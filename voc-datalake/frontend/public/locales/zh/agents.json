@@ -1207,6 +1207,22 @@
       "latestOnly": "仅最近的运行",
       "loadFailed": "无法加载记分卡。请稍后重试。",
       "empty": "此连接上还没有这些版本的记分卡。"
+    },
+    "template": {
+      "title": "模板已更新",
+      "badge": "模板已更新（v{{version}}）",
+      "explain": "此角色的仓库模板有比此范围正在运行的版本更新的版本。请阅读它的改动，然后将其作为提案采用：只有管理员在下方历史中接受后才会运行。不会自动改变。",
+      "show": "显示改动",
+      "loading": "正在读取模板",
+      "readFailed": "无法读取模板。",
+      "diffTitle": "模板 v{{version}} 与当前版本 v{{current}} 对比",
+      "diffTitleFirst": "模板 v{{version}}（尚无当前版本）",
+      "adopt": "作为提案采用",
+      "adoptHint": "由你提出；管理员会像对待其他版本一样接受或拒绝它。",
+      "adoptFailed": "无法采用该模板。",
+      "notNewer": "此模板已被提出或接受。",
+      "proposed": "模板已作为版本 {{version}} 提出：在历史中接受它即可运行。",
+      "openProposed": "打开版本 {{version}}"
     }
   },
   "engineeringRun": {
@@ -1436,7 +1452,8 @@
     "connectFirst": "请先连接一个代码仓库",
     "setUp": "设置",
     "whyNoConnection": "已停用：需要一个可工作的代码仓库连接。",
-    "whySetUp": "设置完成前处于停用状态：需要连接、语言和月度预算。"
+    "whySetUp": "设置完成前处于停用状态：需要连接、语言和月度预算。",
+    "enableFailed": "无法启用该智能体。"
   },
   "prdBuild": {
     "button": "基于此 PRD 构建",
@@ -1446,5 +1463,150 @@
     "confirm": "开始构建",
     "agent": "智能体",
     "inputHint": "运行会以 ID 的形式获得此 PRD 作为输入。"
+  },
+  "readiness": {
+    "title": "就绪情况",
+    "label": "就绪检查",
+    "failingLabel": "未通过的检查",
+    "summary": "未通过：{{fail}} · 未知：{{unknown}} · 警告：{{warn}} · 通过：{{pass}}",
+    "loading": "正在检查运行所需的条件",
+    "loadFailed": "无法读取就绪检查；启用时仍会检查。",
+    "none": "服务器未列出任何检查。",
+    "fix": "修复方法：",
+    "docs": "文档",
+    "opensNewTab": "（在新标签页中打开）",
+    "setWayOfWorking": "在“用户”中设定你的工作方式",
+    "enableWaits": "在运行所需的每项检查都通过之前，启用会一直等待。",
+    "enableRefused": "未启用：运行所需的以下检查未通过。",
+    "status": {
+      "pass": "通过",
+      "fail": "未通过",
+      "warn": "警告",
+      "unknown": "未知"
+    },
+    "check": {
+      "connection": "仓库连接",
+      "app_installation": "GitHub App 安装",
+      "ci_attestation": "CI 证明",
+      "ci_protection": "分支保护",
+      "image": "智能体镜像",
+      "pack": "知识包",
+      "tenets": "原则",
+      "issues_source": "GitHub Issues 来源",
+      "issue_label": "Issue 标签",
+      "dial": "工作方式",
+      "budget": "月度预算",
+      "hard_cap": "硬上限",
+      "bedrock_models": "Bedrock 模型",
+      "agentcore_quota": "AgentCore 配额",
+      "memory_setting": "构建内存配置",
+      "network": "网络",
+      "session_storage": "会话存储"
+    },
+    "required": "运行所需"
+  },
+  "setupGuide": {
+    "title": "配置向导",
+    "open": "配置向导",
+    "subtitle": "配置自主缺陷闭环：在 GitHub 上加了标签的 issue 会被分诊、修复，并以拉取请求的形式打开，由人审阅并合并。步骤按推荐顺序排列；任何步骤都可以暂时跳过。",
+    "notAvailable": "配置向导面向已开启工程智能体的部署的管理员。",
+    "loading": "正在读取已配置的内容",
+    "loadFailed": "无法读取已配置的内容。",
+    "stepsLabel": "配置步骤",
+    "stepNumber": "第 {{n}} 步",
+    "progress": "已完成 {{done, number}}/{{total, number}} 步",
+    "status": {
+      "done": "已完成",
+      "skipped": "暂时跳过",
+      "todo": "待完成",
+      "later": "7.52 推出"
+    },
+    "skip": "暂时跳过",
+    "unskip": "撤销跳过",
+    "next": "下一步：{{step}}",
+    "saveFailed": "无法保存你的选择。",
+    "saveConflict": "其间另一位管理员修改了向导。已重新读取：请再选择一次。",
+    "skipCostTitle": "跳过的代价",
+    "order": "推荐顺序：前提条件、理解仓库、原则、Issue 分诊、Bug fixer、Feature builder。",
+    "orderFine": "此步骤之前的每一步都已完成。",
+    "orderMissing": "此步骤之前未完成：{{list}}。",
+    "later": "它的流程将在 7.52 推出。请暂时跳过：届时向导会再次提供。",
+    "steps": {
+      "prerequisites": {
+        "title": "前提条件",
+        "summary": "每个自动化的基础：通过部署的 GitHub App 连接的仓库、已证明的 CI，以及为整个部署导入的 issue。",
+        "skipCost": "缺少它们，任何自动化都无法运行：运行需要通过 App 连接的仓库和已证明的 CI，issue 自动化需要已导入的 issue。在运行所需的检查通过之前，启用一直处于关闭状态。"
+      },
+      "understand": {
+        "title": "理解仓库",
+        "summary": "对仓库做一次梳理，写下智能体应了解的内容：它的包、每个包如何构建和测试、各部分位于何处。其拉取请求由人审阅。",
+        "skipCost": "缺少它，智能体每次运行都要从头了解仓库：发现更浅，修复更常改错位置，运行更久、花费更多。"
+      },
+      "tenets": {
+        "title": "原则",
+        "summary": "项目的原则，写下来并由管理员接受：分诊和评审据此评判 issue 和变更。",
+        "skipCost": "没有原则，分诊就没有明确的优先级来评判 issue，评审只凭代码评判变更：严重程度不够一致，修复可能违背项目重视的东西。"
+      },
+      "triage": {
+        "title": "Issue 分诊",
+        "summary": "读取每个加了标签的 issue，将其归类为缺陷、功能或调查，评估严重程度，写出验收标准，然后在 issue 上评论并加标签。Bug fixer 和 Feature builder 从它的分诊开始。",
+        "skipCost": "没有分诊，Bug fixer 和 Feature builder 只能依据 issue 自身的标签和文字判断：功能请求可能交给 Bug fixer，严重程度靠猜，修复在没有验收标准的情况下开始。"
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "查找 issue 报告的缺陷，用一个没有修复就会失败的测试来修复它，运行仓库的质量门禁，然后推送并打开写有 Fixes #N 的拉取请求。由人在 GitHub 上批准并合并。",
+        "skipCost": "缺少它，加了标签的缺陷会被分诊，但没有任何东西修复它们或打开拉取请求。"
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "构建功能 issue 或项目 PRD 所要求的内容，经过同样的质量门禁，然后打开拉取请求，由人审阅并合并。",
+        "skipCost": "缺少它，功能请求会被分诊，但没有任何东西构建它们，PRD 的“根据此 PRD 构建”也没有可交付的智能体。"
+      },
+      "ready": {
+        "title": "准备就绪",
+        "summary": "每一步的状态，以及第一次运行。"
+      }
+    },
+    "prerequisites": {
+      "label": "前提条件",
+      "github": "用部署的 GitHub App 连接 GitHub：创建 App，然后将其安装到仓库（两次点击）。",
+      "ci": "在仓库的连接上证明其 CI：受保护的密钥、只读令牌、固定的 OIDC、没有自托管运行器、没有特权拉取请求工作流。",
+      "issues": "导入其 issue：面向整个部署的 GitHub Issues 来源，列出该仓库并用该 App 登录，并在智能体可以接手的每个 issue 上加 voc-agent 标签。",
+      "met": "已完成",
+      "notMet": "待完成",
+      "unknown": "尚不清楚",
+      "openConnections": "打开连接",
+      "openDeploymentSources": "打开 管理 → 数据来源",
+      "openSources": "打开 管理 → 来源 → 来源设置",
+      "sourcesOutside": "在任何工作区之外进行：自动化只读取部署的来源。",
+      "checksTitle": "自动化的就绪情况",
+      "noReadiness": "来源及其标签由自动化的就绪情况检查：尚未找到任何自动化。"
+    },
+    "automation": {
+      "open": "打开 {{name}}",
+      "missing": {
+        "triage": "Issue triage 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的在这里找不到。",
+        "bug_fixer": "Bug fixer 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的按其处理的内容（缺陷）查找。",
+        "feature_builder": "Feature builder 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的按其处理的内容（功能请求）查找。"
+      }
+    },
+    "ready": {
+      "summaryTitle": "每一步的状态",
+      "runTitle": "立即在 issue 上运行",
+      "runHint": "立即在其仓库的一个 issue 上启动 {{name}} 的运行，无需等待下一次心跳。",
+      "run": "立即在 issue 上运行",
+      "runNone": "请先启用 Issue triage 或 Bug fixer：在 issue 上的运行从其中之一开始。",
+      "learnTitle": "每次运行都会学习",
+      "learn": "每次运行都以 Learn 结束：一次回顾、经验教训，以及改进智能体技能的提案。提案在“技能”中等待管理员接受；不会自动改变。",
+      "openSkills": "打开技能",
+      "finish": "完成向导",
+      "finished": "向导已完成。智能体页面上的“配置向导”可再次打开它。"
+    },
+    "intro": {
+      "title": "配置自主缺陷闭环？",
+      "body": "尚未配置任何内容。配置向导会按推荐顺序引导你：GitHub 和仓库的 CI、其 issue，然后是负责分诊、修复和构建的自动化。",
+      "start": "帮我配置",
+      "skip": "跳过"
+    }
   }
 }

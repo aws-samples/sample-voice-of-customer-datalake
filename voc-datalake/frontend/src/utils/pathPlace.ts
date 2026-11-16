@@ -26,7 +26,7 @@ export interface PlaceRead<P> {
   readonly replaceWith: Address | null
 }
 
-function decoded(segment: string): string {
+function decodedSegment(segment: string): string {
   try {
     return decodeURIComponent(segment)
   } catch {
@@ -40,7 +40,7 @@ function decoded(segment: string): string {
  */
 export function segmentsUnder(base: string, pathname: string): string[] | null {
   if (pathname !== base && !pathname.startsWith(`${base}/`)) return null
-  return pathname.slice(base.length).split('/').filter((segment) => segment !== '').map(decoded)
+  return pathname.slice(base.length).split('/').filter((segment) => segment !== '').map(decodedSegment)
 }
 
 /** A path from its segments, each encoded (`['agents', 'ag 1']` → `/agents/ag%201`). */

@@ -406,7 +406,8 @@
     "taxonomy": "Taxonomia",
     "access": "Privacidade e acesso",
     "ai": "Modelos de IA",
-    "system": "Sistema"
+    "system": "Sistema",
+    "dataSources": "Fontes de dados"
   },
   "sections": {
     "plugins": "Configurações de fontes",
@@ -1016,5 +1017,12 @@
     "save": "Salvar tema",
     "saving": "Salvando…",
     "saveFailed": "Não foi possível salvar o tema padrão. Tente novamente."
+  },
+  "deploymentSources": {
+    "title": "As fontes de dados da implantação",
+    "feeds": "Estas fontes alimentam a implantação: os feedbacks que trazem são de toda a implantação, fora de qualquer espaço de trabalho, seja qual for o espaço de trabalho em que você está agora. As credenciais, os agendamentos e as pausas desta página são os da própria implantação.",
+    "engineering": "São os únicos feedbacks que as automações de engenharia leem (Bug fixer, Feature builder, Issue triage): as execuções delas nunca usam os feedbacks de um espaço de trabalho.",
+    "appSignIn": "Conecte aqui a fonte GitHub Issues com a GitHub App da implantação (no cartão dela, \"Entrar com\"), listando os repositórios em que os agentes trabalham.",
+    "inWorkspace": "Você está em {{name}}, mas nada nesta página o altera: as fontes próprias desse espaço de trabalho ficam na aba Fontes."
   }
 }

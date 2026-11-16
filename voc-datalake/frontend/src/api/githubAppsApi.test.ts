@@ -46,6 +46,13 @@ describe('the list', () => {
     const [app] = (await githubAppsApi.list()).apps
     expect([app?.html_url, app?.owner_type]).toStrictEqual(['', 'User'])
   })
+
+  it("is read in the scope asked for: the current workspace's by default, the deployment's for Data sources", async () => {
+    routeFetchApi({ 'GET /agents/engineering/github-apps': () => ({ apps: [APP], limit: 5 }) })
+    await githubAppsApi.list()
+    await githubAppsApi.listIn('deployment')
+    expect(fetchApi.mock.calls.map((call) => call[2])).toStrictEqual(['workspace', 'deployment'])
+  })
 })
 
 describe('the manifest form', () => {

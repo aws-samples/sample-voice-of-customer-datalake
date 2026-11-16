@@ -26,7 +26,7 @@ export const TRIGGER_KINDS = ['new_reviews', 'schedule', 'threshold'] as const
 /** An engineering agent's triggers (7.47.00): a labelled GitHub issue too. */
 export const ENGINEERING_TRIGGER_KINDS = ['github_issue', ...TRIGGER_KINDS] as const
 /** What an engineering agent works on (`engineering.feedback_type`). */
-export const ENGINEERING_FEEDBACK_TYPES = ['bug', 'feature_request'] as const
+const ENGINEERING_FEEDBACK_TYPES = ['bug', 'feature_request'] as const
 
 const RUN_STATUSES = ['queued', 'running', 'needs_human', 'completed', 'failed', 'cancelled'] as const
 export type RunStatus = (typeof RUN_STATUSES)[number]
@@ -406,8 +406,8 @@ export const agentsKeys = {
   run: (id: string, runId: string) => ['agents', 'run', id, runId] as const,
 }
 
-const agentPath = (id: string, suffix = '') => `/agents/${encodeURIComponent(id)}${suffix}`
-const runPath = (id: string, runId: string, suffix = '') => agentPath(id, `/runs/${encodeURIComponent(runId)}${suffix}`)
+const agentApiPath = (id: string, suffix = '') => `/agents/${encodeURIComponent(id)}${suffix}`
+const runPath = (id: string, runId: string, suffix = '') => agentApiPath(id, `/runs/${encodeURIComponent(runId)}${suffix}`)
 
 function requireAgent(raw: unknown): Agent {
   const agent = normalizeAgent(raw)
@@ -423,20 +423,20 @@ function requireRun(raw: unknown): AgentRun {
 
 export const agentsApi = {
   list: async (): Promise<Agent[]> => normalizeAgentList(await fetchApi<unknown>('/agents')),
-  get: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id))),
+  get: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id))),
   create: async (fields: Partial<AgentForm>): Promise<Agent> => requireAgent(await fetchApi<unknown>('/agents', post(fields))),
   update: async (id: string, fields: Partial<AgentForm>): Promise<Agent> =>
-    requireAgent(await fetchApi<unknown>(agentPath(id), put(fields))),
+    requireAgent(await fetchApi<unknown>(agentApiPath(id), put(fields))),
   /** Archive (never delete): disabled and hidden, runs kept. */
-  archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id), del())),
-  enable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/enable'), post())),
-  disable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/disable'), post())),
+  archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id), del())),
+  enable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/enable'), post())),
+  disable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/disable'), post())),
   /** "Run now" — 409 while a run is active; an engineering agent's may start from an issue or a PRD (`body`). */
   run: async (id: string, body?: RunNowBody): Promise<AgentRun> =>
-    requireRun(await fetchApi<unknown>(agentPath(id, '/run'), post(body))),
+    requireRun(await fetchApi<unknown>(agentApiPath(id, '/run'), post(body))),
   listRuns: async (id: string, cursor?: string) => {
     const query = cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`
-    return normalizeRunPage(await fetchApi<unknown>(agentPath(id, `/runs${query}`)))
+    return normalizeRunPage(await fetchApi<unknown>(agentApiPath(id, `/runs${query}`)))
   },
   getRun: async (id: string, runId: string): Promise<AgentRun> => requireRun(await fetchApi<unknown>(runPath(id, runId))),
   listEvents: async (id: string, runId: string, after: number) =>

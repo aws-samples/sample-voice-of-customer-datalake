@@ -38,7 +38,7 @@ import Login from './pages/Login/Login'
 import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
-  DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
+  DataExplorer, Vote, Memory, Company, Agents, AgentDetail, SetupGuide,
   WorkflowPage, WorkflowTemplatePage, EngineeringRun, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
@@ -165,6 +165,8 @@ export const routes: RouteObject[] = [
       { path: 'agents/spend/*', ...page(<Agents />) },
       { path: 'agents/connections/*', ...page(<Agents />) },
       { path: 'agents/skills/*', ...page(<Agents />) },
+      // The engineering setup guide and its steps: /agents/setup[/<step>] (Agents/SetupGuide/setupGuidePaths.ts).
+      { path: 'agents/setup/*', ...page(<SetupGuide />) },
       // One agent and its tabs: /agents/<id>/<tab> (/agents/<id> is Settings).
       { path: 'agents/:id/*', ...page(<AgentDetail />) },
       // A library workflow on its own, outside any agent (Workflow library → Open / New workflow).

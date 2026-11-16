@@ -22,7 +22,7 @@ describe('the skills answers', () => {
 
   it('read the next page\'s token as the server gave it, and none on the last page', () => {
     expect(parseHistory({ versions: [], next_page: 'abc', current_version: 2 })).toStrictEqual(
-      { currentVersion: 2, versions: [], nextPage: 'abc' })
+      { currentVersion: 2, versions: [], nextPage: 'abc', template: null })
     expect(parseHistory({ versions: [], next_page: null }).nextPage).toBeNull()
   })
 })

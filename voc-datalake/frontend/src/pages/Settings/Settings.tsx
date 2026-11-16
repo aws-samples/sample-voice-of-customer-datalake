@@ -3,11 +3,13 @@
  * operational configuration at `/admin` (`/settings` redirects here).
  * @module pages/Settings
  *
- * Six tabs grouped by job, some with a section switch (`/admin/<tab>/<section>`, adminPaths.ts;
- * the model in `adminTabs.ts`):
+ * Six tabs grouped by job (seven for a platform admin), some with a section switch (`/admin/<tab>/<section>`,
+ * adminPaths.ts; the model in `adminTabs.ts`):
  * - General (brand; the dev-only API configuration). Software settings only:
  *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
  * - Sources: Data sources, Integrations, Email inbox, Radar
+ * - Data sources (platform admins only, 7.50.00): the deployment's own sources from any address
+ *   (DeploymentDataSources.tsx)
  * - Taxonomy: Categories, Dimensions
  * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains), Workspaces (the
  *   platform console, platform admins only)

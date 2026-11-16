@@ -1213,6 +1213,22 @@
       "latestOnly": "dernières exécutions seulement",
       "loadFailed": "Les fiches de résultats n’ont pas pu être chargées. Réessayez dans un instant.",
       "empty": "Pas encore de fiches de résultats pour ces versions sur cette connexion."
+    },
+    "template": {
+      "title": "Modèle mis à jour",
+      "badge": "Modèle mis à jour (v{{version}})",
+      "explain": "Le modèle du dépôt pour ce rôle a une version plus récente que celle qu'exécute ce périmètre. Lisez ce qu'il change, puis adoptez-le comme proposition : il ne s'exécute qu'une fois qu'un administrateur l'accepte dans l'historique ci-dessous. Rien ne change de lui-même.",
+      "show": "Afficher ce qu'il change",
+      "loading": "Lecture du modèle",
+      "readFailed": "Le modèle n'a pas pu être lu.",
+      "diffTitle": "Modèle v{{version}} par rapport à la version actuelle v{{current}}",
+      "diffTitleFirst": "Modèle v{{version}} (aucune version n'est encore actuelle)",
+      "adopt": "Adopter comme proposition",
+      "adoptHint": "Proposé par vous ; un administrateur l'accepte ou le rejette comme toute autre version.",
+      "adoptFailed": "Le modèle n'a pas pu être adopté.",
+      "notNewer": "Ce modèle est déjà proposé ou accepté.",
+      "proposed": "Le modèle est proposé comme version {{version}} : acceptez-le dans l'historique pour l'exécuter.",
+      "openProposed": "Ouvrir la version {{version}}"
     }
   },
   "engineeringRun": {
@@ -1443,7 +1459,8 @@
     "connectFirst": "Connectez d'abord un dépôt",
     "setUp": "Configurer",
     "whyNoConnection": "Désactivé : il lui faut une connexion de dépôt sur laquelle travailler.",
-    "whySetUp": "Désactivé tant qu'il n'est pas configuré : une connexion, un langage et un budget mensuel."
+    "whySetUp": "Désactivé tant qu'il n'est pas configuré : une connexion, un langage et un budget mensuel.",
+    "enableFailed": "L'agent n'a pas pu être activé."
   },
   "prdBuild": {
     "button": "Construire depuis ce PRD",
@@ -1453,5 +1470,150 @@
     "confirm": "Lancer la construction",
     "agent": "Agent",
     "inputHint": "L'exécution reçoit ce PRD en entrée, par son identifiant."
+  },
+  "readiness": {
+    "title": "Préparation",
+    "label": "Vérifications de préparation",
+    "failingLabel": "Vérifications en échec",
+    "summary": "En échec : {{fail}} · Inconnues : {{unknown}} · Avertissements : {{warn}} · Réussies : {{pass}}",
+    "loading": "Vérification de ce dont une exécution a besoin",
+    "loadFailed": "Les vérifications de préparation n'ont pas pu être lues ; Activer les vérifie quand même.",
+    "none": "Le serveur n'a indiqué aucune vérification.",
+    "fix": "Correction :",
+    "docs": "Documentation",
+    "opensNewTab": "(s'ouvre dans un nouvel onglet)",
+    "setWayOfWorking": "Définir votre façon de travailler dans Utilisateurs",
+    "enableWaits": "Activer attend que chaque vérification dont une exécution a besoin réussisse.",
+    "enableRefused": "Non activé : ces vérifications dont une exécution a besoin échouent.",
+    "status": {
+      "pass": "Réussie",
+      "fail": "Échoue",
+      "warn": "Avertissement",
+      "unknown": "Inconnue"
+    },
+    "check": {
+      "connection": "Connexion du dépôt",
+      "app_installation": "Installation de la GitHub App",
+      "ci_attestation": "Attestation de la CI",
+      "ci_protection": "Protection des branches",
+      "image": "Image de l'agent",
+      "pack": "Pack de connaissances",
+      "tenets": "Principes",
+      "issues_source": "Source GitHub Issues",
+      "issue_label": "Label d'issue",
+      "dial": "Façon de travailler",
+      "budget": "Budget mensuel",
+      "hard_cap": "Plafond strict",
+      "bedrock_models": "Modèles Bedrock",
+      "agentcore_quota": "Quota AgentCore",
+      "memory_setting": "Réglage de mémoire de build",
+      "network": "Réseau",
+      "session_storage": "Stockage des sessions"
+    },
+    "required": "Nécessaire à l'exécution"
+  },
+  "setupGuide": {
+    "title": "Guide de configuration",
+    "open": "Guide de configuration",
+    "subtitle": "Configurez la boucle autonome de correction : une issue étiquetée sur GitHub est triée, corrigée et ouverte en pull request qu'une personne relit et fusionne. Les étapes sont dans l'ordre recommandé ; chaque étape peut être ignorée pour l'instant.",
+    "notAvailable": "Le guide de configuration est destiné aux administrateurs d'un déploiement où les agents d'ingénierie sont activés.",
+    "loading": "Lecture de ce qui est configuré",
+    "loadFailed": "Ce qui est configuré n'a pas pu être lu.",
+    "stepsLabel": "Étapes de configuration",
+    "stepNumber": "Étape {{n}}",
+    "progress": "{{done, number}} étapes faites sur {{total, number}}",
+    "status": {
+      "done": "Fait",
+      "skipped": "Ignorée pour l'instant",
+      "todo": "À faire",
+      "later": "Arrive avec 7.52"
+    },
+    "skip": "Ignorer pour l'instant",
+    "unskip": "Annuler l'omission",
+    "next": "Suivant : {{step}}",
+    "saveFailed": "Votre choix n'a pas pu être enregistré.",
+    "saveConflict": "Un autre administrateur a modifié le guide entre-temps. Il a été relu : choisissez à nouveau.",
+    "skipCostTitle": "Ce que coûte l'omission",
+    "order": "Ordre recommandé : prérequis, comprendre le dépôt, principes, tri des issues, Bug fixer, Feature builder.",
+    "orderFine": "Chaque étape précédente est faite.",
+    "orderMissing": "Non fait avant celle-ci : {{list}}.",
+    "later": "Son flux arrive avec 7.52. Ignorez-la pour l'instant : le guide la proposera de nouveau.",
+    "steps": {
+      "prerequisites": {
+        "title": "Prérequis",
+        "summary": "Ce sur quoi repose chaque automatisation : le dépôt connecté via la GitHub App du déploiement, sa CI attestée et ses issues ingérées pour tout le déploiement.",
+        "skipCost": "Sans eux aucune automatisation ne s'exécute : une exécution a besoin du dépôt connecté via l'App et de sa CI attestée, et les automatisations d'issues ont besoin de ses issues ingérées. Activer reste désactivé tant que les vérifications dont une exécution a besoin n'ont pas réussi."
+      },
+      "understand": {
+        "title": "Comprendre le dépôt",
+        "summary": "Un passage sur le dépôt qui consigne ce que les agents doivent en savoir : ses paquets, comment chacun se construit et se teste, et où se trouve chaque chose. Sa pull request est relue par une personne.",
+        "skipCost": "Sans cela les agents découvrent le dépôt à chaque exécution : les constats sont plus superficiels, une correction touche plus souvent le mauvais endroit, et les exécutions durent plus longtemps et coûtent plus cher."
+      },
+      "tenets": {
+        "title": "Principes",
+        "summary": "Les principes du projet, rédigés et acceptés par un administrateur : ce à quoi le tri et les revues mesurent une issue et un changement.",
+        "skipCost": "Sans principes, le tri n'a aucune priorité établie pour juger une issue, et les revues jugent un changement sur le seul code : les gravités sont moins cohérentes, et une correction peut aller contre ce qui compte pour le projet."
+      },
+      "triage": {
+        "title": "Tri des issues",
+        "summary": "Lit chaque issue étiquetée, la classe comme bug, fonctionnalité ou investigation, évalue sa gravité, rédige ses critères d'acceptation, puis commente et étiquette l'issue. Bug fixer et Feature builder partent de son tri.",
+        "skipCost": "Sans tri, Bug fixer et Feature builder décident d'après le label et les mots de l'issue : une demande de fonctionnalité peut arriver au Bug fixer, la gravité est devinée, et une correction commence sans critères d'acceptation."
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "Cherche le bug que signale une issue, le corrige avec un test qui échoue sans la correction, exécute le contrôle qualité du dépôt, puis pousse et ouvre la pull request qui indique Fixes #N. Une personne l'approuve et la fusionne sur GitHub.",
+        "skipCost": "Sans lui, les bugs étiquetés sont triés, mais rien ne les corrige ni n'ouvre de pull request."
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "Construit ce que demande une issue de fonctionnalité ou le PRD d'un projet, avec le même contrôle qualité, puis ouvre sa pull request pour qu'une personne la relise et la fusionne.",
+        "skipCost": "Sans lui, les demandes de fonctionnalités sont triées, mais rien ne les construit, et « Construire à partir de ce PRD » n'a aucun agent à qui le confier."
+      },
+      "ready": {
+        "title": "Prêt",
+        "summary": "Où en est chaque étape, et la première exécution."
+      }
+    },
+    "prerequisites": {
+      "label": "Prérequis",
+      "github": "Connectez GitHub avec la GitHub App du déploiement : créez l'App, puis installez-la sur le dépôt (deux clics).",
+      "ci": "Attestez la CI du dépôt sur sa connexion : secrets protégés, jeton en lecture seule, OIDC fixé, aucun runner auto-hébergé, aucun workflow de pull request privilégié.",
+      "issues": "Ingérez ses issues : la source GitHub Issues pour tout le déploiement, listant le dépôt et connectée avec cette App, et le label voc-agent sur chaque issue que les agents peuvent prendre.",
+      "met": "Fait",
+      "notMet": "À faire",
+      "unknown": "Pas encore connu",
+      "openConnections": "Ouvrir Connexions",
+      "openDeploymentSources": "Ouvrir Administration → Sources de données",
+      "openSources": "Ouvrir Administration → Sources → Réglages des sources",
+      "sourcesOutside": "Hors de tout espace de travail : les automatisations ne lisent que les sources du déploiement.",
+      "checksTitle": "Ce que dit la préparation des automatisations",
+      "noReadiness": "La source et son label sont vérifiés par la préparation d'une automatisation : aucune automatisation n'est encore trouvée."
+    },
+    "automation": {
+      "open": "Ouvrir {{name}}",
+      "missing": {
+        "triage": "Issue triage ne figure pas parmi les agents de ce déploiement. Il est ajouté la première fois qu'un administrateur ouvre la liste des agents ; un agent renommé n'est pas trouvé ici.",
+        "bug_fixer": "Bug fixer ne figure pas parmi les agents de ce déploiement. Il est ajouté la première fois qu'un administrateur ouvre la liste des agents ; un agent renommé est trouvé d'après ce sur quoi il travaille (les bugs).",
+        "feature_builder": "Feature builder ne figure pas parmi les agents de ce déploiement. Il est ajouté la première fois qu'un administrateur ouvre la liste des agents ; un agent renommé est trouvé d'après ce sur quoi il travaille (les demandes de fonctionnalités)."
+      }
+    },
+    "ready": {
+      "summaryTitle": "Où en est chaque étape",
+      "runTitle": "Exécuter maintenant sur une issue",
+      "runHint": "Lancez maintenant une exécution de {{name}} sur une issue de son dépôt, sans attendre le prochain heartbeat.",
+      "run": "Exécuter maintenant sur une issue",
+      "runNone": "Activez d'abord Issue triage ou Bug fixer : une exécution sur une issue part de l'un d'eux.",
+      "learnTitle": "Chaque exécution apprend",
+      "learn": "Chaque exécution se termine par Learn : une rétrospective, des leçons et des propositions pour améliorer les compétences des agents. Les propositions attendent dans Compétences qu'un administrateur les accepte ; rien ne change de lui-même.",
+      "openSkills": "Ouvrir Compétences",
+      "finish": "Terminer le guide",
+      "finished": "Le guide est terminé. Guide de configuration, sur la page des agents, le rouvre."
+    },
+    "intro": {
+      "title": "Configurer la boucle autonome de correction ?",
+      "body": "Rien n'est encore configuré. Le guide de configuration vous accompagne dans l'ordre recommandé : GitHub et la CI du dépôt, ses issues, puis les automatisations qui trient, corrigent et construisent.",
+      "start": "Aide-moi à configurer",
+      "skip": "Ignorer"
+    }
   }
 }

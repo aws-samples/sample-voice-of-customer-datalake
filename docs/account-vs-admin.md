@@ -13,7 +13,7 @@ user. This page lists what is on each, and the rule that decides where a new set
 
 Open Administration from the sidebar (Administration section) and Account from the account menu (**My profile**).
 
-## Administration: six tabs
+## Administration: six tabs (seven for a platform admin)
 
 Each tab and section is a path, `/admin/<tab>/<section>` (`frontend/src/pages/Settings/adminTabs.ts`,
 `adminPaths.ts`; [Addresses](document-canvas.md#addresses)), and the Boards section's open editor is
@@ -23,6 +23,7 @@ Each tab and section is a path, `/admin/<tab>/<section>` (`frontend/src/pages/Se
 |---|---|
 | General (`brand`) | Brand (names, handles, hashtags, URLs); Default theme (the colour theme everyone starts with). Local dev builds only: API configuration |
 | Sources (`sources`) | Data sources (`plugins`), Integrations (`integrations`), Email inbox (`inbox`), Radar (`radar`) |
+| Data sources (`data-sources`, platform admins only; 7.50.00) | One page: the deployment's own sources from any address, with no `X-Workspace-Id` ([multi-workspace.md](multi-workspace.md#the-deployments-data-sources-75000)) |
 | Taxonomy (`taxonomy`) | Categories (`categories`), Dimensions (`dimensions`) |
 | Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction, erasure), Users (`users`: roles, category and source access, flags, way of working with AI, participant email), Boards (`boards`: company domains and the [feedback boards](feature-requests.md)) |
 | AI models (`ai`) | Per-surface model picker, model test, capacity |

@@ -22,8 +22,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
-import { LabeledField } from '../../components/LabeledField/LabeledField'
-import { ConnectionTextField, CredentialGuidance, HostChoice } from './ConnectionFields'
+import { ConnectionTextField, CredentialGuidance, HostChoice, OneLineNoteField } from './ConnectionFields'
 import { ConnectionFormModal } from './ConnectionModals'
 import { EMPTY_CONNECTION_FORM, MAX_BRANCH, connectionIssues, connectionRequest } from './connectionRules'
 import type {
@@ -76,19 +75,6 @@ function AppReference({ connection }: Readonly<{ connection: EngineeringConnecti
       <p className="text-sm text-text font-mono break-all">{t('connections.appIds', { appId: appId ?? '', installationId: installationId ?? '' })}</p>
       <p className="text-[12px] text-muted">{t('connections.dialog.appCreatedHint')}</p>
     </div>
-  )
-}
-
-/** Why the change is made: one line, kept with the connection's audit row. */
-function ReasonField({ value, onChange }: Readonly<{ value: string; onChange: (value: string) => void }>) {
-  const { t } = useTranslation('agents')
-  return (
-    <LabeledField label={t('connections.dialog.reason')} hint={t('connections.dialog.reasonHint', { max: MAX_REASON })}>
-      {(id) => (
-        <input id={id} type="text" className="input w-full" value={value} maxLength={MAX_REASON}
-          aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.value)} />
-      )}
-    </LabeledField>
   )
 }
 
@@ -173,7 +159,9 @@ export function ConnectionDialog({ existing, onClose, onSaved }: Readonly<{
           {field('repository', { mono: true, readOnly: true, hint: t('connections.dialog.repositoryFixed') })}
           <AppReference connection={existing} />
           {field('defaultBranch', { mono: true })}
-          <ReasonField value={reason} onChange={setReason} />
+          {/* Why the change is made: one line, kept with the connection's audit row. */}
+          <OneLineNoteField label={t('connections.dialog.reason')} hint={t('connections.dialog.reasonHint', { max: MAX_REASON })}
+            max={MAX_REASON} value={reason} onChange={setReason} />
         </>
       ) : (
         <>

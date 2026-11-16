@@ -44,7 +44,8 @@
     "connections": "연결",
     "github": "GitHub",
     "githubAppCreated": "App 생성됨",
-    "githubAppInstalled": "App 설치됨"
+    "githubAppInstalled": "App 설치됨",
+    "setupGuide": "구성 가이드"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",

@@ -1207,6 +1207,22 @@
       "latestOnly": "최근 실행만",
       "loadFailed": "스코어카드를 불러오지 못했습니다. 잠시 후 다시 시도하세요.",
       "empty": "이 연결에는 아직 이 버전들의 스코어카드가 없습니다."
+    },
+    "template": {
+      "title": "템플릿 업데이트됨",
+      "badge": "템플릿 업데이트됨 (v{{version}})",
+      "explain": "이 역할에 대한 저장소 템플릿에 이 범위가 실행하는 것보다 새로운 버전이 있습니다. 무엇이 바뀌는지 읽은 다음 제안으로 채택하세요. 관리자가 아래 기록에서 승인해야만 실행됩니다. 저절로 바뀌는 것은 없습니다.",
+      "show": "바뀌는 내용 보기",
+      "loading": "템플릿을 읽는 중",
+      "readFailed": "템플릿을 읽지 못했습니다.",
+      "diffTitle": "템플릿 v{{version}}과 현재 버전 v{{current}} 비교",
+      "diffTitleFirst": "템플릿 v{{version}}(아직 현재 버전이 없음)",
+      "adopt": "제안으로 채택",
+      "adoptHint": "내가 제안한 것이 됩니다. 관리자가 다른 버전처럼 승인하거나 거부합니다.",
+      "adoptFailed": "템플릿을 채택하지 못했습니다.",
+      "notNewer": "이 템플릿은 이미 제안되었거나 승인되었습니다.",
+      "proposed": "템플릿이 버전 {{version}}(으)로 제안되었습니다. 실행하려면 기록에서 승인하세요.",
+      "openProposed": "버전 {{version}} 열기"
     }
   },
   "engineeringRun": {
@@ -1436,7 +1452,8 @@
     "connectFirst": "먼저 저장소를 연결하세요",
     "setUp": "설정",
     "whyNoConnection": "사용 안 함: 작업할 저장소 연결이 필요합니다.",
-    "whySetUp": "설정할 때까지 사용 안 함: 연결, 언어, 월 예산."
+    "whySetUp": "설정할 때까지 사용 안 함: 연결, 언어, 월 예산.",
+    "enableFailed": "에이전트를 활성화하지 못했습니다."
   },
   "prdBuild": {
     "button": "이 PRD로 빌드",
@@ -1446,5 +1463,150 @@
     "confirm": "빌드 시작",
     "agent": "에이전트",
     "inputHint": "실행은 이 PRD를 ID로 입력받습니다."
+  },
+  "readiness": {
+    "title": "준비 상태",
+    "label": "준비 상태 검사",
+    "failingLabel": "실패한 검사",
+    "summary": "실패: {{fail}} · 알 수 없음: {{unknown}} · 경고: {{warn}} · 통과: {{pass}}",
+    "loading": "실행에 필요한 것을 확인하는 중",
+    "loadFailed": "준비 상태 검사를 읽지 못했습니다. 활성화할 때 다시 검사합니다.",
+    "none": "서버가 검사를 알려 주지 않았습니다.",
+    "fix": "해결 방법:",
+    "docs": "문서",
+    "opensNewTab": "(새 탭에서 열림)",
+    "setWayOfWorking": "사용자에서 작업 방식 지정",
+    "enableWaits": "실행에 필요한 검사가 모두 통과할 때까지 활성화를 기다립니다.",
+    "enableRefused": "활성화되지 않음: 실행에 필요한 다음 검사가 실패했습니다.",
+    "status": {
+      "pass": "통과",
+      "fail": "실패",
+      "warn": "경고",
+      "unknown": "알 수 없음"
+    },
+    "check": {
+      "connection": "저장소 연결",
+      "app_installation": "GitHub App 설치",
+      "ci_attestation": "CI 증명",
+      "ci_protection": "브랜치 보호",
+      "image": "에이전트 이미지",
+      "pack": "지식 팩",
+      "tenets": "원칙",
+      "issues_source": "GitHub Issues 소스",
+      "issue_label": "이슈 레이블",
+      "dial": "작업 방식",
+      "budget": "월 예산",
+      "hard_cap": "하드 캡",
+      "bedrock_models": "Bedrock 모델",
+      "agentcore_quota": "AgentCore 할당량",
+      "memory_setting": "빌드 메모리 구성",
+      "network": "네트워크",
+      "session_storage": "세션 저장소"
+    },
+    "required": "실행에 필요"
+  },
+  "setupGuide": {
+    "title": "구성 가이드",
+    "open": "구성 가이드",
+    "subtitle": "자율 버그 루프를 구성합니다. GitHub에서 레이블이 붙은 이슈가 분류되고 수정되어, 사람이 검토하고 병합하는 풀 리퀘스트로 열립니다. 단계는 권장 순서대로이며, 어떤 단계든 지금은 건너뛸 수 있습니다.",
+    "notAvailable": "구성 가이드는 엔지니어링 에이전트가 켜진 배포의 관리자용입니다.",
+    "loading": "구성된 내용을 읽는 중",
+    "loadFailed": "구성된 내용을 읽지 못했습니다.",
+    "stepsLabel": "구성 단계",
+    "stepNumber": "{{n}}단계",
+    "progress": "{{total, number}}단계 중 {{done, number}}단계 완료",
+    "status": {
+      "done": "완료",
+      "skipped": "지금은 건너뜀",
+      "todo": "할 일",
+      "later": "7.52에서 제공"
+    },
+    "skip": "지금은 건너뛰기",
+    "unskip": "건너뛰기 취소",
+    "next": "다음: {{step}}",
+    "saveFailed": "선택을 저장하지 못했습니다.",
+    "saveConflict": "그사이 다른 관리자가 가이드를 변경했습니다. 다시 읽었으니 한 번 더 선택하세요.",
+    "skipCostTitle": "건너뛰면 잃는 것",
+    "order": "권장 순서: 사전 요구 사항, 저장소 이해, 원칙, 이슈 분류, Bug fixer, Feature builder.",
+    "orderFine": "이 단계 이전의 모든 단계가 완료되었습니다.",
+    "orderMissing": "이 단계 이전에 완료되지 않음: {{list}}.",
+    "later": "이 흐름은 7.52에서 제공됩니다. 지금은 건너뛰세요. 그때 가이드가 다시 안내합니다.",
+    "steps": {
+      "prerequisites": {
+        "title": "사전 요구 사항",
+        "summary": "모든 자동화의 기반: 배포의 GitHub App으로 연결된 저장소, 증명된 CI, 배포 전체로 수집된 이슈.",
+        "skipCost": "이것이 없으면 어떤 자동화도 실행되지 않습니다. 실행에는 App으로 연결된 저장소와 증명된 CI가 필요하고, 이슈 자동화에는 수집된 이슈가 필요합니다. 실행에 필요한 검사가 통과할 때까지 활성화는 꺼진 상태입니다."
+      },
+      "understand": {
+        "title": "저장소 이해",
+        "summary": "저장소를 한 번 살펴보며 에이전트가 알아야 할 것을 기록합니다: 패키지, 각 패키지의 빌드와 테스트 방법, 무엇이 어디에 있는지. 그 풀 리퀘스트는 사람이 검토합니다.",
+        "skipCost": "이것이 없으면 에이전트는 실행할 때마다 저장소를 처음부터 익힙니다. 발견 내용이 얕아지고, 수정이 엉뚱한 곳을 건드리는 일이 잦아지며, 실행 시간과 비용이 늘어납니다."
+      },
+      "tenets": {
+        "title": "원칙",
+        "summary": "프로젝트의 원칙을 작성하고 관리자가 승인한 것: 분류와 리뷰가 이슈와 변경을 판단하는 기준.",
+        "skipCost": "원칙이 없으면 분류에는 이슈를 판단할 정해진 우선순위가 없고, 리뷰는 코드만으로 변경을 판단합니다. 심각도의 일관성이 떨어지고, 수정이 프로젝트가 중시하는 것과 어긋날 수 있습니다."
+      },
+      "triage": {
+        "title": "이슈 분류",
+        "summary": "레이블이 붙은 각 이슈를 읽고 버그, 기능, 조사로 분류하고 심각도를 평가하고 인수 기준을 쓴 뒤 이슈에 댓글과 레이블을 답니다. Bug fixer와 Feature builder는 이 분류에서 시작합니다.",
+        "skipCost": "분류가 없으면 Bug fixer와 Feature builder가 이슈 자체의 레이블과 문구로 판단합니다. 기능 요청이 Bug fixer에 갈 수 있고, 심각도는 추측이 되며, 수정이 인수 기준 없이 시작됩니다."
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "이슈가 보고한 버그를 찾아, 수정 없이는 실패하는 테스트와 함께 고치고, 저장소의 품질 게이트를 실행한 뒤 push하고 Fixes #N이라고 적힌 풀 리퀘스트를 엽니다. 사람이 GitHub에서 승인하고 병합합니다.",
+        "skipCost": "이것이 없으면 레이블이 붙은 버그는 분류되지만, 고치거나 풀 리퀘스트를 여는 것은 없습니다."
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "기능 이슈나 프로젝트의 PRD가 요청하는 것을 같은 품질 게이트를 거쳐 만들고, 사람이 검토하고 병합할 풀 리퀘스트를 엽니다.",
+        "skipCost": "이것이 없으면 기능 요청은 분류되지만 만들어지지 않고, PRD의 \"이 PRD로 빌드\"는 넘길 에이전트가 없습니다."
+      },
+      "ready": {
+        "title": "준비 완료",
+        "summary": "각 단계의 상태와 첫 실행."
+      }
+    },
+    "prerequisites": {
+      "label": "사전 요구 사항",
+      "github": "배포의 GitHub App으로 GitHub를 연결하세요: App을 만든 다음 저장소에 설치합니다(두 번 클릭).",
+      "ci": "연결에서 저장소의 CI를 증명하세요: 보호된 시크릿, 읽기 전용 토큰, 고정된 OIDC, 셀프 호스팅 러너 없음, 권한 있는 풀 리퀘스트 워크플로 없음.",
+      "issues": "이슈를 수집하세요: 배포 전체의 GitHub Issues 소스에 저장소를 넣고 그 App으로 로그인하며, 에이전트가 맡아도 되는 각 이슈에 voc-agent 레이블을 답니다.",
+      "met": "완료",
+      "notMet": "할 일",
+      "unknown": "아직 알 수 없음",
+      "openConnections": "연결 열기",
+      "openDeploymentSources": "관리 → 데이터 소스 열기",
+      "openSources": "관리 → 소스 → 소스 설정 열기",
+      "sourcesOutside": "어떤 워크스페이스에도 들어가지 않은 상태에서: 자동화는 배포의 소스만 읽습니다.",
+      "checksTitle": "자동화의 준비 상태 결과",
+      "noReadiness": "소스와 레이블은 자동화의 준비 상태로 검사합니다. 아직 찾은 자동화가 없습니다."
+    },
+    "automation": {
+      "open": "{{name}} 열기",
+      "missing": {
+        "triage": "Issue triage가 이 배포의 에이전트에 없습니다. 관리자가 에이전트 목록을 처음 열 때 추가되며, 이름을 바꾼 것은 여기서 찾지 못합니다.",
+        "bug_fixer": "Bug fixer가 이 배포의 에이전트에 없습니다. 관리자가 에이전트 목록을 처음 열 때 추가되며, 이름을 바꾼 것은 하는 일(버그)로 찾습니다.",
+        "feature_builder": "Feature builder가 이 배포의 에이전트에 없습니다. 관리자가 에이전트 목록을 처음 열 때 추가되며, 이름을 바꾼 것은 하는 일(기능 요청)로 찾습니다."
+      }
+    },
+    "ready": {
+      "summaryTitle": "각 단계의 상태",
+      "runTitle": "지금 이슈로 실행",
+      "runHint": "다음 하트비트를 기다리지 않고 저장소의 이슈 하나로 {{name}} 실행을 지금 시작합니다.",
+      "run": "지금 이슈로 실행",
+      "runNone": "먼저 Issue triage나 Bug fixer를 활성화하세요. 이슈 실행은 둘 중 하나에서 시작합니다.",
+      "learnTitle": "모든 실행은 학습합니다",
+      "learn": "각 실행은 Learn으로 끝납니다: 회고, 교훈, 에이전트 스킬을 개선하는 제안. 제안은 스킬에서 관리자의 승인을 기다리며, 저절로 바뀌는 것은 없습니다.",
+      "openSkills": "스킬 열기",
+      "finish": "가이드 마치기",
+      "finished": "가이드를 마쳤습니다. 에이전트 페이지의 구성 가이드에서 다시 열 수 있습니다."
+    },
+    "intro": {
+      "title": "자율 버그 루프를 구성할까요?",
+      "body": "아직 구성된 것이 없습니다. 구성 가이드가 권장 순서대로 안내합니다: GitHub와 저장소의 CI, 이슈, 그리고 분류하고 수정하고 만드는 자동화.",
+      "start": "구성 도와줘",
+      "skip": "건너뛰기"
+    }
   }
 }

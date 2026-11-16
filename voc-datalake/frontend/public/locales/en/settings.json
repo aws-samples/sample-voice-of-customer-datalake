@@ -390,7 +390,8 @@
     "taxonomy": "Taxonomy",
     "access": "Privacy & access",
     "ai": "AI models",
-    "system": "System"
+    "system": "System",
+    "dataSources": "Data sources"
   },
   "sections": {
     "plugins": "Source settings",
@@ -988,5 +989,12 @@
     "save": "Save theme",
     "saving": "Saving…",
     "saveFailed": "Couldn’t save the default theme. Try again."
+  },
+  "deploymentSources": {
+    "title": "The deployment's data sources",
+    "feeds": "These sources feed the deployment: the feedback they bring in is deployment-wide, outside every workspace, whichever workspace you are in now. The credentials, schedules and pauses on this page are the deployment's own.",
+    "engineering": "It is the only feedback the engineering automations read (Bug fixer, Feature builder, Issue triage): their runs never take a workspace's feedback.",
+    "appSignIn": "Sign the GitHub Issues source in here with the deployment's GitHub App (its card's Sign in with), listing the repositories the agents work on.",
+    "inWorkspace": "You are in {{name}}, but nothing on this page changes it: that workspace's own sources are on the Sources tab."
   }
 }

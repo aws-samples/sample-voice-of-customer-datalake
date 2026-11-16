@@ -6,6 +6,7 @@
  *
  * @module pages/Agents/SkillVersionDetail
  */
+import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
@@ -56,15 +57,17 @@ function Moved({ name, moved }: Readonly<{ name: 'model' | 'harness'; moved: rea
   return <p className="text-sm break-all">{t(`skills.diff.${name}`, { from, to: moved[1] })}</p>
 }
 
-function DiffView({ diff }: Readonly<{ diff: SkillDiff }>) {
+/** What a diff changes, under `title` (the version's own titles when left out: SkillTemplateUpdate.tsx names its own). */
+export function DiffView({ diff, title }: Readonly<{ diff: SkillDiff; title?: string }>) {
   const { t } = useTranslation('agents')
+  const titleId = useId()
   const examples = diff.examples.map(([op, example]) =>
     [op, t('skills.diff.example', { situation: example.situation, action: example.action })] as const)
   const tools = [...diff.tools_added.map((name) => ['+', name] as const), ...diff.tools_removed.map((name) => ['-', name] as const)]
   return (
-    <section aria-labelledby="skill-diff" className="space-y-2">
-      <h4 id="skill-diff" className="text-sm font-semibold text-text-strong">
-        {diff.first ? t('skills.diff.firstTitle') : t('skills.diff.title')}
+    <section aria-labelledby={titleId} className="space-y-2">
+      <h4 id={titleId} className="text-sm font-semibold text-text-strong">
+        {title ?? (diff.first ? t('skills.diff.firstTitle') : t('skills.diff.title'))}
       </h4>
       {diffIsEmpty(diff) && <p className="text-sm text-muted">{t('skills.diff.none')}</p>}
       <DiffPart title={t('skills.diff.instructions')} lines={diff.instructions} />

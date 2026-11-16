@@ -406,7 +406,8 @@
     "taxonomy": "Taxonomie",
     "access": "Confidentialité et accès",
     "ai": "Modèles d'IA",
-    "system": "Système"
+    "system": "Système",
+    "dataSources": "Sources de données"
   },
   "sections": {
     "plugins": "Réglages des sources",
@@ -1016,5 +1017,12 @@
     "save": "Enregistrer le thème",
     "saving": "Enregistrement…",
     "saveFailed": "Impossible d’enregistrer le thème par défaut. Réessayez."
+  },
+  "deploymentSources": {
+    "title": "Les sources de données du déploiement",
+    "feeds": "Ces sources alimentent le déploiement : les retours qu’elles apportent concernent tout le déploiement, hors de tout espace de travail, quel que soit l’espace de travail où vous êtes. Les identifiants, planifications et pauses de cette page sont ceux du déploiement.",
+    "engineering": "Ce sont les seuls retours que lisent les automatisations d’ingénierie (Bug fixer, Feature builder, Issue triage) : leurs exécutions ne prennent jamais les retours d’un espace de travail.",
+    "appSignIn": "Connectez ici la source GitHub Issues avec la GitHub App du déploiement (sur sa carte, « Se connecter avec ») en listant les dépôts sur lesquels travaillent les agents.",
+    "inWorkspace": "Vous êtes dans {{name}}, mais rien sur cette page ne le modifie : les sources propres à cet espace de travail sont dans l’onglet Sources."
   }
 }

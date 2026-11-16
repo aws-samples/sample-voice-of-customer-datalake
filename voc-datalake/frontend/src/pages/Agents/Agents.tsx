@@ -6,7 +6,8 @@
  * (`/agents/spend`): what they spent, from the spend ledger, a Connections tab
  * (`/agents/connections`): the repository connections they reach a repository through, and a Skills tab
  * (`/agents/skills`): their skill versions' history and scorecards, read only. Each view is a path
- * (agentsPaths.ts), so Back walks them.
+ * (agentsPaths.ts), so Back walks them. With the engineering agents on, an administrator also gets **Setup guide**
+ * (`/agents/setup`, SetupGuide/), offered on a first visit while nothing is set up (7.50.00).
  *
  * @module pages/Agents/Agents
  */
@@ -32,6 +33,7 @@ import { EngineeringSkills } from './EngineeringSkills'
 import { AgentRowActions } from './AgentRowActions'
 import { EngineeringSetUpCard } from './AgentEngineering'
 import { PlansList } from './PlansList'
+import { SetupGuideButton, SetupIntro } from './SetupGuide/SetupGuideEntry'
 import { prefetch } from '../../lib/prefetch'
 import { usePlaceNavigate, useReplaceAddress } from '../../utils/pathPlace'
 import { AGENTS_VIEWS, agentPath, agentsPath, readAgentsAddress } from './agentsPaths'
@@ -134,6 +136,7 @@ function AgentList({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   const failure = failedReads([listQuery])
   return (
     <>
+      {isAdmin && isEngineeringAvailable() && <SetupIntro agents={data} />}
       {isLoading && <div className="skeleton h-24" />}
       {failure.loadFailed && <LoadFailed message={t('list.loadFailed')} onRetry={failure.retry} retrying={failure.retrying} />}
       {data?.length === 0 && (
@@ -161,6 +164,19 @@ function useAgentsView(isAdmin: boolean): readonly [AgentsView, (view: AgentsVie
   return [parseView(read?.place.view ?? 'agents', isAdmin), setView]
 }
 
+/** The list's own actions (an admin's): the setup guide, with the engineering agents on, and New agent. */
+function ListActions({ onCreate }: Readonly<{ onCreate: () => void }>) {
+  const { t } = useTranslation('agents')
+  return (
+    <div className="flex flex-wrap gap-2">
+      {isEngineeringAvailable() && <SetupGuideButton />}
+      <button type="button" className="btn btn-primary" onClick={onCreate}>
+        <Plus size={16} aria-hidden="true" /> {t('list.create')}
+      </button>
+    </div>
+  )
+}
+
 export default function Agents() {
   const { t } = useTranslation('agents')
   const isAdmin = useIsAdmin()
@@ -173,11 +189,7 @@ export default function Agents() {
           <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('list.title')}</h1>
           <p className="text-sm text-muted mt-1 max-w-prose">{t('list.subtitle')}</p>
         </div>
-        {isAdmin && view === 'agents' && (
-          <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-            <Plus size={16} aria-hidden="true" /> {t('list.create')}
-          </button>
-        )}
+        {isAdmin && view === 'agents' && <ListActions onCreate={() => setCreating(true)} />}
       </div>
       {isAdmin && <ViewTabs view={view} onChange={setView} />}
       <div role={isAdmin ? 'tabpanel' : undefined} aria-label={isAdmin ? t(`views.${view}`) : undefined} className="space-y-4 sm:space-y-6">

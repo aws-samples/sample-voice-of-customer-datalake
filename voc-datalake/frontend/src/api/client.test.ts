@@ -201,6 +201,26 @@ describe('a body that names a run', () => {
   })
 })
 
+describe('a body that names failing checks (an engineering Enable\'s 409, 7.50.00)', () => {
+  const caught = async (body: unknown): Promise<unknown> => {
+    mockFailureOnce(409, JSON.stringify(body))
+    return fetchApi('/agents/ag_b0f1e2d3c4a5/enable').catch((error: unknown) => error)
+  }
+
+  it('keeps the list on the error as sent, for the readiness reader to parse', async () => {
+    const checks = [{ id: 'dial', status: 'fail', detail: 'human-driven', fix: 'Set AI-driven.', docs: '', required: true }]
+    const error = await caught({ error: 'the agent is not ready to run', checks })
+    expect(error instanceof ApiError && [error.status, error.message, error.checks])
+      .toStrictEqual([409, 'the agent is not ready to run', checks])
+  })
+
+  it('keeps nothing that is not a list, or a list too long to be one', async () => {
+    const odd = await caught({ error: 'refused', checks: 'dial' })
+    const long = await caught({ error: 'refused', checks: Array.from({ length: 51 }, () => ({ id: 'x' })) })
+    expect([odd instanceof ApiError && odd.checks, long instanceof ApiError && long.checks]).toStrictEqual([undefined, undefined])
+  })
+})
+
 describe('an accepted answer', () => {
   it('reads a 202\'s body like a 200\'s (an engineering run\'s start: the run is written, its launch under way)', async () => {
     fetchMock().mockResolvedValueOnce({ ok: true, status: 202, json: () => Promise.resolve({ run: { run_id: 'RUN1' } }) })
@@ -344,6 +364,33 @@ describe('the deployment-only operator calls name no workspace, inside one too',
     mockJsonOnce({})
     await api.runSource('webscraper')
     expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+  })
+})
+
+describe("the Data sources calls: the workspace's by default, the deployment's on request (7.50.00)", () => {
+  // Administration → Data sources (pages/Settings/DeploymentDataSources.tsx) asks for 'deployment' inside a workspace.
+  afterEach(() => setCurrentWorkspace(null))
+
+  const calls: [string, (scope?: 'deployment') => Promise<unknown>][] = [
+    ['the credentials status', (scope) => api.getIntegrationStatus(scope)],
+    ['a credentials save', (scope) => api.updateIntegrationCredentials('github_issues', { repos: 'o/r' }, scope)],
+    ['a credentials read', (scope) => api.getIntegrationCredentials('github_issues', ['github_app_id'], scope)],
+    ['the schedules and pauses', (scope) => api.getSourcesStatus(undefined, scope)],
+    ['a pause reset', (scope) => api.resetSource('webscraper', scope)],
+  ]
+
+  it.each(calls)('%s names the current workspace by default', async (_name, call) => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await call()
+    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+  })
+
+  it.each(calls)("%s names no workspace in the deployment's scope", async (_name, call) => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await call('deployment')
+    expect(requestHeaders(0)['X-Workspace-Id']).toBeUndefined()
   })
 })
 

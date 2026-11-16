@@ -6,7 +6,12 @@
  * - `GET …/skills/<role>/versions?connection=&page=`: the role's history a page at a time, newest first, each version
  *   with its events and its benchmark (the proposer's claimed rates apart from the measured ones);
  * - `GET …/skills/<role>/versions/<n>?connection=`: one version's whole record and its diff from its base;
- * - `GET /agents/engineering/scorecards/<role>?connection=&versions=`: each version's scorecard on a connection.
+ * - `GET /agents/engineering/scorecards/<role>?connection=&versions=`: each version's scorecard on a connection;
+ * - since 7.50.00 a role's history names its bundled template (`template: {version, label, newer}`: the template's
+ *   version and label, and whether it is newer than every version of the scope seeded from one: the skills views of
+ *   item B of 7.50.00), and `GET …/skills/<role>/template?connection=` answers that template's diff against the
+ *   scope's current version (`{template, current_version, record, diff}`), which an administrator may adopt as a
+ *   person's proposal (api/engineeringSkillActionsApi.ts `adopt`): never applied by itself.
  * Every text is the server's as data: the screens render it as text, never as HTML.
  *
  * @module api/engineeringSkillsApi
@@ -29,6 +34,9 @@ const count = z.number().int().nonnegative().catch(0)
 const rate = z.number().min(0).max(1).nullable().catch(null)
 
 const LatestSchema = z.object({ version: count, status: text, summary: text, proposed_at: text })
+/** The role's bundled template (7.50.00): its version, its label (`<role>@template-<n>`) and whether it is newer. */
+const TemplateSchema = z.object({ version: z.number().int().positive(), label: text, newer: z.boolean() })
+export type SkillTemplate = z.output<typeof TemplateSchema>
 const RoleSchema = z.object({
   role: z.enum(SKILL_ROLES), current_version: count, versions: count, latest: LatestSchema.nullable().catch(null),
 })
@@ -88,6 +96,15 @@ const DetailSchema = LineSchema.extend({
 })
 export type SkillVersionDetail = z.output<typeof DetailSchema>
 
+/** A role's template against the scope's current version: the template, its record and what it would change. */
+const TemplateUpdateSchema = z.object({
+  template: TemplateSchema,
+  current_version: count,
+  record: RecordSchema,
+  diff: DiffSchema,
+})
+export type SkillTemplateUpdate = z.output<typeof TemplateUpdateSchema>
+
 /** Where a scorecard's version number comes from (views.py score_source: `shipped`, or `not_shipped` for a number
  * no shipped skill of the role had). */
 const SCORE_SOURCES = ['shipped', 'not_shipped', 'shared', 'connection'] as const
@@ -106,6 +123,8 @@ export interface SkillHistoryPage {
   versions: SkillVersionLine[]
   /** The next page's token (the server's, passed back as it is), null on the last page. */
   nextPage: string | null
+  /** The role's bundled template (7.50.00); null for a role with none, or a server before (never "updated"). */
+  template: SkillTemplate | null
 }
 
 /** An answer with no list where the list should be is an error, never "no versions" (a false statement). */
@@ -121,11 +140,20 @@ export function parseRoles(raw: unknown): SkillRoleLine[] {
 export function parseHistory(raw: unknown): SkillHistoryPage {
   const versions = parseEach(LineSchema, listOf(raw, 'versions'))
   const record = isRecord(raw) ? raw : {}
+  const template = TemplateSchema.safeParse(record.template)
   return {
     currentVersion: typeof record.current_version === 'number' ? record.current_version : 0,
     versions,
     nextPage: typeof record.next_page === 'string' && record.next_page !== '' ? record.next_page : null,
+    template: template.success ? template.data : null,
   }
+}
+
+/** The template's diff, read strictly: an answer without it is an error, never "nothing changes". */
+export function parseTemplateUpdate(raw: unknown): SkillTemplateUpdate {
+  const parsed = TemplateUpdateSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('The skill template answer was unreadable')
+  return parsed.data
 }
 
 export function parseDetail(raw: unknown): SkillVersionDetail {
@@ -155,6 +183,8 @@ const historyPath = (connection: string, role: SkillRole, page: string) =>
   `/agents/engineering/skills/${encodeURIComponent(role)}/versions?${query(connection, page === '' ? {} : { page })}`
 const versionPath = (connection: string, role: SkillRole, version: number) =>
   `/agents/engineering/skills/${encodeURIComponent(role)}/versions/${String(version)}?${query(connection)}`
+const templatePath = (connection: string, role: SkillRole) =>
+  `/agents/engineering/skills/${encodeURIComponent(role)}/template?${query(connection)}`
 const scorecardsPath = (connection: string, role: SkillRole, versions: readonly number[]) =>
   `/agents/engineering/scorecards/${encodeURIComponent(role)}?${query(connection, versions.length === 0 ? {} : { versions: versions.join(',') })}`
 
@@ -166,6 +196,7 @@ export const engineeringSkillsKeys = {
   roles: (connection: string) => ['engineering-skills', connection] as const,
   history: (connection: string, role: SkillRole) => ['engineering-skills', connection, role] as const,
   version: (connection: string, role: SkillRole, version: number) => ['engineering-skills', connection, role, version] as const,
+  template: (connection: string, role: SkillRole) => ['engineering-skills', connection, role, 'template'] as const,
   scorecards: (connection: string, role: SkillRole, versions: readonly number[]) =>
     ['engineering-scorecards', connection, role, versions.join(',')] as const,
 }
@@ -177,6 +208,8 @@ export const engineeringSkillsApi = {
     parseHistory(await fetchApi<unknown>(historyPath(connection, role, page))),
   version: async (connection: string, role: SkillRole, version: number): Promise<SkillVersionDetail> =>
     parseDetail(await fetchApi<unknown>(versionPath(connection, role, version))),
+  template: async (connection: string, role: SkillRole): Promise<SkillTemplateUpdate> =>
+    parseTemplateUpdate(await fetchApi<unknown>(templatePath(connection, role))),
   scorecards: async (connection: string, role: SkillRole, versions: readonly number[]): Promise<Scorecards> =>
     parseScorecards(await fetchApi<unknown>(scorecardsPath(connection, role, versions))),
 }

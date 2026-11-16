@@ -390,7 +390,8 @@
     "taxonomy": "分类体系",
     "access": "隐私与访问",
     "ai": "AI 模型",
-    "system": "系统"
+    "system": "系统",
+    "dataSources": "数据来源"
   },
   "sections": {
     "plugins": "来源设置",
@@ -988,5 +989,12 @@
     "save": "保存主题",
     "saving": "正在保存…",
     "saveFailed": "无法保存默认主题。请重试。"
+  },
+  "deploymentSources": {
+    "title": "部署的数据来源",
+    "feeds": "这些来源为整个部署提供反馈：无论你当前在哪个工作区，它们导入的反馈都属于整个部署，不属于任何工作区。此页面上的凭据、计划和暂停都是部署自己的。",
+    "engineering": "工程自动化（Bug fixer、Feature builder、Issue triage）只读取这些反馈：它们的运行从不使用工作区的反馈。",
+    "appSignIn": "请在此处用部署的 GitHub App 为 GitHub Issues 来源登录（在其卡片的“登录方式”中），并列出智能体处理的仓库。",
+    "inWorkspace": "你当前在 {{name}} 中，但此页面上的任何操作都不会改变它：该工作区自己的来源位于“来源”选项卡。"
   }
 }

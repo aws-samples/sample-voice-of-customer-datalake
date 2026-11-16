@@ -15,11 +15,11 @@ import { useId, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ShieldCheck, ShieldAlert } from 'lucide-react'
-import { LabeledField } from '../../components/LabeledField/LabeledField'
 import {
   CI_POINTS, engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested,
 } from '../../api/engineeringConnectionsApi'
 import { formatDateTime } from '../../utils/dateUtils'
+import { OneLineNoteField } from './ConnectionFields'
 import { ConnectionChangeConfirm, ConnectionFormModal } from './ConnectionModals'
 import type { ConnectionConfirmProps } from './ConnectionModals'
 import type {
@@ -139,12 +139,8 @@ export function AttestDialog({ connection, onClose, onRecorded }: Readonly<{
 function NoteField({ value, onChange }: Readonly<{ value: string; onChange: (value: string) => void }>) {
   const { t } = useTranslation('agents')
   return (
-    <LabeledField label={t('connections.ci.dialog.note')} hint={t('connections.ci.dialog.noteHint', { max: MAX_NOTE })}>
-      {(id) => (
-        <input id={id} type="text" className="input w-full" value={value} maxLength={MAX_NOTE}
-          aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.value)} />
-      )}
-    </LabeledField>
+    <OneLineNoteField label={t('connections.ci.dialog.note')} hint={t('connections.ci.dialog.noteHint', { max: MAX_NOTE })}
+      max={MAX_NOTE} value={value} onChange={onChange} />
   )
 }
 

@@ -38,7 +38,7 @@ export function useAdminLocation(isAdmin: boolean, isPlatformAdmin: boolean) {
 }
 
 /** The Boards section's open editor (`/admin/access/boards/<boardId>`) and the move that opens one (null: the list). */
-export function useAdminBoard(): readonly [string | null, (boardId: string | null) => void] {
+export function useBoardInPath(): readonly [string | null, (boardId: string | null) => void] {
   const address = useLocation()
   const move = usePlaceNavigate()
   const open = (boardId: string | null) => { move({ pathname: adminPath(BOARDS, boardId), search: address.search }) }

@@ -11,6 +11,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
 import { visibleSections, visibleTabs } from './adminTabs'
+import { tabLabelKey } from './adminTabLabels'
 import type { AdminTabId } from './adminTabs'
 
 const LOCALES_DIR = path.join(__dirname, '../../../public/locales')
@@ -56,10 +57,11 @@ interface Place { readonly label: string; readonly sections: readonly string[] }
 
 function places(locale: string): Place[] {
   const labels = settingsSchema.parse(readJson(locale, 'settings'))
-  const tabLabel = (id: AdminTabId) => labels.tabs[id === 'brand' ? 'general' : id] ?? id
-  return visibleTabs(true, false).map((id) => ({
+  const tabLabel = (id: AdminTabId) => labels.tabs[tabLabelKey(id).replace(/^tabs\./, '')] ?? id
+  // Every place an administrator may be sent: a platform admin's (the Data sources tab, the platform console) too.
+  return visibleTabs(true, true).map((id) => ({
     label: tabLabel(id),
-    sections: visibleSections(id, true, false).map((section) => labels.sections[section] ?? section),
+    sections: visibleSections(id, true, true).map((section) => labels.sections[section] ?? section),
   }))
 }
 

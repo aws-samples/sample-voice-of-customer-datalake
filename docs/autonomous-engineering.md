@@ -2593,7 +2593,7 @@ history a page at a time (each version's status badge, summary, why, who and whe
 claimed, its events), a version's detail with its diff as plain lines added and removed (the record's text is shown
 as text, never read as HTML) and its whole record, and a role's scorecards on a connection in a table (up to 10
 versions named by number). The role and the version are the path (`/agents/skills/<role>/v/<n>`, 7.49.00) and the
-scope a filter of the query (`?connection=`), so Back walks from a version to the history to the roles. The actions on a version are [below](#the-administrators-actions) (7.08.00).
+scope a filter of the query (`?connection=`), so Back walks from a version to the history to the roles. The actions on a version are [below](#the-administrators-actions) (7.08.00). A role whose template in the repository is newer than its current version says **Template updated (vN)**, with the template's diff and an Adopt that proposes it as a person's version (7.50.00, [autonomous-agents.md](autonomous-agents.md#template-updated)).
 
 <a id="the-administrators-actions"></a>**The administrators' actions** (7.08.00,
 `voc-datalake/lambda/engineering/skills/actions.py`, the Agents API's routes, the version's detail in Agents → Skills):

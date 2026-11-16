@@ -406,7 +406,8 @@
     "taxonomy": "Taxonomía",
     "access": "Privacidad y acceso",
     "ai": "Modelos de IA",
-    "system": "Sistema"
+    "system": "Sistema",
+    "dataSources": "Fuentes de datos"
   },
   "sections": {
     "plugins": "Configuración de fuentes",
@@ -1016,5 +1017,12 @@
     "save": "Guardar tema",
     "saving": "Guardando…",
     "saveFailed": "No se pudo guardar el tema predeterminado. Inténtalo de nuevo."
+  },
+  "deploymentSources": {
+    "title": "Las fuentes de datos del despliegue",
+    "feeds": "Estas fuentes alimentan el despliegue: los comentarios que traen son de todo el despliegue, fuera de cualquier espacio de trabajo, sea cual sea el espacio de trabajo en el que estés ahora. Las credenciales, programaciones y pausas de esta página son las del propio despliegue.",
+    "engineering": "Son los únicos comentarios que leen las automatizaciones de ingeniería (Bug fixer, Feature builder, Issue triage): sus ejecuciones nunca toman los comentarios de un espacio de trabajo.",
+    "appSignIn": "Inicia sesión aquí en la fuente GitHub Issues con la GitHub App del despliegue (en su tarjeta, «Iniciar sesión con») e indica los repositorios en los que trabajan los agentes.",
+    "inWorkspace": "Estás en {{name}}, pero nada de esta página lo cambia: las fuentes propias de ese espacio de trabajo están en la pestaña Fuentes."
   }
 }

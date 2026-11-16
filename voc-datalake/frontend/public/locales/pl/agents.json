@@ -1246,6 +1246,22 @@
       "latestOnly": "tylko ostatnie przebiegi",
       "loadFailed": "Nie udało się wczytać kart wyników. Spróbuj ponownie za chwilę.",
       "empty": "Na tym połączeniu nie ma jeszcze kart wyników dla tych wersji."
+    },
+    "template": {
+      "title": "Szablon zaktualizowany",
+      "badge": "Szablon zaktualizowany (v{{version}})",
+      "explain": "Szablon repozytorium dla tej roli ma nowszą wersję niż ta, którą uruchamia ten zakres. Przeczytaj, co zmienia, a potem przyjmij go jako propozycję: działa dopiero wtedy, gdy administrator zaakceptuje go w historii poniżej. Nic nie zmienia się samo.",
+      "show": "Pokaż, co zmienia",
+      "loading": "Odczytywanie szablonu",
+      "readFailed": "Nie udało się odczytać szablonu.",
+      "diffTitle": "Szablon v{{version}} w porównaniu z bieżącą wersją v{{current}}",
+      "diffTitleFirst": "Szablon v{{version}} (żadna wersja nie jest jeszcze bieżąca)",
+      "adopt": "Przyjmij jako propozycję",
+      "adoptHint": "Zaproponowana przez Ciebie; administrator akceptuje ją lub odrzuca jak każdą inną wersję.",
+      "adoptFailed": "Nie udało się przyjąć szablonu.",
+      "notNewer": "Ten szablon jest już zaproponowany lub zaakceptowany.",
+      "proposed": "Szablon zaproponowano jako wersję {{version}}: zaakceptuj go w historii, aby działał.",
+      "openProposed": "Otwórz wersję {{version}}"
     }
   },
   "engineeringRun": {
@@ -1477,7 +1493,8 @@
     "connectFirst": "Najpierw połącz repozytorium",
     "setUp": "Skonfiguruj",
     "whyNoConnection": "Wyłączony: potrzebuje połączenia z repozytorium, na którym może pracować.",
-    "whySetUp": "Wyłączony do czasu konfiguracji: połączenie, język i budżet miesięczny."
+    "whySetUp": "Wyłączony do czasu konfiguracji: połączenie, język i budżet miesięczny.",
+    "enableFailed": "Nie udało się włączyć agenta."
   },
   "prdBuild": {
     "button": "Zbuduj z tego PRD",
@@ -1487,5 +1504,150 @@
     "confirm": "Rozpocznij budowę",
     "agent": "Agent",
     "inputHint": "Przebieg otrzymuje ten PRD jako dane wejściowe, przez jego identyfikator."
+  },
+  "readiness": {
+    "title": "Gotowość",
+    "label": "Kontrole gotowości",
+    "failingLabel": "Kontrole zakończone niepowodzeniem",
+    "summary": "Niepowodzenia: {{fail}} · Nieznane: {{unknown}} · Ostrzeżenia: {{warn}} · Zaliczone: {{pass}}",
+    "loading": "Sprawdzanie, czego potrzebuje uruchomienie",
+    "loadFailed": "Nie udało się odczytać kontroli gotowości; Włącz i tak je sprawdzi.",
+    "none": "Serwer nie podał żadnych kontroli.",
+    "fix": "Poprawka:",
+    "docs": "Dokumentacja",
+    "opensNewTab": "(otwiera się w nowej karcie)",
+    "setWayOfWorking": "Ustaw swój sposób pracy w sekcji Użytkownicy",
+    "enableWaits": "Włączenie czeka, aż przejdzie każda kontrola, której potrzebuje uruchomienie.",
+    "enableRefused": "Nie włączono: te kontrole, których potrzebuje uruchomienie, nie przechodzą.",
+    "status": {
+      "pass": "Zaliczona",
+      "fail": "Nie przechodzi",
+      "warn": "Ostrzeżenie",
+      "unknown": "Nieznana"
+    },
+    "check": {
+      "connection": "Połączenie z repozytorium",
+      "app_installation": "Instalacja GitHub App",
+      "ci_attestation": "Poświadczenie CI",
+      "ci_protection": "Ochrona gałęzi",
+      "image": "Obraz agenta",
+      "pack": "Pakiet wiedzy",
+      "tenets": "Zasady",
+      "issues_source": "Źródło GitHub Issues",
+      "issue_label": "Etykieta zgłoszenia",
+      "dial": "Sposób pracy",
+      "budget": "Budżet miesięczny",
+      "hard_cap": "Twardy limit",
+      "bedrock_models": "Modele Bedrock",
+      "agentcore_quota": "Limit AgentCore",
+      "memory_setting": "Ustawienie pamięci kompilacji",
+      "network": "Sieć",
+      "session_storage": "Magazyn sesji"
+    },
+    "required": "Potrzebna do uruchomienia"
+  },
+  "setupGuide": {
+    "title": "Przewodnik konfiguracji",
+    "open": "Przewodnik konfiguracji",
+    "subtitle": "Skonfiguruj autonomiczną pętlę błędów: zgłoszenie oznaczone etykietą w GitHubie jest klasyfikowane, naprawiane i otwierane jako pull request, który osoba przegląda i scala. Kroki są w zalecanej kolejności; każdy krok można na razie pominąć.",
+    "notAvailable": "Przewodnik konfiguracji jest dla administratorów wdrożenia z włączonymi agentami inżynieryjnymi.",
+    "loading": "Odczytywanie, co jest skonfigurowane",
+    "loadFailed": "Nie udało się odczytać, co jest skonfigurowane.",
+    "stepsLabel": "Kroki konfiguracji",
+    "stepNumber": "Krok {{n}}",
+    "progress": "Ukończono {{done, number}} z {{total, number}} kroków",
+    "status": {
+      "done": "Gotowe",
+      "skipped": "Na razie pominięty",
+      "todo": "Do zrobienia",
+      "later": "Pojawi się w 7.52"
+    },
+    "skip": "Na razie pomiń",
+    "unskip": "Cofnij pominięcie",
+    "next": "Dalej: {{step}}",
+    "saveFailed": "Nie udało się zapisać Twojego wyboru.",
+    "saveConflict": "W międzyczasie inny administrator zmienił przewodnik. Odczytano go ponownie: wybierz jeszcze raz.",
+    "skipCostTitle": "Co kosztuje pominięcie",
+    "order": "Zalecana kolejność: wymagania wstępne, zrozumienie repozytorium, zasady, triaż zgłoszeń, Bug fixer, Feature builder.",
+    "orderFine": "Każdy wcześniejszy krok jest gotowy.",
+    "orderMissing": "Niegotowe przed tym krokiem: {{list}}.",
+    "later": "Jego przepływ pojawi się w 7.52. Na razie go pomiń: przewodnik zaproponuje go wtedy ponownie.",
+    "steps": {
+      "prerequisites": {
+        "title": "Wymagania wstępne",
+        "summary": "Na czym opiera się każda automatyzacja: repozytorium połączone przez GitHub App wdrożenia, poświadczone CI i zgłoszenia pobrane dla całego wdrożenia.",
+        "skipCost": "Bez nich żadna automatyzacja nie działa: uruchomienie potrzebuje repozytorium połączonego przez App i poświadczonego CI, a automatyzacje zgłoszeń potrzebują pobranych zgłoszeń. Włączenie pozostaje wyłączone, dopóki nie przejdą kontrole, których potrzebuje uruchomienie."
+      },
+      "understand": {
+        "title": "Zrozumienie repozytorium",
+        "summary": "Przejście przez repozytorium, które spisuje, co agenci powinni o nim wiedzieć: jego pakiety, jak każdy się buduje i testuje oraz gdzie co jest. Jego pull request przegląda osoba.",
+        "skipCost": "Bez tego agenci poznają repozytorium od zera przy każdym uruchomieniu: ustalenia są płytsze, poprawka częściej trafia w złe miejsce, a uruchomienia trwają dłużej i kosztują więcej."
+      },
+      "tenets": {
+        "title": "Zasady",
+        "summary": "Zasady projektu spisane i zaakceptowane przez administratora: według nich triaż i przeglądy oceniają zgłoszenie i zmianę.",
+        "skipCost": "Bez zasad triaż nie ma ustalonych priorytetów, według których ocenia zgłoszenie, a przeglądy oceniają zmianę wyłącznie po kodzie: ważność jest mniej spójna, a poprawka może iść wbrew temu, co dla projektu ważne."
+      },
+      "triage": {
+        "title": "Triaż zgłoszeń",
+        "summary": "Czyta każde oznaczone zgłoszenie, klasyfikuje je jako błąd, funkcję lub badanie, ocenia jego ważność, pisze kryteria akceptacji, a potem komentuje i oznacza zgłoszenie. Bug fixer i Feature builder zaczynają od jego triażu.",
+        "skipCost": "Bez triażu Bug fixer i Feature builder decydują na podstawie etykiety i słów samego zgłoszenia: prośba o funkcję może trafić do Bug fixera, ważność jest zgadywana, a poprawka zaczyna się bez kryteriów akceptacji."
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "Szuka błędu zgłoszonego w zgłoszeniu, naprawia go z testem, który bez poprawki nie przechodzi, uruchamia kontrolę jakości repozytorium, a potem wypycha zmiany i otwiera pull request z Fixes #N. Osoba zatwierdza go i scala w GitHubie.",
+        "skipCost": "Bez niego oznaczone błędy są klasyfikowane, ale nic ich nie naprawia ani nie otwiera pull requestu."
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "Buduje to, o co prosi zgłoszenie funkcji lub PRD projektu, przez tę samą kontrolę jakości, a potem otwiera swój pull request, który osoba przegląda i scala.",
+        "skipCost": "Bez niego prośby o funkcje są klasyfikowane, ale nic ich nie buduje, a „Zbuduj z tego PRD” nie ma agenta, któremu mogłoby je przekazać."
+      },
+      "ready": {
+        "title": "Gotowe do pracy",
+        "summary": "Na jakim etapie jest każdy krok, i pierwsze uruchomienie."
+      }
+    },
+    "prerequisites": {
+      "label": "Wymagania wstępne",
+      "github": "Połącz GitHub przez GitHub App wdrożenia: utwórz App, a potem zainstaluj ją w repozytorium (dwa kliknięcia).",
+      "ci": "Poświadcz CI repozytorium na jego połączeniu: chronione sekrety, token tylko do odczytu, przypięte OIDC, brak runnera hostowanego samodzielnie, brak uprzywilejowanego workflow pull requestów.",
+      "issues": "Pobierz jego zgłoszenia: źródło GitHub Issues dla całego wdrożenia, z tym repozytorium i zalogowane tą App, oraz etykieta voc-agent na każdym zgłoszeniu, które agenci mogą przejąć.",
+      "met": "Gotowe",
+      "notMet": "Do zrobienia",
+      "unknown": "Jeszcze nieznane",
+      "openConnections": "Otwórz Połączenia",
+      "openDeploymentSources": "Otwórz Administracja → Źródła danych",
+      "openSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
+      "sourcesOutside": "Poza jakimkolwiek obszarem roboczym: automatyzacje czytają tylko źródła wdrożenia.",
+      "checksTitle": "Co mówi gotowość automatyzacji",
+      "noReadiness": "Źródło i jego etykietę sprawdza gotowość automatyzacji: nie znaleziono jeszcze żadnej automatyzacji."
+    },
+    "automation": {
+      "open": "Otwórz {{name}}",
+      "missing": {
+        "triage": "Issue triage nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie nie jest tu znajdowany.",
+        "bug_fixer": "Bug fixer nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (błędy).",
+        "feature_builder": "Feature builder nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (prośby o funkcje)."
+      }
+    },
+    "ready": {
+      "summaryTitle": "Na jakim etapie jest każdy krok",
+      "runTitle": "Uruchom teraz na zgłoszeniu",
+      "runHint": "Uruchom teraz {{name}} na jednym zgłoszeniu jego repozytorium, bez czekania na następny heartbeat.",
+      "run": "Uruchom teraz na zgłoszeniu",
+      "runNone": "Najpierw włącz Issue triage lub Bug fixer: uruchomienie na zgłoszeniu zaczyna się od jednego z nich.",
+      "learnTitle": "Każde uruchomienie się uczy",
+      "learn": "Każde uruchomienie kończy się krokiem Learn: retrospektywą, wnioskami i propozycjami ulepszenia umiejętności agentów. Propozycje czekają w Umiejętnościach, aż administrator je zaakceptuje; nic nie zmienia się samo.",
+      "openSkills": "Otwórz Umiejętności",
+      "finish": "Zakończ przewodnik",
+      "finished": "Przewodnik jest zakończony. Przewodnik konfiguracji na stronie agentów otwiera go ponownie."
+    },
+    "intro": {
+      "title": "Skonfigurować autonomiczną pętlę błędów?",
+      "body": "Nic nie jest jeszcze skonfigurowane. Przewodnik konfiguracji przeprowadzi Cię przez to w zalecanej kolejności: GitHub i CI repozytorium, jego zgłoszenia, a potem automatyzacje, które klasyfikują, naprawiają i budują.",
+      "start": "Pomóż mi skonfigurować",
+      "skip": "Pomiń"
+    }
   }
 }

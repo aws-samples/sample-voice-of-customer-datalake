@@ -6,6 +6,9 @@
  * (SkillScorecards.tsx); a version opens its detail and its diff (SkillVersionDetail.tsx). The role and the version
  * are the path (`/agents/skills/<role>/v/<n>`, agentsPaths.ts) and the scope a filter of the query (`?connection=`),
  * so a view can be shared and Back returns from a version to the history, and from a role to the scope's roles.
+ * A role whose bundled template is newer than its versions (its history says so) says **Template updated (vN)** on
+ * its panel, with the template's diff and Adopt (SkillTemplateUpdate.tsx, 7.50.00): a person's proposal, never
+ * automatic.
  *
  * @module pages/Agents/EngineeringSkills
  */
@@ -25,6 +28,7 @@ import { SkillHistory, SkillStatusBadge } from './SkillHistory'
 import { useSkillFormats } from './skillFormats'
 import { SkillScorecards } from './SkillScorecards'
 import { SkillVersionDetail } from './SkillVersionDetail'
+import { SkillTemplateUpdate } from './SkillTemplateUpdate'
 import type { SkillRole, SkillRoleLine } from '../../api/engineeringSkillsApi'
 import type { SkillsView } from './skillsView'
 
@@ -122,19 +126,31 @@ function ScopeRoles({ connection, onOpen }: Readonly<{ connection: string; onOpe
   )
 }
 
-function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: SkillRole; onView: (next: Partial<SkillsView>) => void }>) {
-  const { t } = useTranslation('agents')
-  const { connection, version } = view
+/** The role's line among a scope's roles, once read. */
+const lineOf = (roles: readonly SkillRoleLine[] | undefined, role: SkillRole): SkillRoleLine | undefined =>
+  roles?.find((entry) => entry.role === role)
+
+/**
+ * The role's current version in the scope, and the shared skill's (what a connection with no version of its own runs:
+ * the approval card names it), from the scopes' roles.
+ */
+function useRoleHead(connection: string, role: SkillRole) {
   const configured = useConfigured()
   const roles = useQuery({
     queryKey: engineeringSkillsKeys.roles(connection), queryFn: () => engineeringSkillsApi.roles(connection), enabled: configured,
   })
-  // (a connection with no version of its own runs the shared skill's current one: the approval card names it)
   const shared = useQuery({
     queryKey: engineeringSkillsKeys.roles(''), queryFn: () => engineeringSkillsApi.roles(''), enabled: configured && connection !== '',
   })
-  const current = roles.data?.find((line) => line.role === role)?.current_version ?? 0
-  const fallback = connection === '' ? 0 : shared.data?.find((line) => line.role === role)?.current_version ?? 0
+  const line = lineOf(roles.data, role)
+  const fallback = connection === '' ? undefined : lineOf(shared.data, role)
+  return { current: line?.current_version ?? 0, fallback: fallback?.current_version ?? 0 }
+}
+
+function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: SkillRole; onView: (next: Partial<SkillsView>) => void }>) {
+  const { t } = useTranslation('agents')
+  const { connection, version } = view
+  const { current, fallback } = useRoleHead(connection, role)
   return (
     <div className="space-y-4">
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onView({ role: null, version: null })}>
@@ -143,6 +159,8 @@ function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: Sk
       <h2 className="text-lg font-semibold text-text-strong">
         {t('skills.roleTitle', { role: t(`skills.role.${role}`), scope: connection === '' ? t('skills.shared') : t('skills.connection', { name: connection }) })}
       </h2>
+      <SkillTemplateUpdate key={`${connection}-${role}`} connection={connection} role={role}
+        onOpen={(next) => onView({ version: next })} />
       {version === null
         ? <SkillHistory connection={connection} role={role} onOpen={(next) => onView({ version: next })} />
         : <SkillVersionDetail connection={connection} role={role} version={version} current={{ own: current, shared: fallback }}

@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { TestRouter } from '@test/TestRouter'
 import { readAdminAddress } from './adminPaths'
-import { useAdminBoard, useAdminLocation } from './useAdminLocation'
+import { useBoardInPath, useAdminLocation } from './useAdminLocation'
 
 function mount(entry: string, isAdmin = true, isPlatformAdmin = false) {
   const wrapper = ({ children }: Readonly<{ children: ReactNode }>) => (
@@ -18,7 +18,7 @@ function mount(entry: string, isAdmin = true, isPlatformAdmin = false) {
   )
   return renderHook(() => {
     const location = useLocation()
-    const [boardId, openBoard] = useAdminBoard()
+    const [boardId, openBoard] = useBoardInPath()
     return { ...useAdminLocation(isAdmin, isPlatformAdmin), boardId, openBoard, at: `${location.pathname}${location.search}`, navigate: useNavigate() }
   }, { wrapper })
 }

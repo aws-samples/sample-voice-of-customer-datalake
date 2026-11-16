@@ -1,7 +1,7 @@
 /**
  * @fileoverview The fields of a repository connection's dialog: the repository host (GitHub or GitLab), one labelled
- * text field (its hint, or what is wrong with it, tied to it by aria-describedby), and what each host's credential
- * needs (the GitHub App; the GitLab project access token, its role, scopes and expiry). The private key's and the
+ * text field (its hint, or what is wrong with it, tied to it by aria-describedby), a person's one-line note (a change's
+ * reason, an attestation's note), and what each host's credential needs (the GitHub App; the GitLab project access token, its role, scopes and expiry). The private key's and the
  * token's inputs are write-only: never prefilled, never offered to the browser's form filling, never spell-checked.
  *
  * @module pages/Agents/ConnectionFields
@@ -75,6 +75,21 @@ const GUIDANCE: Readonly<Record<ConnectionHost, { title: string; lines: readonly
     title: 'connections.gitlab.guidance.title',
     lines: ['connections.gitlab.guidance.token', 'connections.gitlab.guidance.expiry', 'connections.gitlab.guidance.branch'],
   },
+}
+
+/** A person's one-line note kept with a change (a connection's reason, an attestation's note): at most `max` characters,
+ *  longer refused by the server, never cut. */
+export function OneLineNoteField({ label, hint, max, value, onChange }: Readonly<{
+  label: string; hint: string; max: number; value: string; onChange: (value: string) => void
+}>) {
+  return (
+    <LabeledField label={label} hint={hint}>
+      {(id) => (
+        <input id={id} type="text" className="input w-full" value={value} maxLength={max}
+          aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.value)} />
+      )}
+    </LabeledField>
+  )
 }
 
 /** What a host's credential needs (the GitHub App and the tokens it mints; the GitLab project access token and its

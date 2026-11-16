@@ -210,7 +210,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "POST",
-    "call": "agentPath(id, '/disable')",
+    "call": "agentApiPath(id, '/disable')",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f/disable"
@@ -220,7 +220,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "POST",
-    "call": "agentPath(id, '/enable')",
+    "call": "agentApiPath(id, '/enable')",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f/enable"
@@ -230,7 +230,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "POST",
-    "call": "agentPath(id, '/run')",
+    "call": "agentApiPath(id, '/run')",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f/run"
@@ -240,7 +240,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "GET",
-    "call": "agentPath(id, `/runs${query}`)",
+    "call": "agentApiPath(id, `/runs${query}`)",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f/runs?cursor=c1"
@@ -250,7 +250,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "DELETE",
-    "call": "agentPath(id)",
+    "call": "agentApiPath(id)",
     "probes": [
       {
         "path": "/agents/ag_c0ffee123456"
@@ -260,7 +260,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "GET",
-    "call": "agentPath(id)",
+    "call": "agentApiPath(id)",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f"
@@ -270,7 +270,7 @@
   {
     "file": "api/agentsApi.ts",
     "method": "PUT",
-    "call": "agentPath(id)",
+    "call": "agentApiPath(id)",
     "probes": [
       {
         "path": "/agents/ag_5d1e0c9a7b3f",
@@ -683,6 +683,19 @@
     ]
   },
   {
+    "file": "api/engineeringReadinessApi.ts",
+    "method": "GET",
+    "call": "readinessPath(subject)",
+    "probes": [
+      {
+        "path": "/agents/engineering/readiness?automation=ag_b0f1e2d3c4a5"
+      },
+      {
+        "path": "/agents/engineering/readiness?flow=bug-hunt-and-fix"
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",
@@ -807,6 +820,46 @@
     ]
   },
   {
+    "file": "api/engineeringSetupApi.ts",
+    "method": "GET",
+    "call": "SETUP_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/setup"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSetupApi.ts",
+    "method": "PUT",
+    "call": "SETUP_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/setup",
+        "body": {
+          "revision": 0,
+          "steps": {
+            "understand": "skipped"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillActionsApi.ts",
+    "method": "POST",
+    "call": "adoptPath(connection, role)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/template/adopt?connection=",
+        "body": {
+          "expected_current": 3,
+          "template_version": 2
+        }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringSkillActionsApi.ts",
     "method": "POST",
     "call": "actionPath(connection, role, version, action)",
@@ -873,6 +926,19 @@
       },
       {
         "path": "/agents/engineering/skills?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillsApi.ts",
+    "method": "GET",
+    "call": "templatePath(connection, role)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/template?connection="
+      },
+      {
+        "path": "/agents/engineering/skills/fixer/template?connection=storefront"
       }
     ]
   },
@@ -3762,18 +3828,11 @@
   {
     "file": "api/platformWorkspacesApi.ts",
     "method": "GET",
-    "call": "'/platform/workspaces'",
+    "call": "asked === '' ? '/platform/workspaces' : `/platform/workspaces?${asked}`",
     "probes": [
       {
         "path": "/platform/workspaces"
-      }
-    ]
-  },
-  {
-    "file": "api/platformWorkspacesApi.ts",
-    "method": "GET",
-    "call": "`/platform/workspaces?${cursorQuery(cursor)}`",
-    "probes": [
+      },
       {
         "path": "/platform/workspaces?cursor=25"
       }

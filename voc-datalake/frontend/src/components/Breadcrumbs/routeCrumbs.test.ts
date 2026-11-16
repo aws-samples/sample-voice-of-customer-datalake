@@ -124,6 +124,8 @@ describe('trailSegments: a page\'s places are paths, and the trail ends at the p
     ['/agents/connections/github/created', ['agents', 'connections', 'github', 'created']],
     ['/agents/ag_1/runs', ['agents', 'ag_1']],
     ['/agents/engineering/r1', ['agents', 'engineering', 'r1']],
+    // (the setup guide's steps are its own places: the trail ends at the guide)
+    ['/agents/setup/bug-fixer', ['agents', 'setup']],
     ['/feature-requests/insights', ['feature-requests']],
     ['/feature-requests/requests/fr_1', ['feature-requests']],
     ['/feature-requests/beta/fr_1', ['feature-requests', 'beta']],

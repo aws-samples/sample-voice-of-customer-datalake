@@ -94,10 +94,12 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
   'engineering-github-apps': 'config', // Agents → Connections → Connect GitHub: the deployment's GitHub Apps (change only when an administrator changes them)
   'engineering-connections': 'config', // Agents → Connections: the repository connections (change only when an administrator changes them)
+  'engineering-readiness': 'live', // an engineering automation's readiness checks before Enable (each set-up step moves them)
   'engineering-runs': 'live', // an engineering run's monitor: overview, board, conversation (polled while it runs)
   'engineering-scorecards': 'live', // Agents → Skills: a role's scorecards, which each ended run adds a row to
   'engineering-skills': 'live', // Agents → Skills: the skills' versions, which the coach proposes after a run
   'engineering-settings': 'config', // Agents → Spend: the administrators' hard cap (changes only when they change it)
+  'engineering-setup': 'config', // Agents → Setup guide: what the administrators chose (changes only when one of them saves)
   'engineering-spend': 'live', // Agents → Spend: a month of the spend ledger, which grows while runs work
   'entities': 'feedbackData',
   'entities-all-sources': 'feedbackData',

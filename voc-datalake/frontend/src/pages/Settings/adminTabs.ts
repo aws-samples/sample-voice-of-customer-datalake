@@ -1,6 +1,8 @@
 /**
  * @fileoverview The Administration page's navigation model (5.09): six tabs
- * grouped by job, each with optional sections (`/admin/<tab>/<section>`, adminPaths.ts).
+ * grouped by job, each with optional sections (`/admin/<tab>/<section>`, adminPaths.ts),
+ * and for platform admins a seventh, Data sources (`/admin/data-sources`, 7.50.00): the
+ * deployment's own sources, whatever workspace the app is in.
  *
  * An unknown tab or section falls back to what this caller may see, and the
  * page then replaces the address with the canonical path (adminPaths.ts).
@@ -8,12 +10,13 @@
  * Visibility: an admin-only section is hidden from everyone else, and a tab
  * whose sections are all hidden is hidden too (non-admins keep General, Data
  * sources, Categories, AI models and Logs). Privacy & access → Workspaces,
- * the platform console (6.13), is shown to platform admins only.
+ * the platform console (6.13), and the Data sources tab are shown to platform
+ * admins only; anyone else's link to them falls back like an unknown id.
  *
  * @module pages/Settings/adminTabs
  */
 
-const ADMIN_TAB_IDS = ['brand', 'sources', 'taxonomy', 'access', 'ai', 'system'] as const
+const ADMIN_TAB_IDS = ['brand', 'sources', 'data-sources', 'taxonomy', 'access', 'ai', 'system'] as const
 export type AdminTabId = typeof ADMIN_TAB_IDS[number]
 
 const ADMIN_SECTION_IDS = [
@@ -33,8 +36,10 @@ interface SectionDef {
 
 interface TabDef {
   readonly id: AdminTabId
-  /** Empty: the tab is one page (no section switch), open to every caller. */
+  /** Empty: the tab is one page (no section switch), open to every caller unless `platformOnly`. */
   readonly sections: readonly SectionDef[]
+  /** Platform admins only (an administrator in `platform-admins`), like a platform-only section. */
+  readonly platformOnly?: boolean
 }
 
 const openTo = (id: AdminSectionId): SectionDef => ({ id, adminOnly: false })
@@ -44,6 +49,8 @@ const platformOnly = (id: AdminSectionId): SectionDef => ({ id, adminOnly: true,
 const TABS: readonly TabDef[] = [
   { id: 'brand', sections: [] },
   { id: 'sources', sections: [openTo('plugins'), adminOnly('integrations'), adminOnly('inbox'), adminOnly('radar')] },
+  // The deployment's Data sources (DeploymentDataSources.tsx): one page, never a workspace's.
+  { id: 'data-sources', sections: [], platformOnly: true },
   { id: 'taxonomy', sections: [openTo('categories'), adminOnly('dimensions')] },
   { id: 'access', sections: [adminOnly('policies'), adminOnly('users'), adminOnly('boards'), platformOnly('workspaces')] },
   { id: 'ai', sections: [] },
@@ -73,11 +80,15 @@ export function visibleSections(tab: AdminTabId, isAdmin: boolean, isPlatformAdm
   return tabDef(tab).sections.filter((section) => isVisible(section, isAdmin, isPlatformAdmin)).map((section) => section.id)
 }
 
-/** The tabs this caller may see: a tab with sections needs at least one visible section. */
+function isVisibleTab(tab: TabDef, isAdmin: boolean, isPlatformAdmin: boolean): boolean {
+  if (tab.platformOnly === true) return isAdmin && isPlatformAdmin
+  return tab.sections.length === 0 || visibleSections(tab.id, isAdmin, isPlatformAdmin).length > 0
+}
+
+/** The tabs this caller may see: a tab with sections needs at least one visible section; a platform-only tab, a
+ * platform admin. */
 export function visibleTabs(isAdmin: boolean, isPlatformAdmin: boolean): AdminTabId[] {
-  return TABS
-    .filter((tab) => tab.sections.length === 0 || visibleSections(tab.id, isAdmin, isPlatformAdmin).length > 0)
-    .map((tab) => tab.id)
+  return TABS.filter((tab) => isVisibleTab(tab, isAdmin, isPlatformAdmin)).map((tab) => tab.id)
 }
 
 /**

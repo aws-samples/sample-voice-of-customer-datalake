@@ -22,6 +22,7 @@ import { del, post } from './requestKit'
 import { parseEach } from './lenientFields'
 import { optionalServerText, parseConnection, parseLimitedList } from './engineeringConnectionsApi'
 import { isRecord } from '../lib/typeGuards'
+import type { RequestScope } from './baseUrl'
 import type { SavedConnection } from './engineeringConnectionsApi'
 
 /** The most Apps a deployment keeps (the answer's `limit` wins when it gives one). */
@@ -183,8 +184,15 @@ const appPath = (appId: string) => `/agents/engineering/github-apps/${encodeURIC
 
 export const githubAppsKeys = { list: () => ['engineering-github-apps'] as const }
 
+/** The deployment's Apps; `scope` 'deployment' sends no `X-Workspace-Id` (the deployment's Data sources). */
+async function listApps(scope: RequestScope): Promise<GitHubAppList> {
+  return parseAppList(await fetchApi<unknown>(APPS_PATH, { method: 'GET' }, scope))
+}
+
 export const githubAppsApi = {
-  list: async (): Promise<GitHubAppList> => parseAppList(await fetchApi<unknown>(APPS_PATH)),
+  list: async (): Promise<GitHubAppList> => listApps('workspace'),
+  /** The list, read in `scope` (the GitHub Issues card's App choice, which is the deployment's). */
+  listIn: listApps,
   /** The form to post to github.com for a new App in `request`'s account. */
   manifest: async (request: ManifestRequest): Promise<ManifestForm> =>
     parseManifestForm(await fetchApi<unknown>(`${APPS_PATH}/manifest`, post(request))),

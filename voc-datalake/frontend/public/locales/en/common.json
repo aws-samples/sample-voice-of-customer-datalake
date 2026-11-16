@@ -44,7 +44,8 @@
     "connections": "Connections",
     "github": "GitHub",
     "githubAppCreated": "App created",
-    "githubAppInstalled": "App installed"
+    "githubAppInstalled": "App installed",
+    "setupGuide": "Setup guide"
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",

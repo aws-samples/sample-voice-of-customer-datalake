@@ -4,7 +4,8 @@
  * @module pages/Settings/adminTabLabels
  */
 import {
-  Building2, Cpu, FileWarning, Info, KeyRound, Layers, Lightbulb, Mail, Plug, Radar, Server, ShieldCheck, Tags, Users,
+  Building2, Cpu, Database, FileWarning, Info, KeyRound, Layers, Lightbulb, Mail, Plug, Radar, Server, ShieldCheck, Tags,
+  Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { visibleSections, visibleTabs } from './adminTabs'
@@ -12,7 +13,7 @@ import type { AdminSectionId, AdminTabId } from './adminTabs'
 import type { SectionItem as LabelledItem } from './SectionSwitch'
 
 const TAB_ICONS: Readonly<Record<AdminTabId, LucideIcon>> = {
-  brand: Building2, sources: Plug, taxonomy: Tags, access: ShieldCheck, ai: Cpu, system: Server,
+  brand: Building2, sources: Plug, 'data-sources': Database, taxonomy: Tags, access: ShieldCheck, ai: Cpu, system: Server,
 }
 
 const SECTION_ICONS: Readonly<Record<AdminSectionId, LucideIcon>> = {
@@ -22,8 +23,11 @@ const SECTION_ICONS: Readonly<Record<AdminSectionId, LucideIcon>> = {
   logs: FileWarning, version: Info,
 }
 
-/** `brand` keeps its pre-5.09 label key, `general`. */
-const tabLabelKey = (id: AdminTabId): string => (id === 'brand' ? 'tabs.general' : `tabs.${id}`)
+/** A tab's label key: `brand` keeps its pre-5.09 key, `general`; `data-sources` is `dataSources`. */
+export function tabLabelKey(id: AdminTabId): string {
+  if (id === 'brand') return 'tabs.general'
+  return id === 'data-sources' ? 'tabs.dataSources' : `tabs.${id}`
+}
 
 /** The platform console's label lives with the rest of its copy, `common:workspaces.platform.*`. */
 const sectionLabelKey = (id: AdminSectionId): string => (id === 'workspaces' ? 'common:workspaces.platform.title' : `sections.${id}`)

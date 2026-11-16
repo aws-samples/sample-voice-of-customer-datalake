@@ -71,7 +71,8 @@ Both run at most once a day by default, scope all reviews, no instructions, and 
 language before they can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
 **Set up**, or **Connect a repository first**).
 
-**To enable Bug fixer** (Feature builder alike, with feature requests):
+**To enable Bug fixer** (Feature builder alike, with feature requests; the [setup guide](#setup-guide) walks
+these steps, with Issue triage first):
 
 1. **Connect the repository** with the deployment's GitHub App: Agents → Connections, make the App and install it on
    the repository ([A GitHub App in two clicks](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). Each
@@ -79,9 +80,10 @@ language before they can be enabled (their card says so, on the Agents list for 
    `github_issue` label rule below. A connection saved with a pasted token says nothing of it and is taken as public.
 2. **Attest its CI** on the connection (the broker serves no push or pull request until then).
 3. **Ingest its issues**: the [GitHub Issues source](github-issues.md#signing-in-with-a-github-app-74500),
-   deployment-wide, with the repository listed and **Sign in with** → GitHub App, that App, in place of a fine-grained
-   token (each run then reads with installation tokens of `{issues: read, metadata: read}` alone). A pasted token
-   still works.
+   deployment-wide (Administration → Data sources, `/admin/data-sources`, for a platform admin from any address since
+   7.50.00; outside any workspace, Administration → Sources → Source settings too), with the repository listed and
+   **Sign in with** → GitHub App, that App, in place of a fine-grained token (each run then reads with installation
+   tokens of `{issues: read, metadata: read}` alone). A pasted token still works.
 4. **Set up** on Bug fixer's card (on the Agents list or its page): the connection, the language and the monthly budget ($50 prefilled), then
    **Enable**. It runs as you from then. Enable checks first what a run needs (7.50.00, the connection, the CI
    attestation, an image for the language, Bedrock access to every model its flow runs on, the budget and your stored
@@ -108,7 +110,8 @@ lists or reads one (404).
   an engineering flow, and an agents workflow's agent has no `engineering` settings (400 either way): the two kinds
   of agent never mix their workflows.
 - **Enabling** needs the connection, the language and the flow's monthly budget (`budget.monthly_usd`, 400 "set the
-  agent up first" otherwise). The administrator who enables it is who it runs as from then (`owner_sub`,
+  agent up first" otherwise), and since 7.50.00 the readiness checks a run needs (409 `{error, checks}` otherwise:
+  [Readiness before Enable](#readiness-before-enable)). The administrator who enables it is who it runs as from then (`owner_sub`,
   `owner_username`; `owner_sub` is never set by hand on an engineering agent): their way of working is the dial its
   pushes follow, and the heartbeat re-checks in Cognito before each start that they are still an enabled admin of the
   same account (else the agent skips with `owner_not_admin`).
@@ -133,6 +136,81 @@ lists or reads one (404).
   says "Runs on the deployment's feedback".
 - The assistant's agent tools have no engineering field, and every agent write is an administrator's acting for
   themselves, so no delegated credential sets or changes one.
+- **Readiness** (7.50.00): before Enable, each check with its fix and doc link; Enable waits while a required one
+  does not pass ([Readiness before Enable](#readiness-before-enable)).
+
+## Setup guide
+
+*Built* (7.50.00), for administrators where the engineering agents are on. **Agents → Setup guide**
+(`/agents/setup`, a button beside **New agent**) walks the deployment through the autonomous bug loop, in the owner's
+recommended order. Each step is a path, `/agents/setup/<step>`, so Back walks them; `/agents/setup` opens the step it
+recommends (the first one neither done nor skipped).
+
+| Step | What it sets up | Done when |
+|---|---|---|
+| 0. Prerequisites | GitHub connected with the deployment's GitHub App in two clicks (Agents → Connections), the repository's CI points attested on its connection, and its issues ingested: the GitHub Issues source for the whole deployment (Administration → Data sources, `/admin/data-sources`, for a platform admin; outside any workspace, Administration → Sources → Source settings) signed in with that App, with the `voc-agent` label on the issues the agents may take | a GitHub connection made through an App has its CI attested, and no prerequisite check of an automation's readiness fails (the source and the label are known only from those) |
+| 1. Understand the repository | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
+| 2. Tenets | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
+| 3. Issue triage | the seeded Issue triage automation: its Set up and Enabled control, and its readiness | the automation is enabled |
+| 4. Bug fixer | the same for Bug fixer | enabled |
+| 5. Feature builder | the same for Feature builder | enabled |
+| 6. Ready to go | where each step stands, **Run on an issue now** (a Run now of Issue triage when enabled, else Bug fixer, on one issue), and that every run learns: its proposals wait in Skills for an administrator | **Finish the guide** |
+
+- **Never a lock.** Every step but the last offers **Skip for now**, and says plainly what skipping costs in the
+  quality of the results (without triage, for example, Bug fixer decides from the issue's own label and words, guesses
+  the severity and starts without acceptance criteria) and which steps before it are not done. A skipped step can be
+  taken back. What gates Enable is the readiness a run needs (below), never the guide's order.
+- **What is set up is read, not stored.** The guide reads only routes that already serve the deployment (the agents
+  list, `GET /agents/engineering/connections`, `GET /agents/engineering/github-apps`, each automation's readiness) and
+  its own progress. It finds each automation by its seeded name, then a renamed Bug fixer or Feature builder by what it
+  works on; a renamed Issue triage is not found until the agents API names an agent's seed.
+- **The progress** is the person's choices only: `GET /agents/engineering/setup` →
+  `{steps: {<step>: pending | skipped | done}, intro: unseen | started | skipped, revision, updated_at, updated_by}`,
+  and `PUT` `{revision, steps?, intro?}`, which changes only the steps it names, from the revision read (409 once
+  another administrator saved since). One voc-agents row, `SETTINGS#engineering_setup` / `config`, written with a
+  create-only `LOG#<at>#<n>` row (who, when, what changed) in the same transaction, as the hard cap's
+  (D1, D4; `lambda/shared/agents_engineering_setup_routes.py`). Administrators acting for themselves only (403 for
+  anyone else, a delegated credential included), 404 while the module is off. A detected step is done whatever was
+  chosen; only the last step is marked done by hand.
+- **The first visit.** While nothing is set up (no GitHub connection, no engineering automation enabled) and no
+  choice was made, the Agents list offers **Help me set up** (the guide) or **Skip**. The choice is the deployment's,
+  so another administrator is not asked again; **Setup guide** stays one click away.
+
+### Readiness before Enable
+
+An engineering automation's readiness (`GET /agents/engineering/readiness?automation=<agent id>`; every check, what it
+reads and its fix: autonomous-engineering.md, "Readiness (7.50.00)") answers `{subject, ready,
+checks: [{id, status, detail, fix, docs, required}]}`, `status` `pass`, `fail`, `warn` or `unknown` (a read the server
+could not make, never taken for a pass). The **required** checks are what a run truly needs: the connection, the CI
+attestation, an image for the language, Bedrock access to the flow's models, the budget and the enabling
+administrator's stored way of working. The others are advice.
+
+- **Where it shows.** The Set up dialog, the agents list's card (folded under its summary: a set-up, disabled agent
+  keeps its card while a required check does not pass), the Enabled switch on an agent's page and the setup guide
+  show each check passed, failing, with a warning or unknown, whether a run needs it, what the server found, its fix
+  in the server's words and its doc link (a repository doc or an https address; anything else is not linked). The
+  way-of-working check also links to Administration → Privacy & access → Users, where the administrator sets
+  AI-driven: the agents fix, push and open the pull request, and a person approves and merges it on GitHub.
+- **Enable waits** while a required check does not pass, an unknown one included; an advisory check never holds it.
+  In the Set up dialog the checks it sets itself (the connection, the language's image, the budget) do not hold its
+  **Save and enable**: they are checked again by the Enable after the save. An Enable the server refuses answers 409
+  `{error, checks}`, and the dialog or the switch shows those checks. A readiness that cannot be read is said so, and
+  Enable stays the server's to refuse.
+
+### Template updated
+
+A role's skill (Agents → Skills) is made from its bundled template (`voc-datalake/templates/orchestration/agents/
+<role>/`). A role's history (`GET /agents/engineering/skills/<role>/versions`) names it, `template: {version, label,
+newer}`, `newer` when the scope has versions and none was seeded from a template this recent; Skills then shows
+**Template updated (vN)** on the role's panel.
+
+- **Show what it changes** reads `GET /agents/engineering/skills/<role>/template?connection=` →
+  `{template, current_version, record, diff}`: the template's record and its diff against the scope's current version,
+  shown as a version's diff is (instruction lines and examples added and removed, tools, the model and the harness).
+- **Adopt as a proposal** (`POST …/skills/<role>/template/adopt?connection=` `{expected_current, template_version}`,
+  409 when either moved since the screen read them) makes the template a new version proposed by the administrator who
+  pressed it. It runs only once an administrator accepts it in the role's history, like any proposal; nothing is ever
+  adopted or accepted by itself.
 
 ## Triggers and budgets
 

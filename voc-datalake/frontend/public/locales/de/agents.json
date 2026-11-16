@@ -1207,6 +1207,22 @@
       "latestOnly": "nur die letzten Läufe",
       "loadFailed": "Die Scorecards konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
       "empty": "Für diese Versionen gibt es auf dieser Verbindung noch keine Scorecards."
+    },
+    "template": {
+      "title": "Vorlage aktualisiert",
+      "badge": "Vorlage aktualisiert (v{{version}})",
+      "explain": "Die Vorlage des Repositorys für diese Rolle hat eine neuere Version als die, mit der dieser Bereich läuft. Lesen Sie, was sie ändert, und übernehmen Sie sie dann als Vorschlag: Sie läuft erst, wenn ein Administrator sie im Verlauf unten annimmt. Nichts ändert sich von selbst.",
+      "show": "Zeigen, was sie ändert",
+      "loading": "Liest die Vorlage",
+      "readFailed": "Die Vorlage konnte nicht gelesen werden.",
+      "diffTitle": "Vorlage v{{version}} gegenüber der aktuellen Version v{{current}}",
+      "diffTitleFirst": "Vorlage v{{version}} (noch keine Version aktuell)",
+      "adopt": "Als Vorschlag übernehmen",
+      "adoptHint": "Von Ihnen vorgeschlagen; ein Administrator nimmt ihn an oder lehnt ihn ab wie jede andere Version.",
+      "adoptFailed": "Die Vorlage konnte nicht übernommen werden.",
+      "notNewer": "Diese Vorlage ist bereits vorgeschlagen oder angenommen.",
+      "proposed": "Die Vorlage ist als Version {{version}} vorgeschlagen: Nehmen Sie sie im Verlauf an, damit sie läuft.",
+      "openProposed": "Version {{version}} öffnen"
     }
   },
   "engineeringRun": {
@@ -1436,7 +1452,8 @@
     "connectFirst": "Zuerst ein Repository verbinden",
     "setUp": "Einrichten",
     "whyNoConnection": "Deaktiviert: Er braucht eine Repository-Verbindung, an der er arbeiten kann.",
-    "whySetUp": "Deaktiviert, bis er eingerichtet ist: eine Verbindung, eine Sprache und ein Monatsbudget."
+    "whySetUp": "Deaktiviert, bis er eingerichtet ist: eine Verbindung, eine Sprache und ein Monatsbudget.",
+    "enableFailed": "Der Agent konnte nicht aktiviert werden."
   },
   "prdBuild": {
     "button": "Aus diesem PRD bauen",
@@ -1446,5 +1463,150 @@
     "confirm": "Bau starten",
     "agent": "Agent",
     "inputHint": "Der Lauf erhält dieses PRD als Eingabe, über seine ID."
+  },
+  "readiness": {
+    "title": "Bereitschaft",
+    "label": "Bereitschaftsprüfungen",
+    "failingLabel": "Fehlgeschlagene Prüfungen",
+    "summary": "Fehlgeschlagen: {{fail}} · Unbekannt: {{unknown}} · Warnungen: {{warn}} · Bestanden: {{pass}}",
+    "loading": "Prüft, was ein Lauf braucht",
+    "loadFailed": "Die Bereitschaftsprüfungen konnten nicht gelesen werden; Aktivieren prüft sie trotzdem.",
+    "none": "Der Server hat keine Prüfungen genannt.",
+    "fix": "Behebung:",
+    "docs": "Doku",
+    "opensNewTab": "(öffnet in einem neuen Tab)",
+    "setWayOfWorking": "Arbeitsweise unter Benutzer festlegen",
+    "enableWaits": "Aktivieren wartet, bis jede Prüfung besteht, die ein Lauf braucht.",
+    "enableRefused": "Nicht aktiviert: Diese Prüfungen, die ein Lauf braucht, schlagen fehl.",
+    "status": {
+      "pass": "Bestanden",
+      "fail": "Fehlgeschlagen",
+      "warn": "Warnung",
+      "unknown": "Unbekannt"
+    },
+    "check": {
+      "connection": "Repository-Verbindung",
+      "app_installation": "Installation der GitHub-App",
+      "ci_attestation": "CI-Bestätigung",
+      "ci_protection": "Branch-Schutz",
+      "image": "Agenten-Image",
+      "pack": "Wissenspaket",
+      "tenets": "Grundsätze",
+      "issues_source": "Quelle GitHub Issues",
+      "issue_label": "Issue-Label",
+      "dial": "Arbeitsweise",
+      "budget": "Monatsbudget",
+      "hard_cap": "Harte Obergrenze",
+      "bedrock_models": "Bedrock-Modelle",
+      "agentcore_quota": "AgentCore-Kontingent",
+      "memory_setting": "Build-Speichereinstellung",
+      "network": "Netzwerk",
+      "session_storage": "Sitzungsspeicher"
+    },
+    "required": "Für einen Lauf nötig"
+  },
+  "setupGuide": {
+    "title": "Einrichtungsassistent",
+    "open": "Einrichtungsassistent",
+    "subtitle": "Richten Sie die autonome Fehlerschleife ein: Ein auf GitHub markiertes Issue wird eingestuft, behoben und als Pull Request geöffnet, den eine Person prüft und zusammenführt. Die Schritte stehen in der empfohlenen Reihenfolge; jeder Schritt kann vorerst übersprungen werden.",
+    "notAvailable": "Der Einrichtungsassistent ist für Administratoren einer Bereitstellung, in der die Engineering-Agenten eingeschaltet sind.",
+    "loading": "Liest, was eingerichtet ist",
+    "loadFailed": "Was eingerichtet ist, konnte nicht gelesen werden.",
+    "stepsLabel": "Einrichtungsschritte",
+    "stepNumber": "Schritt {{n}}",
+    "progress": "{{done, number}} von {{total, number}} Schritten erledigt",
+    "status": {
+      "done": "Erledigt",
+      "skipped": "Vorerst übersprungen",
+      "todo": "Offen",
+      "later": "Kommt mit 7.52"
+    },
+    "skip": "Vorerst überspringen",
+    "unskip": "Überspringen zurücknehmen",
+    "next": "Weiter: {{step}}",
+    "saveFailed": "Ihre Wahl konnte nicht gespeichert werden.",
+    "saveConflict": "Ein anderer Administrator hat den Assistenten inzwischen geändert. Er wurde neu gelesen: Wählen Sie noch einmal.",
+    "skipCostTitle": "Was das Überspringen kostet",
+    "order": "Empfohlene Reihenfolge: Voraussetzungen, Repository verstehen, Grundsätze, Issue-Triage, Bug fixer, Feature builder.",
+    "orderFine": "Jeder Schritt vor diesem ist erledigt.",
+    "orderMissing": "Vor diesem nicht erledigt: {{list}}.",
+    "later": "Sein Ablauf kommt mit 7.52. Überspringen Sie ihn vorerst: Der Assistent bietet ihn dann erneut an.",
+    "steps": {
+      "prerequisites": {
+        "title": "Voraussetzungen",
+        "summary": "Worauf jede Automatisierung aufbaut: das Repository über die GitHub-App der Bereitstellung verbunden, seine CI bestätigt und seine Issues für die ganze Bereitstellung eingelesen.",
+        "skipCost": "Ohne sie läuft keine Automatisierung: Ein Lauf braucht das über die App verbundene Repository und seine bestätigte CI, und die Issue-Automatisierungen brauchen seine eingelesenen Issues. Aktivieren bleibt aus, bis die Prüfungen bestehen, die ein Lauf braucht."
+      },
+      "understand": {
+        "title": "Repository verstehen",
+        "summary": "Ein Durchgang durch das Repository, der festhält, was die Agenten davon wissen sollten: seine Pakete, wie jedes gebaut und getestet wird und wo was liegt. Seinen Pull Request prüft eine Person.",
+        "skipCost": "Ohne ihn lernen die Agenten das Repository in jedem Lauf von vorn: Befunde sind oberflächlicher, eine Behebung trifft öfter die falsche Stelle, und Läufe dauern länger und kosten mehr."
+      },
+      "tenets": {
+        "title": "Grundsätze",
+        "summary": "Die Grundsätze des Projekts, aufgeschrieben und von einem Administrator angenommen: woran Triage und Reviews ein Issue und eine Änderung messen.",
+        "skipCost": "Ohne Grundsätze hat die Triage keine festgelegten Prioritäten, an denen sie ein Issue misst, und Reviews beurteilen eine Änderung nur am Code: Schweregrade sind weniger einheitlich, und eine Behebung kann dem widersprechen, was dem Projekt wichtig ist."
+      },
+      "triage": {
+        "title": "Issue-Triage",
+        "summary": "Liest jedes markierte Issue, stuft es als Fehler, Feature oder Untersuchung ein, bewertet seinen Schweregrad, schreibt seine Abnahmekriterien und kommentiert und markiert dann das Issue. Bug fixer und Feature builder starten von seiner Triage.",
+        "skipCost": "Ohne Triage entscheiden Bug fixer und Feature builder nach dem Label und den Worten des Issues: Ein Feature-Wunsch kann beim Bug fixer landen, der Schweregrad wird geraten, und eine Behebung beginnt ohne Abnahmekriterien."
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "Sucht den Fehler, den ein Issue meldet, behebt ihn mit einem Test, der ohne die Behebung fehlschlägt, führt die Qualitätsprüfung des Repositorys aus, pusht dann und öffnet den Pull Request mit „Fixes #N“. Eine Person genehmigt und führt ihn auf GitHub zusammen.",
+        "skipCost": "Ohne ihn werden markierte Fehler eingestuft, aber nichts behebt sie oder öffnet einen Pull Request."
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "Baut, was ein Feature-Issue oder das PRD eines Projekts verlangt, durch dieselbe Qualitätsprüfung, und öffnet dann seinen Pull Request, den eine Person prüft und zusammenführt.",
+        "skipCost": "Ohne ihn werden Feature-Wünsche eingestuft, aber nichts baut sie, und „Aus diesem PRD bauen“ hat keinen Agenten, an den es übergeben kann."
+      },
+      "ready": {
+        "title": "Bereit",
+        "summary": "Wo jeder Schritt steht, und der erste Lauf."
+      }
+    },
+    "prerequisites": {
+      "label": "Voraussetzungen",
+      "github": "Verbinden Sie GitHub mit der GitHub-App der Bereitstellung: App erstellen, dann im Repository installieren (zwei Klicks).",
+      "ci": "Bestätigen Sie die CI des Repositorys an seiner Verbindung: geschützte Secrets, ein schreibgeschütztes Token, festgelegtes OIDC, kein selbst gehosteter Runner, kein privilegierter Pull-Request-Workflow.",
+      "issues": "Lesen Sie seine Issues ein: die Quelle GitHub Issues für die ganze Bereitstellung, mit dem Repository und mit dieser App angemeldet, und das Label voc-agent an jedem Issue, das die Agenten übernehmen dürfen.",
+      "met": "Erledigt",
+      "notMet": "Offen",
+      "unknown": "Noch unbekannt",
+      "openConnections": "Verbindungen öffnen",
+      "openDeploymentSources": "Administration → Datenquellen öffnen",
+      "openSources": "Administration → Quellen → Quelleneinstellungen öffnen",
+      "sourcesOutside": "Außerhalb jedes Arbeitsbereichs: Die Automatisierungen lesen nur die Quellen der Bereitstellung.",
+      "checksTitle": "Was die Bereitschaft der Automatisierungen sagt",
+      "noReadiness": "Die Quelle und ihr Label prüft die Bereitschaft einer Automatisierung: Es ist noch keine Automatisierung gefunden."
+    },
+    "automation": {
+      "open": "{{name}} öffnen",
+      "missing": {
+        "triage": "Issue triage ist nicht unter den Agenten dieser Bereitstellung. Sie wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; eine umbenannte wird hier nicht gefunden.",
+        "bug_fixer": "Bug fixer ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Fehler).",
+        "feature_builder": "Feature builder ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Feature-Wünsche)."
+      }
+    },
+    "ready": {
+      "summaryTitle": "Wo jeder Schritt steht",
+      "runTitle": "Jetzt für ein Issue ausführen",
+      "runHint": "Starten Sie jetzt einen Lauf von {{name}} für ein Issue seines Repositorys, ohne auf den nächsten Heartbeat zu warten.",
+      "run": "Jetzt für ein Issue ausführen",
+      "runNone": "Aktivieren Sie zuerst Issue triage oder Bug fixer: Ein Lauf für ein Issue startet bei einem von ihnen.",
+      "learnTitle": "Jeder Lauf lernt",
+      "learn": "Jeder Lauf endet mit Learn: einer Rückschau, Lektionen und Vorschlägen, die Skills der Agenten zu verbessern. Vorschläge warten unter Skills darauf, dass ein Administrator sie annimmt; nichts ändert sich von selbst.",
+      "openSkills": "Skills öffnen",
+      "finish": "Assistent abschließen",
+      "finished": "Der Assistent ist abgeschlossen. Einrichtungsassistent auf der Agentenseite öffnet ihn wieder."
+    },
+    "intro": {
+      "title": "Die autonome Fehlerschleife einrichten?",
+      "body": "Noch ist nichts eingerichtet. Der Einrichtungsassistent führt Sie in der empfohlenen Reihenfolge hindurch: GitHub und die CI des Repositorys, seine Issues, dann die Automatisierungen, die einstufen, beheben und bauen.",
+      "start": "Hilf mir beim Einrichten",
+      "skip": "Überspringen"
+    }
   }
 }

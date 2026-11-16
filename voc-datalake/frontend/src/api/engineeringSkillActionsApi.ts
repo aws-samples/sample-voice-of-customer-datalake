@@ -5,6 +5,10 @@
  * answers 409 when it moved meanwhile, and an optional reason. Each answers the version as it is now and the action's
  * event.
  *
+ * Since 7.50.00 an administrator also adopts a role's updated template (`POST /agents/engineering/skills/<role>/template/
+ * adopt?connection=` `{expected_current, template_version}`): the template becomes a new version PROPOSED by that
+ * person (provenance `template`), which an administrator then accepts like any other; the answer is that version.
+ *
  * @module api/engineeringSkillActionsApi
  */
 import { z } from 'zod'
@@ -60,7 +64,18 @@ const actionPath = (connection: string, role: SkillRole, version: number, action
   return `${ACTION_PATHS[action](base)}?${new URLSearchParams({ connection }).toString()}`
 }
 
+const adoptPath = (connection: string, role: SkillRole) =>
+  `/agents/engineering/skills/${encodeURIComponent(role)}/template/adopt?${new URLSearchParams({ connection }).toString()}`
+
+/** What an adoption sends: the scope's current version and the template version the screen showed. */
+export interface AdoptBody {
+  expected_current: number
+  template_version: number
+}
+
 export const engineeringSkillActionsApi = {
+  adopt: async (connection: string, role: SkillRole, body: AdoptBody): Promise<ActionResult> =>
+    parseActionResult(await fetchApi<unknown>(adoptPath(connection, role), post(body))),
   act: async (connection: string, role: SkillRole, version: number, body: ActionBody, reason: string): Promise<ActionResult> => {
     const { action, ...fields } = body
     const sent = reason.trim() === '' ? fields : { ...fields, reason: reason.trim() }

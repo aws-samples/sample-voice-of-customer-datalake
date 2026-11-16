@@ -27,13 +27,17 @@ export class ApiError extends Error {
   readonly code: string | undefined
   /** The run an error body names (`run_id`: an engineering run's start that may have written it), if any. */
   readonly runId: string | undefined
+  /** The readiness checks an engineering Enable's 409 names as failing (`checks`), as sent:
+   *  api/engineeringReadinessApi.ts reads them. */
+  readonly checks: unknown[] | undefined
 
-  constructor(status: number, message = `API Error: ${String(status)}`, code?: string, runId?: string) {
+  constructor(status: number, message = `API Error: ${String(status)}`, code?: string, runId?: string, checks?: unknown[]) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.runId = runId
+    this.checks = checks
   }
 }
 

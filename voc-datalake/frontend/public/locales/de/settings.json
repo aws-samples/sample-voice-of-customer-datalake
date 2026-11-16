@@ -390,7 +390,8 @@
     "taxonomy": "Taxonomie",
     "access": "Datenschutz & Zugriff",
     "ai": "KI-Modelle",
-    "system": "System"
+    "system": "System",
+    "dataSources": "Datenquellen"
   },
   "sections": {
     "plugins": "Quelleneinstellungen",
@@ -988,5 +989,12 @@
     "save": "Farbschema speichern",
     "saving": "Wird gespeichert…",
     "saveFailed": "Das Standard-Farbschema konnte nicht gespeichert werden. Bitte versuchen Sie es erneut."
+  },
+  "deploymentSources": {
+    "title": "Die Datenquellen der Bereitstellung",
+    "feeds": "Diese Quellen speisen die Bereitstellung: Das Feedback, das sie einlesen, gilt für die ganze Bereitstellung, außerhalb jedes Arbeitsbereichs, gleich in welchem Arbeitsbereich Sie gerade sind. Zugangsdaten, Zeitpläne und Pausen auf dieser Seite sind die der Bereitstellung.",
+    "engineering": "Nur dieses Feedback lesen die Engineering-Automatisierungen (Bug fixer, Feature builder, Issue triage): Ihre Läufe nehmen nie das Feedback eines Arbeitsbereichs.",
+    "appSignIn": "Melden Sie die GitHub-Issues-Quelle hier mit der GitHub App der Bereitstellung an (auf ihrer Karte unter „Anmelden mit“) und führen Sie die Repositorys auf, an denen die Agenten arbeiten.",
+    "inWorkspace": "Sie sind in {{name}}, aber nichts auf dieser Seite ändert diesen Arbeitsbereich: Seine eigenen Quellen finden Sie im Tab Quellen."
   }
 }

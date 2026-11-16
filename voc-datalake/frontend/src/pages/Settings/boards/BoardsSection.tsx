@@ -5,13 +5,13 @@
  * path change (Back works, a link opens the editor), so the editor's unsaved-changes guard catches it.
  * @module pages/Settings/boards/BoardsSection
  */
-import { useAdminBoard } from '../useAdminLocation'
+import { useBoardInPath } from '../useAdminLocation'
 import BoardEditor from './BoardEditor'
 import BoardList from './BoardList'
 import CompanyDomainsCard from './CompanyDomainsCard'
 
 export default function BoardsSection() {
-  const [boardId, openBoard] = useAdminBoard()
+  const [boardId, openBoard] = useBoardInPath()
   if (boardId !== null) return <BoardEditor boardId={boardId} onClose={() => openBoard(null)} />
   return (
     <div className="space-y-6">

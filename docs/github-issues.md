@@ -88,8 +88,9 @@ blast radiuses small.
 
 Where the engineering agents are deployed (`-c engineeringAgents=true`), a deployment-wide source can sign in with one
 of the deployment's GitHub Apps instead of a token: the Apps an administrator makes under Agents → Connections
-([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the source's card,
-**Sign in with** → GitHub App, then the App (its id is saved as `github_app_id`; choosing the token again saves
+([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the deployment's card
+(Administration → Data sources, `/admin/data-sources`, for platform admins from any address since 7.50.00; or the
+Source settings card outside a workspace), **Sign in with** → GitHub App, then the App (its id is saved as `github_app_id`; choosing the token again saves
 `none`, which is no App). A new App is named `VoC Autonomous Agent <4 hex>` (7.49.00); renaming one is done on GitHub
 (Settings → Developer settings → GitHub Apps → the App → **Edit**), and **Check installation** on Agents →
 Connections then records its new slug ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). Each run then asks the GitHub Apps' token function (`voc-engineering-app-tokens`) for

@@ -25,6 +25,7 @@ import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
 import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
+import { bindSetupAgents, handleEngineeringSetupRoutes, readinessRefusal } from './mock-engineering-setup.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
@@ -1501,6 +1502,8 @@ function handleDomainModules(req, res, url) {
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
     || handleEngineeringSkillRoutes(req, res, url, send, shared)
+    // (before the runs' routes, which would read `setup` and `readiness` as a run id)
+    || handleEngineeringSetupRoutes(req, res, url, send, shared)
     || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)
@@ -3400,6 +3403,7 @@ const WORKFLOW_NOT_FOUND = [404, { success: false, error: 'Workflow not found' }
 const AGENT_EDITABLE_FIELDS = ['name', 'description', 'enabled', 'owner_sub', 'scope', 'instructions', 'personas', 'triggers', 'models', 'output', 'workflow_id', 'budget', 'engineering'];
 // The engineering agents' seeded flows (lambda/shared/agent_seed.py): each with a $50 monthly budget.
 const BUG_FIXER_FLOW_ID = 'wf_b0f1e2d3c4a5';
+const ISSUE_TRIAGE_FLOW_ID = 'wf_17a9e5c3b2d0';
 const FEATURE_BUILDER_FLOW_ID = 'wf_fe4b1d2c3a5e';
 const SEEDED_MONTHLY_BUDGET_USD = 50;
 const NOT_SET_UP = "set the agent up first: its repository connection, its language and its flow's monthly budget (Agents → Connections adds a connection)";
@@ -3596,7 +3600,7 @@ storeMockWorkflow(SAMPLE_FLOW_ID, sampleEngineeringFlow(), { at: daysAgo(3) });
 // The seeded engineering agents' flows, from the default engineering flow templates (agent_seed.py: each its
 // automation's flow, named for the agent, with its monthly budget).
 for (const [workflowId, templateId, name] of [[BUG_FIXER_FLOW_ID, 'bug-hunt-and-fix', 'Bug fixer workflow'],
-  [FEATURE_BUILDER_FLOW_ID, 'feature', 'Feature builder workflow']]) {
+  [FEATURE_BUILDER_FLOW_ID, 'feature', 'Feature builder workflow'], [ISSUE_TRIAGE_FLOW_ID, 'issue-triage', 'Issue triage workflow']]) {
   const template = ENGINEERING_TEMPLATES.find((entry) => entry.template_id === templateId);
   storeMockWorkflow(workflowId, { ...structuredClone(template.definition), name, budget: { monthly_usd: SEEDED_MONTHLY_BUDGET_USD } },
     { at: daysAgo(1) });
@@ -3650,7 +3654,18 @@ const mockAgents = new Map([
   // The engineering agents the seed adds with the engineering module on (7.47.00): "Set up" on their page.
   seededEngineeringAgent('ag_b0f1e2d3c4a5', 'Bug fixer', 'Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a draft pull request that says "Fixes #N"', 'bug', BUG_FIXER_FLOW_ID, 5),
   seededEngineeringAgent('ag_fe4b1d2c3a5e', 'Feature builder', "Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a project's PRD becomes a draft pull request", 'feature_request', FEATURE_BUILDER_FLOW_ID, 10),
+  // The Issue triage automation 7.50.00 seeds (the setup guide's step 3): it classifies a labelled issue first.
+  seededEngineeringAgent('ag_17a9e5c3b2d0', 'Issue triage', 'Reads each labelled GitHub issue, classifies it (bug, feature, investigation), rates its severity and comments the triage on the issue', 'bug', ISSUE_TRIAGE_FLOW_ID, 5),
 ].map((agent) => [agent.agent_id, agent]));
+
+// The setup guide's readiness fixture (mock-engineering-setup.js) reads the agents and their flows' budgets here.
+bindSetupAgents({
+  agent: (agentId) => mockAgents.get(agentId),
+  budgetOf: (agent) => {
+    const flow = mockWorkflows.get(agent.workflow_id);
+    return flow ? currentRevision(flow).definition.budget?.monthly_usd ?? null : null;
+  },
+});
 
 const agentView = (agent) => structuredClone(agent);
 
@@ -3756,6 +3771,9 @@ function routeAgentItem(req, agent, action, body) {
   if (req.method === 'POST' && (action === 'enable' || action === 'disable')) {
     const enabling = action === 'enable';
     if (enabling && agent.engineering && !engineeringSetUp(agent)) return [400, { success: false, error: NOT_SET_UP }];
+    // (7.50.00: an engineering agent's Enable waits for the readiness checks a run needs: 409 with the failing ones)
+    const refused = enabling && agent.engineering && !agent.enabled ? readinessRefusal(agent) : null;
+    if (refused) return refused;
     // An engineering agent runs as the administrator who enabled it.
     const runsAs = enabling && agent.engineering && !agent.enabled ? { owner_sub: MOCK_CALLER.sub, owner_username: 'admin-demo' } : {};
     Object.assign(agent, { enabled: enabling, updated_at: stamp, ...runsAs });

@@ -1,6 +1,8 @@
 /**
  * @fileoverview One source's schedule toggle and circuit breaker, read from the
- * page-wide `GET /sources/status` query.
+ * page-wide `GET /sources/status` query: the current workspace's breakers, or
+ * in the deployment's scope (Administration → Data sources,
+ * workspace/configScope.ts) the deployment's, inside a workspace too.
  * @module pages/Settings/useSourceSchedule
  */
 import { useState } from 'react'
@@ -11,9 +13,7 @@ import { ownValue } from '../Scrapers/scraper-helpers'
 import { CLOSED_CIRCUIT as CLOSED } from '../../api/sourcesStatusSchema'
 import type { SourceCircuit, SourceStatus, SourcesStatus } from '../../api/sourcesStatusSchema'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
-
-/** Shared by every SourceCard (and the source erasure panel) so the page makes one /sources/status call. */
-const SOURCES_STATUS_KEY = sourcesStatusKey()
+import { scopedKey, useConfigScope } from '../../workspace/configScope'
 
 interface ScheduleState {
   readonly enabled: boolean
@@ -42,19 +42,24 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
   resetCircuit: () => Promise<void>
 } {
   const queryClient = useQueryClient()
+  const scope = useConfigScope()
   const workspace = useCurrentWorkspace()
+  // In the deployment's scope the card shows the deployment's breaker wherever the app is.
+  const inWorkspace = scope === 'workspace' && workspace !== null
+  // Shared by every SourceCard of the scope (and the source erasure panel) so the page makes one /sources/status call.
+  const statusKey = scopedKey(sourcesStatusKey(), scope)
   const [loading, setLoading] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [resetFailed, setResetFailed] = useState(false)
   const { data } = useQuery({
-    queryKey: SOURCES_STATUS_KEY,
-    queryFn: () => api.getSourcesStatus(),
+    queryKey: statusKey,
+    queryFn: () => api.getSourcesStatus(undefined, scope),
     enabled: apiEndpoint !== '',
   })
   const own = data === undefined ? undefined : ownValue(data.sources, sourceId)
 
   const patchOwn = (patch: Partial<SourceStatus>) => {
-    queryClient.setQueryData<SourcesStatus>(SOURCES_STATUS_KEY, (previous) => {
+    queryClient.setQueryData<SourcesStatus>(statusKey, (previous) => {
       const sources = previous?.sources ?? {}
       const current: SourceStatus = ownValue(sources, sourceId) ?? { enabled: false, circuit: CLOSED }
       return { sources: { ...sources, [sourceId]: { ...current, ...patch } } }
@@ -68,9 +73,9 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
       // Enabling closes the DEPLOYMENT's breaker (the schedule is the deployment's, sent without X-Workspace-Id).
       // Outside a workspace that is the breaker the card shows; inside one the card shows the workspace's own,
       // which enabling leaves as it is, so the status is read again rather than shown closed.
-      const closesShownBreaker = next && workspace === null
+      const closesShownBreaker = next && !inWorkspace
       patchOwn(closesShownBreaker ? { enabled: response.enabled, circuit: CLOSED } : { enabled: response.enabled })
-      if (next && !closesShownBreaker) void queryClient.invalidateQueries({ queryKey: SOURCES_STATUS_KEY })
+      if (next && !closesShownBreaker) void queryClient.invalidateQueries({ queryKey: statusKey })
     } catch {
       // The toggle stays where it was; the card shows the server's last answer.
     } finally {
@@ -82,7 +87,7 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
     setResetting(true)
     setResetFailed(false)
     try {
-      const response = await api.resetSource(sourceId)
+      const response = await api.resetSource(sourceId, scope)
       if (response.success) patchOwn({ circuit: response.circuit })
       else setResetFailed(true)
     } catch {

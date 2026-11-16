@@ -72,6 +72,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   // `/agents/spend` and `/agents/skills/…`: views of /agents, which the trail ends before (trailSegments).
   'spend': { labelKey: 'common:breadcrumbs.spend', path: '/agents' },
   'skills': { labelKey: 'common:breadcrumbs.skills', path: '/agents' },
+  // `/agents/setup/<step>` — the engineering setup guide; its steps are its own places (the trail ends at it).
+  'setup': { labelKey: 'common:breadcrumbs.setupGuide' },
   // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
   'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
   // `/agents/connections/github/created` and `…/installed`, where GitHub sends an administrator back from the

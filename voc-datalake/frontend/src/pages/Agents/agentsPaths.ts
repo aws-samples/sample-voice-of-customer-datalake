@@ -3,7 +3,8 @@
  *
  * - the list's views: `/agents` (the agents), `/agents/workflows`, `/agents/spend`, `/agents/connections`,
  *   `/agents/skills`; on Skills, a role's history `/agents/skills/<role>` and one version `/agents/skills/<role>/v/<n>`;
- * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings).
+ * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings);
+ * - the engineering setup guide, `/agents/setup[/<step>]` (SetupGuide/setupGuidePaths.ts), a page of its own.
  *
  * The view names are reserved: an agent's id is never one (`ag_<12 hex>`, lambda/shared/agents_store.py), and
  * routes.tsx lists each view before `agents/:id`. What a view shows stays in the query as a filter does: the Spend
@@ -21,6 +22,9 @@ const AGENTS_PATH = '/agents'
 
 /** The list's views; `agents` is the list itself (`/agents`). */
 export const AGENTS_VIEWS = ['agents', 'workflows', 'spend', 'connections', 'skills'] as const
+
+/** The pages under `/agents` that are neither a view of the list nor an agent (`setup`: the setup guide). */
+const AGENTS_PAGES: ReadonlySet<string> = new Set(['setup'])
 
 /** The views that are a path under `/agents` (every view but the list itself, which is `/agents`). */
 export const AGENTS_PATH_VIEWS: ReadonlySet<string> = new Set(AGENTS_VIEWS.filter((view) => view !== 'agents'))
@@ -94,5 +98,5 @@ export function agentTabPage<T extends string>(agentId: string, tabs: readonly [
 /** The agent an address is one of the pages of (`/agents/<id>/…`), or null. */
 export function agentIdOf(pathname: string): string | null {
   const [first] = segmentsUnder(AGENTS_PATH, pathname) ?? []
-  return first === undefined || isView(first) ? null : first
+  return first === undefined || isView(first) || AGENTS_PAGES.has(first) ? null : first
 }

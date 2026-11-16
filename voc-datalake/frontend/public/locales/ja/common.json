@@ -44,7 +44,8 @@
     "connections": "接続",
     "github": "GitHub",
     "githubAppCreated": "App 作成済み",
-    "githubAppInstalled": "App インストール済み"
+    "githubAppInstalled": "App インストール済み",
+    "setupGuide": "セットアップガイド"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",

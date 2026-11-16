@@ -16,7 +16,7 @@ import type { KeyboardEvent, MouseEvent, RefObject } from 'react'
 import type { MenuAnchor } from '../../utils/fixedMenu'
 
 /** Where the open menu is, and how it was opened. */
-export interface CardMenuOpening {
+interface CardMenuOpening {
   readonly anchor: MenuAnchor
   readonly align: 'start' | 'end'
   /** Opened by the "⋯" button: a press on it toggles the menu (its own click), never counts as outside. */

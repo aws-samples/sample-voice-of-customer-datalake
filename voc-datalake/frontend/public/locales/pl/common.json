@@ -42,7 +42,8 @@
     "connections": "Połączenia",
     "github": "GitHub",
     "githubAppCreated": "App utworzona",
-    "githubAppInstalled": "App zainstalowana"
+    "githubAppInstalled": "App zainstalowana",
+    "setupGuide": "Przewodnik konfiguracji"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",

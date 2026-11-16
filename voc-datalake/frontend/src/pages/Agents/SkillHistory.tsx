@@ -7,13 +7,11 @@
  *
  * @module pages/Agents/SkillHistory
  */
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
-import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
-import { useConfigStore } from '../../store/configStore'
 import { statusTone } from './skillsView'
 import { useSkillFormats } from './skillFormats'
+import { useSkillHistory } from './useSkillHistory'
 import type { SkillRole, SkillVersionLine } from '../../api/engineeringSkillsApi'
 
 export function SkillStatusBadge({ status, current }: Readonly<{ status: string; current: boolean }>) {
@@ -120,14 +118,7 @@ export function SkillHistory({ connection, role, onOpen }: Readonly<{
   connection: string; role: SkillRole; onOpen: (version: number) => void
 }>) {
   const { t } = useTranslation('agents')
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const read = useInfiniteQuery({
-    queryKey: engineeringSkillsKeys.history(connection, role),
-    queryFn: ({ pageParam }) => engineeringSkillsApi.history(connection, role, pageParam),
-    initialPageParam: '',
-    getNextPageParam: (page) => page.nextPage ?? undefined,
-    enabled: configured,
-  })
+  const read = useSkillHistory(connection, role)
   const pages = read.data?.pages ?? []
   const versions = pages.flatMap((page) => page.versions)
   const current = pages[0]?.currentVersion ?? 0

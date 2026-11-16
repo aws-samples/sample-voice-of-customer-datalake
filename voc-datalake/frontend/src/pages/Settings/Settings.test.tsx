@@ -699,3 +699,44 @@ describe('Settings without admin access', () => {
     expect(screen.queryByText(/Only admins can change the brand configuration/)).not.toBeInTheDocument()
   })
 })
+
+// 7.50.00: the deployment's Data sources (DeploymentDataSources.tsx), its own tab, for platform admins only.
+describe("Administration → Data sources, the deployment's", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetEnabledPlugins.mockReturnValue([{ id: 'webscraper' }])
+    mockGetBrandSettings.mockResolvedValue({ brand_name: 'Test Brand', brand_handles: [], hashtags: [], urls_to_track: [] })
+  })
+
+  it('opens at /admin/data-sources for a platform admin, its tab after Sources', async () => {
+    const Page = await importSettingsAs(true, true)
+    renderSettings(<Page />, '/admin/data-sources')
+
+    expect(tabLabels()).toStrictEqual(['General', 'Sources', 'Data sources', 'Taxonomy', 'Privacy & access', 'AI models', 'System'])
+    expect(screen.getByRole('button', { name: 'Data sources', pressed: true })).toBeInTheDocument()
+  })
+
+  it('shows what it feeds above the cards, one page with no section switch', async () => {
+    const Page = await importSettingsAs(true, true)
+    renderSettings(<Page />, '/admin/data-sources')
+
+    const notice = screen.getByTestId('deployment-sources-notice')
+    expect(within(notice).getByRole('heading', { name: "The deployment's data sources" })).toBeInTheDocument()
+    expect(notice).toHaveTextContent(/deployment-wide, outside every workspace.*only feedback the engineering automations read/)
+    expect(screen.getByTestId('source-card-webscraper')).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['a plain administrator', true],
+    ['a non-admin', false],
+  ])('gives %s no tab and nothing of the page: the address falls back to General', async (_who, isAdmin) => {
+    const Page = await importSettingsAs(isAdmin, false)
+    renderSettings(<Page />, '/admin/data-sources')
+
+    expect(tabLabels()).not.toContain('Data sources')
+    expect(screen.queryByTestId('deployment-sources-notice')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('source-card-webscraper')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Brand Name/)).toBeInTheDocument()
+  })
+})

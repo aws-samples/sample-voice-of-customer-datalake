@@ -422,7 +422,8 @@
     "taxonomy": "Taksonomia",
     "access": "Prywatność i dostęp",
     "ai": "Modele AI",
-    "system": "System"
+    "system": "System",
+    "dataSources": "Źródła danych"
   },
   "sections": {
     "plugins": "Ustawienia źródeł",
@@ -1044,5 +1045,12 @@
     "save": "Zapisz motyw",
     "saving": "Zapisywanie…",
     "saveFailed": "Nie udało się zapisać domyślnego motywu. Spróbuj ponownie."
+  },
+  "deploymentSources": {
+    "title": "Źródła danych wdrożenia",
+    "feeds": "Te źródła zasilają wdrożenie: opinie, które pobierają, dotyczą całego wdrożenia, poza każdym obszarem roboczym, niezależnie od tego, w którym obszarze roboczym teraz jesteś. Dane logowania, harmonogramy i wstrzymania na tej stronie należą do samego wdrożenia.",
+    "engineering": "To jedyne opinie, które czytają automatyzacje inżynieryjne (Bug fixer, Feature builder, Issue triage): ich uruchomienia nigdy nie biorą opinii obszaru roboczego.",
+    "appSignIn": "Zaloguj tutaj źródło GitHub Issues przez GitHub App wdrożenia (na jego karcie „Logowanie przez”), podając repozytoria, nad którymi pracują agenci.",
+    "inWorkspace": "Jesteś w {{name}}, ale nic na tej stronie go nie zmienia: własne źródła tego obszaru roboczego są na karcie Źródła."
   }
 }

@@ -1153,6 +1153,22 @@
       "latestOnly": "latest runs only",
       "loadFailed": "The scorecards could not be loaded. Try again in a moment.",
       "empty": "No scorecards for these versions on this connection yet."
+    },
+    "template": {
+      "title": "Template updated",
+      "badge": "Template updated (v{{version}})",
+      "explain": "The repository's template for this role has a newer version than the one this scope runs. Read what it changes, then adopt it as a proposal: it runs only once an administrator accepts it in the history below. Nothing changes by itself.",
+      "show": "Show what it changes",
+      "loading": "Reading the template",
+      "readFailed": "The template couldn't be read.",
+      "diffTitle": "Template v{{version}} against the current version v{{current}}",
+      "diffTitleFirst": "Template v{{version}} (no version is current yet)",
+      "adopt": "Adopt as a proposal",
+      "adoptHint": "Proposed by you; an administrator accepts or rejects it like any other version.",
+      "adoptFailed": "The template couldn't be adopted.",
+      "notNewer": "This template is proposed or accepted already.",
+      "proposed": "The template is proposed as version {{version}}: accept it in the history to run it.",
+      "openProposed": "Open version {{version}}"
     }
   },
   "engineeringRun": {
@@ -1382,7 +1398,8 @@
     "connectFirst": "Connect a repository first",
     "setUp": "Set up",
     "whyNoConnection": "Disabled: it needs a repository connection to work on.",
-    "whySetUp": "Disabled until it is set up: a connection, a language and a monthly budget."
+    "whySetUp": "Disabled until it is set up: a connection, a language and a monthly budget.",
+    "enableFailed": "The agent couldn't be enabled."
   },
   "prdBuild": {
     "button": "Build from this PRD",
@@ -1392,5 +1409,150 @@
     "confirm": "Start the build",
     "agent": "Agent",
     "inputHint": "The run gets this PRD as its input, by its id."
+  },
+  "readiness": {
+    "title": "Readiness",
+    "label": "Readiness checks",
+    "failingLabel": "Failing checks",
+    "summary": "Failing: {{fail}} · Unknown: {{unknown}} · Warnings: {{warn}} · Passed: {{pass}}",
+    "loading": "Checking what a run needs",
+    "loadFailed": "The readiness checks couldn't be read; Enable still checks them.",
+    "none": "The server named no checks.",
+    "fix": "Fix:",
+    "docs": "Docs",
+    "opensNewTab": "(opens in a new tab)",
+    "setWayOfWorking": "Set your way of working in Users",
+    "enableWaits": "Enable waits until every check a run needs passes.",
+    "enableRefused": "Not enabled: these checks a run needs fail.",
+    "status": {
+      "pass": "Passed",
+      "fail": "Fails",
+      "warn": "Warning",
+      "unknown": "Unknown"
+    },
+    "check": {
+      "connection": "Repository connection",
+      "app_installation": "GitHub App installation",
+      "ci_attestation": "CI attestation",
+      "ci_protection": "Branch protection",
+      "image": "Agent image",
+      "pack": "Knowledge pack",
+      "tenets": "Tenets",
+      "issues_source": "GitHub Issues source",
+      "issue_label": "Issue label",
+      "dial": "Way of working",
+      "budget": "Monthly budget",
+      "hard_cap": "Hard cap",
+      "bedrock_models": "Bedrock models",
+      "agentcore_quota": "AgentCore quota",
+      "memory_setting": "Build memory setting",
+      "network": "Network",
+      "session_storage": "Session storage"
+    },
+    "required": "Needed to run"
+  },
+  "setupGuide": {
+    "title": "Setup guide",
+    "open": "Setup guide",
+    "subtitle": "Set up the autonomous bug loop: an issue labelled on GitHub is triaged, fixed and opened as a pull request that a person reviews and merges. The steps are in the recommended order; any step can be skipped for now.",
+    "notAvailable": "The setup guide is for administrators of a deployment where the engineering agents are on.",
+    "loading": "Reading what is set up",
+    "loadFailed": "What is set up couldn't be read.",
+    "stepsLabel": "Setup steps",
+    "stepNumber": "Step {{n}}",
+    "progress": "{{done, number}} of {{total, number}} steps done",
+    "status": {
+      "done": "Done",
+      "skipped": "Skipped for now",
+      "todo": "To do",
+      "later": "Arrives in 7.52"
+    },
+    "skip": "Skip for now",
+    "unskip": "Take the skip back",
+    "next": "Next: {{step}}",
+    "saveFailed": "Your choice couldn't be saved.",
+    "saveConflict": "Another administrator changed the guide meanwhile. It was read again: choose once more.",
+    "skipCostTitle": "What skipping costs",
+    "order": "Recommended order: prerequisites, understand the repository, tenets, issue triage, bug fixer, feature builder.",
+    "orderFine": "Every step before this one is done.",
+    "orderMissing": "Not done before this one: {{list}}.",
+    "later": "Its flow arrives in 7.52. Skip it for now: the guide offers it again then.",
+    "steps": {
+      "prerequisites": {
+        "title": "Prerequisites",
+        "summary": "What every automation stands on: the repository connected through the deployment's GitHub App, its CI attested, and its issues ingested for the whole deployment.",
+        "skipCost": "Without them no automation can run: a run needs the repository connected through the App and its CI attested, and the issue automations need its issues ingested. Enable stays off until the checks a run needs pass."
+      },
+      "understand": {
+        "title": "Understand the repository",
+        "summary": "A pass over the repository that writes down what the agents should know of it: its packages, how each builds and tests, and where things live. Its pull request is a person's to review.",
+        "skipCost": "Without it the agents learn the repository from scratch on every run: findings are shallower, a fix touches the wrong place more often, and runs take longer and cost more."
+      },
+      "tenets": {
+        "title": "Tenets",
+        "summary": "The project's tenets, written down and accepted by an administrator: what triage and reviews judge an issue and a change by.",
+        "skipCost": "Without tenets, triage has no stated priorities to judge an issue by, and reviews judge a change by the code alone: severities are less consistent, and a fix can go against what the project values."
+      },
+      "triage": {
+        "title": "Issue triage",
+        "summary": "Reads each labelled issue, classifies it as a bug, a feature or an investigation, rates its severity, writes its acceptance criteria, then comments and labels the issue. Bug fixer and Feature builder start from its triage.",
+        "skipCost": "Without triage, Bug fixer and Feature builder decide from the issue's own label and words: a feature request can reach the bug fixer, severity is guessed, and a fix starts without acceptance criteria."
+      },
+      "bug_fixer": {
+        "title": "Bug fixer",
+        "summary": "Hunts the bug an issue reports, fixes it with a test that fails without the fix, runs the repository's quality gate, then pushes and opens the pull request that says Fixes #N. A person approves and merges it on GitHub.",
+        "skipCost": "Without it, labelled bugs are triaged, but nothing fixes them or opens a pull request."
+      },
+      "feature_builder": {
+        "title": "Feature builder",
+        "summary": "Builds what a feature issue or a project's PRD asks for, through the same quality gate, then opens its pull request for a person to review and merge.",
+        "skipCost": "Without it, feature requests are triaged, but nothing builds them, and a PRD's Build from this PRD has no agent to hand it to."
+      },
+      "ready": {
+        "title": "Ready to go",
+        "summary": "Where each step stands, and the first run."
+      }
+    },
+    "prerequisites": {
+      "label": "Prerequisites",
+      "github": "Connect GitHub with the deployment's GitHub App: make the App, then install it on the repository (two clicks).",
+      "ci": "Attest the repository's CI on its connection: protected secrets, a read-only token, OIDC pinned, no self-hosted runner, no privileged pull request workflow.",
+      "issues": "Ingest its issues: the GitHub Issues source for the whole deployment, listing the repository and signed in with that App, and the voc-agent label on each issue the agents may take.",
+      "met": "Done",
+      "notMet": "To do",
+      "unknown": "Not known yet",
+      "openConnections": "Open Connections",
+      "openDeploymentSources": "Open Administration → Data sources",
+      "openSources": "Open Administration → Sources → Source settings",
+      "sourcesOutside": "Outside any workspace: the automations read only the deployment's sources.",
+      "checksTitle": "What the automations' readiness says",
+      "noReadiness": "The source and its label are checked by an automation's readiness: no automation is found yet."
+    },
+    "automation": {
+      "open": "Open {{name}}",
+      "missing": {
+        "triage": "Issue triage is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is not found here.",
+        "bug_fixer": "Bug fixer is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is found by what it works on (bugs).",
+        "feature_builder": "Feature builder is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is found by what it works on (feature requests)."
+      }
+    },
+    "ready": {
+      "summaryTitle": "Where each step stands",
+      "runTitle": "Run on an issue now",
+      "runHint": "Start a run of {{name}} on one issue of its repository now, without waiting for the next heartbeat.",
+      "run": "Run on an issue now",
+      "runNone": "Enable Issue triage or Bug fixer first: a run on an issue starts from one of them.",
+      "learnTitle": "Every run learns",
+      "learn": "Each run ends with Learn: a retrospective, lessons and proposals to improve the agents' skills. Proposals wait in Skills for an administrator to accept; nothing changes by itself.",
+      "openSkills": "Open Skills",
+      "finish": "Finish the guide",
+      "finished": "The guide is finished. Setup guide on the Agents page opens it again."
+    },
+    "intro": {
+      "title": "Set up the autonomous bug loop?",
+      "body": "Nothing is set up yet. The setup guide walks you through it in the recommended order: GitHub and the repository's CI, its issues, then the automations that triage, fix and build.",
+      "start": "Help me set up",
+      "skip": "Skip"
+    }
   }
 }

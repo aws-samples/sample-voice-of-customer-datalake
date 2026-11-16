@@ -11,6 +11,13 @@
  *   (`PUT /workflows/{id}`), the agent's settings (`PUT /agents/{id}` `{engineering}`), then
  *   `POST /agents/{id}/enable`; the server's refusal is shown in its words.
  *
+ * Before Enable (7.50.00) the dialog, the agents list's card and the switch show the automation's readiness
+ * (`GET /agents/engineering/readiness?automation=<id>`, ReadinessChecks.tsx): each check passed, failed or with a
+ * warning, its fix and its doc link. Enable waits while a check a run needs (`required`) does not pass (an advisory
+ * check or a warning never holds it; in the dialog, the checks it sets itself, the connection, the language's image and
+ * the budget, are checked again by the Enable that follows the save), and an Enable the server refuses with 409
+ * `{error, checks}` shows the checks it names.
+ *
  * Once set up, the switch as for any agent, with who it runs as and a way back to the set-up.
  *
  * @module pages/Agents/AgentEngineering
@@ -29,11 +36,15 @@ import { agentsApi, agentsKeys } from '../../api/agentsApi'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { serverReason } from '../../lib/errors'
+import { blocksEnable, engineeringReadinessKeys, failingChecksOf } from '../../api/engineeringReadinessApi'
 import { useAgentMutations } from './useAgents'
 import { RUN_LANGUAGES } from './startRunRules'
 import { readinessOf, usableConnections } from './engineeringAgentRules'
+import { FailingChecks, ReadinessSection } from './ReadinessChecks'
+import { useReadiness } from './useReadiness'
 import type { Readiness } from './engineeringAgentRules'
 import type { Agent } from '../../api/agentsApi'
+import type { ReadinessCheck } from '../../api/engineeringReadinessApi'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { WorkflowView } from '../../api/workflowsApi'
 
@@ -60,12 +71,44 @@ function useSetup(agent: Agent, workflow: WorkflowView, onDone: () => void) {
     },
     onSuccess: (saved) => {
       queryClient.setQueryData(agentsKeys.detail(agent.agent_id), saved)
+      onDone()
+    },
+    // (an Enable refused after the settings were saved: the agent, its flow and its readiness are read again)
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agent.agent_id) })
       void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
       void queryClient.invalidateQueries({ queryKey: workflowsKeys.detail(workflow.workflow_id) })
       void queryClient.invalidateQueries({ queryKey: workflowsKeys.list() })
-      onDone()
+      void queryClient.invalidateQueries({ queryKey: engineeringReadinessKeys.of({ automation: agent.agent_id }) })
     },
   })
+}
+
+/** The checks the Set up dialog sets itself: saved with its form, they are checked again by the Enable after it. */
+const SET_BY_THE_DIALOG: ReadonlySet<string> = new Set(['connection', 'image', 'budget'])
+
+/** Whether Enable waits: a check a run needs fails (in the dialog, one it does not set itself). */
+function enableHeld(checks: readonly ReadinessCheck[] | undefined, inDialog: boolean): boolean {
+  if (checks === undefined) return false
+  return blocksEnable(inDialog ? checks.filter((check) => !SET_BY_THE_DIALOG.has(check.id)) : checks)
+}
+
+/**
+ * Whether Enable waits for the readiness of `agent` (read while `enabled` and the agent is disabled): in the dialog
+ * also while it loads (its Save would enable before the checks are known); `shown`: the reason is worth a line.
+ */
+function useEnableHold(agent: Agent, enabled: boolean, inDialog: boolean): { held: boolean; shown: boolean } {
+  const readiness = useReadiness({ automation: agent.agent_id }, enabled && !agent.enabled)
+  if (agent.enabled) return { held: false, shown: false }
+  const failing = enableHeld(readiness.data, inDialog)
+  return { held: failing || (inDialog && readiness.isLoading), shown: failing }
+}
+
+/** The refusal of a set-up or an Enable: the failing checks a 409 names, else the server's words. */
+function EnableError({ error, fallback }: Readonly<{ error: unknown; fallback: string }>) {
+  const failing = failingChecksOf(error)
+  if (failing !== null && failing.length > 0) return <FailingChecks checks={failing} />
+  return <p role="alert" className="text-[12px] text-danger">{serverReason(error) ?? fallback}</p>
 }
 
 function SetupFields({ form, connections, budgetIssue, onChange }: Readonly<{
@@ -118,8 +161,10 @@ function SetupDialog({ agent, workflow, connections, onClose }: Readonly<{
     budget: stored === undefined ? '' : String(stored),
   }))
   const save = useSetup(agent, workflow, onClose)
+  const hold = useEnableHold(agent, true, true)
+  const held = hold.held
   const typed = form.budget.trim() !== ''
-  const ready = typed && isMonthlyBudgetUsd(Number(form.budget)) && form.connection !== ''
+  const ready = typed && isMonthlyBudgetUsd(Number(form.budget)) && form.connection !== '' && !held
   return (
     <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg" dismissable={!save.isPending}>
       <div className="dialog-header">
@@ -136,9 +181,9 @@ function SetupDialog({ agent, workflow, connections, onClose }: Readonly<{
           <SetupFields form={form} connections={connections} budgetIssue={typed && !isMonthlyBudgetUsd(Number(form.budget))}
             onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))} />
           <p className="text-[12px] text-muted">{t('engineeringAgent.deploymentFeedback')}</p>
-          {save.isError && (
-            <p role="alert" className="text-[12px] text-danger">{serverReason(save.error) ?? t('engineeringAgent.setupFailed')}</p>
-          )}
+          <ReadinessSection subject={{ automation: agent.agent_id }} enabled />
+          {hold.shown && <p className="text-[12px] text-warn">{t('readiness.enableWaits')}</p>}
+          {save.isError && <EnableError error={save.error} fallback={t('engineeringAgent.setupFailed')} />}
         </div>
         <div className="dialog-footer">
           <button type="button" className="btn btn-secondary" disabled={save.isPending} onClick={onClose}>{t('common.cancel')}</button>
@@ -152,13 +197,34 @@ function SetupDialog({ agent, workflow, connections, onClose }: Readonly<{
   )
 }
 
-function EnabledSwitch({ agent, isAdmin, onSetUp }: Readonly<{ agent: Agent; isAdmin: boolean; onSetUp: () => void }>) {
+/** Under the switch of a disabled agent: why Enable waits, its readiness folded, and an Enable's refusal. */
+function EnableNotes({ agent, isAdmin, held, withReadiness, error }: Readonly<{
+  agent: Agent; isAdmin: boolean; held: boolean; withReadiness: boolean; error: unknown
+}>) {
+  const { t } = useTranslation('agents')
+  return (
+    <>
+      {held && <p className="text-[12px] text-warn max-w-xs">{t('readiness.enableWaits')}</p>}
+      {withReadiness && isAdmin && !agent.enabled && (
+        <div className="max-w-md"><ReadinessSection subject={{ automation: agent.agent_id }} enabled collapsed /></div>
+      )}
+      {error !== null && <div className="max-w-md"><EnableError error={error} fallback={t('engineeringAgent.enableFailed')} /></div>}
+    </>
+  )
+}
+
+function EnabledSwitch({ agent, isAdmin, onSetUp, withReadiness }: Readonly<{
+  agent: Agent; isAdmin: boolean; onSetUp: () => void; withReadiness: boolean
+}>) {
   const { t } = useTranslation('agents')
   const { setEnabled } = useAgentMutations(agent.agent_id)
+  // (turning it off never waits; turning it on waits for the checks a run needs)
+  const { held } = useEnableHold(agent, isAdmin, false)
   return (
+    <div className="flex flex-col items-end gap-1">
     <div className="flex items-center gap-2">
       <label className="flex items-center gap-2 text-sm text-text">
-        <button type="button" role="switch" aria-checked={agent.enabled} disabled={!isAdmin || setEnabled.isPending}
+        <button type="button" role="switch" aria-checked={agent.enabled} disabled={!isAdmin || setEnabled.isPending || held}
           className={clsx('switch', agent.enabled && 'switch-on')} onClick={() => setEnabled.mutate(!agent.enabled)}
           aria-label={t('detail.enabledLabel')}>
           <span className="switch-knob" />
@@ -171,6 +237,8 @@ function EnabledSwitch({ agent, isAdmin, onSetUp }: Readonly<{ agent: Agent; isA
           <Settings2 size={16} aria-hidden="true" />
         </button>
       )}
+    </div>
+    <EnableNotes agent={agent} isAdmin={isAdmin} held={held} withReadiness={withReadiness} error={setEnabled.error} />
     </div>
   )
 }
@@ -223,8 +291,13 @@ function useEngineeringReads(agent: Agent, isAdmin: boolean) {
   }
 }
 
-/** The Enabled control of an engineering agent's page (module doc). */
-export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>) {
+/**
+ * The Enabled control of an engineering agent's page (module doc). `withReadiness` (default on) folds the readiness
+ * under the switch of a disabled agent; the setup guide shows it open beside the control instead.
+ */
+export function EngineeringEnableControl({ agent, isAdmin, withReadiness = true }: Readonly<{
+  agent: Agent; isAdmin: boolean; withReadiness?: boolean
+}>) {
   const { t } = useTranslation('agents')
   const { workflow, connections, failed } = useEngineeringReads(agent, isAdmin)
   const { openSetUp, dialog } = useSetUpDialog(agent, workflow, connections)
@@ -238,7 +311,7 @@ export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: A
   return (
     <div className="flex flex-col items-end gap-1 text-right" data-testid="engineering-enable">
       {readiness === 'ready'
-        ? <EnabledSwitch agent={agent} isAdmin={isAdmin} onSetUp={openSetUp} />
+        ? <EnabledSwitch agent={agent} isAdmin={isAdmin} onSetUp={openSetUp} withReadiness={withReadiness} />
         : <NotReady readiness={readiness} isAdmin={isAdmin} onSetUp={openSetUp} />}
       {owner !== null && <p className="text-[12px] text-muted max-w-xs">{t('engineeringAgent.runsAs', { name: owner })}</p>}
       <p className="text-[12px] text-muted max-w-xs">{t('engineeringAgent.deploymentFeedback')}</p>
@@ -249,20 +322,34 @@ export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: A
 
 /**
  * The agents list's card of an engineering agent that is not set up (7.49.00), for an admin: the page's **Set up**
- * (the same dialog) or **Connect a repository first**, with the reason. Nothing once the agent is set up (the card's
- * badge says Enabled or Disabled), while its reads load, or when they fail (its page says so). The dialog starts its
- * text from the start whatever wrapper it sits in (ModalShell `text-start`).
+ * (the same dialog) or **Connect a repository first**, with the reason, and while it is disabled its readiness folded
+ * under its summary (7.50.00). A set-up agent that is disabled keeps the card while a check a run needs fails (its
+ * Set up opens the dialog whose Enable waits for it). Nothing once the agent is enabled, or set up with nothing failing
+ * (the row's badge says Enabled or Disabled), while its reads load, or when they fail (its page says so). The dialog
+ * starts its text from the start whatever wrapper it sits in (ModalShell `text-start`).
  */
 export function EngineeringSetUpCard({ agent }: Readonly<{ agent: Agent }>) {
+  const { t } = useTranslation('agents')
   const { workflow, connections } = useEngineeringReads(agent, true)
   const { openSetUp, dialog } = useSetUpDialog(agent, workflow, connections)
+  // (the readiness before Enable: 7.50.00; nothing once the agent is enabled)
+  const checks = useReadiness({ automation: agent.agent_id }, !agent.enabled)
   if (connections === undefined || workflow === undefined) return null
   const readiness = readinessOf(agent, connections, workflow.monthly_budget_usd)
-  if (readiness === 'ready') return null
+  const failing = !agent.enabled && blocksEnable(checks.data ?? [])
+  if (readiness === 'ready' && !failing) return null
   return (
     <div className="flex flex-col items-start gap-1" data-testid="engineering-setup-card">
       {/* No state badge: the row beside it shows the agent's (an enabled agent whose connection went is not set up). */}
-      <NotReady readiness={readiness} isAdmin badge={false} onSetUp={openSetUp} />
+      {readiness === 'ready'
+        ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn btn-primary btn-sm" onClick={openSetUp}>{t('engineeringAgent.setUp')}</button>
+            <p className="text-[12px] text-muted max-w-xs">{t('readiness.enableWaits')}</p>
+          </div>
+        )
+        : <NotReady readiness={readiness} isAdmin badge={false} onSetUp={openSetUp} />}
+      {!agent.enabled && <div className="w-full max-w-xl"><ReadinessSection subject={{ automation: agent.agent_id }} enabled collapsed /></div>}
       {dialog}
     </div>
   )

@@ -96,35 +96,44 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
  * is read when `message` is absent — without it a ValidationError's reason (e.g.
  * "No feedback data found for the given filters") never reached the screen and
  * the user saw "API Error: 400". Besides it only a machine-readable `code` (a
- * snake_case word, `ApiError.code` in lambda/shared/exceptions.py) is kept, and
- * a reason longer than a sentence or two is not one meant for a screen.
+ * snake_case word, `ApiError.code` in lambda/shared/exceptions.py), an engineering
+ * start's `run_id` and an engineering Enable's failing readiness checks (`checks`)
+ * are kept, and a reason longer than a sentence or two is not one meant for a screen.
  */
 const MAX_SERVER_MESSAGE_CHARS = 300
 const reasonSchema = z.string().trim().min(1).max(MAX_SERVER_MESSAGE_CHARS)
+/** At most this many failing checks are kept from an error body (a readiness answers seventeen). */
+const MAX_FAILING_CHECKS = 50
 const errorBodySchema = z.object({
   message: reasonSchema.optional().catch(undefined),
   error: reasonSchema.optional().catch(undefined),
   code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).optional().catch(undefined),
   // An engineering run's start that may have written its run names it (agents_handler.py start_engineering_run).
   run_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/).optional().catch(undefined),
+  // An engineering Enable's 409 names its failing readiness checks (api/engineeringReadinessApi.ts parses them).
+  checks: z.array(z.unknown()).max(MAX_FAILING_CHECKS).optional().catch(undefined),
 })
 
 interface ServerAnswer {
   readonly message: string | undefined
   readonly code: string | undefined
   readonly runId: string | undefined
+  readonly checks: unknown[] | undefined
 }
+
+const NO_ANSWER: ServerAnswer = { message: undefined, code: undefined, runId: undefined, checks: undefined }
 
 async function serverAnswer(response: Response): Promise<ServerAnswer> {
   try {
     const parsed = errorBodySchema.safeParse(JSON.parse(await response.text()))
     return parsed.success
-      ? { message: parsed.data.message ?? parsed.data.error, code: parsed.data.code, runId: parsed.data.run_id }
-      : { message: undefined, code: undefined, runId: undefined }
+      ? { message: parsed.data.message ?? parsed.data.error, code: parsed.data.code, runId: parsed.data.run_id,
+        checks: parsed.data.checks }
+      : NO_ANSWER
   } catch {
     // No body, a non-JSON body (an API Gateway error page), or a body that was
     // already consumed: the status alone is still a complete answer.
-    return { message: undefined, code: undefined, runId: undefined }
+    return NO_ANSWER
   }
 }
 
@@ -136,9 +145,9 @@ async function serverAnswer(response: Response): Promise<ServerAnswer> {
  * `fetchApi` for a board session (its 401 path ends the APP session).
  */
 export async function apiErrorFor(response: Response): Promise<ApiError> {
-  const { message, code, runId } = await serverAnswer(response)
+  const { message, code, runId, checks } = await serverAnswer(response)
   // An absent message takes ApiError's default (`API Error: {status}`).
-  return new ApiError(response.status, message, code, runId)
+  return new ApiError(response.status, message, code, runId, checks)
 }
 
 async function handleUnauthorized<T>(
@@ -286,9 +295,11 @@ export const api = {
   },
   
   // Data Source Schedules
-  getSourcesStatus: async (sources?: string[]) => {
+  // `scope` 'deployment' (the deployment's Data sources, workspace/configScope.ts) reads the deployment's breakers and
+  // resets one of them, inside a workspace too; the default is the current workspace's.
+  getSourcesStatus: async (sources?: string[], scope: RequestScope = 'workspace') => {
     const params = sources?.length == null ? '' : `?sources=${sources.join(',')}`
-    return normalizeSourcesStatus(await fetchApi<unknown>(`/sources/status${params}`))
+    return normalizeSourcesStatus(await fetchApi<unknown>(`/sources/status${params}`, { method: 'GET' }, scope))
   },
   
   /** Also closes the source's circuit breaker (the response carries `circuit`). The schedule is the deployment's
@@ -298,8 +309,8 @@ export const api = {
   disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, put(), 'deployment'),
 
   /** Admin: close a tripped circuit breaker without turning the schedule back on. */
-  resetSource: async (source: string) =>
-    normalizeResetSource(await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/reset`, post())),
+  resetSource: async (source: string, scope: RequestScope = 'workspace') =>
+    normalizeResetSource(await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/reset`, post(), scope)),
 
   runSource: (source: string, appId?: string) => fetchApi<{
     success: boolean;
@@ -439,13 +450,15 @@ export const api = {
     parseGeneratedCategories,
   ),
 
-  // Integrations
-  getIntegrationStatus: () => fetchApi<IntegrationStatus>('/integrations/status'),
-  
-  updateIntegrationCredentials: (source: string, credentials: Record<string, string>) => 
-    fetchApi<{ success: boolean; message: string }>(`/integrations/${source}/credentials`, put(credentials)),
-  getIntegrationCredentials: (source: string, keys: string[]) =>
-    fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`),
+  // Integrations: the current workspace's credentials by default; `scope` 'deployment' the deployment's, inside a
+  // workspace too (Administration → Data sources, workspace/configScope.ts).
+  getIntegrationStatus: (scope: RequestScope = 'workspace') =>
+    fetchApi<IntegrationStatus>('/integrations/status', { method: 'GET' }, scope),
+
+  updateIntegrationCredentials: (source: string, credentials: Record<string, string>, scope: RequestScope = 'workspace') =>
+    fetchApi<{ success: boolean; message: string }>(`/integrations/${source}/credentials`, put(credentials), scope),
+  getIntegrationCredentials: (source: string, keys: string[], scope: RequestScope = 'workspace') =>
+    fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`, { method: 'GET' }, scope),
   
   // Scrapers (raw list, for the logs page's scraper picker)
   getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),

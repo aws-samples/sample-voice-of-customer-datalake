@@ -2,7 +2,9 @@
  * @fileoverview Source card component for Settings page.
  * @module pages/Settings/SourceCard
  * 
- * Renders a data source configuration card based on plugin manifest.
+ * Renders a data source configuration card based on plugin manifest. Its reads and writes are the current
+ * workspace's, or in the deployment's scope (Administration → Data sources, workspace/configScope.ts) the
+ * deployment's, inside a workspace too: they then never send `X-Workspace-Id`.
  */
 
 import { useState, useId, type ReactNode } from 'react'
@@ -23,6 +25,7 @@ import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import S3ImportExplorer from '../../components/S3ImportExplorer/S3ImportExplorer'
+import { scopedKey, useConfigScope } from '../../workspace/configScope'
 import clsx from 'clsx'
 import type { PluginManifest } from '../../plugins/types'
 
@@ -58,6 +61,9 @@ interface SourceCardProps {
  */
 const RAW_CONFIG_SOURCES: ReadonlySet<string> = new Set(['webscraper'])
 
+/** Which sources have credentials set (`GET /integrations/status`), scoped per request scope (`scopedKey`). */
+const INTEGRATION_STATUS_KEY = ['integration-status'] as const
+
 function AdvancedWhenRaw({ sourceId, children }: Readonly<{ sourceId: string; children: ReactNode }>) {
   const { t } = useTranslation('settings')
   if (!RAW_CONFIG_SOURCES.has(sourceId)) return <>{children}</>
@@ -73,6 +79,7 @@ function AdvancedWhenRaw({ sourceId, children }: Readonly<{ sourceId: string; ch
 export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCardProps) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
+  const scope = useConfigScope()
   const [isExpanded, setIsExpanded] = useState(false)
   const [showSecrets, setShowSecrets] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string>>({})
@@ -84,8 +91,8 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
   // GET /integrations/status is admin-gated server-side; only issue the query
   // for admin users to prevent a 403 for regular authenticated users.
   const { data: integrationStatus } = useQuery({
-    queryKey: ['integration-status'],
-    queryFn: () => api.getIntegrationStatus(),
+    queryKey: scopedKey(INTEGRATION_STATUS_KEY, scope),
+    queryFn: () => api.getIntegrationStatus(scope),
     enabled: isAdmin && !!apiEndpoint,
   })
 
@@ -93,10 +100,10 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
   const { serverStatus, toggleEnabled, resetCircuit } = useSourceSchedule(manifest.id, apiEndpoint)
 
   const updateCredentialsMutation = useMutation({
-    mutationFn: (creds: Record<string, string>) => api.updateIntegrationCredentials(manifest.id, creds),
+    mutationFn: (creds: Record<string, string>) => api.updateIntegrationCredentials(manifest.id, creds, scope),
     onSuccess: () => {
       showSaveSuccess(true)
-      void queryClient.invalidateQueries({ queryKey: ['integration-status'] })
+      void queryClient.invalidateQueries({ queryKey: scopedKey(INTEGRATION_STATUS_KEY, scope) })
     },
   })
 

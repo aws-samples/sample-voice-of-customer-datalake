@@ -14,6 +14,7 @@ import ParticipantSettingsCard from './ParticipantSettingsCard'
 import BoardsSection from './boards/BoardsSection'
 import PlatformWorkspacesSection from './PlatformWorkspacesSection'
 import DeploymentBrandCard from './DeploymentBrandCard'
+import DeploymentDataSources from './DeploymentDataSources'
 import { DimensionsSection, SourcePoliciesSection } from './DataGovernanceSections'
 import { CategoriesSection, DataSourcesSection, UserAdminSection } from './SettingsSections'
 import type { AdminSectionId, AdminTabId } from './adminTabs'
@@ -69,6 +70,8 @@ export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin
   isPlatformAdmin: boolean
 }>) {
   if (tab === 'ai') return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+  // The deployment's Data sources: platform admins only, like its tab (adminTabs.ts), from any address.
+  if (tab === 'data-sources') return isAdmin && isPlatformAdmin ? <DeploymentDataSources apiEndpoint={apiEndpoint} isAdmin /> : null
   if (section === null) return null
   // The platform console: platform admins only, like its tab (adminTabs.ts), with the deployment's default brand.
   if (section === 'workspaces') return isAdmin && isPlatformAdmin && apiEndpoint ? <PlatformConsole /> : null

@@ -69,6 +69,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/spend/*', kind: 'agents' },
   { route: 'agents/connections/*', kind: 'agents' },
   { route: 'agents/skills/*', kind: 'agents' },
+  // The engineering setup guide and its steps (7.50.00, SetupGuide/setupGuidePaths.ts): the agents pack, no agent.
+  { route: 'agents/setup/*', kind: 'agents' },
   // One agent and its tabs (`/agents/<id>/runs`).
   { route: 'agents/:id/*', kind: 'agent', param: { name: 'id', field: 'agentId' } },
   // Knowledge → Company: the company tool pack (context, my objectives, design system).
