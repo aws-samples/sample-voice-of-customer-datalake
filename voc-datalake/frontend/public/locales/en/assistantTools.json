@@ -39,7 +39,9 @@
     "confirmChange": "Ask for changes",
     "openFeedback": "Open the feedback list",
     "openRadar": "Open Radar",
-    "openRadarSettings": "Open Administration → Sources → Radar"
+    "openRadarSettings": "Open Administration → Sources → Radar",
+    "openCategories": "Open Administration → Taxonomy → Categories",
+    "openWorkspaceCategories": "Open Workspace settings → Categories"
   },
   "preview": {
     "participants": {
@@ -178,6 +180,32 @@
       "looking": "Looking for the saved Understand flow…",
       "notSaved": "No Understand flow is saved yet, so the knowledge pack of {{connection}} can’t be refreshed.",
       "createNote": "Approve saves the Understand flow from its template and starts nothing. Then ask the assistant again to start the refresh."
+    },
+    "saveCategories": {
+      "label": "The categories to add",
+      "reading": "Reading the categories configured now…",
+      "readFailed": "The categories configured now could not be read, so Approve saves nothing. Decline, and ask again later.",
+      "noneConfigured": "No categories are configured yet: these become the categories new reviews are classified into.",
+      "someConfigured": "Categories configured now: {{number, number}}. These are added after them, and none of them changes.",
+      "category": "Category {{number, number}}",
+      "labelField": "Label",
+      "storedAs": "Stored as {{name}}",
+      "productField": "Product or area (optional)",
+      "subcategories": "Subcategories",
+      "subcategoryField": "Subcategory {{number, number}}",
+      "removeSubcategory": "Remove the subcategory {{label}}",
+      "addSubcategory": "Add a subcategory",
+      "removeCategory": "Leave out {{label}}",
+      "fixFirst": "Correct the marked fields to approve.",
+      "intoWorkspace": "Approve adds them to this workspace’s categories. New reviews are classified into them; reviews already in change only with a reprocess.",
+      "intoDeployment": "Approve adds them to the deployment’s categories (outside every workspace). New reviews are classified into them; reviews already in change only with a reprocess.",
+      "problems": {
+        "label": "1-64 characters, without “#”.",
+        "product": "At most 120 characters.",
+        "repeated": "This name is there twice: keep each name once.",
+        "taken": "A category with this name is configured already: leave it out.",
+        "none": "Keep at least one category."
+      }
     },
     "radar": {
       "notTracked": "Not tracked",
@@ -459,6 +487,11 @@
     },
     "update_company_memory": {
       "title": "Change a company memory"
+    },
+    "save_categories": {
+      "title": "Add categories",
+      "titleWith_one": "Add {{count, number}} category",
+      "titleWith_other": "Add {{count, number}} categories"
     },
     "forget_memory": {
       "title": "Forget a memory"

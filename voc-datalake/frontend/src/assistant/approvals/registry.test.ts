@@ -117,6 +117,18 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     good: [{ source: 'app_reviews_ios' }, { source: 'synthetic_reviews' }],
     bad: [{}, { source: 'webscraper' }, { source: '../x' }, { source: 'app_reviews_ios', app_id: '1' }],
   },
+  save_categories: {
+    good: [
+      { categories: [{ label: 'Delivery', subcategories: ['Late delivery', 'Damaged parcel'] }] },
+      { categories: [{ label: 'Billing', product: 'Checkout', subcategories: [] }] },
+    ],
+    bad: [
+      {}, { categories: [] }, { categories: [{ label: 'Delivery' }] }, { categories: [{ label: 'a#b', subcategories: [] }] },
+      { categories: [{ label: 'Delivery', subcategories: [] }, { label: 'delivery', subcategories: [] }] },
+      { categories: [{ label: 'Delivery', subcategories: ['a', 'b', 'c', 'd', 'e', 'f'] }] },
+      { categories: Array.from({ length: 11 }, (_, i) => ({ label: `C${String(i)}`, subcategories: [] })) },
+    ],
+  },
   save_radar_brands: {
     good: [{ brands: [] }, { brands: [{ label: 'Acme Air', domains: ['acme.example'] }] }, { brands: [{ label: 'Example Air' }] }],
     bad: [{}, { brands: [{ label: 'a/b' }] }, { brands: [{ label: 'Acme' }, { label: 'acme' }] }, { brands: [{ label: 'A', domains: ['localhost'] }] }],

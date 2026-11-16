@@ -39,7 +39,9 @@
     "confirmChange": "Pedir alterações",
     "openFeedback": "Abrir a lista de feedback",
     "openRadar": "Abrir Radar",
-    "openRadarSettings": "Abrir Administração → Fontes → Radar"
+    "openRadarSettings": "Abrir Administração → Fontes → Radar",
+    "openCategories": "Abrir Administração → Taxonomia → Categorias",
+    "openWorkspaceCategories": "Abrir Configurações do espaço de trabalho → Categorias"
   },
   "preview": {
     "participants": {
@@ -184,6 +186,32 @@
       "looking": "Procurando o fluxo Understand salvo…",
       "notSaved": "Ainda não há um fluxo Understand salvo, por isso o pacote de conhecimento de {{connection}} não pode ser atualizado.",
       "createNote": "Aprovar salva o fluxo Understand a partir do modelo e não inicia nada. Depois, peça novamente ao assistente para iniciar a atualização."
+    },
+    "saveCategories": {
+      "label": "As categorias a adicionar",
+      "reading": "Lendo as categorias configuradas agora…",
+      "readFailed": "Não foi possível ler as categorias configuradas agora, então Aprovar não salva nada. Recuse e peça novamente mais tarde.",
+      "noneConfigured": "Ainda não há categorias configuradas: estas passam a ser as categorias em que as novas avaliações são classificadas.",
+      "someConfigured": "Categorias configuradas agora: {{number, number}}. Estas são adicionadas depois delas, e nenhuma delas muda.",
+      "category": "Categoria {{number, number}}",
+      "labelField": "Rótulo",
+      "storedAs": "Salva como {{name}}",
+      "productField": "Produto ou área (opcional)",
+      "subcategories": "Subcategorias",
+      "subcategoryField": "Subcategoria {{number, number}}",
+      "removeSubcategory": "Remover a subcategoria {{label}}",
+      "addSubcategory": "Adicionar uma subcategoria",
+      "removeCategory": "Deixar de fora {{label}}",
+      "fixFirst": "Corrija os campos marcados para aprovar.",
+      "intoWorkspace": "Aprovar as adiciona às categorias deste espaço de trabalho. As novas avaliações são classificadas nelas; as que já existem só mudam com um reprocessamento.",
+      "intoDeployment": "Aprovar as adiciona às categorias da implantação (fora de todos os espaços de trabalho). As novas avaliações são classificadas nelas; as que já existem só mudam com um reprocessamento.",
+      "problems": {
+        "label": "De 1 a 64 caracteres, sem \"#\".",
+        "product": "No máximo 120 caracteres.",
+        "repeated": "Este nome aparece duas vezes: use cada nome uma só vez.",
+        "taken": "Já existe uma categoria configurada com este nome: deixe-a de fora.",
+        "none": "Mantenha pelo menos uma categoria."
+      }
     },
     "radar": {
       "notTracked": "Não acompanhada",
@@ -473,6 +501,12 @@
     },
     "update_company_memory": {
       "title": "Alterar uma memória da empresa"
+    },
+    "save_categories": {
+      "title": "Adicionar categorias",
+      "titleWith_one": "Adicionar {{count, number}} categoria",
+      "titleWith_other": "Adicionar {{count, number}} categorias",
+      "titleWith_many": "Adicionar {{count, number}} categorias"
     },
     "forget_memory": {
       "title": "Esquecer uma memória"

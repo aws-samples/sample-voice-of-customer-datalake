@@ -33,6 +33,7 @@ const VALID: Record<string, Record<string, unknown>> = {
   ...NEW_TOOL_VALID_ARGS,
   run_source: { source: 'app_reviews_ios' },
   save_radar_brands: { brands: [{ label: 'Acme Air', domains: ['acme.example'] }] },
+  save_categories: { categories: [{ label: 'Delivery', subcategories: ['Late delivery'] }] },
   run_radar_scan: {},
   set_source_enabled: { source: 'webscraper', enabled: true },
   import_reviews: { source_name: 'Survey', items: [{ text: 'Checkout keeps failing.' }] },

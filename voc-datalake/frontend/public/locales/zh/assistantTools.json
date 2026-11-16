@@ -39,7 +39,9 @@
     "confirmChange": "请求修改",
     "openFeedback": "打开反馈列表",
     "openRadar": "打开 Radar",
-    "openRadarSettings": "打开 管理 → 来源 → 雷达"
+    "openRadarSettings": "打开 管理 → 来源 → 雷达",
+    "openCategories": "打开 管理 → 分类体系 → 分类",
+    "openWorkspaceCategories": "打开工作区设置中的分类"
   },
   "preview": {
     "participants": {
@@ -178,6 +180,32 @@
       "looking": "正在查找已保存的 Understand 流程…",
       "notSaved": "尚未保存 Understand 流程，因此无法刷新 {{connection}} 的知识包。",
       "createNote": "批准会根据模板保存 Understand 流程，但不会启动任何内容。之后请再次让助手启动刷新。"
+    },
+    "saveCategories": {
+      "label": "要添加的分类",
+      "reading": "正在读取当前已配置的分类…",
+      "readFailed": "无法读取当前已配置的分类，因此“批准”不会保存任何内容。请拒绝，稍后再请求。",
+      "noneConfigured": "尚未配置任何分类：这些将成为新评价归入的分类。",
+      "someConfigured": "当前已配置的分类：{{number, number}} 个。这些将添加在它们之后，现有分类均不会改变。",
+      "category": "分类 {{number, number}}",
+      "labelField": "标签",
+      "storedAs": "保存为 {{name}}",
+      "productField": "产品或领域（可选）",
+      "subcategories": "子分类",
+      "subcategoryField": "子分类 {{number, number}}",
+      "removeSubcategory": "移除子分类 {{label}}",
+      "addSubcategory": "添加子分类",
+      "removeCategory": "不添加 {{label}}",
+      "fixFirst": "请更正标出的字段后再批准。",
+      "intoWorkspace": "批准后，它们将添加到此工作区的分类中。新评价会归入这些分类；已有评价只有在重新处理后才会改变。",
+      "intoDeployment": "批准后，它们将添加到部署的分类中（不属于任何工作区）。新评价会归入这些分类；已有评价只有在重新处理后才会改变。",
+      "problems": {
+        "label": "1 到 64 个字符，不能包含“#”。",
+        "product": "最多 120 个字符。",
+        "repeated": "此名称出现了两次：每个名称只能用一次。",
+        "taken": "已配置了同名分类：请不要添加它。",
+        "none": "请至少保留一个分类。"
+      }
     },
     "radar": {
       "notTracked": "未跟踪",
@@ -459,6 +487,11 @@
     },
     "update_company_memory": {
       "title": "更改公司记忆"
+    },
+    "save_categories": {
+      "title": "添加分类",
+      "titleWith_one": "添加 {{count, number}} 个分类",
+      "titleWith_other": "添加 {{count, number}} 个分类"
     },
     "forget_memory": {
       "title": "忘记记忆"

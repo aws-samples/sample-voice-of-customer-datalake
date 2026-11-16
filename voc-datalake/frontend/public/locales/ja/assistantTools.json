@@ -39,7 +39,9 @@
     "confirmChange": "変更を依頼",
     "openFeedback": "フィードバック一覧を開く",
     "openRadar": "Radar を開く",
-    "openRadarSettings": "管理 → ソース → レーダー を開く"
+    "openRadarSettings": "管理 → ソース → レーダー を開く",
+    "openCategories": "管理 → 分類体系 → カテゴリ を開く",
+    "openWorkspaceCategories": "ワークスペースの設定でカテゴリを開く"
   },
   "preview": {
     "participants": {
@@ -178,6 +180,32 @@
       "looking": "保存済みの Understand フローを探しています…",
       "notSaved": "Understand フローがまだ保存されていないため、{{connection}} のナレッジパックを更新できません。",
       "createNote": "承認すると、テンプレートから Understand フローが保存されますが、何も開始されません。その後、アシスタントにもう一度更新の開始を依頼してください。"
+    },
+    "saveCategories": {
+      "label": "追加するカテゴリ",
+      "reading": "現在設定されているカテゴリを読み込み中…",
+      "readFailed": "現在設定されているカテゴリを読み込めなかったため、承認しても何も保存されません。却下して、後でもう一度依頼してください。",
+      "noneConfigured": "カテゴリはまだ設定されていません。これらが、新しいレビューを分類するカテゴリになります。",
+      "someConfigured": "現在設定されているカテゴリ: {{number, number}} 件。これらはその後ろに追加され、既存のカテゴリは変わりません。",
+      "category": "カテゴリ {{number, number}}",
+      "labelField": "ラベル",
+      "storedAs": "{{name}} として保存",
+      "productField": "製品または領域（任意）",
+      "subcategories": "サブカテゴリ",
+      "subcategoryField": "サブカテゴリ {{number, number}}",
+      "removeSubcategory": "サブカテゴリ {{label}} を削除",
+      "addSubcategory": "サブカテゴリを追加",
+      "removeCategory": "{{label}} を除外",
+      "fixFirst": "承認するには、マークされた項目を修正してください。",
+      "intoWorkspace": "承認すると、このワークスペースのカテゴリに追加されます。新しいレビューはこれらに分類されます。既存のレビューは再処理した場合にのみ変わります。",
+      "intoDeployment": "承認すると、デプロイのカテゴリ（どのワークスペースにも属さないもの）に追加されます。新しいレビューはこれらに分類されます。既存のレビューは再処理した場合にのみ変わります。",
+      "problems": {
+        "label": "1～64 文字で、「#」は使えません。",
+        "product": "120 文字以内です。",
+        "repeated": "この名前が 2 回あります。名前はそれぞれ 1 回にしてください。",
+        "taken": "この名前のカテゴリはすでに設定されています。除外してください。",
+        "none": "カテゴリを少なくとも 1 件残してください。"
+      }
     },
     "radar": {
       "notTracked": "追跡していません",
@@ -459,6 +487,11 @@
     },
     "update_company_memory": {
       "title": "会社のメモリを変更"
+    },
+    "save_categories": {
+      "title": "カテゴリを追加",
+      "titleWith_one": "カテゴリを {{count, number}} 件追加",
+      "titleWith_other": "カテゴリを {{count, number}} 件追加"
     },
     "forget_memory": {
       "title": "メモリを削除"

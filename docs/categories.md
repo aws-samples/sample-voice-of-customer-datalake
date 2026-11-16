@@ -30,6 +30,32 @@ New feedback is classified against the current configuration by the processor
 (prompt helpers in `lambda/shared/categorization.py`). Changing the
 configuration does not touch stored feedback — use [reprocessing](#reprocessing-existing-feedback).
 
+### Proposed by the assistant (7.50.00)
+
+When you ask the AI assistant for a new data source and no categories are configured, it asks what you review and
+proposes a category set first ([scrapers.md](scrapers.md), "Categories first"). Once you agree on the set it proposes
+`save_categories`, an approval card. The tool is offered to administrators only (the `admins` group), like the data
+source tools the rule comes before, and the route checks the person again at Approve.
+
+- **The card is the editor.** It shows each proposed category (at most 10 a card) with its label, the product or area
+  it belongs to and its subcategories, all editable. You can rename any of them, add or remove subcategories (at most 5 each) and leave a
+  category out. Under each label it shows the stored name, the label lower-cased with `_` for spaces, as the
+  categories editor makes it. Approve is held while a field is not right (a label of 1-64 characters without `#`, a
+  product of at most 120, each name once) or while the card is still reading the categories configured now.
+- **It adds, never replaces.** Approve sends the stored categories back as it read them, followed by the new ones,
+  through the categories editor's own route (`PUT /settings/categories`): the current workspace's categories inside a
+  workspace (with `X-Workspace-Id`, for its admins), the deployment's outside one. A category already configured is
+  never changed, and a proposed name that is configured already is refused, both by the tool's check before the card
+  and on the card. The label becomes the category's `description` (what every screen shows), and each category and
+  subcategory gets a new `cat_` / `sub_` id.
+- **It saves nothing when the categories changed.** If someone saved categories after the card read them, Approve
+  saves nothing and tells the assistant to read them again.
+- **A plan never saves categories.** `save_categories` is one of the writes only an approval card in the chat runs
+  ([assistant-plan-mode.md](assistant-plan-mode.md)), because you edit the set on its card.
+
+New reviews are classified into the saved categories. Reviews that are already stored keep their category until a
+[reprocess](#reprocessing-existing-feedback).
+
 ## Category access (who sees which reviews)
 
 One row per restricted user in `voc-aggregates`:

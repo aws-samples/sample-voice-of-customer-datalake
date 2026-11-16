@@ -161,10 +161,18 @@ describe('toolGuidance', () => {
 
   it('asks for categories before a new data source on every page, the project page (a plan step) included', () => {
     for (const kind of ['project', 'scrapers', 'radar', 'dashboard'] as const) {
-      const guidance = toolGuidance(selectToolset(catalogue, options(kind, { isAdmin: true })));
+      const set = selectToolset(catalogue, options(kind, { isAdmin: true }));
+      const guidance = toolGuidance(set);
       expect(guidance).toContain('- Categories first (administrators): before proposing a NEW data source');
-      expect(guidance).toContain('You cannot save categories yourself.');
+      expect(guidance).toContain('propose save_categories with it');
+      // (the save is the categories-first rule's own: an administrator has it wherever the rule is)
+      expect(set.byName.has('save_categories')).toBe(true);
     }
+  });
+
+  it('offers save_categories to administrators only', () => {
+    expect(selectToolset(catalogue, options('dashboard')).byName.has('save_categories')).toBe(false);
+    expect(selectToolset(catalogue, options('dashboard', { isAdmin: true })).byName.has('save_categories')).toBe(true);
   });
 
   it('mentions web search only when it is offered', () => {

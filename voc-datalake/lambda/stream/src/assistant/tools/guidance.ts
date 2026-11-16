@@ -52,8 +52,8 @@ const PLAN_GUIDANCE = [
  * Categories before a new data source (owner request, 7.40.00): the categories classify every review a source
  * brings in, and a workspace with none classifies them into generic defaults. Part of `core` because a scraper is
  * asked for on any page, the project page included (as a plan step: plan_catalogue shows only a tool's first
- * sentence, so the create tools' own descriptions are not enough). The assistant has no categories write: the
- * approved set is saved in the categories editor (docs/categories.md) until a save tool exists.
+ * sentence, so the create tools' own descriptions are not enough). The agreed set is saved with `save_categories`
+ * (7.50.00), whose approval card the person edits before Approve (docs/categories.md "Proposed by the assistant").
  */
 const CATEGORIES_FIRST_GUIDANCE = [
   '- Categories first (administrators): before proposing a NEW data source (create_scraper or create_app_connector, '
@@ -63,11 +63,11 @@ const CATEGORIES_FIRST_GUIDANCE = [
     + 'are, which feedback matters most; say what the project or company context already tells you and ask them to '
     + 'confirm it), then propose a category set: 6-10 categories, each with a short label, the product or area it '
     + 'belongs to, one line on what it covers, and 3-5 subcategory labels.',
-  '- You cannot save categories yourself. Once the user approves the set, ask them to save it in the categories '
-    + 'editor (Workspace settings → Categories in a workspace, otherwise Administration → Taxonomy → '
-    + 'Categories; it makes each id from the label) and to tell you when it is saved; then call list_categories again '
-    + 'and propose the source. If they want the source first, propose it and say its reviews get generic default '
-    + 'categories until categories are saved (a reprocess re-classifies them later).',
+  '- Once the user agrees on the set, propose save_categories with it (it only adds new categories: leave out one '
+    + 'configured already). Its approval card lets them edit the labels, products and subcategories before they '
+    + 'approve; once its result says "executed", call list_categories again and propose the source. If they want the '
+    + 'source first, propose it and say its reviews get generic default categories until categories are saved (a '
+    + 'reprocess re-classifies them later).',
 ].join('\n');
 
 const PACK_GUIDANCE: Record<ToolPack, string> = {

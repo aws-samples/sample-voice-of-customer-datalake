@@ -104,13 +104,14 @@ export const PLAN_CONTROL_TOOLS = ['propose_plan', 'cancel_plan'] as const;
  * part 2: drafts are for people, agents revise directly). `set_prototype_walkthrough` writes the steps the
  * card previews to the user, against the version they are looking at (part 1). `propose_knowledge_refresh` starts an
  * engineering run, which only an administrator's Approve on its own card may do (owner decision: never pre-approved,
- * never started by a plan), and its executor re-checks the Understand flow the card showed. They stay ordinary chat
- * writes.
+ * never started by a plan), and its executor re-checks the Understand flow the card showed. `save_categories` saves
+ * the categories as the person edited them on its card, against the stored ones the card read (docs/categories.md).
+ * They stay ordinary chat writes.
  */
 export const CARD_ONLY_WRITE_TOOLS = [
   'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
   'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants', 'draft_prototype_revision',
-  'set_prototype_walkthrough', 'propose_knowledge_refresh',
+  'set_prototype_walkthrough', 'propose_knowledge_refresh', 'save_categories',
 ] as const;
 const NOT_A_PLAN_WRITE: ReadonlySet<string> = new Set([...PLAN_CONTROL_TOOLS, ...CARD_ONLY_WRITE_TOOLS]);
 

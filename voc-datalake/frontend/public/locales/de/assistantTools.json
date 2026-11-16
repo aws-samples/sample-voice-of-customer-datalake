@@ -39,7 +39,9 @@
     "confirmChange": "Änderungen anfordern",
     "openFeedback": "Feedback-Liste öffnen",
     "openRadar": "Radar öffnen",
-    "openRadarSettings": "Administration → Quellen → Radar öffnen"
+    "openRadarSettings": "Administration → Quellen → Radar öffnen",
+    "openCategories": "Administration → Taxonomie → Kategorien öffnen",
+    "openWorkspaceCategories": "Einstellungen des Arbeitsbereichs → Kategorien öffnen"
   },
   "preview": {
     "participants": {
@@ -178,6 +180,32 @@
       "looking": "Der gespeicherte Understand-Ablauf wird gesucht…",
       "notSaved": "Es ist noch kein Understand-Ablauf gespeichert, daher kann das Wissenspaket von {{connection}} nicht aktualisiert werden.",
       "createNote": "Die Freigabe speichert den Understand-Ablauf aus seiner Vorlage und startet nichts. Bitten Sie den Assistenten danach erneut, die Aktualisierung zu starten."
+    },
+    "saveCategories": {
+      "label": "Die hinzuzufügenden Kategorien",
+      "reading": "Die jetzt eingerichteten Kategorien werden gelesen…",
+      "readFailed": "Die jetzt eingerichteten Kategorien konnten nicht gelesen werden, daher speichert „Genehmigen“ nichts. Lehnen Sie ab und fragen Sie später erneut.",
+      "noneConfigured": "Noch sind keine Kategorien eingerichtet: Diese werden die Kategorien, in die neue Bewertungen eingeordnet werden.",
+      "someConfigured": "Jetzt eingerichtete Kategorien: {{number, number}}. Diese werden danach hinzugefügt, und keine von ihnen ändert sich.",
+      "category": "Kategorie {{number, number}}",
+      "labelField": "Bezeichnung",
+      "storedAs": "Gespeichert als {{name}}",
+      "productField": "Produkt oder Bereich (optional)",
+      "subcategories": "Unterkategorien",
+      "subcategoryField": "Unterkategorie {{number, number}}",
+      "removeSubcategory": "Unterkategorie {{label}} entfernen",
+      "addSubcategory": "Unterkategorie hinzufügen",
+      "removeCategory": "{{label}} weglassen",
+      "fixFirst": "Korrigieren Sie die markierten Felder, um zu genehmigen.",
+      "intoWorkspace": "„Genehmigen“ fügt sie den Kategorien dieses Arbeitsbereichs hinzu. Neue Bewertungen werden in sie eingeordnet; vorhandene ändern sich nur durch eine Neuverarbeitung.",
+      "intoDeployment": "„Genehmigen“ fügt sie den Kategorien der Bereitstellung hinzu (außerhalb aller Arbeitsbereiche). Neue Bewertungen werden in sie eingeordnet; vorhandene ändern sich nur durch eine Neuverarbeitung.",
+      "problems": {
+        "label": "1–64 Zeichen, ohne „#“.",
+        "product": "Höchstens 120 Zeichen.",
+        "repeated": "Dieser Name kommt zweimal vor: Verwenden Sie jeden Namen nur einmal.",
+        "taken": "Eine Kategorie mit diesem Namen ist bereits eingerichtet: Lassen Sie sie weg.",
+        "none": "Behalten Sie mindestens eine Kategorie."
+      }
     },
     "radar": {
       "notTracked": "Nicht verfolgt",
@@ -459,6 +487,11 @@
     },
     "update_company_memory": {
       "title": "Unternehmenserinnerung ändern"
+    },
+    "save_categories": {
+      "title": "Kategorien hinzufügen",
+      "titleWith_one": "{{count, number}} Kategorie hinzufügen",
+      "titleWith_other": "{{count, number}} Kategorien hinzufügen"
     },
     "forget_memory": {
       "title": "Erinnerung vergessen"

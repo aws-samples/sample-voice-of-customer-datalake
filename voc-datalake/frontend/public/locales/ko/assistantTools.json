@@ -39,7 +39,9 @@
     "confirmChange": "변경 요청",
     "openFeedback": "피드백 목록 열기",
     "openRadar": "Radar 열기",
-    "openRadarSettings": "관리 → 소스 → 레이더 열기"
+    "openRadarSettings": "관리 → 소스 → 레이더 열기",
+    "openCategories": "관리 → 분류 체계 → 카테고리 열기",
+    "openWorkspaceCategories": "워크스페이스 설정의 카테고리 열기"
   },
   "preview": {
     "participants": {
@@ -178,6 +180,32 @@
       "looking": "저장된 Understand 흐름을 찾는 중…",
       "notSaved": "아직 저장된 Understand 흐름이 없어 {{connection}}의 지식 팩을 새로 고칠 수 없습니다.",
       "createNote": "승인하면 템플릿에서 Understand 흐름을 저장하며 아무것도 시작하지 않습니다. 그런 다음 어시스턴트에게 새로 고침을 다시 요청하세요."
+    },
+    "saveCategories": {
+      "label": "추가할 카테고리",
+      "reading": "현재 설정된 카테고리를 읽는 중…",
+      "readFailed": "현재 설정된 카테고리를 읽을 수 없어 승인해도 아무것도 저장되지 않습니다. 거절하고 나중에 다시 요청하세요.",
+      "noneConfigured": "아직 설정된 카테고리가 없습니다. 이 카테고리들이 새 리뷰를 분류할 카테고리가 됩니다.",
+      "someConfigured": "현재 설정된 카테고리: {{number, number}}개. 이 카테고리들은 그 뒤에 추가되며, 기존 카테고리는 바뀌지 않습니다.",
+      "category": "카테고리 {{number, number}}",
+      "labelField": "레이블",
+      "storedAs": "{{name}}(으)로 저장",
+      "productField": "제품 또는 영역(선택)",
+      "subcategories": "하위 카테고리",
+      "subcategoryField": "하위 카테고리 {{number, number}}",
+      "removeSubcategory": "하위 카테고리 {{label}} 삭제",
+      "addSubcategory": "하위 카테고리 추가",
+      "removeCategory": "{{label}} 제외",
+      "fixFirst": "승인하려면 표시된 항목을 수정하세요.",
+      "intoWorkspace": "승인하면 이 워크스페이스의 카테고리에 추가됩니다. 새 리뷰는 이 카테고리로 분류되며, 이미 있는 리뷰는 재처리해야만 바뀝니다.",
+      "intoDeployment": "승인하면 배포의 카테고리(모든 워크스페이스 밖)에 추가됩니다. 새 리뷰는 이 카테고리로 분류되며, 이미 있는 리뷰는 재처리해야만 바뀝니다.",
+      "problems": {
+        "label": "1~64자이며 \"#\"는 쓸 수 없습니다.",
+        "product": "최대 120자입니다.",
+        "repeated": "이 이름이 두 번 있습니다. 이름은 하나씩만 쓰세요.",
+        "taken": "이 이름의 카테고리가 이미 설정되어 있습니다. 제외하세요.",
+        "none": "카테고리를 하나 이상 남겨 두세요."
+      }
     },
     "radar": {
       "notTracked": "추적 안 함",
@@ -459,6 +487,11 @@
     },
     "update_company_memory": {
       "title": "회사 메모리 변경"
+    },
+    "save_categories": {
+      "title": "카테고리 추가",
+      "titleWith_one": "카테고리 {{count, number}}개 추가",
+      "titleWith_other": "카테고리 {{count, number}}개 추가"
     },
     "forget_memory": {
       "title": "메모리 삭제"

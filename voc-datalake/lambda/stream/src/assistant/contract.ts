@@ -129,7 +129,7 @@ export const SERVER_TOOLS = {
 
 /** Write tools: proposed by the model, approved by a human, executed by the SPA. */
 export const CLIENT_TOOLS = {
-  core: ['create_project', 'remember', 'update_company_memory', 'propose_plan', 'cancel_plan'],
+  core: ['create_project', 'remember', 'update_company_memory', 'save_categories', 'propose_plan', 'cancel_plan'],
   insights: ['set_problem_resolved', 'set_feedback_category'],
   project: [
     'update_document',
@@ -176,6 +176,9 @@ export const DESTRUCTIVE_CLIENT_TOOLS: readonly ClientToolName[] = ['delete_docu
 
 /** Client tools that need the `admins` group (on top of ADMIN_ONLY_PACKS). */
 export const ADMIN_ONLY_CLIENT_TOOLS: readonly ClientToolName[] = [
+  // PUT /settings/categories is an administrator's (require_settings_admin: in a workspace its admins, else the
+  // deployment's): offered to the `admins` group only, like the data source tools the categories-first rule precedes.
+  'save_categories',
   'run_scraper',
   'create_scraper',
   'update_scraper',

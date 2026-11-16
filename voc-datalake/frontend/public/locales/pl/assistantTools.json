@@ -39,7 +39,9 @@
     "confirmChange": "Poproś o zmiany",
     "openFeedback": "Otwórz listę opinii",
     "openRadar": "Otwórz Radar",
-    "openRadarSettings": "Otwórz Administracja → Źródła → Radar"
+    "openRadarSettings": "Otwórz Administracja → Źródła → Radar",
+    "openCategories": "Otwórz Administracja → Taksonomia → Kategorie",
+    "openWorkspaceCategories": "Otwórz Ustawienia obszaru roboczego → Kategorie"
   },
   "preview": {
     "participants": {
@@ -173,6 +175,32 @@
       "looking": "Szukanie zapisanego przepływu Understand…",
       "notSaved": "Nie zapisano jeszcze przepływu Understand, więc nie można odświeżyć pakietu wiedzy repozytorium {{connection}}.",
       "createNote": "Zatwierdzenie zapisuje przepływ Understand z jego szablonu i niczego nie uruchamia. Potem poproś asystenta ponownie o uruchomienie odświeżenia."
+    },
+    "saveCategories": {
+      "label": "Kategorie do dodania",
+      "reading": "Wczytywanie kategorii skonfigurowanych teraz…",
+      "readFailed": "Nie udało się wczytać kategorii skonfigurowanych teraz, więc Zatwierdź niczego nie zapisze. Odrzuć i poproś ponownie później.",
+      "noneConfigured": "Nie skonfigurowano jeszcze żadnych kategorii: te staną się kategoriami, do których trafiają nowe opinie.",
+      "someConfigured": "Kategorie skonfigurowane teraz: {{number, number}}. Te zostaną dodane po nich i żadna z nich się nie zmieni.",
+      "category": "Kategoria {{number, number}}",
+      "labelField": "Etykieta",
+      "storedAs": "Zapisana jako {{name}}",
+      "productField": "Produkt lub obszar (opcjonalnie)",
+      "subcategories": "Podkategorie",
+      "subcategoryField": "Podkategoria {{number, number}}",
+      "removeSubcategory": "Usuń podkategorię {{label}}",
+      "addSubcategory": "Dodaj podkategorię",
+      "removeCategory": "Pomiń {{label}}",
+      "fixFirst": "Popraw zaznaczone pola, aby zatwierdzić.",
+      "intoWorkspace": "Zatwierdź dodaje je do kategorii tego obszaru roboczego. Nowe opinie są do nich przypisywane; opinie już zapisane zmieniają się tylko po ponownym przetworzeniu.",
+      "intoDeployment": "Zatwierdź dodaje je do kategorii wdrożenia (poza wszystkimi obszarami roboczymi). Nowe opinie są do nich przypisywane; opinie już zapisane zmieniają się tylko po ponownym przetworzeniu.",
+      "problems": {
+        "label": "Od 1 do 64 znaków, bez „#”.",
+        "product": "Najwyżej 120 znaków.",
+        "repeated": "Ta nazwa występuje dwa razy: użyj każdej nazwy tylko raz.",
+        "taken": "Kategoria o tej nazwie jest już skonfigurowana: pomiń ją.",
+        "none": "Zostaw co najmniej jedną kategorię."
+      }
     },
     "radar": {
       "notTracked": "Nieśledzona",
@@ -487,6 +515,13 @@
     },
     "update_company_memory": {
       "title": "Zmień wspomnienie firmy"
+    },
+    "save_categories": {
+      "title": "Dodaj kategorie",
+      "titleWith_one": "Dodaj {{count, number}} kategorię",
+      "titleWith_few": "Dodaj {{count, number}} kategorie",
+      "titleWith_many": "Dodaj {{count, number}} kategorii",
+      "titleWith_other": "Dodaj {{count, number}} kategorii"
     },
     "forget_memory": {
       "title": "Zapomnij wspomnienie"

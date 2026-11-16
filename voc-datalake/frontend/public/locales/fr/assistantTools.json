@@ -39,7 +39,9 @@
     "confirmChange": "Demander des modifications",
     "openFeedback": "Ouvrir la liste des retours",
     "openRadar": "Ouvrir Radar",
-    "openRadarSettings": "Ouvrir Administration → Sources → Radar"
+    "openRadarSettings": "Ouvrir Administration → Sources → Radar",
+    "openCategories": "Ouvrir Administration → Taxonomie → Catégories",
+    "openWorkspaceCategories": "Ouvrir Réglages de l’espace de travail → Catégories"
   },
   "preview": {
     "participants": {
@@ -184,6 +186,32 @@
       "looking": "Recherche du flux Understand enregistré…",
       "notSaved": "Aucun flux Understand n’est encore enregistré : le dossier de connaissances de {{connection}} ne peut pas être actualisé.",
       "createNote": "Approuver enregistre le flux Understand à partir de son modèle et ne lance rien. Demandez ensuite à nouveau à l’assistant de lancer l’actualisation."
+    },
+    "saveCategories": {
+      "label": "Les catégories à ajouter",
+      "reading": "Lecture des catégories configurées en ce moment…",
+      "readFailed": "Les catégories configurées en ce moment n’ont pas pu être lues : Approuver n’enregistre donc rien. Refusez, puis redemandez plus tard.",
+      "noneConfigured": "Aucune catégorie n’est encore configurée : celles-ci deviennent les catégories dans lesquelles les nouveaux avis sont classés.",
+      "someConfigured": "Catégories configurées en ce moment : {{number, number}}. Celles-ci sont ajoutées après elles, et aucune d’elles ne change.",
+      "category": "Catégorie {{number, number}}",
+      "labelField": "Libellé",
+      "storedAs": "Enregistrée sous {{name}}",
+      "productField": "Produit ou domaine (facultatif)",
+      "subcategories": "Sous-catégories",
+      "subcategoryField": "Sous-catégorie {{number, number}}",
+      "removeSubcategory": "Retirer la sous-catégorie {{label}}",
+      "addSubcategory": "Ajouter une sous-catégorie",
+      "removeCategory": "Laisser de côté {{label}}",
+      "fixFirst": "Corrigez les champs signalés pour approuver.",
+      "intoWorkspace": "Approuver les ajoute aux catégories de cet espace de travail. Les nouveaux avis y sont classés ; ceux déjà présents ne changent qu’avec un retraitement.",
+      "intoDeployment": "Approuver les ajoute aux catégories du déploiement (hors de tout espace de travail). Les nouveaux avis y sont classés ; ceux déjà présents ne changent qu’avec un retraitement.",
+      "problems": {
+        "label": "De 1 à 64 caractères, sans « # ».",
+        "product": "120 caractères au plus.",
+        "repeated": "Ce nom figure deux fois : gardez chaque nom une seule fois.",
+        "taken": "Une catégorie de ce nom est déjà configurée : laissez-la de côté.",
+        "none": "Gardez au moins une catégorie."
+      }
     },
     "radar": {
       "notTracked": "Non suivie",
@@ -473,6 +501,12 @@
     },
     "update_company_memory": {
       "title": "Modifier une mémoire d'entreprise"
+    },
+    "save_categories": {
+      "title": "Ajouter des catégories",
+      "titleWith_one": "Ajouter {{count, number}} catégorie",
+      "titleWith_other": "Ajouter {{count, number}} catégories",
+      "titleWith_many": "Ajouter {{count, number}} catégories"
     },
     "forget_memory": {
       "title": "Oublier une mémoire"

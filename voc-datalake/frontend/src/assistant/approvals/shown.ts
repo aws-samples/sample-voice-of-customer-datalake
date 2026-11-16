@@ -21,6 +21,9 @@
  * - `knowledgeRefresh` — what the `propose_knowledge_refresh` card's Approve does as it shows it right now (the
  *   Understand flow and revision, the commit and the language; or the save of the flow from its template); the
  *   executor re-reads the flows and does exactly that, or nothing.
+ * - `categories` — the categories the `save_categories` card shows right now, as the person edited them, and the
+ *   fingerprint of the stored categories it read; the executor adds exactly that set, or refuses when the stored
+ *   categories changed since (or the set was not valid yet).
  *
  * The record reaches previews through {@link ShownContext} and executors
  * through the execution context (see {@link shownOf}) — the shared
@@ -33,6 +36,7 @@ import i18n from 'i18next'
 import { getDaysFromRange } from '../../api/baseUrl'
 import { useConfigStore } from '../../store/configStore'
 import type { WriteToolExecutionContext } from '../types'
+import type { SaveCategoriesArgs } from './categorySchemas'
 
 export interface JobEnvironment {
   days: number
@@ -60,6 +64,14 @@ export interface ShownRecord {
   radarBrandsBase?: string
   /** Set by the propose_knowledge_refresh preview: what its Approve does, as the card shows it right now. */
   knowledgeRefresh?: KnowledgeRefreshShown
+  /** Set by the save_categories preview: the edited set it shows and the stored categories it read. */
+  categories?: CategoriesShown
+}
+
+/** What a save_categories card shows: the stored categories' fingerprint, and the edited set once it is valid. */
+export interface CategoriesShown {
+  readonly base: string
+  readonly set: SaveCategoriesArgs
 }
 
 /**
@@ -139,6 +151,11 @@ function holdNothing(): void {
 /** Record what the knowledge refresh card's Approve does right now (undefined: nothing yet). */
 export function recordKnowledgeRefresh(shown: ShownRecord, what: KnowledgeRefreshShown | undefined): void {
   shown.knowledgeRefresh = what
+}
+
+/** Record the categories the save_categories card shows right now (undefined: none to save yet). */
+export function recordCategories(shown: ShownRecord, what: CategoriesShown | undefined): void {
+  shown.categories = what
 }
 
 /** The card's shown record, when the execution came from a card. */

@@ -36,6 +36,9 @@ import * as rs from './radarSchemas'
 import * as radar from './radarExecutors'
 import * as pa from './participantSchemas'
 import * as participants from './participantExecutors'
+import * as cs from './categorySchemas'
+import * as categories from './categoryExecutors'
+import { CategoriesPreview } from './previews/CategoriesPreview'
 import { AddParticipantsPreview, CreateParticipantListPreview } from './previews/ParticipantPreviews'
 import { RadarBrandsPreview, RadarScanPreview } from './previews/RadarPreviews'
 import { CreateUsersPreview, ImportReviewsPreview, SourceEnabledPreview } from './previews/BulkAdminPreviews'
@@ -57,6 +60,7 @@ import { JobPreview } from './previews/JobPreview'
 import { PrototypeDraftPreview } from './previews/PrototypeDraftPreview'
 import { PrototypeWalkthroughPreview } from './previews/PrototypeWalkthroughPreview'
 import { adminPath } from '../../pages/Settings/adminPaths'
+import { currentWorkspace } from '../../workspace/currentWorkspace'
 import type { ComponentType } from 'react'
 import type { z } from 'zod'
 import type { ClientToolName, PageContext } from '@stream/assistant/contract'
@@ -115,6 +119,11 @@ const USERS_LINK: ResultLink = { to: adminPath({ tab: 'access', section: 'users'
 /** The Participants page (its Lists tab is the default). */
 const PARTICIPANTS_LINK: ResultLink = { to: '/participants', labelKey: 'assistantTools:card.openParticipants' }
 const RADAR_SETTINGS_LINK: ResultLink = { to: adminPath({ tab: 'sources', section: 'radar' }), labelKey: 'assistantTools:card.openRadarSettings' }
+/** The categories editor of the categories a save_categories card added to: the workspace's settings inside one, else
+ * Administration → Taxonomy → Categories (the deployment's). */
+const categoriesLink = (): ResultLink => (currentWorkspace() === null
+  ? { to: adminPath({ tab: 'taxonomy', section: 'categories' }), labelKey: 'assistantTools:card.openCategories' }
+  : { to: '/workspace-settings', labelKey: 'assistantTools:card.openWorkspaceCategories' })
 /** The set_user_access card names the person only when the model passed their email alias as the username. */
 const userAccessTitle = (username: string, t: Translate) =>
   (username.includes('@') ? t('assistantTools:tools.set_user_access.titleWith', { email: username }) : t(toolTitleKey('set_user_access')))
@@ -123,6 +132,12 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
   defineWriteTool({
     name: 'create_project', argsSchema: s.createProjectArgs, execute: executors.createProject,
     title: (a, t) => t('assistantTools:tools.create_project.titleWith', { name: a.name }),
+  }),
+  // ── Categories (core pack, admin-only, card-only: the card edits the set) ──
+  defineWriteTool({
+    name: 'save_categories', argsSchema: cs.saveCategoriesArgs, execute: categories.saveCategories,
+    title: (a, t) => t('assistantTools:tools.save_categories.titleWith', { count: a.categories.length }), Preview: CategoriesPreview,
+    resultLink: categoriesLink,
   }),
   defineWriteTool({
     name: 'set_problem_resolved', argsSchema: s.setProblemResolvedArgs, execute: executors.setProblemResolved,

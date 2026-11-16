@@ -41,6 +41,7 @@ export const BROWSER_SAFE_FILES = [
   'src/assistant/session/persona-result.ts',
   'src/assistant/tools/agent-limits.ts',
   'src/assistant/tools/client/allowlists.ts',
+  'src/assistant/tools/client/category-schemas.ts',
   'src/assistant/tools/client/company-schemas.ts',
   'src/assistant/tools/client/memory-schemas.ts',
   'src/assistant/tools/client/radar-schemas.ts',

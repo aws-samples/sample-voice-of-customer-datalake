@@ -39,7 +39,9 @@
     "confirmChange": "Pedir cambios",
     "openFeedback": "Abrir la lista de comentarios",
     "openRadar": "Abrir Radar",
-    "openRadarSettings": "Abrir Administración → Fuentes → Radar"
+    "openRadarSettings": "Abrir Administración → Fuentes → Radar",
+    "openCategories": "Abrir Administración → Taxonomía → Categorías",
+    "openWorkspaceCategories": "Abrir Configuración del espacio de trabajo → Categorías"
   },
   "preview": {
     "participants": {
@@ -184,6 +186,32 @@
       "looking": "Buscando el flujo Understand guardado…",
       "notSaved": "Todavía no hay ningún flujo Understand guardado, así que no se puede actualizar el paquete de conocimiento de {{connection}}.",
       "createNote": "Al aprobar se guarda el flujo Understand a partir de su plantilla y no se inicia nada. Después, pide de nuevo al asistente que inicie la actualización."
+    },
+    "saveCategories": {
+      "label": "Las categorías que se añadirán",
+      "reading": "Leyendo las categorías configuradas ahora…",
+      "readFailed": "No se pudieron leer las categorías configuradas ahora, así que Aprobar no guarda nada. Rechace y vuelva a pedirlo más tarde.",
+      "noneConfigured": "Aún no hay categorías configuradas: estas serán las categorías en las que se clasifiquen las nuevas reseñas.",
+      "someConfigured": "Categorías configuradas ahora: {{number, number}}. Estas se añaden después de ellas, y ninguna de ellas cambia.",
+      "category": "Categoría {{number, number}}",
+      "labelField": "Etiqueta",
+      "storedAs": "Se guarda como {{name}}",
+      "productField": "Producto o área (opcional)",
+      "subcategories": "Subcategorías",
+      "subcategoryField": "Subcategoría {{number, number}}",
+      "removeSubcategory": "Quitar la subcategoría {{label}}",
+      "addSubcategory": "Añadir una subcategoría",
+      "removeCategory": "Omitir {{label}}",
+      "fixFirst": "Corrija los campos marcados para aprobar.",
+      "intoWorkspace": "Aprobar las añade a las categorías de este espacio de trabajo. Las nuevas reseñas se clasifican en ellas; las que ya están solo cambian con un reprocesamiento.",
+      "intoDeployment": "Aprobar las añade a las categorías de la implementación (fuera de todos los espacios de trabajo). Las nuevas reseñas se clasifican en ellas; las que ya están solo cambian con un reprocesamiento.",
+      "problems": {
+        "label": "De 1 a 64 caracteres, sin «#».",
+        "product": "Como máximo 120 caracteres.",
+        "repeated": "Este nombre aparece dos veces: use cada nombre una sola vez.",
+        "taken": "Ya hay una categoría configurada con este nombre: omítala.",
+        "none": "Conserve al menos una categoría."
+      }
     },
     "radar": {
       "notTracked": "Sin seguimiento",
@@ -473,6 +501,12 @@
     },
     "update_company_memory": {
       "title": "Cambiar una memoria de la empresa"
+    },
+    "save_categories": {
+      "title": "Añadir categorías",
+      "titleWith_one": "Añadir {{count, number}} categoría",
+      "titleWith_other": "Añadir {{count, number}} categorías",
+      "titleWith_many": "Añadir {{count, number}} de categorías"
     },
     "forget_memory": {
       "title": "Olvidar una memoria"
