@@ -16,7 +16,7 @@ import time
 from collections.abc import Mapping
 from typing import IO, Any, Final
 
-from engineering.runtime.harness.tools import AgentContext, ToolBox, ToolResult, as_data
+from engineering.runtime.harness.tools import AgentContext, ToolBox, ToolResult
 
 PROTOCOL_VERSION: Final = '2025-06-18'
 SERVER_NAME: Final = 'voc'
@@ -88,9 +88,10 @@ class SessionFiles:
         self.write('state', {'step': context.status.step})
 
 
-def _messages(files: SessionFiles) -> str:
-    """The inbox's messages the harness left for the agent, fenced as data (empty when there are none)."""
-    fenced = [as_data('message:' + str(item.get('kind', '')), str(item.get('summary', '')))
+def _messages(files: SessionFiles, context: AgentContext) -> str:
+    """The inbox's messages the harness left for the agent, fenced as data with the session's fence (empty when
+    there are none)."""
+    fenced = [context.data('message:' + str(item.get('kind', '')), str(item.get('summary', '')))
               for item in files.take_messages()]
     return ''.join('\n' + text for text in fenced)
 
@@ -123,7 +124,7 @@ def answer(toolbox: ToolBox, files: SessionFiles, request: Mapping[str, Any]) ->
             files.write('crashed', {'error': f'{type(error).__name__}: {error}'[:300]})
             return {'jsonrpc': '2.0', 'id': ident, 'error': {'code': _INTERNAL, 'message': 'the tool failed'}}
         files.record(outcome, toolbox.context)
-        result = {'content': [{'type': 'text', 'text': outcome.text + _messages(files)}], 'isError': outcome.error}
+        result = {'content': [{'type': 'text', 'text': outcome.text + _messages(files, toolbox.context)}], 'isError': outcome.error}
     else:
         return {'jsonrpc': '2.0', 'id': ident, 'error': {'code': _METHOD_NOT_FOUND, 'message': f'no method {method}'}}
     return {'jsonrpc': '2.0', 'id': ident, 'result': result}

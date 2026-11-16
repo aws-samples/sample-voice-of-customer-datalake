@@ -48,7 +48,10 @@ skill every connection's agents fall back to) and the agent role::
   accepted one's record, current at once and logged as ``rolled_back``, so the history stays whole.
 - **Seed** (6.29.00): an administrator starts a role's shared skill from its shipped record (``seed_shared``: the
   record the harness runs, runtime/harness/skills.py), as the shared skill's first version, proposed and accepted;
-  only while the shared skill has no version, so a seed never writes over a history. The coach proposes only on a
+  only while the shared skill has no version, so a seed never writes over a history. Since 7.50.00 the record is the
+  role's bundled template (``seed_from_template``: skills/templates.py), and every version names how it was made
+  (``provenance``: ``template``, ``person``, ``coach``, ``rollback`` or ``promotion``, and a template's
+  ``template_version``), additive attributes a version written before reads as ``person`` and 0. The coach proposes only on a
   version the store holds, so a role's first is a person's: this seed, or one they write.
 - **Read**: ``current`` is the connection's own current version, else the shared skill's, else None (the role runs
   on its shipped skill, which the harness still reads from the image, not from this store); ``versions`` pages through a scope's history. A connection's versions are
@@ -91,6 +94,7 @@ from engineering.skills.model import (
     SkillError,
     normalised,
 )
+from engineering.skills.templates import TemplateSkill
 from engineering.workspace.layout import CONNECTION
 from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
@@ -227,6 +231,10 @@ class SkillVersion:
     #: How the coach's proposal was made (the model that answered, the prompt's version), written with the row;
     #: None for a person's version.
     made_with: MadeWith | None = None
+    #: How it was made (7.50.00: ``PROVENANCES``; ``person`` for a version written before) and, for a template's
+    #: seed, the template version it was seeded from (0: none).
+    provenance: str = 'person'
+    template_version: int = 0
 
     @property
     def trusted_rates(self) -> Benchmark:
@@ -270,7 +278,9 @@ class SkillVersion:
                    rejected_by=_text(item.get('rejected_by')), rejected_at=_text(item.get('rejected_at')),
                    restores=_number(item.get('restores')), benchmark_run=recorded,
                    expected_case=_text(item.get('expected_case')),
-                   made_with=_made_with(item.get('made_with_model'), item.get('made_with_prompt')))
+                   made_with=_made_with(item.get('made_with_model'), item.get('made_with_prompt')),
+                   provenance=_text(item.get('provenance')) or 'person',
+                   template_version=_number(item.get('template_version')))
 
 
 #: What a history line reads of a version row: everything but its record and its diff (most of a row's up to
@@ -278,7 +288,8 @@ class SkillVersion:
 LINE_ATTRIBUTES: Final = (
     'version', 'status', 'summary', 'reason_run', 'reason_failure', 'reason_comment', 'proposed_by',
     'proposed_by_kind', 'created_at', 'accepted_by', 'accepted_at', 'rejected_by', 'rejected_at', 'restores',
-    'base_connection', 'base_version', 'benchmark_before', 'benchmark_after', 'benchmark_run', 'expected_case')
+    'base_connection', 'base_version', 'benchmark_before', 'benchmark_after', 'benchmark_run', 'expected_case',
+    'provenance', 'template_version')
 #: The log events a reader is answered. ``promoted_from`` is never one: it names another connection, and only
 #: ``promotion_source`` reads it.
 READABLE_EVENTS: Final = (ACCEPTED, REJECTED, ROLLED_BACK, BENCHMARKED)
@@ -310,6 +321,9 @@ class VersionLine:
     #: The benchmark an administrator recorded on it: the rates readers trust.
     measured: RecordedBenchmark | None
     expected_case: str
+    #: How it was made, and a template's version (7.50.00; ``person`` and 0 for a version written before).
+    provenance: str = 'person'
+    template_version: int = 0
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> VersionLine:
@@ -326,7 +340,9 @@ class VersionLine:
                    rejected_at=_text(item.get('rejected_at')), restores=_number(item.get('restores')),
                    base=_ref(item.get('base_connection'), item.get('base_version')),
                    claimed=Benchmark(_rate(item.get('benchmark_before')), _rate(item.get('benchmark_after'))),
-                   measured=measured, expected_case=_text(item.get('expected_case')))
+                   measured=measured, expected_case=_text(item.get('expected_case')),
+                   provenance=_text(item.get('provenance')) or 'person',
+                   template_version=_number(item.get('template_version')))
 
 
 @dataclass(frozen=True)
@@ -449,6 +465,17 @@ def _made_attributes(expected_case: str, made_with: MadeWith | None) -> dict[str
     return {'expected_case': {'S': expected_case},
             'made_with_model': {'S': made_with.model if made_with else ''},
             'made_with_prompt': {'S': made_with.prompt if made_with else ''}}
+
+
+#: How a version was made (7.50.00): its ``provenance`` attribute.
+PROVENANCES: Final = ('template', 'person', 'coach', 'rollback', 'promotion')
+
+
+def _provenance(kind: str, template_version: int = 0) -> dict[str, Any]:
+    """A version's provenance attributes (additive: a version written before 7.50.00 has none)."""
+    if kind not in PROVENANCES:
+        raise ValueError(f'a version is made as one of {", ".join(PROVENANCES)}, not {kind!r}')
+    return {'provenance': {'S': kind}, 'template_version': {'N': str(template_version)}}
 
 
 def _case_mismatch(found: SkillVersion, run: BenchmarkRun) -> str:
@@ -664,7 +691,7 @@ class SkillStore:
     def _propose(self, ws: str, connection: str, role: str, content: SkillContent, *, proposer: Actor,
                  reason: Reason, base: SkillRef | None, benchmark: Benchmark,
                  promoted_from: SkillRef | None = None, expected_case: str = '',
-                 made_with: MadeWith | None = None) -> Proposed:
+                 made_with: MadeWith | None = None, template_version: int = 0) -> Proposed:
         _pk(ws, connection, role)
         guard = self._coach_guard(ws, connection, role, proposer, reason) if proposer.kind == 'agent' else None
         if not connection and reason.from_a_run:
@@ -677,7 +704,9 @@ class SkillStore:
                                  'and examples only')
         if proposer.kind == 'agent':
             _coach_made(expected_case, made_with)
-        made = _made_attributes(expected_case, made_with)
+        provenance = ('coach' if proposer.kind == 'agent' else 'promotion' if promoted_from is not None
+                      else 'template' if template_version else 'person')
+        made = {**_made_attributes(expected_case, made_with), **_provenance(provenance, template_version)}
         Skill(role, 1, content)   # refused before a version number is spent
         change = diff(base_content, content)
         line = summary(role, 'proposed', _label(base, connection) if base else '', 'v?', change, scope=connection)
@@ -730,6 +759,21 @@ class SkillStore:
                              'line(s) or example text(s) are copied from its version; write them in general terms')
         return self._propose(ws, SHARED, role, content, proposer=by, reason=reason, base=base,
                              benchmark=Benchmark(), promoted_from=source)
+
+    def seed_from_template(self, ws: str, role: str, template: TemplateSkill, *, by: Actor) -> Change | None:
+        """The shared skill's first version from the role's bundled ``template`` (7.50.00): an administrator's
+        version on no base, accepted, its provenance ``template`` and its ``template_version``; only while the shared
+        skill has no version at all (None once it has one: a seed never writes over anyone's history)."""
+        _admin(by, 'seeds')
+        if template.role != role:
+            raise SkillError(f'{template.label} is not a template of the {role} role')
+        if self.versions(ws, SHARED, role, limit=1).versions:
+            return None
+        content = Skill.from_record(template.record).content
+        proposed = self._propose(ws, SHARED, role, content, proposer=by, base=None, benchmark=Benchmark(),
+                                 reason=Reason(comment=f'Seeded from the template {template.label}.'),
+                                 template_version=template.version)
+        return self.accept_version(ws, SHARED, role, proposed.version.version, by)
 
     def seed_shared(self, ws: str, role: str, *, by: Actor) -> Change | None:
         """The shared skill's first version, from the role's shipped record (runtime/harness/skills.py ``SKILLS``,
@@ -924,7 +968,8 @@ class SkillStore:
         line = summary(role, 'rolled_back', _label(base, connection), _label(SkillRef(connection, version), connection),
                        change, restores=to_version, scope=connection)
         item = self._item(ws, connection, skill, status=ACCEPTED, base=base, reason=reason,
-                          benchmark=Benchmark(), change=change, line=line, by=by, restores=to_version)
+                          benchmark=Benchmark(), change=change, line=line, by=by, restores=to_version,
+                          made={**_made_attributes('', None), **_provenance('rollback', target.template_version)})
         item.update({'accepted_by': {'S': by.id}, 'accepted_at': {'S': at}})
         row = SkillVersion.from_item(item)
         announcement = self._announce(ws, 'rolled_back', row, base)

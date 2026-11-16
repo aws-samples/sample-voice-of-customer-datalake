@@ -153,12 +153,6 @@ MAX_USD_PER_MILLION_TOKENS: Final = Decimal('1000')
 TOKEN_PRICE_PARTS: Final = ('input', 'output', 'cacheRead', 'cacheWrite')
 #: A model id as ``ENGINEERING_MODEL_PRICES`` names one (Bedrock's ids and inference profiles).
 MODEL_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}\Z')
-#: Where ``DEFAULT_TOKEN_PRICES`` come from, and when they were read: never a figure from memory.
-MODEL_PRICES_SOURCE: Final = ('AWS Price List API (pricing:GetProducts, read only), service code '
-                              'AmazonBedrockFoundationModels, regionCode us-west-2, the *_global_standard usage types '
-                              '(input, output, cache read and cache write tokens), USD per million tokens')
-MODEL_PRICES_PUBLISHED: Final = '2026-11-09T22:43:12Z'
-MODEL_PRICES_READ: Final = '2026-11-16'
 
 
 @dataclass(frozen=True)
@@ -171,8 +165,10 @@ class TokenPrice:
     cache_write: Decimal = Decimal(0)
 
 
-#: The allowlisted Claude models' global (cross-region) inference profiles, standard tier, as read on
-#: ``MODEL_PRICES_READ`` from ``MODEL_PRICES_SOURCE`` (published ``MODEL_PRICES_PUBLISHED``). The defaults of
+#: The allowlisted Claude models' global (cross-region) inference profiles, standard tier, never figures from memory:
+#: read on 2026-11-16 from the AWS Price List API (pricing:GetProducts, read only; service code
+#: AmazonBedrockFoundationModels, regionCode us-west-2, the *_global_standard usage types for input, output, cache read
+#: and cache write tokens, USD per million tokens; published 2026-11-09T22:43:12Z). The defaults of
 #: ``-c engineeringModelPrices``, which a deployment in another region or tier overrides per model.
 DEFAULT_TOKEN_PRICES: Final[Mapping[str, TokenPrice]] = {
     'global.anthropic.claude-haiku-5-5': TokenPrice(Decimal('0.10'), Decimal('0.50'), Decimal('0.01'),

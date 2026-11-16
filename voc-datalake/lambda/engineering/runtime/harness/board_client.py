@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
-from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, TaskBrief, TaskSummary
+from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, SkillAnswer, TaskBrief, TaskSummary
 from engineering.runtime.interface import FUNCTION_URL_RE
 
 #: The board API's own limit on a page of the inbox.
@@ -33,6 +33,8 @@ TIMEOUT_SECONDS: Final = 30
 #: session it has, or refuses (409) while the first launch still starts the session.
 LAUNCH_TIMEOUT_SECONDS: Final = 125
 MAX_ANSWER_BYTES: Final = 1024 * 1024
+#: The platform rules' text the skill's answer carries at most (the bundle's ``platform_rules``).
+MAX_RULES: Final = 20_000
 #: The inbox types the harness acts on itself; any other is shown to the model as data (its type is its kind).
 ACTED_ON: Final = {'signal.save': SAVE, 'signal.pause': PAUSE}
 #: The waits before each retry of a 503 or a lost connection (seconds).
@@ -205,6 +207,28 @@ class BoardHttp:
         self._own(run_id, task_id)
         self.transport.post({'op': 'move', 'task_id': task_id, 'epoch': self.epoch, 'to': to_state,
                              'result_keys': list(result_keys)})
+
+    def skill(self, *, run_id: str, role: str) -> SkillAnswer:
+        """The skill this session runs, by the label its launch recorded (the board's ``skill``: the session names
+        none). An answer off its shape, or the skill of another role than ``role``, is ``BoardRefused`` (502): a
+        crash, never a fallback."""
+        if run_id != self.run_id:
+            raise ValueError('the harness reaches its own run only')
+        answer = self.transport.post({'op': 'skill'})
+        label, record = answer.get('label'), answer.get('record')
+        if not isinstance(label, str) or not label or not isinstance(record, dict) or record.get('name') != role:
+            raise BoardRefused(502, f'the board answered no skill of the {role} role')
+        rules = answer.get('platform_rules')
+        return SkillAnswer(label=label, record=record,
+                           platform_rules=rules if isinstance(rules, str) and len(rules) <= MAX_RULES else '')
+
+    def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
+        """The approved lessons of the task (the board's ``memory``), each as data; none when nothing applies."""
+        self._own(run_id, task_id)
+        memories = self.transport.post({'op': 'memory', 'task_id': task_id}).get('memories')
+        if not isinstance(memories, list) or not all(isinstance(text, str) for text in memories):
+            raise BoardRefused(502, 'the board answered no memories')
+        return tuple(text for text in memories if text)
 
 
 @dataclass

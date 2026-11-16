@@ -322,6 +322,17 @@ describe('the engineering bus', () => {
     ]);
   });
 
+  it('denies the board every write of the skills\', the agent memory\'s and the scorecards\' rows it reads (7.50.00)', () => {
+    const on = template('on');
+    const board = functionId(on, 'voc-engineering-board');
+    const deny = statementsOf(on, board).find((statement) => statement.Sid === 'DenyLearningWrites');
+    expect(deny).toMatchObject({
+      Effect: 'Deny',
+      Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+      Condition: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*', 'WS#*#AMEM#*', 'WS#*#SCORE#*'] } },
+    });
+  });
+
   it('gives the board a timeout above its wait for the runtime\'s launch, so a slow launch is answered, not cut off', () => {
     const on = template('on');
     const props = on.findResources('AWS::Lambda::Function')[functionId(on, 'voc-engineering-board')]?.Properties;

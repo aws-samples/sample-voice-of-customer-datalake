@@ -34,6 +34,15 @@ so no model call ever runs inside a run's end:
 The coach's ``skill.proposed`` announcement is returned in the outcome, not published: voc-engineering-runtime's
 role speaks on the bus only as the supervisor, and the announcement is the coach's (planned with the bus's coach
 publisher; the proposal itself is in the skills store's history meanwhile).
+
+Since 7.50.00 this is **Learn**, every flow's built-in last step, configured by the run's flow (``settings``:
+``flow/settings.py``, the flow's ``learn``): on a run's end (done, failed, stopped), and on a run left at a person past
+``after_needs_human_hours`` (``at_a_person``: the supervisor's sweep); off with ``learn.enabled: false`` (no scorecard,
+no lesson, no coach); the failures it takes to the coach only of its ``roles`` when the flow names them. The coach
+reads the failed attempt's transcript (``transcripts``: the agent's ``_transcripts/`` chunks, redacted when written,
+cut to the evidence's bounds here, and fenced as data in the coach's prompt), and its calls count in the run's spend,
+within ``learn.budget_share`` of the run's cost cap (``budget``: learning/budget.py); a proposal still needs the
+benchmark gate and an administrator's accept (skills/store.py).
 """
 from __future__ import annotations
 
@@ -53,9 +62,10 @@ from engineering.agent_memory.model import (
     Scope,
 )
 from engineering.agent_memory.store import AgentMemoryStore
-from engineering.coach.failure import CoachError, Failure
+from engineering.coach.failure import MAX_EVIDENCE, MAX_EXCERPT, MAX_EXCERPTS, CoachError, Evidence, Failure
 from engineering.coach.model import READ_TIMEOUT_SECONDS
 from engineering.coach.proposer import Coach, coach_actor
+from engineering.flow.settings import LearnSettings
 from engineering.learning.records import RunRecordReader
 from engineering.learning.retrospective import (
     FailedAttempt,
@@ -81,6 +91,34 @@ COACH_FAILED: Final = 'failed'
 CHOSEN_SK: Final = 'RETRO#coach'
 #: A learned lesson's confidence: the memory layer's floor for an automated write (it is a draft either way).
 LESSON_CONFIDENCE: Final = 0.8
+#: A run waiting at a person (runtime/runs.py): Learn's sweep takes one left there past its flow's hours.
+NEEDS_HUMAN: Final = 'needs_human'
+#: The transcript excerpts the coach reads of a failed attempt, at most, and each one's characters.
+TRANSCRIPT_EXCERPTS: Final = 8
+TRANSCRIPT_EXCERPT: Final = 1_500
+
+
+def _default_settings(_run_id: str) -> LearnSettings:
+    return LearnSettings()
+
+
+def _no_transcripts(_run: Any, _failure: FailedAttempt) -> tuple[str, ...]:
+    return ()
+
+
+def with_transcript(found: Evidence, excerpts: Sequence[str]) -> Evidence:
+    """``found`` with the failed attempt's transcript excerpts (its last ones), cut to the evidence's bounds."""
+    room = MAX_EVIDENCE - sum(map(len, (found.task, *found.conversation, *found.outputs, *found.comments)))
+    kept: list[str] = []
+    for excerpt in excerpts[-min(TRANSCRIPT_EXCERPTS, MAX_EXCERPTS):]:
+        text = excerpt[:min(TRANSCRIPT_EXCERPT, MAX_EXCERPT)]
+        if not text or len(text) > room:
+            break
+        kept.append(text)
+        room -= len(text)
+    return replace(found, conversation=(*found.conversation, *kept)) if kept else found
+
+
 #: What a rule-made lesson says, per way an attempt failed (no model text, no task text: a run repeating it confirms
 #: the same memory instead of adding one).
 RULE_LESSONS: Final = {
@@ -124,8 +162,8 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _connection_or_none(retro: Retrospective) -> str:
-    if retro.run.status not in ENDED:
+def _connection_or_none(retro: Retrospective, at_a_person: bool = False) -> str:
+    if retro.run.status not in ENDED and not (at_a_person and retro.run.status == NEEDS_HUMAN):
         return 'the run has not ended'
     if not retro.run.connection:
         return 'the run has no connection (it launched no agent)'
@@ -143,6 +181,12 @@ class LearningLoop:
     cases: Sequence[str]
     reactions: HostReactions = no_host_reactions
     now: Callable[[], datetime] = _utc_now
+    #: The run's Learn settings (its flow's ``learn``), the failed attempt's transcript excerpts, Learn's budget
+    #: (None: unbounded) and the coach for the run (its model and its metering; None: ``coach``).
+    settings: Callable[[str], LearnSettings] = _default_settings
+    transcripts: Callable[[Any, FailedAttempt], tuple[str, ...]] = _no_transcripts
+    budget: Any = None
+    coach_for: Callable[[str, LearnSettings], Coach] | None = None
 
     def _retro(self, ws: str, run_id: str) -> Retrospective | None:
         record = self.reader.read(ws, run_id)
@@ -161,22 +205,26 @@ class LearningLoop:
             raise
         return True
 
-    def _chosen(self, ws: str, run_id: str, retro: Retrospective) -> tuple[str, ...]:
-        """The failures the run's retrospective takes to the coach, as its ``RETRO#coach`` row recorded them the first
-        time (written now when there is none)."""
-        keys = tuple(failure.key for failure in retro.to_coach)
+    def _chosen(self, ws: str, run_id: str, retro: Retrospective, roles: Sequence[str] = ()) -> tuple[str, ...]:
+        """The failures the run's retrospective takes to the coach (of Learn's ``roles`` when its flow names them),
+        as its ``RETRO#coach`` row recorded them the first time (written now when there is none)."""
+        keys = tuple(failure.key for failure in retro.to_coach if not roles or failure.attempt.role in roles)
         if self._put_once(ws, run_id, CHOSEN_SK, {'keys': {'L': [{'S': key} for key in keys]}}):
             return keys
         row = get_row(self.reader.client, self.reader.table, {'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': CHOSEN_SK}})
         stored = (row or {}).get('keys', {}).get('L', [])
         return tuple(str(value.get('S', '')) for value in stored if isinstance(value, dict))
 
-    def retrospective(self, ws: str, run_id: str) -> Summary:
-        """Step 1: the scorecards written, the failures to coach named (once)."""
+    def retrospective(self, ws: str, run_id: str, *, at_a_person: bool = False) -> Summary:
+        """Step 1: the scorecards written, the failures to coach named (once). ``at_a_person``: the sweep's, of a run
+        left at a person (its record still as it stands)."""
+        settings = self.settings(run_id)
+        if not settings.enabled:
+            return Summary(run_id, 0, 0, 0, (), skipped="Learn is off for this run's flow")
         retro = self._retro(ws, run_id)
         if retro is None:
             return Summary(run_id, 0, 0, 0, (), skipped='no such run')
-        skipped = _connection_or_none(retro)
+        skipped = _connection_or_none(retro, at_a_person)
         if skipped:
             return Summary(run_id, 0, 0, retro.failure_count, (), skipped=skipped)
         written = kept = 0
@@ -191,37 +239,48 @@ class LearningLoop:
         if retro.unattributed_no_go:
             logger.info('learning: NO-GOs with no judged task', extra={'run_id': run_id,
                                                                         'count': retro.unattributed_no_go})
-        return Summary(run_id, written, kept, retro.failure_count, self._chosen(ws, run_id, retro))
+        return Summary(run_id, written, kept, retro.failure_count, self._chosen(ws, run_id, retro, settings.roles))
 
-    def learn_from(self, ws: str, run_id: str, key: str) -> Learned:
+    def learn_from(self, ws: str, run_id: str, key: str, *, at_a_person: bool = False) -> Learned:
         """Step 2: one failure the retrospective chose, to memory and to the coach, once."""
+        settings = self.settings(run_id)
+        if not settings.enabled:
+            return Learned(key, skipped="Learn is off for this run's flow")
         retro = self._retro(ws, run_id)
-        skipped = 'no such run' if retro is None else _connection_or_none(retro)
+        skipped = 'no such run' if retro is None else _connection_or_none(retro, at_a_person)
         if retro is None or skipped:
             return Learned(key, skipped=skipped)
-        chosen = self._chosen(ws, run_id, retro)
+        chosen = self._chosen(ws, run_id, retro, settings.roles)
         failure = next((f for f in (*retro.to_coach, *retro.failures) if f.key == key), None) if key in chosen else None
         if failure is None:
             return Learned(key, skipped='not a failure this run\'s retrospective takes to the coach')
         if not self._put_once(ws, run_id, f'LEARN#{key}', {}):
             return Learned(key, skipped='this failure was taken to the coach already')
+        found = with_transcript(evidence(failure, retro.run, retro.reactions), self.transcripts(retro.run, failure))
         record = Failure(run_id=run_id, connection=retro.run.connection, role=failure.attempt.role,
                          task_id=failure.attempt.task.task_id, attempt=coach_attempt(failure.attempt.attempt),
-                         kind=failure.kind, evidence=evidence(failure, retro.run, retro.reactions), ws=ws)
+                         kind=failure.kind, evidence=found, ws=ws)
         # The lesson before the coach's call: whatever the call's outcome, the failure leaves its lesson.
         memory_id, lesson = self._lesson(record, failure)
-        learned = self._coach(record, Learned(key, memory_id=memory_id, lesson=lesson))
+        learned = self._coach(record, Learned(key, memory_id=memory_id, lesson=lesson), settings)
         self._put_once(ws, run_id, f'LEARNED#{key}', {
             'proposed_version': {'N': str(learned.proposed_version)}, 'coach': {'S': learned.coach[:400]},
             'memory_id': {'S': learned.memory_id}, 'lesson': {'S': learned.lesson[:400]}})
         return learned
 
-    def _coach(self, record: Failure, learned: Learned) -> Learned:
+    def _coach(self, record: Failure, learned: Learned, settings: LearnSettings | None = None) -> Learned:
         """``learned`` with the coach's proposal for the failure, or why there is none (an outcome, never raised)."""
+        settings = settings or LearnSettings()
         if not self.cases:
             return replace(learned, coach='no benchmark cases in this deployment: the coach was not asked')
         try:
-            proposal = self.coach().propose_for(record, self.cases)
+            refused = '' if self.budget is None else self.budget.allows(record.run_id, settings.budget_share,
+                                                                      settings.model)
+            if refused:
+                logger.info('learning: Learn\'s budget holds the coach', extra={'run_id': record.run_id})
+                return replace(learned, coach=refused)
+            coach = self.coach_for(record.run_id, settings) if self.coach_for is not None else self.coach()
+            proposal = coach.propose_for(record, self.cases)
         except (CoachError, SkillError) as refused:
             # A role with no skill yet, the guard spent, an answer refused: an outcome, recorded and logged.
             logger.info('learning: the coach proposed nothing', extra={'run_id': record.run_id, 'reason': str(refused)})

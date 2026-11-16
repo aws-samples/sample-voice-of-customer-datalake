@@ -60,7 +60,7 @@ def test_a_decision_point_is_this_exact_update(aws: Any, sent: Requests) -> None
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
     runs.needs_human(RUN, 'budget', now=60)
     assert _meta_update(sent['transact'][-1]) == {
-        'UpdateExpression': 'SET #status = :human, needs_human = :reason',
+        'UpdateExpression': 'SET #status = :human, needs_human = :reason, needs_human_at = :at',
         'ConditionExpression': ('#status = :active OR (#status = :human AND needs_human <> :reason '
                                 'AND needs_human <> :thirty)')}
 

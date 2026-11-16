@@ -30,6 +30,8 @@ _MODULES = (
 # Names that are legitimately absent from the stack, each with its reason.
 _NOT_SET_BY_CDK = {
     'AWS_LAMBDA_FUNCTION_NAME': 'provided by the Lambda runtime',
+    # (7.50.00: the engineering readiness check's region, for its model and quota reads)
+    'AWS_REGION': 'provided by the Lambda runtime',
     # The run monitor's signals (api/agents_handler.py): voc-engineering-runtime's name on the Agents API, which
     # the opt-in stack is to set beside the reads' table and bucket. Drop this when it does.
     'ENGINEERING_RUNTIME_FUNCTION': 'set only by the opt-in engineering stack (not yet on the Agents API)',

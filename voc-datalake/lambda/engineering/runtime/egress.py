@@ -22,10 +22,12 @@ from engineering.runtime.unit_runner import HOST_RE
 
 #: The package registries each toolchain image fetches from (the images' ready hooks prefetch from the
 #: same hosts). Only these, per language: a Python agent never reaches the npm registry.
+#: (7.50.00: the Python and Rust images carry Node for a mixed repository's TypeScript half, so their dependency step
+#: reaches npm's registry too, and Rust's a pinned toolchain's ``rust-toolchain.toml``: the gate packs' networks.)
 REGISTRY_HOSTS: Final[dict[str, tuple[str, ...]]] = {
-    'python': ('pypi.org', 'files.pythonhosted.org'),
+    'python': ('pypi.org', 'files.pythonhosted.org', 'registry.npmjs.org'),
     'node': ('registry.npmjs.org',),
-    'rust': ('index.crates.io', 'static.crates.io', 'crates.io'),
+    'rust': ('index.crates.io', 'static.crates.io', 'crates.io', 'static.rust-lang.org', 'registry.npmjs.org'),
     'java': ('repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org'),
 }
 MAX_EXTRA_HOSTS: Final = 10

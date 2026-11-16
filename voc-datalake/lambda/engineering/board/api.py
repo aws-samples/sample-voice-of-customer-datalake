@@ -8,7 +8,11 @@ holder's progress report: ``{task_id, epoch, step, waiting?}``, published as ``t
 lease holder moves its task on), ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
 role's, and the conductor's for the coordinator; it reads, it changes nothing) and ``knowledge`` (``{task_id, package}``: the
 approved knowledge pack of one of the caller's task's paths, or of '' the root, as data; ``{version: null}`` when none
-is approved; the paths are the task spec's, the ones its agent was launched on, and the root). The run's coordinator
+is approved; the paths are the task spec's, the ones its agent was launched on, and the root), ``skill`` (7.50.00: the
+skill the caller's session runs, ``{label, record}``, by the label its launch recorded on its session row, never one
+the caller names: skills/resolve.py) and ``memory`` (7.50.00, ``{task_id}``: the approved lessons of the caller's task,
+its connection's repository memories and its role's there, fenced as data, as its run's flow sets the recall; the
+caller holds the task's live lease, as for ``knowledge``). The run's coordinator
 also has ``tasks`` (its run's tasks) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
 through ``voc-engineering-runtime``'s ``launch`` action only, with the run's commit and connection from its META;
 recorded on the task with its attempt and paths, so a retried launch launches the same agent and a repost's new
@@ -48,10 +52,11 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering.agent_memory.model import AgentMemoryError, RunContext
 from engineering.board.flow_guard import FlowGuard
 from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
@@ -66,17 +71,25 @@ from engineering.connectors.identity import (
     caller_from_event,
     own_account,
 )
+from engineering.flow.conductor import FlowError
 from engineering.flow.ledger import ReadRecord, read_gate_record
-from engineering.knowledge.store import PackError
+from engineering.flow.settings import memory_settings
+from engineering.knowledge.store import Actor, PackError
 from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
 from engineering.rows import Refused
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.egress import REGISTRY_HOSTS
-from engineering.runtime.harness.skills import skill_for
 from engineering.runtime.interface import MAX_TASK_PATHS, RuntimeRefused
+from engineering.skills.model import SkillError
+from engineering.skills.resolve import SkillVersions, record_for_label
+from engineering.skills.resolve import kind_of as skill_error_kind
+from engineering.skills.templates import Templates, bundled, parse_template_label
 from engineering.workspace.layout import LayoutError
 from shared.logging import logger, metrics
+
+if TYPE_CHECKING:
+    from engineering.agent_memory.recall import Recall
 
 BOARD_SOURCE = 'voc.engineering/board'
 MAX_TITLE = 200
@@ -273,6 +286,24 @@ class Knowledge(Protocol):
         raise NotImplementedError
 
 
+class MemoryRecall(Protocol):
+    """The approved memories of a task (engineering/agent_memory/store.py ``AgentMemoryStore.recall_for_task``)."""
+
+    def recall_for_task(self, ws: str, run: RunContext, *, max_memories: int = ...,
+                        max_chars: int = ..., kinds: frozenset[str] = ...) -> Recall: ...
+
+
+class _NoSkillRows:
+    """No skills store: every store label is refused (only a template's label is served)."""
+
+    def version(self, ws: str, connection: str, role: str, version: int) -> Any:
+        del ws, connection, role, version
+        raise BoardError('unavailable', 'the skills store is not configured here')
+
+
+_NO_ROWS: Final = _NoSkillRows()
+
+
 @dataclass(frozen=True)
 class LambdaLauncher:
     """The runtime's ``launch`` action, and only it, invoked and waited for."""
@@ -337,21 +368,29 @@ class Outcome:
 class BoardApi:
     def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox, *,
                  launcher: Launcher | None = None, knowledge: Knowledge | None = None,
-                 skill: Callable[[str], object | None] = skill_for,
+                 skill: Callable[[str], object | None] | None = None,
                  images: frozenset[str] = frozenset(REGISTRY_HOSTS),
-                 gate_records: ReadRecord | None = None) -> None:
+                 gate_records: ReadRecord | None = None, skills: SkillVersions | None = None,
+                 templates: Templates | None = None, memory: MemoryRecall | None = None) -> None:
         """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused);
-        ``skill``: a role's skill (runtime/harness/skills.py), which the runtime launches it with; ``images``: the
-        languages this deployment has an agent runtime for (``ENGINEERING_IMAGE_LANGUAGES``); ``gate_records``: a gate
-        record by its key, the GO ledger's read of a quality gate step's verdict (None: no gate is taken for a GO)."""
+        ``skill``: whether a role has a skill to launch it on (its bundled template: skills/templates.py; every
+        version the skills store holds is a version of a role that has one); ``images``: the languages this
+        deployment has an agent runtime for (``ENGINEERING_IMAGE_LANGUAGES``); ``gate_records``: a gate record by its
+        key, the GO ledger's read of a quality gate step's verdict (None: no gate is taken for a GO); ``skills`` and
+        ``templates``: the skills store and the bundled templates the ``skill`` op serves a session's recorded label
+        from (no store: only a template's label is served); ``memory``: the agent memory the ``memory`` op recalls
+        from (None: refused)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
         self.launcher = launcher
         self.knowledge = knowledge
-        self.skill = skill
+        self.templates = templates or bundled()
+        self.skill = skill or self.templates.skill
         self.images = images
         self.flows = FlowGuard(store, gate_records)
+        self.skills = skills
+        self.memories = memory
 
     def _meta(self, run_id: str) -> Mapping[str, Any]:
         meta = self.store.meta(WORKSPACE, run_id)
@@ -414,7 +453,9 @@ class BoardApi:
             answer = self.launcher.launch({
                 'run_id': caller.run_id, 'agent_id': task.launched_agent, 'role': role, 'task_id': task.task_id,
                 'attempt': task.attempt, 'language': task.launched_language or language,
-                'paths': list(task.launched_paths), 'commit': commit, 'connection': connection})
+                'paths': list(task.launched_paths), 'commit': commit, 'connection': connection,
+                # (the step it was posted for: an agent step's skill pin, which the runtime resolves)
+                'step': task.flow_step})
         except LaunchRefused as refused:
             # The runtime answers a repeat with its session, and one while the first still starts as busy, before any
             # other check: these refusals so mean no session and no launch of the agent exist, even on a retry.
@@ -487,11 +528,60 @@ class BoardApi:
             raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
         return {'version': None} if pack is None else {'version': pack.version, 'text': pack.text}
 
+    def _skill(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``skill`` (7.50.00): the skill the caller's session runs, by the label its launch recorded on its session
+        row (``skill_version``: skills/resolve.py), never one the caller names: ``{label, record}``. A label the board
+        cannot serve (no session row, no label, a template this deployment no longer ships, a version not accepted)
+        is refused, which the harness takes as a crash."""
+        del body
+        row = self.store.agent_row(WORKSPACE, caller.run_id, agent_id(caller))
+        label = row.get('skill_version', {}).get('S', '') if row else ''
+        if not label:
+            raise BoardError('not_found', 'no skill is recorded for this agent\'s session')
+        connection = self._meta(caller.run_id).get('connection', {}).get('S', '')
+        if parse_template_label(label) is None and self.skills is None:
+            raise BoardError('unavailable', 'the skills store is not configured here')
+        try:
+            resolved = record_for_label(label, role=caller.role, connection=connection,
+                                        rows=self.skills or _NO_ROWS, templates=self.templates)
+        except SkillError as exc:
+            kind = skill_error_kind(exc)
+            raise BoardError(kind if kind in STATUS else 'conflict', str(exc)[:MAX_TITLE]) from exc
+        # (the platform's rules the harness puts around the skill: the bundle's, never a skill version's)
+        return {**resolved.answer(), 'platform_rules': self.templates.platform_rules()}
+
+    def _memory(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``memory`` (``{task_id}``, 7.50.00): the approved lessons the caller's task takes, from its run's
+        connection's repository memories and its role's lessons there (``AgentMemoryStore.recall_for_task``, no
+        person's memory), as the run's flow sets it (``memory``: flow/settings.py), fenced as data: ``{memories:
+        [text]}`` (none when nothing applies or the flow turns recall off). The caller must hold the task's live
+        lease, as for ``knowledge``."""
+        if self.memories is None:
+            raise BoardError('unavailable', 'agent memory is not configured here')
+        self._callers_task(caller, _text(body, 'task_id'))
+        connection = self._meta(caller.run_id).get('connection', {}).get('S', '')
+        if not connection:
+            raise BoardError('conflict', NO_START_RECORD)
+        try:
+            settings = memory_settings(self.flows.record.definition(WORKSPACE, caller.run_id))
+        except FlowError as exc:
+            raise BoardError('conflict', f'the run\'s copy of its flow cannot be read: {exc}') from exc
+        if not settings.recall:
+            return {'memories': []}
+        try:
+            recalled = self.memories.recall_for_task(
+                WORKSPACE, RunContext(agent=Actor(agent_id(caller), 'agent', connection=connection),
+                                      run_id=caller.run_id, role=caller.role),
+                max_memories=settings.limit, kinds=frozenset(settings.scopes))
+        except AgentMemoryError as exc:
+            raise BoardError('invalid', str(exc)[:MAX_TITLE]) from exc
+        return {'memories': [recalled.text] if recalled.text else []}
+
     def _direct(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any] | None:
         """The ops answered directly, with no board event (None: not one of them): the reads, and the launch, whose
         record is the task's history row and whose agent speaks for itself once it runs."""
         readers = {'inbox': self._inbox, 'knowledge': self._knowledge, 'launch': self._launch, 'flow': self._flow,
-                   'step': self._step}
+                   'step': self._step, 'skill': self._skill, 'memory': self._memory}
         op = body.get('op')
         if op == 'tasks':
             return self._tasks(caller)
@@ -542,8 +632,8 @@ class BoardApi:
                 raise BoardError('invalid', '"result_keys" is a list')
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
-        raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks, launch, flow '
-                                    'or step')
+        raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, skill, memory, tasks, '
+                                    'launch, flow or step')
 
     def _current_coordinator(self, caller: Caller) -> None:
         """A coordinator acts only while it is the run's: the coordinate task's recorded coordinator at the task's
@@ -675,7 +765,9 @@ def launch_client_config() -> Any:
 def _from_environment() -> BoardApi:
     import boto3
 
+    from engineering.agent_memory.store import AgentMemoryStore
     from engineering.knowledge.store import PackStore
+    from engineering.skills.store import SkillStore
     from engineering.workspace.store import WorkspaceStore
     from shared.aws import get_dynamodb_client, get_eventbridge_client, get_s3_client
 
@@ -691,7 +783,12 @@ def _from_environment() -> BoardApi:
                     else None,
                     knowledge=knowledge,
                     images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))),
-                    gate_records=(lambda key: read_gate_record(workspace, key)) if workspace is not None else None)
+                    gate_records=(lambda key: read_gate_record(workspace, key)) if workspace is not None else None,
+                    # The skills a session's recorded label names, and the approved lessons its task recalls (read
+                    # only: its role's statements deny it any write of their partitions, engineering-bus.ts).
+                    skills=SkillStore(client, table),
+                    # (a role's lessons and the repository's only: no person is looked up here)
+                    memory=AgentMemoryStore(client, table, is_user=lambda _user: False))
 
 
 class _Kept:

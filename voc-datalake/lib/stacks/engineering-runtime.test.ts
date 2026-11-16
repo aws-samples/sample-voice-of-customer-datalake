@@ -385,11 +385,66 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(supervisor).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
     // No AgentCore grant without a runtime (engineering-agentcore.test.ts has them).
     expect(supervisor).not.toMatch(/bedrock-agentcore|Microvm/);
-    expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|gsi1|engineering\/runs\//);
+    expect(supervisor).not.toMatch(/s3:DeleteObject|dynamodb:\*|s3:\*|gsi1|engineering\/runs\//);
     template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime',
       Environment: { Variables: Match.objectLike({ ENGINEERING_TABLE: Match.anyValue() }) },
     });
+  });
+
+  /** The supervisor role's statements, parsed: its inline policies' and the managed ones CDK moves a long one's into. */
+  function supervisorStatements(): z.infer<typeof StatementsSchema> {
+    const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
+    const policies = [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
+      ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))];
+    return StatementsSchema.parse(policies.flatMap((policy) => z.looseObject({
+      Properties: z.looseObject({ PolicyDocument: z.looseObject({ Statement: z.array(z.unknown()) }) }),
+    }).parse(policy).Properties.PolicyDocument.Statement));
+  }
+
+  it('lets Learn read the agents\' transcripts and list them under their prefix only (7.50.00)', () => {
+    const statements = supervisorStatements();
+    const bySid = (sid: string) => statements.find((statement) => statement.Sid === sid);
+    expect(JSON.stringify(bySid('LearnReadsTranscripts')?.Resource))
+      .toContain('/ws/default/runs/*/*/commits/*/_transcripts/*');
+    expect(bySid('LearnListsTranscripts')?.Condition?.StringLike?.['s3:prefix'])
+      .toStrictEqual(['ws/default/runs/*/*/commits/*/_transcripts/*']);
+  });
+
+  it('lets the run\'s end write only its manifest and index entry: never a transcript, never an agent\'s keys', () => {
+    const puts = supervisorStatements().filter((statement) => JSON.stringify(statement).includes('"s3:PutObject"'));
+    expect(puts.map((statement) => statement.Sid)).toStrictEqual(['WriteRunManifests']);
+    const written = JSON.stringify(puts[0]?.Resource);
+    expect([written.includes('/ws/default/runs/*/_manifest/*'), written.includes('/ws/default/transcripts-index/*'),
+      written.includes('_transcripts')]).toStrictEqual([true, true, false]);
+  });
+
+  it('lets the launch read the skills\' rows (the coach\'s statement), never delete one (7.50.00)', () => {
+    // The skills' rows: the launch's resolution reads them (GetItem), the coach's proposal writes them.
+    expect(JSON.stringify(template.toJSON())).not.toMatch(/"dynamodb:DeleteItem"[^\]]*WS#\*#SKILL#\*/);
+    expect(policiesWithStatement(template, 'EngineeringSupervisorRole', {
+      Sid: 'LearningCoachSkills', Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] } },
+    })).toHaveLength(1);
+  });
+
+  it('lets no agent role write anything but its own keys: no other agent\'s transcript, no manifest (7.50.00)', () => {
+    const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+      .filter((id) => /^EngineeringRuntimeEngineeringAgent\w+Role/.test(id) || /EngineeringAgent\w+Role/.test(id));
+    expect(roles.length).toBeGreaterThan(10);
+    for (const role of roles) {
+      const statements = Object.values(template.findResources('AWS::IAM::Policy', {
+        Properties: { Roles: Match.arrayWith([{ Ref: role }]) },
+      })).flatMap((policy) => z.looseObject({
+        Properties: z.looseObject({ PolicyDocument: z.looseObject({ Statement: z.array(z.looseObject({
+          Sid: z.string().optional(), Action: z.unknown(), Resource: z.unknown() })) }) }),
+      }).parse(policy).Properties.PolicyDocument.Statement);
+      const puts = statements.filter((statement) => JSON.stringify(statement.Action).includes('s3:PutObject'));
+      expect(puts.map((statement) => statement.Sid)).toStrictEqual(['WriteOwnKeys']);
+      expect(JSON.stringify(puts[0]?.Resource))
+        .toContain('/ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
+      expect(policyText(template, role)).not.toMatch(/_manifest|transcripts-index/);
+    }
   });
 
   it('gives the supervisor one IAM action: the pass of the reactions schedule\'s role, never an IAM write', () => {

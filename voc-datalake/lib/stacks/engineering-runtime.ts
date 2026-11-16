@@ -55,7 +55,7 @@ import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-b
 import {
   EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, pricingEnvironment, refuseRemovedSettings,
 } from './engineering-agentcore';
-import { grantBudgetWork, grantIssueTriage, grantSpendLedger, viaServices } from './engineering-runtime-grants';
+import { grantBudgetWork, grantRunEnd, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
@@ -517,7 +517,8 @@ class EngineeringRuntime extends Construct {
     }));
     const functionName = uniqueName(RUNTIME_FUNCTION);
     this.grantLearning(props, role, functionName);
-    grantIssueTriage(role, workspaceBucket, props.agentsTable);   // (7.50.00: a triage run's end, its issue's row)
+    // (7.50.00: a run's end: its issue's triage row, its manifest and index entry, Learn's read of its transcripts)
+    grantRunEnd(role, workspaceBucket, props.agentsTable);
     return createWorkerFunction(this, 'EngineeringSupervisor', {
       tree: 'engineering',
       functionName,

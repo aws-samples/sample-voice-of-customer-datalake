@@ -100,8 +100,10 @@ class AgentSession:
                                     'inbox': self.inbox.cursor(),
                                     # The outputs written so far, recorded on the task when a continuation finishes.
                                     'results': list(context.result_keys),
-                                    # The checks it ran, as the harness recorded them (a gate record's checks).
+                                    # The checks it ran, as the harness recorded them (a gate record's checks),
+                                    # and whether the gate's own run made them (run_gate: its packs).
                                     'checks': list(context.checks),
+                                    'gate': {'ran': context.gate_ran, 'packs': list(context.gate_packs)},
                                     # The brief, so a continuation needs no claim of a task it holds already.
                                     'brief': {'title': context.brief.title[:500],
                                               'instructions': context.brief.instructions[:MAX_BRIEF],
@@ -128,6 +130,10 @@ class AgentSession:
         key = f'{context.checkpoints_prefix}{seq:06d}-{secrets.token_hex(4)}.json'
         self.store.put(key, body)
         self.saves += 1
+        if context.transcript is not None:
+            # (flushed at each checkpoint: what a continuation starts from is in the transcript too)
+            context.transcript.record('checkpoint', key=key, turn=turn)
+            context.transcript.flush()
         return key
 
     def remember(self, checkpoint: dict[str, Any]) -> None:

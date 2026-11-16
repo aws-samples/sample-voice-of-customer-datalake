@@ -297,6 +297,8 @@ export class EngineeringBus extends Construct {
     // held to the step not being closed and to its post count: lambda/engineering/board/store.py, flow/record.py).
     props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query', 'dynamodb:ConditionCheckItem');
     denyCostRows(role, props.engineeringTable);
+    // 7.50.00: the `skill` and `memory` ops read the skills' and the agent memory's rows; it writes none of them.
+    denyLearningWrites(role, props.engineeringTable);
     const runtime = props.uniqueName(ENGINEERING_RUNTIME_FUNCTION_BASE_NAME);
     this.grantInvokeByName(role, 'EngineeringRuntimeLaunch', runtime);
     const knowledge = props.workspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
@@ -359,6 +361,24 @@ function denyCostRows(role: iam.Role, table: dynamodb.ITable): void {
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
     resources: [table.tableArn],
     conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_SPEND_PARTITIONS, ENGINEERING_BUDGET_ALERT_PARTITIONS] } },
+  }));
+}
+
+/** The skills', the agent memory's and the scorecards' partitions (skills/store.py, agent_memory/model.py, scorecard.py). */
+const LEARNING_PARTITIONS = ['WS#*#SKILL#*', 'WS#*#AMEM#*', 'WS#*#SCORE#*'];
+
+/**
+ * The board reads a session's skill and its task's approved lessons (its `skill` and `memory` ops, 7.50.00) on its
+ * table-wide grant; an explicit Deny keeps it from writing any of those rows, so no board bug, nor an agent's request
+ * through it, can propose, accept or change a skill version, a memory or a scorecard.
+ */
+function denyLearningWrites(role: iam.Role, table: dynamodb.ITable): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'DenyLearningWrites',
+    effect: iam.Effect.DENY,
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+    resources: [table.tableArn],
+    conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': LEARNING_PARTITIONS } },
   }));
 }
 

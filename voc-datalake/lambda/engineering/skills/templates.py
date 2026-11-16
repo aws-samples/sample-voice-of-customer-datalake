@@ -1,17 +1,20 @@
 """The bundled role templates (7.50.00): each launchable role's skill as the repository ships it, the last place a
-launch resolves a skill from (``resolve.py``), labelled ``<role>@template-<version>``.
+launch resolves a skill from (``resolve.py``), labelled ``<role>@template-<version>``, and the platform's rules the
+harness puts around every skill.
 
-One interface, ``Templates`` (``skill``: a role's template, ``card_models``: the model each role's card names), and
-one loader, ``bundled()``. The templates are compiled from ``voc-datalake/templates/orchestration/agents/<role>/``
-(``agent.yaml`` and ``SKILL.md``) into the bundle, which ships in every Lambda that stages ``lambda/`` as
-``lambda/shared/orchestration_bundle.json`` (``BUNDLE_PATH``). Its agents' part, as read here::
+One interface, ``Templates`` (``skill``: a role's template; ``platform_rules``: the rules' text), one loader,
+``bundled()``, whose ``card_models`` also names the model each role's card names (readiness). The templates are
+compiled from ``voc-datalake/templates/orchestration/`` into its ``bundle.json`` (``voc-orchestration-bundle/1``),
+which every Lambda that stages ``lambda/`` ships byte for byte as ``orchestration_bundle.json`` in its ``shared``
+package (the first of ``BUNDLE_PATHS``). The parts read here::
 
-    {"agents": {"<role>": {"version": <template version>, "skill": <its voc-skill/1 record>,
-                           "card": {"model": {"id": <model id>}, ...}}, ...}, ...}
+    {"agents": [{"id": "<role>", "version": <template version>, "label": "<role>@template-<version>",
+                 "skill": <its voc-skill/1 record, null for the coach>, ...}, ...],
+     "platform_rules": {"text": "...", "digest": "sha256:..."}, ...}
 
-A deployment whose bundle is missing (before the templates land) reads the skills the harness ships
-(runtime/harness/skills.py ``SKILLS``), each as its own template version. Either way a template is a role's
-skill as shipped: no person accepted it, so it comes last, after any version the skills store holds for the role.
+A deployment without a bundle reads the skills the harness ships (runtime/harness/skills.py ``SKILLS``), each as its own
+template version, and the harness's own rules. Either way a template is a role's skill as shipped: no person accepted
+it, so it comes last, after any version the skills store holds for the role.
 """
 from __future__ import annotations
 
@@ -26,10 +29,14 @@ from typing import Any, Final, Protocol
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.runtime.harness.skills import SKILLS, Skill, SkillError
 
-#: The bundle every Lambda that stages ``lambda/`` ships (the templates' compiler writes it, byte for byte the one in
-#: voc-datalake/templates/orchestration/bundle.json).
-BUNDLE_PATH: Final = Path(__file__).resolve().parents[2] / 'shared' / 'orchestration_bundle.json'
+_LAMBDA: Final = Path(__file__).resolve().parents[2]
+#: The bundle's places, the first that exists read: the copy every Lambda ships, then the repository's own (a local
+#: run and the tests; no Lambda stages ``templates/``).
+BUNDLE_PATHS: Final = (_LAMBDA / 'shared' / 'orchestration_bundle.json',
+                       _LAMBDA.parent / 'templates' / 'orchestration' / 'bundle.json')
+BUNDLE_SCHEMA: Final = 'voc-orchestration-bundle/1'
 TEMPLATE_LABEL: Final = re.compile(r'(?P<role>[a-z][a-z-]{0,39})@template-(?P<version>[1-9][0-9]{0,5})\Z')
+MAX_RULES: Final = 20_000
 
 
 def template_label(role: str, version: int) -> str:
@@ -65,8 +72,8 @@ class Templates(Protocol):
         """The role's template, None for a role that has none (the coach)."""
         ...
 
-    def card_models(self) -> Mapping[str, str]:
-        """The model each role's card names: what a run of the role calls (readiness checks Bedrock for each)."""
+    def platform_rules(self) -> str:
+        """The platform's rules the harness puts around every skill ('' for the harness's own)."""
         ...
 
 
@@ -75,12 +82,17 @@ class BundleTemplates:
     """The templates of one bundle (``from_bundle``) or of the shipped skills (``shipped``)."""
 
     skills: Mapping[str, TemplateSkill]
+    rules: str = ''
 
     def skill(self, role: str) -> TemplateSkill | None:
         return self.skills.get(role)
 
     def card_models(self) -> Mapping[str, str]:
+        """The model each role's card names: what a run of the role calls (readiness checks Bedrock for each)."""
         return {role: template.skill.model for role, template in sorted(self.skills.items())}
+
+    def platform_rules(self) -> str:
+        return self.rules
 
     @classmethod
     def shipped(cls) -> BundleTemplates:
@@ -89,14 +101,17 @@ class BundleTemplates:
 
     @classmethod
     def from_bundle(cls, bundle: Mapping[str, Any]) -> BundleTemplates:
-        """The agents' part of a bundle (the module's doc); ``SkillError`` when it is off its shape (a bundle that
-        does not read is never half used)."""
+        """The agents and the rules of a bundle (the module's doc); ``SkillError`` when it is off its shape (a bundle
+        that does not read is never half used)."""
         agents = bundle.get('agents')
-        if not isinstance(agents, Mapping):
-            raise SkillError('the bundle has no agents')
+        if bundle.get('schema') != BUNDLE_SCHEMA or not isinstance(agents, list):
+            raise SkillError(f'not a {BUNDLE_SCHEMA} bundle with its agents')
         skills: dict[str, TemplateSkill] = {}
-        for role, entry in agents.items():
-            if role not in AGENT_ROLES or not isinstance(entry, Mapping) or 'skill' not in entry:
+        for entry in agents:
+            role = entry.get('id') if isinstance(entry, Mapping) else None
+            if role not in AGENT_ROLES or role in skills:
+                raise SkillError('each of the bundle\'s agents is one agent role, once')
+            if entry.get('skill') is None:
                 continue   # (the coach's card: Learn's, never launched)
             version = entry.get('version')
             if isinstance(version, bool) or not isinstance(version, int) or not 0 < version < 1_000_000:
@@ -104,15 +119,20 @@ class BundleTemplates:
             skill = Skill.from_record(entry['skill'])
             if skill.name != role or skill.version != version:
                 raise SkillError(f'the bundle\'s {role} template is the skill of {skill.name}@{skill.version}')
-            skills[role] = TemplateSkill(role, version, skill)
-        return cls(skills)
+            skills[str(role)] = TemplateSkill(str(role), version, skill)
+        rules = bundle.get('platform_rules')
+        text = rules.get('text') if isinstance(rules, Mapping) else None
+        if not isinstance(text, str) or not 0 < len(text) <= MAX_RULES:
+            raise SkillError('the bundle has no platform rules')
+        return cls(skills, text)
 
 
-def load(path: Path = BUNDLE_PATH) -> BundleTemplates:
-    """The templates of the bundle at ``path``; the shipped skills when there is none."""
-    if not path.is_file():
-        return BundleTemplates.shipped()
-    return BundleTemplates.from_bundle(json.loads(path.read_text(encoding='utf-8')))
+def load(paths: tuple[Path, ...] = BUNDLE_PATHS) -> BundleTemplates:
+    """The templates of the first bundle of ``paths`` that exists; the shipped skills when there is none."""
+    for path in paths:
+        if path.is_file():
+            return BundleTemplates.from_bundle(json.loads(path.read_text(encoding='utf-8')))
+    return BundleTemplates.shipped()
 
 
 @cache

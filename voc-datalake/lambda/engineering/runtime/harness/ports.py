@@ -58,7 +58,7 @@ class Board(Protocol):
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None: ...
 
-    def skill(self, *, run_id: str) -> SkillAnswer:
+    def skill(self, *, run_id: str, role: str) -> SkillAnswer:
         """The skill this session runs (7.50.00): the record of the label the launch recorded on the agent's session
         row, as the board reads it (the agent never names one). Anything but an answer raises: a crash, never a
         silent fallback to another skill."""
@@ -77,6 +77,8 @@ class SkillAnswer:
 
     label: str
     record: dict[str, Any]
+    #: The platform's rules the harness puts around the skill (the bundle's; '' for the harness's own).
+    platform_rules: str = ''
 
 
 @dataclass(frozen=True)
@@ -283,8 +285,8 @@ class PendingHarnessPorts:
     def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
         raise self._refuse(f'broker.label_issue({run_id}, {agent_id}, #{number}, {len(labels)} labels)')
 
-    def skill(self, *, run_id: str) -> SkillAnswer:
-        raise self._refuse(f'board.skill({run_id})')
+    def skill(self, *, run_id: str, role: str) -> SkillAnswer:
+        raise self._refuse(f'board.skill({run_id}, {role})')
 
     def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
         raise self._refuse(f'board.memory({run_id}, {task_id})')

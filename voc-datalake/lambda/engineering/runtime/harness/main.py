@@ -7,28 +7,34 @@
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
 bucket its session was handed with, the board's and the broker's function URLs) and its role session
-(``AWS_CONFIG_FILE``). The board, the inbox, the run coordinator's planner and the knowledge reader are reached
-through the board API (``board_client.py``), the repository host's reads and writes through the broker
-(``broker_client.py``), each signed with that session; a port whose URL the session was not handed refuses
-(``ports.PendingHarnessPorts``), so a session stops at its first call to it rather than guess.
+(``AWS_CONFIG_FILE``). Its skill (7.50.00) is the board's answer for the label its launch recorded
+(``Board.skill``), fetched before anything else and never chosen here: a fetch that fails crashes the session, never
+falls back to another skill; its task's brief takes its approved lessons from the board's ``memory``. The board, the
+inbox, the run coordinator's planner and the knowledge reader are reached through the board API
+(``board_client.py``), the repository host's reads and writes through the broker (``broker_client.py``), each
+signed with that session; a port whose URL the session was not handed refuses (``ports.PendingHarnessPorts``), so a
+session stops at its first call to it rather than guess.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
+from engineering.quality_gate.text import nonce
 from engineering.runtime.checkout import repo_git, share_working_tree
 from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, SHA, agent_prefix, artifact_prefix, is_valid
 from engineering.runtime.harness.board_client import (
     BoardHttp,
     BoardKnowledge,
     BoardPlanner,
+    BoardRefused,
     InboxHttp,
     SignedTransport,
     board_url,
@@ -36,6 +42,7 @@ from engineering.runtime.harness.board_client import (
 from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
+from engineering.runtime.harness.gate_tools import configured_gates_dir
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
 from engineering.runtime.harness.ports import (
     Board,
@@ -48,15 +55,20 @@ from engineering.runtime.harness.ports import (
 )
 from engineering.runtime.harness.role_tools import GATE_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
+from engineering.runtime.harness.skills import Skill
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tool_server import SessionFiles, serve
 from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
+from engineering.runtime.harness.transcript import Transcript
 from engineering.runtime.harness.workspace import Workspace
 from engineering.runtime.interface import check_id
 
 CHECKOUT_ROOT: Final = '/work/repo'
 #: The tree a gate's harness hashed, handed to the CLI's tool server (which shares its checkout) in its environment.
 GATE_TREE_ENV: Final = 'VOC_GATE_TREE'
+#: The session's fence, handed to the CLI's tool server the same way, so one session fences with one nonce.
+FENCE_ENV: Final = 'VOC_FENCE'
+_FENCE: Final = re.compile(r'[0-9a-f]{16}\Z')
 HEARTBEAT_SECONDS: Final = 60.0
 #: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
 COORDINATOR_ROLE: Final = 'coordinator'
@@ -82,6 +94,11 @@ class S3Store:
 
     def get(self, key: str, limit: int) -> bytes:
         return bytes(self._s3.get_object(Bucket=self._bucket, Key=key)['Body'].read(limit + 1))
+
+    def list(self, prefix: str, token: str | None = None) -> dict[str, Any]:
+        """One page of the run's keys under ``prefix`` (its role lists its run's prefix only)."""
+        return dict(self._s3.list_objects_v2(Bucket=self._bucket, Prefix=prefix,
+                                             **({'ContinuationToken': token} if token else {})))
 
 
 @dataclass(frozen=True)
@@ -116,9 +133,17 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
         checkpoints_prefix=checkpoints,
         patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'),
+        transcript=Transcript(store, artifact_prefix(run_id, agent_id, commit, attempt, 'transcripts')),
+        flush_each_call=not restore,
         planner=ports.planner, knowledge=ports.knowledge, commit=commit, attempt=attempt,
-        model=env.get('VOC_MODEL', ''))
-    session = AgentSession(context=context, tools=ToolBox(context), inbox=ports.inbox, store=store)
+        model=env.get('VOC_MODEL', ''), gates_dir=configured_gates_dir(env),
+        # (the tool server takes the harness's own fence; the harness makes its own)
+        fence=fence if not restore and _FENCE.fullmatch(fence := env.get(FENCE_ENV, '')) else nonce())
+    skill = session_skill(ports.board, context)
+    if restore and not saved:
+        # (a continuation's brief is its checkpoint's, which kept what it recalled in its notes)
+        context.brief = replace(context.brief, memory=_recalled(ports.board, context))
+    session = AgentSession(context=context, tools=ToolBox(context, skill), inbox=ports.inbox, store=store)
     if context.role in GATE_ROLES:
         # A gate judges the submitted patch its task names: applied and hashed by the harness before anything runs
         # (a continuation's working tree is a patch on that tree, so it goes back on after). The CLI's tool server
@@ -128,6 +153,28 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
     if restored is not None:
         _restore(session, store, *restored)
     return session
+
+
+def _recalled(board: Board, context: AgentContext) -> tuple[str, ...]:
+    """The task's approved lessons (the board's ``memory``); none when the board refuses them (advisory: a session
+    never stops for its recall), said on its status."""
+    try:
+        return board.memory(run_id=context.run_id, task_id=context.task_id)
+    except BoardRefused as refused:
+        context.status.at(f'no memory recalled ({refused.status})')
+        return ()
+
+
+def session_skill(board: Board, context: AgentContext) -> Skill:
+    """The skill the session runs: the board's answer for the label the launch recorded (its record, and the
+    platform's rules to put around it). Anything else is raised: a crash, never a fallback to another skill."""
+    answer = board.skill(run_id=context.run_id, role=context.role)
+    skill = Skill.from_record(answer.record)
+    if skill.name != context.role:
+        raise RuntimeError(f'the board answered the skill of {skill.name}, not of {context.role}')
+    context.platform_rules, context.skill_label = answer.platform_rules, answer.label
+    context.status.at(f'skill {answer.label}')
+    return skill
 
 
 def _read(store: S3Store, checkpoints: str, key: str | None) -> tuple[str, dict[str, Any]] | None:
@@ -178,6 +225,13 @@ def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, 
     context.checks = [{'name': str(check['name'])[:200], 'status': check['status']} for check in checks
                       if isinstance(check, dict) and 'name' in check and check.get('status') in ('pass', 'fail')
                       ][:MAX_CHECKS] if isinstance(checks, list) else []
+    gate = position.get('gate') if isinstance(position, dict) else None
+    if isinstance(gate, dict) and gate.get('ran') is True and context.checks:
+        # (run_gate's run before the crash: its checks above, its packs' plain names)
+        packs = gate.get('packs')
+        context.gate_ran = True
+        context.gate_packs = tuple(str(pack)[:64] for pack in packs if isinstance(pack, str))[:20] \
+            if isinstance(packs, list) else ()
     tree = state.get('patch')
     if isinstance(tree, str) and tree.startswith(context.patches_prefix) and context.runs_code:
         session.patch = tree
@@ -248,7 +302,8 @@ def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Calla
     choose_cli(args.cli)
     tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
                                               'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT', 'VOC_BOARD_URL',
-                                              'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                                              'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV, 'VOC_GATES_DIR',
+                                              'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
                 if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],
@@ -300,22 +355,54 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         _renew(ports.board, env)
     stop = threading.Event()
     threading.Thread(target=_heartbeat, args=(ports.board, env, stop), daemon=True).start()
+    session: AgentSession | None = None
+    ending: str = 'crashed'
     try:
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient())
+        _started(session, args)
         if session.restored is None:
             # A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to
             # snapshot): its brief, so a continuation reads it there and never claims the task it already holds.
             session.checkpoint(turn=0, clean=True)
         # The tool server's tree is the one this harness hashed, never one the session's start named.
-        tool_env = {name: value for name, value in env.items() if name != GATE_TREE_ENV}
+        tool_env = {name: value for name, value in env.items() if name not in (GATE_TREE_ENV, FENCE_ENV)}
         if session.context.gate_tree:
             tool_env[GATE_TREE_ENV] = session.context.gate_tree
+        tool_env[FENCE_ENV] = session.context.fence
         ending = adapter_for(args, tool_env, bedrock or _bedrock).run(session)
         if ending == 'done':
             _finished(session)
+    except BaseException as error:
+        if session is not None and session.context.transcript is not None:
+            session.context.transcript.record('crash', error=f'{type(error).__name__}: {error}'[:500])
+        raise
     finally:
         stop.set()
+        if session is not None:
+            _ended(session, ending)
     return DONE_EXIT_CODE if ending == 'done' else PAUSED_EXIT_CODE
+
+
+def _started(session: AgentSession, args: argparse.Namespace) -> None:
+    """The transcript's first event: who runs what, on which model and harness."""
+    context = session.context
+    if context.transcript is not None:
+        context.transcript.record('session', run=context.run_id, agent=context.agent_id, role=context.role,
+                                  task=context.task_id, attempt=context.attempt, commit=context.commit,
+                                  model=args.model, adapter=args.adapter, skill=context.skill_label,
+                                  continuation=session.restored is not None,
+                                  tools=[spec.name for spec in session.tools.specs])
+
+
+def _ended(session: AgentSession, ending: str) -> None:
+    """The transcript's last event (how the session ended, its tokens per model), then its last chunk; never
+    raising: the session's outcome is what the supervisor reads."""
+    transcript = session.context.transcript
+    if transcript is None:
+        return
+    transcript.record('end', ending=ending, tokens=dict(session.context.status.tokens),
+                      results=list(session.context.result_keys))
+    transcript.flush_quietly()
 
 
 def _finished(session: AgentSession) -> None:

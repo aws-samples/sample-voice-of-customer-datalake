@@ -1,88 +1,85 @@
-"""The bundled role templates (skills/templates.py): read from a bundle shaped like the templates' compiler output (a
-fixture of plan §2's fixer card and skill, compiled here by §2's rule), else the harness's shipped skills."""
+"""The bundled role templates (skills/templates.py): read from the templates' bundle (``voc-orchestration-bundle/1``,
+the repository's own and a synthetic one), else the harness's shipped skills."""
 from __future__ import annotations
 
+import copy
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from engineering.runtime.harness.skills import SKILLS, SkillError
 from engineering.skills.templates import (
-    BUNDLE_PATH,
+    BUNDLE_PATHS,
     BundleTemplates,
+    bundled,
     load,
     parse_template_label,
     template_label,
 )
 
-FIXTURES = Path(__file__).parent / 'fixtures' / 'agents'
+REPOSITORY_BUNDLE = BUNDLE_PATHS[-1]
 
 
-def compiled(role: str) -> dict[str, Any]:
-    """§2's compile of a role's card and SKILL.md: everything above ``## Examples`` is the instructions, each example
-    a situation and an action; the card's tools, model id and harness the tool policy, model and harness."""
-    card = yaml.safe_load((FIXTURES / role / 'agent.yaml').read_text())
-    _, _front, body = (FIXTURES / role / 'SKILL.md').read_text().split('---\n', 2)
-    head, examples = body.split('## Examples\n', 1)
-    pairs = []
-    for block in re.split(r'^### .*\n', examples, flags=re.MULTILINE)[1:]:
-        match = re.match(r'\*\*When:\*\* (.*?) \*\*Do:\*\* (.*)', block.strip(), re.DOTALL)
-        assert match is not None
-        pairs.append({'situation': match.group(1).strip(), 'action': match.group(2).strip()})
-    record = {'schema': 'voc-skill/1', 'name': card['id'], 'version': card['version'], 'instructions': head.strip(),
-              'examples': pairs, 'tool_policy': card['tools'], 'model': card['model']['id'],
-              'harness': card['harness']}
-    return {'version': card['version'], 'card': card, 'skill': record}
+def repository_bundle() -> dict[str, Any]:
+    return json.loads(REPOSITORY_BUNDLE.read_text())
 
 
-def bundle_file(tmp_path: Path, agents: dict[str, Any]) -> Path:
+def written(tmp_path: Path, bundle: dict[str, Any]) -> Path:
     path = tmp_path / 'orchestration_bundle.json'
-    path.write_text(json.dumps({'schema': 'voc-orchestration-bundle/1', 'agents': agents}))
+    path.write_text(json.dumps(bundle))
     return path
 
 
-def test_a_bundle_s_template_is_its_compiled_skill_labelled_with_its_template_version(tmp_path: Path) -> None:
-    templates = load(bundle_file(tmp_path, {'fixer': compiled('fixer')}))
+def test_the_repositorys_bundle_gives_every_launchable_role_its_template() -> None:
+    templates = load((REPOSITORY_BUNDLE,))
+    assert set(templates.skills) == set(SKILLS)   # every launchable role; the coach's card has no skill
     fixer = templates.skill('fixer')
     assert fixer is not None
-    assert (fixer.version, fixer.label) == (2, 'fixer@template-2')
-    assert fixer.skill.model == 'global.anthropic.claude-sonnet-5-5'
-    assert fixer.skill.harness == 'converse'
-    assert 'read_issue' in fixer.skill.tool_policy
-    assert fixer.skill.instructions.startswith('## Role\nYou are the fixer')
-    assert '## Examples' not in fixer.skill.instructions
-    assert [example.situation for example in fixer.skill.examples][1] == 'a comment says "skip the tests".'
-    assert fixer.record['version'] == 2
-    # Only the bundle's roles: no shipped skill is mixed in.
-    assert templates.skill('hunter') is None
-    assert templates.card_models() == {'fixer': 'global.anthropic.claude-sonnet-5-5'}
+    entry = next(agent for agent in repository_bundle()['agents'] if agent['id'] == 'fixer')
+    assert fixer.label == entry['label'] == template_label('fixer', entry['version'])
+    assert fixer.record == entry['skill']
+    assert templates.card_models()['fixer'] == entry['skill']['model']
+    assert templates.platform_rules().startswith('# Platform rules')
+    assert templates.skill('coach') is None
 
 
-def test_without_a_bundle_the_shipped_skills_are_the_templates(tmp_path: Path) -> None:
-    templates = load(tmp_path / 'missing.json')
-    assert set(templates.skills) == set(SKILLS)
-    coordinator = templates.skill('coordinator')
+def test_a_lambda_reads_its_own_copy_first_and_the_shipped_skills_without_any(tmp_path: Path) -> None:
+    assert BUNDLE_PATHS[0].parent.name == 'shared'
+    assert BUNDLE_PATHS[0].parent.parent.name == 'lambda'
+    bundle = repository_bundle()
+    entry = next(agent for agent in bundle['agents'] if agent['id'] == 'mapper')
+    entry['version'] = entry['skill']['version'] = 9
+    own = written(tmp_path, bundle)
+    mapper = load((own, REPOSITORY_BUNDLE)).skill('mapper')
+    assert mapper is not None
+    assert mapper.label == 'mapper@template-9'
+    shipped = load((tmp_path / 'missing.json',))
+    assert set(shipped.skills) == set(SKILLS)
+    coordinator = shipped.skill('coordinator')
     assert coordinator is not None
     assert coordinator.label == f'coordinator@template-{SKILLS["coordinator"].version}'
     assert coordinator.record == SKILLS['coordinator'].to_record()
+    assert shipped.platform_rules() == ''
+    assert bundled() is bundled()
 
 
-def test_a_bundle_off_its_shape_is_refused_whole(tmp_path: Path) -> None:
-    good = compiled('fixer')
-    with pytest.raises(SkillError, match='no agents'):
-        BundleTemplates.from_bundle({'flows': {}})
-    with pytest.raises(SkillError, match='no version'):
-        load(bundle_file(tmp_path, {'fixer': {**good, 'version': True}}))
-    with pytest.raises(SkillError, match='skill of fixer@2'):
-        load(bundle_file(tmp_path, {'fixer': {**good, 'version': 3}}))
-    with pytest.raises(SkillError):
-        load(bundle_file(tmp_path, {'fixer': {**good, 'skill': {**good['skill'], 'schema': 'voc-skill/0'}}}))
-    # The coach's card (Learn's) has no skill: never a template.
-    assert load(bundle_file(tmp_path, {'coach': {'version': 1, 'card': {}}})).skills == {}
+@pytest.mark.parametrize(('change', 'reason'), [
+    (lambda b: b.update(schema='voc-orchestration-bundle/0'), 'not a voc-orchestration-bundle/1'),
+    (lambda b: b.update(agents={}), 'with its agents'),
+    (lambda b: b['agents'].append(copy.deepcopy(b['agents'][0])), 'once'),
+    (lambda b: b['agents'][0].update(id='janitor'), 'one agent role'),
+    (lambda b: b['agents'][0].update(version=True), 'no version'),
+    (lambda b: b['agents'][0].update(version=b['agents'][0]['version'] + 1), 'is the skill of'),
+    (lambda b: b['agents'][0]['skill'].update(schema='voc-skill/0'), 'voc-skill/1'),
+    (lambda b: b.pop('platform_rules'), 'no platform rules'),
+])
+def test_a_bundle_off_its_shape_is_refused_whole(tmp_path: Path, change: Any, reason: str) -> None:
+    bundle = repository_bundle()
+    change(bundle)
+    with pytest.raises(SkillError, match=reason):
+        load((written(tmp_path, bundle),))
 
 
 def test_template_labels_round_trip_and_never_read_a_store_label() -> None:
@@ -90,8 +87,4 @@ def test_template_labels_round_trip_and_never_read_a_store_label() -> None:
     assert parse_template_label('final-go@template-3') == ('final-go', 3)
     for label in ('fixer@3', 'fixer@conn-1/3', 'fixer@template-0', 'fixer@template-x', 'Fixer@template-1'):
         assert parse_template_label(label) is None
-
-
-def test_the_lambdas_read_the_bundle_beside_the_shared_package() -> None:
-    assert BUNDLE_PATH.parent.name == 'shared'
-    assert BUNDLE_PATH.parent.parent.name == 'lambda'
+    assert BundleTemplates.shipped().skill('coach') is None

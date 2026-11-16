@@ -98,9 +98,12 @@ export function supervisorEnv(template: Template): Record<string, unknown> {
   return functionEnv(template, 'voc-engineering-runtime');
 }
 
-/** The inline policies attached to the role whose logical id contains `roleId`, as searchable text. */
+/**
+ * The policies attached to the role whose logical id contains `roleId`, as searchable text: its inline ones and the
+ * managed ones CDK moves a long inline policy's overflow into, so a pin reads every statement the role holds.
+ */
 export function policyText(template: Template, roleId: string): string {
-  return JSON.stringify(template.findResources('AWS::IAM::Policy', {
-    Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(roleId) }]) },
-  }));
+  const attached = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(roleId) }]) } };
+  return JSON.stringify({ ...template.findResources('AWS::IAM::Policy', attached),
+    ...template.findResources('AWS::IAM::ManagedPolicy', attached) });
 }

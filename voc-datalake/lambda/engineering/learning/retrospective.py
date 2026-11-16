@@ -57,7 +57,10 @@ COMMENT_CHARS: Final = 1_000
 MAX_MOVE_LINES: Final = 30
 MAX_COMMENTS: Final = 12
 #: A skill version as a session row names it (``runtime/harness/skills.skill_label``: ``<role>@<version>``).
-VERSION_LABEL: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}@[0-9]{1,6}\Z')
+#: A session's skill label (skills/resolve.py, 7.50.00): ``<role>@<n>`` (a shared version, or before 7.50.00 a shipped
+#: one), ``<role>@<connection>/<n>`` (a connection's own) or ``<role>@template-<n>`` (the bundled template).
+VERSION_LABEL: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}@(?:template-[0-9]{1,6}|'
+                                  r'(?:[A-Za-z0-9][A-Za-z0-9_-]{0,127}/)?[0-9]{1,6})\Z')
 #: The label of an agent whose row names no skill version (a role with no skill yet), and of one off that shape.
 NO_VERSION: Final = 'none'
 OFF_SHAPE_VERSION: Final = 'unlabelled'
@@ -118,6 +121,8 @@ class RunRecord:
     history: Mapping[str, Sequence[Move]]
     agents: tuple[AgentRecord, ...]
     gates: tuple[GateVerdict, ...] = ()
+    #: The commit the run works on (its agents' transcripts are under it: Learn reads them, 7.50.00).
+    commit: str = ''
 
 
 @dataclass(frozen=True)

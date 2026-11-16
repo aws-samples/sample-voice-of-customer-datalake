@@ -212,6 +212,11 @@ class BoardStore:
         """The run's META row (its caps, its commit and connection), or None for an unknown run."""
         return self._get({'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}})
 
+    def agent_row(self, ws: str, run_id: str, agent: str) -> dict[str, Any] | None:
+        """The agent's session row (``AGENT#<agent>``: runtime/sessions.py), or None: the skill its launch resolved
+        (``skill_version``) is read there, never taken from the agent (7.50.00)."""
+        return self._get({'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': f'AGENT#{agent}'}})
+
     def tasks(self, ws: str, run_id: str) -> list[Task]:
         """Every task of the run (at most its ``max_tasks``), in id order."""
         return [Task.from_item(item) for item in run_rows(self.client, self.table, ws, run_id, 'TASK#')]

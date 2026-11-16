@@ -51,6 +51,9 @@ class CoachReply:
 
     text: str
     model_id: str
+    #: The call's tokens (Converse's ``usage``): what Learn's spend counts (learning/budget.py, 7.50.00).
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 #: What the coach asks a model: ``(system, prompt)`` in, the reply out (one call, nothing else kept).
@@ -99,4 +102,6 @@ class BedrockCoachModel:
             call_label='the coach\'s Converse call') or {}   # (None only with raise_on_throttle off, never here)
         if answer.get('stopReason') == CUT_AT_CAP:
             raise CoachError(f"the coach's answer ran past its {MAX_ANSWER_TOKENS} tokens: nothing is proposed")
-        return CoachReply(_text(answer), self.model_id)
+        usage = answer.get('usage') if isinstance(answer.get('usage'), dict) else {}
+        return CoachReply(_text(answer), self.model_id, tokens_in=int(usage.get('inputTokens', 0) or 0),
+                          tokens_out=int(usage.get('outputTokens', 0) or 0))

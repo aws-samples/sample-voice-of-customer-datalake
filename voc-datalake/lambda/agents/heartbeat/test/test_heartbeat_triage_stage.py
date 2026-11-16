@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from agents.heartbeat import issues
 from agents.heartbeat import handler as hb
+from agents.heartbeat import issues
 from agents.heartbeat.test.test_heartbeat_engineering import (
     CONNECTION,
     ISSUE,

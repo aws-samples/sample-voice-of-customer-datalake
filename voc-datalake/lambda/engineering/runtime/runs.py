@@ -51,6 +51,7 @@ from engineering.flow.record import (
     STEP_PREFIX,
     board_state,
     cap_reached,
+    copied_definition,
     decision_item,
     flow_item,
     gate_verdicts,
@@ -92,6 +93,10 @@ MAX_ACTOR: Final = 200
 #: How often a status change is tried when another write of META races it (a transaction conflict).
 STATUS_TRIES: Final = 3
 STATUS_PAUSE_S: Final = 0.05
+
+
+#: Learn's spend row in the run's partition (learning/budget.py, which writes it).
+LEARN_SPEND_SK: Final = 'LEARN#spend'
 
 
 def run_pk(run_id: str) -> str:
@@ -150,6 +155,10 @@ class Run:
     waiting_at: str = ''
     #: When a fill of the run's checkout last began before a coordinator's launch (epoch seconds; 0 for never).
     cache_fill_at: int = 0
+    #: When the run came to wait at a person (epoch seconds; 0 for never, or before 7.50.00), and when Learn's sweep
+    #: took it there (0 for not yet): a run left at a person past its flow's hours learns once (7.50.00).
+    needs_human_at: int = 0
+    learn_swept_at: int = 0
 
 
 class StartReadFailed(RuntimeRefused):
@@ -487,10 +496,10 @@ class RunStore:
         try:
             self._update_status(run_id, _history(run_id, status='needs_human', actor=actor, now=now,
                                                  reason=reason),
-                                'SET #status = :human, needs_human = :reason',
+                                'SET #status = :human, needs_human = :reason, needs_human_at = :at',
                                 '#status = :active OR (#status = :human AND needs_human <> :reason '
                                 'AND needs_human <> :thirty)',
-                                {':reason': reason, ':active': 'active', ':thirty': 'thirty_days'})
+                                {':reason': reason, ':active': 'active', ':thirty': 'thirty_days', ':at': now})
         except RunNotActive:
             run = consistent_item(self._table, meta_key(run_id))
             if run is not None and run.get('status') == 'needs_human':
@@ -546,7 +555,9 @@ class RunStore:
                    budget_alert_month=str(item.get('budget_alert_month', '')),
                    resumed_at=int(item.get('resumed_epoch', 0)),
                    cache_fill_at=int(item.get('cache_fill_at', 0)),
-                   waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '')
+                   waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '',
+                   needs_human_at=int(item.get('needs_human_at', 0)),
+                   learn_swept_at=int(item.get('learn_swept_at', 0)))
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
@@ -562,6 +573,20 @@ class RunStore:
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
+
+    def mark_learn_swept(self, run_id: str, *, now: int) -> bool:
+        """Learn's sweep takes the run, left at a person (7.50.00): ``learn_swept_at`` set once, only while it still
+        waits there; False when it was taken already, or has moved on."""
+        try:
+            self._table.update_item(Key=meta_key(run_id), UpdateExpression='SET learn_swept_at = :now',
+                                    ConditionExpression='#status = :human AND attribute_not_exists(learn_swept_at)',
+                                    ExpressionAttributeNames={'#status': 'status'},
+                                    ExpressionAttributeValues={':now': now, ':human': 'needs_human'})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                return False
+            raise
+        return True
 
     def mark_cache_fill(self, run_id: str, *, now: int) -> None:
         """A fill of the run's checkout began before its coordinator's launch (``cache_fill_at``): the supervisor
@@ -626,6 +651,19 @@ class RunStore:
                  'ExpressionAttributeValues': {':run': run_pk(run_id), ':p': prefix}}
         return [_typed(item) for item in iter_query(self._table, query)]
 
+    def flow_revision(self, run_id: str) -> int:
+        """The revision of the flow the run's start copied (0: it was started without one)."""
+        item = consistent_item(self._table, {'pk': run_pk(run_id), 'sk': FLOW_SK})
+        revision = (item or {}).get('revision', 0)
+        return int(revision) if isinstance(revision, int | Decimal) and not isinstance(revision, bool) else 0
+
+    def flow_definition(self, run_id: str) -> dict[str, Any] | None:
+        """The run's own copy of its flow, as stored (None: it was started without one): what a launch reads a
+        step's skill pin from, and the run's end its ``learn`` settings (7.50.00). One consistent read of its
+        ``FLOW`` row; FlowError for a copy that cannot be read."""
+        item = consistent_item(self._table, {'pk': run_pk(run_id), 'sk': FLOW_SK})
+        return None if item is None else copied_definition(_typed(item))
+
     def flow_plan(self, run_id: str, *, keep_verdicts: bool = False) -> Plan | None:
         """The conductor's plan for the run (None: it was started without a flow): its copy of its flow, kept once
         read (it never changes), then its tasks, its step rows and META read now (engineering/flow/record.py).
@@ -689,14 +727,17 @@ class RunStore:
         return [str(item['run_id']) for item in iter_query(self._table, query)]
 
     def spend(self, run_id: str) -> tuple[int, float]:
-        """The run's tokens (its agents' totals) and cost (what the brokers and the runtime priced on its agents)."""
+        """The run's tokens (its agents' totals) and cost (what the brokers and the runtime priced on its agents), with
+        Learn's (its ``LEARN#spend`` row, 7.50.00: learning/budget.py)."""
         query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :agent)', 'ConsistentRead': True,
                  'ExpressionAttributeValues': {':run': run_pk(run_id), ':agent': 'AGENT#'}}
         tokens, cost = 0, 0.0
         for item in iter_query(self._table, query):
             tokens += int(item.get('input_tokens', 0)) + int(item.get('output_tokens', 0))
             cost += float(item.get('cost_usd', 0))
-        return tokens, cost
+        learn = consistent_item(self._table, {'pk': run_pk(run_id), 'sk': LEARN_SPEND_SK}) or {}
+        tokens += int(learn.get('tokens_in', 0)) + int(learn.get('tokens_out', 0))
+        return tokens, cost + float(learn.get('cost_usd', 0))
 
 
 #: How far into a month the month before is still checked, past an alert claim's time: two ticks more, so a claim

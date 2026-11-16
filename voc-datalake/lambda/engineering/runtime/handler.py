@@ -76,6 +76,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Mapping
+from decimal import Decimal
 from functools import cache
 from typing import TYPE_CHECKING, Any, Final, TypeGuard
 
@@ -85,6 +86,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError
 from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.conductor import FlowError
+from engineering.flow.settings import LearnSettings, learn_settings
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkout_cache import (
@@ -98,7 +101,7 @@ from engineering.runtime.checkout_cache import (
 )
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
-from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
+from engineering.runtime.harness.skills import harness_argv
 from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, check_run_id
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import (
@@ -113,6 +116,7 @@ from engineering.runtime.runs import (
     StartReadFailed,
     TableRunControl,
     hard_capped,
+    run_pk,
 )
 from engineering.runtime.sessions import (
     LIVE_STATUSES,
@@ -130,6 +134,7 @@ from engineering.runtime.supervisor import (
 )
 from engineering.runtime.triage_end import copy_triage_at_end
 from engineering.settings import read_hard_cap
+from engineering.skills.templates import bundled
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
 
@@ -138,6 +143,7 @@ if TYPE_CHECKING:
     from engineering.learning.reactions_read import ReactionsRead
     from engineering.quality_gate.record import GateRecord
     from engineering.runtime.board_bus import SessionState
+    from engineering.skills.resolve import Resolved
 
 MAX_HARNESS_ARGS: Final = 32
 #: A failure's key as the retrospective names it (``<task>#<attempt>#<how>``), at most.
@@ -354,6 +360,8 @@ def _settle() -> None:
         run = runs.get(run_id)
         if run is None:
             logger.error('engineering runtime: a listed run has no META row', extra={'run_id': run_id})
+        if run is not None and run.status == 'needs_human':
+            _sweep_at_a_person(runs, run)
         if (run is None or run.status in ENDED) and not sessions.any_live_or_moving(run_id, int(clock())):
             if run is not None:
                 # Every agent of it has ended, its sessions priced: its record no longer moves, so the run's
@@ -367,6 +375,31 @@ def _settle() -> None:
             _switch(True)
 
 
+#: Each listed run's Learn hours at a person, once read (its flow copy never changes), at most this many runs.
+_learn_hours: dict[str, int] = {}
+MAX_LEARN_HOURS_CACHED: Final = 500
+
+
+def _sweep_at_a_person(runs: RunStore, run: Run) -> None:
+    """Learn's sweep (7.50.00): a run left at a person past its flow's ``learn.after_needs_human_hours`` learns once
+    (``RunStore.mark_learn_swept``), its record as it stands; best effort, logged, never failing the tick."""
+    if run.learn_swept_at or not run.needs_human_at:
+        return
+    try:
+        hours = _learn_hours.get(run.run_id)
+        if hours is None:
+            if len(_learn_hours) >= MAX_LEARN_HOURS_CACHED:
+                _learn_hours.clear()
+            settings = _learn_settings(run.run_id)
+            hours = _learn_hours[run.run_id] = settings.after_needs_human_hours if settings.enabled else -1
+        now = int(clock())
+        if hours < 0 or now - run.needs_human_at < hours * 3600 or not runs.mark_learn_swept(run.run_id, now=now):
+            return
+        _hand_on({'action': 'retrospective', 'run_id': run.run_id, 'at_a_person': True})
+    except Exception:
+        logger.exception('engineering learn: the sweep of a run at a person failed', extra={'run_id': run.run_id})
+
+
 def _attempt(supervisor: Supervisor, run_id: str, task_id: str, given: int | None) -> int:
     """The task's attempt, as the board has it (a launch naming another is refused: the agent's lease epoch is the
     attempt, and the supervisor ends a session at another); 1, or the one given, for a task not on the board yet."""
@@ -378,17 +411,41 @@ def _attempt(supervisor: Supervisor, run_id: str, task_id: str, given: int | Non
     return lease.attempt
 
 
+def _skill_rows() -> Any:
+    """The skills store on voc-engineering (the runtime's role reads its rows: ``LearningCoachSkills``)."""
+    from engineering.skills.store import SkillStore
+    from shared.aws import get_dynamodb_client
+    return SkillStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
+
+
+def _resolved_skill(event: Mapping[str, Any]) -> Resolved | None:
+    """The skill the launch runs (``skills/resolve.py``): the flow step's pin, the store's current version for the
+    run's connection, else the role's bundled template; None for a role with none. A pin or label the store refuses
+    is ``RuntimeRefused`` (the board clears its launch record); a store that cannot be read raises as it is (the
+    board answers 503 and the coordinator asks again), never falling back to the template."""
+    from engineering.skills.model import SkillError
+    from engineering.skills.resolve import resolve_launch, step_pin
+    role, run_id = str(event.get('role', '')), str(event.get('run_id', ''))
+    step = str(event.get('step', '') or '')
+    try:
+        definition = _runs().flow_definition(run_id) if step else None
+        return resolve_launch(role, connection=str(event.get('connection', '')),
+                              pin=step_pin(definition, step, role), rows=_skill_rows(), templates=bundled())
+    except (SkillError, FlowError) as error:
+        raise RuntimeRefused(f'the {role} cannot be launched on its skill: {error}') from error
+
+
 def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]:
-    """The agent's harness argv and what the reports name it by: its role's skill's (a request that names another
-    argv for it is refused), else the request's (a role with no skill yet)."""
-    skill = skill_for(str(event.get('role', '')))
+    """The agent's harness argv and what the reports name it by: its resolved skill's (a request that names another
+    argv for it is refused), else the request's (a role with no skill yet). The session row records the skill's
+    label, which the session's harness fetches the record by (the board's ``skill``)."""
+    resolved = _resolved_skill(event)
     given = event.get('harness')
-    if skill is not None:
-        argv = harness_argv(skill)
+    if resolved is not None:
+        argv = harness_argv(resolved.skill)
         if given is not None and (not _strings(given) or tuple(given) != argv):
-            raise RuntimeRefused(f'a {skill.name} runs its skill\'s harness '
-                                 f'({skill_label(skill.name, skill.version)}), not another')
-        return argv, {'model': skill.model, 'skill_version': skill_label(skill.name, skill.version)}
+            raise RuntimeRefused(f'a {resolved.skill.name} runs its skill\'s harness ({resolved.label}), not another')
+        return argv, {'model': resolved.skill.model, 'skill_version': resolved.label}
     if not _strings(given) or not 0 < len(given) <= MAX_HARNESS_ARGS:
         raise RuntimeRefused(f'harness must be an argv of 1-{MAX_HARNESS_ARGS} strings (the role has no skill yet)')
     return tuple(given), {'model': str(event.get('model', ''))[:200],
@@ -419,7 +476,7 @@ def _coordinator_launchable(language: str) -> None:
     """What the coordinator's launch would refuse, refused before a coordinator is numbered (the board's launch op
     checks the same before it numbers an agent: ``BoardApi._check_launchable``): the coordinator role with no skill,
     a language this deployment has no agent runtime for."""
-    if skill_for(COORDINATOR) is None:
+    if bundled().skill(COORDINATOR) is None:
         raise RuntimeRefused('no coordinator can be launched yet: the role has no skill')
     images = _image_languages()
     if language not in images:
@@ -951,6 +1008,19 @@ def _learning() -> LearningLoop:
         from engineering.learning.reactions import ReactionsStore, host_reactions
         cases = json.loads(os.environ['ENGINEERING_BENCHMARK_CASES'])
         reactions = ReactionsStore(client, table)
+        from engineering.learning.budget import LearnBudget, MeteredCoachModel
+        runs = _runs()
+        budget = LearnBudget(runs.table, runs, _token_price)
+
+        def coach_for(run_id: str, settings: LearnSettings) -> Coach:
+            """The run's coach on Learn's model (its flow's, when allowed), every reply's tokens counted in the run's
+            spend (learning/budget.py)."""
+            from engineering.coach.model import COACH_MODEL
+            from shared.model_config import ALLOWED_MODEL_IDS
+            model = settings.model if settings.model in ALLOWED_MODEL_IDS else COACH_MODEL
+            return Coach(skills, MeteredCoachModel(BedrockCoachModel(model), lambda reply: budget.record(
+                run_id, reply.model_id, reply.tokens_in, reply.tokens_out)))
+
         _learning_cache = LearningLoop(
             reader=RunRecordReader(client, table, workspace), scorecards=ScorecardStore(client, table),
             # A role's lessons only: no person memory is learned here, so no user is looked up.
@@ -958,19 +1028,63 @@ def _learning() -> LearningLoop:
             coach=lambda: Coach(skills, BedrockCoachModel()),
             cases=tuple(str(case) for case in cases) if isinstance(cases, list) else (),
             # (7.10.00: the HostReactions port answers the run's latest recorded read, one Query of one row)
-            reactions=lambda run: host_reactions(reactions.latest(run.ws, run.run_id)))
+            reactions=lambda run: host_reactions(reactions.latest(run.ws, run.run_id)),
+            # (7.50.00: Learn, as the run's flow sets it; the failed attempt's transcript; its share of the budget)
+            settings=_learn_settings, transcripts=_transcript_excerpts, budget=budget, coach_for=coach_for)
     return _learning_cache
 
 
+def _token_price(model: str, tokens_in: int, tokens_out: int) -> Decimal:
+    """A model's tokens at this deployment's prices (``ENGINEERING_MODEL_PRICES`` over the defaults: caps.py)."""
+    return caps.token_usd(caps.model_prices(os.environ.get('ENGINEERING_MODEL_PRICES')), model, tokens_in,
+                          tokens_out)
+
+
+def _learn_settings(run_id: str) -> LearnSettings:
+    """The run's Learn settings: its flow copy's (flow/settings.py); the defaults for a run without a flow, or a copy
+    that cannot be read (Learn never stops for a setting it cannot read)."""
+    try:
+        return learn_settings(_runs().flow_definition(run_id))
+    except FlowError:
+        logger.warning('engineering learn: the run\'s flow copy cannot be read; the defaults apply',
+                       extra={'run_id': run_id})
+        return LearnSettings()
+
+
+def _transcript_excerpts(run: Any, failure: Any) -> tuple[str, ...]:
+    """The failed attempt's transcript, as excerpts (learning/transcripts.py), through this function's grant on the
+    agents' ``_transcripts/`` keys alone; none when it cannot be read (logged)."""
+    from engineering.learning.transcripts import excerpts
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_s3_client
+    s3, bucket = get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET']
+    store = WorkspaceStore(s3, bucket, denied_is_missing=True)
+
+    def listed(prefix: str) -> list[str]:
+        answer = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1000)
+        return [str(item['Key']) for item in answer.get('Contents', [])]
+
+    try:
+        return excerpts(listed, store.read_bytes, run.run_id, failure.attempt.agent, run.commit,
+                        failure.attempt.attempt)
+    except Exception:
+        logger.exception('engineering learn: the transcript was not read', extra={'run_id': run.run_id})
+        return ()
+
+
 def retrospective(event: Mapping[str, Any]) -> dict[str, Any]:
-    """The ``retrospective`` action: ``{"run_id"}`` (the run's end hands it on) writes the ended run's scorecards and
-    hands each failure it takes to the coach on as ``{"run_id", "failure": <key>}``, which takes that one to the
-    coach and to memory (``learning/loop.py``). Best effort: whatever fails is logged and answered, never raised (an
-    asynchronous invocation that raised would be retried, and a retry would spend nothing new but time)."""
+    """The ``retrospective`` action, Learn (7.50.00): ``{"run_id", "at_a_person"?}`` (the run's end hands it on, or
+    the sweep of a run left at a person past its flow's hours) writes the run's manifest and index entry, the ended
+    run's scorecards, and hands each failure it takes to the coach on as ``{"run_id", "failure": <key>}``, which takes
+    that one to the coach and to memory (``learning/loop.py``). Best effort: whatever fails is logged and answered,
+    never raised (an asynchronous invocation that raised would be retried, and a retry would spend nothing new but
+    time)."""
     run_id, failure = str(event.get('run_id', '')), event.get('failure')
+    at_a_person = event.get('at_a_person') is True
     try:
         check_run_id(run_id)
-        return _retrospect(run_id) if failure is None else _learn_from(run_id, str(failure)[:MAX_FAILURE_KEY])
+        return (_retrospect(run_id, at_a_person=at_a_person) if failure is None
+                else _learn_from(run_id, str(failure)[:MAX_FAILURE_KEY], at_a_person=at_a_person))
     except Exception:
         logger.exception('engineering retrospective failed', extra={'run_id': run_id, 'failure': failure})
         return {'run_id': run_id, 'status': 'failed'}
@@ -1065,12 +1179,43 @@ def _schedule_reactions(run_id: str) -> None:
     logger.info('engineering reactions scheduled', extra={'run_id': run_id, 'created': created, 'days': schedule.days})
 
 
-def _retrospect(run_id: str) -> dict[str, Any]:
+def _manifest_at_end(run_id: str) -> None:
+    """The run's manifest and its index entry (runtime/manifest.py), create-only; best effort: logged, never raised
+    (Learn goes on without it)."""
+    from engineering.board.store import BoardStore
+    from engineering.runtime import manifest
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+    try:
+        runs = _runs()
+        run = runs.get(run_id)
+        if run is None:
+            return
+        query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :agent)', 'ConsistentRead': True,
+                 'ExpressionAttributeValues': {':run': run_pk(run_id), ':agent': 'AGENT#'}}
+        from shared.dynamo_paging import iter_query
+        agents = list(iter_query(runs.table, query))
+        learn = runs.table.get_item(Key={'pk': run_pk(run_id), 'sk': 'LEARN#spend'}, ConsistentRead=True).get('Item')
+        tasks = BoardStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], new_id=lambda: '').tasks(
+            WORKSPACE, run_id)
+        built = manifest.build(run, agents, tasks, revision=runs.flow_revision(run_id),
+                               learn_spend={name: str(value) for name, value in (learn or {}).items()
+                                            if name in ('tokens_in', 'tokens_out', 'cost_usd')})
+        store = WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'])
+        key, indexed = manifest.write(store, built)
+        logger.info('engineering run manifest written', extra={'run_id': run_id, 'key': key, 'indexed': indexed})
+    except Exception:
+        logger.exception('engineering run manifest not written', extra={'run_id': run_id})
+
+
+def _retrospect(run_id: str, *, at_a_person: bool = False) -> dict[str, Any]:
     copy_triage_at_end(run_id)   # (7.50.00: a triage run's issue gets its trusted triage row; never raises)
+    _manifest_at_end(run_id)
     _reactions_at_end(run_id)   # (the schedule only: no host read here)
-    summary = _learning().retrospective(WORKSPACE, run_id)
+    summary = _learning().retrospective(WORKSPACE, run_id, at_a_person=at_a_person)
     for key in summary.to_coach:
-        _hand_on({'action': 'retrospective', 'run_id': run_id, 'failure': key})
+        _hand_on({'action': 'retrospective', 'run_id': run_id, 'failure': key,
+                  **({'at_a_person': True} if at_a_person else {})})
     logger.info('engineering retrospective', extra={
         'run_id': run_id, 'scorecards': summary.scorecards_written, 'kept': summary.scorecards_kept,
         'failures': summary.failure_count, 'coached': len(summary.to_coach), 'skipped': summary.skipped})
@@ -1078,8 +1223,8 @@ def _retrospect(run_id: str) -> dict[str, Any]:
             'to_coach': list(summary.to_coach), 'skipped': summary.skipped}
 
 
-def _learn_from(run_id: str, failure: str) -> dict[str, Any]:
-    learned = _learning().learn_from(WORKSPACE, run_id, failure)
+def _learn_from(run_id: str, failure: str, *, at_a_person: bool = False) -> dict[str, Any]:
+    learned = _learning().learn_from(WORKSPACE, run_id, failure, at_a_person=at_a_person)
     # The coach's skill.proposed message is the coach's to publish, and this role speaks only as the supervisor: it
     # is logged (its id), and the proposal is in the skills store's history.
     logger.info('engineering retrospective: a failure learned from', extra={

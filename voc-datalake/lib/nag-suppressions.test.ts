@@ -287,7 +287,11 @@ describe('cdk-nag acknowledgements', () => {
       // finding each, their IAM5.
       // 116 -> 117 (7.48.00, 3g-d): voc-retention's read of the deployment's product documents' extracted text
       // (`projects/*/product_docs/extracted/*`), one finding of the same acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 117, used: 117 });
+      // 117 -> 122 (7.50.00): the IAM5 findings of the 7.50.00 grants, each acknowledged where it is made: the
+      // runtime's read of the understanders' triage records (`…/_triage/*`), Learn's read of the agents' transcripts
+      // (`…/_transcripts/*`), the run's end's create-only writes of its manifest (`ws/default/runs/*/_manifest/*`) and
+      // of the transcripts' index (`ws/default/transcripts-index/*`), and the readiness checks' reads.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 122, used: 122 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

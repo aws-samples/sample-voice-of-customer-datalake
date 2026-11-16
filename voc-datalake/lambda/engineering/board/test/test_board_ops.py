@@ -519,7 +519,7 @@ def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> 
     (request,) = run.launcher.requests
     assert request == {'run_id': RUN, 'agent_id': 'fixer-2', 'role': 'fixer', 'task_id': task_id, 'attempt': 1,
                        'language': 'python', 'paths': ['services/billing'], 'commit': 'a' * 40,
-                       'connection': 'repo-1'}
+                       'connection': 'repo-1', 'step': ''}
     last = run.store.history(WS, RUN)[task_id][-1]
     assert (last.op, last.actor, last.reason) == ('launch', 'coordinator-1', 'launched fixer-2')
     again = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])

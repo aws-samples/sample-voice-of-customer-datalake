@@ -53,6 +53,7 @@ from engineering.skills.store import (
     SkillVersion,
     VersionLine,
 )
+from engineering.skills.templates import bundled
 from shared.workflow_engineering import ENGINEERING_ROLES
 
 #: Versions a history page holds.
@@ -193,6 +194,17 @@ def shipped_versions(role: str) -> list[int]:
     return list(range(shipped.version, max(0, shipped.version - DEFAULT_COMPARED), -1))
 
 
+def template_view(role: str, lines: Sequence[VersionLine]) -> dict[str, Any] | None:
+    """The role's bundled template (7.50.00): its version and label, and ``newer`` when the scope has versions and
+    none of the page's was seeded from a template this recent ("Template updated": a person adopts it as a proposal,
+    which an administrator accepts; never automatic). None for a role with no template."""
+    template = bundled().skill(role)
+    if template is None:
+        return None
+    seeded = max((line.template_version for line in lines if line.provenance == 'template'), default=0)
+    return {'version': template.version, 'label': template.label, 'newer': bool(lines) and template.version > seeded}
+
+
 def card_view(number: int, card: VersionCard) -> dict[str, Any]:
     return {'version': number, 'source': score_source(card.role, number), 'label': card.version, 'runs': card.runs,
             'pass_rate': card.pass_rate,
@@ -254,7 +266,8 @@ class SkillViews:
         head = skills.head(WORKSPACE, scope, role)
         return {'connection': scope, 'role': role, 'current_version': head.current_version if head else 0,
                 'versions': [line_view(line, events) for line in page.lines],
-                'next_page': None if page.next_before is None else page_token(scope, role, page.next_before)}
+                'next_page': None if page.next_before is None else page_token(scope, role, page.next_before),
+                'template': template_view(role, page.lines)}
 
     def version(self, connection: str, role: str, version: str) -> dict[str, Any]:
         """One version: its line, its record and its diff from its base."""

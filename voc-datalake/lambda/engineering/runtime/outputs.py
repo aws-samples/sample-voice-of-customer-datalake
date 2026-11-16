@@ -78,11 +78,6 @@ class TriageError(ValueError):
     """A triage record off its shape: the harness hands the reason to the model, a reader drops the record."""
 
 
-def triage_labels(kind: str, severity: str) -> tuple[str, str]:
-    """The two labels a triage puts on its issue: ``voc-triage/<kind>``, ``voc-severity/s<n>``."""
-    return f'voc-triage/{kind}', f'voc-severity/{severity.lower()}'
-
-
 def _triage_texts(raw: object, name: str, limit: int, pattern: re.Pattern[str] | None = None) -> list[str]:
     if raw is None:
         return []
@@ -103,13 +98,10 @@ def triage_record(raw: object) -> dict[str, object]:
     instruction, wherever it is read."""
     if not isinstance(raw, dict):
         raise TriageError('a triage is an object')
-    kind, severity, priority = raw.get('kind'), raw.get('severity'), raw.get('priority')
-    if kind not in TRIAGE_KINDS:
-        raise TriageError(f'kind is one of {", ".join(TRIAGE_KINDS)}')
-    if severity not in TRIAGE_SEVERITIES:
-        raise TriageError(f'severity is one of {", ".join(TRIAGE_SEVERITIES)}')
-    if priority not in TRIAGE_PRIORITIES:
-        raise TriageError(f'priority is one of {", ".join(TRIAGE_PRIORITIES)}')
+    for name, choices in (('kind', TRIAGE_KINDS), ('severity', TRIAGE_SEVERITIES), ('priority', TRIAGE_PRIORITIES)):
+        if raw.get(name) not in choices:
+            raise TriageError(f'{name} is one of {", ".join(choices)}')
+    kind, severity, priority = raw['kind'], raw['severity'], raw['priority']
     summary = raw.get('summary')
     if not isinstance(summary, str) or not summary.strip() or len(summary) > MAX_TRIAGE_SUMMARY:
         raise TriageError(f'summary is text of 1-{MAX_TRIAGE_SUMMARY} characters')

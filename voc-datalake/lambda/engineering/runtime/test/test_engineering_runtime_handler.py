@@ -33,6 +33,7 @@ from engineering.runtime.test.conftest import (
     WORKSPACE_BUCKET,
 )
 from engineering.runtime.test.local_runtime import LocalAgentRuntime
+from engineering.skills.templates import BundleTemplates, bundled
 from shared import aws as shared_aws
 
 OTHER_RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
@@ -704,7 +705,7 @@ def test_a_refused_coordinator_launch_whose_record_cannot_be_cleared_still_raise
 def _unlaunchable(monkeypatch: pytest.MonkeyPatch, missing: str) -> str:
     """The coordinator made unlaunchable (its role with no skill, or no image for the run's language); the refusal."""
     if missing == 'skill':
-        monkeypatch.setattr(handler, 'skill_for', lambda _role: None)
+        monkeypatch.setattr(handler, 'bundled', lambda: BundleTemplates({}))
         return 'no coordinator can be launched'
     monkeypatch.setenv('ENGINEERING_AGENT_RUNTIMES', json.dumps({'java': IMAGE_ARNS['java']}))
     return 'no python image'
@@ -1077,7 +1078,10 @@ def test_a_role_with_a_skill_runs_its_skills_harness_and_is_labelled_by_it(wired
                                '--model', 'global.anthropic.claude-sonnet-5-5')
     row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
                                                                 'sk': 'AGENT#coordinator-0'})['Item']
-    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-sonnet-5-5', 'coordinator@2')
+    # (no version in the skills store: the role's bundled template, labelled with its template version)
+    template = bundled().skill('coordinator')
+    assert template is not None
+    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-sonnet-5-5', template.label)
 
 
 def test_a_launch_naming_another_harness_for_a_role_with_a_skill_is_refused(wired: Any):
@@ -1102,7 +1106,9 @@ def test_a_role_with_no_skill_yet_needs_the_requests_harness(wired: Any):
 @pytest.mark.parametrize('role', sorted(SKILLS))
 def test_every_launchable_role_runs_its_skills_harness_and_is_labelled_by_it(wired: Any, role: str):
     assert wired is not None
-    skill = SKILLS[role]
+    template = bundled().skill(role)
+    assert template is not None
+    skill = template.skill
     handler.lambda_handler({**LAUNCH, 'agent_id': f'{role}-1', 'role': role,
                             **({'task_id': 'coordinate'} if role == 'coordinator' else {})}, None)
     session = handler._supervisor().sessions.get(RUN, f'{role}-1')
@@ -1111,7 +1117,70 @@ def test_every_launchable_role_runs_its_skills_harness_and_is_labelled_by_it(wir
         '/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run', '--adapter', 'converse', '--model', skill.model)
     row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
                                                                 'sk': f'AGENT#{role}-1'})['Item']
-    assert (row['model'], row['skill_version']) == (skill.model, f'{role}@{skill.version}')
+    assert (row['model'], row['skill_version']) == (skill.model, template.label)
+
+
+def _accepted(role: str, connection: str, model: str = 'global.anthropic.claude-haiku-5-5') -> int:
+    """An accepted version of ``role``'s skill in the store (the shipped record on another model): its number."""
+    from engineering.knowledge.store import Actor
+    from engineering.skills.model import Reason
+    from engineering.skills.model import Skill as StoredSkill
+    from engineering.skills.store import SkillStore
+    from shared.aws import get_dynamodb_client
+    admin = Actor('admin-sub-1', 'person', admin=True)
+    store = SkillStore(get_dynamodb_client(), TABLE)
+    record = {**SKILLS[role].to_record(), 'model': model}
+    proposed = store.propose_version(WORKSPACE, connection, role, StoredSkill.from_record(record).content,
+                                     proposer=admin, reason=Reason(comment='a person wrote it'),
+                                     base=store.resolved(WORKSPACE, connection, role))
+    return store.accept_version(WORKSPACE, connection, role, proposed.version.version, admin).version.version
+
+
+def test_an_accepted_version_in_the_store_runs_before_the_template_with_its_model_and_label(wired: Any):
+    assert wired is not None
+    _accepted('fixer', '')
+    handler.lambda_handler(LAUNCH, None)
+    row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                'sk': 'AGENT#fixer-1'})['Item']
+    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-haiku-5-5', 'fixer@1')
+    session = handler._supervisor().sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    assert session.harness[-1] == 'global.anthropic.claude-haiku-5-5'
+    # The run's connection's own version comes before the shared one.
+    _accepted('hunter', '')
+    _accepted('hunter', 'conn-1', 'global.anthropic.claude-opus-5-5')
+    handler.lambda_handler({**LAUNCH, 'agent_id': 'hunter-1', 'role': 'hunter'}, None)
+    hunter = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                   'sk': 'AGENT#hunter-1'})['Item']
+    assert hunter['skill_version'] == 'hunter@conn-1/1'
+
+
+def _pinned_flow(pin: str) -> None:
+    """The run's own copy of a flow whose ``fix`` step is a fixer agent step pinning ``pin``."""
+    definition = {'schema': 'voc-workflow/2', 'nodes': [
+        {'id': 'fix', 'type': 'agent', 'data': {'params': {'role': 'fixer', 'skill_version': pin}}}], 'edges': []}
+    handler._runs().table.put_item(Item={'pk': run_pk(RUN), 'sk': 'FLOW', 'definition': json.dumps(definition)})
+
+
+def test_a_steps_pin_runs_that_accepted_version_and_a_pin_to_none_is_refused(wired: Any):
+    assert wired is not None
+    _accepted('fixer', '')
+    _accepted('fixer', '', 'global.anthropic.claude-opus-5-5')
+    _pinned_flow('v1')
+    handler.lambda_handler({**LAUNCH, 'step': 'fix'}, None)
+    row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                'sk': 'AGENT#fixer-1'})['Item']
+    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-haiku-5-5', 'fixer@1')
+    # (a launch outside the step, a board's claimer: the current version)
+    handler.lambda_handler({**LAUNCH, 'agent_id': 'fixer-2', 'task_id': 'task-2'}, None)
+    other = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                  'sk': 'AGENT#fixer-2'})['Item']
+    assert other['skill_version'] == 'fixer@2'
+    handler._runs().table.delete_item(Key={'pk': run_pk(RUN), 'sk': 'FLOW'})
+    _pinned_flow('v7')
+    with pytest.raises(RuntimeRefused, match='pins fixer v7'):
+        handler.lambda_handler({**LAUNCH, 'agent_id': 'fixer-3', 'task_id': 'task-3', 'step': 'fix'}, None)
+    assert handler._supervisor().sessions.get(RUN, 'fixer-3') is None
 
 
 def _on_the_board(attempt: int) -> None:
@@ -1208,12 +1277,14 @@ class _Loop:
     """The learning loop's two steps, answered as a run with two failures to coach would."""
 
     @staticmethod
-    def retrospective(_ws: str, run_id: str) -> Any:
+    def retrospective(_ws: str, run_id: str, *, at_a_person: bool = False) -> Any:
         from engineering.learning.loop import Summary
+        assert at_a_person is False
         return Summary(run_id, 2, 0, 3, ('t-1#1#failed', 't-2#1#no_go'))
 
     @staticmethod
-    def learn_from(_ws: str, _run_id: str, key: str) -> Any:
+    def learn_from(_ws: str, _run_id: str, key: str, *, at_a_person: bool = False) -> Any:
+        assert at_a_person is False
         from engineering.learning.loop import Learned
         return Learned(key, proposed_version=4, coach='proposed', memory_id='amem_1', lesson='drafted')
 

@@ -1185,7 +1185,24 @@ def list_engineering_skill_versions(role: str):
     """``?connection=&page=<token>`` → ``{connection, role, current_version, versions: [...], next_page}``: a page of
     the role's history, newest first, each version with its events and its benchmark (claimed and measured)."""
     views = _skill_views()
-    return _skill_read(lambda: views.history(_query('connection') or '', role, _query('page') or ''))
+    connection = _query('connection') or ''
+    if not connection and not _query('page'):
+        _seed_from_template(role)
+    return _skill_read(lambda: views.history(connection, role, _query('page') or ''))
+
+
+def _seed_from_template(role: str) -> None:
+    """At an administrator's Skills visit (7.50.00): the role's shared skill seeded from its bundled template while
+    it has no history (``SkillActions.seed_template``), so the coach has a version to propose on. Best effort: the
+    visit's read is answered whatever happens here (logged)."""
+    from engineering.skills.model import SkillError
+    try:
+        seeded = _skill_actions().seed_template(role)
+    except (SkillError, ClientError, BotoCoreError):
+        logger.exception('engineering: the shared skill was not seeded from its template', extra={'role': role[:40]})
+        return
+    if seeded is not None:
+        logger.info('engineering: a shared skill seeded from its template', extra=seeded)
 
 
 @app.get('/agents/engineering/skills/<role>/versions/<version>')

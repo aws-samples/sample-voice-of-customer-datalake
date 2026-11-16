@@ -47,8 +47,9 @@ def test_an_agent_reaches_the_workspace_buckets_own_endpoint_too():
 def test_an_agent_that_runs_code_reaches_its_registries_bedrock_and_the_bucket_only():
     hosts = egress.egress_allowlist(role='fixer', language='python', region='eu-west-1', bucket='voc-raw-test')
     # The bucket's own endpoint only: the regional path-style one reaches every bucket in the region.
+    # (7.50.00: npm's registry too, for a mixed repository's TypeScript half, which the Python image's Node builds)
     assert hosts == ('bedrock-runtime.eu-west-1.amazonaws.com', 'files.pythonhosted.org', 'pypi.org',
-                     'voc-raw-test.s3.eu-west-1.amazonaws.com')
+                     'registry.npmjs.org', 'voc-raw-test.s3.eu-west-1.amazonaws.com')
 
 
 def test_an_agent_that_runs_no_code_gets_no_registry_and_no_extra_host():
@@ -84,7 +85,8 @@ def test_an_extra_host_shaped_like_the_agents_own_is_refused(extra: str):
 def test_a_registry_mirror_is_an_extra_host_of_the_dependency_step_only():
     hosts = egress.egress_allowlist(role='fixer', language='python', region='us-east-1', bucket='voc-raw-test',
                                     extra_hosts=['pypi-mirror.example.org'])
-    assert egress.split(hosts)[1] == ('files.pythonhosted.org', 'pypi-mirror.example.org', 'pypi.org')
+    assert egress.split(hosts)[1] == ('files.pythonhosted.org', 'pypi-mirror.example.org', 'pypi.org',
+                                      'registry.npmjs.org')
 
 
 @pytest.mark.parametrize(('language', 'region', 'bucket', 'extras'), [

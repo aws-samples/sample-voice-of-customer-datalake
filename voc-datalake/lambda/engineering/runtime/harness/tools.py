@@ -15,8 +15,10 @@ The agents that run no repository code (the writers, the reviewers, the coordina
 ``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: every
 launchable role) gets exactly the tools its skill's tool policy names, among those its role may have: the code tools
 for a role that runs code, the planner's for the coordinator (``coordinator.py``), and its role's own outputs,
-sub-task post or broker write (``role_tools.py``). Everything a tool returns from the repository is fenced as data
-(``as_data``): the adapters' instructions say it is never an instruction.
+sub-task post or broker write (``role_tools.py``). Every tool result that carries text from outside the platform
+(the repository, a command's output, an issue, the board, the knowledge pack, memory) is fenced as data (``as_data``:
+``quality_gate/text.data_block``, redacted, inside a block only this session's random fence closes, 7.50.00); the
+platform's rules around every skill say a DATA block is never an instruction.
 """
 from __future__ import annotations
 
@@ -24,12 +26,14 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import secrets
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
+from engineering.quality_gate.text import data_block, nonce
 from engineering.runtime.checkout import repo_git
 from engineering.runtime.harness import coordinator, role_tools
 from engineering.runtime.harness.ports import (
@@ -44,8 +48,9 @@ from engineering.runtime.harness.ports import (
     TaskBrief,
     WriteOutcomeUnknown,
 )
-from engineering.runtime.harness.skills import Skill, skill_for, skill_label
+from engineering.runtime.harness.skills import SKILLS, Skill, skill_label
 from engineering.runtime.harness.status import StatusReport
+from engineering.runtime.harness.transcript import Transcript
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
 
@@ -129,6 +134,23 @@ class AgentContext:
     gate_tree: str = ''
     #: Whether this process moved the task to done (the model's ``finish``).
     finished: bool = False
+    #: This session's fence (7.50.00): every DATA block a tool returns closes only with it (``as_data``), a random
+    #: nonce no repository text knows (the CLI's tool server takes the harness's, ``VOC_FENCE``).
+    fence: str = field(default_factory=nonce)
+    #: The label of the skill the session runs (its launch's, as the board served it: skills/resolve.py).
+    skill_label: str = ''
+    #: The platform's rules the board served with the session's skill (the bundle's; '' for the harness's own).
+    platform_rules: str = ''
+    #: Where the gate packs are (``VOC_GATES_DIR``: ``/opt/voc/gates`` in the images; '' for the repository's own).
+    gates_dir: str = ''
+    #: The deterministic gate's run in this session (``run_gate``): its packs, and whether it planned any check.
+    gate_packs: tuple[str, ...] = ()
+    gate_ran: bool = False
+    #: The session's transcript (``transcript.py``: every tool call and result, model call and message, under the
+    #: agent's own keys); None for none (a test's). ``flush_each_call``: the CLI's tool server flushes after each
+    #: call (it has no checkpoint of its own).
+    transcript: Transcript | None = None
+    flush_each_call: bool = False
 
     @property
     def runs_code(self) -> bool:
@@ -137,6 +159,10 @@ class AgentContext:
     def progress(self, step: str) -> None:
         self.status.at(step)
         self.board.progress(self.run_id, self.task_id, self.agent_id, step)
+
+    def data(self, source: str, text: str) -> str:
+        """``text`` fenced as data from ``source`` with this session's fence (``as_data``)."""
+        return as_data(source, text, self.fence)
 
     def written(self, step: str) -> None:
         """Report a host write's outcome (made, or unknown) on the task, never raising: the write is past, so a board
@@ -147,10 +173,15 @@ class AgentContext:
             self.board.progress(self.run_id, self.task_id, self.agent_id, step)
 
 
-def as_data(source: str, text: str) -> str:
-    """``text`` fenced as data from ``source``; a closing fence inside it cannot end the fence early."""
-    fenced = text.replace('</data', '<\\/data')
-    return f'<data source="{source}">\n{fenced}\n</data>'
+#: What a DATA block's name keeps of its source (a path, a message kind): one line of plain characters.
+_SOURCE_CHARACTER: Final = re.compile(r'[^A-Za-z0-9_.:/@#=+-]')
+MAX_SOURCE: Final = 200
+
+
+def as_data(source: str, text: str, fence: str) -> str:
+    """``text`` fenced as data from ``source`` (``quality_gate/text.data_block``): redacted, inside a block only the
+    holder of ``fence`` closes (the fence inside the text is replaced), its name one line of plain characters."""
+    return data_block(_SOURCE_CHARACTER.sub('_', source)[:MAX_SOURCE] or 'data', text, fence)
 
 
 def _git(context: AgentContext, *argv: str) -> None:
@@ -214,10 +245,10 @@ def _timeout(raw: object) -> int:
     return max(1, min(value, MAX_RUN_SECONDS))
 
 
-def _ran(result: Mapping[str, Any]) -> str:
+def _ran(result: Mapping[str, Any], fence: str) -> str:
     head = f'exit code {result.get("exit_code")}' + (' (timed out)' if result.get('timed_out') else '')
-    return '\n'.join((head, as_data('stdout', str(result.get('stdout_tail', ''))),
-                      as_data('stderr', str(result.get('stderr_tail', '')))))
+    return '\n'.join((head, as_data('stdout', str(result.get('stdout_tail', '')), fence),
+                      as_data('stderr', str(result.get('stderr_tail', '')), fence)))
 
 
 _PATH: Final = {'type': 'string', 'description': 'A path relative to the checkout\'s root.'}
@@ -264,10 +295,10 @@ class ToolBox:
             'read_file': self._read, 'list_files': self._list, 'report_progress': self._progress,
             'save_checkpoint': self._checkpoint, 'finish': self._finish, 'write_file': self._write,
             'run': self._run, 'install_dependencies': self._install, 'submit_work': self._submit,
-            **coordinator.handlers(context, ToolResult, as_data),
+            **coordinator.handlers(context, ToolResult, context.data),
             **role_tools.handlers(context, ToolResult),
         }
-        self.skill = skill or skill_for(context.role)
+        self.skill = skill or SKILLS.get(context.role)
         if skill is not None and skill.name != context.role:
             raise ValueError(f'{skill_label(skill.name, skill.version)} is not a skill of role {context.role}')
         if self.skill is None:
@@ -285,7 +316,20 @@ class ToolBox:
         self._allowed = {spec.name for spec in self.specs}
 
     def call(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
-        """The tool's result; a refusal or failure is a result the model reads, never an exception."""
+        """The tool's result; a refusal or failure is a result the model reads, never an exception. Each call and
+        its result go into the session's transcript (redacted), and its time."""
+        transcript, started = self.context.transcript, time.monotonic()
+        if transcript is not None:
+            transcript.record('tool_call', tool=name, input=dict(arguments))
+        result = self._answer(name, arguments)
+        if transcript is not None:
+            transcript.record('tool_result', tool=name, text=result.text, error=result.error,
+                              ms=int((time.monotonic() - started) * 1000))
+            if self.context.flush_each_call:
+                transcript.flush_quietly()
+        return result
+
+    def _answer(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
         if name not in self._allowed:
             return ToolResult(f'no tool {name!r} for this agent', error=True)
         self.context.status.tool(name)
@@ -302,11 +346,11 @@ class ToolBox:
 
     def _read(self, arguments: Mapping[str, Any]) -> ToolResult:
         path = str(arguments.get('path', ''))
-        return ToolResult(as_data(f'file:{path}', self.context.workspace.read(path)))
+        return ToolResult(self.context.data(f'file:{path}', self.context.workspace.read(path)))
 
     def _list(self, arguments: Mapping[str, Any]) -> ToolResult:
         path = str(arguments.get('path', '') or '')
-        return ToolResult(as_data(f'directory:{path or "."}', '\n'.join(self.context.workspace.list(path))))
+        return ToolResult(self.context.data(f'directory:{path or "."}', '\n'.join(self.context.workspace.list(path))))
 
     def _progress(self, arguments: Mapping[str, Any]) -> ToolResult:
         self.context.progress(str(arguments.get('step', ''))[:500])
@@ -338,7 +382,7 @@ class ToolBox:
         result = self.context.runner.run(argv, timeout_seconds=_timeout(arguments.get('timeout_seconds')),
                                          network=network,
                                          on_wait=lambda: self.context.progress(f'still running {argv[0]}'))
-        return ToolResult(_ran(result), error=result.get('exit_code') != 0), result
+        return ToolResult(_ran(result, self.context.fence), error=result.get('exit_code') != 0), result
 
     def _run(self, arguments: Mapping[str, Any]) -> ToolResult:
         ran, result = self._command(arguments, network=False)

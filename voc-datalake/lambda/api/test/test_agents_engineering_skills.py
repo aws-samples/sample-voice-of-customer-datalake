@@ -191,17 +191,17 @@ def test_the_token_made_for_this_history_is_read(lambda_context: Any, env: Env) 
 
 def test_the_scorecards_compare_the_versions_asked_for_on_the_connections_own_rows(lambda_context: Any,
                                                                                    env: Env) -> None:
-    env.score('fixer@1', '01JD0000000000000000000010', done=2)
-    env.score('fixer@2', '01JD0000000000000000000011', done=6)
-    status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN, 'versions': '2,1'})
-    assert (status, body['versions'], [c['label'] for c in body['cards']]) == (200, [2, 1], ['fixer@2', 'fixer@1'])
+    env.score('fixer@2', '01JD0000000000000000000010', done=2)
+    env.score('fixer@3', '01JD0000000000000000000011', done=6)
+    status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN, 'versions': '3,2'})
+    assert (status, body['versions'], [c['label'] for c in body['cards']]) == (200, [3, 2], ['fixer@3', 'fixer@2'])
     assert body['cards'][0] == {
-        # (fixer ships as version 1: a version 2 asked for by number never shipped, and its card says so)
-        'version': 2, 'source': 'not_shipped', 'label': 'fixer@2', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
+        # (fixer ships as version 2: a version 3 asked for by number never shipped, and its card says so)
+        'version': 3, 'source': 'not_shipped', 'label': 'fixer@3', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
         'needs_human': 1, 'reposts': 0, 'review_rounds': 2, 'attempts': 4, 'cost_usd': 0.75, 'seconds': 600,
         'more': False, 'since': '2026-11-13T08:00:00Z', 'until': '2026-11-13T09:00:00Z',
         'human_edits': {'runs': 0, 'changes_requested': 0, 'people_commits_after_merge': 0, 'reverts': 0, 'more': False}}
-    other = _call(lambda_context, 'GET', SCORES, query={'connection': OTHER, 'versions': '2'})[1]
+    other = _call(lambda_context, 'GET', SCORES, query={'connection': OTHER, 'versions': '3'})[1]
     assert other['cards'][0]['runs'] == 0
 
 
@@ -209,12 +209,13 @@ def test_by_default_the_scorecards_show_the_shipped_versions_only_never_the_stor
                                                                                            env: Env) -> None:
     env.shared_v1()
     _proposals(env, 6)   # (shared versions 1-7 in the store: their numbers are never offered as scorecards)
-    env.score('fixer@1', '01JD0000000000000000000010', done=3)
+    env.score('fixer@2', '01JD0000000000000000000010', done=3)
     status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN})
-    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [1], 'shipped', False)
-    assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [(1, 'shipped', 1)]
+    # (fixer ships as version 2 since 7.50.00: the shipped one and the one before it)
+    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [2, 1], 'shipped', False)
+    assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [(2, 'shipped', 1), (1, 'shipped', 0)]
     coordinator = _call(lambda_context, 'GET', '/agents/engineering/scorecards/coordinator', query={'connection': CONN})[1]
-    assert coordinator['versions'] == [2, 1]   # (it ships as version 2: the shipped one and the one before it)
+    assert coordinator['versions'] == [3, 2, 1]   # (it ships as version 3: the shipped one and the ones before it)
 
 
 @pytest.mark.usefixtures('env')

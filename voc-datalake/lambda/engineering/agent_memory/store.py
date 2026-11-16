@@ -617,13 +617,16 @@ class AgentMemoryStore:
 
     # ── recall ───────────────────────────────────────────────────────────────
     def recall_for_task(self, ws: str, run: RunContext, *, max_memories: int = DEFAULT_MAX_MEMORIES,
-                        max_chars: int = DEFAULT_MAX_CHARS) -> Recall:
+                        max_chars: int = DEFAULT_MAX_CHARS,
+                        kinds: frozenset[str] = frozenset({'repository', 'role'})) -> Recall:
         """The memories an agent's prompt takes for its task, as its run's record names it: the connection's
         repository memories, the run's role's lessons there, and the memories of the people on the task
         (signed-in users of this deployment) that apply to the connection (their own, and those learned in it);
-        approved, live, bounded, flagged and fenced (``recall.assemble``)."""
+        approved, live, bounded, flagged and fenced (``recall.assemble``). ``kinds``: the repository's and the
+        role's scopes to read (a flow's ``memory.scopes``, 7.50.00); a person's are read for the people named."""
         connection = run.connection
-        scopes = [Scope('repository', connection), Scope('role', connection, run.role)]
+        scopes = [scope for scope in (Scope('repository', connection), Scope('role', connection, run.role))
+                  if scope.kind in kinds]
         for person in dict.fromkeys(run.people):
             if self.is_user(person):
                 scopes += [Scope('person', '', person=person), Scope('person', connection, person=person)]

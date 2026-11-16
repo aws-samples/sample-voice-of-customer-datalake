@@ -13,8 +13,12 @@ these and the tools its skill names, whatever a record says.
   ran on; the model never types it;
 - ``post_subtask`` (the hunter, the builder): one task on the board, for the one role each posts for (the board's own
   rule, board/api.py ``POSTERS``: a hunter's fixes, a builder's sub-builds);
-- ``push_commit`` (the committer), ``open_draft_pr`` (the PR author), ``post_comment`` (the PR reviewer): the broker's
-  one write for each role (connectors/broker.py), which checks the run, the dial, the GO and the write rules first.
+- ``push_commit`` (the committer), ``open_draft_pr`` (the PR author: the run's pull request, ready for review or a draft
+  as the run's flow says), ``post_comment`` (the PR reviewer, on the run's pull request; the understander, on the run's
+  issue, its lines code spans: ``issues.issue_comment``): the broker's writes, which check the run, the dial, the
+  GO and the write rules first (the understander's comment and labels are on its issue: no dial, 7.50.00);
+- the issue's tools (``issues.py``: ``read_issue``, ``write_triage``, ``label_issue``) and the gate's
+  (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00.
 
 Every output is written once (the workspace's puts are create-only) and its key is recorded on the task when the agent
 finishes (``AgentContext.result_keys``), so the steps after it read what the board recorded, never a listing. The
@@ -33,6 +37,7 @@ from typing import Any, Final
 from engineering.runtime import outputs
 from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
+from engineering.runtime.harness import gate_tools, issues
 from engineering.runtime.harness.coordinator import Built, Tool, answered, bounded, listed, optional, post_for
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
@@ -57,7 +62,14 @@ ROLE_TOOLS: Final[Mapping[str, frozenset[str]]] = {
     'post_subtask': frozenset({'hunter', 'builder'}),
     'push_commit': frozenset({'committer'}),
     'open_draft_pr': frozenset({'pr-author'}),
-    'post_comment': frozenset({'pr-reviewer'}),
+    'post_comment': frozenset({'pr-reviewer', 'understander'}),
+    # (7.50.00: the run's issue, the deterministic gate and what the final go reads)
+    'read_issue': frozenset({'understander', 'hunter', 'fixer', 'committer', 'pr-author', 'coordinator'}),
+    'write_triage': frozenset({'understander'}),
+    'label_issue': frozenset({'understander'}),
+    'run_gate': frozenset({'gate-runner'}),
+    'read_gate_record': frozenset({'final-go'}),
+    'read_findings': frozenset({'final-go'}),
 }
 #: The one role each poster posts for (board/api.py ``POSTERS``, but the coordinator's, which posts with post_task).
 POSTS_FOR: Final[Mapping[str, str]] = {'hunter': 'fixer', 'builder': 'builder'}
@@ -164,6 +176,8 @@ def _verdict(context: Built, arguments: Mapping[str, Any]) -> tuple[str, str, li
                                  'reasons': _reasons(arguments)}
     if verdict not in GATE_VERDICTS:
         raise ValueError(f'the verdict is one of {", ".join(sorted(GATE_VERDICTS))}')
+    if verdict == 'GO' and not context.gate_ran:
+        raise ValueError('a GO is the gate\'s: run run_gate first (its checks are the ones a GO needs)')
     checks = [dict(check) for check in context.checks]
     if verdict == 'GO' and (not checks or any(check['status'] != 'pass' for check in checks)):
         raise ValueError('a GO needs a check you ran, and every check you ran passed')
@@ -184,6 +198,8 @@ def gate_record(context: Built, arguments: Mapping[str, Any]) -> bytes:
     packs = listed(arguments, 'packs', MAX_PACKS, str, 'gate pack names') if arguments.get('packs') else []
     if not all(PLAIN_NAME.fullmatch(pack) for pack in packs):
         raise ValueError('a pack is a gate pack\'s name (letters, digits, ".", "_", "-")')
+    if context.gate_packs:   # (the gate's own plan's packs, never the model's word)
+        packs = list(context.gate_packs)
     verdict, stop, rounds, final_go = _verdict(context, arguments)
     if verdict == 'GO':
         # The checkout's tree now, every change in it taken: a GO only when it is still the tree judged. The limit:
@@ -237,12 +253,15 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
                   {'branch': {'type': 'string', 'description': f'{AGENT_BRANCH_PREFIX}<run id>/<name>'},
                    'patch': {'type': 'string', 'description': 'The submitted patch\'s key (…/_patches/….diff).'},
                    'tree_hash': text, 'message': text}, ('branch', 'patch', 'tree_hash', 'message')),
-        tool_spec('open_draft_pr', 'Have the broker open (or update) the run\'s draft pull request from a branch.',
+        tool_spec('open_draft_pr', 'Have the broker open (or update) the run\'s pull request from a branch: ready for '
+                  'review, or a draft when the run\'s flow says pr: draft.',
                   {'branch': text, 'title': text, 'body': text}, ('branch', 'title', 'body')),
-        tool_spec('post_comment', 'Post your review as a comment on the run\'s pull request.',
-                  {'number': {'type': 'integer'}, 'body': text}, ('number', 'body')),
+        tool_spec('post_comment', 'Post a short summary of your triage on the run\'s issue (each line shown as '
+                  'written).' if role == 'understander' else 'Post your review as a comment on the run\'s pull '
+                  'request.', {'number': {'type': 'integer'}, 'body': text}, ('number', 'body')),
     )
-    return tuple(spec for spec in all_specs if role in ROLE_TOOLS[spec.name])
+    return (*(spec for spec in all_specs if role in ROLE_TOOLS[spec.name]),
+            *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS))
 
 
 def _branch(context: Built, arguments: Mapping[str, Any]) -> str:
@@ -260,8 +279,11 @@ def _number(arguments: Mapping[str, Any]) -> int:
 
 
 def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
-    """This module's tools on ``context``."""
-    return {**_output_handlers(context, result), **_writer_handlers(context, result)}
+    """This module's tools on ``context`` (and the issue's and the gate's: ``issues``, ``gate_tools``)."""
+    outputs = _output_handlers(context, result)
+    record = outputs.pop('_record')
+    return {**outputs, **_writer_handlers(context, result), **issues.handlers(context, result, record),
+            **gate_tools.handlers(context, result)}
 
 
 def _already_written(error: Exception) -> bool:
@@ -319,7 +341,7 @@ def _output_handlers(context: Built, result: Callable[..., Built]) -> dict[str, 
         return post_for(context, result, arguments, POSTS_FOR[context.role])
 
     return {'write_findings': write_findings, 'write_notes': write_notes, 'write_gate_record': write_gate_record,
-            'post_subtask': answered(post_subtask, result)}
+            'post_subtask': answered(post_subtask, result), '_record': record}
 
 
 def submitted_patch(context: Built, key: str) -> str:
@@ -443,9 +465,15 @@ def _writer_handlers(context: Built, result: Callable[..., Built]) -> dict[str, 
         return result(json.dumps({'broker': answer}))
 
     def post_comment(arguments: Mapping[str, Any]) -> Built:
-        answer = context.broker.comment(context.run_id, context.agent_id, number=_number(arguments),
-                                        body=bounded(arguments, 'body', MAX_TEXT))
-        context.written('posted a review comment')
+        body = bounded(arguments, 'body', MAX_TEXT)
+        if context.role == 'understander':
+            # (its run's issue: each line a code span, under the platform's own head)
+            answer = context.broker.comment(context.run_id, context.agent_id, number=_number(arguments),
+                                            body=issues.issue_comment(body), on='issue')
+            context.written('posted the triage on the issue')
+        else:
+            answer = context.broker.comment(context.run_id, context.agent_id, number=_number(arguments), body=body)
+            context.written('posted a review comment')
         return result(json.dumps({'broker': answer}))
 
     return {'push_commit': push_commit, 'open_draft_pr': open_draft_pr, 'post_comment': post_comment}

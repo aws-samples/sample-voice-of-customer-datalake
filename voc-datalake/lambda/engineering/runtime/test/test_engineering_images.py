@@ -144,7 +144,9 @@ def test_each_image_is_built_for_arm64_and_serves_agentcores_port(language):
 @pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
 def test_each_ready_hook_names_only_its_own_registries(language):
     ready = (IMAGES / language / 'ready.sh').read_text()
-    others = {host for other, hosts in REGISTRY_HOSTS.items() if other != language for host in hosts}
+    # (7.50.00: npm's registry is the Python and Rust images' too, for a mixed repository's TypeScript half)
+    others = {host for other, hosts in REGISTRY_HOSTS.items() if other != language for host in hosts} - set(
+        REGISTRY_HOSTS[language])
     assert not [host for host in others if host in ready]
 
 

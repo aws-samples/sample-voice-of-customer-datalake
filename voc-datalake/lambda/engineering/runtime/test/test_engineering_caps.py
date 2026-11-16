@@ -78,15 +78,12 @@ SONNET, HAIKU, OPUS = ('global.anthropic.claude-sonnet-5-5', 'global.anthropic.c
                        'global.anthropic.claude-opus-5-5')
 
 
-def test_each_allowlisted_model_has_its_list_price_and_the_source_is_recorded():
+def test_each_allowlisted_model_has_its_list_price():
     prices = caps.model_prices(None)
     assert {SONNET, HAIKU, OPUS} <= set(ALLOWED_MODEL_IDS)
     assert prices.of(SONNET) == caps.TokenPrice(Decimal('2.00'), Decimal('10.00'), Decimal('0.10'), Decimal('2.50'))
     assert prices.of(HAIKU).output == Decimal('0.50')
     assert prices.of(OPUS).input == Decimal('4.00')
-    assert 'Price List API' in caps.MODEL_PRICES_SOURCE
-    assert 'us-west-2' in caps.MODEL_PRICES_SOURCE
-    assert (caps.MODEL_PRICES_PUBLISHED, caps.MODEL_PRICES_READ) == ('2026-11-09T22:43:12Z', '2026-11-16')
     assert caps.model_prices('') == caps.model_prices('{}') == prices == caps.TokenPrices()
 
 

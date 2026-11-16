@@ -7,7 +7,6 @@ from engineering.runtime.outputs import (
     TRIAGE_LABELS,
     TRIAGE_SCHEMA,
     TriageError,
-    triage_labels,
     triage_record,
 )
 
@@ -47,7 +46,6 @@ def test_a_triage_off_its_shape_is_refused(change: dict[str, object], reason: st
 
 
 def test_the_labels_a_triage_puts_on_its_issue_are_the_allowlist() -> None:
-    assert triage_labels('bug', 'S2') == ('voc-triage/bug', 'voc-severity/s2')
     expected = {'voc-triage/bug', 'voc-triage/feature', 'voc-triage/investigation',
                 'voc-severity/s1', 'voc-severity/s2', 'voc-severity/s3', 'voc-severity/s4'}
     assert expected == TRIAGE_LABELS

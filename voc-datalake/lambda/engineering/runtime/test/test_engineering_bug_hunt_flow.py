@@ -50,13 +50,14 @@ from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.ports import BrokerRefused
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.skills import COORDINATOR, SKILLS, Skill, harness_argv
-from engineering.runtime.harness.tools import as_data
 from engineering.runtime.test.broker_stub import AgentSessions, FunctionUrl
 from engineering.runtime.test.conftest import BOARD_URL, BROKER_URL, COMMIT, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeRunner, use
 from engineering.runtime.test.test_engineering_board_bus import Events
 from engineering.runtime.test.test_engineering_harness_main import _vm_directory, fixture_repository, run_git
 from engineering.runtime.test.test_engineering_inbox_end_to_end import ApiTransport
+from engineering.skills.store import SkillStore
+from engineering.skills.templates import BundleTemplates
 from engineering.workspace.store import WorkspaceStore
 from shared.ai_mode import MODE_AI_DRIVEN, ai_mode_key
 from shared.workflow_schema import encode_definition
@@ -187,6 +188,27 @@ class GitRunner:
         runner: Any = self.code if repository_code else self.git
         return runner.run(argv, timeout_seconds=timeout_seconds, repository_code=repository_code, network=network,
                           in_checkout=in_checkout, on_wait=on_wait)
+#: The gate runner's pack in this test: one Python root's unit tests (``run_gate``'s plan).
+MINI_PACK = '''schema = "voc-gate-pack/1"
+id = "mini"
+name = "Mini"
+network = []
+
+[languages.python]
+markers = ["pyproject.toml"]
+extensions = [".py"]
+
+[tools.python]
+version_argv = ["python3", "--version"]
+
+[[steps]]
+id = "py.test"
+language = "python"
+name = "unit tests"
+kind = "test"
+argv = ["python3", "-m", "unittest"]
+timeout_s = 60
+'''
 FINDING = {'file': 'slugs.py', 'line': 2, 'severity': 'blocking', 'rule': 'off-by-one',
            'title': 'A slug exactly max_length long loses its last word', 'evidence': 'the length check uses <'}
 
@@ -201,7 +223,11 @@ class ScriptedModel(FakeBedrock):
 
     def converse(self, **request: Any) -> dict[str, Any]:
         assert request['modelId'] == self.skill.model
-        assert request['system'] == [{'text': self.skill.system_prompt()}]
+        # The platform's rules (the harness's own, or the bundle's as the board served them; the session's fence in
+        # them), then the skill's own instructions and examples.
+        [system] = request['system']
+        assert system['text'].lstrip('# ').startswith('Platform rules')
+        assert system['text'].endswith(f'\n\n{self.skill.system_prompt()}')
         assert tuple(tool['toolSpec']['name'] for tool in request['toolConfig']['tools']) == self.skill.tool_policy
         return super().converse(**request)
 
@@ -236,6 +262,8 @@ class BugHunt:
     #: The repository host and the broker's function URL in front of the broker's own handler.
     host: GitHost
     url: FunctionUrl
+    #: The gate runner's packs (``VOC_GATES_DIR``).
+    gates: Path = Path('/nonexistent')
     models: dict[str, ScriptedModel] = field(default_factory=dict)
 
     def transport(self, agent_id: str) -> ApiTransport:
@@ -276,6 +304,8 @@ class BugHunt:
     def run_agent(self, agent_id: str, turns: list[list[dict[str, Any]]], monkeypatch: pytest.MonkeyPatch) -> int:
         """The agent's whole session through the harness's entry, with the argv its session row records."""
         argv, env = self.environment(agent_id)
+        # (the gate runner's packs: the test's own, one Python root's unit tests)
+        env = {**env, 'VOC_GATES_DIR': str(self.gates)} if env['VOC_ROLE'] == 'gate-runner' else env
         skill = SKILLS[env['VOC_ROLE']]
         assert argv == harness_argv(skill)
         model = self.models[agent_id] = ScriptedModel(skill, turns)
@@ -310,14 +340,18 @@ class BugHunt:
         return [text for text in texts if text.startswith(start)]
 
     def read(self, agent_id: str, path: str) -> list[str]:
-        """What ``agent_id``'s session was handed for each ``read_file`` of ``path``: its checkout's file, fenced."""
-        return self.results(agent_id, f'<data source="file:{path}">')
+        """What ``agent_id``'s session was handed for each ``read_file`` of ``path``: its checkout's file, fenced (the
+        block's body)."""
+        return [text.split('\n', 1)[1].rsplit('\n', 1)[0]
+                for text in self.results(agent_id, f'<<<DATA file:{path} ')]
 
 
 def coordinate(session: AgentSession, turns: list[list[dict[str, Any]]]) -> str:
-    """One stretch of the coordinator's session: its scripted turns, on its skill's model, none of them refused."""
-    model = ScriptedModel(COORDINATOR, turns)
-    ending = ConverseAdapter(model, COORDINATOR.model).run(session)
+    """One stretch of the coordinator's session: its scripted turns, on the model of the skill it runs (the one its
+    launch resolved), none of them refused."""
+    skill = session.tools.skill or COORDINATOR
+    model = ScriptedModel(skill, turns)
+    ending = ConverseAdapter(model, skill.model).run(session)
     assert model.refused() == []
     return ending
 
@@ -327,7 +361,7 @@ def statuses(flow: dict[str, Any]) -> dict[str, str]:
 
 
 @pytest.fixture
-def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
+def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BugHunt:
     assert wired is not None
     s3, _ = aws
     handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 20, 'goal': 'hunt the slug bugs',
@@ -339,11 +373,18 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
     counter = iter(range(1, 100))
     workspace = WorkspaceStore(s3, WORKSPACE_BUCKET, denied_is_missing=True)
     launcher = RuntimeLauncher()
-    # The board's own wiring (board/api.py _from_environment), its skill lookup the shipped one.
+    # The board's own wiring (board/api.py _from_environment), its templates (and the runtime's) the shipped skills:
+    # the runs' skills come from the store first, then the templates, which this test pins to the harness's own.
+    shipped = BundleTemplates.shipped()
+    monkeypatch.setattr(handler, 'bundled', lambda: shipped)
     api = BoardApi(BoardStore(client, TABLE, new_id=lambda: f'task-{next(counter)}'),
                    EventBridgePublisher(Events(), 'voc-engineering', 'voc.engineering/board'), Inbox(client, TABLE),
-                   launcher=launcher, gate_records=lambda key: read_gate_record(workspace, key))
-    cache, commit = fixture_repository(tmp_path, {'slugs.py': SLUGS})
+                   launcher=launcher, gate_records=lambda key: read_gate_record(workspace, key), templates=shipped,
+                   skills=SkillStore(client, TABLE))
+    cache, commit = fixture_repository(tmp_path, {'slugs.py': SLUGS, 'pyproject.toml': '[project]\nname = "slugs"\n'})
+    gates = tmp_path / 'gates' / 'mini'
+    gates.mkdir(parents=True)
+    (gates / 'manifest.toml').write_text(MINI_PACK)
     # The broker's own wiring (connectors/handler.py broker_for) over the run's rows and objects, the starter's way
     # of working AI-driven in the aggregates table, and the host on the fixture repository.
     people = boto3.resource('dynamodb', region_name='us-east-1').create_table(
@@ -355,7 +396,8 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path) -> BugHunt:
     records = RunRecords(client, TABLE, workspace)
     broker = Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=Attested(records),
                               ledger=records, dial=WaysOfWorking(people), writes=WriteClaims(client, TABLE)))
-    return BugHunt(api, launcher, s3, tmp_path, cache, commit, host, FunctionUrl(BROKER_URL, broker, AgentSessions(RUN)))
+    return BugHunt(api, launcher, s3, tmp_path, cache, commit, host, FunctionUrl(BROKER_URL, broker, AgentSessions(RUN)),
+                   gates=gates.parent)
 
 
 def _fixed_tree(flow: BugHunt) -> str:
@@ -427,11 +469,10 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     coordinate(coordinator, [[use('complete_step', step='board')], [use('read_board')],
                              *_post_and_launch('gate-runner', 'gate', 'task-4', 'Run the gate packs', patch=patch)])
     flow.run_agent('gate-runner-5', [
-        [use('install_dependencies', argv=['python3', '-m', 'pip', 'install', '-r', 'requirements.txt'])],
-        [use('read_file', path='slugs.py')], [use('run', argv=['python3', '-m', 'unittest'])],
+        [use('read_file', path='slugs.py')], [use('run_gate')],
         [use('write_gate_record', verdict='GO', tree_hash='d' * 40, packs=['python-ts'])],
         _done('every check passed')], monkeypatch)
-    assert flow.read('gate-runner-5', 'slugs.py') == [as_data('file:slugs.py', FIXED)]
+    assert flow.read('gate-runner-5', 'slugs.py') == [FIXED]
     # The board ties the final go to the patch the gate runner's checks ran on: never another submitted patch.
     other = patch.rsplit('/', 1)[0] + '/task-9-0a1b2c3d.diff'
     with pytest.raises(Exception, match="a final go judges the patch the gate runner's checks passed on"):
@@ -441,7 +482,7 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     flow.run_agent('final-go-6', [[use('read_file', path='slugs.py')],
                                   [use('write_gate_record', verdict='GO', reasons=['checked'])], _done('GO')],
                    monkeypatch)
-    assert flow.read('final-go-6', 'slugs.py') == [as_data('file:slugs.py', FIXED)]
+    assert flow.read('final-go-6', 'slugs.py') == [FIXED]
     plan = flow.plan()
     assert (statuses(plan)['gate'], statuses(plan)['commit']) == ('done', 'ready')
     tasks = {task.task_id: task for task in flow.api.store.tasks('default', RUN)}
@@ -472,7 +513,7 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
         skill, argv = SKILLS[str(row['role'])], row['harness']
         assert isinstance(argv, list)
         assert (tuple(argv), row['model'], row['skill_version']) == (
-            harness_argv(skill), skill.model, f'{skill.name}@{skill.version}')
+            harness_argv(skill), skill.model, f'{skill.name}@template-{skill.version}')
     plan = flow.plan()
     assert statuses(plan) == {'start': 'done', 'hunt': 'done', 'board': 'done', 'gate': 'done', 'commit': 'done',
                               'pr_author': 'done', 'pr': 'done', 'human': 'skipped'}

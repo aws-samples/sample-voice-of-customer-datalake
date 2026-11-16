@@ -195,6 +195,12 @@ class FlowRecord:
         self._flows[key] = flow
         return flow
 
+    def definition(self, ws: str, run_id: str) -> dict[str, Any] | None:
+        """The run's copy of its flow as stored (its built-in steps' settings: flow/settings.py), None for a run
+        started without one; FlowError for a copy that cannot be read."""
+        item = get_row(self.client, self.table, {'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': FLOW_SK}})
+        return None if item is None else copied_definition(item)
+
     def rows(self, ws: str, run_id: str) -> list[dict[str, Any]]:
         return run_rows(self.client, self.table, ws, run_id, STEP_PREFIX)
 

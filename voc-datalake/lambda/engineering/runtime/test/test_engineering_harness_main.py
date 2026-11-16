@@ -246,6 +246,7 @@ def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_acros
     assert (again.context.gate_tree, again.context.brief.patch) == (fixed, submitted)
     assert ((work / 'src/parse.py').read_text(), (work / 'build.log').read_text()) == ('new\n', '3 passed\n')
     again.context.checks.append({'name': 'pytest -q', 'status': 'pass'})
+    again.context.gate_ran = True   # (as run_gate records it)
     # The check's build.log changed the checkout: hashed again by real git, its tree is not the judged one, so no GO.
     drifted = again.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': fixed})
     assert drifted.error

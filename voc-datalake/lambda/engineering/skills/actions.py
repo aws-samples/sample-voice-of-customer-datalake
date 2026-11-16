@@ -94,6 +94,18 @@ class SkillActions:
     skills: SkillStore
     actor: Actor
 
+    def seed_template(self, role: str) -> dict[str, Any] | None:
+        """The shared skill's first version from the role's bundled template, at an administrator's Skills visit
+        (7.50.00: ``SkillStore.seed_from_template``), so the coach has a version to propose on; None when the role
+        has no template or its shared skill has a history already (a seed never writes over one)."""
+        from engineering.skills.templates import bundled
+        template = bundled().skill(check_role(role))
+        if template is None:
+            return None
+        seeded = self.skills.seed_from_template(WORKSPACE, template.role, template, by=self.actor)
+        return None if seeded is None else {'role': template.role, 'version': seeded.version.version,
+                                            'template': template.label}
+
     def _scope(self, connection: str, role: str, version: str) -> tuple[str, str, int]:
         return check_connection(connection), check_role(role), check_version(version)
 

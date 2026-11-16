@@ -75,17 +75,23 @@ class FakeBoard:
         self.moves.append((run_id, task_id, to_state))
         self.results.append(result_keys)
 
-    #: What ``skill`` answers (None: the board's refusal, a crash); ``memories``: what ``memory`` answers.
+    #: What ``skill`` answers (None: the role's shipped skill as its template); ``refuse_skill``: the board refuses
+    #: it (a crash); ``memories``: what ``memory`` answers.
     skill_answer: SkillAnswer | None = None
+    refuse_skill: bool = False
     memories: tuple[str, ...] = ()
-    skills_asked: list[str] = field(default_factory=list)
+    skills_asked: list[tuple[str, str]] = field(default_factory=list)
 
-    def skill(self, *, run_id: str) -> SkillAnswer:
-        self.skills_asked.append(run_id)
-        if self.skill_answer is None:
-            from engineering.runtime.harness.ports import BrokerRefused
-            raise BrokerRefused(409, 'no skill recorded for this session')
-        return self.skill_answer
+    def skill(self, *, run_id: str, role: str) -> SkillAnswer:
+        self.skills_asked.append((run_id, role))
+        if self.refuse_skill:
+            from engineering.runtime.harness.board_client import BoardRefused
+            raise BoardRefused(409, 'no skill is recorded for this agent\'s session')
+        if self.skill_answer is not None:
+            return self.skill_answer
+        from engineering.runtime.harness.skills import SKILLS
+        shipped = SKILLS[role]
+        return SkillAnswer(f'{role}@template-{shipped.version}', shipped.to_record())
 
     def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
         del run_id, task_id
@@ -183,6 +189,11 @@ class FakeBedrock:
         return {'output': {'message': {'role': 'assistant', 'content': content}},
                 'stopReason': 'tool_use' if any('toolUse' in block for block in content) else 'end_turn',
                 'usage': {'inputTokens': self._tokens[0], 'outputTokens': self._tokens[1]}}
+
+
+def opened(source: str, fence: str) -> str:
+    """A DATA block's first line (``tools.as_data``), as a session with ``fence`` writes it."""
+    return f'<<<DATA {source} {fence}>>>'
 
 
 def use(name: str, ident: str = 't1', **arguments: Any) -> dict[str, Any]:

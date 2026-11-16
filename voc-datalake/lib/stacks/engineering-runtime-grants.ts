@@ -3,7 +3,8 @@
  * the spend ledger's update (the session store's priced writes), the supervisor's budget work (a flow's month total,
  * the budget alerts, the hard cap), the Deny that keeps every other voc-agents writer off the hard cap's row (the
  * agents' runtime, agent-runtime.ts), an issue's trusted triage row (7.50.00: the runtime's create-only write, and the
- * Deny that keeps every other voc-agents writer off it) and a KMS key's use through named services only.
+ * Deny that keeps every other voc-agents writer off it), the agents' transcripts and the runs' manifests (7.50.00) and
+ * a KMS key's use through named services only.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -12,7 +13,7 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
 
-import { ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
+import { ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE } from './core-buckets';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
@@ -126,7 +127,7 @@ export const TRIAGE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_triage/*';
  * other partition of voc-agents; the hard cap's and the connections' rows explicitly denied, as for every voc-agents
  * writer).
  */
-export function grantIssueTriage(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable): void {
+function grantIssueTriage(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable): void {
   const records = workspaceBucket.arnForObjects(TRIAGE_RECORD_KEYS);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'IssueTriageRecords', actions: ['s3:GetObject'], resources: [records],
@@ -152,3 +153,47 @@ export function viaServices(key: kms.IKey, actions: string[], services: string[]
     conditions: { StringEquals: { 'kms:ViaService': services.map((service) => `${service}.${region}.amazonaws.com`) } },
   });
 }
+
+/**
+ * The agents' transcripts (lambda/engineering/runtime/harness/transcript.py, 7.50.00): each session writes its own under
+ * its own keys (the agent role's `WriteOwnKeys`, unchanged), and nobody else writes them. Learn reads a failed
+ * attempt's (learning/transcripts.py).
+ */
+const TRANSCRIPT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_transcripts/*`;
+/** A run's manifests and the transcripts' index by flow and day (lambda/engineering/runtime/manifest.py). */
+const MANIFEST_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_manifest/*`;
+const TRANSCRIPT_INDEX_KEYS = `ws/${ENGINEERING_WORKSPACE}/transcripts-index/*`;
+
+/**
+ * The runtime's role at a run's end (7.50.00): the issue's trusted triage row (``grantIssueTriage``), and Learn's read
+ * of the agents' transcripts and the run's manifest and index entry (``grantTranscripts``).
+ *
+ * The runtime's role (Learn, the run's end): read the agents' transcripts (GetObject, and a listing under their
+ * prefix only), and write each run's manifest and its index entry, create-only (the workspace bucket refuses a put
+ * without If-None-Match). No other run object is written, and no transcript.
+ */
+export function grantRunEnd(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable): void {
+  grantIssueTriage(role, workspaceBucket, agentsTable);
+  grantTranscripts(role, workspaceBucket);
+}
+
+function grantTranscripts(role: iam.IRole, workspaceBucket: s3.IBucket): void {
+  const transcripts = workspaceBucket.arnForObjects(TRANSCRIPT_KEYS);
+  const written = [MANIFEST_KEYS, TRANSCRIPT_INDEX_KEYS].map((keys) => workspaceBucket.arnForObjects(keys));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'LearnReadsTranscripts', actions: ['s3:GetObject'], resources: [transcripts],
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'LearnListsTranscripts', actions: ['s3:ListBucket'], resources: [workspaceBucket.bucketArn],
+    conditions: { StringLike: { 's3:prefix': [TRANSCRIPT_KEYS] } },
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'WriteRunManifests', actions: ['s3:PutObject'], resources: written,
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'The agents\' transcript objects (read only, one per run, agent, commit and attempt, known only at run time) and each run\'s manifest and index entry (create-only): no other run object',
+    findings: [transcripts, ...written].map(resourceFinding),
+  }]);
+}
+

@@ -117,4 +117,5 @@ class RunRecordReader:
         return RunRecord(ws=ws, run_id=run_id, connection=string_attr(meta, 'connection'),
                          status=string_attr(meta, 'status'), started_at=string_attr(meta, 'started_at'),
                          ended_at=string_attr(meta, 'ended_at'), tasks=tuple(tasks),
-                         history=board.history(ws, run_id), agents=agents, gates=self._gates(ws, run_id, tasks))
+                         history=board.history(ws, run_id), agents=agents, gates=self._gates(ws, run_id, tasks),
+                         commit=string_attr(meta, 'commit'))
