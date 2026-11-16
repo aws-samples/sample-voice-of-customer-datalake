@@ -61,13 +61,18 @@ def _with_pr(setting: object) -> dict[str, Any]:
     return definition
 
 
-@pytest.mark.parametrize(('setting', 'mode'), [('draft', 'draft'), ('ready', 'ready'), (None, 'ready'),
-                                                ('Draft', 'ready')])
+@pytest.mark.parametrize(('setting', 'mode'), [('draft', 'draft'), ('ready', 'ready')])
 def test_the_runs_pull_request_opens_as_its_flows_settings_say(aws, setting: object, mode: str):
     definition = _with_pr(setting)
     assert pull_request_mode(json.dumps(definition)) == mode
     _start(aws[1], encode_definition(definition))
     assert aws[1].get_item(Key={'pk': PK, 'sk': 'META'})['Item']['pull_request'] == mode
+
+
+@pytest.mark.parametrize('setting', [None, 'Draft', 1])
+def test_a_pr_setting_off_its_shape_reads_as_ready(setting: object):
+    # (the server's rules refuse such a flow at its save; a reader of one still opens ready, never a guess at draft)
+    assert pull_request_mode(json.dumps(_with_pr(setting))) == 'ready'
 
 
 @pytest.mark.parametrize('text', ['', 'not json', '[]', '{"nodes": "x"}', '{"nodes": [{"type": "start"}]}',

@@ -26,9 +26,10 @@ COPY lambda/engineering/runtime/__init__.py lambda/engineering/runtime/interface
 COPY lambda/engineering/connectors/__init__.py lambda/engineering/connectors/identity.py /opt/voc/engineering/connectors/
 COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harness/
 # The deterministic gate (7.50.00, the gate runner's run_gate): the stdlib-only gate modules, the orchestration loader
-# and its bundle, and the gate packs at /opt/voc/gates (quality_gate/packs.py default_packs_dir in an image).
+# (bundle.py, never the compiler) and its bundle, and the gate packs at /opt/voc/gates
+# (quality_gate/packs.py default_packs_dir in an image).
 COPY lambda/engineering/quality_gate/__init__.py lambda/engineering/quality_gate/packs.py lambda/engineering/quality_gate/checks.py lambda/engineering/quality_gate/runner.py lambda/engineering/quality_gate/text.py /opt/voc/engineering/quality_gate/
-COPY lambda/engineering/orchestration/ /opt/voc/engineering/orchestration/
+COPY lambda/engineering/orchestration/__init__.py lambda/engineering/orchestration/bundle.py /opt/voc/engineering/orchestration/
 COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json
 COPY templates/orchestration/gates/ /opt/voc/gates/
 COPY engineering-images/common/harness.py /opt/voc/harness.py

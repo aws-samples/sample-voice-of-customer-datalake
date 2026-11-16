@@ -364,6 +364,11 @@ def statuses(flow: dict[str, Any]) -> dict[str, str]:
 def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BugHunt:
     assert wired is not None
     s3, _ = aws
+    # The runtime's templates (and the board's, below) are the shipped skills from the run's start, the coordinator's
+    # launch included: the runs' skills come from the store first, then the templates, which this test pins to the
+    # harness's own.
+    shipped = BundleTemplates.shipped()
+    monkeypatch.setattr(handler, 'bundled', lambda: shipped)
     handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 20, 'goal': 'hunt the slug bugs',
                             'connection': 'conn-1', 'repo': REPOSITORY, 'commit': COMMIT, 'language': 'python',
                             'flow': 'wf_bugs',
@@ -373,10 +378,7 @@ def bug_hunt(wired: Any, aws: tuple[Any, Any], tmp_path: Path, monkeypatch: pyte
     counter = iter(range(1, 100))
     workspace = WorkspaceStore(s3, WORKSPACE_BUCKET, denied_is_missing=True)
     launcher = RuntimeLauncher()
-    # The board's own wiring (board/api.py _from_environment), its templates (and the runtime's) the shipped skills:
-    # the runs' skills come from the store first, then the templates, which this test pins to the harness's own.
-    shipped = BundleTemplates.shipped()
-    monkeypatch.setattr(handler, 'bundled', lambda: shipped)
+    # The board's own wiring (board/api.py _from_environment), on the same templates.
     api = BoardApi(BoardStore(client, TABLE, new_id=lambda: f'task-{next(counter)}'),
                    EventBridgePublisher(Events(), 'voc-engineering', 'voc.engineering/board'), Inbox(client, TABLE),
                    launcher=launcher, gate_records=lambda key: read_gate_record(workspace, key), templates=shipped,

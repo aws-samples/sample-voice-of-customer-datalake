@@ -24,14 +24,15 @@ SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'c
 CONNECTORS = RUNTIME.parent / 'connectors'
 SHIPPED_CONNECTORS = ('__init__.py', 'identity.py')
 #: The deterministic gate the gate runner's run_gate runs in the session (7.50.00): its standard-library-only modules,
-#: and item A's orchestration loader once it lands (its modules, never its tests).
+#: and item A's orchestration loader once it lands (bundle.py, the standard library only: never its compiler,
+#: validator or runner, which read YAML and JSON Schemas).
 QUALITY_GATE = RUNTIME.parent / 'quality_gate'
 SHIPPED_GATE = ('__init__.py', 'packs.py', 'checks.py', 'runner.py', 'text.py')
 ORCHESTRATION = RUNTIME.parent / 'orchestration'
+SHIPPED_ORCHESTRATION = ('__init__.py', 'bundle.py')
 SHIPPED = sorted([RUNTIME / name for name in SHIPPED_RUNTIME] + [CONNECTORS / name for name in SHIPPED_CONNECTORS]
                  + list((RUNTIME / 'harness').glob('*.py')) + [QUALITY_GATE / name for name in SHIPPED_GATE]
-                 + sorted(path for path in ORCHESTRATION.rglob('*.py') if 'test' not in path.relative_to(
-                     ORCHESTRATION).parts))
+                 + [ORCHESTRATION / name for name in SHIPPED_ORCHESTRATION if (ORCHESTRATION / name).is_file()])
 #: typing names Python 3.11 lacks (3.12 and 3.13 added them).
 NEWER_TYPING = {'override', 'TypeAliasType', 'TypeIs', 'ReadOnly', 'NoDefault', 'get_protocol_members', 'is_protocol'}
 
@@ -276,7 +277,8 @@ def test_the_base_keeps_the_agents_home_from_repository_code():
 #: Item A's paths every image copies before they land in this tree (the orchestration loader, the gate packs' new
 #: home): each is held to the images as soon as it exists (``test_item_as_paths_are_copied_once_they_land``).
 LANDING_WITH_ITEM_A: dict[str, str] = {
-    'lambda/engineering/orchestration/': 'item A lands the orchestration loader (lambda/engineering/orchestration)',
+    'lambda/engineering/orchestration/__init__.py': 'item A lands the orchestration package',
+    'lambda/engineering/orchestration/bundle.py': 'item A lands the orchestration loader',
     'templates/orchestration/gates/': 'item A moves the gate packs to templates/orchestration/gates',
 }
 #: The gate packs each image's toolchains are pinned to: a repository's TypeScript half (python-ts, rust-ts) runs on
@@ -339,7 +341,8 @@ def test_each_image_ships_the_deterministic_gate_its_packs_and_the_bundle(langua
     dockerfile = _dockerfile(language)
     gate = ' '.join(f'lambda/engineering/quality_gate/{name}' for name in SHIPPED_GATE)
     assert f'COPY {gate} /opt/voc/engineering/quality_gate/' in dockerfile
-    assert 'COPY lambda/engineering/orchestration/ /opt/voc/engineering/orchestration/' in dockerfile
+    loader = ' '.join(f'lambda/engineering/orchestration/{name}' for name in SHIPPED_ORCHESTRATION)
+    assert f'COPY {loader} /opt/voc/engineering/orchestration/' in dockerfile
     assert 'COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json' in dockerfile
     # (quality_gate/packs.py default_packs_dir: the templates folder in the repository, /opt/voc/gates in an image)
     assert 'COPY templates/orchestration/gates/ /opt/voc/gates/' in dockerfile
