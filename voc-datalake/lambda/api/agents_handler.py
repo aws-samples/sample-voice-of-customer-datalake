@@ -87,6 +87,7 @@ from shared import (
     agent_run_decisions,
     agent_run_resume,
     agent_seed,
+    agents_engineering_setup_routes,
     engineering_templates,
     plans_store,
     project_access,
@@ -1565,6 +1566,10 @@ def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
     if report.ready:
         return None
     return _json(409, {'error': NOT_READY, 'checks': [check.view() for check in report.failing]})
+
+
+# The setup guide's progress (7.50.00, GET/PUT /agents/engineering/setup: shared/agents_engineering_setup_routes.py).
+app.include_router(agents_engineering_setup_routes.app)
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository

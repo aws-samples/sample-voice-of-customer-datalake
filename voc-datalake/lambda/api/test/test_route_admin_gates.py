@@ -108,6 +108,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',
     }),
+    # The engineering setup guide's progress (7.50.00, included by agents_handler.py): an admin acting for themselves.
+    'agents_engineering_setup_routes.py': frozenset({'PUT /agents/engineering/setup'}),
     # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),

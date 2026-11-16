@@ -191,6 +191,12 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /agents/<agent_id>',
         'PUT /workflows/<workflow_id>',
     }),
+    # The engineering setup guide's progress (7.50.00, included by agents_handler.py): the deployment's, like the
+    # engineering agents it sets up, so it moves with them in 3g3.
+    'agents_engineering_setup_routes.py': frozenset({
+        'GET /agents/engineering/setup',
+        'PUT /agents/engineering/setup',
+    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',
