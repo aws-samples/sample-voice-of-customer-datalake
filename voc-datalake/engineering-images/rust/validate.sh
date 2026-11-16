@@ -6,5 +6,6 @@ cd /
 cargo --version
 cargo clippy --version
 cargo fmt --version
+node --version
 git --version
 exec sh /opt/voc/hooks/check-runner.sh cargo --version

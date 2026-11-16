@@ -1,7 +1,9 @@
 """The toolchain images: one per language the egress allowlist knows, each on the shared base and entry point."""
 import ast
+import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -21,8 +23,15 @@ SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'c
 #: The broker's caller identity, which the runtime's agent roles come from (interface.ROLES).
 CONNECTORS = RUNTIME.parent / 'connectors'
 SHIPPED_CONNECTORS = ('__init__.py', 'identity.py')
+#: The deterministic gate the gate runner's run_gate runs in the session (7.50.00): its standard-library-only modules,
+#: and item A's orchestration loader once it lands (its modules, never its tests).
+QUALITY_GATE = RUNTIME.parent / 'quality_gate'
+SHIPPED_GATE = ('__init__.py', 'packs.py', 'checks.py', 'runner.py', 'text.py')
+ORCHESTRATION = RUNTIME.parent / 'orchestration'
 SHIPPED = sorted([RUNTIME / name for name in SHIPPED_RUNTIME] + [CONNECTORS / name for name in SHIPPED_CONNECTORS]
-                 + list((RUNTIME / 'harness').glob('*.py')))
+                 + list((RUNTIME / 'harness').glob('*.py')) + [QUALITY_GATE / name for name in SHIPPED_GATE]
+                 + sorted(path for path in ORCHESTRATION.rglob('*.py') if 'test' not in path.relative_to(
+                     ORCHESTRATION).parts))
 #: typing names Python 3.11 lacks (3.12 and 3.13 added them).
 NEWER_TYPING = {'override', 'TypeAliasType', 'TypeIs', 'ReadOnly', 'NoDefault', 'get_protocol_members', 'is_protocol'}
 
@@ -259,3 +268,132 @@ def test_the_base_keeps_the_agents_home_from_repository_code():
     base = (IMAGES / 'common' / 'install-base.sh').read_text()
     assert 'useradd --create-home --uid 10002 --gid work code' in base
     assert 'chmod 700 /home/unit' in base
+
+
+# ── the deterministic gate and the pinned toolchains (7.50.00) ─────────────────────────────────────────────────────
+#: Item A's paths every image copies before they land in this tree (the orchestration loader, the gate packs' new
+#: home): each is held to the images as soon as it exists (``test_item_as_paths_are_copied_once_they_land``).
+LANDING_WITH_ITEM_A: dict[str, str] = {
+    'lambda/engineering/orchestration/': 'item A lands the orchestration loader (lambda/engineering/orchestration)',
+    'templates/orchestration/gates/': 'item A moves the gate packs to templates/orchestration/gates',
+}
+#: The gate packs each image's toolchains are pinned to: a repository's TypeScript half (python-ts, rust-ts) runs on
+#: the typescript pack's Node, which the Python pack names itself and the Rust image adds.
+IMAGE_PACKS: dict[str, tuple[str, ...]] = {
+    'python': ('python',), 'node': ('typescript',), 'rust': ('rust', 'typescript'), 'java': ('java',)}
+#: The base image each language's FROM names, and the toolchain it is.
+BASE_TOOLCHAIN: dict[str, str] = {'python': 'python', 'node': 'node', 'rust': 'rust', 'eclipse-temurin': 'java'}
+#: An exact release: major, minor and patch (Temurin's build after ``_``), never a floating tag.
+EXACT: re.Pattern[str] = re.compile(r'\d+\.\d+\.\d+(?:\.\d+)?(?:_\d+)?\Z')
+
+
+def _dockerfile(language: str) -> str:
+    return (IMAGES / language / 'Dockerfile').read_text()
+
+
+def _copy_sources(dockerfile: str) -> list[str]:
+    """The build-context paths an image's ``COPY`` lines name (continued lines joined; never a ``--from`` stage)."""
+    sources: list[str] = []
+    for line in dockerfile.replace('\\\n', ' ').splitlines():
+        if line.startswith('COPY ') and '--from=' not in line:
+            sources += [word for word in line.split()[1:-1] if not word.startswith('--')]
+    return sources
+
+
+def _in_context(source: str) -> bool:
+    return any(IMAGES.parent.glob(source.rstrip('/'))) if '*' in source else (IMAGES.parent / source).exists()
+
+
+def _pack_images() -> dict[str, dict[str, str]]:
+    """Each gate pack's ``[image]`` (toolchain to version): its manifest under templates/orchestration/gates once item A
+    moves the packs there, else the committed bundle's gates (the same manifests, compiled)."""
+    manifests = sorted((IMAGES.parent / 'templates' / 'orchestration' / 'gates').glob('*/manifest.toml'))
+    if manifests:
+        return {path.parent.name: dict(tomllib.loads(path.read_text()).get('image', {})) for path in manifests}
+    bundle = json.loads((IMAGES.parent / 'templates' / 'orchestration' / 'bundle.json').read_text())
+    return {pack['id']: dict(pack['image']) for pack in bundle['gates']['packs']}
+
+
+def _pins(language: str) -> dict[str, str]:
+    """What an image installs, toolchain to version: its FROM's, Node's tarball, Maven's and Gradle's archives."""
+    dockerfile = _dockerfile(language)
+    base = re.search(r'^FROM --platform=linux/arm64 public\.ecr\.aws/docker/library/([a-z-]+):(\S+)$', dockerfile,
+                     re.MULTILINE)
+    assert base is not None
+    version = re.match(r'[0-9][0-9._]*[0-9]', base.group(2))
+    assert version is not None
+    pins = {BASE_TOOLCHAIN[base.group(1)]: version.group(0)}
+    node = re.search(r'install-node\.sh (\S+) ([0-9a-f]+) ', dockerfile)
+    if node is not None:
+        pins['node'] = node.group(1)
+    tools = re.search(r'install-build-tools\.sh (\S+) \\\n\s+([0-9a-f]+) \\\n\s+(\S+) ([0-9a-f]+) ', dockerfile)
+    if tools is not None:
+        pins['maven'], pins['gradle'] = tools.group(1), tools.group(3)
+    return pins
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_each_image_ships_the_deterministic_gate_its_packs_and_the_bundle(language):
+    dockerfile = _dockerfile(language)
+    gate = ' '.join(f'lambda/engineering/quality_gate/{name}' for name in SHIPPED_GATE)
+    assert f'COPY {gate} /opt/voc/engineering/quality_gate/' in dockerfile
+    assert 'COPY lambda/engineering/orchestration/ /opt/voc/engineering/orchestration/' in dockerfile
+    assert 'COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json' in dockerfile
+    # (quality_gate/packs.py default_packs_dir: the templates folder in the repository, /opt/voc/gates in an image)
+    assert 'COPY templates/orchestration/gates/ /opt/voc/gates/' in dockerfile
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_every_path_an_image_copies_is_in_the_build_context(language):
+    missing = [source for source in _copy_sources(_dockerfile(language)) if not _in_context(source)]
+    assert [source for source in missing if source not in LANDING_WITH_ITEM_A] == []
+
+
+@pytest.mark.parametrize('path', sorted(LANDING_WITH_ITEM_A))
+def test_item_as_paths_are_copied_once_they_land(path):
+    if not _in_context(path):
+        pytest.skip(f'{LANDING_WITH_ITEM_A[path]}: not in this tree yet, so no image build succeeds before it does')
+    for language in sorted(REGISTRY_HOSTS):
+        assert path in _copy_sources(_dockerfile(language)), language
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_each_images_toolchains_are_exactly_its_gate_packs_pinned_never_floating(language):
+    wanted: dict[str, str] = {}
+    packs = _pack_images()
+    for pack in IMAGE_PACKS[language]:
+        wanted.update(packs[pack])
+    pins = _pins(language)
+    assert set(pins) == set(wanted), 'every toolchain a pack names is installed, and nothing else is pinned'
+    for toolchain, version in pins.items():
+        assert EXACT.fullmatch(version), f'{toolchain} {version} is not an exact release'
+        assert version == wanted[toolchain] or version.startswith(f'{wanted[toolchain]}.'), (
+            f'{toolchain} {version} is not the pack\'s {wanted[toolchain]}')
+
+
+def test_the_python_and_rust_images_install_one_checked_node_tarball():
+    found = {re.search(r'install-node\.sh (\S+) (\S+) ', _dockerfile(language)).groups()  # type: ignore[union-attr]
+             for language in ('python', 'rust')}
+    ((version, sha256),) = found
+    assert EXACT.fullmatch(version)
+    assert re.fullmatch(r'[0-9a-f]{64}', sha256)
+    installer = (IMAGES / 'common' / 'install-node.sh').read_text()
+    assert 'https://nodejs.org/dist/v${version}/node-v${version}-linux-${arch}.tar.gz' in installer
+    assert 'echo "${expected}  /tmp/node.tar.gz" | sha256sum -c -' in installer
+    # Root's tree, linked into a directory `code` cannot write; never the tarball's own file owners.
+    assert '--no-same-owner' in installer
+    assert 'ln -sf "/opt/node/bin/${tool}" "/usr/local/bin/${tool}"' in installer
+    assert 'install-node.sh' not in _dockerfile('node')   # (its base image is Node's own)
+
+
+def test_the_java_image_checks_maven_and_gradle_against_their_published_checksums():
+    tools = re.search(r'install-build-tools\.sh (\S+) \\\n\s+(\S+) \\\n\s+(\S+) (\S+) ', _dockerfile('java'))
+    assert tools is not None
+    assert re.fullmatch(r'[0-9a-f]{128}', tools.group(2))   # (Maven publishes a sha512)
+    assert re.fullmatch(r'[0-9a-f]{64}', tools.group(4))
+    installer = (IMAGES / 'java' / 'install-build-tools.sh').read_text()
+    assert 'echo "${maven_sha512}  /tmp/maven.tar.gz" | sha512sum -c -' in installer
+    assert 'echo "${gradle_sha256}  /tmp/gradle.zip" | sha256sum -c -' in installer
+    assert '--no-same-owner' in installer
+    # (never the distribution's Maven, whose version moves with the base image)
+    assert 'install -y --no-install-recommends maven' not in _dockerfile('java')

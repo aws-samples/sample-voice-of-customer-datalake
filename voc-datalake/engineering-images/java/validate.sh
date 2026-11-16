@@ -5,5 +5,6 @@ set -eu
 cd /
 java -version
 mvn --version
+gradle --version
 git --version
 exec sh /opt/voc/hooks/check-runner.sh java -version
