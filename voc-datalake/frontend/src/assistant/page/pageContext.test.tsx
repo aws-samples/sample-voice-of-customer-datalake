@@ -19,17 +19,31 @@ describe('pageContextFromLocation', () => {
     ['/dashboard', '', { kind: 'dashboard', path: '/dashboard' }],
     ['/feedback/f-1', '', { kind: 'feedback', path: '/feedback/f-1', feedbackId: 'f-1' }],
     ['/projects', '', { kind: 'projects', path: '/projects' }],
-    ['/projects/p1', '?tab=personas', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'personas' }],
+    ['/projects/p1/personas', '', { kind: 'project', path: '/projects/p1/personas', projectId: 'p1', tab: 'personas' }],
+    // The query names no tab (no old `?tab=` link is read): the project's own path is its Overview.
+    ['/projects/p1', '?tab=personas', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'overview' }],
     ['/feedback-forms', '', { kind: 'feedback-forms', path: '/feedback-forms' }],
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],
-    ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows' }],
+    ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows', tab: 'workflows' }],
+    ['/agents/workflows/wf_1', '', { kind: 'agents', path: '/agents/workflows/wf_1' }],
+    ['/agents/skills/fixer/v/2', '', { kind: 'agents', path: '/agents/skills/fixer/v/2', tab: 'skills' }],
+    ['/agents/ag_1/runs', '', { kind: 'agent', path: '/agents/ag_1/runs', agentId: 'ag_1', tab: 'runs' }],
+    ['/agents/ag_1', '?tab=runs', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
+    ['/admin/access/workspaces', '', { kind: 'settings', path: '/admin/access/workspaces', tab: 'access' }],
+    ['/memory/personal', '', { kind: 'memory', path: '/memory/personal', tab: 'personal' }],
+    ['/company/design', '', { kind: 'company', path: '/company/design', tab: 'design' }],
+    ['/account/access', '', { kind: 'other', path: '/account/access', tab: 'access' }],
+    ['/data-explorer/processed', '', { kind: 'data-explorer', path: '/data-explorer/processed', tab: 'processed' }],
+    ['/participants/people', '', { kind: 'participants', path: '/participants/people', tab: 'people' }],
+    ['/feature-requests/insights', '', { kind: 'other', path: '/feature-requests/insights', tab: 'insights' }],
+    ['/feature-requests/beta-feedback/fr_1', '', { kind: 'other', path: '/feature-requests/beta-feedback/fr_1' }],
     ['/agents/ag_1', '', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
     ['/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', '', { kind: 'agents',
       path: '/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', engineeringRunId: '01JDA7K3M9Q2R5T8V0W4X6Y1Z3' }],
     // (not a run id: the run monitor answers not found, and the context names no run)
     ['/agents/engineering/run-1', '', { kind: 'agents', path: '/agents/engineering/run-1' }],
     ['/radar', '', { kind: 'radar', path: '/radar' }],
-    ['/participants', '?tab=lists', { kind: 'participants', path: '/participants', tab: 'lists' }],
+    ['/participants', '?tab=lists', { kind: 'participants', path: '/participants' }],
     ['/feature-requests', '', { kind: 'other', path: '/feature-requests' }],
     ['/feature-requests/beta-feedback', '', { kind: 'other', path: '/feature-requests/beta-feedback' }],
     ['/nowhere', '', { kind: 'other', path: '/nowhere' }],
@@ -37,7 +51,7 @@ describe('pageContextFromLocation', () => {
     expect(pageContextFromLocation({ pathname, search })).toStrictEqual(expected)
   })
 
-  it('reads the open document from a project\'s path (an old link\'s query too), within MAX_ID_LENGTH', () => {
+  it('reads the open document from a project\'s path (never its query), within MAX_ID_LENGTH', () => {
     const project = { kind: 'project' } as const
     const at = (pathname: string, search = '') => ({ pathname, search })
     const longest = 'x'.repeat(MAX_ID_LENGTH)
@@ -45,7 +59,7 @@ describe('pageContextFromLocation', () => {
       at('/projects/p1/documents/proto_3'), at('/projects/p1/documents/proto_3/v/2/focus'),
       at('/projects/p1', '?tab=documents&doc=proto_3'), at(`/projects/p1/documents/${longest}`),
       at(`/projects/p1/documents/${longest}x`), at('/projects/p1/personas'),
-    ].map((location) => selectedDocumentId(project, location))).toStrictEqual(['proto_3', 'proto_3', 'proto_3', longest, undefined, undefined])
+    ].map((location) => selectedDocumentId(project, location))).toStrictEqual(['proto_3', 'proto_3', undefined, longest, undefined, undefined])
     expect(selectedDocumentId({ kind: 'feedback' }, at('/projects/p1/documents/proto_3'))).toBeUndefined()
   })
 
@@ -64,7 +78,7 @@ describe('pageContextFromLocation', () => {
 
   it.each([
     ['/categories', '?category=delivery&review=fb_9', { kind: 'categories', path: '/categories', filters: { category: 'delivery' }, feedbackId: 'fb_9' }],
-    ['/projects/p1', '?tab=decisions&review=fb_9', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'decisions', feedbackId: 'fb_9' }],
+    ['/projects/p1/decisions', '?review=fb_9', { kind: 'project', path: '/projects/p1/decisions', projectId: 'p1', tab: 'decisions', feedbackId: 'fb_9' }],
     // A Radar review is not one of ours: no feedbackId for the assistant to look up.
     ['/radar', '?review=acme-r01&reviewBrand=acme', { kind: 'radar', path: '/radar' }],
   ])('an open review modal on %s%s reports the review', (pathname, search, expected) => {
@@ -136,8 +150,8 @@ describe('usePageContext', () => {
   it('titles a project page from the cached project, without fetching', () => {
     const client = new QueryClient()
     client.setQueryData(['project', 'p1'], { project: { name: 'Checkout revamp' }, personas: [], documents: [] })
-    const result = renderAt('/projects/p1?tab=documents', client)
-    expect(result.current).toStrictEqual({ kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'documents', title: 'Checkout revamp' })
+    const result = renderAt('/projects/p1/documents', client)
+    expect(result.current).toStrictEqual({ kind: 'project', path: '/projects/p1/documents', projectId: 'p1', tab: 'documents', title: 'Checkout revamp' })
   })
 
   it('has no title when the project is not cached', () => {
@@ -170,14 +184,15 @@ describe('usePageContext', () => {
   it('cuts a long prototype title to the contract bound', () => {
     const client = new QueryClient()
     client.setQueryData(['project', 'p1'], { ...PROJECT_WITH_DOCS, documents: [{ document_id: 'proto_3', document_type: 'prototype', title: 'x'.repeat(300) }] })
-    expect(renderAt('/projects/p1?tab=documents&doc=proto_3', client).current.title).toBe('x'.repeat(120))
+    expect(renderAt('/projects/p1/documents/proto_3', client).current.title).toBe('x'.repeat(120))
   })
 
   it.each([
-    ['another document type open', '/projects/p1?tab=documents&doc=prd_1'],
-    ['an id the project does not list', '/projects/p1?tab=documents&doc=gone_1'],
-    ['another tab', '/projects/p1?tab=overview&doc=proto_3'],
-    ['no document open', '/projects/p1?tab=documents'],
+    ['another document type open', '/projects/p1/documents/prd_1'],
+    ['an id the project does not list', '/projects/p1/documents/gone_1'],
+    ['another tab', '/projects/p1/overview'],
+    ['no document open', '/projects/p1/documents'],
+    ['a document named only by the query (no old `?doc=` link is read)', '/projects/p1?tab=documents&doc=proto_3'],
   ])('sets no documentId with %s', (_case, entry) => {
     const result = renderAt(entry, cached())
     expect(result.current.documentId).toBeUndefined()
@@ -185,8 +200,8 @@ describe('usePageContext', () => {
   })
 
   it('sets no documentId before the project is cached, nor on another page', () => {
-    expect(renderAt('/projects/p1?tab=documents&doc=proto_3').current.documentId).toBeUndefined()
-    expect(renderAt('/feedback?tab=documents&doc=proto_3', cached()).current.documentId).toBeUndefined()
+    expect(renderAt('/projects/p1/documents/proto_3').current.documentId).toBeUndefined()
+    expect(renderAt('/feedback/proto_3', cached()).current.documentId).toBeUndefined()
   })
 
   it("titles an agent page with the cached agent's name, not its id", () => {

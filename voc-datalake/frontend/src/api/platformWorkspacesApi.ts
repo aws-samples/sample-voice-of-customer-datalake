@@ -10,7 +10,7 @@
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
-import { cursorQuery, post } from './requestKit'
+import { post } from './requestKit'
 import { WorkspaceIdentitySchema } from './workspacesApi'
 import { readCursorPage } from './cursorPage'
 import type { CursorPage } from './cursorPage'
@@ -34,11 +34,15 @@ export type CreatedWorkspace = z.infer<typeof CreatedSchema>['workspace']
 export const platformWorkspacesKey = () => ['platform-workspaces'] as const
 
 export const platformWorkspacesApi = {
-  /** One page (25, the server's default), from `cursor` when given. */
+  /** One page (25, the server's default, or `limit`: 1 to 100), from `cursor` when given. */
   // The rows this build can read, in the server's order (by name).
-  list: async (cursor: string | null): Promise<CursorPage<PlatformWorkspace>> => readCursorPage(await (cursor === null
-    ? fetchApi<unknown>('/platform/workspaces')
-    : fetchApi<unknown>(`/platform/workspaces?${cursorQuery(cursor)}`)), 'workspaces', PlatformWorkspaceSchema),
+  list: async (cursor: string | null, limit?: number): Promise<CursorPage<PlatformWorkspace>> => {
+    const query = new URLSearchParams(cursor === null ? {} : { cursor })
+    if (limit !== undefined) query.set('limit', String(limit))
+    const asked = query.toString()
+    return readCursorPage(await fetchApi<unknown>(asked === '' ? '/platform/workspaces' : `/platform/workspaces?${asked}`),
+      'workspaces', PlatformWorkspaceSchema)
+  },
   /** 409 when the slug is taken (nothing written). */
   create: async (name: string, slug: string): Promise<CreatedWorkspace> =>
     CreatedSchema.parse(await fetchApi<unknown>('/platform/workspaces', post({ name, slug }))).workspace,

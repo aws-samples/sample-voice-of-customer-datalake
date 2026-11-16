@@ -219,7 +219,7 @@ test.describe('prototype overlay and pins', () => {
 
   test('Tester pins: the review panel opens on the prototype and lists its pins', async ({ page }, testInfo) => {
     const prototype = await prototypeFor(page, roleOf(testInfo))
-    await page.goto(site(`/projects/${encodeURIComponent(prototype.projectId)}?tab=documents`), { waitUntil: 'domcontentloaded' })
+    await page.goto(site(`/projects/${encodeURIComponent(prototype.projectId)}/documents`), { waitUntil: 'domcontentloaded' })
     await settle(page, 800)
     await page.getByRole('button', { name: prototype.title }).first().click()
     const toggle = page.getByRole('button', { name: 'Tester pins' })

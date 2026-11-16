@@ -45,7 +45,7 @@ function signedIn(record: string | undefined): unknown {
 }
 
 function signOut(): void {
-  stubLocationAssign('/w/acme/dashboard')
+  stubLocationAssign('/workspace/acme/dashboard')
   runSignOut()
 }
 

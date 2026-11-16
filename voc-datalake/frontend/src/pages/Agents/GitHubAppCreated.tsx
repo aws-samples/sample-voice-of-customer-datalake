@@ -18,6 +18,7 @@ import { engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { useConnectionError } from './connectionText'
 import { GitHubReturnFrame } from './GitHubReturnFrame'
+import { leavingForGitHub } from './githubReturn'
 import { useSingleRequest, useTakenQuery } from './githubCallback'
 import type { CreatedApp } from '../../api/githubAppsApi'
 import type { RequestOutcome } from './githubCallback'
@@ -43,7 +44,7 @@ function Created({ outcome }: Readonly<{ outcome: RequestOutcome<CreatedApp> }>)
       return (
         <>
           <p role="status" className="text-sm text-text">{t('connections.githubReturn.createdBody', { slug: outcome.answer.app.slug })}</p>
-          <a href={outcome.answer.installUrl} className="btn btn-primary inline-flex items-center gap-1.5">
+          <a href={outcome.answer.installUrl} onClick={leavingForGitHub} className="btn btn-primary inline-flex items-center gap-1.5">
             <ExternalLink size={14} aria-hidden="true" /> {t('connections.githubReturn.installOnGitHub')}
           </a>
         </>

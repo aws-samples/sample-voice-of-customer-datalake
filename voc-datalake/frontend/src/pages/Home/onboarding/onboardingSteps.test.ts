@@ -50,7 +50,7 @@ describe('deriveSteps', () => {
 
   it('links each step to where it is done', () => {
     expect(Object.fromEntries(deriveSteps(EMPTY).map((s) => [s.id, s.to]))).toStrictEqual({
-      categories: '/admin?tab=taxonomy&section=categories', source: '/scrapers', feedback: '/categories', assistant: '/chat', project: '/projects',
+      categories: '/admin/taxonomy/categories', source: '/scrapers', feedback: '/categories', assistant: '/chat', project: '/projects',
     })
   })
 

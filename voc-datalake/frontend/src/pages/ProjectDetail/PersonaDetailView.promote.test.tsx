@@ -69,7 +69,7 @@ describe('Promote to company', () => {
     const user = userEvent.setup()
     const { invalidate } = renderDetail(DANA)
     await user.click(screen.getByRole('button', { name: 'Promote to company' }))
-    expect(await screen.findByRole('link', { name: 'Open the library' })).toHaveAttribute('href', '/company?tab=personas')
+    expect(await screen.findByRole('link', { name: 'Open the library' })).toHaveAttribute('href', '/company/personas')
     expect(fetchApi).toHaveBeenCalledWith('/projects/proj_1/personas/persona_1/promote', expect.objectContaining({ method: 'POST' }))
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company-personas'] }))
   })

@@ -934,7 +934,12 @@
       "description": "Los agentes de ingeniería usan esta conexión para leer el repositorio y proponerle cambios.",
       "stored": "Credencial guardada:",
       "keepHint": "La credencial guardada nunca se muestra. Deje la clave privada vacía para conservarla; un repositorio, un ID de App o un ID de instalación nuevos necesitan de nuevo la clave privada.",
-      "save": "Guardar conexión"
+      "save": "Guardar conexión",
+      "appCreatedTitle": "A través de la GitHub App de este despliegue",
+      "appCreatedHint": "Guardada al instalar la App: su App, su instalación y su repositorio son fijos, y su clave es la de la App. Aquí solo puede cambiar la rama por defecto.",
+      "repositoryFixed": "Guardado por la instalación de la App: no puede cambiar. Instala la App en otro repositorio para conectarlo.",
+      "reason": "Motivo (opcional)",
+      "reasonHint": "Por qué se hace el cambio: se guarda en el historial de la conexión. Una línea, como máximo {{max, number}} caracteres."
     },
     "fields": {
       "connectionId": "Id. de la conexión",

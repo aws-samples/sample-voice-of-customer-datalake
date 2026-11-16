@@ -43,7 +43,7 @@ function renderDetail(entry: string) {
   return renderWithQueryClient(
     <TestRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/agents/:id" element={<AgentDetail />} />
+        <Route path="/agents/:id/*" element={<AgentDetail />} />
         <Route path="/agents/workflows/:workflowId" element={<p>Workflow library page</p>} />
       </Routes>
     </TestRouter>,
@@ -60,7 +60,7 @@ beforeEach(() => {
 describe('AgentDetail — a last run that needs a decision', () => {
   it('shows a banner whose button opens the Runs tab', async () => {
     routes({ ...AGENT, stats: { last_run_status: 'needs_human' } })
-    renderDetail('/agents/ag_1?tab=instructions')
+    renderDetail('/agents/ag_1/instructions')
     const banner = await screen.findByText('The last run of this agent needs your decision.')
     await userEvent.click(within(banner.closest<HTMLElement>('[role="status"]') ?? banner).getByRole('button', { name: 'Review the run' }))
     expect(await screen.findByRole('tab', { name: /Runs/, selected: true })).toBeInTheDocument()
@@ -69,7 +69,7 @@ describe('AgentDetail — a last run that needs a decision', () => {
 
   it('shows no banner otherwise', async () => {
     routes()
-    renderDetail('/agents/ag_1?tab=instructions')
+    renderDetail('/agents/ag_1/instructions')
     await screen.findByRole('heading', { name: 'Scout' })
     expect(screen.queryByText('The last run of this agent needs your decision.')).not.toBeInTheDocument()
   })
@@ -89,7 +89,7 @@ describe('AgentDetail — Workflow tab switcher', () => {
         { workflow_id: 'wf_eng', name: 'Bug hunt', revision: 1, kind: 'engineering' },
       ] }),
     })
-    renderDetail('/agents/ag_1?tab=workflow')
+    renderDetail('/agents/ag_1/workflow')
     const switcher = await findSwitcher()
     expect(within(switcher).getByRole('option', { name: 'Fast flow' })).toBeInTheDocument()
     expect(within(switcher).queryByRole('option', { name: 'Bug hunt' })).toBeNull()
@@ -98,7 +98,7 @@ describe('AgentDetail — Workflow tab switcher', () => {
   it('switches the agent to another library workflow and says so', async () => {
     const put = vi.fn((_body: unknown) => ({ agent: { ...AGENT, workflow_id: 'wf_2' } }))
     routes(AGENT, { 'PUT /agents/ag_1': put })
-    renderDetail('/agents/ag_1?tab=workflow')
+    renderDetail('/agents/ag_1/workflow')
     await userEvent.selectOptions(await findSwitcher(), 'wf_2')
     await waitFor(() => expect(put).toHaveBeenCalledWith({ workflow_id: 'wf_2' }))
     expect(await screen.findByText('This agent now runs Fast flow.')).toBeInTheDocument()
@@ -107,7 +107,7 @@ describe('AgentDetail — Workflow tab switcher', () => {
   it('asks before dropping unsaved edits, and Cancel keeps them', async () => {
     const put = vi.fn((_body: unknown) => ({ agent: { ...AGENT, workflow_id: 'wf_2' } }))
     routes(AGENT, { 'PUT /agents/ag_1': put })
-    renderDetail('/agents/ag_1?tab=workflow')
+    renderDetail('/agents/ag_1/workflow')
     const name = await screen.findByLabelText('Workflow name')
     await userEvent.type(name, ' renamed')
     await userEvent.selectOptions(await findSwitcher(), 'wf_2')
@@ -120,7 +120,7 @@ describe('AgentDetail — Workflow tab switcher', () => {
   it('switches after the confirmation', async () => {
     const put = vi.fn((_body: unknown) => ({ agent: { ...AGENT, workflow_id: 'wf_2' } }))
     routes(AGENT, { 'PUT /agents/ag_1': put })
-    renderDetail('/agents/ag_1?tab=workflow')
+    renderDetail('/agents/ag_1/workflow')
     await userEvent.type(await screen.findByLabelText('Workflow name'), ' renamed')
     await userEvent.selectOptions(await findSwitcher(), 'wf_2')
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Switch workflow' }))
@@ -130,7 +130,7 @@ describe('AgentDetail — Workflow tab switcher', () => {
   it("shows a non-admin the workflow's name, without the switcher", async () => {
     adminFlag.isAdmin = false
     routes()
-    renderDetail('/agents/ag_1?tab=workflow')
+    renderDetail('/agents/ag_1/workflow')
     expect(await screen.findByTitle('Flow')).toHaveTextContent('Flow')
     expect(screen.queryByRole('combobox', { name: 'Workflow' })).not.toBeInTheDocument()
   })

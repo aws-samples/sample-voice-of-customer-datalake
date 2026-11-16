@@ -403,7 +403,7 @@ export const pageContextSchema = z.object({
   agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   /** The engineering run on screen (its monitor, `/agents/engineering/<run_id>`): a ULID, get_engineering_run's default. */
   engineeringRunId: z.string().regex(ENGINEERING_RUN_ID).optional(),
-  /** Active tab on pages that have tabs (`?tab=` or local state). */
+  /** Active tab on pages that have tabs: its path segment (`/admin/<tab>/…`, `/memory/<tab>`; 7.49.00) or local state. */
   tab: z.string().max(64).optional(),
   /** Human title of the entity on screen (project name, …), ≤120 chars. */
   title: z.string().max(120).optional(),

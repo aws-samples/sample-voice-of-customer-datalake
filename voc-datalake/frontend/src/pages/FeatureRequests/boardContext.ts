@@ -6,6 +6,12 @@
  * The in-app pages (`/feature-requests`, `/feature-requests/:slug`) and the standalone ones
  * (`/board`, `/board/:slug`) render the same components; only these values differ between them.
  *
+ * Their addresses are paths (7.49.00): a board `<boards>/<slug>`, one request open on it
+ * `<boards>/<slug>/<requestId>`, a request whose board is looked up `<boards>/requests/<requestId>`
+ * (the in-app citations and Insights know only the request), and in the app the Insights tab
+ * `/feature-requests/insights`. `requests` and `insights` are reserved slugs
+ * (lambda/shared/feature_boards_store.py). No `?request=<id>` link of before is read (a pre-release change).
+ *
  * @module pages/FeatureRequests/boardContext
  */
 import { createContext, useContext } from 'react'
@@ -13,6 +19,9 @@ import { appFeatureRequestsApi } from '../../api/featureRequestsApi'
 import { SEEDED_BOARD } from '../../api/featureBoardsSchema'
 import type { BoardViewer, FeatureRequestsApi } from '../../api/featureRequestsApi'
 import type { FeatureBoard } from '../../api/featureBoardsSchema'
+import { adminPath } from '../Settings/adminPaths'
+import { APP_BOARDS_PATH } from './boardPaths'
+import { pageHref } from '../../workspace/workspacePath'
 
 export interface BoardHost {
   readonly api: FeatureRequestsApi
@@ -36,17 +45,25 @@ export function boardPagePath(host: Pick<BoardHost, 'basePath'>, boardRef: strin
   return `${host.basePath}/${encodeURIComponent(boardRef)}`
 }
 
-/** The absolute link that opens one request's detail on its board, for this audience. */
+/** One request's detail on its board (`/feature-requests/sales-feature-requests/fr_1`). */
+export function boardRequestPath(host: Pick<BoardHost, 'basePath'>, boardRef: string, requestId: string): string {
+  return `${boardPagePath(host, boardRef)}/${encodeURIComponent(requestId)}`
+}
+
+/**
+ * The absolute link that opens one request's detail on its board, for this audience: under this page's
+ * `/workspace/<slug>` when it has one (`pageHref`, as a review's copied link), so it opens the same place.
+ */
 export function shareLinkFor(host: Pick<BoardHost, 'basePath'>, boardRef: string, requestId: string, origin = window.location.origin): string {
-  return `${origin}${boardPagePath(host, boardRef)}?${new URLSearchParams({ request: requestId }).toString()}`
+  return `${origin}${pageHref(boardRequestPath(host, boardRef, requestId))}`
 }
 
 /** Where admins create and configure boards (Administration → Privacy & access → Boards). */
-export const BOARDS_ADMIN_PATH = '/admin?tab=access&section=boards'
+export const BOARDS_ADMIN_PATH = adminPath({ tab: 'access', section: 'boards' })
 
 /** The admin editor of one board. */
 export function boardEditorPath(boardId: string): string {
-  return `/admin?${new URLSearchParams({ tab: 'access', section: 'boards', board: boardId }).toString()}`
+  return adminPath({ tab: 'access', section: 'boards' }, boardId)
 }
 
 /** Board configuration is an app-pool admin's (the editor lives in the app's Administration). */
@@ -60,7 +77,7 @@ export function isAppAdmin(viewer: BoardViewer | undefined): boolean {
  */
 export const APP_BOARD_HOST: BoardHost = {
   api: appFeatureRequestsApi,
-  basePath: '/feature-requests',
+  basePath: APP_BOARDS_PATH,
   session: 'app',
 }
 

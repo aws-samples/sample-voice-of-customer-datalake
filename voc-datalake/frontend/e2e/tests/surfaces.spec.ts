@@ -1,15 +1,15 @@
 /**
  * 5.35 coverage — the URL-addressed surfaces of 5.00–5.34, read only, both roles where they differ.
  *
- * - Account `/account?tab=profile|preferences|briefing|objectives|access` (pages/Account/accountSections.ts):
- *   each tab is the selected one (`aria-selected`) and shows its own heading; a 5.09–5.11 `?section=mcp` is
- *   rewritten to `?tab=access`. Both roles (every Account tab is self-scoped).
- * - Administration `/admin?tab=…&section=…` (pages/Settings/adminTabs.ts): every tab and section (incl. inbox,
+ * - Account `/account/profile|preferences|briefing|objectives|access` (pages/Account/accountSections.ts):
+ *   each tab is the selected one (`aria-selected`) and shows its own heading. Both roles (every Account tab is
+ *   self-scoped).
+ * - Administration `/admin/<tab>/<section>` (pages/Settings/adminPaths.ts): every tab and section (incl. inbox,
  *   radar, dimensions, policies, version) renders as the admin with its top tab pressed, its section tab selected
  *   and its heading; Version shows a `X.YY.ZZ` platform version. e2e-user is redirected off /admin (AdminRoute).
- * - Company `/company?tab=vision|design`; the retired `?tab=mine` lands on `/account?tab=objectives`.
- * - Agents `/agents` and `/agents?tab=workflows`: the admin gets both tabs; e2e-user gets no tabs and falls back
- *   to the agents list on `?tab=workflows`.
+ * - Company `/company/vision|design`.
+ * - Agents `/agents` and `/agents/workflows`: the admin gets both tabs; e2e-user gets no tabs and the agents
+ *   list on `/agents/workflows`.
  * - Home's morning brief (docs/briefing.md, mock-briefing.js): header, "Your brief" and "Things to do" render,
  *   never the "could not be built" error; on the mock its cards and the live "needs your decision" card show.
  *   Home is reached by the sidebar's Home link, so a user whose start page is the dashboard still sees it.
@@ -45,7 +45,7 @@ async function visit(page: Page, pathname: string): Promise<void> {
   await settle(page, 600)
 }
 
-/** The current path plus query (`/account?tab=access`). */
+/** The current path plus query (`/account/access`). */
 const where = (page: Page): string => {
   const url = new URL(page.url())
   return `${url.pathname}${url.search}`
@@ -70,31 +70,22 @@ async function expectTab(page: Page, label: string, heading: string): Promise<vo
 
 test.describe('Account tabs', () => {
   for (const tab of ACCOUNT_TABS) {
-    test(`?tab=${tab.id} is selected and shows "${tab.heading}"`, async ({ page }, testInfo) => {
+    test(`/account/${tab.id} is selected and shows "${tab.heading}"`, async ({ page }, testInfo) => {
       const role = roleOf(testInfo)
       await assertStep(page, role, `surfaces-account-${tab.id}`, async () => {
-        await visit(page, `/account?tab=${tab.id}`)
-        expect(where(page)).toBe(`/account?tab=${tab.id}`)
+        await visit(page, `/account/${tab.id}`)
+        expect(where(page)).toBe(`/account/${tab.id}`)
         await expectTab(page, tab.label, tab.heading)
       })
     })
   }
-
-  test('a legacy ?section=mcp is rewritten to ?tab=access', async ({ page }, testInfo) => {
-    const role = roleOf(testInfo)
-    await assertStep(page, role, 'surfaces-account-legacy-mcp', async () => {
-      await visit(page, '/account?section=mcp')
-      await expect.poll(() => where(page)).toBe('/account?tab=access')
-      await expectTab(page, 'Access & tokens', 'My access')
-      await expect(page.getByRole('heading', { name: 'My MCP tokens', exact: true })).toBeVisible()
-    })
-  })
 })
 
 // ── Administration ────────────────────────────────────────────────────────────
 
 interface AdminSurface {
-  query: string
+  /** Under `/admin/`: `<tab>` or `<tab>/<section>`. */
+  location: string
   /** The pressed top tab (settings:tabs.*). */
   tab: string
   /** The selected section tab (settings:sections.*), when the tab has sections. */
@@ -103,19 +94,19 @@ interface AdminSurface {
 }
 
 const ADMIN_SURFACES: readonly AdminSurface[] = [
-  { query: 'tab=brand', tab: 'General', section: null, heading: 'Brand Configuration' },
-  { query: 'tab=sources&section=plugins', tab: 'Sources', section: 'Source settings', heading: 'Source settings' },
-  { query: 'tab=sources&section=integrations', tab: 'Sources', section: 'Integrations', heading: 'Integrations' },
-  { query: 'tab=sources&section=inbox', tab: 'Sources', section: 'Email inbox', heading: 'Email inbox' },
-  { query: 'tab=sources&section=radar', tab: 'Sources', section: 'Radar', heading: 'Radar' },
-  { query: 'tab=taxonomy&section=categories', tab: 'Taxonomy', section: 'Categories', heading: 'Feedback Categories' },
-  { query: 'tab=taxonomy&section=dimensions', tab: 'Taxonomy', section: 'Dimensions', heading: 'Dimensions' },
-  { query: 'tab=access&section=policies', tab: 'Privacy & access', section: 'Source policies', heading: 'Source policies' },
-  { query: 'tab=access&section=users', tab: 'Privacy & access', section: 'Users', heading: 'User Administration' },
-  { query: 'tab=access&section=boards', tab: 'Privacy & access', section: 'Boards', heading: 'Feedback boards' },
-  { query: 'tab=ai', tab: 'AI models', section: null, heading: 'AI Models' },
-  { query: 'tab=system&section=logs', tab: 'System', section: 'Logs', heading: 'System Logs' },
-  { query: 'tab=system&section=version', tab: 'System', section: 'Version', heading: 'Version' },
+  { location: 'brand', tab: 'General', section: null, heading: 'Brand Configuration' },
+  { location: 'sources/plugins', tab: 'Sources', section: 'Source settings', heading: 'Source settings' },
+  { location: 'sources/integrations', tab: 'Sources', section: 'Integrations', heading: 'Integrations' },
+  { location: 'sources/inbox', tab: 'Sources', section: 'Email inbox', heading: 'Email inbox' },
+  { location: 'sources/radar', tab: 'Sources', section: 'Radar', heading: 'Radar' },
+  { location: 'taxonomy/categories', tab: 'Taxonomy', section: 'Categories', heading: 'Feedback Categories' },
+  { location: 'taxonomy/dimensions', tab: 'Taxonomy', section: 'Dimensions', heading: 'Dimensions' },
+  { location: 'access/policies', tab: 'Privacy & access', section: 'Source policies', heading: 'Source policies' },
+  { location: 'access/users', tab: 'Privacy & access', section: 'Users', heading: 'User Administration' },
+  { location: 'access/boards', tab: 'Privacy & access', section: 'Boards', heading: 'Feedback boards' },
+  { location: 'ai', tab: 'AI models', section: null, heading: 'AI Models' },
+  { location: 'system/logs', tab: 'System', section: 'Logs', heading: 'System Logs' },
+  { location: 'system/version', tab: 'System', section: 'Version', heading: 'Version' },
 ]
 
 /** A padded platform version (`5.34.00`, buildInfo.ts `paddedVersion`). */
@@ -123,12 +114,12 @@ const PLATFORM_VERSION = /^\d+\.\d{2}\.\d{2}$/
 
 test.describe('Administration tabs and sections', () => {
   for (const surface of ADMIN_SURFACES) {
-    test(`/admin?${surface.query} renders "${surface.heading}" for the admin`, async ({ page }, testInfo) => {
+    test(`/admin/${surface.location} renders "${surface.heading}" for the admin`, async ({ page }, testInfo) => {
       const role = roleOf(testInfo)
       test.skip(role !== 'admin', 'admin-only route (the redirect is its own test)')
-      await assertStep(page, role, `surfaces-admin-${surface.query.replace(/[=&]/g, '-')}`, async (recorder) => {
-        await visit(page, `/admin?${surface.query}`)
-        expect(where(page), 'already the canonical form').toBe(`/admin?${surface.query}`)
+      await assertStep(page, role, `surfaces-admin-${surface.location.replace('/', '-')}`, async (recorder) => {
+        await visit(page, `/admin/${surface.location}`)
+        expect(where(page), 'already the canonical form').toBe(`/admin/${surface.location}`)
         await expect(page.getByRole('heading', { name: 'Administration', level: 1 })).toBeVisible()
         await expect(page.getByRole('button', { name: surface.tab, exact: true, pressed: true })).toBeVisible()
         if (surface.section === null) {
@@ -138,7 +129,7 @@ test.describe('Administration tabs and sections', () => {
           await expect(page.getByRole('tab', { selected: true })).toHaveCount(1)
         }
         await expect(page.getByRole('heading', { name: surface.heading, exact: true, level: 2 }).first()).toBeVisible()
-        if (surface.query.endsWith('section=version')) {
+        if (surface.location === 'system/version') {
           const platform = page.getByTestId('platform-version')
           await expect(platform).toHaveText(PLATFORM_VERSION)
           recorder.note(`platform version ${await platform.innerText()}`)
@@ -153,10 +144,10 @@ test.describe('Administration tabs and sections', () => {
     test.skip(role !== 'user', 'the non-admin redirect')
     await assertStep(page, role, 'surfaces-admin-user-redirect', async (recorder) => {
       for (const surface of ADMIN_SURFACES) {
-        await visit(page, `/admin?${surface.query}`)
-        await expect.poll(() => new URL(page.url()).pathname, `${surface.query} redirected`).not.toBe('/admin')
+        await visit(page, `/admin/${surface.location}`)
+        await expect.poll(() => new URL(page.url()).pathname, `${surface.location} redirected`).not.toMatch(/^\/admin(\/|$)/)
         await expect(page.getByRole('heading', { name: 'Administration', level: 1 })).toHaveCount(0)
-        recorder.note(`${surface.query} → ${where(page)}`)
+        recorder.note(`${surface.location} → ${where(page)}`)
       }
     })
   })
@@ -170,24 +161,15 @@ test.describe('Company tabs', () => {
     { id: 'design', label: 'Design system', heading: 'Design system' },
   ]
   for (const tab of tabs) {
-    test(`/company?tab=${tab.id} is selected and shows "${tab.heading}"`, async ({ page }, testInfo) => {
+    test(`/company/${tab.id} is selected and shows "${tab.heading}"`, async ({ page }, testInfo) => {
       const role = roleOf(testInfo)
       await assertStep(page, role, `surfaces-company-${tab.id}`, async () => {
-        await visit(page, `/company?tab=${tab.id}`)
+        await visit(page, `/company/${tab.id}`)
         await expect(page.getByRole('heading', { name: 'Company', level: 1 })).toBeVisible()
         await expectTab(page, tab.label, tab.heading)
       })
     })
   }
-
-  test('/company?tab=mine lands on /account?tab=objectives', async ({ page }, testInfo) => {
-    const role = roleOf(testInfo)
-    await assertStep(page, role, 'surfaces-company-mine', async () => {
-      await visit(page, '/company?tab=mine')
-      await expect.poll(() => where(page)).toBe('/account?tab=objectives')
-      await expectTab(page, 'Objectives', 'My objectives & KPIs')
-    })
-  })
 })
 
 // ── Agents ────────────────────────────────────────────────────────────────────
@@ -200,19 +182,19 @@ test.describe('Agents list tabs', () => {
       await visit(page, '/agents')
       await expect(page.getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
       await expect(page.getByRole('heading', { name: 'Workflow library' })).toHaveCount(0)
-      await visit(page, '/agents?tab=workflows')
+      await visit(page, '/agents/workflows')
       await expect(page.getByRole('tab', { name: 'Workflows', exact: true })).toHaveAttribute('aria-selected', 'true')
       await expect(page.getByRole('tab', { selected: true })).toHaveCount(1)
       await expect(page.getByRole('heading', { name: 'Workflow library' })).toBeVisible()
     })
   })
 
-  test('e2e-user has no tabs and ?tab=workflows falls back to the agents list', async ({ page }, testInfo) => {
+  test('e2e-user has no tabs and /agents/workflows shows the agents list', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     test.skip(MOCK, 'e2e-user needs a real login')
     test.skip(role !== 'user', 'the non-admin fallback')
     await assertStep(page, role, 'surfaces-agents-user', async () => {
-      await visit(page, '/agents?tab=workflows')
+      await visit(page, '/agents/workflows')
       await expect(page.getByRole('heading', { name: 'Autonomous agents', level: 1 })).toBeVisible()
       await expect(page.getByRole('tab')).toHaveCount(0)
       await expect(page.getByRole('heading', { name: 'Workflow library' })).toHaveCount(0)
@@ -227,7 +209,7 @@ test.describe('Home morning brief', () => {
     const role = roleOf(testInfo)
     await assertStep(page, role, 'surfaces-home-brief', async (recorder) => {
       // Reach Home in-app: a fresh load of `/` honours a "dashboard" start page.
-      await visit(page, '/account?tab=profile')
+      await visit(page, '/account/profile')
       await page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
       await expect.poll(() => new URL(page.url()).pathname).toBe('/')
       await settle(page, 800)

@@ -7,47 +7,39 @@
  * assistant, the autonomous agents and the memory extractor all use it — so it
  * sits in the Knowledge nav section beside Memory. Admins
  * edit; everyone reads. The caller's own objectives & KPIs moved to Account
- * (`?tab=mine` redirects there). A project's Product tab stays on the project:
+ * (`/account/objectives`; the header's "My objectives" link). A project's Product tab stays on the project:
  * it is that project's own context and shows this page's company context as a
  * read-only strip.
  *
- * `?tab=design` / `?tab=personas` deep-links a tab. Personas (5.60) is the company persona
+ * Each tab is a path (`/company/vision`, `/company/design`, `/company/personas`; `/company` is Vision; an unknown
+ * tab is replaced by Vision; no `?tab=` link of before is read), so Back walks the tabs. Personas (5.60) is the company persona
  * library: admins write it, projects copy from it.
  *
  * @module pages/Company
  */
-import { useState } from 'react'
-import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import { Compass, Palette, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
 import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
+import { useTabPath } from '../../utils/tabPaths'
+import { accountTabPath } from '../Account/accountSections'
+import { COMPANY_PAGE, COMPANY_TABS } from './companyPaths'
+import type { CompanyTab } from './companyPaths'
 import CompanyContextSection from './CompanyContextSection'
 import DesignSystemSection from './DesignSystemSection'
 import CompanyPersonasSection from './CompanyPersonasSection'
 
-const COMPANY_TABS = ['vision', 'design', 'personas'] as const
-type CompanyTab = typeof COMPANY_TABS[number]
-
 const TAB_ICONS: Record<CompanyTab, LucideIcon> = { vision: Compass, design: Palette, personas: Users }
-
-function isCompanyTab(value: string | null): value is CompanyTab {
-  return COMPANY_TABS.some((tab) => tab === value)
-}
 
 export default function Company() {
   const { t } = useTranslation('settings')
   const isAdmin = useIsAdmin()
   const { config } = useConfigStore()
-  const [searchParams] = useSearchParams()
-  const requested = searchParams.get('tab')
-  const [tab, setTab] = useState<CompanyTab>(isCompanyTab(requested) ? requested : 'vision')
-  // Tabs are local state, not navigation: route the switch through the open section's guard.
-  const guarded = useGuardedAction()
-  if (requested === 'mine') return <Navigate to="/account?tab=objectives" replace />
+  // A tab is a path: the open section's unsaved-changes guard asks before the switch (a route change) leaves it.
+  const [tab, setTab] = useTabPath(COMPANY_PAGE)
 
   return (
     <div className="max-w-5xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6">
@@ -56,11 +48,11 @@ export default function Company() {
         <p className="text-sm text-muted mt-1">{t('company.subtitle')}</p>
         <p className="text-sm text-muted mt-1">
           {t('company.myObjectivesHint')}{' '}
-          <Link to="/account?tab=objectives" className="link">{t('company.myObjectivesLink')}</Link>
+          <Link to={accountTabPath('objectives')} className="link">{t('company.myObjectivesLink')}</Link>
         </p>
       </div>
       <IconTabs tabs={COMPANY_TABS} active={tab} icons={TAB_ICONS} label={t('company.title')}
-        labelOf={(id) => t(`company.tabs.${id}`)} onSelect={(id) => guarded(() => setTab(id))} />
+        labelOf={(id) => t(`company.tabs.${id}`)} onSelect={setTab} />
       {config.apiEndpoint ? <CompanyTabContent tab={tab} isAdmin={isAdmin} /> : (
         <div className="card text-sm text-warn bg-warn-subtle border-warn/30">{t('shared.configureFirst')}</div>
       )}

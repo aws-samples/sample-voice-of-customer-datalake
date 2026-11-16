@@ -56,7 +56,8 @@ export interface GitHubAppList {
 }
 
 /** Whose account the App is created in: the person's own, or an organization's (by its login). */
-export type ManifestRequest = { account: 'user' } | { account: 'organization'; org: string }
+/** The account the App is made on, and the workspace the flow starts in (its slug: GitHub's return comes back into it). */
+export type ManifestRequest = ({ account: 'user' } | { account: 'organization'; org: string }) & { workspace?: string }
 
 /** An organization's login as GitHub takes it (letters, digits and single hyphens, at most 39 characters). */
 export const ORGANIZATION_LOGIN = /^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$/

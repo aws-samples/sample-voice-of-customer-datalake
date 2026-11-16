@@ -76,7 +76,7 @@ describe('WorkspaceNameCard', () => {
     renderCard(JUNIPER)
     const card = screen.getByRole('region', { name: 'Workspace name' })
     expect(within(card).getByText('Juniper Trail Co.')).toBeInTheDocument()
-    expect(within(card).getByText('/w/juniper')).toBeInTheDocument()
+    expect(within(card).getByText('/workspace/juniper')).toBeInTheDocument()
     expect(within(card).getByText("Only this workspace's admins can rename it.")).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
   })
@@ -85,7 +85,7 @@ describe('WorkspaceNameCard', () => {
     renderCard(ACME)
     const { dialog, field } = await openRename()
     // The slug is not editable: the dialog says the address stays.
-    expect(dialog).toHaveTextContent('Its address, /w/acme, stays the same')
+    expect(dialog).toHaveTextContent('Its address, /workspace/acme, stays the same')
     expect(field).toHaveValue('Acme Outfitters')
     expect(field).toHaveAttribute('maxLength', '80')
   })

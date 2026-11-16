@@ -13,12 +13,12 @@
  * exactly when `GET /memory/review` answers, the server's own gate); inside a workspace, its admins only (the role
  * the server applies there; the deployment's admins and the reviewer flag grant nothing).
  *
- * `?tab=personal|review|imports` deep-links a tab; a curator tab asked for by a
- * non-curator shows Company.
+ * Each tab is a path (`/memory/company` (`/memory` too), `/memory/personal`, `/memory/review`,
+ * `/memory/imports`; utils/tabPaths.ts), and Back walks them; a curator tab asked for by a
+ * non-curator shows Company. No `?tab=` link of before is read (a pre-release change).
  *
  * @module pages/Memory
  */
-import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
@@ -34,33 +34,12 @@ import { formatCount } from '../../utils/numberFormat'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
 import { useServerRole } from '../../workspace/useMyWorkspaces'
+import { useTabPath } from '../../utils/tabPaths'
+import { MEMORY_PAGE } from './memoryPaths'
+import type { MemoryTab } from './memoryPaths'
 import MemoryList from './MemoryList'
 import MemoryReview from './MemoryReview'
 import MemoryImports from './MemoryImports'
-
-const MEMORY_TABS = ['company', 'personal', 'review', 'imports'] as const
-type MemoryTab = typeof MEMORY_TABS[number]
-
-function isMemoryTab(value: string | null): value is MemoryTab {
-  return MEMORY_TABS.some((tab) => tab === value)
-}
-
-/**
- * The open tab lives in `?tab=` (deep-linkable; `company`, the default, is no
- * param). Switching REPLACES the history entry, so Back leaves the page rather
- * than walking back through tab clicks.
- */
-function useMemoryTab(): [MemoryTab, (tab: MemoryTab) => void] {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const requested = searchParams.get('tab')
-  const select = (tab: MemoryTab) => setSearchParams((current) => {
-    const next = new URLSearchParams(current)
-    if (tab === 'company') next.delete('tab')
-    else next.set('tab', tab)
-    return next
-  }, { replace: true })
-  return [isMemoryTab(requested) ? requested : 'company', select]
-}
 
 interface TabDef {
   readonly id: MemoryTab
@@ -110,7 +89,7 @@ export default function Memory() {
   const configured = Boolean(config.apiEndpoint)
   const workspace = useCurrentWorkspace()
   const { canCurate, reviewCount, reviewFailed, retryReview } = useCanCurate(configured, workspace)
-  const [tab, setTab] = useMemoryTab()
+  const [tab, setTab] = useTabPath(MEMORY_PAGE)
 
   // Imports are a curator's, inside a workspace too (since 7.16.00: its page under ws/{ws}/memory-imports/).
   const tabs: TabDef[] = [

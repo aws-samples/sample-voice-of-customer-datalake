@@ -1,6 +1,7 @@
 /**
  * @fileoverview One feedback board, shared by the in-app page and `/board/:slug`: its figures, the
- * request list, "New request", and the request detail deep-linked as `?request=<id>`. Everything
+ * request list, "New request", and the request detail, a path of its own (`<boards>/<slug>/<id>`,
+ * boardContext.ts: Back closes it). Everything
  * below it reads the board (fields, statuses, template) from `CurrentBoardContext`.
  *
  * Render it inside a `BoardHostContext` provider, which supplies the session's API.
@@ -10,7 +11,7 @@
 import { PauseCircle, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { SEEDED_BOARD } from '../../api/featureBoardsSchema'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -19,25 +20,29 @@ import RequestDetailModal from './RequestDetailModal'
 import RequestList from './RequestList'
 import { BoardSummary } from './RequestTotals'
 import { rememberedName } from './boardFormat'
-import { CurrentBoardContext } from './boardContext'
+import { CurrentBoardContext, boardPagePath, boardRequestPath, useBoardHost } from './boardContext'
+import { segmentsUnder, useReplaceAddress } from '../../utils/pathPlace'
 import { useRequestList } from './useBoardQueries'
 import type { ReactNode } from 'react'
 import type { FeatureBoard as Board } from '../../api/featureBoardsSchema'
 
-const REQUEST_PARAM = 'request'
-
-function useOpenRequest(): readonly [string | null, (requestId: string | null) => void] {
-  const [params, setParams] = useSearchParams()
+/** The request open on the board (`<boards>/<slug>/<id>`) and the move that opens or closes one (a history entry). */
+function useOpenRequest(boardRef: string): readonly [string | null, (requestId: string | null) => void] {
+  const host = useBoardHost()
+  const { pathname, search } = useLocation()
+  const navigate = useNavigate()
+  const segments = segmentsUnder(host.basePath, pathname)
+  const [slug = boardRef, pathRequest] = segments ?? []
+  const openId = pathRequest ?? null
+  const canonical = openId === null ? boardPagePath(host, slug) : boardRequestPath(host, slug, openId)
+  // A path past the request (`<slug>/<id>/more`) is replaced by the request's own.
+  useReplaceAddress(segments === null || canonical === pathname ? null : { pathname: canonical, search })
   const open = (requestId: string | null) => {
-    setParams((prev) => {
-      const next = new URLSearchParams(prev)
-      if (requestId === null) next.delete(REQUEST_PARAM)
-      else next.set(REQUEST_PARAM, requestId)
-      return next
-      // Rendered before the next event (useBoardControls explains the stale-params race).
-    }, { flushSync: true })
+    const to = requestId === null ? boardPagePath(host, slug) : boardRequestPath(host, slug, requestId)
+    // Rendered before the next event (useBoardControls explains the stale-params race).
+    void navigate({ pathname: to, search }, { flushSync: true })
   }
-  return [params.get(REQUEST_PARAM), open]
+  return [openId, open]
 }
 
 /** Why the list could not be shown: a 404 (no such board, or not shared with this person), a refused sign-in (403), else a retryable failure. */
@@ -92,7 +97,7 @@ export default function FeatureBoard({ boardRef, notFound, header }: Readonly<{
 }>) {
   const { t } = useTranslation('featureRequests')
   const list = useRequestList(boardRef)
-  const [openId, setOpenId] = useOpenRequest()
+  const [openId, setOpenId] = useOpenRequest(boardRef)
   const [creating, setCreating] = useState(false)
   if (list.isLoading) return <p className="text-sm text-muted">{t('loading')}</p>
   if (list.isError || !list.data) {

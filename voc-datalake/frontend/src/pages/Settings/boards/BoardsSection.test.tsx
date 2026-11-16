@@ -1,6 +1,6 @@
 /**
  * @fileoverview Privacy & access → Boards: the company domains (moved here), the board list,
- * "New board" (templates, slug preview, 409 slug_taken) and `&board=<id>` opening the editor.
+ * "New board" (templates, slug preview, 409 slug_taken) and `/admin/access/boards/<id>` opening the editor.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -18,11 +18,13 @@ vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m
 
 const { default: BoardsSection } = await import('./BoardsSection')
 
+/** Where the section is: its path and query. */
 function Search() {
-  return <output data-testid="search">{useLocation().search}</output>
+  const { pathname, search } = useLocation()
+  return <output data-testid="search">{`${pathname}${search}`}</output>
 }
 
-const renderSection = (entry = '/admin?tab=access&section=boards', client = createTestQueryClient()) => renderWithQueryClient(
+const renderSection = (entry = '/admin/access/boards', client = createTestQueryClient()) => renderWithQueryClient(
   <TestRouter initialEntries={[entry]}><BoardsSection /><Search /></TestRouter>, client,
 )
 
@@ -66,20 +68,20 @@ describe('the board list', () => {
     expect(list.getByText('Archived')).toBeInTheDocument()
   })
 
-  it('opens the editor with &board=<id> (other params kept)', async () => {
+  it('opens the editor at /admin/access/boards/<id> (the query kept)', async () => {
     const user = userEvent.setup()
-    renderSection()
+    renderSection('/admin/access/boards?review=fb_1')
     await user.click(await screen.findByRole('button', { name: 'Edit Beta feedback' }))
-    expect(screen.getByTestId('search')).toHaveTextContent('?tab=access&section=boards&board=brd_00000001')
+    expect(screen.getByTestId('search')).toHaveTextContent('/admin/access/boards/brd_00000001?review=fb_1')
     expect(await screen.findByRole('button', { name: 'Back to boards' })).toBeInTheDocument()
   })
 
   it('opens the editor from a deep link and goes back to the list', async () => {
     const user = userEvent.setup()
-    renderSection('/admin?tab=access&section=boards&board=brd_sales')
+    renderSection('/admin/access/boards/brd_sales')
     expect(await screen.findByRole('heading', { name: 'Sales feature requests' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Back to boards' }))
-    expect(screen.getByTestId('search')).toHaveTextContent(/^\?tab=access&section=boards$/)
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/admin\/access\/boards$/)
   })
 })
 
@@ -109,7 +111,7 @@ describe('New board', () => {
     await user.type(dialog.getByRole('textbox', { name: 'Name' }), 'Support issues')
     await user.click(dialog.getByRole('radio', { name: /Customer service issues/ }))
     await user.click(dialog.getByRole('button', { name: 'Create board' }))
-    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('board=brd_0000abcd'))
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('/admin/access/boards/brd_0000abcd'))
     expect(parsedJson(calls('POST', '/feature-requests/boards')[0]?.[1]?.body)).toStrictEqual({
       name: 'Support issues', template: 'service', slug: 'support-issues',
     })
@@ -132,10 +134,10 @@ describe('deleting a board from its editor', () => {
     const user = userEvent.setup()
     const BETA = '/feature-requests/boards/brd_00000001'
     routeFetchApi(boardRoutes({ [`DELETE ${BETA}`]: () => ({ success: true }) }))
-    renderSection('/admin?tab=access&section=boards&board=brd_00000001')
+    renderSection('/admin/access/boards/brd_00000001')
     await user.click(await screen.findByRole('button', { name: 'Delete Beta feedback' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?tab=access&section=boards$/))
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/admin\/access\/boards$/))
     expect(await screen.findByRole('button', { name: 'Edit Sales feature requests' })).toBeInTheDocument()
     await waitFor(() => expect(calls('GET', '/feature-requests/boards').length).toBeGreaterThan(0))
     // The deleted board's own GET happened once, when the editor opened; nothing asked for it again.

@@ -78,19 +78,11 @@ describe('sessionExpiry', () => {
 
   describe('isSessionExpiredRedirect', () => {
     it('recognizes the path endExpiredSession navigates to', () => {
-      const search = SESSION_EXPIRED_PATH.slice(SESSION_EXPIRED_PATH.indexOf('?'))
-
-      expect(isSessionExpiredRedirect(search)).toBe(true)
+      expect([SESSION_EXPIRED_PATH, isSessionExpiredRedirect(SESSION_EXPIRED_PATH)]).toStrictEqual(['/login/expired', true])
     })
 
-    it('is false for a plain visit to the login page', () => {
-      expect(isSessionExpiredRedirect('')).toBe(false)
-      expect(isSessionExpiredRedirect('?next=/dashboard')).toBe(false)
-    })
-
-    it('is false for a flag that is present but not set', () => {
-      expect(isSessionExpiredRedirect('?expired=0')).toBe(false)
-      expect(isSessionExpiredRedirect('?expired')).toBe(false)
+    it('is false for a plain visit to the login page, and for a query flag (no `?expired=1` of before is read)', () => {
+      expect(['/login', '/login/', '/login/other'].map(isSessionExpiredRedirect)).toStrictEqual([false, false, false])
     })
   })
 })

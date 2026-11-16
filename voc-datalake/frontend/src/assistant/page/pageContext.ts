@@ -11,7 +11,9 @@
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
-import { legacyPlace, parseProjectRest } from '../../pages/ProjectDetail/projectPaths'
+import { AGENTS_PATH_VIEWS } from '../../pages/Agents/agentsPaths'
+import { parseProjectRest } from '../../pages/ProjectDetail/projectPaths'
+import { TAB_PATH_PAGES } from '../../pages/tabPathPages'
 import { projectPathParts } from '../../pages/ProjectDetail/useProjectPlace'
 import { ENGINEERING_RUN_ID, MAX_ID_LENGTH, boundedFilterValue } from '@stream/assistant/contract'
 import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '@stream/assistant/contract'
@@ -41,19 +43,17 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // Its tabs, a document, an older version and full screen are the page's own paths (projectPaths.ts).
   { route: 'projects/:id/*', kind: 'project', param: { name: 'id', field: 'projectId' } },
   { route: 'prioritization', kind: 'prioritization' },
-  { route: 'data-explorer', kind: 'data-explorer' },
+  { route: 'data-explorer/*', kind: 'data-explorer' },
   { route: 'scrapers', kind: 'scrapers' },
   { route: 'feedback-forms', kind: 'feedback-forms' },
   // Administration is the `settings` kind; `/settings`
   // only redirects to it now but keeps its pattern for the redirect's instant.
-  { route: 'admin', kind: 'settings', label: 'admin' },
+  { route: 'admin/*', kind: 'settings', label: 'admin' },
   { route: 'settings', kind: 'settings', label: 'admin' },
-  { route: 'memory', kind: 'memory' },
+  { route: 'memory/*', kind: 'memory' },
   { route: 'agents', kind: 'agents' },
-  // Redirects to /agents (the library); BEFORE `agents/:id`, or this segment reads as an agent id.
-  { route: 'agents/workflows', kind: 'agents' },
-  { route: 'agents/:id', kind: 'agent', param: { name: 'id', field: 'agentId' } },
-  // One library workflow: the agents pack (workflow tools), no agent in context.
+  // One library workflow: the agents pack (workflow tools), no agent in context. BEFORE the Workflows view's
+  // `agents/workflows/*`, which would read it as the view.
   { route: 'agents/workflows/:workflowId', kind: 'agents', label: 'workflow' },
   // A default engineering flow's unsaved copy: the same pack, nothing stored yet.
   { route: 'agents/workflows/templates/:templateId', kind: 'agents', label: 'workflow' },
@@ -64,24 +64,33 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // context (the query is the page's alone, taken and removed from the address at once).
   { route: 'agents/connections/github/created', kind: 'agents' },
   { route: 'agents/connections/github/installed', kind: 'agents' },
+  // The list's views (agentsPaths.ts), BEFORE `agents/:id/*`, or a view's name reads as an agent id.
+  { route: 'agents/workflows/*', kind: 'agents' },
+  { route: 'agents/spend/*', kind: 'agents' },
+  { route: 'agents/connections/*', kind: 'agents' },
+  { route: 'agents/skills/*', kind: 'agents' },
+  // One agent and its tabs (`/agents/<id>/runs`).
+  { route: 'agents/:id/*', kind: 'agent', param: { name: 'id', field: 'agentId' } },
   // Knowledge → Company: the company tool pack (context, my objectives, design system).
-  { route: 'company', kind: 'company' },
+  { route: 'company/*', kind: 'company' },
   // `other` (core pack): the stream contract has no `connect` or `account` page kind.
   { route: 'connect', kind: 'other', label: 'connect' },
   // Radar (docs/radar.md): its own kind — core (get_radar), insights, and the scrapers pack so
   // "set up Radar for <brand>" (brand list, Radar scraper / connector, scan) works on this page.
   { route: 'radar', kind: 'radar' },
-  { route: 'account', kind: 'other', label: 'account' },
+  { route: 'account/*', kind: 'other', label: 'account' },
   // A workspace's members (docs/multi-workspace.md): no assistant pack.
   { route: 'members', kind: 'other' },
   // A workspace's brand and plugins: no assistant pack either.
   { route: 'workspace-settings', kind: 'other' },
   // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
-  { route: 'participants', kind: 'participants' },
+  { route: 'participants/*', kind: 'participants' },
   // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.
   { route: 'feature-requests', kind: 'other' },
-  // One feedback board (/feature-requests/:slug): no assistant pack in this release either.
-  { route: 'feature-requests/:slug', kind: 'other' },
+  { route: 'feature-requests/insights', kind: 'other' },
+  { route: 'feature-requests/requests/*', kind: 'other' },
+  // One feedback board (/feature-requests/:slug, a request open on it): no assistant pack in this release either.
+  { route: 'feature-requests/:slug/*', kind: 'other' },
   // MCP OAuth consent (docs/mcp.md → "OAuth sign-in"): approve an assistant's sign-in; no assistant pack.
   { route: 'oauth/authorize', kind: 'other', label: 'connect' },
 ]
@@ -123,17 +132,29 @@ function entityId(params: Record<string, string | undefined>, param: NonNullable
   return value !== undefined && (param.shape?.test(value) ?? true) ? value : undefined
 }
 
-/** A project page's place (its path, an old link's query as the page reads it: projectPaths.ts), or null elsewhere. */
-function projectPlaceOf({ pathname, search }: LocationLike) {
+/** A project page's place (its path: projectPaths.ts), or null elsewhere. */
+function projectPlaceOf({ pathname }: LocationLike) {
   const parts = projectPathParts(pathname)
-  if (parts === null) return null
-  return legacyPlace(parts.rest, search)?.place ?? parseProjectRest(parts.rest).place
+  return parts === null ? null : parseProjectRest(parts.rest).place
 }
 
-/** The page's tab: a project's is its path (`/projects/<id>/documents`), another page's its `?tab=`. */
+/**
+ * The tab a page's path names (7.49.00: a tab is a path): `/admin/<tab>/…`, `/memory/<tab>`, an Agents view
+ * (`/agents/spend`), an agent's tab (`/agents/<id>/runs`), the boards' Insights; undefined when none does.
+ */
+function pathTab(pathname: string): string | undefined {
+  const [first = '', second, third] = pathname.split('/').filter((segment) => segment !== '')
+  if (TAB_PATH_PAGES.has(first)) return second
+  if (first === 'feature-requests') return second === 'insights' ? second : undefined
+  if (first !== 'agents' || second === undefined) return undefined
+  if (AGENTS_PATH_VIEWS.has(second)) return third === undefined || second === 'skills' ? second : undefined
+  return second === 'engineering' ? undefined : third
+}
+
+/** The page's tab: a project's is its path (`/projects/<id>/documents`), another page's its path too ({@link pathTab}). */
 function tabFrom(location: LocationLike): string | undefined {
-  const tab = projectPlaceOf(location)?.tab ?? new URLSearchParams(location.search).get('tab')
-  return tab !== null && tab.length <= MAX_TAB && TAB_PATTERN.test(tab) ? tab : undefined
+  const tab = projectPlaceOf(location)?.tab ?? pathTab(location.pathname)
+  return tab !== undefined && tab.length <= MAX_TAB && TAB_PATTERN.test(tab) ? tab : undefined
 }
 
 function matchPattern(pattern: PagePattern, pathname: string) {

@@ -35,7 +35,7 @@ async function build(title: string): Promise<void> {
 }
 
 async function openDocument(page: Page, title: string): Promise<void> {
-  await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/projects/${PROJECT}/documents`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
   // Below 1280 px the list shows one section at a time: its row is reached through the section buttons.
   await (await revealDocumentRow(page, title)).click()

@@ -28,7 +28,7 @@ const prd: ProjectDocument = {
 }
 const research: ProjectDocument = { ...prd, document_id: 'doc-2', title: 'Test Research', document_type: 'research' }
 
-const renderTab = (document: ProjectDocument, entry = '/projects/proj-1?tab=documents') => render(
+const renderTab = (document: ProjectDocument, entry = '/projects/proj-1/documents') => render(
   <MemoryRouter initialEntries={[entry]}>
     <DocumentsTab project={project} documents={[document]} selectedDoc={document} onSelectDoc={vi.fn()}
       {...documentsTabStubs()} />
@@ -49,7 +49,7 @@ describe('Build from this PRD on the document page', () => {
 
   it('steps aside in focus view and comes back on leaving it, the page never remounted', async () => {
     const user = userEvent.setup()
-    renderTab(prd, '/projects/proj-1?tab=documents&doc=doc-1&view=focus')
+    renderTab(prd, '/projects/proj-1/documents/doc-1/focus')
     const toggle = await screen.findByRole('button', { name: 'Full screen' })
     const pane = screen.getByTestId('document-detail-pane')
     expect([toggle.getAttribute('aria-pressed'), screen.queryByTestId('build-from-prd')]).toStrictEqual(['true', null])

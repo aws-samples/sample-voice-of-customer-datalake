@@ -73,14 +73,18 @@ from shared.delete_audit import actor_from_event, record_delete
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
 from shared.exceptions import NotFoundError as WorkspaceNotFoundError
+from shared.http_cache import request_header
 from shared.ingest_tables import table_view
 from shared.logging import logger, tracer
+from shared.platform_admin import is_platform_admin
 from shared.project_access import is_synthetic_subject
 from shared.request_body import json_body_value, validated_text
 from shared.request_workspace import request_workspace
 from shared.row_ids import LONG_OPAQUE_ID_RE, OPAQUE_ID_RE
 from shared.timestamps import now_iso
 from shared.workspace import NOT_FOUND as WORKSPACE_NOT_FOUND
+from shared.workspace import WORKSPACE_HEADER
+from shared.workspace_ids import is_workspace_id
 from shared.ws_repo import WorkspaceScope, scope_of, ws_table
 
 # AWS Clients
@@ -209,6 +213,23 @@ def _caller(*, fresh: bool = False) -> _Caller:
         raise WorkspaceNotFoundError(WORKSPACE_NOT_FOUND)
     workspace = None if context is None else scope_of(context)
     return _Caller(pk=conversation_partition(sub, workspace), workspace=workspace, sub=sub)
+
+
+def _reading_caller() -> _Caller | None:
+    """The caller of a read, as ``_caller``, except a platform admin (the token's ``platform-admins`` group) inside a
+    well-formed workspace they are not a member of: None, nothing of theirs is there. The stream Lambda, the other
+    writer of these rows, answers that caller's runs and saves nothing for them (session/workspace-member.ts
+    ``resolveSessionOwner``, LOCKSTEP), so their list there is empty, not the one 404 (7.49.00: a platform admin who
+    entered a workspace, by the console or a direct link, reads its pages without an error). A malformed id, a service
+    subject and anyone else stay the one 404; writes keep ``_caller``'s membership rule."""
+    try:
+        return _caller()
+    except WorkspaceNotFoundError:
+        event = app.current_event.raw_event
+        named = (request_header(event, WORKSPACE_HEADER) or '').strip()
+        if is_workspace_id(named) and not is_synthetic_subject(get_caller_subject(event)) and is_platform_admin(event):
+            return None
+        raise
 
 
 def _conversation_key(caller: _Caller, conversation_id: str) -> dict[str, str]:
@@ -523,7 +544,7 @@ def get_conversations(conversation_id: str = ""):
     # is allowed to ask must not depend on whether the resource happens to be
     # configured. Reversing these two lines hands a 200 to a caller with no
     # subject claim whenever the table is unset.
-    caller = _caller()
+    caller = _reading_caller()
     if not conversations_table:
         # Deliberately softer than the write paths, which raise ConfigurationError:
         # a deployment without the conversations table has no history to show, and
@@ -532,6 +553,11 @@ def get_conversations(conversation_id: str = ""):
         # report success for data it silently dropped.
         return {'conversations': []}
     requested = conversation_id.strip() if conversation_id and conversation_id != '_list' else None
+    if caller is None:
+        # A platform admin outside their memberships: nothing of theirs is kept there (``_reading_caller``).
+        if requested:
+            raise NotFoundError(CONVERSATION_NOT_FOUND)
+        return {'conversations': []}
 
     if requested:
         _require_valid_conversation_id(requested)

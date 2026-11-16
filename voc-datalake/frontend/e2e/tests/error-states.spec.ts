@@ -115,7 +115,7 @@ const CASES: readonly ErrorCase[] = [
   },
   {
     step: 'error-admin-brand-500',
-    path: '/admin?tab=brand',
+    path: '/admin/brand',
     adminOnly: true,
     injections: [{ method: 'GET', path: /\/settings\/brand$/, failure: FAIL_500 }],
     expectShown: async (page) => {

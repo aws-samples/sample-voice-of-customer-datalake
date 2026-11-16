@@ -49,7 +49,7 @@ import DataExplorer from './DataExplorer'
 
 async function openEditorAndSave() {
   const user = userEvent.setup()
-  renderWithQueryClient(<TestRouter initialEntries={['/data-explorer?view=processed']}><DataExplorer /></TestRouter>)
+  renderWithQueryClient(<TestRouter initialEntries={['/data-explorer/processed']}><DataExplorer /></TestRouter>)
   await user.click(screen.getByRole('button', { name: 'Edit record' }))
   await user.click(screen.getByRole('button', { name: 'Save' }))
   return user

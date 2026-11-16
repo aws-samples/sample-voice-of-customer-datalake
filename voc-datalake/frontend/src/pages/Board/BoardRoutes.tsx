@@ -1,21 +1,22 @@
 /**
  * @fileoverview The standalone boards under one session (`host`): `/board` lists the boards this
- * person may use (exactly one → it opens directly), `/board/:slug` is one board, and a pre-boards
- * `/board?request=<id>` opens that request on its board. A `?board=<slug>` carried through
- * sign-in opens that board.
+ * person may use (exactly one → it opens directly), `/board/:slug` is one board and
+ * `/board/:slug/:requestId` one request open on it, and `/board/requests/:requestId` opens that
+ * request on its board.
  *
  * @module pages/Board/BoardRoutes
  */
 import { useTranslation } from 'react-i18next'
-import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import BoardList from '../FeatureRequests/BoardList'
 import FeatureBoard from '../FeatureRequests/FeatureBoard'
-import OldRequestLink from '../FeatureRequests/OldRequestLink'
+import RequestLookup from '../FeatureRequests/RequestLookup'
 import { BoardNotFound, BoardTitle } from '../FeatureRequests/BoardPage'
 import { BoardHostContext, boardPagePath, useBoardHost } from '../FeatureRequests/boardContext'
 import { useBoardList } from '../FeatureRequests/useBoardQueries'
-import { BOARD_PARAM, BOARD_PATH, boardLandingPath } from './boardHost'
+import { BOARD_PATH } from './boardHost'
+import { REQUEST_LOOKUP_SEGMENT } from '../FeatureRequests/boardPaths'
 import type { BoardHost } from '../FeatureRequests/boardContext'
 
 function OneBoard() {
@@ -41,20 +42,21 @@ function BoardChooser() {
   )
 }
 
-function BoardIndex() {
-  const [params] = useSearchParams()
-  if (params.get(BOARD_PARAM) !== null) return <Navigate to={boardLandingPath(params)} replace />
-  const requestId = params.get('request')
-  return requestId === null ? <BoardChooser /> : <OldRequestLink requestId={requestId} />
+/** `/board/requests/:requestId`: a request known only by its id, opened on its board. */
+function LookedUpRequest() {
+  const { requestId = '' } = useParams()
+  return <RequestLookup requestId={requestId} />
 }
 
-/** `/board` and `/board/:slug` over `host` (relative routes inside `/board/*`). */
+/** `/board`, `/board/:slug[/:requestId]` and `/board/requests/:requestId` over `host` (relative routes inside `/board/*`). */
 export default function BoardRoutes({ host }: Readonly<{ host: BoardHost }>) {
   return (
     <BoardHostContext.Provider value={host}>
       <Routes>
-        <Route index element={<BoardIndex />} />
-        <Route path=":slug" element={<OneBoard />} />
+        <Route index element={<BoardChooser />} />
+        <Route path={`${REQUEST_LOOKUP_SEGMENT}/:requestId`} element={<LookedUpRequest />} />
+        {/* The board, and a request open on it (`:slug/:requestId`, which FeatureBoard reads from the path). */}
+        <Route path=":slug/*" element={<OneBoard />} />
         <Route path="*" element={<Navigate to={BOARD_PATH} replace />} />
       </Routes>
     </BoardHostContext.Provider>

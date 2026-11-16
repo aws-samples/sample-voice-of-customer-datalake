@@ -4,7 +4,7 @@
  * it globally").
  *
  * Mounted through the page, not ProjectTabs alone, so it also proves an old
- * bookmark (`?tab=mcp`) lands on Overview instead of a blank tab, that nothing on
+ * bookmark (`/projects/<id>/mcp`) lands on Overview instead of a blank tab, that nothing on
  * the page still offers a per-project token or `mcp.json`, and that the header's
  * "Connect via MCP" link sends people to the global page pinned to this project.
  */
@@ -21,9 +21,10 @@ import { configureApiEndpoint, pageApi as api, stubPageReads } from './page-api-
 
 vi.mock('../../api/projectsApi', () => import('./page-api-fixtures').then((m) => ({ projectsApi: m.pageApi })))
 
-/** Shows the router's current search string, so a URL rewrite is observable. */
+/** Shows the router's current path and query, so a URL rewrite is observable. */
 function LocationProbe() {
-  return <output data-testid="location-search">{useLocation().search}</output>
+  const { pathname, search } = useLocation()
+  return <output data-testid="location-search">{`${pathname}${search}`}</output>
 }
 
 /**
@@ -56,11 +57,11 @@ describe('ProjectDetail without the Export / MCP tab', () => {
     expect(names.join(' ')).not.toMatch(/MCP|Export/)
   })
 
-  it('sends an old ?tab=mcp bookmark to Overview, with no token or mcp.json UI anywhere', async () => {
-    renderWithLocation('/projects/proj-1?tab=mcp')
+  it('sends an old /mcp tab bookmark to Overview, with no token or mcp.json UI anywhere', async () => {
+    renderWithLocation('/projects/proj-1/mcp')
     expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByTestId('overview-cards')).toBeInTheDocument()
-    await vi.waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent(/^$/))
+    await vi.waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent(/^\/projects\/proj-1\/overview$/))
     // Old tab's markers: the mcp.json snippet, mint and copy-context buttons, the snippet region.
     expect([
       screen.queryByText(/mcp\.json/i),

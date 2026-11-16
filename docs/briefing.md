@@ -2,7 +2,7 @@
 
 Home (`/`) is each user's own morning brief: a greeting, three metric tiles, the brief's cards,
 "Things to do", the setup checklist and "How it works". The brief's settings live on
-**Account → Morning brief** (`/account?tab=briefing`), with every other personal preference
+**Account → Morning brief** (`/account/briefing`), with every other personal preference
 ([Account or Administration](account-vs-admin.md)). The brief is
 **off until the user subscribes or presses Refresh**. Nobody subscribed and nobody pressing
 Refresh means no model call and no build.
@@ -16,7 +16,7 @@ Refresh means no model call and no build.
 - **Agent decisions** (live, not part of the brief build): one warn card per autonomous agent
   whose last run stopped for a person (`stats.last_run_status = needs_human`), with the reason,
   the step and when it stopped. Admins get **Make the decision**, everyone else **Review the run**
-  (deciding is admin-only); both open `/agents/<id>?tab=runs`. Home reads the same `/agents`
+  (deciding is admin-only); both open `/agents/<id>/runs`. Home reads the same `/agents`
   query as the sidebar badge (refreshed every minute) and each waiting run. While these cards
   show, the brief's "agent runs waiting" row is left out of "Things to do". Each card has an
   **X** that closes it for that waiting run, for this user on every browser
@@ -220,6 +220,6 @@ The draft lives in memory only (`useAssistantUiStore.pendingDraft`) and is never
    prefilled. Nothing is sent until you press send.
    On a Radar card, **Open Radar** opens the Radar page for that brand, and a release card's
    **Sources** open the cited pages in a new tab.
-4. On Account → Morning brief (`/account?tab=briefing`), **Subscribe** at the next hour, turn
+4. On Account → Morning brief (`/account/briefing`), **Subscribe** at the next hour, turn
    **Email me the brief** on and confirm the AWS email. The
    brief arrives after the next 15-minute tick past that hour.

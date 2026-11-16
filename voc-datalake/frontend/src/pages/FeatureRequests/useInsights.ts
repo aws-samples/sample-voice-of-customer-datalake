@@ -2,7 +2,7 @@
  * @fileoverview The Insights tab's state: the board and window it shows (both in the URL, so a view is
  * a link), its query, and the admin's "Enrich requests" write.
  *
- * Foreign URL parameters are kept (the shared review modal and `?tab=` live there too).
+ * Foreign URL parameters are kept (the shared review modal lives there too).
  *
  * @module pages/FeatureRequests/useInsights
  */

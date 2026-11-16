@@ -96,7 +96,7 @@ test.describe('persona avatars: every persona has an image', () => {
     const projectId = await ensureE2eProject(PROJECT, 'public')
 
     await assertStep(page, 'admin', 'persona-avatars-generate', async (r) => {
-      await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=personas`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/projects/${encodeURIComponent(projectId)}/personas`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       await page.getByRole('button', { name: 'Generate Personas', exact: true }).first().click()
       const jobId = await generateFromWizard(page, r)

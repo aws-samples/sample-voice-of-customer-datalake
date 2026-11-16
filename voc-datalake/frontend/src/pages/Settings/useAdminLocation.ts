@@ -1,57 +1,46 @@
 /**
- * @fileoverview Which Administration tab and section is open: the URL is the
- * source of truth (`?tab=&section=`, new or pre-5.09 ids, {@link resolveAdminLocation}).
+ * @fileoverview Which Administration tab, section and board editor is open: the path is the source of truth
+ * (`/admin/<tab>/<section>[/<boardId>]`, adminPaths.ts; {@link resolveAdminLocation}).
  *
- * - A tab or section switch PUSHES the canonical query, so Back returns to the
+ * - A tab or section switch, and opening or closing a board's editor, PUSHES its path, so Back returns to the
  *   previous place and a copied link opens where the user was.
- * - `redirectTo` is the canonical query when the loaded link was not canonical;
- *   the page renders it as a replacing `<Navigate>` (no history entry).
- * - Only `tab` / `section` / `board` are rewritten: any other param (the review
- *   modal's `?review=`) survives a switch or a canonical redirect. `board` (the
- *   Boards section's open editor, `&board=<id>`) lives only inside that section:
- *   a switch drops it, a canonical redirect keeps it when it still lands there.
- * - The brand draft lives at page level, so the page's unsaved-changes guard
- *   blocks only a path change ({@link isLeavingAdmin}), never these switches.
+ * - A path that is not the canonical form of where it leads (a tab without its section, a section hidden from this
+ *   caller) is replaced by that form in place (no history entry), the query (the review modal's `?review=`) kept.
+ * - The brand draft lives at page level, so the page's unsaved-changes guard blocks only leaving Administration
+ *   ({@link isLeavingAdmin}), never these switches.
  *
  * @module pages/Settings/useAdminLocation
  */
-import { useSearchParams } from 'react-router-dom'
-import { withOwnedParams } from '../../utils/searchParams'
+import { useLocation } from 'react-router-dom'
 import type { Location } from 'react-router-dom'
-import { canonicalSearch, resolveAdminLocation, visibleSections } from './adminTabs'
+import { usePlaceNavigate, useReplaceAddress } from '../../utils/pathPlace'
+import { ADMIN_PATH, adminBoardOf, adminPath, readAdminAddress } from './adminPaths'
+import { visibleSections } from './adminTabs'
 import type { AdminLocation, AdminSectionId, AdminTabId } from './adminTabs'
 
-const OWNED_PARAMS: readonly string[] = ['tab', 'section', 'board']
+const BOARDS: AdminLocation = { tab: 'access', section: 'boards' }
 
-/** `?<canonical>` (other params kept) when `tab` / `section` are not the canonical form of where they lead, else null. */
-function redirectFor(current: URLSearchParams, isAdmin: boolean, isPlatformAdmin: boolean): string | null {
-  const tab = current.get('tab')
-  const section = current.get('section')
-  if (tab === null) return null
-  const resolved = resolveAdminLocation(tab, section, isAdmin, isPlatformAdmin)
-  const canonical = new URLSearchParams(canonicalSearch(resolved))
-  if (canonical.get('tab') === tab && canonical.get('section') === section) return null
-  const board = current.get('board')
-  if (board !== null && resolved.section === 'boards') canonical.set('board', board)
-  return `?${withOwnedParams(current, OWNED_PARAMS, canonical).toString()}`
-}
-
-/** The guard's `shouldBlock` for /admin: only leaving the page (a path change) can lose the brand draft. */
-export const isLeavingAdmin = (current: Location, next: Location): boolean => current.pathname !== next.pathname
+/** The guard's `shouldBlock` for /admin: only leaving Administration (a path outside `/admin`) loses the brand draft. */
+export const isLeavingAdmin = (_current: Location, next: Location): boolean =>
+  next.pathname !== ADMIN_PATH && !next.pathname.startsWith(`${ADMIN_PATH}/`)
 
 export function useAdminLocation(isAdmin: boolean, isPlatformAdmin: boolean) {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab')
-  const section = searchParams.get('section')
-  const location = resolveAdminLocation(tab, section, isAdmin, isPlatformAdmin)
-  const redirectTo = redirectFor(searchParams, isAdmin, isPlatformAdmin)
+  const address = useLocation()
+  const read = readAdminAddress(address, isAdmin, isPlatformAdmin)
+  useReplaceAddress(read?.replaceWith ?? null)
+  const move = usePlaceNavigate()
+  const search = read?.replaceWith?.search ?? address.search
+  const location: AdminLocation = read === null ? { tab: 'brand', section: null } : { tab: read.place.tab, section: read.place.section }
+  const go = (next: AdminLocation) => { move({ pathname: adminPath(next), search }) }
+  const selectTab = (next: AdminTabId) => { go({ tab: next, section: visibleSections(next, isAdmin, isPlatformAdmin)[0] ?? null }) }
+  const selectSection = (next: AdminSectionId) => { go({ tab: location.tab, section: next }) }
+  return { location, selectTab, selectSection }
+}
 
-  /** Push `next` unless it is already the place in the URL (re-clicking the open tab adds no entry). */
-  const go = (next: AdminLocation) => {
-    const target = withOwnedParams(searchParams, OWNED_PARAMS, new URLSearchParams(canonicalSearch(next)))
-    if (target.toString() !== searchParams.toString()) setSearchParams(target)
-  }
-  const selectTab = (next: AdminTabId) => go({ tab: next, section: visibleSections(next, isAdmin, isPlatformAdmin)[0] ?? null })
-  const selectSection = (next: AdminSectionId) => go({ tab: location.tab, section: next })
-  return { location, selectTab, selectSection, redirectTo }
+/** The Boards section's open editor (`/admin/access/boards/<boardId>`) and the move that opens one (null: the list). */
+export function useAdminBoard(): readonly [string | null, (boardId: string | null) => void] {
+  const address = useLocation()
+  const move = usePlaceNavigate()
+  const open = (boardId: string | null) => { move({ pathname: adminPath(BOARDS, boardId), search: address.search }) }
+  return [adminBoardOf(address.pathname), open]
 }

@@ -19,6 +19,20 @@ function walk(dir: string): string[] {
   })
 }
 
+const SOURCE_FILE = /\.(ts|tsx)$/
+
+/**
+ * Every production `.ts` / `.tsx` path under `dir`: what `spec` matches (the caller's specs, fixtures and test
+ * helpers) and `.d.ts` files left out. The source scans' walk (importCycles.test.ts, locationParams.test.ts).
+ */
+export function productionSourcePaths(dir: string, spec: RegExp): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) return productionSourcePaths(path, spec)
+    return SOURCE_FILE.test(path) && !spec.test(path) && !path.endsWith('.d.ts') ? [path] : []
+  })
+}
+
 /** Every in-scope app `.tsx` file, as `{ at: path/from/src.tsx, source }`. */
 export function appTsxFiles(): Array<{ at: string; source: string }> {
   return walk(SRC_ROOT).map((file) => ({ at: relative(SRC_ROOT, file), source: readFileSync(file, 'utf8') }))

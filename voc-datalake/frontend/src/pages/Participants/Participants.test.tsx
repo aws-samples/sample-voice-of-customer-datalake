@@ -21,7 +21,8 @@ vi.mock('../../assistant/store/openAssistant', () => ({ openAssistant: (...args:
 const { default: Participants } = await import('./Participants')
 
 function SearchProbe() {
-  return <output data-testid="search">{useLocation().search}</output>
+  const { pathname, search } = useLocation()
+  return <output data-testid="search">{`${pathname}${search}`}</output>
 }
 
 function renderPage(entry = '/participants') {
@@ -59,7 +60,7 @@ function callsAfter(marker: string): string[] {
 async function openErasableAna() {
   const user = userEvent.setup()
   routeFetchApi(participantRoutes({ [ERASE_ANA]: () => ({ success: true }) }), { ignoreQuery: true })
-  renderPage('/participants?tab=people')
+  renderPage('/participants/people')
   await user.click(await screen.findByRole('button', { name: ANA.email }))
   return { user, dialog: await screen.findByRole('dialog') }
 }
@@ -72,17 +73,17 @@ beforeEach(() => {
 })
 
 describe('Participants page', () => {
-  it('opens on Lists and deep-links the other tabs', async () => {
+  it('opens on Lists, and each tab is a path', async () => {
     const user = userEvent.setup()
     renderPage()
     expect(screen.getByRole('tab', { name: /lists/i })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('Example Air employees')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /people/i }))
-    expect(screen.getByTestId('search')).toHaveTextContent('?tab=people')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/participants\/people$/)
   })
 
-  it('shows the asks tab straight from ?tab=asks', async () => {
-    renderPage('/participants?tab=asks')
+  it('shows the asks tab straight from /participants/asks', async () => {
+    renderPage('/participants/asks')
     expect(await screen.findByText('Tell us about the booking flow')).toBeInTheDocument()
     expect(screen.getByText(/1 sent · 1 failed · 1 skipped · 1 responded, of 3/)).toBeInTheDocument()
   })
@@ -160,7 +161,7 @@ describe('Participants page', () => {
 
   it('lists people with their lists and status, and searches on the server', async () => {
     const user = userEvent.setup()
-    renderPage('/participants?tab=people')
+    renderPage('/participants/people')
     const row = (await screen.findByRole('button', { name: ANA.email })).closest('tr')
     expect(within(row ?? document.body).getByText('Example Air employees')).toBeInTheDocument()
     expect(screen.getByText('Unsubscribed')).toBeInTheDocument()
@@ -204,7 +205,7 @@ describe('Participants page', () => {
   it('hides erasure from non-admins', async () => {
     adminFlag.isAdmin = false
     const user = userEvent.setup()
-    renderPage('/participants?tab=people')
+    renderPage('/participants/people')
     await user.click(await screen.findByRole('button', { name: ANA.email }))
     await screen.findByText('Tell us about the booking flow')
     expect(screen.queryByRole('button', { name: /delete person/i })).not.toBeInTheDocument()
@@ -212,7 +213,7 @@ describe('Participants page', () => {
 
   it('shows an ask with each recipient status, an erased person included', async () => {
     const user = userEvent.setup()
-    renderPage('/participants?tab=asks')
+    renderPage('/participants/asks')
     await user.click(await screen.findByRole('button', { name: 'Tell us about the booking flow' }))
     const dialog = await screen.findByRole('dialog')
     await within(dialog).findByText('Skipped (unsubscribed)')

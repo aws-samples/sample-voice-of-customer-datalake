@@ -5,9 +5,9 @@
  * restore made a new version, the canvas loaded the latest) replace the entry, so Back never lands on a version the
  * page has moved past. Every move keeps the rest of the query (filters, an open review).
  *
- * An old link (`?tab=`, `?doc=`, `?view=focus`) and a path that does not name its place as it should (an unknown
- * tab) are replaced by the place's own path, in place (`useCanonicalProjectPath`); meanwhile the place is read as the
- * replacement will name it, so nothing renders for the old form first.
+ * A path that does not name its place as it should (an unknown tab, a document's unknown tail) is replaced by the
+ * place's own path, in place (`useCanonicalProjectPath`); meanwhile the place is read as the replacement will name it,
+ * so nothing renders for the other form first.
  *
  * Read from the location, not the route's params, so the document page reads it under any route (its specs mount it
  * at a bare `/projects/<id>/…` address).
@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect } from 'react'
 import { matchPath, useLocation, useNavigate } from 'react-router-dom'
-import { legacyPlace, parseProjectRest, projectPlacePath, samePageAs } from './projectPaths'
+import { parseProjectRest, projectPlacePath, samePageAs } from './projectPaths'
 import type { ProjectPlace } from './projectPaths'
 
 /** The project route, as routes.tsx declares it (the splat is the page's own). */
@@ -34,14 +34,10 @@ interface Address {
   readonly search: string
 }
 
-/** The place an address names (an old link's as its path will name it), and the path that names it, or null. */
+/** The place an address names, and the path that names it as it should when it does not, or null. */
 function readAddress({ pathname, search }: Address): { place: ProjectPlace; replaceWith: Address | null } | null {
   const parts = projectPathParts(pathname)
   if (parts === null) return null
-  const legacy = legacyPlace(parts.rest, search)
-  if (legacy !== null) {
-    return { place: legacy.place, replaceWith: { pathname: projectPlacePath(parts.projectId, legacy.place), search: legacy.search } }
-  }
   const { place, canonical } = parseProjectRest(parts.rest)
   return { place, replaceWith: canonical ? null : { pathname: projectPlacePath(parts.projectId, place), search } }
 }
@@ -76,7 +72,7 @@ export function useProjectPlace(): ProjectPlaceControls {
   return { place, go }
 }
 
-/** Replaces an old link, or a path that does not name its place as it should, by the place's path (see the module's doc). */
+/** Replaces a path that does not name its place as it should by the place's path (see the module's doc). */
 export function useCanonicalProjectPath(): void {
   const { pathname, search, hash } = useLocation()
   const navigate = useNavigate()

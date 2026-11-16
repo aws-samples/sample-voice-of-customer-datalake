@@ -123,7 +123,7 @@ Admins and unrestricted users are unaffected.
 
 ### With the AI assistant (administrators)
 
-On Administration → Privacy & access → Users (`/admin?tab=access&section=users`) the assistant can administer users for you, and you stay in control: it
+On Administration → Privacy & access → Users (`/admin/access/users`) the assistant can administer users for you, and you stay in control: it
 proposes, an approval card shows exactly what will be saved, and nothing changes until you
 approve. Every one of these tools is admin-only — a non-admin's assistant never has them, and
 the `/users/*` routes they end in are `require_admin` anyway.

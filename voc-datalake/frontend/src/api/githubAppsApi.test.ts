@@ -50,7 +50,7 @@ describe('the list', () => {
 
 describe('the manifest form', () => {
   it('sends the account and answers the server\'s form as it is', async () => {
-    const manifest = { name: 'VoC agents 3f9a2c', public: false }
+    const manifest = { name: 'VoC Autonomous Agent 3f9a', public: false }
     routeFetchApi({ 'POST /agents/engineering/github-apps/manifest': () => ({
       action_url: 'https://github.com/organizations/example-org/settings/apps/new?state=s1', manifest, expires_at: 'later',
     }) })

@@ -8,7 +8,8 @@
  * user-visible result was an expired token rendering a working, logged-in
  * application (round-2 UI review, U3).
  *
- * The reason rides in the URL rather than in storage deliberately. The
+ * The reason rides in the URL — its path, `/login/expired` (7.49.00: an address's place is its path) — rather than in
+ * storage deliberately. The
  * redirect is a full document load — the only reliable way to drop every
  * in-memory cache and in-flight request at once — so an in-memory signal
  * would not survive it, and `sessionStorage` is unavailable in some privacy
@@ -22,11 +23,9 @@ import { forgetRefused } from '../workspace/refusedWorkspaces'
 import { pageHref } from '../workspace/workspacePath'
 import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
 
-/** Query flag appended to `/login` when a session ended unexpectedly. */
-const EXPIRED_FLAG = 'expired'
+/** Where an expired session lands, reason included: the sign-in page's "session expired" mode. */
+export const SESSION_EXPIRED_PATH = '/login/expired'
 
-/** Where an expired session lands, reason included. */
-export const SESSION_EXPIRED_PATH = `/login?${EXPIRED_FLAG}=1`
 
 /**
  * Whether a redirect is already under way.
@@ -61,7 +60,7 @@ export function endExpiredSession(): void {
   announceSessionEnded()
   // A platform admin's entries stay (signing back in returns to the workspace's address): each one only names an id
   // to ask the server about, so whoever signs in gets the server's answer for themselves (workspace/platformEntry.ts).
-  // Inside a workspace the sign-in page is under its `/w/{slug}`, so signing back in returns there.
+  // Inside a workspace the sign-in page is under its `/workspace/{slug}`, so signing back in returns there.
   window.location.replace(pageHref(SESSION_EXPIRED_PATH))
 }
 
@@ -80,13 +79,13 @@ export function resetSessionExpiryForTests(): void {
 }
 
 /**
- * Whether this `/login` visit was caused by an expired session.
+ * Whether this `/login` visit was caused by an expired session: `/login/expired`.
  *
- * Reads the flag without consuming it, so the notice survives re-renders
+ * Reads the address without consuming it, so the notice survives re-renders
  * (typing in the form) and disappears only on navigation away.
  *
- * @param search - `location.search`, including the leading `?`
+ * @param pathname - the router's `pathname`
  */
-export function isSessionExpiredRedirect(search: string): boolean {
-  return new URLSearchParams(search).get(EXPIRED_FLAG) === '1'
+export function isSessionExpiredRedirect(pathname: string): boolean {
+  return pathname === SESSION_EXPIRED_PATH
 }

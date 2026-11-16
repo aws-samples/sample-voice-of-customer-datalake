@@ -74,7 +74,7 @@ class FakeGitHub:
 
 
 def installation(installation_id: int, **change: Any) -> dict[str, Any]:
-    return {'id': installation_id, 'app_id': int(APP_ID), 'suspended_at': None,
+    return {'id': installation_id, 'app_id': int(APP_ID), 'app_slug': 'voc-autonomous-agent-a1b2', 'suspended_at': None,
             'account': {'login': 'example-org', 'type': 'Organization'}, **change}
 
 
@@ -194,7 +194,8 @@ def test_an_inspection_lists_the_repositories_with_a_metadata_token_it_revokes_a
         ('GET', '/installation/repositories?per_page=100&page=1'): repositories_page(['example-org/a', 'example-org/old'], 2),
     })
     found = tokens(ssm, github).inspect(APP_ID, 77)
-    assert found == {'account': {'login': 'example-org', 'type': 'Organization'}, 'truncated': False, 'repositories': [
+    assert found == {'account': {'login': 'example-org', 'type': 'Organization'}, 'truncated': False,
+                     'app_slug': 'voc-autonomous-agent-a1b2', 'repositories': [
         {'repository': 'example-org/a', 'private': True, 'archived': False, 'default_branch': 'main'},
         {'repository': 'example-org/old', 'private': True, 'archived': True, 'default_branch': 'main'}]}
     [mint] = [sent for sent in github.sent if sent.path.endswith('/access_tokens')]
@@ -263,3 +264,17 @@ def test_no_key_jwt_or_token_reaches_a_log(ssm: Any, caplog: pytest.LogCaptureFi
     assert 'engineering GitHub App issues tokens minted' in text
     for secret in (pem().split('\n')[1], jwt, 'ghs_minted_1', 'ghs_minted_2'):
         assert secret not in text
+
+
+def test_an_inspection_answers_the_apps_slug_as_github_reports_it_now_and_none_off_its_shape(ssm: Any) -> None:
+    """A rename on GitHub can change the App's slug: the installation's ``app_slug`` is answered for the check to
+    record (github_apps.py ``check``); an installation read without one answers ''."""
+    def inspected(**change: Any) -> dict[str, Any]:
+        github = FakeGitHub(routes={
+            ('GET', '/app/installations/77'): answer(200, installation(77, **change)),
+            ('GET', '/installation/repositories?per_page=100&page=1'): repositories_page(['example-org/a'], 1),
+        })
+        return tokens(ssm, github).inspect(APP_ID, 77)
+
+    assert inspected(app_slug='renamed-agent')['app_slug'] == 'renamed-agent'
+    assert inspected(app_slug=None)['app_slug'] == ''

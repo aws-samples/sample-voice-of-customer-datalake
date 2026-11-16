@@ -76,7 +76,7 @@ describe("Home's one-click subscribe", () => {
 
   it('links to Account → Morning brief to customise it', () => {
     renderHomeCard(settings())
-    expect(screen.getByRole('link', { name: 'Customise in Account' })).toHaveAttribute('href', '/account?tab=briefing')
+    expect(screen.getByRole('link', { name: 'Customise in Account' })).toHaveAttribute('href', '/account/briefing')
   })
 })
 

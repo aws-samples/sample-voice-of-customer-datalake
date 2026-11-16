@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
@@ -38,18 +38,29 @@ const agent = (id: string, name: string, extra: Record<string, unknown> = {}) =>
 const NO_PLANS: Record<string, RouteHandler> = { 'GET /agents/plans?limit=20': () => ({ plans: [] }) }
 const route = (routes: Record<string, RouteHandler>) => routeFetchApi({ ...NO_PLANS, ...routes }, { missStatus: 500 })
 
-/** The address, for the view options a tab keeps or drops. */
+/** The address, for the view a tab opens and the view options it keeps or drops. */
 function Where() {
   const location = useLocation()
-  return <p data-testid="where">{location.search}</p>
+  const navigate = useNavigate()
+  return (
+    <>
+      <p data-testid="where">{`${location.pathname}${location.search}`}</p>
+      <button type="button" onClick={() => { void navigate(-1) }}>Back</button>
+      <button type="button" onClick={() => { void navigate(1) }}>Forward</button>
+    </>
+  )
 }
+
+/** The list's routes as routes.tsx declares them: each view listed, so it ranks above `/agents/:id/*`. */
+const VIEW_ROUTES = ['/agents', '/agents/workflows/*', '/agents/spend/*', '/agents/connections/*', '/agents/skills/*']
 
 function renderList(entry = '/agents') {
   return renderWithQueryClient(
-    <TestRouter initialEntries={[entry]}>
+    <TestRouter initialEntries={['/home', entry]} initialIndex={1}>
       <Routes>
-        <Route path="/agents" element={<><Agents /><Where /></>} />
-        <Route path="/agents/:id" element={<p>Agent detail page</p>} />
+        {VIEW_ROUTES.map((path) => <Route key={path} path={path} element={<><Agents /><Where /></>} />)}
+        <Route path="/agents/:id/*" element={<p>Agent detail page</p>} />
+        <Route path="/home" element={<p>Home page</p>} />
       </Routes>
     </TestRouter>,
   )
@@ -151,6 +162,43 @@ describe('Agents list', () => {
   })
 })
 
+describe('Agents list — an engineering agent not set up (7.49.00)', () => {
+  const ENGINEERING = { workflow_id: 'wf_1', engineering: { connection: null, language: null, feedback_type: 'bug' } }
+  const connection = { connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
+    credential: { kind: 'app', set: true, app_id: null, installation_id: null, expires_at: null }, version: 1 }
+  const workflow = { workflow: { workflow_id: 'wf_1', name: 'Bug fixer workflow', revision: 1, definition: null,
+    kind: 'engineering', monthly_budget_usd: 50 } }
+
+  function listWith(connections: unknown[]): void {
+    route({
+      'GET /agents': () => ({ items: [agent('ag_1', 'Bug fixer', ENGINEERING), agent('ag_2', 'Scout')] }),
+      'GET /agents/engineering/connections': () => ({ connections, limit: 20 }),
+      'GET /workflows/wf_1': () => workflow,
+    })
+    renderList()
+  }
+
+  it('shows its Set up on its card, which opens the set-up dialog, and nothing on another agent', async () => {
+    listWith([connection])
+    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    expect([await screen.findByRole('dialog'), screen.getAllByTestId('engineering-setup-card')])
+      .toStrictEqual([expect.anything(), [expect.anything()]])
+  })
+
+  it('says to connect a repository first, linking to Connections, while none is stored', async () => {
+    listWith([])
+    expect(await screen.findByRole('link', { name: 'Connect a repository first' })).toHaveAttribute('href', '/agents/connections')
+  })
+
+  it('is not offered to a user', async () => {
+    adminFlag.isAdmin = false
+    listWith([connection])
+    expect(await screen.findByText('Bug fixer')).toBeInTheDocument()
+    expect([screen.queryByTestId('engineering-setup-card'), fetchApi.mock.calls.some(([path]) => path === '/agents/engineering/connections')])
+      .toStrictEqual([null, false])
+  })
+})
+
 /** An empty list (plus `routes`), with the admin's New agent dialog opened. */
 async function openCreateDialog(routes: Record<string, RouteHandler> = {}) {
   route({ 'GET /agents': () => ({ items: [] }), ...routes })
@@ -195,8 +243,8 @@ const workflowSummary = (id: string, name: string, extra: Record<string, unknown
   builtin: false, updated_at: null, updated_by_username: null, ...extra,
 })
 
-/** The Workflows tab, where `/agents/workflows` lands. */
-const LIBRARY = '/agents?tab=workflows'
+/** The Workflows tab. */
+const LIBRARY = '/agents/workflows'
 
 function libraryRoutes(archive: () => unknown) {
   const state = { archived: false }
@@ -252,14 +300,33 @@ describe('Agents — workflow library', () => {
     expect(screen.queryByRole('tab', { name: /Workflows/ })).not.toBeInTheDocument()
   })
 
-  it('opens on the Workflows tab from ?tab=workflows, and the Agents tab goes back to the list', async () => {
+  it('opens on the Workflows tab from its path, and the Agents tab goes back to the list', async () => {
     libraryRoutes(() => ({}))
     renderList(LIBRARY)
     expect(await screen.findByText('Workflow library')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Workflows/ })).toHaveAttribute('aria-selected', 'true')
     await userEvent.click(screen.getByRole('tab', { name: /Agents/ }))
     expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
-    expect(screen.queryByText('Workflow library')).not.toBeInTheDocument()
+    expect([screen.queryByText('Workflow library'), screen.getByTestId('where').textContent]).toStrictEqual([null, '/agents'])
+  })
+
+  it('opens a view from its path, and Back and Forward walk the views', async () => {
+    libraryRoutes(() => ({}))
+    const user = userEvent.setup()
+    renderList('/agents/workflows?from=crumb')
+    expect(await screen.findByText('Workflow library')).toBeInTheDocument()
+    const where = () => screen.getByTestId('where').textContent
+    const visited = [where()]
+    await user.click(screen.getByRole('tab', { name: /Agents/ }))
+    visited.push(where())
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    visited.push(where())
+    await user.click(screen.getByRole('button', { name: 'Forward' }))
+    visited.push(where())
+    expect(visited).toStrictEqual(['/agents/workflows?from=crumb', '/agents', '/agents/workflows?from=crumb', '/agents'])
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    expect(await screen.findByText('Home page')).toBeInTheDocument()
   })
 })
 
@@ -268,7 +335,7 @@ describe('Agents list — a run waiting for a decision', () => {
     route({ 'GET /agents': () => ({ items: [agent('ag_1', 'Scout', { stats: { last_run_status: 'needs_human' } }), agent('ag_2', 'Sleeper')] }) })
     renderList()
     expect(within(rowOf(await screen.findByText('Scout'))).getByText('Needs your decision')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Review the run of Scout' })).toHaveAttribute('href', '/agents/ag_1?tab=runs')
+    expect(screen.getByRole('link', { name: 'Review the run of Scout' })).toHaveAttribute('href', '/agents/ag_1/runs')
     expect(screen.getAllByText('Needs your decision')).toHaveLength(1)
   })
 })
@@ -362,16 +429,16 @@ describe('Agents list — the Spend tab', () => {
     engineeringModule.available = true
     const user = userEvent.setup()
     route({ 'GET /agents': () => ({ items: [] }), 'GET /workflows': () => ({ items: [] }), [SPEND]: month })
-    renderList('/agents?tab=spend&month=2026-10&by=run&workflow=wf_fix')
+    renderList('/agents/spend?month=2026-10&by=run&workflow=wf_fix')
     expect(await screen.findByRole('tab', { name: 'Spend', selected: true })).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Agents' }))
     expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
-    expect(screen.getByTestId('where')).toHaveTextContent(/^\?tab=agents$/)
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents$/)
   })
 
-  it('without the engineering agents there is none, and ?tab=spend shows the agents', async () => {
+  it('without the engineering agents there is none, and /agents/spend shows the agents', async () => {
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=spend')
+    renderList('/agents/spend')
     expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Spend' })).not.toBeInTheDocument()
     expect(spendCalls()).toStrictEqual([])
@@ -381,7 +448,7 @@ describe('Agents list — the Spend tab', () => {
     engineeringModule.available = true
     adminFlag.isAdmin = false
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=spend')
+    renderList('/agents/spend')
     expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(spendCalls()).toStrictEqual([])
@@ -394,14 +461,14 @@ describe('Agents list — the Connections tab', () => {
   it('an admin has it while the engineering agents are on, and it lists the connections', async () => {
     engineeringModule.available = true
     route({ 'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }) })
-    renderList('/agents?tab=connections')
+    renderList('/agents/connections')
     expect(await screen.findByRole('tab', { name: 'Connections', selected: true })).toBeInTheDocument()
     expect(await screen.findByText('No repository connections yet')).toBeInTheDocument()
   })
 
-  it('without the engineering agents there is none, and ?tab=connections shows the agents', async () => {
+  it('without the engineering agents there is none, and /agents/connections shows the agents', async () => {
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=connections')
+    renderList('/agents/connections')
     expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Connections' })).not.toBeInTheDocument()
     expect(connectionCalls()).toStrictEqual([])
@@ -411,7 +478,7 @@ describe('Agents list — the Connections tab', () => {
     engineeringModule.available = true
     adminFlag.isAdmin = false
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=connections')
+    renderList('/agents/connections')
     expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(connectionCalls()).toStrictEqual([])
@@ -427,14 +494,14 @@ describe('Agents list — the Skills tab', () => {
       'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
       'GET /agents/engineering/skills?connection=': () => ({ connection: '', roles: [] }),
     })
-    renderList('/agents?tab=skills')
+    renderList('/agents/skills')
     expect(await screen.findByRole('tab', { name: 'Skills', selected: true })).toBeInTheDocument()
     expect(await screen.findByText(/No shared skill has a version yet/)).toBeInTheDocument()
   })
 
-  it('without the engineering agents there is none, and ?tab=skills shows the agents', async () => {
+  it('without the engineering agents there is none, and /agents/skills shows the agents', async () => {
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=skills')
+    renderList('/agents/skills')
     expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Skills' })).not.toBeInTheDocument()
     expect(skillCalls()).toStrictEqual([])
@@ -444,7 +511,7 @@ describe('Agents list — the Skills tab', () => {
     engineeringModule.available = true
     adminFlag.isAdmin = false
     route({ 'GET /agents': () => ({ items: [] }) })
-    renderList('/agents?tab=skills')
+    renderList('/agents/skills')
     expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
     expect(skillCalls()).toStrictEqual([])
   })

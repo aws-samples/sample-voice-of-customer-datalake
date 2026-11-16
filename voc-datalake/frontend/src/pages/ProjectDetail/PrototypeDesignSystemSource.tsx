@@ -17,12 +17,13 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { companyTabPath } from '../Company/companyPaths'
 import { SourceCheckbox } from './PrototypeSourceCheckbox'
 import type { DesignSystemContents, PrototypeDesignSystemOption } from './usePrototypeDesignSystem'
 import type { TFunction } from 'i18next'
 
 /** Where the design system is set up (Knowledge → Company → Design system). */
-const DESIGN_SYSTEM_PATH = '/company?tab=design'
+const DESIGN_SYSTEM_PATH = companyTabPath('design')
 
 /** The parts the prompt will read, translated, in label order. */
 function contentParts(contents: DesignSystemContents, t: TFunction<'projectDetail'>): string[] {

@@ -20,7 +20,7 @@ describe('Administration → Sources copy', () => {
     expect(screen.getByRole('heading', { level: 2, name: say('sections.plugins', 'settings') })).toHaveTextContent('Source settings')
   })
 
-  it('opens ?tab=sources on that section', () => {
+  it('opens /admin/sources on that section', () => {
     expect(resolveAdminLocation('sources', null, true, false)).toStrictEqual({ tab: 'sources', section: 'plugins' })
   })
 

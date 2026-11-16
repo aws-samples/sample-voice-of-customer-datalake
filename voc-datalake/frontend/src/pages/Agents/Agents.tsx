@@ -1,24 +1,25 @@
 /**
  * @fileoverview Autonomous agents — the list: each agent's state, scope, last
  * run and spend; admins create agents here (created DISABLED, like the
- * assistant's `create_agent`). Admins also get a Workflows tab (`?tab=workflows`,
- * where `/agents/workflows` lands): the workflow library; and, when the engineering
- * agents are on, a Spend tab (`?tab=spend`): what they spent, from the spend ledger, a Connections tab
- * (`?tab=connections`): the repository connections they reach a repository through, and a Skills tab
- * (`?tab=skills`): their skill versions' history and scorecards, read only.
+ * assistant's `create_agent`). Admins also get a Workflows tab (`/agents/workflows`):
+ * the workflow library; and, when the engineering agents are on, a Spend tab
+ * (`/agents/spend`): what they spent, from the spend ledger, a Connections tab
+ * (`/agents/connections`): the repository connections they reach a repository through, and a Skills tab
+ * (`/agents/skills`): their skill versions' history and scorecards, read only. Each view is a path
+ * (agentsPaths.ts), so Back walks them.
  *
  * @module pages/Agents/Agents
  */
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Bot, CircleDollarSign, GraduationCap, Hand, KeyRound, Plus, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { failedReads } from '../../utils/failedReads'
-import { API_AGENT_LIMITS } from '../../api/agentsApi'
+import { API_AGENT_LIMITS, isEngineeringAgent } from '../../api/agentsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useIsAdmin } from '../../store/authStore'
 import { isEngineeringAvailable } from '../../runtimeConfig'
@@ -29,12 +30,14 @@ import { EngineeringSpend } from './EngineeringSpend'
 import { EngineeringConnections } from './EngineeringConnections'
 import { EngineeringSkills } from './EngineeringSkills'
 import { AgentRowActions } from './AgentRowActions'
+import { EngineeringSetUpCard } from './AgentEngineering'
 import { PlansList } from './PlansList'
 import { prefetch } from '../../lib/prefetch'
+import { usePlaceNavigate, useReplaceAddress } from '../../utils/pathPlace'
+import { AGENTS_VIEWS, agentPath, agentsPath, readAgentsAddress } from './agentsPaths'
+import type { AgentsView } from './agentsPaths'
 import type { LucideIcon } from 'lucide-react'
 import type { Agent } from '../../api/agentsApi'
-
-const agentPath = (agentId: string) => `/agents/${encodeURIComponent(agentId)}`
 
 function CreateAgentDialog({ onClose }: Readonly<{ onClose: () => void }>) {
   const { t } = useTranslation('agents')
@@ -84,9 +87,11 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
       </Link>
       {isAdmin && <AgentRowActions agent={agent} />}
       </div>
+      {/* An engineering agent not set up yet: its Set up (or Connect a repository first), as on its page. */}
+      {isAdmin && isEngineeringAgent(agent) && <div className="ml-4"><EngineeringSetUpCard agent={agent} /></div>}
       {/* Beside the row, not inside it: a link cannot hold another link. */}
       {needsDecision && (
-        <Link to={`${agentPath(agent.agent_id)}?tab=runs`} className="ml-4 inline-flex items-center gap-1 text-[12px] link">
+        <Link to={agentPath(agent.agent_id, 'runs')} className="ml-4 inline-flex items-center gap-1 text-[12px] link">
           <Hand size={13} aria-hidden="true" /> {t('list.reviewRun', { name: agent.name })}
         </Link>
       )}
@@ -94,8 +99,6 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
   )
 }
 
-const VIEWS = ['agents', 'workflows', 'spend', 'connections', 'skills'] as const
-type AgentsView = (typeof VIEWS)[number]
 const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = {
   agents: Bot, workflows: Workflow, spend: CircleDollarSign, connections: KeyRound, skills: GraduationCap,
 }
@@ -103,10 +106,10 @@ const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = {
 const ENGINEERING_VIEWS: ReadonlySet<AgentsView> = new Set(['spend', 'connections', 'skills'])
 
 /** The views an admin has: Spend, Connections and Skills only while the engineering agents are on. */
-const adminViews = (): readonly AgentsView[] => (isEngineeringAvailable() ? VIEWS : VIEWS.filter((id) => !ENGINEERING_VIEWS.has(id)))
+const adminViews = (): readonly AgentsView[] => (isEngineeringAvailable() ? AGENTS_VIEWS : AGENTS_VIEWS.filter((id) => !ENGINEERING_VIEWS.has(id)))
 
-/** `?tab=` picks the view (`/agents/workflows` lands on the library); only admins have the library and the spend. */
-function parseView(value: string | null, isAdmin: boolean): AgentsView {
+/** The path picks the view (`/agents/workflows`, agentsPaths.ts); only admins have the library and the spend. */
+function parseView(value: AgentsView, isAdmin: boolean): AgentsView {
   const view = adminViews().find((id) => id === value)
   return isAdmin && view !== undefined ? view : 'agents'
 }
@@ -148,14 +151,21 @@ function AgentList({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   )
 }
 
+/** The view the path names (a path off its form replaced by the view's own), and the move to another (a history entry). */
+function useAgentsView(isAdmin: boolean): readonly [AgentsView, (view: AgentsView) => void] {
+  const read = readAgentsAddress(useLocation())
+  useReplaceAddress(read?.replaceWith ?? null)
+  const move = usePlaceNavigate()
+  // A new view starts from its own options: the Spend tab's month, grouping and workflow go with it.
+  const setView = (next: AgentsView) => { move({ pathname: agentsPath({ view: next }), search: '' }) }
+  return [parseView(read?.place.view ?? 'agents', isAdmin), setView]
+}
+
 export default function Agents() {
   const { t } = useTranslation('agents')
   const isAdmin = useIsAdmin()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const view = parseView(searchParams.get('tab'), isAdmin)
+  const [view, setView] = useAgentsView(isAdmin)
   const [creating, setCreating] = useState(false)
-  // A new view starts from its own options: the Spend tab's month, grouping and workflow go with it.
-  const setView = (next: AgentsView) => setSearchParams({ tab: next }, { replace: true })
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-wrap items-start gap-3">

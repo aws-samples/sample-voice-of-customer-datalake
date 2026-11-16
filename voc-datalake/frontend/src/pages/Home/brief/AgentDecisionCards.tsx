@@ -24,6 +24,7 @@ import { ArrowRight, Hand } from 'lucide-react'
 import { agentsApi, agentsKeys } from '../../../api/agentsApi'
 import { useIsAdmin } from '../../../store/authStore'
 import { ReasonLine } from '../../Agents/RunDecisionCard'
+import { agentPath } from '../../Agents/agentsPaths'
 import { formatDateTime } from '../../../utils/dateUtils'
 import CloseCardButton from './CloseCardButton'
 import type { Agent, AgentRun } from '../../../api/agentsApi'
@@ -78,7 +79,7 @@ function DecisionCard({ agent, isAdmin, onClose }: Readonly<CardProps>) {
         </h3>
         <ReasonLine needsHuman={run?.needs_human ?? null} />
         <RunFacts run={run} />
-        <Link to={`/agents/${encodeURIComponent(agent.agent_id)}?tab=runs`} className="btn btn-primary btn-sm">
+        <Link to={agentPath(agent.agent_id, 'runs')} className="btn btn-primary btn-sm">
           {isAdmin ? t('agents:decision.form.submit') : t('agents:decision.reviewRun')}
           <ArrowRight size={14} aria-hidden="true" />
         </Link>

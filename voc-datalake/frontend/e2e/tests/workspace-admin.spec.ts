@@ -4,7 +4,7 @@
  * acme, and an editor of Juniper Trail Co., slug juniper):
  *
  * 1. The platform console (Administration → Privacy & access → Workspaces) creates "Acme Outfitters Field Team"
- *    (acme-field) and enters it: a full page load to `/w/acme-field/`, the header naming it with the Admin role.
+ *    (acme-field) and enters it: a full page load to `/workspace/acme-field/`, the header naming it with the Admin role.
  * 2. In acme, the members page adds editor@example.com as an Editor, makes them a Viewer, and the caller's own
  *    demotion (the only admin), confirmed first, is refused with the last-admin message.
  * 3. In juniper, where the caller is an editor, the list is read-only; Leave workspace, confirmed, loads `/`, which
@@ -19,12 +19,12 @@
  * 7. In acme, Workspace settings → "Workspace name" → Rename (7.40.00): a blank name cannot be saved and a name over
  *    80 characters is refused in the dialog, neither sending anything; a good one is one `PUT /me/workspaces/current`
  *    carrying acme's `X-Workspace-Id`, and the card and the header's workspace menu show the new name while the
- *    address stays `/w/acme/` (the slug never changes). The spec puts the old name back.
+ *    address stays `/workspace/acme/` (the slug never changes). The spec puts the old name back.
  * 8. Workspace settings → "Delete workspace" (7.40.00) on a workspace the spec creates for it (acme-popup): the
  *    dialog's Delete stays disabled until the slug is typed exactly, a reason is given and "I understand" is ticked;
  *    the delete is one `POST /me/workspaces/current/delete` (`confirm_slug`, `legal_basis`) with its id, the last
  *    dialog says it is being deleted, "Go to my workspaces" is a full page load to `/` that no longer offers it, and
- *    `/w/acme-popup/` is "Workspace not found" (its `GET /me/workspaces/current` a 404).
+ *    `/workspace/acme-popup/` is "Workspace not found" (its `GET /me/workspaces/current` a 404).
  *
  * MOCK ONLY: on a deployment these would create a workspace and change real memberships (the deployment-side
  * lifecycle, which deletes what it made, is workspace-lifecycle.spec.ts). The mock's state lives in its process: the
@@ -66,7 +66,7 @@ const POPUP_SLUG = 'acme-popup'
 const NAME_MAX = 80
 
 /** The console's address inside acme (the gate shows the picker for an address without a workspace). */
-const CONSOLE = '/w/acme/admin?tab=access&section=workspaces'
+const CONSOLE = '/workspace/acme/admin/access/workspaces'
 
 /** admin-demo as the app stores a signed-in user (`voc-auth`, store/authStore.ts): the mock caller's sub. */
 async function signInAsMockCaller(page: Page): Promise<void> {
@@ -145,14 +145,14 @@ test.describe('workspace administration', () => {
       await page.getByRole('button', { name: 'Create workspace' }).click()
       await expect(page.getByRole('status')).toContainText(`Created ${TEXT.field}. You are its admin.`)
       await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: `Enter ${TEXT.field}` }).first().click()])
-      await page.waitForURL(/\/w\/acme-field\/$/)
+      await page.waitForURL(/\/workspace\/acme-field\/$/)
       await expect(page.getByRole('button', { name: `Workspace: ${TEXT.field}, Admin. Switch workspace` })).toBeVisible()
     })
   })
 
   test('an admin adds a member, changes the role, and is refused demoting the last admin', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspace-admin-02-members', async () => {
-      await page.goto(site('/w/acme/members'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/acme/members'), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Members', level: 1 })).toBeVisible()
       await page.getByLabel('Email').fill('editor@example.com')
       await page.getByLabel('Role', { exact: true }).selectOption('editor')
@@ -169,7 +169,7 @@ test.describe('workspace administration', () => {
 
   test('a member leaves a workspace and lands on the start page without it', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspace-admin-03-leave', async () => {
-      await page.goto(site('/w/juniper/members'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/juniper/members'), { waitUntil: 'domcontentloaded' })
       await expect(page.getByText("Only the workspace's admins can add members, change roles or remove members.")).toBeVisible()
       await expect(page.getByRole('combobox')).toHaveCount(0)
       await page.getByRole('button', { name: 'Leave workspace' }).click()
@@ -184,9 +184,9 @@ test.describe('workspace administration', () => {
     await assertStep(page, roleOf(testInfo), 'workspace-admin-04-platform-entry', async () => {
       const juniperId = await workspaceId('juniper')
       await page.goto(site(CONSOLE), { waitUntil: 'domcontentloaded' })
-      const sent = workspaceIdsSent(page, '/w/juniper/')
+      const sent = workspaceIdsSent(page, '/workspace/juniper/')
       await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: `Enter ${TEXT.juniper}` }).click()])
-      await page.waitForURL(/\/w\/juniper\/$/)
+      await page.waitForURL(/\/workspace\/juniper\/$/)
       await expect(page.getByRole('button', { name: `Workspace: ${TEXT.juniper}, Admin. Switch workspace` })).toBeVisible()
       // Every call the page has sent names juniper (one value), polled until the page's calls have gone out.
       await expect.poll(sent).toStrictEqual([juniperId])
@@ -196,7 +196,7 @@ test.describe('workspace administration', () => {
   test("a workspace admin saves the workspace's brand and turns a plugin on and off for it", async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspace-admin-05-workspace-settings', async () => {
       const acmeId = await workspaceId('acme')
-      await page.goto(site('/w/acme/dashboard'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/acme/dashboard'), { waitUntil: 'domcontentloaded' })
       await page.getByRole('button', { name: new RegExp(`^Workspace: ${TEXT.acme}, Admin\\.`) }).click()
       await page.getByRole('menuitem', { name: 'Workspace settings' }).click()
       await expect(page.getByRole('heading', { name: 'Workspace settings', level: 1 })).toBeVisible()
@@ -247,15 +247,15 @@ test.describe('workspace administration', () => {
       const acmeId = await workspaceId('acme')
       expect(acmeId).not.toBe('')
       try {
-        await page.goto(site('/w/acme/workspace-settings'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/workspace/acme/workspace-settings'), { waitUntil: 'domcontentloaded' })
         const card = page.getByRole('region', { name: 'Workspace name' })
         await expect(card.getByText(TEXT.acme, { exact: true })).toBeVisible()
-        await expect(card).toContainText('Address: /w/acme')
+        await expect(card).toContainText('Address: /workspace/acme')
         const puts = apiRequestsTo(page, 'PUT', '/me/workspaces/current')
 
         await card.getByRole('button', { name: 'Rename' }).click()
         const dialog = dialogNamed(page, 'Rename the workspace')
-        await expect(dialog).toContainText('Its address, /w/acme, stays the same')
+        await expect(dialog).toContainText('Its address, /workspace/acme, stays the same')
         const field = dialog.getByLabel('Name', { exact: true })
         const save = dialog.getByRole('button', { name: 'Save', exact: true })
         await expect(field).toHaveValue(TEXT.acme)
@@ -283,8 +283,8 @@ test.describe('workspace administration', () => {
         await expect(card.getByText(TEXT.renamed, { exact: true })).toBeVisible()
         await expect(workspaceMenuButton(page, TEXT.renamed)).toBeVisible()
         // The slug, so the address, is unchanged: on the card, in the page's URL and on the server.
-        await expect(card).toContainText('Address: /w/acme')
-        expect(new URL(page.url()).pathname).toBe('/w/acme/workspace-settings')
+        await expect(card).toContainText('Address: /workspace/acme')
+        expect(new URL(page.url()).pathname).toBe('/workspace/acme/workspace-settings')
         expect(puts).toHaveLength(1)
         expect(await platformRow('acme')).toMatchObject({ id: acmeId, name: TEXT.renamed, slug: 'acme' })
       } finally {
@@ -300,7 +300,7 @@ test.describe('workspace administration', () => {
       expect((await apiCall('admin', 'POST', '/platform/workspaces', { name: TEXT.popup, slug: POPUP_SLUG })).status).toBe(201)
       const popupId = await workspaceId(POPUP_SLUG)
       expect(popupId).not.toBe('')
-      await page.goto(site(`/w/${POPUP_SLUG}/workspace-settings`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/workspace/${POPUP_SLUG}/workspace-settings`), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Workspace settings', level: 1 })).toBeVisible()
       await expect(page.getByRole('region', { name: 'Workspace name' })).toBeVisible()
       const card = page.getByRole('region', { name: 'Delete workspace' })
@@ -348,7 +348,7 @@ test.describe('workspace administration', () => {
 
       expect((await apiCall('admin', 'GET', '/me/workspaces/current', undefined, { workspace: popupId, expect: [404] })).status).toBe(404)
       expect((await platformRow(POPUP_SLUG))['status']).toBe('deleting')
-      await page.goto(site(`/w/${POPUP_SLUG}/`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/workspace/${POPUP_SLUG}/`), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Workspace not found' })).toBeVisible()
       await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
     })

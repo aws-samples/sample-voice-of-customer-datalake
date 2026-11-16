@@ -205,7 +205,7 @@ describe('PluginConfigModal', () => {
     it('points to the source settings instead', async () => {
       render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
       await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
-      expect(screen.getByRole('link', { name: 'Open source settings' })).toHaveAttribute('href', '/admin?tab=sources&section=plugins')
+      expect(screen.getByRole('link', { name: 'Open source settings' })).toHaveAttribute('href', '/admin/sources/plugins')
     })
 
     // 5.34.00 live finding: S3 Bulk Import has no token, yet its dialog said "paste the token".

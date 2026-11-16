@@ -4,7 +4,7 @@
  *
  * Each change REPLACES the history entry (typing a search must not push one entry
  * per keystroke); a value at its default is left out of the URL, and every other
- * parameter (`?request=` of an open detail) is kept. An unknown sort reads as the
+ * parameter (an open review modal's `?review=`) is kept; an open request's detail is the path. An unknown sort reads as the
  * default; the status is any key here, and the list reads a key its board does not
  * have as "all statuses" (RequestList).
  *
@@ -13,7 +13,7 @@
  * receives the RENDERED params, so a control changed before that render (clear the search,
  * then pick a status) wrote the stale search back, and a status picked right after closing
  * a request's detail re-opened it (5.35, e2e feature-requests fr-03 / fr-06). The detail's
- * own `?request=` writer (FeatureBoard) flushes the same way.
+ * own move (its path, FeatureBoard) flushes the same way.
  *
  * @module pages/FeatureRequests/useBoardControls
  */

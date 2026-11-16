@@ -26,6 +26,7 @@ import { LogoUpload } from './LogoUpload'
 import { GroupLabel, MarkdownField, MarkdownView, SectionHeader, ViewOnlyBadge } from './ContextParts'
 import { DraftSaveRow, LoadedSection } from './SectionParts'
 import { useDraft, useDraftGuard } from './useDraft'
+import { adminPath } from '../Settings/adminPaths'
 
 const MAX_GUIDELINES_CHARS = 20_000
 const READING_POLL_MS = 5_000
@@ -146,7 +147,7 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
           {isAdmin ? (
             <p className="text-xs text-muted">
               {t('designSystem.integrationsMoved')}{' '}
-              <Link to="/admin?tab=sources&section=integrations" className="link">{t('designSystem.integrationsLink')}</Link>
+              <Link to={adminPath({ tab: 'sources', section: 'integrations' })} className="link">{t('designSystem.integrationsLink')}</Link>
             </p>
           ) : null}
         </div>

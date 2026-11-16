@@ -81,7 +81,7 @@ async function e2eAgentOnOwnWorkflow(): Promise<{ agentId: string; workflowId: s
 const panelOf = (page: Page): Locator => page.getByRole('complementary', { name: agentsText('editor.panel') })
 
 async function openWorkflowTab(page: Page, agentId: string): Promise<void> {
-  await page.goto(site(`/agents/${encodeURIComponent(agentId)}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/agents/${encodeURIComponent(agentId)}/workflow`), { waitUntil: 'domcontentloaded' })
   await settle(page, 600)
   await expect(page.locator('.react-flow__pane')).toBeVisible()
 }

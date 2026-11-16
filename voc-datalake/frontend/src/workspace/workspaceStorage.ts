@@ -4,12 +4,12 @@
  *
  * Inside a workspace a store's record is its own, `<name>:w/{slug}` (`voc-assistant-ui:w/acme`), so a draft, a
  * filter or the conversation in view saved in one workspace never opens in another, and is back on return. Outside
- * one (no `/w/` in the address, a deployment without workspaces) the name is unchanged, so nothing changes there.
+ * one (no `/workspace/` in the address, a deployment without workspaces) the name is unchanged, so nothing changes there.
  *
  * The slug, not the id: the stores hydrate when their modules load, before the gate has read the caller's
  * workspaces, and the address is all that is known then. A slug is unique and fixed when the workspace is made
  * (decision 15), and switching workspaces is a full page load (workspacePath.ts), so a page load's stores belong
- * to one workspace for as long as they live. A `/w/…` address no workspace can have keeps the plain name: the gate
+ * to one workspace for as long as they live. A `/workspace/…` address no workspace can have keeps the plain name: the gate
  * shows not-found there and opens no page.
  *
  * A page load holds only its own workspace's stores, so sign-out and an expired session drop the other

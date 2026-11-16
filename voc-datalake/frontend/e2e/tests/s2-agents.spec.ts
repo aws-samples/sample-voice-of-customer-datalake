@@ -502,7 +502,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     watchConversationSaves(page)
     const t0 = Date.now()
     await step(page, '02-assistant-edit-agent', async (r) => {
-      await page.goto(site(`/agents/${agentId}?tab=instructions`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${agentId}/instructions`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const response = await askAndApprove(page, r,
         `Update the agent on screen (${agentId}) with ONE update_agent call that sets: instructions to exactly "${INSTRUCTIONS}"; `
@@ -532,7 +532,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     const { aid, wid, context, page } = await agentSession(browser, readState())
     const t0 = Date.now()
     const open = async (): Promise<void> => {
-      await page.goto(site(`/agents/${aid}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/workflow`), { waitUntil: 'domcontentloaded' })
       await settle(page, 800)
       await expect(canvasOf(page)).toBeVisible()
     }
@@ -756,7 +756,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
         return
       }
       const fixed = { ...current, edges: edges.map((e) => (e['source'] === 'custom_llm_1' ? { id: e['id'], source: e['source'], target: e['target'] } : e)) }
-      await page.goto(site(`/agents/${aid}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/workflow`), { waitUntil: 'domcontentloaded' })
       await settle(page, 800)
       await page.locator('input[type=file][accept*="json"]').setInputFiles(saveJson('s2-unlabelled.workflow.json', fixed))
       await expect(page.getByText('Unsaved changes')).toBeVisible()
@@ -781,7 +781,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
         r.note(`reusing run ${existing} started by an earlier attempt of this step (no extra run)`)
         return
       }
-      await page.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/runs`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const { runId, problem } = await runNowViaUi(page, r, aid)
       recordCreated('agent-run', runId, `${NAME.agent} run`)
@@ -807,7 +807,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       r.note(`run ${runId}: status=${String(ended['status'])} model_calls=${String(ended['model_calls'])} started=${String(ended['started_at'])} finished=${String(ended['finished_at'])} error=${String(ended['error'])}`)
       for (const d of durations) r.note(`node ${d.node_id}: ${d.outcome} ${d.ms ?? '?'}ms`)
       saveJson('s2-run-completed.json', { run: ended, events, durations })
-      await page.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/runs`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       // The tab opens the NEWEST run; pick this one (the list is newest first, like the API).
       const order = listOf((await apiCall('admin', 'GET', `/agents/${aid}/runs`)).body, 'items').map((x) => x['run_id'])
@@ -872,7 +872,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     })
 
     await softStep(page, '04e-cancel-second-run', async (r) => {
-      await page.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/runs`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const reused = readState().cancelRunId
       const attempt = reused === undefined ? await startAndCancelViaUi(page, r, aid) : null
@@ -911,7 +911,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     const { aid, wid, context, page } = await agentSession(browser, state)
 
     await softStep(page, '05a-export-ui', async (r) => {
-      await page.goto(site(`/agents/${aid}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/workflow`), { waitUntil: 'domcontentloaded' })
       await settle(page, 800)
       const download = page.waitForEvent('download')
       await page.getByRole('button', { name: 'Export' }).click()
@@ -945,7 +945,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     })
 
     await softStep(page, '05c-enable-disable', async (r) => {
-      await page.goto(site(`/agents/${aid}?tab=settings`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/settings`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const toggle = page.getByRole('switch', { name: 'Enabled' })
       await expect(toggle).toHaveAttribute('aria-checked', 'false')
@@ -965,7 +965,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     })
 
     await softStep(page, '05d-run-history', async (r) => {
-      await page.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/runs`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       const runs = page.getByRole('list', { name: 'Runs' }).getByRole('button')
       const listed = await apiCall('admin', 'GET', `/agents/${aid}/runs`)
@@ -983,7 +983,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     })
 
     await softStep(page, '05e-save-as-ui', async (r) => {
-      await page.goto(site(`/agents/${aid}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/agents/${aid}/workflow`), { waitUntil: 'domcontentloaded' })
       await settle(page, 800)
       await page.getByRole('button', { name: 'Save as…' }).click()
       const dialog = dialogNamed(page, 'Save as a new workflow')
@@ -1032,15 +1032,15 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       await settle(userPage)
       await expect(userPage.getByRole('button', { name: 'New agent' })).toHaveCount(0)
       if (reads.status === 200) {
-        await userPage.goto(site(`/agents/${aid}?tab=settings`), { waitUntil: 'domcontentloaded' })
+        await userPage.goto(site(`/agents/${aid}/settings`), { waitUntil: 'domcontentloaded' })
         await settle(userPage)
         await expect(userPage.getByRole('switch', { name: 'Enabled' })).toBeDisabled()
         await expect(userPage.getByRole('button', { name: 'Archive' })).toHaveCount(0)
         await expect(userPage.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
-        await userPage.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
+        await userPage.goto(site(`/agents/${aid}/runs`), { waitUntil: 'domcontentloaded' })
         await settle(userPage)
         await expect(userPage.getByRole('button', { name: 'Run now' })).toHaveCount(0)
-        await userPage.goto(site(`/agents/${aid}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+        await userPage.goto(site(`/agents/${aid}/workflow`), { waitUntil: 'domcontentloaded' })
         await settle(userPage, 800)
         const paletteButtons = userPage.getByRole('navigation', { name: 'Steps' }).getByRole('button')
         const total = await paletteButtons.count()
@@ -1069,7 +1069,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
           const c = await apiCall('admin', 'POST', `/agents/${agent.id}/runs/${String(active['run_id'])}/cancel`, {})
           proof.push({ action: 'cancel leftover active run', status: c.status, detail: String(active['run_id']) })
         }
-        await page.goto(site(`/agents/${agent.id}?tab=settings`), { waitUntil: 'domcontentloaded' })
+        await page.goto(site(`/agents/${agent.id}/settings`), { waitUntil: 'domcontentloaded' })
         await settle(page, 500)
         const archived = page.waitForResponse((res) => isApi(res, 'DELETE', new RegExp(`/agents/${agent.id}$`)))
         await page.getByRole('button', { name: 'Archive' }).click()

@@ -108,6 +108,13 @@ WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_wri
 COGNITO_READ_PREFIXES = ('admin_get_', 'admin_list_')
 
 WORKSPACE_SCOPED: frozenset[tuple[str, str]] = frozenset(CASES)
+#: A module function that resolves the workspace first for every caller but one, by file: a platform admin (the
+#: token's ``platform-admins`` group) inside a well-formed workspace they are not a member of, whose READ it answers
+#: with None, so the route answers nothing of the workspace (7.49.00, chat_handler.py ``_reading_caller``: the stream
+#: Lambda's rule for the same rows, never elevated, nothing read or written). Its body is one ``try`` that resolves
+#: first and whose every handler ends in ``raise`` (``_none_for_platform_admins``); every other caller gets the
+#: generated checks, and lambda/api/test/test_chat_workspace.py the platform admin's.
+NONE_FOR_PLATFORM_ADMINS: dict[str, frozenset[str]] = {'chat_handler.py': frozenset({'_reading_caller'})}
 
 BY_DESIGN: dict[tuple[str, str], str] = {
     **dict.fromkeys(
@@ -253,10 +260,21 @@ def _imported_resolvers(tree: ast.Module) -> set[str]:
             for alias in stmt.names if alias.asname is None and RESOLVERS.get(alias.name) == stmt.module}
 
 
-def resolving_functions(tree: ast.Module) -> tuple[set[str], set[str]]:
+def _none_for_platform_admins(fn: ast.FunctionDef, resolving: set[str], writing: set[str]) -> bool:
+    """``NONE_FOR_PLATFORM_ADMINS``' shape: the body (after its docstring) is one ``try`` that resolves first, with
+    handlers that each end in ``raise`` and write nothing (one may return None before it, for the platform admin)."""
+    body = fn.body[1:] if fn.body and isinstance(fn.body[0], ast.Expr) and isinstance(fn.body[0].value, ast.Constant) else fn.body
+    [stmt] = body if len(body) == 1 else [None]
+    return (isinstance(stmt, ast.Try) and not stmt.finalbody and _resolves_in(stmt.body, resolving, writing)
+            and all(bool(h.body) and isinstance(h.body[-1], ast.Raise) and not any(_writes(b, writing) for b in h.body)
+                    for h in stmt.handlers))
+
+
+def resolving_functions(tree: ast.Module, none_for_platform_admins: frozenset[str] = frozenset()) -> tuple[set[str], set[str]]:
     """``(resolving, writing)``: the resolver (when imported from shared/workspace.py) plus every module function that
     resolves the workspace first, and every module function that writes. Both err towards "not resolving first": a
-    name the module rebinds anywhere never resolves, while every function by that name that writes counts as one."""
+    name the module rebinds anywhere never resolves, while every function by that name that writes counts as one.
+    A function named in ``none_for_platform_admins`` counts only in its shape (``_none_for_platform_admins``)."""
     every = _module_functions(tree)
     writing = _fixed_point(every, set(), lambda fn, names: any(_writes(stmt, names) for stmt in fn.body))
     rebound = _rebound(tree)
@@ -264,15 +282,16 @@ def resolving_functions(tree: ast.Module) -> tuple[set[str], set[str]]:
     if not seeds:
         return set(), writing
     functions = {name: fn for name, fn in every.items() if name not in rebound}
-    resolving = _fixed_point(functions, seeds, lambda fn, names: _resolves_in(fn.body, names, writing))
+    resolving = _fixed_point(functions, seeds, lambda fn, names: _resolves_in(fn.body, names, writing)
+                             or (fn.name in none_for_platform_admins and _none_for_platform_admins(fn, names, writing)))
     return resolving, writing
 
 
-def routes_resolving_the_workspace(source: str) -> dict[str, bool]:
+def routes_resolving_the_workspace(source: str, none_for_platform_admins: frozenset[str] = frozenset()) -> dict[str, bool]:
     """Every route of ``source`` -> whether it resolves the workspace first: in its body, or in the module's first
     ``app.use`` middleware."""
     tree = ast.parse(source)
-    resolving, writing = resolving_functions(tree)
+    resolving, writing = resolving_functions(tree, none_for_platform_admins)
     module_wide = first_app_middleware(tree) in resolving
     return {key: module_wide or _resolves_in(fn.body, resolving, writing)
             for fn in _module_functions(tree).values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
@@ -283,7 +302,8 @@ def inventory() -> dict[tuple[str, str], bool]:
     """(handler or router file, "METHOD /path") -> resolves the workspace first, over every route of the API."""
     return {(path.name, key): resolves
             for path in [*_handler_files(), *_router_files()]
-            for key, resolves in routes_resolving_the_workspace(path.read_text(encoding='utf-8')).items()}
+            for key, resolves in routes_resolving_the_workspace(
+                path.read_text(encoding='utf-8'), NONE_FOR_PLATFORM_ADMINS.get(path.name, frozenset())).items()}
 
 
 def classification() -> dict[tuple[str, str], list[str]]:
@@ -313,6 +333,39 @@ def test_the_workspace_scoped_routes_are_exactly_the_ones_that_resolve_the_works
         'These routes resolve the workspace: move them out of cross_workspace_pending.py and give each its case')
     assert sorted(WORKSPACE_SCOPED - resolving) == [], (
         'These routes have a case but do not resolve the workspace first (or no longer exist)')
+
+
+def test_a_reader_answering_none_for_platform_admins_counts_only_in_its_shape_and_where_named():
+    source = '''
+from shared.request_workspace import request_workspace
+
+def _reading():
+    try:
+        return request_workspace()
+    except NotFound:
+        if platform_admin():
+            return None
+        raise
+
+def _leaky():
+    try:
+        return request_workspace()
+    except NotFound:
+        return None
+
+@app.get('/x')
+def x():
+    return _reading()
+
+@app.get('/y')
+def y():
+    return _leaky()
+'''
+    assert routes_resolving_the_workspace(source) == {'GET /x': False, 'GET /y': False}
+    assert routes_resolving_the_workspace(source, frozenset({'_reading', '_leaky'})) == {'GET /x': True, 'GET /y': False}
+    every = {(file, name) for file, names in NONE_FOR_PLATFORM_ADMINS.items() for name in names}
+    defined = {(path.name, fn.name) for path in _handler_files() for fn in _module_functions(ast.parse(path.read_text(encoding='utf-8'))).values()}
+    assert sorted(every - defined) == []
 
 
 def test_every_table_entry_names_a_route_that_exists():

@@ -211,7 +211,7 @@ test.describe('feedback catalogue (6.04.00)', () => {
     const names = listOf(api.body, 'fields').map((f) => String(f['name']))
     test.skip(names.length === 0, 'no catalogue from the API')
     await assertStep(page, 'admin', 'methodology-catalogue-fields', async (r) => {
-      await page.goto(site('/data-explorer?view=processed'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/data-explorer/processed'), { waitUntil: 'domcontentloaded' })
       await page.getByRole('button', { name: 'Fields', exact: true }).click()
       const table = page.getByTestId('feedback-fields-table')
       await expect(table).toBeVisible()

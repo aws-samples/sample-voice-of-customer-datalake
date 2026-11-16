@@ -41,8 +41,11 @@ function renderPage(viewer: BoardViewer, entry = '/feature-requests', arrange?: 
   renderWithQueryClient(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/feature-requests" element={<Page />} />
-        <Route path="/feature-requests/:slug" element={<p>Board page</p>} />
+        {/* As routes.tsx declares them: the list, its Insights tab and a request looked up by its id, then a board. */}
+        {['/feature-requests', '/feature-requests/insights', '/feature-requests/requests/*'].map((path) => (
+          <Route key={path} path={path} element={<Page />} />
+        ))}
+        <Route path="/feature-requests/:slug/*" element={<p>Board page</p>} />
       </Routes>
       <SearchProbe />
     </MemoryRouter>,
@@ -108,8 +111,8 @@ describe('admin-only controls', () => {
     renderPage(ADMIN)
     const service = await card('brd_service')
     expect(service.getByRole('link', { name: 'Edit Customer service issues' }))
-      .toHaveAttribute('href', '/admin?tab=access&section=boards&board=brd_service')
-    expect(screen.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', '/admin?tab=access&section=boards')
+      .toHaveAttribute('href', '/admin/access/boards/brd_service')
+    expect(screen.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', '/admin/access/boards')
   })
 
   it('give an admin Pause and Archive on a board in use, but no Delete', async () => {
@@ -172,30 +175,36 @@ describe('admin-only controls', () => {
       vi.mocked(api.listBoards).mockResolvedValue({ boards: [], viewer: ADMIN })
     })
     expect(await screen.findByRole('link', { name: 'Administration, Privacy & access, Boards' }))
-      .toHaveAttribute('href', '/admin?tab=access&section=boards')
+      .toHaveAttribute('href', '/admin/access/boards')
   })
 })
 
-describe('a pre-boards request link', () => {
-  it('opens the request on its board', async () => {
-    renderPage(APP_USER, '/feature-requests?request=fr_9')
+describe('a request known only by its id', () => {
+  it('opens the request on its board, at its path', async () => {
+    renderPage(APP_USER, '/feature-requests/requests/fr_9')
     expect(await screen.findByText('Board page')).toBeInTheDocument()
-    expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_9')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests\/service-board\/fr_9$/)
   })
 
   it('reads a request without a board as the seeded board', async () => {
-    renderPage(APP_USER, '/feature-requests?request=fr_9', (api) => {
+    renderPage(APP_USER, '/feature-requests/requests/fr_9', (api) => {
       vi.mocked(api.getRequest).mockResolvedValue({ request: fixtureRequest('fr_9'), supports: [] })
     })
     expect(await screen.findByText('Board page')).toBeInTheDocument()
   })
 
   it('says the request no longer exists when it is gone', async () => {
-    renderPage(APP_USER, '/feature-requests?request=fr_gone', (api) => {
+    renderPage(APP_USER, '/feature-requests/requests/fr_gone', (api) => {
       vi.mocked(api.getRequest).mockRejectedValue(new ApiError(404))
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('This request no longer exists.')
     await waitFor(() => expect(screen.getByRole('link', { name: 'Back to the boards' })).toHaveAttribute('href', '/feature-requests'))
+  })
+
+  it('reads no request from the list\'s query (no pre-boards `?request=` link is redirected)', async () => {
+    renderPage(APP_USER, '/feature-requests?request=fr_9')
+    expect(await screen.findByRole('tab', { name: 'Boards' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Board page')).toBeNull()
   })
 })
 
@@ -206,18 +215,23 @@ describe('the page tabs', () => {
     expect(screen.queryByTestId('insights-stub')).not.toBeInTheDocument()
   })
 
-  it('deep-links Insights with the boards and the admin flag', async () => {
-    renderPage(ADMIN, '/feature-requests?tab=insights')
+  it('opens Insights at its path with the boards and the admin flag', async () => {
+    renderPage(ADMIN, '/feature-requests/insights')
     expect(await screen.findByRole('tab', { name: 'Insights' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('3 boards, admin true')).toBeInTheDocument()
   })
 
-  it('switches tabs in the URL, and leaving Insights drops its view', async () => {
+  it('reads no tab from the query (no `?tab=insights` link of before is redirected)', async () => {
+    renderPage(ADMIN, '/feature-requests?tab=insights')
+    expect(await screen.findByRole('tab', { name: 'Boards' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('switches tabs by path, and leaving Insights drops its view', async () => {
     const user = userEvent.setup()
-    renderPage(ADMIN, '/feature-requests?tab=insights&board=brd_sales&days=30')
+    renderPage(ADMIN, '/feature-requests/insights?board=brd_sales&days=30')
     await user.click(await screen.findByRole('tab', { name: 'Boards' }))
-    expect(screen.getByTestId('search')).toHaveTextContent(/^$/)
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests$/)
     await user.click(screen.getByRole('tab', { name: 'Insights' }))
-    expect(screen.getByTestId('search')).toHaveTextContent('?tab=insights')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests\/insights$/)
   })
 })

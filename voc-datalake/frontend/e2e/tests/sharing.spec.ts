@@ -119,10 +119,10 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
   await step(userPage, 'user', 'share-viewer-read-only', async (r) => {
     await userPage.goto(site(`/projects/${viewerId}`), { waitUntil: 'domcontentloaded' })
     await expect(userPage.getByText(VIEW_ONLY_BANNER, { exact: false })).toBeVisible()
-    await userPage.goto(site(`/projects/${viewerId}?tab=personas`), { waitUntil: 'domcontentloaded' })
+    await userPage.goto(site(`/projects/${viewerId}/personas`), { waitUntil: 'domcontentloaded' })
     await settle(userPage, 800)
     for (const name of [/Import Persona/i, /Generate Personas/i]) await expect(userPage.getByRole('button', { name })).toHaveCount(0)
-    await userPage.goto(site(`/projects/${viewerId}?tab=documents`), { waitUntil: 'domcontentloaded' })
+    await userPage.goto(site(`/projects/${viewerId}/documents`), { waitUntil: 'domcontentloaded' })
     await settle(userPage, 800)
     await expect(userPage.getByRole('button', { name: /New Document/i })).toHaveCount(0)
     await openList(userPage)

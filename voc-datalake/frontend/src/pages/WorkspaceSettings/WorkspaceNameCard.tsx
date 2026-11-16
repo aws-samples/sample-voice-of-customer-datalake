@@ -2,7 +2,7 @@
  * @fileoverview The workspace's name (docs/multi-workspace.md → Control plane), on its settings page: every member
  * reads it and its address; its admins rename it (`PUT /me/workspaces/current` `{name}`, with the workspace's
  * `X-Workspace-Id`). The name is checked here by the server's rules first (workspaceName.ts); the slug, so the address
- * `/w/{slug}`, never changes.
+ * `/workspace/{slug}`, never changes.
  *
  * A rename's answer is the workspace as `GET /me/workspaces/current` answers it: it is written straight into that
  * cache entry and the caller's list (`GET /me/workspaces`), so the header's workspace menu, the gate and this card show
@@ -55,7 +55,7 @@ export default function WorkspaceNameCard({ workspace, isAdmin }: Readonly<{ wor
   const server = useServerWorkspace(workspace.id)
   // The server's answer once it has one (a rename writes it there first); the gate's record until then.
   const name = server.data?.id === workspace.id ? server.data.name : workspace.name
-  const address = `/w/${workspace.slug}`
+  const address = `/workspace/${workspace.slug}`
   const rename = useRenameWorkspace(workspace.id)
   const [editing, setEditing] = useState(false)
   const [problem, setProblem] = useState<WorkspaceNameProblem | null>(null)

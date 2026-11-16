@@ -233,7 +233,7 @@ describe("WorkspaceSettings: the workspace's name and its delete", () => {
     renderPage(JUNIPER)
     const name = await screen.findByRole('region', { name: 'Workspace name' })
     expect(name).toHaveTextContent('Juniper Trail Co.')
-    expect(name).toHaveTextContent('/w/juniper')
+    expect(name).toHaveTextContent('/workspace/juniper')
     expect(within(name).queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
   })
 

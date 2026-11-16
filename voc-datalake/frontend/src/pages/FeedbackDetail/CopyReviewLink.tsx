@@ -12,7 +12,7 @@ import { useLocation } from 'react-router-dom'
 import { useCopiedFlag } from '../../hooks/useCopiedFlag'
 import { pageHref } from '../../workspace/workspacePath'
 
-/** The absolute URL of a review's page in this app (inside the current workspace's `/w/{slug}`, if any). */
+/** The absolute URL of a review's page in this app (inside the current workspace's `/workspace/{slug}`, if any). */
 function reviewPageUrl(feedbackId: string, origin: string): string {
   const path = `/feedback/${encodeURIComponent(feedbackId)}`
   return `${origin}${pageHref(path)}`

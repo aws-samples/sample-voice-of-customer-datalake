@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -62,7 +63,7 @@ def answer(status: int, data: object = None) -> Response:
 
 def conversion(**change: Any) -> dict[str, Any]:
     """GitHub's answer to the code (``POST /app-manifests/<code>/conversions``), with ``change``."""
-    return {'id': int(APP_ID), 'slug': SLUG, 'node_id': 'A_kw', 'name': 'VoC agents a1b2c3',
+    return {'id': int(APP_ID), 'slug': SLUG, 'node_id': 'A_kw', 'name': 'VoC Autonomous Agent a1b2',
             'owner': {'login': 'example-org', 'type': 'Organization'}, 'html_url': f'https://github.com/apps/{SLUG}',
             'client_id': 'Iv1.0123456789abcdef', 'client_secret': CLIENT_SECRET, 'webhook_secret': WEBHOOK_SECRET,
             'pem': pem(), 'permissions': dict(github_apps.PERMISSIONS), **change}
@@ -94,13 +95,15 @@ class FakeTokens:
     repositories: list[dict[str, Any]] = field(default_factory=lambda: [listed('example-org/refund-service')])
     error: ConnectionRefused | None = None
     calls: list[dict[str, Any]] = field(default_factory=list)
+    #: The App's slug as the installation reports it (``None``: the stored one, as before any rename).
+    app_slug: str | None = None
 
     def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(request)
         if self.error is not None:
             raise self.error
         return {'account': {'login': 'example-org', 'type': 'Organization'}, 'repositories': self.repositories,
-                'truncated': False}
+                'truncated': False, 'app_slug': SLUG if self.app_slug is None else self.app_slug}
 
 
 class Clock:
@@ -177,7 +180,7 @@ def test_the_manifest_is_a_private_app_with_the_brokers_permissions_and_this_dep
         FRONTEND, f'{FRONTEND}/agents/connections/github/created', f'{FRONTEND}/agents/connections/github/installed')
     assert manifest['hook_attributes'] == {'url': HOOK, 'active': True}
     assert manifest['default_events'] == ['issues', 'issue_comment']
-    assert manifest['name'].startswith('VoC agents ')
+    assert re.fullmatch(r'VoC Autonomous Agent [0-9a-f]{4}', manifest['name'])
     assert len(manifest['name']) <= 34
     assert made['action_url'].startswith('https://github.com/settings/apps/new?state=')
     assert made['expires_at'] == (WHEN + timedelta(seconds=STATE_SECONDS)).isoformat()
@@ -188,10 +191,28 @@ def test_an_organization_posts_to_its_own_settings_and_a_login_off_githubs_rule_
     assert made['action_url'].startswith('https://github.com/organizations/example-org/settings/apps/new?state=')
     for body in ({'account': 'organization', 'org': 'bad--name'}, {'account': 'organization', 'org': '-x'},
                  {'account': 'organization'}, {'account': 'user', 'org': 'example-org'}, {'account': 'team'},
-                 {'account': 'user', 'extra': 1}, {'account': 'organization', 'org': 'a' * 40}):
+                 {'account': 'user', 'extra': 1}, {'account': 'organization', 'org': 'a' * 40},
+                 {'account': 'user', 'workspace': 'admin'}, {'account': 'user', 'workspace': 'Acme'},
+                 {'account': 'user', 'workspace': 'a/b'}, {'account': 'user', 'workspace': 7}):
         with pytest.raises(ConnectionRefused) as refused:
             env.apps().manifest(body, ADMIN)
         assert refused.value.kind == 'invalid'
+
+
+def test_the_creation_returns_into_the_workspace_the_flow_started_in_and_the_setup_page_stays_top_level(env: Env) -> None:
+    """The manifest is written for each creation, so its return names the workspace (``/workspace/<slug>/…``); the setup
+    page is fixed with the App while an install may start anywhere, so it stays top-level (the SPA takes it back)."""
+    manifest = env.apps().manifest({'account': 'user', 'workspace': 'acme-eu'}, ADMIN)['manifest']
+    assert (manifest['redirect_url'], manifest['setup_url']) == (
+        f'{FRONTEND}/workspace/acme-eu/agents/connections/github/created', f'{FRONTEND}/agents/connections/github/installed')
+    plain = env.apps().manifest({'account': 'user', 'workspace': ''}, ADMIN)['manifest']
+    assert plain['redirect_url'] == f'{FRONTEND}/agents/connections/github/created'
+
+
+@pytest.mark.parametrize('slug', ['www', 'ab', '-acme', 'acme-', 'Acme', 'a' * 41, 'acme/eu', 7])
+def test_the_workspace_is_a_slug_the_platform_could_have_made(slug: object) -> None:
+    with pytest.raises(ConnectionRefused):
+        github_apps.parse_workspace(slug)
 
 
 def test_without_the_webhook_the_manifest_asks_for_no_hook_and_no_events(env: Env) -> None:
@@ -460,6 +481,29 @@ def test_the_check_marks_the_connections_whose_repository_left_the_installation(
     assert env.apps().check(APP_ID) == {'repositories': ['example-org/web'], 'missing': ['refund-service']}
     env.tokens.error = ConnectionRefused('conflict', 'gone')
     assert env.apps().check(APP_ID) == {'repositories': [], 'missing': ['refund-service', 'web']}
+
+
+def test_a_check_records_the_slug_of_an_app_renamed_on_github_so_its_install_links_keep_working(env: Env) -> None:
+    installed(env, created(env))
+    env.tokens.app_slug = 'voc-sandbox-agent'
+    env.apps().check(APP_ID, ADMIN)
+    [app] = env.apps().list()
+    assert (app['slug'], app['html_url'], app['version']) == (
+        'voc-sandbox-agent', 'https://github.com/apps/voc-sandbox-agent', 2)
+    assert env.apps().install(APP_ID, ADMIN)['install_url'].startswith(
+        'https://github.com/apps/voc-sandbox-agent/installations/new?state=')
+    [renamed] = [row for row in env.rows() if row.get('action') == 'github_app_renamed']
+    assert renamed['changes'] == {'slug': 'voc-sandbox-agent', 'was': SLUG}
+    env.apps().check(APP_ID, ADMIN)
+    assert env.apps().list()[0]['version'] == 2, 'the same slug again writes nothing'
+
+
+def test_a_check_keeps_the_slug_when_the_installation_reports_none_or_one_off_its_shape(env: Env) -> None:
+    installed(env, created(env))
+    for reported in ('', 'Not A Slug'):
+        env.tokens.app_slug = reported
+        env.apps().check(APP_ID, ADMIN)
+        assert env.apps().list()[0]['slug'] == SLUG
 
 
 def test_an_app_in_use_is_not_removed_and_an_unused_one_is_with_its_parameters(env: Env) -> None:

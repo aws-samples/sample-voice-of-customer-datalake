@@ -3891,7 +3891,7 @@ function startMockRun(agent) {
 }
 
 // ag_8a2f4b6c1d0e's last run stopped for a person: the personas did not agree
-// on the PR/FAQ within the loop's rounds (decide it on /agents/ag_8a2f4b6c1d0e?tab=runs).
+// on the PR/FAQ within the loop's rounds (decide it on /agents/ag_8a2f4b6c1d0e/runs).
 {
   const agent = mockAgents.get('ag_8a2f4b6c1d0e');
   const workflow = mockWorkflows.get('wf_3b9e1c0d7a42');

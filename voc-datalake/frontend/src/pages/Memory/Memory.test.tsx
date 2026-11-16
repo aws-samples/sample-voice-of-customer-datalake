@@ -17,7 +17,7 @@ vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) =
 const { default: Memory } = await import('./Memory')
 const { setCurrentWorkspace } = await import('../../workspace/currentWorkspace')
 
-/** The page at `entry`, with the router's current `?search` in `data-testid="search"`. */
+/** The page at `entry`, with the router's current path and query in `data-testid="search"`. */
 function renderMemory(entry = '/memory') {
   return renderWithQueryClient(
     <TestRouter initialEntries={[entry]}>
@@ -28,7 +28,8 @@ function renderMemory(entry = '/memory') {
 }
 
 function SearchProbe() {
-  return <output data-testid="search">{useLocation().search}</output>
+  const { pathname, search } = useLocation()
+  return <output data-testid="search">{`${pathname}${search}`}</output>
 }
 
 const memory = (id: string, statement: string, extra: Record<string, unknown> = {}) => ({
@@ -97,25 +98,25 @@ describe('Memory page', () => {
     expect(screen.queryByRole('tab', { name: /needs review/i })).not.toBeInTheDocument()
   })
 
-  it('reflects the open tab in ?tab= and drops it again for Company', async () => {
+  it('puts the open tab in the path', async () => {
     route(listRoutes([]))
     renderMemory()
     await userEvent.click(await screen.findByRole('tab', { name: 'Personal' }))
-    expect(screen.getByTestId('search')).toHaveTextContent('?tab=personal')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/memory\/personal$/)
     await userEvent.click(screen.getByRole('tab', { name: 'Company' }))
-    expect(screen.getByTestId('search')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/memory\/company$/)
   })
 
-  it.each([['personal', 'Personal'], ['imports', /imports/i]] as const)('opens ?tab=%s from a link', async (tab, name) => {
+  it.each([['personal', 'Personal'], ['imports', /imports/i]] as const)('opens /memory/%s from a link', async (tab, name) => {
     route(listRoutes([]))
-    renderMemory(`/memory?tab=${tab}`)
+    renderMemory(`/memory/${tab}`)
     await waitFor(() => expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true'))
   })
 
   it('shows Company for a curator tab a non-curator was linked to', async () => {
     adminFlag.isAdmin = false
     route({ 'GET /memory': () => ({ items: [] }) })
-    renderMemory('/memory?tab=review')
+    renderMemory('/memory/review')
     expect(await screen.findByRole('tab', { name: 'Company' })).toHaveAttribute('aria-selected', 'true')
   })
 

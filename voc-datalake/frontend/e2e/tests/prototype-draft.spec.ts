@@ -64,7 +64,7 @@ async function titles(base: string): Promise<string[]> {
 }
 
 async function openDocument(page: Page, title: string): Promise<Locator> {
-  await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/projects/${PROJECT}/documents`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
   // Below 1280 px the list holds one section: the Prototypes section is opened first.
   await (await revealDocumentRow(page, title)).click()

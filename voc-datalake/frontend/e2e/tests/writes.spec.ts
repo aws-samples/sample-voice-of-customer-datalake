@@ -160,7 +160,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     test.skip(state.projectId === undefined, 'no project')
     const base = `/projects/${state.projectId ?? ''}`
     const personas = async (): Promise<void> => {
-      await page.goto(site(`${base}?tab=personas`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`${base}/personas`), { waitUntil: 'domcontentloaded' })
       await settle(page)
     }
     await soft(page, 'write-project-import-persona-modal', async (r) => {
@@ -172,13 +172,13 @@ test.describe('writes (admin, e2e-owned data only)', () => {
       await openAndClose(page, r, page.getByRole('button', { name: /^Generate Personas$/ }).first(), DIALOG.generatePersonas)
     })
     await soft(page, 'write-project-sharing-modal', async (r) => {
-      await page.goto(site(`${base}?tab=overview`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`${base}/overview`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       await openAndClose(page, r, page.getByRole('button', { name: /^Share/ }).first(), DIALOG.sharing)
     })
     await soft(page, 'write-project-overview-prototype-wizard', async (r) => {
       // The Build Prototype wizard opens from the Overview tab (OverviewTab.prototypeWizard.test.tsx).
-      await page.goto(site(`${base}?tab=overview`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`${base}/overview`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       const build = page.getByRole('button', { name: /Build Prototype/ }).first()
       await build.scrollIntoViewIfNeeded()
@@ -196,7 +196,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     test.skip(state.projectId === undefined, 'no project')
     const health = watchAssistantHealth(page)
     await step(page, 'write-assistant-message', async (r) => {
-      await page.goto(site(`/projects/${state.projectId ?? ''}?tab=overview`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/projects/${state.projectId ?? ''}/overview`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       await page.getByRole('button', { name: 'Ask the assistant' }).first().click()
       const box = page.getByRole('textbox', { name: 'Message the assistant' })
@@ -235,7 +235,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     test.skip(state.projectId === undefined, 'no project')
     const health = watchAssistantHealth(page)
     await step(page, 'write-assistant-reload-mid-stream', async (r) => {
-      await page.goto(site(`/projects/${state.projectId ?? ''}?tab=overview`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/projects/${state.projectId ?? ''}/overview`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       await openFloating(page)
       await newChat(page)

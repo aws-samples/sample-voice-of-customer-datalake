@@ -1,10 +1,10 @@
 /**
- * @fileoverview Redirect for a route that moved:
- * `/settings` → `/admin` (Administration), and `/agents/workflows` →
- * `/agents?tab=workflows` (the workflow library's tab). Old links, bookmarks and the
- * assistant's navigation suggestions still point at the old path, so the query
- * string is preserved (`?tab=categories` keeps deep-linking the tab). A query on
- * `to` is the target's own: it wins over the same parameter of the old URL.
+ * @fileoverview Redirect for a route that moved: `/settings` → `/admin`
+ * (Administration). The assistant's navigation suggestions still name the old
+ * path (lambda/stream/src/assistant/tools/server/core.ts), so it stays an alias,
+ * its query string preserved. A query on `to` is the target's own: it wins over
+ * the same parameter of the old URL. (No `?tab=` names a place any longer: a tab
+ * is a path, `/admin/<tab>/<section>`.)
  *
  * Its own file so `routes.tsx` defines no component (fast refresh), like
  * `FeedbackRedirect`.

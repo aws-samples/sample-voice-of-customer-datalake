@@ -22,7 +22,7 @@ const NOT_GROUPED: Readonly<Record<string, string>> = {
   'tests/workspaces.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',
   'tests/workspace-admin.spec.ts': 'dev mock only (creates a workspace and changes memberships, which a deployment cannot undo yet)',
   'tests/cross-workspace.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',
-  'tests/workspace-lifecycle.spec.ts': 'opt-in, runs alone (E2E_WORKSPACE_LIFECYCLE=1 --project=admin): its workspace sends the admin test user\'s pages outside /w/ into it until the delete job removes it',
+  'tests/workspace-lifecycle.spec.ts': 'opt-in, runs alone (E2E_WORKSPACE_LIFECYCLE=1 --project=admin): its workspace sends the admin test user\'s pages outside /workspace/ into it until the delete job removes it',
   'tests/document-canvas.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
   'tests/document-canvas-a11y.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
   'tests/document-sections.spec.ts': 'dev mock only (the counts are the mock project\'s)',

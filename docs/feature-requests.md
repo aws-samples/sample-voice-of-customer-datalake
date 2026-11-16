@@ -9,10 +9,15 @@ ready to be emailed for feedback.
 
 Pages: **Feedback boards** in the sidebar (Listen section, `/feature-requests`) lists the boards as cards for app
 users; `/feature-requests/{slug}` is one board. People who only use boards sign in at `/board` (the boards they
-may use; one board opens directly) and `/board/{slug}`. An open request is `?request=<id>`; the list's search,
-status filter and sort are `?q=`, `?status=` and `?sort=`. Admins create and configure boards in
-**Administration → Privacy & access → Boards** (`/admin?tab=access&section=boards`), which also holds the company
-domains.
+may use; one board opens directly) and `/board/{slug}`. An open request is a path, `/feature-requests/{slug}/{id}`
+(`/board/{slug}/{id}`); a request known only by its id (a document's `[FR:<id>]` citation, Insights) is
+`/feature-requests/requests/{id}`, which opens it on its board; the Insights tab is `/feature-requests/insights`
+(`insights` and `requests` are reserved slugs). The list's search, status filter and sort stay in the query, `?q=`,
+`?status=` and `?sort=`, as do Insights' `?board=&days=`. No query link of before (`?request=<id>`, `?tab=insights`) is redirected (7.49.00, a pre-release change;
+[Addresses](document-canvas.md#addresses)). A signed-out visitor of a board signs in at
+`/board/login/{slug}[/{id}]` and lands back on it. Admins create and configure boards in **Administration → Privacy &
+access → Boards** (`/admin/access/boards`, one board's editor `/admin/access/boards/{board_id}`), which also holds the
+company domains.
 
 ## Using a board
 

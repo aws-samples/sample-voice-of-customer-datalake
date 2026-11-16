@@ -1,5 +1,5 @@
 /**
- * @fileoverview A project page's address, as paths (inside a workspace, under its `/w/<slug>` base):
+ * @fileoverview A project page's address, as paths (inside a workspace, under its `/workspace/<slug>` base):
  *
  * - a tab: `/projects/<id>/overview` (`/projects/<id>` is the Overview too), `/personas`, `/product`, `/documents`,
  *   `/decisions`, `/participants`;
@@ -8,8 +8,8 @@
  *   the page is never `/v/`);
  * - full screen: `…/documents/<docId>/focus`, `…/documents/<docId>/v/<n>/focus`.
  *
- * Old links put these in the query (`?tab=documents&doc=<docId>&view=focus`): `legacyPlace` reads them, and the page
- * replaces such an address by its path, every other query parameter (filters, a prefilled decision) kept.
+ * The query holds none of these (7.49.00: no query link of before is read, a pre-release change); it keeps its own
+ * parameters (filters, a prefilled decision, an open review) across every move.
  *
  * @module pages/ProjectDetail/projectPaths
  */
@@ -85,31 +85,6 @@ export function parseProjectRest(rest: string): { readonly place: ProjectPlace; 
   if (document !== null) return { place: { tab, ...document }, canonical: true }
   const [documentId] = more
   return { place: documentId === undefined ? tabPlace(tab) : documentPlace(documentId), canonical: false }
-}
-
-/** The query parameters old links carried the place in. */
-const LEGACY_PARAMS = ['tab', 'doc', 'view'] as const
-
-/**
- * An old link's place (`?tab=`, `?doc=`, `?view=focus` on the project's own path) and the query it keeps (every
- * other parameter), or null when the address carries none of them. A `?doc=` opens the Documents tab unless `?tab=`
- * names another; `?view=focus` counts with a document only. On a path that names a place already, the old
- * parameters are only dropped.
- */
-export function legacyPlace(rest: string, search: string): { readonly place: ProjectPlace; readonly search: string } | null {
-  const params = new URLSearchParams(search)
-  if (!LEGACY_PARAMS.some((name) => params.has(name))) return null
-  const tabParam = params.get('tab')
-  const docParam = params.get('doc') ?? ''
-  const focus = params.get('view') === FOCUS_SEGMENT
-  LEGACY_PARAMS.forEach((name) => { params.delete(name) })
-  const kept = params.toString()
-  const keptSearch = kept === '' ? '' : `?${kept}`
-  const fromPath = parseProjectRest(rest).place
-  if (rest.split('/').some((segment) => segment !== '')) return { place: fromPath, search: keptSearch }
-  const tab = tabParam === null && docParam !== '' ? 'documents' : parseTab(tabParam)
-  if (tab !== 'documents' || docParam === '') return { place: tabPlace(tab), search: keptSearch }
-  return { place: { ...documentPlace(docParam), focus }, search: keptSearch }
 }
 
 /** The place without full screen and without an older version: the same document's page as it is edited. */

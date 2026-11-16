@@ -154,25 +154,31 @@ describe('DataExplorer - the tab is in the URL', () => {
 
   function LocationProbe() {
     const location = useLocation()
-    return <output data-testid="search">{location.search}</output>
+    return <output data-testid="search">{`${location.pathname}${location.search}`}</output>
   }
 
-  it('puts the processed tab in ?view=processed (the header shows the date picker only there) and back', async () => {
+  it('puts the processed tab in its path, /data-explorer/processed, and back', async () => {
     const user = userEvent.setup()
-    renderDataExplorer(<><DataExplorer /><LocationProbe /></>)
+    renderWithQueryClient(<MemoryRouter initialEntries={['/data-explorer']}><DataExplorer /><LocationProbe /></MemoryRouter>)
 
     await user.click(screen.getByRole('tab', { name: /processed feedback/i }))
-    expect(screen.getByTestId('search')).toHaveTextContent('?view=processed')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/data-explorer\/processed$/)
     expect(screen.getByTestId('processed-feedback-view')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /s3 raw data/i }))
-    expect(screen.getByTestId('search')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/data-explorer\/raw$/)
   })
 
-  it('opens on the processed tab from a link', () => {
-    renderWithQueryClient(<MemoryRouter initialEntries={['/data-explorer?view=processed']}><DataExplorer /></MemoryRouter>)
+  it('opens on the processed tab from its path', () => {
+    renderWithQueryClient(<MemoryRouter initialEntries={['/data-explorer/processed']}><DataExplorer /></MemoryRouter>)
 
     expect(screen.getByTestId('processed-feedback-view')).toBeInTheDocument()
+  })
+
+  it('reads no tab from the query (no `?view=processed` link of before is redirected)', () => {
+    renderWithQueryClient(<MemoryRouter initialEntries={['/data-explorer?view=processed']}><DataExplorer /><LocationProbe /></MemoryRouter>)
+
+    expect(screen.queryByTestId('processed-feedback-view')).not.toBeInTheDocument()
   })
 
   it('shows the data-quality section on the processed tab only (it follows the time range)', async () => {

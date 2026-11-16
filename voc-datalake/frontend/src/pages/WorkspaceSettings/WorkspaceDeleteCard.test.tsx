@@ -126,7 +126,7 @@ describe('WorkspaceDeleteCard', () => {
   })
 
   it('sends the slug and the reason, then says the workspace is gone for everyone and its data goes in the background', async () => {
-    stubLocationAssign('/w/acme/workspace-settings')
+    stubLocationAssign('/workspace/acme/workspace-settings')
     const { requested } = await deleteAcme()
     const done = await screen.findByRole('dialog', { name: 'Acme Outfitters is being deleted' })
     expect(requested).toHaveBeenCalledExactlyOnceWith({ confirm_slug: 'acme', legal_basis: REASON })
@@ -136,7 +136,7 @@ describe('WorkspaceDeleteCard', () => {
   })
 
   it("forgets the workspace's browser records at once, and leaves with a full page load, refused in this tab", async () => {
-    const assign = stubLocationAssign('/w/acme/workspace-settings')
+    const assign = stubLocationAssign('/workspace/acme/workspace-settings')
     saved.set('voc-config:w/acme', '{}')
     saved.set('voc-config:w/juniper', '{}')
     await deleteAcme()
@@ -151,7 +151,7 @@ describe('WorkspaceDeleteCard', () => {
   })
 
   it('says the background delete without a time when the answer does not give one', async () => {
-    stubLocationAssign('/w/acme/workspace-settings')
+    stubLocationAssign('/workspace/acme/workspace-settings')
     renderCard({ [`POST ${DELETE}`]: () => ({ delete: {} }) })
     const fields = await openDialog()
     await fill(fields)
@@ -170,7 +170,7 @@ describe('WorkspaceDeleteCard', () => {
     [403, 'Workspace admin access required', "Only the workspace's admins can do that."],
     [400, 'legal_basis must be at most 300 characters', 'That did not work: legal_basis must be at most 300 characters'],
   ])('says a %i refusal in words and keeps the dialog open', async (status, reason, shown) => {
-    const assign = stubLocationAssign('/w/acme/workspace-settings')
+    const assign = stubLocationAssign('/workspace/acme/workspace-settings')
     renderCard({ [`POST ${DELETE}`]: () => { throw new ApiError(status, reason) } })
     const fields = await openDialog()
     await fill(fields)

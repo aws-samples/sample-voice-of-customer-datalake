@@ -1,7 +1,7 @@
 /**
  * @fileoverview The workspace the app is in (docs/multi-workspace.md, Request flow).
  *
- * The workspace gate (`WorkspaceGate.tsx`) sets it once the address's `/w/{slug}` names one of the caller's
+ * The workspace gate (`WorkspaceGate.tsx`) sets it once the address's `/workspace/{slug}` names one of the caller's
  * workspaces; it stays null for a deployment or a person with none, and the app then works as it did before
  * workspaces. While it is set, every API call to a trusted origin names it in `X-Workspace-Id`
  * (`getAuthHeaders` in api/baseUrl.ts, and the feedback boards' own transport): the same origin rule as the

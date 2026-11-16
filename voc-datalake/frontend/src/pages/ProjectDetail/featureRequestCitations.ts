@@ -6,13 +6,14 @@
  *   (≤ 200). Read leniently at runtime (the project schemas keep unknown keys): absent or malformed
  *   reads as none.
  * - `linkFeatureRequestCitations` turns the model's `[FR:<request_id>]` citations in markdown into
- *   links to the request on its board (`/feature-requests?request=<id>`, which opens it there). The
+ *   links to the request on its board (`/feature-requests/requests/<id>`, which opens it there). The
  *   rendered text stays `[FR:<id>]`, so a comment anchored on it still finds it.
  *
  * @module pages/ProjectDetail/featureRequestCitations
  */
 import { z } from 'zod'
 import { nonBlankStringList } from '../../api/lenientFields'
+import { requestLookupPath } from '../FeatureRequests/boardPaths'
 
 /** The most request ids an artefact stores (the backend's cap). */
 const MAX_FEATURE_REQUEST_IDS = 200
@@ -37,7 +38,7 @@ export function featureRequestIdsOf(artefact: unknown): string[] {
 
 /** The in-app link that opens one request on its board. */
 export function featureRequestHref(requestId: string): string {
-  return `/feature-requests?${new URLSearchParams({ request: requestId }).toString()}`
+  return requestLookupPath(requestId)
 }
 
 /** `markdown` with every `[FR:<id>]` citation linked to its request (the visible text unchanged). */

@@ -72,7 +72,7 @@ describe('RadarSourcePicker edge cases', () => {
     await user.click(box())
     expect(await screen.findByText('No Radar brand yet.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Add a brand in Administration → Sources → Radar' }))
-      .toHaveAttribute('href', '/admin?tab=sources&section=radar')
+      .toHaveAttribute('href', '/admin/sources/radar')
   })
 
   it('keeps a stored brand that is no longer in the list, marked as such', async () => {

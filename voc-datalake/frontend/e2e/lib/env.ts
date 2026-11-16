@@ -41,7 +41,7 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'decisions', 'persona-avatars', 'surfaces',
   // Issue #411: CSV dataset re-upload updates (writes feedback, so mock only).
   'csv-dataset-update',
-  // 6.12.00: the workspace picker, /w/{slug} and X-Workspace-Id (the mock's two workspaces; mock only).
+  // 6.12.00: the workspace picker, /workspace/{slug} and X-Workspace-Id (the mock's two workspaces; mock only).
   'workspaces',
   // 6.13.00: the platform console and the members page (creates workspaces and changes memberships; mock only).
   'workspace-admin',

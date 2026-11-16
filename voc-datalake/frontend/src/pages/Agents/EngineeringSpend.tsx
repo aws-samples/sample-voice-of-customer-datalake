@@ -2,7 +2,7 @@
  * @fileoverview Agents → Spend (admins, when the engineering agents are on): what the engineering agents spent in a
  * month, from the spend ledger (api/engineeringSpendApi.ts): the month's cost, tokens and MicroVM time, then its
  * groups by workflow, repository, run, agent, model or day, biggest first. The month, the grouping and a workflow
- * filter are view options in the address (`?tab=spend&month=&by=&workflow=`); a workflow's row narrows the view to
+ * filter are view options in the address (`/agents/spend?month=&by=&workflow=`); a workflow's row narrows the view to
  * its runs, and a run's (or an agent's) row opens its run monitor.
  *
  * @module pages/Agents/EngineeringSpend

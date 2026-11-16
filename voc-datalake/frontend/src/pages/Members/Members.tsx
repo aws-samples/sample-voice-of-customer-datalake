@@ -1,5 +1,5 @@
 /**
- * @fileoverview Members of the current workspace, at `/members` inside it (`/w/{slug}/members`; docs/multi-workspace.md
+ * @fileoverview Members of the current workspace, at `/members` inside it (`/workspace/{slug}/members`; docs/multi-workspace.md
  * → Roles, Invites), opened from the header's workspace menu.
  *
  * - Every member reads the list (name or email, role, joined), a page at a time.

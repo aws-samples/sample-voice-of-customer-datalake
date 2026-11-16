@@ -44,7 +44,7 @@ async function openNewRequest() {
 async function openPromotePanel() {
   const user = userEvent.setup()
   const board = fakeBoard(ADMIN, [SSO], { fr_1: SSO_SUPPORTS })
-  renderBoard(board.api, '/feature-requests?request=fr_1')
+  renderBoard(board.api, '/feature-requests/sales-feature-requests/fr_1')
   const panel = within(await screen.findByRole('region', { name: 'Promote to project' }))
   return { user, board, panel }
 }
@@ -100,7 +100,7 @@ describe('the list controls in the URL', () => {
     await user.selectOptions(screen.getByLabelText('Sort by'), 'at_risk')
     await user.selectOptions(screen.getByLabelText('Status'), 'under_review')
     await user.type(screen.getByLabelText('Search'), 'sign')
-    expect(new URLSearchParams(screen.getByTestId('search').textContent).toString()).toBe('sort=at_risk&status=under_review&q=sign')
+    expect(screen.getByTestId('search').textContent).toBe('/feature-requests/sales-feature-requests?sort=at_risk&status=under_review&q=sign')
   })
 
   it('opens a deep link with its filters applied, and drops a default from the URL', async () => {
@@ -141,7 +141,7 @@ describe('a new request', () => {
       title: 'Audit log export', description: 'Download the audit log as CSV.', name: 'Rui Costa', board: 'brd_sales',
       fields: { customer: 'Example Air', impact: 'committed', amount_usd: 12500 },
     }))
-    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_new'))
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests\/sales-feature-requests\/fr_new$/))
   })
 
   it('groups the typed amount as the locale writes it', async () => {
@@ -163,7 +163,7 @@ describe('a new request', () => {
 
 describe('the request detail', () => {
   it('opens from the ?request deep link with every support row', async () => {
-    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests?request=fr_1')
+    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests/fr_1')
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     expect(await within(dialog).findByText('Acme')).toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: 'rui.costa@example.com' })).toHaveAttribute('href', 'mailto:rui.costa@example.com')
@@ -171,7 +171,7 @@ describe('the request detail', () => {
   })
 
   it('keeps a space between the reporter\'s email and the Reporter badge', async () => {
-    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests?request=fr_1')
+    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests/fr_1')
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     const badge = await within(dialog).findByText('Reporter')
     expect(badge.parentElement?.textContent.endsWith('.com Reporter')).toBe(true)
@@ -179,10 +179,10 @@ describe('the request detail', () => {
 
   it('copies the in-app share link of the request on its board', async () => {
     const user = userEvent.setup()
-    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests?request=fr_1')
+    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests/fr_1')
     await user.click(await screen.findByRole('button', { name: 'Copy link' }))
     // userEvent installs its own clipboard; read back what was written.
-    await expect(navigator.clipboard.readText()).resolves.toBe(`${window.location.origin}/feature-requests/sales-feature-requests?request=fr_1`)
+    await expect(navigator.clipboard.readText()).resolves.toBe(`${window.location.origin}/feature-requests/sales-feature-requests/fr_1`)
     expect(screen.getByRole('button', { name: 'Link copied' })).toBeInTheDocument()
   })
 
@@ -190,7 +190,7 @@ describe('the request detail', () => {
     const user = userEvent.setup()
     // Only the reporter supports it yet: Rui may add his +1.
     const board = fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS.slice(0, 1) })
-    renderBoard(board.api, '/feature-requests?request=fr_1')
+    renderBoard(board.api, '/feature-requests/sales-feature-requests/fr_1')
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     await user.click(await within(dialog).findByRole('button', { name: '+1 with my customer' }))
     const form = within(dialog).getByRole('form', { name: '+1 with my customer' })
@@ -208,7 +208,7 @@ describe('the request detail', () => {
     ['the reporter (their +1 is filed with the request)', { ...BOARD_USER, email: 'Dana.Lee@example.com' }, 'Acme'],
   ] as const)('offers %s "Edit my +1" instead of a second +1', async (_who, viewer, customer) => {
     const user = userEvent.setup()
-    renderBoard(fakeBoard(viewer, [SSO], { fr_1: SSO_SUPPORTS }).api, '/x?request=fr_1', viewer.pool)
+    renderBoard(fakeBoard(viewer, [SSO], { fr_1: SSO_SUPPORTS }).api, `${viewer.pool === 'app' ? '/feature-requests' : '/board'}/sales-feature-requests/fr_1`, viewer.pool)
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     expect(await within(dialog).findByText('You support this request.')).toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: '+1 with my customer' })).not.toBeInTheDocument()
@@ -218,7 +218,7 @@ describe('the request detail', () => {
   })
 
   it('lets a supporter change only their own support', async () => {
-    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests?request=fr_1')
+    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests/fr_1')
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     expect(await within(dialog).findByRole('button', { name: 'Edit the support for Example Air' })).toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Edit the support for Acme' })).not.toBeInTheDocument()
@@ -228,7 +228,7 @@ describe('the request detail', () => {
     ['an app user who is not an admin', APP_USER, 'app'],
     ['a board user', BOARD_USER, 'board'],
   ] as const)('hides the admin controls from %s', async (_who, viewer, session) => {
-    renderBoard(fakeBoard(viewer, [SSO], { fr_1: SSO_SUPPORTS }).api, '/x?request=fr_1', session)
+    renderBoard(fakeBoard(viewer, [SSO], { fr_1: SSO_SUPPORTS }).api, `${session === 'app' ? '/feature-requests' : '/board'}/sales-feature-requests/fr_1`, session)
     const dialog = await screen.findByRole('dialog', { name: 'Single sign-on' })
     await within(dialog).findByText('Acme')
     expect(within(dialog).queryByRole('region', { name: 'Admin' })).not.toBeInTheDocument()
@@ -239,7 +239,7 @@ describe('the request detail', () => {
   it('lets an admin change the status', async () => {
     const user = userEvent.setup()
     const board = fakeBoard(ADMIN, [SSO], { fr_1: SSO_SUPPORTS })
-    renderBoard(board.api, '/feature-requests?request=fr_1')
+    renderBoard(board.api, '/feature-requests/sales-feature-requests/fr_1')
     const admin = await screen.findByRole('region', { name: 'Admin' })
     await user.selectOptions(within(admin).getByLabelText('Status'), 'shipped')
     await waitFor(() => expect(board.api.setStatus).toHaveBeenCalledWith('fr_1', 'shipped'))
@@ -248,7 +248,7 @@ describe('the request detail', () => {
   it('closes a deleted request, clears its link and never asks for it again', async () => {
     const user = userEvent.setup()
     const board = fakeBoard(ADMIN, [SSO, fixtureRequest('fr_2')], { fr_1: SSO_SUPPORTS })
-    renderBoard(board.api, '/feature-requests?request=fr_1')
+    renderBoard(board.api, '/feature-requests/sales-feature-requests/fr_1')
     const admin = await screen.findByRole('region', { name: 'Admin' })
     await user.click(within(admin).getByRole('button', { name: 'Delete request' }))
     const reads = vi.mocked(board.api.getRequest).mock.calls.length
@@ -257,9 +257,9 @@ describe('the request detail', () => {
 
     await waitFor(() => expect(board.api.deleteRequest).toHaveBeenCalledWith('fr_1'))
     await waitFor(() => expect(vi.mocked(board.api.listRequests).mock.calls.length).toBeGreaterThan(lists))
-    // The dialog is driven by `?request=`: an empty search means it closed (awaited: under load the URL
+    // The dialog is the request's path: the board's own path means it closed (awaited: under load the URL
     // commit can render after the list refetch has started).
-    await waitFor(() => expect(screen.getByTestId('search')).toBeEmptyDOMElement())
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests\/sales-feature-requests$/))
     expect(vi.mocked(board.api.getRequest).mock.calls.slice(reads)).toStrictEqual([])
   })
 })
@@ -285,5 +285,21 @@ describe('promoting a request to a project', () => {
 
     await waitFor(() => expect(board.api.promote).toHaveBeenCalledWith('fr_1', 'proj_new'))
     expect(projectsApi.createProject).toHaveBeenCalledWith({ name: 'Single sign-on' })
+  })
+})
+
+describe('the open request is a path', () => {
+  it('opens a request from its path, keeps the filters, and closing it returns to the board\'s path', async () => {
+    const user = userEvent.setup()
+    renderBoard(fakeBoard(APP_USER, [SSO, PDF], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests/fr_1?q=sign')
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/feature-requests\/sales-feature-requests\?q=sign$/))
+  })
+
+  it('reads no request from the query (no `?request=` link of before is redirected)', async () => {
+    renderBoard(fakeBoard(APP_USER, [SSO], { fr_1: SSO_SUPPORTS }).api, '/feature-requests/sales-feature-requests?request=fr_1')
+    expect(await screen.findByRole('button', { name: 'Single sign-on' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

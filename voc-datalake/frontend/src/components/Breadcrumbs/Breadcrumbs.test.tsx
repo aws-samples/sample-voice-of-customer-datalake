@@ -428,7 +428,7 @@ describe('a library workflow (/agents/workflows/:workflowId)', () => {
       client.setQueryData(workflowsKeys.detail('wf_1'), { workflow: { name: 'Research flow' }, revisions: [] })
     })
     const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
-    expect(within(nav).getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/agents?tab=workflows')
+    expect(within(nav).getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/agents/workflows')
     expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Research flow')
     expect(within(nav).queryByText('Agent')).not.toBeInTheDocument()
   })

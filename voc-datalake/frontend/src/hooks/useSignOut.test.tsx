@@ -20,7 +20,7 @@ import { useSignOut } from './useSignOut'
 
 /** Sign out from a page of acme. */
 function signOutInAcme(): void {
-  stubLocationAssign('/w/acme/account')
+  stubLocationAssign('/workspace/acme/account')
   const client = createTestQueryClient()
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
   const { result } = renderHook(() => useSignOut(), { wrapper })
@@ -34,7 +34,7 @@ describe('useSignOut', () => {
     setCurrentWorkspace(ACME)
     // What each step had cleared when the page load started.
     const atLoad: unknown[] = []
-    stubLocationAssign('/w/acme/account').mockImplementation((url) => {
+    stubLocationAssign('/workspace/acme/account').mockImplementation((url) => {
       atLoad.push(url, client.getQueryData(['my-workspaces']), workspaceHeader('/api/feedback'))
     })
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>

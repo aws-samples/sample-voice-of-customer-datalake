@@ -5,7 +5,7 @@
  * retires the workspaces and review pages a run recorded in its ledger.
  *
  * Every call that acts in a workspace sends its `X-Workspace-Id` (`apiCall`'s `workspace` option), as the SPA does
- * inside `/w/{slug}/`.
+ * inside `/workspace/{slug}/`.
  */
 import { apiCall, listOf, stringField } from './api'
 import { siteUrl } from './env'

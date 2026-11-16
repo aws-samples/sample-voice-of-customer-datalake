@@ -1,7 +1,7 @@
 """A workspace's rename: ``PUT /me/workspaces/current`` ``{name}`` (docs/multi-workspace.md, "Control plane"; 7.40.00).
 
 For the workspace's admins (a member admin, or a platform admin who entered: live-checked and audited), the role
-resolved from the table, never the warm cache. The slug, and so every ``/w/{slug}`` address, stays the same.
+resolved from the table, never the warm cache. The slug, and so every ``/workspace/{slug}`` address, stays the same.
 
 The name lives on three kinds of row in voc-workspaces:
 

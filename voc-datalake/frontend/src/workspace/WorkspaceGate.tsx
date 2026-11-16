@@ -6,9 +6,10 @@
  * first call of every page already carries `X-Workspace-Id`; then `GET /me/workspaces/current` confirms it and
  * gives the role the server applies there (a removed membership answers 404: the not-found page). A platform
  * admin entering, from the platform console, a workspace they are not a member of (`platformEntry.ts`) sees
- * nothing of it until that answer names the workspace; a 404 is the plain not-found page. On an
- * address without `/w/`, a caller with no workspace, or a list that cannot be read, gets the app as it was
- * before workspaces: phase 1 does not key the data by workspace yet, so nothing must stop on it. On a `/w/…`
+ * nothing of it until that answer names the workspace; a 404 is the plain not-found page. A platform admin's direct
+ * link (`/workspace/<slug>/…` pasted, not the console's Enter) takes the same entry (`platformDirectEntry.ts`). On an
+ * address without `/workspace/`, a caller with no workspace, or a list that cannot be read, gets the app as it was
+ * before workspaces: phase 1 does not key the data by workspace yet, so nothing must stop on it. On a `/workspace/…`
  * address an unreadable list shows an error page with Retry and Sign out instead: that address never opens the
  * app outside its workspace. The public routes (`/login`, `/vote`, `/board`,
  * `/review`, `/unsubscribe`) are outside `ProtectedRoute` and never pass through here.
@@ -27,6 +28,10 @@ import { gateDecision } from './gateDecision'
 import { forgetPlatformEntry, platformEntryFor } from './platformEntry'
 import { refusedWorkspaceIds, rememberRefused, withoutRefused } from './refusedWorkspaces'
 import { rememberWorkspace, useMyWorkspaces, useServerWorkspace } from './useMyWorkspaces'
+import { returnWorkspace } from './returnWorkspace'
+import { usePlatformDirectEntry } from './platformDirectEntry'
+import type { DirectEntry } from './platformDirectEntry'
+import type { PlatformEntry } from './platformEntry'
 import { PAGE_WORKSPACE } from './workspacePath'
 import WorkspaceChoice, { WorkspaceUnavailable } from './WorkspaceChoice'
 import type { CurrentWorkspace } from './currentWorkspace'
@@ -44,10 +49,22 @@ interface GateState {
   readonly retrying: boolean
 }
 
+/** The console's entry for this page's slug: recorded in the tab, or just looked up for a direct link. */
+function entryOf(direct: DirectEntry): PlatformEntry | null {
+  const recorded = PAGE_WORKSPACE.kind === 'slug' ? platformEntryFor(PAGE_WORKSPACE.slug) : null
+  return recorded ?? (direct.kind === 'done' ? direct.entry : null)
+}
+
+/** GitHub's return to the App's pages outside a workspace goes back into the flow's workspace (returnWorkspace.ts). */
+function returnTo(pathname: string, workspaces: readonly CurrentWorkspace[] | null): string | null {
+  return PAGE_WORKSPACE.kind === 'none' && workspaces !== null ? returnWorkspace(pathname, workspaces) : null
+}
+
 /**
  * The gate's decision once the list has answered. The list counts as unreadable only when there is no data at
  * all: once read, a failed refetch keeps the last answer (TanStack keeps `data` and sets `isError`), so a
- * workspace already entered stays entered.
+ * workspace already entered stays entered. A platform admin's direct-link lookup that failed (not a 403) is the
+ * "could not load" page, its Try again asking again.
  */
 function useGateDecision(): GateState {
   const { pathname, search, hash } = useLocation()
@@ -58,11 +75,18 @@ function useGateDecision(): GateState {
     if (list.isError) console.warn('Could not read your workspaces', list.error)
   }, [list.isError, list.error])
 
-  if (list.isPending) return { decision: null, workspaces: [], entered: null, retry, retrying: list.isFetching }
   // A workspace the server refused in this tab is no longer offered, entered or redirected into.
-  const workspaces = list.data === undefined ? null : withoutRefused(list.data)
-  const entry = PAGE_WORKSPACE.kind === 'slug' ? platformEntryFor(PAGE_WORKSPACE.slug) : null
-  const decision = gateDecision(PAGE_WORKSPACE, workspaces, `${pathname}${search}${hash}`, entry)
+  const workspaces = list.isPending || list.data === undefined ? null : withoutRefused(list.data)
+  // A platform admin's direct link to a workspace outside their list: the console's entry, looked up first.
+  const direct = usePlatformDirectEntry(workspaces)
+  useEffect(() => {
+    if (direct.kind === 'failed') console.warn('Could not look the workspace up in the platform console')
+  }, [direct.kind])
+  if (list.isPending || direct.kind === 'looking') return { decision: null, workspaces: [], entered: null, retry, retrying: list.isFetching }
+  if (direct.kind === 'failed') {
+    return { decision: { kind: 'unavailable' }, workspaces: workspaces ?? [], entered: null, retry: direct.retry, retrying: direct.retrying }
+  }
+  const decision = gateDecision(PAGE_WORKSPACE, workspaces, `${pathname}${search}${hash}`, entryOf(direct), returnTo(pathname, workspaces))
   const entered = decision.kind === 'enter' || decision.kind === 'enter-unlisted' ? decision.workspace : null
   return { decision, workspaces: workspaces ?? [], entered, retry, retrying: list.isFetching }
 }
@@ -170,12 +194,18 @@ function useForgetRefused(refusedId: string | null, droppedSlug: string | null):
   }, [droppedSlug])
 }
 
-/** A one-workspace caller without a slug moves into it with a full page load, so the router's basename applies. */
+/**
+ * A one-workspace caller without a slug moves into it with a full page load, so the router's basename applies. An
+ * external return (GitHub's) moves in place of its address: Back never lands on it again, with its query.
+ */
 function useRedirect(decision: GateDecision | null): void {
   const to = decision?.kind === 'redirect' ? decision.to : null
+  const replace = decision?.kind === 'redirect' && decision.replace === true
   useEffect(() => {
-    if (to !== null) window.location.assign(to)
-  }, [to])
+    if (to === null) return
+    if (replace) window.location.replace(to)
+    else window.location.assign(to)
+  }, [to, replace])
 }
 
 /**

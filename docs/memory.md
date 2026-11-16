@@ -26,7 +26,8 @@ connection, each edit is a new version, and a connection's administrators approv
 
 ## Using the Memory page
 
-Open **Memory** in the sidebar (`/memory`). It has these tabs (`?tab=` deep-links one):
+Open **Memory** in the sidebar (`/memory`). It has these tabs, each a path (`/memory/company`, `/memory/personal`,
+`/memory/review`, `/memory/imports`):
 
 | Tab | Who | What |
 |---|---|---|

@@ -27,7 +27,7 @@ vi.mock('../../services/auth', async (importOriginal) => ({
 // Mock react-router-dom
 const mockNavigate = vi.fn()
 // Mutable so a test can arrive here the way an expired session does.
-const mockLocation: { value: { state?: unknown; search: string } } = {
+const mockLocation: { value: { state?: unknown; search: string; pathname?: string } } = {
   value: { state: { from: '/dashboard' }, search: '' },
 }
 vi.mock('react-router-dom', async () => {
@@ -105,7 +105,7 @@ describe('Login', () => {
    */
   describe('expired-session notice', () => {
     it('explains itself when redirected by an expired session', () => {
-      mockLocation.value = { search: '?expired=1' }
+      mockLocation.value = { pathname: '/login/expired', search: '' }
 
       renderLogin()
 
@@ -119,7 +119,7 @@ describe('Login', () => {
     })
 
     it('yields to a real submit error', async () => {
-      mockLocation.value = { search: '?expired=1' }
+      mockLocation.value = { pathname: '/login/expired', search: '' }
       mockSignIn.mockRejectedValue(new Error('Incorrect username or password'))
 
       await renderAndSignIn('wrong')

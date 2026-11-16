@@ -118,11 +118,11 @@ describe('DocumentsTab', () => {
     expect(onDeleteDoc).toHaveBeenCalledTimes(1)
   })
 
-  // The focus view (`?view=focus`): the page keeps the window; "New document" and the list step aside, and come back.
+  // The focus view (`/focus`): the page keeps the window; "New document" and the list step aside, and come back.
   it('hides New Document and the list while the page is in focus view, and shows them again on leaving', async () => {
     const user = userEvent.setup()
     render(
-      <MemoryRouter initialEntries={['/projects/proj-1?tab=documents&doc=doc-1&view=focus']}>
+      <MemoryRouter initialEntries={['/projects/proj-1/documents/doc-1/focus']}>
         <DocumentsTab {...defaultProps} documents={[mockDoc]} selectedDoc={mockDoc} />
       </MemoryRouter>,
     )

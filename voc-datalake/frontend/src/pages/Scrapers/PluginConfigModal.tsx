@@ -37,6 +37,7 @@ import { BEDROCK_WEB_SEARCH, reviewMethod } from './webReviewMethod'
 import { useRadarBrandLabel } from './useRadarBrands'
 import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
 import { isPluginNotEnabled } from '../../workspace/workspaceRefusals'
+import { adminPath } from '../Settings/adminPaths'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -225,7 +226,7 @@ function SettingsPointer({ plugin }: Readonly<{ plugin: PluginManifest }>) {
   return (
     <div className="p-3 rounded-lg border border-border bg-bg-accent space-y-2">
       <p className="text-sm text-text">{t(copy, { name, where })}</p>
-      <Link to="/admin?tab=sources&section=plugins" className="btn btn-primary btn-sm">{t('pluginConfig.openDataSourceSettings')}</Link>
+      <Link to={adminPath({ tab: 'sources', section: 'plugins' })} className="btn btn-primary btn-sm">{t('pluginConfig.openDataSourceSettings')}</Link>
     </div>
   )
 }

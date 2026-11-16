@@ -1,5 +1,5 @@
 /**
- * @fileoverview The current workspace's settings, at `/workspace-settings` inside it (`/w/{slug}/workspace-settings`;
+ * @fileoverview The current workspace's settings, at `/workspace-settings` inside it (`/workspace/{slug}/workspace-settings`;
  * docs/multi-workspace.md → Per-workspace configuration), opened from the header's workspace menu beside Members.
  *
  * - The workspace's brand (`GET` and `PUT /settings/brand` with the workspace's `X-Workspace-Id`): every member reads

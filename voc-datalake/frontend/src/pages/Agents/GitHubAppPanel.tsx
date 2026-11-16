@@ -22,6 +22,8 @@ import { ORGANIZATION_LOGIN, githubAppsApi, githubAppsKeys } from '../../api/git
 import { formatDateTime } from '../../utils/dateUtils'
 import { ConnectionChangeConfirm } from './ConnectionModals'
 import { useConnectionError } from './connectionText'
+import { leavingForGitHub } from './githubReturn'
+import { PAGE_WORKSPACE } from '../../workspace/workspacePath'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { GitHubApp, GitHubAppList, ManifestForm, ManifestRequest } from '../../api/githubAppsApi'
 
@@ -34,6 +36,7 @@ function ManifestPost({ form }: Readonly<{ form: ManifestForm }>) {
   useEffect(() => {
     if (posted.current || ref.current === null) return
     posted.current = true
+    leavingForGitHub()
     ref.current.submit()
   }, [form])
   return (
@@ -57,7 +60,8 @@ function CreateApp({ full }: Readonly<{ full: boolean }>) {
       return
     }
     setOrgInvalid(false)
-    manifest.mutate(account === 'user' ? { account } : { account, org: org.trim() })
+    const workspace = PAGE_WORKSPACE.kind === 'slug' ? { workspace: PAGE_WORKSPACE.slug } : {}
+    manifest.mutate(account === 'user' ? { account, ...workspace } : { account, org: org.trim(), ...workspace })
   }
   const busy = manifest.isPending || manifest.isSuccess
   return (
@@ -146,9 +150,13 @@ function AppRow({ app, onNotice }: Readonly<{ app: GitHubApp; onNotice: (text: s
   const [removing, setRemoving] = useState(false)
   const install = useMutation({
     mutationFn: () => githubAppsApi.install(app.app_id),
-    onSuccess: ({ installUrl }) => { window.location.assign(installUrl) },
+    onSuccess: ({ installUrl }) => { leavingForGitHub(); window.location.assign(installUrl) },
   })
-  const check = useMutation({ mutationFn: () => githubAppsApi.check(app.app_id) })
+  // A check records the slug GitHub reports (a rename on GitHub, github_apps.py `check`): the row reads it again.
+  const check = useMutation({
+    mutationFn: () => githubAppsApi.check(app.app_id),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: githubAppsKeys.list() }) },
+  })
   const installed = app.connections.length > 0
   const failed = install.isError ? install.error : check.error
   return (

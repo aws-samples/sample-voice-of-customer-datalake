@@ -635,14 +635,22 @@ token function's). Only with `-c engineeringAgents=true` (404 otherwise); every 
 themselves (a delegated MCP credential gets 403), served through `/agents/{proxy+}` with Cognito: no new
 unauthenticated endpoint. Pasting an App's key into a connection (above) stays.
 
-1. **Create.** `POST /agents/engineering/github-apps/manifest` `{account: "user" | "organization", org?}` →
+1. **Create.** `POST /agents/engineering/github-apps/manifest` `{account: "user" | "organization", org?, workspace?}` →
    `{action_url, manifest, expires_at}`: the form's target, `https://github.com/settings/apps/new?state=…` or, for an
    organization (its login as GitHub spells one: letters, digits and single hyphens, at most 39),
-   `https://github.com/organizations/<org>/settings/apps/new?state=…`, and the manifest: `VoC agents <hex6>`, private,
+   `https://github.com/organizations/<org>/settings/apps/new?state=…`, and the manifest: `VoC Autonomous Agent <hex4>`
+   (7.49.00; 25 characters: GitHub takes at most 34, and an App's name is unique on all of GitHub, hence the suffix), private,
    no OAuth on install, its setup asked again on an update, Contents, Pull requests and Issues read and write and
    Metadata read; where the github_issues webhook is deployed, its hook on `<API>/webhooks/github_issues` with the
    issues and issue_comment events; `redirect_url` `/agents/connections/github/created` and `setup_url`
    `/agents/connections/github/installed` on the deployment's own CloudFront domain (a prefixed deployment's too). The
+   manifest is written for each creation, so its `redirect_url` comes back into the workspace the flow started in
+   (`/workspace/<slug>/agents/connections/github/created`, the request's `workspace`, a slug as the platform makes one; 7.49.00).
+   The `setup_url` is fixed when the App is made and an install may start in any workspace, so it stays top-level: the
+   SPA takes a return there (and to the created page outside a workspace) straight back into the workspace the flow
+   started in, remembered in the tab when the manifest is posted or an install link opened (else the workspace last
+   entered, else the caller's first), with GitHub's query carried through and never the workspace picker
+   (`frontend/src/workspace/returnWorkspace.ts`). Both pages then take their query out of the address as before. The
    browser posts it to GitHub (the SPA's `form-action` admits `https://github.com` alone, only with the module:
    [deployment.md](deployment.md#the-web-apps-form-action-74500)). At most 5 Apps (409 past them).
 2. **The code.** GitHub creates the App and sends the browser back with a `code` (a bearer credential for an hour, used
@@ -679,7 +687,15 @@ unauthenticated endpoint. Pasting an App's key into a connection (above) stays.
    (the broker refuses those, failing closed: GitHub mints no token for a repository outside the installation);
    `DELETE …/github-apps/<app_id>` `{reason?}` → `{removed: true}`, its parameters deleted first, then its row marked
    removed with its audit row; 409 while a connection uses it. Deleting the App on GitHub stays the administrator's
-   (its settings page).
+   (its settings page), and so does renaming it: GitHub → Settings → Developer settings → GitHub Apps → the App →
+   **Edit**, its name (an organization's App is under the organization's settings). GitHub derives the App's slug, its
+   `github.com/apps/<slug>` page and install link, from its name, so a rename can change it: **Check installation**
+   records the slug the installation reports (`app_slug` of `GET /app/installations/<id>`, which the token function
+   answers since 7.49.00) when it differs, with the App's page and a `github_app_renamed` audit row, so **Install
+   more** keeps working; the App's row shows it at once. The App's name itself is not stored. The slug is learned
+   from an installation, so rename an App after its first install: one renamed before it keeps the slug it was made
+   with, and its **Install** link then names a page GitHub no longer has (rename it back, install, then rename it;
+   or remove it here and make another).
 
 **State.** Each step's state is `secrets.token_urlsafe(32)`, handed to the browser and never stored: its row,
 `CONNECTIONS#default#SETUP` / `STATE#<sha256 of it>`, names its purpose (`create` or `install`), the administrator's
@@ -2464,8 +2480,8 @@ module is on): a scope picker (the shared skills, or a stored connection), the s
 history a page at a time (each version's status badge, summary, why, who and when, the benchmark marked measured or
 claimed, its events), a version's detail with its diff as plain lines added and removed (the record's text is shown
 as text, never read as HTML) and its whole record, and a role's scorecards on a connection in a table (up to 10
-versions named by number). The scope, the role and the version are view options in the address (`?tab=skills&
-connection=&role=&version=`). The actions on a version are [below](#the-administrators-actions) (7.08.00).
+versions named by number). The role and the version are the path (`/agents/skills/<role>/v/<n>`, 7.49.00) and the
+scope a filter of the query (`?connection=`), so Back walks from a version to the history to the roles. The actions on a version are [below](#the-administrators-actions) (7.08.00).
 
 <a id="the-administrators-actions"></a>**The administrators' actions** (7.08.00,
 `voc-datalake/lambda/engineering/skills/actions.py`, the Agents API's routes, the version's detail in Agents → Skills):
@@ -3049,7 +3065,7 @@ may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, ne
 update to ADDs, the code only ADDs to the counters, and refuses anything below zero); the supervisor alone also reads a
 flow's month total there (GetItem); the Agents API reads them.
 `GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
-repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `?tab=spend`: administrators,
+repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `/agents/spend`: administrators,
 while the engineering agents are on) reads it: the month's cost, tokens and session time, then each group, biggest
 first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
 options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run

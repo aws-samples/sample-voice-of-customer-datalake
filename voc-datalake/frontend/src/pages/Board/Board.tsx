@@ -5,8 +5,8 @@
  *
  * - A visitor signed in to the APP uses that session here too (and is sent to the same board in
  *   the app, `/feature-requests/...`, when the deployment has no board pool).
- * - A signed-out visitor of `/board/:slug` signs in and lands back on that board (`?board=`, and
- *   for the emailed link the slug kept with the pending sign-in, services/boardAuth).
+ * - A signed-out visitor of `/board/:slug[/:requestId]` signs in at `/board/login/:slug[/:requestId]` and
+ *   lands back on that board (for the emailed link, the slug kept with the pending sign-in, services/boardAuth).
  * - Without a board pool and without an app session, the page explains the board is not enabled.
  *
  * @module pages/Board/Board
@@ -21,7 +21,10 @@ import { getBoardAuth, restoreBoardSession, signOutOfBoard, useBoardSessionStore
 import { APP_BOARD_HOST } from '../FeatureRequests/boardContext'
 import BoardLogin from './BoardLogin'
 import BoardRoutes from './BoardRoutes'
-import { BOARD_LOGIN_PATH, BOARD_PARAM, BOARD_PATH, boardHostFor } from './boardHost'
+import {
+  BOARD_LOGIN_PATH, BOARD_PATH, boardHostFor, boardLandingPath, boardLoginPath, boardTarget, loginTarget,
+} from './boardHost'
+import { pathOf } from '../../utils/pathPlace'
 import { withoutSignInParams } from './signInLink'
 import type { ReactNode } from 'react'
 import type { BoardAuth } from '../../services/boardAuth'
@@ -52,20 +55,24 @@ function AppSessionBoards() {
   return <BoardRoutes host={host} />
 }
 
-/** `/board/<slug>…` → the slug, else null (`/board`, `/board/login`). */
-function slugOf(pathname: string): string | null {
-  const [, rest = ''] = pathname.split(`${BOARD_PATH}/`)
-  const slug = rest.split('/')[0] ?? ''
-  return slug === '' || slug === 'login' ? null : decodeURIComponent(slug)
+/** Whether `pathname` is the sign-in page (`/board/login`, `/board/login/<slug>…`). */
+function isLoginPath(pathname: string): boolean {
+  return pathname === BOARD_LOGIN_PATH || pathname.startsWith(`${BOARD_LOGIN_PATH}/`)
 }
 
-/** The sign-in page's search for a signed-out visitor: the link's params, plus the board they opened. */
-function loginSearch(pathname: string, search: string): string {
-  const params = new URLSearchParams(withoutSignInParams(search))
-  const slug = slugOf(pathname)
-  if (slug !== null) params.set(BOARD_PARAM, slug)
-  const rest = params.toString()
-  return rest === '' ? '' : `?${rest}`
+/** Where a signed-in visitor of the sign-in page lands: its target's board path, the rest of the query kept. */
+function landingAfterSignIn(pathname: string, search: string): string {
+  return `${boardLandingPath(loginTarget(pathname))}${withoutSignInParams(search)}`
+}
+
+/** The sign-in page for a signed-out visitor: its path names the board (and request) they opened; the query stays. */
+function loginAddress(pathname: string, search: string): string {
+  return `${boardLoginPath(boardTarget(pathname))}${withoutSignInParams(search)}`
+}
+
+/** The sign-in page. */
+function SignIn({ auth }: Readonly<{ auth: BoardAuth }>) {
+  return <Shell email={null}><div className="flex justify-center"><BoardLogin auth={auth} /></div></Shell>
 }
 
 /** The boards over the board session: sign-in when there is none, the boards when there is. */
@@ -80,12 +87,12 @@ function BoardSession({ auth }: Readonly<{ auth: BoardAuth }>) {
   if (status === 'unknown') return <Shell email={null}><p className="text-sm text-muted">{t('loading')}</p></Shell>
   return (
     <Routes>
-      <Route path="login" element={status === 'signedIn' ? <Navigate to={landing ?? `${BOARD_PATH}${withoutSignInParams(location.search)}`} replace /> : (
-        <Shell email={null}><div className="flex justify-center"><BoardLogin auth={auth} /></div></Shell>
-      )} />
+      <Route path="login/*" element={status === 'signedIn'
+        ? <Navigate to={landing ?? landingAfterSignIn(location.pathname, location.search)} replace />
+        : <SignIn auth={auth} />} />
       <Route path="*" element={status === 'signedIn' ? (
         <Shell email={email} onSignOut={() => signOutOfBoard(auth)}><BoardRoutes host={host} /></Shell>
-      ) : <Navigate to={`${BOARD_LOGIN_PATH}${loginSearch(location.pathname, location.search)}`} replace />} />
+      ) : <Navigate to={loginAddress(location.pathname, location.search)} replace />} />
     </Routes>
   )
 }
@@ -98,15 +105,13 @@ export default function Board() {
   const auth = getBoardAuth()
   if (appSignedIn) {
     if (!auth) {
-      const slug = slugOf(location.pathname)
-      const path = slug === null ? APP_BOARD_HOST.basePath : `${APP_BOARD_HOST.basePath}/${encodeURIComponent(slug)}`
+      const target = boardTarget(location.pathname)
+      const path = target.length === 0 ? APP_BOARD_HOST.basePath : `${APP_BOARD_HOST.basePath}${pathOf(target)}`
       return <Navigate to={`${path}${location.search}`} replace />
     }
     // Already signed in to the app: no board sign-in to show. Without this, `login` reached BoardRoutes as a board
     // slug and asked the API for a board named "login" (404, seen in the 6.04 e2e logs).
-    if (location.pathname === BOARD_LOGIN_PATH || location.pathname === `${BOARD_LOGIN_PATH}/`) {
-      return <Navigate to={`${BOARD_PATH}${withoutSignInParams(location.search)}`} replace />
-    }
+    if (isLoginPath(location.pathname)) return <Navigate to={landingAfterSignIn(location.pathname, location.search)} replace />
     return <Shell email={appEmail}><AppSessionBoards /></Shell>
   }
   if (!auth) {

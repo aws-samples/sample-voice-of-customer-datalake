@@ -3,10 +3,10 @@
  * (mock-workspaces.js: the caller is an admin of Acme Outfitters, slug acme, and an editor of Juniper Trail Co.,
  * slug juniper):
  *
- * 1. From `/` the picker lists both, with their roles, each linking into its own `/w/{slug}/`.
- * 2. Choosing Acme Outfitters from `/dashboard` lands on `/w/acme/dashboard`, the header names it, and every
+ * 1. From `/` the picker lists both, with their roles, each linking into its own `/workspace/{slug}/`.
+ * 2. Choosing Acme Outfitters from `/dashboard` lands on `/workspace/acme/dashboard`, the header names it, and every
  *    API call of the page carries acme's id in `X-Workspace-Id`.
- * 3. The header's workspace menu switches to Juniper Trail Co.: a full page load to `/w/juniper/dashboard`,
+ * 3. The header's workspace menu switches to Juniper Trail Co.: a full page load to `/workspace/juniper/dashboard`,
  *    whose calls carry juniper's id and never acme's.
  * 4. An unknown slug shows "Workspace not found" with the caller's own workspaces, and the app does not render.
  *
@@ -45,7 +45,7 @@ async function mockWorkspaces(): Promise<Record<string, MockWorkspace>> {
 }
 
 /**
- * Every API request a document under `documentPath` (`/w/acme/`) sends from now on, the workspace list itself
+ * Every API request a document under `documentPath` (`/workspace/acme/`) sends from now on, the workspace list itself
  * left out (it names no workspace). Preflights are not page requests.
  */
 function apiRequests(page: Page, documentPath: string): Request[] {
@@ -87,16 +87,16 @@ test.describe('workspaces', () => {
       const links = page.getByRole('navigation', { name: 'Your workspaces' }).getByRole('link')
       await expect(links).toHaveCount(2)
       expect(await links.evaluateAll((items) => items.map((item) => [item.textContent, item.getAttribute('href')])))
-        .toStrictEqual([[`${TEXT.acme}Admin`, '/w/acme/'], [`${TEXT.juniper}Editor`, '/w/juniper/']])
+        .toStrictEqual([[`${TEXT.acme}Admin`, '/workspace/acme/'], [`${TEXT.juniper}Editor`, '/workspace/juniper/']])
     })
   })
 
-  test('choosing acme lands on /w/acme/dashboard, every call naming acme', async ({ page }, testInfo) => {
+  test('choosing acme lands on /workspace/acme/dashboard, every call naming acme', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspaces-02-enter-acme', async () => {
       await page.goto(site('/dashboard'), { waitUntil: 'domcontentloaded' })
-      const requests = apiRequests(page, '/w/acme/')
+      const requests = apiRequests(page, '/workspace/acme/')
       await page.getByRole('link', { name: new RegExp(TEXT.acme) }).click()
-      await page.waitForURL(/\/w\/acme\/dashboard$/)
+      await page.waitForURL(/\/workspace\/acme\/dashboard$/)
       await expect(page.getByRole('button', { name: `Workspace: ${TEXT.acme}, Admin. Switch workspace` })).toBeVisible()
       await settle(page, 500)
       expect(requests.length).toBeGreaterThan(0)
@@ -107,15 +107,15 @@ test.describe('workspaces', () => {
 
   test('the header menu switches to juniper with a full page load', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspaces-03-switch', async () => {
-      await page.goto(site('/w/acme/dashboard'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/acme/dashboard'), { waitUntil: 'domcontentloaded' })
       const trigger = page.getByRole('button', { name: `Workspace: ${TEXT.acme}, Admin. Switch workspace` })
       await trigger.click()
       const item = page.getByRole('menuitem', { name: new RegExp(TEXT.juniper) })
       await expect(item).toBeFocused()
-      const requests = apiRequests(page, '/w/juniper/')
+      const requests = apiRequests(page, '/workspace/juniper/')
       // A full page load (a new document), not an in-app navigation: nothing cached for acme survives it.
       await Promise.all([page.waitForEvent('load'), item.press('Enter')])
-      await page.waitForURL(/\/w\/juniper\/dashboard$/)
+      await page.waitForURL(/\/workspace\/juniper\/dashboard$/)
       await expect(page.getByRole('button', { name: `Workspace: ${TEXT.juniper}, Editor. Switch workspace` })).toBeVisible()
       await settle(page, 500)
       expect(requests.length).toBeGreaterThan(0)
@@ -125,9 +125,9 @@ test.describe('workspaces', () => {
 
   test('an unknown slug shows the not-found page with the caller\'s own workspaces', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspaces-04-not-found', async () => {
-      await page.goto(site('/w/globex/dashboard'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/globex/dashboard'), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: TEXT.notFound })).toBeVisible()
-      await expect(page.getByRole('link', { name: new RegExp(TEXT.acme) })).toHaveAttribute('href', '/w/acme/')
+      await expect(page.getByRole('link', { name: new RegExp(TEXT.acme) })).toHaveAttribute('href', '/workspace/acme/')
       await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
     })
   })

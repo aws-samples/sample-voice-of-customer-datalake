@@ -12,7 +12,6 @@ from shared.exceptions import ConflictError, ValidationError
 from shared.platform_workspaces import (
     CREDENTIALS_READY,
     LISTING_PK,
-    RESERVED_SLUGS,
     SLUG_TAKEN,
     WORKSPACE_CREATED,
     NewWorkspace,
@@ -23,6 +22,7 @@ from shared.platform_workspaces import (
 )
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import is_workspace_id
+from shared.workspace_ids import RESERVED_WORKSPACE_SLUGS
 
 LAMBDA_DIR = Path(__file__).resolve().parents[2]
 AT = '2026-11-12T09:00:00+00:00'
@@ -75,7 +75,7 @@ def test_a_bad_body_is_a_400_that_says_what_to_fix(body, message):
         parse_new_workspace(body)
 
 
-@pytest.mark.parametrize('slug', sorted(RESERVED_SLUGS))
+@pytest.mark.parametrize('slug', sorted(RESERVED_WORKSPACE_SLUGS))
 def test_every_reserved_slug_is_refused(slug):
     with pytest.raises(ValidationError, match='reserved'):
         parse_new_workspace({'name': 'Acme', 'slug': slug})

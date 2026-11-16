@@ -202,7 +202,7 @@ async function step(page: Page, name: string, action: (r: StepRecorder) => Promi
 }
 
 async function openTab(page: Page, tab: string): Promise<void> {
-  await page.goto(site(`/projects/${projectId() ?? ''}?tab=${tab}`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/projects/${projectId() ?? ''}/${tab}`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
   await persistSession(page)
 }

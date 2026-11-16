@@ -11,7 +11,7 @@ The crew model follows KiroCrew: a **conductor** decides and verifies but never 
 (worker, reviewer, persona) are Bedrock tool loops with their own transcript, and they talk only through the
 conductor (`[sent by conductor]` envelopes). Default models: conductor and final reviewer Claude Opus 5.5, workers
 and personas Claude Sonnet 5.5. Each is overridable per surface (`agent_orchestrator`, `agent_worker`,
-`agent_reviewer`, `agent_persona`) in Administration → AI models (`/admin?tab=ai`), and per agent.
+`agent_reviewer`, `agent_persona`) in Administration → AI models (`/admin/ai`), and per agent.
 
 ## Using agents
 
@@ -68,7 +68,8 @@ $50 (the owner's; `SEEDED_MONTHLY_BUDGET_USD`, changed in Set up or in the flow)
 | **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a draft pull request | `github_issue` (label `voc-agent`, issues classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
 
 Both run at most once a day by default, scope all reviews, no instructions, and need a repository connection and a
-language before they can be enabled (their card says so: **Set up**, or **Connect a repository first**).
+language before they can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
+**Set up**, or **Connect a repository first**).
 
 **To enable Bug fixer** (Feature builder alike, with feature requests):
 
@@ -81,7 +82,7 @@ language before they can be enabled (their card says so: **Set up**, or **Connec
    deployment-wide, with the repository listed and **Sign in with** → GitHub App, that App, in place of a fine-grained
    token (each run then reads with installation tokens of `{issues: read, metadata: read}` alone). A pasted token
    still works.
-4. **Set up** on Bug fixer's card: the connection, the language and the monthly budget ($50 prefilled), then
+4. **Set up** on Bug fixer's card (on the Agents list or its page): the connection, the language and the monthly budget ($50 prefilled), then
    **Enable**. It runs as you from then.
 5. **Label an issue** `voc-agent`. Once the source has ingested it, the next heartbeat (every 15 minutes) starts one
    run on it. On a public repository the label is the only way in; on a private one (`repository_private`) the

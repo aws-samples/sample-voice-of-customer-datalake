@@ -8,6 +8,7 @@ It is a separate package (`e2e/package.json`: `@playwright/test` 1.63.0, `@axe-c
 
 ```bash
 cd voc-datalake/frontend
+bash e2e/scripts/e2e-users.sh create              # once per deployment: the two test users, disabled (idempotent)
 bash e2e/scripts/e2e-users.sh enable              # test users on, env file at ~/.config/voc-e2e/suite.env
 set -a; . ~/.config/voc-e2e/suite.env; set +a     # never commit this file
 npm run e2e:prod                                  # npm ci in e2e/, then playwright test
@@ -15,8 +16,12 @@ npm run e2e:prod                                  # npm ci in e2e/, then playwri
 bash e2e/scripts/e2e-users.sh disable             # test users off, signed out, env file deleted
 ```
 
-`e2e/scripts/e2e-users.sh enable|disable` uses the operator's AWS credentials and reads the deployment from the
-stack outputs (`UserPoolId`, `WebsiteURL`, `ApiEndpoint`; `E2E_STACK_PREFIX` for a deployment made with `-c deploymentPrefix`). `enable`
+`e2e/scripts/e2e-users.sh create|enable|disable` uses the operator's AWS credentials and reads the deployment from the
+stack outputs (`UserPoolId`, `WebsiteURL`, `ApiEndpoint`; `E2E_STACK_PREFIX` for a deployment made with `-c deploymentPrefix`). `create`
+makes each test user that does not exist yet (its email from `E2E_ADMIN_EMAIL` / `E2E_USER_EMAIL`, marked verified; no
+invitation is sent and no password is printed), disables it until `enable`, and puts both in their groups (`e2e-admin`
+in `admins`, `e2e-viewer` in `users`, both in `e2e`); a user that exists is left as it is, so running it again changes
+nothing. `enable`
 adds both test users (they must exist: `E2E_ADMIN_USER`, default `e2e-admin`, in `admins`; `E2E_USER_USER`, default
 `e2e-viewer`, in `users`) to the `e2e` group, enables them, sets new random passwords and writes the env file
 (`E2E_ENV_FILE`, mode 600; a path inside a git work tree is refused). Passwords are never printed. `disable`
@@ -118,7 +123,7 @@ Each model call sees the whole conversation, so the assistant specs never contin
      - Create a project, open its modals, send one assistant message, then delete it in the UI.
      - Create a feedback form, check the public `config` and `iframe` routes, then delete it. It does **not** submit, because the feedback table has no delete route.
      - Run scraper `analyze-url` on https://example.com, save it as "Manual only" so it is never scheduled or run, then delete it.
-   - `projects-mcp-removed.spec.ts`: both roles, on one public `e2e-<run id>-mcp-removed` project (made through the admin API, ledger-recorded). Checks that there is no Export / MCP tab, that `?tab=mcp` is rewritten to Overview, and that the header's **Connect via MCP** opens `/connect?project=<id>` showing `/mcp/global`. As admin it also checks that the per-project token routes and `GET /projects/{id}/autoseed`, retired in 3.00.00, answer 404.
+   - `projects-mcp-removed.spec.ts`: both roles, on one public `e2e-<run id>-mcp-removed` project (made through the admin API, ledger-recorded). Checks that there is no Export / MCP tab, that `/projects/<id>/mcp` is rewritten to Overview, and that the header's **Connect via MCP** opens `/connect?project=<id>` showing `/mcp/global`. As admin it also checks that the per-project token routes and `GET /projects/{id}/autoseed`, retired in 3.00.00, answer 404.
    - `workflow-custom-arrows.spec.ts`: both roles, read-only (`POST /workflows/validate` stores nothing). A `pass` / `fail` arrow out of a custom step is refused with the error pinned to that step; the plain arrow validates.
    - `projects-edit.spec.ts`: on three private `e2e-<run id>-edit*` projects (`lib/projects.ts`: admin API create, `inviteMember`).
      - Admin: Edit is in the card's "Actions for <name>" menu. Escape and Cancel close the Edit dialog without a PUT; an edit of name, description and visibility shows on the card, in `GET /projects/{id}` and on the detail page.
@@ -127,7 +132,7 @@ Each model call sees the whole conversation, so the assistant specs never contin
    - `memory.spec.ts`: the caller's OWN personal memory: add (`e2e-<run id>-memory-<role>…`), +1, Forget (with its confirm), Restore from the Archived filter. An injected 500 on `GET /memory/review` shows the alert with Retry; a 403 is silent.
    - `connect.spec.ts`: a read global MCP token minted on /connect (shortest expiry offered), `POST /mcp/global` `tools/list` → 200, revoked in the UI → 401 with a Bearer challenge; and a 1-day token (`expires_in_days: 1`, API) the same way. The secret is never logged or written.
    - `error-states.spec.ts`: Dashboard, Categories, Projects, Admin › General and Memory with their load injected to fail (500, 403, timeout; `lib/inject.ts`): the screen's own error state where it has one, never a blank page or the route error boundary. Screens with no error state get a `finding` annotation.
-   - `request-counts.spec.ts`: one `GET /sources/status` on `/admin?tab=sources&section=plugins`, one `GET /feedback-forms?include=stats` and no per-card stats on `/feedback-forms`, one `GET /feedback/entities` on `/categories` (`/prioritization`'s batched project reads are `prioritization-requests.spec.ts`).
+   - `request-counts.spec.ts`: one `GET /sources/status` on `/admin/sources/plugins`, one `GET /feedback-forms?include=stats` and no per-card stats on `/feedback-forms`, one `GET /feedback/entities` on `/categories` (`/prioritization`'s batched project reads are `prioritization-requests.spec.ts`).
    - `prioritization-requests.spec.ts`: both roles, read-only. Loading `/prioritization` sends one `GET /projects?ids=…` per 200 listed projects (naming each once) and no per-project `GET /projects/{id}`. Also runs against the dev mock (`E2E_MOCK=1`).
    - `dashboard-data.spec.ts`: also holds the dashboard UI to the data on a 30-day window (never the "workspace is empty" welcome when there is feedback), and shows the welcome for an injected all-zero summary.
    - `modals.spec.ts` also checks that Add Data Source offers only the plugins the deployment enables (`GET /sources/status` keys), each tile opening with no API 4xx; `writes.spec.ts` also parses one undated review in Manual Import, sees the date gate disable Import, and cancels at the preview (no confirm call).
@@ -146,11 +151,11 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `sharing.spec.ts` skips there (it needs two real users), as does the `/mcp/global` call of `connect.spec.ts` (the mock does not serve it).
 
-`workspaces.spec.ts` (6.12.00, [docs/multi-workspace.md](../../../docs/multi-workspace.md)) runs ONLY there: it turns on the mock's two workspaces (`PUT /__mock/workspaces`, `mock-workspaces.js`; off again afterwards, so the other mock specs keep the app without workspaces), then checks that `/` shows the picker with both, that choosing Acme Outfitters from `/dashboard` lands on `/w/acme/dashboard` with acme's id in every call's `X-Workspace-Id`, that the header's workspace menu switches to `/w/juniper/dashboard` with a full page load and juniper's id, and that an unknown slug shows "Workspace not found". It needs the mock's two fictional workspaces, which a deployment does not have.
+`workspaces.spec.ts` (6.12.00, [docs/multi-workspace.md](../../../docs/multi-workspace.md)) runs ONLY there: it turns on the mock's two workspaces (`PUT /__mock/workspaces`, `mock-workspaces.js`; off again afterwards, so the other mock specs keep the app without workspaces), then checks that `/` shows the picker with both, that choosing Acme Outfitters from `/dashboard` lands on `/workspace/acme/dashboard` with acme's id in every call's `X-Workspace-Id`, that the header's workspace menu switches to `/workspace/juniper/dashboard` with a full page load and juniper's id, and that an unknown slug shows "Workspace not found". It needs the mock's two fictional workspaces, which a deployment does not have.
 
-`workspace-admin.spec.ts` (6.13.00) runs ONLY there too, on the same switch (on for the spec, off again afterwards; each switch starts the mock's workspaces afresh): the platform console (Administration → Privacy & access → Workspaces, inside `/w/acme/`) creates a workspace and enters it with a full page load to `/w/acme-field/`; the members page of acme adds `editor@example.com` as an Editor, makes them a Viewer and shows the last-admin refusal when the caller demotes themselves; in juniper (an editor there) the list is read-only and Leave workspace, confirmed, loads `/` without it; and the console enters juniper, which the caller is then not a member of, as admin, every call naming juniper. Since 7.40.00 also, in Workspace settings: Rename (a blank name cannot be saved, a name past 80 characters never fits the field, a tab is refused in the dialog, none of them sending anything; a good name is one `PUT /me/workspaces/current` with acme's `X-Workspace-Id`, the card and the header's menu show it, the address stays `/w/acme/`; the old name is put back), and Delete workspace on a workspace the spec creates (`acme-popup`): Delete stays disabled until the slug is typed exactly, a reason is given and "I understand" is ticked; the last dialog's "Go to my workspaces" loads `/` without it and `/w/acme-popup/` is "Workspace not found". The delete step needs Vite started with `VITE_ENABLE_WORKSPACE_DELETE=true` (as above; the repo root's `scripts/dev-with-mock.mjs` sets it). The mock has no sign-in, so the spec stores the mock caller's identity (`voc-auth`, its `sub`) for each page: the members page finds the caller's own row by it. The deployment's side of create, rename, members and delete is `workspace-lifecycle.spec.ts` (below).
+`workspace-admin.spec.ts` (6.13.00) runs ONLY there too, on the same switch (on for the spec, off again afterwards; each switch starts the mock's workspaces afresh): the platform console (Administration → Privacy & access → Workspaces, inside `/workspace/acme/`) creates a workspace and enters it with a full page load to `/workspace/acme-field/`; the members page of acme adds `editor@example.com` as an Editor, makes them a Viewer and shows the last-admin refusal when the caller demotes themselves; in juniper (an editor there) the list is read-only and Leave workspace, confirmed, loads `/` without it; and the console enters juniper, which the caller is then not a member of, as admin, every call naming juniper. Since 7.40.00 also, in Workspace settings: Rename (a blank name cannot be saved, a name past 80 characters never fits the field, a tab is refused in the dialog, none of them sending anything; a good name is one `PUT /me/workspaces/current` with acme's `X-Workspace-Id`, the card and the header's menu show it, the address stays `/workspace/acme/`; the old name is put back), and Delete workspace on a workspace the spec creates (`acme-popup`): Delete stays disabled until the slug is typed exactly, a reason is given and "I understand" is ticked; the last dialog's "Go to my workspaces" loads `/` without it and `/workspace/acme-popup/` is "Workspace not found". The delete step needs Vite started with `VITE_ENABLE_WORKSPACE_DELETE=true` (as above; the repo root's `scripts/dev-with-mock.mjs` sets it). The mock has no sign-in, so the spec stores the mock caller's identity (`voc-auth`, its `sub`) for each page: the members page finds the caller's own row by it. The deployment's side of create, rename, members and delete is `workspace-lifecycle.spec.ts` (below).
 
-`cross-workspace.spec.ts` (6.14.00) runs ONLY there too: it turns on the switch with the caller a member of acme only (`PUT /__mock/workspaces {"enabled": true, "member": "acme"}`, which also makes the caller no platform admin to the workspace routes; off again afterwards) and checks that the address `/w/juniper/members` shows "Workspace not found" with acme as a link and no app. The API's side of the same rule, route by route, is `lambda/api/test/test_cross_workspace_routes.py`.
+`cross-workspace.spec.ts` (6.14.00) runs ONLY there too: it turns on the switch with the caller a member of acme only (`PUT /__mock/workspaces {"enabled": true, "member": "acme"}`, which also makes the caller no platform admin to the workspace routes; off again afterwards) and checks that the address `/workspace/juniper/members` shows "Workspace not found" with acme as a link and no app. The API's side of the same rule, route by route, is `lambda/api/test/test_cross_workspace_routes.py`.
 
 `csv-dataset-update.spec.ts` (issue #411, [docs/csv-import.md](../../../docs/csv-import.md)) runs ONLY there: a CSV upload under a dataset name is previewed and imported, then the corrected file is previewed (one row to update, its before / after text) and confirmed with `apply_updates`; the API refuses an unconfirmed change (409) and `GET /feedback` holds the corrected text once. On a deployment it would write feedback, which has no delete route.
 
@@ -202,7 +207,7 @@ and says so): create `e2e-<run id>-workspace` at the slug `e2e-<run id>` and ent
 (by their id token's email; they list and enter it, a rename is a 403) and remove them again, Run now of web_reviews
 before the workspace enabled it (the declared 409, never a 500), enable it, save one review page
 (https://example.com/, 1 page, Manual only) and run it (never a 500: before the 7.40.00 IAM fix it answered "Failed to
-open the workspace"; a 409 is accepted only with its reason), look at `/w/<slug>/workspace-settings` (the name card,
+open the workspace"; a 409 is accepted only with its reason), look at `/workspace/<slug>/workspace-settings` (the name card,
 and the delete card exactly when `/config.json` has `features.workspaceDelete`), then delete it with its slug and "e2e
 cleanup" (`GET /me/workspaces/current` the declared 404, the platform list `deleting`). Without the delete flag it turns
 the plugin off and leaves the workspace to the cleanup, and it runs at all there only with `E2E_WORKSPACE_KEEP=1`:
@@ -211,7 +216,7 @@ known (kinds `workspace` and `review-page`), so the cleanup retires them whateve
 
 It is opt-in and runs ALONE (no shard group; `unit/shard-groups.spec.ts`): the creator stays the workspace's admin
 member until the delete job removes its rows (its fence is about 21 minutes after the delete), and `GET /me/workspaces`
-lists it until then, so the workspace gate sends the admin test user's every page outside `/w/` into it (one
+lists it until then, so the workspace gate sends the admin test user's every page outside `/workspace/` into it (one
 workspace) or to the picker (several). Start no other run against the deployment before `GET /platform/workspaces`
 no longer lists it.
 
@@ -262,7 +267,7 @@ mock (`E2E_MOCK=1`, no login, user step skipped); the header comment has the com
 - `lib/aws.ts`: the one AWS CLI runner (read-only), account/region, physical names, Step Functions execution timings.
 - `lib/recorder.ts` stores `durationMs` and `ttfbMs` per call.
 - `lib/inject.ts`: `injectFailure(page, { method, path, query?, failure })` answers matching API calls in the browser (a status with the API's JSON error body and CORS headers, any status and body, or a timeout); `withoutInjected(problems, …specs)` drops exactly the problems it caused from a `runStep` verdict.
-- `lib/api.ts` `apiCall(role, method, path, body, { workspace })` sends `X-Workspace-Id` as the SPA does inside `/w/{slug}/`; `lib/workspaces.ts`: a run's workspace slug, the site's `features`, the paged platform list and lenient reads of the workspace routes' answers.
+- `lib/api.ts` `apiCall(role, method, path, body, { workspace })` sends `X-Workspace-Id` as the SPA does inside `/workspace/{slug}/`; `lib/workspaces.ts`: a run's workspace slug, the site's `features`, the paged platform list and lenient reads of the workspace routes' answers.
 - `lib/mcp.ts`: `mcpToolsList(token)` calls `/mcp/global` as an assistant does. `lib/workflows.ts`: archive from the Workflow library (the API instead when a name is not unique).
 
 ## Ops checks (read-only, `E2E_OPS=1` only)
@@ -305,7 +310,7 @@ Its only write is an e2e-named feedback form, created only when no form exists. 
 These run in the default production run (both roles; writes are admin-only and e2e-named) AND against the local dev mock (`E2E_MOCK=1`, see [Local dev mock](#local-dev-mock-e2e_mock1): no login, the mock API without auth; steps the mock cannot model skip and say why).
 
 - `prioritization.spec.ts`: the board, and the public `/vote/:sessionId` in a fresh context with no session (an unknown id says so; its submit is a 404). The room vote end to end (any open vote of the row closed first, open on the board after its confirm, a phone ballot, close, refusal with a 409, then a capped session refusing the next device with a 429) runs on the mock only, because ballots have no TTL and no delete route.
-- `account.spec.ts`: the caller's own "My objectives & KPIs" (`/settings/my-context`) saved through the UI, then the original objectives put back (also in `afterAll`) and proven equal. Also checks that `/company?tab=mine` lands on that same section.
+- `account.spec.ts`: the caller's own "My objectives & KPIs" (`/settings/my-context`) saved through the UI, then the original objectives put back (also in `afterAll`) and proven equal. Also checks that Company's **My objectives** link opens that same section (`/account/objectives`).
 - `in-page-tabs.spec.ts`: the 4 FormEditor tabs (Cancel at the end, nothing is written) and the 3 Admin logs sub-tabs, which must show no text block longer than 200 characters (2.12, no customer data).
 - `i18n-smoke.spec.ts`: 9 locales × 5 screens, with the language set through `voc-language`. Checks `<html lang>`, that no raw key is on screen (it matches exact English key paths and `ns:key` references), and that nothing overflows horizontally.
 - `network.spec.ts`: slow 3G (CDP), a dropped list request (`route.abort`) and `context.setOffline` on /projects, /feedback-forms and /agents, followed by recovery. It also cuts `/chat/stream` after the first answer bytes (`lib/network.ts`), then reloads: the page shows "Still generating…" and then the server's answer.
@@ -315,7 +320,7 @@ These run in the default production run (both roles; writes are admin-only and e
   - Assistant: two conversations answer at once.
 - `auth-session.spec.ts`: production only, each case in its own context; it never writes the saved session back.
   - Expired tokens in storage: a silent refresh on boot.
-  - Expired tokens with no refresh token: `/login?expired=1` with "Session expired".
+  - Expired tokens with no refresh token: `/login/expired` with "Session expired".
   - One 401: a refresh and a retry.
 - `assistant-notifications.spec.ts`: `Notification` is replaced by a recorder and the tab is made to look hidden. A reply notifies only while the tab is hidden, and the notification uses generic words.
 - `flows-matrix.spec.ts`: the main flows in dark and light, and the project flow at 390 px with no horizontal overflow.
@@ -328,15 +333,15 @@ These run in the default production run (both roles; writes are admin-only and e
 
 - `participants.spec.ts`: lists create / rename / delete, a person added to an e2e list (`e2e-<run id>-…@example.com`), found, opened and erased; a project's Participants tab links and unlinks a list with its reach; the ask composer's validation and Send disabled while email is off (`POST /participants/asks` is intercepted, 0 hits). A real ask goes only to the mock's fixture list. e2e-user: no delete controls, forced deletes 403.
 - `unsubscribe.spec.ts`: the public page with no token and with a garbage token: no POST on load, one POST on confirm, the generic answer, nothing leaked.
-- `feedback-boards.spec.ts` (5.36): the "Feedback boards" nav item, the board list `/feature-requests` and its seeded Sales card opening `/feature-requests/sales-feature-requests`; for the admin the Edit link and the gear to `/admin?tab=access&section=boards[&board=<id>]`, that section (company domains, the boards, one board's editor and back); e2e-user sees no board admin controls. Read-only.
-- `feature-requests.spec.ts`: the Sales board `/feature-requests/sales-feature-requests`: create, +1 with a customer in USD, search / status filter / sort, `?request=` deep link, status Planned, delete (404 proof); e2e-user sees no admin controls and a forced status PUT is a 403.
+- `feedback-boards.spec.ts` (5.36): the "Feedback boards" nav item, the board list `/feature-requests` and its seeded Sales card opening `/feature-requests/sales-feature-requests`; for the admin the Edit link and the gear to `/admin/access/boards[/<id>]`, that section (company domains, the boards, one board's editor and back); e2e-user sees no board admin controls. Read-only.
+- `feature-requests.spec.ts`: the Sales board `/feature-requests/sales-feature-requests`: create, +1 with a customer in USD, search / status filter / sort, the `/feature-requests/sales-feature-requests/<id>` deep link, status Planned, delete (404 proof); e2e-user sees no admin controls and a forced status PUT is a 403.
 - `board.spec.ts`: `/board` and `/board/sales-feature-requests` with the app session; `/board/login` renders and refuses an `example.org` address server-side (only `SignUp` reaches Cognito, every other call is aborted, so no code is emailed). Production runs the sign-in steps only when `/config.json` has a `board` pool and `example.org` is not an allowed domain.
 - `product-interview.spec.ts`: "Fill with AI assistant" opens the assistant with the interview draft and sends nothing; the send runs in production only with `E2E_ASSISTANT_SEND=1` (`lib/optIn.ts`).
 - `workflow-history.spec.ts`: History on the built-in (read-only) and on an e2e workflow with two revisions; an old revision opens read-only, closing keeps the current one.
 - `radar.spec.ts`: brands, compare, releases, the reviews dialog and a review's details; any `POST /radar/scan` fails the test.
 - `decisions.spec.ts`: a decision created, edited (the card updates without a reload, also on a second edit) and deleted on an e2e project (verdict Park, no Bedrock). The project delete sweeps the decision.
 - `persona-avatars.spec.ts` (`lib/personaAvatars.ts`): every persona has an `avatar_url` and its card's image answers 200 with `naturalWidth > 0` (the initials fallback fails). Generating personas in production needs `E2E_PERSONA_GENERATE=1`; agent-made personas are checked when this run's ledger has an agent-run project (agent-made personas get portraits by default since 5.35). s3 step 02 and s2 (soft) call the same helper.
-- `surfaces.spec.ts`: the five Account tabs and the legacy `?section=`, every Administration tab and section, Company tabs, the Agents views, the Home brief, the review window deep link (Escape, no prev / next), and German on Participants and Feature requests.
+- `surfaces.spec.ts`: the five Account tabs, every Administration tab and section, Company tabs, the Agents views, the Home brief, the review window deep link (Escape, no prev / next), and German on Participants and Feature requests.
 
 ## Evidence (`$E2E_OUT`)
 

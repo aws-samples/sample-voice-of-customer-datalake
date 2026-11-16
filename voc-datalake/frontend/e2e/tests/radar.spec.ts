@@ -45,7 +45,7 @@ const TEXT = {
 } as const
 
 /** Administration → Sources → Radar (radarFormat.ts RADAR_SETUP_PATH). */
-const RADAR_SETUP_PATH = '/admin?tab=sources&section=radar'
+const RADAR_SETUP_PATH = '/admin/sources/radar'
 
 const compareSection = (page: Page): Locator => page.getByRole('region', { name: TEXT.compare })
 const releasesSection = (page: Page): Locator => page.getByRole('region', { name: TEXT.releases })

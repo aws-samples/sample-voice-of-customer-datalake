@@ -46,7 +46,7 @@ function stubLocation(pathname: string) {
 }
 
 /** This tab, signed in or not and showing `pathname`, with records of acme and outside workspaces saved. */
-function thisTab(signedIn = true, pathname = '/w/acme/dashboard') {
+function thisTab(signedIn = true, pathname = '/workspace/acme/dashboard') {
   useAuthStore.setState({ isAuthenticated: signedIn })
   for (const key of RECORDS) saved.set(key, '{}')
   rememberRefused('ws-juniper')

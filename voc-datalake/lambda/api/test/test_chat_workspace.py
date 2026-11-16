@@ -22,6 +22,13 @@ def _rows() -> dict[str, list[str]]:
     return rows
 
 
+def _write_refused(world, caller) -> bool:
+    """A save inside WS_B by ``caller``: the one workspace 404, and nothing written."""
+    before = _rows()
+    answered = world.call('POST', '/chat/conversations/conv_new', ws=WS_B, caller=caller, body={'title': 'x', 'messages': []})
+    return answered == (404, {'success': False, 'error': 'Workspace not found'}) and _rows() == before
+
+
 def test_a_save_inside_a_workspace_lands_in_the_callers_partition_there(lambda_context):
     with chat_world(lambda_context) as world:
         status, _ = world.call('POST', '/chat/conversations/conv_new', ws=WS_A,
@@ -50,14 +57,14 @@ def test_the_list_inside_a_workspace_is_only_the_callers_conversations_there(lam
 def test_a_workspace_the_caller_is_not_a_member_of_is_the_one_404(lambda_context, caller):
     """Without a platform admin's elevation: the stream Lambda, which writes the same rows, checks membership only."""
     with chat_world(lambda_context) as world:
-        before = _rows()
-        assert world.call('POST', '/chat/conversations/conv_new', ws=WS_B, caller=caller,
-                          body={'title': 'x', 'messages': []}) == (404, {'success': False, 'error': 'Workspace not found'})
-        assert _rows() == before
+        assert _write_refused(world, caller)
 
 
-def test_a_live_platform_admin_is_not_elevated_into_a_workspace_they_are_not_a_member_of(lambda_context):
-    """elevate=False, even for a platform admin the live check would confirm: never consulted, the one 404."""
+def test_a_platform_admin_outside_their_memberships_reads_an_empty_list_never_elevated(lambda_context):
+    """7.49.00: a platform admin who entered a workspace (the console's Enter, or a direct link) gets 200 and an empty
+    list there, as the stream Lambda answers their runs and saves nothing for them (session/workspace-member.ts
+    resolveSessionOwner): never elevated, so no live check, no audit row and nothing read or written; a conversation
+    by id is the one conversation 404, and a write still the workspace 404."""
     from shared import platform_admin_gate
     from shared.test.cognito_doubles import live_cognito
 
@@ -66,10 +73,22 @@ def test_a_live_platform_admin_is_not_elevated_into_a_workspace_they_are_not_a_m
     with chat_world(lambda_context) as world, patch.object(platform_admin_gate, 'get_cognito_idp_client',
                                                             return_value=cognito):
         before = _rows()
-        assert world.call('GET', '/chat/conversations/_list', ws=WS_B, caller=caller) == (
-            404, {'success': False, 'error': 'Workspace not found'})
+        assert world.call('GET', '/chat/conversations/_list', ws=WS_B, caller=caller) == (200, {'conversations': []})
+        assert world.call('GET', '/chat/conversations/_list', ws=WS_B, caller=caller,
+                          query={'kind': 'assistant'}) == (200, {'conversations': []})
+        assert world.call('GET', '/chat/conversations/conv_b', ws=WS_B, caller=caller)[0] == 404
+        assert _write_refused(world, caller)
         assert _rows() == before
     cognito.admin_list_groups_for_user.assert_not_called()
+
+
+@pytest.mark.parametrize(('caller', 'ws'), [(ADA, WS_B), (ADA_MEMBER_ONLY, WS_B),
+                                            ({**ADA, 'cognito:groups': '[platform-admins, users]'}, 'ws_not-an-id')],
+                         ids=['deployment-admin', 'member-elsewhere', 'platform-admin-malformed-id'])
+def test_anyone_else_reading_a_workspace_that_is_not_theirs_gets_the_one_404(lambda_context, caller, ws):
+    with chat_world(lambda_context) as world:
+        assert world.call('GET', '/chat/conversations/_list', ws=ws, caller=caller) == (
+            404, {'success': False, 'error': 'Workspace not found'})
 
 
 def test_a_delete_inside_a_workspace_is_audited_with_its_workspace(lambda_context):

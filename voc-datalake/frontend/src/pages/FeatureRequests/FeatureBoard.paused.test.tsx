@@ -20,7 +20,7 @@ function renderPaused(viewer: BoardViewer, paused: boolean, entry = '/feature-re
 }
 
 async function openDetail(viewer: BoardViewer, paused: boolean) {
-  renderPaused(viewer, paused, '/feature-requests/sales-board?request=fr_1')
+  renderPaused(viewer, paused, '/feature-requests/sales-board/fr_1')
   const dialog = within(await screen.findByRole('dialog', { name: 'Single sign-on' }))
   await dialog.findByText('Example Air')
   return dialog

@@ -3,8 +3,8 @@
  * operational configuration at `/admin` (`/settings` redirects here).
  * @module pages/Settings
  *
- * Six tabs grouped by job, some with a section switch (`?tab=<tab>&section=<section>`,
- * model and pre-5.09 id mapping in `adminTabs.ts`):
+ * Six tabs grouped by job, some with a section switch (`/admin/<tab>/<section>`, adminPaths.ts;
+ * the model in `adminTabs.ts`):
  * - General (brand; the dev-only API configuration). Software settings only:
  *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
  * - Sources: Data sources, Integrations, Email inbox, Radar
@@ -19,7 +19,6 @@ import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
@@ -60,7 +59,7 @@ export default function Settings() {
   const saved = savedShown !== null
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin, isPlatformAdmin)
+  const { location, selectTab, selectSection } = useAdminLocation(isAdmin, isPlatformAdmin)
   const activeTab = location.tab
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -125,7 +124,7 @@ export default function Settings() {
     }
     return ok
   }
-  // Brand edits live at page level, so switching tabs (a query change) keeps them; leaving the page asks (E2E F6).
+  // Brand edits live at page level, so switching tabs (a path under /admin) keeps them; leaving the page asks (E2E F6).
   const guard = useUnsavedChangesGuard({ dirty: brandDirty, onSave: handleSave, onDiscard: discardBrand, shouldBlock: isLeavingAdmin })
 
   const tabs = buildTabs(t, isAdmin, isPlatformAdmin)
@@ -137,7 +136,6 @@ export default function Settings() {
     // min-w-0: inside the shell's flex column, a wide child (the logs tab track)
     // would otherwise stretch the page past 390px instead of scrolling itself.
     <div className="max-w-5xl mx-auto min-w-0 w-full">
-      {redirectTo !== null && <Navigate to={redirectTo} replace />}
       <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={canEditBrand} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
       {guard.dialog}
 

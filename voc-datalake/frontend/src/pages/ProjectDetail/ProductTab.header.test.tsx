@@ -46,8 +46,8 @@ describe('ProductTab header', () => {
   })
 
   it('sends that request with this project as the page context', () => {
-    expect(pageContextFromLocation({ pathname: '/projects/proj-1', search: '?tab=product' }))
-      .toStrictEqual({ kind: 'project', path: '/projects/proj-1', tab: 'product', projectId: 'proj-1' })
+    expect(pageContextFromLocation({ pathname: '/projects/proj-1/product', search: '' }))
+      .toStrictEqual({ kind: 'project', path: '/projects/proj-1/product', tab: 'product', projectId: 'proj-1' })
   })
 
   it('is not offered to a viewer, whose interview could only end in a refused write', async () => {

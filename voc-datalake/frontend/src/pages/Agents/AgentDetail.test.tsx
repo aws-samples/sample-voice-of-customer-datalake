@@ -1,5 +1,5 @@
 /**
- * @fileoverview Agent detail: the tabs (and `?tab=` deep links), Save sends
+ * @fileoverview Agent detail: the tabs (each a path, `/agents/<id>/<tab>`), Save sends
  * only the changed fields, archive goes through a confirmation, enable /
  * disable, read-only for non-admins, the not-found state, and the shared
  * unsaved-changes guard (E2E F6) under a data router.
@@ -27,7 +27,7 @@ vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) =
 const { default: AgentDetail } = await import('./AgentDetail')
 
 /** Must equal the production pattern; `routes.paramNames.test.ts` pins both. */
-const AGENT_DETAIL_PATH = '/agents/:id'
+const AGENT_DETAIL_PATH = '/agents/:id/*'
 
 const AGENT = {
   agent_id: 'ag_1', name: 'Scout', description: 'Watches checkout', enabled: false, status: 'active',
@@ -104,9 +104,9 @@ describe('AgentDetail — tabs', () => {
     expect(within(picker).queryByRole('option', { name: /Bug hunt/ })).toBeNull()
   })
 
-  it('deep-links a tab with ?tab=', async () => {
+  it('opens a tab from its path (/agents/<id>/<tab>)', async () => {
     route(baseRoutes())
-    renderDetail('/agents/ag_1?tab=instructions')
+    renderDetail('/agents/ag_1/instructions')
     await findHeading()
     expect(screen.getByRole('tab', { name: 'Instructions' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('textbox', { name: 'Instructions' })).toHaveValue('Be brief')
@@ -413,7 +413,7 @@ describe('AgentDetail — Save as on the Workflow tab', () => {
       },
       ...extra,
     }))
-    const { container } = renderDetail('/agents/ag_1?tab=workflow')
+    const { container } = renderDetail('/agents/ag_1/workflow')
     await screen.findByRole('button', { name: 'Export' })
     await userEvent.upload(fileInput(container), jsonFile(JSON.stringify(EDITED)))
     await screen.findByText('Unsaved changes')

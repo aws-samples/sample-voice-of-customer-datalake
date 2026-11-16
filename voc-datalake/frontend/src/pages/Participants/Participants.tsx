@@ -3,8 +3,8 @@
  * feedback — employees, paid participants, beta customers, sales colleagues — grouped in
  * lists, and the asks sent to them.
  *
- * Tabs (`?tab=lists|people|asks`, Lists is the default and no param, `useTabParam`): one top tab bar,
- * the Memory / Company recipe. "New ask" opens the composer from any tab.
+ * Tabs as paths (`/participants/lists` (`/participants` too), `/participants/people`, `/participants/asks`;
+ * utils/tabPaths.ts; an unknown tab is replaced by Lists): one top tab bar, the Memory / Company recipe. "New ask" opens the composer from any tab.
  *
  * @module pages/Participants
  */
@@ -19,10 +19,9 @@ import AskComposer from './AskComposer'
 import AsksList from './AsksList'
 import ListsTab from './ListsTab'
 import PeopleTab from './PeopleTab'
-import { useTabParam } from './useTabParam'
-
-const PARTICIPANT_TABS = ['lists', 'people', 'asks'] as const
-type ParticipantTab = typeof PARTICIPANT_TABS[number]
+import { useTabPath } from '../../utils/tabPaths'
+import { PARTICIPANTS_PAGE, PARTICIPANT_TABS } from './participantsPaths'
+import type { ParticipantTab } from './participantsPaths'
 
 const TAB_ICONS: Readonly<Record<ParticipantTab, LucideIcon>> = { lists: List, people: Contact, asks: Mail }
 
@@ -47,7 +46,7 @@ export default function Participants() {
   const { t } = useTranslation('participants')
   const { config } = useConfigStore()
   const configured = Boolean(config.apiEndpoint)
-  const [tab, setTab] = useTabParam(PARTICIPANT_TABS)
+  const [tab, setTab] = useTabPath(PARTICIPANTS_PAGE)
   const [composing, setComposing] = useState(false)
 
   return (

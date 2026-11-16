@@ -123,7 +123,16 @@ any other document keeps its id and stores what a save replaced as a revision. T
 
 ## Addresses
 
-A project page's tab and the document on it are paths (inside a workspace, after its `/w/<slug>`):
+Every place in the app is a path (7.46.00 for a project page, 7.49.00 for the rest): where you are (a page, its tab
+and section, the item open on it, a sub-view, a mode) is the path; only what combines freely stays in the query
+(filters, search, a sort, a window, a scope picker). Inside a workspace every address follows its
+`/workspace/<slug>` (7.49.00; `/w/<slug>` before). `workspace` is reserved: no top-level page and no agent id is
+ever named so (`frontend/src/routes.paramNames.test.ts`). There are no redirects from the forms of before (`/w/…`,
+`?tab=`, `&section=`, `?doc=`, `?view=`, `?request=`, `/login?expired=1`): a pre-release change, nobody has them
+installed. A path that does not name its place as it should (an unknown tab, a tab without its section) is
+replaced in place by the place's own path.
+
+A project page's tab and the document on it:
 
 | Address | Shows |
 |---|---|
@@ -135,10 +144,53 @@ A project page's tab and the document on it are paths (inside a workspace, after
 
 Choosing a tab, a document, a version or full screen is a history entry, so the browser's Back and Forward walk
 them; a save, a restore or the latest loaded moves to the new version in place (Back never lands on a version the
-page has moved past). Old links (`?tab=documents&doc=<docId>&view=focus`, `?tab=decisions`) are replaced by their
-path, in place, keeping every other parameter (a prefilled decision's, an open review's). In-app links (a run's
+page has moved past). The query keeps its own parameters (a prefilled decision's, an open review's) across every
+move; it names no place, and a query link of an earlier build (`?tab=documents&doc=<docId>&view=focus`) is not
+redirected (7.49.00, a pre-release change: nobody has an older build installed). In-app links (a run's
 document, the Decisions card's "PR/FAQ ready") use the paths; the server builds none of these links. The
 breadcrumb trail ends at the project.
+
+The other pages (each area's `*Paths.ts` in `frontend/src/pages/`, the shared parts in `utils/pathPlace.ts` and
+`utils/tabPaths.ts`):
+
+| Address | Shows |
+|---|---|
+| `/admin/<tab>[/<section>]` (`/admin` is General) | an Administration tab and section ([account-vs-admin.md](account-vs-admin.md)) |
+| `/admin/access/boards/<boardId>` | a feedback board's editor |
+| `/account/<tab>` | an Account tab |
+| `/company/<tab>`, `/memory/<tab>`, `/participants/<tab>` | that page's tab |
+| `/data-explorer/raw` (`/data-explorer`), `/data-explorer/processed` | the Data Explorer's tab |
+| `/agents/workflows`, `/agents/spend`, `/agents/connections`, `/agents/skills` | a view of the Agents list |
+| `/agents/skills/<role>[/v/<n>]` | a skill role's history, one of its versions |
+| `/agents/<id>/<tab>` (`/agents/<id>` is Settings) | an agent's tab |
+| `/feature-requests/insights` | the boards' Insights |
+| `/feature-requests/<slug>/<requestId>`, `/board/<slug>/<requestId>` | a request open on its board |
+| `/feature-requests/requests/<requestId>`, `/board/requests/<requestId>` | a request known only by its id, opened on its board |
+| `/board/login[/<slug>[/<requestId>]]` | the board sign-in, then that board |
+| `/login/expired` | sign-in, saying the session ended |
+
+A tab, a section, a view and an item opened on them are history entries: Back and Forward walk them; the query
+stays on a move. The agents' view names are reserved (an agent's id is `ag_<hex>`), and so are the board slugs
+`insights` and `requests`. The assistant's page context names the tab from the path.
+`frontend/src/locationParams.test.ts` lists every module that reads the query and the keys it reads, and fails when
+a location key is read anywhere or an in-app link carries one.
+
+What stays in the query, and why:
+
+| Kind | Keys |
+|---|---|
+| Filters and search | Categories' `q`, `source`, `sentiment`, `usefulness`, `category`, `subcategory`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`, `types`; Problem Analysis' too, and `resolved`, `similarity`; the Dashboard's facets; Radar's `brand` and `days`; a board list's `q`, `status`, `sort`; Insights' `board`, `days`; Agents → Spend's `month`, `by`, `workflow`; Agents → Skills' scope, `connection` |
+| The review modal | `review`, `reviewBrand`: one review over whatever page is open (Back closes it), so no one page's path |
+| A form's prefill, read once | Connect's `project` (the token's pin); a project's Decisions `newDecision`, `title`, `verdict`, `rationale`, `feedback` |
+| External callbacks | GitHub's App returns, `/agents/connections/github/created?code=&state=` and `…/installed?installation_id=&setup_action=&state=`; the MCP OAuth consent's authorize request; the emailed board sign-in link's `email`, `code`; the unsubscribe link's `t`. Each is the other party's by design, and each page takes it once and strips it |
+
+GitHub returns to its two pages at the address it was given: the creation inside the workspace the flow started in
+(the manifest names it), an installation at the top-level page, which goes straight back into that workspace
+(remembered in the tab when the flow starts, else the workspace last entered), never through the workspace picker.
+
+The SPA's CloudFront distribution serves every one of these paths: an unknown path is S3's 404, which the
+distribution answers with `index.html` (`voc-datalake/lib/stacks/core-cdn.ts`); only `/avatars/*` and `/prototypes/*`
+are other behaviours, and no app path starts with them.
 
 ## Full screen
 

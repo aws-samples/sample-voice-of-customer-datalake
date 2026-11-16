@@ -3,7 +3,7 @@
  * menu's behaviour, `useMenuButton`) named after the workspace and the caller's role there. Its menu lists the
  * caller's other workspaces, if any (not one the server refused in this tab, refusedWorkspaces.ts), then Members
  * (`/members`, the workspace's members page) and Workspace settings (`/workspace-settings`, its brand and
- * plugins). Choosing another workspace is a full page load to `/w/{slug}/dashboard`, which starts with an empty cache (so once phase 2 keys the
+ * plugins). Choosing another workspace is a full page load to `/workspace/{slug}/dashboard`, which starts with an empty cache (so once phase 2 keys the
  * data by workspace, no answer of this one is shown in the next). Nothing renders outside a workspace.
  *
  * @module workspace/WorkspaceMenu

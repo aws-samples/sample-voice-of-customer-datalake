@@ -296,7 +296,7 @@ describe('onboarding buddy', () => {
       categories: hrefOf('Set up categories'), source: hrefOf('Add a source'), form: hrefOf('Create a form'),
       feedback: hrefOf('Browse feedback'), assistant: hrefOf('Open the assistant'), project: hrefOf('Create a project'),
     }).toStrictEqual({
-      categories: '/admin?tab=taxonomy&section=categories', source: '/scrapers', form: '/feedback-forms',
+      categories: '/admin/taxonomy/categories', source: '/scrapers', form: '/feedback-forms',
       feedback: '/categories', assistant: '/chat', project: '/projects',
     })
   })
@@ -530,7 +530,7 @@ describe('brief settings live on Account (docs/account-vs-admin.md)', () => {
 
   it("links the header's Settings to Account's Morning brief section", async () => {
     renderHome()
-    expect(await screen.findByRole('link', { name: 'Brief settings' })).toHaveAttribute('href', '/account?tab=briefing')
+    expect(await screen.findByRole('link', { name: 'Brief settings' })).toHaveAttribute('href', '/account/briefing')
   })
 
   it('closes the subscribe card with its X, stored server-side as subscribe_prompt=dismissed', async () => {
@@ -574,7 +574,7 @@ describe('agent decisions', () => {
     renderHome()
     const card = await screen.findByRole('heading', { name: 'Agent ag_1 needs your decision' })
     expect(await screen.findByText('The personas did not agree on the Persona review after 3 rounds.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: label }).getAttribute('href')).toBe('/agents/ag_1?tab=runs')
+    expect(screen.getByRole('link', { name: label }).getAttribute('href')).toBe('/agents/ag_1/runs')
     expect(card).toBeInTheDocument()
   })
 

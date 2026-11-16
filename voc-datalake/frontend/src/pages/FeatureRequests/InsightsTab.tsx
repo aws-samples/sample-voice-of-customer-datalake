@@ -1,5 +1,5 @@
 /**
- * @fileoverview `/feature-requests?tab=insights`: the feedback boards as their own evidence source —
+ * @fileoverview `/feature-requests/insights`: the feedback boards as their own evidence source —
  * one board's figures, or every board's, over a window (30 / 90 / 365 days, all time). Totals, the
  * most-supported requests (each opens its detail on its board) and requests by category, status and
  * sentiment. An admin can enrich the requests not enriched yet.
@@ -20,6 +20,7 @@ import { useSentimentLabels } from '../../components/DataSourceWizard/sentimentL
 import { formatCount } from '../../utils/numberFormat'
 import { INSIGHT_WINDOWS, isInsightWindow } from '../../api/featureRequestInsights'
 import InsightBars from './InsightBars'
+import { requestLookupPath } from './boardPaths'
 import { insightStatusLabel } from './insightLabels'
 import { useEnrichRequests, useInsights, useInsightsView } from './useInsights'
 import type { InsightBarRow } from './InsightBars'
@@ -27,7 +28,7 @@ import type { InsightsView } from './useInsights'
 import type { FeatureBoard } from '../../api/featureBoardsSchema'
 import type { FeatureRequestInsights, InsightTopRequest } from '../../api/featureRequestInsightsSchema'
 
-const requestLink = (requestId: string) => `/feature-requests?${new URLSearchParams({ request: requestId }).toString()}`
+const requestLink = (requestId: string) => requestLookupPath(requestId)
 
 function WindowSelect({ value, onChange }: Readonly<{ value: InsightsView['days']; onChange: (days: InsightsView['days']) => void }>) {
   const { t } = useTranslation('featureRequests')

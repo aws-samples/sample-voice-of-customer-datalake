@@ -445,7 +445,7 @@ describe('Dashboard not configured', () => {
     
     expect(screen.getByText('Welcome to VoC Analytics')).toBeInTheDocument()
     expect(screen.getByText(/Configure your API endpoint/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Go to Settings/i })).toHaveAttribute('href', '/account?tab=preferences')
+    expect(screen.getByRole('link', { name: /Go to Settings/i })).toHaveAttribute('href', '/account/preferences')
   })
 })
 

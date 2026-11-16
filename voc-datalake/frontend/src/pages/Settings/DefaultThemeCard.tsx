@@ -26,6 +26,7 @@ import { ignoreRejection } from '../../lib/rejections'
 import { COLOR_THEME_IDS, isColorThemeId } from '../../theme/themeCatalog'
 import type { ColorThemeId } from '../../theme/themeCatalog'
 import { useThemeStore } from '../../theme/themeStore'
+import { adminTabSegment } from './adminPaths'
 import { SECTION_TITLE } from './sectionTitle'
 import { ReadOnlyNotice, SettingsLoading, SettingsNotice } from './SettingsNotice'
 
@@ -73,10 +74,9 @@ function DefaultThemeSaveBar({ dirty, pending, error, onSave }: Readonly<{
   )
 }
 
-/** What can unmount the card and lose a pick: leaving /admin, or switching its `?tab=` (not an overlay like `?review=`). */
+/** What can unmount the card and lose a pick: leaving General, its tab of /admin (not an overlay like `?review=`). */
 function losesTheCard(current: Location, next: Location): boolean {
-  const tab = (search: string) => new URLSearchParams(search).get('tab')
-  return current.pathname !== next.pathname || tab(current.search) !== tab(next.search)
+  return adminTabSegment(current.pathname) !== adminTabSegment(next.pathname)
 }
 
 /** The admin's unsaved pick, its save, and the guard that asks before it is lost. */

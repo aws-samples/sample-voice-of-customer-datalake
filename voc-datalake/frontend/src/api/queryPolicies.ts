@@ -103,6 +103,8 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'entities-all-sources': 'feedbackData',
   'erasure-jobs': 'live', // GET /settings/erasure → {jobs, sources}: polled while a job runs
   'feedback-catalogue': 'config', // GET /feedback/catalogue: field meanings, change only with a release (Data Explorer → Fields)
+  // A platform admin's direct link: the console's entry for a slug, looked up once (workspace/platformDirectEntry.ts).
+  'platform-direct-entry': 'standard',
   'feature-requests': 'standard', // feedback boards, their requests and a request's detail (api/featureRequestsApi)
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope

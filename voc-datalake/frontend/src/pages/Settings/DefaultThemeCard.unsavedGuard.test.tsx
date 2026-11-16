@@ -50,7 +50,7 @@ describe('Default theme — Cancel keeps the pick and stays guarded (R2)', () =>
     await userEvent.click(await screen.findByRole('radio', { name: 'Nord' }))
     await act(() => router.navigate('/admin?review=fb_1'))
     expect([router.state.location.search, screen.queryByRole('dialog')]).toStrictEqual(['?review=fb_1', null])
-    await act(() => router.navigate('/admin?tab=sources'))
+    await act(() => router.navigate('/admin/sources/plugins'))
     expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
   })
 

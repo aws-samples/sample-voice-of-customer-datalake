@@ -5,7 +5,7 @@ customers, sales people, customers. Every signed-in user can keep lists of them.
 them a feedback form or a link. Answers to a form link are attributed to the person and the ask.
 
 Pages: **Participants** in the sidebar (Validate section, `/participants`), and a project's **Participants** tab
-(`/projects/{id}?tab=participants`). The unsubscribe page is `/unsubscribe` (public).
+(`/projects/{id}/participants`). The unsubscribe page is `/unsubscribe` (public).
 
 ## Setup
 

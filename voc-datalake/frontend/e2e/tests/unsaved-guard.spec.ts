@@ -3,7 +3,7 @@
  * Save / Discard / Cancel), both roles where they can edit.
  *
  * Given an editor with a changed field, When the user leaves by a sidebar link,
- * the Back button, a `?tab=` switch that drops the draft, or closing the tab,
+ * the Back button, a tab switch that drops the draft, or closing the tab,
  * Then the same named dialog (or, for tab close, the browser's own prompt)
  * appears. Cancel stays with the edits; Discard leaves and sends nothing;
  * Save sends the PUT, then leaves.
@@ -97,7 +97,7 @@ test.describe('agent page (e2e-admin, e2e-owned agent)', () => {
     expect(await agentName(agent?.id ?? '')).toBe(agent?.name)
   })
 
-  test('F6-a3: a ?tab= switch that drops the draft asks; Escape is Cancel', async ({ page }) => {
+  test('F6-a3: a tab switch that drops the draft asks; Escape is Cancel', async ({ page }) => {
     await openAgentWithEdit(page)
     // Config tabs share the draft and switch freely…
     await page.getByRole('tab', { name: /Instructions/ }).click()
@@ -107,7 +107,7 @@ test.describe('agent page (e2e-admin, e2e-owned agent)', () => {
     await expectGuardButtons(page)
     await page.keyboard.press('Escape')
     await expect(guard(page)).toBeHidden()
-    await expect(page).toHaveURL(/tab=instructions/)
+    await expect(page).toHaveURL(/\/instructions(\?|$)/)
   })
 
   test('F6-a4: Save sends the PUT, then navigates', async ({ page }) => {
@@ -174,7 +174,7 @@ test.describe('admin settings (Cancel / Discard only, never saved)', () => {
 test.describe('account objectives (both roles, Cancel / Discard only)', () => {
   test('F6-o1: an unsaved objective asks before leaving; nothing is written', async ({ page }) => {
     const writes = recordWrites(page)
-    await page.goto(site('/account?tab=objectives'))
+    await page.goto(site('/account/objectives'))
     await settle(page)
     await page.getByRole('button', { name: 'Add objective' }).click()
     // A blank objective is dropped from the save body (myContextBody), so it is not dirty: type a title.

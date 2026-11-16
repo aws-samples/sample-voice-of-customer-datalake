@@ -172,7 +172,7 @@ const panelOf = (page: Page): Locator => page.getByRole('complementary', { name:
 const paletteOf = (page: Page): Locator => page.getByRole('navigation', { name: text('editor.palette') })
 
 async function openWorkflowTab(page: Page, agentId: string): Promise<void> {
-  await page.goto(site(`/agents/${agentId}?tab=workflow`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/agents/${agentId}/workflow`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
   await expect(page.locator('.react-flow__pane')).toBeVisible()
 }

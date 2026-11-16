@@ -967,7 +967,12 @@
       "description": "Agenci inżynieryjni używają tego połączenia, aby czytać repozytorium i proponować w nim zmiany.",
       "stored": "Zapisane poświadczenie:",
       "keepHint": "Zapisane poświadczenie nigdy nie jest pokazywane. Zostaw klucz prywatny pusty, aby je zachować; nowe repozytorium, identyfikator aplikacji lub instalacji wymaga ponownie klucza prywatnego.",
-      "save": "Zapisz połączenie"
+      "save": "Zapisz połączenie",
+      "appCreatedTitle": "Przez GitHub App tego wdrożenia",
+      "appCreatedHint": "Zapisane przy instalacji App: jej App, instalacja i repozytorium są stałe, a jej klucz to klucz App. Tutaj można zmienić tylko domyślną gałąź.",
+      "repositoryFixed": "Zapisane przez instalację App: nie może się zmienić. Zainstaluj App w innym repozytorium, aby je połączyć.",
+      "reason": "Powód (opcjonalnie)",
+      "reasonHint": "Dlaczego wprowadzana jest zmiana: zapisany w historii połączenia. Jeden wiersz, najwyżej {{max, number}} znaków."
     },
     "fields": {
       "connectionId": "Identyfikator połączenia",

@@ -928,7 +928,12 @@
       "description": "Die Engineering-Agenten lesen über diese Verbindung das Repository und schlagen Änderungen daran vor.",
       "stored": "Gespeicherte Zugangsberechtigung:",
       "keepHint": "Die gespeicherte Zugangsberechtigung wird nie angezeigt. Lassen Sie den privaten Schlüssel leer, um sie zu behalten; ein neues Repository, eine neue App-ID oder Installations-ID braucht den privaten Schlüssel erneut.",
-      "save": "Verbindung speichern"
+      "save": "Verbindung speichern",
+      "appCreatedTitle": "Über die GitHub-App dieser Bereitstellung",
+      "appCreatedHint": "Beim Installieren der App gespeichert: App, Installation und Repository sind fest, und der Schlüssel ist der der App. Hier lässt sich nur der Standard-Branch ändern.",
+      "repositoryFixed": "Von der Installation der App gespeichert: Es lässt sich nicht ändern. Installieren Sie die App in einem anderen Repository, um es zu verbinden.",
+      "reason": "Grund (optional)",
+      "reasonHint": "Warum die Änderung erfolgt: Er wird im Verlauf der Verbindung gespeichert. Eine Zeile, höchstens {{max, number}} Zeichen."
     },
     "fields": {
       "connectionId": "Verbindungs-ID",

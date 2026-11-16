@@ -68,7 +68,7 @@ async function atWidth(page: Page, width: number, theme: Theme): Promise<void> {
 
 /** Opens `title` in `project`, the page shown from its top (the row's click scrolls the list on a phone). */
 async function openPage(page: Page, title: string, project = PROJECT): Promise<void> {
-  await page.goto(site(`/projects/${project}?tab=documents`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/projects/${project}/documents`), { waitUntil: 'domcontentloaded' })
   // Below 1280 px the list holds one section: the row's own is opened first.
   await (await revealDocumentRow(page, title)).click()
   await expect(page.getByRole('textbox', { name: title, exact: true })).toBeVisible({ timeout: 20_000 })
@@ -235,7 +235,8 @@ test.describe('document canvas: accessibility and widths', () => {
         await page.keyboard.type(' Mine.')
         await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
         // Someone else saves meanwhile (the API, as another tab would).
-        const id = await page.evaluate(() => new URL(window.location.href).searchParams.get('doc') ?? '')
+        // The open document is a path segment (`/projects/<id>/documents/<docId>`), never the query.
+        const id = await page.evaluate(() => decodeURIComponent(/\/documents\/([^/?#]+)/.exec(window.location.pathname)?.[1] ?? ''))
         const stored = await storedDocument(PROJECT, id)
         const theirs = await apiCall('admin', 'PUT', `/projects/${PROJECT}/documents/${encodeURIComponent(id)}`, {
           content: `${stringField(stored, 'content') ?? ''}\nTheirs.\n`, expected_revision: stored?.['revision'], edit_id: `a11y-${Date.now()}`,

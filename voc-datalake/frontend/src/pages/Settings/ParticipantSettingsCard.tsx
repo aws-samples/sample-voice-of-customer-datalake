@@ -20,14 +20,14 @@ import { MAX_DAILY_SEND_CAP } from '../../api/participantsSchema'
 import type { SettingsView } from '../../api/participantsSchema'
 import { useIsAdmin } from '../../store/authStore'
 import { participantErrorMessage } from '../Participants/participantErrors'
-import { canonicalSearch } from './adminTabs'
+import { adminPath } from './adminPaths'
 import { SettingsLoading, SettingsNotice } from './SettingsNotice'
 import { useSaveEngagementSettings } from './useSaveEngagementSettings'
 
 /** What this card saves: every engagement setting but the company domains (Boards owns them). */
 type CardInput = Omit<SettingsInput, 'company_domains'>
 
-const BOARDS_SECTION = `/admin?${canonicalSearch({ tab: 'access', section: 'boards' })}`
+const BOARDS_SECTION = adminPath({ tab: 'access', section: 'boards' })
 
 function isValidCap(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_DAILY_SEND_CAP

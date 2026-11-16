@@ -3,7 +3,7 @@
  * global MCP on /connect replaces it. Both roles.
  *
  * - Given a project the caller can view, When `/projects/:id` loads, Then there
- *   is no MCP / Export tab; `?tab=mcp` falls back to Overview with the URL
+ *   is no MCP / Export tab; `/projects/:id/mcp` falls back to Overview with the URL
  *   rewritten and no page error.
  * - When the header's "Connect via MCP" is followed, Then Connect opens with the
  *   project pre-selected and `connect-endpoint` shows `/mcp/global`.
@@ -36,18 +36,18 @@ test.describe('projects: per-project Export / MCP removed', () => {
     await ensureE2eProject(PROJECT, 'public')
   })
 
-  test('no MCP / Export tab; ?tab=mcp lands on Overview with the URL rewritten', async ({ page }, testInfo) => {
+  test('no MCP / Export tab; /mcp lands on Overview with the URL rewritten', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     const id = projectIdOrSkip(PROJECT)
     await assertStep(page, role, 'projects-mcp-removed-tabs', async (r) => {
-      await page.goto(site(`/projects/${id}?tab=mcp`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/projects/${id}/mcp`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const tabs = page.getByRole('tab')
       // ProjectTabs.tsx; Personas / Documents may carry a count after the name.
       await expect(tabs).toHaveText(PROJECT_TABS.map((name) => new RegExp(`^\\s*${name}\\b`)))
       await expect(page.getByRole('tab', { name: /MCP|Export/ })).toHaveCount(0)
       await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
-      await expect(page).not.toHaveURL(/[?&]tab=mcp/)
+      await expect(page).not.toHaveURL(/\/mcp(\?|$)/)
       await expect(page.getByText(/mcp\.json/i)).toHaveCount(0)
       r.note(`tabs: ${(await tabs.allTextContents()).join(' | ')}; url ${page.url()}`)
     })

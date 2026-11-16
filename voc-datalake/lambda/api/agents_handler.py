@@ -1633,9 +1633,9 @@ def list_engineering_github_apps():
 @app.post('/agents/engineering/github-apps/manifest')
 @tracer.capture_method(capture_response=False)
 def engineering_github_app_manifest():
-    """``{account: user | organization, org?}`` → ``{action_url, manifest, expires_at}``: the form's target on
-    github.com (with a single-use state, 30 minutes) and the App's manifest, which the browser posts there. 409 at the
-    Apps' limit."""
+    """``{account: user | organization, org?, workspace?}`` → ``{action_url, manifest, expires_at}``: the form's target
+    on github.com (with a single-use state, 30 minutes) and the App's manifest, which the browser posts there; its
+    return comes back into ``workspace`` (a slug) when the flow started in one. 409 at the Apps' limit."""
     apps, caller = _github_apps()
     return _connection_call(lambda: apps.manifest(json_object_body(app), _connection_actor(caller)))
 
@@ -1677,12 +1677,12 @@ def engineering_github_app_install(app_id: str):
 @tracer.capture_method(capture_response=False)
 def check_engineering_github_app(app_id: str):
     """``{}`` → ``{repositories, missing}``: what the App's installations cover now, and its connections whose
-    repository they no longer do."""
-    apps, _ = _github_apps()
+    repository they no longer do. The slug the installation reports is recorded when the App was renamed on GitHub."""
+    apps, caller = _github_apps()
 
     def check() -> dict:
         _empty_body()
-        return apps.check(app_id)
+        return apps.check(app_id, _connection_actor(caller))
 
     return _connection_call(check)
 

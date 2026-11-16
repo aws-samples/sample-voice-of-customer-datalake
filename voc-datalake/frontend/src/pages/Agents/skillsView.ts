@@ -1,12 +1,13 @@
 /**
- * @fileoverview Agents → Skills, the view's rules (EngineeringSkills.tsx): what the address says is open (the scope,
- * the role, the version: view options in the query string, `?tab=skills&connection=&role=&version=`), a status's
- * badge, and the versions a person types to compare (1 to 10 whole numbers, each once).
+ * @fileoverview Agents → Skills, the view's rules (EngineeringSkills.tsx): what the address says is open (the role
+ * and the version are the path, `/agents/skills/<role>/v/<n>`, agentsPaths.ts; the scope is a filter of the query,
+ * `?connection=`), a status's badge, and the versions a person types to compare (1 to 10 whole numbers, each once).
  *
  * @module pages/Agents/skillsView
  */
 import { MAX_COMPARED, isSkillRole } from '../../api/engineeringSkillsApi'
 import type { SkillDiff, SkillRole } from '../../api/engineeringSkillsApi'
+import type { AgentsPlace } from './agentsPaths'
 
 /** A diff that changes nothing (an administrator's version written again as it was). */
 export function diffIsEmpty(diff: SkillDiff): boolean {
@@ -24,16 +25,14 @@ export interface SkillsView {
 
 const VERSION = /^[1-9]\d{0,5}$/u
 
-/** The view the address names; anything off its shape is left out (the scope's roles, or the role's history). */
-export function skillsViewOf(params: URLSearchParams): SkillsView {
-  const role = params.get('role') ?? ''
-  const version = params.get('version') ?? ''
+/**
+ * The view the address names (its path's role and version, its query's scope); a role the engineering agents do not
+ * have is left out (the scope's roles), and its version with it.
+ */
+export function skillsViewOf(place: Pick<AgentsPlace, 'role' | 'version'>, params: URLSearchParams): SkillsView {
+  const role = place.role ?? ''
   const known = isSkillRole(role) ? role : null
-  return {
-    connection: params.get('connection') ?? '',
-    role: known,
-    version: known !== null && VERSION.test(version) ? Number(version) : null,
-  }
+  return { connection: params.get('connection') ?? '', role: known, version: known === null ? null : place.version }
 }
 
 /** A version's status as a badge's class (an unknown one reads as muted). */

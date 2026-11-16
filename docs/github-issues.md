@@ -17,7 +17,7 @@ saves a token and at least one repository. Set it to `false` to deploy without i
      (`GitHub 401`) and, after five in a row, a circuit-broken schedule.
 2. Deploy with `"github_issues": true` in `pluginStatus` (the default; `npm run generate:config`
    regenerates the frontend manifest after any change), and fill in the plugin's fields in
-   **Administration → Sources → Source settings** (`/admin?tab=sources&section=plugins`; the
+   **Administration → Sources → Source settings** (`/admin/sources/plugins`; the
    **GitHub Issues** entry on the Data sources page links there):
    - **Repositories**: one per line, up to 20. `owner/name`, or any GitHub URL inside the
      repository: `https://github.com/owner/name`, `…/name/issues`, `…/name/issues/42`,
@@ -90,7 +90,9 @@ Where the engineering agents are deployed (`-c engineeringAgents=true`), a deplo
 of the deployment's GitHub Apps instead of a token: the Apps an administrator makes under Agents → Connections
 ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the source's card,
 **Sign in with** → GitHub App, then the App (its id is saved as `github_app_id`; choosing the token again saves
-`none`, which is no App). Each run then asks the GitHub Apps' token function (`voc-engineering-app-tokens`) for
+`none`, which is no App). A new App is named `VoC Autonomous Agent <4 hex>` (7.49.00); renaming one is done on GitHub
+(Settings → Developer settings → GitHub Apps → the App → **Edit**), and **Check installation** on Agents →
+Connections then records its new slug ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). Each run then asks the GitHub Apps' token function (`voc-engineering-app-tokens`) for
 `issues_token` with its repositories: for each one the installation that covers it, and one installation token per
 installation, exactly `{issues: read, metadata: read}`, narrowed to the run's repositories it covers, so no token the
 source holds can read code or write anything (the App itself may: its key never leaves the token function and the

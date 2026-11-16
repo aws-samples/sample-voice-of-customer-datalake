@@ -1,5 +1,5 @@
 /**
- * `/feature-requests?tab=insights`: loading, an empty window, the figures (totals, the most-supported
+ * `/feature-requests/insights`: loading, an empty window, the figures (totals, the most-supported
  * requests linking to their detail, the three breakdowns), the board and window controls in the URL,
  * and the admin-only "Enrich requests".
  */
@@ -38,7 +38,7 @@ const FIGURES: FeatureRequestInsights = {
   by_sentiment: [{ sentiment: 'negative', requests: 2 }, { sentiment: null, requests: 1 }],
 }
 
-function renderTab({ isAdmin = false, entry = '/feature-requests?tab=insights' } = {}) {
+function renderTab({ isAdmin = false, entry = '/feature-requests/insights' } = {}) {
   renderWithQueryClient(
     <MemoryRouter initialEntries={[entry]}>
       <InsightsTab boards={[SALES, OLD]} isAdmin={isAdmin} />
@@ -70,7 +70,7 @@ describe('the Insights tab', () => {
     const totals = within(await screen.findByTestId('fr-insights-totals'))
     expect(totals.getByText('7')).toBeInTheDocument()
     const link = within(screen.getByTestId('fr-insights-top')).getByRole('link', { name: 'Single sign-on' })
-    expect(link).toHaveAttribute('href', '/feature-requests?request=fr_1')
+    expect(link).toHaveAttribute('href', '/feature-requests/requests/fr_1')
     expect(screen.getByTestId('fr-insights-top')).toHaveTextContent('Account access')
     expect(screen.queryByTestId('fr-insights-truncated')).not.toBeInTheDocument()
   })
@@ -105,7 +105,7 @@ describe('the Insights tab', () => {
   })
 
   it('reads an archived board or an unknown window in the URL as every board and 90 days', async () => {
-    renderTab({ entry: '/feature-requests?tab=insights&board=brd_old&days=7' })
+    renderTab({ entry: '/feature-requests/insights?board=brd_old&days=7' })
     await screen.findByTestId('fr-insights-totals')
     expect(api.getFeatureRequestInsights).toHaveBeenCalledWith({ board: undefined, days: 90 })
   })
@@ -120,7 +120,7 @@ describe('Enrich requests', () => {
 
   it('queues the selected board for an admin and says how many', async () => {
     const user = userEvent.setup()
-    renderTab({ isAdmin: true, entry: '/feature-requests?tab=insights&board=brd_sales' })
+    renderTab({ isAdmin: true, entry: '/feature-requests/insights?board=brd_sales' })
     await user.click(await screen.findByRole('button', { name: 'Enrich requests' }))
     expect(await screen.findByText('2 requests queued, 5 still to enrich.')).toBeInTheDocument()
     expect(api.enrichFeatureRequests).toHaveBeenCalledWith('brd_sales')

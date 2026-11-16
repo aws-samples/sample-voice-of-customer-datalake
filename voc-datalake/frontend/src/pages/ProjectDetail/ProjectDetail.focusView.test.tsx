@@ -1,7 +1,7 @@
 /**
- * @fileoverview The document page's focus view through the project page: `?view=focus` on an open document hides the
- * project's header, banner and tabs (the page keeps the window), and leaving brings them back. A `?view=focus` with no
- * page to show changes nothing.
+ * @fileoverview The document page's focus view through the project page: `/focus` on an open document hides the
+ * project's header, banner and tabs (the page keeps the window), and leaving brings them back. An unknown document
+ * (`/documents/focus` names a document whose id is `focus`) leaves the chrome as it is.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
@@ -54,7 +54,7 @@ describe('ProjectDetail in the document page\'s focus view', () => {
 
   it('hides the project header, the read-only banner and the tabs, and shows them again on leaving', async () => {
     const user = userEvent.setup()
-    renderAt('/projects/proj-1?tab=documents&doc=res-1&view=focus')
+    renderAt('/projects/proj-1/documents/res-1/focus')
     const toggle = await screen.findByRole('button', { name: 'Full screen' })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(chrome()).toStrictEqual({ tabs: false, header: false, banner: false })
@@ -64,8 +64,8 @@ describe('ProjectDetail in the document page\'s focus view', () => {
     expect(chrome()).toStrictEqual({ tabs: true, header: true, banner: true })
   })
 
-  it('changes nothing without a document page to show', async () => {
-    renderAt('/projects/proj-1?tab=documents&view=focus')
+  it('leaves the chrome for an unknown document (no document page to show)', async () => {
+    renderAt('/projects/proj-1/documents/focus')
     expect(await screen.findByRole('tablist')).toBeInTheDocument()
     expect(screen.getByText('Focus project')).toBeInTheDocument()
   })

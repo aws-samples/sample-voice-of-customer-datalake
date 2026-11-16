@@ -4,13 +4,14 @@
  *
  * | Address        | Workspaces               | Shows                                                         |
  * |----------------|--------------------------|---------------------------------------------------------------|
- * | `/w/{slug}/…`  | the slug is one          | the app in that workspace                                     |
- * | `/w/{slug}/…`  | the slug is none, but the platform console entered it in this tab | that workspace, once the server confirms it |
- * | `/w/{slug}/…`  | the slug is none         | "not found, or not a member", with the caller's own as links  |
- * | `/w/…`         | the list failed          | "could not load your workspaces", with Retry and Sign out     |
- * | no `/w/`       | exactly one              | a full page load to the same path inside it                   |
- * | no `/w/`       | two or more              | the picker; each choice opens the same path inside it         |
- * | no `/w/`       | none, or the list failed | the app as before workspaces (no workspace, no header)        |
+ * | `/workspace/{slug}/…`  | the slug is one          | the app in that workspace                                     |
+ * | `/workspace/{slug}/…`  | the slug is none, but the platform console entered it in this tab | that workspace, once the server confirms it |
+ * | `/workspace/{slug}/…`  | the slug is none         | "not found, or not a member", with the caller's own as links  |
+ * | `/workspace/…`         | the list failed          | "could not load your workspaces", with Retry and Sign out     |
+ * | no `/workspace/`, an external return | one or more  | a full page load to the same path inside the flow's workspace (returnWorkspace.ts) |
+ * | no `/workspace/`       | exactly one              | a full page load to the same path inside it                   |
+ * | no `/workspace/`       | two or more              | the picker; each choice opens the same path inside it         |
+ * | no `/workspace/`       | none, or the list failed | the app as before workspaces (no workspace, no header)        |
  *
  * The not-found answer is the same whether the slug exists or not: the list holds only the caller's own, so
  * nothing here can confirm another team's workspace. An address inside a workspace never opens the app without
@@ -33,7 +34,8 @@ export type GateDecision =
   | { readonly kind: 'enter'; readonly workspace: CurrentWorkspace }
   /** A slug outside the caller's list that the platform console entered: opened only once the server confirms it. */
   | { readonly kind: 'enter-unlisted'; readonly workspace: CurrentWorkspace }
-  | { readonly kind: 'redirect'; readonly to: string }
+  /** `replace`: in place of the address (an external return's, whose query is the other party's), no history entry. */
+  | { readonly kind: 'redirect'; readonly to: string; readonly replace?: true }
   /** `path`: the address asked for, which each choice opens inside its workspace (like the redirect). */
   | { readonly kind: 'pick'; readonly workspaces: readonly CurrentWorkspace[]; readonly path: string }
   | { readonly kind: 'not-found'; readonly workspaces: readonly CurrentWorkspace[] }
@@ -43,9 +45,11 @@ export type GateDecision =
  * `workspaces` is the caller's list, or null when it could not be read (no data at all: a list read once keeps
  * counting while a later refetch fails). `routerPath` is the path, query and hash the router sees, kept by the
  * one-workspace redirect and the picker. `entry` is the platform console's record for the address's slug, if any.
+ * `returnTo` is the workspace an external return (GitHub's, outside a workspace) goes back to, never the picker.
  */
 export function gateDecision(
   path: PathWorkspace, workspaces: readonly CurrentWorkspace[] | null, routerPath: string, entry: PlatformEntry | null = null,
+  returnTo: string | null = null,
 ): GateDecision {
   if (workspaces === null) return path.kind === 'none' ? { kind: 'without-workspace' } : { kind: 'unavailable' }
   if (path.kind === 'invalid') return { kind: 'not-found', workspaces }
@@ -57,6 +61,12 @@ export function gateDecision(
     if (entry?.slug === path.slug) return { kind: 'enter-unlisted', workspace: { id: entry.id, slug: entry.slug, name: '', role: 'admin' } }
     return { kind: 'not-found', workspaces }
   }
+  return outsideWorkspace(workspaces, routerPath, returnTo)
+}
+
+/** No `/workspace/` in the address: an external return's workspace, the one workspace, the picker, or the app without one. */
+function outsideWorkspace(workspaces: readonly CurrentWorkspace[], routerPath: string, returnTo: string | null): GateDecision {
+  if (returnTo !== null) return { kind: 'redirect', to: workspaceUrl(returnTo, routerPath), replace: true }
   const [only, ...others] = workspaces
   if (only === undefined) return { kind: 'without-workspace' }
   if (others.length === 0) return { kind: 'redirect', to: workspaceUrl(only.slug, routerPath) }

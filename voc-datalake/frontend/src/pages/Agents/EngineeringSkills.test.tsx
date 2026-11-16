@@ -28,13 +28,15 @@ function route(routes: Record<string, RouteHandler>) {
 
 function Where() {
   const location = useLocation()
-  return <p data-testid="where">{location.search}</p>
+  return <p data-testid="where">{`${location.pathname}${location.search}`}</p>
 }
 
-function renderSkills(entry = '/agents?tab=skills') {
+function renderSkills(entry = '/agents/skills') {
   return renderWithQueryClient(
     <TestRouter initialEntries={[entry]}>
-      <Routes><Route path="/agents" element={<><EngineeringSkills /><Where /></>} /></Routes>
+      <Routes>
+        {['/agents', '/agents/skills/*'].map((path) => <Route key={path} path={path} element={<><EngineeringSkills /><Where /></>} />)}
+      </Routes>
     </TestRouter>,
   )
 }
@@ -80,7 +82,7 @@ describe('Agents → Skills: a scope\'s roles', () => {
     renderSkills()
     await userEvent.click(await screen.findByRole('button', { name: 'Open the history of Fixer' }))
     expect(await screen.findByRole('heading', { name: 'Fixer · Shared skills' })).toBeInTheDocument()
-    expect(screen.getByTestId('where')).toHaveTextContent('role=fixer')
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills\/fixer$/)
     expect(screen.queryByRole('button', { name: /Accept|Reject|Roll back/ })).not.toBeInTheDocument()
   })
 
@@ -90,10 +92,25 @@ describe('Agents → Skills: a scope\'s roles', () => {
       'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
       'GET /agents/engineering/skills?connection=storefront': () => ({ connection: 'storefront', roles: [] }),
     })
-    renderSkills('/agents?tab=skills&connection=storefront&role=fixer&version=2')
+    renderSkills('/agents/skills/fixer/v/2?connection=storefront')
     await userEvent.click(await screen.findByRole('button', { name: 'All roles' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Skills of' }), 'Shared skills')
     expect(await screen.findByRole('button', { name: 'Open the history of Fixer' })).toBeInTheDocument()
-    expect(screen.getByTestId('where')).toHaveTextContent(/^\?tab=skills$/)
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills$/)
+  })
+})
+
+describe('Agents → Skills, its role and version as paths', () => {
+  it('opens a version from its path, Back returns to the history and the scope stays in the query', async () => {
+    route({
+      'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
+      'GET /agents/engineering/skills?connection=storefront': () => ({ connection: 'storefront', roles: [FIXER] }),
+      'GET /agents/engineering/skills/fixer/versions?connection=storefront': () => ({ current_version: 3, versions: [], next_page: null }),
+      'GET /agents/engineering/skills/fixer/versions/2?connection=storefront': () => ({ connection: 'storefront', role: 'fixer', version: null }),
+      'GET /agents/engineering/scorecards/fixer?connection=storefront': () => ({ connection: 'storefront', role: 'fixer', versions: [], cards: [] }),
+    })
+    renderSkills('/agents/skills/fixer/v/2?connection=storefront')
+    expect(await screen.findByRole('heading', { name: /Fixer/ })).toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills\/fixer\/v\/2\?connection=storefront$/)
   })
 })

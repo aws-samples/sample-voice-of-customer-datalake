@@ -298,7 +298,7 @@ plan routes as open with an owner check (the approver's own plan).
 
 Planning runs in the ordinary chat run, on the `chat` surface's model. Step agents (free-text fields and think
 steps) use the `agent_worker` surface. Both default to Claude Sonnet 5.5 and can be changed in Administration → AI
-models (`/admin?tab=ai`).
+models (`/admin/ai`).
 
 ## Contract files
 

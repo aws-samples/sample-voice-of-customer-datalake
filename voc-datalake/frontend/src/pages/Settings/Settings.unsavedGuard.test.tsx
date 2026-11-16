@@ -85,17 +85,17 @@ describe('/admin brand form — Cancel keeps the draft and stays guarded (R2)', 
 })
 
 describe('/admin brand form — in-page tab switches are URL changes, not leaves', () => {
-  it('switches tab (pushing ?tab=) without the dialog and keeps the draft for Back', async () => {
+  it('switches tab (pushing its path) without the dialog and keeps the draft for Back', async () => {
     getBrandSettings.mockResolvedValue(stored('Stored brand'))
     const { router } = mountAdmin()
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Brand Name'), ' draft')
     await user.click(screen.getByRole('button', { name: 'System', pressed: false }))
-    const switched = { search: router.state.location.search, dialog: screen.queryByRole('dialog') }
+    const switched = { at: router.state.location.pathname, dialog: screen.queryByRole('dialog') }
     await act(() => router.navigate(-1))
 
-    expect(switched).toStrictEqual({ search: '?tab=system&section=logs', dialog: null })
-    expect(router.state.location.search).toBe('')
+    expect(switched).toStrictEqual({ at: '/admin/system/logs', dialog: null })
+    expect(router.state.location.pathname).toBe('/admin')
     expect(brandField()).toHaveDisplayValue(/draft$/)
   })
 })

@@ -266,75 +266,80 @@ describe('Settings', () => {
     })
   })
 
-  describe('deep links', () => {
-    /** Mounts the page at `path` in a data router (history actions observable). */
+  describe('addresses: the tab and section are the path', () => {
+    /** Mounts the page at `path` in a data router (its route as routes.tsx declares it; history actions observable). */
     function mountAt(path: string) {
-      const router = createMemoryRouter([{ path: '/admin', element: <Settings /> }], { initialEntries: ['/start', path], initialIndex: 1 })
+      const router = createMemoryRouter([{ path: '/admin/*', element: <Settings /> }], { initialEntries: ['/start', path], initialIndex: 1 })
       renderWithQueryClient(<RouterProvider router={router} />)
       return router
     }
+    const at = (router: ReturnType<typeof mountAt>) => `${router.state.location.pathname}${router.state.location.search}`
 
     it.each([
-      ['/admin?tab=version', '?tab=system&section=version', 'version-section'],
-      ['/admin?tab=radar', '?tab=sources&section=radar', 'radar-section'],
-      ['/admin?tab=taxonomy', '?tab=taxonomy&section=categories', 'categories-manager'],
-    ])('opens %s and replaces the URL with %s', async (path, canonical, testId) => {
+      ['/admin/system', '/admin/system/logs', 'logs-section'],
+      ['/admin/access/nope', '/admin/access/policies', 'source-policies-section'],
+      ['/admin/taxonomy', '/admin/taxonomy/categories', 'categories-manager'],
+    ])('opens %s and replaces the address with %s, in place', async (path, canonical, testId) => {
       const router = mountAt(path)
 
       expect(screen.getByTestId(testId)).toBeInTheDocument()
-      await waitFor(() => expect(router.state.location.search).toBe(canonical))
+      await waitFor(() => expect(at(router)).toBe(canonical))
       expect(router.state.historyAction).toBe('REPLACE')
+      await router.navigate(-1)
+      expect(router.state.location.pathname, 'no extra history entry').toBe('/start')
     })
 
-    it('pushes the canonical query on a tab switch, then on a section switch', async () => {
+    it('pushes the path on a tab switch, then on a section switch', async () => {
       const user = userEvent.setup()
       const router = mountAt('/admin')
       await user.click(screen.getByRole('button', { name: 'Taxonomy', pressed: false }))
-      const afterTab = { search: router.state.location.search, action: router.state.historyAction }
+      const afterTab = { at: at(router), action: router.state.historyAction }
       await user.click(screen.getByRole('tab', { name: 'Dimensions' }))
 
-      expect(afterTab).toStrictEqual({ search: '?tab=taxonomy&section=categories', action: 'PUSH' })
-      expect(router.state.location.search).toBe('?tab=taxonomy&section=dimensions')
+      expect(afterTab).toStrictEqual({ at: '/admin/taxonomy/categories', action: 'PUSH' })
+      expect(at(router)).toBe('/admin/taxonomy/dimensions')
       expect(router.state.historyAction).toBe('PUSH')
     })
 
-    it('goes Back to the previous section, and the page follows the URL', async () => {
+    it('goes Back to the previous section and Forward again, and the page follows the path', async () => {
       const user = userEvent.setup()
-      const router = mountAt('/admin?tab=system&section=logs')
+      const router = mountAt('/admin/system/logs')
       await user.click(screen.getByRole('tab', { name: 'Version' }))
       await router.navigate(-1)
 
-      expect(router.state.location.search).toBe('?tab=system&section=logs')
+      expect(at(router)).toBe('/admin/system/logs')
       expect(await screen.findByTestId('logs-section')).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true')
+      await router.navigate(1)
+      expect(await screen.findByTestId('version-section')).toBeInTheDocument()
     })
 
     it('adds no history entry when the open tab is pressed again', async () => {
       const user = userEvent.setup()
-      const router = mountAt('/admin?tab=ai')
+      const router = mountAt('/admin/ai')
       await user.click(screen.getByRole('button', { name: 'AI models', pressed: true }))
 
       expect(router.state.historyAction).toBe('POP')
     })
 
-    it('opens the Sources tab\'s first section for ?tab=sources (no longer the pre-5.09 Source policies)', async () => {
-      const router = mountAt('/admin?tab=sources')
+    it('opens the Sources tab\'s first section for /admin/sources (no longer the pre-5.09 Source policies)', async () => {
+      const router = mountAt('/admin/sources')
 
       expect(screen.getByRole('tab', { name: 'Source settings' })).toHaveAttribute('aria-selected', 'true')
       expect(screen.queryByTestId('source-policies-section')).not.toBeInTheDocument()
-      await waitFor(() => expect(router.state.location.search).toBe('?tab=sources&section=plugins'))
+      await waitFor(() => expect(at(router)).toBe('/admin/sources/plugins'))
     })
 
-    it('keeps ?review= (the review modal) through a canonical redirect and a tab switch', async () => {
+    it('reads no tab from the query (an old `?tab=` link opens General), and keeps the query through a tab switch', async () => {
       const user = userEvent.setup()
       const router = mountAt('/admin?tab=version&review=fb_1')
-      await waitFor(() => expect(router.state.location.search).toBe('?review=fb_1&tab=system&section=version'))
+      expect(screen.queryByTestId('version-section')).not.toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Taxonomy', pressed: false }))
-      expect(new URLSearchParams(router.state.location.search).get('review')).toBe('fb_1')
+      expect(at(router)).toBe('/admin/taxonomy/categories?tab=version&review=fb_1')
     })
 
-    it('leaves a canonical link as it is', () => {
-      const router = mountAt('/admin?tab=sources&section=inbox')
+    it('leaves a path that names its place as it is', () => {
+      const router = mountAt('/admin/sources/inbox')
 
       expect(screen.getByTestId('email-inbox-card')).toBeInTheDocument()
       expect(router.state.historyAction).toBe('POP')
@@ -650,10 +655,10 @@ describe('Settings without admin access', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })
 
-  it('opens Logs, not Version, for a ?tab=version deep link from a non-admin', async () => {
+  it('opens Logs, not Version, for /admin/system/version from a non-admin', async () => {
     const SettingsNonAdmin = await importSettingsAs(false)
 
-    renderSettings(<SettingsNonAdmin />, '/admin?tab=version')
+    renderSettings(<SettingsNonAdmin />, '/admin/system/version')
 
     expect(screen.queryByTestId('version-section')).not.toBeInTheDocument()
     expect(screen.getByTestId('logs-section')).toBeInTheDocument()

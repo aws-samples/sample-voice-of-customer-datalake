@@ -51,27 +51,27 @@ const FRESH = { thread: null, draft: '', timeRange: '14d' }
 
 describe('the stores of a page load', () => {
   it('do not carry what was saved in acme into juniper', async () => {
-    await saveAt('/w/acme/dashboard', 'thread-acme', 'A review from Acme Outfitters')
-    await expect(readAt('/w/juniper/dashboard')).resolves.toStrictEqual(FRESH)
+    await saveAt('/workspace/acme/dashboard', 'thread-acme', 'A review from Acme Outfitters')
+    await expect(readAt('/workspace/juniper/dashboard')).resolves.toStrictEqual(FRESH)
   })
 
   it('give acme back what was saved there on return, whatever juniper saved meanwhile', async () => {
-    await saveAt('/w/acme/dashboard', 'thread-acme', 'A review from Acme Outfitters')
-    await saveAt('/w/juniper/feedback', 'thread-juniper', 'A review from Juniper Trail Co.')
-    await expect(readAt('/w/acme/chat')).resolves.toStrictEqual({ thread: 'thread-acme', draft: 'A review from Acme Outfitters', timeRange: '7d' })
+    await saveAt('/workspace/acme/dashboard', 'thread-acme', 'A review from Acme Outfitters')
+    await saveAt('/workspace/juniper/feedback', 'thread-juniper', 'A review from Juniper Trail Co.')
+    await expect(readAt('/workspace/acme/chat')).resolves.toStrictEqual({ thread: 'thread-acme', draft: 'A review from Acme Outfitters', timeRange: '7d' })
   })
 
   it('keep the deployment-wide records outside a workspace, apart from every workspace\'s', async () => {
     await saveAt('/dashboard', 'thread-plain', 'A review')
     expect([...saved.keys()].sort((a, b) => a.localeCompare(b))).toStrictEqual(['voc-assistant-ui', 'voc-config', 'voc-manual-import'])
-    await expect(readAt('/w/acme/dashboard')).resolves.toStrictEqual(FRESH)
+    await expect(readAt('/workspace/acme/dashboard')).resolves.toStrictEqual(FRESH)
     await expect(readAt('/settings')).resolves.toStrictEqual({ thread: 'thread-plain', draft: 'A review', timeRange: '7d' })
   })
 
   it.each<[string, readonly string[]]>([
-    ['/w/acme/dashboard', ['voc-assistant-ui:w/acme', 'voc-config:w/acme', 'voc-manual-import:w/acme']],
-    // A /w/ address no workspace can have: the gate's not-found, which opens no page.
-    ['/w/ADMIN/dashboard', ['voc-assistant-ui', 'voc-config', 'voc-manual-import']],
+    ['/workspace/acme/dashboard', ['voc-assistant-ui:w/acme', 'voc-config:w/acme', 'voc-manual-import:w/acme']],
+    // A /workspace/ address no workspace can have: the gate's not-found, which opens no page.
+    ['/workspace/ADMIN/dashboard', ['voc-assistant-ui', 'voc-config', 'voc-manual-import']],
   ])('save a page load of %s under its names', async (pathname, names) => {
     await saveAt(pathname, 'thread-acme', 'A review')
     expect(savedKeys()).toStrictEqual(names)
@@ -99,7 +99,7 @@ function seed(): void {
 describe('forgetWorkspaceStores (sign-out, an expired session)', () => {
   it('removes every workspace\'s record of the three stores and the plain assistant record, in both storages', async () => {
     seed()
-    const { forgetWorkspaceStores } = await helpersAt('/w/acme/dashboard')
+    const { forgetWorkspaceStores } = await helpersAt('/workspace/acme/dashboard')
     forgetWorkspaceStores()
     // The plain draft and config (filters) stay as before 6.15.00; the plain assistant record goes with the session.
     expect(savedKeys()).toStrictEqual(['voc-config', 'voc-manual-import', 'voc-theme'])
@@ -110,7 +110,7 @@ describe('forgetWorkspaceStores (sign-out, an expired session)', () => {
 describe('forgetOtherRecords (Reset local settings)', () => {
   it('removes every config record but the page load\'s own', async () => {
     seed()
-    const { forgetOtherRecords } = await helpersAt('/w/acme/settings')
+    const { forgetOtherRecords } = await helpersAt('/workspace/acme/settings')
     forgetOtherRecords('voc-config')
     expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config:w/acme', 'voc-manual-import', 'voc-manual-import:w/juniper', 'voc-theme'])
   })
@@ -126,7 +126,7 @@ describe('forgetOtherRecords (Reset local settings)', () => {
 describe('forgetWorkspaceRecords (a workspace its admin deleted)', () => {
   it("removes that workspace's records of the three stores, in both storages, and nothing else", async () => {
     seed()
-    const { forgetWorkspaceRecords } = await helpersAt('/w/juniper/workspace-settings')
+    const { forgetWorkspaceRecords } = await helpersAt('/workspace/juniper/workspace-settings')
     forgetWorkspaceRecords('juniper')
     expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config', 'voc-config:w/acme', 'voc-manual-import', 'voc-theme'])
     expect(Object.keys(window.sessionStorage)).toStrictEqual(['voc-refused-workspaces'])

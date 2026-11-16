@@ -1,6 +1,6 @@
 /**
  * The header's workspace menu: nothing outside a workspace; inside one a WAI-ARIA menu button whose menu lists the
- * other workspaces (full page loads to `/w/{slug}/dashboard`; not one the server refused in this tab), then Members
+ * other workspaces (full page loads to `/workspace/{slug}/dashboard`; not one the server refused in this tab), then Members
  * and Workspace settings (the in-app `/members` and `/workspace-settings` pages).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -67,7 +67,7 @@ describe('WorkspaceMenu', () => {
     const trigger = await screen.findByRole('button', { name: 'Workspace: Acme Outfitters, Admin. Switch workspace' })
     await userEvent.click(trigger)
     expect(screen.getByRole('menu', { name: 'Workspace: Acme Outfitters, Admin. Switch workspace' })).toHaveTextContent(/Current workspace.*Acme Outfitters.*Admin/)
-    expect(items()).toStrictEqual([['Juniper Trail Co.Editor', '/w/juniper/dashboard'], ...OWN_PAGES])
+    expect(items()).toStrictEqual([['Juniper Trail Co.Editor', '/workspace/juniper/dashboard'], ...OWN_PAGES])
     expect(screen.getByRole('menuitem', { name: /Juniper Trail Co./ })).toHaveFocus()
   })
 
@@ -77,7 +77,7 @@ describe('WorkspaceMenu', () => {
     act(() => setCurrentWorkspace(ACME))
     renderMenu([ACME, field, JUNIPER])
     await userEvent.click(await screen.findByRole('button', { name: /Switch workspace/ }))
-    expect(items()).toStrictEqual([['Acme Outfitters Field TeamViewer', '/w/acme-field/dashboard'], ...OWN_PAGES])
+    expect(items()).toStrictEqual([['Acme Outfitters Field TeamViewer', '/workspace/acme-field/dashboard'], ...OWN_PAGES])
   })
 
   it('opens from the keyboard and closes on Escape with focus back on the button', async () => {

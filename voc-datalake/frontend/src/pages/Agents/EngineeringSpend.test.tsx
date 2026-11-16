@@ -44,11 +44,11 @@ function Where() {
   return <p data-testid="where">{location.pathname + location.search}</p>
 }
 
-function renderSpend(entry = '/agents?tab=spend&month=2026-11') {
+function renderSpend(entry = '/agents/spend?month=2026-11') {
   return renderWithQueryClient(
     <TestRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/agents" element={<><EngineeringSpend /><Where /></>} />
+        <Route path="/agents/spend" element={<><EngineeringSpend /><Where /></>} />
         <Route path="/agents/engineering/:runId" element={<p>Run monitor</p>} />
       </Routes>
     </TestRouter>,
@@ -122,7 +122,7 @@ describe('Agents → Spend: the month', () => {
         'GET /workflows': budgeted,
         [spendPath('month=2026-11&by=run')]: () => answer('run', [{ key: 'RUN1', ...usage(1) }]),
       }, { missStatus: 500 })
-      renderSpend('/agents?tab=spend&month=2026-11&by=run')
+      renderSpend('/agents/spend?month=2026-11&by=run')
       expect(within(await screen.findByRole('table')).queryByRole('columnheader', header)).not.toBeInTheDocument()
     })
 
@@ -131,7 +131,7 @@ describe('Agents → Spend: the month', () => {
         'GET /workflows': budgeted,
         [spendPath('month=2026-10&by=workflow')]: () => answer('workflow', [{ key: 'wf_fix', ...usage(1) }], { month: '2026-10' }),
       }, { missStatus: 500 })
-      renderSpend('/agents?tab=spend&month=2026-10')
+      renderSpend('/agents/spend?month=2026-10')
       expect(within(await screen.findByRole('table')).queryByRole('columnheader', header)).not.toBeInTheDocument()
     })
 
@@ -153,7 +153,7 @@ describe('Agents → Spend: the month', () => {
     expect(await screen.findByRole('link', { name: 'RUN1' })).toHaveAttribute('href', '/agents/engineering/RUN1')
     expect(screen.getByText('Workflow: Fix the reported bugs')).toBeInTheDocument()
     expect(screen.getByLabelText('Group by')).toHaveValue('run')
-    expect(Object.fromEntries(where())).toStrictEqual({ tab: 'spend', month: '2026-11', by: 'run', workflow: 'wf_fix' })
+    expect(Object.fromEntries(where())).toStrictEqual({ month: '2026-11', by: 'run', workflow: 'wf_fix' })
   })
 
   it('the workflow filter clears to every workflow\'s runs', async () => {
@@ -162,7 +162,7 @@ describe('Agents → Spend: the month', () => {
       [spendPath('month=2026-11&by=run&workflow=wf_fix')]: () => answer('run', [{ key: 'RUN1', ...usage(3.38) }]),
       [spendPath('month=2026-11&by=run')]: () => answer('run', [{ key: 'RUN1', ...usage(3.38) }, { key: 'RUN2', ...usage(0.5) }]),
     })
-    renderSpend('/agents?tab=spend&month=2026-11&by=run&workflow=wf_fix')
+    renderSpend('/agents/spend?month=2026-11&by=run&workflow=wf_fix')
     await user.click(await screen.findByRole('button', { name: 'Show every workflow' }))
     expect(await screen.findByRole('link', { name: 'RUN2' })).toBeInTheDocument()
     expect(where().has('workflow')).toBe(false)
@@ -200,7 +200,7 @@ describe('Agents → Spend: the month', () => {
 
   it('an agent links to its run', async () => {
     route({ [spendPath('month=2026-11&by=agent')]: () => answer('agent', [{ key: 'RUN1/fixer-3', ...usage(1) }]) })
-    renderSpend('/agents?tab=spend&month=2026-11&by=agent')
+    renderSpend('/agents/spend?month=2026-11&by=agent')
     const link = await screen.findByRole('link', { name: /fixer-3/ })
     expect(link).toHaveAttribute('href', '/agents/engineering/RUN1')
     expect(link).toHaveTextContent('in run RUN1')
@@ -208,7 +208,7 @@ describe('Agents → Spend: the month', () => {
 
   it('an agent or a run not recorded says so, and a run not recorded links nowhere', async () => {
     route({ [spendPath('month=2026-11&by=agent')]: () => answer('agent', [{ key: 'RUN1/-', ...usage(1) }, { key: '-/-', ...usage(0.1) }]) })
-    renderSpend('/agents?tab=spend&month=2026-11&by=agent')
+    renderSpend('/agents/spend?month=2026-11&by=agent')
     const rows = await screen.findAllByRole('rowheader')
     expect(rows.map((row) => row.textContent)).toStrictEqual(['Not recorded in run RUN1', 'Not recorded'])
     expect(within(rows[0] ?? document.body).getByRole('link')).toHaveAttribute('href', '/agents/engineering/RUN1')
@@ -217,7 +217,7 @@ describe('Agents → Spend: the month', () => {
 
   it('a day reads as a date', async () => {
     route({ [spendPath('month=2026-11&by=day')]: () => answer('day', [{ key: '07', ...usage(1) }]) })
-    renderSpend('/agents?tab=spend&month=2026-11&by=day')
+    renderSpend('/agents/spend?month=2026-11&by=day')
     expect(await screen.findByRole('rowheader', { name: 'Nov 7' })).toBeInTheDocument()
   })
 

@@ -5,10 +5,10 @@
  *
  * - The sidebar's LISTEN item reads "Feedback boards" and opens `/feature-requests`, the board list
  *   (h1 "Feedback boards"), whose seeded Sales board card opens `/feature-requests/sales-feature-requests`.
- * - Admin: the card's Edit links to `/admin?tab=access&section=boards&board=<id>`, the gear
- *   ("Configure boards") to `/admin?tab=access&section=boards`.
+ * - Admin: the card's Edit links to `/admin/access/boards/<id>`, the gear
+ *   ("Configure boards") to `/admin/access/boards`.
  * - Admin: Administration → Privacy & access → Boards lists the boards with the company domains above
- *   them; Edit on the Sales board opens its editor (`&board=brd_sales`), and "Back to boards" returns.
+ *   them; Edit on the Sales board opens its editor (`/admin/access/boards/brd_sales`), and "Back to boards" returns.
  * - Admin: the Sales card's Delete opens the delete dialog; when the board has requests it asks for the
  *   board's name (Delete stays off until it is typed). The dialog is only cancelled, never confirmed.
  * - e2e-user (production only): the list shows no Edit, no Delete and no gear.
@@ -27,7 +27,7 @@ import { recordCreated } from '../lib/ledger'
 
 /** The board seeded on every deployment (shared/feature_boards_store.py) and in the dev mock. */
 const SALES = { id: 'brd_sales', slug: 'sales-feature-requests', name: 'Sales feature requests' } as const
-const BOARDS_ADMIN = '/admin?tab=access&section=boards'
+const BOARDS_ADMIN = '/admin/access/boards'
 
 async function visit(page: Page, pathname: string): Promise<void> {
   await page.goto(site(pathname), { waitUntil: 'domcontentloaded' })
@@ -60,7 +60,7 @@ test.describe('feedback boards', () => {
     await assertStep(page, 'admin', 'fb-03-admin-links', async () => {
       await visit(page, '/feature-requests')
       await expect(salesCard(page).getByRole('link', { name: `Edit ${SALES.name}` }))
-        .toHaveAttribute('href', `${BOARDS_ADMIN}&board=${SALES.id}`)
+        .toHaveAttribute('href', `${BOARDS_ADMIN}/${SALES.id}`)
       await expect(page.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', BOARDS_ADMIN)
     })
     await assertStep(page, 'admin', 'fb-04-admin-section', async () => {
@@ -69,10 +69,11 @@ test.describe('feedback boards', () => {
       await expect(page.getByRole('heading', { name: 'Company domains', level: 2 })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Feedback boards', level: 2 })).toBeVisible()
       await page.getByRole('button', { name: `Edit ${SALES.name}` }).click()
-      await expect.poll(() => new URL(page.url()).searchParams.get('board')).toBe(SALES.id)
+      // The open editor is a path segment (pages/Settings/adminPaths.ts), after the workspace's base when there is one.
+      await expect.poll(() => new URL(page.url()).pathname).toMatch(new RegExp(`${BOARDS_ADMIN}/${SALES.id}$`))
       await expect(page.getByRole('heading', { name: SALES.name, level: 2 })).toBeVisible()
       await page.getByRole('button', { name: 'Back to boards' }).click()
-      await expect.poll(() => new URL(page.url()).searchParams.get('board')).toBeNull()
+      await expect.poll(() => new URL(page.url()).pathname).toMatch(new RegExp(`${BOARDS_ADMIN}$`))
       await expect(page.getByRole('heading', { name: 'Feedback boards', level: 2 })).toBeVisible()
     })
   })

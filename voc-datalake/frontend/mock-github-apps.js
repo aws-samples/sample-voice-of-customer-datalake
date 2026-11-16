@@ -2,7 +2,7 @@
 // routes of agents_handler.py (lambda/engineering/connectors/github_apps.py) in their wire shape, admin only:
 //   GET    /agents/engineering/github-apps                {apps, limit: 5}; each App's `connections` are the ids of the
 //                                                         connections whose credential is a reference to it
-//   POST   …/github-apps/manifest        {account: user | organization, org?}: the form github.com takes (action_url
+//   POST   …/github-apps/manifest        {account: user | organization, org?, workspace?}: the form github.com takes (action_url
 //                                        with a single-use state, the manifest); 400 for a bad org login, 409 at 5 Apps
 //   POST   …/github-apps/conversions     {code, state}: 201 {app, install_url, expires_at}; one uniform 400 for a state
 //                                        that is unknown, used or of another purpose; 409 for the code `expired` (GitHub
@@ -22,6 +22,8 @@
 const APPS_PATH = /^\/agents\/engineering\/github-apps(?:\/([^/]+))?(?:\/(install|check))?$/;
 const APP_LIMIT = 5;
 const ORG_LOGIN = /^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$/;
+/** A workspace's slug (lambda/shared/platform_workspaces.py `_SLUG`): where the creation's return comes back to. */
+const WORKSPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 const APP_ID = /^[1-9]\d{0,19}$/;
 const STATE_REFUSED = 'this link is not valid any more (expired, already used or not yours): start again from Agents → Connections';
 const CODE_REFUSED = 'GitHub refused the code (it expired or was used): the App may exist on GitHub without its key here. '
@@ -77,15 +79,18 @@ function manifest(body) {
   if (account === 'organization' && !ORG_LOGIN.test(String(body.org ?? ''))) {
     return [400, { message: 'org is the organization\'s login: letters, digits and single hyphens, at most 39 characters' }];
   }
-  if (account !== 'user' && account !== 'organization') return [400, { message: 'the body is {account: user | organization, org?}' }];
+  if (account !== 'user' && account !== 'organization') return [400, { message: 'the body is {account: user | organization, org?, workspace?}' }];
+  const workspace = body.workspace ?? '';
+  if (workspace !== '' && !WORKSPACE_SLUG.test(String(workspace))) return [400, { message: 'workspace is the slug of the workspace the flow started in' }];
   const state = mintState('create');
   const base = account === 'user' ? 'https://github.com/settings/apps/new' : `https://github.com/organizations/${body.org}/settings/apps/new`;
-  const hex = (0x3f9a2c + nextState * 4099).toString(16).slice(-6);
+  const hex = (0x3f9a2c + nextState * 4099).toString(16).slice(-4);
+  const returnBase = workspace === '' ? 'http://localhost:3000' : `http://localhost:3000/workspace/${workspace}`;
   return [200, {
     action_url: `${base}?state=${state}`, expires_at: thirtyMinutes(),
     manifest: {
-      name: `VoC agents ${hex}`, url: 'http://localhost:3000', public: false, request_oauth_on_install: false,
-      setup_on_update: true, redirect_url: 'http://localhost:3000/agents/connections/github/created',
+      name: `VoC Autonomous Agent ${hex}`, url: 'http://localhost:3000', public: false, request_oauth_on_install: false,
+      setup_on_update: true, redirect_url: `${returnBase}/agents/connections/github/created`,
       setup_url: 'http://localhost:3000/agents/connections/github/installed',
       hook_attributes: { url: 'http://localhost:3001/webhooks/github_issues', active: true },
       default_permissions: { contents: 'write', pull_requests: 'write', issues: 'write', metadata: 'read' },

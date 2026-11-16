@@ -211,7 +211,7 @@ describe('Members for an editor or a viewer', () => {
   })
 
   it('leaves after the confirmation, then loads the start page', async () => {
-    const assign = stubLocationAssign('/w/juniper/members')
+    const assign = stubLocationAssign('/workspace/juniper/members')
     const left = vi.fn<RouteHandler>(() => ({ removed: 'sub-ada' }))
     renderPage(JUNIPER, { [`DELETE ${MEMBERS}/sub-ada`]: left })
     await userEvent.click(await screen.findByRole('button', { name: 'Leave workspace' }))

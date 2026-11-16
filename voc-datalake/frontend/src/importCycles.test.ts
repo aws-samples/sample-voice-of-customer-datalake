@@ -9,9 +9,10 @@
  *
  * @module importCycles.test
  */
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { readFileSync, existsSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { productionSourcePaths } from './test/appSources'
 
 const SRC = resolve(__dirname)
 const SOURCE_FILE = /\.(ts|tsx)$/
@@ -21,14 +22,6 @@ const STATEMENT_START = /^(?:import|export)\s/
 const TYPE_ONLY_START = /^(?:import|export)\s+type\s/
 // The relative specifier of `… from './y'` (possibly on the closing line of a multi-line import) or `import './y'`.
 const FROM_SPECIFIER = /(?:\bfrom|^import)\s+['"](\.{1,2}\/[^'"]+)['"]/
-
-function listSources(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    if (statSync(path).isDirectory()) return listSources(path)
-    return SOURCE_FILE.test(path) && !SPEC_FILE.test(path) && !path.endsWith('.d.ts') ? [path] : []
-  })
-}
 
 function resolveImport(fromFile: string, specifier: string): string | undefined {
   const base = resolve(dirname(fromFile), specifier)
@@ -86,7 +79,7 @@ describe('findCycles', () => {
 
 describe('production source', () => {
   it('has no runtime import cycle', () => {
-    const files = listSources(SRC)
+    const files = productionSourcePaths(SRC, SPEC_FILE)
     const graph = new Map(files.map((file) => [file, runtimeImports(file)]))
     const cycles = findCycles(graph).map((cycle) => cycle.map((file) => relative(SRC, file)).join(' -> '))
     expect(cycles).toStrictEqual([])

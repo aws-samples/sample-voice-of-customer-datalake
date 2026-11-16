@@ -28,24 +28,18 @@ describe('MovedRouteRedirect', () => {
     const children = routes.find((r) => r.path === '/')?.children ?? []
     const settings = children.find((r) => r.path === 'settings')
     expect(settings?.element).toStrictEqual(<MovedRouteRedirect to="/admin" />)
-    expect(children.some((r) => r.path === 'admin')).toBe(true)
-  })
-
-  it('sends /agents/workflows to the Workflows tab of /agents instead of an agent named "workflows"', () => {
-    const children = routes.find((r) => r.path === '/')?.children ?? []
-    const library = children.find((r) => r.path === 'agents/workflows')
-    expect(library?.element).toStrictEqual(<MovedRouteRedirect to="/agents?tab=workflows" />)
+    expect(children.some((r) => r.path === 'admin/*')).toBe(true)
   })
 
   it('lets a query on the target win over the same parameter of the old URL, and keeps the rest', () => {
     render(
-      <TestRouter initialEntries={['/agents/workflows?tab=agents&from=crumb']}>
+      <TestRouter initialEntries={['/old?view=a&from=crumb']}>
         <Routes>
-          <Route path="/agents/workflows" element={<MovedRouteRedirect to="/agents?tab=workflows" />} />
-          <Route path="/agents" element={<LocationProbe />} />
+          <Route path="/old" element={<MovedRouteRedirect to="/new?view=b" />} />
+          <Route path="/new" element={<LocationProbe />} />
         </Routes>
       </TestRouter>,
     )
-    expect(screen.getByTestId('location')).toHaveTextContent('/agents?tab=workflows&from=crumb')
+    expect(screen.getByTestId('location')).toHaveTextContent('/new?view=b&from=crumb')
   })
 })

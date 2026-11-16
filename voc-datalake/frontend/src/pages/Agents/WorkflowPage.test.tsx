@@ -291,7 +291,7 @@ describe('Workflow library — Start from a template', () => {
       engineering.available = available
       renderAt(`/agents/workflows/templates/${templateId}`)
       expect(await screen.findByText(/This template isn't available here/u)).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Back to the workflow library' })).toHaveAttribute('href', '/agents?tab=workflows')
+      expect(screen.getByRole('link', { name: 'Back to the workflow library' })).toHaveAttribute('href', '/agents/workflows')
       expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     })
 })

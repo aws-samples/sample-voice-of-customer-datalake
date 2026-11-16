@@ -14,6 +14,8 @@
  * @module components/Breadcrumbs/routeCrumbs
  */
 import type { TFunction } from 'i18next'
+import { AGENTS_PATH_VIEWS } from '../../pages/Agents/agentsPaths'
+import { TAB_PATH_PAGES } from '../../pages/tabPathPages'
 
 export interface CrumbLabel {
   /**
@@ -56,19 +58,26 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'feedback-forms': { labelKey: 'common:breadcrumbs.feedbackForms' },
   'participants': { labelKey: 'common:breadcrumbs.participants' },
   'feature-requests': { labelKey: 'common:breadcrumbs.featureRequests' },
+  // `/feature-requests/insights` and `/feature-requests/requests/<id>` (a request looked up by its id): places of
+  // the boards' page, which the trail ends before (trailSegments); labelled for the route coverage.
+  'insights': { labelKey: 'common:breadcrumbs.insights', path: '/feature-requests' },
+  'requests': { labelKey: 'common:breadcrumbs.featureRequests', path: '/feature-requests' },
   'memory': { labelKey: 'common:breadcrumbs.memory' },
   'company': { labelKey: 'common:breadcrumbs.company' },
   'agents': { labelKey: 'common:breadcrumbs.agents' },
-  // `/agents/workflows/:id` — the library is the Workflows tab of /agents, so the crumb links there.
-  'workflows': { labelKey: 'common:breadcrumbs.workflows', path: '/agents?tab=workflows' },
+  // `/agents/workflows/:id` — the library is the Workflows tab of /agents (`/agents/workflows`), the crumb's link.
+  'workflows': { labelKey: 'common:breadcrumbs.workflows' },
   // `/agents/workflows/templates/:templateId` — the templates are offered in the library, so the crumb links there.
-  'templates': { labelKey: 'common:breadcrumbs.templates', path: '/agents?tab=workflows' },
+  'templates': { labelKey: 'common:breadcrumbs.templates', path: '/agents/workflows' },
+  // `/agents/spend` and `/agents/skills/…`: views of /agents, which the trail ends before (trailSegments).
+  'spend': { labelKey: 'common:breadcrumbs.spend', path: '/agents' },
+  'skills': { labelKey: 'common:breadcrumbs.skills', path: '/agents' },
   // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
   'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
   // `/agents/connections/github/created` and `…/installed`, where GitHub sends an administrator back from the
   // deployment's GitHub App: both crumbs above the page go to the Connections tab, where the App is managed.
-  'connections': { labelKey: 'common:breadcrumbs.connections', path: '/agents?tab=connections' },
-  'github': { labelKey: 'common:breadcrumbs.github', path: '/agents?tab=connections' },
+  'connections': { labelKey: 'common:breadcrumbs.connections' },
+  'github': { labelKey: 'common:breadcrumbs.github', path: '/agents/connections' },
   'created': { labelKey: 'common:breadcrumbs.githubAppCreated' },
   'installed': { labelKey: 'common:breadcrumbs.githubAppInstalled' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
@@ -116,14 +125,30 @@ export interface Crumb {
   isHome: boolean
 }
 
+/** `/agents/…`: a view of the list ends at Agents, an agent's tab at the agent; a workflow, a run and GitHub's return pages are pages. */
+function agentsTrail(segments: readonly string[]): string[] {
+  const [, second] = segments
+  if (second === undefined || second === 'engineering') return [...segments]
+  if (!AGENTS_PATH_VIEWS.has(second)) return segments.slice(0, 2)
+  const page = (second === 'workflows' || second === 'connections') && segments.length > 2
+  return page ? [...segments] : segments.slice(0, 1)
+}
+
 /**
- * The segments of `pathname` the trail shows. A project page's tab, document, older version and full screen
- * (`/projects/<id>/documents/<docId>/v/<n>/focus`, pages/ProjectDetail/projectPaths.ts) are places inside the page,
- * which its tabs and toolbar show: the trail ends at the project.
+ * The segments of `pathname` the trail shows. A page's places are paths (7.49.00): a project's tab, document, older
+ * version and full screen (`/projects/<id>/documents/<docId>/v/<n>/focus`, pages/ProjectDetail/projectPaths.ts), a
+ * page's tab and section (`/admin/access/boards/<id>`), an agent's tab, a view of the Agents list, a board's open
+ * request and the boards' Insights: its tabs and toolbar show them, so the trail ends at the page (or the record).
  */
 export function trailSegments(pathname: string): string[] {
   const segments = pathname.split('/').filter(Boolean)
-  return segments[0] === 'projects' && segments.length > 2 ? segments.slice(0, 2) : segments
+  const [first = '', second] = segments
+  if (first === 'projects' || first === 'feature-requests') {
+    const record = second !== undefined && second !== 'insights' && second !== 'requests'
+    return segments.slice(0, record ? 2 : 1)
+  }
+  if (TAB_PATH_PAGES.has(first)) return segments.slice(0, 1)
+  return first === 'agents' ? agentsTrail(segments) : segments
 }
 
 /**

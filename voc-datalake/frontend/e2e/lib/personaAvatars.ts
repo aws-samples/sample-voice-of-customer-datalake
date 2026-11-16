@@ -3,7 +3,7 @@
  * that answers it for a project, for EVERY persona, through the API and the page.
  *
  * - API: `GET /projects/{id}` — each persona carries a non-empty `avatar_url`.
- * - Page: on `?tab=personas` each persona's list card shows an `<img>` (PersonaAvatar.tsx)
+ * - Page: on `/projects/<id>/personas` each persona's list card shows an `<img>` (PersonaAvatar.tsx)
  *   that loaded: its image response answered 200 and, evaluated in the page,
  *   `naturalWidth > 0`. The initials fallback (no `<img>`: no URL, or the image
  *   failed and `onError` swapped it out) is a FAILURE.
@@ -114,7 +114,7 @@ export async function personaAvatarProblems(page: Page, role: Role, projectId: s
   }
   page.on('response', onResponse)
   try {
-    await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=personas`), { waitUntil: 'domcontentloaded' })
+    await page.goto(site(`/projects/${encodeURIComponent(projectId)}/personas`), { waitUntil: 'domcontentloaded' })
     if (!await waitForCards(page, personas.length)) problems.push(`the Personas tab did not list all ${personas.length} personas`)
     // Same-name personas: the k-th one in API order is the k-th card of that name.
     const occurrences = new Map<string, number>()

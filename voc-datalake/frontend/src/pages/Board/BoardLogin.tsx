@@ -8,12 +8,12 @@
 import { Loader2, Mail } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { isReviewPath, normalizeBoardEmail } from '../../services/boardAuth'
 import { BoardAuthError } from '../../services/boardCognito'
 import { useBoardSessionStore } from '../../store/boardSessionStore'
-import { BOARD_PARAM, boardLandingPath } from './boardHost'
+import { boardLandingPath, loginTarget, targetBoard } from './boardHost'
 import { hasSignInParams, withoutSignInParams } from './signInLink'
 import type { BoardAuth } from '../../services/boardAuth'
 import type { BoardAuthErrorCode } from '../../services/boardCognito'
@@ -72,6 +72,8 @@ function initialState(auth: BoardAuth, link: SignInLink): LoginState {
 
 function useBoardLogin(auth: BoardAuth, returnTo: string | undefined) {
   const [params, setParams] = useSearchParams()
+  // Where the visitor lands afterwards: the board (and request) in this page's path (`/board/login/<slug>/<id>`).
+  const target = loginTarget(useLocation().pathname)
   const setSignedIn = useBoardSessionStore((state) => state.setSignedIn)
   const [link] = useState<SignInLink>(() => readLink(params))
   const [state, setState] = useState<LoginState>(() => initialState(auth, link))
@@ -93,7 +95,7 @@ function useBoardLogin(auth: BoardAuth, returnTo: string | undefined) {
       }
       // The signed-in `/board/login` route redirects to `landing` (one owner, no navigate race).
       const review = returnTo ?? remembered?.returnTo
-      setSignedIn(result.email, isReviewPath(review) ? review : boardLandingPath(params, remembered?.board))
+      setSignedIn(result.email, isReviewPath(review) ? review : boardLandingPath(target, remembered?.board))
     } catch (error) {
       const reason = codeOf(error)
       patch({ busy: false, error: reason, step: reason === 'wrong_code' ? 'code' : 'email' })
@@ -102,7 +104,7 @@ function useBoardLogin(auth: BoardAuth, returnTo: string | undefined) {
   const send = async (email: string) => {
     patch({ busy: true, error: null, email, secondCode: false })
     try {
-      await auth.requestCode(email, { board: params.get(BOARD_PARAM) ?? undefined, returnTo })
+      await auth.requestCode(email, { board: targetBoard(target), returnTo })
       patch({ busy: false, step: 'code', foreignLink: false })
     } catch (error) {
       patch({ busy: false, error: codeOf(error) })

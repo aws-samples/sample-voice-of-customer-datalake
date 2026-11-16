@@ -1,5 +1,5 @@
 /**
- * @fileoverview The Spend tab's view options (`?tab=spend&month=&by=&workflow=`): read from the address as the
+ * @fileoverview The Spend tab's view options (`/agents/spend?month=&by=&workflow=`, filters of the query): read from the address as the
  * server checks them (a bad one is the default), and the months the picker offers.
  *
  * @module pages/Agents/spendView

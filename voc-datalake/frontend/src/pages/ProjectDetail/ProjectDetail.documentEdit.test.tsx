@@ -347,8 +347,8 @@ describe('ProjectDetail document deep link', () => {
     primeProjectWith([managedDocument, legacyManagedDocument])
   })
 
-  it('opens the document `?doc=` names — a reload, or the Decisions card link', async () => {
-    renderPage('/projects/proj-1?tab=documents&doc=legacy-prfaq-2')
+  it('opens the document its path names — a reload, or the Decisions card link', async () => {
+    renderPage('/projects/proj-1/documents/legacy-prfaq-2')
 
     expect(await screen.findByRole('heading', { name: 'Legacy launch (v2)', level: 2 })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Launch (v2)', level: 2 })).not.toBeInTheDocument()

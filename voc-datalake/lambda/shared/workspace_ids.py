@@ -5,6 +5,9 @@ workers that only need to check an id or build a name (the plugin ingestors, the
 shared/ingest_schemas.py, the repository layer shared/ws_repo.py) carry none of the request path's imports.
 
 * ``is_workspace_id``: ``ws_`` + a ULID, 26 Crockford base32 characters (no I, L, O, U), the first one 0-7.
+* ``is_workspace_slug``: a slug a workspace may have (``WORKSPACE_SLUG``, not one of ``RESERVED_WORKSPACE_SLUGS``),
+  the ``<slug>`` of its pages' ``/workspace/<slug>`` (shared/platform_workspaces.py makes them; the engineering
+  GitHub App's manifest returns into one, engineering/connectors/github_apps.py).
 * ``ws_key``: ``WS#{ws}#a#b``, a key inside the workspace.
 * ``credentials_parameter_name``: where one plugin's credentials of one workspace live in SSM Parameter Store
   (decision 19): ``{prefix}/{ws}/credentials/{plugin}``, its keys as one JSON object (the webhook secret among them);
@@ -22,9 +25,12 @@ from shared.plugin_identity import is_valid_plugin_identifier
 
 __all__ = [
     'ACTIVE',
+    'RESERVED_WORKSPACE_SLUGS',
+    'WORKSPACE_SLUG',
     'credentials_parameter_name',
     'credentials_path',
     'is_workspace_id',
+    'is_workspace_slug',
     'ws_key',
 ]
 
@@ -36,12 +42,21 @@ ACTIVE: Final = 'active'
 _WORKSPACE_ID: Final = re.compile(r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}')
 #: A parameter prefix: ``/`` then path segments of letters, digits, ``-`` and ``_`` (``/voc/ws``, ``/stg-voc/ws``).
 _PREFIX: Final = re.compile(r'(?:/[A-Za-z0-9_-]+)+')
+#: A workspace's slug: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.
+WORKSPACE_SLUG: Final = re.compile(r'[a-z0-9][a-z0-9-]{1,38}[a-z0-9]')
+#: Slugs that would read as a part of the platform in a ``/workspace/{slug}`` address or a mail address.
+RESERVED_WORKSPACE_SLUGS: Final = frozenset({'admin', 'api', 'app', 'platform', 'www'})
 
 
 def is_workspace_id(value: object) -> bool:
     """Whether ``value`` is a well-formed workspace id (``ws_`` + a ULID)."""
     return isinstance(value, str) and _WORKSPACE_ID.fullmatch(value) is not None
 
+
+
+def is_workspace_slug(value: object) -> bool:
+    """A slug a workspace may have: ``WORKSPACE_SLUG``'s shape and not one of ``RESERVED_WORKSPACE_SLUGS``."""
+    return isinstance(value, str) and WORKSPACE_SLUG.fullmatch(value) is not None and value not in RESERVED_WORKSPACE_SLUGS
 
 def ws_key(ws: str, *parts: str) -> str:
     """``WS#{ws}#a#b``: a key inside the workspace. Refuses (ValueError) an id that is not well formed."""

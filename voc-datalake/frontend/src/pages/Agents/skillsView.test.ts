@@ -2,20 +2,20 @@
 import { describe, it, expect } from 'vitest'
 import { diffIsEmpty, parseVersionsInput, skillsViewOf, statusTone } from './skillsView'
 
-const view = (query: string) => skillsViewOf(new URLSearchParams(query))
+const view = (query: string, role: string | null = null, version: number | null = null) =>
+  skillsViewOf({ role, version }, new URLSearchParams(query))
 const MOVED: [string, string] = ['model-a', 'model-b']
 const NO_CHANGE = { instructions: [], examples: [], tools_added: [], tools_removed: [], tools_reordered: false, model: null, harness: null, first: false }
 
 describe('the Skills view', () => {
-  it('reads the scope, the role and the version from the address', () => {
-    expect(view('connection=storefront&role=fixer&version=3')).toStrictEqual({ connection: 'storefront', role: 'fixer', version: 3 })
+  it('reads the role and the version from the path, and the scope from the query', () => {
+    expect(view('connection=storefront', 'fixer', 3)).toStrictEqual({ connection: 'storefront', role: 'fixer', version: 3 })
     expect(view('')).toStrictEqual({ connection: '', role: null, version: null })
   })
 
-  it('leaves out a role off the catalog, and a version off its shape or without a role', () => {
-    expect(view('role=wizard&version=3')).toStrictEqual({ connection: '', role: null, version: null })
-    expect(view('role=fixer&version=03').version).toBeNull()
-    expect(view('role=fixer&version=1000000').version).toBeNull()
+  it('leaves out a role off the catalog, and its version with it', () => {
+    expect(view('', 'wizard', 3)).toStrictEqual({ connection: '', role: null, version: null })
+    expect(view('role=fixer&version=3')).toStrictEqual({ connection: '', role: null, version: null })
   })
 
   it('gives each status its badge, an unknown one muted', () => {

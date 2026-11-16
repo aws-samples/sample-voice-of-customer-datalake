@@ -7,7 +7,7 @@
  * - the page's action bar: the group "Document actions" with its menu bar (the group "Document menus": the
  *   "Document" menu — Save, Rename, Share for review, Copy, Download as Markdown, Print or save as PDF, Include open
  *   comments, Download as TXT, Copy to Kiro, History, Delete document — then Edit, Format, Insert, View), the save
- *   status (`role=status`), Discard, Save and Full screen (the focus view, `?view=focus`);
+ *   status (`role=status`), Discard, Save and Full screen (the focus view, `/projects/<id>/documents/<docId>/focus`);
  * - the outline: the navigation "Contents"; the floating format bar: the toolbar "Text formatting"; the "/" menu: the
  *   listbox "Blocks".
  */
@@ -60,7 +60,7 @@ export const formatBar = (page: Page): Locator => page.getByRole('toolbar', { na
 export const documentRow = (page: Page, title: string): Locator =>
   page.getByRole('button', { name: new RegExp(`${escapeRegExp(title)}$`) }).first()
 
-export const documentsPath = (projectId: string): string => `/projects/${encodeURIComponent(projectId)}?tab=documents`
+export const documentsPath = (projectId: string): string => `/projects/${encodeURIComponent(projectId)}/documents`
 
 /**
  * Below 1280 px the list is a strip holding one section (PRD, PR/FAQ, Prototypes, Documents) under this row of section

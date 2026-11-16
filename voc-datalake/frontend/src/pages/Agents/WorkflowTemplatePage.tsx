@@ -19,6 +19,7 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { isEngineeringAvailable } from '../../runtimeConfig'
 import { useIsAdmin } from '../../store/authStore'
 import { BackToAgents } from './BackToAgents'
+import { agentsPath } from './agentsPaths'
 import { workflowPath } from './workflowPaths'
 import type { WorkflowView } from '../../api/workflowsApi'
 
@@ -28,7 +29,7 @@ function NotAvailable({ adminOnly }: Readonly<{ adminOnly: boolean }>) {
   return (
     <div className="card space-y-2">
       <p className="text-sm text-text">{t(adminOnly ? 'templatePage.adminOnly' : 'templatePage.notFound')}</p>
-      <Link to="/agents?tab=workflows" className="btn btn-secondary btn-sm">{t('templatePage.backToLibrary')}</Link>
+      <Link to={agentsPath({ view: 'workflows' })} className="btn btn-secondary btn-sm">{t('templatePage.backToLibrary')}</Link>
     </div>
   )
 }

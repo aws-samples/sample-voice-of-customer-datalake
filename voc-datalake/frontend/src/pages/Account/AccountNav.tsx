@@ -1,17 +1,15 @@
 /**
  * @fileoverview The Account page's tab bar: the design-system tabs track
  * (`tabs-rail` / `tabs-track` / `tab`, as on Company, Memory and the project
- * pages), one tab per `?tab=<id>`. A switch replaces the query, like the
- * other pages' tabs, so each tab is a deep link without filling the history;
- * only `tab` changes, so an open review modal (`?review=`) survives.
+ * pages), one tab per path `/account/<id>`. A switch is a history entry of
+ * its own (Back returns to the previous tab), and the query is kept, so an
+ * open review modal (`?review=`) survives.
  * @module pages/Account/AccountNav
  */
 import clsx from 'clsx'
-import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, SlidersHorizontal, Sunrise, Target, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { withOwnedParams } from '../../utils/searchParams'
 import type { AccountTabId } from './accountSections'
 
 /**
@@ -26,9 +24,8 @@ const TABS: readonly (readonly [AccountTabId, LucideIcon, string])[] = [
   ['access', KeyRound, 'account.tabs.access'],
 ]
 
-export default function AccountNav({ active }: Readonly<{ active: AccountTabId }>) {
+export default function AccountNav({ active, onSelect }: Readonly<{ active: AccountTabId; onSelect: (tab: AccountTabId) => void }>) {
   const { t } = useTranslation('common')
-  const [, setSearchParams] = useSearchParams()
   return (
     <div className="tabs-rail overflow-x-auto">
       <div className="tabs-track" role="tablist" aria-label={t('account.tabsLabel')}>
@@ -38,7 +35,7 @@ export default function AccountNav({ active }: Readonly<{ active: AccountTabId }
             type="button"
             role="tab"
             aria-selected={id === active}
-            onClick={() => { setSearchParams((current) => withOwnedParams(current, ['tab'], new URLSearchParams({ tab: id })), { replace: true }) }}
+            onClick={() => { onSelect(id) }}
             className={clsx('tab', id === active && 'tab-active')}
           >
             <Icon size={14} aria-hidden="true" /> {t(labelKey)}

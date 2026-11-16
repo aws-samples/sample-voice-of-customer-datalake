@@ -1,13 +1,14 @@
 /**
  * @fileoverview One autonomous agent: configuration tabs (Settings, Triggers,
  * Personas, Instructions, Models, Budget) sharing one draft and one Save bar,
- * the Workflow editor, and the Runs tab. `?tab=` deep-links a tab. Admins
+ * the Workflow editor, and the Runs tab. Each tab is a path (`/agents/<id>/<tab>`, agentsPaths.ts), so Back walks
+ * them. Admins
  * edit, enable/disable, archive and run; everyone who can see the agent reads.
  *
  * @module pages/Agents/AgentDetail
  */
 import { useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Archive, Bot, Gauge, Hand, History, Loader2, MessageSquareText, Save, Settings2, Sparkles, Users, Workflow, Zap,
 } from 'lucide-react'
@@ -32,6 +33,8 @@ import { rebaseDraft } from '../../components/UnsavedChangesGuard/rebaseDraft'
 import Notice from '../../components/Notice/Notice'
 import { useAgent, useAgentMutations } from './useAgents'
 import { useAgentTabPrefetch } from './useAgentTabPrefetch'
+import { readTabAddress, useTabPath } from '../../utils/tabPaths'
+import { agentIdOf, agentTabPage } from './agentsPaths'
 import type { ComponentType } from 'react'
 import type { Location } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
@@ -57,12 +60,10 @@ const SECTIONS: Readonly<Partial<Record<AgentTab, ComponentType<SectionProps>>>>
   budget: BudgetSection,
 }
 
-const parseTab = (value: string | null): AgentTab => TABS.find((tab) => tab === value) ?? 'settings'
-
 /** Unsaved config edits survive a switch between config tabs, not a move anywhere else. */
 function leavesConfigTabs(current: Location, next: Location): boolean {
-  if (current.pathname !== next.pathname) return true
-  return !CONFIG_TABS.includes(parseTab(new URLSearchParams(next.search).get('tab')))
+  const read = readTabAddress(agentTabPage(agentIdOf(current.pathname) ?? '', TABS), next)
+  return read === null || !CONFIG_TABS.includes(read.place)
 }
 
 /**
@@ -199,15 +200,10 @@ export default function AgentDetail() {
   const { t } = useTranslation('agents')
   // The route is `agents/:id` (routes.tsx, pageContext.ts, Breadcrumbs).
   const { id: agentId = '' } = useParams()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = parseTab(searchParams.get('tab'))
+  const [tab, setTab] = useTabPath(agentTabPage(agentId, TABS))
   const isAdmin = useIsAdmin()
   const { data: agent, isLoading, isError } = useAgent(agentId)
   const prefetchTab = useAgentTabPrefetch(agent, isAdmin)
-  const setTab = (next: AgentTab) => setSearchParams((params) => {
-    params.set('tab', next)
-    return params
-  }, { replace: true })
 
   if (isLoading) return <div className="skeleton h-40" />
   if (isError || agent === undefined) {

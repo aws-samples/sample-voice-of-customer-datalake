@@ -17,7 +17,7 @@ export interface ApiResult {
 
 /**
  * `expect`: the 4xx statuses this call is MEANT to be refused with, so the log sweep counts them as expected.
- * `workspace`: the workspace id the call acts in, sent as `X-Workspace-Id` as the SPA does inside `/w/{slug}/`
+ * `workspace`: the workspace id the call acts in, sent as `X-Workspace-Id` as the SPA does inside `/workspace/{slug}/`
  * (docs/multi-workspace.md); absent, the call acts outside any workspace (the deployment's own data).
  */
 export interface ApiCallOptions {

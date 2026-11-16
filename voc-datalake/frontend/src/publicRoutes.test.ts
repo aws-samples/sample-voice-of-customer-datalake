@@ -13,14 +13,14 @@ describe('isPublicPath', () => {
     },
   )
 
-  it.each(['/', '/dashboard', '/feedback/f-1', '/boards', '/loginx', '/admin', '/w/acme/vote/s-123'])(
+  it.each(['/', '/dashboard', '/feedback/f-1', '/boards', '/loginx', '/admin', '/workspace/acme/vote/s-123'])(
     '%s is not', (path) => {
       expect(isPublicPath(path)).toBe(false)
     },
   )
 
   it("reads a workspace's page once its base path is stripped", () => {
-    expect(isPublicPath(appPathname('/w/acme/login', '/w/acme'))).toBe(true)
-    expect(isPublicPath(appPathname('/w/acme/dashboard', '/w/acme'))).toBe(false)
+    expect(isPublicPath(appPathname('/workspace/acme/login', '/workspace/acme'))).toBe(true)
+    expect(isPublicPath(appPathname('/workspace/acme/dashboard', '/workspace/acme'))).toBe(false)
   })
 })

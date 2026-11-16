@@ -1,7 +1,7 @@
 /**
  * @fileoverview Create a workspace (platform console; `POST /platform/workspaces`): a name and a slug, checked here
  * by the server's own rules before sending (`isWorkspaceSlug`: 3 to 40 of a-z, 0-9 and "-", not starting or ending
- * with "-", not a reserved word; a name of 1 to 80 characters). The slug is the workspace's address, `/w/{slug}/`,
+ * with "-", not a reserved word; a name of 1 to 80 characters). The slug is the workspace's address, `/workspace/{slug}/`,
  * fixed once made; the server answers 409 when another workspace has it.
  *
  * @module pages/Settings/CreateWorkspaceForm

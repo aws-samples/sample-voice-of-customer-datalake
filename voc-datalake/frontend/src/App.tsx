@@ -19,7 +19,7 @@ const queryClient = createAppQueryClient()
 watchFeedbackJobs(queryClient)
 bindQueryCacheToUser(queryClient)
 
-// Inside a workspace (`/w/{slug}/…`, workspace/workspacePath.ts) the whole route table lives under that base
+// Inside a workspace (`/workspace/{slug}/…`, workspace/workspacePath.ts) the whole route table lives under that base
 // path, so every existing route and link works unchanged; switching workspaces is a full page load.
 const router = createBrowserRouter(routes, { basename: PAGE_BASENAME })
 

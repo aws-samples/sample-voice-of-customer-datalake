@@ -217,6 +217,36 @@ describe('editing a connection', () => {
   })
 })
 
+describe('editing a connection the GitHub App saved', () => {
+  const SANDBOX = connection('voc-agents-sandbox', 'mundurragacl/voc-agents-sandbox',
+    { kind: 'app_reference', set: true, app_id: '271828', installation_id: '31415926' })
+
+  it('fits the viewport and scrolls its body, shows the App read only and offers only the branch and the reason', async () => {
+    const put = vi.fn((_body: unknown) => ({ connection: { ...SANDBOX, default_branch: 'develop' }, created: false }))
+    renderConnections({ [LIST]: () => ({ connections: [SANDBOX], limit: 20 }), 'PUT /agents/engineering/connections/voc-agents-sandbox': put })
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit mundurragacl/voc-agents-sandbox' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit the connection to mundurragacl/voc-agents-sandbox' })
+    // At most the viewport's height; the body between the fixed header and footer scrolls (index.css .dialog-body).
+    expect([(dialog.closest('.dialog-panel') ?? dialog).classList.contains('max-h-[90vh]'), dialog.querySelector('.dialog-body') !== null,
+      within(dialog).getByTestId('connection-app-reference').textContent.includes('App 271828, installation 31415926')])
+      .toStrictEqual([true, true, true])
+    // Read only what is fixed; nothing of a pasted key: no host choice, no App fields to fill, no private key, no guidance.
+    expect([within(dialog).getByLabelText('Connection id'), within(dialog).getByLabelText('Repository'),
+      within(dialog).queryByLabelText('Private key'), within(dialog).queryByLabelText('App id'),
+      within(dialog).queryByRole('radio', { name: 'GitLab' }), within(dialog).queryByText(/Leave the private key empty/)])
+      .toStrictEqual([expect.objectContaining({ readOnly: true }), expect.objectContaining({ readOnly: true }), null, null, null, null])
+    const branch = within(dialog).getByLabelText('Default branch')
+    await userEvent.clear(branch)
+    await userEvent.type(branch, 'develop')
+    await userEvent.type(within(dialog).getByLabelText('Reason (optional)'), 'The sandbox works on develop')
+    await save(dialog)
+    expect(await screen.findByRole('status')).toHaveTextContent('mundurragacl/voc-agents-sandbox is saved.')
+    expect(put.mock.calls).toStrictEqual([[{
+      host: 'github', repository: 'mundurragacl/voc-agents-sandbox', default_branch: 'develop', reason: 'The sandbox works on develop',
+    }]])
+  })
+})
+
 describe('removing a connection', () => {
   it('asks first, naming the repository and what live runs lose, then sends the DELETE', async () => {
     const stored = new Map([[WEB.connection_id, WEB], [API.connection_id, API]])

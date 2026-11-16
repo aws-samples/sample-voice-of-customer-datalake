@@ -56,6 +56,7 @@ import { PersonaChangesPreview, ProductContextPreview } from './previews/FieldCh
 import { JobPreview } from './previews/JobPreview'
 import { PrototypeDraftPreview } from './previews/PrototypeDraftPreview'
 import { PrototypeWalkthroughPreview } from './previews/PrototypeWalkthroughPreview'
+import { adminPath } from '../../pages/Settings/adminPaths'
 import type { ComponentType } from 'react'
 import type { z } from 'zod'
 import type { ClientToolName, PageContext } from '@stream/assistant/contract'
@@ -109,11 +110,11 @@ function defineWriteTool<A>(spec: ToolSpec<A>): WriteToolDefinition {
 /** The scraper's card on the Scrapers page (the page scrolls to the hash). */
 const scraperLink = (id: string): ResultLink => ({ to: `/scrapers#${scraperAnchorId(id)}`, labelKey: 'assistantTools:card.openScraper' })
 /** Settings → Users, where every user write lands. */
-const USERS_LINK: ResultLink = { to: '/admin?tab=access&section=users', labelKey: 'assistantTools:card.openUsers' }
+const USERS_LINK: ResultLink = { to: adminPath({ tab: 'access', section: 'users' }), labelKey: 'assistantTools:card.openUsers' }
 /** Administration → Sources → Radar, where the brand list is edited by hand. */
 /** The Participants page (its Lists tab is the default). */
 const PARTICIPANTS_LINK: ResultLink = { to: '/participants', labelKey: 'assistantTools:card.openParticipants' }
-const RADAR_SETTINGS_LINK: ResultLink = { to: '/admin?tab=sources&section=radar', labelKey: 'assistantTools:card.openRadarSettings' }
+const RADAR_SETTINGS_LINK: ResultLink = { to: adminPath({ tab: 'sources', section: 'radar' }), labelKey: 'assistantTools:card.openRadarSettings' }
 /** The set_user_access card names the person only when the model passed their email alias as the username. */
 const userAccessTitle = (username: string, t: Translate) =>
   (username.includes('@') ? t('assistantTools:tools.set_user_access.titleWith', { email: username }) : t(toolTitleKey('set_user_access')))

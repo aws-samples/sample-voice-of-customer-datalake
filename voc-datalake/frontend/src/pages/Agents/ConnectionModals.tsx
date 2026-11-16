@@ -35,7 +35,8 @@ export function ConnectionFormModal({ title, description, saveLabel, pending, er
   const titleId = useId()
   const descriptionId = useId()
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg" dismissable={!pending}>
+    // At most the viewport's height (as the other long dialogs): the header and the footer stay, the body scrolls.
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg max-h-[90vh]" dismissable={!pending}>
       <div className="dialog-header">
         <div>
           <h2 id={titleId} className="dialog-title whitespace-normal">{title}</h2>

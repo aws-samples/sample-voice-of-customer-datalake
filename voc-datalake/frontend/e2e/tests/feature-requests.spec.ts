@@ -4,12 +4,12 @@
  *
  * Admin, one request end to end:
  * - "New request" creates `${RUN_PREFIX}request` (its reporter's own row carries no revenue impact),
- *   `POST /feature-requests` 201, and the detail opens on `?request=<id>`.
+ *   `POST /feature-requests` 201, and the detail opens on `/feature-requests/<board>/<id>`.
  * - "+1 with my customer" adds `Example Air`, committed, 123456 → `POST …/supports` 201; the totals read
  *   "$123,456" (USD currency formatting, never the raw digits), 2 customers, "2 supports".
  * - Search, the Status filter and "Sort by: Committed revenue" find it (the sort is judged on the rendered
  *   Committed figures: every card above it carries at least as much).
- * - The deep link `?request=<id>` opens its dialog on a fresh load (the pre-boards `/feature-requests?request=<id>`
+ * - The deep link `/feature-requests/<board>/<id>` opens its dialog on a fresh load (the lookup `/feature-requests/requests/<id>`
  *   resolves to the request's board first).
  * - Admin → Status → Planned: `PUT …/status` 200, the badge and the Planned filter show it.
  * - Admin → "Delete request" → "Delete this request?" → Delete: gone from the list, `GET` is a 404.
@@ -53,8 +53,10 @@ const SALES_BOARD = { slug: 'sales-feature-requests', name: 'Sales feature reque
 /** A request's card on the board, by its id (RequestList's `fr-card-<id>`). */
 const cardOf = (page: Page, id: string): Locator => listRegion(page).getByTestId(`fr-card-${id}`)
 
-async function openBoard(page: Page, search = ''): Promise<void> {
-  await page.goto(site(`/feature-requests/${SALES_BOARD.slug}${search}`), { waitUntil: 'domcontentloaded' })
+/** The Sales board, or one of its requests (`requestId`: its detail open, `/feature-requests/<board>/<id>`). */
+async function openBoard(page: Page, requestId?: string): Promise<void> {
+  const request = requestId === undefined ? '' : `/${encodeURIComponent(requestId)}`
+  await page.goto(site(`/feature-requests/${SALES_BOARD.slug}${request}`), { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: SALES_BOARD.name, level: 1 })).toBeVisible()
   await expect(listRegion(page)).toBeVisible()
   await settle(page, 300)
@@ -132,7 +134,7 @@ test.describe('feature requests: the in-app board', () => {
       expect(state.id, 'request_id').not.toBe('')
       r.note(`created ${state.id}`)
       await expect(detail).toBeVisible()
-      await expect(page).toHaveURL(new RegExp(`[?&]request=${state.id}(&|$)`))
+      await expect(page).toHaveURL(new RegExp(`/${state.id}(\\?|$)`))
       await expect(detail.getByText(DESCRIPTION)).toBeVisible()
       await expect(statusBadge(detail)).toHaveText('New')
     })
@@ -157,7 +159,7 @@ test.describe('feature requests: the in-app board', () => {
           fields: { customer: SUPPORT_CUSTOMER, impact: 'committed', amount_usd: AMOUNT },
         })
         expect(added.status, 'e2e-user files the second +1').toBe(201)
-        await openBoard(page, `?request=${encodeURIComponent(state.id)}`)
+        await openBoard(page, state.id)
         r.note('the reporter is offered "Edit my +1"; e2e-user filed the second +1')
       }
       await expect(detail.getByRole('heading', { name: '2 supports' })).toBeVisible()
@@ -195,7 +197,7 @@ test.describe('feature requests: the in-app board', () => {
     })
 
     await assertStep(page, 'admin', 'fr-04-deep-link', async () => {
-      await openBoard(page, `?request=${encodeURIComponent(state.id)}`)
+      await openBoard(page, state.id)
       await expect(detail).toBeVisible()
       await expect(figure(detail, 'Committed')).toHaveText(AMOUNT_USD)
     })
@@ -242,7 +244,7 @@ test.describe('feature requests: the in-app board', () => {
     if (id === undefined || title === undefined || current === undefined) return
 
     await assertStep(page, 'user', 'fr-user-no-admin-controls', async () => {
-      await openBoard(page, `?request=${encodeURIComponent(id)}`)
+      await openBoard(page, id)
       const detail = dialogNamed(page, title)
       await expect(detail).toBeVisible()
       await expect(detail.getByRole('button', { name: '+1 with my customer' })).toBeVisible()

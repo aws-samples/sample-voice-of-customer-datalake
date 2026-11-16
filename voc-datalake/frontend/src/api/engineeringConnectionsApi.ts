@@ -127,6 +127,8 @@ interface TokenCredentialInput {
 interface ConnectionFields {
   repository: string
   default_branch: string
+  /** Why the change is made (kept with the connection's audit row); left out when none. */
+  reason?: string
 }
 
 /** A save; its credential left out to keep the stored one (the host, the repository and the App's ids unchanged). */

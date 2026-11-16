@@ -23,6 +23,7 @@ import { Loader2, Settings2 } from 'lucide-react'
 import clsx from 'clsx'
 import { ENGINEERING_MAX_MONTHLY_BUDGET_USD, isMonthlyBudgetUsd } from '@stream/assistant/tools/agent-limits'
 import ModalShell from '../../components/ModalShell/ModalShell'
+import { agentsPath } from './agentsPaths'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { agentsApi, agentsKeys } from '../../api/agentsApi'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
@@ -175,14 +176,16 @@ function EnabledSwitch({ agent, isAdmin, onSetUp }: Readonly<{ agent: Agent; isA
 }
 
 /** In place of the switch while a requirement is missing: what is missing, and the way to it. */
-function NotReady({ readiness, isAdmin, onSetUp }: Readonly<{ readiness: Readiness; isAdmin: boolean; onSetUp: () => void }>) {
+function NotReady({ readiness, isAdmin, onSetUp, badge = true }: Readonly<{
+  readiness: Readiness; isAdmin: boolean; onSetUp: () => void; badge?: boolean
+}>) {
   const { t } = useTranslation('agents')
   const noConnection = readiness === 'no_connection'
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <span className="badge badge-muted">{t('status.disabled')}</span>
-        {noConnection && <Link className="btn btn-secondary btn-sm" to="/agents?tab=connections">{t('engineeringAgent.connectFirst')}</Link>}
+        {badge && <span className="badge badge-muted">{t('status.disabled')}</span>}
+        {noConnection && <Link className="btn btn-secondary btn-sm" to={agentsPath({ view: 'connections' })}>{t('engineeringAgent.connectFirst')}</Link>}
         {!noConnection && isAdmin && (
           <button type="button" className="btn btn-primary btn-sm" onClick={onSetUp}>{t('engineeringAgent.setUp')}</button>
         )}
@@ -194,19 +197,38 @@ function NotReady({ readiness, isAdmin, onSetUp }: Readonly<{ readiness: Readine
   )
 }
 
-/** The Enabled control of an engineering agent's page (module doc). */
-export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>) {
-  const { t } = useTranslation('agents')
-  const [setting, setSetting] = useState(false)
+/**
+ * The Set up dialog of `agent`: what opens it, and the dialog while open (once its reads have answered), offering
+ * the connections the agent may use.
+ */
+function useSetUpDialog(agent: Agent, workflow: WorkflowView | undefined, connections: readonly EngineeringConnection[] | undefined) {
+  const [open, setOpen] = useState(false)
+  const dialog = open && workflow !== undefined && connections !== undefined
+    ? <SetupDialog agent={agent} workflow={workflow} connections={usableConnections(agent, connections)} onClose={() => setOpen(false)} />
+    : null
+  return { openSetUp: () => setOpen(true), dialog }
+}
+
+/** The two reads the control stands on: the deployment's connections (an admin's only) and the agent's flow. */
+function useEngineeringReads(agent: Agent, isAdmin: boolean) {
   const workflowId = agent.workflow_id ?? ''
   const connectionsQuery = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list,
     enabled: isAdmin })
   const workflowQuery = useQuery({ queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId),
     enabled: workflowId !== '' })
-  const workflow = workflowQuery.data?.workflow
-  const connections = connectionsQuery.data?.connections
+  return {
+    workflow: workflowQuery.data?.workflow,
+    connections: connectionsQuery.data?.connections,
+    failed: connectionsQuery.isError || workflowQuery.isError,
+  }
+}
+
+/** The Enabled control of an engineering agent's page (module doc). */
+export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>) {
+  const { t } = useTranslation('agents')
+  const { workflow, connections, failed } = useEngineeringReads(agent, isAdmin)
+  const { openSetUp, dialog } = useSetUpDialog(agent, workflow, connections)
   if (connections === undefined || workflow === undefined) {
-    const failed = connectionsQuery.isError || workflowQuery.isError
     return failed
       ? <p role="alert" className="text-[12px] text-danger">{t('engineeringAgent.loadFailed')}</p>
       : <Loader2 size={16} className="animate-spin text-muted" aria-label={t('engineeringAgent.loading')} />
@@ -216,14 +238,32 @@ export function EngineeringEnableControl({ agent, isAdmin }: Readonly<{ agent: A
   return (
     <div className="flex flex-col items-end gap-1 text-right" data-testid="engineering-enable">
       {readiness === 'ready'
-        ? <EnabledSwitch agent={agent} isAdmin={isAdmin} onSetUp={() => setSetting(true)} />
-        : <NotReady readiness={readiness} isAdmin={isAdmin} onSetUp={() => setSetting(true)} />}
+        ? <EnabledSwitch agent={agent} isAdmin={isAdmin} onSetUp={openSetUp} />
+        : <NotReady readiness={readiness} isAdmin={isAdmin} onSetUp={openSetUp} />}
       {owner !== null && <p className="text-[12px] text-muted max-w-xs">{t('engineeringAgent.runsAs', { name: owner })}</p>}
       <p className="text-[12px] text-muted max-w-xs">{t('engineeringAgent.deploymentFeedback')}</p>
-      {setting && (
-        <SetupDialog agent={agent} workflow={workflow} connections={usableConnections(agent, connections)}
-          onClose={() => setSetting(false)} />
-      )}
+      {dialog}
+    </div>
+  )
+}
+
+/**
+ * The agents list's card of an engineering agent that is not set up (7.49.00), for an admin: the page's **Set up**
+ * (the same dialog) or **Connect a repository first**, with the reason. Nothing once the agent is set up (the card's
+ * badge says Enabled or Disabled), while its reads load, or when they fail (its page says so). The dialog starts its
+ * text from the start whatever wrapper it sits in (ModalShell `text-start`).
+ */
+export function EngineeringSetUpCard({ agent }: Readonly<{ agent: Agent }>) {
+  const { workflow, connections } = useEngineeringReads(agent, true)
+  const { openSetUp, dialog } = useSetUpDialog(agent, workflow, connections)
+  if (connections === undefined || workflow === undefined) return null
+  const readiness = readinessOf(agent, connections, workflow.monthly_budget_usd)
+  if (readiness === 'ready') return null
+  return (
+    <div className="flex flex-col items-start gap-1" data-testid="engineering-setup-card">
+      {/* No state badge: the row beside it shows the agent's (an enabled agent whose connection went is not set up). */}
+      <NotReady readiness={readiness} isAdmin badge={false} onSetUp={openSetUp} />
+      {dialog}
     </div>
   )
 }

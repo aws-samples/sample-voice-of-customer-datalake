@@ -96,7 +96,7 @@ const CASES: readonly ModalCase[] = [
   { step: 'modal-json-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^JSON file/, DIALOG.jsonUpload) },
   { step: 'modal-csv-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^Spreadsheet \(CSV\)/, DIALOG.csvUpload) },
   { step: 'modal-create-agent', path: '/agents', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: 'New agent' }).first(), DIALOG.createAgent) },
-  { step: 'modal-category-access', path: '/admin?tab=access&section=users', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: /category access/i }).first(), DIALOG.categoryAccess) },
+  { step: 'modal-category-access', path: '/admin/access/users', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: /category access/i }).first(), DIALOG.categoryAccess) },
   { step: 'popover-time-range-custom', path: '/dashboard', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^Custom/ }).first(), DIALOG.customRange) },
   {
     step: 'assistant-panel', path: '/dashboard',

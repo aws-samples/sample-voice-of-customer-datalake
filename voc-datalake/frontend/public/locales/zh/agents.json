@@ -928,7 +928,12 @@
       "description": "工程智能体使用此连接读取仓库并提出修改。",
       "stored": "已存储的凭据：",
       "keepHint": "已存储的凭据永远不会显示。私钥留空即可保留它；更换仓库、App ID 或安装 ID 时需要再次提供私钥。",
-      "save": "保存连接"
+      "save": "保存连接",
+      "appCreatedTitle": "通过此部署的 GitHub App",
+      "appCreatedHint": "在安装 App 时保存：其 App、安装和仓库都是固定的，密钥属于 App 本身。此处只能更改默认分支。",
+      "repositoryFixed": "由 App 的安装保存，无法更改。要连接其他仓库，请在该仓库上安装 App。",
+      "reason": "原因（可选）",
+      "reasonHint": "做出更改的原因：保存在连接的历史记录中。一行，最多 {{max, number}} 个字符。"
     },
     "fields": {
       "connectionId": "连接 ID",

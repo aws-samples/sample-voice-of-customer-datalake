@@ -456,7 +456,9 @@ export default function ModalShell({
     // m-0: a consumer inside a `space-y-*` parent gave this fixed wrapper a
     // margin-bottom (Tailwind v4 spaces with margin-block-end), which shrank it
     // and left an un-dimmed, clickable strip of page along the bottom edge.
-    <div className="fixed inset-0 z-[70] m-0 flex items-center justify-center p-4">
+    // text-start (7.49.00): the shell renders where its trigger sits, so a trigger in a `text-right` (or centred)
+    // wrapper passed its alignment to every title, label and hint of the dialog; a dialog starts from the start.
+    <div className="fixed inset-0 z-[70] m-0 flex items-center justify-center p-4 text-start">
       {/* Overlay is a sibling of the panel, not its container, so clicks inside
           the panel are never mistaken for overlay clicks. */}
       {/* `absolute z-0` overrides the recipe's `fixed z-50`: the overlay sits

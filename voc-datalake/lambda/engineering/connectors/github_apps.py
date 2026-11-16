@@ -3,11 +3,13 @@
 or reads a credential back.
 
 1. **Create** (``manifest``, then ``convert``): an administrator asks for a manifest (``{account: user |
-   organization, org?}``); the answer is the form's target on github.com and the manifest itself (a private App,
+   organization, org?, workspace?}``); the answer is the form's target on github.com and the manifest itself (a private App,
    no OAuth on install, its setup asked again on an update, Contents, Pull requests and Issues read and write and
    Metadata read; with the github_issues webhook deployed, its hook on ``/webhooks/github_issues`` and the issues and
    issue_comment events). The browser posts it to GitHub, which creates the App and sends the browser back to
-   ``/agents/connections/github/created`` with a ``code`` (good for an hour) and the ``state``. The page posts both
+   ``/agents/connections/github/created`` with a ``code`` (good for an hour) and the ``state``: inside the workspace
+   the flow started in (``/workspace/<slug>/agents/…``, the request's ``workspace``, 7.49.00), since the manifest is written
+   fresh for each creation. The page posts both
    here at once; the code is exchanged with ``POST /app-manifests/<code>/conversions`` (no authentication, over the
    broker's crypto-free transport), and the answer's private key and webhook secret go straight to SSM: the key once
    for the App, ``{prefix}_github-app/<id>/key`` (``{app_id, slug, private_key}``), and its webhook secret, when a
@@ -16,7 +18,9 @@ or reads a credential back.
 2. **Install** (``installed``): GitHub sends the browser back to ``/agents/connections/github/installed`` with the
    installation's id and the state minted with the create's answer (or by ``install``, to install it again). The
    token function (``app_tokens.py``, invoked by name) reads the installation with the App's JWT, refusing another
-   App's (409), and lists its repositories with a ``metadata: read`` token it revokes. Every repository it lists is
+   App's (409), and lists its repositories with a ``metadata: read`` token it revokes. The ``setup_url`` is fixed
+   when the App is made and an install can start anywhere, so it stays the top-level page: the SPA takes a return
+   there back into the workspace the flow started in (frontend workspace/returnWorkspace.ts). Every repository it lists is
    saved as a connection (``ConnectionStore.save``, its parameter a reference to the App's key:
    ``connections.AppReference``), up to the deployment's ``MAX_CONNECTIONS``; one already connected, an archived one
    and those past the limit are reported, never saved.
@@ -36,7 +40,11 @@ whether it has a hook, who made it and when, a version); its creation and remova
 ``LOG#`` shape as the connections' (``github_app_created``, ``github_app_removed``). The partition is the
 connections', so every other writer of voc-agents is denied it (``denyHardCapWrites``). An App is removed only while
 no connection uses it (409); its parameters go first. Deleting it on GitHub stays the administrator's (its page says
-where).
+where), and so does renaming it (GitHub → Settings → Developer settings → GitHub Apps → the App → Edit). GitHub
+derives an App's slug (its ``github.com/apps/<slug>`` page, the install links) from its name, so a rename can change
+it: **Check installation** (``check``) records the slug its installation reports (``app_slug``), and the install links
+keep working. The slug is learned from an installation only: an App renamed before its first install (or after its
+last connection went) keeps the slug it was made with (docs/autonomous-engineering.md says what to do).
 """
 from __future__ import annotations
 
@@ -78,6 +86,7 @@ from shared.dynamo_values import plain
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 from shared.logging import logger
 from shared.model_fallback import error_code
+from shared.workspace_ids import is_workspace_slug
 
 #: The env vars: the app's own address (``https://<domain>``) and the github_issues webhook's (only when it is
 #: deployed); the token function's is ``shared.engineering_agents.APP_TOKENS_FUNCTION_ENV``.
@@ -98,8 +107,11 @@ INSTALLED_PATH: Final = '/agents/connections/github/installed'
 #: What the App may do: the broker's operations (contents, pull requests and issues, read and write) and metadata.
 PERMISSIONS: Final = {'contents': 'write', 'pull_requests': 'write', 'issues': 'write', 'metadata': 'read'}
 EVENTS: Final = ('issues', 'issue_comment')
-#: An App's name: this and six hex digits (GitHub takes at most 34 characters, unique on GitHub).
-NAME_PREFIX: Final = 'VoC agents '
+#: An App's name: this and four hex digits (GitHub takes at most 34 characters, a name unique on all of GitHub).
+NAME_PREFIX: Final = 'VoC Autonomous Agent '
+NAME_SUFFIX_BYTES: Final = 2
+#: GitHub's longest App name.
+MAX_NAME_CHARS: Final = 34
 #: A GitHub organization's login, as the form's target names it.
 ORGANIZATION: Final = re.compile(r'[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}')
 #: ``secrets.token_urlsafe(32)``.
@@ -157,12 +169,20 @@ def _iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat()
 
 
-def manifest_for(name: str, frontend_url: str, webhook_url: str) -> dict[str, Any]:
+def app_name(suffix: str) -> str:
+    """A new App's name: ``VoC Autonomous Agent <4 hex>`` (25 characters, under GitHub's ``MAX_NAME_CHARS``)."""
+    return f'{NAME_PREFIX}{suffix}'[:MAX_NAME_CHARS]
+
+
+def manifest_for(name: str, frontend_url: str, webhook_url: str, workspace: str = '') -> dict[str, Any]:
     """The App's manifest (GitHub's "Registering a GitHub App from a manifest"): private, no OAuth on install, its
-    setup page asked again on an update, the broker's permissions; with ``webhook_url``, its hook and events."""
+    setup page asked again on an update, the broker's permissions; with ``webhook_url``, its hook and events. The
+    creation's return (``redirect_url``) goes back into ``workspace`` when the flow started in one; the setup page
+    stays top-level (fixed with the App, while an install may start in any workspace)."""
+    base = f'{frontend_url}/workspace/{workspace}' if workspace else frontend_url
     manifest: dict[str, Any] = {
         'name': name, 'url': frontend_url, 'description': 'The VoC data lake\'s engineering agents (this deployment).',
-        'redirect_url': f'{frontend_url}{CREATED_PATH}', 'setup_url': f'{frontend_url}{INSTALLED_PATH}',
+        'redirect_url': f'{base}{CREATED_PATH}', 'setup_url': f'{frontend_url}{INSTALLED_PATH}',
         'public': False, 'request_oauth_on_install': False, 'setup_on_update': True,
         'default_permissions': dict(PERMISSIONS),
     }
@@ -184,19 +204,30 @@ def install_target(slug: str, state: str) -> str:
     return f'https://github.com/apps/{quote(slug, safe="")}/installations/new?{urlencode({"state": state})}'
 
 
-def parse_manifest_request(body: Mapping[str, object]) -> tuple[str, str]:
-    """``{account: user | organization, org?}`` → (account, org); the org's login checked as GitHub spells one."""
-    if not set(body) <= {'account', 'org'} or body.get('account') not in {'user', 'organization'}:
-        raise _invalid('the body is {account: "user" or "organization", org?}')
+def parse_workspace(value: object) -> str:
+    """The workspace a flow started in (its slug, as the platform makes one), or '' for none."""
+    if value in (None, ''):
+        return ''
+    if not isinstance(value, str) or not is_workspace_slug(value):
+        raise _invalid('workspace is the slug of the workspace the flow started in (3 to 40 of a-z, 0-9 and "-")')
+    return value
+
+
+def parse_manifest_request(body: Mapping[str, object]) -> tuple[str, str, str]:
+    """``{account: user | organization, org?, workspace?}`` → (account, org, workspace); the org's login checked as
+    GitHub spells one, the workspace as the platform makes a slug."""
+    if not set(body) <= {'account', 'org', 'workspace'} or body.get('account') not in {'user', 'organization'}:
+        raise _invalid('the body is {account: "user" or "organization", org?, workspace?}')
     account = str(body['account'])
     org = body.get('org')
+    workspace = parse_workspace(body.get('workspace'))
     if account == 'user':
         if org not in (None, ''):
             raise _invalid('org is only for account "organization"')
-        return account, ''
+        return account, '', workspace
     if not isinstance(org, str) or not ORGANIZATION.fullmatch(org.strip()):
         raise _invalid('org is the organization\'s GitHub login (letters, digits and single hyphens, at most 39)')
-    return account, org.strip()
+    return account, org.strip(), workspace
 
 
 def _state_of(body: Mapping[str, object]) -> str:
@@ -416,16 +447,16 @@ class GitHubApps:
 
     def manifest(self, body: Mapping[str, object], actor: Actor) -> dict[str, Any]:
         """The manifest and the form's target for the administrator's account (409 at ``MAX_APPS``)."""
-        account, org = parse_manifest_request(body)
+        account, org, workspace = parse_manifest_request(body)
         if not self._frontend_url.startswith('https://') or not (self._prefix and self._key_id):
             raise ConnectionRefused('unavailable', 'GitHub Apps cannot be made here: the deployment names no address '
                                                    'or parameter path')
         self._require_room()
         state, expires_at = self.states.mint(CREATE, actor, account=account, org=org,
                                              webhook=bool(self._webhook_url))
-        name = f'{NAME_PREFIX}{secrets.token_hex(3)}'
+        name = app_name(secrets.token_hex(NAME_SUFFIX_BYTES))
         return {'action_url': form_target(account, org, state),
-                'manifest': manifest_for(name, self._frontend_url, self._webhook_url), 'expires_at': expires_at}
+                'manifest': manifest_for(name, self._frontend_url, self._webhook_url, workspace), 'expires_at': expires_at}
 
     def convert(self, body: Mapping[str, object], actor: Actor) -> dict[str, Any]:
         """Exchange GitHub's code for the App's key (stored in SSM, never answered), store the App, and answer it with
@@ -607,38 +638,67 @@ class GitHubApps:
             saved.append({'connection': connection, 'created': created})
         return saved, skipped
 
-    def check(self, app_id: str) -> dict[str, Any]:
+    def check(self, app_id: str, actor: Actor | None = None) -> dict[str, Any]:
         """The repositories each installation the App's connections name now covers, and the connections whose
-        repository it no longer does (``missing``: the broker refuses them, failing closed)."""
-        self._app(app_id)
+        repository it no longer does (``missing``: the broker refuses them, failing closed). An App renamed on GitHub
+        has a new slug: the one its installation reports is recorded (``_renamed``), so its install links keep working."""
+        item = self._app(app_id)
         users = self._users().get(app_id, [])
         installations: dict[str, list[dict[str, Any]]] = {}
         for connection in users:
             installations.setdefault(str(connection['credential'].get('installation_id') or ''), []).append(connection)
         repositories: set[str] = set()
         missing: list[str] = []
+        slugs: set[str] = set()
         for installation_id, connections in installations.items():
-            covered, truncated = self._covered(app_id, installation_id)
+            covered, truncated, slug = self._covered(app_id, installation_id)
             repositories |= covered
+            slugs |= {slug} if slug else set()
             missing += [str(c['connection_id']) for c in connections
                         if not truncated and str(c['repository']).lower() not in {r.lower() for r in covered}]
+        if len(slugs) == 1 and actor is not None:
+            self._renamed(item, slugs.pop(), actor)
         return {'repositories': sorted(repositories), 'missing': sorted(missing)}
 
-    def _covered(self, app_id: str, installation_id: str) -> tuple[set[str], bool]:
-        """The repositories ``installation_id`` covers, and whether the list was cut; an installation the token
-        function refuses (another App's, suspended, gone) covers none."""
+    def _renamed(self, item: Mapping[str, Any], slug: str, actor: Actor) -> None:
+        """Record ``slug``, the one GitHub reports now, when the App's row names another (the App was renamed on
+        GitHub), with its page and an audit row; a row that changed meanwhile is left as it is (the next check
+        records it)."""
+        before = str(item.get('slug', ''))
+        if slug == before:
+            return
+        page = str(item.get('html_url', ''))
+        html_url = f'https://github.com/apps/{slug}' if page in ('', f'https://github.com/apps/{before}') else page
+        at = _iso(self._clock())
+        version = int(item.get('version', 0)) + 1
+        updated = {**item, 'slug': slug, 'html_url': html_url, 'updated_at': at,
+                   'updated_by': display_name(actor.name), 'version': version}
+        audit = audit_row({'app_id': str(item.get('app_id', ''))}, 'github_app_renamed', {'slug': slug, 'was': before},
+                          actor, at, version)
+        try:
+            self._write(updated, item, audit)
+        except ConnectionRefused:
+            return
+        logger.info('engineering GitHub App slug updated', extra={'app_id': item.get('app_id')})
+
+    def _covered(self, app_id: str, installation_id: str) -> tuple[set[str], bool, str]:
+        """The repositories ``installation_id`` covers, whether the list was cut, and the App's slug as the
+        installation reports it ('' when off its shape); an installation the token function refuses (another App's,
+        suspended, gone) covers none."""
         if not APP_NUMBER.fullmatch(installation_id):
-            return set(), False
+            return set(), False, ''
         try:
             inspected = self._tokens({'action': 'inspect_installation', 'app_id': app_id,
                                       'installation_id': int(installation_id)})
         except ConnectionRefused as refused:
             if refused.kind != 'conflict':
                 raise
-            return set(), False
+            return set(), False, ''
         listed = dig(inspected, 'repositories')
         names = {str(dig(item, 'repository')) for item in (listed if isinstance(listed, list) else [])}
-        return names, dig(inspected, 'truncated') is True
+        slug = dig(inspected, 'app_slug')
+        reported = slug if isinstance(slug, str) and _SLUG.fullmatch(slug) else ''
+        return names, dig(inspected, 'truncated') is True, reported
 
     # --- removal ----------------------------------------------------------------------------------------------
 

@@ -171,7 +171,7 @@ function themeCard(page: Page, choice: string) {
 }
 
 async function openPreferences(page: Page): Promise<void> {
-  await page.goto(site('/account?tab=preferences'), { waitUntil: 'domcontentloaded' })
+  await page.goto(site('/account/preferences'), { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('radiogroup', { name: 'Colour theme' })).toBeVisible()
 }
 
@@ -218,7 +218,7 @@ test.describe('colour themes (6.01.00)', () => {
       page, role: 'admin', theme: 'dark', step: '6x-default-theme-card',
       action: async (r) => {
         const appearance = page.waitForResponse((res) => isApi(res, 'GET', /\/settings\/appearance$/))
-        await page.goto(site('/admin?tab=general'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin'), { waitUntil: 'domcontentloaded' })
         const body = await jsonOf(await appearance)
         const saved = String(body['default_theme'] ?? '')
         r.note(`GET /settings/appearance default_theme=${saved}`)
@@ -276,7 +276,7 @@ test.describe('board Insights and search (6.02.00)', () => {
     expect(personalKeys(search.body), 'search results carry no email or name').toEqual([])
   })
 
-  test('UI: /feature-requests?tab=insights shows totals and the most-supported list', async ({ page }, testInfo) => {
+  test('UI: /feature-requests/insights shows totals and the most-supported list', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     test.skip(!(await salesBoardExists(role)), 'the seeded Sales board is not on this deployment (deleted or archived)')
     const { record, problems } = await runStep({
@@ -284,7 +284,7 @@ test.describe('board Insights and search (6.02.00)', () => {
       action: async (r) => {
         const loaded = page.waitForResponse((res) => isApi(res, 'GET', /\/feature-requests\/insights$/)
           && new URL(res.url()).searchParams.get('board') === SALES_BOARD.id)
-        await page.goto(site(`/feature-requests?tab=insights&board=${SALES_BOARD.id}&days=30`), { waitUntil: 'domcontentloaded' })
+        await page.goto(site(`/feature-requests/insights?board=${SALES_BOARD.id}&days=30`), { waitUntil: 'domcontentloaded' })
         const res = await loaded
         expect(res.status()).toBe(200)
         const body = await jsonOf(res)
@@ -336,7 +336,7 @@ test.describe('unsaved changes, two editors on one page (6.01.00)', () => {
     const { record, problems } = await runStep({
       page, role: 'admin', theme: 'dark', step: '6x-unsaved-two-editors', audit: false,
       action: async (r) => {
-        await page.goto(site('/admin?tab=general'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin'), { waitUntil: 'domcontentloaded' })
         await settle(page, 600)
         const brand = page.getByLabel('Brand Name')
         await expect(brand).toBeVisible()

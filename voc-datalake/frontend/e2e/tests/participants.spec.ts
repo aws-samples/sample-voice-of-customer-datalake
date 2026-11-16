@@ -1,6 +1,6 @@
 /**
- * Participants (docs/participants.md): `/participants?tab=lists|people|asks` and a
- * project's Participants tab (`/projects/{id}?tab=participants`).
+ * Participants (docs/participants.md): `/participants/lists|people|asks` and a
+ * project's Participants tab (`/projects/{id}/participants`).
  *
  * Admin, serial:
  * 1. Lists: "New list" → `${RUN_PREFIX}list`, Edit renames it, Delete → "Delete this
@@ -68,7 +68,7 @@ const listCard = (page: Page, name: string): Locator =>
   page.getByRole('list', { name: 'Lists' }).getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) })
 
 async function openParticipants(page: Page, tab: 'lists' | 'people' | 'asks'): Promise<void> {
-  await page.goto(site(`/participants?tab=${tab}`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/participants/${tab}`), { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Participants', level: 1 })).toBeVisible()
   await expect(page.getByRole('tab', { name: new RegExp(`^${tab}$`, 'i') })).toHaveAttribute('aria-selected', 'true')
 }
@@ -205,7 +205,7 @@ test.describe('participants (admin)', () => {
     const linkedLists = page.getByRole('region', { name: 'Linked lists' })
 
     await assertStep(page, 'admin', 'participants-project-link', async () => {
-      await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=participants`), { waitUntil: 'domcontentloaded' })
+      await page.goto(site(`/projects/${encodeURIComponent(projectId)}/participants`), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Participants', level: 2 })).toBeVisible()
       const add = page.getByRole('region', { name: 'Add participants' })
       await add.getByLabel('Add a list').selectOption({ label: NAME.projectList })

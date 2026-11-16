@@ -5,10 +5,11 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { companyPersonasApi, companyPersonasKey } from '../../api/companyPersonasApi'
+import { companyTabPath } from '../Company/companyPaths'
 import { copySourcesRootKey } from './useCopyPersonas'
 
 /** Where the promote notice links: Knowledge → Company, Personas tab. */
-export const COMPANY_PERSONAS_PATH = '/company?tab=personas'
+export const COMPANY_PERSONAS_PATH = companyTabPath('personas')
 
 /**
  * Raised when promote runs outside a project. A programming error, never shown to a person:

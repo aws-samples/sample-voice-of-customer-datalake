@@ -1,11 +1,11 @@
 /**
  * @fileoverview The full pages of the workspace gate, each with Sign out:
- * - the picker (no `/w/{slug}` in the address and two or more workspaces) and "workspace not found" (a
- *   `/w/{slug}` the caller is not a member of). Both list the caller's own workspaces as plain links into
- *   `/w/{slug}/…` (the picker keeps the path asked for, so a link shared without a workspace still opens its
+ * - the picker (no `/workspace/{slug}` in the address and two or more workspaces) and "workspace not found" (a
+ *   `/workspace/{slug}` the caller is not a member of). Both list the caller's own workspaces as plain links into
+ *   `/workspace/{slug}/…` (the picker keeps the path asked for, so a link shared without a workspace still opens its
  *   page; not-found opens a workspace's start page): a full page load, so the router starts again under that
  *   base path. Neither page says whether a slug exists.
- * - "could not load your workspaces" (a `/w/…` address whose list could not be read), with Retry: such an
+ * - "could not load your workspaces" (a `/workspace/…` address whose list could not be read), with Retry: such an
  *   address never opens the app without its workspace.
  *
  * @module workspace/WorkspaceChoice
@@ -97,7 +97,7 @@ export default function WorkspaceChoice({ workspaces, path, notFound, refused }:
   )
 }
 
-/** The list could not be read on a `/w/…` address: say so, and offer Retry (the list read again). */
+/** The list could not be read on a `/workspace/…` address: say so, and offer Retry (the list read again). */
 export function WorkspaceUnavailable({ onRetry, retrying }: Readonly<{ onRetry: () => void; retrying: boolean }>) {
   const { t } = useTranslation()
   return (

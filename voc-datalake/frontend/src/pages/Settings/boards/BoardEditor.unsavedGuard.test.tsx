@@ -23,11 +23,12 @@ vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m
 const { default: BoardsSection } = await import('./BoardsSection')
 const { default: AdminSectionContent } = await import('../AdminSectionContent')
 
-const EDITOR_SEARCH = '?tab=access&section=boards&board=brd_sales'
-const EDITOR = `/admin${EDITOR_SEARCH}`
+/** The editor's path (adminPaths.ts), and the list's. */
+const EDITOR = '/admin/access/boards/brd_sales'
+const LIST = '/admin/access/boards'
 
 function mountEditor(client = createTestQueryClient()) {
-  const router = createMemoryRouter([{ path: '/admin', element: <BoardsSection /> }], { initialEntries: [EDITOR] })
+  const router = createMemoryRouter([{ path: '/admin/*', element: <BoardsSection /> }], { initialEntries: [EDITOR] })
   renderWithQueryClient(<RouterProvider router={router} />, client)
   return router
 }
@@ -66,9 +67,9 @@ describe('the board editor guard', () => {
       edit: async (user) => { await user.type(description(), 'Draft text') },
       expectDraft: () => expect(description()).toHaveDisplayValue('Draft text'),
       leave: async (user) => { await user.click(screen.getByRole('button', { name: 'Back to boards' })) },
-      expectStayed: () => expect(state.router?.state.location.search).toBe(EDITOR_SEARCH),
+      expectStayed: () => expect(state.router?.state.location.pathname).toBe(EDITOR),
       expectLeft: async () => {
-        await waitFor(() => expect(state.router?.state.location.search).toBe('?tab=access&section=boards'))
+        await waitFor(() => expect(state.router?.state.location.pathname).toBe(LIST))
       },
       whileDialogOpen: async () => {
         server.board = { ...SALES_BOARD, name: 'Renamed elsewhere', updated_at: '2026-10-28T00:00:00Z' }
@@ -81,28 +82,28 @@ describe('the board editor guard', () => {
     const user = userEvent.setup()
     const router = mountEditor()
     await user.click(await screen.findByRole('button', { name: 'Back to boards' }))
-    expect(router.state.location.search).toBe('?tab=access&section=boards')
+    expect(router.state.location.pathname).toBe(LIST)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('Cancel keeps the draft and the editor open', async () => {
     const { user, router } = await editAndLeave()
     await user.click(guardDialog().getByRole('button', { name: 'Cancel' }))
-    expect(router.state.location.search).toBe(EDITOR_SEARCH)
+    expect(router.state.location.pathname).toBe(EDITOR)
     expect(description()).toHaveDisplayValue('Draft text')
   })
 
   it('Discard leaves without saving', async () => {
     const { user, router } = await editAndLeave()
     await user.click(guardDialog().getByRole('button', { name: 'Discard' }))
-    await waitFor(() => expect(router.state.location.search).toBe('?tab=access&section=boards'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(LIST))
     expect(puts()).toHaveLength(0)
   })
 
   it('Save saves the draft, then leaves', async () => {
     const { user, router } = await editAndLeave()
     await user.click(guardDialog().getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(router.state.location.search).toBe('?tab=access&section=boards'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(LIST))
     expect(asRecord(parsedJson(puts()[0]?.[1]?.body))?.description).toBe('Draft text')
   })
 })
@@ -110,7 +111,7 @@ describe('the board editor guard', () => {
 describe('the Boards section', () => {
   it('renders nothing for a non-admin, even from a deep link', () => {
     const router = createMemoryRouter([{
-      path: '/admin',
+      path: '/admin/*',
       element: <AdminSectionContent tab="access" section="boards" apiEndpoint="https://api.example.com" isAdmin={false} isPlatformAdmin={false} />,
     }], { initialEntries: [EDITOR] })
     const { container } = renderWithQueryClient(<RouterProvider router={router} />)

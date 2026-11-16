@@ -2,7 +2,7 @@
  * The two-workspace check (docs/multi-workspace.md, Phases: a guard kept green from phase 1 on), against the dev
  * mock's two workspaces with the caller a member of Acme Outfitters only (mock-workspaces.js,
  * `PUT /__mock/workspaces {"enabled": true, "member": "acme"}`; the workspace routes then treat the caller as no
- * platform admin): the address `/w/juniper/members`, of a workspace the caller is not a member of, shows "Workspace
+ * platform admin): the address `/workspace/juniper/members`, of a workspace the caller is not a member of, shows "Workspace
  * not found" with the caller's own workspace, and the app does not render.
  *
  * The API's side of the same rule, route by route, is lambda/api/test/test_cross_workspace_routes.py. MOCK ONLY: a
@@ -34,9 +34,9 @@ test.describe('cross-workspace', () => {
 
   test('the address of a workspace the caller is not a member of shows not-found', async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'cross-workspace-01-not-found', async () => {
-      await page.goto(site('/w/juniper/members'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/workspace/juniper/members'), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: TEXT.notFound })).toBeVisible()
-      await expect(page.getByRole('link', { name: new RegExp(TEXT.acme) })).toHaveAttribute('href', '/w/acme/')
+      await expect(page.getByRole('link', { name: new RegExp(TEXT.acme) })).toHaveAttribute('href', '/workspace/acme/')
       await expect(page.getByRole('heading', { name: 'Members', level: 1 })).toHaveCount(0)
       await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
     })

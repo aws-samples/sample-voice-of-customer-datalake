@@ -38,7 +38,7 @@ const ASSISTANT_SEND_SWITCH = 'E2E_ASSISTANT_SEND'
 const fillButton = (page: Page) => page.getByRole('button', { name: FILL_BUTTON, exact: true })
 
 async function openProductTab(page: Page, projectId: string): Promise<void> {
-  await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=product`), { waitUntil: 'domcontentloaded' })
+  await page.goto(site(`/projects/${encodeURIComponent(projectId)}/product`), { waitUntil: 'domcontentloaded' })
   await settle(page, 500)
   await expect(fillButton(page)).toBeVisible()
 }

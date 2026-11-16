@@ -61,7 +61,7 @@ function renderAt(entry: string) {
       <Routes>
         <Route path="/board/*" element={<Board />} />
         <Route path="/feature-requests" element={<p>In-app board</p>} />
-        <Route path="/feature-requests/:slug" element={<p>In-app board page</p>} />
+        <Route path="/feature-requests/:slug/*" element={<p>In-app board page</p>} />
       </Routes>
       <SearchProbe />
       <PathProbe />
@@ -105,30 +105,29 @@ describe('board sign-in', () => {
     expect(await screen.findByText('dana@example.com')).toBeInTheDocument()
   })
 
-  it('drops the used code from the address once the emailed link signed in, keeping the shared request', async () => {
+  it('drops the used code from the address once the emailed link signed in, landing on the board its path names', async () => {
     fakeAuth(PENDING)
-    renderAt('/board/login?email=dana%40example.com&code=12345678&request=fr_1')
+    renderAt('/board/login/sales-feature-requests/fr_1?email=dana%40example.com&code=12345678')
     expect(await screen.findByText('dana@example.com')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_1'))
-    expect(screen.getByTestId('search')).not.toHaveTextContent(/code|email/)
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/sales-feature-requests\/fr_1$/))
   })
 
   it('signs out of a board opened with a stale link without the different-browser warning', async () => {
     const user = userEvent.setup()
     fakeAuth()
     useBoardSessionStore.setState({ status: 'signedIn', email: 'dana@example.com' })
-    renderAt('/board?email=dana%40example.com&code=12345678&request=fr_1')
+    renderAt('/board/sales-feature-requests/fr_1?email=dana%40example.com&code=12345678')
     await user.click(await screen.findByRole('button', { name: 'Sign out' }))
     expect(await screen.findByLabelText('Work email')).toBeInTheDocument()
     expect(screen.queryByText(/opened in a different browser/)).not.toBeInTheDocument()
-    expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_1')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/login\/sales-feature-requests\/fr_1$/)
   })
 
   it('cleans the link out of the address even when it opens in another browser', async () => {
     fakeAuth(null)
     renderAt('/board/login?email=dana%40example.com&code=12345678')
     expect(await screen.findByText(/opened in a different browser/)).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId('search')).toBeEmptyDOMElement())
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/login$/))
   })
 
   it('explains what to do when the link opens in another browser', async () => {
@@ -183,11 +182,19 @@ describe('board sign-in', () => {
     expect(await screen.findByRole('button', { name: 'Single sign-on' })).toBeInTheDocument()
   })
 
-  it('sends a signed-out visitor of /board to sign-in, keeping the shared request', async () => {
+  it('sends a signed-out visitor of a request known by its id to sign-in, keeping it in the path', async () => {
     fakeAuth()
-    renderAt('/board?request=fr_1')
+    renderAt('/board/requests/fr_1')
     expect(await screen.findByLabelText('Work email')).toBeInTheDocument()
-    expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_1')
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/login\/requests\/fr_1$/))
+  })
+
+  it('reads no board from the sign-in page\'s query (no old `?board=&request=` link is redirected)', async () => {
+    const auth = fakeAuth()
+    const user = userEvent.setup()
+    renderAt('/board/login?board=beta-board&request=fr_1')
+    await signInWithCode(user)
+    expect(auth.requestCode).toHaveBeenCalledWith('dana@example.com', { board: undefined, returnTo: undefined })
   })
 })
 
@@ -213,7 +220,7 @@ describe('an app user on /board', () => {
     expect(screen.getByText(APP_USER.email)).toBeInTheDocument()
   })
 
-  it.each(['/board/login?request=fr_1', '/board/login/?request=fr_1'])('sends an app user on %s to the boards instead of looking up a board named "login"', async (entry) => {
+  it.each(['/board/login/requests/fr_1', '/board/login/requests/fr_1/'])('sends an app user on %s to the boards instead of looking up a board named "login"', async (entry) => {
     fakeAuth()
     useAuthStore.getState().setUser({ username: 'rui', email: APP_USER.email, groups: [] })
     const { api } = fakeBoard(BOARD_USER, [fixtureRequest('fr_1', { title: 'Single sign-on' })])
@@ -222,8 +229,8 @@ describe('an app user on /board', () => {
     await waitFor(() => expect(screen.getByTestId('path')).not.toHaveTextContent('/board/login'))
     const refsAsked = [...vi.mocked(api.getBoard).mock.calls, ...vi.mocked(api.listRequests).mock.calls].flat()
     expect(refsAsked).not.toContain('login')
-    // The shared request survives the redirect (`withoutSignInParams` drops only the sign-in params).
-    expect(screen.getByTestId('search')).toHaveTextContent('request=fr_1')
+    // The shared request survives the redirect: its path names it after the sign-in page's.
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/\/fr_1$/))
   })
 })
 
@@ -244,7 +251,7 @@ describe('the standalone boards', () => {
     signedIn([SALES])
     renderAt('/board')
     expect(await screen.findByRole('heading', { name: 'Sales feature requests' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId('search')).toBeEmptyDOMElement())
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/sales-feature-requests$/))
   })
 
   it('lists the boards when there are several', async () => {
@@ -254,11 +261,23 @@ describe('the standalone boards', () => {
     expect(screen.getByRole('link', { name: 'Open Sales feature requests' })).toBeInTheDocument()
   })
 
-  it('opens a pre-boards /board?request= link on the request\'s board', async () => {
+  it('opens a request known by its id (/board/requests/<id>) on its board', async () => {
     signedIn([SALES, BETA])
-    renderAt('/board?request=fr_1')
+    renderAt('/board/requests/fr_1')
     expect(await screen.findByRole('dialog', { name: 'Single sign-on' })).toBeInTheDocument()
-    expect(screen.getByTestId('search')).toHaveTextContent('?request=fr_1')
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/[\w-]+\/fr_1$/))
+  })
+
+  it('opens a request from its path, and a signed-out visitor of it signs in and lands back on it', async () => {
+    const user = userEvent.setup()
+    fakeAuth()
+    appBoard.api = fakeBoard(BOARD_USER, [fixtureRequest('fr_1', { title: 'Single sign-on' })], {}, { boards: [SALES, BETA], board: BETA }).api
+    renderAt('/board/beta-board/fr_1')
+    expect(await screen.findByLabelText('Work email')).toBeInTheDocument()
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/login\/beta-board\/fr_1$/)
+    await signInWithCode(user)
+    expect(await screen.findByRole('dialog', { name: 'Single sign-on' })).toBeInTheDocument()
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/beta-board\/fr_1$/)
   })
 
   it('says a board that is not shared with this person does not exist', async () => {
@@ -290,7 +309,7 @@ describe('the standalone boards', () => {
     appBoard.api = fakeBoard(BOARD_USER, [], {}, { boards: [SALES, BETA], board: BETA }).api
     renderAt('/board/beta-board')
     expect(await screen.findByLabelText('Work email')).toBeInTheDocument()
-    expect(screen.getByTestId('search')).toHaveTextContent('?board=beta-board')
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\/board\/login\/beta-board$/)
     await signInWithCode(user)
     // The board rides along with the pending sign-in, for the emailed link (which carries only email + code).
     expect([auth.requestCode.mock.calls[0], auth.verifyCode.mock.calls[0]]).toStrictEqual([

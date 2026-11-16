@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest'
 import type { RouteObject } from 'react-router-dom'
 import { sortedStrings } from '@test/stringLists'
 import { routes } from './routes'
+import { parseWorkspacePath } from './workspace/workspacePath'
 
 /** Route path in `routes.tsx` → the page module that renders it (relative to src/). */
 const PARAM_PAGES: Record<string, string> = {
@@ -24,11 +25,11 @@ const PARAM_PAGES: Record<string, string> = {
   '/review/:shareId': 'pages/Review/Review.tsx',
   'feedback/:id': 'pages/FeedbackDetail/FeedbackDetail.tsx',
   'projects/:id/*': 'pages/ProjectDetail/ProjectDetail.tsx',
-  'agents/:id': 'pages/Agents/AgentDetail.tsx',
+  'agents/:id/*': 'pages/Agents/AgentDetail.tsx',
   'agents/workflows/:workflowId': 'pages/Agents/WorkflowPage.tsx',
   'agents/workflows/templates/:templateId': 'pages/Agents/WorkflowTemplatePage.tsx',
   'agents/engineering/:runId': 'pages/Agents/EngineeringRun.tsx',
-  'feature-requests/:slug': 'pages/FeatureRequests/BoardPage.tsx',
+  'feature-requests/:slug/*': 'pages/FeatureRequests/BoardPage.tsx',
 }
 
 const read = (file: string) => readFileSync(join(__dirname, file), 'utf8')
@@ -65,6 +66,15 @@ describe('route params', () => {
   })
 
   it('the agent detail spec registers the production route', () => {
-    expect(read('pages/Agents/AgentDetail.test.tsx')).toContain("const AGENT_DETAIL_PATH = '/agents/:id'")
+    expect(read('pages/Agents/AgentDetail.test.tsx')).toContain("const AGENT_DETAIL_PATH = '/agents/:id/*'")
+  })
+})
+
+describe('the workspace prefix is reserved (7.49.00: `/workspace/<slug>/…`)', () => {
+  it('names no top-level page, so an app path never reads as a workspace address', () => {
+    const tops = allPaths(routes).map((path) => path.replace(/^\//, '').split('/')[0] ?? '')
+    expect(tops.filter((segment) => segment === 'workspace')).toStrictEqual([])
+    expect([parseWorkspacePath('/workspace/acme/agents/connections'), parseWorkspacePath('/w/acme/dashboard')])
+      .toStrictEqual([{ kind: 'slug', slug: 'acme' }, { kind: 'none' }])
   })
 })

@@ -934,7 +934,12 @@
       "description": "Les agents d’ingénierie utilisent cette connexion pour lire le dépôt et y proposer des modifications.",
       "stored": "Identifiant d’accès enregistré :",
       "keepHint": "L’identifiant d’accès enregistré n’est jamais affiché. Laissez la clé privée vide pour le conserver ; un nouveau dépôt, un nouvel identifiant d’App ou d’installation demande à nouveau la clé privée.",
-      "save": "Enregistrer la connexion"
+      "save": "Enregistrer la connexion",
+      "appCreatedTitle": "Par la GitHub App de ce déploiement",
+      "appCreatedHint": "Enregistrée à l’installation de l’App : son App, son installation et son dépôt sont fixes, et sa clé est celle de l’App. Seule la branche par défaut peut changer ici.",
+      "repositoryFixed": "Enregistré par l’installation de l’App : il ne peut pas changer. Installez l’App sur un autre dépôt pour le connecter.",
+      "reason": "Motif (facultatif)",
+      "reasonHint": "Pourquoi la modification est faite : conservé dans l’historique de la connexion. Une ligne, au plus {{max, number}} caractères."
     },
     "fields": {
       "connectionId": "Identifiant de la connexion",

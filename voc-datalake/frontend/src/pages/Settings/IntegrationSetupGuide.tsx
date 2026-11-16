@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ExternalLink, LifeBuoy } from 'lucide-react'
 import clsx from 'clsx'
+import { companyTabPath } from '../Company/companyPaths'
 import { INTEGRATION_GUIDES } from './integrationGuides'
 import type { IntegrationGuide } from './integrationGuides'
 
@@ -78,7 +79,7 @@ function GuideBody({ guide }: Readonly<{ guide: IntegrationGuide }>) {
       <GuideSection title={t('integrationGuide.testHeading')}>
         <p>{t('integrationGuide.test', labels)}</p>
         <p className="text-muted">{t(guide.linkFormatKey, labels)}</p>
-        <Link to="/company?tab=design" className="inline-block link focus-ring rounded-sm">
+        <Link to={companyTabPath('design')} className="inline-block link focus-ring rounded-sm">
           {t('integrationGuide.openDesignSystem', labels)}
         </Link>
       </GuideSection>

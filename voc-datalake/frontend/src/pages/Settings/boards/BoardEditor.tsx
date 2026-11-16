@@ -1,5 +1,5 @@
 /**
- * @fileoverview Boards → one board's editor (`?tab=access&section=boards&board=<id>`): basics,
+ * @fileoverview Boards → one board's editor (`/admin/access/boards/<id>`): basics,
  * audience, fields, statuses, then Archive / Delete. One Save = one PUT of the whole configuration;
  * a 409 (`slug_taken`, `status_in_use`) is explained in words. The shared unsaved-changes guard
  * catches leaving with edits (Back to boards, another section or page, closing the tab).

@@ -1,5 +1,5 @@
 /**
- * Project Decisions tab (`/projects/{id}?tab=decisions`, docs/decisions-and-release-watch.md),
+ * Project Decisions tab (`/projects/{id}/decisions`, docs/decisions-and-release-watch.md),
  * admin, on this run's PUBLIC e2e project (`ensureE2eProject`):
  *
  * - create `${RUN_PREFIX}decision` (New decision → form "Decision" → verdict Park → Save
@@ -46,7 +46,7 @@ const EDITED_RATIONALE = 'Edited by the e2e suite: still parked, revisit next qu
 const SUCCESS_METRIC = 'Late-delivery complaints down 20% in 30 days'
 const KILL_CRITERION = 'Stop if complaints do not move within 60 days'
 
-const decisionsPath = (projectId: string): string => `/projects/${encodeURIComponent(projectId)}?tab=decisions`
+const decisionsPath = (projectId: string): string => `/projects/${encodeURIComponent(projectId)}/decisions`
 const card = (page: Page): Locator => page.getByRole('article', { name: TITLE, exact: true })
 const form = (page: Page): Locator => page.getByRole('form', { name: 'Decision', exact: true })
 

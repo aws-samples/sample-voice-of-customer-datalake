@@ -1,7 +1,7 @@
 /**
  * @fileoverview A platform admin's entry into a workspace from the platform console (sessionStorage).
  *
- * `GET /me/workspaces` lists only the caller's memberships, so a `/w/{slug}` address of a workspace a platform admin
+ * `GET /me/workspaces` lists only the caller's memberships, so a `/workspace/{slug}` address of a workspace a platform admin
  * is not a member of has no id for the gate to send. Before its full page load, the console's Enter records the
  * workspace it chose (id and slug); on that address the gate then asks `GET /me/workspaces/current` with this id
  * and opens the workspace only when the server answers it, with the same slug (decision 2: the server lets a

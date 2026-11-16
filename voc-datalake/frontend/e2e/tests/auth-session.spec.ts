@@ -9,12 +9,12 @@
  *    silently on boot — the page renders, the stored id token is a NEW one that
  *    is not expired, and the API answers. Never a blank page.
  * 2. Expired tokens AND no refresh token: the refresh cannot succeed, so the app
- *    ends the session WITH its reason — `/login?expired=1` and "Session expired.
+ *    ends the session WITH its reason — `/login/expired` and "Session expired.
  *    Please login again." — never a bare login form, never a blank page. No
  *    refresh token is left to revoke, so this cannot touch the saved session.
  * 3. A 401 mid-session (one API call answered 401): the client refreshes once,
  *    retries, and the page shows its data — no logout.
- * 4. `/login?expired=1` itself shows the notice (also against the dev mock).
+ * 4. `/login/expired` itself shows the notice (also against the dev mock).
  *
  * Production only for 1–3: the dev mock has no Cognito (DEV treats the session
  * as an admin), so there is nothing to expire.
@@ -116,7 +116,7 @@ test.describe('session expiry', () => {
       await expireStoredTokens(context, { dropRefresh: true })
       const page = await context.newPage()
       await page.goto(site('/projects'), { waitUntil: 'domcontentloaded' })
-      await expect(page).toHaveURL(/\/login\?expired=1/, { timeout: 30_000 })
+      await expect(page).toHaveURL(/\/login\/expired/, { timeout: 30_000 })
       await expect(page.getByRole('alert').filter({ hasText: EXPIRED_NOTICE })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
     } finally {
@@ -149,11 +149,11 @@ test.describe('session expiry', () => {
     }
   })
 
-  test('/login?expired=1 explains why the user is there (signed out)', async ({ browser }) => {
+  test('/login/expired explains why the user is there (signed out)', async ({ browser }) => {
     const context = await anonymousContext(browser, { width: 1440, height: 900 })
     try {
       const page = await context.newPage()
-      await page.goto(site('/login?expired=1'), { waitUntil: 'domcontentloaded' })
+      await page.goto(site('/login/expired'), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('alert').filter({ hasText: EXPIRED_NOTICE })).toBeVisible()
     } finally {
       await context.close()

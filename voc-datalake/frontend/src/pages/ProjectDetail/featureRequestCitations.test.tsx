@@ -32,7 +32,7 @@ describe('featureRequestIdsOf', () => {
 describe('linkFeatureRequestCitations', () => {
   it('links each citation to its request, the visible text unchanged', () => {
     expect(linkFeatureRequestCitations('Admins need SSO [FR:fr_00a1].'))
-      .toBe(String.raw`Admins need SSO [\[FR:fr_00a1\]](/feature-requests?request=fr_00a1).`)
+      .toBe(String.raw`Admins need SSO [\[FR:fr_00a1\]](/feature-requests/requests/fr_00a1).`)
   })
 
   it('leaves review citations, an already linked citation and malformed ids alone', () => {
@@ -41,7 +41,7 @@ describe('linkFeatureRequestCitations', () => {
   })
 
   it('opens the request on its board', () => {
-    expect(featureRequestHref('fr_1')).toBe('/feature-requests?request=fr_1')
+    expect(featureRequestHref('fr_1')).toBe('/feature-requests/requests/fr_1')
   })
 })
 
@@ -66,7 +66,7 @@ describe('the corpus line', () => {
     const user = userEvent.setup()
     renderCorpus(['r1'], ['fr_1'])
     await user.click(screen.getByRole('button', { name: 'Show requests' }))
-    expect(screen.getByRole('link', { name: 'Request fr_1' })).toHaveAttribute('href', '/feature-requests?request=fr_1')
+    expect(screen.getByRole('link', { name: 'Request fr_1' })).toHaveAttribute('href', '/feature-requests/requests/fr_1')
   })
 
   it('shows nothing without reviews or requests', () => {

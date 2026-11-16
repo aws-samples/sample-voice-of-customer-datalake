@@ -16,7 +16,7 @@ export function mountAtAdmin(page: ReactNode) {
   const router = createMemoryRouter(
     [
       { path: '/', element: <p>Home page</p> },
-      { path: '/admin', element: <><Link to="/">Home</Link>{page}</> },
+      { path: '/admin/*', element: <><Link to="/">Home</Link>{page}</> },
     ],
     { initialEntries: ['/admin'] },
   )

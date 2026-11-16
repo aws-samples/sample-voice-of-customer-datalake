@@ -6,6 +6,13 @@
  * need the routes, not a router. Importing this module has no side effects — the
  * pages come lazy from `lazyPages.ts` and nothing here runs at load.
  *
+ * Every in-app place is a PATH (7.49.00, docs/document-canvas.md → "Addresses"): a page's tab, section,
+ * open item, sub-view and mode are path segments its page reads itself (each area's `*Paths.ts`), and
+ * only filters and search stay in the query. A route ending in `/*` is such a page: its splat is its
+ * own places; an unknown place is replaced by the page's first one (no history entry, query kept). No
+ * query link of before (`?tab=`, `&section=`, `&doc=`, `&view=`) is read or redirected: a pre-release change.
+ * `locationParams.test.ts` holds every query read in the app to the filter / external-callback allowlist.
+ *
  * Breadcrumbs' route tables are held to this one by `route coverage` in
  * Breadcrumbs.test.tsx: every layout route needs a label and every `:param` route
  * a stand-in, or the header falls back to printing a raw path segment. It reads
@@ -47,7 +54,8 @@ const page = (element: ReactNode) => ({
 
 export const routes: RouteObject[] = [
   {
-    path: '/login',
+    // `/login`, and `/login/expired` when a session ended (services/sessionExpiry.ts).
+    path: '/login/*',
     element: <Login />,
     errorElement: <RouteErrorBoundary />,
   },
@@ -80,7 +88,8 @@ export const routes: RouteObject[] = [
     /**
      * The feedback boards for people who are NOT app users (docs/feature-requests.md), OUTSIDE
      * `ProtectedRoute` like `/vote`: `/board` (the boards this person may use), `/board/:slug` (one
-     * board) and `/board/login`, routed inside the page. It has its own sign-in (a one-time code or
+     * board), `/board/:slug/:requestId` (a request open on it) and `/board/login[/:slug[/:requestId]]`,
+     * routed inside the page. It has its own sign-in (a one-time code or
      * link emailed by the boards' own Cognito user pool, for the emails some board's audience admits)
      * and its own minimal shell. A board session grants only the board routes — the API's main
      * authorizer never accepts its tokens.
@@ -107,7 +116,7 @@ export const routes: RouteObject[] = [
     element: (
       <ProtectedRoute>
         {/* Signed in: the caller's workspaces decide the picker, the not-found page or the app inside
-            `/w/{slug}` (workspace/WorkspaceGate.tsx); with none, the app as before workspaces. */}
+            `/workspace/{slug}` (workspace/WorkspaceGate.tsx); with none, the app as before workspaces. */}
         <WorkspaceGate>
           {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
           <WorkspaceThemeSync />
@@ -129,23 +138,35 @@ export const routes: RouteObject[] = [
       { path: 'chat', ...page(<Chat />) },
       { path: 'projects', ...page(<Projects />) },
       // A project: its tabs, a document, an older version and full screen are paths the page reads itself
-      // (pages/ProjectDetail/projectPaths.ts: /projects/:id/documents/:docId/v/:n/focus); an old ?tab= link is replaced.
+      // (pages/ProjectDetail/projectPaths.ts: /projects/:id/documents/:docId/v/:n/focus).
       { path: 'projects/:id/*', ...page(<ProjectDetail />) },
       { path: 'prioritization', ...page(<Prioritization />) },
-      { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
+      // Its tab: /data-explorer/raw (/data-explorer too) or /data-explorer/processed (DataExplorer/dataExplorerPaths.ts).
+      { path: 'data-explorer/*', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
       { path: 'feedback-forms', ...page(<FeedbackForms />) },
-      { path: 'participants', ...page(<Participants />) },
-      // Feedback boards: the list (an old `?request=` link opens its board), then one board by slug or id.
+      // Its tabs: /participants/lists|people|asks (Participants/participantsPaths.ts).
+      { path: 'participants/*', ...page(<Participants />) },
+      // Feedback boards (FeatureRequests/boardContext.ts): the list, its Insights tab, a request known only by its id
+      // (looked up, then opened on its board), and one board by slug or id with a request open on it
+      // (/feature-requests/:slug/:requestId). `insights` and `requests` are reserved slugs (feature_boards_store.py).
       { path: 'feature-requests', ...page(<FeatureRequests />) },
-      { path: 'feature-requests/:slug', ...page(<FeatureBoardPage />) },
-      { path: 'memory', ...page(<Memory />) },
-      { path: 'company', ...page(<Company />) },
+      { path: 'feature-requests/insights', ...page(<FeatureRequests />) },
+      { path: 'feature-requests/requests/*', ...page(<FeatureRequests />) },
+      { path: 'feature-requests/:slug/*', ...page(<FeatureBoardPage />) },
+      // Their tabs: /memory/company|personal|review|imports, /company/vision|design|personas (memoryPaths.ts, companyPaths.ts).
+      { path: 'memory/*', ...page(<Memory />) },
+      { path: 'company/*', ...page(<Company />) },
+      // The list's views are paths (Agents/agentsPaths.ts): /agents, /agents/workflows, /agents/spend,
+      // /agents/connections, /agents/skills[/<role>[/v/<n>]]. Each is listed, so it ranks above `agents/:id/*` (an
+      // agent's id is never a view's name: `ag_<12 hex>`); the pages below with a longer static path rank above both.
       { path: 'agents', ...page(<Agents />) },
-      { path: 'agents/:id', ...page(<AgentDetail />) },
-      // The library itself is the Workflows tab of /agents (its "Workflows" crumb links there). Without this,
-      // a trimmed workflow URL matched `agents/:id` and fetched an agent named "workflows" (404).
-      { path: 'agents/workflows', element: <MovedRouteRedirect to="/agents?tab=workflows" />, errorElement: <RouteErrorBoundary /> },
+      { path: 'agents/workflows/*', ...page(<Agents />) },
+      { path: 'agents/spend/*', ...page(<Agents />) },
+      { path: 'agents/connections/*', ...page(<Agents />) },
+      { path: 'agents/skills/*', ...page(<Agents />) },
+      // One agent and its tabs: /agents/<id>/<tab> (/agents/<id> is Settings).
+      { path: 'agents/:id/*', ...page(<AgentDetail />) },
       // A library workflow on its own, outside any agent (Workflow library → Open / New workflow).
       { path: 'agents/workflows/:workflowId', ...page(<WorkflowPage />) },
       // A default engineering flow's unsaved copy (Workflow library → Start from a template), saved as a new workflow.
@@ -154,19 +175,21 @@ export const routes: RouteObject[] = [
       { path: 'agents/engineering/:runId', ...page(<EngineeringRun />) },
       // Where GitHub sends an administrator back from the deployment's GitHub App (Agents → Connections → Connect
       // GitHub): its creation (the manifest's redirect_url, with the code and the state) and its installation (the
-      // App's setup_url). Both addresses are fixed in the manifest the server writes, so they must not move.
+      // App's setup_url). Both addresses are fixed in the manifest the server writes, so they must not move. Their
+      // query is GitHub's (an external callback): each page takes it once and removes it from the address.
       { path: 'agents/connections/github/created', ...page(<GitHubAppCreated />) },
       { path: 'agents/connections/github/installed', ...page(<GitHubAppInstalled />) },
       { path: 'connect', ...page(<Connect />) },
       { path: 'oauth/authorize', ...page(<OAuthConsent />) },
-      { path: 'account', ...page(<Account />) },
+      // Its tabs: /account/profile|preferences|briefing|objectives|access (Account/accountSections.ts).
+      { path: 'account/*', ...page(<Account />) },
       // The current workspace's members (the header's workspace menu); "Page not found" outside a workspace.
       { path: 'members', ...page(<Members />) },
       // The current workspace's brand and plugins (the same menu), for every member; "Page not found" outside one.
       { path: 'workspace-settings', ...page(<WorkspaceSettings />) },
-      // Administration (was Settings): admins only. The old
-      // path keeps working — links, bookmarks and `?tab=` deep links redirect.
-      { path: 'admin', ...page(<AdminRoute><Settings /></AdminRoute>) },
+      // Administration (was Settings): admins only. Its tab, section and open board editor are paths
+      // (/admin/access/boards/<boardId>, Settings/adminPaths.ts); the old /settings path redirects (to /admin).
+      { path: 'admin/*', ...page(<AdminRoute><Settings /></AdminRoute>) },
       { path: 'settings', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
       // Unknown URLs render a "Page not found" state INSIDE the layout, so the
       // sidebar stays usable. Without it React Router hands the 404 to the root

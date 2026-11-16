@@ -3,20 +3,23 @@
  * versions, read only. A scope (the shared skills every connection falls back to, or one repository connection's own)
  * lists its roles with a version (`GET /agents/engineering/skills`): the current version, how many were made and the
  * newest one's summary. A role opens its history (SkillHistory.tsx) and, on a connection, its scorecards
- * (SkillScorecards.tsx); a version opens its detail and its diff (SkillVersionDetail.tsx). The scope, the role and the
- * version are view options in the address (`?tab=skills&connection=&role=&version=`), so a view can be shared.
+ * (SkillScorecards.tsx); a version opens its detail and its diff (SkillVersionDetail.tsx). The role and the version
+ * are the path (`/agents/skills/<role>/v/<n>`, agentsPaths.ts) and the scope a filter of the query (`?connection=`),
+ * so a view can be shared and Back returns from a version to the history, and from a role to the scope's roles.
  *
  * @module pages/Agents/EngineeringSkills
  */
 import { useId } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
 import { useConfigStore } from '../../store/configStore'
+import { usePlaceNavigate } from '../../utils/pathPlace'
+import { agentsPath, readAgentsAddress } from './agentsPaths'
 import { skillsViewOf } from './skillsView'
 import { SkillHistory, SkillStatusBadge } from './SkillHistory'
 import { useSkillFormats } from './skillFormats'
@@ -151,15 +154,19 @@ function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: Sk
 
 export function EngineeringSkills() {
   const { t } = useTranslation('agents')
-  const [searchParams, setSearchParams] = useSearchParams()
-  const view = skillsViewOf(searchParams)
-  const change = (next: Partial<SkillsView>) => setSearchParams((params) => {
-    for (const [name, value] of Object.entries(next)) {
-      if (value === null || value === '') params.delete(name)
-      else params.set(name, String(value))
-    }
-    return params
-  })
+  const location = useLocation()
+  const read = readAgentsAddress(location)
+  const search = read?.replaceWith?.search ?? location.search
+  const view = skillsViewOf(read?.place ?? { role: null, version: null }, new URLSearchParams(search))
+  const move = usePlaceNavigate()
+  const change = (next: Partial<SkillsView>) => {
+    const { connection, role, version } = { ...view, ...next }
+    const params = new URLSearchParams(search)
+    if (connection === '') params.delete('connection')
+    else params.set('connection', connection)
+    const query = params.toString()
+    move({ pathname: agentsPath({ view: 'skills', role, version }), search: query === '' ? '' : `?${query}` })
+  }
   return (
     <section className="space-y-4">
       <p className="text-sm text-muted max-w-prose">{t('skills.hint')}</p>

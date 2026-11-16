@@ -1504,6 +1504,10 @@ Add a test user once (admin only; the e2e suite's setup fails when a user is mis
 aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e
 ```
 
+Or let `bash e2e/scripts/e2e-users.sh create` (from `voc-datalake/frontend`, 7.49.00) make both test users when they
+are missing (`E2E_ADMIN_EMAIL` and `E2E_USER_EMAIL` give their emails), each in its groups, disabled until `enable`;
+it prints no password and changes nothing when run again.
+
 For a run, `bash voc-datalake/frontend/e2e/scripts/e2e-users.sh enable` (from `voc-datalake/frontend`: `bash
 e2e/scripts/e2e-users.sh enable`) does this for both test users, enables them with new random passwords and
 writes the suite's env file outside the repository; `disable` turns them off again

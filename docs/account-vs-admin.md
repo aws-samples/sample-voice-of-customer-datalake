@@ -15,10 +15,11 @@ Open Administration from the sidebar (Administration section) and Account from t
 
 ## Administration: six tabs
 
-Each tab and section is a deep link, `/admin?tab=<tab>&section=<section>`
-(`frontend/src/pages/Settings/adminTabs.ts`).
+Each tab and section is a path, `/admin/<tab>/<section>` (`frontend/src/pages/Settings/adminTabs.ts`,
+`adminPaths.ts`; [Addresses](document-canvas.md#addresses)), and the Boards section's open editor is
+`/admin/access/boards/<boardId>`.
 
-| Tab (`?tab=`) | Sections (`&section=`) |
+| Tab (`/admin/<tab>`) | Sections (`/admin/<tab>/<section>`) |
 |---|---|
 | General (`brand`) | Brand (names, handles, hashtags, URLs); Default theme (the colour theme everyone starts with). Local dev builds only: API configuration |
 | Sources (`sources`) | Data sources (`plugins`), Integrations (`integrations`), Email inbox (`inbox`), Radar (`radar`) |
@@ -27,9 +28,10 @@ Each tab and section is a deep link, `/admin?tab=<tab>&section=<section>`
 | AI models (`ai`) | Per-surface model picker, model test, capacity |
 | System (`system`) | Logs (`logs`, incl. Alerts), Version (`version`) |
 
-Links written for releases before 5.09.00 still work and are replaced by their canonical URL: `?tab=plugins`,
-`integrations`, `radar` open Sources; `categories`, `dimensions` open Taxonomy; `users` opens Privacy & access;
-`logs`, `version` open System. The old `/settings` path redirects to `/admin`.
+No query names a tab or a section: the `?tab=&section=` links of releases before 7.49.00 (and the pre-5.09 ids) are
+not redirected, a pre-release change. A path that does not name its place as it should (`/admin/sources`, a section
+hidden from the caller) is replaced by its own path. `/settings` stays an alias of `/admin` (the assistant's
+navigation links it).
 
 ### Users
 
@@ -66,11 +68,11 @@ console.
 
 ## Account: five tabs
 
-Each tab is a deep link, `/account?tab=<id>` (`frontend/src/pages/Account/accountSections.ts`). An unknown id opens
-Profile. The `?section=<id>` links of releases 5.09 to 5.11 open the tab that holds that card, and Company's old
-`?tab=mine` lands on Objectives.
+Each tab is a path, `/account/<id>` (`frontend/src/pages/Account/accountSections.ts`). An unknown id opens
+Profile. The query links of before (`?tab=<id>`, the 5.09–5.11 `?section=<id>`, Company's `?tab=mine`) are not
+redirected (7.49.00, a pre-release change).
 
-| Tab (`?tab=`) | Cards | Store |
+| Tab (`/account/<id>`) | Cards | Store |
 |---|---|---|
 | Profile (`profile`) | Profile: name, email, username, role, groups (read-only); Change password; Sign out | Cognito |
 | Preferences (`preferences`) | Language & theme (language, light or dark, colour theme: Workspace default or one of the themes); Setup checklist "Show on Home", start page ("Open the dashboard when I sign in"), "How it works" (`guide`); Assistant: desktop notifications (the same setting as the panel bell), "Reset bubble position"; This browser: the API endpoint (read-only), "Reset local settings" | `voc-language`, `voc-theme`; `/settings/my-onboarding`; `voc-assistant-ui` `notify`, `voc-assistant-bubble`; `voc-config` |
@@ -78,8 +80,8 @@ Profile. The `?section=<id>` links of releases 5.09 to 5.11 open the tab that ho
 | Objectives (`objectives`) | My own objectives and KPIs ([company-context.md](company-context.md)) | `/settings/my-context` |
 | Access & tokens (`access`) | My access: role, category and source scope (read-only; an admin changes it in Privacy & access → Users); MCP tokens: a link to Connect, where tokens are created, audited and revoked ([mcp.md](mcp.md)) | `GET /feedback/access`; `/connect/tokens` |
 
-Home's Settings button links to `?tab=briefing`. The "Go to settings" buttons shown when no API endpoint is set
-(Dashboard, Feedback Forms, Scrapers) link to `?tab=preferences`, where This browser sits, because `/admin` would
+Home's Settings button links to `/account/briefing`. The "Go to settings" buttons shown when no API endpoint is set
+(Dashboard, Feedback Forms, Scrapers) link to `/account/preferences`, where This browser sits, because `/admin` would
 turn a non-admin away.
 
 Language, theme, the assistant settings and `voc-config` (the API endpoint, the header's time range and date basis)

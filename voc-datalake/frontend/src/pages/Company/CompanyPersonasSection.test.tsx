@@ -1,6 +1,6 @@
 /**
  * @fileoverview Knowledge → Company → Personas (5.60): the company persona library.
- * `?tab=personas` deep-links it; admins (`can_edit`) get generate / import / edit /
+ * `/company/personas` opens it; admins (`can_edit`) get generate / import / edit /
  * delete, everyone else reads; an empty library explains how it is filled.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -29,7 +29,7 @@ function library(personas: unknown[], canEdit: boolean) {
 }
 
 function renderPersonasTab() {
-  return renderWithQueryClient(<TestRouter initialEntries={['/company?tab=personas']}><Company /></TestRouter>)
+  return renderWithQueryClient(<TestRouter initialEntries={['/company/personas']}><Company /></TestRouter>)
 }
 
 beforeEach(() => {
@@ -38,7 +38,7 @@ beforeEach(() => {
 })
 
 describe('Company → Personas', () => {
-  it('opens on the Personas tab from ?tab=personas', async () => {
+  it('opens on the Personas tab from /company/personas', async () => {
     library([FARAH], true)
     renderPersonasTab()
     expect(screen.getByRole('tab', { name: /Personas/ })).toHaveAttribute('aria-selected', 'true')

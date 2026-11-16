@@ -188,7 +188,7 @@ test.describe.serial('home onboarding buddy', () => {
       // Home no longer links the dashboard here (the start-page switch moved to Account).
       await expect(other.getByRole('link', { name: 'Open dashboard' })).toHaveCount(0)
 
-      await other.goto(site('/account?tab=preferences'), { waitUntil: 'domcontentloaded' })
+      await other.goto(site('/account/preferences'), { waitUntil: 'domcontentloaded' })
       const section = other.getByRole('region', { name: 'Setup checklist' })
       await expect(section.getByText('Turned off')).toBeVisible()
       await section.getByRole('button', { name: 'Show on Home' }).click()

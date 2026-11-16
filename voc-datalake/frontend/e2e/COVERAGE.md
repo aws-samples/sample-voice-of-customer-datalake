@@ -1,7 +1,7 @@
 # e2e coverage map
 
 Every user-facing page, tab, dialog and flow of the app (5.35; 6.00–6.04 rows added in 6.04.02), against the Playwright specs in `tests/`. Sources:
-`src/routes.tsx`, each page's `?tab=` parser, the sidebar (`components/Layout/Layout.tsx`), `docs/*.md` and the
+`src/routes.tsx`, each area's path builder (`*Paths.ts`), the sidebar (`components/Layout/Layout.tsx`), `docs/*.md` and the
 CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new screen or a new spec.
 
 - **Covered**: a spec drives the flow and asserts its outcome.
@@ -18,11 +18,11 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 |---|---|---|---|
 | Home: greeting, morning brief, "Your brief", "Things to do", agent-decision card | `/` | Covered | surfaces M |
 | Home: onboarding buddy (checklist, Skip, Hide, Don't show again) | `/` | Covered | home-onboarding |
-| Workspaces (6.12): the picker, entering `/w/{slug}/dashboard` with `X-Workspace-Id`, the header's workspace menu, an unknown slug's not-found page | `/` | Covered | workspaces M (mock only: it needs the mock's two fictional workspaces) |
-| Workspace members (6.13): the list, add by email, role change, the last-admin refusal, leave | `/w/{slug}/members` | Covered | workspace-admin M (mock only: memberships cannot be restored with proof on a deployment); remove a member and the other refusals: component specs only |
-| Cross-workspace (6.14): the `/w/{slug}/members` address of a workspace the caller is not a member of shows not-found | `/w/{slug}/members` | Covered | cross-workspace M (mock only: it needs the mock's two fictional workspaces); the API's 404 per route: `lambda/api/test/test_cross_workspace_routes.py` |
-| Workspace settings (7.38): rename (the client-side refusals, `X-Workspace-Id`, the header's menu, the slug kept) and delete (slug + reason + "I understand", the last dialog, `/` without it, its address not found) | `/w/{slug}/workspace-settings` | Covered | workspace-admin M (mock only); on a deployment: workspace-lifecycle (opt-in, run alone: the API's create, rename, members, the web_reviews run in a workspace and the delete, plus the name and delete cards) |
-| Platform console (6.13): list, create, enter (also a workspace the caller is not a member of) | `/admin?tab=access&section=workspaces` | Covered | workspace-admin M (mock only: a workspace cannot be deleted yet); grant and revoke platform admin (Users): component specs only (the live grant is a Cognito group change) |
+| Workspaces (6.12): the picker, entering `/workspace/{slug}/dashboard` with `X-Workspace-Id`, the header's workspace menu, an unknown slug's not-found page | `/` | Covered | workspaces M (mock only: it needs the mock's two fictional workspaces) |
+| Workspace members (6.13): the list, add by email, role change, the last-admin refusal, leave | `/workspace/{slug}/members` | Covered | workspace-admin M (mock only: memberships cannot be restored with proof on a deployment); remove a member and the other refusals: component specs only |
+| Cross-workspace (6.14): the `/workspace/{slug}/members` address of a workspace the caller is not a member of shows not-found | `/workspace/{slug}/members` | Covered | cross-workspace M (mock only: it needs the mock's two fictional workspaces); the API's 404 per route: `lambda/api/test/test_cross_workspace_routes.py` |
+| Workspace settings (7.38): rename (the client-side refusals, `X-Workspace-Id`, the header's menu, the slug kept) and delete (slug + reason + "I understand", the last dialog, `/` without it, its address not found) | `/workspace/{slug}/workspace-settings` | Covered | workspace-admin M (mock only); on a deployment: workspace-lifecycle (opt-in, run alone: the API's create, rename, members, the web_reviews run in a workspace and the delete, plus the name and delete cards) |
+| Platform console (6.13): list, create, enter (also a workspace the caller is not a member of) | `/admin/access/workspaces` | Covered | workspace-admin M (mock only: a workspace cannot be deleted yet); grant and revoke platform admin (Users): component specs only (the live grant is a Cognito group change) |
 | Home: brief subscribe / Brief settings save, card dismiss (5.23) | `/` | Missing | writes the caller's brief subscription; needs a restore like account.spec |
 | Dashboard: tiles and charts vs the API, empty-workspace welcome | `/dashboard` | Covered | dashboard-data |
 | Dashboard: custom time range popover | `/dashboard` | Covered | modals M |
@@ -37,20 +37,20 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Assistant notifications (More actions → Notify me) | panel | Covered | assistant-notifications M (keyboard and pointer) |
 | Assistant plan mode (propose_plan, plan card, `/agents/plans`) | panel | Missing | spends Bedrock and starts a Step Functions run; needs an opt-in like `E2E_ASSISTANT_SEND` |
 | Projects list, create, edit, share, delete | `/projects` | Covered | writes, projects-edit, sharing M |
-| Project Overview / Documents / remix / export / research / prototype | `?tab=overview\|documents` | Covered | s3-personas-documents, prototype-enlarge M, concurrency M |
-| Document canvas (6.05): edit in place (shortcuts, "/" menu, format bar), Save / Discard, conflict, leave guard, comments, share, History restore, outline, viewer, keyboard, 360–1440 | `?tab=documents` | Covered | document-canvas M (mock only), concurrency M, s3-personas-documents |
-| Document canvas, accessibility and widths: axe (no serious / critical) and no sideways scroll, reduced motion; at 360–1440 in dark and light: reading, File menu (inside the window), History, Share, Evidence tab, a reply box, Full screen (header on screen); at 360: Escape back to File and Reply, Ctrl+Enter, the Revise outcome; the stale-save banner at 1440 / 360 (both themes); the viewer at 1440 / 390 | `?tab=documents` | Covered | document-canvas-a11y M (mock only) |
-| Documents in sections (PRD, PR/FAQ, Prototypes, Documents): the order and counts of the project read, all open, each section's New (the Prototypes New opens the build dialog), fold / unfold by keyboard (Enter, Space) not remembered on reload; at 390 the row of section buttons above the strip, one section in it; axe (no serious / critical) and no sideways scroll at 1440 / 390 | `?tab=documents` | Covered | document-sections M (mock only) |
-| Prototype Feedback view (every pin of the series, grouped by screen and folded): the anonymity note, a folded item, select an item and a group, the count, Escape; axe (no serious / critical) and no sideways scroll at 1440 / 360 | `?tab=documents` | Covered | prototype-feedback M (mock only) |
-| Document canvas on long documents: typing and the write after each pause on 60,000 and 200,000 characters (Long Tasks under 200 ms; keystrokes reported) | `?tab=documents` | Covered | document-canvas-perf M (mock only) |
-| Document canvas: the assistant's suggested-changes banner | `?tab=documents` | Missing | needs an assistant `update_document` proposal; the mock assistant does not stream one |
-| Project Personas: generate, import, edit, delete, avatar regenerate | `?tab=personas` | Covered | s3-personas-documents |
-| Every persona has a loaded avatar (project page and agent runs) | `?tab=personas` | Covered | persona-avatars M (agent part: production, when the run made a project), s3 step 02, s2 (soft) |
-| Project Product tab (5.32): "Fill with AI assistant" prefilled draft | `?tab=product` | Covered | product-interview M (send only with `E2E_ASSISTANT_SEND=1` in prod) |
-| Project Decisions (5.04): create, edit, delete | `?tab=decisions` | Covered | decisions M |
-| Decision release watch (`launched_at`) | `?tab=decisions` | Missing | needs a dated launch with feedback before and after it |
-| Project Participants (5.33): link / unlink a list, reach | `?tab=participants` | Covered | participants M |
-| `?tab=mcp` rewritten, Connect via MCP | project header | Covered | projects-mcp-removed |
+| Project Overview / Documents / remix / export / research / prototype | `/projects/{id}/overview\|documents` | Covered | s3-personas-documents, prototype-enlarge M, concurrency M |
+| Document canvas (6.05): edit in place (shortcuts, "/" menu, format bar), Save / Discard, conflict, leave guard, comments, share, History restore, outline, viewer, keyboard, 360–1440 | `/projects/{id}/documents` | Covered | document-canvas M (mock only), concurrency M, s3-personas-documents |
+| Document canvas, accessibility and widths: axe (no serious / critical) and no sideways scroll, reduced motion; at 360–1440 in dark and light: reading, File menu (inside the window), History, Share, Evidence tab, a reply box, Full screen (header on screen); at 360: Escape back to File and Reply, Ctrl+Enter, the Revise outcome; the stale-save banner at 1440 / 360 (both themes); the viewer at 1440 / 390 | `/projects/{id}/documents` | Covered | document-canvas-a11y M (mock only) |
+| Documents in sections (PRD, PR/FAQ, Prototypes, Documents): the order and counts of the project read, all open, each section's New (the Prototypes New opens the build dialog), fold / unfold by keyboard (Enter, Space) not remembered on reload; at 390 the row of section buttons above the strip, one section in it; axe (no serious / critical) and no sideways scroll at 1440 / 390 | `/projects/{id}/documents` | Covered | document-sections M (mock only) |
+| Prototype Feedback view (every pin of the series, grouped by screen and folded): the anonymity note, a folded item, select an item and a group, the count, Escape; axe (no serious / critical) and no sideways scroll at 1440 / 360 | `/projects/{id}/documents` | Covered | prototype-feedback M (mock only) |
+| Document canvas on long documents: typing and the write after each pause on 60,000 and 200,000 characters (Long Tasks under 200 ms; keystrokes reported) | `/projects/{id}/documents` | Covered | document-canvas-perf M (mock only) |
+| Document canvas: the assistant's suggested-changes banner | `/projects/{id}/documents` | Missing | needs an assistant `update_document` proposal; the mock assistant does not stream one |
+| Project Personas: generate, import, edit, delete, avatar regenerate | `/projects/{id}/personas` | Covered | s3-personas-documents |
+| Every persona has a loaded avatar (project page and agent runs) | `/projects/{id}/personas` | Covered | persona-avatars M (agent part: production, when the run made a project), s3 step 02, s2 (soft) |
+| Project Product tab (5.32): "Fill with AI assistant" prefilled draft | `/projects/{id}/product` | Covered | product-interview M (send only with `E2E_ASSISTANT_SEND=1` in prod) |
+| Project Decisions (5.04): create, edit, delete | `/projects/{id}/decisions` | Covered | decisions M |
+| Decision release watch (`launched_at`) | `/projects/{id}/decisions` | Missing | needs a dated launch with feedback before and after it |
+| Project Participants (5.33): link / unlink a list, reach | `/projects/{id}/participants` | Covered | participants M |
+| `/projects/{id}/mcp` rewritten to Overview, Connect via MCP | project header | Covered | projects-mcp-removed |
 | Prioritization board, batched project reads | `/prioritization` | Covered | prioritization M, prioritization-requests M |
 | Room vote and the public ballot | `/vote/:id` | Covered | prioritization M (end to end on the mock only: ballots have no delete) |
 | Data Explorer (admin) | `/data-explorer` | Partial | screens; s1-a (s1 track only) |
@@ -58,42 +58,42 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Data sources: scraper analyze-url, save Manual only, delete | `/scrapers` | Covered | writes |
 | Manual import date gate (cancelled at preview) | `/scrapers` | Covered | writes |
 | Feedback forms: create, public config / iframe, delete, editor tabs | `/feedback-forms` | Covered | writes, in-page-tabs M, request-counts M |
-| Participants (5.33): lists CRUD, add person, search, person modal, erase | `/participants?tab=lists\|people` | Covered | participants M |
-| Participants asks: composer validation, Send disabled when email is off | `?tab=asks` | Covered | participants M (a real send: mock only) |
+| Participants (5.33): lists CRUD, add person, search, person modal, erase | `/participants/lists\|people` | Covered | participants M |
+| Participants asks: composer validation, Send disabled when email is off | `/participants/asks` | Covered | participants M (a real send: mock only) |
 | Feedback boards (5.36): nav rename, board list cards, Open, admin Edit / gear links, user without admin controls | `/feature-requests` | Covered | feedback-boards M |
-| Board requests (Sales board): create, +1 in USD, search/filter/sort, `?request=`, status, delete, user refusals | `/feature-requests/{slug}` | Covered | feature-requests M |
+| Board requests (Sales board): create, +1 in USD, search/filter/sort, the `/feature-requests/{slug}/{id}` deep link, status, delete, user refusals | `/feature-requests/{slug}` | Covered | feature-requests M |
 | Board request → Promote to project | `/feature-requests/{slug}` | Missing | creates a project and may email supporters |
 | Board templates' fields (Service, Beta): create with their fields, totals | `/feature-requests/{slug}` | Partial | unit tests (BoardTemplates, FeatureBoard); screens only in e2e |
 | Standalone board for the board pool: list, one board, login | `/board`, `/board/{slug}`, `/board/login` | Covered | board M |
-| Administration → Privacy & access → Boards: company domains, board list, editor open / back | `/admin?tab=access&section=boards[&board=<id>]` | Covered | feedback-boards M, surfaces M |
-| Boards admin writes: create, save fields / statuses / audience, archive, delete, 409s | `?tab=access&section=boards` | Partial | unit tests (BoardEditor, BoardsSection); e2e is read-only here (every board save rewrites the shared board-pool sign-up audience row) |
-| Memory: personal add / forget / restore, review queue errors | `/memory?tab=personal\|company\|review\|imports` | Covered | memory M, error-states M |
-| Memory imports, company memory curation | `?tab=imports\|review` | Partial | screens only |
-| Company: vision, design system; `?tab=mine` redirect | `/company?tab=vision\|design` | Covered | surfaces M, account M |
-| Company design system from a website / GitHub (5.21) | `?tab=design` | Missing | third-party fetch, which the suite never does |
-| Autonomous agents: create, edit, workflow editor, run, cancel, duplicate, export | `/agents`, `/agents/{id}?tab=…` | Covered | s2-agents, s2-workflow-rebuild M, concurrency M |
-| Agents view tabs, Workflow library (admin) | `/agents?tab=workflows` | Covered | surfaces M, s2-workflow-rebuild M |
+| Administration → Privacy & access → Boards: company domains, board list, editor open / back | `/admin/access/boards[/<id>]` | Covered | feedback-boards M, surfaces M |
+| Boards admin writes: create, save fields / statuses / audience, archive, delete, 409s | `/admin/access/boards` | Partial | unit tests (BoardEditor, BoardsSection); e2e is read-only here (every board save rewrites the shared board-pool sign-up audience row) |
+| Memory: personal add / forget / restore, review queue errors | `/memory/personal\|company\|review\|imports` | Covered | memory M, error-states M |
+| Memory imports, company memory curation | `/memory/imports\|review` | Partial | screens only |
+| Company: vision, design system; its My objectives link to Account | `/company/vision\|design` | Covered | surfaces M, account M |
+| Company design system from a website / GitHub (5.21) | `/company/design` | Missing | third-party fetch, which the suite never does |
+| Autonomous agents: create, edit, workflow editor, run, cancel, duplicate, export | `/agents`, `/agents/{id}/…` | Covered | s2-agents, s2-workflow-rebuild M, concurrency M |
+| Agents view tabs, Workflow library (admin) | `/agents/workflows` | Covered | surfaces M, s2-workflow-rebuild M |
 | Workflow page and revision History (5.30) | `/agents/workflows/{id}` | Covered | workflow-history M, workflow-custom-arrows |
 | Connect: mint, use, revoke a global MCP token | `/connect` | Covered | connect M |
-| Account: five tabs, legacy `?section=` | `/account?tab=profile\|preferences\|briefing\|objectives\|access` | Covered | surfaces M |
-| Account: My objectives & KPIs saved and restored | `?tab=objectives` | Covered | account M, unsaved-guard |
-| Account: language (9 locales) | `?tab=preferences` | Covered | i18n-smoke M, surfaces M (de: participants, featureRequests) |
-| Administration: every tab and section | `/admin?tab=…&section=…` | Covered | surfaces M (renders, canonical URL, version string) |
+| Account: five tabs | `/account/profile\|preferences\|briefing\|objectives\|access` | Covered | surfaces M |
+| Account: My objectives & KPIs saved and restored | `/account/objectives` | Covered | account M, unsaved-guard |
+| Account: language (9 locales) | `/account/preferences` | Covered | i18n-smoke M, surfaces M (de: participants, featureRequests) |
+| Administration: every tab and section | `/admin/<tab>/<section>` | Covered | surfaces M (renders, canonical URL, version string) |
 | Admin: plugins status, users + category access, logs sub-tabs | `/admin` | Covered | request-counts M, modals M, in-page-tabs M |
 | Admin: Logs → Alerts, inbox, radar brands, dimensions, policies, erasure | `/admin` | Partial | render only: each is a deployment-wide setting, never written by the suite |
-| Admin: AI models test / capacity | `?tab=ai` | Partial | screens only (a model test spends Bedrock) |
-| Methodology on `GET /projects/{id}` and the Overview cards (6.04) | `/projects/{id}?tab=overview` | Covered | methodology-catalogue |
+| Admin: AI models test / capacity | `/admin/ai` | Partial | screens only (a model test spends Bedrock) |
+| Methodology on `GET /projects/{id}` and the Overview cards (6.04) | `/projects/{id}/overview` | Covered | methodology-catalogue |
 | Build prototype with no PRD / PR/FAQ: 409, no job (6.04) | `POST /projects/{id}/build-prototype` | Covered | methodology-catalogue |
 | Workflow methodology warnings (validate + above the editor canvas, never saved) (6.04) | `/agents/workflows/{id}` | Covered | methodology-catalogue |
-| Feedback catalogue: `GET /feedback/catalogue`, Data Explorer → Processed → Fields (6.04) | `/data-explorer?view=processed` | Covered | methodology-catalogue |
+| Feedback catalogue: `GET /feedback/catalogue`, Data Explorer → Processed → Fields (6.04) | `/data-explorer/processed` | Covered | methodology-catalogue |
 | Erasure needs a legal basis: 400 admin, 403 user, no job (6.00) | `POST /settings/erasure` | Covered | methodology-catalogue |
 | Push notices: `config.json` hosts, own-channel subscribe, other / wildcard / deeper channels refused, a job end arrives (6.04) | AppSync Events | Covered | realtime |
 | The SPA opens the Event API WebSocket with no CSP violation (6.04.02) | any signed-in page | Covered | realtime |
 | Global MCP 6.04 tools: read tools listed to a read token, catalogue / Radar / prioritization reads, unknown job, write tools refused, audit log | `POST /mcp/global` | Covered | mcp-tools-6x |
 | Scraper write rules: `mode` create / update, `base_etag`, computed `etag` (409 / 409 / 200 / 404), e2e-user 403 (6.04) | `POST /scrapers` | Covered | features-6x |
-| Colour themes: Account → Preferences pick, reload, restore; Administration → General default theme (read only) (6.01) | `/account?tab=preferences`, `/admin?tab=general` | Covered | features-6x |
-| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin?tab=general` | Covered | features-6x |
-| Board Insights tab, insights and search APIs without names or emails (6.02) | `/feature-requests?tab=insights` | Covered | features-6x |
+| Colour themes: Account → Preferences pick, reload, restore; Administration → General default theme (read only) (6.01) | `/account/preferences`, `/admin` | Covered | features-6x |
+| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin` | Covered | features-6x |
+| Board Insights tab, insights and search APIs without names or emails (6.02) | `/feature-requests/insights` | Covered | features-6x |
 | MCP write tools succeeding, with person attribution (6.04) | `POST /mcp/global` | Missing | needs a write token and a real write; the MCP unit tests cover it |
 | Reprocess a slice / resume, silver history (6.03) | Administration → Taxonomy | Missing | rewrites stored feedback in production; pytest covers it |
 

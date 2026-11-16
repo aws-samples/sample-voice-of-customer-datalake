@@ -86,7 +86,7 @@ describe('Design system box in the build wizard', () => {
     const box = within(dialog).getByRole('checkbox', { name: 'Design system' })
     expect(box).toBeDisabled()
     expect(box).toHaveAccessibleDescription(/^none set up yet\. once an administrator adds your colours/i)
-    expect(within(dialog).getByRole('link', { name: 'Open Design system' })).toHaveAttribute('href', '/company?tab=design')
+    expect(within(dialog).getByRole('link', { name: 'Open Design system' })).toHaveAttribute('href', '/company/design')
   })
 
   it.each([

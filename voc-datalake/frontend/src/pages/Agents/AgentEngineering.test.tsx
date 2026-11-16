@@ -20,7 +20,7 @@ import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
-const { EngineeringEnableControl } = await import('./AgentEngineering')
+const { EngineeringEnableControl, EngineeringSetUpCard } = await import('./AgentEngineering')
 
 const ISSUE = { kind: 'github_issue', label: 'voc-agent', trusted_authors: false, lookback_days: 7 }
 
@@ -89,7 +89,7 @@ describe('EngineeringEnableControl', () => {
     routes([])
     renderControl(agentOf())
     const link = await screen.findByRole('link', { name: 'Connect a repository first' })
-    expect(link).toHaveAttribute('href', '/agents?tab=connections')
+    expect(link).toHaveAttribute('href', '/agents/connections')
     expect(screen.getByText('Disabled: it needs a repository connection to work on.')).toBeInTheDocument()
     expect(screen.getByText("Runs on the deployment's feedback.")).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
@@ -159,5 +159,37 @@ describe('EngineeringEnableControl', () => {
     expect(await screen.findByRole('switch', { name: 'Enabled' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByText('Runs as alice.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Change the set-up' })).toBeInTheDocument()
+  })
+})
+
+describe('the agents list\'s card (7.49.00)', () => {
+  beforeEach(() => { resetFetchApi() })
+
+  function renderCard(agent: Agent): void {
+    renderWithQueryClient(<TestRouter><div className="text-right"><EngineeringSetUpCard agent={agent} /></div></TestRouter>)
+  }
+
+  it('offers Set up while the agent is not set up, opening the same dialog, which starts its text from the start', async () => {
+    routes([connection('storefront')])
+    renderCard(agentOf())
+    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    const shell = (await screen.findByRole('dialog')).parentElement
+    expect([screen.getByLabelText('Monthly budget (USD)'), shell?.classList.contains('text-start')])
+      .toStrictEqual([expect.objectContaining({ value: '50' }), true])
+  })
+
+  it('says to connect a repository first while none is stored', async () => {
+    routes([])
+    renderCard(agentOf())
+    expect(await screen.findByRole('link', { name: 'Connect a repository first' })).toHaveAttribute('href', '/agents/connections')
+  })
+
+  it('shows nothing once the agent is set up', async () => {
+    routes([connection('storefront')])
+    const agent = agentOf({ engineering: { connection: 'storefront', language: 'python', feedback_type: 'bug' } })
+    // Beside the page's control, which reads the same two queries: once it shows the switch, the card has its reads.
+    renderWithQueryClient(<TestRouter><EngineeringEnableControl agent={agent} isAdmin /><EngineeringSetUpCard agent={agent} /></TestRouter>)
+    expect(await screen.findByRole('switch', { name: 'Enabled' })).toBeInTheDocument()
+    expect(screen.queryByTestId('engineering-setup-card')).toBeNull()
   })
 })

@@ -1,5 +1,5 @@
 /**
- * @fileoverview One request in a dialog (deep-linked as `?request=<id>`): its description, its
+ * @fileoverview One request in a dialog (deep-linked as `<board>/<id>`, boardContext.ts `boardRequestPath`): its description, its
  * template field values and totals, every support row, "+1" (or "Edit my +1" for someone who already
  * supports it), the reporter's/admin's edit, a share
  * link, and the admin controls.

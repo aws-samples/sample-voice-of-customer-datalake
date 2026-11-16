@@ -6,7 +6,7 @@ the Prioritization board, and hand the result to an external agent through the a
 ([mcp.md](mcp.md)). Projects are private to their owner and invited members by default; see
 [Sharing and permissions](#sharing-and-permissions).
 
-Open **Projects** in the sidebar (`/projects`). A project page (`/projects/{id}`) has these tabs (`?tab=`):
+Open **Projects** in the sidebar (`/projects`). A project page (`/projects/{id}`) has these tabs, each a path (`/projects/{id}/<tab>`):
 **Overview**, **Personas**, **Product**, **Documents**, **Decisions** ([decision records](decisions-and-release-watch.md))
 and **Participants** ([participants](participants.md)). The AI assistant knows which project you are on and can use
 its personas and documents ([mentions](assistant-mentions.md)).
@@ -97,7 +97,7 @@ Workflows (agents) get the same advice at design time: see [autonomous-agents.md
 
 ## Product tab
 
-The **Product** tab (`/projects/<id>?tab=product`) holds the project's product description, which PRD, PR/FAQ,
+The **Product** tab (`/projects/<id>/product`) holds the project's product description, which PRD, PR/FAQ,
 product-report and prototype generation read as context. It shows one header (what the tab is for, how many of the
 11 fields are filled, when it was last saved), the company context it inherits (read-only, edited in Knowledge →
 Company), the description in five sections (the product · customers and problem · offering · goals and boundaries
@@ -328,7 +328,7 @@ A workspace delete really deletes, and it is recorded (TENETS.md D4, D5; custome
 
 ## Company personas
 
-The **Company** page (`/company`) has a **Personas** tab (`?tab=personas`) beside Vision and Design system: one shared library of personas for the whole workspace. Every signed-in user reads it; **only admins write it** (generate, import, edit, notes, regenerate the avatar, delete, and promote a project persona into it). Company personas are not filtered by category access.
+The **Company** page (`/company`) has a **Personas** tab (`/company/personas`) beside Vision and Design system: one shared library of personas for the whole workspace. Every signed-in user reads it; **only admins write it** (generate, import, edit, notes, regenerate the avatar, delete, and promote a project persona into it). Company personas are not filtered by category access.
 
 **Copy, never link.** Moving a persona between the library and a project always makes an independent copy with a new id, its own avatar image, and a `copied_from` record (`{scope: 'project' | 'company', project_id?, project_name?, persona_id, copied_at, copied_by}`, replaced on a copy of a copy). **Research notes are never copied**, in either direction: the copy starts with no notes. Later edits to either side do not reach the other. Deleting a company persona is a hard delete, like a project persona.
 
@@ -357,7 +357,7 @@ Generation reads the same feedback and SHARED company knowledge as project gener
 
 External assistants reach projects through the **global MCP server** (`POST {api}/mcp/global`). Tokens are minted on **Connect** (`/connect`) and act as the minting user — their project access, never admin, at most editor — optionally pinned to one project. See [mcp.md](mcp.md).
 
-The project header's **Connect via MCP** link opens `/connect?project={id}`, which pre-selects that project as the token's pin. An old `?tab=mcp` link opens the Overview tab.
+The project header's **Connect via MCP** link opens `/connect?project={id}`, which pre-selects that project as the token's pin. A retired tab's path (`/projects/{id}/mcp`) opens the Overview tab.
 
 ### Upgrading from a release before 3.00.00
 

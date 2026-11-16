@@ -64,7 +64,7 @@ describe('IntegrationSetupGuide', () => {
     const region = screen.getByRole('region', { name: GITHUB })
     expect(within(region).getByText(/paste the token into the "github token" field above and click "save tokens"/i)).toBeInTheDocument()
     expect(within(region).getByText(/choose the type "github repository"/i)).toBeInTheDocument()
-    expect(within(region).getByRole('link', { name: 'Open Company → Design system' })).toHaveAttribute('href', '/company?tab=design')
+    expect(within(region).getByRole('link', { name: 'Open Company → Design system' })).toHaveAttribute('href', '/company/design')
   })
 
   it('links each provider to its official pages in a new tab, without an opener', async () => {

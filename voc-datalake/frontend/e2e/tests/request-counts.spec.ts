@@ -4,7 +4,7 @@
  * regression shows up as a count, not as a failure. READ-only, both roles
  * (Admin › Data Sources only as the admin), safe on production.
  *
- * - `/admin?tab=sources&section=plugins`: ONE `GET /sources/status` (each SourceCard used to fetch it).
+ * - `/admin/sources/plugins`: ONE `GET /sources/status` (each SourceCard used to fetch it).
  * - `/feedback-forms`: ONE `GET /feedback-forms?include=stats` and NO per-card
  *   `GET /feedback-forms/{id}/stats` (the list seeds every card's stats).
  * - `/categories`: ONE `GET /feedback/entities` (two hooks share the key).
@@ -50,7 +50,7 @@ interface CountCase {
 
 const CASES: readonly CountCase[] = [
   {
-    step: 'counts-admin-plugins', path: '/admin?tab=sources&section=plugins', adminOnly: true,
+    step: 'counts-admin-plugins', path: '/admin/sources/plugins', adminOnly: true,
     check: (gets) => {
       expect(count(gets, (g) => g.path === '/sources/status' && g.search === ''), 'GET /sources/status').toBe(1)
       expect(count(gets, (g) => g.path === '/integrations/status'), 'GET /integrations/status').toBeLessThanOrEqual(1)

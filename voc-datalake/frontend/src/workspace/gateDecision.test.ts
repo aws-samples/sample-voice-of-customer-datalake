@@ -27,8 +27,8 @@ describe('gateDecision with a slug in the address', () => {
 
 describe('gateDecision without a slug', () => {
   it('moves a caller with one workspace into it, keeping the path, query and hash', () => {
-    expect(gateDecision(NONE, [ACME], '/projects/p1?tab=docs#top')).toStrictEqual({ kind: 'redirect', to: '/w/acme/projects/p1?tab=docs#top' })
-    expect(gateDecision(NONE, [ACME], '/')).toStrictEqual({ kind: 'redirect', to: '/w/acme/' })
+    expect(gateDecision(NONE, [ACME], '/projects/p1?tab=docs#top')).toStrictEqual({ kind: 'redirect', to: '/workspace/acme/projects/p1?tab=docs#top' })
+    expect(gateDecision(NONE, [ACME], '/')).toStrictEqual({ kind: 'redirect', to: '/workspace/acme/' })
   })
 
   it('offers the picker for two or more, never choosing one itself, keeping the path asked for', () => {

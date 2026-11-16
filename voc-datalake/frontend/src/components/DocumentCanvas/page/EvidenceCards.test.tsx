@@ -89,7 +89,7 @@ describe('EvidenceCards', () => {
   it('lists the feature requests it read as links to the board', () => {
     renderCards({ featureRequestIds: ['fr_1'] })
     expect(screen.queryByText(/No reviews or feature requests/)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Request fr_1' })).toHaveAttribute('href', '/feature-requests?request=fr_1')
+    expect(screen.getByRole('link', { name: 'Request fr_1' })).toHaveAttribute('href', '/feature-requests/requests/fr_1')
   })
 
   it('keeps the erased-evidence count', () => {

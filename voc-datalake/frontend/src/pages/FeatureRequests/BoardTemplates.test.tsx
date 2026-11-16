@@ -96,7 +96,7 @@ describe('a service board', () => {
 
   it('lets an admin move a request to one of the board statuses', async () => {
     const user = userEvent.setup()
-    const fake = show(SERVICE, [REFUND], ADMIN, `/feature-requests/${SERVICE.slug}?request=fr_s1`)
+    const fake = show(SERVICE, [REFUND], ADMIN, `/feature-requests/${SERVICE.slug}/fr_s1`)
     const admin = within(await screen.findByRole('region', { name: 'Admin' }))
     await user.selectOptions(admin.getByLabelText('Status'), 'wont_fix')
     await waitFor(() => expect(fake.api.setStatus).toHaveBeenCalledWith('fr_s1', 'wont_fix'))
@@ -104,7 +104,7 @@ describe('a service board', () => {
 
   it('says "I am affected too" for a +1, with only a note to add', async () => {
     const user = userEvent.setup()
-    const fake = show(SERVICE, [REFUND], APP_USER, `/feature-requests/${SERVICE.slug}?request=fr_s1`)
+    const fake = show(SERVICE, [REFUND], APP_USER, `/feature-requests/${SERVICE.slug}/fr_s1`)
     const dialog = within(await screen.findByRole('dialog', { name: 'Refund email never arrives' }))
     await user.click(await dialog.findByRole('button', { name: 'I am affected too' }))
     const form = within(dialog.getByRole('form', { name: 'I am affected too' }))
@@ -117,7 +117,7 @@ describe('a service board', () => {
 
 describe('a beta board', () => {
   it('shows the rating, its average and an https link as a safe link', async () => {
-    show(BETA, [CHECKOUT], APP_USER, `/feature-requests/${BETA.slug}?request=fr_b1`)
+    show(BETA, [CHECKOUT], APP_USER, `/feature-requests/${BETA.slug}/fr_b1`)
     const dialog = within(await screen.findByRole('dialog', { name: 'Promo code field is hidden' }))
     const link = await dialog.findByRole('link', { name: 'https://beta.example.com/checkout' })
     expect(link).toHaveAttribute('rel', 'noopener noreferrer nofollow')
@@ -126,7 +126,7 @@ describe('a beta board', () => {
   })
 
   it('shows a link that is not https as plain text', async () => {
-    show(BETA, [{ ...CHECKOUT, fields: { ...CHECKOUT.fields, link: 'javascript:alert(1)' } }], APP_USER, `/feature-requests/${BETA.slug}?request=fr_b1`)
+    show(BETA, [{ ...CHECKOUT, fields: { ...CHECKOUT.fields, link: 'javascript:alert(1)' } }], APP_USER, `/feature-requests/${BETA.slug}/fr_b1`)
     const dialog = within(await screen.findByRole('dialog', { name: 'Promo code field is hidden' }))
     expect(await dialog.findByText('javascript:alert(1)')).toBeInTheDocument()
     expect(dialog.queryByRole('link', { name: /javascript/ })).not.toBeInTheDocument()

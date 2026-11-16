@@ -11,7 +11,7 @@ import { forgetPlatformEntries } from '../workspace/platformEntry'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
 import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
 
-/** Where a voluntary sign-out lands: the plain sign-in page, outside any `/w/{slug}` (docs/multi-workspace.md). */
+/** Where a voluntary sign-out lands: the plain sign-in page, outside any `/workspace/{slug}` (docs/multi-workspace.md). */
 const SIGNED_OUT_PATH = '/login'
 
 export function useSignOut(): () => void {
@@ -19,7 +19,7 @@ export function useSignOut(): () => void {
   return useCallback(() => {
     // The cache and the current workspace are cleared first, so nothing renders or is sent for the last person
     // while the page unloads; the full page load then drops every in-memory cache and in-flight request, and
-    // leaves the workspace's address (the router's basename would keep `/w/{slug}` on an in-app navigation).
+    // leaves the workspace's address (the router's basename would keep `/workspace/{slug}` on an in-app navigation).
     queryClient.clear()
     setCurrentWorkspace(null)
     forgetRefused()

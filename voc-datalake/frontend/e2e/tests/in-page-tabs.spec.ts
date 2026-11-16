@@ -107,7 +107,7 @@ test.describe('in-page tabs', () => {
     const { record, problems } = await runStep({
       page, role, theme: 'dark', step: 'p3-admin-logs-tabs',
       action: async (recorder) => {
-        await page.goto(site('/admin?tab=system&section=logs'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/system/logs'), { waitUntil: 'domcontentloaded' })
         await expect(page.getByRole('heading', { name: 'System Logs' })).toBeVisible()
         for (const [index, tab] of LOGS_TABS.entries()) {
           const button = page.getByRole('button', { name: tab.name, exact: true })

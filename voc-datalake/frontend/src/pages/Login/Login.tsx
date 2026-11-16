@@ -198,7 +198,7 @@ export default function Login() {
    * than seeded into state so it survives translations loading late, and a
    * real submit error (wrong password) takes precedence over it.
    */
-  const expiredNotice = isSessionExpiredRedirect(location.search)
+  const expiredNotice = isSessionExpiredRedirect(location.pathname)
     ? t('errors.sessionExpired')
     : null
 

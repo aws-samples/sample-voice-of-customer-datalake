@@ -5,7 +5,7 @@
  * - Every workspace of the deployment by name, a page at a time: name, slug and status (no credentials badge since
  *   decision 19: a workspace's credentials need no secret, docs/multi-workspace.md → Credentials).
  * - Create one (name and slug): the caller becomes its admin. A slug another workspace has is refused (409).
- * - Enter one: a full page load to `/w/{slug}/`. A platform admin who is not a member enters as admin, which the
+ * - Enter one: a full page load to `/workspace/{slug}/`. A platform admin who is not a member enters as admin, which the
  *   server checks live and audits; the console records the workspace for the gate first (`platformEntry.ts`),
  *   because the caller's own list does not name it.
  *
@@ -61,7 +61,7 @@ function WorkspaceRow({ workspace }: Readonly<{ workspace: PlatformWorkspace }>)
     <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-text-strong break-words">{workspace.name}</p>
-        <p className="text-xs text-muted font-mono break-all">/w/{workspace.slug}/</p>
+        <p className="text-xs text-muted font-mono break-all">{workspaceUrl(workspace.slug, '/')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {status === '' ? null : <span className="badge badge-muted">{status}</span>}

@@ -24,7 +24,7 @@ describe('RadarSourceField', () => {
     renderField({ ...defaultSourceProfile('rival'), radar_brand: 'Acme', radar_domains: ['acme.com'] })
     expect(screen.getByRole('note')).toHaveTextContent('Radar source for Acme')
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(screen.getByRole('link', { name: 'Open Radar settings' })).toHaveAttribute('href', '/admin?tab=sources&section=radar')
+    expect(screen.getByRole('link', { name: 'Open Radar settings' })).toHaveAttribute('href', '/admin/sources/radar')
   })
 
   it('keeps a legacy profile\'s Radar fields on the wire', () => {

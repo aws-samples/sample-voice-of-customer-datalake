@@ -82,7 +82,7 @@ describe('WorkspaceExportCard', () => {
   })
 
   it('downloads a completed export through a fresh link, and says how long each link works', async () => {
-    const assign = stubLocationAssign('/w/acme/workspace-settings')
+    const assign = stubLocationAssign('/workspace/acme/workspace-settings')
     renderCard({
       [`GET ${EXPORT}`]: () => ({ export: COMPLETED }),
       [`POST ${EXPORT}/link`]: () => ({ link: { id: COMPLETED.id, url: 'https://example.com/x.zip', expires_in: 900, expires_at: 'z' } }),

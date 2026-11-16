@@ -37,7 +37,7 @@ describe('Radar page', () => {
     route([])
     renderPage()
     expect(await screen.findByRole('heading', { name: 'No brand on the Radar yet' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Set up Radar' })).toHaveAttribute('href', '/admin?tab=sources&section=radar')
+    expect(screen.getByRole('link', { name: 'Set up Radar' })).toHaveAttribute('href', '/admin/sources/radar')
   })
 
   it('hides the setup links from non-admins', async () => {
@@ -52,7 +52,7 @@ describe('Radar page', () => {
   it('gives admins a Configure link to Administration -> Sources -> Radar in the header', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
-    expect(await screen.findByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/admin?tab=sources&section=radar')
+    expect(await screen.findByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/admin/sources/radar')
   })
 
   it('gives an admin one scan line in the header, with what the scan does as its description', async () => {

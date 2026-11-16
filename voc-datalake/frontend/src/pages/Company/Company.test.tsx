@@ -32,7 +32,7 @@ const DESIGN = {
 
 function renderAt(tab?: string) {
   return renderWithQueryClient(
-    <TestRouter initialEntries={[tab ? `/company?tab=${tab}` : '/company']}><Company /></TestRouter>,
+    <TestRouter initialEntries={[tab ? `/company/${tab}` : '/company']}><Company /></TestRouter>,
   )
 }
 
@@ -131,7 +131,7 @@ describe('Company — design system', () => {
     expect(await screen.findByRole('img', { name: 'Color swatch #8e48ff' })).toHaveStyle({ backgroundColor: '#8e48ff' })
     expect(screen.getByRole('img', { name: 'Not a valid color value' })).toBeInTheDocument()
     expect(screen.queryByLabelText(/figma token/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Administration → Sources → Integrations' })).toHaveAttribute('href', '/admin?tab=sources&section=integrations')
+    expect(screen.getByRole('link', { name: 'Administration → Sources → Integrations' })).toHaveAttribute('href', '/admin/sources/integrations')
   })
 
   it('shows a reference the API stored as status "error" as Failed, with its reason', async () => {
@@ -184,20 +184,20 @@ describe('Company — my objectives moved to Account', () => {
   it('the subtitle links to Account → My objectives instead of promising them here', async () => {
     route({ 'GET /settings/company-context': () => COMPANY })
     renderAt()
-    expect(await screen.findByRole('link', { name: 'My objectives' })).toHaveAttribute('href', '/account?tab=objectives')
+    expect(await screen.findByRole('link', { name: 'My objectives' })).toHaveAttribute('href', '/account/objectives')
     expect(screen.queryByText(/plus your own objectives/i)).not.toBeInTheDocument()
   })
 
-  it('redirects ?tab=mine to /account?tab=objectives', async () => {
+  it('switches tabs by path, keeping the query; a tab of the query (`?tab=design` of before) is not read', async () => {
+    route({ 'GET /settings/company-context': () => COMPANY, 'GET /settings/design-system': () => DESIGN })
     renderWithQueryClient(
-      <TestRouter initialEntries={['/company?tab=mine']}>
-        <Routes>
-          <Route path="/company" element={<Company />} />
-          <Route path="/account" element={<LocationProbe />} />
-        </Routes>
+      <TestRouter initialEntries={['/company?tab=design']}>
+        <Routes><Route path="/company/*" element={<><Company /><LocationProbe /></>} /></Routes>
       </TestRouter>,
     )
-    expect(await screen.findByTestId('location')).toHaveTextContent('/account?tab=objectives')
+    expect(await screen.findByRole('tab', { name: /Vision/ })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('tab', { name: /Design system/ }))
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/company\/design\?tab=design$/)
   })
 })
 

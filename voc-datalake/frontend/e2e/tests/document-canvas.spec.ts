@@ -19,7 +19,7 @@
  * 10. Keyboard only: Tab to the canvas (a visible focus ring), type, Ctrl+S saves.
  * 11. Drag a block: hover a block, press on its handle's grip, move and release over another block's end (the
  *     mouse, as a person would): the block moves, "Unsaved changes", Save stores the new order (moved, not copied).
- * 12. Focus view at 1440 and 390 ("Full screen", `?view=focus`): the button, focus in the canvas, the live note, nothing
+ * 12. Focus view at 1440 and 390 ("Full screen", `/focus`): the button, focus in the canvas, the live note, nothing
  *     else of the app on screen (sidebar, header, project tabs, list, launcher), the rail beside the text (1440) or under
  *     it (390), Escape leaves (focus back on the button), Ctrl+Shift+F, a reload keeps it, the button leaves it; it adds
  *     no history entry (after a save in it, Back goes to the page before, never the older version); a draft goes
@@ -586,7 +586,7 @@ test.describe('document canvas', () => {
         // The button: in, the page is the window; focus in the canvas; the note says how to leave.
         await toggle.click()
         await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-        await expect(page).toHaveURL(/[?&]view=focus(&|$)/)
+        await expect(page).toHaveURL(/\/focus(\?|$)/)
         await expect(canvas).toBeFocused()
         await expect(page.getByTestId('canvas-focus-note')).toHaveText('Full screen. Press Escape to leave.')
         expect(await chromeShown(page, title), 'nothing else of the app').toStrictEqual({ sidebar: false, header: false, tabs: false, list: false, launcher: false })
@@ -604,7 +604,7 @@ test.describe('document canvas', () => {
         await page.keyboard.press('Escape')
         await expect(toggle).toHaveAttribute('aria-pressed', 'false')
         await expect(toggle).toBeFocused()
-        await expect(page).not.toHaveURL(/view=focus/)
+        await expect(page).not.toHaveURL(/\/focus(\?|$)/)
         await expect(documentRow(page, title), 'the list is back').toBeAttached()
 
         // The shortcut toggles it; a reload keeps it; the button leaves it.
@@ -617,7 +617,7 @@ test.describe('document canvas', () => {
         expect((await chromeShown(page, title)).list).toBe(false)
         await barButton(page, 'Full screen').click()
         await expect(barButton(page, 'Full screen')).toHaveAttribute('aria-pressed', 'false')
-        await expect(page).not.toHaveURL(/view=focus/)
+        await expect(page).not.toHaveURL(/\/focus(\?|$)/)
         await expect(documentRow(page, title)).toBeVisible()
         await expect(canvasOf(page, title)).toBeVisible()
       })
@@ -631,18 +631,20 @@ test.describe('document canvas', () => {
       // The page before the document's: the project's overview.
       await page.goto(site(`/projects/${encodeURIComponent(PROJECT)}`), { waitUntil: 'domcontentloaded' })
       const canvas = await openDocument(page, PROJECT, title)
-      await expect(page).toHaveURL(new RegExp(`[?&]doc=${escapeRegExp(firstId)}(&|$)`))
+      // The open document is a path segment (7.46.00, pages/ProjectDetail/projectPaths.ts), never the query.
+      const openedFirst = new RegExp(`/documents/${escapeRegExp(firstId)}(/|\\?|$)`)
+      await expect(page).toHaveURL(openedFirst)
       await barButton(page, 'Full screen').click()
-      await expect(page).toHaveURL(/[?&]view=focus(&|$)/)
+      await expect(page).toHaveURL(/\/focus(\?|$)/)
 
       await caretAtEnd(canvas)
       await page.keyboard.type(' Saved in full screen.')
       expect((await clickSave(page)).status()).toBe(200)
       await expect(saveStatus(page)).toHaveText(savedAt(2))
-      await expect(page, 'the saved version selected').not.toHaveURL(new RegExp(`[?&]doc=${escapeRegExp(firstId)}(&|$)`))
+      await expect(page, 'the saved version selected').not.toHaveURL(openedFirst)
 
       await page.goBack({ waitUntil: 'domcontentloaded' })
-      await expect(page, 'Back left the document page').not.toHaveURL(/[?&]doc=/)
+      await expect(page, 'Back left the document page').not.toHaveURL(/\/documents\/[^/?]+/)
       await expect(page).not.toHaveURL(new RegExp(escapeRegExp(firstId)))
       await expect(page).toHaveURL(new RegExp(`/projects/${escapeRegExp(PROJECT)}`))
     })

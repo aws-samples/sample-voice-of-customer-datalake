@@ -9,8 +9,9 @@ refuses every other, and any request off its shape, before anything is read (``A
   the App's JWT reads it (GitHub's ``/app/installations/<id>``: an installation of another App answers 404 there, and
   one whose ``app_id`` differs or that is suspended is refused alike, ``InstallationRefused``), then its repositories,
   read with an installation token of ``{metadata: read}`` alone, which is revoked before the answer (a ``DELETE`` of
-  GitHub's ``/installation/token``). The answer, ``{account: {login, type}, repositories: [{repository, private,
-  archived, default_branch}], truncated}``, never carries a token;
+  GitHub's ``/installation/token``). The answer, ``{account: {login, type}, app_slug, repositories: [{repository,
+  private, archived, default_branch}], truncated}`` (``app_slug``: the App's slug as GitHub reports it now, which a
+  rename of the App can change), never carries a token;
 * ``issues_token`` ``{app_id, repositories}``, the github_issues ingestor's (a deployment-wide run's sign-in with an
   App): for each repository the installation that covers it (GitHub's ``/repos/<owner>/<name>/installation`` read
   with the JWT; a 404 is not covered, answered in ``uncovered``), then one installation token per installation with exactly
@@ -194,7 +195,9 @@ class AppTokens:
             self._revoke(token)
         logger.info('engineering GitHub App installation inspected',
                     extra={'app_id': app_id, 'installation_id': installation_id, 'repositories': len(repositories)})
-        return {'account': account, 'repositories': repositories, 'truncated': truncated}
+        slug = dig(data, 'app_slug')
+        return {'account': account, 'app_slug': slug if isinstance(slug, str) else '', 'repositories': repositories,
+                'truncated': truncated}
 
     def _repositories(self, token: str) -> tuple[list[dict[str, Any]], bool]:
         found: list[dict[str, Any]] = []

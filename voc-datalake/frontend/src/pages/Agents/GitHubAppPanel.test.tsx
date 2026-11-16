@@ -34,7 +34,7 @@ const BILLING = {
 const APPS = 'GET /agents/engineering/github-apps'
 const MANIFEST = 'POST /agents/engineering/github-apps/manifest'
 const ACTION_URL = 'https://github.com/settings/apps/new?state=s1'
-const MANIFEST_BODY = { name: 'VoC agents 3f9a2c', public: false, default_permissions: { issues: 'write' } }
+const MANIFEST_BODY = { name: 'VoC Autonomous Agent 3f9a', public: false, default_permissions: { issues: 'write' } }
 
 function renderPanel(routes: Record<string, RouteHandler> = {}, apps: unknown[] = [app(), FRESH], limit = 5) {
   routeFetchApi({

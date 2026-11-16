@@ -31,7 +31,6 @@ goes when the platform routes drop it.
 """
 from __future__ import annotations
 
-import re
 import secrets
 import time
 import unicodedata
@@ -48,13 +47,10 @@ from shared.logging import logger
 from shared.request_body import reject_unknown_fields, validated_text
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, text_fields, ws_key
+from shared.workspace_ids import RESERVED_WORKSPACE_SLUGS, WORKSPACE_SLUG
 from shared.workspace_plugin_settings import plugin_key
 
 NAME_MAX_CHARS: Final = 80
-#: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.
-_SLUG: Final = re.compile(r'[a-z0-9][a-z0-9-]{1,38}[a-z0-9]')
-#: Slugs that would read as a part of the platform in a ``/w/{slug}`` address or a mail address.
-RESERVED_SLUGS: Final = frozenset({'admin', 'api', 'app', 'platform', 'www'})
 LISTING_PK: Final = 'WORKSPACES'
 #: A listing row's stamp of its last rename (shared/workspace_rename.py, 7.43.00): a retention walk of the listing that
 #: began before it reads the row again (jobs/retention/workspaces.py), as it does one whose ``created_at`` is later.
@@ -94,9 +90,9 @@ def parse_new_workspace(body: Mapping[str, Any]) -> NewWorkspace:
     reject_unknown_fields(body, ('name', 'slug'))
     name = validated_workspace_name(body.get('name'))
     slug = body.get('slug')
-    if not isinstance(slug, str) or not _SLUG.fullmatch(slug):
+    if not isinstance(slug, str) or not WORKSPACE_SLUG.fullmatch(slug):
         raise ValidationError('slug must be 3 to 40 characters of a-z, 0-9 and "-", not starting or ending with "-"')
-    if slug in RESERVED_SLUGS:
+    if slug in RESERVED_WORKSPACE_SLUGS:
         raise ValidationError(f'slug "{slug}" is reserved: choose another')
     return NewWorkspace(name=name, slug=slug)
 

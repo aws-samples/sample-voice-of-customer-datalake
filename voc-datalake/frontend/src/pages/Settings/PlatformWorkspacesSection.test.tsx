@@ -60,7 +60,7 @@ beforeEach(() => {
 describe('PlatformWorkspacesSection list', () => {
   it('lists every workspace with its address and status, and no credentials badge', async () => {
     renderSection({ 'GET /platform/workspaces': () => ({ workspaces: [{ ...ACME, secret_status: 'ready' }, JUNIPER], next_cursor: null }) })
-    expect(await screen.findByText('/w/acme/')).toBeInTheDocument()
+    expect(await screen.findByText('/workspace/acme/')).toBeInTheDocument()
     expect(within(listItem('Acme Outfitters')).queryByText(/secret/i)).not.toBeInTheDocument()
     expect(within(listItem('Juniper Trail Co.')).getByText('Active')).toBeInTheDocument()
   })
@@ -69,7 +69,7 @@ describe('PlatformWorkspacesSection list', () => {
     const assign = stubLocationAssign('/admin')
     renderSection()
     await userEvent.click(await screen.findByRole('button', { name: 'Enter Juniper Trail Co.' }))
-    expect(assign).toHaveBeenCalledExactlyOnceWith('/w/juniper/')
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/workspace/juniper/')
     expect(platformEntryFor('juniper')).toStrictEqual({ id: JUNIPER.id, slug: 'juniper' })
   })
 

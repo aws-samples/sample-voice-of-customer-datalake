@@ -1,10 +1,12 @@
 """Feedback boards API: seed, CRUD, slugs, access per audience and pool, the derived sign-up row."""
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from engagement_fixtures import ADMIN, BOARD, BOARD_2, BOARD_POOL, ISSUER, USER, call, engagement_world, ok
 
-from shared.feature_boards_store import SEEDED_BOARD_ID, SEEDED_SLUG
+from shared.feature_boards_store import RESERVED_SLUGS, SEEDED_BOARD_ID, SEEDED_SLUG, slug_from
 from shared.participants_settings import BOARD_AUDIENCE_KEY, SETTINGS_KEY
 
 OUTSIDER = {'sub': 'out-sub', 'email': 'eve@outsider.example', 'email_verified': 'true', 'iss': ISSUER + BOARD_POOL}
@@ -104,6 +106,7 @@ def test_slug_conflicts(lambda_context):
 @pytest.mark.parametrize('body', [
     {'name': '', 'template': 'beta'}, {'name': 'x' * 81, 'template': 'beta'}, {'name': 'A', 'template': 'x'},
     {'name': 'A', 'template': 'beta', 'slug': 'Bad Slug'}, {'name': 'A', 'template': 'beta', 'slug': 'login'},
+    {'name': 'A', 'template': 'beta', 'slug': 'insights'}, {'name': 'A', 'template': 'beta', 'slug': 'requests'},
     {'name': 'A', 'template': 'beta', 'slug': 'a--b'}, {'name': 'A', 'template': 'beta', 'slug': 'a' * 61},
     {'name': 'A', 'template': 'beta', 'description': 'x' * 1001}, {'name': 'A', 'template': 'beta', 'extra': 1},
     {'name': 'A', 'template': 'beta', 'audience': {'mode': 'everyone'}},
@@ -227,3 +230,24 @@ def test_every_save_rewrites_the_sign_up_row(world, lambda_context):
     assert (row['company'], row['domains'], row['emails']) == (True, [], [])
     ok(lambda_context, 'PUT', f'{BOARDS}/{SEEDED_BOARD_ID}', body={'audience': {'mode': 'list', 'emails': []}})
     assert _audience_row(world)['company'] is False
+
+
+@pytest.mark.usefixtures('world')
+def test_a_board_that_had_a_slug_reserved_since_saves_its_edits_but_takes_no_reserved_slug(lambda_context):
+    """`insights` and `requests` are reserved since 7.49.00: a board stored with one keeps it through its other edits
+    (the board editor sends its slug with every save; its share links unchanged); a rename to a reserved slug is
+    refused."""
+    with patch('shared.feature_boards_store.RESERVED_SLUGS', frozenset({'login', 'boards'})):
+        board = _create(lambda_context, name='Requests', slug='requests')
+    path = f'{BOARDS}/{board["board_id"]}'
+    saved = ok(lambda_context, 'PUT', path, body={'slug': 'requests', 'description': 'Asks'})['board']
+    assert (saved['slug'], saved['description']) == ('requests', 'Asks')
+    assert call(lambda_context, 'PUT', path, body={'slug': 'insights'})[0] == 400
+
+
+@pytest.mark.parametrize('name', ['Insights', 'Requests', 'Login'])
+def test_a_name_that_reads_as_a_reserved_path_gets_the_plain_slug(name):
+    """The board's pages are paths (7.49.00): a slug from a name never shadows /feature-requests/insights,
+    <boards>/requests/<id> or /board/login."""
+    assert {'insights', 'requests', 'login', 'boards'} <= RESERVED_SLUGS
+    assert slug_from(name) == 'board'

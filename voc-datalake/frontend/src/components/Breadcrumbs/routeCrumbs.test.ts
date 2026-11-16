@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
-import { buildCrumbs, RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
+import { buildCrumbs, RECORD_CRUMBS, SEGMENT_CRUMBS, trailSegments } from './routeCrumbs'
 
 // The real `t`, so a table entry pointing at a key the catalogue lacks fails here
 // rather than rendering the key path in the header. The instance is the one
@@ -106,5 +106,35 @@ describe('label keys', () => {
     expect(resolved).not.toBe(missing)
     expect(resolved).not.toContain('breadcrumbs.')
     expect(resolved.trim()).not.toBe('')
+  })
+})
+
+describe('trailSegments: a page\'s places are paths, and the trail ends at the page or its record', () => {
+  it.each([
+    ['/admin/access/boards/brd_1', ['admin']],
+    ['/account/briefing', ['account']],
+    ['/company/design', ['company']],
+    ['/memory/personal', ['memory']],
+    ['/participants/people', ['participants']],
+    ['/data-explorer/processed', ['data-explorer']],
+    ['/agents/spend', ['agents']],
+    ['/agents/skills/fixer/v/2', ['agents']],
+    ['/agents/workflows', ['agents']],
+    ['/agents/workflows/wf_1', ['agents', 'workflows', 'wf_1']],
+    ['/agents/connections/github/created', ['agents', 'connections', 'github', 'created']],
+    ['/agents/ag_1/runs', ['agents', 'ag_1']],
+    ['/agents/engineering/r1', ['agents', 'engineering', 'r1']],
+    ['/feature-requests/insights', ['feature-requests']],
+    ['/feature-requests/requests/fr_1', ['feature-requests']],
+    ['/feature-requests/beta/fr_1', ['feature-requests', 'beta']],
+    ['/projects/p1/documents/d1/v/2', ['projects', 'p1']],
+    ['/feedback/f1', ['feedback', 'f1']],
+  ])('%s trails %o', (pathname, segments) => {
+    expect(trailSegments(pathname)).toStrictEqual(segments)
+  })
+
+  it('links the Workflows and Connections crumbs to their views of /agents', () => {
+    expect(paths('/agents/workflows/wf_1')[2]).toBe('/agents/workflows')
+    expect(paths('/agents/connections/github/created').slice(2, 4)).toStrictEqual(['/agents/connections', '/agents/connections'])
   })
 })

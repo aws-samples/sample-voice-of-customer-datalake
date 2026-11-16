@@ -81,7 +81,7 @@ vi.mock('../../../pages/ProjectDetail/useDocumentComments', () => ({ useDocument
 const editor = makeProject({ project_id: 'proj-1', name: 'P', description: '' })
 const viewer = { ...editor, access: VIEWER_ACCESS }
 const STORED = 'Plan [FR:req123]'
-const LINKED = '/feature-requests?request=req123'
+const LINKED = '/feature-requests/requests/req123'
 
 function doc(overrides: Partial<ProjectDocument>): ProjectDocument {
   return {
@@ -91,7 +91,7 @@ function doc(overrides: Partial<ProjectDocument>): ProjectDocument {
 }
 
 /** `onCanvas`: the stored text the canvas is on (its baseline); the selected document's own by default. */
-function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content, entry = '/projects/proj-1?tab=documents',
+function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content, entry = '/projects/proj-1/documents',
   opening: { openOn?: 'title' | 'text'; onOpened?: () => void } = {}) {
   // The canvas's own rule (useCanvasDocument): a viewer's canvas is never editable.
   if (!canEdit) canvasState.editable = false
@@ -338,9 +338,9 @@ describe('DocumentPage: the focus view', () => {
   // jsdom has no scrollIntoView: the stub notes any scroll the page would make.
   beforeEach(() => stubElementScrollIntoView())
 
-  it('fills the window from `?view=focus` (no card edge), says how to leave, and the shell steps aside', () => {
+  it('fills the window from `/focus` (no card edge), says how to leave, and the shell steps aside', () => {
     render(<ShellProbe />)
-    renderPage(doc({}), true, STORED, '/projects/proj-1?tab=documents&doc=doc-1&view=focus')
+    renderPage(doc({}), true, STORED, '/projects/proj-1/documents/doc-1/focus')
     expect(paneLook()).toStrictEqual({ focus: true, card: false, fullHeight: true, note: 'Full screen. Press Escape to leave.' })
     expect(screen.getByTestId('canvas-focus-note')).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByTestId('shell')).toHaveTextContent('true')

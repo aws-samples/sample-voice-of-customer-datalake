@@ -1,47 +1,28 @@
 /**
- * Account deep links: `?tab=<id>` opens that tab, every 5.09–5.11
- * `?section=<id>` opens the tab that now holds its card, anything else opens
- * Profile, and a non-canonical query is replaced by its canonical `?tab=` form.
+ * Account's tabs as paths (`/account/<id>`): each tab's path opens it, an unknown tab opens Profile (its path
+ * replacing the address), and no query names a tab (no `?tab=` / `?section=` link of before is read).
  */
 import { describe, it, expect } from 'vitest'
-import { ACCOUNT_TAB_IDS, accountRedirect, accountTabPath, resolveAccountTab } from './accountSections'
+import { readTabAddress } from '../../utils/tabPaths'
+import { ACCOUNT_PAGE, ACCOUNT_TAB_IDS, accountTabPath } from './accountSections'
 
-describe('resolveAccountTab', () => {
-  it.each(ACCOUNT_TAB_IDS)('?tab=%s opens that tab', (id) => {
-    expect(resolveAccountTab(id, null)).toBe(id)
+describe('the Account page\'s addresses', () => {
+  const read = (pathname: string, search = '') => readTabAddress(ACCOUNT_PAGE, { pathname, search })
+
+  it.each(ACCOUNT_TAB_IDS)('/account/%s opens that tab, as it is', (id) => {
+    expect(read(`/account/${id}`)).toStrictEqual({ place: id, replaceWith: null })
   })
 
   it.each([
-    ['password', 'profile'], ['signout', 'profile'],
-    ['assistant', 'preferences'], ['browser', 'preferences'],
-    ['mcp', 'access'], ['access', 'access'], ['briefing', 'briefing'], ['objectives', 'objectives'],
-  ])('the old ?section=%s opens %s', (section, expected) => {
-    expect(resolveAccountTab(null, section)).toBe(expected)
-  })
-
-  it.each([
-    [null, null], ['nope', null], [null, 'nope'], [null, 'constructor'], [null, 'toString'],
-  ])('tab=%s section=%s opens Profile', (tab, section) => {
-    expect(resolveAccountTab(tab, section)).toBe('profile')
-  })
-
-  it('prefers a valid ?tab= over a ?section=', () => {
-    expect(resolveAccountTab('briefing', 'password')).toBe('briefing')
-  })
-})
-
-describe('accountRedirect', () => {
-  it.each([
-    [null, null, null],
-    ['briefing', null, null],
-    [null, 'browser', '?tab=preferences'],
-    ['briefing', 'password', '?tab=briefing'],
-    ['nope', null, '?tab=profile'],
-  ])('tab=%s section=%s redirects to %s', (tab, section, expected) => {
-    expect(accountRedirect(tab, section)).toBe(expected)
+    ['/account', '', 'profile', null],
+    ['/account', '?tab=briefing&section=password', 'profile', null],
+    ['/account/password', '?review=fb_1', 'profile', { pathname: '/account/profile', search: '?review=fb_1' }],
+    ['/account/nope', '', 'profile', { pathname: '/account/profile', search: '' }],
+  ])('%s%s opens %s, replaced by %o', (pathname, search, tab, replaceWith) => {
+    expect(read(pathname, search)).toStrictEqual({ place: tab, replaceWith })
   })
 
   it('builds the links Home and the "Go to settings" buttons use', () => {
-    expect([accountTabPath('briefing'), accountTabPath('preferences')]).toStrictEqual(['/account?tab=briefing', '/account?tab=preferences'])
+    expect([accountTabPath('briefing'), accountTabPath('preferences')]).toStrictEqual(['/account/briefing', '/account/preferences'])
   })
 })

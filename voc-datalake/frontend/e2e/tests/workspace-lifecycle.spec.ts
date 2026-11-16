@@ -14,7 +14,7 @@
  *    saved in the workspace (https://example.com/, 1 page, at most 1 review, Manual only; ledger-recorded) and run
  *    (`POST /sources/web_reviews/run`): never a 500 (before the 7.40.00 IAM fix: "Failed to open the workspace"),
  *    a 200/202, or a 409 declared beforehand and accepted only with its reason (an annotation).
- * 4. As the admin, `/w/<slug>/workspace-settings` shows the "Workspace name" card with the new name and its address,
+ * 4. As the admin, `/workspace/<slug>/workspace-settings` shows the "Workspace name" card with the new name and its address,
  *    and the "Delete workspace" card exactly when the site's `/config.json` has `features.workspaceDelete`.
  * 5. With `features.workspaceDelete`: a wrong slug is refused (400, declared), then the delete with the slug and the
  *    reason "e2e cleanup" answers 202 (`waiting`, `fence`); `GET /me/workspaces/current` turns into the declared
@@ -29,7 +29,7 @@
  *
  * Run it alone, opted in: the creator stays the workspace's admin member until the delete job removes its rows (the
  * fence is ~21 minutes; without the delete flag, for good), and `GET /me/workspaces` lists it meanwhile, so the gate
- * (src/workspace/gateDecision.ts) sends the admin test user's every page outside `/w/` into it (one workspace) or
+ * (src/workspace/gateDecision.ts) sends the admin test user's every page outside `/workspace/` into it (one workspace) or
  * to the picker (several): another spec running beside it, or a run started before the workspace is gone from
  * `GET /platform/workspaces`, would land there. Hence not in any shard group (unit/shard-groups.spec.ts).
  *
@@ -71,7 +71,7 @@ const REVIEW_PAGE = { app_name: NAME.page, url: REVIEW_URL, max_pages: '1', max_
 const POLL = { timeout: 60_000, intervals: [1_000, 2_000, 5_000] }
 
 /** The run-alone note every skip of the opt-in names. */
-const ALONE = 'its workspace stays listed for the admin test user until the delete job removes it, so the gate sends the admin\'s pages outside /w/ into it: run it alone'
+const ALONE = 'its workspace stays listed for the admin test user until the delete job removes it, so the gate sends the admin\'s pages outside /workspace/ into it: run it alone'
 
 /** `role`'s own workspaces (`GET /me/workspaces`). */
 async function mine(role: Role): Promise<WorkspaceRow[]> {
@@ -149,7 +149,7 @@ test.describe('workspace lifecycle (deployment): create, rename, members, plugin
       expect((await platformWorkspace(run.id))?.name).toBe(NAME.renamed)
     } finally {
       if (added.status === 201) {
-        // Out again at once: listed, the workspace would send the viewer's pages outside /w/ into it too, and a
+        // Out again at once: listed, the workspace would send the viewer's pages outside /workspace/ into it too, and a
         // deleted one stays listed until its job removes its rows. Soft: a failure above stays the one reported.
         const removed = await apiCall('admin', 'DELETE', `/me/workspaces/current/members/${encodeURIComponent(viewerSub)}`, undefined, { workspace: run.id })
         expect.soft(removed.status, `remove the viewer: ${errorText(removed.body)}`).toBe(200)
@@ -213,17 +213,17 @@ test.describe('workspace lifecycle (deployment): create, rename, members, plugin
       const card = page.getByRole('region', { name: 'Workspace name' })
       // The card reads GET /me/workspaces/current, which a warm container may answer with the old name for 30 s.
       await expect(async () => {
-        await page.goto(site(`/w/${run.slug}/workspace-settings`), { waitUntil: 'domcontentloaded' })
+        await page.goto(site(`/workspace/${run.slug}/workspace-settings`), { waitUntil: 'domcontentloaded' })
         await expect(card.getByText(NAME.renamed, { exact: true })).toBeVisible({ timeout: 10_000 })
       }).toPass({ timeout: POLL.timeout })
       await expect(page.getByRole('heading', { name: 'Workspace settings', level: 1 })).toBeVisible()
-      await expect(card).toContainText(`Address: /w/${run.slug}`)
+      await expect(card).toContainText(`Address: /workspace/${run.slug}`)
       await expect(card.getByRole('button', { name: 'Rename' })).toBeVisible()
       await expect(page.getByRole('button', { name: new RegExp(`^Workspace: ${escapeRegExp(NAME.renamed)}, Admin\\.`) })).toBeVisible()
       const deleteCard = page.getByRole('region', { name: 'Delete workspace' })
       if (run.deleteOn) await expect(deleteCard.getByRole('button', { name: 'Delete workspace…' })).toBeVisible()
       else await expect(deleteCard).toHaveCount(0)
-      recorder.note(`name card: ${NAME.renamed} at /w/${run.slug}; delete card ${run.deleteOn ? 'shown' : 'absent (flag off)'}`)
+      recorder.note(`name card: ${NAME.renamed} at /workspace/${run.slug}; delete card ${run.deleteOn ? 'shown' : 'absent (flag off)'}`)
     })
   })
 

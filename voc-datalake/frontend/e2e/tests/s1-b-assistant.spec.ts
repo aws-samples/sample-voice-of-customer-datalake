@@ -205,7 +205,7 @@ test.describe('s1 assistant', () => {
         fs.writeFileSync(path.join(OUT_DIR, 'settings-truth.json'), JSON.stringify({ brand: brand.body, categories: categories.body, model: model.body }, null, 2))
         r.note(`GET /settings/brand -> ${brand.status} brand_name=${brandName}; /settings/categories -> ${categories.status} ${categoryNames.length} categories; /settings/model -> ${model.status}`)
         // The settings tools load only on the Settings page (PAGE_TOOL_PACKS.settings, admin-only).
-        await page.goto(site('/admin?tab=brand'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/brand'), { waitUntil: 'domcontentloaded' })
         await settle(page, 800)
         await openFloating(page)
         await newChat(page)
@@ -383,7 +383,7 @@ test.describe('s1 assistant', () => {
         const descBefore = stringField(projectOf(before.body), 'description')
         // On the project's own page the project pack (update_project…) would load:
         // the stream must drop it for a caller who cannot even view the project.
-        await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=overview`), { waitUntil: 'domcontentloaded' })
+        await page.goto(site(`/projects/${encodeURIComponent(projectId)}/overview`), { waitUntil: 'domcontentloaded' })
         await settle(page, 1_500)
         await page.screenshot({ path: path.join(SCREENS_DIR, 'user-dark-s1-20-foreign-project-page.png') })
         await openFloating(page)

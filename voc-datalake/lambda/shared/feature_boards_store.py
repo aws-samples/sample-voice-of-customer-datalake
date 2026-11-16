@@ -55,8 +55,11 @@ MAX_BOARDS: Final = 100
 MAX_NAME: Final = 80
 MAX_DESCRIPTION: Final = 1000
 MAX_SLUG: Final = 60
-# Paths of the standalone board page that a slug must never shadow (/board/login, /board/boards).
-RESERVED_SLUGS: Final = frozenset({'login', 'boards'})
+# Paths a slug must never shadow (7.49.00: a board's places are paths): /board/login and /board/boards on the
+# standalone board, /feature-requests/insights (the Insights tab) and <boards>/requests/<id> (a request looked up by
+# its id) in the app (frontend pages/FeatureRequests/boardContext.ts). A board whose slug was one stays reachable by
+# its id.
+RESERVED_SLUGS: Final = frozenset({'login', 'boards', 'insights', 'requests'})
 BOARD_NOT_FOUND: Final = 'Board not found'
 SLUG_TAKEN: Final = 'slug_taken'
 BOARD_LIMIT: Final = 'board_limit'
@@ -90,10 +93,22 @@ def slug_from(name: str) -> str:
     return slug if slug and slug not in RESERVED_SLUGS else 'board'
 
 
+def _slug_refused() -> ValidationError:
+    return ValidationError(f'slug must be at most {MAX_SLUG} lower-case letters, digits and single hyphens '
+                           f'(not {", ".join(sorted(RESERVED_SLUGS))})')
+
+
 def validate_slug(value: object) -> str:
     if not is_slug(value) or value in RESERVED_SLUGS:
-        raise ValidationError(f'slug must be at most {MAX_SLUG} lower-case letters, digits and single hyphens '
-                              f'(not {", ".join(sorted(RESERVED_SLUGS))})')
+        raise _slug_refused()
+    return str(value)
+
+
+def _slug_shape(value: object) -> str:
+    """An update's slug, its shape only: a reserved one is refused when it is a new slug (``update_board``), so a
+    board that had one before it was reserved (``insights`` and ``requests``, 7.49.00) still saves its other edits."""
+    if not is_slug(value):
+        raise _slug_refused()
     return str(value)
 
 
@@ -246,7 +261,7 @@ def validate_update(body: Mapping[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(body) - set(_EDITABLE))
     if unknown:
         raise ValidationError(f'unknown board field: {unknown[0]}')
-    checks = {'name': lambda raw: required_text({'name': raw}, 'name', MAX_NAME), 'slug': validate_slug,
+    checks = {'name': lambda raw: required_text({'name': raw}, 'name', MAX_NAME), 'slug': _slug_shape,
               'description': lambda raw: optional_text({'d': raw}, 'd', MAX_DESCRIPTION),
               'fields': validate_fields_config, 'statuses': validate_statuses, 'audience': validate_audience,
               'archived': lambda raw: _flag(raw, 'archived'), 'paused': lambda raw: _flag(raw, 'paused')}
@@ -291,9 +306,12 @@ def _rename(table: Any, board: Mapping[str, Any], changes: Mapping[str, Any]) ->
 def update_board(table: Any, participants: Any, board: Mapping[str, Any], changes: Mapping[str, Any]) -> dict[str, Any]:
     """Apply validated ``changes``; the new META (and the sign-up row rewritten)."""
     board_id = str(board['board_id'])
+    renamed = 'slug' in changes and changes['slug'] != board.get('slug')
+    if renamed and changes['slug'] in RESERVED_SLUGS:
+        raise _slug_refused()
     boards = list_boards(table)
     row = derived_row(_with(boards, {**board, **changes}, board_id))
-    if 'slug' in changes and changes['slug'] != board.get('slug'):
+    if renamed:
         updated = _rename(table, board, changes)
     else:
         updated = update_existing(table, board_key(board_id), changes, BOARD_NOT_FOUND)

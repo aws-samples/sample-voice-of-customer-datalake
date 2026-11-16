@@ -6,7 +6,6 @@
  */
 
 import { useState, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Database, HardDrive, Plus, RefreshCw, Search, Filter } from 'lucide-react'
 import type { FeedbackItem } from '../../api/types'
@@ -23,29 +22,20 @@ import { isStaleEditorRefusal, savedFeedbackBody } from './openedStamp'
 import { useAppSourceLabel } from './useAppSourceLabel'
 import { useDataExplorerMutations } from './useDataExplorerMutations'
 import { openS3Editor, openS3Creator, downloadS3File } from './s3Handlers'
+import { DATA_EXPLORER_PAGE } from './dataExplorerPaths'
+import { useTabPath } from '../../utils/tabPaths'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed'
 
 /**
- * The tab lives in the URL (`?view=processed`): only the processed tab is scoped
- * by the time range, so the header can tell the two apart (the S3 tab hides the
- * date picker), and a reload or a shared link keeps the tab.
+ * The tab is the path (`/data-explorer/processed`; `/data-explorer` and `/data-explorer/raw` are S3 raw data;
+ * dataExplorerPaths.ts): only the processed tab reads the time range; a reload or a shared link keeps the tab, and
+ * Back returns to the other one.
  */
-const DATA_EXPLORER_VIEW_PARAM = 'view'
-const PROCESSED_VIEW = 'processed'
-
 function useViewMode(): readonly [ViewMode, (mode: ViewMode) => void] {
-  const [params, setParams] = useSearchParams()
-  const mode: ViewMode = params.get(DATA_EXPLORER_VIEW_PARAM) === PROCESSED_VIEW ? 'dynamodb-processed' : 's3-raw'
-  const setMode = useCallback((next: ViewMode) => {
-    setParams((current) => {
-      const updated = new URLSearchParams(current)
-      if (next === 'dynamodb-processed') updated.set(DATA_EXPLORER_VIEW_PARAM, PROCESSED_VIEW)
-      else updated.delete(DATA_EXPLORER_VIEW_PARAM)
-      return updated
-    }, { replace: true })
-  }, [setParams])
-  return [mode, setMode]
+  const [tab, setTab] = useTabPath(DATA_EXPLORER_PAGE)
+  const setMode = useCallback((next: ViewMode) => { setTab(next === 'dynamodb-processed' ? 'processed' : 'raw') }, [setTab])
+  return [tab === 'processed' ? 'dynamodb-processed' : 's3-raw', setMode]
 }
 
 const VIEW_TABS = [

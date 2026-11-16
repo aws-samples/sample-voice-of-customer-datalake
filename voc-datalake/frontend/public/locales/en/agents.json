@@ -874,7 +874,12 @@
       "description": "The engineering agents use this connection to read the repository and propose changes to it.",
       "stored": "Stored credential:",
       "keepHint": "The stored credential is never shown. Leave the private key empty to keep it; a new repository, App id or installation id needs the private key again.",
-      "save": "Save connection"
+      "save": "Save connection",
+      "appCreatedTitle": "Through the deployment’s GitHub App",
+      "appCreatedHint": "Saved when the App was installed: its App, installation and repository are fixed, and its key is the App’s own. Only the default branch can change here.",
+      "repositoryFixed": "Saved by the App’s installation: it cannot change. Install the App on another repository to connect it.",
+      "reason": "Reason (optional)",
+      "reasonHint": "Why the change is made: kept with the connection’s history. One line, at most {{max, number}} characters."
     },
     "fields": {
       "connectionId": "Connection id",

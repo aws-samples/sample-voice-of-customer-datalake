@@ -1,22 +1,16 @@
-/** The Administration navigation model: six tabs, sections, and every pre-5.09 `?tab=` id. */
+/** The Administration navigation model: six tabs and their sections, read from the path's tab and section. */
 import { describe, expect, it } from 'vitest'
-import { canonicalSearch, resolveAdminLocation, visibleSections, visibleTabs } from './adminTabs'
+import { resolveAdminLocation, visibleSections, visibleTabs } from './adminTabs'
 import type { AdminTabId } from './adminTabs'
 
 describe('resolveAdminLocation', () => {
   it.each([
     ['brand', 'brand', null],
-    ['plugins', 'sources', 'plugins'],
-    ['integrations', 'sources', 'integrations'],
-    ['radar', 'sources', 'radar'],
-    ['categories', 'taxonomy', 'categories'],
-    ['dimensions', 'taxonomy', 'dimensions'],
-    ['users', 'access', 'users'],
     ['ai', 'ai', null],
-    ['logs', 'system', 'logs'],
-    ['version', 'system', 'version'],
-  ])('maps the pre-5.09 ?tab=%s to %s / %s', (old, tab, section) => {
-    expect(resolveAdminLocation(old, null, true, false)).toStrictEqual({ tab, section })
+    ['plugins', 'brand', null],
+    ['categories', 'brand', null],
+  ])('reads the tab %s as %s / %s (an id of before 5.09 is no tab any longer)', (tab, expectedTab, section) => {
+    expect(resolveAdminLocation(tab, null, true, false)).toStrictEqual({ tab: expectedTab, section })
   })
 
   it.each([
@@ -31,23 +25,23 @@ describe('resolveAdminLocation', () => {
     ['access', null, 'access', 'policies'],
     ['system', null, 'system', 'logs'],
     ['system', 'users', 'system', 'logs'],
-  ])('resolves the new ?tab=%s&section=%s to %s / %s', (tab, section, expectedTab, expectedSection) => {
+  ])('resolves /admin/%s/%s to %s / %s', (tab, section, expectedTab, expectedSection) => {
     expect(resolveAdminLocation(tab, section, true, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
   })
 
-  it.each([null, 'mcp', 'nope'])('falls back to General for ?tab=%s', (tab) => {
+  it.each([null, 'mcp', 'nope'])('falls back to General for the tab %s', (tab) => {
     expect(resolveAdminLocation(tab, null, true, false)).toStrictEqual({ tab: 'brand', section: null })
   })
 
   it.each([
-    ['users', null, 'brand', null],
+    ['access', 'users', 'brand', null],
     ['sources', null, 'sources', 'plugins'],
-    ['version', null, 'system', 'logs'],
-    ['radar', null, 'sources', 'plugins'],
+    ['system', 'version', 'system', 'logs'],
+    ['sources', 'radar', 'sources', 'plugins'],
     ['sources', 'inbox', 'sources', 'plugins'],
-    ['dimensions', null, 'taxonomy', 'categories'],
+    ['taxonomy', 'dimensions', 'taxonomy', 'categories'],
     ['access', 'boards', 'brand', null],
-  ])('keeps a non-admin off admin-only ?tab=%s&section=%s (→ %s / %s)', (tab, section, expectedTab, expectedSection) => {
+  ])('keeps a non-admin off admin-only /admin/%s/%s (→ %s / %s)', (tab, section, expectedTab, expectedSection) => {
     expect(resolveAdminLocation(tab, section, false, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
   })
 })
@@ -83,14 +77,5 @@ describe('Privacy & access', () => {
   it('sends a deep link to Workspaces back to the tab\'s first section for anyone else', () => {
     expect([resolveAdminLocation('access', 'workspaces', true, true), resolveAdminLocation('access', 'workspaces', true, false)])
       .toStrictEqual([{ tab: 'access', section: 'workspaces' }, { tab: 'access', section: 'policies' }])
-  })
-})
-
-describe('canonicalSearch', () => {
-  it('names the section only for a tab that has one', () => {
-    expect([
-      canonicalSearch({ tab: 'brand', section: null }),
-      canonicalSearch({ tab: 'system', section: 'version' }),
-    ]).toStrictEqual(['tab=brand', 'tab=system&section=version'])
   })
 })

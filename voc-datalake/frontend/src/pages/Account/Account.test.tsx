@@ -1,9 +1,9 @@
 /**
  * Account: the user's own preferences (docs/account-vs-admin.md) on the shared
- * top tab bar, five tabs each a deep link `?tab=<id>`: Profile (details,
+ * top tab bar, five tabs each a path `/account/<id>`: Profile (details,
  * password, sign out), Preferences (language, theme, Home setup, assistant,
  * this browser), Morning brief, Objectives, Access & tokens (my access, MCP).
- * The 5.09–5.11 `?section=<id>` links still land on the tab holding that card.
+ * No query names a tab: an old `?tab=` / `?section=` link is not redirected (a pre-release change).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -22,7 +22,6 @@ import { withMemoryLocalStorage } from '@test/memoryLocalStorage'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const signOut = vi.fn<() => void>()
-const navigate = vi.fn<(to: string) => void>()
 interface TestUser { name?: string; email?: string; username?: string; groups: string[] }
 const ADA: TestUser = { name: 'Ada Moreno', email: 'ada@example.com', username: 'ada', groups: ['users'] }
 const state = vi.hoisted((): { isAdmin: boolean; user: TestUser | null } => ({ isAdmin: false, user: null }))
@@ -42,24 +41,24 @@ vi.mock('../../i18n/languages', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../i18n/languages')>()
   return { ...actual, changeLanguage: vi.fn().mockResolvedValue(undefined) }
 })
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
-  return { ...actual, useNavigate: () => navigate }
-})
 
 const { default: Account } = await import('./Account')
 const { changeLanguage } = await import('../../i18n/languages')
 
-function renderAt(search = '', queryClient: QueryClient = createTestQueryClient()) {
-  return renderWithQueryClient(<TestRouter initialEntries={[`/account${search}`]}><Account /></TestRouter>, queryClient)
+/** Account at `/account` + `rest` (a tab's path, or an old link's query). */
+function renderAt(rest = '', queryClient: QueryClient = createTestQueryClient()) {
+  return renderWithQueryClient(<TestRouter initialEntries={[`/account${rest}`]}><Account /></TestRouter>, queryClient)
 }
 
-/** Account under a data router, so a test can read the location and how it changed. */
-function renderInRouter(search: string) {
-  const router = createMemoryRouter([{ path: '/account', element: <Account /> }], { initialEntries: [`/account${search}`] })
+/** Account under a data router (its route as routes.tsx declares it), so a test can read the location and how it changed. */
+function renderInRouter(rest: string) {
+  const router = createMemoryRouter([{ path: '/home', element: <p>Home</p> }, { path: '/account/*', element: <Account /> }],
+    { initialEntries: ['/home', `/account${rest}`], initialIndex: 1 })
   renderWithQueryClient(<RouterProvider router={router} />)
   return router
 }
+
+const placeOf = (router: ReturnType<typeof renderInRouter>) => `${router.state.location.pathname}${router.state.location.search}`
 
 function section(name: string | RegExp): HTMLElement {
   return screen.getByRole('region', { name })
@@ -73,7 +72,6 @@ beforeEach(() => {
   fetchApi.mockReset()
   fetchApi.mockResolvedValue({ objectives: [] })
   signOut.mockReset()
-  navigate.mockReset()
   state.isAdmin = false
   state.user = ADA
   useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com' } }))
@@ -99,42 +97,50 @@ describe('Account — tab bar with deep links', () => {
     ['profile', 'Profile'], ['profile', 'Change Password'], ['profile', 'Sign out'],
     ['preferences', 'Language & theme'], ['preferences', 'Setup checklist'], ['preferences', 'Assistant'],
     ['briefing', 'Morning brief'], ['access', 'My access'], ['access', 'My MCP tokens'],
-  ])('?tab=%s holds the "%s" card', (id, name) => {
-    renderAt(`?tab=${id}`)
+  ])('/account/%s holds the "%s" card', (id, name) => {
+    renderAt(`/${id}`)
     expect(section(name)).toBeInTheDocument()
   })
 
-  it('shows one tab at a time and switches from the bar, replacing the query', async () => {
-    const router = renderInRouter('?tab=profile')
+  it('shows one tab at a time and switches from the bar as a history entry; Back returns', async () => {
+    const router = renderInRouter('/profile')
     await userEvent.click(screen.getByRole('tab', { name: 'Access & tokens' }))
-    expect({ search: router.state.location.search, action: router.state.historyAction }).toStrictEqual({ search: '?tab=access', action: 'REPLACE' })
-    expect(section('My access')).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Profile' })).toBeNull()
+    expect({ at: placeOf(router), action: router.state.historyAction }).toStrictEqual({ at: '/account/access', action: 'PUSH' })
+    expect([section('My access'), screen.queryByRole('region', { name: 'Profile' })]).toStrictEqual([expect.anything(), null])
+    await router.navigate(-1)
+    expect(placeOf(router)).toBe('/account/profile')
+    expect(await screen.findByRole('tab', { name: 'Profile', selected: true })).toBeInTheDocument()
   })
 
   it('keeps ?review= (the review modal) on a tab switch', async () => {
-    const router = renderInRouter('?tab=profile&review=fb_1')
+    const router = renderInRouter('/profile?review=fb_1')
     await userEvent.click(screen.getByRole('tab', { name: 'Access & tokens' }))
-    expect(router.state.location.search).toBe('?review=fb_1&tab=access')
+    expect(placeOf(router)).toBe('/account/access?review=fb_1')
+  })
+
+  it('reads no tab from the query: an old `?tab=` / `?section=` link opens Profile (no redirect)', () => {
+    renderAt('?tab=briefing&section=password')
+    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it.each([
-    ['?section=password', '?tab=profile'], ['?section=signout', '?tab=profile'],
-    ['?section=assistant', '?tab=preferences'], ['?section=browser', '?tab=preferences'],
-    ['?section=mcp', '?tab=access'], ['?section=briefing', '?tab=briefing'],
-    ['?tab=nope', '?tab=profile'], ['?section=constructor', '?tab=profile'],
-  ])('replaces the old link %s with %s', (from, to) => {
-    expect(renderInRouter(from).state.location.search).toBe(to)
+    ['/nope', '/account/profile'], ['/nope?review=fb_1', '/account/profile?review=fb_1'], ['/briefing/x', '/account/briefing'],
+  ])('replaces a path naming no tab, %s, with %s, in place', async (from, to) => {
+    const router = renderInRouter(from)
+    await waitFor(() => { expect(placeOf(router)).toBe(to) })
+    expect(router.state.historyAction).toBe('REPLACE')
+    await router.navigate(-1)
+    expect(placeOf(router), 'no extra history entry').toBe('/home')
   })
 
-  it('opens the objectives on ?tab=objectives (Company links here)', async () => {
-    renderAt('?tab=objectives')
+  it('opens the objectives on /account/objectives (Company links here)', async () => {
+    renderAt('/objectives')
     expect(await screen.findByRole('button', { name: 'Add objective' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Objectives' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('heads every tab with the avatar initial and the user name under one h1', () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(screen.getByText('A', { selector: '[aria-hidden="true"]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Account' }).nextElementSibling).toHaveTextContent('Ada Moreno')
   })
@@ -150,7 +156,7 @@ describe('Account — tab bar with deep links', () => {
 
 describe('Account — morning brief (its only home; Home links here)', () => {
   it("offers the reader's own brief settings, read from their self-scoped preference", async () => {
-    renderAt('?section=briefing')
+    renderAt('/briefing')
     // Not subscribed yet (the fixture's default): only the Subscribe control shows.
     expect(await within(section('Morning brief')).findByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
     expect(fetchApi.mock.calls.map(([endpoint]) => endpoint)).toContain('/settings/my-briefing')
@@ -189,7 +195,7 @@ describe('Account — profile', () => {
 
 describe('Account — preferences: language & theme', () => {
   it('offers every shipped locale under a labelled select and switches language', async () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const select = within(section('Language & theme')).getByRole('combobox', { name: 'Language' })
     expect(select).toHaveValue('en')
     expect(within(select).getAllByRole('option').map((o) => o.textContent)).toStrictEqual(supportedLanguages.map((l) => languageNames[l]))
@@ -198,7 +204,7 @@ describe('Account — preferences: language & theme', () => {
   })
 
   it('carries the mode toggle and the colour theme picker', () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(within(section('Language & theme')).getByText('Light or dark')).toBeInTheDocument()
     expect(within(section('Language & theme')).getByRole('button')).toBeInTheDocument()
     expect(within(section('Language & theme')).getByRole('radiogroup', { name: 'Colour theme' })).toBeInTheDocument()
@@ -212,7 +218,7 @@ describe('Account — objectives & KPIs', () => {
       if (options?.method === 'PUT') return Promise.resolve(save(parsedJson(options.body)))
       return endpoint === '/settings/my-context' ? Promise.resolve({ objectives: [] }) : Promise.reject(new Error('API Error: 404'))
     })
-    renderAt('?tab=objectives')
+    renderAt('/objectives')
     await userEvent.click(await screen.findByRole('button', { name: 'Add objective' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Objective title' }), 'Ship returns redesign')
     await userEvent.click(screen.getByRole('button', { name: 'Add KPI' }))
@@ -228,20 +234,20 @@ describe('Account — objectives & KPIs', () => {
 
   it('asks for configuration instead of calling the API when no endpoint is set', () => {
     useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: '' } }))
-    renderAt('?tab=objectives')
+    renderAt('/objectives')
     expect(fetchApi).not.toHaveBeenCalled()
   })
 })
 
 describe('Account — MCP tokens and sign out', () => {
   it('points MCP tokens to Connect', () => {
-    renderAt('?tab=access')
+    renderAt('/access')
     expect(within(section('My MCP tokens')).getByRole('link', { name: 'Go to Connect' })).toHaveAttribute('href', '/connect')
   })
 
   it('signs out from the page: clears cached data, ends the session, loads /login', async () => {
     const queryClient = createTestQueryClient({ gcTime: Infinity })
-    renderAt('?tab=profile', queryClient)
+    renderAt('/profile', queryClient)
     queryClient.setQueryData(['feedback'], { items: ['private'] })
     // A full page load to the plain sign-in page (hooks/useSignOut.ts).
     const assign = stubLocationAssign()
@@ -272,7 +278,7 @@ describe('Account — preferences: setup checklist, start page, "How it works"',
 
   it('switches "open the dashboard when I sign in" off again', async () => {
     server.onboarding = { state: 'dismissed', visible: false, start_page: 'dashboard' }
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const control = await within(section('Setup checklist')).findByRole('switch', { name: 'Open the dashboard when I sign in' })
     await waitFor(() => expect(control).toBeChecked())
     await userEvent.click(control)
@@ -282,7 +288,7 @@ describe('Account — preferences: setup checklist, start page, "How it works"',
 
   // Live finding: the two inline switches ran together on one line.
   it('puts the start-page and "How it works" switches on rows of their own', async () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const region = section('Setup checklist')
     const rows = (await within(region).findAllByRole('switch')).map((s) => s.closest('.flex-col'))
     expect(rows[0]).not.toBeNull()
@@ -290,7 +296,7 @@ describe('Account — preferences: setup checklist, start page, "How it works"',
   })
 
   it('says the checklist is off and brings it back on Home, server-side', async () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const region = section('Setup checklist')
     expect(await within(region).findByText('Turned off')).toBeInTheDocument()
     await userEvent.click(within(region).getByRole('button', { name: 'Show on Home' }))
@@ -300,7 +306,7 @@ describe('Account — preferences: setup checklist, start page, "How it works"',
 
   it('collapses "How it works" on Home from here (the guide preference)', async () => {
     server.onboarding = { state: 'dismissed', visible: false, guide: 'open' }
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const guide = await within(section('Setup checklist')).findByRole('switch', { name: 'Show "How it works" expanded on Home' })
     await waitFor(() => expect(guide).toBeChecked())
     await userEvent.click(guide)
@@ -309,7 +315,7 @@ describe('Account — preferences: setup checklist, start page, "How it works"',
 
   it('shows when a snooze ends', async () => {
     server.onboarding = { state: 'hidden', visible: false, hidden_until: '2026-10-07T12:00:00+00:00' }
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(await within(section('Setup checklist')).findByText(/^Hidden until /)).toBeInTheDocument()
   })
 })
@@ -322,7 +328,7 @@ describe('Account — assistant (the same store as the panel bell and the launch
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('offers desktop notifications, and says why when this browser has none', () => {
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const control = within(section('Assistant')).getByRole('switch', { name: 'Desktop notifications' })
     expect(control).toBeDisabled()
     expect(control).toHaveAccessibleDescription(/This browser does not support notifications/)
@@ -331,7 +337,7 @@ describe('Account — assistant (the same store as the panel bell and the launch
   it('turns notifications off in the shared store when the browser allows them', async () => {
     vi.stubGlobal('Notification', Object.assign(function FakeNotification() {}, { permission: 'granted', requestPermission: vi.fn() }))
     useAssistantUiStore.setState({ notify: true })
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     const control = within(section('Assistant')).getByRole('switch', { name: 'Desktop notifications' })
     expect(control).toBeChecked()
     await userEvent.click(control)
@@ -340,7 +346,7 @@ describe('Account — assistant (the same store as the panel bell and the launch
 
   it("resets the caller's own bubble position and leaves other users' alone", async () => {
     useBubbleStore.setState({ positions: { ada: { right: 300, bottom: 200 }, other: { right: 10, bottom: 10 } } })
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     await userEvent.click(within(section('Assistant')).getByRole('button', { name: 'Reset bubble position' }))
     expect(useBubbleStore.getState().positions).toStrictEqual({ other: { right: 10, bottom: 10 } })
     expect(screen.getByRole('button', { name: 'Reset bubble position' })).toBeDisabled()
@@ -352,7 +358,7 @@ describe('Account — my access (read-only, GET /feedback/access)', () => {
     fetchApi.mockImplementation((endpoint) => Promise.resolve(endpoint === '/feedback/access'
       ? { all: false, categories: ['delivery', 'pricing'], sources_all: false, sources: [], source_rule: 'deny', sources_denied: ['internal_tickets'] }
       : {}))
-    renderAt('?tab=access')
+    renderAt('/access')
     const region = section('My access')
     expect(await within(region).findByText('Every source except:')).toBeInTheDocument()
     expect(within(region).getAllByRole('listitem').map((li) => li.textContent)).toStrictEqual(['delivery', 'pricing', 'internal_tickets'])
@@ -361,21 +367,21 @@ describe('Account — my access (read-only, GET /feedback/access)', () => {
 
   it('says every category and every source for an unrestricted caller', async () => {
     fetchApi.mockResolvedValue({ all: true, categories: [], sources_all: true, sources: [], source_rule: 'all', sources_denied: [] })
-    renderAt('?tab=access')
+    renderAt('/access')
     expect(await within(section('My access')).findByText('Every category')).toBeInTheDocument()
     expect(within(section('My access')).getByText('Every source')).toBeInTheDocument()
   })
 
   it('lists an explicit source grant', async () => {
     fetchApi.mockResolvedValue({ all: true, categories: [], sources_all: false, sources: ['webscraper'], source_rule: 'allow', sources_denied: [] })
-    renderAt('?tab=access')
+    renderAt('/access')
     expect(await within(section('My access')).findByText('Only these sources:')).toBeInTheDocument()
     expect(within(section('My access')).getByRole('listitem')).toHaveTextContent('webscraper')
   })
 
   it('reports a failed read', async () => {
     fetchApi.mockRejectedValue(new Error('API Error: 500'))
-    renderAt('?tab=access')
+    renderAt('/access')
     expect(await within(section('My access')).findByRole('alert')).toHaveTextContent('Could not load your access.')
   })
 })
@@ -390,7 +396,7 @@ function advanced(): HTMLElement {
 describe('Account — this browser, under "Advanced" (moved from Administration → General)', () => {
   it("shows this browser's API endpoint and clears the local settings after confirming", async () => {
     useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com', brandName: 'Acme' } }))
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(within(advanced()).getByText('https://api.example.com')).toBeInTheDocument()
     await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
@@ -406,7 +412,7 @@ describe('Account — Reset local settings, in every workspace', () => {
     // Where the config store keeps a workspace's record (store/configStore.ts, workspace/workspaceStorage.ts).
     saved.set('voc-config:w/juniper', '{"state":{"timeRange":"7d"},"version":3}')
     saved.set('voc-assistant-ui:w/juniper', '{}')
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
     // The page's own config, cleared; juniper's gone; another store's record untouched.
@@ -415,13 +421,13 @@ describe('Account — Reset local settings, in every workspace', () => {
 
   it('is collapsed while an API endpoint is configured', () => {
     useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com' } }))
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(advanced()).not.toHaveAttribute('open')
   })
 
   it('is open when no API endpoint is set, so "Go to settings" lands on why', () => {
     useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: '' } }))
-    renderAt('?tab=preferences')
+    renderAt('/preferences')
     expect(advanced()).toHaveAttribute('open')
   })
 })
