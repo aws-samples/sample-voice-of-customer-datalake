@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: hunter
-version: 2
+version: 3
 purpose: Confirms bugs from the issue, the tests and static signals, writes each with its evidence, and posts one fix task per confirmed bug.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -12,9 +12,8 @@ inputs:
 outputs:
   - {name: findings, schema: voc-finding/1, recorded_on: task}
   - {name: fix_tasks, kind: board_task, recorded_on: task}
-tools: [read_file, list_files, run, install_dependencies, write_findings, post_subtask, report_progress,
+tools: [read_file, list_files, run, install_dependencies, write_findings, post_subtask, read_issue, report_progress,
         save_checkpoint, finish]
-pending_tools: [read_issue]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, command_output, knowledge, memory], fence: nonce}

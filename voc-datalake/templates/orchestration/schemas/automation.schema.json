@@ -25,7 +25,13 @@
     "personas": {"type": "object"},
     "triggers": {"type": "array", "maxItems": 5, "items": {
       "type": "object", "required": ["kind"],
-      "properties": {"kind": {"enum": ["github_issue", "new_reviews", "schedule", "threshold"]}}
+      "properties": {
+        "kind": {"enum": ["github_issue", "new_reviews", "schedule", "threshold"]},
+        "stage": {"description": "A github_issue trigger's stage: act (left out) or triage (the Issue triage automation's own claim).",
+                  "enum": ["act", "triage"]},
+        "requires_triage": {"description": "An act github_issue trigger's: the triage kind an issue must have (ISSUE_TRIAGE#) before this automation takes it; the heartbeat reads it here.",
+                            "enum": ["bug", "feature"]}
+      }
     }},
     "models": {"type": "object"},
     "output": {"type": "object", "additionalProperties": false, "required": ["visibility"],
@@ -46,8 +52,6 @@
         "feedback_type": {"enum": ["bug", "feature_request"]}
       }
     },
-    "requires_triage": {"description": "The triage kind an issue must have (ISSUE_TRIAGE#) before this automation takes it.",
-                        "enum": ["bug", "feature"]},
     "learn": {"type": "object", "additionalProperties": false, "required": ["cross_run"],
               "properties": {"cross_run": {"enum": ["off", "weekly"]}}},
     "pr": {"enum": ["ready", "draft"]},

@@ -1,11 +1,11 @@
 """A flow's built-in steps' settings (7.50.00, plan §2): ``memory`` (the recall every agent's brief takes) and
 ``learn`` (the run's last step, which no flow can remove), read from the run's own copy of its flow.
 
-The templates' compiler puts them in the flow's start step (``data.params``: ``{memory, learn, pr}``, the same place
-``shared/workflow_engineering.flow_settings`` reads); both are optional, so a flow without them (every flow before
-7.50.00, and a run with no flow) gets the defaults: no recall, Learn on at 5% of the run's cost cap, after 72 hours at
-a person. A value off its shape is the default (the templates' validator refuses it before it is ever saved): a run
-never stops for a setting it cannot read.
+The templates' compiler puts them in the flow's start step (``data.params``: ``{memory, learn, pr}``), which
+``shared/workflow_engineering.flow_settings`` reads, here too; both are optional, so a flow without them (every flow
+before 7.50.00, and a run with no flow) gets the defaults: no recall, Learn on at 5% of the run's cost cap, after 72
+hours at a person. A value off its shape is the default (the templates' validator refuses it before it is ever saved):
+a run never stops for a setting it cannot read.
 
     memory: {recall: true, scopes: [repo, role], limit: 10}
     learn: {enabled: true, model: <an allowed model id>, budget_share: 0.05, roles: [...], after_needs_human_hours: 72}
@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
+
+from shared.workflow_engineering import flow_settings
 
 #: The memory scopes a recall reads (agent_memory/model.py ``Scope.kind``), as a flow names them.
 MEMORY_SCOPES: Final = {'repo': 'repository', 'repository': 'repository', 'role': 'role'}
@@ -44,28 +46,12 @@ class LearnSettings:
     after_needs_human_hours: int = DEFAULT_AFTER_NEEDS_HUMAN_HOURS
 
 
-def start_params(definition: Mapping[str, Any] | None) -> Mapping[str, Any]:
-    """The flow's start step's settings (``data.params`` of its ``start`` node), {} for none."""
-    nodes = definition.get('nodes') if isinstance(definition, Mapping) else None
-    for node in nodes if isinstance(nodes, list) else ():
-        if isinstance(node, Mapping) and node.get('type') == 'start':
-            data = node.get('data')
-            params = data.get('params') if isinstance(data, Mapping) else None
-            return params if isinstance(params, Mapping) else {}
-    return {}
-
-
-def _section(definition: Mapping[str, Any] | None, name: str) -> Mapping[str, Any]:
-    section = start_params(definition).get(name)
-    return section if isinstance(section, Mapping) else {}
-
-
 def _whole(value: object, low: int, high: int, default: int) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high else default
 
 
 def memory_settings(definition: Mapping[str, Any] | None) -> MemorySettings:
-    section = _section(definition, 'memory')
+    section = flow_settings(definition)['memory']
     scopes = section.get('scopes')
     named = tuple(dict.fromkeys(MEMORY_SCOPES[str(scope)] for scope in scopes if str(scope) in MEMORY_SCOPES)) \
         if isinstance(scopes, list) else MemorySettings.scopes
@@ -74,7 +60,7 @@ def memory_settings(definition: Mapping[str, Any] | None) -> MemorySettings:
 
 
 def learn_settings(definition: Mapping[str, Any] | None) -> LearnSettings:
-    section = _section(definition, 'learn')
+    section = flow_settings(definition)['learn']
     share = section.get('budget_share', DEFAULT_BUDGET_SHARE)
     share = float(share) if isinstance(share, int | float) and not isinstance(share, bool) and 0 < share <= 1 \
         else DEFAULT_BUDGET_SHARE

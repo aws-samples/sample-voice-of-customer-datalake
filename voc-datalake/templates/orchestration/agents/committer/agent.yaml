@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: committer
-version: 2
+version: 3
 purpose: After the quality gate's GO, has the broker push the submitted patch as one commit to the run's branch.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -11,8 +11,7 @@ inputs:
   - {name: issue, from: broker.read:issue, trust: data}
 outputs:
   - {name: commit, kind: pushed_branch, recorded_on: branch}
-tools: [read_file, list_files, push_commit, report_progress, save_checkpoint, finish]
-pending_tools: [read_issue]
+tools: [read_file, list_files, push_commit, read_issue, report_progress, save_checkpoint, finish]
 broker_ops: [read, push_bundle]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, knowledge], fence: nonce}

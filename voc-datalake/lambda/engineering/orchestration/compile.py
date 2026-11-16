@@ -240,11 +240,18 @@ def agent_body(automation: Mapping[str, Any]) -> dict[str, Any]:
     return body
 
 
+def requires_triage(automation: Mapping[str, Any]) -> str | None:
+    """The triage kind an automation's issue trigger requires (``requires_triage`` on its ``github_issue`` trigger,
+    where the heartbeat reads it); None when it requires none."""
+    return next((str(trigger['requires_triage']) for trigger in automation['triggers']
+                 if trigger.get('kind') == 'github_issue' and trigger.get('requires_triage')), None)
+
+
 def _automation(automation: Mapping[str, Any]) -> dict[str, Any]:
     return {'id': automation['id'], 'version': automation['version'], 'name': automation['name'],
             'seed_marker': dict(automation['seed_marker']), 'flow': automation['flow'],
             'monthly_budget_usd': automation['budget'].get('monthly_usd'),
-            'requires_triage': automation.get('requires_triage'), 'learn': automation.get('learn'),
+            'requires_triage': requires_triage(automation), 'learn': automation.get('learn'),
             'pr': automation.get('pr'), 'readiness': list(automation['readiness']), 'body': agent_body(automation)}
 
 

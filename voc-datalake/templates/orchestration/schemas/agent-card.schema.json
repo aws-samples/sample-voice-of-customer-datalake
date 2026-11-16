@@ -29,9 +29,10 @@
       "description": "Tools SKILL.md names that the harness does not offer this role yet (they arrive with the runtime work). The validator fails once the harness offers one: it then moves into tools.",
       "type": "array", "items": {"$ref": "#/$defs/name"}, "uniqueItems": true
     },
-    "broker_ops": {"description": "The broker operations the role makes: read, and at most its one write (none for the Learn card).",
+    "broker_ops": {"description": "The broker operations the role makes: read, and the writes the broker grants it (none for the Learn card).",
                    "type": "array", "uniqueItems": true,
-                   "items": {"enum": ["read", "post_comment", "push_bundle", "open_or_update_draft_pr"]}},
+                   "items": {"enum": ["read", "post_comment", "push_bundle", "open_or_update_draft_pr",
+                                      "label_issue"]}},
     "pending_broker_ops": {"description": "Broker operations the role needs that the broker does not grant it yet.",
                            "type": "array", "uniqueItems": true, "items": {"enum": ["label_issue", "post_comment"]}},
     "caps": {

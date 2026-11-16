@@ -4,10 +4,11 @@ A run of the compiled Bug hunt and fix flow on one eval case's fixture, end to e
 and buckets, voc-engineering-runtime's own handler on the local fake agent runtime, the board's API, the broker's own
 handler behind the SigV4-checking function URL and a git host on the fixture (``runtime/test/
 test_engineering_bug_hunt_flow.py``'s, reused as they are). Each agent runs the harness's own entry on a real git
-checkout of the fixture, on a scripted Converse model that acts out the case's known fix (``known-fix.diff``): the
-hunter runs the case's check and writes what it shows, the fixer writes the fixed files and runs the tests, the gate
-runner runs the gate plan's checks for real on the judged tree, and the committer and the PR author go through the
-broker. Repository commands run for real in the checkout; the dependency step installs nothing (it would need the
+checkout of the fixture, on a scripted Converse model that acts out the case's known fix (``known-fix.diff``) on
+the skill its launch resolved (its role's bundled template, as the runtime and the board read it): the hunter runs
+the case's check and writes what it shows, the fixer writes the fixed files and runs the tests, the gate runner's
+``run_gate`` runs the gate plan's checks for real on the judged tree, and the committer and the PR author go through
+the broker. Repository commands run for real in the checkout; the dependency step installs nothing (it would need the
 registries): the test interpreter, with pytest, is the sandbox's here.
 
 After each step of the flow it evaluates the step's assertions (``params.assert``) on what the step recorded, as the
@@ -43,10 +44,10 @@ from engineering.flow.ledger import read_gate_record
 from engineering.learning import reactions_broker
 from engineering.orchestration import assertions
 from engineering.orchestration.assertions import Recorded, Result
-from engineering.quality_gate.packs import RepoView, default_packs_dir, detect, load_packs, plan
+from engineering.quality_gate import packs
 from engineering.runtime import handler
+from engineering.runtime.harness import gate_tools
 from engineering.runtime.harness import main as harness_main
-from engineering.runtime.harness.skills import SKILLS
 from engineering.runtime.interface import CODE_ROLES
 from engineering.runtime.test import conftest as runtime_world
 from engineering.runtime.test import test_engineering_bug_hunt_flow as bug_hunt
@@ -55,6 +56,7 @@ from engineering.runtime.test.harness_fakes import use
 from engineering.runtime.test.local_runtime import LocalAgentRuntime
 from engineering.runtime.test.test_engineering_board_bus import Events
 from engineering.runtime.test.test_engineering_harness_main import _vm_directory, fixture_repository, run_git
+from engineering.skills.templates import bundled
 from engineering.workspace.store import WorkspaceStore
 from shared import aws as shared_aws
 from shared.ai_mode import MODE_AI_DRIVEN, ai_mode_key
@@ -147,7 +149,7 @@ class Code:
 
 @dataclass
 class Host(bug_hunt.GitHost):
-    """The test's git host, keeping each pull request's text too (the broker opens it as a draft)."""
+    """The test's git host, keeping each pull request's text too (ready for review or a draft, as the broker asks)."""
 
     pull_requests: list[dict[str, Any]] = field(default_factory=list)
 
@@ -159,9 +161,9 @@ class Host(bug_hunt.GitHost):
         return 'open' if connection_id == 'conn-1' and number > 0 else None
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
-                                tree_hash: str) -> PullRequestRef:
-        opened = super().open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash)
-        self.pull_requests.append({'branch': branch, 'tree': tree_hash, 'draft': True, 'title': title, 'body': body})
+                                tree_hash: str, *, draft: bool = True) -> PullRequestRef:
+        opened = super().open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash, draft=draft)
+        self.pull_requests.append({'branch': branch, 'tree': tree_hash, 'draft': draft, 'title': title, 'body': body})
         return opened
 
 
@@ -248,14 +250,18 @@ class LocalRun:
         # (read before the model takes its turns: it answers them one by one, off the list)
         summary = next((block['toolUse']['input'].get('summary', '') for turn in turns for block in turn
                         if block.get('toolUse', {}).get('name') == 'finish'), '')
-        model = self.world.models[agent_id] = bug_hunt.ScriptedModel(SKILLS[role], turns)
+        # (the role's bundled template: the skill the runtime's launch resolved and the board's skill op serves)
+        template = bundled().skill(role)
+        if template is None:
+            raise FakeRunError(f'the bundle has no template for {role}')
+        model = self.world.models[agent_id] = bug_hunt.ScriptedModel(template.skill, turns)
         vm = self.world.tmp / agent_id / 'vm'
         runner = Code(_vm_directory(vm, self.world.cache, self.world.commit), real=role in CODE_ROLES)
         self.patched.setattr(harness_main, 'build_session',
                              functools.partial(bug_hunt.BUILD_SESSION, checkout=str(vm / 'work' / 'repo')))
         ports = self.world.ports(agent_id, env['VOC_TASK_ID'], int(env['VOC_ATTEMPT']))
         harness_main.main(list(argv[3:]), env, s3=self.world.s3, ports=ports, bedrock=lambda: model, runner=runner)
-        self.out(f'  {agent_id} ({role}, {SKILLS[role].name}@{SKILLS[role].version}): {summary}')
+        self.out(f'  {agent_id} ({role}, {template.label}): {summary}')
         return model.refused()
 
     def coordinate(self, turns: list[list[dict[str, Any]]]) -> None:
@@ -283,13 +289,6 @@ def _post(role: str, step: str, task: str, title: str, **extra: str) -> list[lis
 
 def _finish(summary: str) -> list[dict[str, Any]]:
     return [use('finish', summary=summary)]
-
-
-def _gate_checks(case: Case) -> list[list[str]]:
-    """The gate plan's checks on the case's fixture, but its dependency step: the gate runner's commands."""
-    repo = RepoView(frozenset(case.files), case.files.get)
-    gate = plan(detect(load_packs(default_packs_dir()), repo), repo, python=sys.executable)
-    return [list(check.argv) for check in gate.checks if check.kind != 'setup']
 
 
 def _hunt(run: LocalRun) -> None:
@@ -338,11 +337,11 @@ def _patch(run: LocalRun) -> str:
 def _gate(run: LocalRun) -> str:
     patch = _patch(run)
     run.coordinate([[use('read_board')], *_post('gate-runner', 'gate', 'task-4', 'Run the gate packs', patch=patch)])
-    checks = _gate_checks(run.case)
+    # ``run_gate`` plans the packs' checks on the sandbox's interpreter ({python}): for a local run, the test
+    # interpreter, which has pytest (the dependency step installs nothing here).
+    run.patched.setattr(gate_tools.packs, 'plan', functools.partial(packs.plan, python=sys.executable))
     errors = run.agent('gate-runner-5', [
-        [use('install_dependencies', argv=[sys.executable, '-m', 'pip', 'install', '-r', 'requirements-dev.txt'])],
-        *[[use('run', argv=argv)] for argv in checks],
-        [use('write_gate_record', verdict='GO', packs=['python'])], _finish('every check passed')])
+        [use('run_gate')], [use('write_gate_record', verdict='GO', packs=['python'])], _finish('every check passed')])
     if errors:
         raise FakeRunError(f'the gate runner was refused: {errors}')
     [record] = [json.loads(body) for _, key, body in run.objects('gate-runner') if key.endswith('/record.json')]
@@ -408,7 +407,7 @@ def run_flow(flow: Mapping[str, Any], repo: Path, *, out: Out = print, issue: in
     0 when it reached its pull request with every blocking assertion passed, 1 otherwise."""
     case = load_case(repo)
     out(f'local run of {flow["template_id"]} v{flow["version"]} on {case.directory.name} (scripted models acting out '
-        'its known fix; the harness runs its shipped skills, which hold the templates\' tools, models and harness)')
+        'its known fix; each agent runs its role\'s bundled template, as the runtime resolves it)')
     with tempfile.TemporaryDirectory() as scratch, _wired(Path(scratch)) as patched:
         (Path(scratch) / 'home').mkdir()
         run = _start(Path(scratch) / 'world', case, flow, patched, out, issue)

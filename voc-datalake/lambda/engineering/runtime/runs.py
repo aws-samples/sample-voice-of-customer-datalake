@@ -79,7 +79,7 @@ from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
 from shared.logging import logger
-from shared.workflow_engineering import BUDGET_RULE, budget_of
+from shared.workflow_engineering import BUDGET_RULE, budget_of, flow_settings
 
 #: How a run ends (``active`` and ``needs_human`` are its live statuses).
 ENDED: Final = frozenset({'done', 'failed', 'stopped'})
@@ -253,14 +253,7 @@ def pull_request_mode(definition: str) -> str:
         parsed = json.loads(definition) if definition else None
     except ValueError:
         return PULL_REQUEST_READY
-    nodes = parsed.get('nodes') if isinstance(parsed, dict) else None
-    for node in nodes if isinstance(nodes, list) else []:
-        if isinstance(node, dict) and node.get('type') == 'start':
-            data = node.get('data')
-            params = data.get('params') if isinstance(data, dict) else None
-            if isinstance(params, dict) and params.get('pr') == PULL_REQUEST_DRAFT:
-                return PULL_REQUEST_DRAFT
-    return PULL_REQUEST_READY
+    return PULL_REQUEST_DRAFT if flow_settings(parsed)['pr'] == PULL_REQUEST_DRAFT else PULL_REQUEST_READY
 
 
 def _flow_copy(run_id: str, flow: str, definition: str, revision: object, now: int) -> list[dict[str, Any]]:

@@ -269,12 +269,20 @@ _PARAMS = {'agent': _agent_issues, 'quality_gate': _gate_issues, 'board': _board
            'memory': _memory_issues, 'start': _start_issues}
 
 
-def flow_settings(definition: Mapping[str, Any]) -> dict[str, Any]:
+def flow_settings(definition: object) -> dict[str, Any]:
     """An engineering flow's ``memory``, ``learn`` and ``pr`` (its start step's params), each with its default when the
-    flow leaves it out (a flow saved before 7.50.00 has none): no recall, Learn on, the pull request ready."""
-    start = next((node for node in definition.get('nodes', ()) if node.get('type') == 'start'), {})
-    params = start.get('data', {}).get('params', {}) if isinstance(start, Mapping) else {}
-    return {'memory': dict(params.get('memory', {'recall': False})), 'learn': dict(params.get('learn', {'enabled': True})),
+    flow leaves it out (a flow saved before 7.50.00 has none) or is off its shape (a run's readers never stop for a
+    setting they cannot read; the rules above refuse such a flow at its save): no recall, Learn on, the pull request
+    ready. ``pr`` is as written: a reader takes ``draft`` only for a draft."""
+    nodes = definition.get('nodes') if isinstance(definition, Mapping) else None
+    start = next((node for node in nodes if isinstance(node, Mapping) and node.get('type') == 'start'), {}) \
+        if isinstance(nodes, list) else {}
+    data = start.get('data')
+    params = data.get('params') if isinstance(data, Mapping) else None
+    params = params if isinstance(params, Mapping) else {}
+    memory, learn = params.get('memory'), params.get('learn')
+    return {'memory': dict(memory) if isinstance(memory, Mapping) else {'recall': False},
+            'learn': dict(learn) if isinstance(learn, Mapping) else {'enabled': True},
             'pr': params.get('pr', DEFAULT_PR)}
 
 

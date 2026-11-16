@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: fixer
-version: 2
+version: 3
 purpose: Smallest fix for one confirmed bug, with a test that fails without it.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -12,9 +12,8 @@ inputs:
 outputs:
   - {name: patch, kind: submitted_patch, recorded_on: task}
   - {name: finish, kind: summary, recorded_on: task}
-tools: [read_file, list_files, write_file, run, install_dependencies, submit_work, report_progress, save_checkpoint,
-        finish]
-pending_tools: [read_issue]
+tools: [read_file, list_files, write_file, run, install_dependencies, submit_work, read_issue, report_progress,
+        save_checkpoint, finish]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, command_output, knowledge, memory], fence: nonce}

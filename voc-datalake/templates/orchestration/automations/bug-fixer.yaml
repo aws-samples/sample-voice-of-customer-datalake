@@ -8,14 +8,15 @@ flow: bug-hunt-and-fix
 enabled: false
 scope: {all: true}
 instructions: ''
+# The issue trigger acts on an issue once its trusted triage says bug (while an Issue triage agent watches the
+# connection; else on the issue's feedback type, 7.47.00's rule): the heartbeat reads requires_triage on the trigger.
 triggers:
-  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7}
+  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7, requires_triage: bug}
   - {kind: new_reviews, min_new: 5, cooldown_hours: 24}
 models: {}
 output: {visibility: private}
 budget: {monthly_usd: 50, max_scheduled_runs_per_day: 1}
 engineering: {connection: null, language: null, feedback_type: bug}
-requires_triage: bug
 learn: {cross_run: 'off'}
 pr: ready
 readiness: [connection, app_installation, ci_attestation, branch_rules, image, bedrock_models, agentcore_quota,

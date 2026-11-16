@@ -22,6 +22,14 @@ def _main(*argv: str) -> tuple[int, list[str]]:
     return cli.main(list(argv), lines.append), lines
 
 
+def _replace(path: Path, changes: dict[str, str]) -> None:
+    text = path.read_text(encoding='utf-8')
+    for old, new in changes.items():
+        assert old in text, f'{old!r} not in {path}'
+        text = text.replace(old, new, 1)
+    path.write_text(text, encoding='utf-8')
+
+
 def test_validate_and_compile_check_say_the_shipped_templates_are_valid_and_compiled() -> None:
     assert _main('validate') == (0, ['orchestration: the templates and both bundles are valid'])
     assert _main('compile', '--check') == (0, [])
@@ -51,19 +59,30 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
     root = tmp_path / 'orchestration'
     shutil.copytree(ROOT, root)
     write(render(compile_bundle(load(root))), root)
-    assert promote.promote(root) == ()   # (nothing is offered yet)
-    offered = tools.ToolSpec('read_issue', 'Read the run\'s issue.', {})
-    monkeypatch.setattr(promote, 'role_specs', lambda role: (*tools.role_specs(role), offered) if role == 'fixer'
-                        else tools.role_specs(role))
-    monkeypatch.setattr(promote, 'permitted', lambda role, op: (role, op) == ('understander', 'label_issue'))
+    assert promote.promote(root) == ()   # (every card's pending tools and broker operations are promoted already)
+    # Two cards as they were before the platform offered what they had pending (7.50.00's promotion undone).
+    _replace(root / 'agents' / 'fixer' / 'agent.yaml', {
+        'submit_work, read_issue, report_progress,': 'submit_work, report_progress,',
+        'broker_ops: [read]\n': 'pending_tools: [read_issue]\nbroker_ops: [read]\n'})
+    _replace(root / 'agents' / 'understander' / 'agent.yaml', {
+        ('tools: [read_file, list_files, read_issue, write_triage, post_comment, label_issue, report_progress, '
+         'save_checkpoint,\n        finish]\nbroker_ops: [read, post_comment, label_issue]\n'): (
+            'tools: [read_file, list_files, report_progress, save_checkpoint, finish]\n'
+            'pending_tools: [read_issue, write_triage, post_comment, label_issue]\n'
+            'broker_ops: [read, post_comment]\npending_broker_ops: [label_issue]\n')})
+    # The harness offers the fixer its read_issue but not yet the understander its four tools; the broker grants the
+    # understander label_issue.
+    triage = {'read_issue', 'write_triage', 'post_comment', 'label_issue'}
+    monkeypatch.setattr(promote, 'role_specs', lambda role: tuple(
+        spec for spec in tools.role_specs(role) if role != 'understander' or spec.name not in triage))
     moved = promote.promote(root)
     assert [str(item) for item in moved] == [
-        'fixer: tool read_issue (template version 2 -> 3)',
-        'understander: broker op label_issue (template version 2 -> 3)']
+        'fixer: tool read_issue (template version 3 -> 4)',
+        'understander: broker op label_issue (template version 3 -> 4)']
     fixer = read_yaml(root / 'agents' / 'fixer' / 'agent.yaml', root)
     assert (fixer['version'], fixer['tools'][-4:], 'pending_tools' in fixer) == (
-        3, ['read_issue', 'report_progress', 'save_checkpoint', 'finish'], False)
-    assert 'voc-template-version: 3' in (root / 'agents' / 'fixer' / 'SKILL.md').read_text(encoding='utf-8')
+        4, ['read_issue', 'report_progress', 'save_checkpoint', 'finish'], False)
+    assert 'voc-template-version: 4' in (root / 'agents' / 'fixer' / 'SKILL.md').read_text(encoding='utf-8')
     understander = read_yaml(root / 'agents' / 'understander' / 'agent.yaml', root)
     assert (understander['broker_ops'], 'pending_broker_ops' in understander) == (
         ['read', 'post_comment', 'label_issue'], False)
@@ -95,10 +114,12 @@ def test_a_dry_run_prints_the_flow_its_resolved_skills_and_the_gate_plan() -> No
     assert code == 0
     assert lines[0] == 'flow bug-hunt-and-fix v3: Bug hunt and fix'
     assert json.loads(lines[1])['schema'] == 'voc-workflow/2'
-    assert ('  board.fixer: fixer@latest -> fixer@template-2 (the template), global.anthropic.claude-sonnet-5-5, '
+    assert ('  board.fixer: fixer@latest -> fixer@template-3 (the template), global.anthropic.claude-sonnet-5-5, '
             'converse; tools read_file') in text
-    assert 'pending read_issue' in text
-    assert 'pending run_gate' in text
+    # (every tool the cards had pending is the harness's now: the fixer's read_issue, the gate runner's run_gate)
+    assert 'submit_work, read_issue, report_progress' in text
+    assert 'write_gate_record, run_gate, report_progress' in text
+    assert '; pending ' not in text
     assert f'gate plan on {DIVIDE}: packs python' in text
     assert '  [setup] py.install@.: ' in text
     assert ' -r requirements-dev.txt' in text

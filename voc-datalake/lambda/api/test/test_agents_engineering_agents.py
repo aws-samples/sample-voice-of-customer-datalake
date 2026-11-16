@@ -229,11 +229,11 @@ def test_an_act_trigger_requires_the_triage_of_its_own_agents_kind(lambda_contex
 def test_run_now_of_a_triage_agent_triages_the_issue_under_its_own_claim(lambda_context: Any,
                                                                           env: tuple[Any, Start]) -> None:
     agents_env, client = env
-    bug = _seeded(lambda_context)['Bug fixer']
-    path = f"/agents/{bug['agent_id']}"
+    triage = _seeded(lambda_context)['Issue triage']
+    assert triage['triggers'][0]['stage'] == 'triage'   # (its seed's issue trigger)
+    path = f"/agents/{triage['agent_id']}"
     status, body = _call(lambda_context, 'PUT', path, body={
-        'triggers': [{**bug['triggers'][0], 'stage': 'triage'}],
-        'engineering': {**bug['engineering'], 'connection': 'shop', 'language': 'python'}})
+        'engineering': {**triage['engineering'], 'connection': 'shop', 'language': 'python'}})
     assert status == 200, body
     status, body = _call(lambda_context, 'POST', f'{path}/run', body={'issue': 7})
     assert status == 202, body

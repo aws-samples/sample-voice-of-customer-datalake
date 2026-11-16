@@ -113,14 +113,20 @@ def test_the_engineering_agents_are_seeded_disabled_with_their_flows_and_a_start
         assert len(created) == 3
         bug, feature, triage = agents['Bug fixer'], agents['Feature builder'], agents['Issue triage']
         assert (bug['enabled'], feature['enabled'], triage['enabled']) == (False, False, False)
-        assert triage['triggers'] == [
-            {'kind': 'github_issue', 'label': 'voc-agent', 'trusted_authors': False, 'lookback_days': 7}]
+        # Issue triage takes each labelled issue at its triage stage (its own claim); Bug fixer and Feature builder act
+        # on one once its trusted triage says their kind (the heartbeat reads requires_triage on the issue trigger).
+        assert triage['triggers'] == [{'kind': 'github_issue', 'label': 'voc-agent', 'trusted_authors': False,
+                                       'lookback_days': 7, 'stage': 'triage'}]
         assert bug['engineering'] == {'connection': None, 'language': None, 'feedback_type': 'bug'}
         assert feature['engineering'] == {'connection': None, 'language': None, 'feedback_type': 'feature_request'}
         assert bug['triggers'] == [
-            {'kind': 'github_issue', 'label': 'voc-agent', 'trusted_authors': False, 'lookback_days': 7},
+            {'kind': 'github_issue', 'label': 'voc-agent', 'trusted_authors': False, 'lookback_days': 7,
+             'requires_triage': 'bug'},
             {'kind': 'new_reviews', 'min_new': 5, 'cooldown_hours': 24}]
-        assert feature['triggers'][1] == {'kind': 'new_reviews', 'min_new': 10, 'cooldown_hours': 24}
+        assert feature['triggers'] == [
+            {'kind': 'github_issue', 'label': 'voc-agent', 'trusted_authors': False, 'lookback_days': 7,
+             'requires_triage': 'feature'},
+            {'kind': 'new_reviews', 'min_new': 10, 'cooldown_hours': 24}]
         assert (bug['budget']['max_scheduled_runs_per_day'], bug['scope']) == (
             1, {'all': True, 'categories': [], 'subcategories': []})
         decoded = {name: workflow_schema.decode_definition(

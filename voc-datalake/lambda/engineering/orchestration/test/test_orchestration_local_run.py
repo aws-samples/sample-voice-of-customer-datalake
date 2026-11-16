@@ -31,10 +31,11 @@ def test_divide_floor_bug_runs_from_the_hunt_to_its_pull_request_with_every_step
                   'patch.no_ci_changes', 'review.no_blocking', 'gate.pack_checks_ran', 'gate.passed',
                   'push.tree_is_judged_tree', 'pr.opened', 'pr.links_issue'):
         assert f'    assert {check}: pass' in text, text
-    # The gate ran the python pack's pytest for real on the judged tree (the fix and its test), and it passed.
-    assert any(line.startswith('    gate check ') and '-m pytest -q -p no:cacheprovider: pass' in line for line in lines)
+    # The gate runner's run_gate ran the python pack's pytest for real on the judged tree (the fix and its test), and
+    # it passed.
+    assert '    gate check py.test@.: pytest: pass' in lines, text
     assert 'flow: start done, hunt done, board done, gate done, commit done, human skipped, pr_author done, pr done' in text
-    # The flow asks for a pull request ready for review; the broker opens drafts until the runtime work honours `pr`.
-    ready = next(line for line in lines if line.startswith('    assert pr.state_as_flow: '))
-    assert code == (0 if ready.endswith(': pass (1 of 1 pull requests opened ready for review)') else 1), text
-    assert lines[-1].startswith('result: reached its pull request; ')
+    # The flow asks for a pull request ready for review, and the broker opened it so.
+    assert '    assert pr.state_as_flow: pass (1 of 1 pull requests opened ready for review)' in lines, text
+    assert code == 0, text
+    assert lines[-1] == 'result: reached its pull request; every blocking assertion passed'

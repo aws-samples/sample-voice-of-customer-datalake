@@ -8,10 +8,10 @@ flow: issue-triage
 enabled: false
 scope: {all: true}
 instructions: ''
-# One trigger: the labelled issue itself. Until the triage's own issue claim lands (7.50.00, the runtime work), the
-# 7.47.00 issue trigger takes the issues of the agent's feedback_type only.
+# One trigger: the labelled issue itself, at its triage stage: any kind of issue (the run decides the kind), on its own
+# claim (<repo>#<n>#triage) beside the act claim Bug fixer's or Feature builder's run takes.
 triggers:
-  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7}
+  - {kind: github_issue, label: voc-agent, trusted_authors: false, lookback_days: 7, stage: triage}
 models: {}
 output: {visibility: private}
 budget: {monthly_usd: 50, max_scheduled_runs_per_day: 1}

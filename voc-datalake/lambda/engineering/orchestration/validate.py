@@ -44,6 +44,7 @@ from engineering.orchestration.compile import (
     load,
     outputs,
     render,
+    requires_triage,
     skill_ref,
 )
 from engineering.orchestration.schema import EXAMPLES, REQUIRED_SECTIONS, ROOT, TemplateError, errors, relative, schema
@@ -204,7 +205,7 @@ def readiness_needed(automation: Mapping[str, Any], flow: Mapping[str, Any] | No
         ('dial', bool(requires.get('dial'))), ('ci_attestation', bool(requires.get('ci_attestation'))),
         ('branch_rules', bool(requires.get('ci_attestation'))),
         ('issues_source', bool(requires.get('issues_source')) or 'github_issue' in kinds),
-        ('issue_label', 'github_issue' in kinds), ('triage_enabled', 'requires_triage' in automation)) if on}
+        ('issue_label', 'github_issue' in kinds), ('triage_enabled', requires_triage(automation) is not None)) if on}
 
 
 def _automation_problems(sources: Sources) -> Problems:
