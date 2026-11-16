@@ -1,6 +1,6 @@
 # Exact pin: Powertools changed CORS behaviour within a minor (3.38.0 started answering Vary: Origin); an open range let CI and local disagree.
 aws-lambda-powertools[tracer]==3.39.0
-pydantic==2.14.2
+pydantic==2.14.3
 requests>=2.34.2
 # Exact pin: an open range let CI resolve a newer LoggerProtocol than local (pyright drift).
 tenacity==9.2.1
