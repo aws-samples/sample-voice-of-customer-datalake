@@ -2,7 +2,8 @@
  * What this workspace learned for an Automatic review page's site, on its card ("Known best: Bedrock web index
  * (learned …)"), from one read of `GET /integrations/web_reviews/methods` for every card; and "Re-check methods":
  * an admin clears the site's record (`DELETE …/methods/{domain}`), after which the card says the next run tries
- * every method again. A non-admin sees the record but cannot clear it; a page on one method shows neither.
+ * every method again. A non-admin sees the record but cannot clear it; a page on one method shows neither. A run of
+ * the page that finishes reads the records again, so what it learned shows without a reload.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -14,11 +15,14 @@ import type { PluginManifest } from '../../plugins/types'
 
 const mockList = vi.fn<() => Promise<WebReviewMethodRecord[]>>()
 const mockClear = vi.fn<(domain: string) => Promise<unknown>>()
+/** Each page's run row (`GET /sources/status?run_status=web_reviews&app_id=…`): never run unless a test sets one. */
+const runRows = new Map<string, Record<string, unknown>>()
 
 vi.mock('../../api/client', () => ({
   api: {
     getAppConfigs: () => Promise.resolve({ apps: pages }),
-    getSourceRunStatus: () => Promise.resolve({ status: 'never_run' }),
+    getSourceRunStatus: (_source: string, run?: { appId?: string }) =>
+      Promise.resolve(runRows.get(run?.appId ?? '') ?? { status: 'never_run' }),
   },
 }))
 vi.mock('../../api/webReviewMethodsApi', () => ({
@@ -56,6 +60,7 @@ async function card(name: string): Promise<HTMLElement> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  runRows.clear()
   mockList.mockResolvedValue([LEARNED, { ...LEARNED, domain: 'forum.example' }])
   mockClear.mockResolvedValue({ success: true, domain: 'reviews.example', cleared: true })
 })
@@ -83,6 +88,32 @@ describe('the known best method', () => {
     mockList.mockResolvedValue([{ ...LEARNED, best_method: 'none', learned_at: null, browser_recheck_due_at: null }])
     renderList()
     expect(await within(await card('Reviews - Acme')).findByText('No method has read this site yet')).toBeInTheDocument()
+  })
+})
+
+describe('after a run', () => {
+  it('reads what was learned again once a run of the page finishes, so the line shows without a reload', async () => {
+    const page = 'https://www.Reviews.example/acme'
+    runRows.set(page, { status: 'running', started_at: new Date().toISOString(), items_found: 0, errors: [] })
+    mockList.mockResolvedValue([])
+    renderList()
+    const acme = await card('Reviews - Acme')
+    expect((await within(acme).findAllByText('Running...')).length).toBeGreaterThan(0)
+    expect(within(acme).queryByText(/Known best/)).not.toBeInTheDocument()
+
+    mockList.mockResolvedValue([LEARNED])
+    runRows.set(page, { status: 'completed', started_at: '2026-11-15T09:00:00Z', completed_at: '2026-11-15T09:02:00Z', items_found: 4, errors: [] })
+
+    expect(await within(acme).findByText('Known best: Bedrock web index (learned Nov 15, 2026)', {}, { timeout: 5000 }))
+      .toBeInTheDocument()
+    expect(mockList).toHaveBeenCalledTimes(2)
+  })
+
+  it('the control: a run that was never seen running reads nothing again', async () => {
+    runRows.set('https://www.Reviews.example/acme', { status: 'completed', started_at: '2026-11-15T09:00:00Z', items_found: 4, errors: [] })
+    renderList()
+    expect(await within(await card('Reviews - Acme')).findByText(/Known best/)).toBeInTheDocument()
+    expect(mockList).toHaveBeenCalledTimes(1)
   })
 })
 

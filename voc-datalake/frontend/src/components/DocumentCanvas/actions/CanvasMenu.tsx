@@ -27,6 +27,8 @@ interface MenuAction extends EntryBase {
   readonly icon: LucideIcon
   readonly onSelect: () => void
   readonly disabled?: boolean
+  /** A destructive action (Delete): drawn in the danger colour. */
+  readonly danger?: boolean
 }
 
 interface MenuToggle extends EntryBase {
@@ -50,7 +52,11 @@ function ShortcutHint({ shortcut }: Readonly<{ shortcut?: Shortcut }>) {
   return <kbd aria-hidden="true" className="ml-auto pl-3 font-sans text-xs text-muted whitespace-nowrap">{shortcutText(shortcut)}</kbd>
 }
 
-function Entry({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (run: () => void) => void }>) {
+/**
+ * One entry of a menu (`role="menu"`): CanvasMenu's, and the documents list's card menu (DocumentCardMenu). `choose`
+ * closes the menu, then runs the entry.
+ */
+export function CanvasMenuItem({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (run: () => void) => void }>) {
   if (entry.kind === 'separator') return <hr className="menu-separator border-0" />
   const keys = entry.shortcut === undefined ? undefined : shortcutKeys(entry.shortcut)
   if (entry.kind === 'toggle') {
@@ -70,7 +76,7 @@ function Entry({ entry, choose }: Readonly<{ entry: CanvasMenuEntry; choose: (ru
   return (
     // Not `disabled`: a disabled item could not take the menu's roving focus (APG: disabled items stay focusable).
     <button type="button" role="menuitem" aria-disabled={disabled ? true : undefined} aria-keyshortcuts={keys}
-      className={clsx(ITEM_CLASS, disabled && 'text-muted cursor-default hover:bg-transparent')}
+      className={clsx(ITEM_CLASS, disabled && 'text-muted cursor-default hover:bg-transparent', entry.danger === true && !disabled && 'text-danger')}
       onClick={disabled ? undefined : () => choose(entry.onSelect)}>
       <Icon size={16} className="flex-shrink-0" aria-hidden="true" />
       <span className="truncate">{entry.label}</span>
@@ -97,7 +103,7 @@ export default function CanvasMenu({ label, entries }: CanvasMenuProps) {
       {open ? (
         <div ref={menuRef} id={menuId} role="menu" aria-labelledby={triggerId} aria-orientation="vertical"
           onKeyDown={onMenuKeyDown} className={MENUBAR_POPUP_CLASS}>
-          {entries().map((entry) => <Entry key={entry.id} entry={entry} choose={choose} />)}
+          {entries().map((entry) => <CanvasMenuItem key={entry.id} entry={entry} choose={choose} />)}
         </div>
       ) : null}
     </div>

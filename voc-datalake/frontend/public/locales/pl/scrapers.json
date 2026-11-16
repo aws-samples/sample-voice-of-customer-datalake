@@ -318,7 +318,8 @@
     "select": "Wybierz...",
     "configuredInSettings": "{{name}} jest połączony w {{where}}: wklej tam token i jego ustawienia, a następnie wróć tutaj.",
     "configuredInSettingsNoToken": "{{name}} konfiguruje się w {{where}}: wpisz tam jego ustawienia, a potem wróć tutaj.",
-    "openDataSourceSettings": "Otwórz ustawienia źródła"
+    "openDataSourceSettings": "Otwórz ustawienia źródła",
+    "saveFailed": "Nie udało się zapisać. Spróbuj ponownie."
   },
   "status": {
     "completed": "Zakończono",
@@ -358,7 +359,10 @@
       "deleteConfirmTitle": "Usuń stronę z recenzjami",
       "deleteConfirmMessage": "Czy na pewno chcesz usunąć tę stronę z recenzjami?",
       "addBedrockPage": "Dodaj stronę z indeksu wyszukiwania internetowego Bedrock",
-      "bedrockNote": "Recenzje są odczytywane z kopii tej strony zaindeksowanej przez Amazon Bedrock (pamięć podręczna Amazon), a nie z samej witryny. Każda recenzja zachowuje swój źródłowy adres URL i witrynę, więc zawsze wskazuje miejsce publikacji. Model, który ją odczytuje, wybiera się w Administracja → Modele AI."
+      "bedrockNote": "Recenzje są odczytywane z kopii tej strony zaindeksowanej przez Amazon Bedrock (pamięć podręczna Amazon), a nie z samej witryny. Każda recenzja zachowuje swój źródłowy adres URL i witrynę, więc zawsze wskazuje miejsce publikacji. Model, który ją odczytuje, wybiera się w Administracja → Modele AI.",
+      "nameHint": "Do 100 liter, cyfr, spacji, „.”, „_” lub „-”, zaczynając od litery A–Z lub cyfry.",
+      "nameInvalid": "Nie można zapisać tej nazwy: używaj tylko liter, cyfr, spacji, „.”, „_” lub „-” (do 100), zaczynając od litery A–Z lub cyfry.",
+      "alreadySource": "Ta strona jest już źródłem: {{name}}"
     },
     "kind": {
       "reviewPage": "Strona z recenzjami",
@@ -379,6 +383,7 @@
     "configuredApps": "Skonfigurowane aplikacje",
     "noApps": "Nie skonfigurowano jeszcze żadnych aplikacji",
     "addFirstApp": "Dodaj pierwszą aplikację",
+    "alreadySource": "Ta aplikacja jest już źródłem: {{name}}",
     "kindLabel": "Typ",
     "method": {
       "browser": "Przeglądarka",

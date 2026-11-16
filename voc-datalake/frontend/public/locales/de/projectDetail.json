@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Dokument löschen",
+    "card": {
+      "more": "Weitere Aktionen",
+      "menu": "Aktionen für „{{title}}“",
+      "open": "Öffnen",
+      "renameFailed": "Der neue Name konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+      "renameConflict": "Das Dokument wurde inzwischen geändert, daher wurde der neue Name nicht gespeichert. Versuchen Sie es erneut."
+    },
     "derivation": {
       "builtFrom": "Erstellt aus",
       "feedbackUsed_one": "{{count, number}} Feedback-Eintrag verwendet",

@@ -302,7 +302,8 @@
     "select": "Sélectionner...",
     "configuredInSettings": "{{name}} se connecte dans {{where}} : collez-y le jeton et ses réglages, puis revenez ici.",
     "configuredInSettingsNoToken": "{{name}} se configure dans {{where}} : saisissez-y ses paramètres, puis revenez ici.",
-    "openDataSourceSettings": "Ouvrir les réglages des sources"
+    "openDataSourceSettings": "Ouvrir les réglages des sources",
+    "saveFailed": "Impossible d’enregistrer. Veuillez réessayer."
   },
   "refresh": "Actualiser",
   "status": {
@@ -347,6 +348,7 @@
     "configuredApps": "Apps configurées",
     "noApps": "Aucune app configurée pour l'instant",
     "addFirstApp": "Ajoutez votre première app",
+    "alreadySource": "Cette application est déjà une source : {{name}}",
     "web": {
       "configuredPages": "Pages d'avis",
       "addPage": "Ajouter une page",
@@ -358,7 +360,10 @@
       "deleteConfirmTitle": "Retirer la page d'avis",
       "deleteConfirmMessage": "Voulez-vous vraiment retirer cette page d'avis ?",
       "addBedrockPage": "Ajouter une page de l’index de recherche web Bedrock",
-      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié. Le modèle qui la lit se choisit dans Administration → Modèles d'IA."
+      "bedrockNote": "Les avis sont lus dans la copie de cette page indexée par Amazon Bedrock (le cache d’Amazon), et non sur le site lui-même. Chaque avis garde son URL source et son site : il renvoie toujours là où il a été publié. Le modèle qui la lit se choisit dans Administration → Modèles d'IA.",
+      "nameHint": "Jusqu’à 100 lettres, chiffres, espaces, « . », « _ » ou « - », commençant par une lettre A–Z ou un chiffre.",
+      "nameInvalid": "Ce nom ne peut pas être enregistré : utilisez uniquement des lettres, chiffres, espaces, « . », « _ » ou « - » (jusqu’à 100), en commençant par une lettre A–Z ou un chiffre.",
+      "alreadySource": "Cette page est déjà une source : {{name}}"
     },
     "kindLabel": "Type",
     "kind": {

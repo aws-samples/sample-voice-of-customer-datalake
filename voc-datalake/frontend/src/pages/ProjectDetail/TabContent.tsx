@@ -45,7 +45,10 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onCopyPersonas: () => void
   /** The page's GUARDED selection: it asks first while the open document has unsaved changes. */
   readonly onSelectDoc: (d: ProjectDocument) => void
+  /** The open document's Delete (asks first). */
   readonly onDeleteDoc: () => void
+  /** A document card's Delete in the list (asks first). */
+  readonly onDeleteDocument: (d: ProjectDocument) => void
   /** New without the wizard on the Documents tab (useBlankDocument). */
   readonly blank: BlankDocumentControls
   /** The Documents tab's PRD / PR/FAQ New → With the wizard: the document wizard with that type. */
@@ -79,6 +82,7 @@ export default function TabContent({
   onCopyPersonas,
   onSelectDoc,
   onDeleteDoc,
+  onDeleteDocument,
   blank,
   onWriteDocument,
   onJobStarted,
@@ -154,6 +158,7 @@ export default function TabContent({
       selectedDoc={selectedDoc}
       onSelectDoc={onSelectDoc}
       onDeleteDoc={onDeleteDoc}
+      onDeleteDocument={onDeleteDocument}
       blank={blank}
       onWriteDocument={onWriteDocument}
       onJobStarted={onJobStarted}

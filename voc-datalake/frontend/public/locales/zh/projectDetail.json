@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "删除文档",
+    "card": {
+      "more": "更多操作",
+      "menu": "“{{title}}”的操作",
+      "open": "打开",
+      "renameFailed": "无法保存新名称。请重试。",
+      "renameConflict": "文档在此期间已被更改，因此新名称未保存。请重试。"
+    },
     "derivation": {
       "builtFrom": "构建来源",
       "feedbackUsed_one": "已使用 {{count, number}} 条反馈",

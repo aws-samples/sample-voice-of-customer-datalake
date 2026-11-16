@@ -281,7 +281,8 @@
     "select": "選択...",
     "configuredInSettings": "{{name}} は {{where}} で接続します。そこにトークンと設定を貼り付けてから、ここに戻ってください。",
     "configuredInSettingsNoToken": "{{name}} は {{where}} で設定します。そこで設定を入力してから、ここに戻ってください。",
-    "openDataSourceSettings": "ソース設定を開く"
+    "openDataSourceSettings": "ソース設定を開く",
+    "saveFailed": "保存できませんでした。もう一度お試しください。"
   },
   "refresh": "更新",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "設定済みのアプリ",
     "noApps": "まだアプリが設定されていません",
     "addFirstApp": "最初のアプリを追加",
+    "alreadySource": "このアプリはすでにソースです: {{name}}",
     "web": {
       "configuredPages": "レビューページ",
       "addPage": "ページを追加",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "レビューページを削除",
       "deleteConfirmMessage": "このレビューページを削除してもよろしいですか？",
       "addBedrockPage": "Bedrock ウェブ検索インデックスからページを追加",
-      "bedrockNote": "レビューはサイトそのものではなく、Amazon Bedrock がインデックスしたこのページのコピー（Amazon のキャッシュ）から読み取られます。各レビューには取得元の URL とサイトが保持されるため、常に公開元をたどれます。読み取るモデルは「管理 → AIモデル」で選択します。"
+      "bedrockNote": "レビューはサイトそのものではなく、Amazon Bedrock がインデックスしたこのページのコピー（Amazon のキャッシュ）から読み取られます。各レビューには取得元の URL とサイトが保持されるため、常に公開元をたどれます。読み取るモデルは「管理 → AIモデル」で選択します。",
+      "nameHint": "最大 100 文字の英字・数字・スペース・「.」「_」「-」で、先頭は A–Z の英字か数字です。",
+      "nameInvalid": "この名前は保存できません。英字・数字・スペース・「.」「_」「-」のみ（最大 100 文字）で、先頭は A–Z の英字か数字にしてください。",
+      "alreadySource": "このページはすでにソースです: {{name}}"
     },
     "kindLabel": "種類",
     "kind": {

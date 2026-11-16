@@ -281,7 +281,8 @@
     "select": "Auswählen...",
     "configuredInSettings": "{{name}} wird unter {{where}} verbunden: Fügen Sie dort das Token und die Einstellungen ein und kommen Sie dann hierher zurück.",
     "configuredInSettingsNoToken": "{{name}} wird unter {{where}} eingerichtet: dort die Einstellungen eintragen und dann hierher zurückkehren.",
-    "openDataSourceSettings": "Quelleneinstellungen öffnen"
+    "openDataSourceSettings": "Quelleneinstellungen öffnen",
+    "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
   },
   "refresh": "Aktualisieren",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "Konfigurierte Apps",
     "noApps": "Noch keine Apps konfiguriert",
     "addFirstApp": "Erste App hinzufügen",
+    "alreadySource": "Diese App ist bereits eine Quelle: {{name}}",
     "web": {
       "configuredPages": "Bewertungsseiten",
       "addPage": "Seite hinzufügen",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "Bewertungsseite entfernen",
       "deleteConfirmMessage": "Möchten Sie diese Bewertungsseite wirklich entfernen?",
       "addBedrockPage": "Seite aus dem Bedrock-Websuchindex hinzufügen",
-      "bedrockNote": "Die Bewertungen werden aus der Kopie dieser Seite gelesen, die Amazon Bedrock indexiert hat (Amazons Cache), nicht von der Website selbst. Jede Bewertung behält ihre Quell-URL und Website und verweist so immer auf den Ort ihrer Veröffentlichung. Das Modell, das sie liest, wird unter Administration → KI-Modelle gewählt."
+      "bedrockNote": "Die Bewertungen werden aus der Kopie dieser Seite gelesen, die Amazon Bedrock indexiert hat (Amazons Cache), nicht von der Website selbst. Jede Bewertung behält ihre Quell-URL und Website und verweist so immer auf den Ort ihrer Veröffentlichung. Das Modell, das sie liest, wird unter Administration → KI-Modelle gewählt.",
+      "nameHint": "Bis zu 100 Buchstaben, Ziffern, Leerzeichen, „.“, „_“ oder „-“, beginnend mit einem Buchstaben A–Z oder einer Ziffer.",
+      "nameInvalid": "Dieser Name kann nicht gespeichert werden: nur Buchstaben, Ziffern, Leerzeichen, „.“, „_“ oder „-“ (bis zu 100), beginnend mit einem Buchstaben A–Z oder einer Ziffer.",
+      "alreadySource": "Diese Seite ist bereits eine Quelle: {{name}}"
     },
     "kindLabel": "Art",
     "kind": {

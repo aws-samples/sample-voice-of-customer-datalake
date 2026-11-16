@@ -302,7 +302,8 @@
     "select": "Selecionar...",
     "configuredInSettings": "{{name}} é conectado em {{where}}: cole lá o token e as configurações e depois volte aqui.",
     "configuredInSettingsNoToken": "{{name}} é configurado em {{where}}: insira as configurações lá e depois volte aqui.",
-    "openDataSourceSettings": "Abrir as configurações de fontes"
+    "openDataSourceSettings": "Abrir as configurações de fontes",
+    "saveFailed": "Não foi possível salvar. Tente novamente."
   },
   "refresh": "Atualizar",
   "status": {
@@ -347,6 +348,7 @@
     "configuredApps": "Apps configurados",
     "noApps": "Nenhum app configurado ainda",
     "addFirstApp": "Adicione seu primeiro app",
+    "alreadySource": "Este app já é uma fonte: {{name}}",
     "web": {
       "configuredPages": "Páginas de avaliações",
       "addPage": "Adicionar página",
@@ -358,7 +360,10 @@
       "deleteConfirmTitle": "Remover página de avaliações",
       "deleteConfirmMessage": "Tem certeza de que deseja remover esta página de avaliações?",
       "addBedrockPage": "Adicionar uma página do índice de pesquisa na web do Bedrock",
-      "bedrockNote": "As avaliações são lidas da cópia desta página indexada pelo Amazon Bedrock (o cache da Amazon), não do próprio site. Cada avaliação mantém a URL e o site de origem, então sempre aponta para onde foi publicada. O modelo que a lê é escolhido em Administração → Modelos de IA."
+      "bedrockNote": "As avaliações são lidas da cópia desta página indexada pelo Amazon Bedrock (o cache da Amazon), não do próprio site. Cada avaliação mantém a URL e o site de origem, então sempre aponta para onde foi publicada. O modelo que a lê é escolhido em Administração → Modelos de IA.",
+      "nameHint": "Até 100 letras, dígitos, espaços, “.”, “_” ou “-”, começando com uma letra A–Z ou um dígito.",
+      "nameInvalid": "Este nome não pode ser salvo: use apenas letras, dígitos, espaços, “.”, “_” ou “-” (até 100), começando com uma letra A–Z ou um dígito.",
+      "alreadySource": "Esta página já é uma fonte: {{name}}"
     },
     "kindLabel": "Tipo",
     "kind": {

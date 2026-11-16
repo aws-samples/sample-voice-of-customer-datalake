@@ -281,7 +281,8 @@
     "select": "选择...",
     "configuredInSettings": "{{name}} 在 {{where}} 中连接：在那里粘贴令牌和设置，然后回到这里。",
     "configuredInSettingsNoToken": "{{name}} 在 {{where}} 中设置：请在那里填写设置，然后返回此处。",
-    "openDataSourceSettings": "打开来源设置"
+    "openDataSourceSettings": "打开来源设置",
+    "saveFailed": "无法保存。请重试。"
   },
   "refresh": "刷新",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "已配置的应用",
     "noApps": "尚未配置任何应用",
     "addFirstApp": "添加第一个应用",
+    "alreadySource": "此应用已是一个来源：{{name}}",
     "web": {
       "configuredPages": "评论页面",
       "addPage": "添加页面",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "移除评论页面",
       "deleteConfirmMessage": "确定要移除此评论页面吗？",
       "addBedrockPage": "从 Bedrock 网页搜索索引添加页面",
-      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。读取它的模型在“管理 → AI 模型”中选择。"
+      "bedrockNote": "评价读取自 Amazon Bedrock 已编入索引的此页面副本（Amazon 缓存），而非网站本身。每条评价都保留其来源 URL 和站点，因此始终可以追溯到发布位置。读取它的模型在“管理 → AI 模型”中选择。",
+      "nameHint": "最多 100 个字母、数字、空格、“.”、“_”或“-”，以字母 A–Z 或数字开头。",
+      "nameInvalid": "无法保存此名称：只能使用字母、数字、空格、“.”、“_”或“-”（最多 100 个），并以字母 A–Z 或数字开头。",
+      "alreadySource": "此页面已是一个来源：{{name}}"
     },
     "kindLabel": "类型",
     "kind": {

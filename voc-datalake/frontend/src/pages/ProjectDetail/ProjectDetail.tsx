@@ -159,6 +159,7 @@ export default function ProjectDetail() {
     deleteDocMut,
   } = useDocumentMutations({
     id,
+    selectedDoc: docSelection.selectedDoc,
     setSelectedDoc,
   })
 
@@ -314,6 +315,7 @@ export default function ProjectDetail() {
         onCopyPersonas={() => setShowCopyPersonas(true)}
         onSelectDoc={selectDoc}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
+        onDeleteDocument={(doc) => confirm.openDocumentConfirm(doc.document_id)}
         blank={blank}
         onWriteDocument={wizard.openDocWizard}
         onJobStarted={handleJobStarted}

@@ -61,7 +61,7 @@ function SimilarItemBody({ item }: Readonly<{ item: FeedbackItem }>) {
   return (
     <>
       <div className="flex items-start justify-between mb-1.5 sm:mb-2 gap-2">
-        <span className="text-xs text-muted">{labels.source(item.source_platform)}</span>
+        <span className="text-xs text-muted">{labels.reviewSource(item.source_platform, item.source_channel)}</span>
         <ReviewSentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
       </div>
       <p className="text-sm text-text line-clamp-2">{cleanReviewText(item.original_text)}</p>

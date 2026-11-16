@@ -85,6 +85,18 @@ open thread whose quote is in the printed version (or on the whole document) wit
 **Delete**. Exports use the saved version; the menu says so while there are unsaved changes. Arrow keys move through
 it, Esc returns to the button.
 
+The same **Rename** and **Delete** are on each document's card in the Documents tab's list, in the card's menu: a
+right-click on the card (the menu opens at the pointer, kept inside the window), the ContextMenu key or Shift+F10 on
+a focused card, or the card's **⋯** button (shown on hover and focus, on the selected card and always on a touch
+screen). It holds **Open** (selects the card, as a click does), **Rename** (only for a document whose title its writers
+own: research and custom documents and product reports; a PRD's, PR/FAQ's or prototype's title is its series' own, and
+a decision is edited in its tab) and **Delete**. A viewer gets Open only. Rename edits the card's title in place with
+the page title's rules (Enter saves, Escape cancels, an empty or unchanged name saves nothing) and the same save, one
+new version carrying the title alone; the document open on its page is renamed through the page, so its unsaved text
+stays the draft. Delete asks first with the page's confirmation; deleting the open document closes it, deleting
+another leaves it open. The menu follows the WAI-ARIA menu pattern: arrows, Home / End, Escape back to the card (or
+the ⋯), Tab out; a press outside it or a scroll closes it.
+
 ## Revise from comments
 
 On a PR/FAQ or PRD, once threads are answered or resolved, **Revise from comments** in the comment rail asks the AI

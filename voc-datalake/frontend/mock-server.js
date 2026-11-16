@@ -1866,6 +1866,14 @@ function handleVotingSessionRoutes(req, res, url, send) {
   return false;
 }
 
+/** The stored app or page a create of `app` would repeat: its id, its name, or its app / page (case and spaces aside). */
+function mockAppTwin(source, apps, app, index) {
+  if (index >= 0) return apps[index];
+  const field = { app_reviews_ios: 'app_id', app_reviews_android: 'package_name', web_reviews: 'url' }[source];
+  const same = (a, b) => typeof a === 'string' && typeof b === 'string' && a.trim() !== '' && a.trim().toLowerCase() === b.trim().toLowerCase();
+  return apps.find((stored) => same(stored.app_name, app.app_name) || (field !== undefined && same(stored[field], app[field]))) ?? null;
+}
+
 function handleAppConfigRoutes(req, res, url, send) {
   const appsMatch = url.pathname.match(/^\/integrations\/([^/]+)\/apps(?:\/([^/]+))?$/);
   if (appsMatch) {
@@ -1898,6 +1906,13 @@ function handleAppConfigRoutes(req, res, url, send) {
         const clean = Object.fromEntries(Object.entries(app).filter(([, v]) => typeof v === 'string'));
         if (!clean.id) clean.id = nextMockId('app').slice(-8);
         const index = apps.findIndex((a) => a.id === clean.id);
+        // mode 'create' never overwrites, nor stores the same app or page twice (integrations_handler._check_app_write).
+        const twin = body.mode === 'create' ? mockAppTwin(source, apps, clean, index) : null;
+        if (twin) {
+          const kind = source === 'web_reviews' ? 'The review page' : 'The app connector';
+          send(409, { success: false, error: `${kind} "${twin.app_name}" already exists; nothing was saved. A create never overwrites.` });
+          return;
+        }
         if (source === 'web_reviews') {
           // Minted on create, the stored label kept on update; a client's source_id is ignored.
           const stored = index >= 0 ? apps[index] : null;

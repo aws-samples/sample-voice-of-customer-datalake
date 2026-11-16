@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "ドキュメントを削除",
+    "card": {
+      "more": "その他の操作",
+      "menu": "「{{title}}」の操作",
+      "open": "開く",
+      "renameFailed": "新しい名前を保存できませんでした。もう一度お試しください。",
+      "renameConflict": "その間にドキュメントが変更されたため、新しい名前は保存されませんでした。もう一度お試しください。"
+    },
     "derivation": {
       "builtFrom": "作成元",
       "feedbackUsed_one": "フィードバック{{count, number}}件を使用",

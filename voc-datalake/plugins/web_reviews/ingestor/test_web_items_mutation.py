@@ -10,7 +10,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from extract import ExtractedReview
-from web_items import WebTarget, created_at, queue_item, review_id, stored_configs, target_from_config
+from web_items import (
+    MODEL_RELAYED_STEPS,
+    WebTarget,
+    created_at,
+    is_model_relayed,
+    queue_item,
+    relayed_review_key,
+    review_id,
+    stored_configs,
+    target_from_config,
+)
 
 from shared.test.clock import frozen_clock
 from shared.web_review_targets import TargetError
@@ -20,6 +30,16 @@ REVIEW = ExtractedReview(text='Lost my bag.', rating=1.0, date='2026-10-01', tit
 UNDATED = ExtractedReview(text='Lost my bag.', rating=None, date=None, title=None, author=None)
 ID_DATED = 'web_480171b35d26314cadaeec3716495f11df3132deeace7298f05935dc9ef8c650'
 ID_UNDATED = 'web_a0004cd7fc62dd50ba4e3eae94fa60f5fdee9dd80c72857e39e97f5d7b5a4077'
+#: A browser read's id, computed by the code before model-relayed ids (7.44.01): every stored review keeps its id.
+BROWSER_REVIEW = ExtractedReview(text='Amazon Connect made our contact centre easy to run. Routing is flexible.',
+                                 rating=4.0, date='2026-11-02', title='Easy to run', author='Admin in Telecom')
+ID_BROWSER = 'web_4e53618f421aeceb9f4775ab5da042d5d5e453d0805c5c60501292cbfc52edc7'
+TRUSTRADIUS = 'https://www.trustradius.com/products/amazon-connect/reviews'
+#: The live case (7.44.00): the Bedrock web index relayed the same review twice, the second read 21 characters longer.
+RELAYED_BODY = ('We moved our contact centre to Amazon Connect last year. ' * 26)[:1442]
+FIRST_READ = ExtractedReview(text=RELAYED_BODY, rating=4.0, date='2026-11-02', title='Flexible routing', author=None)
+SECOND_READ = ExtractedReview(text=f'{RELAYED_BODY} Support was quick too.', rating=4.0, date='2026-11-02',
+                              title='Flexible routing', author=None)
 
 
 def target(**fields: object) -> WebTarget:
@@ -96,6 +116,107 @@ class TestTheReviewIdIsAFixedHash:
 
     def test_an_undated_review_hashes_an_empty_date(self):
         assert review_id('www.trustpilot.com', UNDATED) == ID_UNDATED
+
+
+class TestABrowserReadKeepsItsId:
+    """Browser ids are never changed: a new id would store every review already stored once more."""
+
+    @pytest.mark.parametrize('method_used', [None, 'browser', '', 'something new'])
+    def test_the_pinned_id(self, method_used):
+        assert review_id('www.trustradius.com', BROWSER_REVIEW, method_used=method_used, page_url=TRUSTRADIUS) == ID_BROWSER
+
+    def test_the_queued_browser_item_carries_it(self):
+        item = queue_item(target(url=TRUSTRADIUS), BROWSER_REVIEW, page=3, page_url=f'{TRUSTRADIUS}?page=3', brand_name='',
+                          attribution={'method_used': 'browser'})
+        assert (item['id'], is_model_relayed(item)) == (ID_BROWSER, False)
+
+    def test_a_browser_read_still_tells_two_texts_apart(self):
+        assert review_id('www.trustradius.com', FIRST_READ) != review_id('www.trustradius.com', SECOND_READ)
+
+
+class TestAModelRelayedReviewIsKnownByItsStableFields:
+    """Bedrock web search and AgentCore Web Search relay the review's text through a model, which varies it."""
+
+    @pytest.mark.parametrize('step', sorted(MODEL_RELAYED_STEPS))
+    def test_two_reads_differing_only_in_trailing_text_get_one_id(self, step):
+        first = review_id('www.trustradius.com', FIRST_READ, method_used=step, page_url=TRUSTRADIUS)
+        assert first == review_id('www.trustradius.com', SECOND_READ, method_used=step, page_url=TRUSTRADIUS)
+        assert (first[:4], len(first)) == ('web_', 68)
+        assert first != review_id('www.trustradius.com', FIRST_READ)
+
+    def test_both_relaying_steps_agree(self):
+        assert len({review_id('www.trustradius.com', FIRST_READ, method_used=step, page_url=TRUSTRADIUS)
+                    for step in MODEL_RELAYED_STEPS}) == 1
+
+    @pytest.mark.parametrize('other', [
+        ExtractedReview(text=RELAYED_BODY, rating=4.0, date='2026-11-02', title='Clunky reporting', author=None),
+        ExtractedReview(text=RELAYED_BODY, rating=4.0, date='2026-11-02', title='Flexible routing', author='Agent B'),
+        ExtractedReview(text=RELAYED_BODY, rating=4.0, date='2026-11-03', title='Flexible routing', author=None),
+    ], ids=['another title', 'an author', 'another date'])
+    def test_different_reviews_on_one_page_get_different_ids(self, other):
+        ids = {review_id('www.trustradius.com', review, method_used='bedrock_web_search', page_url=TRUSTRADIUS)
+               for review in (FIRST_READ, other)}
+        assert len(ids) == 2
+
+    def test_host_path_title_and_author_are_compared_loosely(self):
+        loose = ExtractedReview(text='Other words.', rating=None, date='2026-11-02', title='  flexible ROUTING!! ',
+                                author='\u2003')  # a blank author (an em space) is no author
+        assert relayed_review_key('WWW.TrustRadius.com', loose,
+                                  'https://www.trustradius.com/Products/Amazon-Connect/Reviews/?page=2') == (
+            relayed_review_key('www.trustradius.com', FIRST_READ, TRUSTRADIUS))
+
+    def test_the_key_with_a_title_or_author(self):
+        review = ExtractedReview(text='x', rating=None, date='2026-11-02', title='**Great** crew', author='J. Doe')
+        assert relayed_review_key('www.trustradius.com', review, TRUSTRADIUS) == (
+            'relayed\nwww.trustradius.com\n/products/amazon-connect/reviews\n2026-11-02\nby\nj doe\ngreat crew')
+
+    def test_without_title_or_author_the_first_200_normalized_characters(self):
+        text = 'Great, GREAT   support\u2014really!  ' + 'word ' * 100
+        review = ExtractedReview(text=text, rating=None, date=None, title=None, author='')
+        key = relayed_review_key('www.trustradius.com', review, 'https://www.trustradius.com')
+        head, prefix = key.rsplit('\n', 1)
+        assert head == 'relayed\nwww.trustradius.com\n/\n\ntext'
+        assert prefix == ('great great support really ' + 'word ' * 100)[:200].rstrip()
+        assert len(prefix) == 200
+
+    def test_a_prefix_cut_on_a_space_drops_it(self):
+        review = ExtractedReview(text=f'{"a" * 199} tail', rating=None, date=None, title=None, author=None)
+        assert relayed_review_key('h', review, '').rsplit('\n', 1)[1] == 'a' * 199
+
+    def test_without_title_or_author_trailing_text_beyond_the_prefix_keeps_the_id(self):
+        first = ExtractedReview(text=RELAYED_BODY, rating=None, date='2026-11-02', title=None, author=None)
+        second = ExtractedReview(text=f'{RELAYED_BODY} And more.', rating=None, date='2026-11-02', title=None, author=None)
+        other = ExtractedReview(text=f'Not the same. {RELAYED_BODY}', rating=None, date='2026-11-02', title=None, author=None)
+        ids = [review_id('www.trustradius.com', review, method_used='agentcore_web_search', page_url=TRUSTRADIUS)
+               for review in (first, second, other)]
+        assert ids[0] == ids[1] != ids[2]
+
+    def test_another_page_of_the_site_is_another_review(self):
+        assert review_id('www.trustradius.com', FIRST_READ, method_used='bedrock_web_search', page_url=TRUSTRADIUS) != (
+            review_id('www.trustradius.com', FIRST_READ, method_used='bedrock_web_search',
+                      page_url='https://www.trustradius.com/products/amazon-lex/reviews'))
+
+    def test_the_queued_item_is_known_on_the_targets_page_not_the_snippets_url(self):
+        relayed: dict[str, object] = {'method_used': 'agentcore_web_search'}
+        on_target = queue_item(target(url=TRUSTRADIUS), FIRST_READ, page=1, page_url=TRUSTRADIUS, brand_name='',
+                               attribution=relayed)
+        on_snippet = queue_item(target(url=TRUSTRADIUS), SECOND_READ, page=1, page_url=f'{TRUSTRADIUS}?page=2',
+                                brand_name='', attribution=relayed)
+        assert on_target['id'] == on_snippet['id'] == review_id(
+            'www.trustradius.com', FIRST_READ, method_used='agentcore_web_search', page_url=TRUSTRADIUS)
+        assert (is_model_relayed(on_target), on_snippet['url']) == (True, f'{TRUSTRADIUS}?page=2')
+
+    @pytest.mark.parametrize(('item', 'relayed'), [
+        ({'metadata': {'method_used': 'bedrock_web_search'}}, True),
+        ({'metadata': {'method_used': 'agentcore_web_search'}}, True),
+        ({'metadata': {'method_used': 'browser'}}, False),
+        ({'metadata': {'method_used': ['bedrock_web_search']}}, False),
+        ({'metadata': {}}, False),
+        ({'metadata': 'bedrock_web_search'}, False),
+        ({}, False),
+    ])
+    def test_which_items_are_model_relayed(self, item, relayed):
+        assert is_model_relayed(item) is relayed
 
 
 class TestCreatedAt:

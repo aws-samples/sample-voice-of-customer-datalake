@@ -1,7 +1,8 @@
 /**
  * DocumentsTab - Documents list and detail view, plus the prototype builder.
  *
- * The list is in the project's four sections (DocumentList), each with its New for an editor: the PRD and PR/FAQ
+ * The list is in the project's four sections (DocumentList), each card with its menu (Open; for an editor Rename and
+ * Delete: useDocumentCardActions) and each section with its New for an editor: the PRD and PR/FAQ
  * sections' a menu, "Blank" (named in the draft pane, BlankDocumentDraft, then written on its page) or "With the
  * wizard" (the writing wizard); the prototype build dialog; and New document, a blank document created at once and
  * opened on its page with its title selected (useBlankDocument). No modal.
@@ -22,6 +23,7 @@ import { seriesKeyOf } from './documentEdit'
 import { deriveOverviewState } from './overviewState'
 import { PrototypeBuildWizard } from './PrototypeBuildWizard'
 import { useProjectPrototypeBuild } from './useProjectPrototypeBuild'
+import { useDocumentCardActions, type PageRename } from './useDocumentCardActions'
 import { isVersionManagedDocument } from '../../api/documentLineage'
 import type { TFunction } from 'i18next'
 import type { PrototypeBuildControl } from './usePrototypeBuild'
@@ -64,7 +66,10 @@ interface DocumentsTabProps {
   /** The company design system for the build dialog's "Design system" box; undefined = not known. */
   readonly designSystem?: DesignSystem
   readonly onSelectDoc: (doc: ProjectDocument) => void
+  /** The open document's Delete (its page's, its preview pane's): asks first, then deletes. */
   readonly onDeleteDoc: () => void
+  /** A card's Delete in the list: asks first, then deletes that document. */
+  readonly onDeleteDocument: (doc: ProjectDocument) => void
   /** New without the wizard: the Documents section's New, and the PRD and PR/FAQ sections' "Blank" (useBlankDocument). */
   readonly blank: BlankDocumentControls
   /** The PRD and PR/FAQ sections' "With the wizard": the document wizard with that type (the Overview card's own). */
@@ -87,6 +92,7 @@ export default function DocumentsTab({
   designSystem,
   onSelectDoc,
   onDeleteDoc,
+  onDeleteDocument,
   blank,
   onWriteDocument,
   onJobStarted,
@@ -108,6 +114,7 @@ export default function DocumentsTab({
     })
     : undefined
   const { pending, fresh } = canEdit ? blank : { pending: null, fresh: null }
+  const card = useDocumentCardActions({ projectId: project.project_id, canEdit, onDeleteDocument, isDeleting })
 
   return (
     <div className={focusView ? undefined : 'space-y-4'}>
@@ -115,7 +122,8 @@ export default function DocumentsTab({
           outline, text and rail. */}
       <div className={focusView ? undefined : 'flex flex-col gap-4 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:gap-6'}>
         {focusView ? null : (
-          <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} newActions={newActions} />
+          <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} newActions={newActions}
+            cardActions={card.actions} />
         )}
         {pending === null ? null : <BlankDocumentDraft pending={pending} documents={documents} blank={blank} />}
         {pending === null && selectedDoc === null ? (
@@ -129,7 +137,8 @@ export default function DocumentsTab({
         {pending === null && selectedDoc !== null ? (
           <SelectedDocument project={project} document={selectedDoc} documents={documents} productDocs={productDocs}
             canEdit={canEdit} onSelectDoc={onSelectDoc} onDeleteDoc={onDeleteDoc} onJobStarted={onJobStarted}
-            isDeleting={isDeleting} openOn={freshFocus(fresh, selectedDoc)} onOpened={blank.consumeFresh} />
+            isDeleting={isDeleting} openOn={freshFocus(fresh, selectedDoc)} onOpened={blank.consumeFresh}
+            onPageRename={card.onPageRename} />
         ) : null}
       </div>
       {/* Opened by the Prototypes section's New; nothing is built until its own button is pressed. */}
@@ -220,6 +229,7 @@ function pageKey(document: ProjectDocument): string {
 function SelectedDocument(props: PrototypePaneProps & {
   readonly openOn: FreshDocument['focus'] | undefined
   readonly onOpened: () => void
+  readonly onPageRename: (rename: PageRename | null) => void
 }) {
   const { document } = props
   if (document.document_type === 'prototype') return <PrototypePane {...props} />
@@ -228,7 +238,7 @@ function SelectedDocument(props: PrototypePaneProps & {
       {/* Keyed: a page's draft, outline and comments belong to one document (a PRD / PR/FAQ: its series). */}
       <DocumentPage key={pageKey(document)} project={props.project} document={document} documents={props.documents}
         canEdit={props.canEdit} onSelectDoc={props.onSelectDoc} onDeleteDoc={props.onDeleteDoc} isDeleting={props.isDeleting}
-        openOn={props.openOn} onOpened={props.onOpened} />
+        openOn={props.openOn} onOpened={props.onOpened} onPageRename={props.onPageRename} />
     </Suspense>
   )
 }

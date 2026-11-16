@@ -77,6 +77,13 @@
       "heading": "Wersja poprawiona z"
     },
     "deleteDocument": "Usuń dokument",
+    "card": {
+      "more": "Więcej działań",
+      "menu": "Działania dla „{{title}}”",
+      "open": "Otwórz",
+      "renameFailed": "Nie udało się zapisać nowej nazwy. Spróbuj ponownie.",
+      "renameConflict": "W międzyczasie dokument został zmieniony, więc nowa nazwa nie została zapisana. Spróbuj ponownie."
+    },
     "newDocument": "Nowy dokument",
     "sections": {
       "label": "Sekcje dokumentów",

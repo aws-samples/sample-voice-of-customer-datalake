@@ -93,6 +93,26 @@ class TestAppConnectors:
         assert 'already exists' in answer['error']
         assert written is False
 
+    def test_a_create_names_the_app_already_stored_not_the_new_name(self, api_gateway_event, lambda_context):
+        _, answer, _ = _apps(api_gateway_event, lambda_context,
+                             {'app': {'app_name': 'Other', 'app_id': '123'}, 'mode': 'create'}, STORED_APPS)
+        assert answer['error'] == ('The app connector "Example Air" (123) already exists; nothing was saved. '
+                                   'A create never overwrites.')
+
+    def test_a_review_page_create_names_the_stored_page_and_its_url(self):
+        stored = {'id': 'w1', 'app_name': 'Trustpilot - Acme', 'url': 'https://www.trustpilot.com/review/acme.example'}
+        sent = {'app_name': 'Acme again', 'url': 'https://WWW.trustpilot.com/review/acme.example '}
+        with pytest.raises(ConflictError) as refused:
+            integrations_handler._check_app_write('web_reviews', [stored], sent, None, 'create', None)
+        assert refused.value.message == ('The review page "Trustpilot - Acme" (https://www.trustpilot.com/review/'
+                                         'acme.example) already exists; nothing was saved. A create never overwrites.')
+
+    def test_a_missing_update_names_the_app_sent(self):
+        with pytest.raises(NotFoundError) as refused:
+            integrations_handler._check_app_write('app_reviews_ios', [], {'id': 'x', 'app_name': 'New'}, None,
+                                                  'update', None)
+        assert refused.value.message == 'The app connector "New" does not exist; nothing was saved.'
+
     def test_a_new_app_is_created(self, api_gateway_event, lambda_context):
         status, _, written = _apps(api_gateway_event, lambda_context,
                                    {'app': {'app_name': 'Other', 'app_id': '456'}, 'mode': 'create'}, STORED_APPS)

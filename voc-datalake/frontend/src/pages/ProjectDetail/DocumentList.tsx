@@ -7,20 +7,19 @@
  * button names the section and its count, `aria-expanded`), every one open on each page view (folding is not
  * remembered), with its New beside it for editors. Below `xl` the list is a strip above the page: the sections
  * become a row of section buttons above it and the strip holds one section (the selected document's, else the
- * first with documents), so it never scrolls sideways through all four. Rows are buttons with `aria-current` on
- * the selected one; titles are plain text rather than headings, because a heading inside a button is flattened
- * into the button's name anyway and a list of them broke the page outline (h1 → h4).
+ * first with documents), so it never scrolls sideways through all four. Rows are cards (DocumentCard), buttons with
+ * `aria-current` on the selected one; titles are plain text rather than headings, because a heading inside a button
+ * is flattened into the button's name anyway and a list of them broke the page outline (h1 → h4). Each card has its
+ * menu (a right-click, the ContextMenu key or Shift+F10, its "⋯"): Open, and for an editor Rename and Delete.
  */
 import clsx from 'clsx'
 import { ChevronRight, Loader2, Plus } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isVersionManagedDocument, ordinalByType, type DocumentOrdinal } from '../../api/documentLineage'
-import { byNewestEdit, groupBySection, lastEdit, sectionOf, type DocumentSectionGroup, type DocumentSectionId } from '../../api/documentSections'
-import { DocumentTypeBadge } from '../../components/DocumentTypeBadge/DocumentTypeBadge'
-import { DocumentOrdinalLabel } from './DocumentLabels'
+import { byNewestEdit, groupBySection, sectionOf, type DocumentSectionGroup, type DocumentSectionId } from '../../api/documentSections'
+import DocumentCard, { type DocumentCardActions } from './DocumentCard'
 import SectionNewMenu, { type SectionNewChoice } from './SectionNewMenu'
-import { formatDate } from '../../utils/dateUtils'
 import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import type { ProjectDocument } from '../../api/types'
@@ -46,6 +45,8 @@ interface DocumentListProps {
   readonly onSelectDoc: (doc: ProjectDocument) => void
   /** Each section's New, for an editor; absent for a viewer, who sees no New at all. */
   readonly newActions?: Readonly<Record<DocumentSectionId, SectionNewAction>>
+  /** Each card's Rename and Delete, for an editor; absent for a viewer, whose card menu has Open only. */
+  readonly cardActions?: DocumentCardActions
 }
 
 type Group = DocumentSectionGroup<ProjectDocument>
@@ -75,7 +76,7 @@ function narrowSection(groups: readonly Group[], selectedDoc: ProjectDocument | 
 }
 
 export default function DocumentList({
-  documents, selectedDoc, onSelectDoc, newActions,
+  documents, selectedDoc, onSelectDoc, newActions, cardActions,
 }: DocumentListProps) {
   const { t } = useTranslation('projectDetail')
   const baseId = useId()
@@ -113,7 +114,7 @@ export default function DocumentList({
         <DocumentSection key={group.section} group={group} listId={listIdOf(group.section)} texts={texts[group.section]}
           expanded={!folded.has(group.section)} narrowOpen={open === group.section} onToggle={() => toggle(group.section)}
           newAction={newActions?.[group.section]} selectedId={selectedDoc?.document_id} ordinals={ordinals}
-          onSelectDoc={onSelectDoc} />
+          onSelectDoc={onSelectDoc} cardActions={cardActions} />
       ))}
     </div>
   )
@@ -132,10 +133,11 @@ interface DocumentSectionProps {
   readonly selectedId?: string
   readonly ordinals: ReadonlyMap<string, DocumentOrdinal>
   readonly onSelectDoc: (doc: ProjectDocument) => void
+  readonly cardActions?: DocumentCardActions
 }
 
 function DocumentSection({
-  group, listId, texts, expanded, narrowOpen, onToggle, newAction, selectedId, ordinals, onSelectDoc,
+  group, listId, texts, expanded, narrowOpen, onToggle, newAction, selectedId, ordinals, onSelectDoc, cardActions,
 }: DocumentSectionProps) {
   const { t } = useTranslation('projectDetail')
   const count = group.documents.length
@@ -153,9 +155,9 @@ function DocumentSection({
             <li className="px-1 py-1 text-sm text-muted">{t('documents.noDocuments')}</li>
           ) : group.documents.map((document) => (
             <li key={document.document_id} className="flex-shrink-0 xl:w-full">
-              <DocumentRow document={document} selected={selectedId === document.document_id}
+              <DocumentCard document={document} selected={selectedId === document.document_id}
                 ordinal={isVersionManagedDocument(document) ? undefined : ordinals.get(document.document_id)}
-                onSelect={() => onSelectDoc(document)} />
+                onSelect={() => onSelectDoc(document)} actions={cardActions} />
             </li>
           ))}
         </ul>
@@ -232,37 +234,5 @@ function SectionLabel({ name, count, nameClassName, countClassName }: Readonly<{
       <span className={countClassName} aria-hidden>{count}</span>
       <span className="sr-only">{t('documents.sections.toggle', { name, count })}</span>
     </>
-  )
-}
-
-function DocumentRow({ document, selected, ordinal, onSelect }: Readonly<{
-  document: ProjectDocument
-  selected: boolean
-  ordinal: DocumentOrdinal | undefined
-  onSelect: () => void
-}>) {
-  const { t, i18n } = useTranslation('projectDetail')
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
-      className={clsx(
-        'w-56 xl:w-full text-left p-3 rounded-lg border transition-colors focus-ring',
-        selected
-          ? 'bg-accent-subtle border-accent/40 [&_.text-muted]:text-text'
-          : 'bg-card border-border hover:border-border-strong hover:bg-bg-hover',
-      )}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <DocumentTypeBadge type={document.document_type} />
-        {/* Canonical managed-document titles already carry their persisted
-            backend version. Only unmanaged types use a contextual ordinal. */}
-        <DocumentOrdinalLabel ordinal={ordinal} t={t} />
-        {/* The date the section sorts on (last edit), so the list reads in the order of its dates. */}
-        <span className="text-xs text-muted">{formatDate(lastEdit(document), i18n.language, '', 'short')}</span>
-      </div>
-      <p className="font-medium line-clamp-2 text-sm text-text-strong">{document.title}</p>
-    </button>
   )
 }

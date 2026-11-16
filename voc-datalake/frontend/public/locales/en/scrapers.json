@@ -281,7 +281,8 @@
     "select": "Select...",
     "configuredInSettings": "{{name}} is connected in {{where}}: paste the token and its settings there, then come back here.",
     "configuredInSettingsNoToken": "{{name}} is set up in {{where}}: enter its settings there, then come back here.",
-    "openDataSourceSettings": "Open source settings"
+    "openDataSourceSettings": "Open source settings",
+    "saveFailed": "Could not save. Please retry."
   },
   "refresh": "Refresh",
   "status": {
@@ -325,6 +326,7 @@
     "configuredApps": "Configured Apps",
     "noApps": "No apps configured yet",
     "addFirstApp": "Add your first app",
+    "alreadySource": "This app is already a source: {{name}}",
     "web": {
       "configuredPages": "Review pages",
       "addPage": "Add page",
@@ -336,7 +338,10 @@
       "deleteConfirmTitle": "Remove review page",
       "deleteConfirmMessage": "Are you sure you want to remove this review page?",
       "addBedrockPage": "Add a page from the Bedrock web search index",
-      "bedrockNote": "Reviews are read from the copy of this page that Amazon Bedrock has indexed (Amazon's cache), not from the site itself. Each review keeps its source URL and site, so it always points back to where it was published. The model that reads it is chosen in Administration → AI models."
+      "bedrockNote": "Reviews are read from the copy of this page that Amazon Bedrock has indexed (Amazon's cache), not from the site itself. Each review keeps its source URL and site, so it always points back to where it was published. The model that reads it is chosen in Administration → AI models.",
+      "nameHint": "Up to 100 letters, digits, spaces, “.”, “_” or “-”, starting with a letter A–Z or a digit.",
+      "nameInvalid": "This name cannot be saved: use only letters, digits, spaces, “.”, “_” or “-” (up to 100), starting with a letter A–Z or a digit.",
+      "alreadySource": "This page is already a source: {{name}}"
     },
     "kindLabel": "Type",
     "kind": {

@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Supprimer le document",
+    "card": {
+      "more": "Plus d’actions",
+      "menu": "Actions pour « {{title}} »",
+      "open": "Ouvrir",
+      "renameFailed": "Le nouveau nom n’a pas pu être enregistré. Réessayez.",
+      "renameConflict": "Le document a changé entre-temps : le nouveau nom n’a pas été enregistré. Réessayez."
+    },
     "derivation": {
       "builtFrom": "Créé à partir de",
       "feedbackUsed_one": "{{count, number}} retour client utilisé",

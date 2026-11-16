@@ -96,8 +96,15 @@ run (see [Backfill across runs](#backfill-across-runs)).
    escaped full stop that glued two sentences gets its space back (`review_text.py`; the same rules display older
    stored reviews cleanly in the app and the assistant, `schemas/review-text-cleanup-cases.json`; stored data is
    not rewritten).
-4. **Items.** `id` = `web_` + sha256(host, text, date): the same review read again gets the same id, so the
-   processor deduplicates it. `created_at` is the review's date (else the import time), `url` the page it was
+4. **Items.** The same review read again gets the same `id`, so the processor deduplicates it (an id already stored
+   is never written again). A review the browser read: `id` = `web_` + sha256(host, text, date), the text as
+   extracted. A review a model relayed (`bedrock_web_search`, `agentcore_web_search`) is known by stable fields
+   instead, because the model's "verbatim" text varies between reads (the same review came back 21 characters
+   longer): `id` = `web_` + sha256(host, the target page's path, date, author, title), the author and title
+   normalized (plain text, case-folded, every run of whitespace and punctuation one space), when it has either;
+   else sha256(host, path, date, the first 200 characters of its text normalized the same way). A run queues a
+   model-relayed review once: a second copy with the same id is dropped (`web_items.relayed_review_key`; 7.44.01;
+   browser ids are unchanged). `created_at` is the review's date (else the import time), `url` the page it was
    read on, `channel` the target's name, `author` / `title` when the page has them, `metadata` = the target name,
    page number and `method_used` (the step that read it: `browser`, `bedrock_web_search` or `agentcore_web_search`).
 5. **Watermark.** Per target, the newest review date seen; a review older than that date minus one day is not
@@ -227,7 +234,9 @@ Before anything is queued:
   feedback", "reviewers say", …), is dropped (a page-level AI summary is one);
 - the body is bounded like every path (1-5,000 characters), a rating brought to 1-5 by its own scale (an 8/10 is
   4.0) and kept only within 1-5, a date kept only as `YYYY-MM-DD`; the review is kept without a field
-  that fails; a review read twice is kept once; the watermark applies as on the browser path;
+  that fails; a review read twice is kept once, and a near-copy (the same date, author and title, its text a
+  little longer or shorter) gets the same id ([How a run works](#how-a-run-works), Items); the watermark applies as on
+  the browser path;
 - **attribution**: every review's `metadata` carries `method` (`bedrock_web_search`), `method_used` (the same),
   `model`, `site` (the host),
   `source_url` (the page asked for), `fetched_at` (when it was read), `opened_urls` (the URLs the model's

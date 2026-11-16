@@ -56,7 +56,7 @@ export function FeedbackHeader({ feedback, level = 'h1', radarBrand }: HeaderPro
   const Heading = level
   // A Radar review is named by its brand ("Example Air review"), never by the stored source id.
   const title = radarBrand === undefined
-    ? sourceTitle(labels.source(feedback.source_platform), channel)
+    ? sourceTitle(labels.reviewSource(feedback.source_platform, feedback.source_channel), channel)
     : t('brandReview', { brand: radarBrand })
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">

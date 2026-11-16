@@ -87,6 +87,7 @@ export function blankStubs(state: Partial<BlankState> = {}) {
 export function documentsTabStubs() {
   return {
     onDeleteDoc: vi.fn(),
+    onDeleteDocument: vi.fn(),
     blank: blankStubs(),
     onWriteDocument: vi.fn(),
     isDeleting: false,

@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "Delete document",
+    "card": {
+      "more": "More actions",
+      "menu": "Actions for “{{title}}”",
+      "open": "Open",
+      "renameFailed": "The new name could not be saved. Try again.",
+      "renameConflict": "The document changed meanwhile, so the new name was not saved. Try again."
+    },
     "derivation": {
       "builtFrom": "Built from",
       "feedbackUsed_one": "{{count, number}} feedback item used",

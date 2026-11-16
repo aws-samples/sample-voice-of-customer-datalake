@@ -13,6 +13,13 @@
   },
   "documents": {
     "deleteDocument": "문서 삭제",
+    "card": {
+      "more": "추가 작업",
+      "menu": "“{{title}}”에 대한 작업",
+      "open": "열기",
+      "renameFailed": "새 이름을 저장할 수 없습니다. 다시 시도하세요.",
+      "renameConflict": "그사이 문서가 변경되어 새 이름이 저장되지 않았습니다. 다시 시도하세요."
+    },
     "derivation": {
       "builtFrom": "생성 출처",
       "feedbackUsed_one": "피드백 {{count, number}}건 사용",

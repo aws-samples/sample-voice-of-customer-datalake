@@ -876,15 +876,29 @@ def _same_text(a: object, b: object) -> bool:
     return isinstance(a, str) and isinstance(b, str) and bool(a.strip()) and a.strip().lower() == b.strip().lower()
 
 
+def _app_described(source: str, record: Mapping[str, Any]) -> str:
+    """How a refusal names a connector's record: the review page or app connector, its name and its page / app
+    (``The review page "Trustpilot - Acme" (https://…)``)."""
+    kind = 'The review page' if source == WEB_REVIEWS_PLUGIN else 'The app connector'
+    named = f'{kind} "{record.get("app_name") or ""}"'
+    field = APP_IDENTITY_FIELD.get(source)
+    identity = record.get(field) if field is not None else None
+    return f'{named} ({identity.strip()})' if isinstance(identity, str) and identity.strip() else named
+
+
 def _check_app_write(source: str, configs: list, app_config: dict, stored: Mapping[str, Any] | None,
                      mode: str | None, base: str | None) -> None:
-    """The write rules for an app connector: a create also refuses the same app under a new id."""
-    name = app_config.get('app_name')
+    """The write rules for an app connector: a create also refuses the same app under a new id.
+
+    A refusal names the record it is about: the one stored when there is one (a create of a page the workspace has
+    under another name used to name the NEW name, as if that existed), else the one sent."""
     if mode == config_write_guard.MODE_CREATE and stored is None:
+        name = app_config.get('app_name')
         field = APP_IDENTITY_FIELD.get(source)
         stored = config_write_guard.find_existing(configs, lambda c: _same_text(c.get('app_name'), name) or (
             field is not None and _same_text(c.get(field), app_config.get(field))))
-    config_write_guard.check_write(stored, mode=mode, base=base, what=f'An app connector for "{name}"')
+    what = _app_described(source, app_config if stored is None else stored)
+    config_write_guard.check_write(stored, mode=mode, base=base, what=what)
 
 
 @app.delete("/integrations/<source>/apps/<app_id>")

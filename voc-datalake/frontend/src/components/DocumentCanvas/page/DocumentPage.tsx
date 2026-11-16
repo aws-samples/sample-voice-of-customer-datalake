@@ -48,11 +48,13 @@ import Outline from './Outline'
 import { PAGE_SHEET_CLASS, PAGE_SHEET_WIDE_CLASS } from './pageStyles'
 import { useFocusView } from './useFocusView'
 import { usePageView, type PageView } from './usePageView'
+import { noCleanup } from '../../../hooks/noCleanup'
 import type { FocusViewControls } from './useFocusView'
 import type { RefObject } from 'react'
 import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasDocument as CanvasDocumentState } from '../actions/useCanvasDocument'
+import type { PageRename } from '../../../pages/ProjectDetail/useDocumentCardActions'
 import type { OutlineItem } from '../editor/CanvasEditor'
 
 /** Document types shown with margin comments, persona review and a review link (docs/document-review.md). */
@@ -71,6 +73,11 @@ interface DocumentPageProps {
   readonly openOn?: 'title' | 'text'
   /** The page took `openOn`: a later visit opens as any other. */
   readonly onOpened?: () => void
+  /**
+   * The list's card renames the open document through the page (its canvas's `rename`, which keeps the draft): handed
+   * over while the title may be renamed, null when the page closes.
+   */
+  readonly onPageRename?: (rename: PageRename | null) => void
 }
 
 type BarProps = Readonly<{
@@ -91,6 +98,17 @@ function CommentableActionsBar(props: BarProps) {
     <DocumentActionsBar {...props} share={query.isSuccess ? comments : null} threads={threads}
       openThreads={threads?.filter((thread) => thread.status === 'open').length} />
   )
+}
+
+/** Hands the canvas's rename of `documentId` to the documents list's card while the title may be renamed. */
+function usePageRename(onPageRename: DocumentPageProps['onPageRename'], documentId: string, state: CanvasDocumentState) {
+  const renamable = state.editable && state.titleEditable
+  const { rename } = state
+  useEffect(() => {
+    if (onPageRename === undefined || !renamable) return noCleanup
+    onPageRename({ documentId, rename })
+    return () => onPageRename(null)
+  }, [onPageRename, documentId, renamable, rename])
 }
 
 /** Where the page puts its focus as it opens (`openOn`), taken once; its owner is told it was taken. */
@@ -162,11 +180,12 @@ function PageHeading({ project, document, state, markdown, titleRef, selectOnOpe
 }
 
 export default function DocumentPage({
-  project, document, documents, canEdit, onSelectDoc, onDeleteDoc, isDeleting, openOn, onOpened,
+  project, document, documents, canEdit, onSelectDoc, onDeleteDoc, isDeleting, openOn, onOpened, onPageRename,
 }: DocumentPageProps) {
   // Stored ids inside generated text (`technical_support`, `proj_…`) read as their names.
   const labelIds = useLabelKnownIds()
   const state = useCanvasDocument({ project, document, onSelectDoc })
+  usePageRename(onPageRename, document.document_id, state)
   const commentable = COMMENTABLE_TYPES.has(document.document_type)
   const view = usePageView(commentable)
   const opening = useOpening(openOn, onOpened)

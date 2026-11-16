@@ -118,8 +118,8 @@ function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boole
   }
 }
 
-/** A rename's PUT: the title alone, checked against the revision the canvas holds. */
-function renameOf(document: ProjectDocument, title: string): DocumentUpdate {
+/** A rename's PUT: the title alone, checked against the revision held (the canvas's, or the list card's: DocumentCard). */
+export function renameOf(document: ProjectDocument, title: string): DocumentUpdate {
   return { docId: document.document_id, title, expectedRevision: documentRevision(document) }
 }
 

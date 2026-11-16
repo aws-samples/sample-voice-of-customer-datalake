@@ -19,6 +19,8 @@ export interface AppCopy {
   readonly unnamed: string
   readonly deleteTitle: string
   readonly deleteMessage: string
+  /** A create refused as a source the workspace already has: "This page is already a source: {{name}}". */
+  readonly alreadySource: string
   readonly icon: LucideIcon
 }
 
@@ -32,6 +34,7 @@ const APP_COPY: AppCopy = {
   unnamed: 'appCard.unnamed',
   deleteTitle: 'appCard.deleteConfirmTitle',
   deleteMessage: 'appCard.deleteConfirmMessage',
+  alreadySource: 'appCard.alreadySource',
   icon: Smartphone,
 }
 
@@ -45,6 +48,7 @@ const WEB_PAGE_COPY: AppCopy = {
   unnamed: 'appCard.web.unnamed',
   deleteTitle: 'appCard.web.deleteConfirmTitle',
   deleteMessage: 'appCard.web.deleteConfirmMessage',
+  alreadySource: 'appCard.web.alreadySource',
   icon: Globe,
 }
 

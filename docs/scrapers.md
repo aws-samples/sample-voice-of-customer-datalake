@@ -155,7 +155,7 @@ the card (`lambda/shared/config_write_guard.py`, TENETS.md tenet 4). `POST /scra
 
 | Field | Values | Effect |
 |---|---|---|
-| `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id: `An app connector for "<name>" already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
+| `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id; the answer names the record already stored, `The review page "<its name>" (<its url>) already exists; …` or `The app connector "<its name>" (<its app id>) already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
 | `base_etag` | the record's `etag` as read (≤ 64 characters) | **409** `… changed since it was read; nothing was saved. Read it again.` when the stored record's `etag` differs |
 
 Both absent = the upsert older clients rely on. The checks read the stored configuration before the save, and the
@@ -164,7 +164,8 @@ both pass (the later one wins). `GET /scrapers` and `GET /integrations/{source}/
 `etag` to each record (the first 16 hex characters of a SHA-256 of its canonical JSON); it is never stored, and a
 record sent back with its `etag` is saved without it. The assistant's `create_scraper` / `create_app_connector`
 executors send `mode: create`; `update_scraper` sends `mode: update` and the `etag` the card read; a plan step does
-the same.
+the same. The Sources page's app and review page form sends `mode: create` for a new one (since 7.44.01) and says the
+409 in the form ("This page is already a source: <its name>"); an edit stays the upsert.
 
 ## Pagination
 

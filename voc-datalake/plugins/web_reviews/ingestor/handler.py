@@ -57,7 +57,15 @@ from snippet_reader import (
     snippet_reviews,
 )
 from target_reader import ReadLimits, ReadReview, TargetResult, read_target
-from web_items import METADATA_VALUE_MAX_CHARS, WebTarget, queue_item, stored_configs, target_from_config, url_list
+from web_items import (
+    METADATA_VALUE_MAX_CHARS,
+    WebTarget,
+    is_model_relayed,
+    queue_item,
+    stored_configs,
+    target_from_config,
+    url_list,
+)
 from web_search_reader import MAX_WEB_SEARCH_REVIEWS, WebSearchError, WebSearchRead, read_with_fallback
 
 from _shared.app_reviews_utils import is_due_for_run
@@ -106,7 +114,7 @@ MAX_RECONNECTS: Final = 1
 
 
 #: The attribution of a browser read's reviews.
-BROWSER_ATTRIBUTION: Final = {'method_used': STEP_BROWSER}
+BROWSER_ATTRIBUTION: Final[dict[str, object]] = {'method_used': STEP_BROWSER}
 #: What an auto target's browser step says of a redirect off its site, and of a redirect to an error page.
 REDIRECTED: Final = 'redirected off-host'
 ERROR_PAGE: Final = 'an error page'
@@ -143,6 +151,9 @@ class WebReviewsIngestor(BaseIngestor):
         self._deadline = deadline if deadline is not None else time.monotonic() + DEFAULT_TIMEOUT_SECONDS
         self._complete = complete
         self._sent = 0
+        #: The ids of the model-relayed reviews this run queued: the same review relayed again (its text a little
+        #: different, the same stable fields: web_items.relayed_review_key) is queued once.
+        self._relayed_ids: set[str] = set()
         self._resume = ResumeStore(self.get_watermark, self.set_watermark)
         #: The ``auto`` targets' cascades, by watermark prefix (one per target), and the learned records by domain.
         self._cascades: dict[str, Cascade] = {}
@@ -297,8 +308,13 @@ class WebReviewsIngestor(BaseIngestor):
     def _items_of(self, target: WebTarget, result: TargetResult, resume_at: ResumeCursor | None,
                   attribution: dict[str, object] | None = None) -> Generator[dict, None, None]:
         for read in result.reviews:
-            yield queue_item(target, read.review, page=read.page, page_url=read.page_url, brand_name=self.brand_name,
-                             attribution={**(attribution or {}), **(read.attribution or {})})
+            item = queue_item(target, read.review, page=read.page, page_url=read.page_url, brand_name=self.brand_name,
+                              attribution={**(attribution or {}), **(read.attribution or {})})
+            if is_model_relayed(item):
+                if item['id'] in self._relayed_ids:
+                    continue  # a near-duplicate of a review this run already queued
+                self._relayed_ids.add(item['id'])
+            yield item
             self._sent += 1
         newest = max((read.review.date for read in result.reviews if read.review.date), default=None)
         previous = self._watermark(target)
