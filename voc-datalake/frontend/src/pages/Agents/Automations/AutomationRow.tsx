@@ -92,8 +92,8 @@ export function AutomationRow({ agent, isAdmin, facts, emphasis = 'secondary' }:
               {agent.name}
             </Link>
             {agent.description === ''
-              ? <p className="text-[12px] text-muted line-clamp-1"><ScopeSummary scope={agent.scope} /></p>
-              : <TruncatedText as="p" className="text-[12px] text-muted line-clamp-1 break-words [overflow-wrap:anywhere]" text={agent.description} />}
+              ? <p className="text-[12px] text-muted line-clamp-2"><ScopeSummary scope={agent.scope} /></p>
+              : <TruncatedText as="p" className="text-[12px] text-muted line-clamp-2 break-words [overflow-wrap:anywhere]" text={agent.description} />}
           </div>
           {menu !== null && <span className="md:hidden">{menu}</span>}
         </div>

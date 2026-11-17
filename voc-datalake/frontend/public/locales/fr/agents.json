@@ -88,10 +88,10 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "Attend votre décision",
       "spentOf": "{{amount}} sur {{budget}}",
-      "callsOf": "{{calls}} sur {{cap}} appels au modèle",
-      "calls_one": "{{calls}} appel au modèle",
-      "calls_many": "{{calls}} d'appels au modèle",
-      "calls_other": "{{calls}} appels au modèle",
+      "callsOf": "{{calls, number}} sur {{cap, number}} appels au modèle",
+      "calls_one": "{{calls, number}} appel au modèle",
+      "calls_many": "{{calls, number}} d'appels au modèle",
+      "calls_other": "{{calls, number}} appels au modèle",
       "scheduledToday_one": "{{count, number}} exécution planifiée aujourd'hui",
       "scheduledToday_many": "{{count, number}} d'exécutions planifiées aujourd'hui",
       "scheduledToday_other": "{{count, number}} exécutions planifiées aujourd'hui"
@@ -254,9 +254,9 @@
       "today_one": "{{count, number}} planifiée aujourd'hui",
       "today_many": "{{count, number}} planifiées aujourd'hui",
       "today_other": "{{count, number}} planifiées aujourd'hui",
-      "calls_one": "{{calls}} appel au modèle ce mois-ci",
-      "calls_many": "{{calls}} d'appels au modèle ce mois-ci",
-      "calls_other": "{{calls}} appels au modèle ce mois-ci"
+      "calls_one": "{{calls, number}} appel au modèle ce mois-ci",
+      "calls_many": "{{calls, number}} d'appels au modèle ce mois-ci",
+      "calls_other": "{{calls, number}} appels au modèle ce mois-ci"
     },
     "flow": {
       "another": "Exécuter un autre flux",
@@ -2334,7 +2334,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} agent",
       "agents_other": "{{count, number}} agents",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · publiées par {{posters}}"
@@ -2343,7 +2343,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "Détection automatique",
-      "rounds": "≤ {{n}} tours",
+      "rounds": "≤ {{n, number}} tours",
       "reviewers_one": "{{count, number}} relecteur",
       "reviewers_other": "{{count, number}} relecteurs"
     },
@@ -2357,7 +2357,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "Aucun flux choisi pour l’instant",
-      "progress": "{{done}} étapes sur {{total}} terminées"
+      "progress": "{{done, number}} étapes sur {{total, number}} terminées"
     },
     "decision": {
       "title": "Une personne décide",
@@ -2373,8 +2373,8 @@
       "prDraft": "Pull request · en brouillon"
     },
     "platform": {
-      "map": "Par {{by}} · au plus {{n}}",
-      "memoryRead": "Lit la mémoire ({{whose}}) · {{n}}",
+      "map": "Par {{by}} · au plus {{n, number}}",
+      "memoryRead": "Lit la mémoire ({{whose}}) · {{n, number}}",
       "memoryWrite": "Écrit dans la mémoire ({{whose}})",
       "reduce": "Regroupe les lots"
     },
@@ -2434,7 +2434,7 @@
       "latest": "La dernière acceptée",
       "cardModel": "Celui de la carte",
       "share": "Part du budget de chaque exécution",
-      "sharesInAll": "Parts des agents : {{used}} sur 100 %",
+      "sharesInAll": "Parts des agents : {{used, number}} sur 100 %",
       "overrides": "Remplace celui de la carte ({{model}})",
       "useCards": "Utiliser celui de la carte",
       "cardsModel": "Modèle de la carte : {{model}}",
@@ -2446,12 +2446,12 @@
       "host": "Hôte",
       "hostBroker": "Lecture seule, via le broker ({{ops}})",
       "caps": "Plafonds",
-      "turns": "{{n}} tours",
-      "tokens": "{{n}} k jetons d’entrée",
+      "turns": "{{n, number}} tours",
+      "tokens": "{{n, number}} k jetons d’entrée",
       "reads": "Lit",
       "writes": "Écrit",
       "scorecard": "Fiche de résultats",
-      "scorecardLine": "{{runs}} exécutions · {{rate}} % réussies",
+      "scorecardLine": "{{runs, number}} exécutions · {{rate}} % réussies",
       "thisMonth": "Ce mois-ci",
       "usd": "${{amount}}"
     },
@@ -2506,7 +2506,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}} : en cas d’échec",
       "remove": "Retirer {{check}}",
-      "full": "Au plus {{max}} assertions.",
+      "full": "Au plus {{max, number}} assertions.",
       "noneApply": "Aucune vérification ne s’applique à ce type d’étape.",
       "checks": {
         "findings_cite_evidence": "Chaque constat cite un fichier, une ligne et sa preuve",
@@ -2542,7 +2542,7 @@
       "childSteps_one": "{{count, number}} étape",
       "childSteps_other": "{{count, number}} étapes",
       "expands": "Se développe en",
-      "inAll": "{{total}} étapes sur {{max}} au total",
+      "inAll": "{{total, number}} étapes sur {{max, number}} au total",
       "usedBy": "Utilisé par",
       "openFlow": "Ouvrir le flux",
       "preview": "{{name}}, en lecture seule",
@@ -2560,7 +2560,7 @@
       "startedBy": "Lancé par",
       "nobody": "Aucune automatisation n’utilise encore ce flux.",
       "inputs": "Entrées",
-      "inputMax": "{{name}}, au plus {{max}}",
+      "inputMax": "{{name}}, au plus {{max, number}}",
       "memory": "Mémoire",
       "recall": "Rappeler la mémoire du dépôt au démarrage",
       "recallOn": "Rappelée au démarrage",

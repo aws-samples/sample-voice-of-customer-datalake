@@ -85,9 +85,9 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "Braucht Ihre Entscheidung",
       "spentOf": "{{amount}} von {{budget}}",
-      "callsOf": "{{calls}} von {{cap}} Modellaufrufen",
-      "calls_one": "{{calls}} Modellaufruf",
-      "calls_other": "{{calls}} Modellaufrufe",
+      "callsOf": "{{calls, number}} von {{cap, number}} Modellaufrufen",
+      "calls_one": "{{calls, number}} Modellaufruf",
+      "calls_other": "{{calls, number}} Modellaufrufe",
       "scheduledToday_one": "{{count, number}} geplanter Lauf heute",
       "scheduledToday_other": "{{count, number}} geplante Läufe heute"
     },
@@ -242,8 +242,8 @@
       "runs_other": "{{count, number}} Läufe",
       "today_one": "{{count, number}} heute geplant",
       "today_other": "{{count, number}} heute geplant",
-      "calls_one": "{{calls}} Modellaufruf in diesem Monat",
-      "calls_other": "{{calls}} Modellaufrufe in diesem Monat"
+      "calls_one": "{{calls, number}} Modellaufruf in diesem Monat",
+      "calls_other": "{{calls, number}} Modellaufrufe in diesem Monat"
     },
     "flow": {
       "another": "Anderen Flow ausführen",
@@ -2315,7 +2315,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} Agent",
       "agents_other": "{{count, number}} Agenten",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · eingestellt von {{posters}}"
@@ -2324,7 +2324,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "Automatisch erkennen",
-      "rounds": "≤ {{n}} Runden",
+      "rounds": "≤ {{n, number}} Runden",
       "reviewers_one": "{{count, number}} Prüfer",
       "reviewers_other": "{{count, number}} Prüfer"
     },
@@ -2338,7 +2338,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "Noch kein Ablauf gewählt",
-      "progress": "{{done}} von {{total}} Schritten erledigt"
+      "progress": "{{done, number}} von {{total, number}} Schritten erledigt"
     },
     "decision": {
       "title": "Eine Person entscheidet",
@@ -2354,8 +2354,8 @@
       "prDraft": "Pull Request · als Entwurf"
     },
     "platform": {
-      "map": "Nach {{by}} · höchstens {{n}}",
-      "memoryRead": "Liest Gedächtnis ({{whose}}) · {{n}}",
+      "map": "Nach {{by}} · höchstens {{n, number}}",
+      "memoryRead": "Liest Gedächtnis ({{whose}}) · {{n, number}}",
       "memoryWrite": "Schreibt Gedächtnis ({{whose}})",
       "reduce": "Führt die Stücke zusammen"
     },
@@ -2415,7 +2415,7 @@
       "latest": "Neueste angenommene",
       "cardModel": "Wie in der Karte",
       "share": "Anteil am Budget jedes Laufs",
-      "sharesInAll": "Anteile der Agenten: {{used}} von 100 %",
+      "sharesInAll": "Anteile der Agenten: {{used, number}} von 100 %",
       "overrides": "Ersetzt das Modell der Karte ({{model}})",
       "useCards": "Modell der Karte verwenden",
       "cardsModel": "Modell der Karte: {{model}}",
@@ -2427,12 +2427,12 @@
       "host": "Host",
       "hostBroker": "Nur lesend, über den Broker ({{ops}})",
       "caps": "Obergrenzen",
-      "turns": "{{n}} Turns",
-      "tokens": "{{n}} k Eingabe-Tokens",
+      "turns": "{{n, number}} Turns",
+      "tokens": "{{n, number}} k Eingabe-Tokens",
       "reads": "Liest",
       "writes": "Schreibt",
       "scorecard": "Scorecard",
-      "scorecardLine": "{{runs}} Läufe · {{rate}} % bestanden",
+      "scorecardLine": "{{runs, number}} Läufe · {{rate}} % bestanden",
       "thisMonth": "Diesen Monat",
       "usd": "${{amount}}"
     },
@@ -2487,7 +2487,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: wenn er fehlschlägt",
       "remove": "{{check}} entfernen",
-      "full": "Höchstens {{max}} Zusicherungen.",
+      "full": "Höchstens {{max, number}} Zusicherungen.",
       "noneApply": "Für diese Art von Schritt gibt es keinen passenden Check.",
       "checks": {
         "findings_cite_evidence": "Jeder Befund nennt eine Datei, eine Zeile und seinen Beleg",
@@ -2523,7 +2523,7 @@
       "childSteps_one": "{{count, number}} Schritt",
       "childSteps_other": "{{count, number}} Schritte",
       "expands": "Wird erweitert zu",
-      "inAll": "{{total}} von {{max}} Schritten insgesamt",
+      "inAll": "{{total, number}} von {{max, number}} Schritten insgesamt",
       "usedBy": "Verwendet von",
       "openFlow": "Ablauf öffnen",
       "preview": "{{name}}, schreibgeschützt",
@@ -2541,7 +2541,7 @@
       "startedBy": "Gestartet von",
       "nobody": "Noch keine Automatisierung verwendet diesen Ablauf.",
       "inputs": "Eingaben",
-      "inputMax": "{{name}}, höchstens {{max}}",
+      "inputMax": "{{name}}, höchstens {{max, number}}",
       "memory": "Gedächtnis",
       "recall": "Gedächtnis des Repositorys zu Beginn abrufen",
       "recallOn": "Zu Beginn abgerufen",

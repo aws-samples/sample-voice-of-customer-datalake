@@ -85,9 +85,9 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "결정이 필요합니다",
       "spentOf": "{{budget}} 중 {{amount}}",
-      "callsOf": "모델 호출 {{cap}}회 중 {{calls}}회",
-      "calls_one": "모델 호출 {{calls}}회",
-      "calls_other": "모델 호출 {{calls}}회",
+      "callsOf": "모델 호출 {{cap, number}}회 중 {{calls, number}}회",
+      "calls_one": "모델 호출 {{calls, number}}회",
+      "calls_other": "모델 호출 {{calls, number}}회",
       "scheduledToday_one": "오늘 예약 실행 {{count, number}}회",
       "scheduledToday_other": "오늘 예약 실행 {{count, number}}회"
     },
@@ -242,8 +242,8 @@
       "runs_other": "실행 {{count, number}}회",
       "today_one": "오늘 예약 {{count, number}}회",
       "today_other": "오늘 예약 {{count, number}}회",
-      "calls_one": "이번 달 모델 호출 {{calls}}회",
-      "calls_other": "이번 달 모델 호출 {{calls}}회"
+      "calls_one": "이번 달 모델 호출 {{calls, number}}회",
+      "calls_other": "이번 달 모델 호출 {{calls, number}}회"
     },
     "flow": {
       "another": "다른 플로 실행",
@@ -2315,7 +2315,7 @@
       "cost": "${{amount}}",
       "agents_one": "에이전트 {{count, number}}개",
       "agents_other": "에이전트 {{count, number}}개",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · 게시: {{posters}}"
@@ -2324,7 +2324,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "자동 감지",
-      "rounds": "≤ {{n}}라운드",
+      "rounds": "≤ {{n, number}}라운드",
       "reviewers_one": "검토자 {{count, number}}명",
       "reviewers_other": "검토자 {{count, number}}명"
     },
@@ -2338,7 +2338,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "아직 선택한 흐름이 없습니다",
-      "progress": "{{total}}단계 중 {{done}}단계 완료"
+      "progress": "{{total, number}}단계 중 {{done, number}}단계 완료"
     },
     "decision": {
       "title": "사람이 결정",
@@ -2354,8 +2354,8 @@
       "prDraft": "풀 리퀘스트 · 초안"
     },
     "platform": {
-      "map": "{{by}} 기준 · 최대 {{n}}",
-      "memoryRead": "{{whose}} 메모리 읽기 · {{n}}",
+      "map": "{{by}} 기준 · 최대 {{n, number}}",
+      "memoryRead": "{{whose}} 메모리 읽기 · {{n, number}}",
       "memoryWrite": "{{whose}} 메모리 쓰기",
       "reduce": "샤드를 하나로 모음"
     },
@@ -2415,7 +2415,7 @@
       "latest": "최근 승인된 버전",
       "cardModel": "카드 설정대로",
       "share": "각 실행의 예산 몫",
-      "sharesInAll": "에이전트 몫 합계: {{used}}%(최대 100%)",
+      "sharesInAll": "에이전트 몫 합계: {{used, number}}%(최대 100%)",
       "overrides": "카드의 {{model}} 대신 사용",
       "useCards": "카드의 모델 사용",
       "cardsModel": "카드의 모델: {{model}}",
@@ -2427,12 +2427,12 @@
       "host": "호스트",
       "hostBroker": "읽기 전용, 브로커 경유({{ops}})",
       "caps": "한도",
-      "turns": "{{n}}턴",
-      "tokens": "입력 토큰 {{n}}k",
+      "turns": "{{n, number}}턴",
+      "tokens": "입력 토큰 {{n, number}}k",
       "reads": "읽기",
       "writes": "쓰기",
       "scorecard": "스코어카드",
-      "scorecardLine": "실행 {{runs}}회 · {{rate}}% 통과",
+      "scorecardLine": "실행 {{runs, number}}회 · {{rate}}% 통과",
       "thisMonth": "이번 달",
       "usd": "${{amount}}"
     },
@@ -2487,7 +2487,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: 실패하면",
       "remove": "{{check}} 삭제",
-      "full": "어서션은 최대 {{max}}개입니다.",
+      "full": "어서션은 최대 {{max, number}}개입니다.",
       "noneApply": "이 종류의 단계에 적용되는 검사가 없습니다.",
       "checks": {
         "findings_cite_evidence": "모든 발견 사항이 파일, 줄, 근거를 제시함",
@@ -2523,7 +2523,7 @@
       "childSteps_one": "{{count, number}}개 단계",
       "childSteps_other": "{{count, number}}개 단계",
       "expands": "펼친 결과",
-      "inAll": "전체 {{max}}단계 중 {{total}}단계",
+      "inAll": "전체 {{max, number}}단계 중 {{total, number}}단계",
       "usedBy": "사용처",
       "openFlow": "흐름 열기",
       "preview": "{{name}}, 읽기 전용",
@@ -2541,7 +2541,7 @@
       "startedBy": "시작 주체",
       "nobody": "아직 이 흐름을 사용하는 자동화가 없습니다.",
       "inputs": "입력",
-      "inputMax": "{{name}}, 최대 {{max}}",
+      "inputMax": "{{name}}, 최대 {{max, number}}",
       "memory": "메모리",
       "recall": "시작할 때 저장소의 메모리 불러오기",
       "recallOn": "시작할 때 불러옴",

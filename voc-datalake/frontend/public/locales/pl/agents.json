@@ -91,11 +91,11 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "Wymaga Twojej decyzji",
       "spentOf": "{{amount}} z {{budget}}",
-      "callsOf": "{{calls}} z {{cap}} wywołań modelu",
-      "calls_one": "{{calls}} wywołanie modelu",
-      "calls_few": "{{calls}} wywołania modelu",
-      "calls_many": "{{calls}} wywołań modelu",
-      "calls_other": "{{calls}} wywołania modelu",
+      "callsOf": "{{calls, number}} z {{cap, number}} wywołań modelu",
+      "calls_one": "{{calls, number}} wywołanie modelu",
+      "calls_few": "{{calls, number}} wywołania modelu",
+      "calls_many": "{{calls, number}} wywołań modelu",
+      "calls_other": "{{calls, number}} wywołania modelu",
       "scheduledToday_one": "{{count, number}} zaplanowany przebieg dziś",
       "scheduledToday_few": "{{count, number}} zaplanowane przebiegi dziś",
       "scheduledToday_many": "{{count, number}} zaplanowanych przebiegów dziś",
@@ -266,10 +266,10 @@
       "today_few": "{{count, number}} zaplanowane dziś",
       "today_many": "{{count, number}} zaplanowanych dziś",
       "today_other": "{{count, number}} zaplanowanego dziś",
-      "calls_one": "{{calls}} wywołanie modelu w tym miesiącu",
-      "calls_few": "{{calls}} wywołania modelu w tym miesiącu",
-      "calls_many": "{{calls}} wywołań modelu w tym miesiącu",
-      "calls_other": "{{calls}} wywołania modelu w tym miesiącu"
+      "calls_one": "{{calls, number}} wywołanie modelu w tym miesiącu",
+      "calls_few": "{{calls, number}} wywołania modelu w tym miesiącu",
+      "calls_many": "{{calls, number}} wywołań modelu w tym miesiącu",
+      "calls_other": "{{calls, number}} wywołania modelu w tym miesiącu"
     },
     "flow": {
       "another": "Uruchamiaj inny przepływ",
@@ -2394,7 +2394,7 @@
       "agents_few": "{{count, number}} agenci",
       "agents_many": "{{count, number}} agentów",
       "agents_other": "{{count, number}} agentów",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · zadania publikuje: {{posters}}"
@@ -2403,7 +2403,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "Wykrywanie automatyczne",
-      "rounds": "Rundy: ≤ {{n}}",
+      "rounds": "Rundy: ≤ {{n, number}}",
       "reviewers_one": "{{count, number}} recenzent",
       "reviewers_few": "{{count, number}} recenzenci",
       "reviewers_many": "{{count, number}} recenzentów",
@@ -2419,7 +2419,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "Nie wybrano jeszcze przepływu",
-      "progress": "Ukończone kroki: {{done}} z {{total}}"
+      "progress": "Ukończone kroki: {{done, number}} z {{total, number}}"
     },
     "decision": {
       "title": "Decyduje osoba",
@@ -2435,8 +2435,8 @@
       "prDraft": "Pull request · szkic"
     },
     "platform": {
-      "map": "Według {{by}} · najwyżej {{n}}",
-      "memoryRead": "Odczytuje pamięć {{whose}} · {{n}}",
+      "map": "Według {{by}} · najwyżej {{n, number}}",
+      "memoryRead": "Odczytuje pamięć {{whose}} · {{n, number}}",
       "memoryWrite": "Zapisuje w pamięci {{whose}}",
       "reduce": "Łączy części"
     },
@@ -2498,7 +2498,7 @@
       "latest": "Ostatnia zaakceptowana",
       "cardModel": "Z karty",
       "share": "Udział w budżecie każdego przebiegu",
-      "sharesInAll": "Udziały agentów: {{used}} ze 100%",
+      "sharesInAll": "Udziały agentów: {{used, number}} ze 100%",
       "overrides": "Zastępuje model z karty ({{model}})",
       "useCards": "Użyj modelu z karty",
       "cardsModel": "Model z karty: {{model}}",
@@ -2510,12 +2510,12 @@
       "host": "Host",
       "hostBroker": "Tylko do odczytu, przez brokera ({{ops}})",
       "caps": "Limity",
-      "turns": "Tury: {{n}}",
-      "tokens": "Tokeny wejściowe: {{n}} k",
+      "turns": "Tury: {{n, number}}",
+      "tokens": "Tokeny wejściowe: {{n, number}} k",
       "reads": "Czyta",
       "writes": "Zapisuje",
       "scorecard": "Karta wyników",
-      "scorecardLine": "Przebiegi: {{runs}} · zaliczone: {{rate}}%",
+      "scorecardLine": "Przebiegi: {{runs, number}} · zaliczone: {{rate}}%",
       "thisMonth": "W tym miesiącu",
       "usd": "${{amount}}"
     },
@@ -2570,7 +2570,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: gdy się nie powiedzie",
       "remove": "Usuń {{check}}",
-      "full": "Najwyżej {{max}} asercji.",
+      "full": "Najwyżej {{max, number}} asercji.",
       "noneApply": "Do tego rodzaju kroku nie pasuje żadne sprawdzenie.",
       "checks": {
         "findings_cite_evidence": "Każde ustalenie wskazuje plik, wiersz i dowód",
@@ -2608,7 +2608,7 @@
       "childSteps_many": "{{count, number}} kroków",
       "childSteps_other": "{{count, number}} kroków",
       "expands": "Rozwija się do",
-      "inAll": "Łącznie {{total}} z {{max}} kroków",
+      "inAll": "Łącznie {{total, number}} z {{max, number}} kroków",
       "usedBy": "Używany przez",
       "openFlow": "Otwórz przepływ",
       "preview": "{{name}}, tylko do odczytu",
@@ -2626,7 +2626,7 @@
       "startedBy": "Uruchamiany przez",
       "nobody": "Żadna automatyzacja nie używa jeszcze tego przepływu.",
       "inputs": "Dane wejściowe",
-      "inputMax": "{{name}}, najwyżej {{max}}",
+      "inputMax": "{{name}}, najwyżej {{max, number}}",
       "memory": "Pamięć",
       "recall": "Przywołaj pamięć repozytorium na początku",
       "recallOn": "Przywoływana na początku",

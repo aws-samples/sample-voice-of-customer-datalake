@@ -33,9 +33,13 @@ const PRE_FORMATTED = 'the call site passes an already formatted string'
 /** `namespace:key` (plural suffix dropped) → the count-named placeholders it deliberately keeps bare. */
 const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: string }>> = {
   'agents:run.olderRevision': { params: ['n'], why: ORDINAL },
+  'agents:inspector.fromCard': { params: ['n'], why: ORDINAL },
+  'agents:inspector.asRun': { params: ['n'], why: ORDINAL },
+  'agents:inspector.end.prNumber': { params: ['n'], why: ORDINAL },
+  'agents:inspector.run.round': { params: ['n'], why: ORDINAL },
+  'agents:palette.revision': { params: ['n'], why: ORDINAL },
   // The setup guide's step number (0 to 6, the steps' place in the recommended order).
   'agents:setupGuide.stepNumber': { params: ['n'], why: ORDINAL },
-  'agents:run.rounds': { params: ['n'], why: ORDINAL },
   'agents:editor.loopFrameLabel': { params: ['n'], why: ORDINAL },
   'agents:editor.loopOption': { params: ['n'], why: ORDINAL },
   'agents:editor.loopTitle': { params: ['n'], why: ORDINAL },

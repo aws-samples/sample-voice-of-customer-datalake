@@ -29,8 +29,9 @@ describe.each([
   ['pages/Settings/AlertsCard.tsx', '{recipient.email}</span>'],
   ['pages/Projects/ProjectCard.tsx', '>{project.name}</h2>'],
   ['pages/ProjectDetail/ProjectHeader.tsx', '>{name}</h1>'],
-  ['pages/Agents/Agents.tsx', '>{agent.name}</p>'],
-  ['pages/Agents/Agents.tsx', 'text={agent.description} />'],
+  // (7.52.00 C1: the list's rows are Automations/AutomationRow.tsx)
+  ['pages/Agents/Automations/AutomationRow.tsx', 'to={agentPath(agent.agent_id)} className="text-sm font-semibold'],
+  ['pages/Agents/Automations/AutomationRow.tsx', 'text={agent.description} />'],
   ['pages/Agents/WorkflowLibrary.tsx', '>{workflow.name}</p>'],
   ['pages/Agents/RunsTab.tsx', 't(`run.triggers.${run.trigger}`)'],
   ['pages/Company/DesignReferences.tsx', 'reference.title ||'],

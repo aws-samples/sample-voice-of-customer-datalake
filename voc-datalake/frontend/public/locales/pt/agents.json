@@ -88,10 +88,10 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "Precisa da sua decisão",
       "spentOf": "{{amount}} de {{budget}}",
-      "callsOf": "{{calls}} de {{cap}} chamadas ao modelo",
-      "calls_one": "{{calls}} chamada ao modelo",
-      "calls_many": "{{calls}} de chamadas ao modelo",
-      "calls_other": "{{calls}} chamadas ao modelo",
+      "callsOf": "{{calls, number}} de {{cap, number}} chamadas ao modelo",
+      "calls_one": "{{calls, number}} chamada ao modelo",
+      "calls_many": "{{calls, number}} de chamadas ao modelo",
+      "calls_other": "{{calls, number}} chamadas ao modelo",
       "scheduledToday_one": "{{count, number}} execução agendada hoje",
       "scheduledToday_many": "{{count, number}} de execuções agendadas hoje",
       "scheduledToday_other": "{{count, number}} execuções agendadas hoje"
@@ -254,9 +254,9 @@
       "today_one": "{{count, number}} agendada hoje",
       "today_many": "{{count, number}} agendadas hoje",
       "today_other": "{{count, number}} agendadas hoje",
-      "calls_one": "{{calls}} chamada ao modelo este mês",
-      "calls_many": "{{calls}} de chamadas ao modelo este mês",
-      "calls_other": "{{calls}} chamadas ao modelo este mês"
+      "calls_one": "{{calls, number}} chamada ao modelo este mês",
+      "calls_many": "{{calls, number}} de chamadas ao modelo este mês",
+      "calls_other": "{{calls, number}} chamadas ao modelo este mês"
     },
     "flow": {
       "another": "Executar outro fluxo",
@@ -2334,7 +2334,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} agente",
       "agents_other": "{{count, number}} agentes",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · publicadas por {{posters}}"
@@ -2343,7 +2343,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "Detecção automática",
-      "rounds": "≤ {{n}} rodadas",
+      "rounds": "≤ {{n, number}} rodadas",
       "reviewers_one": "{{count, number}} revisor",
       "reviewers_other": "{{count, number}} revisores"
     },
@@ -2357,7 +2357,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "Nenhum fluxo escolhido ainda",
-      "progress": "{{done}} de {{total}} etapas concluídas"
+      "progress": "{{done, number}} de {{total, number}} etapas concluídas"
     },
     "decision": {
       "title": "Uma pessoa decide",
@@ -2373,8 +2373,8 @@
       "prDraft": "Pull request · como rascunho"
     },
     "platform": {
-      "map": "Por {{by}} · no máximo {{n}}",
-      "memoryRead": "Lê a memória ({{whose}}) · {{n}}",
+      "map": "Por {{by}} · no máximo {{n, number}}",
+      "memoryRead": "Lê a memória ({{whose}}) · {{n, number}}",
       "memoryWrite": "Escreve na memória ({{whose}})",
       "reduce": "Junta as partes"
     },
@@ -2434,7 +2434,7 @@
       "latest": "A última aceita",
       "cardModel": "O do cartão",
       "share": "Parte do orçamento de cada execução",
-      "sharesInAll": "Partes dos agentes: {{used}} de 100%",
+      "sharesInAll": "Partes dos agentes: {{used, number}} de 100%",
       "overrides": "Substitui o do cartão ({{model}})",
       "useCards": "Usar o do cartão",
       "cardsModel": "Modelo do cartão: {{model}}",
@@ -2446,12 +2446,12 @@
       "host": "Host",
       "hostBroker": "Somente leitura, pelo broker ({{ops}})",
       "caps": "Limites",
-      "turns": "{{n}} turnos",
-      "tokens": "{{n}} k tokens de entrada",
+      "turns": "{{n, number}} turnos",
+      "tokens": "{{n, number}} k tokens de entrada",
       "reads": "Lê",
       "writes": "Escreve",
       "scorecard": "Ficha de resultados",
-      "scorecardLine": "{{runs}} execuções · {{rate}}% aprovadas",
+      "scorecardLine": "{{runs, number}} execuções · {{rate}}% aprovadas",
       "thisMonth": "Este mês",
       "usd": "${{amount}}"
     },
@@ -2506,7 +2506,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: quando falha",
       "remove": "Remover {{check}}",
-      "full": "No máximo {{max}} asserções.",
+      "full": "No máximo {{max, number}} asserções.",
       "noneApply": "Nenhuma verificação se aplica a este tipo de etapa.",
       "checks": {
         "findings_cite_evidence": "Cada descoberta cita um arquivo, uma linha e sua evidência",
@@ -2542,7 +2542,7 @@
       "childSteps_one": "{{count, number}} etapa",
       "childSteps_other": "{{count, number}} etapas",
       "expands": "Expande para",
-      "inAll": "{{total}} de {{max}} etapas no total",
+      "inAll": "{{total, number}} de {{max, number}} etapas no total",
       "usedBy": "Usado por",
       "openFlow": "Abrir o fluxo",
       "preview": "{{name}}, somente leitura",
@@ -2560,7 +2560,7 @@
       "startedBy": "Iniciado por",
       "nobody": "Nenhuma automação usa este fluxo ainda.",
       "inputs": "Entradas",
-      "inputMax": "{{name}}, no máximo {{max}}",
+      "inputMax": "{{name}}, no máximo {{max, number}}",
       "memory": "Memória",
       "recall": "Recuperar a memória do repositório no início",
       "recallOn": "Recuperada no início",

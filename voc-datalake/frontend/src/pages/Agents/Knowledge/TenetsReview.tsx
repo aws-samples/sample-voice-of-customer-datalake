@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next'
 import { GitPullRequest, Loader2 } from 'lucide-react'
 import DocumentSurface from '../../../components/Document/DocumentSurface'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { engineeringKnowledgeApi, engineeringKnowledgeKeys } from '../../../api/engineeringKnowledgeApi'
 import { serverReason } from '../../../lib/errors'
 import { useConfigStore } from '../../../store/configStore'
@@ -76,7 +77,7 @@ function Decision({ connection, version, head, onReadAgain }: Readonly<{
       <label htmlFor={reasonId} className="block text-[12px] font-semibold text-muted">{t('tenets.reason')}</label>
       <textarea id={reasonId} className="input w-full" rows={2} maxLength={MAX_TENETS_REASON} value={reason}
         onChange={(event) => setReason(event.target.value)} />
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <StickyActionBar variant="inline" className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" className="btn btn-secondary btn-sm" aria-disabled={decide.isPending}
           onClick={() => { if (!decide.isPending) decide.mutate('reject') }}>{t('tenets.reject')}</button>
         <button type="button" className="btn btn-primary btn-sm" aria-disabled={decide.isPending}
@@ -84,7 +85,7 @@ function Decision({ connection, version, head, onReadAgain }: Readonly<{
           {decide.isPending && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
           {t('tenets.accept', { version: version.version })}
         </button>
-      </div>
+      </StickyActionBar>
       {stale && (
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/30 bg-warn-subtle p-3 text-sm text-text">
           <p className="mr-auto min-w-0">{t('tenets.stale')}</p>

@@ -85,9 +85,9 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "Needs your decision",
       "spentOf": "{{amount}} of {{budget}}",
-      "callsOf": "{{calls}} of {{cap}} model calls",
-      "calls_one": "{{calls}} model call",
-      "calls_other": "{{calls}} model calls",
+      "callsOf": "{{calls, number}} of {{cap, number}} model calls",
+      "calls_one": "{{calls, number}} model call",
+      "calls_other": "{{calls, number}} model calls",
       "scheduledToday_one": "{{count, number}} scheduled run today",
       "scheduledToday_other": "{{count, number}} scheduled runs today"
     },
@@ -242,8 +242,8 @@
       "runs_other": "{{count, number}} runs",
       "today_one": "{{count, number}} scheduled today",
       "today_other": "{{count, number}} scheduled today",
-      "calls_one": "{{calls}} model call this month",
-      "calls_other": "{{calls}} model calls this month"
+      "calls_one": "{{calls, number}} model call this month",
+      "calls_other": "{{calls, number}} model calls this month"
     },
     "flow": {
       "another": "Run another flow",
@@ -2261,7 +2261,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} agent",
       "agents_other": "{{count, number}} agents",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · posted by {{posters}}"
@@ -2270,7 +2270,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "Auto-detect",
-      "rounds": "≤ {{n}} rounds",
+      "rounds": "≤ {{n, number}} rounds",
       "reviewers_one": "{{count, number}} reviewer",
       "reviewers_other": "{{count, number}} reviewers"
     },
@@ -2284,7 +2284,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "No flow chosen yet",
-      "progress": "{{done}} of {{total}} steps done"
+      "progress": "{{done, number}} of {{total, number}} steps done"
     },
     "decision": {
       "title": "A person decides",
@@ -2300,8 +2300,8 @@
       "prDraft": "Pull request · a draft"
     },
     "platform": {
-      "map": "By {{by}} · at most {{n}}",
-      "memoryRead": "Reads {{whose}} memory · {{n}}",
+      "map": "By {{by}} · at most {{n, number}}",
+      "memoryRead": "Reads {{whose}} memory · {{n, number}}",
       "memoryWrite": "Writes {{whose}} memory",
       "reduce": "Brings the shards together"
     },
@@ -2361,7 +2361,7 @@
       "latest": "Latest accepted",
       "cardModel": "The card's",
       "share": "Share of each run's budget",
-      "sharesInAll": "The agents' shares: {{used}} of 100 %",
+      "sharesInAll": "The agents' shares: {{used, number}} of 100 %",
       "overrides": "Overrides the card's {{model}}",
       "useCards": "Use the card's",
       "cardsModel": "The card's model: {{model}}",
@@ -2373,12 +2373,12 @@
       "host": "Host",
       "hostBroker": "Read only, through the broker ({{ops}})",
       "caps": "Caps",
-      "turns": "{{n}} turns",
-      "tokens": "{{n}} k input tokens",
+      "turns": "{{n, number}} turns",
+      "tokens": "{{n, number}} k input tokens",
       "reads": "Reads",
       "writes": "Writes",
       "scorecard": "Scorecard",
-      "scorecardLine": "{{runs}} runs · {{rate}} % passed",
+      "scorecardLine": "{{runs, number}} runs · {{rate}} % passed",
       "thisMonth": "This month",
       "usd": "${{amount}}"
     },
@@ -2433,7 +2433,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: when it fails",
       "remove": "Remove {{check}}",
-      "full": "At most {{max}} assertions.",
+      "full": "At most {{max, number}} assertions.",
       "noneApply": "No check applies to this kind of step.",
       "checks": {
         "findings_cite_evidence": "Every finding cites a file, a line and its evidence",
@@ -2469,7 +2469,7 @@
       "childSteps_one": "{{count, number}} step",
       "childSteps_other": "{{count, number}} steps",
       "expands": "Expands to",
-      "inAll": "{{total}} of {{max}} steps in all",
+      "inAll": "{{total, number}} of {{max, number}} steps in all",
       "usedBy": "Used by",
       "openFlow": "Open flow",
       "preview": "{{name}}, read only",
@@ -2487,7 +2487,7 @@
       "startedBy": "Started by",
       "nobody": "No automation uses this flow yet.",
       "inputs": "Inputs",
-      "inputMax": "{{name}}, at most {{max}}",
+      "inputMax": "{{name}}, at most {{max, number}}",
       "memory": "Memory",
       "recall": "Recall the repository's memory at the start",
       "recallOn": "Recalled at the start",

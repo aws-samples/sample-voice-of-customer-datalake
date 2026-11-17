@@ -96,10 +96,13 @@ function agentItems(t: TFunction<'agents'>, cards: readonly RegistryCard[] | und
   })
 }
 
+/** A quality gate's packs when it detects them in the repository (the server's `packs: 'auto'`). */
+const AUTO_PACKS = 'auto'
+
 function gateItems(t: TFunction<'agents'>, gates: GatesView | undefined): PaletteItem[] {
-  const auto = plain(t, 'quality_gate', { max_rounds: 3, packs: 'auto' })
+  const auto = plain(t, 'quality_gate', { max_rounds: 3, packs: AUTO_PACKS })
   if (gates === undefined) return [auto]
-  const detect: PaletteItem = { ...auto, key: 'gate:auto', label: t('canvas.gate.autoDetect') }
+  const detect: PaletteItem = { ...auto, key: `gate:${AUTO_PACKS}`, label: t('canvas.gate.autoDetect') }
   return [detect, ...gates.packs.map((pack) => ({
     key: `gate:${pack.id}`,
     block: { type: 'quality_gate' as const, title: t('palette.gateOf', { pack: pack.name || pack.id }), params: { max_rounds: 3, packs: [pack.id] } },

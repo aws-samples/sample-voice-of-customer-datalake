@@ -49,6 +49,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   DefaultThemeCard: 'Administration → Brand & appearance → Default theme → Save',
   BrandEditorCard: 'Administration → Brand & appearance → Brand → Save; Workspace settings → Brand → Save; Administration → Platform → Deployment brand → Save',
   SaveBar: 'the document surface\'s own save row (components/Document/surface): Discard and Save',
+  TenetsReview: 'Agent orchestration → Setup guide → Tenets: a version\'s reason, then Reject or Accept',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */
@@ -81,7 +82,9 @@ const EXEMPT: Readonly<Record<string, string>> = {
   SetupGuideEntry: 'Start the setup guide is the first visit\'s choice in the Engineering group\'s card on Automations, saved at once; nothing left unsaved',
   ReadyStep: 'Run on an issue now is the Ready to go step\'s action inside the step\'s card (it opens a confirmation dialog); nothing left unsaved',
   WorkflowPage: 'Start a run is a page-header action beside the title (it opens a dialog)',
-  WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
+  EditorParts: 'the flow editor\'s Save sits in its toolbar above the canvas, top of the page, next to Save as (7.52.00 C2)',
+  KnowledgeReview: 'Approve a knowledge pack version is the one action of its review card in the setup guide, nothing typed left unsaved',
+  RegistryPage: 'Create from a skill heads the Registry\'s list (it opens the Create card sheet)',
   SteerComposer: 'Send is the run workspace thread\'s composer, under the session pane it steers (a message to the orchestrator, not a form\'s save row)',
   EngineeringBoardControls: 'Post is a small fold-out form\'s at the top of the board it adds a task to (an action, not a page\'s save row)',
   RunDecisionForm: 'Make the decision sits in the decision card at the top of the selected run, above the graph, left-aligned',
@@ -134,7 +137,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   DocumentActionsBar: 'the canvas\'s Save and Discard register themselves as an action bar (useRegisterActionBar) and pin to the bottom on a phone while dirty',
 }
 
-const isDialog = (text: string): boolean => /ModalShell|dialog-footer/.test(text)
+// (a SideSheet is a ModalShell too: its footer sits over the launcher)
+const isDialog = (text: string): boolean => /ModalShell|dialog-footer|<SideSheet\b/.test(text)
 /** File name without extension; an `index` file is named by its folder (`RouteErrorBoundary/index`). */
 const moduleName = (path: string): string => {
   const [folder = '', file = ''] = path.replace(/\.tsx$/, '').split('/').slice(-2)

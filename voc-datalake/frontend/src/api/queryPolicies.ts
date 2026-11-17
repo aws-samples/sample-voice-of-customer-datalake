@@ -92,6 +92,10 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
+  'engineering-gates': 'config', // (7.52.00) Registry → Quality gates: the packs, steps and briefs (a release changes them)
+  'engineering-knowledge': 'live', // (7.52.00) the setup guide's Knowledge and Tenets reviews: versions a run drafts and a person decides
+  'engineering-registry': 'config', // (7.52.00) the Registry's cards (a release, or an administrator making a card, changes them)
+  'engineering-templates': 'config', // (7.52.00) a template's source text from the bundle (a release changes it)
   'engineering-github-apps': 'config', // Agents → Connections → Connect GitHub: the deployment's GitHub Apps (change only when an administrator changes them)
   'engineering-issues-source': 'config', // Agents → Connections: the deployment's GitHub Issues source as its connections configure it (changes only on an administrator's switch, install, check or removal)
   'engineering-connections': 'config', // Agents → Connections: the repository connections (change only when an administrator changes them)

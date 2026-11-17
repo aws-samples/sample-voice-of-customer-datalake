@@ -85,9 +85,9 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "あなたの判断が必要です",
       "spentOf": "{{budget}} 中 {{amount}}",
-      "callsOf": "モデル呼び出し {{cap}} 回中 {{calls}} 回",
-      "calls_one": "モデル呼び出し {{calls}} 回",
-      "calls_other": "モデル呼び出し {{calls}} 回",
+      "callsOf": "モデル呼び出し {{cap, number}} 回中 {{calls, number}} 回",
+      "calls_one": "モデル呼び出し {{calls, number}} 回",
+      "calls_other": "モデル呼び出し {{calls, number}} 回",
       "scheduledToday_one": "本日の予定実行 {{count, number}} 回",
       "scheduledToday_other": "本日の予定実行 {{count, number}} 回"
     },
@@ -242,8 +242,8 @@
       "runs_other": "実行 {{count, number}} 回",
       "today_one": "本日の予定 {{count, number}} 回",
       "today_other": "本日の予定 {{count, number}} 回",
-      "calls_one": "今月のモデル呼び出し {{calls}} 回",
-      "calls_other": "今月のモデル呼び出し {{calls}} 回"
+      "calls_one": "今月のモデル呼び出し {{calls, number}} 回",
+      "calls_other": "今月のモデル呼び出し {{calls, number}} 回"
     },
     "flow": {
       "another": "別のフローを実行",
@@ -2315,7 +2315,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} エージェント",
       "agents_other": "{{count, number}} エージェント",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · 投稿: {{posters}}"
@@ -2324,7 +2324,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "自動検出",
-      "rounds": "≤ {{n}} ラウンド",
+      "rounds": "≤ {{n, number}} ラウンド",
       "reviewers_one": "レビュアー {{count, number}} 人",
       "reviewers_other": "レビュアー {{count, number}} 人"
     },
@@ -2338,7 +2338,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "フローがまだ選択されていません",
-      "progress": "{{total}} ステップ中 {{done}} ステップ完了"
+      "progress": "{{total, number}} ステップ中 {{done, number}} ステップ完了"
     },
     "decision": {
       "title": "人が判断",
@@ -2354,8 +2354,8 @@
       "prDraft": "プルリクエスト · 下書き"
     },
     "platform": {
-      "map": "{{by}}ごと · 最大 {{n}}",
-      "memoryRead": "{{whose}}のメモリを読み取り · {{n}}",
+      "map": "{{by}}ごと · 最大 {{n, number}}",
+      "memoryRead": "{{whose}}のメモリを読み取り · {{n, number}}",
       "memoryWrite": "{{whose}}のメモリに書き込み",
       "reduce": "シャードを集約"
     },
@@ -2415,7 +2415,7 @@
       "latest": "最新の承認済み",
       "cardModel": "カードの設定どおり",
       "share": "各実行の予算の配分",
-      "sharesInAll": "エージェントの配分の合計: {{used}}%（上限 100%）",
+      "sharesInAll": "エージェントの配分の合計: {{used, number}}%（上限 100%）",
       "overrides": "カードの {{model}} を上書き",
       "useCards": "カードのモデルを使う",
       "cardsModel": "カードのモデル: {{model}}",
@@ -2427,12 +2427,12 @@
       "host": "ホスト",
       "hostBroker": "読み取り専用、ブローカー経由（{{ops}}）",
       "caps": "上限",
-      "turns": "{{n}} ターン",
-      "tokens": "入力トークン {{n}}k",
+      "turns": "{{n, number}} ターン",
+      "tokens": "入力トークン {{n, number}}k",
       "reads": "読み取り",
       "writes": "書き込み",
       "scorecard": "スコアカード",
-      "scorecardLine": "{{runs}} 回実行 · 合格率 {{rate}}%",
+      "scorecardLine": "{{runs, number}} 回実行 · 合格率 {{rate}}%",
       "thisMonth": "今月",
       "usd": "${{amount}}"
     },
@@ -2487,7 +2487,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}: 失敗したとき",
       "remove": "{{check}} を削除",
-      "full": "アサーションは最大 {{max}} 件です。",
+      "full": "アサーションは最大 {{max, number}} 件です。",
       "noneApply": "この種類のステップに適用できるチェックはありません。",
       "checks": {
         "findings_cite_evidence": "すべての指摘がファイル、行、根拠を示している",
@@ -2523,7 +2523,7 @@
       "childSteps_one": "{{count, number}} ステップ",
       "childSteps_other": "{{count, number}} ステップ",
       "expands": "展開後",
-      "inAll": "合計 {{total}} / {{max}} ステップ",
+      "inAll": "合計 {{total, number}} / {{max, number}} ステップ",
       "usedBy": "使用元",
       "openFlow": "フローを開く",
       "preview": "{{name}}（読み取り専用）",
@@ -2541,7 +2541,7 @@
       "startedBy": "開始元",
       "nobody": "このフローを使う自動化はまだありません。",
       "inputs": "入力",
-      "inputMax": "{{name}}、最大 {{max}}",
+      "inputMax": "{{name}}、最大 {{max, number}}",
       "memory": "メモリ",
       "recall": "開始時にリポジトリのメモリを呼び出す",
       "recallOn": "開始時に呼び出す",

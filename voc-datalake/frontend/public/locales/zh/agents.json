@@ -85,9 +85,9 @@
       "ended": "{{status}} · {{when}}",
       "needsDecision": "需要你的决定",
       "spentOf": "{{amount}} / {{budget}}",
-      "callsOf": "模型调用 {{calls}}/{{cap}} 次",
-      "calls_one": "{{calls}} 次模型调用",
-      "calls_other": "{{calls}} 次模型调用",
+      "callsOf": "模型调用 {{calls, number}}/{{cap, number}} 次",
+      "calls_one": "{{calls, number}} 次模型调用",
+      "calls_other": "{{calls, number}} 次模型调用",
       "scheduledToday_one": "今天计划运行 {{count, number}} 次",
       "scheduledToday_other": "今天计划运行 {{count, number}} 次"
     },
@@ -242,8 +242,8 @@
       "runs_other": "{{count, number}} 次运行",
       "today_one": "今天计划 {{count, number}} 次",
       "today_other": "今天计划 {{count, number}} 次",
-      "calls_one": "本月 {{calls}} 次模型调用",
-      "calls_other": "本月 {{calls}} 次模型调用"
+      "calls_one": "本月 {{calls, number}} 次模型调用",
+      "calls_other": "本月 {{calls, number}} 次模型调用"
     },
     "flow": {
       "another": "运行其他流程",
@@ -2315,7 +2315,7 @@
       "cost": "${{amount}}",
       "agents_one": "{{count, number}} 个智能体",
       "agents_other": "{{count, number}} 个智能体",
-      "more": "+{{n}}"
+      "more": "+{{n, number}}"
     },
     "team": {
       "line": "{{claimers}} · 由 {{posters}} 发布"
@@ -2324,7 +2324,7 @@
       "go": "GO",
       "noGo": "NO-GO",
       "autoDetect": "自动检测",
-      "rounds": "≤ {{n}} 轮",
+      "rounds": "≤ {{n, number}} 轮",
       "reviewers_one": "{{count, number}} 位评审者",
       "reviewers_other": "{{count, number}} 位评审者"
     },
@@ -2338,7 +2338,7 @@
     "call": {
       "line": "{{name}} · r{{revision}}",
       "noFlow": "尚未选择流程",
-      "progress": "已完成 {{done}}/{{total}} 个步骤"
+      "progress": "已完成 {{done, number}}/{{total, number}} 个步骤"
     },
     "decision": {
       "title": "由人决定",
@@ -2354,8 +2354,8 @@
       "prDraft": "拉取请求 · 草稿"
     },
     "platform": {
-      "map": "按{{by}} · 最多 {{n}}",
-      "memoryRead": "读取{{whose}}的记忆 · {{n}}",
+      "map": "按{{by}} · 最多 {{n, number}}",
+      "memoryRead": "读取{{whose}}的记忆 · {{n, number}}",
       "memoryWrite": "写入{{whose}}的记忆",
       "reduce": "汇总分片"
     },
@@ -2415,7 +2415,7 @@
       "latest": "最新已接受的版本",
       "cardModel": "沿用卡片",
       "share": "每次运行的预算份额",
-      "sharesInAll": "各智能体份额合计：{{used}}/100%",
+      "sharesInAll": "各智能体份额合计：{{used, number}}/100%",
       "overrides": "覆盖卡片的 {{model}}",
       "useCards": "使用卡片的模型",
       "cardsModel": "卡片的模型：{{model}}",
@@ -2427,12 +2427,12 @@
       "host": "运行环境",
       "hostBroker": "只读，通过代理服务（{{ops}}）",
       "caps": "上限",
-      "turns": "{{n}} 个回合",
-      "tokens": "{{n}}k 输入令牌",
+      "turns": "{{n, number}} 个回合",
+      "tokens": "{{n, number}}k 输入令牌",
       "reads": "读取",
       "writes": "写入",
       "scorecard": "记分卡",
-      "scorecardLine": "{{runs}} 次运行 · {{rate}}% 通过",
+      "scorecardLine": "{{runs, number}} 次运行 · {{rate}}% 通过",
       "thisMonth": "本月",
       "usd": "${{amount}}"
     },
@@ -2487,7 +2487,7 @@
       "argument": "{{name}}",
       "onFail": "{{check}}：失败时",
       "remove": "移除 {{check}}",
-      "full": "最多 {{max}} 个断言。",
+      "full": "最多 {{max, number}} 个断言。",
       "noneApply": "没有适用于此类步骤的检查。",
       "checks": {
         "findings_cite_evidence": "每个发现都注明文件、行和证据",
@@ -2523,7 +2523,7 @@
       "childSteps_one": "{{count, number}} 个步骤",
       "childSteps_other": "{{count, number}} 个步骤",
       "expands": "展开为",
-      "inAll": "共 {{total}}/{{max}} 个步骤",
+      "inAll": "共 {{total, number}}/{{max, number}} 个步骤",
       "usedBy": "使用者",
       "openFlow": "打开流程",
       "preview": "{{name}}，只读",
@@ -2541,7 +2541,7 @@
       "startedBy": "启动方",
       "nobody": "还没有自动化使用此流程。",
       "inputs": "输入",
-      "inputMax": "{{name}}，最多 {{max}}",
+      "inputMax": "{{name}}，最多 {{max, number}}",
       "memory": "记忆",
       "recall": "开始时调出仓库的记忆",
       "recallOn": "开始时调出",
