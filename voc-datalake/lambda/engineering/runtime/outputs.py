@@ -4,8 +4,9 @@ The harness ships alone in the agents' images (engineering-images: no reader's m
 ``role_tools`` write these outputs; the readers take the same values from here: a ``voc-finding/1`` line
 (workspace/findings.py), a ``voc-note/1`` line (knowledge/notes.py), a ``voc-gate-record/1`` record and its verdicts
 and severities (quality_gate/record.py, review.py), a package path as one workspace key segment
-(workspace/layout.py), the agents' branch prefix (connectors/write_policy.py), and a submitted patch's key and the
-broker's size bound for it (connectors/patches.py: the gate judges only a patch the broker would read). Pure: the
+(workspace/layout.py), the agents' branch prefix (connectors/write_policy.py), a submitted patch's key and the
+broker's size bound for it (connectors/patches.py: the gate judges only a patch the broker would read), a triage
+record and, since 7.52.00, a ``voc-tenets/1`` record and the rule that holds a triage to the accepted tenets. Pure: the
 standard library only.
 """
 from __future__ import annotations
@@ -116,3 +117,77 @@ def triage_record(raw: object) -> dict[str, object]:
             'paths': paths,
             'acceptance_criteria': _triage_texts(raw.get('acceptance_criteria'), 'acceptance_criteria',
                                                  MAX_TRIAGE_ITEMS)}
+
+
+def unaccepted_tenets(cited: object, accepted: frozenset[str]) -> list[str]:
+    """The tenet ids a triage cites that the connection's accepted tenets version does not hold (7.52.00, the hard
+    lock: ``write_triage`` and the run's end refuse a triage that names one). With no version accepted, ``accepted`` is
+    empty and every cited id is one: such a triage cites none (``[]``)."""
+    listed = cited if isinstance(cited, list) else []
+    return [str(tenet) for tenet in listed if str(tenet) not in accepted]
+
+
+#: A repository's tenets (7.52.00): the understander's ``write_tenets`` record in the Tenets flow, under its own keys
+#: (``ws/<ws>/runs/<run>/<agent>/commits/<sha>/_tenets/attempt-<n>/tenets.json``), which the run's end
+#: (``runtime/tenets_end.py``) drafts as the connection's next tenets version (``knowledge/tenets.py``) for an
+#: administrator to accept or reject; an accepted version is what TENETS.md is rendered from and what a triage may cite.
+TENETS_SCHEMA: Final = 'voc-tenets/1'
+TENETS_FILE: Final = 'tenets.json'
+MAX_TENETS: Final = 30
+MAX_TENET_TITLE: Final = 120
+MAX_TENET_TEXT: Final = 600
+MAX_TENET_CITATIONS: Final = 8
+MAX_TENETS_SUMMARY: Final = 1_000
+#: A tenet's citation: a repository path, ``path:line`` or a full commit sha (path characters only, no space).
+TENET_CITATION: Final = re.compile(r'[A-Za-z0-9_./@+-]{1,300}(?::[1-9][0-9]{0,8})?\Z')
+
+
+class TenetsError(ValueError):
+    """A tenets record off its shape: the harness hands the reason to the model, a reader drops the record."""
+
+
+def _tenet_text(raw: object, name: str, limit: int, *, required: bool = True) -> str:
+    text = raw.strip() if isinstance(raw, str) else None
+    one_line = name == 'title'
+    if text is None or (required and not text) or len(text) > limit or (one_line and '\n' in text):
+        raise TenetsError(f'{name} is text of {1 if required else 0}-{limit} characters'
+                          + (' on one line' if one_line else ''))
+    return text
+
+
+def _citations(raw: object) -> list[str]:
+    if not isinstance(raw, list) or len(raw) > MAX_TENET_CITATIONS or not all(
+            isinstance(c, str) and TENET_CITATION.fullmatch(c) and not c.startswith('/') and '..' not in c.split('/')
+            for c in raw):
+        raise TenetsError(f'a tenet cites at most {MAX_TENET_CITATIONS} places: repository paths (path or path:line, '
+                          'relative, no "..") or commits')
+    return list(dict.fromkeys(raw))
+
+
+def _tenet(raw: object) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        raise TenetsError('a tenet is an object: {id, title, statement, rationale?, citations?}')
+    tenet_id = raw.get('id')
+    if not isinstance(tenet_id, str) or not TENET_ID.fullmatch(tenet_id):
+        raise TenetsError('a tenet\'s id is 1-40 letters, digits, ".", "_" or "-", starting with a letter or digit')
+    return {'id': tenet_id, 'title': _tenet_text(raw.get('title'), 'title', MAX_TENET_TITLE),
+            'statement': _tenet_text(raw.get('statement'), 'statement', MAX_TENET_TEXT),
+            'rationale': _tenet_text(raw.get('rationale', ''), 'rationale', MAX_TENET_TEXT, required=False),
+            'citations': _citations(raw.get('citations', []))}
+
+
+def tenets_record(raw: object) -> dict[str, object]:
+    """``raw`` as a ``voc-tenets/1`` record: ``tenets`` (1 to ``MAX_TENETS``, each ``{id, title, statement,
+    rationale, citations}``, the ids unique) and an optional ``summary``; ``TenetsError`` for anything else. Every
+    field is text a model wrote: data, never an instruction, wherever it is read."""
+    if not isinstance(raw, dict):
+        raise TenetsError('a tenets record is an object: {tenets: [...], summary?}')
+    listed = raw.get('tenets')
+    if not isinstance(listed, list) or not 0 < len(listed) <= MAX_TENETS:
+        raise TenetsError(f'tenets is a list of 1-{MAX_TENETS} tenets')
+    tenets = [_tenet(item) for item in listed]
+    ids = [str(tenet['id']) for tenet in tenets]
+    if len(set(ids)) != len(ids):
+        raise TenetsError('each tenet has an id of its own')
+    summary = _tenet_text(raw.get('summary', ''), 'summary', MAX_TENETS_SUMMARY, required=False)
+    return {'schema': TENETS_SCHEMA, 'summary': summary, 'tenets': tenets}

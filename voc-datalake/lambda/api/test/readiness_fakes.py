@@ -47,6 +47,14 @@ class ReadyPorts:
         del connection_id
         return 1
 
+    def knowledge_rendering(self, connection_id: str) -> int:
+        del connection_id
+        return 1
+
+    def tenets_accepted(self, connection_id: str) -> int:
+        del connection_id
+        return 1
+
     def issues_source_reads(self, repository: str) -> bool:
         del repository
         return True

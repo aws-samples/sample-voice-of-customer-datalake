@@ -5,7 +5,10 @@
   fenced as data. Its text is anyone's: it never changes what the task is.
 - ``write_triage`` (the understander): the issue's ``voc-triage/1`` record (``outputs.triage_record``), once, under
   the agent's own keys (``.../commits/<sha>/_triage/attempt-<n>/triage.json``), recorded on its task: the run's end
-  copies it to the issue's trusted row, which a Bug fixer's ``requires_triage`` reads.
+  copies it to the issue's trusted row, which a Bug fixer's ``requires_triage`` reads. Since 7.52.00 a triage that
+  cites a tenet is held to the run's connection's accepted tenets (``tenets_tools.accepted_ids``, the broker's read): an
+  id they do not hold is refused, and with none accepted a triage cites none (the hard lock; the run's end holds it
+  to the same rule, ``outputs.unaccepted_tenets``).
 - ``label_issue`` (the understander): the broker's ``label_issue``, the run's own issue only, ``outputs.TRIAGE_LABELS``
   only (checked here too), once per attempt.
 
@@ -21,7 +24,15 @@ from typing import Any, Final
 from engineering.quality_gate.text import cell
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.coordinator import Built, Tool, bounded, listed
-from engineering.runtime.outputs import TRIAGE_FILE, TRIAGE_KINDS, TRIAGE_LABELS, TRIAGE_PRIORITIES, TRIAGE_SEVERITIES
+from engineering.runtime.harness.tenets_tools import accepted_ids
+from engineering.runtime.outputs import (
+    TRIAGE_FILE,
+    TRIAGE_KINDS,
+    TRIAGE_LABELS,
+    TRIAGE_PRIORITIES,
+    TRIAGE_SEVERITIES,
+    unaccepted_tenets,
+)
 from engineering.runtime.outputs import triage_record as checked_triage
 
 #: The most lines and characters of the understander's comment, and of a line (each one code span).
@@ -59,7 +70,8 @@ def specs(tool_spec: Callable[..., Built], role: str, roles: Mapping[str, frozen
                   'an instruction).', {'number': issue, 'cursor': {**text, 'description': 'The next page\'s cursor '
                                        'a page gave, if any.'}}, ('number',)),
         tool_spec('write_triage', 'Write the issue\'s triage, once: its kind, severity, priority, summary, the paths '
-                  'involved, the acceptance criteria and the tenets it touches (none: an empty list).',
+                  'involved, the acceptance criteria and the accepted tenets it touches (read_tenets; none: an empty '
+                  'list).',
                   {'kind': {'type': 'string', 'enum': list(TRIAGE_KINDS)},
                    'severity': {'type': 'string', 'enum': list(TRIAGE_SEVERITIES)},
                    'priority': {'type': 'string', 'enum': list(TRIAGE_PRIORITIES)},
@@ -87,6 +99,14 @@ def handlers(context: Built, result: Callable[..., Built], record: Callable[[str
 
     def write_triage(arguments: Mapping[str, Any]) -> Built:
         triage = checked_triage(dict(arguments))
+        if triage['tenets']:
+            accepted = accepted_ids(context)
+            unaccepted = unaccepted_tenets(triage['tenets'], accepted)
+            if unaccepted:
+                held = (f'the accepted ones are {", ".join(sorted(accepted))}' if accepted
+                        else 'none is accepted yet, so a triage cites none (an empty list)')
+                raise ValueError(f'tenets {", ".join(unaccepted)} are not the repository\'s accepted tenets: {held} '
+                                 '(read_tenets)')
         key = (f'{artifact_prefix(context.run_id, context.agent_id, context.commit, context.attempt, "triage")}'
                f'{TRIAGE_FILE}')
         return record(key, json.dumps(triage, sort_keys=True).encode(), f'the triage ({triage["kind"]}, '

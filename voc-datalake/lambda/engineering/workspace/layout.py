@@ -4,7 +4,8 @@
 
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package>/attempt-<n>/<shard>.jsonl   findings (voc-finding/1 lines)
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<kind>/attempt-<n>/<name>             gate outputs, logs, patches, checkpoints,
-                                                                                    transcripts, a triage (7.50.00)
+                                                                                    transcripts, a triage (7.50.00),
+                                                                                    tenets (7.52.00)
     ws/<ws>/runs/<run>/_manifest/v<nnnn>.json                                      the run's manifest (the runtime's)
     ws/<ws>/transcripts-index/<flow>/<yyyy-mm-dd>/<run>.json                       a run's entry, by flow and day
     ws/<ws>/reports/<run>/<level>/<subject>/v<nnnn>.json (+ .md)                    commit, PR and goal reports
@@ -30,7 +31,7 @@ from engineering.runtime.checkpoints import SHA
 from engineering.runtime.outputs import encode_package as harness_encode_package
 
 #: The kinds of non-finding artifact an agent writes under a commit.
-ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage'})
+ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage', 'tenets'})
 REPORT_LEVELS = frozenset({'commit', 'pr', 'goal'})
 _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
 #: A package segment: plain characters and ``=XX`` escapes, not beginning with ``_`` (escaped as ``=5F``).
@@ -63,6 +64,15 @@ def encode_package(package: str) -> str:
     if not package or len(package) > 300:
         raise LayoutError(f'not a valid package: {package[:80]!r}')
     return _check(_ENCODED, harness_encode_package(package), 'package')
+
+
+def decode_package(segment: str) -> str:
+    """A package key segment back as its path (``encode_package``'s inverse; 7.52.00, the ``<pkg>`` of a knowledge
+    route): ``LayoutError`` for a segment ``encode_package`` would never write."""
+    decoded = _decode_package(segment) if _ENCODED.fullmatch(segment) else None
+    if not decoded or encode_package(decoded) != segment:
+        raise LayoutError(f'not a package segment: {segment[:80]!r}')
+    return decoded
 
 
 def knowledge_key(ws: str, connection: str, package: str, version: int, name: str) -> str:

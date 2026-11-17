@@ -61,6 +61,8 @@ class Ports:
     attestation: Any = True
     protection: Any = None
     pack: Any = 3
+    rendering: Any = 0
+    tenets: Any = 0
     issues: Any = True
     #: Whether the Issues source's settings name the repository (7.50.02); None: not deployed here.
     lists: Any = None
@@ -99,6 +101,14 @@ class Ports:
     def knowledge_approved(self, connection_id: str) -> int:
         del connection_id
         return self._answer(self.pack)
+
+    def knowledge_rendering(self, connection_id: str) -> int:
+        del connection_id
+        return self._answer(self.rendering)
+
+    def tenets_accepted(self, connection_id: str) -> int:
+        del connection_id
+        return self._answer(self.tenets)
 
     def issues_source_reads(self, repository: str) -> bool:
         self.asked.append(f'issues {repository}')
@@ -248,6 +258,21 @@ def test_the_pack_and_tenets_only_where_the_flow_requires_them() -> None:
     assert checks(asks, Ports(pack=ReadFailed('x')))['pack'].status == 'unknown'
     assert checks(asks)['tenets'].status == 'warn'
     assert not checks(asks, Ports(pack=0))['pack'].blocking   # (advice: Enable is not refused for it)
+
+
+def test_the_tenets_and_the_docs_read_their_stores() -> None:
+    """7.52.00: the accepted tenets version passes, none warns (a triage cites none), an unreadable store is
+    unknown; never blocking. The pack names its docs' rendering once there is one."""
+    asks = replace(SUBJECT, requires={**SUBJECT.requires, 'knowledge_pack': True, 'tenets': True})
+    accepted = checks(asks, Ports(tenets=2))['tenets']
+    assert (accepted.status, accepted.detail) == ('pass', 'Tenets version 2 is accepted: a triage cites its ids.')
+    none = checks(asks)['tenets']
+    assert none.status == 'warn'
+    assert 'cites none' in none.detail
+    assert not none.blocking
+    assert checks(asks, Ports(tenets=ReadFailed('x')))['tenets'].status == 'unknown'
+    assert 'rendering 4' in checks(asks, Ports(rendering=4))['pack'].detail
+    assert 'rendering' not in checks(asks)['pack'].detail
 
 
 def test_the_issues_source_and_label_for_an_issue_trigger() -> None:

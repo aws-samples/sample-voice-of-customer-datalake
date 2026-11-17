@@ -289,7 +289,7 @@ def compile_bundle(sources: Sources) -> dict[str, Any]:
 
 
 #: The flows in the docs' order (docs/autonomous-engineering.md "Default flows"): the order the library lists them in.
-FLOW_ORDER: Final = ('understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review')
+FLOW_ORDER: Final = ('understand-repository', 'tenets', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review')
 #: The built-in agents workflow an automation may name instead of an engineering flow.
 BUILTIN_FLOWS: Final = frozenset({DEFAULT_WORKFLOW_ID})
 

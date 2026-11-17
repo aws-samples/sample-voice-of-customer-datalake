@@ -50,8 +50,10 @@ def test_the_task_states_are_the_boards():
     assert (TASK_DONE, TASK_ENDED) == (BOARD_DONE, BOARD_FINAL)
 
 
-def test_the_five_default_flows_are_all_here_and_valid_and_7_47s_stored_ones_still_are():
-    assert sorted(TEMPLATES) == ['bug-hunt-and-fix', 'feature', 'issue-triage', 'pr-review', 'understand-repository']
+def test_the_six_default_flows_are_all_here_and_valid_and_7_47s_stored_ones_still_are():
+    # (7.52.00: the Tenets flow is the sixth)
+    assert sorted(TEMPLATES) == ['bug-hunt-and-fix', 'feature', 'issue-triage', 'pr-review', 'tenets',
+                                 'understand-repository']
     assert all(validate_definition(definition).valid for definition in TEMPLATES.values())
     assert sorted(name for name in STORED_7_47 if not name.startswith('stored-')) == [
         *sorted(TEMPLATES)[:4], 'self-improvement', 'understand-repository']

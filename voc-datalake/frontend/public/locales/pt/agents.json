@@ -1472,6 +1472,10 @@
       "name": "Entender o repositório",
       "description": "Percorre o repositório pacote por pacote e redige o pacote de conhecimento, os princípios e o guia de revisão para aprovação de um administrador."
     },
+    "tenets": {
+      "name": "Princípios",
+      "description": "Redige os princípios do repositório a partir do pacote de conhecimento aprovado, do TENETS.md e dos princípios aceitos, para um administrador aceitar; o TENETS.md segue em um pull request."
+    },
     "issueTriage": {
       "name": "Triagem de issues",
       "description": "Lê uma issue, classifica-a como bug, funcionalidade ou investigação, reproduz ou localiza o problema e propõe o próximo passo na issue."

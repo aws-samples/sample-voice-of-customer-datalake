@@ -1411,6 +1411,10 @@
       "name": "Understand the repository",
       "description": "Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval."
     },
+    "tenets": {
+      "name": "Tenets",
+      "description": "Drafts the repository's tenets from its approved knowledge pack, its TENETS.md and the accepted tenets, for an administrator to accept; TENETS.md follows in a pull request."
+    },
     "issueTriage": {
       "name": "Issue triage",
       "description": "Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue."

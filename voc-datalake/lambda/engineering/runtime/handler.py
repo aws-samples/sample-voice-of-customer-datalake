@@ -125,6 +125,7 @@ from engineering.runtime.checkout_cache import (
 )
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
+from engineering.runtime.docs_publish import ACTION as DOCS_PUBLISH_ACTION
 from engineering.runtime.harness.skills import harness_argv
 from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, RuntimeSession, check_run_id
 from engineering.runtime.launcher import Launcher
@@ -159,6 +160,7 @@ from engineering.runtime.supervisor import (
     landed_session,
     stop_or_keep_lost,
 )
+from engineering.runtime.tenets_end import draft_tenets_at_end
 from engineering.runtime.triage_end import copy_triage_at_end
 from engineering.settings import read_hard_cap
 from engineering.skills.templates import bundled
@@ -1443,6 +1445,7 @@ def _manifest_at_end(run_id: str) -> None:
 
 def _retrospect(run_id: str, *, at_a_person: bool = False) -> dict[str, Any]:
     copy_triage_at_end(run_id)   # (7.50.00: a triage run's issue gets its trusted triage row; never raises)
+    draft_tenets_at_end(run_id)   # (7.52.00: a Tenets run's record drafted as the next tenets version; never raises)
     _manifest_at_end(run_id)
     _reactions_at_end(run_id)   # (the schedule only: no host read here)
     summary = _learning().retrospective(WORKSPACE, run_id, at_a_person=at_a_person)
@@ -1840,6 +1843,26 @@ def signal_from_api(event: Mapping[str, Any]) -> dict[str, Any]:
     return request.view(_iso_now(now))
 
 
+#: ... and (7.52.00) an administrator's request for the pull request of the docs they approved.
+PUBLISH_DOCS_ACTION: Final = DOCS_PUBLISH_ACTION
+
+
+def publish_docs(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-start's ``publish_docs`` (7.52.00, ``runtime/docs_publish.py``): the broker's
+    ``push_approved_docs`` asked as this function's own role, its answer (opened, repeated or refused) answered. An
+    event off its shape is ``RuntimeRefused`` before anything is asked; a broker out of reach ``DocsUnavailable``."""
+    from engineering.runtime.docs_publish import BrokerDocs, DocsRefused, publish
+    try:
+        broker = BrokerDocs(url=os.environ['ENGINEERING_BROKER_URL'], region=os.environ.get('AWS_REGION', 'us-east-1'),
+                            credentials=_own_credentials())
+        answer = publish(event, broker)
+    except DocsRefused as refused:
+        raise RuntimeRefused(str(refused)) from refused
+    logger.info('engineering docs publish', extra={'status': answer['status'], 'kind': str(event.get('kind'))[:20],
+                                                   'connection_id': str(event.get('connection'))[:128]})
+    return answer
+
+
 def ask_reactions(event: Mapping[str, Any]) -> dict[str, Any]:
     """voc-engineering-start's ``ask_reactions`` (``{"run_id", "actor"}``, the Agents API's ``POST
     /agents/engineering/<run_id>/reactions``, an administrator acting for themselves): for an ended run, at most once
@@ -1915,11 +1938,12 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
     """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``), since 7.10.00 its
     hand trigger of an ended run's reactions read (``ask_reactions``), since 7.50.03 a person's Stop of a whole run
     (``stop_run``: ``stop_from_api``), since 7.51.00 a person's Resume or Restart of an ended run as a child run
-    (``restart_run``) and since 7.51.02 a person's signal to a live run or one of its agents (``signal_run``:
-    ``signal_from_api``, checked here, then handed on). Every other action, and an event naming none, is refused before
-    anything is read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it
-    can start a run, restart an ended one, ask for an ended run's reactions, stop a run and hand a person's checked
-    signal on, and never tick, launch, end a run or send the runtime anything else.
+    (``restart_run``), since 7.51.02 a person's signal to a live run or one of its agents (``signal_run``:
+    ``signal_from_api``, checked here, then handed on) and since 7.52.00 an administrator's request for the approved
+    docs' pull request (``publish_docs``). Every other action, and an event naming none, is refused before anything is
+    read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it can start a
+    run, restart an ended one, ask for an ended run's reactions, stop a run, hand a person's checked signal on and
+    publish approved docs, and never tick, launch, end a run or send the runtime anything else.
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
@@ -1934,13 +1958,15 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
         return signal_from_api(event)
     if event.get('action') == RESTART_ACTION:
         return restart_run(event)
+    if event.get('action') == PUBLISH_DOCS_ACTION:
+        return publish_docs(event)
     if event.get('action') != START_ACTION:
         logger.warning('engineering start: an action other than start_run refused',
                        extra={'action': str(event.get('action'))[:40]})
         raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}), restarts an ended one as a '
                              f"child run ({RESTART_ACTION!r}), asks for an ended run's reactions "
-                             f'({ASK_REACTIONS_ACTION!r}), stops a run ({STOP_ACTION!r}) or hands a person\'s signal on '
-                             f'({run_signals.SIGNAL_ACTION!r})')
+                             f'({ASK_REACTIONS_ACTION!r}), stops a run ({STOP_ACTION!r}), hands a person\'s signal on '
+                             f'({run_signals.SIGNAL_ACTION!r}) or publishes approved docs ({PUBLISH_DOCS_ACTION!r})')
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
     try:
         answer = start_run(event, launch=False)

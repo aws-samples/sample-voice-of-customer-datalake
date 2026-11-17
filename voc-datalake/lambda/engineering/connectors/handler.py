@@ -22,7 +22,12 @@ line has the operation, the caller's role, run and agent index, and the status.
 after its function (``ENGINEERING_RUNTIME_ROLE_NAME``, ``ENGINEERING_RUNTIME_FUNCTION_NAME``), checked as an agent's
 identity is; an agent asking for it is refused 403, and the runtime asking for any other operation is too. ``head``
 (7.47.00, ``{"connection", "repository", "branch", "issue"?}``) is voc-engineering-start's alone, admitted the same
-way (``ENGINEERING_START_ROLE_NAME``, ``ENGINEERING_START_FUNCTION_NAME``).
+way (``ENGINEERING_START_ROLE_NAME``, ``ENGINEERING_START_FUNCTION_NAME``), and so is ``push_approved_docs`` (7.52.00,
+``{connection, repository, default_branch, kind, digest, requested_by, draft?}``: the approved docs' pull request, its
+refusals' answers carrying a ``code`` beside the reason: ``human_driven``, ``not_approved``, ``digest_mismatch``). An
+agent's ``read`` of kind ``tenets`` (7.52.00, ``{"kind": "tenets", "target": "accepted"}``) answers its run's
+connection's accepted tenets from the store; the approved docs' reader and their claims are wired with the engineering
+table and the workspace bucket (``records.ApprovedDocsRecords``, ``records.DocsClaims``).
 """
 from __future__ import annotations
 
@@ -36,7 +41,7 @@ from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any, Final
 
-from engineering.connectors.broker import Broker, NotNow, NotPermitted
+from engineering.connectors.broker import Broker, DocsRequest, NotNow, NotPermitted
 from engineering.connectors.connections import CONNECTION_ID, PARAMETER_PREFIX_ENV
 from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
@@ -65,10 +70,12 @@ from engineering.connectors.identity import (
     LABEL_ISSUE,
     OPEN_OR_UPDATE_DRAFT_PR,
     POST_COMMENT,
+    PUSH_APPROVED_DOCS,
     PUSH_BUNDLE,
     REACTIONS,
     READ,
     START_ROLE,
+    TENETS_READ,
     Caller,
     UnknownCaller,
     caller_from_event,
@@ -76,7 +83,7 @@ from engineering.connectors.identity import (
     runtime_caller_from_event,
 )
 from engineering.connectors.patches import WorkspacePatches
-from engineering.connectors.records import RunRecords, WriteClaims
+from engineering.connectors.records import ApprovedDocsRecords, DocsClaims, RunRecords, WriteClaims
 from engineering.connectors.router import HostRouter
 from engineering.connectors.write_policy import WriteRefused
 from engineering.runtime.interface import MAX_ATTEMPT
@@ -188,6 +195,12 @@ def _attempt(args: Mapping[str, object]) -> int:
 
 def _read(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
     _keys(args, {'kind', 'target'}, frozenset({'cursor'}))
+    if args.get('kind') == TENETS_READ:
+        # (7.52.00: the run's connection's accepted tenets, from the store: no cursor, no host)
+        if args.get('target') != 'accepted' or 'cursor' in args:
+            raise BadRequest('A tenets read is {"kind": "tenets", "target": "accepted"}.')
+        page = broker.tenets(caller)
+        return {'content': page.content, 'next_cursor': None}
     cursor = _text(args, 'cursor', MAX_NAME) if 'cursor' in args else None
     page = broker.read(caller, _choice(args, 'kind', _READ_KINDS), _text(args, 'target', MAX_NAME), cursor)
     return {'content': page.content, 'next_cursor': page.next_cursor}
@@ -270,6 +283,31 @@ def _head(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[st
                        issue if isinstance(issue, int) else None)
 
 
+def _push_approved_docs(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
+    """``{connection, repository, default_branch, kind, digest, requested_by, draft?}`` (voc-engineering-start's alone,
+    7.52.00): ``{pr: {number, url, branch}, kind, version, digest, tree_hash, draft, repeated}``."""
+    _keys(args, {'connection', 'repository', 'default_branch', 'kind', 'digest', 'requested_by'},
+          frozenset({'draft'}))
+    from engineering.knowledge.render_docs import DIGEST, KINDS
+    connection = _text(args, 'connection', MAX_NAME)
+    if not CONNECTION_ID.fullmatch(connection):
+        raise BadRequest('connection is a connection id.')
+    kind, digest = args.get('kind'), args.get('digest')
+    if kind not in KINDS:
+        raise BadRequest('kind is knowledge or tenets.')
+    if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
+        raise BadRequest('digest is the rendering\'s sha256, 64 hexadecimal characters.')
+    # (who asked: the dial reads only a person's subject, so anything else works Human-driven: dial.py)
+    person = _text(args, 'requested_by', MAX_NAME)
+    draft = args.get('draft', False)
+    if not isinstance(draft, bool):
+        raise BadRequest('draft is true or false.')
+    return broker.push_approved_docs(caller, DocsRequest(
+        connection=connection, repository=_text(args, 'repository', MAX_NAME),
+        default_branch=_text(args, 'default_branch', MAX_NAME), kind=str(kind), digest=digest, requested_by=person,
+        draft=draft))
+
+
 _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]], dict[str, object]]]] = {
     READ: _read,
     POST_COMMENT: _post_comment,
@@ -278,6 +316,7 @@ _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]],
     OPEN_OR_UPDATE_DRAFT_PR: _open_or_update_draft_pr,
     REACTIONS: _reactions,
     HEAD: _head,
+    PUSH_APPROVED_DOCS: _push_approved_docs,
 }
 
 
@@ -290,7 +329,10 @@ _REFUSAL_STATUSES: Final[Mapping[type, int]] = {
 
 def _refusal(exc: WriteRefused | HostError) -> dict[str, Any]:
     status = next(_REFUSAL_STATUSES[kind] for kind in type(exc).__mro__ if kind in _REFUSAL_STATUSES)
-    return _response(status, {'error': exc.reason}, retry_after=exc.retry_after if isinstance(exc, HostBusy) else None)
+    # (a docs write's refusal names why beside its reason: broker.py ``DocsRefused``)
+    code = getattr(exc, 'code', '')
+    return _response(status, {'error': exc.reason, **({'code': code} if isinstance(code, str) and code else {})},
+                     retry_after=exc.retry_after if isinstance(exc, HostBusy) else None)
 
 
 def _answer(event: Mapping[str, object], caller: Caller, broker: Broker) -> tuple[str | None, dict[str, Any]]:
@@ -366,7 +408,18 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
     records = RunRecords(get_dynamodb_client(), table, workspace, agents)
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
                             ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
-                            writes=WriteClaims(get_dynamodb_client(), table)))
+                            writes=WriteClaims(get_dynamodb_client(), table),
+                            docs=ApprovedDocsRecords(approved_docs(get_dynamodb_client(), table, workspace)),
+                            docs_writes=DocsClaims(get_dynamodb_client(), table)))
+
+
+def approved_docs(client: Any, table: str, workspace: WorkspaceStore) -> Any:
+    """What an administrator approved, over the knowledge store's rows and objects (``knowledge/docs.py``)."""
+    from engineering.knowledge.docs import ApprovedDocs, KnowledgeDocs
+    from engineering.knowledge.store import PackStore
+    from engineering.knowledge.tenets import TenetsStore
+
+    return ApprovedDocs(KnowledgeDocs(PackStore(client, table, workspace)), TenetsStore(client, table))
 
 
 @instrumented_handler   # (its metrics flush: the workspace store's count of denied reads taken as missing)

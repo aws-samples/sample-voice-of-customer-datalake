@@ -243,6 +243,23 @@ def test_the_knowledge_pack_counter_is_read_by_its_key() -> None:
     assert ports(client=client).knowledge_approved('not a connection') == 0
 
 
+def test_the_accepted_tenets_and_the_docs_rendering_are_read_by_their_keys() -> None:
+    @dataclass
+    class Client:
+        asked: list[dict[str, Any]] = field(default_factory=list)
+
+        def get_item(self, **request: Any) -> dict[str, Any]:
+            self.asked.append(request)
+            return {'Item': {'accepted_version': {'N': '2'}, 'version': {'N': '5'}}}
+
+    client = Client()
+    assert ports(client=client).tenets_accepted('shop') == 2
+    assert ports(client=client).knowledge_rendering('shop') == 5
+    assert [ask['Key']['sk']['S'] for ask in client.asked] == ['TENETS', 'KDOCS']
+    assert {ask['Key']['pk']['S'] for ask in client.asked} == {'WS#default#REPO#shop'}
+    assert ports(client=client).tenets_accepted('not a connection') == 0
+
+
 def test_the_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('ENGINEERING_IMAGE_LANGUAGES', 'python,node')
     monkeypatch.setenv('ENGINEERING_AGENT_NETWORK', 'vpc')

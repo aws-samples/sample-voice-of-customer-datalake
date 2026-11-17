@@ -64,9 +64,11 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
       ['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject', 's3:PutObject']);
     expect(JSON.stringify(statements)).not.toMatch(/Delete|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
-    // (7.51.00: and the run workspace's reads of the agents' own objects, below)
+    // (7.51.00: and the run workspace's reads of the agents' own objects, below; 7.52.00: and the knowledge packs'
+    // objects, for an approval's rendering and the docs' preview)
     expect(objects.map((statement) => statement.resource)).toStrictEqual([
-      expect.stringMatching(/"\/ws\/default\/reports\/\*"/), expect.stringMatching(/_transcripts/)]);
+      expect.stringMatching(/"\/ws\/default\/knowledge\/\*"/), expect.stringMatching(/"\/ws\/default\/reports\/\*"/),
+      expect.stringMatching(/_transcripts/)]);
     const puts = statements.filter((statement) => statement.actions.includes('s3:PutObject'));
     expect(puts.map((statement) => [statement.actions, statement.resource])).toStrictEqual(
       [[['s3:PutObject'], expect.stringMatching(/"\/ws\/default\/_readiness\/\*"/)]]);
@@ -114,13 +116,30 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions)
     const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
       && statement.actions.some((action) => /^dynamodb:(Put|Update|ConditionCheck)/.test(action)));
+    // (7.52.00: and the repositories' partitions, the knowledge flows' decisions: below)
     expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
-      [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']]);
+      [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        ['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
     expect(writes[0]?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] },
       Null: { 'dynamodb:LeadingKeys': 'false' },
     });
     expect(writes[0]?.resource).toMatch(/^\{"Fn::ImportValue":"[^"]*Engineering/);
+  });
+
+  it('write the repositories\' partitions (WS#*#REPO#*) with Put and Update only: approvals and tenets (7.52.00)', () => {
+    // (an administrator's approval of a knowledge pack version with its docs' rendering, and an acceptance or rejection
+    // of a tenets version: the stores' transactions; no delete, no ConditionCheckItem)
+    const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
+      && JSON.stringify(statement.condition ?? {}).includes('REPO'));
+    expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
+      [['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
+    expect(writes[0]?.condition).toStrictEqual({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    });
+    // Never the docs' claims (the broker's) nor the start's push: this role reaches the broker only through the start.
+    expect(JSON.stringify(policyStatementsOf(on(), 'AgentsLambdaRole'))).not.toMatch(/DOCS#|InvokeFunctionUrl/);
   });
 
   it('give the agents API no write of the engineering table while the module is off', () => {

@@ -1,4 +1,4 @@
-"""The default engineering flows (docs/autonomous-engineering.md "Default flows"): five ``voc-workflow/2`` templates.
+"""The default engineering flows (docs/autonomous-engineering.md "Default flows"): six ``voc-workflow/2`` templates.
 
 They are compiled from voc-datalake/templates/orchestration/flows/ into the orchestration bundle (7.50.00), whose
 copy every Lambda that stages lambda/ ships beside this module (``orchestration_bundle.json``; the web app imports the

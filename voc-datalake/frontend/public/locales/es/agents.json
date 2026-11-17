@@ -1472,6 +1472,10 @@
       "name": "Comprender el repositorio",
       "description": "Recorre el repositorio paquete a paquete y redacta su paquete de conocimiento, sus principios y su guía de revisión para que un administrador los apruebe."
     },
+    "tenets": {
+      "name": "Principios",
+      "description": "Redacta los principios del repositorio a partir de su paquete de conocimiento aprobado, su TENETS.md y los principios aceptados, para que un administrador los acepte; TENETS.md llega después en una pull request."
+    },
     "issueTriage": {
       "name": "Clasificación de incidencias",
       "description": "Lee una incidencia, la clasifica como error, funcionalidad o investigación, la reproduce o la localiza y propone el siguiente paso en la incidencia."

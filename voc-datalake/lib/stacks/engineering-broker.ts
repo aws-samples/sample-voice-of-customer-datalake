@@ -35,7 +35,12 @@
  * - `dynamodb:Query` on voc-agents, only in the connections' CI attestations' partitions (`CONNECTIONS#*#CI#*`, 7.04.00:
  *   the newest version of the run's connection's attestation, connectors/attestations.py) and of a row only its key,
  *   `state`, `repository` and `version` (a projection: a `dynamodb:Attributes` condition);
- * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only.
+ * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only;
+ * - since 7.52.00, for voc-engineering-start's `push_approved_docs` and the agents' read of the accepted tenets:
+ *   `dynamodb:GetItem` on voc-engineering, only in the repositories' partitions (`WS#*#REPO#*`: the knowledge packs'
+ *   versions and their rendering, the tenets' versions), read only; `s3:GetObject` on the knowledge packs' objects
+ *   (`ws/default/knowledge/*`); and the docs writes' claims in the connections' docs partitions (`WS#*#DOCS#*`, records.py
+ *   DocsClaims) with the claims' own grant and attributes.
  * No other write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
  * on it can call it: the agent roles (engineering-runtime.ts) and, since 7.10.00, voc-engineering-runtime's role for the
@@ -54,7 +59,7 @@ import { booleanContextFlag } from '../utils/context-flag';
 import { ENGINEERING_CI_LAYER_DIR, SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
-import { ENGINEERING_WORKSPACE } from './core-buckets';
+import { ENGINEERING_REPO_PARTITIONS, ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS } from './core-buckets';
 
 /** The CDK context key that deploys the engineering agents (default off). */
 const ENGINEERING_AGENTS_CONTEXT_KEY = 'engineeringAgents';
@@ -116,6 +121,11 @@ const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];
 const BROKER_CLAIM_ATTRIBUTES = ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'];
 /** The runs' writes' partitions (`WS#<ws>#WRITES#<run>`, records.py writes_pk): the claim rows', and nothing else. */
 const BROKER_WRITE_PARTITIONS = 'WS#*#WRITES#*';
+/**
+ * The connections' docs writes' partitions (7.52.00, `WS#<ws>#DOCS#<connection>`, records.py docs_pk): the approved
+ * docs' claim rows, once per (connection, kind, version), with a run's claims' attributes.
+ */
+export const BROKER_DOCS_PARTITIONS = 'WS#*#DOCS#*';
 /**
  * The connections' CI attestations' partitions in voc-agents (`CONNECTIONS#<ws>#CI#<connection>`, attestations.py
  * attestation_pk): beside the connections' own (`CONNECTIONS#<ws>`), which this pattern does not match.
@@ -220,9 +230,10 @@ export class EngineeringBroker extends Construct {
 
   /**
    * Admit voc-engineering-start's role, in the session Lambda names after its function, for the `head` operation
-   * alone (7.47.00; lambda/engineering/connectors/identity.py runtime_caller_from_event with START_ROLE): a start
-   * that resolves its commit reads its connection's default branch's head and its issue's state, read only. The
-   * caller still needs its own IAM grant on the function URL (engineering-start.ts).
+   * (7.47.00; lambda/engineering/connectors/identity.py runtime_caller_from_event with START_ROLE): a start that
+   * resolves its commit reads its connection's default branch's head and its issue's state, read only; and since
+   * 7.52.00 for `push_approved_docs` (its `publish_docs`: the approved docs' commit and pull request, which no agent role
+   * may ask for). The caller still needs its own IAM grant on the function URL (engineering-start.ts).
    */
   public admitStart(role: iam.IRole, functionName: string): void {
     this.brokerFunction.addEnvironment('ENGINEERING_START_ROLE_NAME', role.roleName);
@@ -286,7 +297,7 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
     actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
     resources: [props.engineeringTable.tableArn],
     conditions: {
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_WRITE_PARTITIONS] },
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_WRITE_PARTITIONS, BROKER_DOCS_PARTITIONS] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_CLAIM_ATTRIBUTES },
       StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
     },
@@ -328,11 +339,23 @@ function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): voi
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'SubmittedPatchesAndGateRecords', actions: ['s3:GetObject'], resources: objects,
   }));
+  // The approved docs (7.52.00, knowledge/docs.py through records.py ApprovedDocsRecords): their rows, read only, in the
+  // repositories' partitions alone, and the knowledge packs' objects they render from, read only.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'ApprovedDocsRecords', actions: ['dynamodb:GetItem'], resources: [props.engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_REPO_PARTITIONS] } },
+  }));
+  const knowledge = props.workspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'ApprovedDocsObjects', actions: ['s3:GetObject'], resources: [knowledge],
+  }));
   acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
     reason: 'The workspace bucket\'s agents\' patches and gate records (their run, agent and commit are known only at '
-      + 'run time), read only; the code reads the caller\'s own patch and the run\'s recorded gate record alone',
-    findings: objects.map(resourceFinding),
+      + 'run time), read only; the code reads the caller\'s own patch and the run\'s recorded gate record alone; and '
+      + 'the knowledge packs\' objects (their connection, package and version known only at run time), read only, '
+      + 'for the approved docs the broker renders again',
+    findings: [...objects, knowledge].map(resourceFinding),
   }]);
   const { region } = cdk.Stack.of(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({

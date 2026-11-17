@@ -19,7 +19,9 @@ The content is in the workspace bucket, written once (``If-None-Match``) before 
   draft to ``approved`` with who and when, moves the counter's ``approved_version`` up (never down: approving a
   version older than the approved one is refused, and so is one built on an older version than the approved one,
   which would drop what that one added), and writes the approval's log row. Approving the approved version
-  again answers it as it is.
+  again answers it as it is. Since 7.52.00 the approval keeps the digest of the connection's agent docs as they render
+  with it (``rendering_digest``, on the version and its log row) and records that rendering in the same transaction
+  (``knowledge/docs.py``).
 - **Read**: agents read only ``for_agent``: the counter's ``approved_version`` and its documents, each inside a DATA
   block (the pack is mined from text anyone with access can write: data, never instructions); a package with no
   approved version has no pack to read. ``latest_approved`` gives the same version as a pack, for the reduce.
@@ -108,6 +110,8 @@ class PackVersion:
     created_at: str
     approved_by: str = ''
     approved_at: str = ''
+    #: The digest of the connection's agent docs as its approval rendered them (7.52.00, ``knowledge/docs.py``).
+    rendering_digest: str = ''
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> PackVersion:
@@ -116,7 +120,14 @@ class PackVersion:
                    author_kind=_text(item.get('author_kind')), reason=_text(item.get('reason')),
                    built_from=_text(item.get('built_from')), base_version=_number(item.get('base_version')),
                    created_at=_text(item.get('created_at')), approved_by=_text(item.get('approved_by')),
-                   approved_at=_text(item.get('approved_at')))
+                   approved_at=_text(item.get('approved_at')), rendering_digest=_text(item.get('rendering_digest')))
+
+    def view(self) -> dict[str, Any]:
+        return {'package': self.package, 'version': self.version, 'status': self.status, 'author': self.author,
+                'author_kind': self.author_kind, 'reason': self.reason, 'built_from': self.built_from,
+                'base_version': self.base_version, 'created_at': self.created_at,
+                'approved_by': self.approved_by or None, 'approved_at': self.approved_at or None,
+                'rendering_digest': self.rendering_digest or None}
 
 
 @dataclass(frozen=True)
@@ -212,7 +223,15 @@ class PackStore:
         counter = get_row(self.client, self.table, self._key(ws, connection, f'KPACK#{_segment(package)}')) or {}
         return int(counter.get('approved_version', {}).get('N', '0'))
 
-    def approve(self, ws: str, connection: str, package: str, version: int, approver: Actor) -> PackVersion:
+    def approved_version(self, ws: str, connection: str, package: str) -> int:
+        """The package's approved version (0: none)."""
+        return self._approved_version(ws, connection, package)
+
+    def approve(self, ws: str, connection: str, package: str, version: int, approver: Actor, *,
+                rendering_digest: str = '', also: Sequence[Mapping[str, Any]] = ()) -> PackVersion:
+        """An administrator's approval of a draft (the module's doc). ``rendering_digest`` (7.52.00): the digest of
+        the connection's agent docs with this version approved, kept on the version and its log row, and ``also`` the
+        writes that record that rendering (``knowledge/docs.py``), in the same transaction."""
         if not (approver.kind == 'person' and approver.admin):
             raise PackForbidden('only an administrator approves a knowledge pack')
         current = self.version(ws, connection, package, version)
@@ -228,24 +247,31 @@ class PackStore:
                                f'{approved} is approved since: refresh or edit from version {approved} instead')
         segment, at = _segment(package), self.now().isoformat()
         values = {':approved': {'S': APPROVED}, ':draft': {'S': DRAFT}, ':by': {'S': approver.id}, ':at': {'S': at}}
+        update = 'SET #s = :approved, approved_by = :by, approved_at = :at'
+        digest = {'rendering_digest': {'S': rendering_digest}} if rendering_digest else {}
+        if rendering_digest:
+            update += ', rendering_digest = :digest'
+            values[':digest'] = {'S': rendering_digest}
+        items: list[Mapping[str, Any]] = [
+            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}#{version:06d}'),
+                        'UpdateExpression': update,
+                        'ConditionExpression': '#s = :draft', 'ExpressionAttributeNames': {'#s': 'status'},
+                        'ExpressionAttributeValues': values}},
+            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}'),
+                        'UpdateExpression': 'SET approved_version = :v',
+                        'ConditionExpression': 'attribute_not_exists(approved_version) OR '
+                                               '(approved_version < :v AND approved_version <= :base)',
+                        'ExpressionAttributeValues': {':v': {'N': str(version)},
+                                                      ':base': {'N': str(current.base_version)}}}},
+            {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': {
+                **self._key(ws, connection, f'KPACKLOG#{segment}#{version:06d}#approved'),
+                'by': {'S': approver.id}, 'at': {'S': at}, 'version': {'N': str(version)}, **digest}}},
+            *also,
+        ]
         try:
-            self.client.transact_write_items(TransactItems=[
-                {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}#{version:06d}'),
-                            'UpdateExpression': 'SET #s = :approved, approved_by = :by, approved_at = :at',
-                            'ConditionExpression': '#s = :draft', 'ExpressionAttributeNames': {'#s': 'status'},
-                            'ExpressionAttributeValues': values}},
-                {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}'),
-                            'UpdateExpression': 'SET approved_version = :v',
-                            'ConditionExpression': 'attribute_not_exists(approved_version) OR '
-                                                   '(approved_version < :v AND approved_version <= :base)',
-                            'ExpressionAttributeValues': {':v': {'N': str(version)},
-                                                          ':base': {'N': str(current.base_version)}}}},
-                {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': {
-                    **self._key(ws, connection, f'KPACKLOG#{segment}#{version:06d}#approved'),
-                    'by': {'S': approver.id}, 'at': {'S': at}, 'version': {'N': str(version)}}}},
-            ])
+            self.client.transact_write_items(TransactItems=items)
         except ClientError as exc:
-            if not any(is_key_collision(exc, put_index=i) for i in range(3)):
+            if not any(is_key_collision(exc, put_index=i) for i in range(len(items))):
                 raise
             raise PackConflict('the version or the approved one changed meanwhile: read it again') from exc
         return self.version(ws, connection, package, version)
@@ -262,6 +288,10 @@ class PackStore:
         except ValueError as exc:   # json.JSONDecodeError is a ValueError
             raise PackUnavailable(f'version {version.version} is not a readable pack') from exc
         return ApprovedPack(version, pack, {kind: read(f'{kind}.md') for kind in KINDS})
+
+    def load(self, ws: str, connection: str, package: str, version: int) -> ApprovedPack:
+        """One version as a pack, whatever its status (an administrator's read, a rendering)."""
+        return self._load(ws, connection, self.version(ws, connection, package, version))
 
     def latest_approved(self, ws: str, connection: str, package: str) -> ApprovedPack | None:
         """The latest approved version as a pack (for the reduce and the administrators' reads), None when no

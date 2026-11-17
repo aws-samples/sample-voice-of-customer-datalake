@@ -107,8 +107,8 @@ def test_a_records_instructions_are_its_skill_above_its_examples_and_leave_the_p
                for agent in BUNDLE['agents'] if agent['skill'])
 
 
-@pytest.mark.parametrize('flow_id', ['understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature',
-                                     'pr-review'])
+@pytest.mark.parametrize('flow_id', ['understand-repository', 'tenets', 'issue-triage', 'bug-hunt-and-fix',
+                                     'feature', 'pr-review'])
 def test_each_flow_compiles_to_a_definition_the_server_keeps_as_written(flow_id: str) -> None:
     flow = FLOWS[flow_id]
     result = validate_definition(flow['definition'])

@@ -16,7 +16,9 @@
  * reads and puts, its invoke of the runtime): the Agents API reaches the signals through it, never the runtime's own
  * function. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
  * engineering agent's trigger), and a start that resolves its commit calls the broker's `head` (its function URL, which
- * admits this role for that operation alone). Pay per use: no fixed cost.
+ * admits this role for that operation and, since 7.52.00, `push_approved_docs`, the `publish_docs` action's: an
+ * administrator's request for the approved docs' pull request; the broker holds every check, this role holds no
+ * repository credential and no knowledge row). Pay per use: no fixed cost.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -130,7 +132,8 @@ function startRole(scope: Construct, props: StartProps): iam.Role {
   }));
   grantInvokeByName(stack, role, [props.runtime.functionName], 'HandTheLaunchOn');
   // An engineering agent's start resolves its commit (7.47.00): the broker's `head`, through its function URL with IAM
-  // auth only, as the agents and the runtime call it; the broker admits this role for that operation alone.
+  // auth only, as the agents and the runtime call it; the broker admits this role for that operation and, since 7.52.00,
+  // `push_approved_docs` (publish_docs) alone.
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'StartBrokerHead', actions: ['lambda:InvokeFunctionUrl'], resources: [props.broker.functionArn],
     conditions: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },

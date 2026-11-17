@@ -9,6 +9,9 @@ Every write an engineering agent makes goes through the connector's broker, and 
   commit messages but for their authorship trailers), a value shaped like personal data (an email address, a
   phone number).
 
+Since 7.52.00, the approved docs' write (``push_approved_docs``) writes ``docs/agents/**`` or exactly ``TENETS.md``,
+each kind its own (``docs_paths``), on its own branch (``docs_branch``).
+
 Pure functions, no I/O: the broker calls them and raises on a refusal.
 """
 from __future__ import annotations
@@ -116,6 +119,45 @@ def path_refusals(paths: Iterable[str], ci_definitions: Collection[str] = ()) ->
     named = {path.strip('/') for path in ci_definitions}
     return [Refusal('ci_definition', f'An agent never changes the CI definitions ({path}).')
             for path in sorted(set(paths)) if _CI_PATHS.match(path.lstrip('/')) or path.strip('/') in named]
+
+
+#: The only files the platform's docs write puts on a repository (7.52.00, the broker's ``push_approved_docs``): the
+#: agent docs under ``docs/agents/`` (a relative path of path characters, no empty, ``.`` or ``..`` part) and the
+#: tenets file at the root, exactly; each kind its own.
+DOCS_PATHS: Final = re.compile(r'docs/agents/(?:[A-Za-z0-9@._+-]+/){0,20}[A-Za-z0-9@._+-]+\Z')
+TENETS_PATH: Final = 'TENETS.md'
+#: The docs write's branches, one per kind and version: ``voc-agent/docs/<kind>-v<n>`` (never a run's, never the
+#: default branch: the ruleset that leaves ``voc-agent/**`` unprotected covers it).
+DOCS_BRANCH: Final = re.compile(rf'{re.escape(AGENT_BRANCH_PREFIX)}docs/(?P<kind>knowledge|tenets)-v[1-9][0-9]{{0,5}}\Z')
+
+
+def docs_path_refusal(path: str, kind: str) -> Refusal | None:
+    """Why the docs write of ``kind`` refuses ``path``: knowledge writes ``docs/agents/**`` only, tenets
+    ``TENETS.md`` only (never ``docs/agentsX``, an absolute path, ``..`` or any other file)."""
+    if kind == 'tenets' and path == TENETS_PATH:
+        return None
+    if kind == 'knowledge' and DOCS_PATHS.fullmatch(path) and not any(
+            part in ('.', '..') for part in path.split('/')):
+        return None
+    allowed = TENETS_PATH if kind == 'tenets' else 'docs/agents/**'
+    return Refusal('not_docs_path', f'The docs write of {kind} writes {allowed} only, not {path[:120]!r}.')
+
+
+def docs_paths(paths: Iterable[str], kind: str) -> None:
+    """Raise ``WriteRefused`` unless every path is one the docs write of ``kind`` writes (``docs_path_refusal``), and
+    there is at least one."""
+    listed = list(paths)
+    refusals = [found for path in listed if (found := docs_path_refusal(path, kind)) is not None]
+    if not listed or refusals:
+        raise WriteRefused(' '.join(r.message for r in refusals) or 'The docs write names no file.')
+
+
+def docs_branch(kind: str, version: int) -> str:
+    """The branch the docs write of ``kind`` at ``version`` goes on (``DOCS_BRANCH``)."""
+    branch = f'{AGENT_BRANCH_PREFIX}docs/{kind}-v{int(version)}'
+    if not DOCS_BRANCH.fullmatch(branch):
+        raise WriteRefused('The docs write is of knowledge or tenets, at a version from 1.')
+    return branch
 
 
 def check_ci_definitions(changed_paths: Iterable[str], ci_definitions: Collection[str]) -> None:

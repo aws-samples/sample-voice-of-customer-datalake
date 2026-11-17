@@ -1,6 +1,6 @@
 /**
  * The default engineering flows as the app reads them (the orchestration bundle's, `templates/orchestration/bundle.json`,
- * whose copy the server lists): all five, each kept whole by the app's model, each valid under the editor's port of the server's rules
+ * whose copy the server lists): all six, each kept whole by the app's model, each valid under the editor's port of the server's rules
  * (the server's own test, `shared/test/test_engineering_templates.py`, validates them with the real validator), and
  * each with its copy in the catalogues.
  */
@@ -16,9 +16,9 @@ const catalogue = (key: string): unknown =>
   key.replace(/^agents:/, '').split('.').reduce<unknown>((node, part) => Branch.safeParse(node).data?.[part], en)
 
 describe('the default engineering flows', () => {
-  it('offers all five, in the order of the bundle', () => {
+  it('offers all six, in the order of the bundle', () => {
     expect(ENGINEERING_TEMPLATES.map((t) => t.templateId)).toStrictEqual(flows.map((t) => t.template_id))
-    expect(ENGINEERING_TEMPLATES).toHaveLength(5)
+    expect(ENGINEERING_TEMPLATES).toHaveLength(6)
   })
 
   it.each(ENGINEERING_TEMPLATES.map((t) => [t.templateId, t] as const))('%s is valid in the editor, as the server has it', (_id, template) => {

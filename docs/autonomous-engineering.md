@@ -556,11 +556,12 @@ branch, being refused:
 
 | Role | Operations |
 |---|---|
-| every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token |
+| every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token; since 7.52.00 the run's connection's accepted tenets (`read` of kind `tenets`, target `accepted`: the store's, never the repository's file) |
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per attempt; no dial: a label changes no code) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
 | PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`) |
+| voc-engineering-start (no agent) | `head` (7.47.00: a connection's default branch's head and an issue's state, read only) and `push_approved_docs` (7.52.00: the approved knowledge docs or tenets, at an administrator's request: [The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)) |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
 the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; any
@@ -756,10 +757,12 @@ checkout cache's writer: nothing new. All pinned by `lib/stacks/engineering-app-
 
 *Partly built* (`voc-datalake/lambda/engineering/knowledge/`): the packages and their owners, the shards, the map
 step's one model call and its note schema, the reduce into documents, and the versioned store with approval, as
-tested code that nothing invokes yet. Planned: the Understand flow and the mapper agent that run them (phase 4: until
-then nothing reads a repository for a pack, and no pack exists), the REST routes to list, read, edit and approve a
-version (admin only), several runs resuming one map, the dependency graph in the architecture document, and the
-repository's tenets ([below](#the-repositorys-tenets)). A refresh starts as a run of the saved Understand flow: from
+tested code that nothing invokes yet. Since 7.52.00 the REST routes list, read and approve a version (admin only,
+[below](#the-knowledge-docs-pull-request-75200)), an approval records the docs the pack renders to, and those docs go
+to the repository in a pull request; the repository's tenets have a store of their own ([below](#the-repositorys-tenets)).
+Planned: the Understand flow and the mapper agent that run them (phase 4: until then nothing reads a repository for a
+pack, and no pack exists), an edit route, several runs resuming one map, and the dependency graph in the architecture
+document. A refresh starts as a run of the saved Understand flow: from
 the flow's page (**Start a run**), `POST /agents/engineering/runs`, or the AI assistant's approval card ("refresh the
 knowledge pack", 6.27.00: only an administrator's Approve starts it, as them; [From the
 assistant](#how-the-agents-work-together)); until the runtime follows a flow's steps, such a run maps nothing yet.
@@ -833,15 +836,83 @@ Agents read a pack only through `for_agent`: the latest approved version's docum
 one random fence (the quality gate's `data_block`, redacted), never raw Markdown in a prompt; a package with no
 approved version has no pack to read.
 
+### The knowledge docs pull request (7.52.00)
+
+*Built* (`knowledge/render_docs.py`, `knowledge/docs.py`, the broker's `push_approved_docs`, voc-engineering-start's
+`publish_docs`, `shared/agents_engineering_knowledge_routes.py`). The approved pack goes to the repository as Markdown
+that people and other tools read: `docs/agents/index.md` (every package the overview lists, each with its document
+or "not approved yet") and `docs/agents/<package path>.md` per package with an approved version (its seven documents,
+its citations as footnotes numbered across the file). The root package is `docs/agents/repository.md`; a package whose
+path is `index` or `repository` (in any case) is `index-package.md` or `repository-package.md`; a character outside
+`[A-Za-z0-9@._+-]` in a path segment becomes `-`, and two packages that would land on one file (in any case) are
+refused, never merged. A claim flagged for review is not rendered. The rendering is deterministic and of the standard
+library only, so the Agents API and the broker render the same bytes, and its digest is the sha256 of the canonical
+`[(path, sha256)]` list (sorted by path, JSON without spaces).
+
+- **Approve** (`POST /agents/engineering/knowledge/<connection>/<package>/versions/<version>/approve`, `{}`): the store's
+  approval, as before, and in the same transaction the connection's docs as they render with this version: every
+  package the overview lists at its approved version, this one in its place. The digest is kept on the version
+  (`rendering_digest`) and its `KPACKLOG#…#approved` row, and the connection's next rendering is recorded,
+  `KDOCS` (its number, digest, each package's version, who and when; held to the number read, so of two approvals
+  racing one is refused) and a create-only `KDOCSLOG#<n:06d>` (D1, D4). The answer is `{connection, version,
+  rendering_digest, rendering}`. `<package>` is in the workspace layout's encoding (`=2E` for the root,
+  `packages=2Fweb`).
+- **Read**: `GET /agents/engineering/knowledge/<connection>` (each package's versions, its approved one, the recorded
+  rendering) and `…/<package>/versions/<version>` (the version, its seven documents).
+- **Preview** (`GET /agents/engineering/docs/<connection>/preview?kind=knowledge|tenets`): the files the approved
+  docs render to now (`{path, sha256, bytes}`), their digest and the approval's (`matches`), the branch, and a git
+  patch that adds them (cut at 4 MB, `patch_truncated`): what a Human-driven administrator applies by hand.
+- **Publish** (`POST /agents/engineering/docs/<connection>/publish`, `{kind, digest, pr?}`): 202 `{pr: {url, number,
+  branch}, kind, version, digest, draft}`. The Agents API reads the requesting administrator's stored way of working
+  first (Human-driven, or none stored: 409 `human_driven`, with the preview's address), then invokes
+  voc-engineering-start's `publish_docs`, which asks the broker's `push_approved_docs` as its own role. The broker,
+  voc-engineering-start's alone (no agent role may ask for it, and the runtime may not either):
+  1. holds the connection's credential to the stored connection's repository;
+  2. reads the approved version again (`KDOCS` and each package version it names, each still approved, or the
+     accepted tenets version) and renders it again from the stored records; the request's digest, the approval's
+     and the rendering's must be one (409 `digest_mismatch`; nothing approved: 409 `not_approved`);
+  3. allows only `docs/agents/**` for the knowledge and exactly `TENETS.md` for the tenets (`write_policy.docs_paths`:
+     never `docs/agentsX`, an absolute path, `..`, a CI file or anything else; 422), 4 MB at most;
+  4. reads the requesting administrator's stored way of working again, failing closed (`human_driven` for
+     anything but AI-assisted or AI-driven: their request is the person's go an AI-assisted push waits for);
+  5. holds the connection's CI attestation and the host's branch rules, as for an agent's push (409);
+  6. writes one commit (the bot's identity, a trusted message naming the version and the digest) on its own branch
+     `voc-agent/docs/<kind>-v<n>` from the default branch's head, then opens the pull request ready for review, or as
+     a draft when the request says `pr: draft` or else the flow's own `pr` setting says so (Understand the
+     repository's for the knowledge, Tenets' for the tenets: both `ready`). Its body names the files, the version
+     and the digest, and ends with the platform's line that only a person approves and merges it.
+
+  Each write is made once per (connection, kind, version): the push and the pull request are claims of their own
+  (`WS#default#DOCS#<connection>`, a run's claims' attributes), so a pull request whose open failed opens on a retry
+  from the branch already pushed, and a second publish of a version whose pull request is open answers 409
+  `already_published` with it. There is no final go (no code is written: D-6), no merge, approval or ready operation.
+  A `TENETS.md` written by hand is replaced in the pull request's diff, which a person reviews.
+
 ### The repository's tenets
 
-The Understand flow also drafts the target repository's own tenets, a TENETS.md in the style of this sample's (what
-the team optimises for, ranked, each with its evidence from the history: PR review comments, reverted changes, the
-code style, the CI rules, the code owners), and its review guide, in the style of this sample's REVIEW.md. They are
-mined from text anyone with access can write, and they become the gate's bar, so an administrator edits and accepts
-them (versioned, like the pack); the review agents and the quality gate then use the accepted
-tenets as their bar, as this sample's own tenets review does. Changes to them are proposed by the learning loop and
-need a person. Nothing is written to the repository unless a person opens that pull request.
+*Built* (7.52.00: `knowledge/tenets.py`, `templates/orchestration/flows/tenets.yaml`, the harness's `read_tenets` and
+`write_tenets`, `runtime/tenets_end.py`). The Tenets flow's understander reads the approved knowledge pack its task
+carries, the repository's `TENETS.md` if it has one (a file read through the broker) and the accepted tenets
+(`read_tenets`), and writes the repository's tenets once with `write_tenets`: a `voc-tenets/1` record (1 to 30 tenets,
+each an id such as `T1` or `D5`, a title, a statement, why, and the paths or commits it rests on) under its own keys,
+`…/commits/<sha>/_tenets/attempt-<n>/tenets.json` (`_tenets` is one of the workspace layout's artifact kinds). At the
+run's end (`tenets_end`, beside the triage's copy) the record, its text made safe (credentials and personal data
+replaced) and checked again, becomes the connection's next version, a draft, once per run.
+
+The versions are in the connection's partition beside its packs (`WS#default#REPO#<connection>`): the counter
+`TENETS` (its versions, the accepted version with its `TENETS.md` digest and its ids), each version `TENETS#<v:06d>`
+(its record, author, run, status) and a create-only `TENETSLOG#<v:06d>#<event>` per event (drafted, accepted,
+rejected: who, when, why), and `TENETSRUN#<run>`, the run that drafted one. The runtime's role writes a draft's
+attributes alone (an IAM `dynamodb:Attributes` pin), so it never accepts or rejects one. An administrator reads them
+(`GET /agents/engineering/tenets/<connection>[/versions/<v>]`) and accepts (`POST …/versions/<v>/accept {reason?}`:
+never a version older than the accepted one) or rejects (`…/reject`) a draft; a rejected one stays. Once accepted,
+`TENETS.md` is rendered from it and goes to the repository through the same publish (`kind: tenets`).
+
+**Triage cites accepted tenets only** (the hard lock): `write_triage` refuses a tenet id the run's connection's
+accepted version does not hold (the broker's `read` of kind `tenets`, the store's: never the repository's file), and so
+does the triage run's end (the issue's trusted row is not written, `unaccepted_tenet`). With none accepted the list is
+`[]`, and readiness's `tenets` check warns. The review agents and the quality gate are to take the accepted tenets as
+their bar; changes to them are proposed by a new Tenets run and need a person.
 
 Storage (built for the pack: `knowledge/store.py`, `workspace/layout.py`'s `knowledge_key`): each version's
 `pack.json` and one Markdown file per document in the workspace bucket under
@@ -1288,21 +1359,22 @@ text: no engineering agent reads review text at all (the hunter gets ids, counts
 the customer-text check that guards host writes also runs in the publish helper and on workspace and memory writes,
 so an erasure (D5) has nothing to chase there.
 
-**Default flows.** Five default engineering flows to start from, each a template in the workflow editor that a team can
+**Default flows.** Six default engineering flows to start from, each a template in the workflow editor that a team can
 change (a run follows its flow since 6.28.00, as far as the runtime can do its steps:
 [The flow a run follows](#the-flow-a-run-follows)):
 
 | Flow | Steps | Stops at |
 |---|---|---|
 | Understand the repository | map shards → reduce → draft knowledge pack versions and the repository's draft tenets and review guide ([below](#the-repositorys-tenets)) | an administrator's approval |
+| Tenets (7.52.00) | the understander reads the approved pack, TENETS.md and the accepted tenets → `write_tenets`; the run's end drafts the next tenets version ([below](#the-repositorys-tenets)) | the draft, for an administrator to accept; then the `TENETS.md` pull request |
 | Issue triage | understand → classify (bug, feature, investigation) → reproduce or locate → propose | the proposal on the issue |
 | Bug hunt and fix | hunt → understand → fix → commit review → quality gate → commit → PR | the draft pull request |
 | Feature | understand (issue or PRD) → plan → build → commit review → quality gate → commit → PR | the draft pull request |
 | PR review | read the PR → reviewers in parallel, one pass, against the repository's tenets and review guide → comments | the review comments |
 
-*Built as templates*: since 7.50.00 the five are compiled from `voc-datalake/templates/orchestration/flows/` into
+*Built as templates*: since 7.50.00 the five (since 7.52.00 six, with Tenets) are compiled from `voc-datalake/templates/orchestration/flows/` into
 the orchestration bundle (`templates/orchestration/bundle.json`, its Lambda copy `lambda/shared/orchestration_bundle.json`),
-which the server and the web app both read (template ids `understand-repository`,
+which the server and the web app both read (template ids `understand-repository`, `tenets`,
 `issue-triage`, `bug-hunt-and-fix`, `feature`, `pr-review`; `shared/engineering_templates.py`),
 each validated by the server's own rules and kept as written (`shared/test/test_engineering_templates.py`, which also
 holds that none can merge and that the two pushing flows, Bug hunt and fix and Feature, end only at a stop at PR or a
@@ -1347,7 +1419,7 @@ engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-age
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
 shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
-`features.engineering`), and offers the five default flows as templates beside it (above).
+`features.engineering`), and offers the six default flows as templates beside it (above).
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
@@ -3327,7 +3399,8 @@ Enable (`POST /agents/<id>/enable`, and a create or update that turns an enginee
 checks and answers 409 `{error, checks}` with the failing ones. A check the subject does not need (the Issues source
 for a flow no issue starts) passes and says so. What a flow needs is its template's `requires` (`dial`, the ways of
 working it runs in; `ci_attestation`; `image`; `issues_source`; `knowledge_pack`); a stored flow without one needs
-what its roles do: a flow with a committer or a PR author a pushing way of working and the CI attestation.
+what its roles do: a flow with a committer or a PR author a pushing way of working and the CI attestation. Since
+7.52.00 `tenets` too (Issue triage requires it: advice, never blocking).
 
 | Check | Required | Reads | Fix |
 |---|---|---|---|
@@ -3336,8 +3409,8 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `ci_attestation` | yes, where the flow pushes | the connection's CI attestation | the CI attestation under Agents → Connections |
 | `ci_protection` | | `unknown`: the broker reads the host's branch rules with the connection's own token at each push; this API holds no host token | protect the default branch with its required checks, and leave `voc-agent/*` unprotected |
 | `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |
-| `pack` | | the connection's approved knowledge pack, where the flow requires one | the Understand flow, then approve its pack |
-| `tenets` | | where the flow requires them: `warn`, the tenets store arrives in a later release | write the repository's TENETS.md by hand meanwhile |
+| `pack` | | the connection's approved knowledge pack, where the flow requires one, and its docs' rendering (7.52.00) | the Understand flow, then approve its pack |
+| `tenets` | | the connection's accepted tenets version (7.52.00, `WS#default#REPO#<connection>` / `TENETS`), where the flow requires them (Issue triage): `warn` with none accepted, a triage then cites none | the Tenets flow, then accept its draft |
 | `issues_source` | | the deployment-wide GitHub Issues source's settings naming the repository with a sign-in (7.50.02: its connection adds it, [github-issues.md](github-issues.md#configured-by-your-github-connection-75002)), else its watermark (`voc-watermarks`, `github_issues#repo#<owner/name>`) | Agents → Connections: turn on "Read this repository's issues"; or Administration → Data sources → GitHub Issues (`/admin/data-sources/github_issues`) |
 | `issue_label` | | the trigger's label (a public repository needs one); `voc-agent` passes once its connection created it or found it (7.50.02: the token function's `ensure_label`); another label's presence is `unknown` here | Agents → Connections → Check installation; or create the label, and let only maintainers put it on an issue |
 | `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator, else the one asking), against the flow's `requires.dial`; nothing saved fails as "Not set yet: choose AI-assisted or AI-driven for <name>" (7.50.02: a run pushes nothing, whatever the documents' default), a saved Human-driven as Human-driven; the check names the person and each way of working by its name (Human-driven, AI-assisted, AI-driven) | Administration → Privacy & access → Users (`/admin/access/users`); in the Set up dialog, **Set my way of working to AI-driven** (the caller's own) |

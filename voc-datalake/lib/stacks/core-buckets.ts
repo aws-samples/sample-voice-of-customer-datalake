@@ -177,6 +177,17 @@ export const ENGINEERING_CHECKPOINT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*
 /** The runs list's month partitions (7.51.00, lambda/engineering/runtime/runs.py runlist_key). */
 export const ENGINEERING_RUNLIST_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#RUNLIST#20??-??`;
 /**
+ * The knowledge packs' objects (lambda/engineering/knowledge/store.py: `ws/<ws>/knowledge/<connection>/<package>/v<n>/`),
+ * written once by the packs' publish: the board reads them for an agent, and since 7.52.00 the Agents API (an approval's
+ * rendering, a preview) and the broker (the docs it writes, rendered again).
+ */
+export const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/knowledge/*`;
+/**
+ * The repositories' partitions in voc-engineering (`WS#<ws>#REPO#<connection>`, 7.52.00 knowledge/store.py, tenets.py,
+ * docs.py): the knowledge packs' versions and their rendering, the tenets' versions, as a `dynamodb:LeadingKeys` pattern.
+ */
+export const ENGINEERING_REPO_PARTITIONS = 'WS#*#REPO#*';
+/**
  * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
  * pattern: the metering writers ADD to them in the same transaction as each priced session write.
  */

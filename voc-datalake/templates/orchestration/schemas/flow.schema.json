@@ -63,7 +63,8 @@
         "ci_attestation": {"type": "boolean"},
         "image": {"type": "boolean"},
         "issues_source": {"type": "boolean"},
-        "knowledge_pack": {"type": "boolean"}
+        "knowledge_pack": {"type": "boolean"},
+        "tenets": {"type": "boolean"}
       }
     },
     "steps": {"type": "array", "minItems": 1, "maxItems": 58, "items": {"$ref": "#/$defs/step"}}

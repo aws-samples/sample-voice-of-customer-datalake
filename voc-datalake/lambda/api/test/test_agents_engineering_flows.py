@@ -115,9 +115,9 @@ def test_the_default_flows_are_listed_for_an_administrator_where_the_module_is(l
                                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
     with _api():
         status, body = _call(lambda_context, 'GET', '/workflows/templates')
-        assert (status, body['count']) == (200, 5), body
+        assert (status, body['count']) == (200, 6), body   # (7.52.00: and Tenets)
         assert all(set(item) == {'template_id', 'name', 'description', 'definition'} for item in body['items'])
-        assert [item['template_id'] for item in body['items']][:2] == ['understand-repository', 'issue-triage']
+        assert [item['template_id'] for item in body['items']][:3] == ['understand-repository', 'tenets', 'issue-triage']
         assert all(item['definition']['schema'] == workflow_schema.SCHEMA_V2 for item in body['items'])
         assert _call(lambda_context, 'GET', '/workflows/templates', claims=USER)[0] == 403
         # A delegated (MCP) credential an administrator minted is never an administrator here.
@@ -130,7 +130,8 @@ def test_create_from_a_template_is_the_librarys_own_create(lambda_context: Any,
                                                            monkeypatch: pytest.MonkeyPatch) -> None:
     """No write path of its own: the template's definition goes to POST /workflows, validated, 409 where it is off."""
     with _api():
-        definition = _call(lambda_context, 'GET', '/workflows/templates')[1]['items'][2]['definition']
+        templates = _call(lambda_context, 'GET', '/workflows/templates')[1]['items']
+        definition = next(item for item in templates if item['template_id'] == 'bug-hunt-and-fix')['definition']
         status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': definition})
         assert (status, body['workflow']['name'], body['workflow']['kind']) == (201, 'Bug hunt and fix', 'engineering')
         broken = {**definition, 'nodes': definition['nodes'][:-1]}

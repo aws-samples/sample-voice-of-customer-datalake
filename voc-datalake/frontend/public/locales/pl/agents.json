@@ -1510,6 +1510,10 @@
       "name": "Poznaj repozytorium",
       "description": "Przegląda repozytorium pakiet po pakiecie i przygotowuje projekt pakietu wiedzy, zasad i przewodnika recenzji do zatwierdzenia przez administratora."
     },
+    "tenets": {
+      "name": "Zasady",
+      "description": "Przygotowuje projekt zasad repozytorium na podstawie zatwierdzonego pakietu wiedzy, pliku TENETS.md i przyjętych zasad do przyjęcia przez administratora; TENETS.md trafia potem do pull requesta."
+    },
     "issueTriage": {
       "name": "Selekcja zgłoszeń",
       "description": "Czyta zgłoszenie, klasyfikuje je jako błąd, funkcję lub dochodzenie, odtwarza je lub lokalizuje i proponuje w zgłoszeniu kolejny krok."

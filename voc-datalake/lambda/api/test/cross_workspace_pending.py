@@ -219,6 +219,20 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/restart',
         'POST /agents/engineering/<run_id>/steer',
     }),
+    # The knowledge flows (7.52.00, included by agents_handler.py): a repository connection's knowledge pack, its
+    # tenets and their docs' pull request, in the engineering agents' own partitions of the deployment, so they move
+    # with the agents in 3g3.
+    'agents_engineering_knowledge_routes.py': frozenset({
+        'GET /agents/engineering/knowledge/<connection_id>',
+        'GET /agents/engineering/knowledge/<connection_id>/<package>/versions/<version>',
+        'POST /agents/engineering/knowledge/<connection_id>/<package>/versions/<version>/approve',
+        'GET /agents/engineering/tenets/<connection_id>',
+        'GET /agents/engineering/tenets/<connection_id>/versions/<version>',
+        'POST /agents/engineering/tenets/<connection_id>/versions/<version>/accept',
+        'POST /agents/engineering/tenets/<connection_id>/versions/<version>/reject',
+        'GET /agents/engineering/docs/<connection_id>/preview',
+        'POST /agents/engineering/docs/<connection_id>/publish',
+    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

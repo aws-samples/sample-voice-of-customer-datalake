@@ -1465,6 +1465,10 @@
       "name": "Das Repository verstehen",
       "description": "Erfasst das Repository Paket für Paket und entwirft sein Wissenspaket, seine Grundsätze und seinen Review-Leitfaden zur Freigabe durch eine Administratorin oder einen Administrator."
     },
+    "tenets": {
+      "name": "Grundsätze",
+      "description": "Entwirft die Grundsätze des Repositorys aus seinem freigegebenen Wissenspaket, seiner TENETS.md und den angenommenen Grundsätzen zur Annahme durch eine Administratorin oder einen Administrator; TENETS.md folgt in einem Pull Request."
+    },
     "issueTriage": {
       "name": "Issue-Triage",
       "description": "Liest ein Issue, ordnet es als Fehler, Funktion oder Untersuchung ein, reproduziert oder lokalisiert es und schlägt im Issue den nächsten Schritt vor."

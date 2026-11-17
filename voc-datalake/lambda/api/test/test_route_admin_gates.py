@@ -123,6 +123,15 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'agents_engineering_run_routes.py': frozenset({
         'POST /agents/engineering/<run_id>/steer', 'POST /agents/engineering/<run_id>/restart',
     }),
+    # The knowledge flows (7.52.00, included by agents_handler.py): a knowledge pack version's approval with the docs it
+    # renders, a tenets version's acceptance or rejection, and the approved docs' pull request: an admin acting for
+    # themselves.
+    'agents_engineering_knowledge_routes.py': frozenset({
+        'POST /agents/engineering/knowledge/<connection_id>/<package>/versions/<version>/approve',
+        'POST /agents/engineering/tenets/<connection_id>/versions/<version>/accept',
+        'POST /agents/engineering/tenets/<connection_id>/versions/<version>/reject',
+        'POST /agents/engineering/docs/<connection_id>/publish',
+    }),
     # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),

@@ -1,6 +1,6 @@
 schema: voc-flow-template/1
 id: understand-repository
-version: 2
+version: 3
 name: Understand the repository
 description: Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval.
 inputs:
@@ -13,6 +13,7 @@ learn:
   budget_share: 0.05
   roles: [mapper, understander]
   after_needs_human_hours: 72
+pr: ready
 requires: {dial: [human_driven, ai_assisted, ai_driven], image: true}
 steps:
   - {id: map, title: Map the packages, map: {shard_by: packages, shard_cap: 200}}

@@ -1,6 +1,6 @@
 schema: voc-flow-template/1
 id: issue-triage
-version: 2
+version: 3
 name: Issue triage
 description: Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue.
 inputs:
@@ -14,12 +14,12 @@ learn:
   roles: [understander, hunter]
   after_needs_human_hours: 72
   assert: [{check: learn.proposals_name_case}]
-requires: {dial: [human_driven, ai_assisted, ai_driven], image: true, issues_source: true}
+requires: {dial: [human_driven, ai_assisted, ai_driven], image: true, issues_source: true, tenets: true}
 steps:
   - id: classify
     title: Understand and classify
     agent: understander@latest
-    instructions: Read the issue, classify it as a bug, a feature or an investigation with a severity and say why; record the triage, comment it on the issue and label the issue.
+    instructions: Read the issue, classify it as a bug, a feature or an investigation with a severity and say why; cite only the accepted tenets it touches (read_tenets); record the triage, comment it on the issue and label the issue.
     assert:
       - {check: triage.recorded, on_fail: block}
       - {check: triage.commented, on_fail: warn}

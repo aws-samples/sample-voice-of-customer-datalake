@@ -764,11 +764,12 @@ def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
     # Reads (a patch's base file, the default branch, the credential's repository, the branch rules, the reactions to
     # a pull request, and since 7.47.00 a branch's head and an issue's state) and the four writes (7.50.00: an issue's
-    # triage labels), and the checkout cache's read-only fetch token: nothing else (no method changes a branch rule,
-    # merges, approves or marks a pull request ready).
+    # triage labels), and the checkout cache's read-only fetch token, and since 7.52.00 the approved docs' tree (an
+    # object no branch names until a push commits it): nothing else (no method changes a branch rule, merges,
+    # approves or marks a pull request ready).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
                       'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
-                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue'}
+                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue', 'tree_with'}
 
 
 def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:

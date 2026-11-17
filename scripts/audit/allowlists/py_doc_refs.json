@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "key": "lambda/engineering/knowledge/render_docs.py::docs/agents/index.md",
+      "reason": "a file this module renders for the CONNECTED repository (its knowledge docs' pull request), not a file of this repo"
+    },
+    {
+      "key": "lambda/engineering/knowledge/render_docs.py::docs/agents/repository.md",
+      "reason": "the root package's document this module renders for the CONNECTED repository, not a file of this repo"
+    },
+    {
       "key": "lambda/aggregator/handler.py::parallelizationFactor",
       "reason": "names the CDK EventSourceMapping property an operator would turn (deliberately unset today); the token lives in aws-cdk-lib, which the scan skips with node_modules"
     },

@@ -38,14 +38,22 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from engineering.connectors.identity import LABEL_ISSUE, OPEN_OR_UPDATE_DRAFT_PR, POST_COMMENT, PUSH_BUNDLE, READ
+from engineering.connectors.identity import (
+    LABEL_ISSUE,
+    OPEN_OR_UPDATE_DRAFT_PR,
+    POST_COMMENT,
+    PUSH_BUNDLE,
+    READ,
+    TENETS_READ,
+)
 from engineering.runtime.checkpoints import agent_prefix
 from engineering.runtime.harness.board_client import RETRY_WAITS, json_object, signed_post
 from engineering.runtime.harness.ports import BrokerRefused, WriteOutcomeUnknown
 from engineering.runtime.outputs import is_submitted_patch
 
-#: What a read reads (connectors/handler.py ``_READ_KINDS``: a test holds them equal; the images do not ship it).
-READ_KINDS: Final = frozenset({'file', 'history', 'issue', 'pull_request'})
+#: What a read reads (connectors/handler.py ``_READ_KINDS``, and since 7.52.00 the accepted tenets, its
+#: ``TENETS_READ``: a test holds them equal; the images do not ship the handler).
+READ_KINDS: Final = frozenset({'file', 'history', 'issue', 'pull_request', TENETS_READ})
 #: Every call's wait: above the broker function's own limit (120 s, engineering-broker.ts), so the broker's answer
 #: always arrives first.
 TIMEOUT_SECONDS: Final = 125
@@ -178,8 +186,8 @@ class BrokerHttp:
             raise ValueError('the harness asks the broker as its own agent only')
 
     def read(self, *, kind: str, target: str, cursor: str | None = None) -> dict[str, Any]:
-        """One page of ``target`` (``kind``: a file, a history, an issue or a pull request) and the next page's
-        cursor (None: the last)."""
+        """One page of ``target`` (``kind``: a file, a history, an issue or a pull request; or, ``tenets`` of
+        ``accepted``, the run's connection's accepted tenets) and the next page's cursor (None: the last)."""
         if kind not in READ_KINDS:
             raise ValueError(f'a read is of one of {", ".join(sorted(READ_KINDS))}')
         args: dict[str, Any] = {'kind': kind, 'target': target, **({'cursor': cursor} if cursor else {})}

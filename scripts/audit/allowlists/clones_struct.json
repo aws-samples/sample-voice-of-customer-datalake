@@ -3,6 +3,14 @@
   "entries": [
     {
       "files": [
+        "voc-datalake/lambda/api/agents_handler.py",
+        "voc-datalake/lambda/shared/agents_engineering_knowledge_routes.py"
+      ],
+      "name": "invoke_publish",
+      "reason": "each voc-engineering-start action's one synchronous invoke (the reactions ask's in the handler, 7.10.00; the docs publish's in its routes module, 7.52.00): the same call and RuntimeRefused-to-409 mapping around different answers (asked/too_soon vs opened/repeated/refused) and failure words; one helper would carry both answer tables"
+    },
+    {
+      "files": [
         "voc-datalake/lambda/engineering/connectors/github.py",
         "voc-datalake/lambda/engineering/connectors/gitlab.py"
       ],

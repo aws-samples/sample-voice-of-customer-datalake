@@ -18,6 +18,7 @@ from engineering.connectors.hosts import (
     CiProtection,
     CommentTarget,
     FetchAccess,
+    FileChange,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -75,6 +76,9 @@ class HostRouter:
                                 tree_hash: str, *, draft: bool = True) -> PullRequestRef:
         return self._host(connection_id).open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash,
                                                                  draft=draft)
+
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        return self._host(connection_id).tree_with(connection_id, base, changes)
 
     def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
         return self._host(connection_id).reactions(connection_id, number, url, branch)

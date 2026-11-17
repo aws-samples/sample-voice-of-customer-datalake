@@ -24,7 +24,9 @@ import {
 import type { ApiStackContext } from './api-context';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 import { createS3ImportLambda } from './api-s3-import-lambda';
-import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
+import {
+  ENGINEERING_REPO_PARTITIONS, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS, ENGINEERING_WORKSPACE_REPORTS_KEYS,
+} from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
@@ -132,6 +134,7 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
       Null: { 'dynamodb:LeadingKeys': 'false' },
     },
   }));
+  grantKnowledgeDecisions(ctx, role);
   // A person's board actions go through the board's function (engineering/board/api.py person_request), invoked
   // directly: its own role writes the change, and hands the events back for this role to publish as the person. This
   // role writes no row of the table. The agent roles may invoke the board only through its function URL
@@ -187,6 +190,38 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     FRONTEND_URL: `https://${ctx.props.frontendDomainName}`,
     ...engineeringRunCaps(ctx.stack),
   };
+}
+
+/**
+ * The knowledge flows' decisions and reads (7.52.00, shared/agents_engineering_knowledge_routes.py over
+ * lambda/engineering/knowledge/): an administrator's approval of a knowledge pack version, with the docs it renders
+ * recorded (its `KDOCS` row and `KDOCSLOG#` row), and an acceptance or rejection of a tenets version: exactly what the
+ * stores' transactions use (PutItem of a create-only log row or the rendering's row held to the number read, UpdateItem
+ * of a version's status and its counter), on the repositories' partitions only (`WS#*#REPO#*`, by
+ * `dynamodb:LeadingKeys`, as the skills' decisions are). No delete, no ConditionCheckItem (none is used). And GetObject on
+ * the knowledge packs' objects (`ws/default/knowledge/*`), read for an approval's rendering and a preview, decrypted
+ * through S3 by the reports' key statement. The key through DynamoDB is AgentsTablesKey's.
+ */
+function grantKnowledgeDecisions(ctx: ApiStackContext, role: iam.Role): void {
+  const { engineeringTable, engineeringWorkspaceBucket } = ctx.props;
+  if (!engineeringTable || !engineeringWorkspaceBucket) return;
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'KnowledgeDecisions',
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+    resources: [engineeringTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_REPO_PARTITIONS] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    },
+  }));
+  const knowledge = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
+  role.addToPolicy(new iam.PolicyStatement({ sid: 'KnowledgePackObjects', actions: ['s3:GetObject'], resources: [knowledge] }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the knowledge packs\' objects (one prefix: their keys name the connection, package and version, '
+      + 'known only at run time), for an approval\'s rendering and the docs\' preview',
+    findings: [resourceFinding(knowledge)],
+  }]);
 }
 
 /**

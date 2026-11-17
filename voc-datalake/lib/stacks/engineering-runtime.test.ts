@@ -10,6 +10,7 @@ import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { benchmarkCaseIds } from './engineering-runtime';
+import { TENETS_DRAFT_ATTRIBUTES } from './engineering-runtime-grants';
 
 const StatementsSchema = z.array(z.looseObject({
   Sid: z.string().optional(),
@@ -513,6 +514,15 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     }
   });
 
+  it('gives no agent role a repository\'s knowledge, tenets or docs rows, or the packs\' objects (7.52.00)', () => {
+    // (its tenets go under its own keys, and only the runtime drafts them; the docs write is the start's, never an
+    // agent's: the broker refuses push_approved_docs to every agent role, test_broker_docs.py)
+    const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+      .filter((id) => /^EngineeringRuntimeEngineeringAgent\w+Role/.test(id) || /EngineeringAgent\w+Role/.test(id));
+    expect(roles.length).toBeGreaterThan(10);
+    expect(roles.filter((role) => /REPO#|DOCS#|\/knowledge\//.test(policyText(template, role)))).toStrictEqual([]);
+  });
+
   it('gives the supervisor one IAM action: the pass of the reactions schedule\'s role, never an IAM write', () => {
     // (to EventBridge Scheduler alone, 7.10.00: engineering-reactions.test.ts pins the statement)
     expect(policyText(template, 'EngineeringSupervisorRole').match(/"iam:\w+"/g))
@@ -704,6 +714,43 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(JSON.stringify(records?.Resource))
         .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_triage\/\*"/);
       expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/_triage|ISSUE_TRIAGE/);
+    });
+
+    /** Every statement of the supervisor's role: its inline policies' and the managed ones CDK moves a long one's into. */
+    function everyStatement(): Record<string, unknown>[] {
+      const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
+      return [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
+        ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))]
+        .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
+    }
+
+    it('drafts the tenets at a Tenets run\'s end with a draft\'s attributes alone, never an acceptance (7.52.00)', () => {
+      expect(everyStatement().find((found) => found.Sid === 'TenetsDrafts')).toMatchObject({
+        Effect: 'Allow', Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        Condition: {
+          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] },
+          'ForAllValues:StringEquals': { 'dynamodb:Attributes': TENETS_DRAFT_ATTRIBUTES },
+        },
+      });
+      const decided = ['accepted_version', 'accepted_digest', 'accepted_ids', 'decided_by', 'rendering_digest',
+        'approved_version', 'approved_by'];
+      expect(TENETS_DRAFT_ATTRIBUTES.filter((attribute) => decided.includes(attribute))).toStrictEqual([]);
+      const repositoryWriters = everyStatement().filter((found) => JSON.stringify(found.Condition ?? {})
+        .includes('REPO') && /PutItem|UpdateItem|DeleteItem/.test(JSON.stringify(found.Action)));
+      expect(repositoryWriters.map((found) => found.Sid)).toStrictEqual(['TenetsDrafts']);
+    });
+
+    it('reads the tenets\' counter and the understanders\' tenets records alone for it, the delivery neither (7.52.00)', () => {
+      // (the counter: the triage's hard lock and the draft's number)
+      expect(everyStatement().find((found) => found.Sid === 'TenetsReads')).toMatchObject({
+        Effect: 'Allow', Action: 'dynamodb:GetItem',
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] } },
+      });
+      const records = everyStatement().find((found) => found.Sid === 'TenetsRecords');
+      expect(records).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });
+      expect(JSON.stringify(records?.Resource))
+        .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_tenets\/\*"/);
+      expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/_tenets|REPO#/);
     });
 
     it('names the benchmark\'s shipped cases for the coach', () => {

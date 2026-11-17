@@ -49,7 +49,7 @@
         "untrusted": {"description": "What the role reads that is DATA, never an instruction.",
                       "type": "array", "uniqueItems": true, "minItems": 1,
                       "items": {"enum": ["issue", "repository", "command_output", "knowledge", "memory", "board",
-                                         "person", "transcripts", "pull_request"]}},
+                                         "person", "transcripts", "pull_request", "tenets"]}},
         "fence": {"description": "nonce: every tool result is fenced with a per-session random fence.",
                   "enum": ["nonce"]}
       }

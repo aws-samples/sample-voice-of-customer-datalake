@@ -1472,6 +1472,10 @@
       "name": "Comprendre le dépôt",
       "description": "Parcourt le dépôt paquet par paquet et rédige son pack de connaissances, ses principes et son guide de revue pour qu’un administrateur les approuve."
     },
+    "tenets": {
+      "name": "Principes",
+      "description": "Rédige les principes du dépôt à partir de son pack de connaissances approuvé, de son TENETS.md et des principes acceptés, pour qu’un administrateur les accepte ; TENETS.md suit dans une pull request."
+    },
     "issueTriage": {
       "name": "Tri des tickets",
       "description": "Lit un ticket, le classe comme bogue, fonctionnalité ou investigation, le reproduit ou le localise et propose l’étape suivante sur le ticket."

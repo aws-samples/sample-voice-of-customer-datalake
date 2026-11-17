@@ -64,7 +64,7 @@ import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
   ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_CHECKPOINT_KEYS, ENGINEERING_FINDING_KEYS, ENGINEERING_GATE_RECORD_KEYS,
   ENGINEERING_PATCH_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_TRANSCRIPT_KEYS, ENGINEERING_TRIAGE_KEYS,
-  ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+  ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 import { runtimeLanguages } from './engineering-agentcore';
@@ -76,8 +76,6 @@ export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
 const ENGINEERING_DELIVERY_FUNCTION_BASE_NAME = 'voc-engineering-delivery';
 /** The runtime's function (engineering-runtime.ts): the board invokes its `launch` action for the run's coordinator. */
 const ENGINEERING_RUNTIME_FUNCTION_BASE_NAME = 'voc-engineering-runtime';
-/** The knowledge packs' objects in the workspace bucket (engineering/knowledge/store.py), read for the agents. */
-const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/knowledge/*`;
 /**
  * The board function's timeout (seconds): above its wait for the runtime's launch (100 s, board/api.py
  * LAUNCH_READ_TIMEOUT_SECONDS), so the board answers the coordinator before it is cut off.

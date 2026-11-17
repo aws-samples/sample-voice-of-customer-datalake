@@ -373,7 +373,9 @@ def test_a_pull_request_is_a_draft_in_every_mode_and_nothing_marks_it_ready_or_m
     # The only pull request write is the host's open-or-update of a draft; no operation of any role marks one
     # ready, merges or approves it.
     assert {c[0] for c in host.calls} <= {'branch_tree_hash', 'open_or_update_draft_pr'}
-    assert not [name for name in dir(Broker) if any(word in name for word in ('merge', 'ready', 'approve'))]
+    # (``push_approved_docs``, 7.52.00, writes docs an administrator approved in the app: it approves nothing)
+    assert not [name for name in dir(Broker) if any(word in name for word in ('merge', 'ready', 'approve'))
+                and name != 'push_approved_docs']
 
 
 @pytest.mark.parametrize('starter', ['', 'agent:fixer-1', 'mcp:tok_1'])
@@ -499,9 +501,11 @@ def test_the_broker_has_no_merge_approve_or_ready_operation_of_any_kind() -> Non
     # Its operations are the reads and the writes the roles make, and the runtime's and the start's reads: nothing
     # merges, approves or marks a pull request ready, whatever the mode (TENETS.md tenet 3: only a person does).
     public = {name for name in dir(Broker) if not name.startswith('_')}
+    # (7.52.00: the agents' read of the accepted tenets, and the start's write of the docs an administrator approved,
+    # which approves nothing itself: test_broker_docs.py)
     assert public == {'read', 'post_comment', 'label_issue', 'push_bundle', 'open_or_update_draft_pr', 'reactions',
-                      'head'}
-    for name in public:
+                      'head', 'tenets', 'push_approved_docs'}
+    for name in public - {'push_approved_docs'}:
         assert not any(word in name for word in ('merge', 'approve', 'ready'))
 
 

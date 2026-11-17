@@ -170,6 +170,15 @@ class ReadinessPorts(Protocol):
         """The approved knowledge pack version of the connection's repository root (0: none)."""
         ...
 
+    def knowledge_rendering(self, connection_id: str) -> int:
+        """The number of the connection's approved docs rendering (7.52.00, ``knowledge/docs.py`` ``KDOCS``; 0:
+        none)."""
+        ...
+
+    def tenets_accepted(self, connection_id: str) -> int:
+        """The connection's accepted tenets version (7.52.00, ``knowledge/tenets.py``; 0: none)."""
+        ...
+
     def issues_source_reads(self, repository: str) -> bool:
         """Whether the deployment-wide GitHub Issues source has read ``repository`` (its watermark exists)."""
         ...
@@ -476,19 +485,35 @@ def _pack(ctx: _Context) -> Check:
                      KNOWLEDGE_DOCS)
     try:
         version = ctx.ports.knowledge_approved(ctx.subject.connection)
+        rendering = ctx.ports.knowledge_rendering(ctx.subject.connection) if version else 0
     except ReadFailed as error:
         return _unknown('pack', 'The knowledge pack', error, docs=KNOWLEDGE_DOCS)
     if version:
-        return Check('pack', 'pass', f'Knowledge pack version {version} is approved.', '', KNOWLEDGE_DOCS)
+        docs = f' Its docs are rendering {rendering}.' if rendering else ''
+        return Check('pack', 'pass', f'Knowledge pack version {version} is approved.{docs}', '', KNOWLEDGE_DOCS)
     return Check('pack', 'fail', 'No knowledge pack version is approved for the repository.',
-                 'Run the Understand flow, then approve its pack under Agents → Knowledge.', KNOWLEDGE_DOCS)
+                 'Run the Understand flow, then approve its pack under Agent orchestration → Knowledge.',
+                 KNOWLEDGE_DOCS)
 
 
 def _tenets(ctx: _Context) -> Check:
+    """The accepted tenets (7.52.00, the tenets store): a warning, never a failure, when none is accepted, since a
+    triage then cites none (an empty list) and runs as before."""
     if not requires(ctx.subject, 'tenets'):
-        return _not_needed('tenets', 'the flow does not require accepted tenets', TENETS_DOCS)
-    return Check('tenets', 'warn', 'The repository\'s tenets store arrives in a later release: the flow runs without '
-                 'accepted tenets meanwhile.', 'Write the repository\'s TENETS.md by hand meanwhile.', TENETS_DOCS)
+        return _not_needed('tenets', 'the flow does not cite accepted tenets', TENETS_DOCS)
+    fix = 'Run the Tenets flow, then accept its draft under Agent orchestration → Tenets.'
+    if ctx.row is None:
+        return Check('tenets', 'warn', 'No stored connection to read the accepted tenets of.', ADD_CONNECTION,
+                     TENETS_DOCS)
+    try:
+        version = ctx.ports.tenets_accepted(ctx.subject.connection)
+    except ReadFailed as error:
+        return _unknown('tenets', 'The accepted tenets', error, docs=TENETS_DOCS)
+    if version:
+        return Check('tenets', 'pass', f'Tenets version {version} is accepted: a triage cites its ids.', '',
+                     TENETS_DOCS)
+    return Check('tenets', 'warn', 'No tenets version is accepted for the repository: a triage cites none (an empty '
+                 'list).', fix, TENETS_DOCS)
 
 
 def _starts_from_issues(ctx: _Context) -> bool:

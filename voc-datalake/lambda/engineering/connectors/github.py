@@ -611,6 +611,20 @@ class GitHubHost:
         if moved.status == 422:
             raise Conflict('The branch changed while the bundle was pushed; fetch it and make the bundle again.')
 
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        """The tree ``changes`` give on ``base``'s (7.52.00, the approved docs' write), made with the Git Data API as a
+        push makes it: an object no branch names until a push commits it (the push makes the same tree again, by its
+        content). ``Conflict`` when the repository has no such commit."""
+        tree = self._tree_of(connection_id, _PUSH, base)
+        if tree is None:
+            raise Conflict("The repository has no commit the docs' base names; read its head again.")
+        if not changes:
+            return tree
+        entries = [self._entry(connection_id, change) for change in changes]
+        built = self._api(connection_id, _PUSH, 'POST', '/git/trees', 'the docs tree', ok=(201,),
+                          body={'base_tree': tree, 'tree': entries})
+        return _text(_json(built), 'sha')
+
     def _require_pull_request_tree(self, connection_id: str, number: int, tree_hash: str) -> None:
         """Raise ``Conflict`` unless the pull request's head has ``tree_hash``."""
         response = self._api(connection_id, _DRAFT, 'GET', f'/pulls/{number}', 'the pull request check')

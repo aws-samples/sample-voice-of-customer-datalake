@@ -20,7 +20,9 @@ everything else from that run's record.
 And one more (7.47.00): voc-engineering-start, for the ``head`` read alone (``HEAD``, ``START_ROLE``): its own execution
 role, in the session Lambda names after its function, checked the same way (``runtime_caller_from_event`` with the
 start's names). It too speaks for no run: a start that resolves its commit asks for the head of a connection's stored
-default branch, before its run is written.
+default branch, before its run is written. Since 7.52.00 voc-engineering-start also asks for ``push_approved_docs``
+(``PUSH_APPROVED_DOCS``, its ``publish_docs``: an administrator's request to open the pull request of the docs they
+approved), which no agent role may make.
 """
 from __future__ import annotations
 
@@ -46,9 +48,15 @@ REACTIONS: Final = 'reactions'
 #: voc-engineering-start's one operation (7.47.00): a connection's default branch's head commit, and an issue's state,
 #: read only, for a start that resolves its commit (an engineering agent's run).
 HEAD: Final = 'head'
+#: voc-engineering-start's other operation (7.52.00): the approved knowledge docs or tenets of a connection written as
+#: one commit on their own branch and a pull request, at an administrator's request. Never an agent's.
+PUSH_APPROVED_DOCS: Final = 'push_approved_docs'
+#: The read kind an agent asks for its run's connection's accepted tenets with (7.52.00, the broker's ``read``).
+TENETS_READ: Final = 'tenets'
 #: The role a runtime caller has (never an agent role, so no agent operation is ``permitted`` for it).
 RUNTIME_ROLE: Final = 'runtime'
-#: The role voc-engineering-start has as a caller (7.47.00): its ``head`` operation alone.
+#: The role voc-engineering-start has as a caller (7.47.00): its ``head`` operation and, since 7.52.00,
+#: ``push_approved_docs``, alone.
 START_ROLE: Final = 'start'
 #: The agent catalog's roles, as their IAM role names spell them.
 AGENT_ROLES: Final = frozenset({

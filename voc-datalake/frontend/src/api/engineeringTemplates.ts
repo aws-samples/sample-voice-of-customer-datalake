@@ -1,5 +1,5 @@
 /**
- * @fileoverview The five default engineering flows (docs/autonomous-engineering.md "Default flows") as the workflow
+ * @fileoverview The six default engineering flows (docs/autonomous-engineering.md "Default flows") as the workflow
  * library offers them ("Start from a template").
  *
  * They are compiled from `voc-datalake/templates/orchestration/flows/` into the orchestration bundle
@@ -29,6 +29,7 @@ const TEMPLATE_TEXT = {
     nameKey: 'agents:templates.understandRepository.name',
     descriptionKey: 'agents:templates.understandRepository.description',
   },
+  'tenets': { nameKey: 'agents:templates.tenets.name', descriptionKey: 'agents:templates.tenets.description' },
   'issue-triage': { nameKey: 'agents:templates.issueTriage.name', descriptionKey: 'agents:templates.issueTriage.description' },
   'bug-hunt-and-fix': { nameKey: 'agents:templates.bugHunt.name', descriptionKey: 'agents:templates.bugHunt.description' },
   'feature': { nameKey: 'agents:templates.feature.name', descriptionKey: 'agents:templates.feature.description' },

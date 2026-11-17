@@ -309,6 +309,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.51.00: the run workspace's steering and restart read the supervisor's session rows (voc-engineering, as the
     # Agents API's run monitor does): the deployment's, like the engineering agents (phase 3).
     'lambda/shared/agents_engineering_run_routes.py': (3, {'Table': 1}),
+    # 7.52.00: the docs' publish reads the requesting administrator's way of working (USERFLAGS#{sub} in voc-aggregates,
+    # a person's flag, the deployment's on this branch, as the broker's dial reads it).
+    'lambda/shared/agents_engineering_knowledge_routes.py': (3, {'get_aggregates_table': 1}),
     'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 3, 'transact': 3}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),
     # BatchGetItem's one bounded helper (MCP tokens, projects); the layer's `batch_get_item` is the workspace's.
@@ -445,6 +448,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/engineering/conversation/store.py': (3, {'transact': 1}),
     'lambda/engineering/flow/record.py': (3, {'transact': 1}),
     'lambda/engineering/knowledge/store.py': (3, {'transact': 1}),
+    # 7.52.00: a tenets version's draft and decisions, each with its log row, in the connection's partition (the
+    # engineering agents' own table, the deployment's until agents move: 3g3).
+    'lambda/engineering/knowledge/tenets.py': (3, {'transact': 2}),
     # 7.50.00: Learn's spend, its LEARN#spend row in the run's partition with its spend ledger rows, one transaction
     # (the engineering agents' own table, the deployment's like the sessions' metering until agents move: 3g3).
     'lambda/engineering/learning/budget.py': (3, {'meta.client': 1, 'transact': 1}),

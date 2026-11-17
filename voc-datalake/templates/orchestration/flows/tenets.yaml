@@ -1,0 +1,22 @@
+schema: voc-flow-template/1
+id: tenets
+version: 1
+name: Tenets
+description: Drafts the repository's tenets from its approved knowledge pack, its TENETS.md and the accepted tenets, for an administrator to accept; TENETS.md follows in a pull request.
+inputs: {}
+budget: {monthly_usd: 20, max_tasks: 5}
+memory: {recall: false}
+learn:
+  enabled: true
+  model: global.anthropic.claude-sonnet-5-5
+  budget_share: 0.05
+  roles: [understander]
+  after_needs_human_hours: 72
+pr: ready
+requires: {dial: [human_driven, ai_assisted, ai_driven], image: true, knowledge_pack: true}
+steps:
+  - id: draft
+    title: Draft the tenets
+    agent: understander@latest
+    instructions: This is the Tenets flow, not a triage. Read the approved knowledge pack your task carries, the repository's TENETS.md if it has one (read_file) and the accepted tenets (read_tenets); write the repository's tenets once with write_tenets, then finish.
+  - {id: end, title: The draft waits for an administrator, end: {status: completed}}

@@ -88,9 +88,10 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
         'submit_work, read_issue, report_progress,': 'submit_work, report_progress,',
         'broker_ops: [read]\n': 'pending_tools: [read_issue]\nbroker_ops: [read]\n'})
     _replace(root / 'agents' / 'understander' / 'agent.yaml', {
-        ('tools: [read_file, list_files, read_issue, write_triage, post_comment, label_issue, report_progress, '
-         'save_checkpoint,\n        finish]\nbroker_ops: [read, post_comment, label_issue]\n'): (
-            'tools: [read_file, list_files, report_progress, save_checkpoint, finish]\n'
+        ('tools: [read_file, list_files, read_issue, write_triage, post_comment, label_issue, read_tenets, '
+         'write_tenets,\n        report_progress, save_checkpoint, finish]\nbroker_ops: [read, post_comment, '
+         'label_issue]\n'): (
+            'tools: [read_file, list_files, read_tenets, write_tenets, report_progress, save_checkpoint, finish]\n'
             'pending_tools: [read_issue, write_triage, post_comment, label_issue]\n'
             'broker_ops: [read, post_comment]\npending_broker_ops: [label_issue]\n')})
     # The harness offers the fixer its read_issue but not yet the understander its four tools; the broker grants the
@@ -101,7 +102,7 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
     moved = promote.promote(root)
     assert [str(item) for item in moved] == [
         'fixer: tool read_issue (template version 3 -> 4)',
-        'understander: broker op label_issue (template version 3 -> 4)']
+        'understander: broker op label_issue (template version 4 -> 5)']
     fixer = read_yaml(root / 'agents' / 'fixer' / 'agent.yaml', root)
     assert (fixer['version'], fixer['tools'][-4:], 'pending_tools' in fixer) == (
         4, ['read_issue', 'report_progress', 'save_checkpoint', 'finish'], False)
@@ -156,7 +157,8 @@ def test_a_dry_run_prints_the_flow_its_resolved_skills_and_the_gate_plan() -> No
 
 def test_a_run_names_a_flow_and_a_directory_and_bedrock_is_a_stub_for_now(tmp_path: Path) -> None:
     assert _main('run', '--flow', 'nope', '--repo', str(DIVIDE), '--dry-run') == (2, [
-        'no flow nope (the flows: understand-repository, issue-triage, bug-hunt-and-fix, feature, pr-review)'])
+        ('no flow nope (the flows: understand-repository, tenets, issue-triage, bug-hunt-and-fix, feature, '
+         'pr-review)')])
     assert _main('run', '--flow', 'feature', '--repo', str(tmp_path / 'none'), '--dry-run')[0] == 2
     assert _main('run', '--flow', 'bug-hunt-and-fix', '--repo', str(DIVIDE), '--models', 'bedrock') == (
         2, [runner.BEDROCK_STUB])

@@ -1,5 +1,9 @@
 {
   "entries": [
+    {"key": "docs/autonomous-engineering.md::missing-path::docs/agents/index.md", "reason": "A file the knowledge docs' pull request writes in the CONNECTED repository (lambda/engineering/knowledge/render_docs.py, 7.52.00), not a file of this repo."},
+    {"key": "docs/autonomous-engineering.md::missing-path::docs/agents/repository.md", "reason": "A file the knowledge docs' pull request writes in the CONNECTED repository (the root package's document, knowledge/render_docs.py), not a file of this repo."},
+    {"key": "docs/autonomous-engineering.md::uncited-file::index-package.md", "reason": "The name a package called `index` takes in the CONNECTED repository's docs/agents/ (knowledge/render_docs.py doc_path), not a file of this repo."},
+    {"key": "docs/autonomous-engineering.md::uncited-file::repository-package.md", "reason": "The name a package called `repository` takes in the CONNECTED repository's docs/agents/ (knowledge/render_docs.py doc_path), not a file of this repo."},
     {"key": "docs/mcp.md::missing-path::.cursor/mcp.json", "reason": "Where Cursor reads an MCP config in the USER's project (the Connect page's env-var snippet), not a file of this repo."},
     {"key": "docs/mcp.md::missing-path::.kiro/settings/mcp.json", "reason": "Where Kiro reads an MCP config in the USER's workspace (the Connect page's env-var snippet); this repo keeps no MCP config of its own."},
     {"key": "docs/company-context.md::missing-path::company-context/design/", "reason": "An S3 key prefix in the raw data bucket (reference uploads go there by presigned PUT), not a repo directory."},

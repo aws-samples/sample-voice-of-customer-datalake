@@ -624,6 +624,15 @@ class GitLabHost:
                            'nothing was pushed.')
         return head, listing
 
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        """The tree ``changes`` give on ``base``'s (7.52.00, the approved docs' write), worked out from the base's
+        listings of the directories they touch as a push works it out (``gitlab_tree.rebuilt``): reads only."""
+        listing = _Tree(lambda directory: self._listing(connection_id, base, directory), {})
+        final = {change.path: change for change in changes}
+        for directory in sorted(directories(final)):
+            listing(directory)
+        return rebuilt(listing, final, algorithm_of(base))
+
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None:
         ends_by = WRITE_READY_BY.get()

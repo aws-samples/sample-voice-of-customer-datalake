@@ -43,16 +43,24 @@ audit record. The one operation that is no agent's, ``reactions`` (7.10.00), is 
 (``Broker.reactions``). Each write's claim row keeps its outcome (claimed, done with its answer, refused or unknown), its
 operation and when, under the agent's key; it is not the audit row of D4 (who asked, in the run's log), which is
 still planned.
+
+Since 7.52.00 voc-engineering-start also asks for ``push_approved_docs`` (``Broker.push_approved_docs``, its alone: no
+agent role, nor the runtime): the knowledge docs (``docs/agents/**``) or the tenets (``TENETS.md``) an administrator
+approved, rendered again from the stored records and held to the request's and the approval's digest, as one commit on
+``voc-agent/docs/<kind>-v<n>`` and a pull request, under the requesting administrator's way of working, the CI
+attestation and the branch rules, once per (connection, kind, version) (``records.DocsClaims``); and every agent reads
+its run's connection's accepted tenets (``Broker.tenets``, the ``read`` of kind ``tenets``).
 """
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import replace
-from typing import Final
+from dataclasses import dataclass, replace
+from typing import Any, Final
 
 from engineering.connectors.hosts import (
     ACTIVE,
@@ -60,9 +68,12 @@ from engineering.connectors.hosts import (
     WRITE_DONE,
     WRITE_REFUSED,
     WRITE_UNKNOWN,
+    BundleContents,
     CiProtection,
     CommentTarget,
+    Commit,
     Connector,
+    FileChange,
     HostBusy,
     HostError,
     InvalidTarget,
@@ -75,6 +86,7 @@ from engineering.connectors.hosts import (
     RunRecord,
     Submission,
     Unavailable,
+    WriteLedger,
     ci_refusal,
 )
 from engineering.connectors.identity import (
@@ -89,6 +101,7 @@ from engineering.connectors.identity import (
     Caller,
     agent_id,
 )
+from engineering.connectors.patches import AUTHOR
 from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.write_policy import (
     WriteRefused,
@@ -98,6 +111,8 @@ from engineering.connectors.write_policy import (
     check_commit_message,
     check_heads,
     check_text,
+    docs_branch,
+    docs_paths,
 )
 from engineering.run_links import pull_request_link
 from engineering.runtime.outputs import TRIAGE_LABELS
@@ -412,6 +427,233 @@ class Broker:
         return {'commit': commit, 'issue': found}
 
 
+    def tenets(self, caller: Caller) -> ReadPage:
+        """An agent's ``read`` of kind ``tenets`` (7.52.00): its run's connection's accepted tenets, as an
+        administrator accepted them (never the repository's TENETS.md), as JSON ``{version, summary, tenets: [{id,
+        title, statement, rationale, citations}]}``, ``{version: null, tenets: []}`` with none accepted. Every agent
+        reads (``READ``), for an active run, on its own connection; no host is asked."""
+        if not permitted(caller.role, READ):
+            raise NotPermitted(f'The {caller.role} role may not read.')
+        connector = self._connector
+        if connector is None or connector.docs is None:
+            raise NoConnection(NO_CONNECTION)
+        run = connector.runs.run(caller.run_id)
+        if run is None:
+            raise NotNow('The run is not one the broker knows.')
+        if run.status != ACTIVE:
+            raise NotNow(_NOT_ACTIVE.get(run.status, _ENDED))
+        accepted = connector.docs.accepted_tenets(run.connection_id)
+        return ReadPage(json.dumps(accepted or {'version': None, 'summary': '', 'tenets': []}, sort_keys=True), None)
+
+    def push_approved_docs(self, caller: Caller, request: DocsRequest) -> dict[str, object]:
+        """The approved docs of ``request.kind`` (7.52.00; the knowledge docs, ``docs/agents/**``, or the tenets,
+        ``TENETS.md``) as one commit on their own branch (``voc-agent/docs/<kind>-v<n>``, on the default branch's head)
+        and a pull request, ready for review or a draft as asked (the flow's ``pr``); voc-engineering-start's alone
+        (its ``publish_docs``, an administrator's request: no agent role may ask for it, ``NotPermitted``).
+
+        Before anything is written: the connection's credential names the stored connection's repository; the approved
+        version is read again and rendered again from the stored records (``DocsReader.approved``), and the request's
+        digest, the approval's and the rendering's must be one (``DocsRefused`` ``digest_mismatch`` otherwise); every
+        path is the kind's own (``write_policy.docs_paths``); the requesting administrator's STORED way of working,
+        failing closed (``DocsRefused`` ``human_driven`` for anything but AI-assisted or AI-driven: their request is
+        the person's go AI-assisted waits for); the CI attestation and the host's branch rules, as for an agent's push.
+        No final go: no code is written (D-6). Each write once per (connection, kind, version), the push and the pull
+        request each its own claim (``DocsClaims``), so a pull request whose open failed is opened on a retry from the
+        branch already pushed; a second publish of a version whose pull request is open answers it, ``repeated``."""
+        if caller.role != START_ROLE:
+            raise NotPermitted(f'The {caller.role} role may not push approved docs.')
+        connector = self._connector
+        if connector is None or connector.docs is None or connector.docs_writes is None:
+            raise NoConnection(NO_CONNECTION)
+        claims, connection = connector.docs_writes, request.connection
+        recorded, rendering = _approved_docs(connector, request)
+        branch = docs_branch(request.kind, recorded.version)
+        key = functools.partial(docs_write_key, request.kind, recorded.version, digest=recorded.digest)
+        opened = _earlier_done(claims, connection, key(OPEN_OR_UPDATE_DRAFT_PR))
+        if opened is not None:
+            _docs_repeated(connection, request.kind, recorded.version)
+            return {**opened, 'repeated': True}
+        default, run, ci = _docs_write_checks(connector, request, branch)
+        commit = Commit(docs_commit_message(request.kind, recorded.version, recorded.digest), AUTHOR, AUTHOR,
+                        tuple(FileChange(file.path, '100644', file.content) for file in rendering.files))
+        check_commit_identities(commit.author, commit.committer, run.bot_addresses)
+        check_commit_message(commit.message, (), run.bot_addresses)
+        lines = tuple(line for file in rendering.files for line in file.content.decode().splitlines())
+        check_text('\n'.join(lines), (), prose=request.kind == 'tenets')
+        title, body = docs_pull_request(request.kind, recorded.version, recorded.digest, rendering.paths(),
+                                        recorded.approved_at)
+        check_text(f'{title}\n\n{body}', (), prose=True)
+        pushed = _earlier_done(claims, connection, key(PUSH_BUNDLE)) or _docs_push(
+            connector, request, recorded.version, key(PUSH_BUNDLE), BundleContents(
+                heads=(f'refs/heads/{branch}',), tree_hash='', changed_paths=rendering.paths(), commits=(commit,),
+                added_lines=lines, base=''), default, ci)
+        tree_hash = str(pushed['tree_hash'])
+
+        def open_pull_request() -> dict[str, object]:
+            ref = connector.host.open_or_update_draft_pr(connection, branch, default, title, merge_is_human(body),
+                                                         tree_hash, draft=request.draft)
+            _docs_wrote(OPEN_OR_UPDATE_DRAFT_PR, connection, kind=request.kind, version=recorded.version,
+                        branch=branch, tree_hash=tree_hash, number=ref.number)
+            return {'pr': {'number': ref.number, 'url': ref.url, 'branch': branch}, 'kind': request.kind,
+                    'version': recorded.version, 'digest': recorded.digest, 'tree_hash': tree_hash,
+                    'draft': request.draft, 'ci': ci}
+
+        done = _claimed(claims, connection, key(OPEN_OR_UPDATE_DRAFT_PR), OPEN_OR_UPDATE_DRAFT_PR, open_pull_request,
+                        lambda: _docs_repeated(connection, request.kind, recorded.version))
+        return {**done, 'repeated': False}
+
+
+@dataclass(frozen=True)
+class DocsRequest:
+    """voc-engineering-start's ``push_approved_docs`` (7.52.00): the stored connection (its id, its repository and
+    its default branch, as its row has them), the kind (``knowledge`` or ``tenets``), the digest of the docs the
+    administrator saw, who asked (whose way of working the write follows), and whether the pull request opens as a
+    draft (the flow's ``pr``)."""
+
+    connection: str
+    repository: str
+    default_branch: str
+    kind: str
+    digest: str
+    requested_by: str
+    draft: bool = False
+
+
+class DocsRefused(NotNow):
+    """The docs write refused for its state, ``code`` saying which (``human_driven``, ``not_approved``,
+    ``digest_mismatch``): the broker's answer carries it beside the reason."""
+
+    def __init__(self, reason: str, code: str) -> None:
+        super().__init__(reason)
+        self.code = code
+
+
+#: The largest docs one write puts on a branch, all its files together (one Git Data API tree).
+MAX_DOCS_BYTES: Final = 4 * 1024 * 1024
+DOCS_HUMAN_DRIVEN: Final = ('You work Human-driven: the platform pushes nothing and opens no pull request for you. Apply '
+                            'the patch of GET /agents/engineering/docs/<connection>/preview yourself, or change your '
+                            'way of working.')
+DOCS_NOT_APPROVED: Final = 'Nothing of this kind is approved for the connection yet: approve it first.'
+DOCS_DIGEST: Final = ("These are not the docs approved: the request's digest, the approval's and the stored records' "
+                      'rendering differ. Read the preview again.')
+DOCS_TITLES: Final[Mapping[str, str]] = {'knowledge': 'Agent docs: the approved knowledge pack (rendering {version})',
+                                         'tenets': 'Tenets: the accepted version {version}'}
+
+
+def _approved_docs(connector: Connector, request: DocsRequest) -> tuple[Any, Any]:
+    """The approved docs' recorded rendering and its files as rendered again, once the connection's credential names
+    the stored connection's repository, something of the kind is approved, the three digests are one, every path is
+    the kind's own and the files fit one write."""
+    if connector.host.repository(request.connection) != request.repository:
+        raise NotNow(START_OTHER_REPOSITORY)
+    approved = None if connector.docs is None else connector.docs.approved(request.connection, request.kind)
+    if approved is None:
+        raise DocsRefused(DOCS_NOT_APPROVED, 'not_approved')
+    recorded, rendering = approved.recorded, approved.rendering
+    if not request.digest == recorded.digest == rendering.digest:
+        raise DocsRefused(DOCS_DIGEST, 'digest_mismatch')
+    docs_paths(rendering.paths(), request.kind)
+    if sum(len(file.content) for file in rendering.files) > MAX_DOCS_BYTES:
+        raise WriteRefused(f'The docs are larger than one write takes ({MAX_DOCS_BYTES} bytes).')
+    return recorded, rendering
+
+
+def _docs_write_checks(connector: Connector, request: DocsRequest,
+                       branch: str) -> tuple[str, RunRecord, dict[str, object]]:
+    """A docs write's checks before its own: the requesting administrator's way of working, the default branch (the
+    stored one once the host confirms it), the CI attestation and the host's branch rules; the default branch, the
+    record the checks read and what the claims keep of the CI checks."""
+    _require_docs_dial(connector, request.requested_by)
+    default = connector.host.default_branch(request.connection, request.default_branch)
+    if branch == default:
+        raise WriteRefused('The docs are never written to the default branch.')
+    run = connector.runs.attested(RunRecord(
+        connection_id=request.connection, default_branch=default, status=ACTIVE, ci_attested=False, cited_reviews=(),
+        bot_addresses=(AUTHOR,), repository=request.repository, stored_default_branch=request.default_branch))
+    _require_attestation(run)
+    return default, run, _ci_record(run, _require_ci(connector, run, branch))
+
+
+def _docs_push(connector: Connector, request: DocsRequest, version: int, key: str, contents: BundleContents,
+               default: str, ci: dict[str, object]) -> dict[str, object]:
+    """The docs' one commit pushed on its new branch, from the default branch's head (its tree worked out first:
+    the tree the host must build), once (``DocsClaims``)."""
+    host, connection, branch = connector.host, request.connection, contents.heads[0].removeprefix('refs/heads/')
+    base = host.head_commit(connection, default)
+    if base is None:
+        raise NotNow(NO_BRANCH)
+    tree = host.tree_with(connection, base, contents.commits[0].changes)
+    bundle = replace(contents, tree_hash=tree, base=base)
+
+    def push() -> dict[str, object]:
+        host.push_bundle(connection, branch, bundle, tree, default)
+        _docs_wrote(PUSH_BUNDLE, connection, kind=request.kind, version=version, branch=branch, tree_hash=tree,
+                    files=len(bundle.changed_paths))
+        return {'branch': branch, 'tree_hash': tree, 'base': base, 'ci': ci}
+
+    claims = connector.docs_writes
+    if claims is None:
+        raise NoConnection(NO_CONNECTION)
+    return _claimed(claims, connection, key, PUSH_BUNDLE, push, lambda: _docs_repeated(connection, request.kind, version))
+
+
+def _require_docs_dial(connector: Connector, person: str) -> None:
+    """The requesting administrator's stored way of working, failing closed (``dial.py``): AI-driven and AI-assisted
+    go on (their request is the person's go), anything else is ``human_driven``."""
+    if connector.dial.mode(person) not in (MODE_AI_DRIVEN, MODE_AI_ASSISTED):
+        raise DocsRefused(DOCS_HUMAN_DRIVEN, 'human_driven')
+
+
+def docs_write_key(kind: str, version: int, operation: str, *, digest: str) -> str:
+    """The key a docs write is made once for, in the connection's docs partition (``records.DocsClaims``), in a run's
+    write key's shape (``write_key``: ``<who>#<attempt>#<operation>#<digest>``): the kind and version, the write (its
+    push, its pull request) and the rendering's digest, which a version never changes: once per (connection, kind,
+    version)."""
+    return f'docs-{kind}-v{version}#1#{operation}#{digest[:32]}'
+
+
+def _earlier_done(claims: WriteLedger, partition: str, key: str) -> dict[str, object] | None:
+    """A done claim's answer; None for none or a refused one (claimed again); ``OutcomeUnknown`` for one whose
+    outcome is not known (never made again)."""
+    earlier = claims.earlier(partition, key)
+    if earlier is None or earlier.state == WRITE_REFUSED:
+        return None
+    if earlier.state == WRITE_DONE and earlier.result is not None:
+        return dict(earlier.result)
+    raise OutcomeUnknown(EARLIER_UNKNOWN)
+
+
+def docs_commit_message(kind: str, version: int, digest: str) -> str:
+    """The docs commit's message: trusted text, the kind, its version and its rendering's digest."""
+    what = 'the approved knowledge pack' if kind == 'knowledge' else 'the accepted tenets'
+    return (f'docs: {what}, version {version}\n\nRendered by the Voice of the Customer data lake from {what} '
+            f'(rendering digest {digest}).')
+
+
+def docs_pull_request(kind: str, version: int, digest: str, paths: tuple[str, ...],
+                      approved_at: str) -> tuple[str, str]:
+    """The docs pull request's title and body: trusted text (the files, the version, the digest, when it was approved);
+    ``merge_is_human`` adds that a person reviews and merges it."""
+    listed = '\n'.join(f'- `{path}`' for path in paths[:50])
+    more = f'\n- and {len(paths) - 50} more' if len(paths) > 50 else ''
+    what = ("the repository's approved knowledge pack, as `docs/agents/`" if kind == 'knowledge'
+            else "the repository's accepted tenets, as `TENETS.md`")
+    when = f' on {approved_at[:10]}' if approved_at else ''
+    body = (f'This pull request writes {what} (version {version}, rendering digest `{digest[:16]}`), as an '
+            f'administrator approved it{when}.\n\n{listed}{more}\n\nReview the diff here. To change these files, '
+            'change the pack or the tenets in the app and approve them again: a new version opens a new pull request.')
+    return DOCS_TITLES[kind].format(version=version), body
+
+
+def _docs_wrote(operation: str, connection: str, **written: object) -> None:
+    logger.info('broker wrote docs', extra={'operation': operation, 'role': START_ROLE, 'connection_id': connection,
+                                            **written})
+
+
+def _docs_repeated(connection: str, kind: str, version: int) -> None:
+    logger.info('broker docs write repeated', extra={'connection_id': connection, 'kind': kind, 'version': version})
+
+
 NOT_ENDED: Final = "The run has not ended; its pull request's reactions are read once it has."
 #: How each host's pull (merge) request closes the issue it fixes once merged (7.47.00).
 CLOSING_KEYWORDS: Final[Mapping[str, str]] = {'github': 'Fixes', 'gitlab': 'Closes'}
@@ -527,11 +769,18 @@ def _once(connector: Connector, caller: Caller, operation: str, attempt: int,
     ``attempt``, the operation and what it writes). The claim is taken before the host call and closed with its
     outcome: a repeat of a done write answers its first answer, a repeat of one whose outcome is unknown is
     ``OutcomeUnknown`` (and is not made), and only a refusal that wrote nothing lets the key be claimed again."""
-    key = write_key(caller, attempt, operation, *arguments)
-    earlier = connector.writes.claim(caller.run_id, key, operation)
+    return _claimed(connector.writes, caller.run_id, write_key(caller, attempt, operation, *arguments), operation,
+                    write, lambda: _repeated(caller, operation, attempt))
+
+
+def _claimed(ledger: WriteLedger, partition: str, key: str, operation: str, write: Callable[[], dict[str, object]],
+             repeated: Callable[[], None]) -> dict[str, object]:
+    """``write`` once for ``key`` in ``ledger``'s ``partition`` (a run's writes, ``_once``; a connection's docs,
+    ``push_approved_docs``), as ``_once`` says."""
+    earlier = ledger.claim(partition, key, operation)
     if earlier is not None:
         if earlier.state == WRITE_DONE and earlier.result is not None:
-            _repeated(caller, operation, attempt)
+            repeated()
             return earlier.result
         raise OutcomeUnknown(EARLIER_UNKNOWN)
     try:
@@ -539,15 +788,15 @@ def _once(connector: Connector, caller: Caller, operation: str, attempt: int,
     except _NOTHING_WRITTEN:
         # (unrecorded, the claim stays open: a repeat is answered as unknown, never made twice)
         with contextlib.suppress(Unavailable):
-            connector.writes.close(caller.run_id, key, WRITE_REFUSED)
+            ledger.close(partition, key, WRITE_REFUSED)
         raise
     except HostError as exc:   # (a host error or a wait the client gave up on: the write may have been made)
         with contextlib.suppress(Unavailable):
-            connector.writes.close(caller.run_id, key, WRITE_UNKNOWN)
+            ledger.close(partition, key, WRITE_UNKNOWN)
         raise OutcomeUnknown(f'{exc.reason} Whether the write was made is not known; it is not made again for '
                              'this attempt.') from exc
     try:
-        connector.writes.close(caller.run_id, key, WRITE_DONE, result)
+        ledger.close(partition, key, WRITE_DONE, result)
     except Unavailable:   # (made: answered as made; a repeat finds the claim open, and is not made again)
-        logger.warning('broker write not recorded as done', extra={'operation': operation, 'run_id': caller.run_id})
+        logger.warning('broker write not recorded as done', extra={'operation': operation, 'partition': partition})
     return result

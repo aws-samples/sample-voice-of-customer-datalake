@@ -138,6 +138,25 @@ class AwsReadinessPorts:
             raise _failed('the knowledge pack', error) from error
         return int(counter.get('approved_version', {}).get('N', '0'))
 
+    def _repo_row(self, connection_id: str, sk: str, attribute: str, what: str) -> int:
+        """A whole number of one of the connection's ``WS#default#REPO#`` rows (0 for none, or an id off its shape)."""
+        from engineering.rows import get_row
+        from engineering.workspace.layout import CONNECTION
+        if not CONNECTION.fullmatch(connection_id):
+            return 0
+        key = {'pk': {'S': f'WS#default#REPO#{connection_id}'}, 'sk': {'S': sk}}
+        try:
+            row = get_row(self.engineering_client, self.engineering_table, key) or {}
+        except _AWS_ERRORS as error:
+            raise _failed(what, error) from error
+        return int(row.get(attribute, {}).get('N', '0'))
+
+    def knowledge_rendering(self, connection_id: str) -> int:
+        return self._repo_row(connection_id, 'KDOCS', 'version', 'the knowledge docs')
+
+    def tenets_accepted(self, connection_id: str) -> int:
+        return self._repo_row(connection_id, 'TENETS', 'accepted_version', 'the accepted tenets')
+
     def issues_source_reads(self, repository: str) -> bool:
         if self.watermarks is None:
             raise ReadFailed('this deployment names no watermarks table to the Agents API')

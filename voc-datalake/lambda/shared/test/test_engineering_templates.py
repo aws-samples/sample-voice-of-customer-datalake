@@ -1,4 +1,4 @@
-"""The five default engineering flows (the orchestration bundle's, compiled from templates/orchestration/flows/): each
+"""The six default engineering flows (the orchestration bundle's, compiled from templates/orchestration/flows/): each
 valid under the server's own rules, each as the validator keeps it, none able to merge, and every flow that pushes code
 ending at a stop at PR."""
 from __future__ import annotations
@@ -28,10 +28,11 @@ def _ends(definition: dict[str, Any]) -> list[tuple[str, str | None]]:
             if node['type'] in ('end', workflow_engineering.NODE_STOP_AT_PR)]
 
 
-def test_the_five_default_flows_in_the_docs_order() -> None:
-    assert IDS == ['understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review']
+def test_the_six_default_flows_in_the_docs_order() -> None:
+    # (7.52.00: Tenets after Understand the repository, the setup guide's order)
+    assert IDS == ['understand-repository', 'tenets', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review']
     assert [template['name'] for template in TEMPLATES] == [
-        'Understand the repository', 'Issue triage', 'Bug hunt and fix', 'Feature from an issue or a PRD',
+        'Understand the repository', 'Tenets', 'Issue triage', 'Bug hunt and fix', 'Feature from an issue or a PRD',
         'PR review']
     assert all(set(template) == {'template_id', 'name', 'description', 'definition'} for template in TEMPLATES)
 
@@ -71,6 +72,7 @@ def test_no_template_merges_and_a_pushing_flow_stops_at_a_pr_or_a_person(templat
 
 @pytest.mark.parametrize(('template_id', 'ends'), [
     ('understand-repository', [('end', 'needs_human')]),
+    ('tenets', [('end', 'completed')]),   # (the draft waits for an administrator in the store, not in the run)
     ('issue-triage', [('end', 'completed')]),
     ('bug-hunt-and-fix', [('stop_at_pr', None), ('end', 'needs_human')]),
     ('feature', [('stop_at_pr', None), ('end', 'needs_human')]),

@@ -102,6 +102,7 @@ from shared import (
     agent_run_decisions,
     agent_run_resume,
     agent_seed,
+    agents_engineering_knowledge_routes,
     agents_engineering_run_routes,
     agents_engineering_setup_routes,
     engineering_templates,
@@ -1322,6 +1323,10 @@ def get_engineering_scorecards(role: str):
     its latest runs on the connection (at most 10 versions; by default the shipped one and the newest few)."""
     views = _skill_views()
     return _skill_read(lambda: views.scorecards(_query('connection') or '', role, _query('versions')))
+
+
+# The knowledge flows' routes (7.52.00, shared/agents_engineering_knowledge_routes.py), before the run's routes.
+app.include_router(agents_engineering_knowledge_routes.app)
 
 
 def _engineering_tables(run_id: str) -> tuple[str, str]:

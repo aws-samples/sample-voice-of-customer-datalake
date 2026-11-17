@@ -56,6 +56,7 @@ from engineering.connectors.hosts import (
     NO_CONNECTION,
     WRITE_CLAIMED,
     WRITE_REFUSED,
+    Conflict,
     NoConnection,
     RunRecord,
     Unavailable,
@@ -282,3 +283,55 @@ class WriteClaims:
 _NOT_RECORDED: Final = "The run's pull request could not be recorded."
 #: How many times a record of the run's pull request is read and written when another write moved it meanwhile.
 PULL_REQUEST_TRIES: Final = 3
+
+
+#: The partition of a connection's docs writes' claims (7.52.00): ``WS#<ws>#DOCS#<connection>``, beside the runs'
+#: writes' and with the same attributes, so the broker's grant reaches no other row.
+DOCS_PREFIX: Final = 'DOCS#'
+
+
+def docs_pk(ws: str, connection: str) -> str:
+    return f'WS#{ws}#{DOCS_PREFIX}{connection}'
+
+
+class DocsClaims(WriteClaims):
+    """The docs write's ``WriteLedger`` (7.52.00, ``push_approved_docs``): a ``WriteClaims`` whose partition is the
+    connection's docs (``docs_pk``; its ``run_id`` argument names the connection) and whose key is the kind, the
+    version and the write (``<kind>#v<n>#push_bundle``, ``…#open_or_update_draft_pr``): once per (connection, kind,
+    version)."""
+
+    def _key(self, run_id: str, key: str) -> dict[str, Any]:
+        return {'pk': {'S': docs_pk(WORKSPACE, run_id)}, 'sk': {'S': f'{WRITE_PREFIX}{key}'}}
+
+
+class ApprovedDocsRecords:
+    """The broker's ``DocsReader`` (7.52.00) over the knowledge store's records (``knowledge/docs.py``
+    ``ApprovedDocs``): what an administrator approved, rendered again, and the accepted tenets an agent reads. A record
+    that cannot be read is ``Unavailable`` (503), one the store refuses (its version no longer approved, a missing
+    object) ``Conflict`` (409): never a pass."""
+
+    def __init__(self, docs: Any) -> None:
+        self._docs = docs
+
+    def _read[T](self, read: Callable[[], T]) -> T:
+        from engineering.knowledge.store import PackError, PackUnavailable
+
+        try:
+            return read()
+        except PackUnavailable as exc:
+            raise Unavailable(f'The approved docs could not be read ({exc}); retry.') from exc
+        except PackError as exc:
+            raise Conflict(f'The approved docs are not as approved: {exc}') from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise Unavailable('The approved docs could not be read; retry.') from exc
+
+    def approved(self, connection_id: str, kind: str) -> Any:
+        return self._read(lambda: self._docs.approved(WORKSPACE, connection_id, kind))
+
+    def accepted_tenets(self, connection_id: str) -> dict[str, object] | None:
+        found = self._read(lambda: self._docs.tenets.accepted(WORKSPACE, connection_id))
+        if found is None:
+            return None
+        record = found.version.record
+        return {'version': found.version.version, 'summary': record.get('summary', ''),
+                'tenets': list(record.get('tenets', []))}

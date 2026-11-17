@@ -81,11 +81,12 @@ describe('the engineering broker', () => {
     // Reads, and the one write of its claim rows (PutItem, UpdateItem, their GenerateDataKey): no DeleteItem,
     // PutObject or other write anywhere on its role.
     // (7.10.00: one more Query, of the runs' writes' partitions, for the reactions read: RunPullRequestReads)
+    // (7.52.00: one more GetItem and GetObject, the approved docs' rows and the knowledge packs' objects, read only)
     expect(actions).toStrictEqual([
-      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
-      'dynamodb:Query', 'dynamodb:Query', 'dynamodb:UpdateItem',
+      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+      'dynamodb:Query', 'dynamodb:Query', 'dynamodb:Query', 'dynamodb:UpdateItem',
       'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
-      's3:GetObject', 'ssm:GetParameter',
+      's3:GetObject', 's3:GetObject', 'ssm:GetParameter',
     ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
@@ -132,7 +133,8 @@ describe('the engineering broker', () => {
     expect(claims).toMatchObject({
       Effect: 'Allow', Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
       Condition: {
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*'] },
+        // (7.52.00: and the connections' docs writes' claims, once per kind and version, with the same attributes)
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*', 'WS#*#DOCS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'] },
         StringEqualsIfExists: { 'dynamodb:ReturnValues': 'NONE' },
       },
@@ -197,6 +199,38 @@ describe('the engineering broker', () => {
     expect(keys).toStrictEqual([
       '/ws/default/runs/*/commits/*/_patches/*', '/ws/default/runs/*/final-go-*/commits/*/_gate/*',
       '/ws/default/runs/*/gate-runner-*/commits/*/_gate/*']);
+  });
+
+  it('reads the approved docs (7.52.00): the repositories\' rows by GetItem and the knowledge packs\' objects, no write', () => {
+    const statements = brokerStatements(template('on'));
+    const rows = statements.find((statement) => statement.Sid === 'ApprovedDocsRecords');
+    expect(rows).toMatchObject({
+      Effect: 'Allow', Action: 'dynamodb:GetItem',
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] } },
+    });
+    expect(JSON.stringify(rows?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
+    const objects = statements.find((statement) => statement.Sid === 'ApprovedDocsObjects');
+    expect(objects?.Action).toBe('s3:GetObject');
+    expect(JSON.stringify(objects?.Resource)).toMatch(/"\/ws\/default\/knowledge\/\*"/);
+  });
+
+  it('writes no repository row and nothing to the bucket: the docs go to the host, through the claims (7.52.00)', () => {
+    // Negative pins: no write on a repository's rows (an approval, an acceptance: the Agents API's alone) and none on the
+    // bucket; the docs it writes go to the host, through the claims' one grant.
+    const statements = brokerStatements(template('on'));
+    const repositoryWriters = statements.filter((statement) => JSON.stringify(statement.Condition ?? {}).includes('REPO')
+      && [statement.Action].flat().some((action) => !/^dynamodb:GetItem$/.test(String(action))));
+    expect(repositoryWriters).toStrictEqual([]);
+    expect(JSON.stringify(statements)).not.toMatch(/s3:PutObject|s3:DeleteObject/);
+  });
+
+  it('admits voc-engineering-start, never an agent role, as the docs write\'s caller (7.52.00)', () => {
+    const on = template('on');
+    const variables = on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment?.Variables ?? {};
+    // The start's own role, by its reference: never the agents' role name pattern (an agent's session is refused
+    // push_approved_docs in the code, connectors/broker.py, pinned in test_broker_docs.py).
+    expect(JSON.stringify(variables.ENGINEERING_START_ROLE_NAME)).toMatch(/EngineeringStartRole/);
+    expect(JSON.stringify(variables.ENGINEERING_START_ROLE_NAME)).not.toMatch(/voc-eng-/);
   });
 
   it('decrypts what it reads through DynamoDB and S3 only', () => {

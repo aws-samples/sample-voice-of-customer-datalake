@@ -4,7 +4,9 @@ The host clients are ``github.GitHubHost`` and ``gitlab.GitLabHost``, and the br
 credential names through ``router.HostRouter`` (docs/autonomous-engineering.md, "Repository connectors"); the run's
 record and the board's GO ledger are ``records.RunRecords``, the submitted patch's reader ``patches.WorkspacePatches``
 and the way of working ``dial.WaysOfWorking``. A deployment that names none of their stores gets ``UNCONNECTED`` in
-their place, so every permitted operation answers ``NoConnection``.
+their place, so every permitted operation answers ``NoConnection``. Since 7.52.00 the approved docs' reader
+(``records.ApprovedDocsRecords``: the knowledge docs and the tenets as an administrator approved them) and their writes'
+claims (``records.DocsClaims``), for voc-engineering-start's ``push_approved_docs`` and the agents' ``tenets`` read.
 """
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ import re
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.write_policy import BrokerError, WriteRefused
@@ -478,6 +480,11 @@ class RepositoryHost(Protocol):
         open one's title and body only: an update never marks one ready nor turns one back into a draft."""
         ...
 
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        """The tree id commit ``base``'s tree becomes with ``changes`` (7.52.00, the approved docs' write: the tree its
+        push is held to), worked out without moving any branch."""
+        ...
+
     def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
         """People's reactions to the pull request ``number`` (its record's address ``url``), the revert and the edits
         after its merge on ``branch`` (7.10.00, ``reactions.py``): reads only, bounded, trust-filtered, redacted."""
@@ -543,6 +550,20 @@ class WriteLedger(Protocol):
         ...
 
 
+class DocsReader(Protocol):
+    """What an administrator approved (7.52.00): the docs of a kind rendered again from the stored records, and the
+    accepted tenets an agent reads."""
+
+    def approved(self, connection_id: str, kind: str) -> Any:
+        """``knowledge/docs.py`` ``Approved`` (its recorded rendering and the files it renders to now), None when
+        nothing is approved yet; ``Unavailable`` when the records cannot be read."""
+        ...
+
+    def accepted_tenets(self, connection_id: str) -> dict[str, object] | None:
+        """The accepted tenets version ``{version, summary, tenets}``, None when none is accepted."""
+        ...
+
+
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
     is ``NoConnection``, so the broker refuses each permitted operation with 503 before it reaches the host."""
@@ -596,3 +617,7 @@ class Connector:
     ledger: GateLedger
     dial: Dial
     writes: WriteLedger
+    #: The approved docs and their writes' claims (7.52.00; None where the deployment names no store for them: the
+    #: docs write and the tenets read are refused, ``NoConnection``).
+    docs: DocsReader | None = None
+    docs_writes: WriteLedger | None = None

@@ -18,7 +18,8 @@ these and the tools its skill names, whatever a record says.
   issue, its lines code spans: ``issues.issue_comment``): the broker's writes, which check the run, the dial, the
   GO and the write rules first (the understander's comment and labels are on its issue: no dial, 7.50.00);
 - the issue's tools (``issues.py``: ``read_issue``, ``write_triage``, ``label_issue``) and the gate's
-  (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00.
+  (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00;
+- the tenets' (``tenets_tools.py``: ``read_tenets``, ``write_tenets``), 7.52.00.
 
 Every output is written once (the workspace's puts are create-only) and its key is recorded on the task when the agent
 finishes (``AgentContext.result_keys``), so the steps after it read what the board recorded, never a listing. The
@@ -37,7 +38,7 @@ from typing import Any, Final
 from engineering.runtime import outputs
 from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
-from engineering.runtime.harness import gate_tools, issues
+from engineering.runtime.harness import gate_tools, issues, tenets_tools
 from engineering.runtime.harness.coordinator import Built, Tool, answered, bounded, listed, optional, post_for
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
@@ -70,6 +71,9 @@ ROLE_TOOLS: Final[Mapping[str, frozenset[str]]] = {
     'run_gate': frozenset({'gate-runner'}),
     'read_gate_record': frozenset({'final-go'}),
     'read_findings': frozenset({'final-go'}),
+    # (7.52.00: the accepted tenets a triage may cite, and the Tenets flow's draft of them)
+    'read_tenets': frozenset({'understander'}),
+    'write_tenets': frozenset({'understander'}),
 }
 #: The one role each poster posts for (board/api.py ``POSTERS``, but the coordinator's, which posts with post_task).
 POSTS_FOR: Final[Mapping[str, str]] = {'hunter': 'fixer', 'builder': 'builder'}
@@ -261,7 +265,8 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
                   'request.', {'number': {'type': 'integer'}, 'body': text}, ('number', 'body')),
     )
     return (*(spec for spec in all_specs if role in ROLE_TOOLS[spec.name]),
-            *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS))
+            *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS),
+            *tenets_tools.specs(tool_spec, role, ROLE_TOOLS))
 
 
 def _branch(context: Built, arguments: Mapping[str, Any]) -> str:
@@ -283,7 +288,7 @@ def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
     outputs = _output_handlers(context, result)
     record = outputs.pop('_record')
     return {**outputs, **_writer_handlers(context, result), **issues.handlers(context, result, record),
-            **gate_tools.handlers(context, result)}
+            **gate_tools.handlers(context, result), **tenets_tools.handlers(context, result, record)}
 
 
 def _already_written(error: Exception) -> bool:

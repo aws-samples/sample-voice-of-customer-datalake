@@ -6,7 +6,7 @@
  * opens its workflow there; on that page Save as opens the copy without the
  * unsaved-changes guard getting in the way (the draft lives in the copy). Rename
  * (not on the built-in) saves the trimmed name and says why when it is refused.
- * "Start from a template" (beside New engineering flow) lists the five default engineering flows with their
+ * "Start from a template" (beside New engineering flow) lists the six default engineering flows with their
  * descriptions; choosing one opens the editor on an unsaved copy of the server's definition
  * (`GET /workflows/templates`) that nothing stores until Save, the library's own create, which opens the new flow.
  */
@@ -170,13 +170,13 @@ describe('Workflow page', () => {
 const BUG_HUNT = findEngineeringTemplate('bug-hunt-and-fix')
 
 describe('Workflow library — Start from a template', () => {
-  it('lists the five default flows, each named and described', async () => {
+  it('lists the six default flows, each named and described', async () => {
     renderAt('/agents')
     await userEvent.click(await screen.findByRole('button', { name: 'Start from a template' }))
     const dialog = await screen.findByRole('dialog', { name: 'Start from a template' })
     const links = within(dialog).getAllByRole('link')
     expect(links.map((link) => link.getAttribute('href'))).toStrictEqual([
-      'understand-repository', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review',
+      'understand-repository', 'tenets', 'issue-triage', 'bug-hunt-and-fix', 'feature', 'pr-review',
     ].map((id) => `/agents/workflows/templates/${id}`))
     expect(links.map((link) => (link.getAttribute('aria-describedby') ?? '') !== '')).not.toContain(false)
     expect(within(dialog).getByRole('link', { name: 'Bug hunt and fix' })).toHaveAccessibleDescription(

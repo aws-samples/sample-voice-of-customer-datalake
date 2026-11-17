@@ -28,13 +28,10 @@ from engineering.knowledge.notes import (
     safe_text,
     subject_of,
 )
+from engineering.knowledge.render_docs import ESCAPED as _ESCAPED
+from engineering.knowledge.render_docs import PACK_SCHEMA, TITLES
 from engineering.knowledge.workspaces import KINDS as PACKAGE_KINDS
 from engineering.knowledge.workspaces import ROOT, Package
-
-PACK_SCHEMA = 'voc-kpack/1'
-TITLES = {'architecture': 'Architecture', 'convention': 'Conventions', 'review-guide': 'Review guide',
-          'test-strategy': 'Test strategy', 'ci': 'CI and gates', 'glossary': 'Glossary', 'how-we-work': 'How we work'}
-_ESCAPED = frozenset('\\`*_[]<>!|#~&')
 
 
 @dataclass(frozen=True)

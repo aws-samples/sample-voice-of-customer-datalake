@@ -14,6 +14,7 @@ from engineering.connectors.hosts import (
     Commit,
     Connector,
     Dial,
+    FileChange,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -150,6 +151,11 @@ class FakeHost:
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None:
         self.calls.append(('push_bundle', connection_id, branch, contents, tree_hash, default_branch))
+
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        """The approved docs' tree (7.52.00): ``tree_hash`` (``TREE`` by default), what the branch then has."""
+        self.calls.append(('tree_with', connection_id, base, tuple(change.path for change in changes)))
+        return self.tree_hash or TREE
 
     #: Whether each open asked for a draft (apart from ``calls``).
     drafts: list[bool] = field(default_factory=list)

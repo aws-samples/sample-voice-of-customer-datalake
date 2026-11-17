@@ -169,7 +169,7 @@ def _broker(**collaborators: Any) -> FunctionUrl:
 
 
 def test_the_clients_read_kinds_and_bounds_are_the_brokers():
-    assert set(connector_handler._READ_KINDS) == broker_client.READ_KINDS
+    assert set(connector_handler._READ_KINDS) | {connector_handler.TENETS_READ} == broker_client.READ_KINDS
     assert TIMEOUT_SECONDS > 120  # (the broker function's own limit: its answer always comes first)
     assert MAX_ANSWER_BYTES > connector_handler.MAX_ANSWER_BYTES
 

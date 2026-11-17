@@ -14,8 +14,8 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
 
 import {
-  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_PATCH_KEYS, ENGINEERING_RUNLIST_PARTITIONS, ENGINEERING_SEED_KEYS,
-  ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_PATCH_KEYS, ENGINEERING_REPO_PARTITIONS,
+  ENGINEERING_RUNLIST_PARTITIONS, ENGINEERING_SEED_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
 } from './core-buckets';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
@@ -216,7 +216,7 @@ const TRANSCRIPT_INDEX_KEYS = `ws/${ENGINEERING_WORKSPACE}/transcripts-index/*`;
 /**
  * The runtime's role at a run's end (7.50.00): the issue's trusted triage row (``grantIssueTriage``), and Learn's read
  * of the agents' transcripts and the run's manifest and index entry (``grantTranscripts``); 7.51.00: the runs list and
- * a child run's seeds (``grantChildRuns``).
+ * a child run's seeds (``grantChildRuns``); 7.52.00: a Tenets run's draft and a triage's lock (``grantTenetsEnd``).
  *
  * The runtime's role (Learn, the run's end): read the agents' transcripts (GetObject, and a listing under their
  * prefix only), and write each run's manifest and its index entry, create-only (the workspace bucket refuses a put
@@ -227,6 +227,48 @@ export function grantRunEnd(role: iam.IRole, workspaceBucket: s3.IBucket, agents
   grantIssueTriage(role, workspaceBucket, agentsTable);
   grantTranscripts(role, workspaceBucket);
   grantChildRuns(role, engineeringTable, workspaceBucket);
+  grantTenetsEnd(role, workspaceBucket, engineeringTable);
+}
+
+/** An understander's recorded tenets of a run (7.52.00, lambda/engineering/runtime/tenets_end.py). */
+export const TENETS_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_tenets/*';
+/**
+ * Every attribute a tenets draft writes (lambda/engineering/knowledge/tenets.py DRAFT_ATTRIBUTES; a Python test holds the
+ * two equal): the counter's `versions`, the version's and its log's and its run's rows. Never an acceptance's
+ * (`accepted_version`, `accepted_digest`, `accepted_ids`, `decided_by`, `rendering_digest`), nor a knowledge pack's
+ * approval (`approved_version`), which the Agents API alone writes.
+ */
+export const TENETS_DRAFT_ATTRIBUTES = ['pk', 'sk', 'versions', 'version', 'status', 'record', 'author', 'author_kind',
+  'run_id', 'base_version', 'created_at', 'event', 'by', 'at'];
+
+/**
+ * A Tenets run's end and a triage run's hard lock (7.52.00), on the runtime's role: the understander's recorded tenets
+ * read (`GetObject` on the runs' `_tenets/` objects only, no listing); the repositories' rows read (`GetItem` on
+ * `WS#*#REPO#*`: the tenets' counter, its accepted ids, for the triage's lock and the draft's number); and the draft
+ * written (`PutItem` and `UpdateItem` on those partitions, of the draft's attributes alone: `dynamodb:Attributes`), so the
+ * runtime drafts and never accepts, rejects or approves anything.
+ */
+function grantTenetsEnd(role: iam.IRole, workspaceBucket: s3.IBucket, engineeringTable: dynamodb.ITable): void {
+  const records = workspaceBucket.arnForObjects(TENETS_RECORD_KEYS);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'TenetsRecords', actions: ['s3:GetObject'], resources: [records],
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the understanders\' tenets objects of every run: a run\'s end reads only the key its understander task recorded',
+    findings: [resourceFinding(records)],
+  }]);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'TenetsReads', actions: ['dynamodb:GetItem'], resources: [engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_REPO_PARTITIONS] } },
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'TenetsDrafts', actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [engineeringTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_REPO_PARTITIONS] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': TENETS_DRAFT_ATTRIBUTES },
+    },
+  }));
 }
 
 function grantTranscripts(role: iam.IRole, workspaceBucket: s3.IBucket): void {

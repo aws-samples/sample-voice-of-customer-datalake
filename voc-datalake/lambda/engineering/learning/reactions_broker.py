@@ -35,11 +35,11 @@ class BrokerUnavailable(RuntimeError):
 
 class BrokerAnswered(BrokerUnavailable):
     """The broker answered with a refusal: its status, and its plain reason (the broker's ``error``, never a body it
-    was sent)."""
+    was sent), and the ``code`` a docs write's refusal names beside it (7.52.00; '' for none)."""
 
-    def __init__(self, status: int, reason: str) -> None:
+    def __init__(self, status: int, reason: str, code: str = '') -> None:
         super().__init__(f'the broker answered {status}')
-        self.status, self.reason = status, reason
+        self.status, self.reason, self.code = status, reason, code
 
 
 class _NoFollow(urllib.request.HTTPRedirectHandler):
@@ -81,14 +81,17 @@ class BrokerReactions:
                                       opener=self.opener, timeout=TIMEOUT_SECONDS))
 
 
-def _refusal(error: urllib.error.HTTPError) -> str:
-    """The broker's plain reason for a refusal (its ``{"error"}``), '' when it gave none that can be read."""
+def _refusal(error: urllib.error.HTTPError) -> tuple[str, str]:
+    """The broker's plain reason for a refusal (its ``{"error"}``) and its ``code`` (7.52.00), each '' when it gave
+    none that can be read."""
     try:
         parsed = json.loads(error.read(MAX_ANSWER_BYTES) or b'{}')
     except (ValueError, OSError, AttributeError):
-        return ''
+        return '', ''
     reason = parsed.get('error') if isinstance(parsed, dict) else None
-    return reason[:500] if isinstance(reason, str) else ''
+    code = parsed.get('code') if isinstance(parsed, dict) else None
+    return (reason[:500] if isinstance(reason, str) else '',
+            code if isinstance(code, str) and code.isidentifier() and len(code) <= 40 else '')
 
 
 def signed_call(url: str, region: str, credentials: Any, operation: str, args: dict[str, object], *, opener: Any,
@@ -109,7 +112,7 @@ def signed_call(url: str, region: str, credentials: Any, operation: str, args: d
         with opener.open(request, timeout=timeout) as answer:
             return bytes(answer.read(MAX_ANSWER_BYTES + 1))
     except urllib.error.HTTPError as error:
-        raise BrokerAnswered(error.code, _refusal(error)) from error
+        raise BrokerAnswered(error.code, *_refusal(error)) from error
     except _LOST as error:
         raise BrokerUnavailable('the broker\'s answer never came') from error
 
