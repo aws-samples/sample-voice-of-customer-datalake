@@ -74,8 +74,8 @@ export default function EvidenceCards({ feedbackIds, featureRequestIds, erasedEv
   const empty = ids.length === 0 && requests.length === 0
   return (
     <section data-testid="evidence-cards" aria-labelledby={titled ? headingId : undefined} className="space-y-3 min-w-0">
-      {titled ? <h3 id={headingId} className="text-sm font-semibold text-text-strong">{t('canvas.page.evidence')}</h3> : null}
-      {empty ? <p className="text-xs text-muted">{t('canvas.page.evidenceEmpty')}</p> : null}
+      {titled ? <h3 id={headingId} className="text-sm font-semibold text-text-strong">{t('documents:page.evidence')}</h3> : null}
+      {empty ? <p className="text-xs text-muted">{t('documents:page.evidenceEmpty')}</p> : null}
       {ids.length > 0 ? (
         <>
           <p className="text-xs text-muted">{t('corpus.summary', { count: ids.length })}</p>
@@ -84,14 +84,14 @@ export default function EvidenceCards({ feedbackIds, featureRequestIds, erasedEv
           </ul>
           {ids.length > EVIDENCE_CARD_LIMIT ? (
             <button type="button" className="btn btn-secondary btn-sm" aria-haspopup="dialog" onClick={() => setShowingAll(true)}>
-              {t('canvas.page.showAll', { n: ids.length })}
+              {t('documents:page.showAll', { n: ids.length })}
             </button>
           ) : null}
         </>
       ) : null}
       {requests.length > 0 ? (
         <div>
-          <p className="text-xs font-medium text-text">{t('canvas.page.featureRequests')}</p>
+          <p className="text-xs font-medium text-text">{t('documents:page.featureRequests')}</p>
           <FeatureRequestList ids={requests} open listId={requestsId} />
         </div>
       ) : null}

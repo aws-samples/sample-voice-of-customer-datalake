@@ -16,8 +16,8 @@ import {
 } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { LucideIcon } from 'lucide-react'
-import type { CanvasCommand } from '../editor/commands'
-import type { CanvasEditorHandle } from '../editor/CanvasEditor'
+import type { CanvasCommand } from '../../Document/edit/editor/commands'
+import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
 import type { CanvasMenuEntry } from './CanvasMenu'
 import type { Shortcut } from './menuShortcuts'
 
@@ -57,39 +57,39 @@ function commandEntries(handle: Handle, entries: readonly (CommandEntry | 'separ
 
 export function editEntries(handle: Handle, t: TFunction<'projectDetail'>): CanvasMenuEntry[] {
   return commandEntries(handle, [
-    { command: 'undo', label: t('canvas.menubar.undo'), icon: Undo2, shortcut: { key: 'z' } },
-    { command: 'redo', label: t('canvas.menubar.redo'), icon: Redo2, shortcut: { key: 'z', shift: true } },
+    { command: 'undo', label: t('documents:menubar.undo'), icon: Undo2, shortcut: { key: 'z' } },
+    { command: 'redo', label: t('documents:menubar.redo'), icon: Redo2, shortcut: { key: 'z', shift: true } },
   ], 'edit')
 }
 
 export function formatEntries(handle: Handle, t: TFunction<'projectDetail'>): CanvasMenuEntry[] {
   return commandEntries(handle, [
-    { command: 'paragraph', label: t('canvas.editor.blocks.paragraph'), icon: Pilcrow, shortcut: { key: '0', alt: true } },
-    { command: 'heading1', label: t('canvas.editor.blocks.heading1'), icon: Heading1, shortcut: { key: '1', alt: true } },
-    { command: 'heading2', label: t('canvas.editor.blocks.heading2'), icon: Heading2, shortcut: { key: '2', alt: true } },
-    { command: 'heading3', label: t('canvas.editor.blocks.heading3'), icon: Heading3, shortcut: { key: '3', alt: true } },
+    { command: 'paragraph', label: t('documents:editor.blocks.paragraph'), icon: Pilcrow, shortcut: { key: '0', alt: true } },
+    { command: 'heading1', label: t('documents:editor.blocks.heading1'), icon: Heading1, shortcut: { key: '1', alt: true } },
+    { command: 'heading2', label: t('documents:editor.blocks.heading2'), icon: Heading2, shortcut: { key: '2', alt: true } },
+    { command: 'heading3', label: t('documents:editor.blocks.heading3'), icon: Heading3, shortcut: { key: '3', alt: true } },
     'separator',
-    { command: 'bold', label: t('canvas.editor.format.bold'), icon: Bold, shortcut: { key: 'b' } },
-    { command: 'italic', label: t('canvas.editor.format.italic'), icon: Italic, shortcut: { key: 'i' } },
-    { command: 'strike', label: t('canvas.editor.format.strike'), icon: Strikethrough, shortcut: { key: 's', shift: true } },
-    { command: 'code', label: t('canvas.editor.format.code'), icon: Code, shortcut: { key: 'e' } },
+    { command: 'bold', label: t('documents:editor.format.bold'), icon: Bold, shortcut: { key: 'b' } },
+    { command: 'italic', label: t('documents:editor.format.italic'), icon: Italic, shortcut: { key: 'i' } },
+    { command: 'strike', label: t('documents:editor.format.strike'), icon: Strikethrough, shortcut: { key: 's', shift: true } },
+    { command: 'code', label: t('documents:editor.format.code'), icon: Code, shortcut: { key: 'e' } },
     'separator',
-    { command: 'bulletList', label: t('canvas.editor.blocks.bulletList'), icon: List, shortcut: { key: '8', shift: true } },
-    { command: 'orderedList', label: t('canvas.editor.blocks.orderedList'), icon: ListOrdered, shortcut: { key: '7', shift: true } },
-    { command: 'taskList', label: t('canvas.editor.blocks.taskList'), icon: ListTodo, shortcut: { key: '9', shift: true } },
-    { command: 'blockquote', label: t('canvas.editor.blocks.blockquote'), icon: Quote, shortcut: { key: 'b', shift: true } },
-    { command: 'codeBlock', label: t('canvas.editor.blocks.codeBlock'), icon: CodeXml, shortcut: { key: 'c', alt: true } },
+    { command: 'bulletList', label: t('documents:editor.blocks.bulletList'), icon: List, shortcut: { key: '8', shift: true } },
+    { command: 'orderedList', label: t('documents:editor.blocks.orderedList'), icon: ListOrdered, shortcut: { key: '7', shift: true } },
+    { command: 'taskList', label: t('documents:editor.blocks.taskList'), icon: ListTodo, shortcut: { key: '9', shift: true } },
+    { command: 'blockquote', label: t('documents:editor.blocks.blockquote'), icon: Quote, shortcut: { key: 'b', shift: true } },
+    { command: 'codeBlock', label: t('documents:editor.blocks.codeBlock'), icon: CodeXml, shortcut: { key: 'c', alt: true } },
   ], 'format')
 }
 
 export function insertEntries(handle: Handle, t: TFunction<'projectDetail'>): CanvasMenuEntry[] {
   return commandEntries(handle, [
-    { command: 'link', label: t('canvas.menubar.link'), icon: Link, shortcut: { key: 'k' } },
-    { command: 'image', label: t('canvas.menubar.image'), icon: ImageIcon },
+    { command: 'link', label: t('documents:menubar.link'), icon: Link, shortcut: { key: 'k' } },
+    { command: 'image', label: t('documents:menubar.image'), icon: ImageIcon },
     'separator',
-    { command: 'table', label: t('canvas.editor.blocks.table'), icon: Table2 },
-    { command: 'divider', label: t('canvas.editor.blocks.divider'), icon: Minus },
-    { command: 'callout', label: t('canvas.editor.blocks.callout'), icon: Megaphone },
+    { command: 'table', label: t('documents:editor.blocks.table'), icon: Table2 },
+    { command: 'divider', label: t('documents:editor.blocks.divider'), icon: Minus },
+    { command: 'callout', label: t('documents:editor.blocks.callout'), icon: Megaphone },
   ], 'insert')
 }
 
@@ -97,15 +97,15 @@ export function insertEntries(handle: Handle, t: TFunction<'projectDetail'>): Ca
 export function viewEntries(view: CanvasViewControls, focus: ViewToggle, t: TFunction<'projectDetail'>): CanvasMenuEntry[] {
   const { comments } = view
   const commentsPanel: CanvasMenuEntry[] = comments === undefined ? [] : [
-    { kind: 'toggle', id: 'comments', label: t('canvas.menubar.comments'), checked: comments.on, onToggle: comments.toggle },
+    { kind: 'toggle', id: 'comments', label: t('documents:menubar.comments'), checked: comments.on, onToggle: comments.toggle },
   ]
   return [
     ...commentsPanel,
-    { kind: 'toggle', id: 'outline', label: t('canvas.page.contents'), checked: view.outline.on, onToggle: view.outline.toggle },
-    { kind: 'toggle', id: 'fullWidth', label: t('canvas.menubar.fullWidth'), checked: view.fullWidth.on, onToggle: view.fullWidth.toggle },
+    { kind: 'toggle', id: 'outline', label: t('documents:page.contents'), checked: view.outline.on, onToggle: view.outline.toggle },
+    { kind: 'toggle', id: 'fullWidth', label: t('documents:menubar.fullWidth'), checked: view.fullWidth.on, onToggle: view.fullWidth.toggle },
     { kind: 'separator', id: 'view-separator' },
     {
-      kind: 'toggle', id: 'fullScreen', label: t('canvas.focus.button'), checked: focus.on, onToggle: focus.toggle,
+      kind: 'toggle', id: 'fullScreen', label: t('documents:focus.button'), checked: focus.on, onToggle: focus.toggle,
       shortcut: { key: 'f', shift: true },
     },
   ]

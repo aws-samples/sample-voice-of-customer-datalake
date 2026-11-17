@@ -10,7 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestQueryClient } from '../../../test/query-client'
-import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../../public/locales/en/documents.json'
 import enTools from '../../../../public/locales/en/assistantTools.json'
 import { resetExecutions } from '../../../assistant/approvals/executionStore'
 import { useThreadStore } from '../../../assistant/store/assistantStore'
@@ -29,7 +29,7 @@ const m = vi.hoisted(() => ({
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: { updateDocument: m.updateDocument, getDocumentVersions: m.getDocumentVersions } }))
 vi.mock('../../../assistant/runtime/runtime', () => ({ resolveApproval: m.resolveApproval }))
 
-const assistant = enProjectDetail.canvas.actions.assistant
+const assistant = enDocuments.actions.assistant
 const document: ProjectDocument = {
   document_id: 'doc-1', document_type: 'custom', title: 'Notes', revision: 2, created_at: '2026-10-01T00:00:00Z',
   content: '# Notes\n\nKeep this.\n\nOld paragraph.',

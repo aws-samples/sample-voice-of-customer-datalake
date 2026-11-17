@@ -16,7 +16,7 @@ interface ImageDialogProps {
 const isImageAddress = (url: string) => url !== '' && isSafeHref(url) && !/^mailto:/i.test(url)
 
 export default function ImageDialog({ editor, anchor, onClose }: ImageDialogProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const [src, setSrc] = useState('')
   const [alt, setAlt] = useState('')
   const [errors, setErrors] = useState<{ src: string | null; alt: string | null }>({ src: null, alt: null })
@@ -30,8 +30,8 @@ export default function ImageDialog({ editor, anchor, onClose }: ImageDialogProp
     event.preventDefault()
     const url = src.trim()
     const next = {
-      src: isImageAddress(url) ? null : t('canvas.editor.image.invalidUrl'),
-      alt: alt.trim() === '' ? t('canvas.editor.image.altRequired') : null,
+      src: isImageAddress(url) ? null : t('editor.image.invalidUrl'),
+      alt: alt.trim() === '' ? t('editor.image.altRequired') : null,
     }
     setErrors(next)
     if (next.src || next.alt) return
@@ -40,13 +40,13 @@ export default function ImageDialog({ editor, anchor, onClose }: ImageDialogProp
   }
 
   return (
-    <CanvasPopover title={t('canvas.editor.image.title')} anchor={anchor} onClose={close}>
+    <CanvasPopover title={t('editor.image.title')} anchor={anchor} onClose={close}>
       <form onSubmit={submit} noValidate>
-        <PopoverField type="url" label={t('canvas.editor.image.url')} value={src} error={errors.src} onChange={setSrc} placeholder="https://" />
-        <PopoverField label={t('canvas.editor.image.alt')} hint={t('canvas.editor.image.altHint')} value={alt} error={errors.alt} onChange={setAlt} />
+        <PopoverField type="url" label={t('editor.image.url')} value={src} error={errors.src} onChange={setSrc} placeholder="https://" />
+        <PopoverField label={t('editor.image.alt')} hint={t('editor.image.altHint')} value={alt} error={errors.alt} onChange={setAlt} />
         <div className="canvas-popover__actions">
-          <button type="button" className="canvas-button canvas-button--quiet" onClick={close}>{t('canvas.editor.image.cancel')}</button>
-          <button type="submit" className="canvas-button canvas-button--primary">{t('canvas.editor.image.insert')}</button>
+          <button type="button" className="canvas-button canvas-button--quiet" onClick={close}>{t('editor.image.cancel')}</button>
+          <button type="submit" className="canvas-button canvas-button--primary">{t('editor.image.insert')}</button>
         </div>
       </form>
     </CanvasPopover>

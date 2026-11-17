@@ -17,7 +17,7 @@ import DocumentPage from './DocumentPage'
 import { useFocusViewActive } from './focusView'
 import type { ReactNode } from 'react'
 import type { ProjectDocument } from '../../../api/types'
-import type { OutlineItem } from '../editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/edit/editor/CanvasEditor'
 
 const handle = {
   root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(),
@@ -44,7 +44,7 @@ vi.mock('../actions/DocumentActionsBar', () => ({
     </div>
   ),
 }))
-vi.mock('../editor/CanvasEditor', () => ({
+vi.mock('../../Document/edit/editor/CanvasEditor', () => ({
   default: function MockCanvasEditor({ markdown, editable, ariaLabel, onOutlineChange }: {
     markdown: string; editable: boolean; ariaLabel: string; onOutlineChange?: (items: readonly OutlineItem[]) => void
   }) {

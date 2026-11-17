@@ -13,6 +13,7 @@ import { createRef, isValidElement } from 'react'
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createTestQueryClient } from '../../../test/query-client'
 import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../../public/locales/en/documents.json'
 import enComponents from '../../../../public/locales/en/components.json'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { useActionBarRects } from '../../StickyActionBar/actionBarRegistry'
@@ -40,8 +41,8 @@ vi.mock('../../../utils/file', async (importOriginal) => ({
   downloadFile: (content: string, name: string, type: string) => files.download(content, name, type),
 }))
 
-const actions = enProjectDetail.canvas.actions
-const menuText = enProjectDetail.canvas.menu
+const actions = enDocuments.actions
+const menuText = enDocuments.menu
 const exportText = enComponents.documentExport
 const project = makeProject({ project_id: 'p1' })
 const prd: ProjectDocument = {
@@ -155,9 +156,9 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
   it('opens the row with the menu bar (Document first), and keeps Save, Discard and Full screen in one group at its end', () => {
     renderBar()
     const bar = screen.getByRole('group', { name: actions.toolbarLabel })
-    const menus = screen.getByRole('group', { name: enProjectDetail.canvas.menubar.label })
+    const menus = screen.getByRole('group', { name: enDocuments.menubar.label })
     const controls = screen.getByTestId('document-actions-controls')
-    const inControls = [actions.save, actions.discard, enProjectDetail.canvas.focus.button]
+    const inControls = [actions.save, actions.discard, enDocuments.focus.button]
       .map((name) => controls.contains(screen.getByRole('button', { name })))
     expect({
       inControls, last: bar.lastElementChild === controls, first: bar.firstElementChild === menus,
@@ -188,7 +189,7 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
     renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: true, loading: false } }) })
     const alert = within(screen.getByRole('alert'))
     expect(alert.getByRole('button', { name: enProjectDetail.documentModal.conflictReload })).toBeDisabled()
-    expect(alert.getByRole('button', { name: enProjectDetail.canvas.actions.status.saving })).toBeDisabled()
+    expect(alert.getByRole('button', { name: enDocuments.actions.status.saving })).toBeDisabled()
     expect(alert.queryByRole('button', { name: enProjectDetail.documentModal.conflictSaveAnyway })).not.toBeInTheDocument()
   })
 })
@@ -196,7 +197,7 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
 describe('DocumentActionsBar: Full screen', () => {
   it.each([[false], [true]])('is a toggle button (pressed: %s) with its shortcut, that toggles the focus view', async (active) => {
     const { user, focus, focusButtonRef } = renderBar({ focus: focusControls(active) })
-    const button = screen.getByRole('button', { name: enProjectDetail.canvas.focus.button })
+    const button = screen.getByRole('button', { name: enDocuments.focus.button })
     expect({
       pressed: button.getAttribute('aria-pressed'), keys: button.getAttribute('aria-keyshortcuts'),
       ref: button.isSameNode(focusButtonRef.current),

@@ -54,7 +54,7 @@ export default function VersionPicker({ projectId, document, viewing, rove, onCh
   const shown =t('documents.versions.label', { n: viewing ?? documentRevision(document) ?? 1 })
   const notice = (() => {
     if (versions.isError) return t('documents.versions.loadFailed')
-    return versions.data === undefined ? t('canvas.toolbar.versionsLoading') : null
+    return versions.data === undefined ? t('documents:toolbar.versionsLoading') : null
   })()
   const entries = (): CanvasMenuEntry[] => {
     const list = versions.data ?? []
@@ -63,13 +63,13 @@ export default function VersionPicker({ projectId, document, viewing, rove, onCh
       kind: 'radio', id: version.version_id, label: t('documents.versions.label', { n: version.version }),
       checked: viewing === null ? version.version_id === own : version.version === viewing,
       detail: formatDateTime(version.created_at, i18n.language),
-      badge: version.current ? t('canvas.toolbar.latest') : null,
+      badge: version.current ? t('documents:toolbar.latest') : null,
       onSelect: () => onChoose(choiceOf(version, list, document)),
     }))
   }
   return (
-    <ToolbarMenu menu={menu} rove={rove} wide label={t('canvas.toolbar.version', { version: shown })}
-      hint={t('canvas.toolbar.versionHint')} notice={notice} entries={entries}
+    <ToolbarMenu menu={menu} rove={rove} wide label={t('documents:toolbar.version', { version: shown })}
+      hint={t('documents:toolbar.versionHint')} notice={notice} entries={entries}
       face={(
         <>
           <span className="font-mono">{shown}</span>

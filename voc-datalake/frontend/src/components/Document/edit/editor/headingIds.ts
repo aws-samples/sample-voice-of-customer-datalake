@@ -1,6 +1,7 @@
 /**
  * Heading ids and the outline. Each heading's DOM node carries `id` = a stable slug of its text (`h-` + the
- * words, `-1`, `-2` … for repeats), set as a ProseMirror node decoration so it never enters the document.
+ * words, `-1`, `-2` … for repeats: components/Document/headingSlug.ts, the light reader's rule too), set as a
+ * ProseMirror node decoration so it never enters the document.
  *
  * The ids depend only on the headings' text and order, so a change that touches no heading (typing in a paragraph of
  * a long document) keeps them: the decorations move with the text and the outline stays the same array; only a change
@@ -11,14 +12,9 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { type EditorState, Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import { AddMarkStep, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, type Step } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { headingId } from '../../headingSlug'
 
 interface Heading { readonly id: string; readonly level: number; readonly text: string; readonly pos: number; readonly size: number }
-
-/** `h-` keeps a heading such as "Root" or "Main" from colliding with the app's own element ids. */
-function slugify(text: string): string {
-  const words = text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replaceAll(' ', '-')
-  return `h-${words === '' ? 'section' : words}`
-}
 
 const isHeading = (node: PMNode) => node.type.name === 'heading'
 
@@ -28,11 +24,8 @@ export function headingsOf(doc: PMNode): Heading[] {
   doc.descendants((node, pos) => {
     // A heading may sit in a list or a quote; the text inside a paragraph holds none.
     if (!isHeading(node)) return !node.isTextblock
-    const slug = slugify(node.textContent)
-    const count = seen.get(slug) ?? 0
-    seen.set(slug, count + 1)
     const level: unknown = node.attrs.level
-    headings.push({ id: count === 0 ? slug : `${slug}-${count}`, level: typeof level === 'number' ? level : 1, text: node.textContent, pos, size: node.nodeSize })
+    headings.push({ id: headingId(seen, node.textContent), level: typeof level === 'number' ? level : 1, text: node.textContent, pos, size: node.nodeSize })
     return false
   })
   return headings

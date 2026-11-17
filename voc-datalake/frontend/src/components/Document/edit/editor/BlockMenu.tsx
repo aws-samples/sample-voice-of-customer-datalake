@@ -21,7 +21,7 @@ function siblings(editor: Editor, pos: number) {
 }
 
 export default function BlockMenu({ editor, pos, anchor, onClose }: BlockMenuProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const [turning, setTurning] = useState(false)
   const node = editor.state.doc.nodeAt(pos)
   const { first, last } = siblings(editor, pos)
@@ -38,17 +38,17 @@ export default function BlockMenu({ editor, pos, anchor, onClose }: BlockMenuPro
   }
 
   const main: MenuItem[] = [
-    { id: 'up', label: t('canvas.editor.handle.moveUp'), icon: ArrowUp, disabled: first, onSelect: done(() => moveBlock(editor, pos, -1)) },
-    { id: 'down', label: t('canvas.editor.handle.moveDown'), icon: ArrowDown, disabled: last, onSelect: done(() => moveBlock(editor, pos, 1)) },
-    { id: 'turn', label: t('canvas.editor.handle.turnInto'), icon: Repeat2, disabled: !node?.isTextblock, submenu: true, onSelect: () => setTurning(true) },
-    { id: 'duplicate', label: t('canvas.editor.handle.duplicate'), icon: Copy, onSelect: done(() => duplicateBlock(editor, pos)) },
-    { id: 'delete', label: t('canvas.editor.handle.delete'), icon: Trash2, onSelect: done(() => deleteBlock(editor, pos)) },
+    { id: 'up', label: t('editor.handle.moveUp'), icon: ArrowUp, disabled: first, onSelect: done(() => moveBlock(editor, pos, -1)) },
+    { id: 'down', label: t('editor.handle.moveDown'), icon: ArrowDown, disabled: last, onSelect: done(() => moveBlock(editor, pos, 1)) },
+    { id: 'turn', label: t('editor.handle.turnInto'), icon: Repeat2, disabled: !node?.isTextblock, submenu: true, onSelect: () => setTurning(true) },
+    { id: 'duplicate', label: t('editor.handle.duplicate'), icon: Copy, onSelect: done(() => duplicateBlock(editor, pos)) },
+    { id: 'delete', label: t('editor.handle.delete'), icon: Trash2, onSelect: done(() => deleteBlock(editor, pos)) },
   ]
   const turnItems: MenuItem[] = [
-    { id: 'back', label: t('canvas.editor.handle.back'), icon: ArrowLeft, onSelect: () => setTurning(false) },
+    { id: 'back', label: t('editor.handle.back'), icon: ArrowLeft, onSelect: () => setTurning(false) },
     ...TURN_INTO_BLOCKS.map((block) => ({
       id: block.id,
-      label: t(`canvas.editor.blocks.${block.id}`),
+      label: t(`editor.blocks.${block.id}`),
       icon: block.icon,
       onSelect: done(() => {
         selectBlock(editor, pos)
@@ -59,7 +59,7 @@ export default function BlockMenu({ editor, pos, anchor, onClose }: BlockMenuPro
 
   return (
     <div className="canvas-floating" style={{ top: anchor.top, left: anchor.left }}>
-      <MenuList label={turning ? t('canvas.editor.handle.turnInto') : t('canvas.editor.handle.menu')} items={turning ? turnItems : main} onClose={turning ? () => setTurning(false) : close} />
+      <MenuList label={turning ? t('editor.handle.turnInto') : t('editor.handle.menu')} items={turning ? turnItems : main} onClose={turning ? () => setTurning(false) : close} />
     </div>
   )
 }

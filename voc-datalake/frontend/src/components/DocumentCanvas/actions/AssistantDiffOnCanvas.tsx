@@ -73,8 +73,8 @@ function OtherVersionNote({ base, shown }: Readonly<{ base: DiffBase; shown: num
   if (proposed === null || shown === undefined) return null
   return (
     <p className="text-[13px] text-warn" data-testid="assistant-diff-other-version">
-      {t('canvas.actions.assistant.otherVersion', { proposed, current: shown })}
-      {base.replacesNewer ? ` ${t('canvas.actions.assistant.replacesSince', { proposed })}` : null}
+      {t('documents:actions.assistant.otherVersion', { proposed, current: shown })}
+      {base.replacesNewer ? ` ${t('documents:actions.assistant.replacesSince', { proposed })}` : null}
     </p>
   )
 }
@@ -120,12 +120,12 @@ function PendingEdit({ pending, base, shownVersion, state }: Readonly<{
       className="space-y-3 rounded-lg border border-accent/30 bg-bg-accent p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Sparkles size={16} className="text-accent" aria-hidden="true" />
-        <h3 id={headingId} className="mr-auto text-sm font-medium text-text">{t('canvas.actions.assistant.banner')}</h3>
+        <h3 id={headingId} className="mr-auto text-sm font-medium text-text">{t('documents:actions.assistant.banner')}</h3>
         <button type="button" className="btn btn-secondary btn-sm" aria-expanded={reviewing}
           // Only while open: the diff it controls is not rendered while closed.
           aria-controls={reviewing ? diffId : undefined}
           onClick={() => setReviewing((open) => !open)}>
-          {reviewing ? t('canvas.actions.assistant.hide') : t('canvas.actions.assistant.review')}
+          {reviewing ? t('documents:actions.assistant.hide') : t('documents:actions.assistant.review')}
         </button>
       </div>
       <OtherVersionNote base={base} shown={shownVersion} />
@@ -135,9 +135,9 @@ function PendingEdit({ pending, base, shownVersion, state }: Readonly<{
       {reviewing ? (
         <>
           {args.title !== undefined && args.title !== base.title ? (
-            <p className="text-[13px] text-text">{t('canvas.actions.assistant.newTitle', { title: args.title })}</p>
+            <p className="text-[13px] text-text">{t('documents:actions.assistant.newTitle', { title: args.title })}</p>
           ) : null}
-          {state.dirty ? <p className="text-[12px] text-warn">{t('canvas.actions.assistant.draftNote')}</p> : null}
+          {state.dirty ? <p className="text-[12px] text-warn">{t('documents:actions.assistant.draftNote')}</p> : null}
           <div className="max-h-[60vh] overflow-y-auto rounded-md border border-border bg-card p-2">
             <BlockDiff id={diffId} before={base.content} after={args.content} />
           </div>

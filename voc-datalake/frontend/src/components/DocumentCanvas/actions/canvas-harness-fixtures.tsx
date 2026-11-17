@@ -12,7 +12,7 @@ import { useCanvasDocument } from './useCanvasDocument'
 import type { ComponentType } from 'react'
 import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
-import type { CanvasEditorProps } from '../editor/CanvasEditor'
+import type { CanvasEditorProps } from '../../Document/edit/editor/CanvasEditor'
 import type { RevisedBy } from './useCanvasDocument'
 
 /** What "revised" marks by default: the pass "job-7", whose changes any text keeps. */

@@ -10,7 +10,7 @@ import { DragHandle } from '@tiptap/extension-drag-handle-react'
 import { GripVertical } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Tooltip } from '../../Tooltip/Tooltip'
+import { Tooltip } from '../../../Tooltip/Tooltip'
 import type { Pointer } from './controller'
 
 interface BlockHandleProps {
@@ -20,7 +20,7 @@ interface BlockHandleProps {
 }
 
 export default function BlockHandle({ editor, onOpenMenu, lastPointer }: BlockHandleProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const hovered = useRef<number | null>(null)
   // DragHandle registers its plugin in its own effect, which runs before this one. Never while a button is held: a
   // move then belongs to a selection or a drag in progress.
@@ -38,10 +38,10 @@ export default function BlockHandle({ editor, onOpenMenu, lastPointer }: BlockHa
         hovered.current = node ? pos : null
       }}
     >
-      <Tooltip kind="label" content={t('canvas.editor.handle.label')}>
+      <Tooltip kind="label" content={t('editor.handle.label')}>
         <div
           role="button"
-          aria-label={t('canvas.editor.handle.label')}
+          aria-label={t('editor.handle.label')}
           aria-haspopup="menu"
           aria-keyshortcuts="Alt+Shift+M"
           className="canvas-handle__grip"

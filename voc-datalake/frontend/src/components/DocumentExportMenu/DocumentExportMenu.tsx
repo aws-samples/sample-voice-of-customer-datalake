@@ -61,7 +61,7 @@ function IncludeCommentsItem({ checked, onToggle }: Readonly<{ checked: boolean;
       <span aria-hidden="true" className="inline-flex size-4 flex-shrink-0 items-center justify-center rounded-sm border border-border">
         {checked ? <Check size={12} /> : null}
       </span>
-      <span className="truncate">{t('canvas.menu.includeComments')}</span>
+      <span className="truncate">{t('documents:menu.includeComments')}</span>
     </button>
   )
 }
@@ -229,8 +229,8 @@ export default function DocumentExportMenu({
     // settled: not part of the read-out).
     const pdfComments = threads !== null && includeComments
       ? {
-          heading: tPage('canvas.menu.commentsHeading'),
-          wholeDocument: tPage('canvas.menu.wholeDocument'),
+          heading: tPage('documents:menu.commentsHeading'),
+          wholeDocument: tPage('documents:menu.wholeDocument'),
           threads: printedThreads(doc, threads.filter((thread) => thread.status === 'open')),
         }
       : null

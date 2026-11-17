@@ -49,7 +49,7 @@ vi.mock('../actions/DocumentActionsBar', () => ({
     </div>
   ),
 }))
-vi.mock('../editor/CanvasEditor', () => ({
+vi.mock('../../Document/edit/editor/CanvasEditor', () => ({
   default: ({ markdown, editable }: { markdown: string; editable: boolean }) => (
     <div data-testid="canvas" data-editable={String(editable)}>{markdown}</div>
   ),

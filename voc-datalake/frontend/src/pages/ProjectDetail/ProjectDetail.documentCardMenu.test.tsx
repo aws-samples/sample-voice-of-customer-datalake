@@ -12,6 +12,7 @@ import {
 import type { ProjectDocument } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../public/locales/en/documents.json'
 import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
 import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
 import { renderProjectDetailPage } from './project-detail-page-fixtures'
@@ -34,7 +35,7 @@ vi.mock('../../api/projectsApi', () => ({
     updateProject: vi.fn(),
   },
 }))
-vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => ({
+vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => ({
   default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeCanvasEditor,
 }))
 
@@ -100,7 +101,7 @@ describe('ProjectDetail card Rename', () => {
     renderProjectDetailPage()
     await openDocumentsTab(user)
 
-    await chooseOnCard(user, 'Other notes', enProjectDetail.canvas.menu.rename)
+    await chooseOnCard(user, 'Other notes', enDocuments.menu.rename)
     await user.keyboard('Interview log{Enter}')
 
     await waitFor(() => expect(put()).toStrictEqual(['proj-1', 'doc-2', { title: 'Interview log', expected_revision: 1, edit_id: 'string' }]))
@@ -117,13 +118,13 @@ describe('ProjectDetail card Rename', () => {
     await user.clear(canvas)
     await user.type(canvas, 'half written')
 
-    await chooseOnCard(user, 'Notes', enProjectDetail.canvas.menu.rename)
+    await chooseOnCard(user, 'Notes', enDocuments.menu.rename)
     await user.keyboard('Field notes{Enter}')
 
     await waitFor(() => expect(put()).toStrictEqual(['proj-1', 'doc-1', { title: 'Field notes', expected_revision: 2, edit_id: 'string' }]))
-    expect(await screen.findByRole('textbox', { name: enProjectDetail.canvas.page.titleLabel })).toHaveValue('Field notes')
+    expect(await screen.findByRole('textbox', { name: enDocuments.page.titleLabel })).toHaveValue('Field notes')
     expect(canvas).toHaveValue('half written')
-    expect(screen.getByTestId('canvas-save-status')).toHaveTextContent(enProjectDetail.canvas.actions.status.unsaved)
+    expect(screen.getByTestId('canvas-save-status')).toHaveTextContent(enDocuments.actions.status.unsaved)
   })
 })
 

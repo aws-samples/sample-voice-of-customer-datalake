@@ -46,7 +46,7 @@ import AssistantDiffOnCanvas from '../actions/AssistantDiffOnCanvas'
 import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../comments/readingColumn'
 import DocumentActionsBar from '../actions/DocumentActionsBar'
 import { useCanvasDocument } from '../actions/useCanvasDocument'
-import CanvasEditor from '../editor/CanvasEditor'
+import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
 import DocumentMeta from './DocumentMeta'
 import DocumentProvenance from './DocumentProvenance'
 import EvidenceCards from './EvidenceCards'
@@ -69,7 +69,7 @@ import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasDocument as CanvasDocumentState } from '../actions/useCanvasDocument'
 import type { PageRename } from '../../../pages/ProjectDetail/useDocumentCardActions'
-import type { CanvasEditorHandle, OutlineItem } from '../editor/CanvasEditor'
+import type { CanvasEditorHandle, OutlineItem } from '../../Document/edit/editor/CanvasEditor'
 
 /** Document types shown with margin comments, persona review and a review link (docs/document-review.md). */
 const COMMENTABLE_TYPES: ReadonlySet<string> = new Set(['prfaq', 'prd'])
@@ -239,8 +239,8 @@ function useFocusCanvas(handleRef: RefObject<CanvasEditorHandle | null>) {
 /** What the live note says: full screen, an older version on screen, or nothing. */
 function pageNote(focusActive: boolean, viewed: ViewedVersion | null, t: TFunction<'projectDetail'>): string {
   const parts = [
-    focusActive ? t('canvas.focus.announce') : '',
-    viewed === null ? '' : t('canvas.versions.announce', { version: t('documents.versions.label', { n: viewed.number }) }),
+    focusActive ? t('documents:focus.announce') : '',
+    viewed === null ? '' : t('documents:versions.announce', { version: t('documents.versions.label', { n: viewed.number }) }),
   ]
   return parts.filter((part) => part !== '').join(' ')
 }

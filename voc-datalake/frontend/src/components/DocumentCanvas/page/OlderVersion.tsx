@@ -17,10 +17,10 @@ import { useLabelKnownIds } from '../../../hooks/useLabelKnownIds'
 import { linkFeatureRequestCitations } from '../../../pages/ProjectDetail/featureRequestCitations'
 import { useVersionRestore } from '../../../pages/ProjectDetail/useVersionRestore'
 import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../comments/readingColumn'
-import CanvasEditor from '../editor/CanvasEditor'
+import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
 import Outline from './Outline'
 import { TITLE_TEXT_CLASS } from './pageStyles'
-import type { CanvasEditorHandle, OutlineItem } from '../editor/CanvasEditor'
+import type { CanvasEditorHandle, OutlineItem } from '../../Document/edit/editor/CanvasEditor'
 import type { DocumentVersion } from '../../../api/projectDetailSchema'
 import type { ProjectDocument } from '../../../api/types'
 
@@ -51,16 +51,16 @@ function VersionBanner({ viewed, canRestore, restoring, onBack, onRestore }: Rea
   const { t } = useTranslation('projectDetail')
   const label = t('documents.versions.label', { n: viewed.number })
   const text = viewed.latest === null
-    ? t('canvas.versions.viewingOne', { version: label })
-    : t('canvas.versions.viewing', { version: label, latest: viewed.latest })
+    ? t('documents:versions.viewingOne', { version: label })
+    : t('documents:versions.viewing', { version: label, latest: viewed.latest })
   return (
-    <section aria-label={t('canvas.versions.bannerLabel')} data-testid="older-version-banner"
+    <section aria-label={t('documents:versions.bannerLabel')} data-testid="older-version-banner"
       className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-subtle p-3 text-sm text-text">
       <History size={14} className="text-info" aria-hidden="true" />
       <p className="mr-auto min-w-0 break-words">
-        <span className="font-medium">{text}</span> · {t('canvas.versions.readOnly')}
+        <span className="font-medium">{text}</span> · {t('documents:versions.readOnly')}
       </p>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>{t('canvas.versions.backToLatest')}</button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>{t('documents:versions.backToLatest')}</button>
       {canRestore && viewed.version !== null ? (
         <button type="button" className="btn btn-secondary btn-sm" disabled={restoring} onClick={onRestore}
           aria-label={t('documents.versions.restoreNamed', { label })}>
@@ -94,7 +94,7 @@ function VersionText({ version, title, showOutline }: Readonly<{ version: Docume
 function VersionPending({ failed }: Readonly<{ failed: boolean }>) {
   const { t } = useTranslation('projectDetail')
   if (failed) return <p role="alert" className="text-[12px] text-danger">{t('documents.versions.loadFailed')}</p>
-  return <div className="skeleton h-40" role="status" aria-label={t('canvas.toolbar.versionsLoading')} />
+  return <div className="skeleton h-40" role="status" aria-label={t('documents:toolbar.versionsLoading')} />
 }
 
 export default function OlderVersion({ projectId, document, viewed, canRestore, showOutline, onBack, onRestored }: OlderVersionProps) {

@@ -65,13 +65,13 @@ function SaveStatus({ document, state }: Readonly<{ document: ProjectDocument; s
   const { t, i18n } = useTranslation('projectDetail')
   const now = useNow()
   const text = (() => {
-    if (state.saving) return t('canvas.actions.status.saving')
-    if (state.dirty) return t('canvas.actions.status.unsaved')
+    if (state.saving) return t('documents:actions.status.saving')
+    if (state.dirty) return t('documents:actions.status.unsaved')
     const when = formatRelativeDate(document.updated_at ?? document.created_at, i18n.language, now)
     const n = versionNumber(document)
     return n === undefined
-      ? t('canvas.actions.status.savedNoVersion', { when })
-      : t('canvas.actions.status.saved', { version: t('documents.versions.label', { n }), when })
+      ? t('documents:actions.status.savedNoVersion', { when })
+      : t('documents:actions.status.saved', { version: t('documents.versions.label', { n }), when })
   })()
   return (
     <p role="status" aria-live="polite" data-testid="canvas-save-status"
@@ -92,13 +92,13 @@ function SaveButtons({ state }: Readonly<{ state: CanvasDocument }>) {
       // A phone: what there is to save stays in reach at the bottom of the screen.
       state.dirty && 'max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-30 max-sm:justify-end max-sm:border-t max-sm:border-border max-sm:bg-card max-sm:p-3')}>
       <button type="button" className="btn btn-secondary btn-sm" disabled={idle} onClick={state.discard}
-        title={t('canvas.actions.discardHint')}>
-        <Undo2 size={14} aria-hidden="true" />{t('canvas.actions.discard')}
+        title={t('documents:actions.discardHint')}>
+        <Undo2 size={14} aria-hidden="true" />{t('documents:actions.discard')}
       </button>
       <button type="button" className="btn btn-primary btn-sm" disabled={idle} aria-keyshortcuts="Control+S Meta+S"
-        title={t('canvas.actions.saveHint')} onClick={() => saveIgnoringFailure(state.save)}>
+        title={t('documents:actions.saveHint')} onClick={() => saveIgnoringFailure(state.save)}>
         {state.saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
-        {state.saving ? t('canvas.actions.status.saving') : t('canvas.actions.save')}
+        {state.saving ? t('documents:actions.status.saving') : t('documents:actions.save')}
       </button>
     </div>
   )
@@ -114,17 +114,17 @@ function MenuBar({ menu, focus, view, editing, onOpenDialog }: Readonly<{
   const handle = () => state.handleRef.current
   const fullScreen = { on: focus.active, toggle: focus.toggle }
   return (
-    <div role="group" aria-label={t('canvas.menubar.label')} data-testid="document-menubar" onKeyDown={onMenuBarKeyDown}
+    <div role="group" aria-label={t('documents:menubar.label')} data-testid="document-menubar" onKeyDown={onMenuBarKeyDown}
       className="flex flex-wrap items-center gap-0.5">
       <DocumentMenu {...menu} onOpenDialog={onOpenDialog} />
       {editing ? (
         <>
-          <CanvasMenu label={t('canvas.menubar.edit')} entries={() => editEntries(handle, t)} />
-          <CanvasMenu label={t('canvas.menubar.format')} entries={() => formatEntries(handle, t)} />
-          <CanvasMenu label={t('canvas.menubar.insert')} entries={() => insertEntries(handle, t)} />
+          <CanvasMenu label={t('documents:menubar.edit')} entries={() => editEntries(handle, t)} />
+          <CanvasMenu label={t('documents:menubar.format')} entries={() => formatEntries(handle, t)} />
+          <CanvasMenu label={t('documents:menubar.insert')} entries={() => insertEntries(handle, t)} />
         </>
       ) : null}
-      {view === undefined ? null : <CanvasMenu label={t('canvas.menubar.view')} entries={() => viewEntries(view, fullScreen, t)} />}
+      {view === undefined ? null : <CanvasMenu label={t('documents:menubar.view')} entries={() => viewEntries(view, fullScreen, t)} />}
     </div>
   )
 }
@@ -140,7 +140,7 @@ export default function DocumentActionsBar({
   const editing = state.editable && viewing === null
   return (
     <div className="space-y-2">
-      <div role="group" aria-label={t('canvas.actions.toolbarLabel')} data-testid="document-actions-bar"
+      <div role="group" aria-label={t('documents:actions.toolbarLabel')} data-testid="document-actions-bar"
         className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <MenuBar menu={menu} focus={focus} view={view} editing={editing} onOpenDialog={setDialog} />
         <SaveStatus document={document} state={state} />

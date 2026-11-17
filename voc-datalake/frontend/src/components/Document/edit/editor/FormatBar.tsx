@@ -10,12 +10,12 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import { Bold, ChevronDown, Code, Italic, Link, type LucideIcon, MessageSquarePlus, Strikethrough } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { rovingIndex, TAB_KEYS } from '../../../utils/rovingIndex'
+import { rovingIndex, TAB_KEYS } from '../../../../utils/rovingIndex'
 import { TURN_INTO_BLOCKS, turnInto } from './blocks'
 import type { CanvasController } from './controller'
 import MenuList from './MenuList'
 import { toggleMark } from './commands'
-import { Tooltip } from '../../Tooltip/Tooltip'
+import { Tooltip } from '../../../Tooltip/Tooltip'
 
 interface FormatBarProps {
   readonly editor: Editor
@@ -49,7 +49,7 @@ const hasTextSelection = (editor: Editor) => {
 }
 
 export default function FormatBar({ editor, controller, onComment }: FormatBarProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const bar = useRef<HTMLDivElement>(null)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [turnIntoOpen, setTurnIntoOpen] = useState(false)
@@ -100,7 +100,7 @@ export default function FormatBar({ editor, controller, onComment }: FormatBarPr
       <div
         ref={bar}
         role="toolbar"
-        aria-label={t('canvas.editor.format.toolbar')}
+        aria-label={t('editor.format.toolbar')}
         className="canvas-bar"
         onFocus={(event) => {
           if (event.target === bar.current) bar.current.querySelector<HTMLButtonElement>(':scope > button')?.focus()
@@ -117,29 +117,29 @@ export default function FormatBar({ editor, controller, onComment }: FormatBarPr
           rove(event, bar.current)
         }}
       >
-        {state.editable && MARKS.map(({ mark, icon }) => button(mark, t(`canvas.editor.format.${mark}`), icon, () => toggleMark(editor, mark), state[mark]))}
-        {state.editable && button('link', t('canvas.editor.format.link'), Link, () => controller.openLink(), state.link)}
+        {state.editable && MARKS.map(({ mark, icon }) => button(mark, t(`editor.format.${mark}`), icon, () => toggleMark(editor, mark), state[mark]))}
+        {state.editable && button('link', t('editor.format.link'), Link, () => controller.openLink(), state.link)}
         {state.editable && (
           <button type="button" className="canvas-bar__button canvas-bar__button--text" aria-haspopup="menu" aria-expanded={turnIntoOpen} tabIndex={-1} onClick={() => setTurnIntoOpen((open) => !open)}>
-            <span>{t('canvas.editor.format.turnInto')}</span>
+            <span>{t('editor.format.turnInto')}</span>
             <ChevronDown aria-hidden="true" className="canvas-bar__icon" />
           </button>
         )}
         {onComment && (
           <button type="button" className="canvas-bar__button canvas-bar__button--text" tabIndex={-1} onClick={() => onComment()}>
             <MessageSquarePlus aria-hidden="true" className="canvas-bar__icon" />
-            <span>{t('canvas.editor.format.comment')}</span>
+            <span>{t('editor.format.comment')}</span>
           </button>
         )}
       </div>
       {turnIntoOpen && (
         <MenuList
-          label={t('canvas.editor.format.turnInto')}
+          label={t('editor.format.turnInto')}
           className="canvas-menu canvas-menu--attached"
           onClose={() => setTurnIntoOpen(false)}
           items={TURN_INTO_BLOCKS.map((block) => ({
             id: block.id,
-            label: t(`canvas.editor.blocks.${block.id}`),
+            label: t(`editor.blocks.${block.id}`),
             icon: block.icon,
             onSelect: () => {
               setTurnIntoOpen(false)

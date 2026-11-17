@@ -10,18 +10,18 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { createRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestQueryClient } from '../../../test/query-client'
-import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../../public/locales/en/documents.json'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { canvasState } from './canvas-state-fixtures'
 import DocumentActionsBar from './DocumentActionsBar'
-import type { CanvasCommand } from '../editor/commands'
-import type { CanvasEditorHandle } from '../editor/CanvasEditor'
+import type { CanvasCommand } from '../../Document/edit/editor/commands'
+import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
 import type { CanvasViewControls } from './canvasMenus'
 import type { ProjectDocument } from '../../../api/types'
 
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: { getDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() } }))
 
-const bar = enProjectDetail.canvas.menubar
+const bar = enDocuments.menubar
 const project = makeProject({ project_id: 'p1' })
 const custom: ProjectDocument = {
   document_id: 'doc-1', document_type: 'custom', title: 'Notes', content: 'text', created_at: '2026-10-01T00:00:00Z',
@@ -74,14 +74,14 @@ describe('DocumentActionsBar: the menu bar', () => {
     renderBar()
     const buttons = within(menuBar()).getAllByRole('button')
     expect(buttons.map((button) => [button.textContent, button.getAttribute('aria-haspopup')])).toStrictEqual([
-      [enProjectDetail.canvas.menu.trigger, 'menu'], [bar.edit, 'menu'], [bar.format, 'menu'], [bar.insert, 'menu'], [bar.view, 'menu'],
+      [enDocuments.menu.trigger, 'menu'], [bar.edit, 'menu'], [bar.format, 'menu'], [bar.insert, 'menu'], [bar.view, 'menu'],
     ])
   })
 
   it('offers a read-only canvas (a viewer) Document and View only', () => {
     renderBar({ editable: false, canEdit: false })
     expect(within(menuBar()).getAllByRole('button').map((button) => button.textContent))
-      .toStrictEqual([enProjectDetail.canvas.menu.trigger, bar.view])
+      .toStrictEqual([enDocuments.menu.trigger, bar.view])
   })
 
   it('runs Edit → Redo on the editor and closes the menu with focus back on Edit; Undo with nothing to undo is inert', async () => {
@@ -100,17 +100,17 @@ describe('DocumentActionsBar: the menu bar', () => {
   it('shows each Format entry with the shortcut the editor answers, and runs the one chosen', async () => {
     const { user } = renderBar()
     await user.click(menuButton(bar.format))
-    const bold = screen.getByRole('menuitem', { name: enProjectDetail.canvas.editor.format.bold })
+    const bold = screen.getByRole('menuitem', { name: enDocuments.editor.format.bold })
     expect(bold).toHaveAttribute('aria-keyshortcuts', 'Control+B Meta+B')
     expect(bold).toHaveTextContent('Ctrl+B')
-    await user.click(screen.getByRole('menuitem', { name: enProjectDetail.canvas.editor.blocks.heading2 }))
-    await choose(user, bar.format, enProjectDetail.canvas.editor.blocks.bulletList)
+    await user.click(screen.getByRole('menuitem', { name: enDocuments.editor.blocks.heading2 }))
+    await choose(user, bar.format, enDocuments.editor.blocks.bulletList)
     expect(run.mock.calls).toStrictEqual([['heading2'], ['bulletList']])
   })
 
   it('inserts a link, an image, a table, a divider and a callout through the editor', async () => {
     const { user } = renderBar()
-    const blocks = enProjectDetail.canvas.editor.blocks
+    const blocks = enDocuments.editor.blocks
     for (const item of [bar.link, bar.image, blocks.table, blocks.divider, blocks.callout]) await choose(user, bar.insert, item)
     expect(run.mock.calls).toStrictEqual([['link'], ['image'], ['table'], ['divider'], ['callout']])
   })
@@ -126,11 +126,11 @@ describe('DocumentActionsBar: the menu bar', () => {
     await user.click(menuButton(bar.view))
     const checked = screen.getAllByRole('menuitemcheckbox').map((item) => [item.textContent, item.getAttribute('aria-checked')])
     expect(checked).toStrictEqual([
-      [bar.comments, 'true'], [enProjectDetail.canvas.page.contents, 'true'], [bar.fullWidth, 'true'],
-      [expect.stringContaining(enProjectDetail.canvas.focus.button), 'false'],
+      [bar.comments, 'true'], [enDocuments.page.contents, 'true'], [bar.fullWidth, 'true'],
+      [expect.stringContaining(enDocuments.focus.button), 'false'],
     ])
     await user.click(screen.getByRole('menuitemcheckbox', { name: bar.comments }))
-    for (const name of [enProjectDetail.canvas.page.contents, bar.fullWidth, enProjectDetail.canvas.focus.button]) {
+    for (const name of [enDocuments.page.contents, bar.fullWidth, enDocuments.focus.button]) {
       await user.click(menuButton(bar.view))
       await user.click(screen.getByRole('menuitemcheckbox', { name }))
     }
@@ -147,7 +147,7 @@ describe('DocumentActionsBar: the menu bar', () => {
 
   it('walks the menu buttons with the arrow keys, wrapping', async () => {
     const { user } = renderBar()
-    menuButton(enProjectDetail.canvas.menu.trigger).focus()
+    menuButton(enDocuments.menu.trigger).focus()
     await user.keyboard('{ArrowLeft}')
     expect(menuButton(bar.view)).toHaveFocus()
     await user.keyboard('{ArrowRight}{ArrowRight}')
@@ -162,22 +162,22 @@ describe('DocumentActionsBar: the menu bar', () => {
     await user.keyboard('{ArrowRight}')
     expect(screen.getAllByRole('menu').map((menu) => menu.getAttribute('aria-labelledby') === menuButton(bar.format).id))
       .toStrictEqual([true])
-    expect(screen.getByRole('menuitem', { name: enProjectDetail.canvas.editor.blocks.paragraph })).toHaveFocus()
+    expect(screen.getByRole('menuitem', { name: enDocuments.editor.blocks.paragraph })).toHaveFocus()
     await user.keyboard('{Escape}')
     expect(menuButton(bar.format)).toHaveFocus()
   })
 
   it('renames from Document → Rename while the title is the document\'s own', async () => {
     const { user, onRename } = renderBar()
-    await user.click(menuButton(enProjectDetail.canvas.menu.trigger))
-    await user.click(screen.getByRole('menuitem', { name: enProjectDetail.canvas.menu.rename }))
+    await user.click(menuButton(enDocuments.menu.trigger))
+    await user.click(screen.getByRole('menuitem', { name: enDocuments.menu.rename }))
     expect(onRename).toHaveBeenCalledTimes(1)
   })
 
   it('offers no Rename for a title that is its series\' own (a PRD / PR/FAQ)', async () => {
     const { user } = renderBar({ titleEditable: false })
-    await user.click(menuButton(enProjectDetail.canvas.menu.trigger))
-    expect(screen.queryByRole('menuitem', { name: enProjectDetail.canvas.menu.rename })).not.toBeInTheDocument()
+    await user.click(menuButton(enDocuments.menu.trigger))
+    expect(screen.queryByRole('menuitem', { name: enDocuments.menu.rename })).not.toBeInTheDocument()
   })
 })
 

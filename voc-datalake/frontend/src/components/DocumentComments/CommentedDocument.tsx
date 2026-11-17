@@ -173,7 +173,7 @@ export default function CommentedDocument({
   const draftHasText = useCallback(() => draftText.current.trim() !== '', [])
   const openDraft = useCallback((next: Draft) => {
     if (draft !== null && draftHasText()) {
-      setMessage(t('projectDetail:canvas.comments.draftOpen'))
+      setMessage(t('documents:comments.draftOpen'))
       draftBox.current?.querySelector('textarea')?.focus()
       return false
     }
@@ -193,7 +193,7 @@ export default function CommentedDocument({
     const selection = globalThis.getSelection()
     const anchor = canComment && root !== null ? anchorOfSelection(root, selection) : null
     if (root === null || anchor === null || selection === null) {
-      setMessage(canComment ? t('projectDetail:canvas.comments.selectFirst') : '')
+      setMessage(canComment ? t('documents:comments.selectFirst') : '')
       return false
     }
     const box = selection.getRangeAt(0).getBoundingClientRect()
@@ -241,7 +241,7 @@ export default function CommentedDocument({
       </div>
       {canComment ? (
         <div className="space-y-1 text-xs">
-          <p className="text-muted">{t('projectDetail:canvas.comments.hint')}</p>
+          <p className="text-muted">{t('documents:comments.hint')}</p>
           {/* Always rendered, so a screen reader hears what is written into it. */}
           <p aria-live="polite" className="text-warn">{message}</p>
         </div>

@@ -1,7 +1,7 @@
 /** A keyboard-complete menu (role=menu): arrows, Home/End move, Enter/Space choose, Esc closes. */
 import type { LucideIcon } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef } from 'react'
-import { MENU_KEYS, rovingIndex } from '../../../utils/rovingIndex'
+import { MENU_KEYS, rovingIndex } from '../../../../utils/rovingIndex'
 
 export interface MenuItem {
   readonly id: string

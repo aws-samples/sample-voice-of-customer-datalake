@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { indexText } from '../../DocumentComments/anchors'
+import { indexText } from '../../../DocumentComments/anchors'
 import CanvasEditor, { type CanvasEditorHandle, type CanvasEditorProps } from './CanvasEditor'
 import * as noCollaboration from './noCollaboration'
 

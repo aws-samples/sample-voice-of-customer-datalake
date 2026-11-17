@@ -247,7 +247,7 @@ function PageLoading() {
   return (
     <div role="status" className={clsx(PANE, 'lg:min-h-[500px] flex items-center justify-center')}>
       <Loader2 size={24} className="animate-spin text-accent" aria-hidden />
-      <span className="sr-only">{t('canvas.page.loading')}</span>
+      <span className="sr-only">{t('documents:page.loading')}</span>
     </div>
   )
 }

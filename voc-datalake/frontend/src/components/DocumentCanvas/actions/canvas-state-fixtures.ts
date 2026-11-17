@@ -5,7 +5,7 @@
 import { createRef } from 'react'
 import { vi } from 'vitest'
 import type { CanvasDocument } from './useCanvasDocument'
-import type { CanvasEditorHandle } from '../editor/CanvasEditor'
+import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
 
 export function canvasState(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
   return {

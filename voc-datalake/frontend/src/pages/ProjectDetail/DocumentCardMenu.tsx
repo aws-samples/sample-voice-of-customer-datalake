@@ -42,7 +42,7 @@ export interface CardMenuActions {
 function cardMenuEntries(actions: CardMenuActions, t: TFunction<'projectDetail'>): CanvasMenuEntry[] {
   const entries: CanvasMenuEntry[] = [{ kind: 'action', id: 'open', label: t('documents.card.open'), icon: FileText, onSelect: actions.onOpen }]
   if (actions.onRename !== undefined) {
-    entries.push({ kind: 'action', id: 'rename', label: t('canvas.menu.rename'), icon: PenLine, onSelect: actions.onRename })
+    entries.push({ kind: 'action', id: 'rename', label: t('documents:menu.rename'), icon: PenLine, onSelect: actions.onRename })
   }
   if (actions.onDelete !== undefined) {
     entries.push({ kind: 'separator', id: 'delete-separator' }, {

@@ -35,7 +35,7 @@ vi.mock('../../api/projectsApi', () => ({
     updateProject: vi.fn(),
   },
 }))
-vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => ({
+vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => ({
   default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeCanvasEditor,
 }))
 vi.mock('./DocumentReviewView', async () => {

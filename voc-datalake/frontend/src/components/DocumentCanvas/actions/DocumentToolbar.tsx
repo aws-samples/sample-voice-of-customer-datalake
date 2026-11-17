@@ -71,10 +71,10 @@ function ShareButton({ active, rove, onOpen }: Readonly<{ active: boolean; rove:
   const { t } = useTranslation('projectDetail')
   const tipId = useId()
   return (
-    <button type="button" {...rove} aria-haspopup="dialog" aria-label={t('canvas.toolbar.share')} aria-describedby={tipId} onClick={onOpen}
+    <button type="button" {...rove} aria-haspopup="dialog" aria-label={t('documents:toolbar.share')} aria-describedby={tipId} onClick={onOpen}
       className="group relative btn btn-primary btn-sm focus-ring" data-testid="toolbar-share">
       <Share2 size={14} aria-hidden="true" />
-      {t('canvas.toolbar.share')}
+      {t('documents:toolbar.share')}
       <ToolbarTip id={tipId}>{active ? t('components:reviewShare.openActive') : t('components:reviewShare.open')}</ToolbarTip>
     </button>
   )
@@ -84,7 +84,7 @@ function MoreMenu({ items, rove }: Readonly<{ items: readonly ToolbarItem[]; rov
   const { t } = useTranslation('projectDetail')
   const menu = useMenuButton()
   return (
-    <ToolbarMenu menu={menu} rove={rove} label={t('canvas.toolbar.more')} hint={t('canvas.toolbar.more')}
+    <ToolbarMenu menu={menu} rove={rove} label={t('documents:toolbar.more')} hint={t('documents:toolbar.more')}
       entries={() => items.map(overflowEntry)} face={<Ellipsis size={16} aria-hidden="true" />} />
   )
 }
@@ -110,7 +110,7 @@ export default function DocumentToolbar({
   const { ref, onKeyDown, rove } = useRovingToolbar(ids)
   return (
     <>
-      <div ref={ref} role="toolbar" aria-label={t('canvas.toolbar.label')} aria-orientation="horizontal"
+      <div ref={ref} role="toolbar" aria-label={t('documents:toolbar.label')} aria-orientation="horizontal"
         data-document-toolbar="" data-testid="document-toolbar" onKeyDown={onKeyDown} className="flex items-center gap-0.5">
         {versions === null ? null : (
           <VersionPicker projectId={versions.projectId} document={versions.document} viewing={versions.viewing}

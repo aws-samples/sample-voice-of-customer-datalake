@@ -68,10 +68,10 @@ function toggleItem(id: string, label: string, hint: string, icon: LucideIcon, t
 function reviewItems(review: ReviewActions | null, t: TFunction<'projectDetail'>): ToolbarItem[] {
   if (review === null) return []
   const { review: personas, rewrite } = review
-  const ask = t('canvas.toolbar.aiReview')
+  const ask = t('documents:toolbar.aiReview')
   const askHint = (() => {
     if (personas.running) return t('components:documentComments.personaReviewRunning')
-    if (personas.blocked) return t('canvas.toolbar.aiReviewNoPersonas')
+    if (personas.blocked) return t('documents:toolbar.aiReviewNoPersonas')
     return personas.again ? t('canvas.revise.reviewAgain') : t('components:documentComments.personaReviewHint')
   })()
   const items: ToolbarItem[] = [{
@@ -79,7 +79,7 @@ function reviewItems(review: ReviewActions | null, t: TFunction<'projectDetail'>
     disabled: personas.blocked, busy: personas.running,
   }]
   if (rewrite === null) return items
-  const rewriteLabel = t('canvas.toolbar.aiRewrite')
+  const rewriteLabel = t('documents:toolbar.aiRewrite')
   return [...items, {
     id: 'aiRewrite', label: rewriteLabel, menuLabel: rewriteLabel, icon: WandSparkles, overflows: true, run: rewrite.start,
     hint: rewrite.running ? t('canvas.revise.running') : (rewrite.reason ?? t('canvas.revise.hint')),
@@ -90,10 +90,10 @@ function reviewItems(review: ReviewActions | null, t: TFunction<'projectDetail'>
 function commentsItem(view: CanvasViewControls | undefined, openThreads: number | undefined, t: TFunction<'projectDetail'>): ToolbarItem[] {
   const comments = view?.comments
   if (comments === undefined) return []
-  const name = t('canvas.menubar.comments')
+  const name = t('documents:menubar.comments')
   return [{
-    ...toggleItem('comments', name, t('canvas.menubar.commentsHint'), MessageSquare, comments, false),
-    label: openThreads === undefined ? name : t('canvas.menubar.commentsButton', { count: openThreads }),
+    ...toggleItem('comments', name, t('documents:menubar.commentsHint'), MessageSquare, comments, false),
+    label: openThreads === undefined ? name : t('documents:menubar.commentsButton', { count: openThreads }),
     badge: openThreads,
   }]
 }
@@ -101,12 +101,12 @@ function commentsItem(view: CanvasViewControls | undefined, openThreads: number 
 /** The toolbar's buttons, in order (see the module's doc). */
 export function toolbarItems({ view, openThreads, focus, onHistory, review }: ToolbarInputs, t: TFunction<'projectDetail'>): ToolbarItem[] {
   const history: ToolbarItem[] = onHistory === null ? [] : [{
-    id: 'history', label: t('canvas.actions.history'), menuLabel: t('canvas.actions.history'),
-    hint: t('canvas.toolbar.historyHint'), icon: History, opensDialog: true, overflows: true, run: onHistory,
+    id: 'history', label: t('documents:actions.history'), menuLabel: t('documents:actions.history'),
+    hint: t('documents:toolbar.historyHint'), icon: History, opensDialog: true, overflows: true, run: onHistory,
   }]
   const panels: ToolbarItem[] = view === undefined ? [] : [
-    toggleItem('outline', t('canvas.page.contents'), t('canvas.toolbar.contentsHint'), TableOfContents, view.outline, true),
-    toggleItem('fullWidth', t('canvas.menubar.fullWidth'), t('canvas.toolbar.fullWidthHint'), MoveHorizontal, view.fullWidth, true),
+    toggleItem('outline', t('documents:page.contents'), t('documents:toolbar.contentsHint'), TableOfContents, view.outline, true),
+    toggleItem('fullWidth', t('documents:menubar.fullWidth'), t('documents:toolbar.fullWidthHint'), MoveHorizontal, view.fullWidth, true),
   ]
   return [
     ...history,
@@ -114,7 +114,7 @@ export function toolbarItems({ view, openThreads, focus, onHistory, review }: To
     ...commentsItem(view, openThreads, t),
     ...panels,
     {
-      ...toggleItem('fullScreen', t('canvas.focus.button'), t('canvas.focus.hint'), focus.on ? Minimize2 : Maximize2, focus, false),
+      ...toggleItem('fullScreen', t('documents:focus.button'), t('documents:focus.hint'), focus.on ? Minimize2 : Maximize2, focus, false),
       keyShortcuts: 'Control+Shift+F Meta+Shift+F',
     },
   ]

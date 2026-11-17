@@ -56,20 +56,20 @@ export default function DocumentMeta({ project, document, text }: DocumentMetaPr
   const words = useMemo(() => countWords(deferred, i18n.language), [deferred, i18n.language])
   const minutes = readingMinutes(words)
   return (
-    <ul aria-label={t('canvas.meta.label')} data-testid="document-meta" className="mt-3 flex flex-wrap items-center gap-2">
+    <ul aria-label={t('documents:meta.label')} data-testid="document-meta" className="mt-3 flex flex-wrap items-center gap-2">
       {author === null ? null : (
         <li className={CHIP_CLASS}>
           <UserRound size={12} aria-hidden />
-          {author.creator ? t('canvas.meta.author', { name: author.name }) : t('canvas.meta.owner', { name: author.name })}
+          {author.creator ? t('documents:meta.author', { name: author.name }) : t('documents:meta.owner', { name: author.name })}
         </li>
       )}
       {edited === '' ? null : (
-        <li className={CHIP_CLASS}><Clock size={12} aria-hidden />{t('canvas.meta.edited', { when: edited })}</li>
+        <li className={CHIP_CLASS}><Clock size={12} aria-hidden />{t('documents:meta.edited', { when: edited })}</li>
       )}
       <li className={CHIP_CLASS}>
         {minutes === 0
-          ? t('canvas.meta.words', { count: words })
-          : t('canvas.meta.wordsAndMinutes', { words: t('canvas.meta.words', { count: words }), minutes: t('canvas.meta.minutes', { count: minutes }) })}
+          ? t('documents:meta.words', { count: words })
+          : t('documents:meta.wordsAndMinutes', { words: t('documents:meta.words', { count: words }), minutes: t('documents:meta.minutes', { count: minutes }) })}
       </li>
       <li className="flex"><DocumentTypeBadge type={document.document_type} /></li>
     </ul>

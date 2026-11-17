@@ -8,7 +8,7 @@
  * the canvas; the "Comments | Evidence" tabs; and the canvas shown, never remounted, when comments
  * cannot load.
  *
- * The canvas editor is a stand-in with the real one's props and handle (src/components/DocumentCanvas/editor/CanvasEditor.tsx): it renders
+ * The canvas editor is a stand-in with the real one's props and handle (src/components/Document/edit/editor/CanvasEditor.tsx): it renders
  * the Markdown's blocks as plain elements, an editor control marked data-anchor-skip, and a bar
  * button that calls `onCommentSelection`.
  */
@@ -26,7 +26,7 @@ import { makeProject } from './project-detail-fixtures'
 import { parsedJson } from '@test/jsonText'
 import { asRecord } from '../../api/wireRecord'
 import type { ProjectDocument } from '../../api/types'
-import type { CanvasEditorHandle, CanvasEditorProps } from '../../components/DocumentCanvas/editor/CanvasEditor'
+import type { CanvasEditorHandle, CanvasEditorProps } from '../../components/Document/edit/editor/CanvasEditor'
 import type { ReviseCanvas } from '../../components/DocumentCanvas/revise/useRevisePass'
 import type { ReviewActions } from '../../components/DocumentCanvas/actions/toolbarItems'
 import type { ReactNode } from 'react'
@@ -40,7 +40,7 @@ vi.mock('../../api/assistJobs', () => ({ runAssistJob: () => runAssistJob() }))
 
 const EDITED = '## Customer problem\n\nCustomers wait for a refund.'
 
-vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => {
+vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => {
   const { useImperativeHandle, useRef, useState } = await import('react')
   function FakeCanvasEditor(props: CanvasEditorProps) {
     editorProps(props)

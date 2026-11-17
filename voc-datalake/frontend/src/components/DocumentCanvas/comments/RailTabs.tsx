@@ -41,13 +41,13 @@ export default function RailTabs({ comments, evidence }: RailTabsProps) {
   }
   return (
     <div className="min-w-0 space-y-3">
-      <div className="tabs-track" role="tablist" aria-label={t('canvas.comments.tabs.label')} onKeyDown={onKeyDown}>
+      <div className="tabs-track" role="tablist" aria-label={t('documents:comments.tabs.label')} onKeyDown={onKeyDown}>
         {TABS.map((tab) => (
           <button key={tab} type="button" role="tab" id={`${id}-${tab}-tab`} aria-controls={`${id}-${tab}-panel`}
             aria-selected={active === tab} tabIndex={active === tab ? 0 : -1}
             ref={(element) => { buttons.current[tab] = element }}
             className={clsx('tab', active === tab && 'tab-active')} onClick={() => setActive(tab)}>
-            {t(`canvas.comments.tabs.${tab}`)}
+            {t(`documents:comments.tabs.${tab}`)}
           </button>
         ))}
       </div>

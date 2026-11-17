@@ -13,6 +13,7 @@ import { makeDocument } from './project-detail-fixtures'
 import { ApiError } from '../../lib/errors'
 import { defined } from '@test/defined'
 import en from '../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../public/locales/en/documents.json'
 import type { DocumentCardActions } from './DocumentCard'
 import type { ProjectDocument } from '../../api/types'
 
@@ -115,7 +116,7 @@ describe('DocumentCard menu: items', () => {
   it('gives an editor Open, Rename and Delete on a document renamed by its writers', () => {
     renderList(editorActions())
     fireEvent.contextMenu(cardOf('Interview notes'))
-    expect(itemNames(menuOf('Interview notes'))).toStrictEqual([card.open, en.canvas.menu.rename, en.documents.deleteDocument])
+    expect(itemNames(menuOf('Interview notes'))).toStrictEqual([card.open, enDocuments.menu.rename, en.documents.deleteDocument])
   })
 
   it('leaves Rename out of a PRD\'s menu, whose title is its series\'', () => {
@@ -176,7 +177,7 @@ describe('DocumentCard menu: keyboard and closing', () => {
       focused.push(document.activeElement?.textContent ?? null)
     }
     expect(focused).toStrictEqual([
-      en.canvas.menu.rename, en.documents.deleteDocument, card.open, en.documents.deleteDocument, card.open,
+      enDocuments.menu.rename, en.documents.deleteDocument, card.open, en.documents.deleteDocument, card.open,
     ])
   })
 
@@ -225,8 +226,8 @@ describe('DocumentCard Rename', () => {
   async function renaming(actions = editorActions()) {
     const rendered = renderList(actions)
     fireEvent.contextMenu(cardOf('Plan'))
-    await rendered.user.click(within(menuOf('Plan')).getByRole('menuitem', { name: en.canvas.menu.rename }))
-    const field = screen.getByRole('textbox', { name: en.canvas.page.titleLabel })
+    await rendered.user.click(within(menuOf('Plan')).getByRole('menuitem', { name: enDocuments.menu.rename }))
+    const field = screen.getByRole('textbox', { name: enDocuments.page.titleLabel })
     return { ...rendered, actions, field }
   }
 
@@ -256,7 +257,7 @@ describe('DocumentCard Rename', () => {
     const { user, actions, field } = await renaming()
     await user.clear(field)
     await user.type(field, '   {Enter}')
-    expect(screen.getByRole('alert')).toHaveTextContent(en.canvas.page.titleRequired)
+    expect(screen.getByRole('alert')).toHaveTextContent(enDocuments.page.titleRequired)
     expect(field).toHaveAttribute('aria-invalid', 'true')
 
     await user.clear(field)

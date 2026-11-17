@@ -27,7 +27,7 @@ const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // compares this list, i18n-check.mjs's copy, src/i18n/options.ts and src/test/setup.ts
 // against the files on disk. `feedback` was listed here with no catalogue in any
 // locale, so every run tried to load a namespace that does not exist.
-const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'briefing', 'categories', 'common', 'components', 'dashboard',
+const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'briefing', 'categories', 'common', 'components', 'dashboard', 'documents',
   'dataExplorer', 'decisions', 'emailInbox', 'featureRequests', 'feedbackDetail', 'feedbackForms', 'login', 'memory',
   'participants', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
 const ALL_LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh', 'pl']
@@ -82,6 +82,7 @@ const NS_CONTEXT = {
   components: 'Reusable UI components — data source wizard (multi-step form), feedback cards, social feed, S3 file import, user administration panel, user profile/password management, document/persona export menus.',
   dashboard: 'Main dashboard — overview page with metric cards (total feedback, sentiment, urgent issues), charts (volume trend, source breakdown, sentiment distribution), and a live social feed.',
   dataExplorer: 'Data Explorer page — browse raw S3 data files and processed DynamoDB feedback records. Includes file editing, JSON preview, and category statistics.',
+  documents: 'The shared document viewer and editor (components/Document) — the Markdown canvas (block menu, format bar, links, images, callouts), its menu bar and toolbar, versions and history, the save status and the stale-save conflict (Compare and merge), the light reader (Rendered / Source, Contents), the code view, read-only reasons and provenance chips.',
   feedback: 'Feedback list page — filterable, searchable, paginated list of all customer feedback items with sentiment and source filters.',
   feedbackDetail: 'Feedback detail page — single feedback item view showing classification, persona, problem analysis, root cause, suggested customer responses, similar feedback, and translation info.',
   feedbackForms: 'Feedback Forms page — create and manage embeddable Typeform-style feedback collection forms with rating types, themes, category routing, and embed code generation.',

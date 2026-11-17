@@ -60,8 +60,8 @@ function SaveItem({ state, close }: Readonly<{ state: CanvasDocument; close: () 
   const stateId = useId()
   const idle = !state.dirty || state.saving
   const label = (() => {
-    if (state.saving) return t('canvas.actions.status.saving')
-    return state.dirty ? t('canvas.actions.status.unsaved') : t('canvas.menu.saved')
+    if (state.saving) return t('documents:actions.status.saving')
+    return state.dirty ? t('documents:actions.status.unsaved') : t('documents:menu.saved')
   })()
   return (
     // Not `disabled`: a disabled item could not take the menu's roving focus (APG: disabled items stay focusable).
@@ -73,7 +73,7 @@ function SaveItem({ state, close }: Readonly<{ state: CanvasDocument; close: () 
         saveIgnoringFailure(state.save)
       }}>
       {state.saving ? <Loader2 size={16} className="flex-shrink-0 animate-spin" aria-hidden="true" /> : <Save size={16} className="flex-shrink-0" aria-hidden="true" />}
-      <span className="truncate">{t('canvas.actions.save')}</span>
+      <span className="truncate">{t('documents:actions.save')}</span>
       {/* Its description, not part of its name: the item is "Save" whatever the state. */}
       <span id={stateId} aria-hidden="true" className={clsx('ml-auto pl-2 text-xs whitespace-nowrap', state.dirty ? 'text-warn' : 'text-muted')}>{label}</span>
     </button>
@@ -129,7 +129,7 @@ export default function DocumentMenu({
     action()
   }
   return (
-    <DocumentExportMenu document={document} project={project} threads={threads} triggerLabel={t('canvas.menu.trigger')}
+    <DocumentExportMenu document={document} project={project} threads={threads} triggerLabel={t('documents:menu.trigger')}
       menuBar exportDescribedBy={state.dirty ? hintId : undefined}
       leading={({ close }) => (
         <>
@@ -137,7 +137,7 @@ export default function DocumentMenu({
           {state.editable && state.titleEditable && onRename !== undefined ? (
             <button type="button" role="menuitem" className={ITEM_CLASS} onClick={then(close, onRename)}>
               <PenLine size={16} className="flex-shrink-0" aria-hidden="true" />
-              <span className="truncate">{t('canvas.menu.rename')}</span>
+              <span className="truncate">{t('documents:menu.rename')}</span>
             </button>
           ) : null}
           {offeredShare === null ? null : (
@@ -150,7 +150,7 @@ export default function DocumentMenu({
           {state.editable || offeredShare !== null ? <hr className="menu-separator border-0" /> : null}
           {/* Export reads the stored version (what the link, the review page and the assistant read). */}
           {state.dirty ? (
-            <p id={hintId} role="presentation" className="px-3 py-1.5 text-xs text-warn">{t('canvas.actions.exportSavedHint')}</p>
+            <p id={hintId} role="presentation" className="px-3 py-1.5 text-xs text-warn">{t('documents:actions.exportSavedHint')}</p>
           ) : null}
         </>
       )}>
@@ -161,7 +161,7 @@ export default function DocumentMenu({
             <button type="button" role="menuitem" aria-haspopup="dialog" className={ITEM_CLASS}
               onClick={then(close, () => onOpenDialog('history'))}>
               <History size={16} className="flex-shrink-0" aria-hidden="true" />
-              <span className="truncate">{t('canvas.actions.history')}</span>
+              <span className="truncate">{t('documents:actions.history')}</span>
             </button>
           ) : null}
           {canEdit ? (

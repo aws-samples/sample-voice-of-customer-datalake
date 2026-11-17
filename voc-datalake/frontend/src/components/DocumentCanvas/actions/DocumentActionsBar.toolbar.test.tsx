@@ -11,7 +11,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { createRef, useState } from 'react'
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createTestQueryClient } from '../../../test/query-client'
-import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../../public/locales/en/documents.json'
 import { projectsApi } from '../../../api/projectsApi'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { usePageView, useDocumentViewStore } from '../page/usePageView'
@@ -25,8 +25,8 @@ import type { ProjectDocument } from '../../../api/types'
 
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: { getDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() } }))
 
-const bar = enProjectDetail.canvas.menubar
-const tools = enProjectDetail.canvas.toolbar
+const bar = enDocuments.menubar
+const tools = enDocuments.toolbar
 const project = makeProject({ project_id: 'p1' })
 const prfaq: ProjectDocument = {
   document_id: 'prfaq_4', document_type: 'prfaq', title: 'Refunds (v4)', base_title: 'Refunds', content: 'text',
@@ -93,8 +93,8 @@ describe('the toolbar: its items', () => {
     renderBar()
     expect(within(toolbar()).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.textContent))
       .toStrictEqual([
-        'Version v4', enProjectDetail.canvas.actions.history, tools.aiReview, tools.aiRewrite, 'Comments, 3 open',
-        enProjectDetail.canvas.page.contents, bar.fullWidth, enProjectDetail.canvas.focus.button, tools.share,
+        'Version v4', enDocuments.actions.history, tools.aiReview, tools.aiRewrite, 'Comments, 3 open',
+        enDocuments.page.contents, bar.fullWidth, enDocuments.focus.button, tools.share,
       ])
   })
 
@@ -102,8 +102,8 @@ describe('the toolbar: its items', () => {
     renderBar({ canEdit: false })
     const names = within(toolbar()).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.textContent)
     expect(names).toStrictEqual([
-      'Version v4', enProjectDetail.canvas.actions.history, 'Comments, 3 open', enProjectDetail.canvas.page.contents,
-      bar.fullWidth, enProjectDetail.canvas.focus.button,
+      'Version v4', enDocuments.actions.history, 'Comments, 3 open', enDocuments.page.contents,
+      bar.fullWidth, enDocuments.focus.button,
     ])
   })
 
@@ -115,7 +115,7 @@ describe('the toolbar: its items', () => {
       expect(button.getAttribute('aria-describedby')).toBe(tip?.id)
       expect(button).toHaveAccessibleName()
     }
-    expect(tool(enProjectDetail.canvas.page.contents)).toHaveAccessibleDescription(tools.contentsHint)
+    expect(tool(enDocuments.page.contents)).toHaveAccessibleDescription(tools.contentsHint)
   })
 
   it('counts the open comments in the Comments button\'s name (announced) and its badge', () => {
@@ -152,7 +152,7 @@ describe('the toolbar: its items', () => {
 describe('the toolbar and the View menu: one state', () => {
   it('starts with the panel closed, Contents shown and the full width on (no stored choice)', async () => {
     const { user } = renderBar()
-    expect([tool('Comments, 3 open'), tool(enProjectDetail.canvas.page.contents), tool(bar.fullWidth)]
+    expect([tool('Comments, 3 open'), tool(enDocuments.page.contents), tool(bar.fullWidth)]
       .map((button) => button.getAttribute('aria-pressed'))).toStrictEqual(['false', 'true', 'true'])
     await user.click(screen.getByRole('button', { name: bar.view }))
     expect(screen.getAllByRole('menuitemcheckbox').slice(0, 3).map((item) => item.getAttribute('aria-checked')))
@@ -167,11 +167,11 @@ describe('the toolbar and the View menu: one state', () => {
     const view = within(screen.getByRole('menu', { name: bar.view }))
     expect([bar.comments, bar.fullWidth].map((name) => view.getByRole('menuitemcheckbox', { name }).getAttribute('aria-checked')))
       .toStrictEqual(['true', 'false'])
-    await user.click(view.getByRole('menuitemcheckbox', { name: enProjectDetail.canvas.page.contents }))
-    expect(tool(enProjectDetail.canvas.page.contents)).toHaveAttribute('aria-pressed', 'false')
+    await user.click(view.getByRole('menuitemcheckbox', { name: enDocuments.page.contents }))
+    expect(tool(enDocuments.page.contents)).toHaveAttribute('aria-pressed', 'false')
     await user.click(screen.getByRole('button', { name: bar.view }))
-    await user.click(screen.getByRole('menuitemcheckbox', { name: new RegExp(enProjectDetail.canvas.focus.button) }))
-    expect(tool(enProjectDetail.canvas.focus.button)).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('menuitemcheckbox', { name: new RegExp(enDocuments.focus.button) }))
+    expect(tool(enDocuments.focus.button)).toHaveAttribute('aria-pressed', 'true')
   })
 })
 
@@ -196,7 +196,7 @@ describe('the toolbar: the keyboard', () => {
       await user.keyboard(key)
       seen.push(focused())
     }
-    expect(seen).toStrictEqual([enProjectDetail.canvas.actions.history, tools.share, 'Version v4', tools.share])
+    expect(seen).toStrictEqual([enDocuments.actions.history, tools.share, 'Version v4', tools.share])
   })
 
   it('leaves the arrows to an open menu of the row', async () => {
@@ -245,11 +245,11 @@ describe('on a narrow screen', () => {
     onTestFinished(() => { vi.unstubAllGlobals() })
     const { user } = renderBar()
     expect(within(toolbar()).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.textContent))
-      .toStrictEqual(['Version v4', 'Comments, 3 open', enProjectDetail.canvas.focus.button, tools.more, tools.share])
+      .toStrictEqual(['Version v4', 'Comments, 3 open', enDocuments.focus.button, tools.more, tools.share])
     await user.click(tool(tools.more))
     const more = within(screen.getByRole('menu', { name: tools.more }))
     expect(more.getAllByRole('menuitem').map((item) => item.textContent)).toStrictEqual([
-      enProjectDetail.canvas.actions.history, tools.aiReview, tools.aiRewrite,
+      enDocuments.actions.history, tools.aiReview, tools.aiRewrite,
     ])
     await user.click(more.getByRole('menuitemcheckbox', { name: bar.fullWidth }))
     expect(useDocumentViewStore.getState().fullWidth).toBe(false)

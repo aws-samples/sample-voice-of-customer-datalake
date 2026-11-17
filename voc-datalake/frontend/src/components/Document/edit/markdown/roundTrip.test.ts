@@ -14,7 +14,7 @@ import { canvasExtensions } from './extensions'
 import { readTree, serialize } from './serialize'
 import { blockToMdast } from './toMdast'
 
-const VOC = join(import.meta.dirname, '../../../../..')
+const VOC = join(import.meta.dirname, '../../../../../..')
 const SCHEMA_OPTIONS = {
   placeholder: '', calloutLabels: { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' },
   taskLabel: () => 'Done', emptyClass: 'empty',

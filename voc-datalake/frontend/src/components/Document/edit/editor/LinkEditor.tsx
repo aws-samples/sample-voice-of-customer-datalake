@@ -19,7 +19,7 @@ function currentHref(editor: Editor): string {
 }
 
 export default function LinkEditor({ editor, anchor, onClose }: LinkEditorProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const existing = currentHref(editor)
   const [value, setValue] = useState(existing)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +33,7 @@ export default function LinkEditor({ editor, anchor, onClose }: LinkEditorProps)
     event.preventDefault()
     const href = normalizeHref(value)
     if (!href) {
-      setError(t('canvas.editor.link.invalid'))
+      setError(t('editor.link.invalid'))
       return
     }
     const chain = editor.chain().focus().extendMarkRange('link')
@@ -51,11 +51,11 @@ export default function LinkEditor({ editor, anchor, onClose }: LinkEditorProps)
   }
 
   return (
-    <CanvasPopover title={t('canvas.editor.link.title')} anchor={anchor} onClose={close}>
+    <CanvasPopover title={t('editor.link.title')} anchor={anchor} onClose={close}>
       <form onSubmit={submit} noValidate>
         <PopoverField
-          label={t('canvas.editor.link.url')}
-          placeholder={t('canvas.editor.link.placeholder')}
+          label={t('editor.link.url')}
+          placeholder={t('editor.link.placeholder')}
           value={value}
           error={error}
           onChange={(next) => {
@@ -65,10 +65,10 @@ export default function LinkEditor({ editor, anchor, onClose }: LinkEditorProps)
         />
         <div className="canvas-popover__actions">
           {existing !== '' && (
-            <button type="button" className="canvas-button canvas-button--quiet" onClick={remove}>{t('canvas.editor.link.remove')}</button>
+            <button type="button" className="canvas-button canvas-button--quiet" onClick={remove}>{t('editor.link.remove')}</button>
           )}
-          <button type="button" className="canvas-button canvas-button--quiet" onClick={close}>{t('canvas.editor.link.cancel')}</button>
-          <button type="submit" className="canvas-button canvas-button--primary">{t('canvas.editor.link.apply')}</button>
+          <button type="button" className="canvas-button canvas-button--quiet" onClick={close}>{t('editor.link.cancel')}</button>
+          <button type="submit" className="canvas-button canvas-button--primary">{t('editor.link.apply')}</button>
         </div>
       </form>
     </CanvasPopover>

@@ -259,10 +259,12 @@ path. A proposal is refused before it is shown when your way of working does not
 
 ## Code
 
-The canvas is in `voc-datalake/frontend/src/components/DocumentCanvas/`: `markdown/` (the Markdown ↔ editor
-mapping, on TipTap and ProseMirror, MIT), `editor/` (the editor; its menus, format bar and popovers load as a chunk of their own right after the text,
-`editor/CanvasChrome.tsx`), `page/` (the page,
-outline, evidence, the view preferences, an older version and the full-screen view), `comments/`, `actions/` (save,
-the menus, the toolbar and its version picker, the assistant's diff) and `revise/` (Revise from comments). The
-addresses are `pages/ProjectDetail/projectPaths.ts` and `useProjectPlace.ts`. It is loaded only
-when the Documents tab opens a document.
+The editor is the shared document component's edit engine, in
+`voc-datalake/frontend/src/components/Document/edit/`: `markdown/` (the Markdown ↔ editor mapping, on TipTap and
+ProseMirror, MIT) and `editor/` (the editor; its menus, format bar and popovers load as a chunk of their own right
+after the text, `editor/CanvasChrome.tsx`). Its strings are the `documents` namespace. The Projects page around it
+is in `voc-datalake/frontend/src/components/DocumentCanvas/`: `page/` (the page, outline, evidence, the view
+preferences, an older version and the full-screen view), `comments/`, `actions/` (save, the menus, the toolbar and
+its version picker, the assistant's diff) and `revise/` (Revise from comments). The addresses are
+`pages/ProjectDetail/projectPaths.ts` and `useProjectPlace.ts`. It is loaded only when the Documents tab opens a
+document.

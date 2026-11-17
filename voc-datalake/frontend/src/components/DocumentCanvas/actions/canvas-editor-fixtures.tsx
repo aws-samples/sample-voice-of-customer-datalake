@@ -5,7 +5,7 @@
  * `vi.mock('…/editor/CanvasEditor', async () => ({ default: (await import('…/canvas-editor-fixtures')).FakeCanvasEditor }))`.
  */
 import { useImperativeHandle, useRef, useState } from 'react'
-import type { CanvasEditorProps } from '../editor/CanvasEditor'
+import type { CanvasEditorProps } from '../../Document/edit/editor/CanvasEditor'
 
 export function FakeCanvasEditor({ markdown, editable, ariaLabel, onChange, handleRef }: CanvasEditorProps) {
   const [value, setValue] = useState(markdown)

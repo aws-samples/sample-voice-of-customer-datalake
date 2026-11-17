@@ -79,7 +79,7 @@ export default function BlankDocumentDraft({ pending, documents, blank }: BlankD
     <section data-testid="document-detail-pane" aria-label={t('documents.blank.draftLabel', { type })}
       className="bg-card rounded-xl border min-w-0 lg:min-h-[500px]">
       <form className={PAGE_SHEET_CLASS} onSubmit={submit} noValidate>
-        <label htmlFor={inputId} className="sr-only">{t('canvas.page.titleLabel')}</label>
+        <label htmlFor={inputId} className="sr-only">{t('documents:page.titleLabel')}</label>
         <input ref={input} id={inputId} type="text" value={title} autoFocus autoComplete="off" spellCheck
           readOnly={blank.creatingPending} aria-invalid={refusal === null ? undefined : true}
           aria-describedby={message === null ? hintId : `${errorId} ${hintId}`}

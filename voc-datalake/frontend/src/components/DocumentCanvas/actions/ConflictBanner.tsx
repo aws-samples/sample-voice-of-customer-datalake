@@ -33,7 +33,7 @@ export function ConflictBanner({ conflict }: Readonly<{ conflict: DocumentConfli
       {/* Bordered, like its neighbour: a ghost button's muted text misses AA on the warning tint. */}
       <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => saveIgnoringFailure(conflict.onSaveAnyway)}>
         {saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
-        {saving ? t('canvas.actions.status.saving') : t('documentModal.conflictSaveAnyway')}
+        {saving ? t('documents:actions.status.saving') : t('documentModal.conflictSaveAnyway')}
       </button>
     </div>
   )
@@ -56,7 +56,7 @@ export function ReviseRefusedBanner({ refused }: Readonly<{ refused: ReviseRefus
       </span>
       <button type="button" className="btn btn-secondary btn-sm" disabled={saving} onClick={() => saveIgnoringFailure(refused.onSaveAsOwnEdit)}>
         {saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
-        {saving ? t('canvas.actions.status.saving') : t('canvas.revise.refused.saveAsOwn')}
+        {saving ? t('documents:actions.status.saving') : t('canvas.revise.refused.saveAsOwn')}
       </button>
     </div>
   )

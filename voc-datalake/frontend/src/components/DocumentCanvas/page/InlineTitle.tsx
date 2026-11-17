@@ -79,15 +79,15 @@ export default function InlineTitle({ title, editable, onRename, onDone, inputRe
   }
   return (
     <>
-      <label htmlFor={inputId} className="sr-only">{t('canvas.page.titleLabel')}</label>
+      <label htmlFor={inputId} className="sr-only">{t('documents:page.titleLabel')}</label>
       <input ref={inputRef} id={inputId} type="text" value={typed ?? title} autoComplete="off" spellCheck
-        title={t('canvas.page.titleHint')} aria-invalid={refused ? true : undefined}
+        title={t('documents:page.titleHint')} aria-invalid={refused ? true : undefined}
         aria-describedby={refused ? errorId : undefined}
         onChange={(event) => { setTyped(event.target.value); setRefused(false) }}
         onKeyDown={onKeyDown} onBlur={() => { if (typedRef.current !== null) commit(true) }}
         className={TITLE_INPUT_CLASS} />
       {/* Inserted when the name is refused: an alert that appears is read out. */}
-      {refused ? <p id={errorId} role="alert" className="mt-1 text-sm text-danger">{t('canvas.page.titleRequired')}</p> : null}
+      {refused ? <p id={errorId} role="alert" className="mt-1 text-sm text-danger">{t('documents:page.titleRequired')}</p> : null}
     </>
   )
 }

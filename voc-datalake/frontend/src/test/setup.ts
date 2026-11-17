@@ -33,6 +33,7 @@ import prioritizationEn from '../../public/locales/en/prioritization.json'
 import problemAnalysisEn from '../../public/locales/en/problemAnalysis.json'
 import scrapersEn from '../../public/locales/en/scrapers.json'
 import projectDetailEn from '../../public/locales/en/projectDetail.json'
+import documentsEn from '../../public/locales/en/documents.json'
 import memoryEn from '../../public/locales/en/memory.json'
 import agentsEn from '../../public/locales/en/agents.json'
 import decisionsEn from '../../public/locales/en/decisions.json'
@@ -61,6 +62,7 @@ const namespaceResources = {
   problemAnalysis: problemAnalysisEn,
   scrapers: scrapersEn,
   projectDetail: projectDetailEn,
+  documents: documentsEn,
   memory: memoryEn,
   agents: agentsEn,
   decisions: decisionsEn,

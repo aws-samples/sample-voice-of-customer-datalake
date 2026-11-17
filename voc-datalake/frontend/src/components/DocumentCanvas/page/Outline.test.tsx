@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Outline from './Outline'
-import type { OutlineItem } from '../editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/edit/editor/CanvasEditor'
 
 const ITEMS: readonly OutlineItem[] = [
   { id: 'overview', level: 1, text: 'Overview' },

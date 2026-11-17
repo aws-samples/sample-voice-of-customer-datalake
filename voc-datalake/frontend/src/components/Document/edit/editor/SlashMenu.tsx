@@ -6,7 +6,7 @@ import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MENU_KEYS, rovingIndex } from '../../../utils/rovingIndex'
+import { MENU_KEYS, rovingIndex } from '../../../../utils/rovingIndex'
 import { applyBlock, type BlockChoice, SLASH_BLOCKS } from './blocks'
 import type { CanvasController } from './controller'
 import { anchorAt } from './floating'
@@ -66,12 +66,12 @@ function handleKey(event: KeyboardEvent, { items, index, move, choose, dismiss }
 }
 
 export default function SlashMenu({ editor, container, controller, onImage }: SlashMenuProps) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const listId = useId()
   const trigger = useEditorState({ editor, selector: ({ editor: current }) => (current.isEditable ? slashTrigger(current.state) : null), equalityFn: sameTrigger })
   const [dismissedAt, setDismissedAt] = useState<number | null>(null)
   const [cursor, setCursor] = useState({ query: '', index: 0 })
-  const label = (block: BlockChoice) => t(`canvas.editor.blocks.${block.id}`)
+  const label = (block: BlockChoice) => t(`editor.blocks.${block.id}`)
   const open = trigger !== null && trigger.from !== dismissedAt ? trigger : null
   const items = open ? filterBlocks(SLASH_BLOCKS, open.query, label) : []
   const index = open?.query === cursor.query ? Math.min(cursor.index, Math.max(items.length - 1, 0)) : 0
@@ -106,8 +106,8 @@ export default function SlashMenu({ editor, container, controller, onImage }: Sl
   if (!open) return null
   const anchor = anchorAt(editor, open.from, container)
   return (
-    <div id={listId} role="listbox" aria-label={t('canvas.editor.slash.label')} className="canvas-menu canvas-menu--floating" style={{ top: anchor.top, left: anchor.left }}>
-      {items.length === 0 && <p role="status" className="canvas-menu__empty">{t('canvas.editor.slash.empty', { query: open.query })}</p>}
+    <div id={listId} role="listbox" aria-label={t('editor.slash.label')} className="canvas-menu canvas-menu--floating" style={{ top: anchor.top, left: anchor.left }}>
+      {items.length === 0 && <p role="status" className="canvas-menu__empty">{t('editor.slash.empty', { query: open.query })}</p>}
       {items.map((block, at) => {
         const Icon = block.icon
         return (

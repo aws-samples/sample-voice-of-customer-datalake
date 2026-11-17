@@ -8,7 +8,7 @@
   // alias maps to it, so it would report all four exports unused: it is an entry of its own (exports public).
   "entry": [
     "index.html!",
-    "src/components/DocumentCanvas/editor/noCollaboration.ts!",
+    "src/components/Document/edit/editor/noCollaboration.ts!",
     "scripts/fix-i18n.mjs",
     "scripts/i18n-check.test.mjs",
     "scripts/set-nested.test.mjs",

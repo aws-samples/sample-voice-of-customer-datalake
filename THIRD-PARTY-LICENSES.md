@@ -179,7 +179,7 @@ Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's
 [w3c-keyname@2.2.8](https://github.com/marijnh/w3c-keyname) - MIT
 
 
-Frontend document canvas, installed but not bundled (voc-datalake/frontend's lockfile: peer dependencies of @tiptap/extension-drag-handle; canvasResolve.ts aliases its collaboration imports to src/components/DocumentCanvas/editor/noCollaboration.ts, so none of these ship):
+Frontend document canvas, installed but not bundled (voc-datalake/frontend's lockfile: peer dependencies of @tiptap/extension-drag-handle; canvasResolve.ts aliases its collaboration imports to src/components/Document/edit/editor/noCollaboration.ts, so none of these ship):
 [@tiptap/extension-collaboration@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
 [@tiptap/y-tiptap@3.3.0](https://github.com/ueberdosis/tiptap) - MIT
 [isomorphic.js@0.2.5](https://github.com/dmonad/isomorphic.js) - MIT

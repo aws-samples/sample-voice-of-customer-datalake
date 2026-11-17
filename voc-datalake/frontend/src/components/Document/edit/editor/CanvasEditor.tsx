@@ -12,7 +12,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import clsx from 'clsx'
 import { lazy, Suspense, useEffect, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { noCleanup } from '../../../hooks/noCleanup'
+import { noCleanup } from '../../../../hooks/noCleanup'
 import type { CalloutKind } from '../markdown/callout'
 import { markdownToDoc } from '../markdown/convert'
 import { canvasExtensions } from '../markdown/extensions'
@@ -96,17 +96,17 @@ function focusText(editor: Editor | null, scroll: boolean) {
 
 /** The schema and keys, built once per canvas (a language switch shows in the next canvas, the content is kept). */
 function useExtensions(controller: CanvasController) {
-  const { t } = useTranslation('projectDetail')
+  const { t } = useTranslation('documents')
   const [extensions] = useState(() => {
     const calloutLabels: Record<CalloutKind, string> = {
-      note: t('canvas.editor.callout.note'),
-      tip: t('canvas.editor.callout.tip'),
-      important: t('canvas.editor.callout.important'),
-      warning: t('canvas.editor.callout.warning'),
-      caution: t('canvas.editor.callout.caution'),
+      note: t('editor.callout.note'),
+      tip: t('editor.callout.tip'),
+      important: t('editor.callout.important'),
+      warning: t('editor.callout.warning'),
+      caution: t('editor.callout.caution'),
     }
     return [
-      ...canvasExtensions({ placeholder: t('canvas.editor.placeholder'), calloutLabels, taskLabel: () => t('canvas.editor.task'), emptyClass: EMPTY_CLASS }),
+      ...canvasExtensions({ placeholder: t('editor.placeholder'), calloutLabels, taskLabel: () => t('editor.task'), emptyClass: EMPTY_CLASS }),
       HeadingIds,
       CanvasKeys.configure({ controller: () => controller }),
     ]

@@ -14,6 +14,7 @@ import type { ProjectDocument } from '../../api/types'
 import { ApiError } from '../../lib/errors'
 import { useConfigStore } from '../../store/configStore'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../public/locales/en/documents.json'
 import enComponents from '../../../public/locales/en/components.json'
 import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
 import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
@@ -45,7 +46,7 @@ vi.mock('../../api/projectsApi', () => ({
     updateProject: vi.fn(),
   },
 }))
-vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => ({
+vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => ({
   default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeCanvasEditor,
 }))
 // A PR/FAQ / PRD reads inside the comments view (T3's); here only its canvas matters.
@@ -101,7 +102,7 @@ const otherDocument: ProjectDocument = {
   document_id: 'doc-2', document_type: 'custom', title: 'Other notes', content: 'other text', created_at: '2026-09-01T10:00:00Z',
 }
 
-const actions = enProjectDetail.canvas.actions
+const actions = enDocuments.actions
 const renderPage = renderProjectDetailPage
 
 type User = ReturnType<typeof userEvent.setup>

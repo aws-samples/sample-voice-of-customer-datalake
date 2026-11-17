@@ -11,7 +11,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { noCleanup } from '../../../hooks/noCleanup'
 import type { KeyboardEvent, MouseEvent } from 'react'
-import type { OutlineItem } from '../editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/edit/editor/CanvasEditor'
 
 const INDENT: Readonly<Record<OutlineItem['level'], string>> = { 1: 'pl-2', 2: 'pl-5', 3: 'pl-8' }
 
@@ -72,15 +72,15 @@ export default function Outline({ items, onNavigate, className }: OutlineProps) 
     toggleRef.current?.focus()
   }
   return (
-    <nav aria-label={t('canvas.page.contents')} onKeyDown={closeOnEscape}
+    <nav aria-label={t('documents:page.contents')} onKeyDown={closeOnEscape}
       className={clsx('min-w-0 lg:sticky lg:top-20 lg:self-start', className)}>
       <button ref={toggleRef} type="button" aria-expanded={open} aria-controls={listId}
         className="lg:hidden btn btn-secondary btn-sm w-full justify-between" onClick={() => setOpen((value) => !value)}>
-        {t('canvas.page.contents')}
+        {t('documents:page.contents')}
         <ChevronDown size={14} aria-hidden className={clsx('transition-transform motion-reduce:transition-none', open && 'rotate-180')} />
       </button>
       <p aria-hidden className="hidden lg:block mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-        {t('canvas.page.contents')}
+        {t('documents:page.contents')}
       </p>
       <ol id={listId} data-open={open} className={clsx('mt-2 lg:mt-0 space-y-0.5 text-sm', open ? 'block' : 'hidden lg:block')}>
         {items.map((item) => {
