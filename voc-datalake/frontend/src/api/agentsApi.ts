@@ -32,6 +32,10 @@ const RUN_STATUSES = ['queued', 'running', 'needs_human', 'completed', 'failed',
 export type RunStatus = (typeof RUN_STATUSES)[number]
 const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ['queued', 'running']
 const RUN_TRIGGERS = ['manual', 'schedule', 'new_reviews', 'threshold', 'github_issue'] as const
+/** A `github_issue` trigger's stage (7.50.00, lambda/shared/agents_store.py `ISSUE_STAGES`): `act` when left out; and
+ * the triage kind an act trigger may require (`REQUIRED_TRIAGE_KINDS`). The agents API keeps both as written. */
+const ISSUE_STAGES = ['act', 'triage'] as const
+const REQUIRED_TRIAGE_KINDS = ['bug', 'feature'] as const
 const RUN_EVENT_KINDS = [
   'node_started', 'node_finished', 'node_failed', 'message', 'verdict', 'decision', 'artifact',
 ] as const
@@ -185,6 +189,9 @@ function engineeringTriggers(limits: AgentLimits) {
     label: z.string().trim().max(API_ENGINEERING_LIMITS.maxIssueLabelChars),
     trusted_authors: z.boolean(),
     lookback_days: z.number().int().min(1).max(API_ENGINEERING_LIMITS.maxLookbackDays),
+    // (7.50.00, kept as the agent has them: Issue triage's stage, an act trigger's required triage kind)
+    stage: z.enum(ISSUE_STAGES).optional(),
+    requires_triage: z.enum(REQUIRED_TRIAGE_KINDS).optional(),
   })
   const trigger = z.discriminatedUnion('kind', [...triggerVariants(limits), issue]).refine(
     (t) => t.kind !== 'schedule' || (t.every === 'cron') === (t.cron !== undefined), CRON_RULE)
@@ -238,6 +245,8 @@ const LenientTriggerSchema = z.union([
     label: z.string().catch(API_ENGINEERING_LIMITS.defaultIssueLabel),
     trusted_authors: z.boolean().catch(false),
     lookback_days: z.number().int().catch(API_ENGINEERING_LIMITS.defaultLookbackDays),
+    stage: z.enum(ISSUE_STAGES).optional().catch(undefined),
+    requires_triage: z.enum(REQUIRED_TRIAGE_KINDS).optional().catch(undefined),
   }),
 ])
 

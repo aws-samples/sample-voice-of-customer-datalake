@@ -47,7 +47,7 @@ from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 
-__all__ = ['INTROS', 'SETUP_KEY', 'STEP_IDS', 'STEP_STATES', 'app', 'read_setup', 'save_setup', 'setup_change']
+__all__ = ['app']
 
 #: The guide's one row (voc-agents).
 SETUP_KEY: Final = {'pk': 'SETTINGS#engineering_setup', 'sk': 'config'}

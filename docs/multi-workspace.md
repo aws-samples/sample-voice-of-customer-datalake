@@ -524,6 +524,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
 | `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
 | `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)); so are, since 7.50.00, their runs' transcripts, run manifests and the transcripts' index in voc-eng-workspace (`ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/`, `ws/default/runs/<run>/_manifest/`, `ws/default/transcripts-index/<flow>/<day>/<run>.json`), kept forever and in no workspace's export or delete until 3g3 |
+| `engineering_setup` (voc-agents, `SETTINGS#engineering_setup`) | deployment | the engineering setup guide's progress (7.50.00, `lambda/shared/agents_engineering_setup_routes.py`, only with `-c engineeringAgents=true`): what the deployment's administrators chose for each step of the guide, which sets up the deployment's engineering agents; it moves with them ([3g3](#the-project-plan-phase-3)) |
 
 ### The configuration cut-over (7.08.00)
 

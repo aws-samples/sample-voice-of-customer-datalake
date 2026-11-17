@@ -37,6 +37,14 @@ describe('the agent form', () => {
     const sources = Array.from({ length: 21 }, (_v, i) => `source_${String(i)}`)
     expect(agentFormSchema.partial().safeParse({ scope: { ...SCOPE, sources } }).success).toBe(false)
   })
+
+  it('takes the issue trigger\'s stage and required triage (7.50.00), only as the server names them', () => {
+    const issue = (extra: object) => engineeringAgentFormSchema.partial().safeParse({ triggers: [{ ...ISSUE, ...extra }] }).success
+    expect(issue({ stage: 'triage' })).toBe(true)
+    expect(issue({ requires_triage: 'bug' })).toBe(true)
+    expect(issue({ stage: 'later' })).toBe(false)
+    expect(issue({ requires_triage: 'investigation' })).toBe(false)
+  })
 })
 
 describe('the lenient reads', () => {
@@ -48,5 +56,14 @@ describe('the lenient reads', () => {
     expect(agent).toMatchObject({ engineering: ENGINEERING, owner_username: 'alice', triggers: [ISSUE] })
     expect(agent?.scope.sources).toStrictEqual(['github_issues'])
     expect(normalizeAgent({ agent_id: 'ag_2', name: 'Plain' })?.engineering).toBeNull()
+  })
+
+  it('keep the issue trigger\'s stage and required triage, so a save sends them back as they were', () => {
+    const triage = { ...ISSUE, stage: 'triage' }
+    const act = { ...ISSUE, requires_triage: 'feature' }
+    expect(normalizeAgent({ agent_id: 'ag_3', name: 'Issue triage', engineering: ENGINEERING, triggers: [triage] })?.triggers)
+      .toStrictEqual([triage])
+    expect(normalizeAgent({ agent_id: 'ag_4', name: 'Feature builder', engineering: ENGINEERING, triggers: [act] })?.triggers)
+      .toStrictEqual([act])
   })
 })

@@ -41,14 +41,15 @@ from engineering.connectors.connections import CONNECTION_ID
 from engineering.connectors.identity import AGENT_ROLES, WORKSPACE
 from engineering.learning.scorecard import MAX_COMPARED, ScorecardStore, VersionCard
 from engineering.runtime.harness.skills import SKILLS, skill_label
-from engineering.skills.diff import to_json
-from engineering.skills.model import SkillError
+from engineering.skills.diff import diff, to_json
+from engineering.skills.model import Skill, SkillContent, SkillError
 from engineering.skills.store import (
     MAX_PAGE,
     MAX_VERSION,
     SHARED,
     LogEvent,
     RecordedBenchmark,
+    SkillNotFound,
     SkillStore,
     SkillVersion,
     VersionLine,
@@ -166,7 +167,11 @@ def line_view(line: VersionLine, events: Sequence[LogEvent]) -> dict[str, Any]:
 
 
 def _record_view(found: SkillVersion) -> dict[str, Any]:
-    content = found.skill.content
+    return content_view(found.skill.content)
+
+
+def content_view(content: SkillContent) -> dict[str, Any]:
+    """A skill's record as the screens show it: its instructions, examples, tools, model and harness."""
     return {'instructions': content.instructions,
             'examples': [{'situation': example.situation, 'action': example.action} for example in content.examples],
             'tool_policy': list(content.tool_policy), 'model': content.model, 'harness': content.harness}
@@ -192,6 +197,14 @@ def shipped_versions(role: str) -> list[int]:
     if shipped is None:
         return []
     return list(range(shipped.version, max(0, shipped.version - DEFAULT_COMPARED), -1))
+
+
+def bundled_content(role: str) -> SkillContent:
+    """The role's bundled template's content (``SkillNotFound`` for a role with none)."""
+    template = bundled().skill(role)
+    if template is None:
+        raise SkillNotFound(f'the {role} role has no bundled template')
+    return Skill.from_record(template.record).content
 
 
 def template_view(role: str, lines: Sequence[VersionLine]) -> dict[str, Any] | None:
@@ -268,6 +281,23 @@ class SkillViews:
                 'versions': [line_view(line, events) for line in page.lines],
                 'next_page': None if page.next_before is None else page_token(scope, role, page.next_before),
                 'template': template_view(role, page.lines)}
+
+    def template(self, connection: str, role: str) -> dict[str, Any]:
+        """The role's bundled template against the version the scope runs (7.50.00, "Template updated"): the
+        template as the history names it, the scope's own current version (0 for none), the template's record and
+        its diff from the version the scope runs (its own current one, else the shared skill's; ``first`` when it
+        runs none). Read only: adopting it is a person's proposal (``SkillActions.adopt_template``)."""
+        scope, role = check_connection(connection), check_role(role)
+        if bundled().skill(role) is None:
+            raise SkillNotFound(f'the {role} role has no bundled template')
+        skills = self._skills
+        head = skills.head(WORKSPACE, scope, role)
+        runs = skills.current(WORKSPACE, scope, role)
+        content = bundled_content(role)
+        return {'connection': scope, 'role': role,
+                'template': template_view(role, skills.lines(WORKSPACE, scope, role, limit=PAGE).lines),
+                'current_version': head.current_version if head else 0, 'record': content_view(content),
+                'diff': to_json(diff(None if runs is None else runs.skill.content, content))}
 
     def version(self, connection: str, role: str, version: str) -> dict[str, Any]:
         """One version: its line, its record and its diff from its base."""

@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-MANIFEST_SCHEMA: Final = 'voc-run-manifest/1'
+from engineering.runtime.manifest import MANIFEST_SCHEMA
+
 MARGIN: Final = 1.5
 #: The harness's ceilings (runtime/harness/converse_loop.py MAX_TURNS, MAX_INPUT_TOKENS; the card schema's maxima).
 MAX_TURNS: Final = 150

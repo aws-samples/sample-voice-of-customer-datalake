@@ -19,7 +19,7 @@ from typing import Any
 from engineering.connectors.identity import WORKSPACE
 from engineering.knowledge.store import Actor
 from engineering.quality_gate.text import redact
-from engineering.skills.model import BENCHMARK_FIELDS, MAX_COMMENT, BenchmarkRun, SkillError
+from engineering.skills.model import BENCHMARK_FIELDS, MAX_COMMENT, BenchmarkRun, Reason, SkillError
 from engineering.skills.store import (
     ACCEPTED,
     BENCHMARKED,
@@ -29,9 +29,18 @@ from engineering.skills.store import (
     ROLLED_BACK,
     Announcement,
     SkillConflict,
+    SkillNotFound,
     SkillStore,
 )
-from engineering.skills.views import check_connection, check_role, check_version, line_view
+from engineering.skills.views import (
+    PAGE,
+    bundled_content,
+    check_connection,
+    check_role,
+    check_version,
+    line_view,
+    template_view,
+)
 
 
 def _redacted(value: Any) -> Any:
@@ -105,6 +114,35 @@ class SkillActions:
         seeded = self.skills.seed_from_template(WORKSPACE, template.role, template, by=self.actor)
         return None if seeded is None else {'role': template.role, 'version': seeded.version.version,
                                             'template': template.label}
+
+    def adopt_template(self, connection: str, role: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``{expected_current, template_version, reason?}`` (7.50.00, "Template updated" → Adopt): the role's bundled
+        template as the scope's next version, PROPOSED by this administrator on the version the scope runs (its
+        provenance ``template``); never applied here: an administrator accepts it as any other proposal. 409 when
+        the scope's current version or the bundled template changed since the screen read them, or when no newer
+        template is waiting (one of this version is proposed or accepted already)."""
+        from engineering.skills.templates import bundled
+        scope, role = check_connection(connection), check_role(role)
+        _fields(body, frozenset({'expected_current', 'template_version'}),
+                '{expected_current, template_version, reason?}')
+        current, reason = _expected_current(body), _reason(body)
+        shown = body.get('template_version')
+        if isinstance(shown, bool) or not isinstance(shown, int) or shown < 1:
+            raise SkillError('template_version is the template version the screen showed')
+        template = bundled().skill(role)
+        if template is None:
+            raise SkillNotFound(f'the {role} role has no bundled template')
+        if template.version != shown:
+            raise SkillConflict(f'{CHANGED}: the template was v{shown} and is v{template.version} now; read it again')
+        self._check_current(scope, role, current)
+        waiting = template_view(role, self.skills.lines(WORKSPACE, scope, role, limit=PAGE).lines)
+        if not (waiting and waiting['newer']):
+            raise SkillConflict(f'{CHANGED}: {template.label} is proposed or accepted already; read it again')
+        proposed = self.skills.propose_version(
+            WORKSPACE, scope, role, bundled_content(role), proposer=self.actor,
+            reason=Reason(comment=reason or f'Adopted the template {template.label}.'),
+            base=self.skills.resolved(WORKSPACE, scope, role), template_version=template.version)
+        return self._answer(scope, role, proposed.version.version, PROPOSED, proposed.announcement)
 
     def _scope(self, connection: str, role: str, version: str) -> tuple[str, str, int]:
         return check_connection(connection), check_role(role), check_version(version)

@@ -90,6 +90,9 @@ DEPLOYMENT_KINDS: dict[str, frozenset[str]] = {
     'alerts': frozenset({'lambda/shared/ops_alerts.py'}),
     # The engineering agents' hard cap (voc-agents; voc-autonomous, merged in 7.35.00): the deployment's administrators'.
     'engineering': frozenset({'lambda/engineering/settings.py', 'lib/stacks/engineering-runtime-grants.ts'}),
+    # The engineering setup guide's progress (7.50.00, voc-agents): the deployment's administrators' choices, as the
+    # engineering agents it sets up are the deployment's.
+    'engineering_setup': frozenset({'lambda/shared/agents_engineering_setup_routes.py'}),
 }
 
 SETTINGS_KINDS: dict[str, frozenset[str]] = {**WORKSPACE_KINDS, **DEPLOYMENT_KINDS}

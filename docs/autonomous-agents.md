@@ -53,22 +53,24 @@ included, is `skipped` and gets nothing. Archiving the default agent never bring
 `state: failed`, so the next admin listing tries again; the listing itself still answers. A `seeding` claim
 older than 15 minutes counts as abandoned and is taken over. Code: `lambda/shared/agent_seed.py`.
 
-With the engineering agents module on (`-c engineeringAgents=true`; since 7.47.00) the same listing also seeds two
+With the engineering agents module on (`-c engineeringAgents=true`; since 7.47.00) the same listing also seeds the
 [engineering agents](#engineering-agents), each under a marker of its own (`AGENTSEED#bug-fixer`,
-`AGENTSEED#feature-builder` / `META`, the same claim, states and stale-claim rule), so a deployment that has run for a
-while gets them once on upgrade. A marker is `skipped` when an active agent of that name already exists (one an admin
+`AGENTSEED#feature-builder` and, since 7.50.00, `AGENTSEED#issue-triage` / `META`, the same claim, states and
+stale-claim rule), so a deployment that has run for a while gets each once on upgrade. Since 7.50.00 they are built
+from the orchestration templates' automations (`voc-datalake/templates/orchestration/automations/`). A marker is `skipped` when an active agent of that name already exists (one an admin
 made is never doubled); archiving or deleting a seeded one never brings it back. Without the module they are not
-seeded and the page does not mention them. Both are created **disabled**, with their own editable copy of their
+seeded and the page does not mention them. Each is created **disabled**, with their own editable copy of their
 engineering flow (visible and editable in the Workflows tab like any workflow) carrying a starting monthly budget of
 $50 (the owner's; `SEEDED_MONTHLY_BUDGET_USD`, changed in Set up or in the flow):
 
 | Agent | Works on | Workflow | Triggers |
 |---|---|---|---|
-| **Bug fixer** | `feedback_type` `bug` | *Issue triage* (memory, classify, reproduce or locate) then *Bug hunt and fix*, to a pull request that says `Fixes #N` (7.50.00: ready for review unless the flow says `pr: draft`; a person approves and merges) | `github_issue` (label `voc-agent`, issues classified as a bug), `new_reviews` (5 bug reports, 24 h cooldown); no schedule |
-| **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a pull request (ready for review unless the flow says `pr: draft`) | `github_issue` (label `voc-agent`, issues classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
+| **Issue triage** (7.50.00) | any labelled issue | *Issue triage* (classify, locate): the issue's kind, severity, code involved and acceptance criteria, commented and labelled on the issue and kept as its trusted triage row | `github_issue` at its `triage` stage (label `voc-agent`, any kind, its own claim); no reviews trigger, no schedule |
+| **Bug fixer** | `feedback_type` `bug` | *Bug hunt and fix*, to a pull request that says `Fixes #N` (7.50.00: ready for review unless the flow says `pr: draft`; a person approves and merges; a Bug fixer seeded before 7.50.00 keeps *Issue triage* then *Bug hunt and fix*) | `github_issue` (label `voc-agent`, `requires_triage: bug`: an issue triaged as a bug while Issue triage watches the connection, else one classified as a bug), `new_reviews` (5 bug reports, 24 h cooldown); no schedule |
+| **Feature builder** | `feedback_type` `feature_request` | *Feature from an issue or a PRD*, to a pull request (ready for review unless the flow says `pr: draft`) | `github_issue` (label `voc-agent`, `requires_triage: feature`: an issue triaged as a feature while Issue triage watches the connection, else one classified as a feature request), `new_reviews` (10 feature requests, 24 h cooldown); and **Build from this PRD** on a project's PRD (a Run now with the PRD's ids) |
 
-Both run at most once a day by default, scope all reviews, no instructions, and need a repository connection and a
-language before they can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
+Each runs at most once a day by default, scopes all reviews, has no instructions, and needs a repository connection and
+a language before it can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
 **Set up**, or **Connect a repository first**).
 
 **To enable Bug fixer** (Feature builder alike, with feature requests; the [setup guide](#setup-guide) walks
@@ -205,12 +207,15 @@ newer}`, `newer` when the scope has versions and none was seeded from a template
 **Template updated (vN)** on the role's panel.
 
 - **Show what it changes** reads `GET /agents/engineering/skills/<role>/template?connection=` →
-  `{template, current_version, record, diff}`: the template's record and its diff against the scope's current version,
-  shown as a version's diff is (instruction lines and examples added and removed, tools, the model and the harness).
+  `{template, current_version, record, diff}`: the template's record and its diff against the version the scope runs
+  (its own current one, else the shared skill's), shown as a version's diff is (instruction lines and examples added
+  and removed, tools, the model and the harness); 404 for a role with no template.
 - **Adopt as a proposal** (`POST …/skills/<role>/template/adopt?connection=` `{expected_current, template_version}`,
-  409 when either moved since the screen read them) makes the template a new version proposed by the administrator who
-  pressed it. It runs only once an administrator accepts it in the role's history, like any proposal; nothing is ever
-  adopted or accepted by itself.
+  409 when either moved since the screen read them, or when that template is proposed or accepted already) makes the
+  template a new version proposed by the administrator who pressed it, on the version the scope runs (provenance
+  `template`, `engineering/skills/actions.py` `adopt_template`). It runs only once an administrator accepts it in the
+  role's history, like any proposal; nothing is ever adopted or accepted by itself. Both routes are an administrator's
+  acting for themselves (403 otherwise, an MCP credential included), 404 while the module is off.
 
 ## Triggers and budgets
 

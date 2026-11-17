@@ -104,6 +104,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/skills/<role>/versions/<version>/reject',
         'POST /agents/engineering/skills/<role>/versions/<version>/rollback',
         'POST /agents/engineering/skills/<role>/versions/<version>/benchmark',
+        # A role's bundled template adopted as a person's proposal (7.50.00, engineering/skills/actions.py): the same
+        # gate.
+        'POST /agents/engineering/skills/<role>/template/adopt',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',

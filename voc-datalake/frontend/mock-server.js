@@ -3620,10 +3620,12 @@ const defaultAgentFields = () => ({
   engineering: null, owner_username: null,
 });
 /** A seeded engineering agent (agent_seed.py): disabled, no connection or language yet. */
-const seededEngineeringAgent = (agentId, name, description, feedbackType, workflowId, minNew) => ({
+// (the seeds' issue triggers, 7.50.00: Issue triage's at its triage stage; Bug fixer's and Feature builder's acting on
+// an issue once its triage says their kind; Issue triage has no reviews trigger)
+const seededEngineeringAgent = (agentId, name, description, feedbackType, workflowId, minNew, issue) => ({
   ...defaultAgentFields(), agent_id: agentId, name, description, workflow_id: workflowId,
-  triggers: [{ kind: 'github_issue', label: 'voc-agent', trusted_authors: false, lookback_days: 7 },
-    { kind: 'new_reviews', min_new: minNew, cooldown_hours: 24 }],
+  triggers: [{ kind: 'github_issue', label: 'voc-agent', trusted_authors: false, lookback_days: 7, ...issue },
+    ...(minNew === null ? [] : [{ kind: 'new_reviews', min_new: minNew, cooldown_hours: 24 }])],
   budget: { max_scheduled_runs_per_day: 1, max_model_calls_per_run: 150, monthly_call_cap: 5000 },
   engineering: { connection: null, language: null, feedback_type: feedbackType },
   status: 'active', created_by: MOCK_CALLER.sub, created_at: daysAgo(1), updated_at: daysAgo(1), stats: emptyAgentStats(),
@@ -3652,10 +3654,10 @@ const mockAgents = new Map([
   // Sparse legacy row: no stats, budget, models, personas, output or timestamps.
   { agent_id: 'ag_c0ffee123456', name: 'Legacy packaging agent', enabled: false, scope: { all: true }, triggers: [{ kind: 'schedule', every: '12h' }], workflow_id: 'wf_default' },
   // The engineering agents the seed adds with the engineering module on (7.47.00): "Set up" on their page.
-  seededEngineeringAgent('ag_b0f1e2d3c4a5', 'Bug fixer', 'Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a draft pull request that says "Fixes #N"', 'bug', BUG_FIXER_FLOW_ID, 5),
-  seededEngineeringAgent('ag_fe4b1d2c3a5e', 'Feature builder', "Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a project's PRD becomes a draft pull request", 'feature_request', FEATURE_BUILDER_FLOW_ID, 10),
+  seededEngineeringAgent('ag_b0f1e2d3c4a5', 'Bug fixer', 'Fixes the bugs customers report: a labelled GitHub issue, or a run of bug reports, becomes a draft pull request that says "Fixes #N"', 'bug', BUG_FIXER_FLOW_ID, 5, { requires_triage: 'bug' }),
+  seededEngineeringAgent('ag_fe4b1d2c3a5e', 'Feature builder', "Builds what customers ask for: a labelled GitHub feature issue, a run of feature requests or a project's PRD becomes a draft pull request", 'feature_request', FEATURE_BUILDER_FLOW_ID, 10, { requires_triage: 'feature' }),
   // The Issue triage automation 7.50.00 seeds (the setup guide's step 3): it classifies a labelled issue first.
-  seededEngineeringAgent('ag_17a9e5c3b2d0', 'Issue triage', 'Reads each labelled GitHub issue, classifies it (bug, feature, investigation), rates its severity and comments the triage on the issue', 'bug', ISSUE_TRIAGE_FLOW_ID, 5),
+  seededEngineeringAgent('ag_17a9e5c3b2d0', 'Issue triage', 'Reads each labelled GitHub issue, classifies it (bug, feature, investigation), rates its severity and comments the triage on the issue', 'bug', ISSUE_TRIAGE_FLOW_ID, null, { stage: 'triage' }),
 ].map((agent) => [agent.agent_id, agent]));
 
 // The setup guide's readiness fixture (mock-engineering-setup.js) reads the agents and their flows' budgets here.

@@ -44,7 +44,9 @@ Permissions:
   function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
   ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
   and an administrator's actions on a version (``POST …/skills/<role>/versions/<version>/accept``, ``…/reject``,
-  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions), and an ended run's
+  ``…/rollback``, ``…/benchmark``: engineering/skills/actions.py, the store's own transactions; since 7.50.00 a role's
+  bundled template against the scope, ``GET …/skills/<role>/template``, and its adoption as a person's proposal,
+  ``POST …/skills/<role>/template/adopt``), and an ended run's
   reactions read asked for by hand (``POST /agents/engineering/<run_id>/reactions``, 7.10.00: the start function's
   ``ask_reactions``, below); while the engineering agents are off every caller gets 404.
 
@@ -1271,6 +1273,29 @@ def record_engineering_skill_benchmark(role: str, version: str):
     version with its benchmark recorded, once (a coach's version names the case it expected to gain on)."""
     actions = _skill_actions()
     return _skill_read(lambda: actions.benchmark(_query('connection') or '', role, version, json_object_body(app)),
+                       _SKILL_NOT_SAVED)
+
+
+@app.get('/agents/engineering/skills/<role>/template')
+@tracer.capture_method(capture_response=False)
+def get_engineering_skill_template(role: str):
+    """``?connection=`` → ``{connection, role, template: {version, label, newer}, current_version, record, diff}``
+    (7.50.00, "Template updated"): the role's bundled template, its record and its diff from the version the scope
+    runs; 404 for a role with no template."""
+    views = _skill_views()
+    return _skill_read(lambda: views.template(_query('connection') or '', role))
+
+
+@app.post('/agents/engineering/skills/<role>/template/adopt')
+@tracer.capture_method(capture_response=False)
+def adopt_engineering_skill_template(role: str):
+    """``?connection=`` ``{expected_current, template_version, reason?}`` → ``{connection, role, version, event,
+    announcement}``: the role's bundled template as the scope's next version, PROPOSED by the administrator calling
+    (provenance ``template``) and never applied by this route: an administrator accepts it as any other proposal.
+    409 when the scope's current version or the template changed since the screen read them, or when no newer
+    template is waiting."""
+    actions = _skill_actions()
+    return _skill_read(lambda: actions.adopt_template(_query('connection') or '', role, json_object_body(app)),
                        _SKILL_NOT_SAVED)
 
 

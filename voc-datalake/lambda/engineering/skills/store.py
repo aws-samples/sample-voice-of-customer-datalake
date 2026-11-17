@@ -658,15 +658,19 @@ class SkillStore:
 
     def propose_version(self, ws: str, connection: str, role: str, content: SkillContent, *, proposer: Actor,
                         reason: Reason, base: SkillRef | None, benchmark: Benchmark | None = None,
-                        expected_case: str = '', made_with: MadeWith | None = None) -> Proposed:
+                        expected_case: str = '', made_with: MadeWith | None = None,
+                        template_version: int = 0) -> Proposed:
         """``content`` as the scope's next version, proposed. ``base``: the version it was written on, as
         ``resolved`` named it then (None for the first one); accepting it needs that one still current.
         ``expected_case``: the benchmark case it should gain on, which the coach's proposal names (its recorded
         benchmark must name the same one). ``made_with``: the model that answered and the prompt's version, which
-        the coach's proposal records too (D4)."""
+        the coach's proposal records too (D4). ``template_version``: the bundled template a person adopted it from
+        (7.50.00, "Template updated"; its provenance is then ``template``), 0 for none."""
+        if template_version and proposer.kind != 'person':
+            raise SkillForbidden('only a person adopts a template: the coach proposes its own versions')
         return self._propose(ws, connection, role, content, proposer=proposer, reason=reason, base=base,
                              benchmark=benchmark or Benchmark(), expected_case=_expected_case(expected_case),
-                             made_with=made_with)
+                             made_with=made_with, template_version=template_version)
 
     def _coach_guard(self, ws: str, connection: str, role: str, proposer: Actor, reason: Reason) -> dict[str, Any]:
         """The coach's checks; its ``RUN#<run>#<failure>`` row, the one proposal for that run's failure."""
