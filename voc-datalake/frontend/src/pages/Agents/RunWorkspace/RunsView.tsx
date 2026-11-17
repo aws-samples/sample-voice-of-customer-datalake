@@ -11,6 +11,7 @@ import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { Hand, History } from 'lucide-react'
 import CursorPagesList from '../../../components/CursorPagesList/CursorPagesList'
 import { useCursorPages } from '../../../hooks/useCursorPages'
 import { RUN_LIST_STATUSES, runWorkspaceApi, runWorkspaceKeys } from '../../../api/engineeringRunWorkspaceApi'
@@ -20,6 +21,9 @@ import { monthsOffered } from '../spendView'
 import { runWorkspacePath } from './runWorkspacePaths'
 import { runsQueryOf } from './runsFilters'
 import { RunRequests } from './RunRequests'
+import Notice from '../../../components/Notice/Notice'
+import { currentMonth } from '../../../api/engineeringSpendApi'
+import { agentsPath } from '../agentsPaths'
 import type { ListedRun, RunsQuery } from '../../../api/engineeringRunWorkspaceApi'
 
 /** The engineering flows' names by id (the library's list, which the Workflows tab reads too). */
@@ -101,16 +105,40 @@ export function RunsView() {
   }, { replace: true })
   const copy = {
     loading: t('runWorkspace.loading'), loadFailed: t('runWorkspace.runs.loadFailed'), more: t('runWorkspace.runs.more'),
-    moreFailed: t('runWorkspace.runs.moreFailed'), refreshFailed: t('runWorkspace.runs.loadFailed'), empty: t('runWorkspace.runs.empty'),
+    moreFailed: t('runWorkspace.runs.moreFailed'), refreshFailed: t('runWorkspace.runs.loadFailed'),
   }
+  const empty = pages.isSuccess && rows.length === 0
   return (
-    <section className="space-y-4" aria-label={t('views.runs')}>
+    <section className="space-y-4" aria-label={t('shell.tabs.runs')}>
       <p className="text-sm text-muted max-w-prose">{t('runWorkspace.runs.hint')}</p>
       <RunRequests />
       <Filters query={query} flows={flows} onChange={change} />
-      <CursorPagesList query={pages} count={rows.length} copy={copy}>
-        <ul className="space-y-2">{rows.map((run) => <RunRow key={run.run_id} run={run} flows={flows} />)}</ul>
-      </CursorPagesList>
+      {empty
+        ? <RunsEmpty query={query} onShowAll={() => change({ status: '', flow: '' })} />
+        : (
+            <CursorPagesList query={pages} count={rows.length} copy={copy}>
+              <ul className="space-y-2">{rows.map((run) => <RunRow key={run.run_id} run={run} flows={flows} />)}</ul>
+            </CursorPagesList>
+          )}
     </section>
+  )
+}
+
+/**
+ * Nothing listed (7.52.00 C1, ux-agents-redesign part 4 §4.5): "Nothing needs you" under the Needs-a-person filter
+ * (Show all runs), "No runs match" under another filter or month (the list's copy of before), else "No runs yet"
+ * with the way to the automations that start them.
+ */
+function RunsEmpty({ query, onShowAll }: Readonly<{ query: RunsQuery; onShowAll: () => void }>) {
+  const { t } = useTranslation('agents')
+  if (query.status === 'needs_human') {
+    return <Notice variant="empty" icon={Hand} title={t('shell.empty.runsNeedsYou')} text={t('shell.empty.runsNeedsYouHint')} action={{ label: t('shell.empty.showAllRuns'), onClick: onShowAll }} />
+  }
+  if (query.status !== '' || query.flow !== '' || query.month !== currentMonth()) {
+    return <p className="text-sm text-muted">{t('runWorkspace.runs.empty')}</p>
+  }
+  return (
+    <Notice variant="empty" icon={History} title={t('shell.empty.runsTitle')} text={t('shell.empty.runsHint')}
+      action={{ label: t('shell.empty.goToAutomations'), to: agentsPath({ view: 'agents' }) }} />
   )
 }

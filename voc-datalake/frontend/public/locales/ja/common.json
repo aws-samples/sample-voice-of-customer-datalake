@@ -22,7 +22,7 @@
     "scrapers": "データソース",
     "memory": "メモリ",
     "company": "会社",
-    "agents": "自律エージェント",
+    "agents": "エージェントオーケストレーション",
     "agent": "エージェント",
     "admin": "管理",
     "connect": "接続",

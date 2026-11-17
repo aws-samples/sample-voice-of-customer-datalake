@@ -372,16 +372,16 @@
       "appLabel": "GitHub App",
       "oneApp": "GitHub App: {{app}}",
       "chooseApp": "App を選択",
-      "appHint": "App はインストールされているリポジトリだけを読み取ります。ほかのリポジトリには エージェント → 接続 でインストールしてください。",
+      "appHint": "App はインストールされているリポジトリだけを読み取ります。ほかのリポジトリには エージェントオーケストレーション → 接続 でインストールしてください。",
       "useToken": "代わりに Fine-grained トークンを使う",
       "tokenHint": "これらのリポジトリの Issues と Metadata を読み取りのみで許可した Fine-grained 個人アクセストークン。",
       "useApp": "代わりに GitHub App でサインインする",
-      "connectHint": "または エージェント → 接続 で GitHub を接続してください。デプロイの GitHub App が 2 クリックで作成され、このソースは接続したリポジトリの Issue を自動で読み取ります。",
+      "connectHint": "または エージェントオーケストレーション → 接続 で GitHub を接続してください。デプロイの GitHub App が 2 クリックで作成され、このソースは接続したリポジトリの Issue を自動で読み取ります。",
       "connect": "GitHub を接続",
       "managed_one": "GitHub 接続で管理されています: {{count, number}} 件のリポジトリの Issue。",
       "managed_other": "GitHub 接続で管理されています: {{count, number}} 件のリポジトリの Issue。",
-      "managedHint": "エージェント → 接続 で GitHub App を通じて接続した各リポジトリは自動で読み取られます。オフにするのもそこからです。",
-      "openConnections": "エージェント → 接続 を開く",
+      "managedHint": "エージェントオーケストレーション → 接続 で GitHub App を通じて接続した各リポジトリは自動で読み取られます。オフにするのもそこからです。",
+      "openConnections": "エージェントオーケストレーション → 接続 を開く",
       "manual": "手動で設定（詳細）"
     }
   },
@@ -1074,8 +1074,8 @@
       "errors_other": "過去 24 時間のエラー {{count, number}} 件"
     },
     "elsewhere": {
-      "cost": "コスト: エージェント › 費用",
-      "github": "GitHub: エージェント › 接続",
+      "cost": "コスト: エージェントオーケストレーション › 費用",
+      "github": "GitHub: エージェントオーケストレーション › 接続",
       "preferences": "自分の設定: アカウント › 設定"
     }
   },
@@ -1086,7 +1086,7 @@
       "preferences": "設定"
     },
     "places": {
-      "agents": "エージェント",
+      "agents": "エージェントオーケストレーション",
       "account": "アカウント"
     },
     "label": "設定を検索",

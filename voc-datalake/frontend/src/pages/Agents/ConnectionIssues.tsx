@@ -3,11 +3,15 @@
  * repository through the deployment's GitHub App reads its issues automatically into the deployment's GitHub Issues
  * source, and creates its `voc-agent` label, with no Data sources step.
  *
- * - {@link ConnectionIssues}, on each connection made through one of the deployment's Apps (Agents → Connections): the
- *   "Read this repository's issues" switch (on unless an administrator turned it off), whether the source reads it
- *   now or why not (switched off; the source signs in with a token, which an administrator manages under
- *   Administration → Data sources; another App; its 20 repositories taken; no source deployed here; not in its list
- *   yet, with "Read its issues now"), and its label;
+ * - {@link IssuesCell}, a repository row's Issues column on Agents → Connections (7.52.00, part 2 S4): on a connection
+ *   made through one of the deployment's Apps, the "Read this repository's issues" switch (on unless an administrator
+ *   turned it off; no confirmation to turn it off, the page's status line says so) with its state as visible text
+ *   ("Reading", "Not read", "Off"), and why the source does not read it when it does not (switched off; the source
+ *   signs in with a token, which an administrator manages under Administration → Data sources; another App; its 20
+ *   repositories taken; no source deployed here; not in its list yet, with "Read its issues now"). A GitLab
+ *   connection, or one with a pasted key, shows "—" (read only through the App: said to screen readers);
+ * - {@link LabelCell}, its Label column: the `voc-agent` label on the repository (`ok`), or that it could not be created
+ *   (`danger`: the row's primary is then Create label, the App's check trying again);
  * - {@link IssuesFollowLines}, under an installation's return and a Check installation: what followed for the source.
  *
  * @module pages/Agents/ConnectionIssues
@@ -16,10 +20,13 @@ import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import Switch from '../../components/Switch/Switch'
+import { CircleX, Tag } from 'lucide-react'
+import clsx from 'clsx'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
 import { deploymentSourcePath } from '../Settings/adminPaths'
 import { useConnectionError } from './connectionText'
+import { issuesOf, viaApp } from './connectionStatus'
 import type { ConnectionIssues as Issues, IssuesFollow, IssuesSkipReason, IssuesSourceView } from '../../api/issuesSourceApi'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 
@@ -27,25 +34,22 @@ import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 const ISSUES_CARD = deploymentSourcePath('github_issues')
 /** The most repositories the source reads (plugins/_shared/github_config.py MAX_REPOS). */
 const MAX_REPOSITORIES = 20
-
-/** A connection made through one of the deployment's GitHub Apps: the only kind whose issues follow it. */
-const followsIssues = (connection: EngineeringConnection): boolean =>
-  connection.host === 'github' && connection.credential.kind === 'app_reference'
+/** The `switch` recipe's track, as components/Switch draws it. */
+const TRACK = 'switch peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50'
 
 function SourcesLink() {
   const { t } = useTranslation('agents')
   return <Link className="link" to={ISSUES_CARD}>{t('connections.issues.openSources')}</Link>
 }
 
-/** Whether the source reads the repository now, or why not; `onReadNow`: a connection not in its list yet, read now. */
-function StatusLine({ issues, id, busy, onReadNow }: Readonly<{
+/** Why the source does not read the repository; `onReadNow`: a connection not in its list yet, read now. */
+function ReasonLine({ issues, id, busy, onReadNow }: Readonly<{
   issues: Issues; id: string; busy: boolean; onReadNow: () => void
 }>) {
   const { t } = useTranslation('agents')
-  if (issues.reading) return <p id={id} className="text-[12px] text-ok">{t('connections.issues.reading')}</p>
   const reason = issues.reason ?? 'unknown'
   return (
-    <p id={id} className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted">
+    <p id={id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
       <span>{t(`connections.issues.reasons.${reason}`, { limit: MAX_REPOSITORIES })}</span>
       {(reason === 'token' || reason === 'limit') && <SourcesLink />}
       {reason === 'pending' && (
@@ -56,41 +60,88 @@ function StatusLine({ issues, id, busy, onReadNow }: Readonly<{
   )
 }
 
-function LabelLine({ issues, label }: Readonly<{ issues: Issues; label: string }>) {
-  const { t } = useTranslation('agents')
-  if (issues.label === null) return null
-  const failed = issues.label === 'failed'
-  return <p className={failed ? 'text-[12px] text-warn' : 'text-[12px] text-muted'}>{t(`connections.issues.label.${issues.label}`, { label })}</p>
+/** What the switch's visible text says: the source reads it, it is switched on but not read, or it is off. */
+function stateOf(issues: Issues): 'reading' | 'notRead' | 'off' {
+  if (!issues.read) return 'off'
+  return issues.reading ? 'reading' : 'notRead'
 }
 
 /**
- * The connection's issues as `view` says them (nothing while it is not read, or does not name the connection): its
- * switch, written through `PUT …/connections/<id>/issues`, whose answer replaces the view.
+ * The switch, named "Read this repository's issues" (components/Switch's recipe; its visible text is the state, so
+ * the name is the input's own label), described by the reason line.
  */
-export function ConnectionIssues({ connection, view }: Readonly<{
+function ReadSwitch({ issues, busy, describedBy, onChange }: Readonly<{
+  issues: Issues; busy: boolean; describedBy: string | undefined; onChange: (read: boolean) => void
+}>) {
+  const { t } = useTranslation('agents')
+  return (
+    <label className="inline-flex items-center gap-2 text-[12px] text-text">
+      <span className="relative inline-flex flex-shrink-0 items-center">
+        <input type="checkbox" role="switch" className="peer sr-only" checked={issues.read} disabled={busy}
+          aria-label={t('connections.issues.switch')} aria-describedby={describedBy}
+          onChange={(event) => { onChange(event.target.checked) }} />
+        <span aria-hidden="true" className={clsx(TRACK, issues.read && 'switch-on')}><span className="switch-knob" /></span>
+      </span>
+      <span aria-hidden="true">{t(`connections.issues.state.${stateOf(issues)}`)}</span>
+    </label>
+  )
+}
+
+/** "—", with what it means said to a screen reader. */
+function NoIssues({ meaning }: Readonly<{ meaning: string | null }>) {
+  return (
+    <span className="text-[12px] text-muted">
+      <span aria-hidden="true">—</span>
+      {meaning !== null && <span className="sr-only">{meaning}</span>}
+    </span>
+  )
+}
+
+/**
+ * The connection's Issues column, as `view` says it: written through `PUT …/connections/<id>/issues`, whose answer
+ * replaces the view. "—" while the view is not read, or does not name the connection, or for a connection whose issues
+ * do not follow it.
+ */
+export function IssuesCell({ connection, view }: Readonly<{
   connection: EngineeringConnection; view: IssuesSourceView | undefined
 }>) {
   const { t } = useTranslation('agents')
   const errorText = useConnectionError()
   const queryClient = useQueryClient()
-  const statusId = useId()
+  const reasonId = useId()
   const change = useMutation({
     mutationFn: (read: boolean) => issuesSourceApi.setRead(connection.connection_id, read),
     onSuccess: (answer) => { queryClient.setQueryData(issuesSourceKeys.view(), answer) },
   })
-  const issues = view?.connections.find((entry) => entry.connection_id === connection.connection_id)
-  if (view === undefined || issues === undefined || !followsIssues(connection)) return null
+  if (connection.host === 'gitlab') return <NoIssues meaning={t('connections.issues.githubOnly')} />
+  if (!viaApp(connection)) return <NoIssues meaning={t('connections.issues.appOnly')} />
+  const issues = issuesOf(view, connection.connection_id)
+  if (view === undefined || issues === undefined) return <NoIssues meaning={null} />
   return (
     <div className="space-y-1" data-testid={`connection-issues-${connection.connection_id}`}>
       {view.deployed && (
-        <Switch label={t('connections.issues.switch')} checked={issues.read} disabled={change.isPending}
-          describedBy={statusId} onChange={(read) => { change.mutate(read) }} />
+        <ReadSwitch issues={issues} busy={change.isPending} describedBy={issues.reading ? undefined : reasonId}
+          onChange={(read) => { change.mutate(read) }} />
       )}
-      <StatusLine issues={issues} id={statusId} busy={change.isPending} onReadNow={() => { change.mutate(true) }} />
-      <LabelLine issues={issues} label={view.label} />
+      {!issues.reading && (
+        <ReasonLine issues={issues} id={reasonId} busy={change.isPending} onReadNow={() => { change.mutate(true) }} />
+      )}
       {change.isError && <p role="alert" className="text-[12px] text-danger">{errorText(change.error)}</p>}
     </div>
   )
+}
+
+/** The connection's Label column: the label on the repository, or that it could not be created; "—" when unsaid. */
+export function LabelCell({ connection, view }: Readonly<{
+  connection: EngineeringConnection; view: IssuesSourceView | undefined
+}>) {
+  const { t } = useTranslation('agents')
+  const issues = viaApp(connection) ? issuesOf(view, connection.connection_id) : undefined
+  if (view === undefined || issues === undefined || issues.label === null) return <NoIssues meaning={null} />
+  if (issues.label === 'failed') {
+    return <IconBadge toneClass="badge-danger" icon={CircleX}>{t('connections.issues.labelFailed')}</IconBadge>
+  }
+  return <IconBadge toneClass="badge-ok" icon={Tag}>{view.label}</IconBadge>
 }
 
 const LABEL = 'voc-agent'

@@ -30,6 +30,16 @@ describe('the list\'s views', () => {
     expect(read(pathname, search)?.replaceWith).toStrictEqual({ pathname: to, search: kept })
   })
 
+  it('are Agent orchestration\'s tabs, in their order (7.52.00: operate, build, then the set-up-once plumbing)', () => {
+    expect(AGENTS_VIEWS).toStrictEqual(['agents', 'runs', 'skills', 'spend', 'workflows', 'registry', 'connections'])
+  })
+
+  it('leaves every place under the Registry to its page (7.52.00 C3), never replacing it', () => {
+    expect([read('/agents/registry'), read('/agents/registry/gates'), read('/agents/registry/cards/fixer-careful/v/2')])
+      .toStrictEqual(Array.from({ length: 3 }, () => ({ place: { view: 'registry', role: null, version: null }, replaceWith: null })))
+    expect(agentsPath({ view: 'registry' })).toBe('/agents/registry')
+  })
+
   it('reads no view from the query (no old `?tab=` link is redirected)', () => {
     expect(read('/agents', '?tab=spend')).toStrictEqual({ place: { view: 'agents', role: null, version: null }, replaceWith: null })
     expect(AGENTS_VIEWS.some((view: string) => view === 'workspace')).toBe(false)

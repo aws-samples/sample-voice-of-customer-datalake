@@ -34,7 +34,13 @@ vi.mock('../../../runtimeConfig', (importOriginal) =>
   import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
 
 const { default: SetupGuide } = await import('./SetupGuide')
-const { SetupIntro } = await import('./SetupGuideEntry')
+const { SetupPrompt } = await import('./SetupGuideEntry')
+const { useOffersSetupPrompt } = await import('./useSetupGuide')
+
+/** The Automations list's Engineering group's prompt, as it reads its offer (no automation yet). */
+function SetupIntro() {
+  return <SetupPrompt progress={useOffersSetupPrompt([])} />
+}
 const { engineeringModule } = await import('@test/engineeringModule')
 
 const NOTHING = Object.fromEntries(SETUP_STEP_IDS.map((step) => [step, 'pending']))
@@ -81,6 +87,7 @@ function routes(extra: Record<string, RouteHandler> = {}, agents: unknown[] = [T
     'GET /agents/engineering/github-apps': () => ({ apps: [APP], limit: 5 }),
     'GET /agents/engineering/setup': () => progress(),
     [ISSUES_SOURCE]: () => issuesView(),
+    'GET /workflows': () => ({ items: [{ workflow_id: 'wf_1', name: 'Bug flow', revision: 1, kind: 'engineering', monthly_budget_usd: 50 }] }),
     'GET /workflows/wf_1': () => workflowView(1, { ...template.definition, budget: { monthly_usd: 50 } },
       { kind: 'engineering', monthly_budget_usd: 50 }),
     'GET /agents/engineering/readiness?automation=ag_17a9e5c3b2d0': () => ({
@@ -261,12 +268,12 @@ describe('the guide', () => {
     expect(await within(step).findByRole('alert')).toHaveTextContent('Another administrator changed the guide meanwhile.')
   })
 
-  it('shows an automation\'s control and readiness open on its step', async () => {
+  it('shows an automation\'s row (its state, what to fix, Set up as the step\'s action) and its readiness open on its step', async () => {
     routes()
     renderGuide('/agents/setup/bug-fixer')
     const step = await screen.findByTestId('setup-step')
-    expect(within(step).getByRole('link', { name: 'Open Bug fixer' })).toHaveAttribute('href', '/agents/ag_b0f1e2d3c4a5')
-    expect(await within(step).findByRole('switch', { name: 'Enabled' })).toBeDisabled()
+    expect(within(step).getByRole('link', { name: 'Bug fixer' })).toHaveAttribute('href', '/agents/ag_b0f1e2d3c4a5')
+    expect(await within(step).findByRole('button', { name: 'Set up Bug fixer' })).toHaveClass('btn-primary')
     expect(await within(step).findByTestId('readiness-ci_attestation')).toBeVisible()
     expect(within(step).getByRole('region', { name: 'Readiness for Bug fixer, once set up' })).toBeInTheDocument()
   })
@@ -317,38 +324,38 @@ describe('the first visit\'s offer', () => {
   const renderIntro = () => renderWithQueryClient(
     <TestRouter initialEntries={['/agents']}>
       <Routes>
-        <Route path="/agents" element={<SetupIntro agents={[]} />} />
+        <Route path="/agents" element={<SetupIntro />} />
         <Route path="/agents/setup" element={<p>The guide</p>} />
       </Routes>
     </TestRouter>,
   )
 
-  it('offers Help me set up while nothing is set up, saving the choice, then opens the guide', async () => {
+  it('offers Start the setup guide while nothing is set up, saving the choice, then opens the guide', async () => {
     routes({
       'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
       'PUT /agents/engineering/setup': () => progress({}, { intro: 'started', revision: 3 }),
     })
     renderIntro()
-    await userEvent.click(await screen.findByRole('button', { name: 'Help me set up' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the setup guide' }))
     expect(await screen.findByText('The guide')).toBeInTheDocument()
     expect(sentFetchApiBody('/agents/engineering/setup', 'PUT')).toStrictEqual({ revision: 2, intro: 'started' })
   })
 
-  it('goes on Skip, and is not offered once a choice is made or anything is set up', async () => {
+  it('goes on Not now, and is not offered once a choice is made or anything is set up', async () => {
     routes({
       'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
       'PUT /agents/engineering/setup': () => progress({}, { intro: 'skipped', revision: 3 }),
     })
     renderIntro()
-    await userEvent.click(await screen.findByRole('button', { name: 'Skip' }))
-    await waitFor(() => { expect(screen.queryByTestId('setup-intro')).toBeNull() })
+    await userEvent.click(await screen.findByRole('button', { name: 'Not now' }))
+    await waitFor(() => { expect(screen.queryByTestId('setup-prompt')).toBeNull() })
     expect(sentFetchApiBody('/agents/engineering/setup', 'PUT')).toStrictEqual({ revision: 2, intro: 'skipped' })
   })
 
   it('is not offered while a GitHub connection is stored', async () => {
     routes()
     renderIntro()
-    await waitFor(() => { expect(screen.queryByTestId('setup-intro')).toBeNull() })
-    expect(screen.queryByRole('button', { name: 'Help me set up' })).toBeNull()
+    await waitFor(() => { expect(screen.queryByTestId('setup-prompt')).toBeNull() })
+    expect(screen.queryByRole('button', { name: 'Start the setup guide' })).toBeNull()
   })
 })

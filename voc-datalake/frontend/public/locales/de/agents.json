@@ -1,15 +1,155 @@
 {
   "nav": {
-    "label": "Autonome Agenten",
+    "label": "Agenten-Orchestrierung",
     "needsDecision_one": "{{count, number}} Agent braucht eine Entscheidung",
     "needsDecision_other": "{{count, number}} Agenten brauchen eine Entscheidung"
   },
+  "shell": {
+    "title": "Agenten-Orchestrierung",
+    "subtitle": "Agenten, die an Ihrem Feedback und Ihren GitHub-Issues arbeiten, innerhalb der Budgets, die Sie festlegen.",
+    "create": "Neue Automatisierung",
+    "createTitle": "Produkt-Automatisierung erstellen",
+    "createSubmit": "Automatisierung erstellen",
+    "setupGuideProgress": "Einrichtungsassistent · {{done, number}} von {{total, number}} erledigt",
+    "tabs": {
+      "label": "Bereiche der Agenten-Orchestrierung",
+      "agents": "Automatisierungen",
+      "runs": "Läufe",
+      "skills": "Skills",
+      "spend": "Ausgaben",
+      "workflows": "Flows",
+      "registry": "Registry",
+      "connections": "Verbindungen"
+    },
+    "empty": {
+      "runsTitle": "Noch keine Läufe.",
+      "runsHint": "Läufe erscheinen hier, sobald eine Automatisierung einen startet.",
+      "goToAutomations": "Zu den Automatisierungen",
+      "runsNeedsYou": "Nichts wartet auf Sie.",
+      "runsNeedsYouHint": "Läufe, die auf die Entscheidung einer Person warten, erscheinen hier.",
+      "showAllRuns": "Alle Läufe anzeigen"
+    },
+    "counts": {
+      "runs_one": "{{count, number}} wartet auf Sie",
+      "runs_other": "{{count, number}} warten auf Sie",
+      "skills_one": "{{count, number}} zu prüfen",
+      "skills_other": "{{count, number}} zu prüfen"
+    }
+  },
+  "automations": {
+    "state": {
+      "needs_setup": "Einrichtung nötig",
+      "cant_run": "Kann nicht laufen",
+      "paused": "Pausiert",
+      "ready": "Bereit",
+      "enabled": "Aktiviert",
+      "loading": "Status wird gelesen"
+    },
+    "unchecked": "Konnte nicht geprüft werden",
+    "reason": {
+      "connection_gone": "Seine Repository-Verbindung wurde entfernt.",
+      "monthly_cap": "Monatslimit erreicht: Läufe warten bis zum nächsten Monat.",
+      "daily_cap": "Tageslimit für Läufe erreicht."
+    },
+    "actions": {
+      "set_up": "Einrichten",
+      "fix": "Beheben",
+      "resume": "Fortsetzen",
+      "enable": "Aktivieren",
+      "run_now": "Jetzt ausführen",
+      "review": "Prüfen"
+    },
+    "menu": {
+      "label": "Aktionen für {{name}}",
+      "open": "Öffnen",
+      "editSettings": "Einstellungen bearbeiten",
+      "changeSetup": "Einrichtung ändern…",
+      "rename": "Umbenennen…",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "turnOff": "Ausschalten",
+      "runNow": "Jetzt ausführen",
+      "allRuns": "Alle Läufe",
+      "delete": "Löschen…",
+      "archive": "Archivieren…"
+    },
+    "columns": {
+      "automation": "Automatisierung",
+      "status": "Status",
+      "lastRun": "Letzter Lauf",
+      "usage": "Nutzung"
+    },
+    "activity": {
+      "none": "Noch keine Läufe",
+      "running": "Läuft · gestartet {{when}}",
+      "ended": "{{status}} · {{when}}",
+      "needsDecision": "Braucht Ihre Entscheidung",
+      "spentOf": "{{amount}} von {{budget}}",
+      "callsOf": "{{calls}} von {{cap}} Modellaufrufen",
+      "calls_one": "{{calls}} Modellaufruf",
+      "calls_other": "{{calls}} Modellaufrufe",
+      "scheduledToday_one": "{{count, number}} geplanter Lauf heute",
+      "scheduledToday_other": "{{count, number}} geplante Läufe heute"
+    },
+    "notice": {
+      "enabled": "{{name}} aktiviert.",
+      "enabledRunsAsYou": "{{name}} aktiviert. Läuft in Ihrem Namen.",
+      "paused": "{{name}} pausiert: Kein Lauf startet von selbst, bis Sie fortsetzen.",
+      "resumed": "{{name}} fortgesetzt.",
+      "turnedOff": "{{name}} ausgeschaltet.",
+      "started": "Ein Lauf von {{name}} wurde gestartet.",
+      "saved": "Die Einrichtung von {{name}} wurde gespeichert."
+    },
+    "pauseFailed": "Die Automatisierung konnte nicht pausiert oder fortgesetzt werden.",
+    "groups": {
+      "engineering": {
+        "title": "Engineering-Automatisierungen",
+        "hint": "Ein markiertes GitHub-Issue wird zu einem Pull Request, den eine Person prüft: Triage → Fix oder Umsetzung."
+      },
+      "product": {
+        "title": "Produkt-Automatisierungen",
+        "hint": "Neues Feedback wird zu einem recherchierten Projekt: Personas, PR/FAQ, PRD und ein Prototyp."
+      }
+    },
+    "blocked": {
+      "noConnection": "Diese Automatisierungen brauchen eine GitHub-Verbindung.",
+      "connect": "GitHub verbinden"
+    },
+    "firstRun": {
+      "title": "Den Bug-Kreislauf einrichten",
+      "body": "Verbinden Sie GitHub und bestätigen Sie die CI des Repositorys, dann schalten Sie Triage, Fixen und Umsetzen ein. Jeder Schritt kann warten.",
+      "start": "Einrichtungsassistent starten",
+      "skip": "Nicht jetzt"
+    },
+    "needsYou": {
+      "review": "Prüfen",
+      "decision": "Braucht Ihre Entscheidung",
+      "decisionLine": "{{name}} · sein letzter Lauf wartet auf Sie · {{when}}",
+      "waiting": "Wartet auf Prüfung",
+      "title_one": "Wartet auf Sie ({{count, number}})",
+      "title_other": "Wartet auf Sie ({{count, number}})",
+      "skillsLine_one": "Skills · {{count, number}} Version zu prüfen",
+      "skillsLine_other": "Skills · {{count, number}} Versionen zu prüfen"
+    },
+    "drawer": {
+      "description": "Sie läuft in Ihrem Namen, auf dem Feedback der Bereitstellung.",
+      "repository": "Repository",
+      "noRepository": "Noch kein nutzbares Repository",
+      "changeRepository": "Unter Verbindungen ändern",
+      "language": "Sprache",
+      "budget": "Monatsbudget (USD)",
+      "readiness": "Bevor sie laufen kann",
+      "openConnections": "Verbindungen öffnen",
+      "enableWaits_one": "Aktivieren wartet auf {{count, number}} Korrektur.",
+      "enableWaits_other": "Aktivieren wartet auf {{count, number}} Korrekturen."
+    },
+    "toFix_one": "{{count, number}} zu beheben",
+    "toFix_other": "{{count, number}} zu beheben",
+    "warnings_one": "{{count, number}} Warnung",
+    "warnings_other": "{{count, number}} Warnungen"
+  },
   "common": {
     "cancel": "Abbrechen"
-  },
-  "status": {
-    "enabled": "Aktiviert",
-    "disabled": "Deaktiviert"
   },
   "scope": {
     "all": "Alle Kategorien",
@@ -17,39 +157,19 @@
     "sources": "Nur diese Quellen",
     "sourcesHint": "Keine auswählen, um alle Quellen zu beobachten. Ein Schwellenwert-Auslöser zählt alle Quellen und wird daher mit Quellen nicht angeboten."
   },
-  "views": {
-    "label": "Bereiche der Agentenseite",
-    "agents": "Agenten",
-    "workflows": "Workflows",
-    "spend": "Ausgaben",
-    "connections": "Verbindungen",
-    "skills": "Skills",
-    "runs": "Läufe"
-  },
   "list": {
-    "title": "Autonome Agenten",
-    "subtitle": "Agenten beobachten das Feedback in ihrem Bereich und führen bei einem Auslöser einen Workflow aus: Recherche, Personas, PR/FAQ, PRD und ein Prototyp, von Personas geprüft, bevor ein Projekt übergeben wird.",
-    "create": "Neuer Agent",
-    "createTitle": "Autonomen Agenten erstellen",
     "createHint": "Er wird deaktiviert mit einer eigenen, bearbeitbaren Kopie des Workflows „Bewertungen → Prototyp“ erstellt. Konfigurieren Sie Auslöser und Workflow und aktivieren Sie ihn dann.",
     "createFailed": "Der Agent konnte nicht erstellt werden.",
-    "emptyTitle": "Noch keine autonomen Agenten",
+    "emptyTitle": "Noch keine Automatisierungen",
     "emptyAdmin": "Erstellen Sie einen, um neues Feedback automatisch in recherchierte Projekte und Prototypen umzuwandeln.",
-    "emptyUser": "Ein Administrator hat noch keinen für Sie sichtbaren Agenten eingerichtet.",
+    "emptyUser": "Ein Administrator hat noch keine Automatisierung eingerichtet, die Sie sehen können.",
     "loadFailed": "Agenten konnten nicht geladen werden.",
-    "spend": "{{runs, number}} geplante Läufe heute · {{calls, number}} Modellaufrufe diesen Monat",
-    "spendHint": "Manuelle Läufe zählen nicht zum täglichen Limit geplanter Läufe.",
-    "needsDecision": "Wartet auf Ihre Entscheidung",
-    "reviewRun": "Lauf von {{name}} prüfen",
     "rename": "Umbenennen",
-    "renameNamed": "{{name}} umbenennen",
-    "renameTitle": "Agent umbenennen",
+    "renameTitle": "Diese Automatisierung umbenennen",
     "renameFailed": "Der Agent konnte nicht umbenannt werden.",
     "delete": "Löschen",
-    "deleteNamed": "{{name}} löschen",
-    "deleteTitle": "Diesen Agenten löschen?",
-    "deleteMessage": "„{{name}}“ läuft nicht mehr und verschwindet aus Ihren Agenten. Frühere Läufe sowie die erstellten Projekte und Dokumente bleiben erhalten. Ein laufender Lauf wird zuerst beendet.",
-    "deleteFailed": "Der Agent konnte nicht gelöscht werden."
+    "deleteTitle": "Diese Automatisierung löschen?",
+    "deleteMessage": "„{{name}}“ läuft nicht mehr und verschwindet aus Ihren Automatisierungen. Ihre bisherigen Läufe sowie die erstellten Projekte und Dokumente bleiben erhalten. Ein laufender Lauf wird zuerst beendet."
   },
   "library": {
     "title": "Workflow-Bibliothek",
@@ -99,28 +219,49 @@
     "public": "Öffentlich"
   },
   "detail": {
-    "back": "Alle Agenten",
+    "back": "Agenten-Orchestrierung",
     "tabs": "Agentenbereiche",
-    "enabledLabel": "Aktiviert",
     "toggleFailed": "Der Agent konnte nicht aktiviert oder deaktiviert werden.",
     "save": "Speichern",
     "saved": "Gespeichert",
     "saveFailed": "Die Änderungen konnten nicht gespeichert werden.",
     "discard": "Änderungen verwerfen",
     "archive": "Archivieren",
-    "archiveTitle": "Diesen Agenten archivieren?",
+    "archiveTitle": "Diese Automatisierung archivieren?",
     "archiveMessage": "Er wird nicht mehr ausgeführt und verschwindet aus der Liste. Von ihm erstellte Projekte bleiben erhalten.",
-    "notFound": "Dieser Agent existiert nicht oder ist für Sie nicht sichtbar.",
-    "stats": "{{runs, number}} Läufe insgesamt · {{today, number}} heute geplant · {{calls, number}} Modellaufrufe diesen Monat"
+    "notFound": "Diese Automatisierung existiert nicht oder Sie können sie nicht sehen.",
+    "backToAutomations": "Automatisierungen",
+    "tab": {
+      "flow": "Flow",
+      "budgetModels": "Budget & Modelle"
+    },
+    "meta": {
+      "actsAs": "Handelt als {{name}}, der sie aktiviert hat",
+      "deploymentFeedback": "Feedback der Bereitstellung",
+      "runs_one": "{{count, number}} Lauf",
+      "runs_other": "{{count, number}} Läufe",
+      "today_one": "{{count, number}} heute geplant",
+      "today_other": "{{count, number}} heute geplant",
+      "calls_one": "{{calls}} Modellaufruf in diesem Monat",
+      "calls_other": "{{calls}} Modellaufrufe in diesem Monat"
+    },
+    "flow": {
+      "another": "Anderen Flow ausführen",
+      "edit": "In Flows bearbeiten",
+      "revision": "Revision {{revision, number}}",
+      "readOnly": "Hier nur lesbar: Ein Flow kann von mehreren Automatisierungen genutzt werden, darum wird er unter Flows geändert.",
+      "loadFailed": "Der Flow konnte nicht geladen werden.",
+      "unreadableTitle": "Dieser Flow kann nicht angezeigt werden",
+      "unreadable": "Seine gespeicherte Definition konnte nicht gelesen werden.",
+      "switchMessage": "{{name}} führt ab dem nächsten Lauf „{{flow}}“ aus."
+    },
+    "runsEmptyHint": "Läufe erscheinen hier, sobald sie einen startet: durch einen Auslöser oder wenn jemand „Jetzt ausführen“ drückt."
   },
   "tabs": {
     "settings": "Einstellungen",
     "triggers": "Auslöser",
     "personas": "Personas",
-    "instructions": "Anweisungen",
-    "models": "Modelle",
     "budget": "Budget",
-    "workflow": "Workflow",
     "runs": "Läufe"
   },
   "triggers": {
@@ -458,12 +599,8 @@
     "clear": "Arbeitsfläche leeren",
     "clearTitle": "Arbeitsfläche leeren?",
     "clearMessage": "Alle Schritte, Pfeile und Schleifen werden aus dem Entwurf entfernt, damit Sie den Workflow neu aufbauen können. Gespeichert wird erst, wenn Sie speichern.",
-    "savedAsAgent": "Gespeichert als „{{name}}“. Dieser Agent führt ihn jetzt aus.",
-    "savedAsSwitchFailed": "Die Kopie wurde gespeichert, aber dieser Agent konnte nicht darauf umgestellt werden. Wählen Sie sie in den Einstellungen des Agenten.",
     "savedAsOpened": "Gespeichert als „{{name}}“.",
-    "switchLabel": "Workflow",
     "switchTitle": "Workflow wechseln?",
-    "switchMessage": "Ihre ungespeicherten Änderungen an {{name}} gehen verloren.",
     "switchConfirm": "Workflow wechseln",
     "switched": "Dieser Agent führt jetzt {{name}} aus.",
     "switchFailed": "Der Agent konnte nicht auf diesen Workflow umgestellt werden.",
@@ -775,7 +912,7 @@
     }
   },
   "spend": {
-    "hint": "Was die Engineering-Agenten ausgegeben haben, laut Ausgabenbuch: Kosten, Tokens und MicroVM-Zeit jeder Sitzung, wie die Laufzeitumgebung sie gemessen hat. Die Kosten sind Sitzungszeit und Modell-Tokens, jeweils zu den Preisen der Bereitstellung. Monate in UTC.",
+    "hint": "Was die Engineering-Automatisierungen in diesem Monat ausgegeben haben, zu den Preisen dieser Bereitstellung (UTC).",
     "month": "Monat",
     "groupBy": "Gruppieren nach",
     "by": {
@@ -803,7 +940,6 @@
     "none": "Nicht erfasst",
     "otherModels": "Andere Modelle",
     "workflowRuns": "{{name}}: Läufe anzeigen",
-    "inRun": "in Lauf {{run}}",
     "onlyWorkflow": "Workflow: {{name}}",
     "allWorkflows": "Alle Workflows anzeigen",
     "tableCaption": "Ausgaben im {{month}}, gruppiert nach: {{by}}",
@@ -827,31 +963,30 @@
       "listLabel": "GitHub Apps",
       "ownerUser": "{{owner}} (persönliches Konto)",
       "ownerOrganization": "{{owner}} (Organisation)",
-      "webhookOn": "Issue-Ereignisse werden hierher zugestellt",
+      "webhookOn": "Sendet Issue-Ereignisse",
       "webhookOff": "Kein Webhook",
-      "connections_one": "{{count, number}} Verbindung",
-      "connections_other": "{{count, number}} Verbindungen",
       "notInstalled": "Nicht installiert",
-      "created": "Erstellt am {{when}} von {{who}}",
       "openOnGitHub": "{{slug}} auf GitHub öffnen",
-      "install": "Installieren",
-      "installMore": "Weitere installieren",
-      "installLabel": "{{slug}} auf GitHub installieren",
       "check": "Installation prüfen",
-      "checkLabel": "Installation von {{slug}} prüfen",
       "checkCovered": "Die Installation deckt jede Verbindung von {{slug}} ab ({{repositories, number}} Repositorys installiert).",
       "checkMissing": "Nicht mehr von der Installation abgedeckt: {{connections}}. Ihre Läufe werden abgelehnt, bis die App wieder auf diesen Repositorys installiert ist oder die Verbindungen entfernt sind.",
-      "remove": "Entfernen",
-      "removeLabel": "{{slug}} entfernen",
       "removeTitle": "{{slug}} entfernen?",
       "removeMessage": "Ihr Schlüssel und ihr Webhook-Secret werden aus diesem Deployment gelöscht. Die App selbst bleibt auf GitHub: Löschen Sie sie auch in den GitHub-Einstellungen.",
       "removeConfirm": "App entfernen",
       "removed": "{{slug}} ist aus diesem Deployment entfernt. Löschen Sie sie auch in den GitHub-Einstellungen.",
-      "via": "über {{slug}}"
+      "menuLabel": "Aktionen für {{slug}}",
+      "removeApp": "App entfernen…",
+      "addRepositories": "Repositorys hinzufügen",
+      "installOnGitHub": "Auf GitHub installieren",
+      "checked": "Geprüft {{when}}",
+      "reinstall": "Auf GitHub neu installieren",
+      "checking": "Installation wird geprüft…",
+      "repositoriesLabel": "Repositorys über {{slug}}",
+      "installed_one": "Installiert · {{count, number}} Repository",
+      "installed_other": "Installiert · {{count, number}} Repositorys"
     },
     "issues": {
       "switch": "Issues dieses Repositorys lesen",
-      "reading": "Issues werden automatisch gelesen.",
       "reasons": {
         "off": "Seine Issues werden nicht gelesen: Der Schalter ist aus.",
         "token": "Die GitHub-Issues-Quelle meldet sich mit einem Token an: Fügen Sie dieses Repository unter Administration → Datenquellen hinzu.",
@@ -882,15 +1017,23 @@
         },
         "scheduleOff": "Der Zeitplan der GitHub-Issues-Quelle ist aus: Schalten Sie ihn unter Administration → Datenquellen ein.",
         "error": "Die GitHub-Issues-Quelle konnte nicht automatisch eingerichtet werden: {{error}}"
-      }
+      },
+      "state": {
+        "reading": "Wird gelesen",
+        "notRead": "Nicht gelesen",
+        "off": "Aus"
+      },
+      "githubOnly": "Nur GitHub",
+      "appOnly": "Nur über die GitHub App des Deployments gelesen",
+      "labelFailed": "Nicht erstellt"
     },
     "githubReturn": {
-      "back": "Zurück zu Agenten → Verbindungen",
+      "back": "Zurück zu Agenten-Orchestrierung → Verbindungen",
       "createdTitle": "GitHub App erstellt",
       "creating": "Schlüssel der App wird gespeichert…",
       "createdBody": "{{slug}} ist erstellt und ihr Schlüssel gespeichert. Installieren Sie sie jetzt auf den Repositorys, an denen die Agenten arbeiten dürfen.",
       "installOnGitHub": "Auf GitHub installieren",
-      "noCode": "Diese Seite braucht den Link, den GitHub nach dem Erstellen der App zurückschickt. Beginnen Sie erneut unter Agenten → Verbindungen.",
+      "noCode": "Diese Seite braucht den Link, den GitHub nach dem Erstellen der App zurückschickt. Beginnen Sie erneut unter Agenten-Orchestrierung → Verbindungen.",
       "installedTitle": "GitHub App installiert",
       "installing": "Verbindungen werden gespeichert…",
       "installedBody_one": "{{count, number}} Repository über {{slug}} verbunden.",
@@ -905,16 +1048,13 @@
         "limit": "{{repository}}: über dem Verbindungslimit",
         "not_saved": "{{repository}}: konnte nicht gespeichert werden"
       },
-      "approval": "Ein Inhaber muss die Installation genehmigen. Danach öffnen Sie Agenten → Verbindungen und speichern ihre Repositorys mit „Weitere installieren“ an der App.",
-      "noState": "GitHub hat Sie ohne den Link dieses Deployments zurückgeschickt, daher wurde nichts gespeichert. Öffnen Sie Agenten → Verbindungen und verwenden Sie „Installation prüfen“ oder „Weitere installieren“ an der App."
+      "approval": "Ein Inhaber muss die Installation genehmigen. Danach öffnen Sie Agenten-Orchestrierung → Verbindungen und speichern ihre Repositorys mit „Repositorys hinzufügen“ an der App.",
+      "noState": "GitHub hat Sie ohne den Link dieses Deployments zurückgeschickt, daher wurde nichts gespeichert. Öffnen Sie Agenten-Orchestrierung → Verbindungen und verwenden Sie „Installation prüfen“ oder „Repositorys hinzufügen“ an der App."
     },
     "title": "Repository-Verbindungen",
-    "intro": "Die Engineering-Agenten erreichen ein Repository über eine Verbindung: das Repository, seinen Standard-Branch und eine für sie gespeicherte Zugangsberechtigung. Eine gespeicherte Zugangsberechtigung wird nie wieder angezeigt, niemandem.",
-    "add": "Verbindung hinzufügen",
+    "intro": "Wo die Engineering-Agenten arbeiten: jedes Repository, wie sie es erreichen und ob sie pushen dürfen.",
     "limitReached": "Diese Bereitstellung fasst höchstens {{limit, number}} Verbindungen. Entfernen Sie eine, um eine weitere hinzuzufügen.",
     "loadFailed": "Die Repository-Verbindungen konnten nicht geladen werden.",
-    "emptyTitle": "Noch keine Repository-Verbindungen",
-    "emptyHint": "Fügen Sie eine hinzu, damit die Engineering-Agenten an einem Repository arbeiten können.",
     "branch": "Standard-Branch: {{branch}}",
     "kind": "GitHub App",
     "kindToken": "GitLab-Projektzugriffstoken",
@@ -971,10 +1111,6 @@
     "notSetHint": "Die gespeicherte Zugangsberechtigung fehlt: Bearbeiten Sie die Verbindung und speichern Sie sie erneut mit ihrer Zugangsberechtigung.",
     "updated": "Geändert {{when}} von {{who}}",
     "unknownEditor": "unbekannt",
-    "edit": "Bearbeiten",
-    "editLabel": "{{repository}} bearbeiten",
-    "remove": "Entfernen",
-    "removeLabel": "{{repository}} entfernen",
     "created": "{{repository}} wurde hinzugefügt.",
     "saved": "{{repository}} wurde gespeichert.",
     "removed": "{{repository}} wurde entfernt.",
@@ -1048,9 +1184,6 @@
       "voidedRemoved": "Ungültig geworden, als die Verbindung entfernt wurde: Bestätigen Sie ihre CI erneut.",
       "unknownPerson": "eine Administratorin oder ein Administrator",
       "attest": "CI bestätigen",
-      "attestLabel": "CI von {{repository}} bestätigen",
-      "withdrawAction": "CI zurückziehen",
-      "withdrawLabel": "CI-Bestätigung von {{repository}} zurückziehen",
       "recorded": "Die CI-Bestätigung von {{repository}} ist gespeichert.",
       "withdrawn": "Die CI-Bestätigung von {{repository}} ist zurückgezogen.",
       "points": {
@@ -1076,6 +1209,70 @@
         "message": "Der nächste Push oder Pull Request der Agenten auf {{repository}} wird abgelehnt, bis eine Administratorin oder ein Administrator die CI erneut bestätigt.",
         "confirm": "Bestätigung zurückziehen"
       }
+    },
+    "checkNow": "Jetzt prüfen",
+    "summary": {
+      "connected": "Verbunden",
+      "attention": "Handlungsbedarf",
+      "issuesRead": "Issues werden automatisch gelesen",
+      "through_one": "{{count, number}} Repository über {{slug}}",
+      "through_other": "{{count, number}} Repositorys über {{slug}}",
+      "others_one": "{{count, number}} weitere Verbindung",
+      "others_other": "{{count, number}} weitere Verbindungen",
+      "ciNeeded_one": "{{count, number}} braucht eine CI-Bestätigung, bevor die Agenten pushen",
+      "ciNeeded_other": "{{count, number}} brauchen eine CI-Bestätigung, bevor die Agenten pushen"
+    },
+    "columns": {
+      "repository": "Repository",
+      "ci": "CI",
+      "issues": "Issues",
+      "label": "Label"
+    },
+    "others": {
+      "title": "Weitere Verbindungen",
+      "hint": "Verbunden mit einem eingefügten GitHub-App-Schlüssel oder einem GitLab-Token."
+    },
+    "actions": {
+      "storeKey": "Schlüssel speichern",
+      "replaceToken": "Token ersetzen",
+      "createLabel": "Label erstellen"
+    },
+    "menu": {
+      "label": "Aktionen für {{repository}}",
+      "changeBranch": "Standard-Branch ändern…",
+      "edit": "Verbindung bearbeiten…",
+      "attest": "CI bestätigen…",
+      "withdraw": "CI-Bestätigung zurückziehen…",
+      "remove": "Verbindung entfernen…"
+    },
+    "details": {
+      "button": "Verbindungsdetails für {{repository}}",
+      "title": "Verbindungsdetails",
+      "connectionId": "Verbindungs-ID",
+      "appId": "GitHub-App-ID",
+      "installationId": "Installations-ID",
+      "branch": "Standard-Branch",
+      "host": "Host und Zugangsberechtigung",
+      "key": "Schlüssel",
+      "keyStored": "Gespeichert, nie angezeigt",
+      "keyMissing": "Fehlt: erneut speichern",
+      "tokenExpiry": "Token läuft ab",
+      "ci": "CI-Bestätigung",
+      "label": "Label",
+      "updated": "Letzte Änderung",
+      "copy": "{{field}} kopieren",
+      "copied": "Kopiert"
+    },
+    "more": {
+      "title": "Weitere Verbindungswege",
+      "anotherApp": "Weitere GitHub App hinzufügen",
+      "anotherAppHint": "Zwei Klicks: eine private App auf GitHub erstellen, dann installieren.",
+      "manual": "Manuell verbinden (fortgeschritten)",
+      "manualHint": "Die IDs und den privaten Schlüssel einer GitHub App selbst einfügen.",
+      "gitlab": "GitLab",
+      "gitlabHint": "Ein GitLab-Projekt mit einem Projektzugriffstoken verbinden.",
+      "addGithub": "GitHub-Verbindung hinzufügen",
+      "addGitlab": "GitLab-Verbindung hinzufügen"
     }
   },
   "skills": {
@@ -1493,11 +1690,7 @@
   "engineeringAgent": {
     "deploymentFeedback": "Arbeitet mit dem Feedback der Bereitstellung.",
     "setupTitle": "{{name}} einrichten",
-    "setupDescription": "Wählen Sie die Repository-Verbindung, an der er arbeitet, die Sprache des Repositorys und was seine Läufe pro Monat ausgeben dürfen. Danach ist er aktiviert und läuft in Ihrem Namen.",
-    "connection": "Repository-Verbindung",
     "connectionHint": "Mit einem GitHub-Issue-Auslöser werden nur GitHub-Verbindungen angezeigt.",
-    "language": "Sprache",
-    "budget": "Monatsbudget (USD)",
     "budgetHint": "Wird in seinem Workflow gespeichert: was alle seine Läufe in einem Kalendermonat ausgeben dürfen.",
     "budgetInvalid": "Dollar und Cent, von 0,01 bis 100.000.",
     "setupFailed": "Der Agent konnte nicht eingerichtet werden.",
@@ -1505,12 +1698,6 @@
     "save": "Speichern",
     "loadFailed": "Die Einrichtung des Agenten konnte nicht gelesen werden.",
     "loading": "Einrichtung des Agenten wird gelesen",
-    "runsAs": "Läuft als {{name}}.",
-    "changeSetup": "Einrichtung ändern",
-    "connectFirst": "Zuerst ein Repository verbinden",
-    "setUp": "Einrichten",
-    "whyNoConnection": "Deaktiviert: Er braucht eine Repository-Verbindung, an der er arbeiten kann.",
-    "whySetUp": "Deaktiviert, bis er eingerichtet ist: eine Verbindung, eine Sprache und ein Monatsbudget.",
     "enableFailed": "Der Agent konnte nicht aktiviert werden."
   },
   "prdBuild": {
@@ -1539,7 +1726,6 @@
     "dialConfirmAction": "Auf KI-geführt setzen",
     "dialSaved": "Gespeichert: KI-geführt.",
     "dialFailed": "Ihre Arbeitsweise konnte nicht gespeichert werden: Versuchen Sie es erneut.",
-    "enableWaits": "Aktivieren wartet, bis jede Prüfung besteht, die ein Lauf braucht.",
     "enableRefused": "Nicht aktiviert: Diese Prüfungen, die ein Lauf braucht, schlagen fehl.",
     "passedFolded": "Bestandene Prüfungen ({{count, number}})",
     "passedLabel": "Bestandene Prüfungen",
@@ -1661,11 +1847,10 @@
       "labelPending": "Label {{label}}: wird automatisch in jedem Repository erstellt, dessen Issues gelesen werden."
     },
     "automation": {
-      "open": "{{name}} öffnen",
       "missing": {
-        "triage": "Issue triage ist nicht unter den Agenten dieser Bereitstellung. Sie wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; eine umbenannte wird hier nicht gefunden.",
-        "bug_fixer": "Bug fixer ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Fehler).",
-        "feature_builder": "Feature builder ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agentenliste zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Feature-Wünsche)."
+        "triage": "Issue triage ist nicht unter den Agenten dieser Bereitstellung. Sie wird hinzugefügt, wenn ein Administrator die Agenten-Orchestrierung zum ersten Mal öffnet; eine umbenannte wird hier nicht gefunden.",
+        "bug_fixer": "Bug fixer ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agenten-Orchestrierung zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Fehler).",
+        "feature_builder": "Feature builder ist nicht unter den Agenten dieser Bereitstellung. Er wird hinzugefügt, wenn ein Administrator die Agenten-Orchestrierung zum ersten Mal öffnet; ein umbenannter wird an seiner Arbeit erkannt (Feature-Wünsche)."
       }
     },
     "ready": {
@@ -1678,13 +1863,7 @@
       "learn": "Jeder Lauf endet mit Learn: einer Rückschau, Lektionen und Vorschlägen, die Skills der Agenten zu verbessern. Vorschläge warten unter Skills darauf, dass ein Administrator sie annimmt; nichts ändert sich von selbst.",
       "openSkills": "Skills öffnen",
       "finish": "Assistent abschließen",
-      "finished": "Der Assistent ist abgeschlossen. Einrichtungsassistent auf der Agentenseite öffnet ihn wieder."
-    },
-    "intro": {
-      "title": "Die autonome Fehlerschleife einrichten?",
-      "body": "Noch ist nichts eingerichtet. Der Einrichtungsassistent führt Sie in der empfohlenen Reihenfolge hindurch: GitHub und die CI des Repositorys, seine Issues, dann die Automatisierungen, die einstufen, beheben und bauen.",
-      "start": "Hilf mir beim Einrichten",
-      "skip": "Überspringen"
+      "finished": "Der Assistent ist abgeschlossen. Einrichtungsassistent in der Agenten-Orchestrierung öffnet ihn wieder."
     }
   },
   "runWorkspace": {

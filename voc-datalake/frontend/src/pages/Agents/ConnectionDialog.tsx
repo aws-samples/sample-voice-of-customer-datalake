@@ -46,8 +46,8 @@ const ISSUE_TEXT: Readonly<Record<ConnectionIssue, string>> = {
   token: 'connections.gitlab.invalid.token',
 }
 
-const formOf =(existing: EngineeringConnection | null): ConnectionForm => (existing === null
-  ? { ...EMPTY_CONNECTION_FORM }
+const formOf = (existing: EngineeringConnection | null, host: ConnectionHost): ConnectionForm => (existing === null
+  ? { ...EMPTY_CONNECTION_FORM, host }
   : {
       ...EMPTY_CONNECTION_FORM, host: existing.host, connectionId: existing.connection_id, repository: existing.repository,
       defaultBranch: existing.default_branch,
@@ -70,7 +70,7 @@ function AppReference({ connection }: Readonly<{ connection: EngineeringConnecti
   const { t } = useTranslation('agents')
   const { app_id: appId, installation_id: installationId } = connection.credential
   return (
-    <div className="rounded-md border border-border bg-bg-hover px-3 py-2 space-y-1" data-testid="connection-app-reference">
+    <div className="rounded-md border border-border bg-bg-accent px-3 py-2 space-y-1" data-testid="connection-app-reference">
       <p className="text-sm font-medium text-text-strong">{t('connections.dialog.appCreatedTitle')}</p>
       <p className="text-sm text-text font-mono break-all">{t('connections.appIds', { appId: appId ?? '', installationId: installationId ?? '' })}</p>
       <p className="text-[12px] text-muted">{t('connections.dialog.appCreatedHint')}</p>
@@ -93,15 +93,17 @@ function StoredCredential({ connection }: Readonly<{ connection: EngineeringConn
   )
 }
 
-export function ConnectionDialog({ existing, onClose, onSaved }: Readonly<{
+export function ConnectionDialog({ existing, presetHost = 'github', onClose, onSaved }: Readonly<{
   /** The connection being edited; null to add one. */
   existing: EngineeringConnection | null
+  /** The host a new connection starts on (7.52.00: More ways to connect's "Connect manually" or "GitLab"). */
+  presetHost?: ConnectionHost
   onClose: () => void
   onSaved: (saved: SavedConnection) => void
 }>) {
   const { t } = useTranslation('agents')
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<ConnectionForm>(() => formOf(existing))
+  const [form, setForm] = useState<ConnectionForm>(() => formOf(existing, presetHost))
   const [issues, setIssues] = useState<ConnectionIssues>({})
   const [reason, setReason] = useState('')
   const fields = useRef<Partial<Record<ConnectionField, HTMLInputElement | HTMLTextAreaElement | null>>>({})

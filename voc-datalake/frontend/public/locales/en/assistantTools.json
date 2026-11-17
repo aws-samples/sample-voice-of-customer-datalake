@@ -342,7 +342,7 @@
         "scrapers": "Data sources",
         "settings": "Settings",
         "memory": "Memory",
-        "agents": "Agents",
+        "agents": "Agent orchestration",
         "company": "Company"
       }
     },

@@ -1,8 +1,8 @@
 /**
- * @fileoverview Agent detail: the tabs (each a path, `/agents/<id>/<tab>`), Save sends
- * only the changed fields, archive goes through a confirmation, enable /
- * disable, read-only for non-admins, the not-found state, and the shared
- * unsaved-changes guard (E2E F6) under a data router.
+ * @fileoverview An automation's page (7.52.00 C1): its tabs by kind (each a path, `/agents/<id>/<tab>`; Runs first once
+ * it has run), Save sends only the changed fields, its header (the state chip, its state's one primary, its ⋯ menu with
+ * Pause or Resume and Archive…), the read-only Flow tab with Edit in Flows, read-only for non-admins, the not-found
+ * state, and the shared unsaved-changes guard (E2E F6) under a data router.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -12,7 +12,7 @@ import { createTestQueryClient, renderWithQueryClient } from '@test/query-client
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import { TestRouter } from '@test/TestRouter'
 import { adminFlag, resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
-import { fileInput, jsonFile, wfEdge, wfNode, workflowView } from '@test/workflowFixtures'
+import { wfEdge, wfNode, workflowView } from '@test/workflowFixtures'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => ({
@@ -37,7 +37,7 @@ const AGENT = {
   models: { orchestrator: null, worker: null, reviewer: null, persona: null },
   output: { visibility: 'private' }, workflow_id: 'wf_1',
   budget: { max_scheduled_runs_per_day: 2, max_model_calls_per_run: 150, monthly_call_cap: 5000 },
-  stats: { runs_total: 4, scheduled_runs_today: 1, model_calls_this_month: 90 },
+  stats: { runs_total: 0, scheduled_runs_today: 1, model_calls_this_month: 90 },
 }
 
 const WORKFLOW = workflowView(7, {
@@ -78,16 +78,32 @@ beforeEach(() => {
 })
 
 describe('AgentDetail — tabs', () => {
-  it('renders every tab with Settings selected', async () => {
+  it("renders a product automation's tabs, Settings open before its first run", async () => {
     route(baseRoutes())
     renderDetail()
     await findHeading()
     const tabs = within(screen.getByRole('tablist', { name: 'Agent sections' })).getAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent.trim())).toStrictEqual(
-      ['Settings', 'Triggers', 'Personas', 'Instructions', 'Models', 'Budget', 'Workflow', 'Runs'],
+      ['Runs', 'Triggers', 'Settings', 'Personas', 'Flow', 'Budget & models'],
     )
     expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Name')).toHaveValue('Scout')
+  })
+
+  it('opens on Runs once it has run', async () => {
+    route(baseRoutes({ 'GET /agents/ag_1': () => ({ agent: { ...AGENT, stats: { ...AGENT.stats, runs_total: 3 } } }) }))
+    renderDetail()
+    await findHeading()
+    expect(screen.getByRole('tab', { name: 'Runs' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it("renders an engineering automation's tabs: no Personas, Budget alone", async () => {
+    const engineering = { ...AGENT, engineering: { connection: null, language: null, feedback_type: 'bug' } }
+    route(baseRoutes({ 'GET /agents/ag_1': () => ({ agent: engineering }), 'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }) }))
+    renderDetail()
+    await findHeading()
+    const tabs = within(screen.getByRole('tablist', { name: 'Agent sections' })).getAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent.trim())).toStrictEqual(['Runs', 'Triggers', 'Settings', 'Flow', 'Budget'])
   })
 
   it("the settings' workflow picker never offers an engineering flow", async () => {
@@ -104,11 +120,11 @@ describe('AgentDetail — tabs', () => {
     expect(within(picker).queryByRole('option', { name: /Bug hunt/ })).toBeNull()
   })
 
-  it('opens a tab from its path (/agents/<id>/<tab>)', async () => {
+  it('opens a tab from its path (/agents/<id>/<tab>); Settings holds the Instructions', async () => {
     route(baseRoutes())
-    renderDetail('/agents/ag_1/instructions')
+    renderDetail('/agents/ag_1/settings')
     await findHeading()
-    expect(screen.getByRole('tab', { name: 'Instructions' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('textbox', { name: 'Instructions' })).toHaveValue('Be brief')
   })
 
@@ -121,12 +137,14 @@ describe('AgentDetail — tabs', () => {
     expect(screen.getByRole('button', { name: 'Run now' })).toBeEnabled()
   })
 
-  it("opens the agent's workflow on the Workflow tab", async () => {
+  it('shows its flow read only on the Flow tab, with Edit in Flows', async () => {
     route(baseRoutes())
     renderDetail()
     await findHeading()
-    await userEvent.click(screen.getByRole('tab', { name: 'Workflow' }))
-    expect(await screen.findByRole('combobox', { name: 'Workflow' })).toHaveValue('wf_1')
+    await userEvent.click(screen.getByRole('tab', { name: 'Flow' }))
+    expect(await screen.findByTestId('flow-canvas')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Edit in Flows' })).toHaveAttribute('href', '/agents/workflows/wf_1')
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   })
 })
 
@@ -205,13 +223,19 @@ describe('AgentDetail — save', () => {
   })
 })
 
+/** Opens the header's ⋯ menu and chooses `item`. */
+async function chooseInMenu(item: string) {
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for Scout' }))
+  await userEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: item }))
+}
+
 describe('AgentDetail — header actions', () => {
   it('archives only after the confirmation, then returns to the list', async () => {
     const archive = vi.fn((_body: unknown) => ({ agent: { ...AGENT, status: 'archived' } }))
     route(baseRoutes({ 'DELETE /agents/ag_1': archive }))
     renderDetail()
     await findHeading()
-    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await chooseInMenu('Archive…')
     const dialog = await screen.findByRole('dialog')
     expect(archive).not.toHaveBeenCalledWith(undefined)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archive' }))
@@ -224,20 +248,34 @@ describe('AgentDetail — header actions', () => {
     route(baseRoutes({ 'DELETE /agents/ag_1': archive }))
     renderDetail()
     await findHeading()
-    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await chooseInMenu('Archive…')
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }))
     expect(archive).not.toHaveBeenCalledWith(undefined)
     expect(screen.getByRole('heading', { name: 'Scout' })).toBeInTheDocument()
   })
 
-  it('enables the agent from the switch', async () => {
+  it('enables the automation from its state\'s one primary, then its chip says so', async () => {
     const enable = vi.fn((_body: unknown) => ({ agent: { ...AGENT, enabled: true } }))
     route(baseRoutes({ 'POST /agents/ag_1/enable': enable }))
     renderDetail()
     await findHeading()
-    await userEvent.click(screen.getByRole('switch', { name: 'Enabled' }))
+    expect(screen.getByText('Ready')).toHaveClass('badge-muted')
+    await userEvent.click(screen.getByRole('button', { name: 'Enable Scout' }))
     await waitFor(() => expect(enable).toHaveBeenCalledWith(undefined))
-    expect(await screen.findByRole('switch', { name: 'Enabled', checked: true })).toBeInTheDocument()
+    expect(await screen.findByText('Enabled')).toHaveClass('badge-ok')
+    expect(screen.getByRole('status')).toHaveTextContent('Scout enabled.')
+  })
+
+  it('pauses an automation that is on from its menu, and offers Resume once paused (audited by the server)', async () => {
+    const server: { agent: Record<string, unknown> } = { agent: { ...AGENT, enabled: true } }
+    const pause = vi.fn((_body: unknown) => { server.agent = { ...server.agent, paused: true }; return { agent: server.agent } })
+    route(baseRoutes({ 'GET /agents/ag_1': () => ({ agent: server.agent }), 'POST /agents/ag_1/pause': pause }))
+    renderDetail()
+    await findHeading()
+    await chooseInMenu('Pause')
+    await waitFor(() => expect(pause).toHaveBeenCalledWith(undefined))
+    expect(await screen.findByText('Paused')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resume Scout' })).toBeInTheDocument()
   })
 })
 
@@ -248,16 +286,16 @@ describe('AgentDetail — access', () => {
     renderDetail()
     await findHeading()
     expect(screen.getByLabelText('Name')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Enabled' })).toBeDisabled()
+    expect([screen.queryByRole('button', { name: 'Save' }), screen.queryByRole('button', { name: 'Actions for Scout' }),
+      screen.queryByRole('button', { name: 'Enable Scout' })]).toStrictEqual([null, null, null])
+    expect(screen.getByText('Ready')).toBeInTheDocument()
   })
 
   it('shows not found when the agent cannot be read', async () => {
     route({})
     renderDetail('/agents/ag_missing')
-    expect(await screen.findByText("This agent doesn't exist or you can't see it.")).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'All agents' })).toHaveAttribute('href', '/agents')
+    expect(await screen.findByText("This automation doesn't exist or you can't see it.")).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Automations' })).toHaveAttribute('href', '/agents')
   })
 })
 
@@ -290,7 +328,7 @@ async function loadAndEditName(extra: Parameters<typeof baseRoutes>[0] = {}) {
 /** {@link loadAndEditName}, then take the Back link (the guard should catch it). */
 async function editThenLeave(extra: Parameters<typeof baseRoutes>[0] = {}) {
   const router = await loadAndEditName(extra)
-  await userEvent.click(screen.getByRole('link', { name: 'All agents' }))
+  await userEvent.click(screen.getByRole('link', { name: 'Automations' }))
   return router
 }
 
@@ -332,7 +370,7 @@ describe('AgentDetail — unsaved-changes guard', () => {
 
   it('switching between config tabs keeps the draft without asking', async () => {
     await loadAndEditName()
-    await userEvent.click(screen.getByRole('tab', { name: /Instructions/ }))
+    await userEvent.click(screen.getByRole('tab', { name: /Triggers/ }))
     expect(guardDialog()).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: /Settings/ }))
     expect(screen.getByLabelText('Name')).toHaveValue('Scout 2')
@@ -367,7 +405,7 @@ describe('AgentDetail — the shared Cancel-keeps-the-draft contract (3.00.00 R2
       },
       edit: async (user) => { await user.type(screen.getByLabelText('Name'), ' 2') },
       expectDraft: () => expect(screen.getByLabelText('Name')).toHaveValue('Scout 2'),
-      leave: async (user) => { await user.click(screen.getByRole('link', { name: 'All agents' })) },
+      leave: async (user) => { await user.click(screen.getByRole('link', { name: 'Automations' })) },
       expectStayed: () => expect(mounted.router?.state.location.pathname).toBe('/agents/ag_1'),
       expectLeft: async () => { expect(await screen.findByText('Agents list page')).toBeInTheDocument() },
       whileDialogOpen: async () => {
@@ -377,69 +415,5 @@ describe('AgentDetail — the shared Cancel-keeps-the-draft contract (3.00.00 R2
         await waitFor(() => expect(screen.getByLabelText('Description')).toHaveValue('Edited elsewhere'))
       },
     })
-  })
-})
-
-/**
- * "Save as…" on the Workflow tab (live browser test: the copy was created and the
- * agent re-pointed, but the editor kept the OLD workflow — name, "Unsaved changes",
- * Save enabled — so Save would have overwritten the old workflow with the edits).
- * Both workflows sit at revision 1, as a new agent's own copy does.
- */
-describe('AgentDetail — Save as on the Workflow tab', () => {
-  const ORIGINAL = workflowView(1, WORKFLOW.workflow.definition)
-  const EDITED = {
-    ...WORKFLOW.workflow.definition,
-    nodes: [...WORKFLOW.workflow.definition.nodes, wfNode('prd', 'write_prd', 'Write the PRD', 140)],
-    edges: [wfEdge('e1', 'start', 'prd'), wfEdge('e2', 'prd', 'end')],
-  }
-  const isDefinitionBody = (value: unknown): value is { definition: typeof EDITED } =>
-    typeof value === 'object' && value !== null && 'definition' in value
-
-  /** Imports a valid edit (unsaved) on the Workflow tab and saves it as "Flow (copy)"; returns the server's state. */
-  async function editThenSaveAs(extra: Record<string, Handler> = {}) {
-    const created: unknown[] = []
-    const server = { agent: AGENT, created }
-    const copy = () => workflowView(1, { ...EDITED, name: 'Flow (copy)' }, { workflow_id: 'wf_2' })
-    route(baseRoutes({
-      'GET /agents/ag_1': () => ({ agent: server.agent }),
-      'GET /workflows/wf_1': () => ORIGINAL,
-      'POST /workflows/validate': () => ({ valid: true, errors: [] }),
-      'POST /workflows': (body: unknown) => { server.created.push(body); return copy() },
-      'GET /workflows/wf_2': copy,
-      'PUT /agents/ag_1': () => {
-        server.agent = { ...server.agent, workflow_id: 'wf_2' }
-        return { agent: server.agent }
-      },
-      ...extra,
-    }))
-    const { container } = renderDetail('/agents/ag_1/workflow')
-    await screen.findByRole('button', { name: 'Export' })
-    await userEvent.upload(fileInput(container), jsonFile(JSON.stringify(EDITED)))
-    await screen.findByText('Unsaved changes')
-    await userEvent.click(screen.getByRole('button', { name: 'Save as…' }))
-    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save as…' }))
-    return server
-  }
-
-  it('shows the copy, clean, and says the agent now runs it', async () => {
-    await editThenSaveAs()
-    expect(await screen.findByText('Saved as “Flow (copy)”. This agent now runs it.')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveDisplayValue('Flow (copy)')
-    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  })
-
-  it('saves the unsaved edits into the copy and re-points the agent', async () => {
-    const server = await editThenSaveAs()
-    await waitFor(() => expect(server.agent.workflow_id).toBe('wf_2'))
-    const body = server.created.at(0)
-    expect(isDefinitionBody(body) ? body.definition.nodes.map((n) => n.type) : []).toContain('write_prd')
-  })
-
-  it('goes back to the agent workflow and says so when the agent cannot be re-pointed', async () => {
-    await editThenSaveAs({ 'PUT /agents/ag_1': () => { throw new Error('API Error: 500') } })
-    expect(await screen.findByRole('alert')).toHaveTextContent("this agent couldn't be switched to it")
-    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveDisplayValue('Flow')
   })
 })

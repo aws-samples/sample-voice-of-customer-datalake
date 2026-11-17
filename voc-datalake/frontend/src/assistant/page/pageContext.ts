@@ -71,6 +71,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/spend/*', kind: 'agents' },
   { route: 'agents/connections/*', kind: 'agents' },
   { route: 'agents/skills/*', kind: 'agents' },
+  // Agent orchestration's Registry (7.52.00, with Quality gates as its filter): its own places under it.
+  { route: 'agents/registry/*', kind: 'agents' },
   // The engineering setup guide and its steps (7.50.00, SetupGuide/setupGuidePaths.ts): the agents pack, no agent.
   { route: 'agents/setup/*', kind: 'agents' },
   // One agent and its tabs (`/agents/<id>/runs`).

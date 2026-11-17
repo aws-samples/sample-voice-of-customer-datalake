@@ -521,6 +521,7 @@ The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md 
 - `size="wide"` (`sm:max-w-[44rem]`) holds a document: the document component's `sheet` variant is this sheet ([Documents](#documents): the History's Open and Compare), so the app has one side sheet.
 - The title is the sheet's `h2` and its accessible name; the header's `DialogClose` ("Dismiss") closes it. A confirmation opened from inside it (`ConfirmModal`) stacks above it.
 - Prefer a sheet to a stepped dialog when the row it edits should stay in view; a sheet whose item is a place is a path (`/admin/people/<username>`), so Back closes it.
+- `dismissable={false}` while a save is on its way: Escape, the backdrop and its close button wait. An engineering automation's **Set up drawer** (7.52.00, `pages/Agents/Automations/SetupDrawer.tsx`) is one: numbered steps, its readiness under a heading it focuses when opened from "N to fix", and Save / Save and enable in its footer (the form's submit by its id).
 
 ### Saving: one "Saved" per card
 
@@ -529,6 +530,8 @@ Every settings card saves itself: there is no page-level Save. After a save the 
 ### Menus and popovers
 
 `menu` (container: `rounded-lg border bg-bg-elevated p-1 shadow-lg`, scales in) · `menu-item` (`rounded-md px-3 py-1.5 text-[13px]`, hover `bg-bg-hover`) · `menu-label` · `menu-separator`. Position with utilities (`absolute right-0 top-full mt-1 w-52`).
+
+**A row's actions: `RowActionsMenu`** (`components/RowActionsMenu/`, 7.52.00): the "⋯" `icon-btn` named "Actions for <item>" (its Tooltip the same words), opening a `menu` fixed in a portal (a list card's `overflow-hidden` never clips it), the WAI-ARIA menu button pattern (the first item focused, arrows, Home/End, Escape back to the button, Tab on to the next control). Entries are actions or separators (`rowMenuEntries.ts`; a separator is never first, last or doubled); a destructive one is last, in the danger tone; one that cannot act now stays focusable (`aria-disabled`) with its reason as visible text. `face` makes it a text menu button ("Run another flow ▾"). Automations' rows and an automation's page header use it.
 
 ### Tooltips
 

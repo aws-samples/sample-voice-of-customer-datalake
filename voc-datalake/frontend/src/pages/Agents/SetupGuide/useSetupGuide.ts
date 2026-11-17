@@ -19,7 +19,7 @@ import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { useConfigStore } from '../../../store/configStore'
 import { useAgentList } from '../useAgents'
 import { useReadiness } from '../useReadiness'
-import { findAutomations, guideSubject, stepStatuses } from './setupGuideRules'
+import { findAutomations, guideSubject, offersIntro, stepStatuses } from './setupGuideRules'
 import type { Agent } from '../../../api/agentsApi'
 import type { ConnectionList, EngineeringConnection } from '../../../api/engineeringConnectionsApi'
 import type { ReadinessCheck } from '../../../api/engineeringReadinessApi'
@@ -29,7 +29,7 @@ import type { IssuesSourceView } from '../../../api/issuesSourceApi'
 import type { Automations, GuideFacts, StepStatuses } from './setupGuideRules'
 
 /** The guide's progress (what a person chose), read while `enabled`. */
-export function useSetupProgress(enabled: boolean) {
+function useSetupProgress(enabled: boolean) {
   const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
   return useQuery({ queryKey: engineeringSetupKeys.progress(), queryFn: engineeringSetupApi.get, enabled: enabled && configured })
 }
@@ -106,4 +106,15 @@ export function useSetupGuide(enabled: boolean): GuideState {
     failed: reads.some((read) => read.isError),
     retry: () => { reads.filter((read) => read.isError).forEach((read) => { void read.refetch() }) },
   }
+}
+
+/**
+ * Whether the first-run prompt is offered (no choice made yet, and nothing set up), once its reads answered: the
+ * Engineering group shows it in place of its blocker banner.
+ */
+export function useOffersSetupPrompt(agents: readonly Agent[] | undefined): SetupProgress | null {
+  const progress = useSetupProgress(true)
+  const connections = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list })
+  if (agents === undefined || progress.data === undefined || connections.data === undefined) return null
+  return offersIntro(progress.data, { agents, connections: connections.data.connections }) ? progress.data : null
 }

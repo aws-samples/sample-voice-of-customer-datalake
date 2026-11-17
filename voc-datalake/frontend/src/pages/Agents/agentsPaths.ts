@@ -1,9 +1,11 @@
 /**
  * @fileoverview The Agents pages' addresses, as paths (7.49.00, utils/pathPlace.ts):
  *
- * - the list's views: `/agents` (the agents), `/agents/runs` (7.51.00, the engineering runs), `/agents/workflows`,
- *   `/agents/spend`, `/agents/connections`, `/agents/skills`; on Skills, a role's history `/agents/skills/<role>` and
- *   one version `/agents/skills/<role>/v/<n>`;
+ * - Agent orchestration's tabs (7.52.00 C1), in their order: Automations `/agents`, Runs `/agents/runs` (7.51.00, the
+ *   engineering runs), Skills `/agents/skills` (a role's history `/agents/skills/<role>`, one version
+ *   `/agents/skills/<role>/v/<n>`), Spend `/agents/spend`, Flows `/agents/workflows`, Registry `/agents/registry` (its
+ *   own places under it are its page's: 7.52.00 C3) and Connections `/agents/connections` (the paths of before are kept,
+ *   D52-1; none is aliased);
  * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings);
  * - the engineering setup guide, `/agents/setup[/<step>]` (SetupGuide/setupGuidePaths.ts), a page of its own.
  *
@@ -21,8 +23,12 @@ import type { TabPage } from '../../utils/tabPaths'
 
 const AGENTS_PATH = '/agents'
 
-/** The list's views; `agents` is the list itself (`/agents`). */
-export const AGENTS_VIEWS = ['agents', 'runs', 'workflows', 'spend', 'connections', 'skills'] as const
+/** Agent orchestration's tabs, in their order (operate, then build, then the set-up-once plumbing); `agents` is
+ * Automations, the list itself (`/agents`), and `workflows` is Flows. */
+export const AGENTS_VIEWS = ['agents', 'runs', 'skills', 'spend', 'workflows', 'registry', 'connections'] as const
+
+/** The tabs whose places under their path are their own page's to read (7.52.00 C3's Registry): never replaced here. */
+const OWN_PLACES_VIEWS: ReadonlySet<string> = new Set(['registry'])
 
 /** The pages under `/agents` that are neither a view of the list nor an agent (`setup`: the setup guide). */
 const AGENTS_PAGES: ReadonlySet<string> = new Set(['setup'])
@@ -69,7 +75,8 @@ function skillsPlace(rest: readonly string[]): { readonly place: AgentsPlace; re
 
 /** The place a view's path names (`first`, then the rest of its segments), and whether it names it as its path does. */
 function viewPlace(first: AgentsView, rest: readonly string[]): { readonly place: AgentsPlace; readonly own: boolean } {
-  return first === 'skills' ? skillsPlace(rest) : { place: { ...LIST, view: first }, own: rest.length === 0 }
+  if (first === 'skills') return skillsPlace(rest)
+  return { place: { ...LIST, view: first }, own: rest.length === 0 || OWN_PLACES_VIEWS.has(first) }
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * @fileoverview The sidebar's "needs a decision" count: agents whose last run
  * stopped for a person, read from `/agents` only when enabled, and the pill it
- * puts on "Autonomous agents".
+ * puts on "Agent orchestration".
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, renderHook, screen, waitFor } from '@testing-library/react'
@@ -52,14 +52,14 @@ function renderSidebar(decisionCount: number) {
   )
 }
 
-describe('Sidebar — the count on "Autonomous agents"', () => {
+describe('Sidebar — the count on "Agent orchestration"', () => {
   it('shows how many agents need a decision, named for screen readers', () => {
     renderSidebar(2)
-    expect(screen.getByRole('link', { name: /Autonomous agents/ })).toHaveTextContent('2 2 agents need a decision')
+    expect(screen.getByRole('link', { name: /Agent orchestration/ })).toHaveTextContent('2 2 agents need a decision')
   })
 
   it('shows no count at zero', () => {
     renderSidebar(0)
-    expect(screen.getByRole('link', { name: 'Autonomous agents' })).toHaveTextContent(/^Autonomous agents$/)
+    expect(screen.getByRole('link', { name: 'Agent orchestration' })).toHaveTextContent(/^Agent orchestration$/)
   })
 })

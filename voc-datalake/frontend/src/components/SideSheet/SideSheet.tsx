@@ -32,15 +32,20 @@ interface SideSheetProps {
   readonly footer?: ReactNode
   /** `default` (30rem from `sm`: a row's editor) or `wide` (44rem: a document, DocumentSurface's `sheet` variant). */
   readonly size?: 'default' | 'wide'
+  /** False while work is in flight (a save): Escape, the backdrop and the close button wait (ModalShell `dismissable`). */
+  readonly dismissable?: boolean
 }
 
 /** The panel's width from `sm` per size (`.sheet-panel` holds the default). */
 const SIZE_CLASS = { default: '', wide: 'sm:max-w-[44rem]' } as const
 
-export default function SideSheet({ isOpen, onClose, title, description, icon: Icon, children, footer, size = 'default' }: SideSheetProps) {
+export default function SideSheet({
+  isOpen, onClose, title, description, icon: Icon, children, footer, size = 'default', dismissable = true,
+}: SideSheetProps) {
   const titleId = useId()
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} ariaLabelledBy={titleId} placement="end" panelClassName={SIZE_CLASS[size]}>
+    <ModalShell isOpen={isOpen} onClose={onClose} ariaLabelledBy={titleId} placement="end" panelClassName={SIZE_CLASS[size]}
+      dismissable={dismissable}>
       <div className="dialog-header justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {Icon === undefined ? null : <Icon size={20} className="shrink-0 text-accent" aria-hidden="true" />}
@@ -49,7 +54,7 @@ export default function SideSheet({ isOpen, onClose, title, description, icon: I
             {description === undefined ? null : <p className="dialog-description break-words">{description}</p>}
           </div>
         </div>
-        <DialogClose onClick={onClose} />
+        <DialogClose onClick={onClose} disabled={!dismissable} />
       </div>
       <div className="dialog-body space-y-5">{children}</div>
       {footer === undefined ? null : <div className="dialog-footer flex-wrap justify-between">{footer}</div>}

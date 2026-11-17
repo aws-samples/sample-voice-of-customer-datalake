@@ -1,17 +1,175 @@
 {
   "nav": {
-    "label": "Agenci autonomiczni",
+    "label": "Orkiestracja agentów",
     "needsDecision_one": "{{count, number}} agent wymaga decyzji",
     "needsDecision_other": "{{count, number}} agenta wymaga decyzji",
     "needsDecision_few": "{{count, number}} agenci wymagają decyzji",
     "needsDecision_many": "{{count, number}} agentów wymaga decyzji"
   },
+  "shell": {
+    "title": "Orkiestracja agentów",
+    "subtitle": "Agenci, którzy pracują na Twoim feedbacku i zgłoszeniach z GitHub, w ramach ustalonych budżetów.",
+    "create": "Nowa automatyzacja",
+    "createTitle": "Utwórz automatyzację produktową",
+    "createSubmit": "Utwórz automatyzację",
+    "setupGuideProgress": "Przewodnik konfiguracji · {{done, number}} z {{total, number}} gotowe",
+    "tabs": {
+      "label": "Sekcje orkiestracji agentów",
+      "agents": "Automatyzacje",
+      "runs": "Przebiegi",
+      "skills": "Umiejętności",
+      "spend": "Wydatki",
+      "workflows": "Przepływy",
+      "registry": "Rejestr",
+      "connections": "Połączenia"
+    },
+    "empty": {
+      "runsTitle": "Nie ma jeszcze przebiegów.",
+      "runsHint": "Przebiegi pojawią się tutaj, gdy automatyzacja jakiś uruchomi.",
+      "goToAutomations": "Przejdź do automatyzacji",
+      "runsNeedsYou": "Nic na Ciebie nie czeka.",
+      "runsNeedsYouHint": "Tutaj pojawiają się przebiegi czekające na decyzję człowieka.",
+      "showAllRuns": "Pokaż wszystkie przebiegi"
+    },
+    "counts": {
+      "runs_one": "{{count, number}} czeka na Ciebie",
+      "runs_few": "{{count, number}} czekają na Ciebie",
+      "runs_many": "{{count, number}} czeka na Ciebie",
+      "runs_other": "{{count, number}} czeka na Ciebie",
+      "skills_one": "{{count, number}} do przejrzenia",
+      "skills_few": "{{count, number}} do przejrzenia",
+      "skills_many": "{{count, number}} do przejrzenia",
+      "skills_other": "{{count, number}} do przejrzenia"
+    }
+  },
+  "automations": {
+    "state": {
+      "needs_setup": "Wymaga konfiguracji",
+      "cant_run": "Nie może działać",
+      "paused": "Wstrzymana",
+      "ready": "Gotowa",
+      "enabled": "Włączona",
+      "loading": "Odczytywanie stanu"
+    },
+    "unchecked": "Nie udało się sprawdzić",
+    "reason": {
+      "connection_gone": "Jej połączenie z repozytorium zostało usunięte.",
+      "monthly_cap": "Osiągnięto limit miesięczny: przebiegi czekają do następnego miesiąca.",
+      "daily_cap": "Osiągnięto dzienny limit przebiegów."
+    },
+    "actions": {
+      "set_up": "Skonfiguruj",
+      "fix": "Napraw",
+      "resume": "Wznów",
+      "enable": "Włącz",
+      "run_now": "Uruchom teraz",
+      "review": "Przejrzyj"
+    },
+    "menu": {
+      "label": "Akcje dla {{name}}",
+      "open": "Otwórz",
+      "editSettings": "Edytuj ustawienia",
+      "changeSetup": "Zmień konfigurację…",
+      "rename": "Zmień nazwę…",
+      "pause": "Wstrzymaj",
+      "resume": "Wznów",
+      "turnOff": "Wyłącz",
+      "runNow": "Uruchom teraz",
+      "allRuns": "Wszystkie przebiegi",
+      "delete": "Usuń…",
+      "archive": "Archiwizuj…"
+    },
+    "columns": {
+      "automation": "Automatyzacja",
+      "status": "Stan",
+      "lastRun": "Ostatni przebieg",
+      "usage": "Użycie"
+    },
+    "activity": {
+      "none": "Jeszcze bez przebiegów",
+      "running": "W toku · rozpoczęty {{when}}",
+      "ended": "{{status}} · {{when}}",
+      "needsDecision": "Wymaga Twojej decyzji",
+      "spentOf": "{{amount}} z {{budget}}",
+      "callsOf": "{{calls}} z {{cap}} wywołań modelu",
+      "calls_one": "{{calls}} wywołanie modelu",
+      "calls_few": "{{calls}} wywołania modelu",
+      "calls_many": "{{calls}} wywołań modelu",
+      "calls_other": "{{calls}} wywołania modelu",
+      "scheduledToday_one": "{{count, number}} zaplanowany przebieg dziś",
+      "scheduledToday_few": "{{count, number}} zaplanowane przebiegi dziś",
+      "scheduledToday_many": "{{count, number}} zaplanowanych przebiegów dziś",
+      "scheduledToday_other": "{{count, number}} zaplanowanego przebiegu dziś"
+    },
+    "notice": {
+      "enabled": "Włączono {{name}}.",
+      "enabledRunsAsYou": "Włączono {{name}}. Działa w Twoim imieniu.",
+      "paused": "Wstrzymano {{name}}: żaden przebieg nie ruszy sam, dopóki jej nie wznowisz.",
+      "resumed": "Wznowiono {{name}}.",
+      "turnedOff": "Wyłączono {{name}}.",
+      "started": "Rozpoczęto przebieg {{name}}.",
+      "saved": "Zapisano konfigurację {{name}}."
+    },
+    "pauseFailed": "Nie udało się wstrzymać ani wznowić automatyzacji.",
+    "groups": {
+      "engineering": {
+        "title": "Automatyzacje inżynierskie",
+        "hint": "Oznaczone zgłoszenie z GitHub staje się pull requestem, który przegląda człowiek: triaż → poprawka lub budowa."
+      },
+      "product": {
+        "title": "Automatyzacje produktowe",
+        "hint": "Nowy feedback staje się zbadanym projektem: persony, PR/FAQ, PRD i prototyp."
+      }
+    },
+    "blocked": {
+      "noConnection": "Te automatyzacje potrzebują połączenia z GitHub.",
+      "connect": "Połącz GitHub"
+    },
+    "firstRun": {
+      "title": "Skonfiguruj pętlę błędów",
+      "body": "Połącz GitHub i potwierdź CI repozytorium, potem włącz triaż, poprawki i budowę. Każdy krok może poczekać.",
+      "start": "Uruchom przewodnik konfiguracji",
+      "skip": "Nie teraz"
+    },
+    "needsYou": {
+      "review": "Przejrzyj",
+      "decision": "Wymaga Twojej decyzji",
+      "decisionLine": "{{name}} · jej ostatni przebieg czeka na Ciebie · {{when}}",
+      "waiting": "Czeka na przegląd",
+      "title_one": "Czeka na Ciebie ({{count, number}})",
+      "title_few": "Czeka na Ciebie ({{count, number}})",
+      "title_many": "Czeka na Ciebie ({{count, number}})",
+      "title_other": "Czeka na Ciebie ({{count, number}})",
+      "skillsLine_one": "Umiejętności · {{count, number}} wersja do przejrzenia",
+      "skillsLine_few": "Umiejętności · {{count, number}} wersje do przejrzenia",
+      "skillsLine_many": "Umiejętności · {{count, number}} wersji do przejrzenia",
+      "skillsLine_other": "Umiejętności · {{count, number}} wersji do przejrzenia"
+    },
+    "drawer": {
+      "description": "Działa w Twoim imieniu, na feedbacku wdrożenia.",
+      "repository": "Repozytorium",
+      "noRepository": "Brak jeszcze repozytorium, którego może użyć",
+      "changeRepository": "Zmień w Połączeniach",
+      "language": "Język",
+      "budget": "Budżet miesięczny (USD)",
+      "readiness": "Zanim będzie mogła działać",
+      "openConnections": "Otwórz Połączenia",
+      "enableWaits_one": "Włączenie czeka na {{count, number}} poprawkę.",
+      "enableWaits_few": "Włączenie czeka na {{count, number}} poprawki.",
+      "enableWaits_many": "Włączenie czeka na {{count, number}} poprawek.",
+      "enableWaits_other": "Włączenie czeka na {{count, number}} poprawki."
+    },
+    "toFix_one": "{{count, number}} do poprawy",
+    "toFix_few": "{{count, number}} do poprawy",
+    "toFix_many": "{{count, number}} do poprawy",
+    "toFix_other": "{{count, number}} do poprawy",
+    "warnings_one": "{{count, number}} ostrzeżenie",
+    "warnings_few": "{{count, number}} ostrzeżenia",
+    "warnings_many": "{{count, number}} ostrzeżeń",
+    "warnings_other": "{{count, number}} ostrzeżenia"
+  },
   "common": {
     "cancel": "Anuluj"
-  },
-  "status": {
-    "enabled": "Włączony",
-    "disabled": "Wyłączony"
   },
   "scope": {
     "all": "Wszystkie kategorie",
@@ -19,39 +177,19 @@
     "sources": "Tylko te źródła",
     "sourcesHint": "Nie zaznaczaj żadnego, aby obserwować wszystkie źródła. Wyzwalacz progowy liczy wszystkie źródła, dlatego nie jest dostępny przy wybranych źródłach."
   },
-  "views": {
-    "label": "Sekcje strony agentów",
-    "agents": "Agenci",
-    "workflows": "Przepływy pracy",
-    "spend": "Wydatki",
-    "connections": "Połączenia",
-    "skills": "Umiejętności",
-    "runs": "Przebiegi"
-  },
   "list": {
-    "title": "Agenci autonomiczni",
-    "subtitle": "Agenci obserwują opinie w swoim zakresie i gdy zadziała wyzwalacz, uruchamiają przepływ pracy: badania, persony, PR/FAQ, PRD i prototyp, który persony sprawdzają przed przekazaniem projektu.",
-    "create": "Nowy agent",
-    "createTitle": "Utwórz agenta autonomicznego",
     "createHint": "Agent jest tworzony wyłączony, z własną edytowalną kopią przepływu „Recenzje → Prototyp”. Skonfiguruj wyzwalacze i przepływ, a następnie go włącz.",
     "createFailed": "Nie udało się utworzyć agenta.",
-    "emptyTitle": "Nie ma jeszcze agentów autonomicznych",
+    "emptyTitle": "Nie ma jeszcze automatyzacji",
     "emptyAdmin": "Utwórz agenta, aby automatycznie zamieniać nowe opinie w zbadane projekty i prototypy.",
-    "emptyUser": "Administrator nie skonfigurował jeszcze żadnego agenta, który byłby dla Ciebie widoczny.",
+    "emptyUser": "Administrator nie skonfigurował jeszcze żadnej automatyzacji, którą możesz zobaczyć.",
     "loadFailed": "Nie udało się wczytać agentów.",
-    "spend": "Zaplanowane uruchomienia dziś: {{runs, number}} · wywołania modelu w tym miesiącu: {{calls, number}}",
-    "spendHint": "Ręczne uruchomienia nie są wliczane do dziennego limitu zaplanowanych uruchomień.",
-    "needsDecision": "Wymaga Twojej decyzji",
-    "reviewRun": "Przejrzyj uruchomienie agenta {{name}}",
     "rename": "Zmień nazwę",
-    "renameNamed": "Zmień nazwę: {{name}}",
-    "renameTitle": "Zmień nazwę tego agenta",
+    "renameTitle": "Zmień nazwę tej automatyzacji",
     "renameFailed": "Nie udało się zmienić nazwy agenta.",
     "delete": "Usuń",
-    "deleteNamed": "Usuń {{name}}",
-    "deleteTitle": "Usunąć tego agenta?",
-    "deleteMessage": "„{{name}}” przestanie działać i zniknie z listy agentów. Jego poprzednie uruchomienia oraz utworzone przez niego projekty i dokumenty zostaną zachowane. Uruchomienie w toku zostanie najpierw zakończone.",
-    "deleteFailed": "Nie udało się usunąć agenta."
+    "deleteTitle": "Usunąć tę automatyzację?",
+    "deleteMessage": "„{{name}}” przestaje działać i znika z Twoich automatyzacji. Jej wcześniejsze przebiegi oraz utworzone projekty i dokumenty zostają. Trwający przebieg najpierw się zakończy."
   },
   "library": {
     "title": "Biblioteka przepływów pracy",
@@ -101,28 +239,55 @@
     "public": "Publiczny"
   },
   "detail": {
-    "back": "Wszystkie agenty",
+    "back": "Orkiestracja agentów",
     "tabs": "Sekcje agenta",
-    "enabledLabel": "Włączony",
     "toggleFailed": "Nie udało się włączyć ani wyłączyć agenta.",
     "save": "Zapisz",
     "saved": "Zapisano",
     "saveFailed": "Nie udało się zapisać zmian.",
     "discard": "Odrzuć zmiany",
     "archive": "Archiwizuj",
-    "archiveTitle": "Zarchiwizować tego agenta?",
+    "archiveTitle": "Zarchiwizować tę automatyzację?",
     "archiveMessage": "Przestanie działać i zniknie z listy. Projekty, które utworzył, pozostaną.",
-    "notFound": "Ten agent nie istnieje lub nie masz do niego dostępu.",
-    "stats": "Łącznie uruchomień: {{runs, number}} · zaplanowanych na dziś: {{today, number}} · wywołań modelu w tym miesiącu: {{calls, number}}"
+    "notFound": "Ta automatyzacja nie istnieje lub nie możesz jej zobaczyć.",
+    "backToAutomations": "Automatyzacje",
+    "tab": {
+      "flow": "Przepływ",
+      "budgetModels": "Budżet i modele"
+    },
+    "meta": {
+      "actsAs": "Działa jako {{name}}, który ją włączył",
+      "deploymentFeedback": "Feedback wdrożenia",
+      "runs_one": "{{count, number}} przebieg",
+      "runs_few": "{{count, number}} przebiegi",
+      "runs_many": "{{count, number}} przebiegów",
+      "runs_other": "{{count, number}} przebiegu",
+      "today_one": "{{count, number}} zaplanowany dziś",
+      "today_few": "{{count, number}} zaplanowane dziś",
+      "today_many": "{{count, number}} zaplanowanych dziś",
+      "today_other": "{{count, number}} zaplanowanego dziś",
+      "calls_one": "{{calls}} wywołanie modelu w tym miesiącu",
+      "calls_few": "{{calls}} wywołania modelu w tym miesiącu",
+      "calls_many": "{{calls}} wywołań modelu w tym miesiącu",
+      "calls_other": "{{calls}} wywołania modelu w tym miesiącu"
+    },
+    "flow": {
+      "another": "Uruchamiaj inny przepływ",
+      "edit": "Edytuj w Przepływach",
+      "revision": "Wersja {{revision, number}}",
+      "readOnly": "Tu tylko do odczytu: przepływ może być wspólny dla kilku automatyzacji, więc zmienia się go w Przepływach.",
+      "loadFailed": "Nie udało się wczytać przepływu.",
+      "unreadableTitle": "Tego przepływu nie można pokazać",
+      "unreadable": "Nie udało się odczytać zapisanej definicji.",
+      "switchMessage": "{{name}} będzie uruchamiać „{{flow}}” od następnego przebiegu."
+    },
+    "runsEmptyHint": "Przebiegi pojawią się tutaj, gdy jakiś się zacznie: po wyzwalaczu albo gdy ktoś naciśnie Uruchom teraz."
   },
   "tabs": {
     "settings": "Ustawienia",
     "triggers": "Wyzwalacze",
     "personas": "Persony",
-    "instructions": "Instrukcje",
-    "models": "Modele",
     "budget": "Budżet",
-    "workflow": "Przepływ pracy",
     "runs": "Uruchomienia"
   },
   "triggers": {
@@ -487,12 +652,8 @@
     "issueCount_other": "{{count, number}} problemów",
     "valid": "Przepływ jest poprawny.",
     "validUnsaved": "Poprawny — jeszcze niezapisany.",
-    "savedAsAgent": "Zapisano jako „{{name}}”. Ten agent teraz go uruchamia.",
-    "savedAsSwitchFailed": "Kopia została zapisana, ale nie udało się przełączyć tego agenta na nią. Wybierz ją w ustawieniach agenta.",
     "savedAsOpened": "Zapisano jako „{{name}}”.",
-    "switchLabel": "Przepływ pracy",
     "switchTitle": "Zmienić przepływ pracy?",
-    "switchMessage": "Niezapisane zmiany w {{name}} zostaną utracone.",
     "switchConfirm": "Zmień przepływ",
     "switched": "Ten agent uruchamia teraz {{name}}.",
     "switchFailed": "Nie udało się przełączyć agenta na ten przepływ pracy.",
@@ -810,7 +971,7 @@
     "verdicts_many": "{{count, number}} opinii person"
   },
   "spend": {
-    "hint": "Ile wydały agenty inżynieryjne, według rejestru wydatków: koszt, tokeny i czas MicroVM każdej sesji, tak jak zmierzyło je środowisko uruchomieniowe. Koszt to czas sesji i tokeny modelu, każde według cen wdrożenia. Miesiące w UTC.",
+    "hint": "Ile automatyzacje inżynierskie wydały w tym miesiącu, w cenach tego wdrożenia (UTC).",
     "month": "Miesiąc",
     "groupBy": "Grupuj według",
     "by": {
@@ -838,7 +999,6 @@
     "none": "Nie zapisano",
     "otherModels": "Inne modele",
     "workflowRuns": "{{name}}: pokaż uruchomienia",
-    "inRun": "w uruchomieniu {{run}}",
     "onlyWorkflow": "Przepływ pracy: {{name}}",
     "allWorkflows": "Pokaż wszystkie przepływy pracy",
     "tableCaption": "Wydatki – {{month}}, grupowane według: {{by}}",
@@ -862,33 +1022,32 @@
       "listLabel": "GitHub Apps",
       "ownerUser": "{{owner}} (konto osobiste)",
       "ownerOrganization": "{{owner}} (organizacja)",
-      "webhookOn": "Zdarzenia zgłoszeń dostarczane tutaj",
+      "webhookOn": "Wysyła zdarzenia zgłoszeń",
       "webhookOff": "Bez webhooka",
-      "connections_one": "{{count, number}} połączenie",
-      "connections_few": "{{count, number}} połączenia",
-      "connections_many": "{{count, number}} połączeń",
-      "connections_other": "{{count, number}} połączenia",
       "notInstalled": "Niezainstalowana",
-      "created": "Utworzona {{when}} przez {{who}}",
       "openOnGitHub": "Otwórz {{slug}} w GitHubie",
-      "install": "Zainstaluj",
-      "installMore": "Zainstaluj w kolejnych",
-      "installLabel": "Zainstaluj {{slug}} w GitHubie",
       "check": "Sprawdź instalację",
-      "checkLabel": "Sprawdź instalację {{slug}}",
       "checkCovered": "Instalacja obejmuje wszystkie połączenia {{slug}} (zainstalowane repozytoria: {{repositories, number}}).",
       "checkMissing": "Już nieobjęte instalacją: {{connections}}. Ich uruchomienia są odrzucane, dopóki App nie zostanie ponownie zainstalowana w tych repozytoriach albo połączenia nie zostaną usunięte.",
-      "remove": "Usuń",
-      "removeLabel": "Usuń {{slug}}",
       "removeTitle": "Usunąć {{slug}}?",
       "removeMessage": "Jej klucz i sekret webhooka zostaną usunięte z tego wdrożenia. Sama App zostaje w GitHubie: usuń ją też w ustawieniach GitHuba.",
       "removeConfirm": "Usuń App",
       "removed": "{{slug}} została usunięta z tego wdrożenia. Usuń ją też w ustawieniach GitHuba.",
-      "via": "przez {{slug}}"
+      "menuLabel": "Działania dla {{slug}}",
+      "removeApp": "Usuń App…",
+      "addRepositories": "Dodaj repozytoria",
+      "installOnGitHub": "Zainstaluj w GitHubie",
+      "checked": "Sprawdzono {{when}}",
+      "reinstall": "Zainstaluj ponownie w GitHubie",
+      "checking": "Sprawdzanie instalacji…",
+      "repositoriesLabel": "Repozytoria przez {{slug}}",
+      "installed_one": "Zainstalowana · {{count, number}} repozytorium",
+      "installed_few": "Zainstalowana · {{count, number}} repozytoria",
+      "installed_many": "Zainstalowana · {{count, number}} repozytoriów",
+      "installed_other": "Zainstalowana · {{count, number}} repozytorium"
     },
     "issues": {
       "switch": "Odczytuj zgłoszenia tego repozytorium",
-      "reading": "Zgłoszenia są odczytywane automatycznie.",
       "reasons": {
         "off": "Jego zgłoszenia nie są odczytywane: przełącznik jest wyłączony.",
         "token": "Źródło GitHub Issues loguje się tokenem: dodaj to repozytorium w Administracja → Źródła danych.",
@@ -921,15 +1080,23 @@
         },
         "scheduleOff": "Harmonogram źródła GitHub Issues jest wyłączony: włącz go w Administracja → Źródła danych.",
         "error": "Nie udało się automatycznie skonfigurować źródła GitHub Issues: {{error}}"
-      }
+      },
+      "state": {
+        "reading": "Odczytywane",
+        "notRead": "Nieodczytywane",
+        "off": "Wyłączone"
+      },
+      "githubOnly": "Tylko GitHub",
+      "appOnly": "Odczytywane tylko przez GitHub App wdrożenia",
+      "labelFailed": "Nie utworzono"
     },
     "githubReturn": {
-      "back": "Wróć do Agenci → Połączenia",
+      "back": "Wróć do Orkiestracja agentów → Połączenia",
       "createdTitle": "GitHub App utworzona",
       "creating": "Zapisywanie klucza App…",
       "createdBody": "{{slug}} jest utworzona, a jej klucz zapisany. Teraz zainstaluj ją w repozytoriach, nad którymi agenci mogą pracować.",
       "installOnGitHub": "Zainstaluj w GitHubie",
-      "noCode": "Ta strona potrzebuje linku, który GitHub odsyła po utworzeniu App. Zacznij od nowa w Agenci → Połączenia.",
+      "noCode": "Ta strona potrzebuje linku, który GitHub odsyła po utworzeniu App. Zacznij od nowa w Orkiestracja agentów → Połączenia.",
       "installedTitle": "GitHub App zainstalowana",
       "installing": "Zapisywanie połączeń…",
       "installedBody_one": "Połączono {{count, number}} repozytorium przez {{slug}}.",
@@ -946,16 +1113,13 @@
         "limit": "{{repository}}: ponad limit połączeń",
         "not_saved": "{{repository}}: nie udało się zapisać"
       },
-      "approval": "Właściciel musi zatwierdzić instalację. Gdy to zrobi, otwórz Agenci → Połączenia i użyj „Zainstaluj w kolejnych” przy App, aby zapisać jej repozytoria.",
-      "noState": "GitHub odesłał Cię bez linku tego wdrożenia, więc nic nie zostało zapisane. Otwórz Agenci → Połączenia i użyj „Sprawdź instalację” lub „Zainstaluj w kolejnych” przy App."
+      "approval": "Właściciel musi zatwierdzić instalację. Gdy to zrobi, otwórz Orkiestracja agentów → Połączenia i użyj „Dodaj repozytoria” przy App, aby zapisać jej repozytoria.",
+      "noState": "GitHub odesłał Cię bez linku tego wdrożenia, więc nic nie zostało zapisane. Otwórz Orkiestracja agentów → Połączenia i użyj „Sprawdź instalację” lub „Dodaj repozytoria” przy App."
     },
     "title": "Połączenia z repozytoriami",
-    "intro": "Agenci inżynieryjni docierają do repozytorium przez połączenie: repozytorium, jego domyślną gałąź i zapisane dla nich poświadczenie. Zapisane poświadczenie nie jest już nigdy nikomu pokazywane.",
-    "add": "Dodaj połączenie",
+    "intro": "Gdzie pracują agenci inżynieryjni: każde repozytorium, jak do niego docierają i czy mogą wypychać zmiany.",
     "limitReached": "To wdrożenie mieści najwyżej {{limit, number}} połączeń. Usuń jedno, aby dodać kolejne.",
     "loadFailed": "Nie udało się wczytać połączeń z repozytoriami.",
-    "emptyTitle": "Nie ma jeszcze połączeń z repozytoriami",
-    "emptyHint": "Dodaj połączenie, aby agenci inżynieryjni mogli pracować w repozytorium.",
     "branch": "Domyślna gałąź: {{branch}}",
     "kind": "GitHub App",
     "kindToken": "Token dostępu do projektu GitLab",
@@ -1012,10 +1176,6 @@
     "notSetHint": "Brak zapisanego poświadczenia: edytuj połączenie i zapisz je ponownie wraz z poświadczeniem.",
     "updated": "Zmienione {{when}} przez {{who}}",
     "unknownEditor": "nieznana osoba",
-    "edit": "Edytuj",
-    "editLabel": "Edytuj {{repository}}",
-    "remove": "Usuń",
-    "removeLabel": "Usuń {{repository}}",
     "created": "Dodano {{repository}}.",
     "saved": "Zapisano {{repository}}.",
     "removed": "Usunięto {{repository}}.",
@@ -1089,9 +1249,6 @@
       "voidedRemoved": "Unieważnione po usunięciu połączenia: potwierdź jego CI ponownie.",
       "unknownPerson": "administrator",
       "attest": "Potwierdź CI",
-      "attestLabel": "Potwierdź CI repozytorium {{repository}}",
-      "withdrawAction": "Wycofaj CI",
-      "withdrawLabel": "Wycofaj potwierdzenie CI repozytorium {{repository}}",
       "recorded": "Potwierdzenie CI repozytorium {{repository}} jest zapisane.",
       "withdrawn": "Potwierdzenie CI repozytorium {{repository}} jest wycofane.",
       "points": {
@@ -1117,6 +1274,76 @@
         "message": "Następne wypchnięcie lub pull request agentów w {{repository}} zostanie odrzucone, dopóki administrator ponownie nie potwierdzi CI.",
         "confirm": "Wycofaj potwierdzenie"
       }
+    },
+    "checkNow": "Sprawdź teraz",
+    "summary": {
+      "connected": "Połączono",
+      "attention": "Wymaga uwagi",
+      "issuesRead": "Zgłoszenia odczytywane automatycznie",
+      "through_one": "{{count, number}} repozytorium przez {{slug}}",
+      "through_few": "{{count, number}} repozytoria przez {{slug}}",
+      "through_many": "{{count, number}} repozytoriów przez {{slug}}",
+      "through_other": "{{count, number}} repozytorium przez {{slug}}",
+      "others_one": "{{count, number}} inne połączenie",
+      "others_few": "{{count, number}} inne połączenia",
+      "others_many": "{{count, number}} innych połączeń",
+      "others_other": "{{count, number}} innego połączenia",
+      "ciNeeded_one": "{{count, number}} wymaga potwierdzenia CI, zanim agenci wypchną zmiany",
+      "ciNeeded_few": "{{count, number}} wymagają potwierdzenia CI, zanim agenci wypchną zmiany",
+      "ciNeeded_many": "{{count, number}} wymaga potwierdzenia CI, zanim agenci wypchną zmiany",
+      "ciNeeded_other": "{{count, number}} wymaga potwierdzenia CI, zanim agenci wypchną zmiany"
+    },
+    "columns": {
+      "repository": "Repozytorium",
+      "ci": "CI",
+      "issues": "Zgłoszenia",
+      "label": "Etykieta"
+    },
+    "others": {
+      "title": "Inne połączenia",
+      "hint": "Połączone wklejonym kluczem GitHub App lub tokenem GitLab."
+    },
+    "actions": {
+      "storeKey": "Zapisz klucz",
+      "replaceToken": "Zastąp token",
+      "createLabel": "Utwórz etykietę"
+    },
+    "menu": {
+      "label": "Działania dla {{repository}}",
+      "changeBranch": "Zmień domyślną gałąź…",
+      "edit": "Edytuj połączenie…",
+      "attest": "Potwierdź CI…",
+      "withdraw": "Wycofaj potwierdzenie CI…",
+      "remove": "Usuń połączenie…"
+    },
+    "details": {
+      "button": "Szczegóły połączenia {{repository}}",
+      "title": "Szczegóły połączenia",
+      "connectionId": "Identyfikator połączenia",
+      "appId": "Identyfikator GitHub App",
+      "installationId": "Identyfikator instalacji",
+      "branch": "Domyślna gałąź",
+      "host": "Host i poświadczenie",
+      "key": "Klucz",
+      "keyStored": "Zapisany, nigdy niepokazywany",
+      "keyMissing": "Brak: zapisz go ponownie",
+      "tokenExpiry": "Token wygasa",
+      "ci": "Potwierdzenie CI",
+      "label": "Etykieta",
+      "updated": "Ostatnia zmiana",
+      "copy": "Kopiuj: {{field}}",
+      "copied": "Skopiowano"
+    },
+    "more": {
+      "title": "Inne sposoby połączenia",
+      "anotherApp": "Dodaj kolejną GitHub App",
+      "anotherAppHint": "Dwa kliknięcia: utwórz prywatną App w GitHubie, a potem ją zainstaluj.",
+      "manual": "Połącz ręcznie (zaawansowane)",
+      "manualHint": "Samodzielnie wklej identyfikatory i klucz prywatny GitHub App.",
+      "gitlab": "GitLab",
+      "gitlabHint": "Połącz projekt GitLab tokenem dostępu do projektu.",
+      "addGithub": "Dodaj połączenie GitHub",
+      "addGitlab": "Dodaj połączenie GitLab"
     }
   },
   "skills": {
@@ -1538,11 +1765,7 @@
   "engineeringAgent": {
     "deploymentFeedback": "Działa na opiniach z wdrożenia.",
     "setupTitle": "Skonfiguruj: {{name}}",
-    "setupDescription": "Wybierz połączenie z repozytorium, na którym pracuje, język repozytorium i ile jego przebiegi mogą wydać w miesiącu. Potem zostanie włączony i będzie działał w Twoim imieniu.",
-    "connection": "Połączenie z repozytorium",
     "connectionHint": "Przy wyzwalaczu zgłoszeń GitHub widoczne są tylko połączenia GitHub.",
-    "language": "Język",
-    "budget": "Budżet miesięczny (USD)",
     "budgetHint": "Zapisywany w jego przepływie pracy: ile wszystkie jego przebiegi mogą wydać w miesiącu kalendarzowym.",
     "budgetInvalid": "Dolary i centy, od 0,01 do 100 000.",
     "setupFailed": "Nie udało się skonfigurować agenta.",
@@ -1550,12 +1773,6 @@
     "save": "Zapisz",
     "loadFailed": "Nie udało się odczytać konfiguracji agenta.",
     "loading": "Odczytywanie konfiguracji agenta",
-    "runsAs": "Działa jako {{name}}.",
-    "changeSetup": "Zmień konfigurację",
-    "connectFirst": "Najpierw połącz repozytorium",
-    "setUp": "Skonfiguruj",
-    "whyNoConnection": "Wyłączony: potrzebuje połączenia z repozytorium, na którym może pracować.",
-    "whySetUp": "Wyłączony do czasu konfiguracji: połączenie, język i budżet miesięczny.",
     "enableFailed": "Nie udało się włączyć agenta."
   },
   "prdBuild": {
@@ -1584,7 +1801,6 @@
     "dialConfirmAction": "Ustaw na Prowadzone przez AI",
     "dialSaved": "Zapisano: Prowadzone przez AI.",
     "dialFailed": "Nie udało się zapisać Twojego sposobu pracy: spróbuj ponownie.",
-    "enableWaits": "Włączenie czeka, aż przejdzie każda kontrola, której potrzebuje uruchomienie.",
     "enableRefused": "Nie włączono: te kontrole, których potrzebuje uruchomienie, nie przechodzą.",
     "passedFolded": "Zaliczone kontrole ({{count, number}})",
     "passedLabel": "Zaliczone kontrole",
@@ -1708,11 +1924,10 @@
       "labelPending": "Etykieta {{label}}: tworzona automatycznie w każdym repozytorium, którego zgłoszenia są odczytywane."
     },
     "automation": {
-      "open": "Otwórz {{name}}",
       "missing": {
-        "triage": "Issue triage nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie nie jest tu znajdowany.",
-        "bug_fixer": "Bug fixer nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (błędy).",
-        "feature_builder": "Feature builder nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy listę agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (prośby o funkcje)."
+        "triage": "Issue triage nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy Orkiestrację agentów; agent o zmienionej nazwie nie jest tu znajdowany.",
+        "bug_fixer": "Bug fixer nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy Orkiestrację agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (błędy).",
+        "feature_builder": "Feature builder nie ma wśród agentów tego wdrożenia. Jest dodawany, gdy administrator po raz pierwszy otworzy Orkiestrację agentów; agent o zmienionej nazwie jest znajdowany po tym, nad czym pracuje (prośby o funkcje)."
       }
     },
     "ready": {
@@ -1725,13 +1940,7 @@
       "learn": "Każde uruchomienie kończy się krokiem Learn: retrospektywą, wnioskami i propozycjami ulepszenia umiejętności agentów. Propozycje czekają w Umiejętnościach, aż administrator je zaakceptuje; nic nie zmienia się samo.",
       "openSkills": "Otwórz Umiejętności",
       "finish": "Zakończ przewodnik",
-      "finished": "Przewodnik jest zakończony. Przewodnik konfiguracji na stronie agentów otwiera go ponownie."
-    },
-    "intro": {
-      "title": "Skonfigurować autonomiczną pętlę błędów?",
-      "body": "Nic nie jest jeszcze skonfigurowane. Przewodnik konfiguracji przeprowadzi Cię przez to w zalecanej kolejności: GitHub i CI repozytorium, jego zgłoszenia, a potem automatyzacje, które klasyfikują, naprawiają i budują.",
-      "start": "Pomóż mi skonfigurować",
-      "skip": "Pomiń"
+      "finished": "Przewodnik jest zakończony. Przewodnik konfiguracji w Orkiestracji agentów otwiera go ponownie."
     }
   },
   "runWorkspace": {

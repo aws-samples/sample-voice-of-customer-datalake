@@ -1,15 +1,155 @@
 {
   "nav": {
-    "label": "自主智能体",
+    "label": "智能体编排",
     "needsDecision_one": "{{count, number}} 个代理需要决定",
     "needsDecision_other": "{{count, number}} 个代理需要决定"
   },
+  "shell": {
+    "title": "智能体编排",
+    "subtitle": "在你设定的预算内处理反馈和 GitHub Issue 的智能体。",
+    "create": "新建自动化",
+    "createTitle": "创建产品自动化",
+    "createSubmit": "创建自动化",
+    "setupGuideProgress": "配置向导 · 已完成 {{done, number}}/{{total, number}}",
+    "tabs": {
+      "label": "智能体编排分区",
+      "agents": "自动化",
+      "runs": "运行记录",
+      "skills": "技能",
+      "spend": "费用",
+      "workflows": "流程",
+      "registry": "注册表",
+      "connections": "连接"
+    },
+    "empty": {
+      "runsTitle": "暂无运行记录。",
+      "runsHint": "自动化开始运行后会显示在这里。",
+      "goToAutomations": "前往自动化",
+      "runsNeedsYou": "没有待你处理的事项。",
+      "runsNeedsYouHint": "等待人工决定的运行会显示在这里。",
+      "showAllRuns": "显示全部运行记录"
+    },
+    "counts": {
+      "runs_one": "{{count, number}} 项待你处理",
+      "runs_other": "{{count, number}} 项待你处理",
+      "skills_one": "{{count, number}} 项待审核",
+      "skills_other": "{{count, number}} 项待审核"
+    }
+  },
+  "automations": {
+    "state": {
+      "needs_setup": "需要配置",
+      "cant_run": "无法运行",
+      "paused": "已暂停",
+      "ready": "就绪",
+      "enabled": "已启用",
+      "loading": "正在读取状态"
+    },
+    "unchecked": "无法检查",
+    "reason": {
+      "connection_gone": "其代码仓库连接已被删除。",
+      "monthly_cap": "已达到每月上限：运行将等到下个月。",
+      "daily_cap": "已达到每日运行上限。"
+    },
+    "actions": {
+      "set_up": "配置",
+      "fix": "修复",
+      "resume": "恢复",
+      "enable": "启用",
+      "run_now": "立即运行",
+      "review": "查看"
+    },
+    "menu": {
+      "label": "{{name}} 的操作",
+      "open": "打开",
+      "editSettings": "编辑设置",
+      "changeSetup": "更改配置…",
+      "rename": "重命名…",
+      "pause": "暂停",
+      "resume": "恢复",
+      "turnOff": "关闭",
+      "runNow": "立即运行",
+      "allRuns": "全部运行记录",
+      "delete": "删除…",
+      "archive": "归档…"
+    },
+    "columns": {
+      "automation": "自动化",
+      "status": "状态",
+      "lastRun": "上次运行",
+      "usage": "用量"
+    },
+    "activity": {
+      "none": "暂无运行",
+      "running": "运行中 · {{when}}开始",
+      "ended": "{{status}} · {{when}}",
+      "needsDecision": "需要你的决定",
+      "spentOf": "{{amount}} / {{budget}}",
+      "callsOf": "模型调用 {{calls}}/{{cap}} 次",
+      "calls_one": "{{calls}} 次模型调用",
+      "calls_other": "{{calls}} 次模型调用",
+      "scheduledToday_one": "今天计划运行 {{count, number}} 次",
+      "scheduledToday_other": "今天计划运行 {{count, number}} 次"
+    },
+    "notice": {
+      "enabled": "已启用 {{name}}。",
+      "enabledRunsAsYou": "已启用 {{name}}。它将以你的身份运行。",
+      "paused": "已暂停 {{name}}：恢复之前不会自动开始任何运行。",
+      "resumed": "已恢复 {{name}}。",
+      "turnedOff": "已关闭 {{name}}。",
+      "started": "{{name}} 已开始一次运行。",
+      "saved": "已保存 {{name}} 的配置。"
+    },
+    "pauseFailed": "无法暂停或恢复此自动化。",
+    "groups": {
+      "engineering": {
+        "title": "工程自动化",
+        "hint": "带标签的 GitHub Issue 会变成由人审阅的拉取请求：分诊 → 修复或构建。"
+      },
+      "product": {
+        "title": "产品自动化",
+        "hint": "新反馈会变成经过调研的项目：用户画像、PR/FAQ、PRD 和原型。"
+      }
+    },
+    "blocked": {
+      "noConnection": "这些自动化需要 GitHub 连接。",
+      "connect": "连接 GitHub"
+    },
+    "firstRun": {
+      "title": "配置缺陷处理闭环",
+      "body": "连接 GitHub 并确认代码仓库的 CI，然后开启分诊、修复和构建。任何步骤都可以稍后再做。",
+      "start": "开始配置向导",
+      "skip": "暂不"
+    },
+    "needsYou": {
+      "review": "查看",
+      "decision": "需要你的决定",
+      "decisionLine": "{{name}} · 上次运行等待你处理 · {{when}}",
+      "waiting": "等待审核",
+      "title_one": "待你处理（{{count, number}}）",
+      "title_other": "待你处理（{{count, number}}）",
+      "skillsLine_one": "技能 · {{count, number}} 个版本待审核",
+      "skillsLine_other": "技能 · {{count, number}} 个版本待审核"
+    },
+    "drawer": {
+      "description": "它以你的身份，基于部署的反馈运行。",
+      "repository": "代码仓库",
+      "noRepository": "暂无可用的代码仓库",
+      "changeRepository": "在“连接”中更改",
+      "language": "语言",
+      "budget": "每月预算（美元）",
+      "readiness": "运行前",
+      "openConnections": "打开“连接”",
+      "enableWaits_one": "启用前需修复 {{count, number}} 项。",
+      "enableWaits_other": "启用前需修复 {{count, number}} 项。"
+    },
+    "toFix_one": "{{count, number}} 项待修复",
+    "toFix_other": "{{count, number}} 项待修复",
+    "warnings_one": "{{count, number}} 个警告",
+    "warnings_other": "{{count, number}} 个警告"
+  },
   "common": {
     "cancel": "取消"
-  },
-  "status": {
-    "enabled": "已启用",
-    "disabled": "已停用"
   },
   "scope": {
     "all": "所有分类",
@@ -17,39 +157,19 @@
     "sources": "仅限这些来源",
     "sourcesHint": "不勾选则关注所有来源。阈值触发器会统计所有来源，因此指定来源时不提供该触发器。"
   },
-  "views": {
-    "label": "智能体页面分区",
-    "agents": "智能体",
-    "workflows": "工作流",
-    "spend": "费用",
-    "connections": "连接",
-    "skills": "技能",
-    "runs": "运行记录"
-  },
   "list": {
-    "title": "自主智能体",
-    "subtitle": "智能体关注其范围内的反馈，并在触发器触发时运行工作流：调研、用户画像、PR/FAQ、PRD 和原型，经用户画像评审后移交项目。",
-    "create": "新建智能体",
-    "createTitle": "创建自主智能体",
     "createHint": "创建后默认停用，并附带一份可编辑的“评论 → 原型”工作流专属副本。配置触发器和工作流后再启用。",
     "createFailed": "无法创建智能体。",
-    "emptyTitle": "暂无自主智能体",
+    "emptyTitle": "暂无自动化",
     "emptyAdmin": "创建一个智能体，自动将新反馈转化为经过调研的项目和原型。",
-    "emptyUser": "管理员尚未设置您可见的智能体。",
+    "emptyUser": "管理员尚未设置你可以查看的自动化。",
     "loadFailed": "无法加载智能体。",
-    "spend": "今日计划运行 {{runs, number}} 次 · 本月模型调用 {{calls, number}} 次",
-    "spendHint": "手动运行不计入每日计划运行上限。",
-    "needsDecision": "需要您的决定",
-    "reviewRun": "查看 {{name}} 的运行",
     "rename": "重命名",
-    "renameNamed": "重命名 {{name}}",
-    "renameTitle": "重命名此智能体",
+    "renameTitle": "重命名此自动化",
     "renameFailed": "无法重命名该智能体。",
     "delete": "删除",
-    "deleteNamed": "删除 {{name}}",
-    "deleteTitle": "删除此智能体？",
-    "deleteMessage": "“{{name}}”将停止运行并从你的智能体中移除。其历史运行以及创建的项目和文档会保留。正在进行的运行会先完成。",
-    "deleteFailed": "无法删除该智能体。"
+    "deleteTitle": "删除此自动化？",
+    "deleteMessage": "“{{name}}”将停止运行并从你的自动化中移除。其过往运行以及创建的项目和文档会保留。进行中的运行会先完成。"
   },
   "library": {
     "title": "工作流库",
@@ -99,28 +219,49 @@
     "public": "公开"
   },
   "detail": {
-    "back": "所有智能体",
+    "back": "智能体编排",
     "tabs": "智能体分区",
-    "enabledLabel": "已启用",
     "toggleFailed": "无法启用或停用智能体。",
     "save": "保存",
     "saved": "已保存",
     "saveFailed": "无法保存更改。",
     "discard": "放弃更改",
     "archive": "归档",
-    "archiveTitle": "归档此智能体？",
+    "archiveTitle": "归档此自动化？",
     "archiveMessage": "它将停止运行并从列表中消失。它创建的项目会保留。",
-    "notFound": "此智能体不存在或您无权查看。",
-    "stats": "共运行 {{runs, number}} 次 · 今日计划 {{today, number}} 次 · 本月模型调用 {{calls, number}} 次"
+    "notFound": "此自动化不存在，或你无权查看。",
+    "backToAutomations": "自动化",
+    "tab": {
+      "flow": "流程",
+      "budgetModels": "预算与模型"
+    },
+    "meta": {
+      "actsAs": "以启用它的 {{name}} 身份运行",
+      "deploymentFeedback": "部署反馈",
+      "runs_one": "{{count, number}} 次运行",
+      "runs_other": "{{count, number}} 次运行",
+      "today_one": "今天计划 {{count, number}} 次",
+      "today_other": "今天计划 {{count, number}} 次",
+      "calls_one": "本月 {{calls}} 次模型调用",
+      "calls_other": "本月 {{calls}} 次模型调用"
+    },
+    "flow": {
+      "another": "运行其他流程",
+      "edit": "在“流程”中编辑",
+      "revision": "修订版 {{revision, number}}",
+      "readOnly": "此处只读：一个流程可能被多个自动化共用，因此请在“流程”中修改。",
+      "loadFailed": "无法加载其流程。",
+      "unreadableTitle": "无法显示此流程",
+      "unreadable": "无法读取其已保存的定义。",
+      "switchMessage": "{{name}} 将从下一次运行开始执行“{{flow}}”。"
+    },
+    "runsEmptyHint": "当它开始运行（由触发器触发，或有人点击“立即运行”）时会显示在这里。"
   },
   "tabs": {
     "settings": "设置",
     "triggers": "触发器",
     "personas": "用户画像",
-    "instructions": "指令",
-    "models": "模型",
     "budget": "预算",
-    "workflow": "工作流",
     "runs": "运行记录"
   },
   "triggers": {
@@ -458,12 +599,8 @@
     "clear": "清空画布",
     "clearTitle": "清空画布？",
     "clearMessage": "将从草稿中移除所有步骤、箭头和循环，以便从头构建工作流。在你保存之前不会保存任何内容。",
-    "savedAsAgent": "已另存为“{{name}}”。此智能体现在运行它。",
-    "savedAsSwitchFailed": "副本已保存，但无法将此智能体切换到该副本。请在智能体设置中选择它。",
     "savedAsOpened": "已另存为“{{name}}”。",
-    "switchLabel": "工作流",
     "switchTitle": "切换工作流？",
-    "switchMessage": "您对 {{name}} 未保存的更改将丢失。",
     "switchConfirm": "切换工作流",
     "switched": "此代理现在运行 {{name}}。",
     "switchFailed": "无法将代理切换到该工作流。",
@@ -775,7 +912,7 @@
     }
   },
   "spend": {
-    "hint": "工程智能体的花费（来自费用台账）：每个会话的费用、令牌和 MicroVM 时间，以运行时的计量为准。费用包含会话时间和模型令牌，均按部署的价格计算。月份按 UTC 计算。",
+    "hint": "工程自动化本月的花费，按本部署的价格计算（UTC）。",
     "month": "月份",
     "groupBy": "分组依据",
     "by": {
@@ -803,7 +940,6 @@
     "none": "未记录",
     "otherModels": "其他模型",
     "workflowRuns": "{{name}}：查看其运行",
-    "inRun": "运行 {{run}}",
     "onlyWorkflow": "工作流：{{name}}",
     "allWorkflows": "显示所有工作流",
     "tableCaption": "{{month}}的费用，分组依据：{{by}}",
@@ -827,31 +963,30 @@
       "listLabel": "GitHub App",
       "ownerUser": "{{owner}}（个人账户）",
       "ownerOrganization": "{{owner}}（组织）",
-      "webhookOn": "Issue 事件投递到这里",
+      "webhookOn": "发送 Issue 事件",
       "webhookOff": "无 Webhook",
-      "connections_one": "{{count, number}} 个连接",
-      "connections_other": "{{count, number}} 个连接",
       "notInstalled": "未安装",
-      "created": "由 {{who}} 于 {{when}} 创建",
       "openOnGitHub": "在 GitHub 上打开 {{slug}}",
-      "install": "安装",
-      "installMore": "安装到更多仓库",
-      "installLabel": "在 GitHub 上安装 {{slug}}",
       "check": "检查安装",
-      "checkLabel": "检查 {{slug}} 的安装",
       "checkCovered": "该安装覆盖了 {{slug}} 的所有连接（已安装 {{repositories, number}} 个仓库）。",
       "checkMissing": "已不在安装范围内：{{connections}}。在 App 重新安装到这些仓库或删除这些连接之前，它们的运行会被拒绝。",
-      "remove": "删除",
-      "removeLabel": "删除 {{slug}}",
       "removeTitle": "删除 {{slug}}？",
       "removeMessage": "其密钥和 Webhook 密钥将从本部署中删除。App 本身仍保留在 GitHub 上：请同时在 GitHub 设置中删除它。",
       "removeConfirm": "删除 App",
       "removed": "已从本部署中删除 {{slug}}。请同时在 GitHub 设置中删除它。",
-      "via": "通过 {{slug}}"
+      "menuLabel": "{{slug}} 的操作",
+      "removeApp": "删除 App…",
+      "addRepositories": "添加仓库",
+      "installOnGitHub": "在 GitHub 上安装",
+      "checked": "{{when}}检查过",
+      "reinstall": "在 GitHub 上重新安装",
+      "checking": "正在检查安装…",
+      "repositoriesLabel": "通过 {{slug}} 连接的仓库",
+      "installed_one": "已安装 · {{count, number}} 个仓库",
+      "installed_other": "已安装 · {{count, number}} 个仓库"
     },
     "issues": {
       "switch": "读取此仓库的 Issue",
-      "reading": "Issue 会自动读取。",
       "reasons": {
         "off": "未读取其 Issue：开关已关闭。",
         "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 数据来源”中添加此仓库。",
@@ -882,15 +1017,23 @@
         },
         "scheduleOff": "GitHub Issues 数据源的计划已关闭：请在“管理 → 数据来源”中开启。",
         "error": "无法自动设置 GitHub Issues 数据源：{{error}}"
-      }
+      },
+      "state": {
+        "reading": "读取中",
+        "notRead": "未读取",
+        "off": "关闭"
+      },
+      "githubOnly": "仅限 GitHub",
+      "appOnly": "仅通过部署的 GitHub App 读取",
+      "labelFailed": "无法创建"
     },
     "githubReturn": {
-      "back": "返回 智能体 → 连接",
+      "back": "返回 智能体编排 → 连接",
       "createdTitle": "GitHub App 已创建",
       "creating": "正在保存 App 的密钥…",
       "createdBody": "{{slug}} 已创建，其密钥已保存。接下来，请将它安装到智能体可以处理的仓库上。",
       "installOnGitHub": "在 GitHub 上安装",
-      "noCode": "此页面需要 GitHub 在创建 App 后返回的链接。请从 智能体 → 连接 重新开始。",
+      "noCode": "此页面需要 GitHub 在创建 App 后返回的链接。请从 智能体编排 → 连接 重新开始。",
       "installedTitle": "GitHub App 已安装",
       "installing": "正在保存连接…",
       "installedBody_one": "已通过 {{slug}} 连接 {{count, number}} 个仓库。",
@@ -905,16 +1048,13 @@
         "limit": "{{repository}}：超出连接上限",
         "not_saved": "{{repository}}：无法保存"
       },
-      "approval": "安装需要所有者批准。批准后，请打开 智能体 → 连接，并在 App 上使用“安装到更多仓库”来保存其仓库。",
-      "noState": "GitHub 返回时没有带上本部署的链接，因此未保存任何内容。请打开 智能体 → 连接，并在 App 上使用“检查安装”或“安装到更多仓库”。"
+      "approval": "安装需要所有者批准。批准后，请打开 智能体编排 → 连接，并在 App 上使用“添加仓库”来保存其仓库。",
+      "noState": "GitHub 返回时没有带上本部署的链接，因此未保存任何内容。请打开 智能体编排 → 连接，并在 App 上使用“检查安装”或“添加仓库”。"
     },
     "title": "代码仓库连接",
-    "intro": "工程智能体通过连接访问代码仓库：连接包括仓库、其默认分支以及为它们保存的凭据。已保存的凭据不会再向任何人显示。",
-    "add": "添加连接",
+    "intro": "工程智能体在哪里工作：每个仓库、它们如何访问它，以及是否允许推送。",
     "limitReached": "此部署最多可保存 {{limit, number}} 个连接。请先移除一个，再添加新的连接。",
     "loadFailed": "无法加载代码仓库连接。",
-    "emptyTitle": "还没有代码仓库连接",
-    "emptyHint": "添加一个连接，工程智能体即可在仓库中工作。",
     "branch": "默认分支：{{branch}}",
     "kind": "GitHub App",
     "kindToken": "GitLab 项目访问令牌",
@@ -971,10 +1111,6 @@
     "notSetHint": "缺少已保存的凭据：请编辑此连接，并连同凭据重新保存。",
     "updated": "{{who}} 于 {{when}} 更新",
     "unknownEditor": "未知",
-    "edit": "编辑",
-    "editLabel": "编辑 {{repository}}",
-    "remove": "移除",
-    "removeLabel": "移除 {{repository}}",
     "created": "已添加 {{repository}}。",
     "saved": "已保存 {{repository}}。",
     "removed": "已移除 {{repository}}。",
@@ -1048,9 +1184,6 @@
       "voidedRemoved": "连接已移除，确认已失效：请再次确认其 CI。",
       "unknownPerson": "一位管理员",
       "attest": "确认 CI",
-      "attestLabel": "确认 {{repository}} 的 CI",
-      "withdrawAction": "撤回 CI 确认",
-      "withdrawLabel": "撤回 {{repository}} 的 CI 确认",
       "recorded": "{{repository}} 的 CI 确认已记录。",
       "withdrawn": "{{repository}} 的 CI 确认已撤回。",
       "points": {
@@ -1076,6 +1209,70 @@
         "message": "在管理员再次确认其 CI 之前，智能体在 {{repository}} 上的下一次推送或拉取请求都会被拒绝。",
         "confirm": "撤回确认"
       }
+    },
+    "checkNow": "立即检查",
+    "summary": {
+      "connected": "已连接",
+      "attention": "需要处理",
+      "issuesRead": "自动读取 Issue",
+      "through_one": "通过 {{slug}} 连接的 {{count, number}} 个仓库",
+      "through_other": "通过 {{slug}} 连接的 {{count, number}} 个仓库",
+      "others_one": "其他 {{count, number}} 个连接",
+      "others_other": "其他 {{count, number}} 个连接",
+      "ciNeeded_one": "{{count, number}} 个仓库需要先确认 CI，智能体才能推送",
+      "ciNeeded_other": "{{count, number}} 个仓库需要先确认 CI，智能体才能推送"
+    },
+    "columns": {
+      "repository": "仓库",
+      "ci": "CI",
+      "issues": "Issue",
+      "label": "标签"
+    },
+    "others": {
+      "title": "其他连接",
+      "hint": "通过粘贴的 GitHub App 密钥或 GitLab 令牌连接。"
+    },
+    "actions": {
+      "storeKey": "保存密钥",
+      "replaceToken": "替换令牌",
+      "createLabel": "创建标签"
+    },
+    "menu": {
+      "label": "{{repository}} 的操作",
+      "changeBranch": "更改默认分支…",
+      "edit": "编辑连接…",
+      "attest": "确认 CI…",
+      "withdraw": "撤回 CI 确认…",
+      "remove": "移除连接…"
+    },
+    "details": {
+      "button": "{{repository}} 的连接详情",
+      "title": "连接详情",
+      "connectionId": "连接 ID",
+      "appId": "GitHub App ID",
+      "installationId": "安装 ID",
+      "branch": "默认分支",
+      "host": "主机和凭据",
+      "key": "密钥",
+      "keyStored": "已保存，从不显示",
+      "keyMissing": "缺失：请重新保存",
+      "tokenExpiry": "令牌到期",
+      "ci": "CI 确认",
+      "label": "标签",
+      "updated": "最近更改",
+      "copy": "复制{{field}}",
+      "copied": "已复制"
+    },
+    "more": {
+      "title": "其他连接方式",
+      "anotherApp": "添加另一个 GitHub App",
+      "anotherAppHint": "两次点击：在 GitHub 上创建私有 App，然后安装它。",
+      "manual": "手动连接（高级）",
+      "manualHint": "自己粘贴 GitHub App 的 ID 和私钥。",
+      "gitlab": "GitLab",
+      "gitlabHint": "用项目访问令牌连接 GitLab 项目。",
+      "addGithub": "添加 GitHub 连接",
+      "addGitlab": "添加 GitLab 连接"
     }
   },
   "skills": {
@@ -1493,11 +1690,7 @@
   "engineeringAgent": {
     "deploymentFeedback": "基于部署的反馈运行。",
     "setupTitle": "设置 {{name}}",
-    "setupDescription": "选择它工作的代码仓库连接、代码仓库的语言，以及其运行每月可花费的金额。之后它将被启用，并以你的身份运行。",
-    "connection": "代码仓库连接",
     "connectionHint": "有 GitHub Issue 触发器时，只列出 GitHub 连接。",
-    "language": "语言",
-    "budget": "月度预算（美元）",
     "budgetHint": "保存在其工作流中：其所有运行在一个自然月内可花费的金额。",
     "budgetInvalid": "以美元和美分表示，从 0.01 到 100,000。",
     "setupFailed": "无法设置该智能体。",
@@ -1505,12 +1698,6 @@
     "save": "保存",
     "loadFailed": "无法读取该智能体的设置。",
     "loading": "正在读取智能体的设置",
-    "runsAs": "以 {{name}} 的身份运行。",
-    "changeSetup": "更改设置",
-    "connectFirst": "请先连接一个代码仓库",
-    "setUp": "设置",
-    "whyNoConnection": "已停用：需要一个可工作的代码仓库连接。",
-    "whySetUp": "设置完成前处于停用状态：需要连接、语言和月度预算。",
     "enableFailed": "无法启用该智能体。"
   },
   "prdBuild": {
@@ -1539,7 +1726,6 @@
     "dialConfirmAction": "设为 AI 主导",
     "dialSaved": "已保存：AI 主导。",
     "dialFailed": "无法保存你的工作方式：请重试。",
-    "enableWaits": "在运行所需的每项检查都通过之前，启用会一直等待。",
     "enableRefused": "未启用：运行所需的以下检查未通过。",
     "passedFolded": "已通过的检查（{{count, number}}）",
     "passedLabel": "已通过的检查",
@@ -1661,11 +1847,10 @@
       "labelPending": "标签 {{label}}：会在每个读取 Issue 的仓库上自动创建。"
     },
     "automation": {
-      "open": "打开 {{name}}",
       "missing": {
-        "triage": "Issue triage 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的在这里找不到。",
-        "bug_fixer": "Bug fixer 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的按其处理的内容（缺陷）查找。",
-        "feature_builder": "Feature builder 不在此部署的智能体中。管理员首次打开智能体列表时会添加它；改过名的按其处理的内容（功能请求）查找。"
+        "triage": "Issue triage 不在此部署的智能体中。管理员首次打开智能体编排时会添加它；改过名的在这里找不到。",
+        "bug_fixer": "Bug fixer 不在此部署的智能体中。管理员首次打开智能体编排时会添加它；改过名的按其处理的内容（缺陷）查找。",
+        "feature_builder": "Feature builder 不在此部署的智能体中。管理员首次打开智能体编排时会添加它；改过名的按其处理的内容（功能请求）查找。"
       }
     },
     "ready": {
@@ -1678,13 +1863,7 @@
       "learn": "每次运行都以 Learn 结束：一次回顾、经验教训，以及改进智能体技能的提案。提案在“技能”中等待管理员接受；不会自动改变。",
       "openSkills": "打开技能",
       "finish": "完成向导",
-      "finished": "向导已完成。智能体页面上的“配置向导”可再次打开它。"
-    },
-    "intro": {
-      "title": "配置自主缺陷闭环？",
-      "body": "尚未配置任何内容。配置向导会按推荐顺序引导你：GitHub 和仓库的 CI、其 issue，然后是负责分诊、修复和构建的自动化。",
-      "start": "帮我配置",
-      "skip": "跳过"
+      "finished": "向导已完成。智能体编排中的“配置向导”可再次打开它。"
     }
   },
   "runWorkspace": {

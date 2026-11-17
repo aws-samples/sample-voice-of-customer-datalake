@@ -47,10 +47,12 @@ const PREFETCH: Readonly<Record<string, Prefetch>> = {
     prefetch(client, { queryKey: agentsKeys.runs(target.agentId), queryFn: () => agentsApi.listRuns(target.agentId), staleTime: PREFETCH_FRESH_MS }),
     workflowDetail(client, target),
   ]),
-  workflow: (client, target) => Promise.all([workflowDetail(client, target), target.isAdmin ? workflowList(client) : null]),
+  // (7.52.00: the Flow tab's flow and, an administrator's, the flows it may run instead)
+  flow: (client, target) => Promise.all([workflowDetail(client, target), target.isAdmin ? workflowList(client) : null]),
   settings: (client) => workflowList(client),
   personas: (client) => prefetch(client, { queryKey: projectsKey(), queryFn: projectsApi.getProjects, staleTime: PREFETCH_FRESH_MS }),
-  models: (client) => prefetch(client, {
+  // (a product automation's Budget & models)
+  budget: (client) => prefetch(client, {
     queryKey: modelSettingsKey(), queryFn: () => api.getModelSettings(), retry: false, staleTime: PREFETCH_FRESH_MS,
   }),
 }

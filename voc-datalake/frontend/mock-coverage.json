@@ -230,6 +230,26 @@
   {
     "file": "api/agentsApi.ts",
     "method": "POST",
+    "call": "agentApiPath(id, '/pause')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/pause"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "agentApiPath(id, '/resume')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/resume"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
     "call": "agentApiPath(id, '/run')",
     "probes": [
       {

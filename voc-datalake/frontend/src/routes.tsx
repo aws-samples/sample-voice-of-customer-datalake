@@ -38,11 +38,13 @@ import Login from './pages/Login/Login'
 import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
-  DataExplorer, Vote, Memory, Company, Agents, AgentDetail, SetupGuide,
+  DataExplorer, Vote, Memory, Company, Agents, AgentsAutomations, AgentsRuns, AgentsSpend, AgentsFlows, AgentsConnections,
+  AgentDetail, SetupGuide,
   WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
+import { registryRoutes } from './pages/Agents/orchestrationRoutes.registry'
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
@@ -51,6 +53,14 @@ const page = (element: ReactNode) => ({
   element: <Suspense fallback={<PageLoader />}>{element}</Suspense>,
   errorElement: <RouteErrorBoundary />,
 })
+
+/**
+ * A route of Agent orchestration's C3 file as a child of its shell: its path relative to `agents`, however it is
+ * written (`/agents/registry/*`, `agents/registry/*` or `registry/*`).
+ */
+function underOrchestration(route: RouteObject): RouteObject {
+  return route.path === undefined ? route : { ...route, path: route.path.replace(/^\/?agents\//u, '') }
+}
 
 export const routes: RouteObject[] = [
   {
@@ -157,16 +167,24 @@ export const routes: RouteObject[] = [
       // Their tabs: /memory/company|personal|review|imports, /company/vision|design|personas (memoryPaths.ts, companyPaths.ts).
       { path: 'memory/*', ...page(<Memory />) },
       { path: 'company/*', ...page(<Company />) },
-      // The list's views are paths (Agents/agentsPaths.ts): /agents, /agents/workflows, /agents/spend,
-      // /agents/connections, /agents/skills[/<role>[/v/<n>]], /agents/runs (7.51.00, the engineering runs, filtered by
-      // `?month=&flow=&status=`). Each is listed, so it ranks above `agents/:id/*` (an agent's id is never a view's
-      // name: `ag_<12 hex>`); the pages below with a longer static path rank above both.
-      { path: 'agents', ...page(<Agents />) },
-      { path: 'agents/runs/*', ...page(<Agents />) },
-      { path: 'agents/workflows/*', ...page(<Agents />) },
-      { path: 'agents/spend/*', ...page(<Agents />) },
-      { path: 'agents/connections/*', ...page(<Agents />) },
-      { path: 'agents/skills/*', ...page(<Agents />) },
+      // Agent orchestration (7.52.00; Agents/agentsPaths.ts): the shell of its tabs, each tab a child route, in their
+      // order: Automations /agents, Runs /agents/runs (the engineering runs, filtered by `?month=&flow=&status=`),
+      // Skills /agents/skills[/<role>[/v/<n>]], Spend /agents/spend, Flows /agents/workflows, Registry
+      // /agents/registry[/…] and Connections /agents/connections. Each is static, so it ranks above `agents/:id/*` (an
+      // agent's id is never a tab's name: `ag_<12 hex>`); the pages below with a longer static path rank above both.
+      // Skills and Registry are 7.52.00 C3's pages (Agents/orchestrationRoutes.registry.tsx), made the shell's children.
+      {
+        path: 'agents',
+        ...page(<Agents />),
+        children: [
+          { index: true, element: <AgentsAutomations /> },
+          { path: 'runs/*', element: <AgentsRuns /> },
+          { path: 'spend/*', element: <AgentsSpend /> },
+          { path: 'workflows/*', element: <AgentsFlows /> },
+          { path: 'connections/*', element: <AgentsConnections /> },
+          ...registryRoutes.map(underOrchestration),
+        ],
+      },
       // The engineering setup guide and its steps: /agents/setup[/<step>] (Agents/SetupGuide/setupGuidePaths.ts).
       { path: 'agents/setup/*', ...page(<SetupGuide />) },
       // One agent and its tabs: /agents/<id>/<tab> (/agents/<id> is Settings).

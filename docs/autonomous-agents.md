@@ -15,24 +15,35 @@ and personas Claude Sonnet 5.5. Each is overridable per surface (`agent_orchestr
 
 ## Using agents
 
-Open the agents page from the sidebar (`/agents`, titled **Autonomous agents**). It lists the agents you can see,
-each with its status and its spend (scheduled runs today, model calls this month); a run that waits for a person
-shows **Needs your decision**. Administrators also get **New agent**, an **Agents** / **Workflows** switch for the
-workflow library, and Rename and Delete on each row. The **Plans** section lists the multi-step requests you
-approved in the AI assistant ([plan mode](assistant-plan-mode.md)).
+Open **Agent orchestration** from the sidebar (`/agents`; 7.52.00). Its tabs, in their order, are paths:
+**Automations** `/agents` · **Runs** `/agents/runs` (with how many runs wait for a person) · **Skills** `/agents/skills`
+(with how many versions wait for review) · **Spend** `/agents/spend` · **Flows** `/agents/workflows` · **Registry**
+`/agents/registry` (Quality gates is its filter) · **Connections** `/agents/connections`. Runs, Skills, Spend, Registry
+and Connections are an administrator's, while the engineering agents are on; anyone else sees Automations only, read
+only.
 
-An agent's page has an **Enabled** switch and these tabs:
+**Automations** lists the automations you can see in two groups, Engineering first (for an administrator with the
+engineering agents on), then Product, above a **Needs you** strip (a last run waiting for a decision, skill versions
+waiting for review). Each row has one state chip (Needs setup, Can't run, Paused, Ready or Enabled), "N to fix" when a
+check a run needs does not pass, its last run, its usage (an engineering automation's month against its flow's
+budget, a product one's model calls), at most one button (its state's action: Set up, Fix, Resume, Enable, Run now or
+Review) and a ⋯ menu (Open, Edit settings, Change setup…, Rename…, Pause or Resume, Turn off, Run now, All runs,
+Delete…). An engineering automation is set up in the **Set up drawer** (a side sheet: its repository, language,
+monthly budget and readiness; Save while a check holds Enable, Save and enable once nothing does). Administrators
+also get **New automation** (a product automation, created off). Your assistant plans
+([plan mode](assistant-plan-mode.md)) are under Runs, or under Automations for whoever has no Runs tab.
+
+An automation's page has its state chip, its state's one action and a ⋯ menu (Pause or Resume, Turn off, Run now,
+Change setup…, Rename…, Archive…), and these tabs (Runs opens first once it has run, Settings before):
 
 | Tab | What you set or see |
 |---|---|
-| Settings | name, description, workflow, output visibility (private or public), scope (all reviews, or chosen categories and subcategories) |
-| Triggers | up to 5 triggers (below) |
-| Personas | up to 6 fixed personas picked from projects, and whether the agent may generate new personas when none fit |
-| Instructions | free-text instructions (up to 8,000 characters) that reach every writing step |
-| Models | a model per role (planner, worker, reviewer, persona), overriding the deployment default |
-| Budget | scheduled runs per day (at most 2), model calls per run (10–500, default 150), monthly model-call cap (default 5,000, or none) |
-| Workflow | the agent's workflow in the editor (below) |
 | Runs | each run's journal, what it produced, and the decision a paused run needs ([below](#when-a-run-needs-a-human)) |
+| Triggers | up to 5 triggers (below) |
+| Settings | name, description, workflow, output visibility (private or public), scope (all reviews, or chosen categories and subcategories), and free-text instructions (up to 8,000 characters) that reach every writing step |
+| Personas | (a product automation's) up to 6 fixed personas picked from projects, and whether the agent may generate new personas when none fit |
+| Flow | the flow it runs, read only (a flow may be shared): **Edit in Flows** opens its page, **Run another flow** points the automation at another flow of its kind from its next run |
+| Budget (& models) | scheduled runs per day (at most 2), model calls per run (10–500, default 150), monthly model-call cap (default 5,000, or none); a product automation's model per role (planner, worker, reviewer, persona) too, overriding the deployment default |
 
 A new agent is created **disabled** with its own editable copy of the "Reviews → Prototype" workflow. It never runs,
 and costs nothing, until an administrator enables it. **Run now** starts a run at once.
@@ -186,7 +197,7 @@ recommends (the first one neither done nor skipped).
   anyone else, a delegated credential included), 404 while the module is off. A detected step is done whatever was
   chosen; only the last step is marked done by hand.
 - **The first visit.** While nothing is set up (no GitHub connection, no engineering automation enabled) and no
-  choice was made, the Agents list offers **Help me set up** (the guide) or **Skip**. The choice is the deployment's,
+  choice was made, Automations' Engineering group offers **Start the setup guide** or **Not now**. The choice is the deployment's,
   so another administrator is not asked again; **Setup guide** stays one click away.
 
 ### Readiness before Enable
@@ -339,7 +350,8 @@ written in the same transaction as the agent row (`shared/agents_store.py` `set_
 counts as watching its connection, so the Bug fixer and Feature builder on it wait for its triage rather than acting
 on untriaged issues. Administrators acting for themselves only; 404 for an unknown or archived agent.
 
-The web app's states (planned): off is **Ready**, on and paused **Paused** (primary **Resume**), on **Enabled**.
+The web app's states (7.52.00): off is **Ready**, on and paused **Paused** (its one action **Resume**), on **Enabled**;
+Pause and Resume are also in the automation's ⋯ menu, on its row and on its page.
 
 ## Triggers and budgets
 

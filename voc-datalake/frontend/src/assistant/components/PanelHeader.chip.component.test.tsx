@@ -38,7 +38,7 @@ describe('PanelHeader context chip', () => {
   })
 
   it.each([
-    ['/agents', 'Using: Autonomous agents'],
+    ['/agents', 'Using: Agent orchestration'],
     ['/agents/ag_1', 'Using: Agent'],
     ['/memory', 'Using: Memory'],
     ['/connect', 'Using: Connect'],

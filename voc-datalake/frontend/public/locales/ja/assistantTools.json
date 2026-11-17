@@ -342,7 +342,7 @@
         "scrapers": "データソース",
         "settings": "設定",
         "memory": "メモリ",
-        "agents": "エージェント",
+        "agents": "エージェントオーケストレーション",
         "company": "会社"
       }
     },

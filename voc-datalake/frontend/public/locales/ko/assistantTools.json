@@ -342,7 +342,7 @@
         "scrapers": "데이터 소스",
         "settings": "설정",
         "memory": "메모리",
-        "agents": "에이전트",
+        "agents": "에이전트 오케스트레이션",
         "company": "회사"
       }
     },

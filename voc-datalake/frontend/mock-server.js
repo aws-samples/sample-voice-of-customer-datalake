@@ -3682,7 +3682,23 @@ bindSetupAgents({
   },
 });
 
-const agentView = (agent) => structuredClone(agent);
+// The agent view answers its exact Paused state (7.52.00, agents_store.agent_view): paused, paused_at, paused_by.
+const agentView = (agent) => ({ paused: false, paused_at: null, paused_by: null, ...structuredClone(agent) });
+
+/**
+ * POST /agents/<id>/pause|resume (7.52.00, agents_engineering_registry_routes._pause): only an automation that is on is
+ * paused (409 otherwise); pausing a paused one, or resuming one that is not, answers it as it is; turning it off ends
+ * its pause (routeAgentItem's disable).
+ */
+function pauseMockAgent(agent, paused) {
+  if ((agent.paused === true) === paused) return [200, { agent: agentView(agent) }];
+  if (paused && agent.enabled !== true) return [409, { success: false, error: 'only an automation that is on is paused: this one is off' }];
+  const stamp = new Date().toISOString();
+  Object.assign(agent, paused
+    ? { paused: true, paused_at: stamp, paused_by: MOCK_CALLER.username, updated_at: stamp }
+    : { paused: false, paused_at: null, paused_by: null, updated_at: stamp });
+  return [200, { agent: agentView(agent) }];
+}
 
 /** agents_handler.py's checks of an engineering agent's settings: a stored connection, a language with an image. */
 function engineeringSettingsError(engineering) {
@@ -3800,9 +3816,12 @@ function routeAgentItem(req, agent, action, body) {
     if (refused) return refused;
     // An engineering agent runs as the administrator who enabled it.
     const runsAs = enabling && agent.engineering && !agent.enabled ? { owner_sub: MOCK_CALLER.sub, owner_username: 'admin-demo' } : {};
-    Object.assign(agent, { enabled: enabling, updated_at: stamp, ...runsAs });
+    // (turning it off ends a pause)
+    const unpaused = enabling ? {} : { paused: false, paused_at: null, paused_by: null };
+    Object.assign(agent, { enabled: enabling, updated_at: stamp, ...runsAs, ...unpaused });
     return [200, { agent: agentView(agent) }];
   }
+  if (req.method === 'POST' && (action === 'pause' || action === 'resume')) return pauseMockAgent(agent, action === 'pause');
   if (req.method === 'POST' && action === 'run') {
     return agent.engineering ? startMockEngineeringRun(agent, body) : startMockRun(agent);
   }
@@ -4019,7 +4038,7 @@ function routeAgents(req, url, body) {
   const hidden = !agent || (agent.status === 'archived' && !MOCK_AGENTS_ADMIN);
   if (hidden) return AGENT_NOT_FOUND;
   if (action === 'runs') return routeAgentRuns(req, url, agent, rest, body);
-  if (rest.length || (action && !['enable', 'disable', 'run'].includes(action))) return [404, { success: false, error: 'Not found' }];
+  if (rest.length || (action && !['enable', 'disable', 'pause', 'resume', 'run'].includes(action))) return [404, { success: false, error: 'Not found' }];
   return routeAgentItem(req, agent, action, body);
 }
 

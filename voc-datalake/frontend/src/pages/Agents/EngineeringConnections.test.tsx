@@ -1,10 +1,12 @@
 /**
- * @fileoverview Agents → Connections: the list (each connection's repository, branch, its GitHub App's ids and whether
- * its credential is set, never a secret), the empty and load-failed states, adding one (the PUT with the App's
- * credential, whose key is never shown back nor kept in the query cache), editing one (its id fixed; an empty key keeps
- * the stored credential, a new repository asks for the key again), removing one after a confirmation that names it
- * (the DELETE), a server's 409 said in its own words, what the App needs, and the form's own checks before anything is
- * sent. Where the tab is offered is Agents.test.tsx's.
+ * @fileoverview Agents → Connections (7.52.00): each repository as a row (its repository, branch and CI; no id as
+ * content: the connection id, the App's and the installation's only in its details, never a secret), a missing
+ * credential's Store the key, the nothing-connected hero and its one primary, More ways to connect folded, the
+ * load-failed states, adding one (the PUT with the App's credential, whose key is never shown back nor kept in the
+ * query cache), editing one through its "⋯" (its id fixed; an empty key keeps the stored credential, a new repository
+ * asks for the key again), removing one after a confirmation that names it (the DELETE), a server's 409 said in its own
+ * words, what the App needs, and the form's own checks before anything is sent. Where the tab is offered is
+ * Agents.test.tsx's.
  */
 import * as fs from 'fs'
 import * as path from 'path'
@@ -13,11 +15,11 @@ import { z } from 'zod'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
+import { TestRouter } from '@test/TestRouter'
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
-import { at } from '@test/defined'
 import { sortedStrings } from '@test/stringLists'
 import { said } from '@test/describedField'
-import { openAddConnection, saveConnection } from '@test/connectionDialog'
+import { addConnectionButton, chooseInRowMenu, openAddConnection, saveConnection } from '@test/connectionDialog'
 import { ApiError } from '../../lib/errors'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
@@ -36,19 +38,20 @@ const connection = (id: string, repository: string, credential: Record<string, u
 const WEB = connection('web-app', 'example-org/web-app', { kind: 'app', set: true, app_id: '123', installation_id: '456' })
 const API = connection('api', 'example-org/api', { kind: 'app', set: false, app_id: '321', installation_id: '654' })
 const LIST = 'GET /agents/engineering/connections'
-/** The deployment's GitHub Apps (the "Connect GitHub" panel's list): none, unless a test says otherwise. */
+/** The deployment's GitHub Apps: none, unless a test says otherwise. */
 const NO_APPS = { 'GET /agents/engineering/github-apps': () => ({ apps: [], limit: 5 }) }
 
 function renderConnections(routes: Record<string, RouteHandler>) {
   routeFetchApi({ ...NO_APPS, ...routes }, { missStatus: 500 })
   const client = createTestQueryClient()
-  renderWithQueryClient(<EngineeringConnections />, client)
+  renderWithQueryClient(<TestRouter><EngineeringConnections /></TestRouter>, client)
   return client
 }
 
 const calls = (method: string) => fetchApi.mock.calls.filter(([, options]) => options?.method === method)
 const openAdd = openAddConnection
 const save = saveConnection
+const rowOf = async (id: string) => within(await screen.findByTestId(`connection-row-${id}`))
 
 async function pasteKey(dialog: HTMLElement, key = PEM) {
   within(dialog).getByLabelText('Private key').focus()
@@ -64,24 +67,73 @@ async function fillNew(dialog: HTMLElement, { id = 'web-app', repository = 'exam
   if (key !== '') await pasteKey(dialog, key)
 }
 
+/** Open the row's details (ⓘ): the popover. */
+async function openDetails(repository: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Connection details for ${repository}` }))
+  return screen.getByRole('dialog', { name: 'Connection details' })
+}
+
 beforeEach(() => { resetFetchApi() })
 
 describe('the connections list', () => {
-  it('shows each connection\'s repository, branch, App and whether its credential is set', async () => {
+  it('shows each repository with its branch and CI, and keeps every id out of the row', async () => {
     renderConnections({ [LIST]: () => ({ connections: [WEB, API], limit: 20 }) })
-    const rows = await screen.findAllByRole('listitem')
-    const [web, api] = [within(at(rows, 0)), within(at(rows, 1))]
-    expect(rows.map((row) => row.textContent.includes('Default branch: main'))).toStrictEqual([true, true])
-    expect([web.getByText('GitHub App'), web.getByText('App 123, installation 456'), web.getByText('Set'),
-      web.getByText(/admin-b/)]).toHaveLength(4)
-    expect([api.getByText('Not set'), api.getByText(/save it with its credential again/)]).toHaveLength(2)
-    expect(api.getByRole('button', { name: 'Edit example-org/api' })).toBeInTheDocument()
+    const web = await rowOf('web-app')
+    expect([web.getByText('example-org/web-app'), web.getByText('Default branch: main'), web.getByText('CI not attested')])
+      .toHaveLength(3)
+    expect([screen.queryByText('web-app'), screen.queryByText(/App 123/), screen.queryByText('456')]).toStrictEqual([null, null, null])
+    expect(screen.getByRole('list', { name: 'Other connections' })).toBeInTheDocument()
+    expect(screen.getByTestId('connections-status')).toHaveTextContent('2 other connections · 2 need their CI attested before the agents push')
   })
 
-  it('says when there is none yet, and what the App needs', async () => {
+  it('holds the ids, the key\'s state and the last change in the row\'s details, with a copy for each id', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText')
+    renderConnections({ [LIST]: () => ({ connections: [WEB], limit: 20 }) })
+    await user.click(await screen.findByRole('button', { name: 'Connection details for example-org/web-app' }))
+    const details = within(screen.getByRole('dialog', { name: 'Connection details' }))
+    expect([details.getByText('web-app'), details.getByText('123'), details.getByText('456'), details.getByText('Stored, never shown'),
+      details.getByText('GitHub · GitHub App'), details.getByText(/admin-b/)]).toHaveLength(6)
+    expect(details.getByText('web-app')).toHaveClass('font-mono')
+    await user.click(details.getByRole('button', { name: 'Copy Connection id' }))
+    expect(writeText).toHaveBeenCalledWith('web-app')
+    expect(await screen.findByText('Copied', { selector: '[role="status"]' })).toBeInTheDocument()
+  })
+
+  it('closes the details on Escape, the focus back on their button', async () => {
+    renderConnections({ [LIST]: () => ({ connections: [WEB], limit: 20 }) })
+    await openDetails('example-org/web-app')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: 'Connection details' })).not.toBeInTheDocument() })
+    expect(screen.getByRole('button', { name: 'Connection details for example-org/web-app' })).toHaveFocus()
+  })
+
+  it('says a missing credential on its row, whose one action is Store the key (its Edit dialog)', async () => {
+    renderConnections({ [LIST]: () => ({ connections: [WEB, API], limit: 20 }) })
+    const api = await rowOf('api')
+    expect(api.getByText(/save it with its credential again/)).toBeInTheDocument()
+    await userEvent.click(api.getByRole('button', { name: 'Store the key example-org/api' }))
+    expect(screen.getByRole('dialog', { name: 'Edit the connection to example-org/api' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect((await openDetails('example-org/api')).textContent).toContain('Missing: store it again')
+  })
+
+  it('offers Connect GitHub as the page\'s one primary while nothing is connected, the other ways folded', async () => {
     renderConnections({ [LIST]: () => ({ connections: [], limit: 20 }) })
-    expect(await screen.findByText('No repository connections yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add connection' })).toBeEnabled()
+    const hero = await screen.findByRole('region', { name: 'Connect GitHub' })
+    expect(within(hero).getByRole('button', { name: 'Create the App on GitHub' })).toHaveClass('btn-primary')
+    expect(document.querySelectorAll('.btn-primary')).toHaveLength(1)
+    const ways = screen.getAllByRole('button', { expanded: false })
+    expect(ways.map((way) => way.textContent)).toStrictEqual([
+      expect.stringMatching(/^Connect manually \(advanced\)/), expect.stringMatching(/^GitLab/),
+    ])
+    expect([screen.queryByRole('button', { name: 'Add a GitHub connection' }), screen.queryByText('Add another GitHub App'),
+      screen.queryByTestId('connections-status')]).toStrictEqual([null, null, null])
+  })
+
+  it('says what a pasted App needs once its way is unfolded', async () => {
+    renderConnections({ [LIST]: () => ({ connections: [], limit: 20 }) })
+    await addConnectionButton('github')
     const guidance = screen.getByRole('region', { name: 'What the credential needs' })
     expect(guidance).toHaveTextContent('Contents, Pull requests and Issues set to Read and write')
     // A token holds at most the App's own permissions, the four the line above asks for.
@@ -98,15 +150,15 @@ describe('the connections list', () => {
     expect(await screen.findByText('example-org/web-app')).toBeInTheDocument()
   })
 
-  it('reads an answer without a list as a failed load, never as "no connections"', async () => {
+  it('reads an answer without a list as a failed load, never as "nothing connected"', async () => {
     renderConnections({ [LIST]: () => ({ items: [] }) })
     expect(await screen.findByText('The repository connections could not be loaded.')).toBeInTheDocument()
-    expect(screen.queryByText('No repository connections yet')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Connect GitHub' })).not.toBeInTheDocument()
   })
 
   it('offers no new connection at the limit', async () => {
     renderConnections({ [LIST]: () => ({ connections: [WEB], limit: 1 }) })
-    expect(await screen.findByRole('button', { name: 'Add connection' })).toBeDisabled()
+    expect(await addConnectionButton('github')).toBeDisabled()
     expect(screen.getByText(/at most 1 connections/)).toBeInTheDocument()
   })
 })
@@ -119,7 +171,7 @@ describe('adding a connection', () => {
     })
     await fillNew(await openAdd())
     await save(screen.getByRole('dialog'))
-    expect(await screen.findByRole('status')).toHaveTextContent('example-org/web-app is added.')
+    expect(await screen.findByText('example-org/web-app is added.')).toHaveAttribute('role', 'status')
     expect(put.mock.calls).toStrictEqual([[{
       host: 'github', repository: 'example-org/web-app', default_branch: 'main',
       credential: { app_id: '123', installation_id: '456', private_key: `${PEM}\n` },
@@ -178,9 +230,21 @@ describe('adding a connection', () => {
 
 describe('editing a connection', () => {
   const openEdit = async () => {
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit example-org/web-app' }))
+    await chooseInRowMenu('Actions for example-org/web-app', 'Edit connection…')
     return screen.getByRole('dialog', { name: 'Edit the connection to example-org/web-app' })
   }
+
+  it('offers Edit connection…, the CI\'s attestation and the removal in the row\'s "⋯", the removal last', async () => {
+    renderConnections({ [LIST]: () => ({ connections: [{ ...WEB, ci_attestation: null }, API], limit: 20 }) })
+    await userEvent.click(await screen.findByRole('button', { name: 'Actions for example-org/api' }))
+    // (the API row's one action is Store the key: Attest CI waits in its menu)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent))
+      .toStrictEqual(['Edit connection…', 'Attest CI…', 'Remove connection…'])
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for example-org/web-app' }))
+    // (its one action is Attest CI: not again in its menu)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toStrictEqual(['Edit connection…', 'Remove connection…'])
+  })
 
   it('keeps its id and the stored credential when only the branch changes', async () => {
     const put = vi.fn((_body: unknown) => ({ connection: { ...WEB, default_branch: 'trunk' }, created: false }))
@@ -194,7 +258,7 @@ describe('editing a connection', () => {
     await userEvent.clear(branch)
     await userEvent.type(branch, 'trunk')
     await save(dialog)
-    expect(await screen.findByRole('status')).toHaveTextContent('example-org/web-app is saved.')
+    expect(await screen.findByText('example-org/web-app is saved.')).toHaveAttribute('role', 'status')
     expect(put.mock.calls).toStrictEqual([[{ host: 'github', repository: 'example-org/web-app', default_branch: 'trunk' }]])
   })
 
@@ -224,7 +288,7 @@ describe('editing a connection the GitHub App saved', () => {
   it('fits the viewport and scrolls its body, shows the App read only and offers only the branch and the reason', async () => {
     const put = vi.fn((_body: unknown) => ({ connection: { ...SANDBOX, default_branch: 'develop' }, created: false }))
     renderConnections({ [LIST]: () => ({ connections: [SANDBOX], limit: 20 }), 'PUT /agents/engineering/connections/voc-agents-sandbox': put })
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit mundurragacl/voc-agents-sandbox' }))
+    await chooseInRowMenu('Actions for mundurragacl/voc-agents-sandbox', 'Change default branch…')
     const dialog = screen.getByRole('dialog', { name: 'Edit the connection to mundurragacl/voc-agents-sandbox' })
     // At most the viewport's height; the body between the fixed header and footer scrolls (index.css .dialog-body).
     expect([(dialog.closest('.dialog-panel') ?? dialog).classList.contains('max-h-[90vh]'), dialog.querySelector('.dialog-body') !== null,
@@ -240,7 +304,7 @@ describe('editing a connection the GitHub App saved', () => {
     await userEvent.type(branch, 'develop')
     await userEvent.type(within(dialog).getByLabelText('Reason (optional)'), 'The sandbox works on develop')
     await save(dialog)
-    expect(await screen.findByRole('status')).toHaveTextContent('mundurragacl/voc-agents-sandbox is saved.')
+    expect(await screen.findByText('mundurragacl/voc-agents-sandbox is saved.')).toHaveAttribute('role', 'status')
     expect(put.mock.calls).toStrictEqual([[{
       host: 'github', repository: 'mundurragacl/voc-agents-sandbox', default_branch: 'develop', reason: 'The sandbox works on develop',
     }]])
@@ -254,21 +318,21 @@ describe('removing a connection', () => {
     renderConnections({
       [LIST]: () => ({ connections: [...stored.values()], limit: 20 }), 'DELETE /agents/engineering/connections/web-app': remove,
     })
-    await userEvent.click(await screen.findByRole('button', { name: 'Remove example-org/web-app' }))
+    await chooseInRowMenu('Actions for example-org/web-app', 'Remove connection…')
     const confirm = screen.getByRole('dialog', { name: 'Remove example-org/web-app?' })
     expect(confirm).toHaveTextContent('Runs working on example-org/web-app lose access within five minutes: their reads and writes fail until a connection is stored again.')
     await userEvent.click(within(confirm).getByRole('button', { name: 'Remove connection' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('example-org/web-app is removed.')
+    expect(await screen.findByText('example-org/web-app is removed.')).toHaveAttribute('role', 'status')
     expect([remove.mock.calls.length, screen.queryByText('example-org/web-app'), screen.getByText('example-org/api')])
       .toStrictEqual([1, null, expect.anything()])
   })
 
   it('sends nothing on Cancel, and Escape closes the confirmation', async () => {
     renderConnections({ [LIST]: () => ({ connections: [WEB], limit: 20 }) })
-    await userEvent.click(await screen.findByRole('button', { name: 'Remove example-org/web-app' }))
+    await chooseInRowMenu('Actions for example-org/web-app', 'Remove connection…')
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
     expect([screen.queryByRole('dialog'), calls('DELETE')]).toStrictEqual([null, []])
-    await userEvent.click(screen.getByRole('button', { name: 'Remove example-org/web-app' }))
+    await chooseInRowMenu('Actions for example-org/web-app', 'Remove connection…')
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(calls('DELETE')).toStrictEqual([])
@@ -280,6 +344,7 @@ const LOCALES = ['de', 'en', 'es', 'fr', 'ja', 'ko', 'pl', 'pt', 'zh']
 const guidanceSchema = z.object({ connections: z.object({ guidance: z.object({ token: z.string() }) }) })
 const localeGuidance = (locale: string) => guidanceSchema.parse(
   JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, locale, 'agents.json'), 'utf8'))).connections.guidance
+const draftSchema = z.object({ connections: z.record(z.string(), z.unknown()) }).loose()
 
 describe('what a token holds, in every locale', () => {
   it('covers the nine shipped locales', () => {
@@ -291,5 +356,11 @@ describe('what a token holds, in every locale', () => {
     const { token } = localeGuidance(locale)
     expect(['Contents', 'Pull requests', 'Issues', 'Metadata'].filter((name) => !token.includes(name)))
       .toStrictEqual([])
+  })
+
+  // Pull requests open ready for review since 7.50 (ux-agents-redesign C5).
+  it('never says "draft pull request" on Connections in English', () => {
+    const bundle = draftSchema.parse(JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, 'en', 'agents.json'), 'utf8')))
+    expect(JSON.stringify(bundle.connections)).not.toMatch(/draft pull request/i)
   })
 })

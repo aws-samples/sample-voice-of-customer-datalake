@@ -19,7 +19,7 @@ function useEnabled(): boolean {
 }
 
 /** The list refreshes this often while an agent's last run is still queued or running. */
-export const LIST_POLL_MS = 15_000
+const LIST_POLL_MS = 15_000
 
 /** The agents list; polled while a card shows a live run, so its status badge moves on its own. */
 export function useAgentList() {
@@ -52,12 +52,19 @@ export function useAgentMutations(agentId: string) {
     mutationFn: (enabled: boolean) => (enabled ? agentsApi.enable(agentId) : agentsApi.disable(agentId)),
     onSuccess: settle,
   })
+  // (7.52.00: an automation that is on, paused or resumed; the server audits who and when)
+  const setPaused = useMutation({
+    mutationFn: (paused: boolean) => (paused ? agentsApi.pause(agentId) : agentsApi.resume(agentId)),
+    onSuccess: settle,
+  })
   const archive = useMutation({ mutationFn: () => agentsApi.archive(agentId), onSuccess: settle })
   const runNow = useMutation({
     mutationFn: (body?: RunNowBody) => agentsApi.run(agentId, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: agentsKeys.runs(agentId) })
       void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agentId) })
+      // (the Automations list's Last run cell)
+      void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
     },
   })
   const cancelRun = useMutation({
@@ -79,7 +86,7 @@ export function useAgentMutations(agentId: string) {
       void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
     },
   })
-  return { update, setEnabled, archive, runNow, cancelRun, decideRun }
+  return { update, setEnabled, setPaused, archive, runNow, cancelRun, decideRun }
 }
 
 export function useCreateAgent() {

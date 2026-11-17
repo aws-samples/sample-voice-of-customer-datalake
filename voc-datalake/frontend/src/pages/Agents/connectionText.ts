@@ -1,13 +1,19 @@
 /**
- * @fileoverview What a refused connection save or removal says: for a field off its rule (400) or a conflict (409:
- * live runs on the connection, the connection limit), the server's own reason, which names the field or what to do;
- * else the status's message.
+ * @fileoverview What Agents → Connections says in a sentence:
+ *
+ * - a refused connection save or removal: for a field off its rule (400) or a conflict (409: live runs on the
+ *   connection, the connection limit), the server's own reason, which names the field or what to do; else the
+ *   status's message;
+ * - a connection's CI attestation (7.52.00, the row's details): who recorded or withdrew it and when, or why none
+ *   holds (none yet, voided by a repository change or a removal).
  *
  * @module pages/Agents/connectionText
  */
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus, messageKeyForStatus } from '../../api/apiErrorStatus'
 import { serverReason } from '../../lib/errors'
+import { formatDateTime } from '../../utils/dateUtils'
+import type { CiAttestation } from '../../api/engineeringConnectionsApi'
 
 const CONNECTION_ERRORS = [
   { status: 400, messageKey: 'agents:connections.errors.invalid' },
@@ -25,5 +31,18 @@ export function useConnectionError(): (error: unknown) => string {
   return (error) => {
     const key = messageKeyForStatus(error, CONNECTION_ERRORS, CONNECTION_ERROR)
     return (SERVER_REASONS.has(apiErrorStatus(error) ?? 0) ? serverReason(error) : null) ?? t(key)
+  }
+}
+
+/** What the connection's newest CI attestation version says, in a sentence: who and when, or why none holds. */
+export function useAttestationText(): (attestation: CiAttestation | null) => string {
+  const { t, i18n } = useTranslation('agents')
+  return (attestation) => {
+    if (attestation === null) return t('connections.ci.none')
+    const who = attestation.by ?? t('connections.ci.unknownPerson')
+    const when = formatDateTime(attestation.at, i18n.language, '')
+    if (attestation.state === 'attested') return t('connections.ci.attestedBy', { who, when })
+    if (attestation.state === 'withdrawn') return t('connections.ci.withdrawnBy', { who, when })
+    return attestation.cause === 'connection_removed' ? t('connections.ci.voidedRemoved') : t('connections.ci.voidedRepository')
   }
 }

@@ -404,18 +404,18 @@
       "appLabel": "GitHub App",
       "oneApp": "GitHub App: {{app}}",
       "chooseApp": "Wybierz App",
-      "appHint": "App czyta tylko repozytoria, w których jest zainstalowana: zainstaluj ją w kolejnych w Agenci → Połączenia.",
+      "appHint": "App czyta tylko repozytoria, w których jest zainstalowana: zainstaluj ją w kolejnych w Orkiestracja agentów → Połączenia.",
       "useToken": "Użyj zamiast tego szczegółowego tokenu",
       "tokenHint": "Szczegółowy osobisty token dostępu z Issues i Metadata tylko do odczytu w tych repozytoriach.",
       "useApp": "Zaloguj się zamiast tego przez GitHub App",
-      "connectHint": "Albo połącz GitHub w Agenci → Połączenia: GitHub App wdrożenia powstaje w dwóch kliknięciach, a to źródło samo czyta wtedy issues połączonych repozytoriów.",
+      "connectHint": "Albo połącz GitHub w Orkiestracja agentów → Połączenia: GitHub App wdrożenia powstaje w dwóch kliknięciach, a to źródło samo czyta wtedy issues połączonych repozytoriów.",
       "connect": "Połącz GitHub",
       "managed_one": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytorium.",
       "managed_few": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
       "managed_many": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
       "managed_other": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
-      "managedHint": "Każde repozytorium połączone przez GitHub App w Agenci → Połączenia jest czytane automatycznie; wyłącz je tam.",
-      "openConnections": "Otwórz Agenci → Połączenia",
+      "managedHint": "Każde repozytorium połączone przez GitHub App w Orkiestracja agentów → Połączenia jest czytane automatycznie; wyłącz je tam.",
+      "openConnections": "Otwórz Orkiestracja agentów → Połączenia",
       "manual": "Skonfiguruj ręcznie (zaawansowane)"
     }
   },
@@ -1142,8 +1142,8 @@
       "errors_few": "{{count, number}} błędy w ciągu ostatnich 24 godzin"
     },
     "elsewhere": {
-      "cost": "Koszty: Agenci › Wydatki",
-      "github": "GitHub: Agenci › Połączenia",
+      "cost": "Koszty: Orkiestracja agentów › Wydatki",
+      "github": "GitHub: Orkiestracja agentów › Połączenia",
       "preferences": "Twoje preferencje: Konto › Preferencje"
     }
   },
@@ -1154,7 +1154,7 @@
       "preferences": "Preferencje"
     },
     "places": {
-      "agents": "Agenci",
+      "agents": "Orkiestracja agentów",
       "account": "Konto"
     },
     "label": "Szukaj ustawień",

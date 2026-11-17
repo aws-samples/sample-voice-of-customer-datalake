@@ -15,7 +15,7 @@
 import { useId, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2, Play, Square } from 'lucide-react'
+import { ChevronDown, ChevronRight, History, Loader2, Play, Square } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatDateTime, formatTime } from '../../utils/dateUtils'
 import { isActiveRun } from '../../api/agentsApi'
@@ -40,6 +40,7 @@ import { isEngineeringAgent } from '../../api/agentsApi'
 import type { Agent, AgentRun, RunEvent, RunNowBody } from '../../api/agentsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import Notice from '../../components/Notice/Notice'
 import MethodologyGaps from '../../components/MethodologyGaps/MethodologyGaps'
 import { failedReads, type FailedReads } from '../../utils/failedReads'
 
@@ -349,23 +350,30 @@ function RunNowBar({ agent, isAdmin, hasActive, onStarted }: Readonly<{
   )
 }
 
-export function RunsTab({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>) {
+/**
+ * `onRunNow` (7.52.00 C1): the automation's page holds Run now in its header (its state's one primary, or its ⋯ menu),
+ * so the tab shows only its hint, and its empty state offers that Run now; without it the tab has its own bar.
+ */
+export function RunsTab({ agent, isAdmin, onRunNow }: Readonly<{ agent: Agent; isAdmin: boolean; onRunNow?: () => void }>) {
+  const { t } = useTranslation('agents')
   const runsQuery = useAgentRuns(agent.agent_id)
   const [picked, setPicked] = useState<string | null>(null)
   const runs = runsQuery.data?.items ?? []
   return (
     <div className="space-y-3">
-      <RunNowBar agent={agent} isAdmin={isAdmin} hasActive={runs.some(isActiveRun)} onStarted={setPicked} />
+      {onRunNow === undefined
+        ? <RunNowBar agent={agent} isAdmin={isAdmin} hasActive={runs.some(isActiveRun)} onStarted={setPicked} />
+        : <p className="text-[12px] text-muted">{t('run.hint')}</p>}
       <RunsBody
         agent={agent} isAdmin={isAdmin} runs={runs} isLoading={runsQuery.isLoading}
-        failure={failedReads([runsQuery])} picked={picked} onPick={setPicked}
+        failure={failedReads([runsQuery])} picked={picked} onPick={setPicked} onRunNow={isAdmin ? onRunNow : undefined}
       />
     </div>
   )
 }
 
 /** Loading, a failed read (not "No runs yet"), the empty line, or the list and the selected run. */
-function RunsBody({ agent, isAdmin, runs, isLoading, failure, picked, onPick }: Readonly<{
+function RunsBody({ agent, isAdmin, runs, isLoading, failure, picked, onPick, onRunNow }: Readonly<{
   agent: Agent
   isAdmin: boolean
   runs: AgentRun[]
@@ -373,12 +381,19 @@ function RunsBody({ agent, isAdmin, runs, isLoading, failure, picked, onPick }: 
   failure: FailedReads
   picked: string | null
   onPick: (runId: string) => void
+  /** The empty state's action (an administrator's, on the automation's page). */
+  onRunNow?: () => void
 }>) {
   const { t } = useTranslation('agents')
   const [technical, setTechnical] = useState(false)
   if (isLoading) return <div className="skeleton h-40" />
   if (failure.loadFailed) return <LoadFailed onRetry={failure.retry} retrying={failure.retrying} />
-  if (runs.length === 0) return <p className="card text-sm text-muted">{t('run.none')}</p>
+  if (runs.length === 0) {
+    return (
+      <Notice variant="empty" icon={History} title={t('run.none')} text={t('detail.runsEmptyHint')}
+        action={onRunNow === undefined ? undefined : { label: t('run.runNow'), icon: Play, onClick: onRunNow }} />
+    )
+  }
   const selected = picked ?? runs.at(0)?.run_id ?? null
   return (
     <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">

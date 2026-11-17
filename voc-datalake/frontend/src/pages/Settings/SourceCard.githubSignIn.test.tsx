@@ -2,11 +2,11 @@
  * @fileoverview The deployment's GitHub Issues card's sign-in (7.45.00; App-first since 7.50.02, githubSignIn.ts).
  *
  * - While its connections manage the source (a stored App's id and `repos_managed`), the card says so, links to
- *   Agents → Connections and keeps its fields behind "Configure manually (advanced)".
+ *   Agent orchestration → Connections and keeps its fields behind "Configure manually (advanced)".
  * - The manual path is App-first: with an App and nothing stored that decides otherwise it signs in with the App (the
  *   only one preselected and saved with the rest; a choice among several), the token behind "Use a fine-grained token
  *   instead". What is stored wins: an App's id is the App, `none` or repositories saved without an App the token.
- * - Without any App: the token, and Connect GitHub (Agents → Connections). Apps that cannot be listed leave the App's
+ * - Without any App: the token, and Connect GitHub (Agent orchestration → Connections). Apps that cannot be listed leave the App's
  *   id typed by hand. Choosing the token saves `github_app_id` as `none` (the credentials route never deletes a value).
  * - Inside a workspace, and on any other card, the fields stay the manifest's.
  */
@@ -131,7 +131,7 @@ describe('the manual path, App-first', () => {
     await saved({ github_app_id: '314159' })
   })
 
-  it('offers Connect GitHub (Agents → Connections) while the deployment has no App, the token in view', async () => {
+  it('offers Connect GitHub (Agent orchestration → Connections) while the deployment has no App, the token in view', async () => {
     routeFetchApi({ 'GET /agents/engineering/github-apps': () => ({ apps: [], limit: 5 }) })
     await openCard()
     expect(await screen.findByRole('link', { name: 'Connect GitHub' })).toHaveAttribute('href', '/agents/connections')
@@ -152,12 +152,12 @@ describe('the manual path, App-first', () => {
 describe('a source its connections manage', () => {
   const MANAGED = { github_app_id: '271828', repos: 'example-org/shop\nexample-org/api', repos_managed: 'example-org/shop\nexample-org/api' }
 
-  it('says so with the count and Agents → Connections, the fields behind Configure manually', async () => {
+  it('says so with the count and Agent orchestration → Connections, the fields behind Configure manually', async () => {
     getIntegrationCredentials.mockResolvedValue(MANAGED)
     const user = await openCard()
     const managed = await screen.findByTestId('github-issues-managed')
     expect(managed).toHaveTextContent('Managed by your GitHub connection: issues from 2 repositories.')
-    expect(within(managed).getByRole('link', { name: 'Open Agents → Connections' })).toHaveAttribute('href', '/agents/connections')
+    expect(within(managed).getByRole('link', { name: 'Open Agent orchestration → Connections' })).toHaveAttribute('href', '/agents/connections')
     const manual = screen.getByText('Configure manually (advanced)')
     expect(screen.getByText(APP_INTRO)).not.toBeVisible()
     await user.click(manual)

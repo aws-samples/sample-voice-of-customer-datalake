@@ -15,7 +15,9 @@ import { useTranslation } from 'react-i18next'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import MetricCard from '../../components/MetricCard/MetricCard'
 import { failedReads } from '../../utils/failedReads'
-import { formatCalendarDay, formatCalendarMonth } from '../../utils/dateUtils'
+import { formatCalendarDay, formatCalendarMonth, formatDate } from '../../utils/dateUtils'
+import { runWorkspaceApi, runWorkspaceKeys } from '../../api/engineeringRunWorkspaceApi'
+import { isSkillRole } from '../../api/engineeringSkillsApi'
 import { formatCount } from '../../utils/numberFormat'
 import {
   SPEND_GROUPINGS, SPEND_MICROVM, SPEND_NONE, currentMonth, engineeringSpendApi, engineeringSpendKeys, isSpendGrouping,
@@ -27,6 +29,7 @@ import { EngineeringHardCap } from './EngineeringHardCap'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { LucideIcon } from 'lucide-react'
 import type { MonthSpend, SpendGroup, SpendGrouping, SpendQuery, SpendUsage } from '../../api/engineeringSpendApi'
+import type { ListedRun } from '../../api/engineeringRunWorkspaceApi'
 
 const runPath = (runId: string) => `/agents/engineering/${encodeURIComponent(runId)}`
 
@@ -97,27 +100,72 @@ function Totals({ total, approximate }: Readonly<{ total: SpendUsage; approximat
   )
 }
 
-/** An agent's group (`<run>/<agent>`): the agent, linking to its run; a part not recorded says so (and a run not
- * recorded links nowhere). */
-function AgentName({ value }: Readonly<{ value: string }>) {
+/** The month's runs by id (the Runs list's first page): what a run's or an agent's row names it by. */
+type MonthRuns = ReadonlyMap<string, ListedRun>
+
+function useMonthRuns(month: string, enabled: boolean): MonthRuns {
+  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
+  const query = { month, flow: '', status: '' }
+  const { data } = useQuery({
+    queryKey: [...runWorkspaceKeys.runsLists(), month, 'names'],
+    queryFn: () => runWorkspaceApi.runs(query, null),
+    enabled: configured && enabled,
+    retry: false,
+    staleTime: 30_000,
+  })
+  return new Map((data?.rows ?? []).map((run) => [run.run_id, run]))
+}
+
+/** An agent's role, in words (`fixer-3` → Fixer); the agent as written when its role is not one the app knows. */
+function useRoleName(): (agent: string) => string {
   const { t } = useTranslation('agents')
+  return (agent) => {
+    const role = /^([a-z]+(?:-[a-z]+)*?)(?:-\d+)?$/u.exec(agent)?.[1]
+    return role !== undefined && isSkillRole(role) ? t(`skills.role.${role}`, { defaultValue: agent }) : agent
+  }
+}
+
+/**
+ * A run in words (7.52.00 C1, S7): its goal, its flow and its day ("Fix: crash on export · Bug fixer workflow · 16 Nov"),
+ * a link to its workspace whose id is its description (a Tooltip); the id alone for a run the month's list does not
+ * hold.
+ */
+function RunName({ runId, runs, names }: Readonly<{ runId: string; runs: MonthRuns; names: ReadonlyMap<string, string> }>) {
+  const { t, i18n } = useTranslation('agents')
+  const run = runs.get(runId)
+  if (run === undefined) return <Link to={runPath(runId)} className="link font-mono break-all">{runId}</Link>
+  const words = [run.goal || t('engineeringRun.untitled'), names.get(run.flow) ?? run.flow,
+    formatDate(run.started_at, i18n.language, '', 'short')].filter((part) => part !== '')
+  return (
+    <Tooltip kind="description" content={runId}>
+      <Link to={runPath(runId)} className="link break-words [overflow-wrap:anywhere]">{words.join(' · ')}</Link>
+    </Tooltip>
+  )
+}
+
+/** An agent's group (`<run>/<agent>`): the agent's role, linking to its run; a part not recorded says so (and a run
+ * not recorded links nowhere). */
+function AgentName({ value, runs, names }: Readonly<{ value: string; runs: MonthRuns; names: ReadonlyMap<string, string> }>) {
+  const { t } = useTranslation('agents')
+  const roleName = useRoleName()
   const cut = value.indexOf('/')
   const run = value.slice(0, cut)
   const agent = value.slice(cut + 1)
-  const agentText = agent === SPEND_NONE ? t('spend.none') : agent
+  const agentText = agent === SPEND_NONE ? t('spend.none') : roleName(agent)
   if (cut < 0) return <span className="font-mono break-all">{value}</span>
   if (run === SPEND_NONE) return <span className="text-muted">{agentText}</span>
   return (
-    <Link to={runPath(run)} className="link break-all">
-      <span className="font-mono">{agentText}</span>{' '}
-      <span className="text-[12px] text-muted font-mono">{t('spend.inRun', { run })}</span>
-    </Link>
+    <span className="inline-flex flex-wrap items-baseline gap-x-2">
+      <span>{agentText}</span>
+      <span className="text-[12px] text-muted"><RunName runId={run} runs={runs} names={names} /></span>
+    </span>
   )
 }
 
 /** A group's name: a workflow's from the library, a run's and an agent's linking to the run, a model's or a day's. */
-function GroupName({ group, by, month, names, onWorkflow }: Readonly<{
-  group: SpendGroup; by: SpendGrouping; month: string; names: ReadonlyMap<string, string>; onWorkflow: (id: string) => void
+function GroupName({ group, by, month, names, runs, onWorkflow }: Readonly<{
+  group: SpendGroup; by: SpendGrouping; month: string; names: ReadonlyMap<string, string>; runs: MonthRuns
+  onWorkflow: (id: string) => void
 }>) {
   const { t } = useTranslation('agents')
   const format = useFormats()
@@ -131,8 +179,8 @@ function GroupName({ group, by, month, names, onWorkflow }: Readonly<{
         <button type="button" className="link text-left break-all" onClick={() => onWorkflow(key)}
           aria-label={t('spend.workflowRuns', { name })}>{name}</button>
       )
-    case 'run': return <Link to={runPath(key)} className="link font-mono break-all">{key}</Link>
-    case 'agent': return <AgentName value={key} />
+    case 'run': return <RunName runId={key} runs={runs} names={names} />
+    case 'agent': return <AgentName value={key} runs={runs} names={names} />
     case 'day': return <span>{format.day(month, key)}</span>
     default: return <span className="font-mono break-all">{key}</span>
   }
@@ -163,6 +211,7 @@ function GroupTable({ spend, library, onWorkflow }: Readonly<{
   const { t } = useTranslation('agents')
   const format = useFormats()
   const { names, budgets } = library
+  const runs = useMonthRuns(spend.month, spend.by === 'run' || spend.by === 'agent')
   // (by workflow, this month only: each one's spend against its budget as it is now; a past month ran under the
   // budgets its runs kept, which the alerts measured, not today's)
   const withBudget = spend.by === 'workflow' && spend.month === currentMonth() && budgets.size > 0
@@ -184,7 +233,7 @@ function GroupTable({ spend, library, onWorkflow }: Readonly<{
           {spend.groups.map((group) => (
             <tr key={group.key}>
               <th scope="row" className="px-3 py-2 text-left text-sm font-normal text-text-strong">
-                <GroupName group={group} by={spend.by} month={spend.month} names={names} onWorkflow={onWorkflow} />
+                <GroupName group={group} by={spend.by} month={spend.month} names={names} runs={runs} onWorkflow={onWorkflow} />
               </th>
               <td className={TD_NUM}>{format.usd(group.usd)}</td>
               <td className={TD_NUM}>{format.count(group.tokens_in)}</td>

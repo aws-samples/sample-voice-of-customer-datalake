@@ -372,16 +372,16 @@
       "appLabel": "GitHub App",
       "oneApp": "GitHub App: {{app}}",
       "chooseApp": "App wählen",
-      "appHint": "Die App liest nur die Repositorys, auf denen sie installiert ist: Installieren Sie sie unter Agenten → Verbindungen auf weiteren.",
+      "appHint": "Die App liest nur die Repositorys, auf denen sie installiert ist: Installieren Sie sie unter Agenten-Orchestrierung → Verbindungen auf weiteren.",
       "useToken": "Stattdessen ein feingranulares Token verwenden",
       "tokenHint": "Ein feingranulares persönliches Zugriffstoken mit Issues und Metadata nur zum Lesen auf diesen Repositorys.",
       "useApp": "Stattdessen mit Ihrer GitHub App anmelden",
-      "connectHint": "Oder verbinden Sie GitHub unter Agenten → Verbindungen: Die GitHub App der Bereitstellung entsteht mit zwei Klicks, und diese Quelle liest dann die Issues der verbundenen Repositorys von selbst.",
+      "connectHint": "Oder verbinden Sie GitHub unter Agenten-Orchestrierung → Verbindungen: Die GitHub App der Bereitstellung entsteht mit zwei Klicks, und diese Quelle liest dann die Issues der verbundenen Repositorys von selbst.",
       "connect": "GitHub verbinden",
       "managed_one": "Von Ihrer GitHub-Verbindung verwaltet: Issues aus {{count, number}} Repository.",
       "managed_other": "Von Ihrer GitHub-Verbindung verwaltet: Issues aus {{count, number}} Repositorys.",
-      "managedHint": "Jedes über die GitHub App unter Agenten → Verbindungen verbundene Repository wird automatisch gelesen; schalten Sie es dort ab.",
-      "openConnections": "Agenten → Verbindungen öffnen",
+      "managedHint": "Jedes über die GitHub App unter Agenten-Orchestrierung → Verbindungen verbundene Repository wird automatisch gelesen; schalten Sie es dort ab.",
+      "openConnections": "Agenten-Orchestrierung → Verbindungen öffnen",
       "manual": "Manuell konfigurieren (erweitert)"
     }
   },
@@ -1074,8 +1074,8 @@
       "errors_other": "{{count, number}} Fehler in den letzten 24 Stunden"
     },
     "elsewhere": {
-      "cost": "Kosten: Agenten › Ausgaben",
-      "github": "GitHub: Agenten › Verbindungen",
+      "cost": "Kosten: Agenten-Orchestrierung › Ausgaben",
+      "github": "GitHub: Agenten-Orchestrierung › Verbindungen",
       "preferences": "Ihre Einstellungen: Konto › Einstellungen"
     }
   },
@@ -1086,7 +1086,7 @@
       "preferences": "Einstellungen"
     },
     "places": {
-      "agents": "Agenten",
+      "agents": "Agenten-Orchestrierung",
       "account": "Konto"
     },
     "label": "Einstellungen durchsuchen",

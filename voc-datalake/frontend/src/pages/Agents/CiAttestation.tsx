@@ -1,7 +1,8 @@
 /**
- * @fileoverview A repository connection's CI attestation on Agents → Connections (administrators): whether one holds,
- * who recorded or withdrew it and when, or why it was voided; recording one (`POST …/connections/<id>/ci-attestation`)
- * after the administrator confirms every point of the setup guide; and withdrawing it (`DELETE`) after a confirmation.
+ * @fileoverview A repository connection's CI attestation on Agents → Connections (administrators): whether one holds
+ * (the row's chip, `CiBadge`), who recorded or withdrew it and when, or why it was voided (the row's details since
+ * 7.52.00, connectionText.ts `useAttestationText`); recording one (`POST …/connections/<id>/ci-attestation`) after the administrator
+ * confirms every point of the setup guide; and withdrawing it (`DELETE`) after a confirmation.
  *
  * A push to an agent branch can start the repository's own pipelines, and neither the GitHub App nor a GitLab
  * Developer token can read the settings that keep them harmless (the points keep their ids; a GitLab connection's
@@ -18,12 +19,12 @@ import { ShieldCheck, ShieldAlert } from 'lucide-react'
 import {
   CI_POINTS, engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested,
 } from '../../api/engineeringConnectionsApi'
-import { formatDateTime } from '../../utils/dateUtils'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { OneLineNoteField } from './ConnectionFields'
 import { ConnectionChangeConfirm, ConnectionFormModal } from './ConnectionModals'
 import type { ConnectionConfirmProps } from './ConnectionModals'
 import type {
-  CiAttestation, CiPoint, ConnectionList, EngineeringConnection, RecordedAttestation,
+  CiPoint, ConnectionList, EngineeringConnection, RecordedAttestation,
 } from '../../api/engineeringConnectionsApi'
 
 /** The longest note an attestation keeps (the server's MAX_REASON: longer is refused, never cut). */
@@ -41,33 +42,12 @@ function withAttestation(list: ConnectionList | undefined, connectionId: string,
   }
 }
 
-/** What the connection's newest version says, in a sentence. */
-function useAttestationText(): (attestation: CiAttestation | null) => string {
-  const { t, i18n } = useTranslation('agents')
-  return (attestation) => {
-    if (attestation === null) return t('connections.ci.none')
-    const who = attestation.by ?? t('connections.ci.unknownPerson')
-    const when = formatDateTime(attestation.at, i18n.language, '')
-    if (attestation.state === 'attested') return t('connections.ci.attestedBy', { who, when })
-    if (attestation.state === 'withdrawn') return t('connections.ci.withdrawnBy', { who, when })
-    return attestation.cause === 'connection_removed' ? t('connections.ci.voidedRemoved') : t('connections.ci.voidedRepository')
-  }
-}
-
-/** The connection's CI attestation line: a badge, and what holds (or why nothing does). */
-export function CiAttestationLine({ connection }: Readonly<{ connection: EngineeringConnection }>) {
+/** The connection's CI chip (7.52.00): attested (the agents may push), or not (they push nothing until it is). */
+export function CiBadge({ connection }: Readonly<{ connection: EngineeringConnection }>) {
   const { t } = useTranslation('agents')
-  const text = useAttestationText()
-  const attested = isCiAttested(connection)
-  const Icon = attested ? ShieldCheck : ShieldAlert
-  return (
-    <p className="flex flex-wrap items-center gap-2 text-[12px]">
-      <span className={attested ? 'badge badge-ok inline-flex items-center gap-1' : 'badge badge-warn inline-flex items-center gap-1'}>
-        <Icon size={12} aria-hidden="true" /> {attested ? t('connections.ci.attested') : t('connections.ci.notAttested')}
-      </span>
-      <span className={attested ? 'text-muted' : 'text-warn'}>{text(connection.ci_attestation)}</span>
-    </p>
-  )
+  return isCiAttested(connection)
+    ? <IconBadge toneClass="badge-ok" icon={ShieldCheck}>{t('connections.ci.attested')}</IconBadge>
+    : <IconBadge toneClass="badge-warn" icon={ShieldAlert}>{t('connections.ci.notAttested')}</IconBadge>
 }
 
 type Checked = Readonly<Record<CiPoint, boolean>>

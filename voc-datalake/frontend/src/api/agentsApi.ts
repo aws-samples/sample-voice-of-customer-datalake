@@ -280,6 +280,13 @@ const AgentSchema = z.object({
   name: z.string().catch(''),
   description: z.string().catch(''),
   enabled: z.boolean().catch(false),
+  /**
+   * An automation an administrator paused (7.52.00, `POST /agents/<id>/pause`): on, and no run starts by itself until
+   * it is resumed (Run now still runs it); who paused it and when. Only an enabled one is paused.
+   */
+  paused: z.boolean().optional().catch(false).transform((paused) => paused === true),
+  paused_at: z.string().nullable().optional().catch(null).transform((at) => at ?? null),
+  paused_by: z.string().nullable().optional().catch(null).transform((by) => by ?? null),
   status: z.enum(['active', 'archived']).catch('active'),
   owner_sub: nullableString,
   /** Who an engineering agent runs as: the administrator who enabled it. */
@@ -440,6 +447,10 @@ export const agentsApi = {
   archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id), del())),
   enable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/enable'), post())),
   disable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/disable'), post())),
+  /** Pause an automation that is on (7.52.00; 409 for one that is off): audited by the server, who and when. */
+  pause: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/pause'), post())),
+  /** Resume a paused automation: its triggers start runs again from the next tick. */
+  resume: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentApiPath(id, '/resume'), post())),
   /** "Run now" — 409 while a run is active; an engineering agent's may start from an issue or a PRD (`body`). */
   run: async (id: string, body?: RunNowBody): Promise<AgentRun> =>
     requireRun(await fetchApi<unknown>(agentApiPath(id, '/run'), post(body))),

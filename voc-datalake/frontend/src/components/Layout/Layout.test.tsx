@@ -367,7 +367,7 @@ describe('Layout', () => {
     // Wave 4 clip pass: "Autonomous age…" beside its count, "Voice of the Custo…" at 1024 px.
     it('wraps nav labels and the header title instead of truncating them', async () => {
       render(<Layout />, { wrapper: createWrapper() })
-      const label = await screen.findByText('Autonomous agents')
+      const label = await screen.findByText('Agent orchestration')
       expect(label).toHaveClass('min-w-0', 'flex-1', 'break-words')
       expect(label).not.toHaveClass('truncate')
       expect(screen.getByTestId('header-title')).not.toHaveClass('truncate')

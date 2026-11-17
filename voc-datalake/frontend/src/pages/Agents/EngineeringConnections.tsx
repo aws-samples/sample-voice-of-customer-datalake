@@ -1,152 +1,62 @@
 /**
- * @fileoverview Agents → Connections (administrators, while the engineering agents are on): the repository
- * connections the engineering agents reach a repository through (`GET /agents/engineering/connections`). Each shows
- * its host (GitHub or GitLab), repository, default branch, its GitHub App's ids or its GitLab token's expiry (a
- * warning within 30 days of it, a danger once past), whether its credential is set (never the key or the token),
- * and who changed it last; an administrator adds one, edits one (an empty private key keeps the stored credential),
- * or removes one after a confirmation that says live runs on it lose access within five minutes. Each shows its CI
- * attestation too (CiAttestation.tsx): an administrator attests that the repository's CI meets the setup guide, which
- * the agents' pushes and pull requests wait for, or withdraws it. Since 7.45.00 the "Connect GitHub" panel
- * (GitHubAppPanel.tsx) makes a GitHub App from a manifest and saves a connection for each repository it is installed
- * on; such a connection says which App it goes through ("via <slug>"). Since 7.50.02 such a connection's issues are
- * read automatically by the deployment's GitHub Issues source, with its "Read this repository's issues" switch and its
- * `voc-agent` label (ConnectionIssues.tsx, `GET /agents/engineering/issues-source`).
+ * @fileoverview Agent orchestration → Connections (administrators, while the engineering agents are on; 7.52.00,
+ * ux-agents-redesign part 1 §2.6 and part 2 S4): the repository connections the engineering agents reach a repository
+ * through (`GET /agents/engineering/connections`), under the deployment's GitHub Apps (`GET …/github-apps`) and the
+ * GitHub Issues source that reads their issues (`GET …/issues-source`, 7.50.02).
+ *
+ * - **The header:** "Repository connections", one line on what they are, and **Check now** (secondary, once an App is
+ *   installed: every installed App's check), then the status line (ConnectionsStatus.tsx: "Connected" or "Needs
+ *   attention", how many repositories go through which App, how many need their CI attested, "Issues read
+ *   automatically" while the source reads one).
+ * - **Nothing connected** (no App, no connection): one card, Connect GitHub, whose Create the App on GitHub is the
+ *   page's one primary button (GitHubAppPanel.tsx).
+ * - **Connected:** one card per GitHub App (AppGroup.tsx), its repositories as rows (ConnectionRow.tsx); the
+ *   connections outside every App (a pasted App key, a GitLab token, one whose App is no longer listed) under "Other
+ *   connections" with the same rows. Each row has at most one action (connectionStatus.ts), its details (ⓘ) and its
+ *   "⋯" (edit, the CI attestation's other move, remove).
+ * - **More ways to connect**, folded (MoreWaysToConnect.tsx): another GitHub App, a connection made by hand, GitLab.
+ *
+ * One dialog at a time over the page: adding or editing a connection (ConnectionDialog.tsx: an empty key keeps the
+ * stored credential), removing one after a confirmation that says live runs on it lose access within five minutes,
+ * attesting or withdrawing its CI (CiAttestation.tsx). What a change did is said once in a polite status line.
  *
  * @module pages/Agents/EngineeringConnections
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { GitBranch, KeyRound, Plus } from 'lucide-react'
+import { Loader2, RefreshCw } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
-import { engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested } from '../../api/engineeringConnectionsApi'
+import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
 import { useConfigStore } from '../../store/configStore'
-import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
-import { EXPIRY_WARNING_DAYS, todayUtc, tokenExpiry } from './connectionRules'
-import { AttestDialog, CiAttestationLine, WithdrawConfirm } from './CiAttestation'
+import { todayUtc } from './connectionRules'
+import { connectionsSummary, groupConnections } from './connectionStatus'
+import { AttestDialog, WithdrawConfirm } from './CiAttestation'
 import { ConnectionDialog } from './ConnectionDialog'
-import { ConnectionIssues } from './ConnectionIssues'
-import { CredentialGuidance } from './ConnectionFields'
 import { ConnectionChangeConfirm } from './ConnectionModals'
-import { GitHubAppPanel } from './GitHubAppPanel'
-import type { ConnectionList, EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
+import { ConnectionsStatus } from './ConnectionsStatus'
+import { RepositoryList } from './ConnectionRow'
+import { AppGroup } from './AppGroup'
+import { ConnectGitHubHero } from './GitHubAppPanel'
+import { MoreWaysToConnect } from './MoreWaysToConnect'
+import { useAppChecks } from './useAppChecks'
+import type { UseQueryResult } from '@tanstack/react-query'
+import type {
+  ConnectionHost, ConnectionList, EngineeringConnection, SavedConnection,
+} from '../../api/engineeringConnectionsApi'
+import type { GitHubAppList } from '../../api/githubAppsApi'
 import type { IssuesSourceView } from '../../api/issuesSourceApi'
+import type { RowActions } from './ConnectionRow'
+import type { ConnectionsSummary } from './connectionStatus'
+import type { AppChecks } from './useAppChecks'
 
-/** The dialog open: adding (null) or editing a connection, removing it, or attesting or withdrawing its CI. */
+/** The dialog open: adding (on a host) or editing a connection, removing it, or attesting or withdrawing its CI. */
 type Open =
-  | { kind: 'edit'; connection: EngineeringConnection | null }
-  | { kind: 'remove' | 'attest' | 'withdraw'; connection: EngineeringConnection }
+  | { kind: 'add'; host: ConnectionHost }
+  | { kind: 'edit' | 'remove' | 'attest' | 'withdraw'; connection: EngineeringConnection }
   | null
-
-/** What a row's buttons open. */
-interface RowActions {
-  onEdit: (c: EngineeringConnection) => void
-  onRemove: (c: EngineeringConnection) => void
-  onAttest: (c: EngineeringConnection) => void
-  onWithdraw: (c: EngineeringConnection) => void
-}
-
-/** A GitLab token's expiry: its day, a warning within the last `EXPIRY_WARNING_DAYS`, a danger badge once past. */
-function TokenExpiryLine({ expiresAt }: Readonly<{ expiresAt: string | null }>) {
-  const { t, i18n } = useTranslation('agents')
-  const expiry = tokenExpiry(expiresAt, todayUtc())
-  if (expiry.state === 'none') return <p className="text-[12px] text-warn">{t('connections.expiry.unknown')}</p>
-  const date = formatCalendarDay(expiry.date, i18n.language)
-  if (expiry.state === 'ok') return <p className="text-[12px] text-muted">{t('connections.expiry.on', { date })}</p>
-  const soon = expiry.state === 'soon'
-  return (
-    <p className="flex flex-wrap items-center gap-2 text-[12px]">
-      <span className={soon ? 'badge badge-warn' : 'badge badge-danger'}>
-        {soon ? t('connections.expiry.soonBadge') : t('connections.expiry.expiredBadge')}
-      </span>
-      <span className={soon ? 'text-warn' : 'text-danger'}>
-        {soon ? t('connections.expiry.soon', { date, days: EXPIRY_WARNING_DAYS }) : t('connections.expiry.expired', { date })}
-      </span>
-    </p>
-  )
-}
-
-/** The App a connection goes through, by its id: the slug of each of the deployment's GitHub Apps. */
-type AppSlugs = ReadonlyMap<string, string>
-
-/** A connection's credential: its host and kind, its App (the one it goes through, or its ids), whether it is set. */
-function CredentialLine({ connection, appSlugs }: Readonly<{ connection: EngineeringConnection; appSlugs: AppSlugs }>) {
-  const { t } = useTranslation('agents')
-  const { credential } = connection
-  const viaApp = credential.kind === 'app_reference' && credential.app_id !== null ? appSlugs.get(credential.app_id) : undefined
-  return (
-    <p className="flex flex-wrap items-center gap-2 text-[12px]">
-      <span className="badge badge-muted">{t(`connections.hosts.${connection.host}`)}</span>
-      <span className="badge badge-muted inline-flex items-center gap-1">
-        <KeyRound size={12} aria-hidden="true" /> {connection.host === 'gitlab' ? t('connections.kindToken') : t('connections.kind')}
-      </span>
-      {viaApp !== undefined && <span className="text-muted">{t('connections.githubApp.via', { slug: viaApp })}</span>}
-      {credential.app_id !== null && credential.installation_id !== null && (
-        <span className="font-mono text-muted">
-          {t('connections.appIds', { appId: credential.app_id, installationId: credential.installation_id })}
-        </span>
-      )}
-      <span className={credential.set ? 'badge badge-ok' : 'badge badge-warn'}>
-        {credential.set ? t('connections.set') : t('connections.notSet')}
-      </span>
-      {!credential.set && <span className="text-warn">{t('connections.notSetHint')}</span>}
-    </p>
-  )
-}
-
-/** What every row reads beside its connection: the Apps' slugs, and the GitHub Issues source's view (once read). */
-interface RowContext {
-  appSlugs: AppSlugs
-  issues: IssuesSourceView | undefined
-}
-
-function ConnectionRow({ connection, actions, context }: Readonly<{
-  connection: EngineeringConnection; actions: RowActions; context: RowContext
-}>) {
-  const { t, i18n } = useTranslation('agents')
-  const { repository, credential } = connection
-  const when = formatDateTime(connection.updated_at, i18n.language, '')
-  return (
-    <li className="card p-4 flex flex-wrap items-start gap-3">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-semibold text-text-strong font-mono break-words [overflow-wrap:anywhere]">{repository}</p>
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
-          <span className="font-mono">{connection.connection_id}</span>
-          <span className="inline-flex items-center gap-1">
-            <GitBranch size={13} aria-hidden="true" />
-            {t('connections.branch', { branch: connection.default_branch })}
-          </span>
-        </p>
-        <CredentialLine connection={connection} appSlugs={context.appSlugs} />
-        {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
-        <CiAttestationLine connection={connection} />
-        <ConnectionIssues connection={connection} view={context.issues} />
-        {when !== '' && (
-          <p className="text-[12px] text-muted">
-            {t('connections.updated', { when, who: connection.updated_by ?? t('connections.unknownEditor') })}
-          </p>
-        )}
-      </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {isCiAttested(connection)
-          ? (
-              <button type="button" className="btn btn-secondary" onClick={() => actions.onWithdraw(connection)}
-                aria-label={t('connections.ci.withdrawLabel', { repository })}>{t('connections.ci.withdrawAction')}</button>
-            )
-          : (
-              <button type="button" className="btn btn-secondary" onClick={() => actions.onAttest(connection)}
-                aria-label={t('connections.ci.attestLabel', { repository })}>{t('connections.ci.attest')}</button>
-            )}
-        <button type="button" className="btn btn-secondary" onClick={() => actions.onEdit(connection)}
-          aria-label={t('connections.editLabel', { repository })}>{t('connections.edit')}</button>
-        <button type="button" className="btn btn-secondary" onClick={() => actions.onRemove(connection)}
-          aria-label={t('connections.removeLabel', { repository })}>{t('connections.remove')}</button>
-      </div>
-    </li>
-  )
-}
 
 function RemoveConfirm({ connection, onDone, onCancel }: Readonly<{
   connection: EngineeringConnection; onDone: () => void; onCancel: () => void
@@ -169,27 +79,7 @@ function RemoveConfirm({ connection, onDone, onCancel }: Readonly<{
   )
 }
 
-function ConnectionsBody({ list, actions, context }: Readonly<{ list: ConnectionList; actions: RowActions; context: RowContext }>) {
-  const { t } = useTranslation('agents')
-  if (list.connections.length === 0) {
-    return (
-      <div className="card text-center py-10">
-        <KeyRound size={20} className="mx-auto text-muted" aria-hidden="true" />
-        <p className="mt-2 text-sm font-semibold text-text-strong">{t('connections.emptyTitle')}</p>
-        <p className="text-sm text-muted">{t('connections.emptyHint')}</p>
-      </div>
-    )
-  }
-  return (
-    <ul className="space-y-2" aria-label={t('connections.title')}>
-      {list.connections.map((connection) => (
-        <ConnectionRow key={connection.connection_id} connection={connection} actions={actions} context={context} />
-      ))}
-    </ul>
-  )
-}
-
-/** The one dialog open over the list, with the connection it is for. */
+/** The one dialog open over the page, with the connection it is for. */
 function OpenDialog({ open, onClose, onNotice }: Readonly<{
   open: Exclude<Open, null>; onClose: () => void; onNotice: (text: string) => void
 }>) {
@@ -198,14 +88,13 @@ function OpenDialog({ open, onClose, onNotice }: Readonly<{
     onNotice(t(key, { repository }))
     onClose()
   }
-  if (open.kind === 'edit') {
-    const saved = ({ connection, created }: SavedConnection) => {
-      done(created ? 'connections.created' : 'connections.saved', connection.repository)
-    }
-    return <ConnectionDialog existing={open.connection} onClose={onClose} onSaved={saved} />
+  const saved = ({ connection, created }: SavedConnection) => {
+    done(created ? 'connections.created' : 'connections.saved', connection.repository)
   }
+  if (open.kind === 'add') return <ConnectionDialog existing={null} presetHost={open.host} onClose={onClose} onSaved={saved} />
   const { connection } = open
   const { repository } = connection
+  if (open.kind === 'edit') return <ConnectionDialog existing={connection} onClose={onClose} onSaved={saved} />
   if (open.kind === 'remove') {
     return <RemoveConfirm connection={connection} onCancel={onClose} onDone={() => done('connections.removed', repository)} />
   }
@@ -215,49 +104,171 @@ function OpenDialog({ open, onClose, onNotice }: Readonly<{
   return <WithdrawConfirm connection={connection} onCancel={onClose} onDone={() => done('connections.ci.withdrawn', repository)} />
 }
 
-export function EngineeringConnections() {
-  const { t } = useTranslation('agents')
+/** The page's three reads: the connections, the deployment's Apps and the GitHub Issues source's view. */
+function useConnectionReads() {
   const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const read = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list, enabled: configured })
+  const connections = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list, enabled: configured })
   const apps = useQuery({ queryKey: githubAppsKeys.list(), queryFn: githubAppsApi.list, enabled: configured })
-  const appSlugs: AppSlugs = new Map((apps.data?.apps ?? []).map((app) => [app.app_id, app.slug]))
-  // (the deployment's: sent without a workspace header; a failed read shows no issues line, never a made-up one)
+  // (the deployment's: sent without a workspace header; a failed read shows no issues column, never a made-up one)
   const issues = useQuery({ queryKey: issuesSourceKeys.view(), queryFn: issuesSourceApi.get, enabled: configured, retry: false })
+  return { configured, connections, apps, issues: issues.data }
+}
+
+/** Connections outside every listed App: a pasted key's, a GitLab token's, or one whose App is gone. */
+function OtherConnections({ connections, view, actions }: Readonly<{
+  connections: readonly EngineeringConnection[]; view: IssuesSourceView | undefined; actions: RowActions
+}>) {
+  const { t } = useTranslation('agents')
+  const titleId = useId()
+  return (
+    <section className="card p-0 overflow-hidden" aria-labelledby={titleId}>
+      <div className="px-4 py-3">
+        <h3 id={titleId} className="text-sm font-semibold text-text-strong">{t('connections.others.title')}</h3>
+        <p className="text-[12px] text-muted">{t('connections.others.hint')}</p>
+      </div>
+      <RepositoryList label={t('connections.others.title')} connections={connections} view={view} actions={actions}
+        labelBusy={() => false} />
+    </section>
+  )
+}
+
+/** The Apps, each with its repositories, then the other connections; or the Apps' failed read. */
+function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly<{
+  list: ConnectionList
+  apps: UseQueryResult<GitHubAppList>
+  view: IssuesSourceView | undefined
+  checks: AppChecks
+  actions: RowActions
+  onNotice: (text: string) => void
+}>) {
+  const { t } = useTranslation('agents')
+  // (while the Apps are read, nothing is grouped: a connection made through one would show among the others)
+  if (apps.isPending) return <div className="skeleton h-16" />
+  const groups = groupConnections(list.connections, apps.data?.apps ?? [])
+  return (
+    <>
+      {apps.data === undefined && (
+        <LoadFailed message={t('connections.githubApp.loadFailed')} onRetry={() => { void apps.refetch() }} retrying={apps.isFetching} />
+      )}
+      {groups.apps.length > 0 && (
+        <ul className="space-y-4" aria-label={t('connections.githubApp.listLabel')}>
+          {groups.apps.map((group) => (
+            <li key={group.app.app_id}>
+              <AppGroup group={group} view={view} record={checks.records.get(group.app.app_id)}
+                checking={checks.running.has(group.app.app_id)} actions={actions} onNotice={onNotice}
+                onCheck={() => { void checks.check(group.app.app_id) }} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {groups.others.length > 0 && <OtherConnections connections={groups.others} view={view} actions={actions} />}
+    </>
+  )
+}
+
+/** Check now: every installed App's check, at once (secondary: the page's primary is none once connected). */
+function CheckNow({ appIds, checks }: Readonly<{ appIds: readonly string[]; checks: AppChecks }>) {
+  const { t } = useTranslation('agents')
+  const busy = appIds.some((appId) => checks.running.has(appId))
+  return (
+    <button type="button" className="btn btn-secondary btn-sm" aria-disabled={busy || undefined}
+      onClick={() => { if (!busy) void checks.checkAll(appIds) }}>
+      {busy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />}
+      {t('connections.checkNow')}
+    </button>
+  )
+}
+
+/** What the rows' actions open; Create label runs the check of the App the connection goes through. */
+function rowActions(checks: AppChecks, open: (next: Exclude<Open, null>) => void): RowActions {
+  const opener = (kind: 'edit' | 'remove' | 'attest' | 'withdraw') => (connection: EngineeringConnection) => {
+    open({ kind, connection })
+  }
+  return {
+    onEdit: opener('edit'), onRemove: opener('remove'), onAttest: opener('attest'), onWithdraw: opener('withdraw'),
+    onCreateLabel: (connection) => {
+      const appId = connection.credential.app_id
+      if (appId !== null) void checks.check(appId)
+    },
+  }
+}
+
+/** The status line's facts once the connections and the Apps are read; null before. */
+function summaryOf(list: ConnectionList | undefined, apps: GitHubAppList | undefined, issues: IssuesSourceView | undefined,
+  checks: AppChecks): ConnectionsSummary | null {
+  if (list === undefined || apps === undefined) return null
+  return connectionsSummary({ connections: list.connections, apps: apps.apps, issues, checks: checks.results, today: todayUtc() })
+}
+
+/** "Repository connections", what they are, and Check now once an App is installed. */
+function PageHeader({ apps, checks }: Readonly<{ apps: GitHubAppList | undefined; checks: AppChecks }>) {
+  const { t } = useTranslation('agents')
+  const installed = (apps?.apps ?? []).filter((app) => app.connections.length > 0).map((app) => app.app_id)
+  return (
+    <div className="flex flex-wrap items-start gap-3">
+      <div className="mr-auto min-w-0 max-w-prose space-y-1">
+        <h2 className="text-lg font-semibold text-text-strong">{t('connections.title')}</h2>
+        <p className="text-sm text-muted">{t('connections.intro')}</p>
+      </div>
+      {installed.length > 0 && <CheckNow appIds={installed} checks={checks} />}
+    </div>
+  )
+}
+
+/** The connections' read while it loads, or its failure with Try again. */
+function ListState({ read, configured }: Readonly<{ read: UseQueryResult<ConnectionList>; configured: boolean }>) {
+  const { t } = useTranslation('agents')
+  if (read.isPending && configured) return <div className="skeleton h-24" />
+  if (read.data !== undefined || !read.isError) return null
+  return <LoadFailed message={t('connections.loadFailed')} onRetry={() => { void read.refetch() }} retrying={read.isFetching} />
+}
+
+/** Nothing connected: the hero; else the Apps and the other connections. More ways to connect under either. */
+function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd }: Readonly<{
+  list: ConnectionList
+  summary: ConnectionsSummary | null
+  apps: UseQueryResult<GitHubAppList>
+  view: IssuesSourceView | undefined
+  checks: AppChecks
+  actions: RowActions
+  onNotice: (text: string) => void
+  onAdd: (host: ConnectionHost) => void
+}>) {
+  const appList = apps.data
+  const appsFull = appList === undefined || appList.apps.length >= appList.limit
+  const empty = summary?.empty === true
+  return (
+    <>
+      {empty
+        ? <ConnectGitHubHero full={appsFull} />
+        : <ConnectedBody list={list} apps={apps} view={view} checks={checks} actions={actions} onNotice={onNotice} />}
+      <MoreWaysToConnect anotherApp={!empty} appsFull={appsFull} appLimit={appList?.limit ?? null}
+        connectionsFull={list.connections.length >= list.limit} connectionLimit={list.limit} onAdd={onAdd} />
+    </>
+  )
+}
+
+export function EngineeringConnections() {
+  const reads = useConnectionReads()
+  const checks = useAppChecks()
   const [open, setOpen] = useState<Open>(null)
   const [notice, setNotice] = useState('')
-  const list = read.data
-  const full = list !== undefined && list.connections.length >= list.limit
-  const opener = (kind: 'edit' | 'remove' | 'attest' | 'withdraw') => (connection: EngineeringConnection) => {
+  const show = (next: Exclude<Open, null>) => {
     setNotice('')
-    setOpen({ kind, connection })
+    setOpen(next)
   }
-  const actions: RowActions = {
-    onEdit: opener('edit'), onRemove: opener('remove'), onAttest: opener('attest'), onWithdraw: opener('withdraw'),
-  }
+  const list = reads.connections.data
+  const summary = summaryOf(list, reads.apps.data, reads.issues, checks)
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="mr-auto min-w-0 max-w-prose space-y-1">
-          <h2 className="text-lg font-semibold text-text-strong">{t('connections.title')}</h2>
-          <p className="text-sm text-muted">{t('connections.intro')}</p>
-        </div>
-        {list !== undefined && (
-          <button type="button" className="btn btn-primary" disabled={full} onClick={() => { setNotice(''); setOpen({ kind: 'edit', connection: null }) }}>
-            <Plus size={16} aria-hidden="true" /> {t('connections.add')}
-          </button>
-        )}
-      </div>
-      {full && <p className="text-[12px] text-muted">{t('connections.limitReached', { limit: list.limit })}</p>}
+      <PageHeader apps={reads.apps.data} checks={checks} />
+      {summary !== null && <ConnectionsStatus summary={summary} />}
       <p role="status" className="text-[12px] text-ok">{notice}</p>
-      {read.isPending && configured && <div className="skeleton h-24" />}
-      {list === undefined && read.isError && (
-        <LoadFailed message={t('connections.loadFailed')} onRetry={() => { void read.refetch() }} retrying={read.isFetching} />
-      )}
+      <ListState read={reads.connections} configured={reads.configured} />
       {list !== undefined && (
-        <ConnectionsBody list={list} actions={actions} context={{ appSlugs, issues: issues.data }} />
+        <PageBody list={list} summary={summary} apps={reads.apps} view={reads.issues} checks={checks}
+          actions={rowActions(checks, show)} onNotice={setNotice} onAdd={(host) => { show({ kind: 'add', host }) }} />
       )}
-      <GitHubAppPanel read={apps} onNotice={setNotice} />
-      <CredentialGuidance />
       {open !== null && <OpenDialog open={open} onClose={() => setOpen(null)} onNotice={setNotice} />}
     </div>
   )

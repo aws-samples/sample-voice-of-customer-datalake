@@ -372,16 +372,16 @@
       "appLabel": "GitHub App",
       "oneApp": "GitHub App: {{app}}",
       "chooseApp": "Choose an App",
-      "appHint": "The App reads only the repositories it is installed on: install it on more under Agents → Connections.",
+      "appHint": "The App reads only the repositories it is installed on: install it on more under Agent orchestration → Connections.",
       "useToken": "Use a fine-grained token instead",
       "tokenHint": "A fine-grained personal access token with read-only Issues and Metadata on these repositories.",
       "useApp": "Sign in with your GitHub App instead",
-      "connectHint": "Or connect GitHub under Agents → Connections: the deployment's GitHub App is made in two clicks, and this source then reads the connected repositories' issues by itself.",
+      "connectHint": "Or connect GitHub under Agent orchestration → Connections: the deployment's GitHub App is made in two clicks, and this source then reads the connected repositories' issues by itself.",
       "connect": "Connect GitHub",
       "managed_one": "Managed by your GitHub connection: issues from {{count, number}} repository.",
       "managed_other": "Managed by your GitHub connection: issues from {{count, number}} repositories.",
-      "managedHint": "Each repository connected through the GitHub App under Agents → Connections is read automatically; switch one off there.",
-      "openConnections": "Open Agents → Connections",
+      "managedHint": "Each repository connected through the GitHub App under Agent orchestration → Connections is read automatically; switch one off there.",
+      "openConnections": "Open Agent orchestration → Connections",
       "manual": "Configure manually (advanced)"
     }
   },
@@ -1074,8 +1074,8 @@
       "errors_other": "{{count, number}} errors in the last 24 hours"
     },
     "elsewhere": {
-      "cost": "Cost: Agents › Spend",
-      "github": "GitHub: Agents › Connections",
+      "cost": "Cost: Agent orchestration › Spend",
+      "github": "GitHub: Agent orchestration › Connections",
       "preferences": "Your preferences: Account › Preferences"
     }
   },
@@ -1086,7 +1086,7 @@
       "preferences": "Preferences"
     },
     "places": {
-      "agents": "Agents",
+      "agents": "Agent orchestration",
       "account": "Account"
     },
     "label": "Search settings",

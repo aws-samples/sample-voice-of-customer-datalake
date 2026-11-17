@@ -151,7 +151,7 @@ describe('the installation\'s return', () => {
 
   it('sends nothing for a return without this deployment\'s state, and points to Check installation', async () => {
     renderAt(`${INSTALLED}?installation_id=31415926&setup_action=update`, {})
-    expect(await screen.findByText(/use Check installation or Install more/)).toBeInTheDocument()
+    expect(await screen.findByText(/use Check installation or Add repositories/)).toBeInTheDocument()
     expect(fetchApi).not.toHaveBeenCalled()
   })
 })

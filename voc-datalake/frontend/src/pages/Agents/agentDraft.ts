@@ -12,7 +12,7 @@ import {
 import type { Agent, AgentForm, AgentTrigger } from '../../api/agentsApi'
 
 /** The draft the form edits: an engineering agent's `engineering` settings are set up on their own card
- *  (AgentEngineering.tsx), never through the draft. */
+ *  (Automations/SetupDrawer.tsx), never through the draft. */
 export type AgentDraft = Omit<AgentForm, 'workflow_id' | 'engineering'> & { workflow_id: string | null }
 
 export function draftOf(agent: Agent): AgentDraft {

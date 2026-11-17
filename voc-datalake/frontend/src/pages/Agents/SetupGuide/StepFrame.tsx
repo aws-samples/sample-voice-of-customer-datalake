@@ -71,7 +71,8 @@ function NextLink({ step }: Readonly<{ step: SetupStepId }>) {
   const next = GUIDE_STEPS[GUIDE_STEPS.indexOf(step) + 1]
   if (next === undefined) return null
   return (
-    <Link className="btn btn-ghost btn-sm" to={setupGuidePath(next)}>
+    // (secondary: a step's own action, its automation's row, is the step's primary; 7.52.00 C1, S1)
+    <Link className="btn btn-secondary btn-sm" to={setupGuidePath(next)}>
       {t('setupGuide.next', { step: t(`setupGuide.steps.${next}.title`) })} <ArrowRight size={14} aria-hidden="true" />
     </Link>
   )

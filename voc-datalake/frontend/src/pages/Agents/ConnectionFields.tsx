@@ -105,7 +105,8 @@ function HostGuidance({ host }: Readonly<{ host: ConnectionHost }>) {
   const titleId = useId()
   const { title, lines } = GUIDANCE[host]
   return (
-    <section aria-labelledby={titleId} className="rounded-md border border-border bg-bg-hover px-3 py-2 text-[12px] text-text space-y-1">
+    // (a static fill is `bg-bg-accent`: `bg-bg-hover` is the hover token, ux-agents-redesign C7)
+    <section aria-labelledby={titleId} className="rounded-md border border-border bg-bg-accent px-3 py-2 text-[12px] text-text space-y-1">
       <h3 id={titleId} className="font-medium text-text-strong">{t(title)}</h3>
       {lines.map((line) => <p key={line}>{t(line)}</p>)}
     </section>

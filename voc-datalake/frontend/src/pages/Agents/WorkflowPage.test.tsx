@@ -249,7 +249,7 @@ describe('Workflow library — Start from a template', () => {
   it('the leave-page prompt saves an unsaved copy as Save does, and shows why when it cannot', async () => {
     const create = vi.fn((_body: unknown) => { throw new Error('API Error: 500') })
     const router = renderAt('/agents/workflows/templates/pr-review', { 'POST /workflows': create })
-    await userEvent.click(await screen.findByRole('link', { name: 'All agents' }))
+    await userEvent.click(await screen.findByRole('link', { name: 'Agent orchestration' }))
     await userEvent.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Save' }))
     expect(await screen.findByText("The workflow couldn't be saved.")).toBeInTheDocument()
     expect([create.mock.calls.length, router.state.location.pathname]).toStrictEqual([1, '/agents/workflows/templates/pr-review'])
@@ -259,7 +259,7 @@ describe('Workflow library — Start from a template', () => {
     const created = workflowView(1, { ...BUG_HUNT?.definition, name: 'PR review' }, { workflow_id: 'wf_new', kind: 'engineering' })
     const create = vi.fn((_body: unknown) => created)
     const router = renderAt('/agents/workflows/templates/pr-review', { 'POST /workflows': create })
-    await userEvent.click(await screen.findByRole('link', { name: 'All agents' }))
+    await userEvent.click(await screen.findByRole('link', { name: 'Agent orchestration' }))
     await userEvent.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/agents'))
     expect(create).toHaveBeenCalledTimes(1)

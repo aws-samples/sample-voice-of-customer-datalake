@@ -1,15 +1,155 @@
 {
   "nav": {
-    "label": "Autonomous agents",
+    "label": "Agent orchestration",
     "needsDecision_one": "{{count, number}} agent needs a decision",
     "needsDecision_other": "{{count, number}} agents need a decision"
   },
+  "shell": {
+    "title": "Agent orchestration",
+    "subtitle": "Agents that work on your feedback and GitHub issues, within the budgets you set.",
+    "create": "New automation",
+    "createTitle": "Create a product automation",
+    "createSubmit": "Create automation",
+    "setupGuideProgress": "Setup guide · {{done, number}} of {{total, number}} done",
+    "tabs": {
+      "label": "Agent orchestration sections",
+      "agents": "Automations",
+      "runs": "Runs",
+      "skills": "Skills",
+      "spend": "Spend",
+      "workflows": "Flows",
+      "registry": "Registry",
+      "connections": "Connections"
+    },
+    "empty": {
+      "runsTitle": "No runs yet.",
+      "runsHint": "Runs appear here when an automation starts one.",
+      "goToAutomations": "Go to Automations",
+      "runsNeedsYou": "Nothing needs you.",
+      "runsNeedsYouHint": "Runs that wait for a person's decision show here.",
+      "showAllRuns": "Show all runs"
+    },
+    "counts": {
+      "runs_one": "{{count, number}} needs you",
+      "runs_other": "{{count, number}} need you",
+      "skills_one": "{{count, number}} to review",
+      "skills_other": "{{count, number}} to review"
+    }
+  },
+  "automations": {
+    "state": {
+      "needs_setup": "Needs setup",
+      "cant_run": "Can't run",
+      "paused": "Paused",
+      "ready": "Ready",
+      "enabled": "Enabled",
+      "loading": "Reading its state"
+    },
+    "unchecked": "Couldn't check",
+    "reason": {
+      "connection_gone": "Its repository connection was removed.",
+      "monthly_cap": "Monthly cap reached: runs wait for next month.",
+      "daily_cap": "Daily run limit reached."
+    },
+    "actions": {
+      "set_up": "Set up",
+      "fix": "Fix",
+      "resume": "Resume",
+      "enable": "Enable",
+      "run_now": "Run now",
+      "review": "Review"
+    },
+    "menu": {
+      "label": "Actions for {{name}}",
+      "open": "Open",
+      "editSettings": "Edit settings",
+      "changeSetup": "Change setup…",
+      "rename": "Rename…",
+      "pause": "Pause",
+      "resume": "Resume",
+      "turnOff": "Turn off",
+      "runNow": "Run now",
+      "allRuns": "All runs",
+      "delete": "Delete…",
+      "archive": "Archive…"
+    },
+    "columns": {
+      "automation": "Automation",
+      "status": "Status",
+      "lastRun": "Last run",
+      "usage": "Usage"
+    },
+    "activity": {
+      "none": "No runs yet",
+      "running": "Running · started {{when}}",
+      "ended": "{{status}} · {{when}}",
+      "needsDecision": "Needs your decision",
+      "spentOf": "{{amount}} of {{budget}}",
+      "callsOf": "{{calls}} of {{cap}} model calls",
+      "calls_one": "{{calls}} model call",
+      "calls_other": "{{calls}} model calls",
+      "scheduledToday_one": "{{count, number}} scheduled run today",
+      "scheduledToday_other": "{{count, number}} scheduled runs today"
+    },
+    "notice": {
+      "enabled": "{{name}} enabled.",
+      "enabledRunsAsYou": "{{name}} enabled. Runs as you.",
+      "paused": "{{name}} paused: no run starts by itself until you resume it.",
+      "resumed": "{{name}} resumed.",
+      "turnedOff": "{{name}} turned off.",
+      "started": "A run of {{name}} started.",
+      "saved": "The setup of {{name}} was saved."
+    },
+    "pauseFailed": "The automation couldn't be paused or resumed.",
+    "groups": {
+      "engineering": {
+        "title": "Engineering automations",
+        "hint": "A labelled GitHub issue becomes a pull request a person reviews: triage → fix or build."
+      },
+      "product": {
+        "title": "Product automations",
+        "hint": "New feedback becomes a researched project: personas, PR/FAQ, PRD and a prototype."
+      }
+    },
+    "blocked": {
+      "noConnection": "These automations need a GitHub connection.",
+      "connect": "Connect GitHub"
+    },
+    "firstRun": {
+      "title": "Set up the bug loop",
+      "body": "Connect GitHub and confirm the repository's CI, then switch on triage, fixing and building. Any step can wait.",
+      "start": "Start the setup guide",
+      "skip": "Not now"
+    },
+    "needsYou": {
+      "review": "Review",
+      "decision": "Needs your decision",
+      "decisionLine": "{{name}} · its last run waits for you · {{when}}",
+      "waiting": "Waiting for review",
+      "title_one": "Needs you ({{count, number}})",
+      "title_other": "Needs you ({{count, number}})",
+      "skillsLine_one": "Skills · {{count, number}} version to review",
+      "skillsLine_other": "Skills · {{count, number}} versions to review"
+    },
+    "drawer": {
+      "description": "It runs as you, on the deployment's feedback.",
+      "repository": "Repository",
+      "noRepository": "No repository it can use yet",
+      "changeRepository": "Change in Connections",
+      "language": "Language",
+      "budget": "Monthly budget (USD)",
+      "readiness": "Before it can run",
+      "openConnections": "Open Connections",
+      "enableWaits_one": "Enable waits for {{count, number}} fix.",
+      "enableWaits_other": "Enable waits for {{count, number}} fixes."
+    },
+    "toFix_one": "{{count, number}} to fix",
+    "toFix_other": "{{count, number}} to fix",
+    "warnings_one": "{{count, number}} warning",
+    "warnings_other": "{{count, number}} warnings"
+  },
   "common": {
     "cancel": "Cancel"
-  },
-  "status": {
-    "enabled": "Enabled",
-    "disabled": "Disabled"
   },
   "scope": {
     "all": "All categories",
@@ -17,39 +157,19 @@
     "sources": "Only these sources",
     "sourcesHint": "Leave all unticked to watch every source. A threshold trigger counts every source, so it is not offered with sources."
   },
-  "views": {
-    "label": "Agents page sections",
-    "agents": "Agents",
-    "workflows": "Workflows",
-    "spend": "Spend",
-    "connections": "Connections",
-    "skills": "Skills",
-    "runs": "Runs"
-  },
   "list": {
-    "title": "Autonomous agents",
-    "subtitle": "Agents watch the feedback in their scope and, when a trigger fires, run a workflow: research, personas, PR/FAQ, PRD and a prototype, reviewed by personas before handing off a project.",
-    "create": "New agent",
-    "createTitle": "Create an autonomous agent",
     "createHint": "It is created disabled with its own editable copy of the “Reviews → Prototype” workflow. Configure triggers and the workflow, then enable it.",
     "createFailed": "The agent couldn't be created.",
-    "emptyTitle": "No autonomous agents yet",
+    "emptyTitle": "No automations yet",
     "emptyAdmin": "Create one to turn new feedback into researched projects and prototypes automatically.",
-    "emptyUser": "An administrator hasn't set up any agent you can see yet.",
+    "emptyUser": "An administrator hasn't set up any automation you can see yet.",
     "loadFailed": "Agents couldn't be loaded.",
-    "spend": "{{runs, number}} scheduled runs today · {{calls, number}} model calls this month",
-    "spendHint": "Manual runs are not counted against the daily scheduled-run limit.",
-    "needsDecision": "Needs your decision",
-    "reviewRun": "Review the run of {{name}}",
     "rename": "Rename",
-    "renameNamed": "Rename {{name}}",
-    "renameTitle": "Rename this agent",
+    "renameTitle": "Rename this automation",
     "renameFailed": "The agent couldn’t be renamed.",
     "delete": "Delete",
-    "deleteNamed": "Delete {{name}}",
-    "deleteTitle": "Delete this agent?",
-    "deleteMessage": "“{{name}}” stops running and leaves your agents. Its past runs and the projects and documents it made are kept. A run in progress finishes first.",
-    "deleteFailed": "The agent couldn’t be deleted."
+    "deleteTitle": "Delete this automation?",
+    "deleteMessage": "“{{name}}” stops running and leaves your automations. Its past runs and the projects and documents it made are kept. A run in progress finishes first."
   },
   "library": {
     "title": "Workflow library",
@@ -99,28 +219,49 @@
     "public": "Public"
   },
   "detail": {
-    "back": "All agents",
+    "back": "Agent orchestration",
     "tabs": "Agent sections",
-    "enabledLabel": "Enabled",
     "toggleFailed": "The agent couldn't be enabled or disabled.",
     "save": "Save",
     "saved": "Saved",
     "saveFailed": "The changes couldn't be saved.",
     "discard": "Discard changes",
     "archive": "Archive",
-    "archiveTitle": "Archive this agent?",
+    "archiveTitle": "Archive this automation?",
     "archiveMessage": "It stops running and disappears from the list. Projects it created stay.",
-    "notFound": "This agent doesn't exist or you can't see it.",
-    "stats": "{{runs, number}} runs in total · {{today, number}} scheduled today · {{calls, number}} model calls this month"
+    "notFound": "This automation doesn't exist or you can't see it.",
+    "backToAutomations": "Automations",
+    "tab": {
+      "flow": "Flow",
+      "budgetModels": "Budget & models"
+    },
+    "meta": {
+      "actsAs": "Acts as {{name}}, who enabled it",
+      "deploymentFeedback": "Deployment feedback",
+      "runs_one": "{{count, number}} run",
+      "runs_other": "{{count, number}} runs",
+      "today_one": "{{count, number}} scheduled today",
+      "today_other": "{{count, number}} scheduled today",
+      "calls_one": "{{calls}} model call this month",
+      "calls_other": "{{calls}} model calls this month"
+    },
+    "flow": {
+      "another": "Run another flow",
+      "edit": "Edit in Flows",
+      "revision": "Revision {{revision, number}}",
+      "readOnly": "Read only here: a flow can be shared by several automations, so it is changed in Flows.",
+      "loadFailed": "Its flow couldn't be loaded.",
+      "unreadableTitle": "This flow can't be shown",
+      "unreadable": "Its saved definition couldn't be read.",
+      "switchMessage": "{{name}} runs “{{flow}}” from its next run."
+    },
+    "runsEmptyHint": "Runs appear here when it starts one: on a trigger, or when someone presses Run now."
   },
   "tabs": {
     "settings": "Settings",
     "triggers": "Triggers",
     "personas": "Personas",
-    "instructions": "Instructions",
-    "models": "Models",
     "budget": "Budget",
-    "workflow": "Workflow",
     "runs": "Runs"
   },
   "triggers": {
@@ -458,12 +599,8 @@
       "useWebSearchHint": "Counts toward the run's limit of {{limit, number}} web searches.",
       "endStatus": "Run ends as"
     },
-    "savedAsAgent": "Saved as “{{name}}”. This agent now runs it.",
-    "savedAsSwitchFailed": "The copy was saved, but this agent couldn't be switched to it. Pick it in the agent's settings.",
     "savedAsOpened": "Saved as “{{name}}”.",
-    "switchLabel": "Workflow",
     "switchTitle": "Switch workflow?",
-    "switchMessage": "Your unsaved changes to {{name}} will be lost.",
     "switchConfirm": "Switch workflow",
     "switched": "This agent now runs {{name}}.",
     "switchFailed": "The agent couldn't be switched to that workflow.",
@@ -721,7 +858,7 @@
     }
   },
   "spend": {
-    "hint": "What the engineering agents spent, from the spend ledger: each session’s cost, tokens and MicroVM time, as the runtime measured them. The cost is session time and model tokens, each at the deployment’s prices. Months are in UTC.",
+    "hint": "What the engineering automations spent this month, at this deployment's prices (UTC).",
     "month": "Month",
     "groupBy": "Group by",
     "by": {
@@ -749,7 +886,6 @@
     "none": "Not recorded",
     "otherModels": "Other models",
     "workflowRuns": "{{name}}: show its runs",
-    "inRun": "in run {{run}}",
     "onlyWorkflow": "Workflow: {{name}}",
     "allWorkflows": "Show every workflow",
     "tableCaption": "Spend in {{month}}, grouped by: {{by}}",
@@ -773,31 +909,30 @@
       "listLabel": "GitHub Apps",
       "ownerUser": "{{owner}} (personal account)",
       "ownerOrganization": "{{owner}} (organization)",
-      "webhookOn": "Issue events delivered here",
+      "webhookOn": "Sends issue events",
       "webhookOff": "No webhook",
-      "connections_one": "{{count, number}} connection",
-      "connections_other": "{{count, number}} connections",
       "notInstalled": "Not installed",
-      "created": "Created {{when}} by {{who}}",
       "openOnGitHub": "Open {{slug}} on GitHub",
-      "install": "Install",
-      "installMore": "Install more",
-      "installLabel": "Install {{slug}} on GitHub",
       "check": "Check installation",
-      "checkLabel": "Check the installation of {{slug}}",
       "checkCovered": "The installation covers every connection of {{slug}} ({{repositories, number}} repositories installed).",
       "checkMissing": "No longer covered by the installation: {{connections}}. Their runs are refused until the App is installed on those repositories again or the connections are removed.",
-      "remove": "Remove",
-      "removeLabel": "Remove {{slug}}",
       "removeTitle": "Remove {{slug}}?",
       "removeMessage": "Its key and its webhook secret are deleted from this deployment. The App itself stays on GitHub: delete it in GitHub's settings too.",
       "removeConfirm": "Remove the App",
       "removed": "{{slug}} is removed from this deployment. Delete it in GitHub's settings too.",
-      "via": "via {{slug}}"
+      "menuLabel": "Actions for {{slug}}",
+      "removeApp": "Remove App…",
+      "addRepositories": "Add repositories",
+      "installOnGitHub": "Install on GitHub",
+      "checked": "Checked {{when}}",
+      "reinstall": "Reinstall on GitHub",
+      "checking": "Checking the installation…",
+      "repositoriesLabel": "Repositories through {{slug}}",
+      "installed_one": "Installed · {{count, number}} repository",
+      "installed_other": "Installed · {{count, number}} repositories"
     },
     "issues": {
       "switch": "Read this repository's issues",
-      "reading": "Issues are read automatically.",
       "reasons": {
         "off": "Its issues are not read: the switch is off.",
         "token": "The GitHub Issues source signs in with a token: add this repository under Administration → Data sources.",
@@ -828,15 +963,23 @@
         },
         "scheduleOff": "The GitHub Issues source's schedule is off: turn it on under Administration → Data sources.",
         "error": "The GitHub Issues source could not be set up automatically: {{error}}"
-      }
+      },
+      "state": {
+        "reading": "Reading",
+        "notRead": "Not read",
+        "off": "Off"
+      },
+      "githubOnly": "GitHub only",
+      "appOnly": "Read only through the deployment’s GitHub App",
+      "labelFailed": "Couldn’t create"
     },
     "githubReturn": {
-      "back": "Back to Agents → Connections",
+      "back": "Back to Agent orchestration → Connections",
       "createdTitle": "GitHub App created",
       "creating": "Storing the App's key…",
       "createdBody": "{{slug}} is created and its key stored. Next, install it on the repositories the agents may work on.",
       "installOnGitHub": "Install on GitHub",
-      "noCode": "This page needs the link GitHub sends back once it has created the App. Start again from Agents → Connections.",
+      "noCode": "This page needs the link GitHub sends back once it has created the App. Start again from Agent orchestration → Connections.",
       "installedTitle": "GitHub App installed",
       "installing": "Saving the connections…",
       "installedBody_one": "Connected {{count, number}} repository through {{slug}}.",
@@ -851,16 +994,13 @@
         "limit": "{{repository}}: past the connection limit",
         "not_saved": "{{repository}}: could not be saved"
       },
-      "approval": "An owner must approve the installation. Once they have, open Agents → Connections and use Install more on the App to save its repositories.",
-      "noState": "GitHub sent you back without this deployment's link, so nothing was saved. Open Agents → Connections and use Check installation or Install more on the App."
+      "approval": "An owner must approve the installation. Once they have, open Agent orchestration → Connections and use Add repositories on the App to save its repositories.",
+      "noState": "GitHub sent you back without this deployment's link, so nothing was saved. Open Agent orchestration → Connections and use Check installation or Add repositories on the App."
     },
     "title": "Repository connections",
-    "intro": "The engineering agents reach a repository through a connection: the repository, its default branch and a credential stored for them. A stored credential is never shown again, to anyone.",
-    "add": "Add connection",
+    "intro": "Where the engineering agents work: each repository, how they reach it, and whether they may push.",
     "limitReached": "This deployment holds at most {{limit, number}} connections. Remove one to add another.",
     "loadFailed": "The repository connections could not be loaded.",
-    "emptyTitle": "No repository connections yet",
-    "emptyHint": "Add one so the engineering agents can work on a repository.",
     "branch": "Default branch: {{branch}}",
     "kind": "GitHub App",
     "kindToken": "GitLab project access token",
@@ -917,10 +1057,6 @@
     "notSetHint": "The stored credential is missing: edit the connection and save it with its credential again.",
     "updated": "Updated {{when}} by {{who}}",
     "unknownEditor": "unknown",
-    "edit": "Edit",
-    "editLabel": "Edit {{repository}}",
-    "remove": "Remove",
-    "removeLabel": "Remove {{repository}}",
     "created": "{{repository}} is added.",
     "saved": "{{repository}} is saved.",
     "removed": "{{repository}} is removed.",
@@ -994,9 +1130,6 @@
       "voidedRemoved": "Voided when the connection was removed: attest its CI again.",
       "unknownPerson": "an administrator",
       "attest": "Attest CI",
-      "attestLabel": "Attest the CI of {{repository}}",
-      "withdrawAction": "Withdraw CI",
-      "withdrawLabel": "Withdraw the CI attestation of {{repository}}",
       "recorded": "The CI attestation of {{repository}} is recorded.",
       "withdrawn": "The CI attestation of {{repository}} is withdrawn.",
       "points": {
@@ -1022,6 +1155,70 @@
         "message": "The agents’ next push or pull request on {{repository}} is refused until an administrator attests its CI again.",
         "confirm": "Withdraw attestation"
       }
+    },
+    "checkNow": "Check now",
+    "summary": {
+      "connected": "Connected",
+      "attention": "Needs attention",
+      "issuesRead": "Issues read automatically",
+      "through_one": "{{count, number}} repository through {{slug}}",
+      "through_other": "{{count, number}} repositories through {{slug}}",
+      "others_one": "{{count, number}} other connection",
+      "others_other": "{{count, number}} other connections",
+      "ciNeeded_one": "{{count, number}} needs its CI attested before the agents push",
+      "ciNeeded_other": "{{count, number}} need their CI attested before the agents push"
+    },
+    "columns": {
+      "repository": "Repository",
+      "ci": "CI",
+      "issues": "Issues",
+      "label": "Label"
+    },
+    "others": {
+      "title": "Other connections",
+      "hint": "Connected with a pasted GitHub App key or a GitLab token."
+    },
+    "actions": {
+      "storeKey": "Store the key",
+      "replaceToken": "Replace token",
+      "createLabel": "Create label"
+    },
+    "menu": {
+      "label": "Actions for {{repository}}",
+      "changeBranch": "Change default branch…",
+      "edit": "Edit connection…",
+      "attest": "Attest CI…",
+      "withdraw": "Withdraw CI attestation…",
+      "remove": "Remove connection…"
+    },
+    "details": {
+      "button": "Connection details for {{repository}}",
+      "title": "Connection details",
+      "connectionId": "Connection id",
+      "appId": "GitHub App id",
+      "installationId": "Installation id",
+      "branch": "Default branch",
+      "host": "Host and credential",
+      "key": "Key",
+      "keyStored": "Stored, never shown",
+      "keyMissing": "Missing: store it again",
+      "tokenExpiry": "Token expires",
+      "ci": "CI attestation",
+      "label": "Label",
+      "updated": "Last change",
+      "copy": "Copy {{field}}",
+      "copied": "Copied"
+    },
+    "more": {
+      "title": "More ways to connect",
+      "anotherApp": "Add another GitHub App",
+      "anotherAppHint": "Two clicks: create a private App on GitHub, then install it.",
+      "manual": "Connect manually (advanced)",
+      "manualHint": "Paste a GitHub App’s ids and private key yourself.",
+      "gitlab": "GitLab",
+      "gitlabHint": "Connect a GitLab project with a project access token.",
+      "addGithub": "Add a GitHub connection",
+      "addGitlab": "Add a GitLab connection"
     }
   },
   "skills": {
@@ -1439,11 +1636,7 @@
   "engineeringAgent": {
     "deploymentFeedback": "Runs on the deployment's feedback.",
     "setupTitle": "Set up {{name}}",
-    "setupDescription": "Choose the repository connection it works on, the repository's language and what its runs may spend in a month. Then it is enabled, and runs as you.",
-    "connection": "Repository connection",
     "connectionHint": "With a GitHub issue trigger, only GitHub connections are listed.",
-    "language": "Language",
-    "budget": "Monthly budget (USD)",
     "budgetHint": "Saved on its workflow: what all its runs may spend in a calendar month.",
     "budgetInvalid": "Dollars and cents, from 0.01 to 100,000.",
     "setupFailed": "The agent couldn't be set up.",
@@ -1451,12 +1644,6 @@
     "save": "Save",
     "loadFailed": "The agent's set-up couldn't be read.",
     "loading": "Reading the agent's set-up",
-    "runsAs": "Runs as {{name}}.",
-    "changeSetup": "Change the set-up",
-    "connectFirst": "Connect a repository first",
-    "setUp": "Set up",
-    "whyNoConnection": "Disabled: it needs a repository connection to work on.",
-    "whySetUp": "Disabled until it is set up: a connection, a language and a monthly budget.",
     "enableFailed": "The agent couldn't be enabled."
   },
   "prdBuild": {
@@ -1485,7 +1672,6 @@
     "dialConfirmAction": "Set to AI-driven",
     "dialSaved": "Saved: AI-driven.",
     "dialFailed": "Your way of working could not be saved: try again.",
-    "enableWaits": "Enable waits until every check a run needs passes.",
     "enableRefused": "Not enabled: these checks a run needs fail.",
     "passedFolded": "Checks that passed ({{count, number}})",
     "passedLabel": "Checks that passed",
@@ -1607,11 +1793,10 @@
       "labelPending": "Label {{label}}: created automatically on each repository whose issues are read."
     },
     "automation": {
-      "open": "Open {{name}}",
       "missing": {
-        "triage": "Issue triage is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is not found here.",
-        "bug_fixer": "Bug fixer is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is found by what it works on (bugs).",
-        "feature_builder": "Feature builder is not among this deployment's agents. It is added the first time an administrator opens the agents list; a renamed one is found by what it works on (feature requests)."
+        "triage": "Issue triage is not among this deployment's agents. It is added the first time an administrator opens Agent orchestration; a renamed one is not found here.",
+        "bug_fixer": "Bug fixer is not among this deployment's agents. It is added the first time an administrator opens Agent orchestration; a renamed one is found by what it works on (bugs).",
+        "feature_builder": "Feature builder is not among this deployment's agents. It is added the first time an administrator opens Agent orchestration; a renamed one is found by what it works on (feature requests)."
       }
     },
     "ready": {
@@ -1624,13 +1809,7 @@
       "learn": "Each run ends with Learn: a retrospective, lessons and proposals to improve the agents' skills. Proposals wait in Skills for an administrator to accept; nothing changes by itself.",
       "openSkills": "Open Skills",
       "finish": "Finish the guide",
-      "finished": "The guide is finished. Setup guide on the Agents page opens it again."
-    },
-    "intro": {
-      "title": "Set up the autonomous bug loop?",
-      "body": "Nothing is set up yet. The setup guide walks you through it in the recommended order: GitHub and the repository's CI, its issues, then the automations that triage, fix and build.",
-      "start": "Help me set up",
-      "skip": "Skip"
+      "finished": "The guide is finished. Setup guide on Agent orchestration opens it again."
     }
   },
   "runWorkspace": {

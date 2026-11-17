@@ -198,20 +198,24 @@ describe('Agents → Spend: the month', () => {
     expect(where().get('month')).toBe('2026-10')
   })
 
-  it('an agent links to its run', async () => {
-    route({ [spendPath('month=2026-11&by=agent')]: () => answer('agent', [{ key: 'RUN1/fixer-3', ...usage(1) }]) })
+  it('an agent shows its role beside its run, named by its goal, flow and day when the month lists it (7.52.00)', async () => {
+    route({
+      [spendPath('month=2026-11&by=agent')]: () => answer('agent', [{ key: 'RUN1/fixer-3', ...usage(1) }]),
+      'GET /agents/engineering/runs?month=2026-11': () => ({ runs: [{ run_id: 'RUN1', flow: 'wf_fix', goal: 'Fix: crash on export',
+        status: 'done', started_at: '2026-11-16T10:00:00Z', ended_at: null }], next: null }),
+    })
     renderSpend('/agents/spend?month=2026-11&by=agent')
-    const link = await screen.findByRole('link', { name: /fixer-3/ })
-    expect(link).toHaveAttribute('href', '/agents/engineering/RUN1')
-    expect(link).toHaveTextContent('in run RUN1')
+    const link = await screen.findByRole('link', { name: /Fix: crash on export/ })
+    expect([link.getAttribute('href'), screen.getByRole('rowheader').textContent.startsWith('Fixer')])
+      .toStrictEqual(['/agents/engineering/RUN1', true])
   })
 
   it('an agent or a run not recorded says so, and a run not recorded links nowhere', async () => {
     route({ [spendPath('month=2026-11&by=agent')]: () => answer('agent', [{ key: 'RUN1/-', ...usage(1) }, { key: '-/-', ...usage(0.1) }]) })
     renderSpend('/agents/spend?month=2026-11&by=agent')
     const rows = await screen.findAllByRole('rowheader')
-    expect(rows.map((row) => row.textContent)).toStrictEqual(['Not recorded in run RUN1', 'Not recorded'])
-    expect(within(rows[0] ?? document.body).getByRole('link')).toHaveAttribute('href', '/agents/engineering/RUN1')
+    expect(rows.map((row) => row.textContent)).toStrictEqual(['Not recordedRUN1', 'Not recorded'])
+    expect(within(rows[0] ?? document.body).getByRole('link', { name: 'RUN1' })).toHaveAttribute('href', '/agents/engineering/RUN1')
     expect(within(rows[1] ?? document.body).queryByRole('link')).not.toBeInTheDocument()
   })
 

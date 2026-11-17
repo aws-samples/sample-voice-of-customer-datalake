@@ -388,17 +388,17 @@
       "appLabel": "GitHub App",
       "oneApp": "GitHub App: {{app}}",
       "chooseApp": "Escolha uma App",
-      "appHint": "A App lê apenas os repositórios em que está instalada: instale-a em mais em Agentes → Conexões.",
+      "appHint": "A App lê apenas os repositórios em que está instalada: instale-a em mais em Orquestração de agentes → Conexões.",
       "useToken": "Usar um token de acesso refinado em vez disso",
       "tokenHint": "Um token de acesso pessoal refinado com Issues e Metadata somente leitura nestes repositórios.",
       "useApp": "Entrar com a sua GitHub App em vez disso",
-      "connectHint": "Ou conecte o GitHub em Agentes → Conexões: a GitHub App da implantação é criada em dois cliques, e esta fonte passa a ler sozinha os issues dos repositórios conectados.",
+      "connectHint": "Ou conecte o GitHub em Orquestração de agentes → Conexões: a GitHub App da implantação é criada em dois cliques, e esta fonte passa a ler sozinha os issues dos repositórios conectados.",
       "connect": "Conectar GitHub",
       "managed_one": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositório.",
       "managed_many": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositórios.",
       "managed_other": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositórios.",
-      "managedHint": "Cada repositório conectado pela GitHub App em Agentes → Conexões é lido automaticamente; desative-o lá.",
-      "openConnections": "Abrir Agentes → Conexões",
+      "managedHint": "Cada repositório conectado pela GitHub App em Orquestração de agentes → Conexões é lido automaticamente; desative-o lá.",
+      "openConnections": "Abrir Orquestração de agentes → Conexões",
       "manual": "Configurar manualmente (avançado)"
     }
   },
@@ -1108,8 +1108,8 @@
       "errors_many": "{{count, number}} erros nas últimas 24 horas"
     },
     "elsewhere": {
-      "cost": "Custo: Agentes › Gastos",
-      "github": "GitHub: Agentes › Conexões",
+      "cost": "Custo: Orquestração de agentes › Gastos",
+      "github": "GitHub: Orquestração de agentes › Conexões",
       "preferences": "Suas preferências: Conta › Preferências"
     }
   },
@@ -1120,7 +1120,7 @@
       "preferences": "Preferências"
     },
     "places": {
-      "agents": "Agentes",
+      "agents": "Orquestração de agentes",
       "account": "Conta"
     },
     "label": "Pesquisar configurações",

@@ -22,8 +22,8 @@ function lineOf(file: string, child: string): string {
 
 /** [file, the JSX expression the truncated element renders] */
 const SITES: ReadonlyArray<readonly [string, string]> = [
-  ['pages/Agents/Agents.tsx', '{agent.name}</p>'],
-  ['pages/Agents/Agents.tsx', 'text={agent.description} />'],
+  // (7.52.00: the Automations row: its name wraps, its one line of what it does is a TruncatedText)
+  ['pages/Agents/Automations/AutomationRow.tsx', 'text={agent.description} />'],
   ['components/ProjectSharingModal/MemberList.tsx', 'text={person.email} />'],
   ['pages/Scrapers/SourceCardParts.tsx', '{value}</dd>'],
   // The Prioritization row, document and form titles now WRAP (wave 4), so nothing is cut:
@@ -48,7 +48,6 @@ const SUBTITLES: ReadonlyArray<readonly [string, string]> = [
   ['pages/Settings/Settings.tsx', "{t(tabHintKey(tab))}</p>"],
   ['pages/Prioritization/PrioritizationHeader.tsx', "{t('subtitle')}</p>"],
   ['pages/Projects/Projects.tsx', "{t('description')}</p>"],
-  ['pages/Agents/Agents.tsx', "{t('list.subtitle')}</p>"],
 ]
 
 describe.each(SUBTITLES)('%s subtitle', (file, child) => {
