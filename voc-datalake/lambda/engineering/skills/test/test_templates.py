@@ -45,6 +45,14 @@ def test_the_repositorys_bundle_gives_every_launchable_role_its_template() -> No
     assert templates.skill('coach') is None
 
 
+def test_the_shipped_understander_is_its_bundled_template() -> None:
+    # (7.52.00: a deployment without a bundle, and the harness's fallback, give the understander read_tenets and
+    # write_tenets too, the triage's tenets lock and the Tenets flow's draft)
+    template = load((REPOSITORY_BUNDLE,)).skill('understander')
+    assert template is not None
+    assert (template.version, template.record) == (SKILLS['understander'].version, SKILLS['understander'].to_record())
+
+
 def test_a_lambda_reads_its_own_copy_first_and_the_shipped_skills_without_any(tmp_path: Path) -> None:
     assert BUNDLE_PATHS[0].parent.name == 'shared'
     assert BUNDLE_PATHS[0].parent.parent.name == 'lambda'

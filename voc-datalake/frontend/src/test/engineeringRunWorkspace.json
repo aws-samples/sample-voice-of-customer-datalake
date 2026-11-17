@@ -156,6 +156,7 @@
      "at": null,
      "reason": null
     },
+    "expansion": [],
     "issue": null,
     "pull_request": {
      "host": "github",
@@ -199,6 +200,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": null,
      "model": "model-large",
+     "card": null,
+     "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
     },
     {
@@ -228,6 +231,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": "final-go@v1",
      "model": "model-large",
+     "card": null,
+     "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
     },
     {
@@ -257,6 +262,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": "fixer@v3",
      "model": "model-medium",
+     "card": "fixer-careful",
+     "card_version": 2,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
     },
     {
@@ -286,6 +293,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": null,
      "model": "model-small",
+     "card": null,
+     "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
     }
    ],
@@ -379,6 +388,7 @@
     "flow_definition": null,
     "flow_steps": null,
     "flow_outcome": null,
+    "expansion": [],
     "issue": null,
     "pull_request": null,
     "cost_usd": 0.0,
@@ -441,6 +451,7 @@
     "flow_definition": null,
     "flow_steps": null,
     "flow_outcome": null,
+    "expansion": [],
     "issue": null,
     "pull_request": null,
     "cost_usd": 0.0,
@@ -1091,7 +1102,7 @@
     ],
     "own_gate": false,
     "tool_versions": {
-     "pytest": "8.3.3"
+     "python": "Python 3.14.0"
     },
     "max_rounds": 3,
     "reviewers": [
@@ -1105,11 +1116,11 @@
       "number": 1,
       "checks": [
        {
-        "name": "python.tests: pytest",
+        "name": "py.test@.: pytest",
         "status": "pass"
        },
        {
-        "name": "python.lint: ruff",
+        "name": "py.ruff@.: ruff",
         "status": "pass"
        }
       ],
@@ -1141,29 +1152,40 @@
    },
    "checks": [
     {
-     "key": "python.tests",
+     "key": "py.test@.",
      "name": "pytest",
      "status": "pass",
      "reason": "",
      "exit_code": 0,
      "duration_s": 4.2,
-     "output_tail": "..........\n10 passed in 4.1s"
+     "output_tail": "..........\n10 passed in 4.1s",
+     "pack": "python",
+     "language": "python"
     },
     {
-     "key": "python.lint",
+     "key": "py.ruff@.",
      "name": "ruff",
      "status": "pass",
      "reason": "",
      "exit_code": 0,
      "duration_s": 0.4,
-     "output_tail": "All checks passed!"
+     "output_tail": "All checks passed!",
+     "pack": "python",
+     "language": "python"
     }
    ],
    "passed": true,
    "packs": [
     "python"
    ],
-   "ran_at": "2026-11-17T09:28:00.000000Z"
+   "ran_at": "2026-11-17T09:28:00.000000Z",
+   "round": 1,
+   "tool_versions": {
+    "python": "Python 3.14.0"
+   },
+   "verdict": "GO",
+   "stop": null,
+   "final_go": null
   }
  },
  "memory": {

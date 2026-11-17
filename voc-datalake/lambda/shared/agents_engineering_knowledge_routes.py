@@ -8,11 +8,14 @@ approval, its tenets and their acceptance, and the pull request of the docs an a
                                                                                           rendering}
     GET  /agents/engineering/tenets/<connection>                                      -> {connection, head, versions}
     GET  /agents/engineering/tenets/<connection>/versions/<version>                    -> {connection, version, log}
-    POST /agents/engineering/tenets/<connection>/versions/<version>/accept {reason?}    -> {connection, version, log}
-    POST /agents/engineering/tenets/<connection>/versions/<version>/reject {reason?}    -> {connection, version, log}
+    POST /agents/engineering/tenets/<connection>/versions/<version>/accept {expected_accepted, reason?}
+                                                                                      -> {connection, version, log}
+    POST /agents/engineering/tenets/<connection>/versions/<version>/reject {expected_accepted, reason?}
+                                                                                      -> {connection, version, log}
     GET  /agents/engineering/docs/<connection>/preview?kind=knowledge|tenets            -> {kind, version, branch, files,
                                                                                           digest, approved_digest, matches,
-                                                                                          patch, patch_truncated}
+                                                                                          patch, patch_truncated,
+                                                                                          texts_truncated}
     POST /agents/engineering/docs/<connection>/publish {kind, digest, pr?}              -> 202 {pr: {url, number, branch},
                                                                                           kind, version, digest, draft}
 
@@ -70,8 +73,11 @@ WS: Final = 'default'
 #: The flow whose ``pr`` setting a kind's pull request follows when the request names none.
 FLOW_OF_KIND: Final = {'knowledge': 'understand-repository', 'tenets': 'tenets'}
 MAX_REASON: Final = 500
-#: The largest patch a preview answers (the rest is cut, ``patch_truncated``): under the function's 6 MB answer.
+#: The largest patch a preview answers, less its files' texts (the rest is cut, ``patch_truncated``): under the
+#: function's 6 MB answer. The texts take at most ``MAX_TEXT_BYTES`` of it (a file past it has no text:
+#: ``texts_truncated``).
 MAX_PATCH_BYTES: Final = 4_000_000
+MAX_TEXT_BYTES: Final = 2_000_000
 #: The most versions a tenets listing answers (newest first).
 MAX_LISTED: Final = 100
 #: The most rows of a connection's knowledge packs an overview reads (counters and versions together).
@@ -187,6 +193,17 @@ def _reason(body: Mapping[str, Any]) -> str:
     return reason
 
 
+def _decision(body: Mapping[str, Any]) -> tuple[str, int]:
+    """A tenets decision's body (7.52.00's integration): ``{expected_accepted, reason?}``, the accepted version the
+    screen showed (0 for none) and the person's reason."""
+    if set(body) - {'reason', 'expected_accepted'}:
+        raise ValidationError('the body is {expected_accepted, reason?}')
+    expected = body.get('expected_accepted')
+    if isinstance(expected, bool) or not isinstance(expected, int) or expected < 0:
+        raise ValidationError('expected_accepted is the accepted version the screen showed (0 for none)')
+    return _reason({'reason': body.get('reason', '')}), expected
+
+
 # --- the knowledge pack ---------------------------------------------------------------------------------------------
 
 
@@ -296,13 +313,14 @@ def get_engineering_tenets_version(connection_id: str, version: str):
 @app.post('/agents/engineering/tenets/<connection_id>/versions/<version>/accept')
 @tracer.capture_method(capture_response=False)
 def accept_engineering_tenets_version(connection_id: str, version: str):
-    """``{reason?}``: an administrator accepts a draft (``TenetsStore.accept``): its TENETS.md digest and its ids
-    recorded, the accepted version moved up (never down); accepting the accepted version again answers it."""
+    """``{expected_accepted, reason?}``: an administrator accepts a draft (``TenetsStore.accept``): its TENETS.md
+    digest and its ids recorded, the accepted version moved up (never down); accepting the accepted version again
+    answers it. 409 when the accepted version is no longer ``expected_accepted`` (the draft was read against another)."""
     caller = _admin()
     connection, number = _connection(connection_id), _version(version)
-    reason = _reason(json_object_body(app))
+    reason, expected = _decision(json_object_body(app))
     store = _tenets()
-    _call(lambda: store.accept(WS, connection, number, _person(caller), reason), NOT_SAVED)
+    _call(lambda: store.accept(WS, connection, number, _person(caller), reason, expected_accepted=expected), NOT_SAVED)
     logger.info('engineering: a tenets version accepted', extra={'connection_id': connection, 'version': number})
     return _call(lambda: _tenets_version(store, connection, number))
 
@@ -310,12 +328,13 @@ def accept_engineering_tenets_version(connection_id: str, version: str):
 @app.post('/agents/engineering/tenets/<connection_id>/versions/<version>/reject')
 @tracer.capture_method(capture_response=False)
 def reject_engineering_tenets_version(connection_id: str, version: str):
-    """``{reason?}``: an administrator rejects a draft; it stays, marked rejected, with its event."""
+    """``{expected_accepted, reason?}``: an administrator rejects a draft; it stays, marked rejected, with its event.
+    409 when the accepted version is no longer ``expected_accepted``."""
     caller = _admin()
     connection, number = _connection(connection_id), _version(version)
-    reason = _reason(json_object_body(app))
+    reason, expected = _decision(json_object_body(app))
     store = _tenets()
-    _call(lambda: store.reject(WS, connection, number, _person(caller), reason), NOT_SAVED)
+    _call(lambda: store.reject(WS, connection, number, _person(caller), reason, expected_accepted=expected), NOT_SAVED)
     logger.info('engineering: a tenets version rejected', extra={'connection_id': connection, 'version': number})
     return _call(lambda: _tenets_version(store, connection, number))
 
@@ -326,9 +345,9 @@ def reject_engineering_tenets_version(connection_id: str, version: str):
 @app.get('/agents/engineering/docs/<connection_id>/preview')
 @tracer.capture_method(capture_response=False)
 def preview_engineering_docs(connection_id: str):
-    """``?kind=knowledge|tenets``: the files the approved docs render to now (path, sha256, bytes), their digest and
-    the approval's, and a patch adding them (what a Human-driven administrator applies); 404 when nothing of the kind
-    is approved yet."""
+    """``?kind=knowledge|tenets``: the files the approved docs render to now (path, sha256, bytes and, since 7.52.00's
+    integration, text), their digest and the approval's, and a patch adding them (what a Human-driven administrator
+    applies); 404 when nothing of the kind is approved yet."""
     _admin()
     connection, kind = _connection(connection_id), _kind(_query('kind'))
     from engineering.connectors.write_policy import docs_branch
@@ -336,14 +355,28 @@ def preview_engineering_docs(connection_id: str):
     approved = _call(lambda: _approved_docs().approved(WS, connection, kind))
     if approved is None:
         raise NotFoundError(f'no {kind} docs are approved for the connection yet')
-    text = patch(approved.rendering)
-    cut = len(text.encode()) > MAX_PATCH_BYTES
+    files, used = _preview_files(approved.rendering)
+    text, budget = patch(approved.rendering), MAX_PATCH_BYTES - used
+    cut = len(text.encode()) > budget
     recorded = approved.recorded
     return {'connection': connection, 'kind': kind, 'version': recorded.version,
-            'branch': docs_branch(kind, recorded.version), 'files': approved.rendering.manifest(),
+            'branch': docs_branch(kind, recorded.version), 'files': files,
             'digest': approved.rendering.digest, 'approved_digest': recorded.digest, 'matches': approved.matches,
             'approved_by': recorded.approved_by or None, 'approved_at': recorded.approved_at or None,
-            'patch': text.encode()[:MAX_PATCH_BYTES].decode(errors='ignore') if cut else text, 'patch_truncated': cut}
+            'patch': text.encode()[:budget].decode(errors='ignore') if cut else text, 'patch_truncated': cut,
+            'texts_truncated': any(file['text'] is None for file in files)}
+
+
+def _preview_files(rendering: Any) -> tuple[list[dict[str, Any]], int]:
+    """Each rendered file as the preview lists it, with its text (7.52.00's integration: the web app reads each as a
+    document) while the texts fit ``MAX_TEXT_BYTES``, else ``text: None``; and the bytes the texts took, which the
+    patch's own bound gives up (the answer stays under the function's 6 MB)."""
+    files, used = [], 0
+    for rendered in rendering.files:
+        fits = used + len(rendered.content) <= MAX_TEXT_BYTES
+        used += len(rendered.content) if fits else 0
+        files.append({**rendered.view(), 'text': rendered.content.decode('utf-8', errors='replace') if fits else None})
+    return files, used
 
 
 def flow_pr(kind: str) -> str:
@@ -376,29 +409,6 @@ def _start_client() -> Any:
     from shared.engineering_agent_runs import START_READ_TIMEOUT_SECONDS
     return boto3.client('lambda', config=Config(read_timeout=START_READ_TIMEOUT_SECONDS, connect_timeout=5,
                                                 retries={'total_max_attempts': 1}))
-
-
-def invoke_publish(function: str, request: Mapping[str, Any]) -> dict[str, Any]:
-    """The start function's ``publish_docs`` answer (``runtime/docs_publish.py``): its refusal of the request's shape
-    is 409 in its words; a broker out of reach, or any other failure, 503 (publishing again is safe: once per
-    version)."""
-    try:
-        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse',
-                                          Payload=json.dumps(dict(request)).encode())
-        payload = json.loads(response['Payload'].read() or b'{}')
-    except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
-        logger.exception('engineering: the docs publish could not be asked for')
-        raise ServiceUnavailableError('the engineering runtime could not be reached: publish again to find out '
-                                      'whether the pull request was opened') from exc
-    answer: dict[str, Any] = payload if isinstance(payload, dict) else {}
-    if response.get('FunctionError'):
-        if answer.get('errorType') == 'RuntimeRefused':
-            raise ConflictError(str(answer.get('errorMessage') or 'the runtime refused it')[:500])
-        raise ServiceUnavailableError('the docs could not be published: publish again to find out whether the pull '
-                                      'request was opened')
-    if answer.get('status') not in ('opened', 'repeated', 'refused'):
-        raise ServiceUnavailableError('the docs could not be published: publish again')
-    return answer
 
 
 def _refused(answer: Mapping[str, Any]) -> Response:
@@ -441,10 +451,14 @@ def publish_engineering_docs(connection_id: str):
     function = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     if not function:
         raise ServiceUnavailableError('docs cannot be published from here: the deployment names no start function')
-    answer = invoke_publish(function, {
+    # (the start function's refusal of the request's shape 409 in its words; a broker out of reach, or any other
+    # failure, 503: publishing again is safe, once per version)
+    answer = eng_runs.ask_start(_start_client(), function, {
         'action': 'publish_docs', 'connection': connection, 'repository': str(row.get('repository', '')),
         'default_branch': str(row.get('default_branch', '')), 'kind': kind, 'digest': digest, 'draft': pr == 'draft',
-        'actor': caller.subject})
+        'actor': caller.subject}, answers=frozenset({'opened', 'repeated', 'refused'}),
+        failed='the docs could not be published',
+        again='publish again to find out whether the pull request was opened')
     if answer['status'] == 'refused':
         return _refused(answer)
     published = {'pr': answer.get('pr'), 'kind': kind, 'version': answer.get('version'), 'digest': digest,

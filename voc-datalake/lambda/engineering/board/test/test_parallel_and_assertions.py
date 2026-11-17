@@ -14,6 +14,7 @@ from moto import mock_aws
 
 from engineering.board.api import BoardApi
 from engineering.board.inbox import Inbox
+from engineering.board.model import Task
 from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, create_table
 from engineering.board.test.test_board_ops import Board, Launcher, call
@@ -21,7 +22,7 @@ from engineering.board.test.test_flow_ops import COORDINATOR, HUNTER, _finish
 from engineering.board.test.test_progress_repost import Bus
 from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
-from engineering.flow.assertion_record import results
+from engineering.flow.assertion_record import recorded, results
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.orchestration.assertions import Recorded
 from engineering.rows import run_rows
@@ -91,6 +92,20 @@ def test_a_done_steps_assertions_are_recorded_once_at_its_attempt(bugs) -> None:
     assert [(row['sk']['S'], row['by']['S']) for row in rows] == [('ASSERT#hunt#1', 'coordinator-1')]
     assert [(item['check'], item['status']) for item in json.loads(rows[0]['results']['S'])] == [
         ('findings.cite_evidence', 'pass'), ('tasks.posted', 'pass')]
+
+
+def test_a_tenets_draft_the_step_recorded_is_read_for_tenets_recorded() -> None:
+    # (7.52.00: the Tenets flow's draft step; its understander's write_tenets key, recorded on the task)
+    key = f'ws/default/runs/{RUN}/understander-1/commits/{"a" * 40}/_tenets/attempt-1/tenets.json'
+    draft = {'schema': 'voc-tenets/1', 'summary': '', 'tenets': [
+        {'id': 'T1', 'title': 'Fail closed', 'statement': 'A check that cannot run refuses.', 'rationale': '',
+         'citations': []}]}
+    task = Task(task_id='task-1', role='understander', state='done', title='Draft', spec='{}', spec_hash='', depth=0,
+                priority=0, attempt=1, result_keys=(key,), launched_agent='understander-1', flow_step='draft')
+    seen = recorded('draft', [task], lambda wanted, _limit: json.dumps(draft).encode() if wanted == key else None, [],
+                    issue=None, pr_setting='ready')
+    assert results([{'check': 'tenets.recorded'}], seen) == [
+        {'check': 'tenets.recorded', 'status': 'pass', 'detail': '1 tenet(s) drafted', 'on_fail': 'block'}]
 
 
 def test_a_check_whose_input_the_board_does_not_keep_is_recorded_unread() -> None:

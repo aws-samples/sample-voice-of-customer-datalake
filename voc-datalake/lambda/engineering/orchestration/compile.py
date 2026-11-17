@@ -22,6 +22,8 @@ What it makes of each source (``schema.py`` reads them):
   tools and its steps (every field of the manifest's), and ``gates.briefs`` the owner's briefs
   (``gates/briefs/<id>.md``: the packs each is the source of truth for, its text and its digest), with the
   repository's own gate (``own_gate``): what the Registry's Quality gates view shows, from the Lambdas' copy.
+- ``sources`` (7.52.00): each template's source text, a role's ``SKILL.md`` and ``agent.yaml`` and each flow's YAML,
+  with its path, digest and template version (``template_sources``): the app's read-only source view.
 
 Beside the bundle, one Kiro CLI agent config per launchable role, ``kiro-agents/<role>.json`` (Kiro's v3 universal
 agent JSON; 7.53.00 prep: nothing loads them yet). Its prompt is the platform rules and then the role's skill, as the
@@ -359,8 +361,30 @@ def compile_bundle(sources: Sources) -> dict[str, Any]:
         'flows': [_flow(sources.flows[flow_id], cases) for flow_id in FLOW_ORDER if flow_id in sources.flows]
         + [_flow(template, cases) for flow_id, template in sources.flows.items() if flow_id not in FLOW_ORDER],
         'automations': [_automation(sources.automations[name]) for name in sorted(sources.automations)],
-        'gates': _gates(sources.root), 'evals': cases,
+        'gates': _gates(sources.root), 'evals': cases, 'sources': template_sources(sources),
     }
+
+
+def template_sources(sources: Sources) -> list[dict[str, Any]]:
+    """Each template's source text, as the repository holds it (7.52.00: the app's read-only source view): every
+    role's SKILL.md (``skill``) and agent.yaml (``card``), with its card's version, and every flow's YAML, with its
+    template version, in the bundle's order. A gate brief's text is ``gates.briefs``'."""
+    def entry(kind: str, ident: str, path: Path, version: object) -> dict[str, Any]:
+        raw = path.read_bytes()
+        return {'kind': kind, 'id': ident, 'path': relative(path, sources.root), 'text': raw.decode('utf-8'),
+                'digest': digest(raw), 'template_version': int(str(version))}
+
+    found = []
+    for role in role_order(sources.cards):
+        folder = sources.root / 'agents' / role
+        version = sources.cards[role]['version']
+        if (folder / 'SKILL.md').is_file():
+            found.append(entry('skill', role, folder / 'SKILL.md', version))
+        found.append(entry('card', role, folder / 'agent.yaml', version))
+    order = [*(flow for flow in FLOW_ORDER if flow in sources.flows), *(f for f in sources.flows if f not in FLOW_ORDER)]
+    found += [entry('flow', flow, sources.root / 'flows' / f'{flow}.yaml', sources.flows[flow]['version'])
+              for flow in order]
+    return found
 
 
 #: The flows in the docs' order (docs/autonomous-engineering.md "Default flows"): the order the library lists them in.

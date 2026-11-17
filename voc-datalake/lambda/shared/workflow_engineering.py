@@ -121,7 +121,8 @@ ASSERTION_ARGS: Final[Mapping[str, tuple[str, ...]]] = {
     'notes.cite_sources': (), 'patch.max_lines': ('max',), 'patch.no_ci_changes': (), 'patch.submitted': (),
     'patch.touches_tests': (), 'pr.links_issue': (), 'pr.opened': (), 'pr.state_as_flow': (),
     'push.tree_is_judged_tree': (), 'review.commented': (), 'review.no_blocking': ('by',),
-    'tasks.posted': ('role', 'min'), 'triage.commented': (), 'triage.labelled': (), 'triage.recorded': (),
+    'tasks.posted': ('role', 'min'), 'tenets.recorded': (), 'triage.commented': (), 'triage.labelled': (),
+    'triage.recorded': (),
 }
 ASSERTION_ON_FAIL: Final = ('block', 'fail_arrow', 'warn')
 MAX_ASSERTIONS: Final = 10

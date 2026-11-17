@@ -113,10 +113,16 @@ def test_the_gate_is_its_record_and_its_latest_runs_checks_with_their_output(tab
     assert (gate['key'], gate['record']['verdict'], gate['passed'], gate['packs']) == (
         world.GATE_RECORD_KEY, 'GO', True, ['python'])
     assert [(check['key'], check['output_tail']) for check in gate['checks']] == [
-        ('python.tests', '..........\n10 passed in 4.1s'), ('python.lint', 'All checks passed!')]
+        ('py.test@.', '..........\n10 passed in 4.1s'), ('py.ruff@.', 'All checks passed!')]
+    # (7.52.00: each check's pack and language from the bundle's steps, the run's round among the agent's runs of the
+    # gate, the tools' versions, the record's verdict; a GO stopped nothing, and a gate runner's record has no final go)
+    assert [(check['pack'], check['language']) for check in gate['checks']] == [('python', 'python')] * 2
+    assert (gate['round'], gate['tool_versions'], gate['verdict'], gate['stop'], gate['final_go']) == (
+        1, {'python': 'Python 3.14.0'}, 'GO', None, None)
     # (an agent that ran no gate and wrote no record: nothing read, no key asked for)
     assert tabs.gate(_agent(tabs)) == {'key': None, 'record': None, 'checks': [], 'passed': None, 'packs': [],
-                                       'ran_at': None}
+                                       'ran_at': None, 'round': None, 'tool_versions': {}, 'verdict': None,
+                                       'stop': None, 'final_go': None}
 
 
 def test_the_memory_is_its_briefs_lessons_and_what_learn_made_of_its_task(tabs: AgentTabs) -> None:

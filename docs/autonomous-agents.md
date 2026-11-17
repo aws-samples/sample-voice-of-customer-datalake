@@ -294,7 +294,21 @@ views and the card store in `lambda/engineering/registry/`.
   and its digest), from the orchestration bundle's `gates`; who runs a gate that names nobody (`defaults`:
   `gate-runner@latest`, `final-go@latest`); and why a gate stops at a person (`stops`: `check_failed`,
   `looked_at_nothing`, `own_gate_changed`, `review_blocked`, `rounds_used_up`, each with its decision payload, its
-  actions, a text key `gates.stops.<code>` and the English words).
+  actions, a text key `gates.stops.<code>` and the English words). Since 7.52.00's integration each brief there is
+  `{id, path, packs, digest, bytes}` without its text (the briefs are 45-156 KB each): **one brief** is `GET
+  /agents/engineering/gates/briefs/<id>` → `{id, path, packs, digest, bytes, text}` (404 for none). And
+  `?connection=<id>` gives each pack `recorded`: the versions of its tools the connection's newest gate record holds,
+  and when (`{tool_versions: {<tool>: <its version's first line>}, run_id, at}`, `at` when its gate runner's task
+  recorded it; None for a pack none of whose tools the record names, and for every pack without `?connection=`,
+  with `connection` echoed). It reads the runs list of this month and the two before, newest first, each run's
+  `META` for its connection (at most 10 of the connection's runs, 100 list rows), their done tasks' gate record keys
+  and the record objects: the role's 7.51.00 reads of the table and of `…/_gate/*`, no other grant. A gate runner's
+  record carries the versions since 7.52.00 (`run_gate`'s, kept by the harness: an image from before records none).
+- **Template sources** (`GET /agents/engineering/templates/<kind>/<id>/source` → `{kind, id, path, text, digest,
+  template_version}`, read only, 7.52.00's integration): a template's source text as the repository holds it, from
+  the orchestration bundle's `sources`: a role's `SKILL.md` (`skill`) or `agent.yaml` (`card`), with its card's
+  version, a flow's YAML (`flow`), with its template version, or an owner's gate brief (`brief`, `template_version`
+  null). 400 for another kind, 404 for no such template.
 - **Who runs a gate.** A quality gate step's `runner` and `final_go` name the gate runner and the final go: the role
   at `latest` or a version (`gate-runner@v3`, which the launch pins), or a Registry card of the role at a version
   (`gate-runner-strict@v2`, checked at the save: a card of that role the Registry has; the launch runs the role's
@@ -305,7 +319,9 @@ views and the card store in `lambda/engineering/registry/`.
   `_`), its arguments and their JSON Schema (`tasks.posted {role, min}`, `review.no_blocking {by}`, `patch.max_lines
   {max}`), the steps it is checked on (`kinds`: `gate.*` on a quality gate, `learn.*` on the flow's Learn, the others
   on an agent or a board) and the `on_fail` it takes there (`fail_arrow` on a quality gate only). A save holds a flow
-  to the same rules (`shared/workflow_engineering.py`), and the editor's `engineeringRules.ts` mirrors them.
+  to the same rules (`shared/workflow_engineering.py`), and the editor's `engineeringRules.ts` mirrors them. Since
+  7.52.00's integration the vocabulary has `tenets.recorded` (a `voc-tenets/1` record of 1-30 tenets, each with an
+  id, a title and a statement, held to the record's own rules), on the Tenets flow's draft step.
 
 Every Registry route is an administrator's acting for themselves (403 otherwise, an MCP credential included), 404
 while the module is off, 503 when a table cannot be read.
@@ -569,7 +585,18 @@ transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). Since
 last failed, as the supervisor keeps it: `last_exit` (`{exit_code, timed_out, duration_seconds, stderr_tail}`, never
 its stdout) and `last_failure`; and a run at a person carries `waiting_detail`, the plain reason its supervisor stored
 (META's `needs_human_detail`, 7.51.03; null otherwise). Each is redacted and stripped of control characters as a thread
-is, and at most 500 characters.
+is, and at most 500 characters. Since 7.52.00 the run also carries
+`expansion` (`[{step, flow, revision, inputs?}]`: the calls its flow expanded, as its copy records them on its start
+step, in the order they were expanded; empty for a flow that calls none or a run with no flow), so the canvas regroups a
+call's `<call>.<step>` steps under it; and each agent `card` and `card_version` (the Registry card its step was made
+from, as its launch recorded it on its session row: an id and a whole number, both null for a role's own step). The
+gate read (`…/agents/{agent}/gate`) adds each check's `pack` and `language` (the bundle's gate steps by the check's
+`<step>@<root>` key; the repository's own gate is no pack's, in `repo`), `round` (the latest gate run's number among the
+agent's runs of the gate), `tool_versions` (what that run found of its packs' tools, else the record's), and the
+record's `verdict`, `stop` (`{code, text_key, recorded}`: `code` one of `GET …/gates`' `stops`, null when the record
+does not tell it apart, `recorded` its own `stop_reason`; null for a GO) and `final_go` (`{verdict, agent, model_id,
+reasons}`, a final go's decision; null otherwise). It stays per agent: a step's view reads its gate runner's lane and
+its final go's.
 
 ### The run workspace
 

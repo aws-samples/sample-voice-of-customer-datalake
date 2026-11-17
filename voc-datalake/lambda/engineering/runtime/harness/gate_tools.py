@@ -94,6 +94,7 @@ def run_gate(context: Built) -> dict[str, Any]:
                        else 'fail'} for result in ran.results][:100]
     context.gate_packs = tuple(plan.packs)
     context.gate_ran = bool(plan.checks)
+    context.gate_tool_versions = dict(ran.tool_versions)
     context.progress(f'ran the gate: {len(ran.results)} checks, {len(ran.failures)} failed')
     return {'packs': list(plan.packs), 'passed': ran.passed and bool(plan.checks),
             'own_gate': plan.own_gate, 'tool_versions': dict(ran.tool_versions),

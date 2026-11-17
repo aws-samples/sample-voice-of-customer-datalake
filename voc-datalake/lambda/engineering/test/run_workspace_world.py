@@ -267,21 +267,22 @@ def _fixer_events() -> list[tuple[float, str, dict[str, Any]]]:
 
 
 def _gate_run() -> dict[str, Any]:
-    return {'packs': ['python'], 'passed': True, 'own_gate': False, 'tool_versions': {'pytest': '8.3.3'}, 'skipped': [],
+    return {'packs': ['python'], 'passed': True, 'own_gate': False, 'tool_versions': {'python': 'Python 3.14.0'},
+            'skipped': [],
             'checks': [
-                {'key': 'python.tests', 'name': 'pytest', 'kind': 'test', 'root': '.', 'status': 'pass', 'reason': '',
+                {'key': 'py.test@.', 'name': 'pytest', 'kind': 'test', 'root': '', 'status': 'pass', 'reason': '',
                  'exit_code': 0, 'duration_s': 4.2, 'output': '..........\n10 passed in 4.1s'},
-                {'key': 'python.lint', 'name': 'ruff', 'kind': 'lint', 'root': '.', 'status': 'pass', 'reason': '',
+                {'key': 'py.ruff@.', 'name': 'ruff', 'kind': 'lint', 'root': '', 'status': 'pass', 'reason': '',
                  'exit_code': 0, 'duration_s': 0.4, 'output': 'All checks passed!'}]}
 
 
 def gate_record() -> dict[str, Any]:
     """The gate runner's record (voc-gate-record/1, as quality_gate/record.py's ``to_dict`` writes it)."""
     return {'schema': 'voc-gate-record/1', 'verdict': 'GO', 'stop_reason': '', 'tree_hash': 'b' * 40,
-            'packs': ['python'], 'own_gate': False, 'tool_versions': {'pytest': '8.3.3'}, 'max_rounds': 3,
+            'packs': ['python'], 'own_gate': False, 'tool_versions': {'python': 'Python 3.14.0'}, 'max_rounds': 3,
             'reviewers': ['security', 'quality'], 'model_calls': 2, 'accepted_by': '',
-            'rounds': [{'number': 1, 'checks': [{'name': 'python.tests: pytest', 'status': 'pass'},
-                                                {'name': 'python.lint: ruff', 'status': 'pass'}],
+            'rounds': [{'number': 1, 'checks': [{'name': 'py.test@.: pytest', 'status': 'pass'},
+                                                {'name': 'py.ruff@.: ruff', 'status': 'pass'}],
                         'reviewed': True, 'complete': True, 'finding_ids': ['R1-quality-1']}],
             'findings': [{'id': 'R1-quality-1', 'round': 1, 'reviewer': 'quality', 'severity': 'nit',
                           'title': 'Name the page size constant', 'file': 'src/paging.py', 'line': 12, 'quote': '',
@@ -449,7 +450,8 @@ def build(region: str = 'us-east-1') -> World:
                       {'model-large': {'in': 42000, 'out': 6100}}, 'board'), {'model': 'model-large', 'skill_version': ''},
              '0.412'),
             (_session(FIXER, 'fixer', FIX_TASK, 2, 'working', 11, 1420, {'model-medium': {'in': 61500, 'out': 9800}},
-                      'board'), {'model': 'model-medium', 'skill_version': 'fixer@v3'}, '0.9375'),
+                      'board'), {'model': 'model-medium', 'skill_version': 'fixer@v3', 'card': 'fixer-careful',
+                                 'card_version': '2'}, '0.9375'),
             (_session(GATE_RUNNER, 'gate-runner', CHECKS_TASK, 1, 'done', 25, 300, {'model-small': {'in': 900, 'out': 80}},
                       'gate'), {'model': 'model-small', 'skill_version': ''}, '0.05'),
             (_session(FINAL_GO, 'final-go', GO_TASK, 1, 'done', 29.5, 120, {'model-large': {'in': 12000, 'out': 900}},

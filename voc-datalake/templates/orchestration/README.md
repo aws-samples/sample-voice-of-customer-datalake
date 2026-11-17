@@ -45,7 +45,9 @@ kiro-agents/<role>.json            GENERATED: each launchable role's Kiro CLI ag
 - **A gate pack** follows its brief. Record any difference in `gates/briefs/RECONCILIATION.md`. Each brief is the
   source of truth for the packs of its name (`python-ts` for `python` and `typescript`, `rust-ts` for `rust` and
   `typescript`, `java` for `java`); validate holds every pack to one, and since 7.52.00 the bundle carries the briefs'
-  text and digest (`gates.briefs`) with each pack's steps and tools, for the Registry's Quality gates view.
+  text and digest (`gates.briefs`) with each pack's steps and tools, for the Registry's Quality gates view, and each
+  template's source text (`sources`: every role's `SKILL.md` and `agent.yaml`, every flow's YAML) for the app's
+  read-only source view (`GET /agents/engineering/templates/<kind>/<id>/source`).
 
 ## Validating, compiling, running
 

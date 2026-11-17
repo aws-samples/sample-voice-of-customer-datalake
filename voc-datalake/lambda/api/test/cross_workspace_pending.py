@@ -162,6 +162,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/engineering/connections/<connection_id>/ci-attestation',
         'POST /agents/engineering/runs',
         'POST /agents/engineering/skills/<role>/template/adopt',
+        'POST /agents/engineering/skills/<role>/versions',
         'POST /agents/engineering/skills/<role>/versions/<version>/accept',
         'POST /agents/engineering/skills/<role>/versions/<version>/benchmark',
         'POST /agents/engineering/skills/<role>/versions/<version>/reject',
@@ -238,8 +239,10 @@ PHASE_3: dict[str, frozenset[str]] = {
     'agents_engineering_registry_routes.py': frozenset({
         'GET /agents/engineering/assertions',
         'GET /agents/engineering/gates',
+        'GET /agents/engineering/gates/briefs/<brief_id>',
         'GET /agents/engineering/registry',
         'GET /agents/engineering/registry/<card>',
+        'GET /agents/engineering/templates/<kind>/<template_id>/source',
         'GET /workflows/<workflow_id>/expanded',
         'POST /agents/<agent_id>/pause',
         'POST /agents/<agent_id>/resume',

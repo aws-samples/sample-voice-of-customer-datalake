@@ -1,5 +1,6 @@
 """What an administrator does to a skill version (agents_handler.py's ``POST /agents/engineering/skills/<role>/
-versions/<n>/accept|reject|rollback|benchmark``; docs/autonomous-engineering.md, "The administrators' actions").
+versions/<n>/accept|reject|rollback|benchmark``, and since 7.52.00 ``POST …/skills/<role>/versions``: a person's own
+version, proposed; docs/autonomous-engineering.md, "The administrators' actions").
 
 Each action is the store's own (``SkillStore.accept_version``, ``reject_version``, ``roll_back_to``,
 ``record_benchmark``): its checks and its transaction are the store's, never re-implemented here. This module adds
@@ -14,12 +15,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from engineering.connectors.identity import WORKSPACE
 from engineering.knowledge.store import Actor
 from engineering.quality_gate.text import redact
-from engineering.skills.model import BENCHMARK_FIELDS, MAX_COMMENT, BenchmarkRun, Reason, SkillError
+from engineering.skills.model import (
+    BENCHMARK_FIELDS,
+    MAX_COMMENT,
+    BenchmarkRun,
+    Example,
+    Reason,
+    SkillContent,
+    SkillError,
+)
 from engineering.skills.store import (
     ACCEPTED,
     BENCHMARKED,
@@ -41,6 +50,9 @@ from engineering.skills.views import (
     line_view,
     template_view,
 )
+
+#: A person's one-line summary of the version they propose.
+MAX_SUMMARY: Final = 200
 
 
 def _redacted(value: Any) -> Any:
@@ -68,6 +80,22 @@ def _reason(body: Mapping[str, Any]) -> str:
     if not isinstance(raw, str) or len(raw) > MAX_COMMENT or '\x00' in raw:
         raise SkillError(f'reason is text of at most {MAX_COMMENT} characters')
     return redact(raw.strip())
+
+
+def _text(raw: object, name: str) -> str:
+    """A person's text as they wrote it (the skill's own rules bound it: ``SkillContent``)."""
+    if not isinstance(raw, str) or '\x00' in raw:
+        raise SkillError(f'{name} is text')
+    return raw
+
+
+def _examples(raw: object) -> tuple[Example, ...]:
+    """A person's worked examples: ``[{situation, action}]``, each text (the skill's own rules bound them)."""
+    if not isinstance(raw, list) or not all(isinstance(item, Mapping) and set(item) == {'situation', 'action'}
+                                            for item in raw):
+        raise SkillError('examples is a list of {situation, action}')
+    return tuple(Example(_text(item['situation'], "an example's situation"),
+                         _text(item['action'], "an example's action")) for item in raw)
 
 
 def _fields(body: Mapping[str, Any], allowed: frozenset[str], shape: str) -> None:
@@ -142,6 +170,42 @@ class SkillActions:
             WORKSPACE, scope, role, bundled_content(role), proposer=self.actor,
             reason=Reason(comment=reason or f'Adopted the template {template.label}.'),
             base=self.skills.resolved(WORKSPACE, scope, role), template_version=template.version)
+        return self._answer(scope, role, proposed.version.version, PROPOSED, proposed.announcement)
+
+    def propose(self, connection: str, role: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``{base_version, instructions, examples, summary, reason?}`` (7.52.00): a person's own version of the scope's
+        skill, PROPOSED on the version the scope runs (``base_version``: its number as the screen showed it, 0 for
+        none), with that version's tools, model and harness: a person's edit here is its text, the instructions and
+        the examples. Never applied here: an administrator accepts it as any other proposal. Its record is the
+        version row (who proposed it and when, its provenance ``person``, its base and why: ``summary``, then the
+        ``reason``). 409 when the scope runs another version now, 400 for a version that changes nothing."""
+        scope, role = check_connection(connection), check_role(role)
+        _fields(body, frozenset({'base_version', 'instructions', 'examples', 'summary'}),
+                '{base_version, instructions, examples, summary, reason?}')
+        shown, reason = body.get('base_version'), _reason(body)
+        if isinstance(shown, bool) or not isinstance(shown, int) or shown < 0:
+            raise SkillError('base_version is the version the scope runs, as the screen showed it (0 for none)')
+        summary_line = body.get('summary')
+        if not isinstance(summary_line, str) or not 0 < len(summary_line.strip()) <= MAX_SUMMARY \
+                or '\n' in summary_line.strip():
+            raise SkillError(f'summary is one line of 1-{MAX_SUMMARY} characters: what the version changes')
+        base = self.skills.resolved(WORKSPACE, scope, role)
+        if (base.version if base else 0) != shown:
+            now = f'v{base.version}' if base else 'none'
+            raise SkillConflict(f'{CHANGED}: the version the scope runs was {f"v{shown}" if shown else "none"} and '
+                                f'is {now} now; read it again')
+        base_content = (self.skills.version(WORKSPACE, base.connection, role, base.version).skill.content
+                        if base else bundled_content(role))
+        content = SkillContent(instructions=_text(body.get('instructions'), 'instructions'),
+                               examples=_examples(body.get('examples')), tool_policy=base_content.tool_policy,
+                               model=base_content.model, harness=base_content.harness)
+        if content == base_content:
+            raise SkillError('the version changes nothing: edit its instructions or its examples')
+        why = redact(summary_line.strip()) + (f'\n\n{reason}' if reason else '')
+        if len(why) > MAX_COMMENT:
+            raise SkillError(f'the summary and the reason are at most {MAX_COMMENT} characters together')
+        proposed = self.skills.propose_version(WORKSPACE, scope, role, content, proposer=self.actor,
+                                               reason=Reason(comment=why), base=base)
         return self._answer(scope, role, proposed.version.version, PROPOSED, proposed.announcement)
 
     def _scope(self, connection: str, role: str, version: str) -> tuple[str, str, int]:

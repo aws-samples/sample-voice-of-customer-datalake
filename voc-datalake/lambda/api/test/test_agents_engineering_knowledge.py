@@ -171,23 +171,35 @@ def test_the_tenets_are_accepted_or_rejected_with_who_and_when(lambda_context: A
     assert (status, [v['version'] for v in listed['versions']], listed['head']['accepted_version']) == (
         200, [2, 1], None)
     assert 'record' not in listed['versions'][0]
+    # (7.52.00's integration: the accepted version the screen showed; another one is 409 and nothing is decided)
+    stale = _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/2/accept',
+                  body={'expected_accepted': 1})
+    assert (stale[0], 'read it again' in stale[1]['error']) == (409, True)
+    assert _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/2/accept', body={})[0] == 400
     status, accepted = _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/2/accept',
-                             body={'reason': 'Reads true.'})
+                             body={'reason': 'Reads true.', 'expected_accepted': 0})
     assert status == 200
     assert (accepted['version']['status'], accepted['version']['current'], accepted['version']['decided_by']) == (
         'accepted', True, 'admin-sub')
     assert [event['event'] for event in accepted['log']] == ['accepted', 'drafted']
-    status, rejected = _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/1/reject', body={})
+    assert _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/1/reject',
+                 body={'expected_accepted': 0})[0] == 409   # (v2 is accepted now)
+    status, rejected = _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/1/reject',
+                             body={'expected_accepted': 2})
     assert (status, rejected['version']['status']) == (200, 'rejected')
-    assert _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/1/accept', body={})[0] == 409
+    assert _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/1/accept',
+                 body={'expected_accepted': 2})[0] == 409
     status, preview = _call(lambda_context, 'GET', f'/agents/engineering/docs/{CONN}/preview',
                             query={'kind': 'tenets'})
     assert (status, [f['path'] for f in preview['files']], preview['digest']) == (
         200, ['TENETS.md'], accepted['version']['rendering_digest'])
+    # (each file's text beside the one patch, 7.52.00's integration)
+    assert (preview['files'][0]['text'].startswith('# '), preview['texts_truncated']) == (True, False)
+    assert preview['files'][0]['bytes'] == len(preview['files'][0]['text'].encode())
     assert _call(lambda_context, 'GET', f'/agents/engineering/tenets/{CONN}/versions/2')[1]['version']['record'][
         'tenets'][0]['id'] == 'T1'
     assert _call(lambda_context, 'POST', f'/agents/engineering/tenets/{CONN}/versions/2/accept',
-                 body={'reason': 'x' * 501})[0] == 400
+                 body={'reason': 'x' * 501, 'expected_accepted': 2})[0] == 400
 
 
 def _approve(lambda_context: Any, world: World) -> str:

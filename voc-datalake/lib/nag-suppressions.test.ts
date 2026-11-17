@@ -299,7 +299,9 @@ describe('cdk-nag acknowledgements', () => {
       // 131 -> 134 (7.52.00): the knowledge flows' reads, each acknowledged where it is made: the agents API's and the
       // broker's of the knowledge packs' objects (`ws/default/knowledge/*`: an approval's rendering, the preview, the
       // docs the broker renders again) and the runtime's of the understanders' tenets records (`…/_tenets/*`).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 134, used: 134 });
+      // 134 -> 135 (7.52.00): the board's read of a Tenets run's draft for its tenets.recorded assertion (one more
+      // finding of its recorded outputs' acknowledgement, engineering-bus.ts).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 135, used: 135 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

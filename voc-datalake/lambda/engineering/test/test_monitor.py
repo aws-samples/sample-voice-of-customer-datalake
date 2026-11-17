@@ -131,6 +131,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
+                           'expansion': [],   # (7.52.00: no flow, so no call expanded)
                            'issue': None, 'pull_request': None,   # (started from no issue, no pull request yet)
                            'waiting_at': '', 'waiting_detail': None,   # (at no person's decision point)
                            'stop': None,   # (nobody stopped it)
@@ -145,6 +146,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
         'microvm_seconds': 300, 'tokens': [{'model': 'model-a', 'input_tokens': 1000, 'output_tokens': 200}],
         # (7.51.00: its session row's cost and labels, none written here; its attempt, commit and thread's tail)
         'cost_usd': 0.0, 'attempt': 1, 'commit': 'a' * 40, 'skill_label': None, 'model': None,
+        'card': None, 'card_version': None,   # (7.52.00: a role's own step, made from no Registry card)
         'transcript_cursor': TAIL, 'last_exit': None, 'last_failure': None}   # (7.51.04: it has not failed)
     assert (view['lanes'], view['gates'], view['children']) == ({}, {}, [])
     assert (coordinator['task_id'], coordinator['heartbeat_age'], len(coordinator['stuck_why'])) == (None, None, MAX_LINE)
@@ -449,6 +451,7 @@ def test_the_overview_lights_the_runs_flow_from_its_own_copy(run) -> None:
         'ready', 'collecting', 'waiting')
     # The run's own copy, as its start wrote it: what the monitor draws.
     assert flow['flow_definition'] == TEMPLATES['bug-hunt-and-fix']
+    assert view['run']['expansion'] == []   # (7.52.00: a flow that calls no other)
     # A copy the conductor cannot follow lights nothing (and is logged); the rest of the overview stands.
     put_flow(client, TABLE, RUN, definition='{')
     broken = monitor.overview(RUN)
@@ -708,6 +711,8 @@ def test_the_overview_shows_the_lanes_the_gates_the_cost_and_the_family_of_a_run
         fixer = next(agent for agent in view['agents'] if agent['agent'] == world.FIXER)
         assert (fixer['cost_usd'], fixer['attempt'], fixer['skill_label'], fixer['model']) == (
             0.9375, 2, 'fixer@v3', 'model-medium')
+        # (7.52.00: the Registry card its step was made from, as its launch recorded it)
+        assert (fixer['card'], fixer['card_version'], view['run']['expansion']) == ('fixer-careful', 2, [])
         ended = monitor.overview(world.ENDED_RUN)
         child = monitor.overview(world.CHILD_RUN)
         assert ended is not None
@@ -728,3 +733,19 @@ def test_the_overview_shows_the_lanes_the_gates_the_cost_and_the_family_of_a_run
                                             'stderr_tail': world.CHECKOUT_STDERR}
         assert (failed['run']['flow_steps']['classify'], failed['lanes'], failed['run']['cost_usd']) == (
             'ready', {}, 0.03)
+
+
+def test_the_overview_answers_the_calls_its_flow_expanded(run) -> None:
+    # (7.52.00, gap I: a run's copy is flat; the overview says which steps came from which call, at which revision)
+    from engineering.flow.test.fixtures import put_flow
+    from shared.flow_expand import expand
+    from shared.test.test_flow_expand import ROOT, A, Saved, calling, two_agents
+    from shared.workflow_schema import encode_definition
+    client, monitor, _, _, _ = run
+    flat = expand(calling(f'{A}@2'), Saved(**{f'{A}_r2': two_agents()}), root=ROOT).definition
+    put_flow(client, TABLE, RUN, revision=4, definition=encode_definition(flat))
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert view['run']['expansion'] == [{'step': 'call', 'flow': A, 'revision': 2}]
+    assert [node['id'] for node in view['run']['flow_definition']['nodes']] == [
+        'start', 'call.hunt', 'call.fix', 'build', 'end']

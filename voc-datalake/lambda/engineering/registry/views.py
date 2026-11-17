@@ -173,6 +173,102 @@ GATE_STOPS: Final = (
 )
 
 
+#: The stop codes (``GATE_STOPS``), and the steps' checks a gate record's last round says ran nothing.
+STOP_CODES: Final = frozenset(str(stop['code']) for stop in GATE_STOPS)
+_NOTHING_CHECKED: Final = 'empty'
+
+
+def step_places(gates: Mapping[str, Any]) -> dict[str, tuple[str, str]]:
+    """Each gate step's pack and language, by the step's id (the bundle's ``gates``: a step id is its pack's own,
+    ``py.ruff``)."""
+    return {str(step['id']): (str(pack['id']), str(step['language'])) for pack in gates['packs']
+            for step in pack['steps']}
+
+
+def check_place(key: str, places: Mapping[str, tuple[str, str]]) -> dict[str, str | None]:
+    """A gate check's pack and language, from its key (``<step>@<root>``, quality_gate/packs.py ``plan``): the
+    repository's own gate (``own:<file>``) is no pack's, in the language ``repo``; a step no pack has, neither."""
+    if key.startswith('own:'):
+        return {'pack': None, 'language': 'repo'}
+    pack, language = places.get(key.partition('@')[0], (None, None))
+    return {'pack': pack, 'language': language}
+
+
+def _last_checks(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    rounds = record.get('rounds')
+    last = rounds[-1] if isinstance(rounds, list) and rounds and isinstance(rounds[-1], Mapping) else {}
+    checks = last.get('checks')
+    return [check for check in checks if isinstance(check, Mapping)] if isinstance(checks, list) else []
+
+
+def _failed_checks(record: Mapping[str, Any]) -> bool:
+    return any(check.get('status') != 'pass' for check in _last_checks(record))
+
+
+def _no_go_stop(record: Mapping[str, Any]) -> str | None:
+    """A gate runner's NO-GO by its last round's checks: none ran, or one found nothing to check
+    (``looked_at_nothing``); else one failed (``check_failed``); None when every one passed."""
+    statuses = {check.get('status') for check in _last_checks(record)}
+    if not statuses or _NOTHING_CHECKED in statuses:
+        return 'looked_at_nothing'
+    return 'check_failed' if statuses - {'pass'} else None
+
+
+def stop_code(record: Mapping[str, Any]) -> str | None:
+    """Why the gate whose record this is stopped at a person, as ``GATE_STOPS`` names it (7.52.00): a final go's NO-GO
+    is ``review_blocked``; a record's own ``stop_reason`` when it is a code; the decision it stopped at
+    (``quality_gate/gate.py``: ``no_fail_path``; ``loop_exhausted``, told apart by its last round's checks); a gate
+    runner's NO-GO by its checks (``_no_go_stop``). None for a GO and for a stop its record does not tell apart
+    (``verification``: no check applied, the own gate, the diff's size or a model's failure)."""
+    final = record.get('final_go')
+    verdict, reason = record.get('verdict'), str(record.get('stop_reason') or '')
+    if (isinstance(final, Mapping) and final.get('verdict') == 'NO-GO') or reason == 'no_fail_path':
+        return 'review_blocked'
+    if verdict == 'GO':
+        return None
+    if reason in STOP_CODES:
+        return reason
+    if reason == 'loop_exhausted':
+        return 'check_failed' if _failed_checks(record) else 'rounds_used_up'
+    return _no_go_stop(record) if verdict == 'NO-GO' else None
+
+
+def stop_view(record: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """A gate record's stop for the run workspace (``{code, text_key, recorded}``: ``code`` None when the record does
+    not tell it, ``recorded`` its own ``stop_reason``); None for no record, or one that did not stop the gate."""
+    if not record or record.get('unreadable'):
+        return None
+    code = stop_code(record)
+    recorded = str(record.get('stop_reason') or '') or None
+    if code is None and recorded is None:
+        return None
+    return {'code': code, 'text_key': f'gates.stops.{code}' if code else None, 'recorded': recorded}
+
+
+def pack_tool_versions(gates: Mapping[str, Any], recorded: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Each pack's tools' versions as a connection's newest gate record holds them (``recorded``:
+    registry/gate_records.py ``GateRecords.newest``), with its run and when: ``{pack: {tool_versions, run_id, at} |
+    None}``, None for a pack none of whose tools the record names (the repository's own pins decide them)."""
+    versions = recorded.get('tool_versions', {}) if recorded else {}
+    found: dict[str, Any] = {}
+    for pack in gates['packs']:
+        tools = {str(tool['name']): versions[tool['name']] for tool in pack['tools'] if tool['name'] in versions}
+        found[str(pack['id'])] = {'tool_versions': tools, 'run_id': recorded.get('run_id'),
+                                  'at': recorded.get('at')} if tools and recorded else None
+    return found
+
+
+def final_go_view(record: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """A final go's decision as its record holds it (``{verdict, agent, model_id, reasons}``), None for none."""
+    final = record.get('final_go') if record else None
+    if not isinstance(final, Mapping) or final.get('verdict') not in ('GO', 'NO-GO'):
+        return None
+    reasons = final.get('reasons')
+    return {'verdict': final['verdict'], 'agent': str(final.get('agent') or '') or None,
+            'model_id': str(final.get('model_id') or '') or None,
+            'reasons': [str(reason) for reason in reasons] if isinstance(reasons, list) else []}
+
+
 def looked_at_nothing(step: Mapping[str, Any]) -> str | None:
     """The step's vacuous-pass rule in words: how it fails when it checked nothing (None: an exit 0 passes)."""
     rules = []
@@ -203,19 +299,50 @@ def step_messages(step: Mapping[str, Any], words: Mapping[str, str]) -> list[dic
     return messages
 
 
-def gates_view(gates: Mapping[str, Any]) -> dict[str, Any]:
+#: What ``GET …/gates`` says of each brief: everything but its text (7.52.00: ``GET …/gates/briefs/<id>`` reads it).
+BRIEF_FIELDS: Final = ('id', 'path', 'packs', 'digest', 'bytes')
+
+
+def gates_view(gates: Mapping[str, Any], recorded: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The bundle's ``gates`` as the Quality gates view reads them: each pack's steps with their messages and their
-    vacuous-pass rule, the gate's stop reasons, and who runs a gate that names nobody (``defaults``)."""
+    vacuous-pass rule, the gate's stop reasons, who runs a gate that names nobody (``defaults``), and each brief
+    without its text. ``recorded``: a connection's newest gate record (``gate_records.GateRecords.newest``), whose
+    tools' versions each pack then carries (``recorded``: ``pack_tool_versions``, None for none)."""
     words = gates['messages']
+    versions = pack_tool_versions(gates, recorded)
     packs = [{**pack, 'steps': [{**step, 'messages': step_messages(step, words),
-                                 'looked_at_nothing': looked_at_nothing(step)} for step in pack['steps']]}
+                                 'looked_at_nothing': looked_at_nothing(step)} for step in pack['steps']],
+              'recorded': versions[str(pack['id'])]}
              for pack in gates['packs']]
     own_gate = str(gates['own_gate']['file'])
     return {'packs': packs, 'aliases': dict(gates['aliases']), 'own_gate': dict(gates['own_gate']),
-            'briefs': [dict(brief) for brief in gates['briefs']], 'runners': sorted(GATE_ROLES),
-            'defaults': dict(GATE_AGENT_DEFAULTS),
+            'briefs': [{name: brief[name] for name in BRIEF_FIELDS} for brief in gates['briefs']],
+            'runners': sorted(GATE_ROLES), 'defaults': dict(GATE_AGENT_DEFAULTS),
             'stops': [{**stop, 'text': stop['text'].format(own_gate=own_gate), 'text_key': f'gates.stops.{stop["code"]}',
                        'actions': _actions(stop['decision'])} for stop in GATE_STOPS]}
+
+
+def brief_view(gates: Mapping[str, Any], brief_id: str) -> dict[str, Any] | None:
+    """One owner's brief with its text (``{id, path, packs, digest, bytes, text}``), None for no such brief."""
+    found = next((brief for brief in gates['briefs'] if brief['id'] == brief_id), None)
+    return None if found is None else {name: found[name] for name in (*BRIEF_FIELDS, 'text')}
+
+
+#: The templates whose source text the app reads (7.52.00's integration): a role's SKILL.md and agent.yaml, a flow's
+#: YAML, an owner's gate brief.
+SOURCE_KINDS: Final = ('skill', 'card', 'flow', 'brief')
+
+
+def template_source(bundle: Mapping[str, Any], kind: str, ident: str) -> dict[str, Any] | None:
+    """A template's source text as the repository holds it, from the bundle (``sources``; a brief's from
+    ``gates.briefs``, which has no template version): ``{kind, id, path, text, digest, template_version}``, None for
+    none of that kind and id."""
+    if kind == 'brief':
+        brief = next((item for item in bundle['gates']['briefs'] if item['id'] == ident), None)
+        return None if brief is None else {'kind': kind, 'id': ident, 'path': brief['path'], 'text': brief['text'],
+                                           'digest': brief['digest'], 'template_version': None}
+    found = next((item for item in bundle['sources'] if item['kind'] == kind and item['id'] == ident), None)
+    return None if found is None else dict(found)
 
 
 def _actions(reason: str) -> list[str]:

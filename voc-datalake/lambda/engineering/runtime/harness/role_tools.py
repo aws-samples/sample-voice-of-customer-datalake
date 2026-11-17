@@ -216,7 +216,9 @@ def gate_record(context: Built, arguments: Mapping[str, Any]) -> bytes:
                              '(the submitted patch applied to the run\'s commit), so its checks are not for the judged '
                              'tree: write NO-GO, and say which command changed it')
     record = {'schema': GATE_SCHEMA, 'verdict': verdict, 'stop_reason': stop, 'tree_hash': context.gate_tree,
-              'packs': list(dict.fromkeys(packs)), 'own_gate': False, 'tool_versions': {}, 'max_rounds': 1,
+              'packs': list(dict.fromkeys(packs)), 'own_gate': False,
+              # (7.52.00: what run_gate found of its packs' tools; none for a final go, which runs no gate)
+              'tool_versions': dict(context.gate_tool_versions), 'max_rounds': 1,
               'reviewers': [], 'model_calls': 0, 'accepted_by': '', 'rounds': rounds, 'findings': [],
               'final_go': final_go}
     return json.dumps(record, sort_keys=True).encode()

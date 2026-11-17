@@ -2,7 +2,8 @@
 
 - Per agent, from its session row (``AGENT#<agent>``): its cost so far (``cost_usd``: its session time and, since
   7.50.00, its tokens at their prices, with the brokers' metering), the attempt and commit it works on, its skill's
-  label and its model, and ``transcript_cursor``: the cursor that opens its thread at its transcript's end
+  label and its model, since 7.52.00 the Registry card its step was made from (``card``, ``card_version``: None for a
+  role's own step), and ``transcript_cursor``: the cursor that opens its thread at its transcript's end
   (views_thread.TAIL; None for an agent with no transcript to read); and (7.51.04) why it last failed, as the
   supervisor's inspection data holds it: ``last_exit`` (its failed command's exit code, whether it timed out, how long
   it ran and its stderr's tail; never its stdout) and ``last_failure`` (the supervisor's own words: "the boot took too
@@ -12,6 +13,8 @@
   ``needs_human_detail``, written since 7.51.03 beside the decision point, as at ``checkout_failed``: "The repository
   checkout failed (git clone, exit 128): …"), shown the same way; None for none, and for a run that is not at a person
   (a reason kept from an earlier wait says nothing of the run now).
+- The calls the run's flow expanded (7.52.00, ``expansion``: its copy's record, shared/flow_expand.py), so the canvas
+  regroups a call's ``<call>.<step>`` steps under it.
 - The lanes: each flow step's tasks (``flow_step``) with the agent on each (its holder, else the agent launched for its
   attempt) and that agent's status, the canvas's sibling nodes of a stage.
 - The run's cost: its agents' and Learn's (``LEARN#spend``, learning/budget.py), against its cost cap.
@@ -56,9 +59,14 @@ def agent_extras(run_id: str, session: AgentSession, row: Mapping[str, Any] | No
     row = row or {}
     subject = Subject(run_id=run_id, agent=session.agent_id, role=session.role, task_id=session.task_id,
                       attempt=session.task_attempt, commit=session.commit, status=session.status)
+    version = string_attr(row, 'card_version')
     return {'cost_usd': usd(amount_attr(row, 'cost_usd')), 'attempt': session.task_attempt,
             'commit': session.commit or None, 'skill_label': string_attr(row, 'skill_version') or None,
-            'model': string_attr(row, 'model') or None, 'transcript_cursor': TAIL if subject.transcripts else None,
+            'model': string_attr(row, 'model') or None,
+            # (7.52.00) The Registry card its step was made from, as its launch recorded it (None: a role's own step).
+            'card': string_attr(row, 'card') or None,
+            'card_version': int(version) if version.isdigit() and version[0] != '0' else None,
+            'transcript_cursor': TAIL if subject.transcripts else None,
             'last_exit': last_exit(session.inspect),
             'last_failure': shown(session.inspect.get('last_failure'), MAX_REASON)}
 

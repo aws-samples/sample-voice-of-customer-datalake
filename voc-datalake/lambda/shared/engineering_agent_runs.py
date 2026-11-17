@@ -372,6 +372,29 @@ def invoke_start(client: Any, function: str, request: Mapping[str, Any], *, run_
     return StartAnswer('started', payload=payload)
 
 
+def ask_start(client: Any, function: str, request: Mapping[str, Any], *, answers: frozenset[str], failed: str,
+              again: str) -> dict[str, Any]:
+    """A voc-engineering-start action other than a run's start (``invoke_start``), asked synchronously, and its answer:
+    an ended run's reactions read (``ask_reactions``, 7.10.00, agents_handler.py) and the approved docs' pull request
+    (``publish_docs``, 7.52.00, agents_engineering_knowledge_routes.py). Its refusal (``RuntimeRefused``) is
+    ``ConflictError`` in its words; the function out of reach, any other failure, or an answer whose ``status`` is not
+    one of ``answers``, is ``ServiceUnavailableError`` (``failed``, then ``again``: asking again is safe for both, each
+    held by a create-only claim)."""
+    try:
+        response = client.invoke(FunctionName=function, InvocationType='RequestResponse',
+                                 Payload=json.dumps(dict(request)).encode())
+        payload = json.loads(response['Payload'].read() or b'{}')
+    except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
+        logger.exception(f'engineering: {failed}')
+        raise ServiceUnavailableError(f'the engineering runtime could not be reached: {again}') from exc
+    answer: dict[str, Any] = payload if isinstance(payload, dict) else {}
+    if response.get('FunctionError') and answer.get('errorType') == 'RuntimeRefused':
+        raise ConflictError(str(answer.get('errorMessage') or 'the runtime refused it')[:500])
+    if response.get('FunctionError') or answer.get('status') not in answers:
+        raise ServiceUnavailableError(f'{failed}: {again}')
+    return answer
+
+
 @dataclass(frozen=True)
 class IssueRef:
     """The GitHub issue a run starts from: its repository, number and the feedback item it was ingested as."""

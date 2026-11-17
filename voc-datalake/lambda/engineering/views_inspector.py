@@ -13,7 +13,10 @@ memory.
 - **Files**: the files its tool calls read, listed or wrote, from its transcript (``views_thread.ThreadView.events``).
 - **Gate**: its gate record (``…/_gate/attempt-<n>/record.json``, ``voc-gate-record/1``, checked by
   ``GateRecord.from_dict``), read once the record was written (its task recorded it, or its transcript shows the write),
-  and the checks of its latest ``run_gate`` with each one's output tail, from its transcript.
+  and the checks of its latest ``run_gate`` with each one's output tail, from its transcript; since 7.52.00 with each
+  check's pack and language (the bundle's gate steps), the gate run's round, the tools' versions, and the record's
+  verdict, stop (``GET …/gates``' stop codes: registry/views.py ``stop_view``) and final go's decision. It is read
+  per agent: a step's view reads its gate runner's lane, and its final go's.
 - **Memory**: the approved lessons its task's brief took (the brief's ``memory:<n>`` blocks, its transcript's first
   prompt) and what Learn made of its task's failures (the run's ``LEARNED#<task>#…`` rows, learning/loop.py).
 
@@ -218,6 +221,13 @@ def _gate_run(text: str) -> dict[str, Any] | None:
     return found if isinstance(found, dict) and isinstance(found.get('checks'), list) else None
 
 
+def _versions(raw: object) -> dict[str, str]:
+    """A gate's tools' versions as it recorded them (``{tool: version}``: at most 20, each bounded)."""
+    if not isinstance(raw, Mapping):
+        return {}
+    return {str(tool)[:64]: display(str(version))[:200] for tool, version in list(raw.items())[:20]}
+
+
 def _check_view(check: Mapping[str, Any]) -> dict[str, Any]:
     output = str(check.get('output', ''))
     exit_code = check.get('exit_code')
@@ -344,24 +354,33 @@ class AgentTabs:
 
     def gate(self, subject: Subject) -> dict[str, Any]:
         """Its gate record and its latest gate run's checks with their output tails (``{key, record, checks,
-        passed, packs, ran_at}``)."""
-        latest: tuple[str, dict[str, Any]] | None = None
+        passed, packs, ran_at}``); since 7.52.00 each check's pack and language, the run's ``round`` (its number among
+        this agent's runs of the gate), the tools' versions it recorded, the record's ``verdict``, its ``stop`` as
+        ``GET …/gates`` names the stops and a final go's decision (``final_go``)."""
+        from engineering.registry.views import check_place, final_go_view, step_places, stop_view
+        from shared.engineering_templates import bundle
+
+        latest: tuple[str, dict[str, Any], int] | None = None
         written = False
         for event in self.thread.events(subject):
             data = event.data
             if data.get('kind') != 'tool_result' or data.get('error'):
                 continue
             if data.get('tool') == 'run_gate' and (ran := _gate_run(str(data.get('text', '')))) is not None:
-                latest = (str(data.get('at', '')), ran)
+                latest = (str(data.get('at', '')), ran, (latest[2] if latest else 0) + 1)
             written = written or data.get('tool') == 'write_gate_record'
         key = f'{subject.prefix("gate")}record.json' if subject.prefix('gate') else ''
         record = self._record(key) if key and (written or self._recorded(subject, key)) else None
         ran = latest[1] if latest else {}
+        places = step_places(bundle()['gates'])
         return {'key': key if record is not None else None, 'record': record,
-                'checks': [_check_view(check) for check in ran.get('checks', [])[:100] if isinstance(check, Mapping)],
+                'checks': [{**_check_view(check), **check_place(str(check.get('key', '')), places)}
+                           for check in ran.get('checks', [])[:100] if isinstance(check, Mapping)],
                 'passed': ran.get('passed') if isinstance(ran.get('passed'), bool) else None,
                 'packs': [str(pack)[:64] for pack in ran.get('packs', [])[:20]] if isinstance(ran.get('packs'), list) else [],
-                'ran_at': latest[0] if latest else None}
+                'ran_at': latest[0] if latest else None, 'round': latest[2] if latest else None,
+                'tool_versions': _versions(ran.get('tool_versions')) or _versions((record or {}).get('tool_versions')),
+                'verdict': (record or {}).get('verdict'), 'stop': stop_view(record), 'final_go': final_go_view(record)}
 
     def _recorded(self, subject: Subject, key: str) -> bool:
         if not subject.task_id:

@@ -255,3 +255,20 @@ def test_a_calls_inputs_name_the_inputs_its_flow_declares() -> None:
     unknown['nodes'][1]['data']['params']['inputs'] = {'issue': 'x'}
     refused = refusal(unknown, read)
     assert (refused.node_id, 'does not declare: issue' in refused.message) == ('call', True)
+
+
+def test_a_runs_copy_answers_the_calls_it_records_and_nothing_off_their_shape() -> None:
+    # (7.52.00: the run workspace's overview reads them back from the run's copy, recorded_expansion)
+    declared = {**two_agents(), 'inputs': {'issue': {'type': 'issue_ref'}}}
+    caller = calling(f'{A}@1')
+    caller['nodes'][1]['data']['params']['inputs'] = {'issue': "the run's issue"}
+    expanded = expand(caller, Saved(**{f'{A}_r1': declared}), root=ROOT)
+    assert flow_expand.recorded_expansion(expanded.definition) == [
+        {'step': 'call', 'flow': A, 'revision': 1, 'inputs': {'issue': "the run's issue"}}]
+    assert flow_expand.recorded_expansion(bug_fix()) == []
+    assert flow_expand.recorded_expansion(None) == []
+    broken = copy.deepcopy(expanded.definition)
+    broken['nodes'][0]['data']['params'][EXPANSION] = [
+        {'step': 'call', 'flow': 'wf_nothex', 'revision': 1}, {'step': 3, 'flow': A, 'revision': 1}, 'call',
+        {'step': 'call', 'flow': A, 'revision': True}, {'step': 'call', 'flow': B, 'revision': 2}]
+    assert flow_expand.recorded_expansion(broken) == [{'step': 'call', 'flow': B, 'revision': 2}]

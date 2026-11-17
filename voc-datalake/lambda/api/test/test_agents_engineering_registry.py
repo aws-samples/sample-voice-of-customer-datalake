@@ -178,8 +178,8 @@ def test_the_quality_gates_are_the_packs_steps_messages_and_briefs(lambda_contex
     briefs = {brief['id']: brief for brief in body['briefs']}
     assert set(briefs) == {'java', 'python-ts', 'rust-ts'}
     assert briefs['python-ts']['packs'] == ['python', 'typescript']
-    assert briefs['java']['text'].startswith('#')
-    assert briefs['java']['digest'].startswith('sha256:')
+    # (7.52.00's integration: each brief without its text, read on its own through GET …/gates/briefs/<id>)
+    assert ('text' in briefs['java'], briefs['java']['digest'].startswith('sha256:')) == (False, True)
     assert (body['own_gate']['file'], body['runners']) == ('scripts/validate.sh', ['final-go', 'gate-runner'])
     # (who runs a gate that names nobody; the tools whose versions a gate records, never a version of its own)
     assert body['defaults'] == {'runner': 'gate-runner@latest', 'final_go': 'final-go@latest'}

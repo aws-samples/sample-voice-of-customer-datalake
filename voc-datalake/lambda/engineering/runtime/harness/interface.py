@@ -160,7 +160,8 @@ class AgentSession:
                                     # The checks it ran, as the harness recorded them (a gate record's checks),
                                     # and whether the gate's own run made them (run_gate: its packs).
                                     'checks': list(context.checks),
-                                    'gate': {'ran': context.gate_ran, 'packs': list(context.gate_packs)},
+                                    'gate': {'ran': context.gate_ran, 'packs': list(context.gate_packs),
+                                             'tool_versions': dict(context.gate_tool_versions)},
                                     # The brief, so a continuation needs no claim of a task it holds already.
                                     'brief': {'title': context.brief.title[:500],
                                               'instructions': context.brief.instructions[:MAX_BRIEF],

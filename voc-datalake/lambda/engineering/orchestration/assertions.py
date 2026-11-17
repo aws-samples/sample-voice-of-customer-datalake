@@ -3,7 +3,7 @@
 A flow template's step carries ``assert: [{check, args?, on_fail?}]`` (``templates/orchestration/flows/*.yaml``,
 compiled onto the voc-workflow/2 step's ``params.assert``). Each check reads the step's recorded outputs (a
 ``Recorded``: its tasks, the findings and notes written under the agents' keys, the submitted patches, the gate
-records, the broker's host writes, the triage record) and answers pass or fail with one line of detail. No check
+records, the broker's host writes, the triage record, the tenets record) and answers pass or fail with one line of detail. No check
 reads a model's prose, a summary or a finish: an agent saying it did something is not the record of it.
 
 ``on_fail`` says what a failure means: ``block`` (the default: the step does not pass and the run goes to a person),
@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from engineering.connectors.write_policy import path_refusals
+from engineering.runtime.outputs import TENETS_SCHEMA, TenetsError, tenets_record
 from shared.workflow_engineering import ASSERTION_ON_FAIL as ON_FAIL
 
 DEFAULT_ON_FAIL: Final = 'block'
@@ -50,6 +51,8 @@ class Recorded:
     comments: tuple[Mapping[str, Any], ...] = ()
     labels: tuple[str, ...] = ()
     triage: Mapping[str, Any] | None = None
+    #: The understander's ``voc-tenets/1`` record (7.52.00, the Tenets flow's ``write_tenets``), None for none.
+    tenets: Mapping[str, Any] | None = None
     proposals: tuple[Mapping[str, Any], ...] = ()
     #: The run's issue number (None: the run has none) and the flow's ``pr`` setting.
     issue: int | None = None
@@ -196,6 +199,21 @@ def _triage_recorded(recorded: Recorded, _args: Mapping[str, Any]) -> Verdict:
     return ok, (f'triage {triage.get("kind")} {triage.get("severity")}' if triage else 'no triage was recorded')
 
 
+def _tenets_recorded(recorded: Recorded, _args: Mapping[str, Any]) -> Verdict:
+    """The Tenets flow's draft (7.52.00): a ``voc-tenets/1`` record that its run's end drafts as the connection's next
+    tenets version (``runtime/tenets_end.py``), held to the record's own rules (``outputs.tenets_record``)."""
+    record = recorded.tenets
+    if record is None:
+        return False, 'no tenets were recorded'
+    if record.get('schema') != TENETS_SCHEMA:
+        return False, f'the record is not {TENETS_SCHEMA}'
+    try:
+        tenets = tenets_record(dict(record))['tenets']
+    except TenetsError as error:
+        return False, f'the tenets record breaks its rules: {error}'
+    return True, f'{len(tenets)} tenet(s) drafted'
+
+
 def _triage_labelled(recorded: Recorded, _args: Mapping[str, Any]) -> Verdict:
     triage = recorded.triage or {}
     want = {f'voc-triage/{triage.get("kind")}', f'voc-severity/{str(triage.get("severity", "")).lower()}'}
@@ -246,6 +264,8 @@ VOCABULARY: Final[Mapping[str, Check]] = {
     'review.commented': Check('a review comment was posted on the pull request', (), _review_commented),
     'review.no_blocking': Check('the role named by "by" wrote no blocking finding', ('by',), _no_blocking),
     'tasks.posted': Check('at least min tasks were posted for role', ('role', 'min'), _tasks_posted),
+    'tenets.recorded': Check('a voc-tenets/1 record of 1-30 tenets, each with an id, a title and a statement', (),
+                             _tenets_recorded),
     'triage.commented': Check('the triage was commented on the run\'s issue', (), _triage_commented),
     'triage.labelled': Check('the issue carries the triage\'s kind and severity labels', (), _triage_labelled),
     'triage.recorded': Check('a voc-triage/1 record with a kind and a severity S1-S4', (), _triage_recorded),

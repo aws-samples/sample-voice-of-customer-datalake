@@ -25,6 +25,7 @@
         "review.commented",
         "review.no_blocking",
         "tasks.posted",
+        "tenets.recorded",
         "triage.commented",
         "triage.labelled",
         "triage.recorded"

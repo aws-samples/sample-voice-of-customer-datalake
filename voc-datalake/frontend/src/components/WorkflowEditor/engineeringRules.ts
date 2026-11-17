@@ -48,7 +48,8 @@ const ASSERTION_ARGS: Readonly<Record<string, readonly string[]>> = {
   'notes.cite_sources': [], 'patch.max_lines': ['max'], 'patch.no_ci_changes': [], 'patch.submitted': [],
   'patch.touches_tests': [], 'pr.links_issue': [], 'pr.opened': [], 'pr.state_as_flow': [],
   'push.tree_is_judged_tree': [], 'review.commented': [], 'review.no_blocking': ['by'],
-  'tasks.posted': ['role', 'min'], 'triage.commented': [], 'triage.labelled': [], 'triage.recorded': [],
+  'tasks.posted': ['role', 'min'], 'tenets.recorded': [], 'triage.commented': [], 'triage.labelled': [],
+  'triage.recorded': [],
 }
 const ASSERTION_ON_FAIL = ['block', 'fail_arrow', 'warn'] as const
 const MAX_ASSERTIONS = 10

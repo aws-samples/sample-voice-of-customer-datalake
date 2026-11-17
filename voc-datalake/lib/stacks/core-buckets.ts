@@ -172,6 +172,8 @@ export const ENGINEERING_PATCH_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/comm
 export const ENGINEERING_SEED_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_seed/*`;
 export const ENGINEERING_FINDING_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/*/attempt-*/*.jsonl`;
 export const ENGINEERING_TRIAGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_triage/*`;
+/** An understander's tenets draft (7.52.00, runtime/harness/tenets_tools.py), which the Tenets flow's assertion reads. */
+export const ENGINEERING_TENETS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_tenets/*`;
 export const ENGINEERING_TRANSCRIPT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_transcripts/*`;
 export const ENGINEERING_CHECKPOINT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_checkpoints/*`;
 /** The runs list's month partitions (7.51.00, lambda/engineering/runtime/runs.py runlist_key). */

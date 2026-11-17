@@ -5111,7 +5111,7 @@
   },
   "errors": [
    {
-    "message": "an assertion is {check, args?, on_fail?}, its check one of findings.cite_evidence, gate.pack_checks_ran, gate.passed, learn.proposals_name_case, notes.cite_sources, patch.max_lines, patch.no_ci_changes, patch.submitted, patch.touches_tests, pr.links_issue, pr.opened, pr.state_as_flow, push.tree_is_judged_tree, review.commented, review.no_blocking, tasks.posted, triage.commented, triage.labelled, triage.recorded",
+    "message": "an assertion is {check, args?, on_fail?}, its check one of findings.cite_evidence, gate.pack_checks_ran, gate.passed, learn.proposals_name_case, notes.cite_sources, patch.max_lines, patch.no_ci_changes, patch.submitted, patch.touches_tests, pr.links_issue, pr.opened, pr.state_as_flow, push.tree_is_judged_tree, review.commented, review.no_blocking, tasks.posted, tenets.recorded, triage.commented, triage.labelled, triage.recorded",
     "node_id": "hunt"
    }
   ]

@@ -305,10 +305,12 @@ def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, 
     gate = position.get('gate') if isinstance(position, dict) else None
     if isinstance(gate, dict) and gate.get('ran') is True and context.checks:
         # (run_gate's run before the crash: its checks above, its packs' plain names)
-        packs = gate.get('packs')
+        packs, versions = gate.get('packs'), gate.get('tool_versions')
         context.gate_ran = True
         context.gate_packs = tuple(str(pack)[:64] for pack in packs if isinstance(pack, str))[:20] \
             if isinstance(packs, list) else ()
+        context.gate_tool_versions = {str(tool)[:64]: version[:200] for tool, version in list(versions.items())[:20]
+                                      if isinstance(version, str)} if isinstance(versions, dict) else {}
     tree = state.get('patch')
     if isinstance(tree, str) and tree.startswith(context.patches_prefix) and context.runs_code:
         session.patch = tree

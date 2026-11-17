@@ -860,8 +860,10 @@ library only, so the Agents API and the broker render the same bytes, and its di
 - **Read**: `GET /agents/engineering/knowledge/<connection>` (each package's versions, its approved one, the recorded
   rendering) and `…/<package>/versions/<version>` (the version, its seven documents).
 - **Preview** (`GET /agents/engineering/docs/<connection>/preview?kind=knowledge|tenets`): the files the approved
-  docs render to now (`{path, sha256, bytes}`), their digest and the approval's (`matches`), the branch, and a git
-  patch that adds them (cut at 4 MB, `patch_truncated`): what a Human-driven administrator applies by hand.
+  docs render to now (`{path, sha256, bytes, text}`: since 7.52.00's integration each file's text, so the app reads
+  each as a document, while the texts fit 2 MB, else `text: null` and `texts_truncated`), their digest and the
+  approval's (`matches`), the branch, and a git patch that adds them (cut at 4 MB less the texts' bytes,
+  `patch_truncated`): what a Human-driven administrator applies by hand.
 - **Publish** (`POST /agents/engineering/docs/<connection>/publish`, `{kind, digest, pr?}`): 202 `{pr: {url, number,
   branch}, kind, version, digest, draft}`. The Agents API reads the requesting administrator's stored way of working
   first (Human-driven, or none stored: 409 `human_driven`, with the preview's address), then invokes
@@ -904,9 +906,14 @@ The versions are in the connection's partition beside its packs (`WS#default#REP
 (its record, author, run, status) and a create-only `TENETSLOG#<v:06d>#<event>` per event (drafted, accepted,
 rejected: who, when, why), and `TENETSRUN#<run>`, the run that drafted one. The runtime's role writes a draft's
 attributes alone (an IAM `dynamodb:Attributes` pin), so it never accepts or rejects one. An administrator reads them
-(`GET /agents/engineering/tenets/<connection>[/versions/<v>]`) and accepts (`POST …/versions/<v>/accept {reason?}`:
-never a version older than the accepted one) or rejects (`…/reject`) a draft; a rejected one stays. Once accepted,
-`TENETS.md` is rendered from it and goes to the repository through the same publish (`kind: tenets`).
+(`GET /agents/engineering/tenets/<connection>[/versions/<v>]`) and accepts (`POST …/versions/<v>/accept
+{expected_accepted, reason?}`: never a version older than the accepted one) or rejects (`…/reject {expected_accepted,
+reason?}`) a draft; a rejected one stays. `expected_accepted` (7.52.00's integration) is the accepted version the
+screen showed (0 for none), the one the draft was read and compared against: another one now is 409 "read it again"
+(an acceptance holds it in the counter's own conditional update; a rejection, which moves no accepted version, reads it
+just before its write). Once accepted, `TENETS.md` is rendered from it and goes to the repository through the same
+publish (`kind: tenets`). The Tenets flow's draft step asserts `tenets.recorded` (a `voc-tenets/1` record held to the
+record's own rules), which the board evaluates on the draft its task recorded (it reads `…/_tenets/*` for it).
 
 **Triage cites accepted tenets only** (the hard lock): `write_triage` refuses a tenet id the run's connection's
 accepted version does not hold (the broker's `read` of kind `tenets`, the store's: never the repository's file), and so
@@ -969,7 +976,7 @@ The tools are exactly what each job needs, and a role is never offered one beyon
 | Feature builder | `write_file`, `run`, `install_dependencies`, `submit_work`, `post_subtask` (a sub-build) | Sonnet 5.5 |
 | Committer | `read_issue`, `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
 | Commit reviewer | `write_findings` | Sonnet 5.5 |
-| Gate runner | `run_gate` (7.50.00: the packs detect the checkout's languages, plan their checks and run each one in the sandbox), `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks `run_gate` saw end, its plan's packs; a GO only after `run_gate`, never a final go) | Haiku 5.5 |
+| Gate runner | `run_gate` (7.50.00: the packs detect the checkout's languages, plan their checks and run each one in the sandbox), `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks `run_gate` saw end, its plan's packs and, since 7.52.00, the versions `run_gate` found of their tools, `tool_versions`; a GO only after `run_gate`, never a final go) | Haiku 5.5 |
 | PR author | `read_issue`, `open_draft_pr` (the broker's pull request: ready for review, or a draft when the run's flow says `pr: draft`) | Sonnet 5.5 |
 | PR reviewer | `write_findings`, `post_comment` (on the run's pull request) | Sonnet 5.5 |
 | Final go | `read_gate_record` (the gate runners' records of the tree it judges), `read_findings` (the run's findings at its commit), `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
@@ -1713,7 +1720,9 @@ called flow's steps carry theirs). The step's own shape is the rules'
   rules.
 - **What the run records** (D4): the flat flow is the run's copy (its `FLOW` row), and its start step's
   `params.expansion` lists the calls, `[{step, flow, revision, inputs?}]`, the outer before the inner; an engineering
-  agent's run row (voc-agents) keeps `expansion` too, and the start's answer names it.
+  agent's run row (voc-agents) keeps `expansion` too, and the start's answer names it. The run workspace's overview
+  answers it as the run's `expansion` (7.52.00's integration: `shared/flow_expand.py` `recorded_expansion`, each entry
+  off that shape left out), so the canvas regroups a call's steps under it.
 - **At a save.** `POST`/`PUT /workflows` (and `POST /workflows/validate` for an administrator) simulate the expansion
   on the stored flows, so a flow whose calls cannot be expanded is never saved; `GET /workflows/<id>/expanded?revision=`
   (an administrator's) answers the flat flow a run of that revision would follow, with `expansion`, `calls` and
@@ -2749,7 +2758,7 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
 - **IAM** (pinned in CDK tests): voc-engineering-start `RestartReadsTheParent` (Query of `WS#*#RUN#*`) and the RUNLIST
   partitions beside its run rows; voc-engineering-runtime `RunsListRows`, `RestartReadsPatches` and `WriteRestartSeeds`
   (`ws/default/runs/*/_seed/*`, create-only); the board `ReadRecordedOutputs` with an explicit Deny on `_transcripts`
-  and `_checkpoints`; the Agents API `s3:GetObject` on the runs' transcripts, patches, gate records and manifests and
+  and `_checkpoints` (since 7.52.00 also a Tenets run's draft, `…/_tenets/*`, for `tenets.recorded`); the Agents API `s3:GetObject` on the runs' transcripts, patches, gate records and manifests and
   `s3:ListBucket` held to the transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). No agent role
   gains anything.
 
@@ -3022,6 +3031,15 @@ every key is that scope's, so an administrator acts on one scope's partition at 
   `expected_case`, else 409 saying what
   is missing). `expected_status` is `proposed` (anything else is 400).
 - `…/reject` `{expected_status, reason?}`: `reject_version`; the version stays, marked rejected.
+- `POST /agents/engineering/skills/<role>/versions` `{base_version, instructions, examples, summary, reason?}` → 201
+  (7.52.00's integration, `SkillActions.propose`): **a person's own version**, PROPOSED on the version the scope runs
+  (`base_version`, its number as the screen showed it, 0 for none: another one is 409 "it changed since you opened
+  it"), with that version's tools, model and harness (a person writes the text here: the instructions and the
+  examples, `[{situation, action}]`, held to the skill's own limits), its provenance `person`, never applied: it is
+  accepted or rejected as any other proposal. `summary` is one line of at most 200 characters, what the version
+  changes; it and the reason are the version's why (`reason_comment`). Its record is the version row itself (who
+  proposed it and when, its base, its provenance and why), as for an adopted template. 400 for a body off its shape
+  or a version that changes nothing.
 - `…/rollback` `{expected_current, reason?}`: `roll_back_to` version `<n>`, an earlier accepted version of the same
   scope (else 409), as a new version current at once; answered as that new version.
 - `…/benchmark` `{expected_status, before, after, cases, passed, reasons, failure_case, run_ref?, reason?}`:

@@ -105,6 +105,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.
+        # A person's own skill version, proposed (7.52.00, engineering/skills/actions.py ``propose``): the same gate.
+        'POST /agents/engineering/skills/<role>/versions',
         'POST /agents/engineering/skills/<role>/versions/<version>/accept',
         'POST /agents/engineering/skills/<role>/versions/<version>/reject',
         'POST /agents/engineering/skills/<role>/versions/<version>/rollback',

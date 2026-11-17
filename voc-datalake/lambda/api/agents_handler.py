@@ -1378,6 +1378,21 @@ def _skill_actions() -> Any:
 _SKILL_NOT_SAVED = 'the skill version could not be saved: read it again and retry'
 
 
+@app.post('/agents/engineering/skills/<role>/versions')
+@tracer.capture_method(capture_response=False)
+def propose_engineering_skill_version(role: str):
+    """``?connection=`` ``{base_version, instructions, examples, summary, reason?}`` → 201 ``{connection, role,
+    version, event, announcement}`` (7.52.00): an administrator's own version of the role's skill, PROPOSED on the
+    version the scope runs and never applied here (it is accepted as any other proposal); 409 when the scope runs
+    another version than ``base_version`` now."""
+    actions = _skill_actions()
+    answer = _skill_read(lambda: actions.propose(_query('connection') or '', role, json_object_body(app)),
+                         _SKILL_NOT_SAVED)
+    logger.info('engineering: a skill version proposed by a person',
+                extra={'role': role, 'version': answer['version'].get('version')})
+    return _json(201, answer)
+
+
 @app.post('/agents/engineering/skills/<role>/versions/<version>/accept')
 @tracer.capture_method(capture_response=False)
 def accept_engineering_skill_version(role: str, version: str):
@@ -2487,26 +2502,6 @@ def give_engineering_go(run_id: str):
     return answer
 
 
-def _ask_reactions(function: str, run_id: str, actor: str) -> dict[str, Any]:
-    """The start function's answer to ``ask_reactions`` (``{status, retry_after?}``): its refusal (an unknown run, one
-    not ended) is 409 in its words, any other failure 503 (asking again is safe: the hour's claim is create-only)."""
-    try:
-        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse', Payload=json.dumps(
-            {'action': 'ask_reactions', 'run_id': run_id, 'actor': actor}).encode())
-        payload = json.loads(response['Payload'].read() or b'{}')
-    except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
-        logger.exception('engineering: the reactions read could not be asked for')
-        raise ServiceUnavailableError('the engineering runtime could not be reached: ask again') from exc
-    answer: dict[str, Any] = payload if isinstance(payload, dict) else {}
-    if response.get('FunctionError'):
-        if answer.get('errorType') == 'RuntimeRefused':
-            raise ConflictError(str(answer.get('errorMessage') or 'the runtime refused it')[:500])
-        raise ServiceUnavailableError('the reactions read could not be asked for: ask again')
-    if answer.get('status') not in ('asked', 'too_soon'):
-        raise ServiceUnavailableError('the reactions read could not be asked for: ask again')
-    return answer
-
-
 @app.post('/agents/engineering/<run_id>/reactions')
 @tracer.capture_method
 def ask_engineering_reactions(run_id: str):
@@ -2528,7 +2523,12 @@ def ask_engineering_reactions(run_id: str):
     function = os.environ.get('ENGINEERING_START_FUNCTION', '')
     if not function:
         raise ServiceUnavailableError('reactions cannot be asked for from here: the deployment names no start function')
-    answer = _ask_reactions(function, run_id, caller.subject)
+    # (its refusal, an unknown run or one not ended, 409 in its words; asking again is safe: the hour's claim is
+    # create-only)
+    answer = eng_runs.ask_start(_start_client(), function,
+                                {'action': 'ask_reactions', 'run_id': run_id, 'actor': caller.subject},
+                                answers=frozenset({'asked', 'too_soon'}),
+                                failed='the reactions read could not be asked for', again='ask again')
     if answer['status'] == 'too_soon':
         wait = answer.get('retry_after')
         seconds = wait if isinstance(wait, int) and not isinstance(wait, bool) and wait > 0 else 3600

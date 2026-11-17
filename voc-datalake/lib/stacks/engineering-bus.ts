@@ -63,8 +63,9 @@ import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../ut
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
   ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_CHECKPOINT_KEYS, ENGINEERING_FINDING_KEYS, ENGINEERING_GATE_RECORD_KEYS,
-  ENGINEERING_PATCH_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_TRANSCRIPT_KEYS, ENGINEERING_TRIAGE_KEYS,
-  ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+  ENGINEERING_PATCH_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_TENETS_KEYS, ENGINEERING_TRANSCRIPT_KEYS,
+  ENGINEERING_TRIAGE_KEYS, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS, ENGINEERING_WORKSPACE_REPORTS_KEYS,
+  ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 import { runtimeLanguages } from './engineering-agentcore';
@@ -349,9 +350,10 @@ export class EngineeringBus extends Construct {
       sid: 'ReadGateRecords', actions: ['s3:GetObject'], resources: [gateRecords],
     }));
     // A done step's assertions (7.51.00, lambda/engineering/flow/assertion_record.py) read what its tasks recorded:
-    // their findings' and notes' lines, their submitted patches and a triage, by the keys the board recorded on them;
-    // never a transcript or a checkpoint (denied, whatever the patterns above match).
-    const outputs = [ENGINEERING_FINDING_KEYS, ENGINEERING_PATCH_KEYS, ENGINEERING_TRIAGE_KEYS]
+    // their findings' and notes' lines, their submitted patches, a triage and (7.52.00, tenets.recorded) a tenets
+    // draft, by the keys the board recorded on them; never a transcript or a checkpoint (denied, whatever the
+    // patterns above match).
+    const outputs = [ENGINEERING_FINDING_KEYS, ENGINEERING_PATCH_KEYS, ENGINEERING_TRIAGE_KEYS, ENGINEERING_TENETS_KEYS]
       .map((keys) => props.workspaceBucket.arnForObjects(keys));
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'ReadRecordedOutputs', actions: ['s3:GetObject'], resources: outputs,

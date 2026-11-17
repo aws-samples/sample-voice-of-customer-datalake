@@ -72,6 +72,7 @@ from engineering.runtime.runs import ENDED
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
 from shared.dynamo_paging import iter_query
+from shared.flow_expand import recorded_expansion
 from shared.logging import logger
 
 API_SOURCE = 'voc.engineering/api'
@@ -478,13 +479,14 @@ class RunMonitor:
         found = run_flow(self.client, self.table, WORKSPACE, run_id, meta, tasks=tasks)
         if found is None:
             return {'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None, 'flow_steps': None,
-                    'flow_outcome': None}, {}
+                    'flow_outcome': None, 'expansion': []}, {}
         plan = found.plan
         return {'flow_revision': found.revision or None, 'flow_copied_at': found.copied_at or None,
                 # The run's own copy, as its start wrote it: what the monitor draws (never the flow as saved since).
                 'flow_definition': found.definition, 'flow_steps': plan.lit(),
-                'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)}}, \
-            dict(plan.verdicts)
+                'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)},
+                # (7.52.00) The calls it expanded, as the copy records them: [{step, flow, revision, inputs?}].
+                'expansion': recorded_expansion(found.definition)}, dict(plan.verdicts)
 
     @property
     def board_available(self) -> bool:

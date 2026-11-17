@@ -144,9 +144,11 @@ class AgentContext:
     platform_rules: str = ''
     #: Where the gate packs are (``VOC_GATES_DIR``: ``/opt/voc/gates`` in the images; '' for the repository's own).
     gates_dir: str = ''
-    #: The deterministic gate's run in this session (``run_gate``): its packs, and whether it planned any check.
+    #: The deterministic gate's run in this session (``run_gate``): its packs, and whether it planned any check; and
+    #: (7.52.00) the versions it recorded of its packs' tools, which the gate runner's record keeps.
     gate_packs: tuple[str, ...] = ()
     gate_ran: bool = False
+    gate_tool_versions: dict[str, str] = field(default_factory=dict)
     #: The run's direction as this session last read it (7.51.00: the coordinator's ``set_direction``, a version and its
     #: text; 0 for none), read again when an inbox page says a newer one, and at each continuation.
     direction_version: int = 0

@@ -9,7 +9,7 @@ is one more than the people's decisions on it (a person's Resume at its decision
 
 What a check reads is what the board reads back, never what a model said: the step's tasks and the tasks its agents
 posted, the outputs its tasks recorded (their result keys, read through ``read``: the findings' and notes' lines, the
-submitted patches, the gate records, a triage; never a transcript or a checkpoint), the broker's done writes of the run
+submitted patches, the gate records, a triage, a tenets draft (7.52.00); never a transcript or a checkpoint), the broker's done writes of the run
 (its pushes, pull requests and labels: ``WS#<ws>#WRITES#<run>``), the run's issue and the flow's ``pr``. A check whose
 input the board does not keep (a pull request's body and draft state, a comment, a coach proposal) is recorded
 ``unread``, never guessed. A record is the record only: the conductor does not block on it yet; the run workspace's
@@ -89,6 +89,7 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
     patches: list[str] = []
     gates: list[Mapping[str, Any]] = []
     triage: Mapping[str, Any] | None = None
+    tenets: Mapping[str, Any] | None = None
     for task in mine:
         for key in task.result_keys:
             if '/_transcripts/' in key or '/_checkpoints/' in key:
@@ -102,6 +103,8 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
                 gates.append({**json.loads(body), 'by': task.role})
             elif '/_triage/' in key:
                 triage = json.loads(body)
+            elif '/_tenets/' in key:
+                tenets = json.loads(body)
             elif key.endswith('.jsonl'):
                 for line in _lines(body):
                     (notes if str(line.get('schema', '')).startswith('voc-note/') else findings).append(
@@ -113,7 +116,7 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
     labels = tuple(str(label) for w in done if w['op'] == 'label_issue' for label in w.get('labels', ()))
     return Recorded(findings=tuple(findings), notes=tuple(notes), posted=posted, patches=tuple(patches),
                     gate_records=tuple(gates), pushes=pushes, pull_requests=pulls, labels=labels, triage=triage,
-                    issue=issue, pr_setting=pr_setting)
+                    tenets=tenets, issue=issue, pr_setting=pr_setting)
 
 
 def results(assertions: Sequence[Mapping[str, Any]], seen: Recorded) -> list[dict[str, str]]:

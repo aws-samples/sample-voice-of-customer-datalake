@@ -311,6 +311,8 @@ def test_the_gate_runners_checks_are_the_ones_the_harness_saw_and_a_go_needs_the
     assert (record.verdict, record.tree_hash, record.final_go, record.packs, [dict(c) for c in record.rounds[0].checks]) == (
         'GO', TREE, None, ('mini',), [{'name': 'py.install@.: install dependencies', 'status': 'pass'},
                                       {'name': 'py.test@.: unit tests', 'status': 'pass'}])
+    # (7.52.00: the versions run_gate found of its packs' tools, as it answered them, kept on the record)
+    assert (dict(record.tool_versions), list(ran['tool_versions'])) == (ran['tool_versions'], ['python'])
     # A free-form command is no gate: the gate runner has no run, and a GO needs run_gate.
     assert 'no tool' in tools.call('run', {'argv': ['true']}).text
     # A failed check: no GO, whatever the model says; its record is NO-GO, or STOPPED with why.

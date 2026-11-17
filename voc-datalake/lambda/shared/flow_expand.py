@@ -306,6 +306,26 @@ def expand(definition: Mapping[str, Any], read: ReadRevision, *, root: str | Non
     return Expanded(checked, tuple(expansion))
 
 
+def recorded_expansion(definition: object) -> list[dict[str, Any]]:
+    """The calls a run's copy of its flow records it expanded (its start step's ``EXPANSION``, 7.52.00), as the run
+    workspace's overview answers them: ``[{step, flow, revision, inputs?}]`` in the order they were expanded; empty for
+    a flow with no call, a run started without a flow, and any entry off that shape (the copy is the run's record,
+    read back, never trusted to be one)."""
+    nodes = definition.get('nodes') if isinstance(definition, Mapping) else None
+    start = next((node for node in nodes or () if isinstance(node, Mapping) and node.get('type') == 'start'), None)
+    listed = _params(start).get(EXPANSION) if isinstance(start, Mapping) else None
+    found: list[dict[str, Any]] = []
+    for entry in listed if isinstance(listed, list) else ():
+        ref = flow_ref(f'{entry.get("flow")}@{entry.get("revision")}') if isinstance(entry, Mapping) else None
+        if ref is None or not isinstance(entry.get('step'), str):
+            continue
+        inputs = entry.get('inputs')
+        found.append({'step': entry['step'][:MAX_ID_CHARS], 'flow': ref[0], 'revision': ref[1],
+                      **({'inputs': {str(name): str(value) for name, value in inputs.items()}}
+                         if isinstance(inputs, Mapping) and inputs else {})})
+    return found
+
+
 def save_issues(definition: Mapping[str, Any], read: ReadRevision, *,
                 root: str | None = None) -> list[tuple[str, str | None]]:
     """What a save of ``definition`` (an engineering flow the rules pass) is refused for, as ``(message, node_id)``:

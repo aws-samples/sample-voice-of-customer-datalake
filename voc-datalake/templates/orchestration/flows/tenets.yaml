@@ -19,4 +19,5 @@ steps:
     title: Draft the tenets
     agent: understander@latest
     instructions: This is the Tenets flow, not a triage. Read the approved knowledge pack your task carries, the repository's TENETS.md if it has one (read_file) and the accepted tenets (read_tenets); write the repository's tenets once with write_tenets, then finish.
+    assert: [{check: tenets.recorded, on_fail: block}]
   - {id: end, title: The draft waits for an administrator, end: {status: completed}}

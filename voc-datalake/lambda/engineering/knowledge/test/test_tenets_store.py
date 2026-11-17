@@ -146,3 +146,20 @@ def test_the_draft_attributes_are_the_runtimes_grant() -> None:
     found = re.search(r"TENETS_DRAFT_ATTRIBUTES = \[([^\]]*)\]", stack)
     assert found is not None
     assert tuple(re.findall(r"'([a-z_]+)'", found.group(1))) == DRAFT_ATTRIBUTES
+
+
+def test_a_decision_on_a_draft_read_against_another_accepted_version_is_refused(
+        world: tuple[Any, TenetsStore]) -> None:
+    # (7.52.00's integration: the accepted version the screen showed, held in the counter's own update on an
+    # acceptance and read before a rejection)
+    _client, store = world
+    for run in (RUN, OTHER_RUN, '01JD3R4NZXQ7Y2W8K4M6P9T0AD'):
+        store.draft('default', CONN, RECORD, author=AGENT, run_id=run)
+    store.accept('default', CONN, 1, ADMIN, expected_accepted=0)
+    with pytest.raises(PackConflict, match='was none and is v1 now'):
+        store.accept('default', CONN, 2, ADMIN, expected_accepted=0)
+    with pytest.raises(PackConflict, match='was v2 and is v1 now'):
+        store.reject('default', CONN, 3, ADMIN, expected_accepted=2)
+    assert store.accept('default', CONN, 2, ADMIN, expected_accepted=1).status == ACCEPTED
+    assert store.reject('default', CONN, 3, ADMIN, expected_accepted=2).status == REJECTED
+    assert store.head('default', CONN).accepted_version == 2

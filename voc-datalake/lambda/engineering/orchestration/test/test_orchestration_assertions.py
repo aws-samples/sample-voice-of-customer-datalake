@@ -19,6 +19,7 @@ CI = 'diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml\n+on:
 TREE = 'a' * 40
 FINDING = {'file': 'calculator/ops.py', 'line': 20, 'severity': 'blocking', 'evidence': 'divide(7, 2) == 3',
            'by': 'hunter'}
+TENET = {'id': 'T1', 'title': 'Fail closed', 'statement': 'A check that cannot run refuses.', 'citations': ['a.py:1']}
 
 
 def _record(by: str, verdict: str, tree: str = TREE, checks: int = 1) -> dict[str, Any]:
@@ -62,6 +63,8 @@ def test_the_vocabulary_is_the_same_in_the_evaluator_the_schema_and_the_servers_
      Recorded(issue=1, pull_requests=({'body': 'Fixes #12'},)), {}),
     ('triage.recorded', Recorded(triage={'kind': 'bug', 'severity': 'S2'}),
      Recorded(triage={'kind': 'bug', 'severity': 'S5'}), {}),
+    ('tenets.recorded', Recorded(tenets={'schema': 'voc-tenets/1', 'tenets': [TENET]}),
+     Recorded(tenets={'schema': 'voc-tenets/1', 'tenets': [TENET, TENET]}), {}),
     ('triage.labelled', Recorded(triage={'kind': 'bug', 'severity': 'S2'},
                                  labels=('voc-triage/bug', 'voc-severity/s2')),
      Recorded(triage={'kind': 'bug', 'severity': 'S2'}, labels=('voc-triage/bug',)), {}),
@@ -87,6 +90,12 @@ def test_the_edge_cases_pass_or_fail_as_their_details_say() -> None:
     assert _check('push.tree_is_judged_tree', Recorded()) == (False, 'nothing was pushed')
     assert _check('pr.state_as_flow', Recorded(pr_setting='draft', pull_requests=({'draft': True},)))[0]
     assert _check('triage.recorded', Recorded()) == (False, 'no triage was recorded')
+    # (7.52.00: the Tenets flow's draft, held to the record's own rules: unique ids, a voc-tenets/1 record)
+    assert _check('tenets.recorded', Recorded()) == (False, 'no tenets were recorded')
+    assert _check('tenets.recorded', Recorded(tenets={'schema': 'voc-triage/1', 'tenets': [TENET]})) == (
+        False, 'the record is not voc-tenets/1')
+    assert _check('tenets.recorded', Recorded(tenets={'schema': 'voc-tenets/1', 'tenets': [TENET]})) == (
+        True, '1 tenet(s) drafted')
     assert assertions.changed_lines(FIX) == 4
     assert assertions.patch_paths(FIX) == ['calculator/ops.py', 'tests/test_ops.py']
     assert [assertions.is_test_path(path) for path in ('tests/test_ops.py', 'src/a.test.ts', 'src/a.py')] == [

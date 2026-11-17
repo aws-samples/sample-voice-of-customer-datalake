@@ -174,6 +174,23 @@ def _held_to_the_grant(items: Sequence[Mapping[str, Any]]) -> None:
         raise PackError(f'a draft writes no {", ".join(sorted(written - set(DRAFT_ATTRIBUTES)))}')
 
 
+def _held(head: TenetsHead, expected: int | None) -> None:
+    """The accepted version the screen showed is the one accepted now (``PackConflict`` otherwise)."""
+    if expected is not None and head.accepted_version != expected:
+        shown = f'v{expected}' if expected else 'none'
+        now = f'v{head.accepted_version}' if head.accepted_version else 'none'
+        raise PackConflict(f'the accepted version was {shown} and is {now} now: read it again')
+
+
+def _counter_condition(expected: int | None) -> str:
+    """The counter's condition at an acceptance: the accepted version only moves up, and (with ``expected``) from
+    the one the screen showed."""
+    if expected is None:
+        return 'attribute_not_exists(accepted_version) OR accepted_version < :v'
+    return 'attribute_not_exists(accepted_version)' if expected == 0 else \
+        'accepted_version = :e AND accepted_version < :v'
+
+
 @dataclass(frozen=True)
 class TenetsStore:
     #: A low-level DynamoDB client on ``voc-engineering``.
@@ -301,8 +318,11 @@ class TenetsStore:
                 raise PackConflict('the version or the accepted one changed meanwhile: read it again') from exc
             raise
 
-    def accept(self, ws: str, connection: str, version: int, by: Actor, reason: str = '') -> TenetsVersion:
-        """An administrator's acceptance of a draft (the module's doc); the version as it stands after."""
+    def accept(self, ws: str, connection: str, version: int, by: Actor, reason: str = '', *,
+               expected_accepted: int | None = None) -> TenetsVersion:
+        """An administrator's acceptance of a draft (the module's doc); the version as it stands after.
+        ``expected_accepted`` (7.52.00): the accepted version the screen showed (0 for none), held in the counter's
+        own update, so a draft read against another accepted version is ``PackConflict`` (None: not checked)."""
         if not (by.kind == 'person' and by.admin):
             raise PackForbidden('only an administrator accepts the tenets')
         current = self.version(ws, connection, version)
@@ -311,6 +331,7 @@ class TenetsStore:
         if current.status != DRAFT:
             raise PackConflict(f'version {version} is {current.status}: only a draft is accepted')
         head = self.head(ws, connection)
+        _held(head, expected_accepted)
         if version < head.accepted_version:
             raise PackConflict('a later version is accepted already: accept a newer draft instead')
         try:
@@ -322,19 +343,24 @@ class TenetsStore:
             'TableName': self.table, 'Key': self._key(ws, connection, COUNTER),
             'UpdateExpression': ('SET accepted_version = :v, accepted_digest = :d, accepted_ids = :ids, '
                                  'accepted_by = :by, accepted_at = :at'),
-            'ConditionExpression': 'attribute_not_exists(accepted_version) OR accepted_version < :v',
+            'ConditionExpression': _counter_condition(expected_accepted),
             'ExpressionAttributeValues': {':v': {'N': str(version)}, ':d': {'S': digest},
+                                          **({':e': {'N': str(expected_accepted)}} if expected_accepted else {}),
                                           ':ids': {'L': [{'S': tenet_id} for tenet_id in current.ids]},
                                           ':by': {'S': by.id}, ':at': {'S': at}}}}
         self._decision(ws, connection, version, by, ACCEPTED, _reason(reason), (counter,), digest)
         return self.version(ws, connection, version)
 
-    def reject(self, ws: str, connection: str, version: int, by: Actor, reason: str = '') -> TenetsVersion:
-        """An administrator's rejection of a draft: it stays, marked rejected."""
+    def reject(self, ws: str, connection: str, version: int, by: Actor, reason: str = '', *,
+               expected_accepted: int | None = None) -> TenetsVersion:
+        """An administrator's rejection of a draft: it stays, marked rejected. ``expected_accepted`` (7.52.00): the
+        accepted version the screen showed, read before the write (a rejection moves no accepted version, and the
+        Agents API's role has no ConditionCheckItem on these rows); None: not checked."""
         if not (by.kind == 'person' and by.admin):
             raise PackForbidden('only an administrator rejects the tenets')
         current = self.version(ws, connection, version)
         if current.status != DRAFT:
             raise PackConflict(f'version {version} is {current.status}: only a draft is rejected')
+        _held(self.head(ws, connection), expected_accepted)
         self._decision(ws, connection, version, by, REJECTED, _reason(reason))
         return self.version(ws, connection, version)

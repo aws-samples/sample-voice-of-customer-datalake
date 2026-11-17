@@ -4,8 +4,10 @@
     GET  /agents/engineering/registry?connection=&month=        -> {month, connection, cards: [...]}
     GET  /agents/engineering/registry/<card>?connection=&month= -> {card, versions, events}
     POST /agents/engineering/registry/cards                      -> 201 {card}
-    GET  /agents/engineering/gates                               -> {packs, aliases, own_gate, briefs, runners}
+    GET  /agents/engineering/gates?connection=                   -> {packs, aliases, own_gate, briefs, runners, ...}
+    GET  /agents/engineering/gates/briefs/<id>                   -> {id, path, packs, digest, bytes, text}
     GET  /agents/engineering/assertions                          -> {checks, on_fail, default_on_fail, max, roles}
+    GET  /agents/engineering/templates/<kind>/<id>/source        -> {kind, id, path, text, digest, template_version}
     GET  /workflows/<workflow_id>/expanded?revision=             -> {workflow_id, revision, definition, expansion, ...}
     POST /agents/<agent_id>/pause, POST /agents/<agent_id>/resume -> {agent}
 
@@ -24,10 +26,15 @@
   tools whose versions a gate records, image pins and the owner's briefs, from the orchestration bundle (``gates``),
   with the gate's stop reasons (a code, a text key and the words) and who runs a gate that names nobody
   (``defaults``: ``gate-runner@latest``, ``final-go@latest``); read only. Quality gates are a filter of the Registry
-  tab (the web app's).
+  tab (the web app's). Since 7.52.00's integration a brief's text is read on its own (``…/gates/briefs/<id>``: the
+  briefs are 45-156 KB each), and ``?connection=<id>`` adds each pack's tools' versions as that connection's newest
+  gate record holds them (engineering/registry/gate_records.py: the runs list, the runs' ``META`` and gate runners'
+  tasks, the record object; the role's 7.51.00 reads of the table and of ``…/_gate/*``, nothing more).
 - **The assertions**: the closed vocabulary a step's ``params.assert`` takes, each check with its text keys, its
   arguments' JSON Schema, the steps it is checked on and the ``on_fail`` each takes, for the editor's assertions
   field (the rules a save holds them to, shared/workflow_engineering.py, mirrored by the editor).
+- **A template's source** (7.52.00's integration): a role's SKILL.md or agent.yaml, a flow's YAML or a gate brief,
+  as the repository holds it, from the bundle (its ``sources``, ``gates.briefs``): the app's read-only source view.
 - **A flow's expansion** (``shared/flow_expand.py``): the flat flow a run of that revision would follow, with its
   calls expanded and recorded; 409 with the refusal (and its step) when a call cannot be expanded.
 - **Pause and resume** (``agents_store.set_paused``): an automation that is on, held: the heartbeat starts no run of
@@ -262,15 +269,65 @@ def create_engineering_registry_card():
     return _json(201, {'card': card_view(record)})
 
 
+def _newest_gate_record(connection: str) -> dict[str, Any] | None:
+    """The connection's newest gate record that names a tool version (``GateRecords.newest``)."""
+    from engineering.registry.gate_records import GateRecords
+    from engineering.run_objects import RunObjects
+    from shared.aws import get_s3_client
+
+    bucket = os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
+    if not bucket:
+        raise ServiceUnavailableError("the gate records cannot be read here: the deployment names no workspace bucket")
+    client, table = _engineering_client()
+    return _answered(lambda: GateRecords(client, table, RunObjects(get_s3_client(), bucket)).newest(
+        connection, datetime.now(UTC)), 'the gate records could not be read: retry')
+
+
 @app.get('/agents/engineering/gates')
 @tracer.capture_method(capture_response=False)
 def get_engineering_gates():
-    """The gate packs (steps with their messages, tools, image pins, registries, briefs) and the owner's briefs."""
+    """``?connection=<id>`` → the gate packs (steps with their messages, tools, image pins, registries, briefs), the
+    owner's briefs without their text (``GET …/gates/briefs/<id>``), and with a connection each pack's tools'
+    versions as the connection's newest gate record holds them, and when (``recorded``; None without one)."""
     _engineering_on()
     require_admin_caller(caller_from_event(app.current_event.raw_event))
     from engineering.registry.views import gates_view
 
-    return gates_view(engineering_templates.bundle()['gates'])
+    connection = _connection()
+    recorded = _newest_gate_record(connection) if connection else None
+    return {**gates_view(engineering_templates.bundle()['gates'], recorded), 'connection': connection or None}
+
+
+@app.get('/agents/engineering/gates/briefs/<brief_id>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_gate_brief(brief_id: str):
+    """One owner's brief with its text (``{id, path, packs, digest, bytes, text}``); 404 for no such brief."""
+    _engineering_on()
+    require_admin_caller(caller_from_event(app.current_event.raw_event))
+    from engineering.registry.views import brief_view
+
+    found = brief_view(engineering_templates.bundle()['gates'], brief_id)
+    if found is None:
+        raise NotFoundError(f'no gate brief {brief_id[:64]}')
+    return found
+
+
+@app.get('/agents/engineering/templates/<kind>/<template_id>/source')
+@tracer.capture_method(capture_response=False)
+def get_engineering_template_source(kind: str, template_id: str):
+    """A template's source text from the bundle, read only: ``{kind, id, path, text, digest, template_version}`` for a
+    role's SKILL.md (``skill``) or agent.yaml (``card``), a flow's YAML (``flow``) or an owner's gate brief (``brief``,
+    no template version); 400 for another kind, 404 for no such template."""
+    _engineering_on()
+    require_admin_caller(caller_from_event(app.current_event.raw_event))
+    from engineering.registry.views import SOURCE_KINDS, template_source
+
+    if kind not in SOURCE_KINDS:
+        raise ValidationError(f'kind is one of {", ".join(SOURCE_KINDS)}')
+    found = template_source(engineering_templates.bundle(), kind, template_id)
+    if found is None:
+        raise NotFoundError(f'no {kind} template {template_id[:64]}')
+    return found
 
 
 @app.get('/agents/engineering/assertions')
