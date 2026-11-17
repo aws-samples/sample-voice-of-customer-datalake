@@ -112,7 +112,7 @@ function HistoryBody({ headingId, close, history }: Readonly<{ headingId: string
   const [selected, setSelected] = useState(revisions.some((r) => r.revision === currentRevision) ? currentRevision : revisions[0]?.revision)
   const restore = onRestore === undefined ? undefined : (restored: RestoredRevision) => { close(); onRestore(restored) }
   return (
-    <div className="p-4 space-y-3">
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
       <h3 id={headingId} className="font-semibold tracking-tight text-text-strong">{t('editor.history.title')}</h3>
       {revisions.length === 0 || selected === undefined ? <p className="text-sm text-muted">{t('editor.history.empty')}</p> : (
         <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
@@ -140,7 +140,7 @@ export function WorkflowHistory(props: WorkflowHistoryProps) {
   return (
     <DialogTrigger triggerClassName="btn btn-ghost btn-sm"
       trigger={<><History size={14} aria-hidden="true" /> {t('editor.history.open')}</>}
-      panelClassName="max-w-3xl">
+      panelClassName="max-w-3xl max-h-[90vh]">
       {({ headingId, close }) => <HistoryBody headingId={headingId} close={close} history={props} />}
     </DialogTrigger>
   )

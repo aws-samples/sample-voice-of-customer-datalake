@@ -9,8 +9,9 @@ import { normalizeAgent } from '../../../api/agentsApi'
 import { parseConnection } from '../../../api/engineeringConnectionsApi'
 import { SETUP_STEP_IDS } from '../../../api/engineeringSetupApi'
 import {
-  canSkip, findAutomations, issueRunner, nextOpenStep, notDoneBefore, nothingSetUp, offersIntro, prerequisiteChecks,
-  prerequisitesMet, progressCount, recommendedGuideStep, stepStatus, stepStatuses,
+  attestedConnections, canSkip, findAutomations, guideSubject, issueRunner, nextOpenStep, notDoneBefore, nothingSetUp,
+  offersIntro, prerequisiteChecks, prerequisiteChecksOf, prerequisitesMet, progressCount, recommendedGuideStep, stepStatus,
+  stepStatuses,
 } from './setupGuideRules'
 import type { Agent } from '../../../api/agentsApi'
 import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
@@ -64,7 +65,8 @@ const bugFixer = agent('2', 'Bug fixer')
 const featureBuilder = agent('3', 'Feature builder', { engineering: FEATURES })
 
 function facts(extra: Partial<GuideFacts> = {}): GuideFacts {
-  return { agents: [triage, bugFixer, featureBuilder], connections: [connection()], apps: 1, readiness: {}, ...extra }
+  return { agents: [triage, bugFixer, featureBuilder], connections: [connection()], apps: 1, issuesSource: null, readiness: {},
+    ...extra }
 }
 
 describe('the seeded automations', () => {
@@ -101,6 +103,18 @@ describe('the prerequisites', () => {
     ]).toStrictEqual([true, false, false, false])
   })
 
+  it('wait while the deployment\'s GitHub Issues source is not configured, never while that is not known', () => {
+    expect([prerequisitesMet(facts({ issuesSource: false })), prerequisitesMet(facts({ issuesSource: true })),
+      prerequisitesMet(facts({ issuesSource: null }))]).toStrictEqual([false, true, true])
+  })
+
+  it('name the connections made through an App whose CI is attested (the deployment\'s fact)', () => {
+    const other = connection({ connection_id: 'other', ci_attestation: null })
+    const token = connection({ connection_id: 'token', credential: { kind: 'project_token', set: true } })
+    expect(attestedConnections(facts({ connections: [connection(), other, token] })).map((entry) => entry.connection_id))
+      .toStrictEqual(['storefront'])
+  })
+
   it('wait for a failing prerequisite check, never a warning, an unknown one or another step\'s check', () => {
     expect(prerequisitesMet(facts({ readiness: { bug_fixer: [check('issue_label', 'fail')] } }))).toBe(false)
     expect(prerequisitesMet(facts({ readiness: { bug_fixer: [check('issues_source', 'warn'), check('ci_protection', 'unknown'),
@@ -115,6 +129,26 @@ describe('the prerequisites', () => {
     }
     expect(prerequisiteChecks({ readiness }).map((entry) => [entry.id, entry.status]))
       .toStrictEqual([['issues_source', 'fail'], ['ci_protection', 'unknown'], ['issue_label', 'warn']])
+    expect(prerequisiteChecksOf(readiness.triage).map((entry) => entry.id)).toStrictEqual(['issues_source', 'ci_protection'])
+  })
+})
+
+describe('what an automation\'s readiness is asked of (7.50.01)', () => {
+  const sandbox = connection({ connection_id: 'sandbox' })
+  const lab = connection({ connection_id: 'lab', host: 'gitlab', credential: { kind: 'project_token', set: true } })
+  const issues = { triggers: [{ kind: 'github_issue', label: 'voc-agent', trusted_authors: false, lookback_days: 7 }] }
+
+  it('is the deployment\'s only connection it could use while it names none', () => {
+    expect(guideSubject(bugFixer, [sandbox])).toStrictEqual({ automation: bugFixer.agent_id, connection: 'sandbox' })
+    // (an issue automation uses GitHub connections only: the GitLab one does not count)
+    expect(guideSubject(agent('7', 'Bug fixer', issues), [sandbox, lab]))
+      .toStrictEqual({ automation: 'ag_000000000007', connection: 'sandbox' })
+  })
+
+  it('is the automation as stored once it names one, or while the deployment has none or several', () => {
+    const set = agent('8', 'Bug fixer', { engineering: { connection: 'storefront', language: 'python', feedback_type: 'bug' } })
+    expect([guideSubject(set, [sandbox]), guideSubject(bugFixer, []), guideSubject(bugFixer, [sandbox, connection()])])
+      .toStrictEqual([{ automation: set.agent_id }, { automation: bugFixer.agent_id }, { automation: bugFixer.agent_id }])
   })
 })
 

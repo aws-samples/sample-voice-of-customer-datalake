@@ -2,11 +2,11 @@
  * @fileoverview An engineering automation's readiness as the SPA reads it (api/engineeringReadinessApi.ts): the
  * checks, a status it does not know as unknown and a check that does not say as required (neither ever a pass), an
  * answer without its list an error; the failing checks of an Enable's 409; what holds Enable (a required check that
- * does not pass); which doc links are followed.
+ * does not pass); which doc links are followed; a preview's cache entry under its agent's.
  */
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../lib/errors'
-import { blocksEnable, docsHref, failingChecksOf, parseReadiness } from './engineeringReadinessApi'
+import { blocksEnable, docsHref, engineeringReadinessKeys, failingChecksOf, parseReadiness } from './engineeringReadinessApi'
 
 const check = (id: string, status: string, required = true) => ({
   id, status, detail: 'found', fix: 'do this', docs: 'docs/github-issues.md', required,
@@ -64,5 +64,19 @@ describe('a check\'s doc link', () => {
     ['', null],
   ])('%s → %s', (docs, href) => {
     expect(docsHref(docs)).toBe(href)
+  })
+})
+
+describe('the cache entry of a readiness', () => {
+  it('is one per subject, and a preview\'s starts with its agent\'s (an invalidation of the agent reaches it)', () => {
+    const agent = ['engineering-readiness', 'automation:ag_1']
+    expect([
+      engineeringReadinessKeys.of({ automation: 'ag_1' }),
+      engineeringReadinessKeys.of({ automation: 'ag_1', connection: '', language: '' }),
+      engineeringReadinessKeys.of({ automation: 'ag_1', connection: 'sandbox', language: 'python' }),
+      engineeringReadinessKeys.of({ automation: 'ag_1', connection: 'sandbox' }),
+      engineeringReadinessKeys.of({ flow: 'issue-triage' }),
+    ]).toStrictEqual([agent, agent, [...agent, 'as:sandbox:python'], [...agent, 'as:sandbox:'],
+      ['engineering-readiness', 'flow:issue-triage']])
   })
 })

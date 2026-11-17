@@ -4,7 +4,7 @@
  * Rename (a new revision with only the name changed), New workflow (a dialog
  * asks for the name and an optional description; only its submit creates the
  * Start → End workflow, which then opens; New engineering flow only where the deployment has the engineering
- * agents module, `features.engineering`, and beside it Start from a template: the six default engineering flows,
+ * agents module, `features.engineering`, and beside it Start from a template: the five default engineering flows,
  * each opening the editor on an unsaved copy), and Archive for the ones no active agent runs. The
  * built-in template can be neither renamed nor archived.
  *

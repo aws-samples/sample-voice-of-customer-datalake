@@ -78,7 +78,7 @@
     "engineeringKind": "エンジニアリング",
     "fromTemplate": "テンプレートから開始",
     "templatesTitle": "テンプレートから開始",
-    "templatesHint": "出発点となる既定のエンジニアリングフローが 6 つあります。選ぶとコピーがエディターで開きます。保存するまで何も保存されません。"
+    "templatesHint": "出発点となる既定のエンジニアリングフローが 5 つあります。選ぶとコピーがエディターで開きます。保存するまで何も保存されません。"
   },
   "fields": {
     "name": "名前",
@@ -1478,6 +1478,8 @@
     "setWayOfWorking": "ユーザーで作業スタイルを設定",
     "enableWaits": "実行に必要なチェックがすべて合格するまで、有効化は待機します。",
     "enableRefused": "有効化されませんでした: 実行に必要な次のチェックが失敗しています。",
+    "passedFolded": "合格したチェック ({{count, number}})",
+    "passedLabel": "合格したチェック",
     "status": {
       "pass": "合格",
       "fail": "失敗",
@@ -1530,6 +1532,7 @@
     "order": "推奨順: 前提条件、リポジトリの理解、原則、Issue トリアージ、Bug fixer、Feature builder。",
     "orderFine": "この手順より前の手順はすべて完了しています。",
     "orderMissing": "この手順より前で未完了: {{list}}。",
+    "readinessFor": "設定後の {{name}} の準備状況",
     "later": "このフローは 7.52 で提供されます。今はスキップしてください。その時にガイドが改めて案内します。",
     "steps": {
       "prerequisites": {
@@ -1579,7 +1582,10 @@
       "openDeploymentSources": "管理 → データソース を開く",
       "openSources": "管理 → ソース → ソース設定 を開く",
       "sourcesOutside": "どのワークスペースにも入らずに行います。自動化はデプロイのソースだけを読みます。",
-      "checksTitle": "自動化の準備状況の結果",
+      "deploymentTitle": "このデプロイ",
+      "connectedAs": "App で接続済み: {{list}}。",
+      "ciFor": "CI を証明済み: {{list}}。",
+      "notConfigured": "未設定",
       "noReadiness": "ソースとそのラベルは自動化の準備状況でチェックされます。自動化はまだ見つかっていません。"
     },
     "automation": {

@@ -86,7 +86,7 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
   const budget = workflow.monthly_budget_usd === null ? null
     : new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'USD' }).format(workflow.monthly_budget_usd)
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg"
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-lg max-h-[90vh]"
       dismissable={!start.isPending}>
       <div className="dialog-header">
         <div>

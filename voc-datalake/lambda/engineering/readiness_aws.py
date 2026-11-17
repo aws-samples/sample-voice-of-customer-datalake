@@ -225,27 +225,29 @@ def _budget(definition: Mapping[str, Any]) -> Decimal | None:
     return None if budget is None or broken else Decimal(str(budget['monthly_usd']))
 
 
-def agent_subject(agent: Mapping[str, Any], workflow: Mapping[str, Any] | None, asker: str) -> Subject:
+def agent_subject(agent: Mapping[str, Any], workflow: Mapping[str, Any] | None, asker: str,
+                  asker_name: str = '') -> Subject:
     """An engineering agent as readiness reads it: its connection, language, flow and ``github_issue`` trigger, and
     whose way of working its runs follow (the administrator who enabled it, else the one asking: who would enable
-    it)."""
+    it), by their username."""
     from shared import workflow_schema
     settings = agent.get('engineering') if isinstance(agent.get('engineering'), Mapping) else {}
     definition = workflow_schema.decode_definition((workflow or {}).get('definition')) or {}
     trigger = next((trigger for trigger in agent.get('triggers') or []
                     if isinstance(trigger, Mapping) and trigger.get('kind') == 'github_issue'), None)
     owner = str(agent.get('owner_sub') or '') if agent.get('enabled') is True else ''
+    name = str(agent.get('owner_username') or '') if owner else asker_name
     return Subject(kind='automation', id=str(agent.get('agent_id', '')), name=str(agent.get('name', '')),
-                   definition=definition, person=owner or asker, requires=flow_requires(definition),
+                   definition=definition, person=owner or asker, person_name=name, requires=flow_requires(definition),
                    workflow_id=str((workflow or {}).get('workflow_id') or ''),
                    connection=str(settings.get('connection') or ''), language=str(settings.get('language') or ''),
                    budget_usd=_budget(definition), trigger=trigger)
 
 
-def template_subject(template: Mapping[str, Any], asker: str, *, connection: str = '', language: str = '') -> Subject:
-    """A flow template as readiness reads it, on the connection and language asked about ('' for none named)."""
+def template_subject(template: Mapping[str, Any], asker: str, asker_name: str = '') -> Subject:
+    """A flow template as readiness reads it, on no connection nor language (``readiness.preview`` names them)."""
     definition = template.get('definition') if isinstance(template.get('definition'), Mapping) else {}
     budget = _budget(definition) if 'budget' in definition else _budget({'budget': template.get('budget')})
     return Subject(kind='flow', id=str(template.get('template_id', '')), name=str(template.get('name', '')),
-                   definition=definition, person=asker, requires=flow_requires(definition, template.get('requires')),
-                   connection=connection, language=language, budget_usd=budget)
+                   definition=definition, person=asker, person_name=asker_name,
+                   requires=flow_requires(definition, template.get('requires')), budget_usd=budget)

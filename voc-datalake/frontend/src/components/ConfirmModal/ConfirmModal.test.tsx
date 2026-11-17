@@ -34,6 +34,14 @@ describe('ConfirmModal', () => {
       render(<ConfirmModal {...defaultProps} />)
       expect(screen.getByText('Delete Item')).toBeInTheDocument()
     })
+
+    it('fits the window: its content scrolls and the buttons stay outside it (7.50.01)', () => {
+      render(<ConfirmModal {...defaultProps}><textarea aria-label="A tall form" rows={60} /></ConfirmModal>)
+      const dialog = screen.getByRole('dialog')
+      const content = screen.getByLabelText('A tall form').closest('.overflow-y-auto')
+      expect([dialog.classList.contains('max-h-[90vh]'), content?.contains(screen.getByRole('button', { name: 'Delete' })),
+        content?.contains(screen.getByRole('button', { name: 'Cancel' }))]).toStrictEqual([true, false, false])
+    })
   })
 
   describe('content', () => {

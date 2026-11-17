@@ -78,7 +78,7 @@
     "engineeringKind": "工程",
     "fromTemplate": "从模板开始",
     "templatesTitle": "从模板开始",
-    "templatesHint": "六个可作为起点的默认工程流程。选择一个会在编辑器中打开副本：在你保存之前不会保存任何内容。"
+    "templatesHint": "五个可作为起点的默认工程流程。选择一个会在编辑器中打开副本：在你保存之前不会保存任何内容。"
   },
   "fields": {
     "name": "名称",
@@ -1478,6 +1478,8 @@
     "setWayOfWorking": "在“用户”中设定你的工作方式",
     "enableWaits": "在运行所需的每项检查都通过之前，启用会一直等待。",
     "enableRefused": "未启用：运行所需的以下检查未通过。",
+    "passedFolded": "已通过的检查（{{count, number}}）",
+    "passedLabel": "已通过的检查",
     "status": {
       "pass": "通过",
       "fail": "未通过",
@@ -1530,6 +1532,7 @@
     "order": "推荐顺序：前提条件、理解仓库、原则、Issue 分诊、Bug fixer、Feature builder。",
     "orderFine": "此步骤之前的每一步都已完成。",
     "orderMissing": "此步骤之前未完成：{{list}}。",
+    "readinessFor": "设置后 {{name}} 的就绪情况",
     "later": "它的流程将在 7.52 推出。请暂时跳过：届时向导会再次提供。",
     "steps": {
       "prerequisites": {
@@ -1579,7 +1582,10 @@
       "openDeploymentSources": "打开 管理 → 数据来源",
       "openSources": "打开 管理 → 来源 → 来源设置",
       "sourcesOutside": "在任何工作区之外进行：自动化只读取部署的来源。",
-      "checksTitle": "自动化的就绪情况",
+      "deploymentTitle": "此部署",
+      "connectedAs": "已通过 App 连接：{{list}}。",
+      "ciFor": "CI 已证明：{{list}}。",
+      "notConfigured": "未配置",
       "noReadiness": "来源及其标签由自动化的就绪情况检查：尚未找到任何自动化。"
     },
     "automation": {

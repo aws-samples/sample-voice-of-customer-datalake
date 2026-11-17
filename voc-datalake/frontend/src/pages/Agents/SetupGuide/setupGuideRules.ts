@@ -1,7 +1,7 @@
 /**
  * @fileoverview The setup guide's rules (7.50.00, docs/autonomous-agents.md "Setup guide"): what the deployment has set
  * up, read from the answers of the routes that already serve it (the agents, the repository connections, the GitHub
- * Apps, each automation's readiness), and what a person chose (api/engineeringSetupApi.ts: a step skipped for now, the
+ * Apps, each automation's readiness, the deployment's GitHub Issues source), and what a person chose (api/engineeringSetupApi.ts: a step skipped for now, the
  * guide finished, the first visit's choice). Pure, so every rule is tested on its own (setupGuideRules.test.ts).
  *
  * The order is the owner's recommendation (understand → tenets → triage → bug → feature, after the prerequisites):
@@ -14,9 +14,10 @@
  */
 import { isCiAttested } from '../../../api/engineeringConnectionsApi'
 import { SETUP_STEP_IDS } from '../../../api/engineeringSetupApi'
+import { usableConnections } from '../engineeringAgentRules'
 import type { Agent } from '../../../api/agentsApi'
 import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
-import type { ReadinessCheck } from '../../../api/engineeringReadinessApi'
+import type { ReadinessCheck, ReadinessSubject } from '../../../api/engineeringReadinessApi'
 import type { SetupProgress, SetupStepId } from '../../../api/engineeringSetupApi'
 
 /** The guide's steps, in the order it recommends them. */
@@ -26,7 +27,7 @@ export const GUIDE_STEPS: readonly SetupStepId[] = SETUP_STEP_IDS
 const LATER_STEPS: ReadonlySet<SetupStepId> = new Set<SetupStepId>(['understand', 'tenets'])
 
 /** The steps that each set up one of the seeded engineering automations. */
-const AUTOMATION_STEPS = ['triage', 'bug_fixer', 'feature_builder'] as const
+export const AUTOMATION_STEPS = ['triage', 'bug_fixer', 'feature_builder'] as const
 export type AutomationStep = (typeof AUTOMATION_STEPS)[number]
 
 export const isAutomationStep = (step: SetupStepId): step is AutomationStep =>
@@ -57,6 +58,11 @@ export interface GuideFacts {
   readonly connections: readonly EngineeringConnection[]
   /** How many GitHub Apps the deployment has made (Agents → Connections → Connect GitHub). */
   readonly apps: number
+  /**
+   * Whether the deployment's GitHub Issues source is configured (its integration status, 7.50.01); null while it is
+   * not known (not read yet, refused, or not said).
+   */
+  readonly issuesSource: boolean | null
   /** Each automation's readiness checks, once read (an automation not found, or not read yet, has none). */
   readonly readiness: Readonly<Partial<Record<AutomationStep, readonly ReadinessCheck[]>>>
 }
@@ -84,6 +90,22 @@ export function findAutomations(agents: readonly Agent[]): Automations {
 export const throughApp = (connection: EngineeringConnection): boolean =>
   connection.host === 'github' && (connection.credential.kind === 'app' || connection.credential.kind === 'app_reference')
 
+/**
+ * What the guide asks an automation's readiness of (7.50.01): the automation as stored once it names a connection,
+ * else, while the deployment has one connection it could use, the automation as if set up on it (the readiness
+ * preview), so its App installation, CI attestation and Issues source are answered for that connection; else as
+ * stored (its checks then say it has no connection).
+ */
+export function guideSubject(agent: Agent, connections: readonly EngineeringConnection[]): ReadinessSubject {
+  const usable = usableConnections(agent, connections)
+  const only = (agent.engineering?.connection ?? null) === null && usable.length === 1 ? usable[0] : undefined
+  return only === undefined ? { automation: agent.agent_id } : { automation: agent.agent_id, connection: only.connection_id }
+}
+
+/** The checks of one readiness that the prerequisites step covers (PREREQUISITE_CHECKS), in their order. */
+export const prerequisiteChecksOf = (checks: readonly ReadinessCheck[]): ReadinessCheck[] =>
+  checks.filter((check) => PREREQUISITE_CHECKS.has(check.id))
+
 const STATUS_RANK: Readonly<Record<ReadinessCheck['status'], number>> = { fail: 3, unknown: 2, warn: 1, pass: 0 }
 
 /**
@@ -92,24 +114,28 @@ const STATUS_RANK: Readonly<Record<ReadinessCheck['status'], number>> = { fail: 
  */
 export function prerequisiteChecks(facts: Pick<GuideFacts, 'readiness'>): ReadinessCheck[] {
   const worst = new Map<string, ReadinessCheck>()
-  for (const check of AUTOMATION_STEPS.flatMap((step) => facts.readiness[step] ?? [])) {
+  for (const check of prerequisiteChecksOf(AUTOMATION_STEPS.flatMap((step) => facts.readiness[step] ?? []))) {
     const kept = worst.get(check.id)
-    if (PREREQUISITE_CHECKS.has(check.id) && (kept === undefined || STATUS_RANK[check.status] > STATUS_RANK[kept.status])) {
-      worst.set(check.id, check)
-    }
+    if (kept === undefined || STATUS_RANK[check.status] > STATUS_RANK[kept.status]) worst.set(check.id, check)
   }
   return [...worst.values()]
 }
 
+/** The deployment's GitHub connections made through a GitHub App whose CI is attested (the deployment's fact). */
+export const attestedConnections = (facts: Pick<GuideFacts, 'connections'>): EngineeringConnection[] =>
+  facts.connections.filter((connection) => throughApp(connection) && isCiAttested(connection))
+
 /**
- * The prerequisites are met once GitHub is connected through an App, a connection's CI is attested, and no
- * prerequisite check of a readiness read fails (the GitHub Issues source and its label are known only from those; a
- * check the server cannot make here, `unknown`, such as the host's branch rules, does not hold them).
+ * The prerequisites are met once GitHub is connected through an App, a connection's CI is attested, the deployment's
+ * GitHub Issues source is not known to be unconfigured, and no prerequisite check of a readiness read fails (the
+ * source's reads and its label are known only from those; a check the server cannot make here, `unknown`, such as the
+ * host's branch rules, does not hold them).
  */
 export function prerequisitesMet(facts: GuideFacts): boolean {
   const connected = facts.apps > 0 && facts.connections.some(throughApp)
-  const attested = facts.connections.some((connection) => throughApp(connection) && isCiAttested(connection))
-  return connected && attested && prerequisiteChecks(facts).every((check) => check.status !== 'fail')
+  const attested = attestedConnections(facts).length > 0
+  return connected && attested && facts.issuesSource !== false
+    && prerequisiteChecks(facts).every((check) => check.status !== 'fail')
 }
 
 /** An automation is set up once it is enabled (Enable needs its set-up and the readiness a run needs). */

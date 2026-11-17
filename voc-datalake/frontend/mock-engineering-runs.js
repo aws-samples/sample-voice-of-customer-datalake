@@ -562,6 +562,8 @@ const connections = new Map([['storefront', {
   created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
   version: 1, repository_private: null,
 }]]);
+/** Whether `id` names a stored connection (a removed one is gone from the map): the readiness preview's rule. */
+export const isStoredConnection = (id) => connections.has(id);
 const DIGITS = /^[1-9]\d{0,19}$/;
 const GITLAB_TOKEN = /^glpat-[A-Za-z0-9_.-]{20,300}$/;
 const PROJECT_SEGMENT = /^\w[\w.-]*$/;

@@ -8,6 +8,10 @@
  * - `PUT /agents/engineering/setup` `{revision, steps?, intro?}`: changes only the steps it names, from the revision
  *   read (409 once it moved), each change audited with its history row.
  *
+ * And one fact of the deployment the guide reads beside it (7.50.01): whether the deployment's GitHub Issues source is
+ * configured, from `GET /integrations/status` in the deployment's scope (no workspace header: the deployment's own
+ * sources, which the engineering automations read), its `github_issues.configured`.
+ *
  * @module api/engineeringSetupApi
  */
 import { z } from 'zod'
@@ -63,12 +67,30 @@ export function parseSetupProgress(raw: unknown): SetupProgress {
   return { steps, intro, revision, updatedAt, updatedBy }
 }
 
+/** The deployment's GitHub Issues source (plugins/github_issues). */
+const ISSUES_SOURCE = 'github_issues'
+
+/**
+ * Whether the deployment's GitHub Issues source is configured, from `GET /integrations/status`; null when the answer
+ * does not say (a deployment without the source, an answer off its shape): never taken for configured or not.
+ */
+export function parseIssuesSource(raw: unknown): boolean | null {
+  const source = isRecord(raw) ? raw[ISSUES_SOURCE] : undefined
+  return isRecord(source) && typeof source.configured === 'boolean' ? source.configured : null
+}
+
 const SETUP_PATH = '/agents/engineering/setup'
 
-export const engineeringSetupKeys = { progress: () => ['engineering-setup'] as const }
+export const engineeringSetupKeys = {
+  progress: () => ['engineering-setup'] as const,
+  /** Under the deployment's integration status (SourceCard's, `scopedKey`): its credentials' saves reach it. */
+  issuesSource: () => ['integration-status', 'deployment', ISSUES_SOURCE] as const,
+}
 
 export const engineeringSetupApi = {
   get: async (): Promise<SetupProgress> => parseSetupProgress(await fetchApi<unknown>(SETUP_PATH)),
   save: async (change: SetupChange): Promise<SetupProgress> =>
     parseSetupProgress(await fetchApi<unknown>(SETUP_PATH, put(change))),
+  issuesSource: async (): Promise<boolean | null> =>
+    parseIssuesSource(await fetchApi<unknown>('/integrations/status', { method: 'GET' }, 'deployment')),
 }

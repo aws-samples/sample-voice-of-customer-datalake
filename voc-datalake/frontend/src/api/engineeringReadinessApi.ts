@@ -5,6 +5,9 @@
  * - `GET /agents/engineering/readiness?automation=<agent id>` (an engineering agent) or `?flow=<template id>` (a flow
  *   not saved yet) → `{subject, ready, checks: [{id, status: pass | fail | warn | unknown, detail, fix, docs,
  *   required}]}`: each check with what it found, how to fix it, where the docs explain it, and whether a run needs it;
+ *   `&connection=<id>&language=<language>` (7.50.01) answers for the agent as if it were set up with them, read-only
+ *   (the Set up dialog's selection; the setup guide's only connection): a connection not stored or a language with no
+ *   image is a 400;
  * - Enable (`POST /agents/<id>/enable`, and a save that turns an engineering agent on) answers 409 `{error, checks}`
  *   with the required checks that do not pass; the client keeps that list on the ApiError (`checks`), and
  *   {@link failingChecksOf} reads it.
@@ -38,8 +41,13 @@ export type ReadinessCheck = z.output<typeof CheckSchema>
 /** The way of working the enabling administrator has stored (connectors/dial.py): set in Administration → Users. */
 export const WAY_OF_WORKING_CHECK = 'dial'
 
-/** What the readiness is asked of: a saved engineering agent, or a default flow before it is saved. */
-export type ReadinessSubject = { readonly automation: string } | { readonly flow: string }
+/**
+ * What the readiness is asked of: a saved engineering agent, or a default flow before it is saved. An agent's
+ * `connection` and `language` (7.50.01) ask for it as if it were set up with them; '' or none keeps its own.
+ */
+export type ReadinessSubject =
+  | { readonly automation: string; readonly connection?: string; readonly language?: string }
+  | { readonly flow: string }
 
 /** An answer with no list of checks is an error, never "nothing to check" (a false statement). */
 export function parseReadiness(raw: unknown): ReadinessCheck[] {
@@ -77,16 +85,30 @@ export function docsHref(docs: string): string | null {
   }
 }
 
+/** The connection and language an agent's readiness is asked as if set up with (none named: ''). */
+function previewOf(subject: ReadinessSubject): { connection: string; language: string } {
+  return 'automation' in subject
+    ? { connection: subject.connection ?? '', language: subject.language ?? '' }
+    : { connection: '', language: '' }
+}
+
 function readinessPath(subject: ReadinessSubject): string {
   const params = new URLSearchParams()
   if ('automation' in subject) params.set('automation', subject.automation)
   else params.set('flow', subject.flow)
+  const { connection, language } = previewOf(subject)
+  if (connection !== '') params.set('connection', connection)
+  if (language !== '') params.set('language', language)
   return `/agents/engineering/readiness?${params.toString()}`
 }
 
 export const engineeringReadinessKeys = {
-  of: (subject: ReadinessSubject) =>
-    ['engineering-readiness', 'automation' in subject ? `automation:${subject.automation}` : `flow:${subject.flow}`] as const,
+  /** One entry per subject; a preview's starts with its agent's, so invalidating the agent's reaches its previews. */
+  of: (subject: ReadinessSubject) => {
+    const { connection, language } = previewOf(subject)
+    const base = ['engineering-readiness', 'automation' in subject ? `automation:${subject.automation}` : `flow:${subject.flow}`]
+    return connection === '' && language === '' ? base : [...base, `as:${connection}:${language}`]
+  },
 }
 
 export const engineeringReadinessApi = {

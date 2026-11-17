@@ -1276,7 +1276,7 @@ text: no engineering agent reads review text at all (the hunter gets ids, counts
 the customer-text check that guards host writes also runs in the publish helper and on workspace and memory writes,
 so an erasure (D5) has nothing to chase there.
 
-**Default flows.** Six default engineering flows to start from, each a template in the workflow editor that a team can
+**Default flows.** Five default engineering flows to start from, each a template in the workflow editor that a team can
 change (a run follows its flow since 6.28.00, as far as the runtime can do its steps:
 [The flow a run follows](#the-flow-a-run-follows)):
 
@@ -1287,7 +1287,6 @@ change (a run follows its flow since 6.28.00, as far as the runtime can do its s
 | Bug hunt and fix | hunt → understand → fix → commit review → quality gate → commit → PR | the draft pull request |
 | Feature | understand (issue or PRD) → plan → build → commit review → quality gate → commit → PR | the draft pull request |
 | PR review | read the PR → reviewers in parallel, one pass, against the repository's tenets and review guide → comments | the review comments |
-| Self-improvement | the coach's loop over past runs → skill-version proposals → benchmark | an administrator's acceptance |
 
 *Built as templates*: since 7.50.00 the five are compiled from `voc-datalake/templates/orchestration/flows/` into
 the orchestration bundle (`templates/orchestration/bundle.json`, its Lambda copy `lambda/shared/orchestration_bundle.json`),
@@ -1336,7 +1335,7 @@ engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-age
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
 shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
-`features.engineering`), and offers the six default flows as templates beside it (above).
+`features.engineering`), and offers the five default flows as templates beside it (above).
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
@@ -1496,7 +1495,7 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   posts while they still run), `done`, `not_yet_run`, `passed` (a person went past it), `blocked` (a task of it
   ended without being done), `stopped` (a step the runtime cannot do that the flow cannot go on without), `human` (a
   human decision point reached) or `skipped` (on a quality gate's arrow its verdict did not take). A step after a
-  join waits for every way that was taken. It is tested on the six default flows, each driven from its start to its
+  join waits for every way that was taken. It is tested on the five default flows, each driven from its start to its
   end with every task done and again with each task failing once (`flow/test/test_conductor.py`), and on the edge
   cases.
 - **The coordinator's tools** (its skill, `coordinator@2`): `read_flow` returns every step's status, and the live
@@ -3014,10 +3013,15 @@ a forget or a restore, by them as a person or an administrator) is refused befor
 
 *Built* (`voc-datalake/lambda/engineering/readiness.py`, pure, its reads behind ports; the Agents API's wiring in
 `readiness_aws.py`). `GET /agents/engineering/readiness?automation=<agent id>` (an engineering agent: its connection,
-language, flow and `github_issue` trigger) or `?flow=<template id>[&connection=<id>&language=<language>]` (a default
-flow, on the connection and language asked about) answers `{subject, ready, checks}`, each check `{id, status,
-detail, fix, docs, required}` with `status` `pass`, `fail`, `warn` or `unknown` (a read that failed, or one this API
-cannot make: never taken for a pass). Administrators acting for themselves only (403 otherwise, an MCP credential
+language, flow and `github_issue` trigger) or `?flow=<template id>` (a default flow), either with
+`[&connection=<id>&language=<language>]`, answers `{subject, ready, checks}`, each check `{id, status, detail, fix,
+docs, required}` with `status` `pass`, `fail`, `warn` or `unknown` (a read that failed, or one this API cannot make:
+never taken for a pass). `connection` and `language` (7.50.01 for an agent; `readiness.preview`) answer as if the
+subject were set up with them, read-only: nothing is saved, the agent keeps its settings and Enable still evaluates
+what is stored. The Set up dialog asks it of its selection, so the App installation, the CI attestation, the branch
+rules, the Issues source and the image are those of the connection and language it would save. The connection must
+be stored and not removed and the language one with an agent image (`python`, `node`, `rust`, `java`): 400 otherwise
+(503 when the connection cannot be read). Administrators acting for themselves only (403 otherwise, an MCP credential
 included: REST only), 404 while the module is off. `ready` is true when no **required** check fails; Engineering
 Enable (`POST /agents/<id>/enable`, and a create or update that turns an engineering agent on) runs the required
 checks and answers 409 `{error, checks}` with the failing ones. A check the subject does not need (the Issues source
@@ -3034,9 +3038,9 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |
 | `pack` | | the connection's approved knowledge pack, where the flow requires one | the Understand flow, then approve its pack |
 | `tenets` | | where the flow requires them: `warn`, the tenets store arrives in a later release | write the repository's TENETS.md by hand meanwhile |
-| `issues_source` | | the deployment-wide GitHub Issues source's watermark of the repository (`voc-watermarks`, `github_issues#repo#<owner/name>`) | add the repository to Settings → Data sources (deployment) → GitHub Issues |
+| `issues_source` | | the deployment-wide GitHub Issues source's watermark of the repository (`voc-watermarks`, `github_issues#repo#<owner/name>`) | add the repository to Administration → Data sources → GitHub Issues |
 | `issue_label` | | the trigger's label (a public repository needs one); whether it exists on the repository is `unknown` here | create the label, and let only maintainers put it on an issue |
-| `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator; no row is Human-driven, which pushes nothing), against the flow's `requires.dial` | Administration → Users |
+| `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator, else the one asking; no row is Human-driven, which pushes nothing), against the flow's `requires.dial`; the check names the person and each way of working by its name (Human-driven, AI-assisted, AI-driven) | Administration → Privacy & access → Users |
 | `budget` | yes | the flow's monthly budget | the flow's Workflow tab |
 | `hard_cap` | | the hard cap's setting and this month's spend of the flow (`warn` while it is off) | Agents → Spend |
 | `bedrock_models` | yes | Bedrock access (`GetFoundationModelAvailability`) of every model the flow's roles run on (their cards' models, a step's own `model`, Learn's) | Model access in the Bedrock console |

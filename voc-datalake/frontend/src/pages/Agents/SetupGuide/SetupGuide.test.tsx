@@ -3,7 +3,9 @@
  * guide recommends at `/agents/setup`, Skip for now on any step (saved from the revision read, moving on to the next
  * step still open) with what skipping costs, Understand and Tenets arriving in 7.52, an automation's step with its
  * control and readiness, Ready to go, and the Agents list's first-visit offer. Administrators only, where the
- * engineering agents are on.
+ * engineering agents are on. 7.50.01: the deployment's own facts apart from each automation's readiness ("once set
+ * up"), asked of the deployment's only connection while the automation names none, and the GitHub Issues source "Not
+ * configured" from the deployment's integration status.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -11,7 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
-import { adminFlag, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
+import { adminFlag, fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { workflowView } from '@test/workflowFixtures'
 import { findEngineeringTemplate } from '../../../api/engineeringTemplates'
 import { SETUP_STEP_IDS } from '../../../api/engineeringSetupApi'
@@ -116,18 +118,27 @@ describe('the guide', () => {
   })
 
   /** The prerequisites step once the automations' readiness is in (the source and its label are known from it). */
-  async function prerequisites(): Promise<HTMLElement> {
-    routes()
+  async function prerequisites(extra: Record<string, RouteHandler> = {}, agents?: unknown[], connections?: unknown[]): Promise<HTMLElement> {
+    routes({
+      ...(connections === undefined ? {} : { 'GET /agents/engineering/connections': () => ({ connections, limit: 20 }) }),
+      ...extra,
+    }, agents)
     renderGuide('/agents/setup/prerequisites')
     const step = await screen.findByTestId('setup-step')
-    await within(step).findByTestId('readiness-ci_attestation')
+    await within(step).findByTestId('setup-readiness-bug_fixer')
     return step
   }
 
+  /** The badges of the deployment's facts: GitHub connected, the CI attested, the issues ingested. */
+  const badges = (step: HTMLElement) => within(within(step).getByRole('list', { name: 'Prerequisites' })).getAllByRole('listitem')
+    .map((item) => item.querySelector('.badge')?.textContent)
+
   it('shows where each prerequisite stands, with the page that sets it', async () => {
     const step = await prerequisites()
-    const items = within(within(step).getByRole('list', { name: 'Prerequisites' })).getAllByRole('listitem')
-    expect(items.map((item) => item.querySelector('.badge')?.textContent)).toStrictEqual(['Done', 'To do', 'Done'])
+    expect(badges(step)).toStrictEqual(['Done', 'To do', 'Done'])
+    // (the deployment's own facts, under their own heading)
+    expect([within(step).getByRole('heading', { name: 'This deployment' }), within(step).getByText('Connected through an App: storefront.')])
+      .toHaveLength(2)
     expect(within(step).getAllByRole('link', { name: 'Open Connections' })[0]).toHaveAttribute('href', '/agents/connections')
     // (not a platform admin: the deployment's sources, outside any workspace)
     expect(within(step).getByRole('link', { name: 'Open Administration → Sources → Source settings' }))
@@ -140,13 +151,43 @@ describe('the guide', () => {
     expect(within(step).getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources')
   })
 
-  it('shows the prerequisite checks of the readiness, the worst answer of each, with its fix', async () => {
+  it('shows each automation\'s prerequisite checks apart, "once set up", with each fix', async () => {
     const step = await prerequisites()
-    expect(within(step).getByTestId('readiness-ci_attestation')).toHaveAttribute('data-status', 'fail')
-    expect(within(step).getByText('ci_attestation fix')).toBeInTheDocument()
-    // (the Bug fixer's label warning; the way of working is no prerequisite)
-    expect(within(step).getByTestId('readiness-issue_label')).toHaveAttribute('data-status', 'warn')
-    expect(within(step).queryByTestId('readiness-dial')).toBeNull()
+    const triage = within(step).getByRole('region', { name: 'Readiness for Issue triage, once set up' })
+    const bugFixer = within(step).getByRole('region', { name: 'Readiness for Bug fixer, once set up' })
+    const statuses = (region: HTMLElement) => within(region).getAllByTestId(/^readiness-/).map((row) => [row.dataset.testid, row.dataset.status])
+    expect(within(triage).getByText('ci_attestation fix')).toBeInTheDocument()
+    // (each its own: the Bug fixer's label warning is not the triage's; the way of working is no prerequisite)
+    expect(statuses(triage)).toStrictEqual([['readiness-ci_attestation', 'fail'], ['readiness-issues_source', 'pass']])
+    expect(statuses(bugFixer)).toStrictEqual([['readiness-ci_attestation', 'fail'], ['readiness-issue_label', 'warn']])
+  })
+
+  it('says the GitHub Issues source is not configured when the deployment\'s integration status says so', async () => {
+    platform.admin = true
+    const step = await prerequisites({
+      'GET /integrations/status': () => ({ github_issues: { configured: false, credentials_set: [] } }),
+    })
+    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'Not configured']) })
+    expect(within(step).getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources')
+    // (the deployment's status: no workspace header)
+    expect(fetchApi).toHaveBeenCalledWith('/integrations/status', { method: 'GET' }, 'deployment')
+  })
+
+  it('asks an automation\'s readiness of the deployment\'s only connection while it names none', async () => {
+    const attested = { ...CONNECTION, ci_attestation: { version: 1, state: 'attested', repository: 'example-org/storefront',
+      points: [], by: 'alice', at: '2026-11-17T00:00:00+00:00', connection_version: 1 } }
+    const unset = { engineering: { connection: null, language: null, feedback_type: 'bug' } }
+    const step = await prerequisites({
+      'GET /agents/engineering/readiness?automation=ag_17a9e5c3b2d0&connection=storefront': () => ({
+        checks: [check('ci_attestation', 'pass'), check('issues_source', 'pass')] }),
+      'GET /agents/engineering/readiness?automation=ag_b0f1e2d3c4a5&connection=storefront': () => ({
+        checks: [check('ci_attestation', 'pass'), check('issue_label', 'unknown')] }),
+    }, [{ ...TRIAGE, ...unset }, { ...BUG_FIXER, ...unset }], [attested])
+    // The deployment's CI attestation and each automation's agree.
+    expect([badges(step)[1], within(step).queryByText('CI attested for storefront.') !== null]).toStrictEqual(['Done', true])
+    const triage = within(step).getByRole('region', { name: 'Readiness for Issue triage, once set up' })
+    expect(within(triage).getByTestId('readiness-ci_attestation')).toHaveAttribute('data-status', 'pass')
+    expect(fetchApi.mock.calls.some(([path]) => path === '/agents/engineering/readiness?automation=ag_17a9e5c3b2d0')).toBe(false)
   })
 
   it('skips a step for now from the revision read, saying what skipping costs, and moves on', async () => {
@@ -188,6 +229,7 @@ describe('the guide', () => {
     expect(within(step).getByRole('link', { name: 'Open Bug fixer' })).toHaveAttribute('href', '/agents/ag_b0f1e2d3c4a5')
     expect(await within(step).findByRole('switch', { name: 'Enabled' })).toBeDisabled()
     expect(await within(step).findByTestId('readiness-ci_attestation')).toBeVisible()
+    expect(within(step).getByRole('region', { name: 'Readiness for Bug fixer, once set up' })).toBeInTheDocument()
   })
 
   it('says why an automation is not found', async () => {

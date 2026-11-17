@@ -229,19 +229,21 @@ def test_the_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch)
 
 def test_an_agents_subject_follows_its_enabler_and_a_templates_the_asker() -> None:
     agent = {'agent_id': 'agent_1', 'name': 'Bug fixer', 'enabled': True, 'owner_sub': 'enabler',
-             'engineering': {'connection': 'shop', 'language': 'python'},
+             'owner_username': 'erin', 'engineering': {'connection': 'shop', 'language': 'python'},
              'triggers': [{'kind': 'new_reviews'}, {'kind': 'github_issue', 'label': 'voc-agent'}]}
     workflow = {'workflow_id': 'wf_1', 'definition': '{"schema": "voc-workflow/2", "budget": {"monthly_usd": 50}, '
                                                      '"nodes": [{"id": "c", "type": "agent", '
                                                      '"data": {"params": {"role": "committer"}}}]}'}
-    subject = agent_subject(agent, workflow, 'asker')
-    assert (subject.person, subject.connection, subject.workflow_id, subject.budget_usd) == (
-        'enabler', 'shop', 'wf_1', Decimal(50))
+    subject = agent_subject(agent, workflow, 'asker', 'alice')
+    assert (subject.person, subject.person_name, subject.connection, subject.workflow_id, subject.budget_usd) == (
+        'enabler', 'erin', 'shop', 'wf_1', Decimal(50))
     assert subject.trigger == {'kind': 'github_issue', 'label': 'voc-agent'}
     assert subject.requires['ci_attestation'] is True   # (it pushes)
-    assert agent_subject({**agent, 'enabled': False}, workflow, 'asker').person == 'asker'
+    disabled = agent_subject({**agent, 'enabled': False}, workflow, 'asker', 'alice')
+    assert (disabled.person, disabled.person_name) == ('asker', 'alice')
     template = {'template_id': 'issue-triage', 'name': 'Issue triage', 'budget': {'monthly_usd': 50},
                 'requires': {'dial': ['human_driven'], 'issues_source': True}, 'definition': {'nodes': []}}
-    flow = template_subject(template, 'asker', connection='shop', language='node')
-    assert (flow.kind, flow.person, flow.budget_usd, flow.requires) == (
-        'flow', 'asker', Decimal(50), {'dial': ['human_driven'], 'issues_source': True})
+    flow = template_subject(template, 'asker', 'alice')
+    assert (flow.kind, flow.person, flow.person_name, flow.budget_usd, flow.requires) == (
+        'flow', 'asker', 'alice', Decimal(50), {'dial': ['human_driven'], 'issues_source': True})
+    assert (flow.connection, flow.language) == ('', '')   # (readiness.preview names them)

@@ -78,7 +78,7 @@
     "engineeringKind": "Engineering",
     "fromTemplate": "Start from a template",
     "templatesTitle": "Start from a template",
-    "templatesHint": "Six default engineering flows to start from. Choosing one opens a copy in the editor: nothing is saved until you save it."
+    "templatesHint": "Five default engineering flows to start from. Choosing one opens a copy in the editor: nothing is saved until you save it."
   },
   "fields": {
     "name": "Name",
@@ -1424,6 +1424,8 @@
     "setWayOfWorking": "Set your way of working in Users",
     "enableWaits": "Enable waits until every check a run needs passes.",
     "enableRefused": "Not enabled: these checks a run needs fail.",
+    "passedFolded": "Checks that passed ({{count, number}})",
+    "passedLabel": "Checks that passed",
     "status": {
       "pass": "Passed",
       "fail": "Fails",
@@ -1476,6 +1478,7 @@
     "order": "Recommended order: prerequisites, understand the repository, tenets, issue triage, bug fixer, feature builder.",
     "orderFine": "Every step before this one is done.",
     "orderMissing": "Not done before this one: {{list}}.",
+    "readinessFor": "Readiness for {{name}}, once set up",
     "later": "Its flow arrives in 7.52. Skip it for now: the guide offers it again then.",
     "steps": {
       "prerequisites": {
@@ -1525,7 +1528,10 @@
       "openDeploymentSources": "Open Administration → Data sources",
       "openSources": "Open Administration → Sources → Source settings",
       "sourcesOutside": "Outside any workspace: the automations read only the deployment's sources.",
-      "checksTitle": "What the automations' readiness says",
+      "deploymentTitle": "This deployment",
+      "connectedAs": "Connected through an App: {{list}}.",
+      "ciFor": "CI attested for {{list}}.",
+      "notConfigured": "Not configured",
       "noReadiness": "The source and its label are checked by an automation's readiness: no automation is found yet."
     },
     "automation": {

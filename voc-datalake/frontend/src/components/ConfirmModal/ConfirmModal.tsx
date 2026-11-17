@@ -82,12 +82,14 @@ export default function ConfirmModal({
       isOpen={isOpen}
       onClose={onCancel}
       ariaLabel={title}
-      panelClassName="max-w-md"
+      // max-h-[90vh] (7.50.01): a confirmation whose `children` are a form (a skill's benchmark) fits the window;
+      // its content scrolls and the buttons stay in view.
+      panelClassName="max-w-md max-h-[90vh]"
       // An in-flight confirmation must not be dismissable: closing the dialog
       // would not cancel the work it already started.
       dismissable={!isLoading}
     >
-      <div className="p-4 sm:p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex items-start gap-3 sm:gap-4">
           <div className={clsx('w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0', styles.icon)}>
             <AlertTriangle size={18} className="sm:w-5 sm:h-5" aria-hidden="true" />

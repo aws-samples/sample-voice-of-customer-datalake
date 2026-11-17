@@ -78,7 +78,7 @@
     "engineeringKind": "Engineering",
     "fromTemplate": "Mit einer Vorlage beginnen",
     "templatesTitle": "Mit einer Vorlage beginnen",
-    "templatesHint": "Sechs Standard-Engineering-Abläufe als Ausgangspunkt. Eine Auswahl öffnet eine Kopie im Editor: Gespeichert wird erst, wenn Sie speichern."
+    "templatesHint": "Fünf Standard-Engineering-Abläufe als Ausgangspunkt. Eine Auswahl öffnet eine Kopie im Editor: Gespeichert wird erst, wenn Sie speichern."
   },
   "fields": {
     "name": "Name",
@@ -1478,6 +1478,8 @@
     "setWayOfWorking": "Arbeitsweise unter Benutzer festlegen",
     "enableWaits": "Aktivieren wartet, bis jede Prüfung besteht, die ein Lauf braucht.",
     "enableRefused": "Nicht aktiviert: Diese Prüfungen, die ein Lauf braucht, schlagen fehl.",
+    "passedFolded": "Bestandene Prüfungen ({{count, number}})",
+    "passedLabel": "Bestandene Prüfungen",
     "status": {
       "pass": "Bestanden",
       "fail": "Fehlgeschlagen",
@@ -1530,6 +1532,7 @@
     "order": "Empfohlene Reihenfolge: Voraussetzungen, Repository verstehen, Grundsätze, Issue-Triage, Bug fixer, Feature builder.",
     "orderFine": "Jeder Schritt vor diesem ist erledigt.",
     "orderMissing": "Vor diesem nicht erledigt: {{list}}.",
+    "readinessFor": "Bereitschaft von {{name}}, sobald eingerichtet",
     "later": "Sein Ablauf kommt mit 7.52. Überspringen Sie ihn vorerst: Der Assistent bietet ihn dann erneut an.",
     "steps": {
       "prerequisites": {
@@ -1579,7 +1582,10 @@
       "openDeploymentSources": "Administration → Datenquellen öffnen",
       "openSources": "Administration → Quellen → Quelleneinstellungen öffnen",
       "sourcesOutside": "Außerhalb jedes Arbeitsbereichs: Die Automatisierungen lesen nur die Quellen der Bereitstellung.",
-      "checksTitle": "Was die Bereitschaft der Automatisierungen sagt",
+      "deploymentTitle": "Diese Bereitstellung",
+      "connectedAs": "Über eine App verbunden: {{list}}.",
+      "ciFor": "CI bestätigt für {{list}}.",
+      "notConfigured": "Nicht eingerichtet",
       "noReadiness": "Die Quelle und ihr Label prüft die Bereitschaft einer Automatisierung: Es ist noch keine Automatisierung gefunden."
     },
     "automation": {

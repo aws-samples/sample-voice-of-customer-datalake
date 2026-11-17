@@ -19,15 +19,18 @@ the sessions' network; the workspace bucket's create-only probe.
 ``REQUIRED`` (the owner's decision, 2026-11-16) are the checks a run truly needs: the connection, the CI attestation,
 the image, the models, the budget and the dial. Engineering Enable is refused (409) while one of them fails; the rest
 are advice, and the setup guide says so.
+
+``preview`` (7.50.01) answers for a subject as if it were set up with another connection or language, read-only: the
+Set up dialog asks it of what it has selected before it saves anything. Enable always evaluates what is stored.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Collection, Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any, Final, Literal, Protocol
 
-from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODES
+from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
 from shared.workflow_engineering import PUSHING_ROLES
 
 Status = Literal['pass', 'fail', 'warn', 'unknown']
@@ -42,6 +45,8 @@ REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_m
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
 #: shared/ai_mode.py's ``MODES``, and the roles whose work leaves as code shared/workflow_engineering.py's).
 PUSHING_MODES: Final = frozenset({MODE_AI_ASSISTED, MODE_AI_DRIVEN})
+#: Each way of working by the name Administration → Privacy & access → Users shows it under.
+MODE_NAMES: Final = {MODE_HUMAN_DRIVEN: 'Human-driven', MODE_AI_ASSISTED: 'AI-assisted', MODE_AI_DRIVEN: 'AI-driven'}
 #: Learn's model, as ``flow_models`` names its caller (the run-end step, plan §5; the coach's card has no model).
 LEARN: Final = 'learn'
 #: The model access statuses (shared/image_model_status.py): only ``available`` runs.
@@ -59,6 +64,10 @@ GATE_ROLES: Final = ('gate-runner', 'final-go')
 
 class ReadFailed(Exception):
     """A port that could not read what it was asked (a refused or failed call): the check answers ``unknown``."""
+
+
+class PreviewRefused(ValueError):
+    """A preview's connection or language that readiness does not take (the API's 400)."""
 
 
 @dataclass(frozen=True)
@@ -90,13 +99,15 @@ class Subject:
     ``definition``: the flow (``voc-workflow/2``); ``workflow_id``: the stored flow whose month spend the hard cap
     reads ('' for a template); ``connection``/``language``: the agent's settings ('' for none named); ``trigger``:
     its ``github_issue`` trigger, if any; ``person``: whose stored way of working its runs follow (the enabling
-    administrator, or the asker for an agent not enabled yet)."""
+    administrator, or the asker for an agent not enabled yet), and ``person_name`` their username, as the checks name
+    them ('' when not known)."""
 
     kind: Literal['automation', 'flow']
     id: str
     name: str
     definition: Mapping[str, Any]
     person: str
+    person_name: str = ''
     #: What a run of the flow needs (``flow_requires``: its template's ``requires``, plan §2).
     requires: Mapping[str, Any] = field(default_factory=dict)
     workflow_id: str = ''
@@ -452,7 +463,7 @@ def _starts_from_issues(ctx: _Context) -> bool:
 def _issues_source(ctx: _Context) -> Check:
     if not _starts_from_issues(ctx):
         return _not_needed('issues_source', 'nothing here starts a run from a GitHub issue')
-    fix = ('Settings → Data sources (deployment) → GitHub Issues: add the repository, signed in with this '
+    fix = ('Administration → Data sources → GitHub Issues: add the repository, signed in with this '
            'deployment\'s GitHub App or a read-only token.')
     if ctx.row is None:
         return Check('issues_source', 'unknown', 'No stored connection to look the repository up for.', fix)
@@ -483,9 +494,18 @@ def _issue_label(ctx: _Context) -> Check:
                  'maintainers put it on an issue.')
 
 
+def mode_names(modes: Collection[str]) -> str:
+    """The ways of working by their names, in ``MODES``' order: "AI-assisted or AI-driven"."""
+    names = [MODE_NAMES[mode] for mode in MODES if mode in modes]
+    return ' or '.join(names) if len(names) < 3 else f'{", ".join(names[:-1])} or {names[-1]}'
+
+
 def _dial(ctx: _Context) -> Check:
-    fix = ('An administrator sets this person\'s way of working to AI-assisted or AI-driven (Administration → Users); '
-           'with AI-assisted, each push waits for a person\'s go on the run.')
+    allowed = allowed_modes(ctx.subject)
+    who = ctx.subject.person_name or 'the administrator who enables the agent'
+    fix = (f'An administrator sets the way of working of {who} to {mode_names(allowed)} in Administration → Privacy & '
+           'access → Users' + ('; with AI-assisted, each push waits for a person\'s go on the run.'
+                               if MODE_AI_ASSISTED in allowed else '.'))
     if not ctx.subject.person:
         return Check('dial', 'fail', 'No person to run as: the agent runs as the administrator who enables it.', fix,
                      TRUST_DOCS)
@@ -493,13 +513,12 @@ def _dial(ctx: _Context) -> Check:
         mode = ctx.ports.mode(ctx.subject.person)
     except ReadFailed as error:
         return _unknown('dial', 'The way of working', error, docs=TRUST_DOCS)
-    allowed, shown = allowed_modes(ctx.subject), mode.replace('_', '-')
+    # (no stored row reads Human-driven: connectors/dial.py)
+    found = f'The runs follow {who}, whose way of working is {MODE_NAMES.get(mode, mode)}'
     if mode in allowed:
-        return Check('dial', 'pass', f'The runs follow a {shown} way of working, which this flow runs in.', '',
-                     TRUST_DOCS)
-    return Check('dial', 'fail', f'The person the runs follow works {shown} (no stored AI-assisted or AI-driven way of '
-                 f'working is Human-driven: a run pushes nothing), and this flow runs only '
-                 f'{", ".join(mode.replace("_", "-") for mode in sorted(allowed))}.', fix, TRUST_DOCS)
+        return Check('dial', 'pass', f'{found}, which this flow runs in.', '', TRUST_DOCS)
+    pushes_nothing = ', so a run would push nothing' if mode not in PUSHING_MODES else ''
+    return Check('dial', 'fail', f'{found}{pushes_nothing}. This flow needs {mode_names(allowed)}.', fix, TRUST_DOCS)
 
 
 def _budget(ctx: _Context) -> Check:
@@ -614,6 +633,19 @@ _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
     'hard_cap': _hard_cap, 'bedrock_models': _bedrock_models, 'agentcore_quota': _agentcore_quota,
     'memory_setting': _memory_setting, 'network': _network, 'session_storage': _session_storage,
 }
+
+
+def preview(subject: Subject, ports: ReadinessPorts, languages: Collection[str], *, connection: str = '',
+            language: str = '') -> Subject:
+    """``subject`` as if it were set up with ``connection`` and ``language`` ('' keeps the subject's own), read-only:
+    nothing is written, and Enable still evaluates what is stored. The connection must be stored and not removed
+    (``ports.connection``), the language one the engineering images run (``languages``); else ``PreviewRefused``. A
+    connection that cannot be read raises ``ReadFailed``."""
+    if language and language not in languages:
+        raise PreviewRefused(f'language is one of {", ".join(sorted(languages))}')
+    if connection and ports.connection(connection) is None:
+        raise PreviewRefused('connection names no stored repository connection (Agents → Connections)')
+    return replace(subject, connection=connection or subject.connection, language=language or subject.language)
 
 
 def evaluate(subject: Subject, ports: ReadinessPorts, settings: Settings,

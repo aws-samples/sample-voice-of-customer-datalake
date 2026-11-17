@@ -78,7 +78,7 @@
     "engineeringKind": "엔지니어링",
     "fromTemplate": "템플릿으로 시작",
     "templatesTitle": "템플릿으로 시작",
-    "templatesHint": "시작점으로 쓸 수 있는 기본 엔지니어링 흐름 6개입니다. 하나를 고르면 편집기에서 사본이 열리며, 저장하기 전에는 아무것도 저장되지 않습니다."
+    "templatesHint": "시작점으로 쓸 수 있는 기본 엔지니어링 흐름 5개입니다. 하나를 고르면 편집기에서 사본이 열리며, 저장하기 전에는 아무것도 저장되지 않습니다."
   },
   "fields": {
     "name": "이름",
@@ -1478,6 +1478,8 @@
     "setWayOfWorking": "사용자에서 작업 방식 지정",
     "enableWaits": "실행에 필요한 검사가 모두 통과할 때까지 활성화를 기다립니다.",
     "enableRefused": "활성화되지 않음: 실행에 필요한 다음 검사가 실패했습니다.",
+    "passedFolded": "통과한 검사 ({{count, number}})",
+    "passedLabel": "통과한 검사",
     "status": {
       "pass": "통과",
       "fail": "실패",
@@ -1530,6 +1532,7 @@
     "order": "권장 순서: 사전 요구 사항, 저장소 이해, 원칙, 이슈 분류, Bug fixer, Feature builder.",
     "orderFine": "이 단계 이전의 모든 단계가 완료되었습니다.",
     "orderMissing": "이 단계 이전에 완료되지 않음: {{list}}.",
+    "readinessFor": "설정 후 {{name}}의 준비 상태",
     "later": "이 흐름은 7.52에서 제공됩니다. 지금은 건너뛰세요. 그때 가이드가 다시 안내합니다.",
     "steps": {
       "prerequisites": {
@@ -1579,7 +1582,10 @@
       "openDeploymentSources": "관리 → 데이터 소스 열기",
       "openSources": "관리 → 소스 → 소스 설정 열기",
       "sourcesOutside": "어떤 워크스페이스에도 들어가지 않은 상태에서: 자동화는 배포의 소스만 읽습니다.",
-      "checksTitle": "자동화의 준비 상태 결과",
+      "deploymentTitle": "이 배포",
+      "connectedAs": "App으로 연결됨: {{list}}.",
+      "ciFor": "CI 증명됨: {{list}}.",
+      "notConfigured": "구성되지 않음",
       "noReadiness": "소스와 레이블은 자동화의 준비 상태로 검사합니다. 아직 찾은 자동화가 없습니다."
     },
     "automation": {

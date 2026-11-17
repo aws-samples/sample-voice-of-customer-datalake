@@ -1,9 +1,10 @@
 /**
  * @fileoverview An engineering automation's readiness before Enable (7.50.00): the Set up dialog, the agents list's
  * card and the switch show each check (passed, failing, with a warning, unknown) with its fix and doc link; Enable
- * waits while a required check does not pass, never for an advisory one (in the dialog, a check it sets itself does
- * not hold it); an Enable refused with 409 `{error, checks}` shows the checks it names; the way-of-working check links
- * to Users.
+ * waits while a required check does not pass, never for an advisory one (in the dialog, only the budget it sets itself
+ * does not hold it); an Enable refused with 409 `{error, checks}` shows the checks it names; the way-of-working check
+ * links to Users. 7.50.01: the dialog reads the readiness of its selection (read again when the connection or the
+ * language changes), fits the window with its buttons in view, and folds the checks that passed.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -24,6 +25,10 @@ const { EngineeringEnableControl, EngineeringSetUpCard } = await import('./Agent
 
 const AGENT = 'ag_b0f1e2d3c4a5'
 const READINESS = `GET /agents/engineering/readiness?automation=${AGENT}`
+/** The dialog's readiness: the agent as if set up with its selection (7.50.01). */
+const previewOf = (connection: string, language = 'python') =>
+  `GET /agents/engineering/readiness?automation=${AGENT}&connection=${connection}&language=${language}`
+const PREVIEW = previewOf('storefront')
 
 function agentOf(extra: Record<string, unknown> = {}): Agent {
   const agent = normalizeAgent({
@@ -39,6 +44,7 @@ const CONNECTION = {
   connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: null, installation_id: null, expires_at: null }, version: 1,
 }
+const SANDBOX = { ...CONNECTION, connection_id: 'voc-agents-sandbox', repository: 'example-org/voc-agents-sandbox' }
 
 /** What a run truly needs (the server's required checks, item B of 7.50.00): the other checks are advice. */
 const REQUIRED = new Set(['connection', 'ci_attestation', 'image', 'bedrock_models', 'budget', 'dial'])
@@ -47,11 +53,11 @@ const check = (id: string, status: string, extra: Record<string, string> = {}) =
   required: REQUIRED.has(id), ...extra,
 })
 
-function routes(checks: unknown[], extra: Record<string, RouteHandler> = {}): void {
+function routes(checks: unknown[], extra: Record<string, RouteHandler> = {}, connections: unknown[] = [CONNECTION]): void {
   const template = findEngineeringTemplate('bug-hunt-and-fix')
   if (template === undefined) throw new Error('no bug-hunt-and-fix template')
   routeFetchApi({
-    'GET /agents/engineering/connections': () => ({ connections: [CONNECTION], limit: 20 }),
+    'GET /agents/engineering/connections': () => ({ connections, limit: 20 }),
     'GET /workflows/wf_1': () => workflowView(3, { ...template.definition, budget: { monthly_usd: 50 } },
       { kind: 'engineering', monthly_budget_usd: 50 }),
     [READINESS]: () => ({ checks }),
@@ -134,42 +140,113 @@ describe('the switch of a set-up agent', () => {
 })
 
 describe('the Set up dialog', () => {
-  it('shows the readiness, and a check it sets itself does not hold Save and enable', async () => {
-    routes([check('connection', 'fail'), check('image', 'fail'), check('budget', 'pass')], {
+  const NOT_SET_UP = { engineering: { connection: null, language: null, feedback_type: 'bug' } }
+  const ALL_PASS = ['connection', 'app_installation', 'ci_attestation', 'image', 'dial', 'budget', 'bedrock_models']
+    .map((id) => check(id, 'pass'))
+  /** Every check passing but `id`, which answers `status`. */
+  const allPassBut = (id: string, status: string) => [...ALL_PASS.filter((entry) => entry.id !== id), check(id, status)]
+
+  async function openDialog(agent: Agent = agentOf(NOT_SET_UP)): Promise<HTMLElement> {
+    renderControl(agent)
+    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    return screen.findByRole('dialog')
+  }
+
+  it('shows the readiness of its selection, and the budget it sets itself does not hold Save and enable', async () => {
+    routes([check('connection', 'fail')], {
+      [PREVIEW]: () => ({ checks: allPassBut('budget', 'fail') }),
       [`PUT /agents/${AGENT}`]: () => ({ agent: agentOf() }),
       [`POST /agents/${AGENT}/enable`]: () => ({ agent: agentOf({ enabled: true }) }),
     })
-    renderControl(agentOf({ engineering: { connection: null, language: null, feedback_type: 'bug' } }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    const dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByTestId('readiness-connection')).toHaveAttribute('data-status', 'fail')
+    const dialog = await openDialog()
+    expect(await within(dialog).findByTestId('readiness-budget')).toHaveAttribute('data-status', 'fail')
     expect(within(dialog).getByRole('button', { name: 'Save and enable' })).toBeEnabled()
+    expect(fetchApi).toHaveBeenCalledWith(PREVIEW.replace('GET ', ''), undefined)
   })
 
-  it('holds Save and enable while a check it does not set fails', async () => {
-    routes([check('ci_attestation', 'fail'), check('connection', 'pass')])
-    renderControl(agentOf({ engineering: { connection: null, language: null, feedback_type: 'bug' } }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    const dialog = await screen.findByRole('dialog')
-    await within(dialog).findByTestId('readiness-ci_attestation')
+  it('enables Save and enable on a first set-up once every required check passes for the selection', async () => {
+    // (the stored agent names no connection, so its own readiness fails the CI attestation; the selection's passes)
+    routes([check('connection', 'fail'), check('ci_attestation', 'fail')], {
+      [PREVIEW]: () => ({ checks: [...ALL_PASS, check('ci_protection', 'unknown'), check('hard_cap', 'warn')] }),
+    })
+    const dialog = await openDialog()
+    await within(dialog).findByText('Failing: 0 · Unknown: 1 · Warnings: 1 · Passed: 7')
+    expect(within(dialog).getByTestId('readiness-ci_attestation')).toHaveAttribute('data-status', 'pass')
+    expect(within(dialog).getByRole('button', { name: 'Save and enable' })).toBeEnabled()
+    expect(within(dialog).queryByText('Enable waits until every check a run needs passes.')).toBeNull()
+  })
+
+  it('reads the readiness again when the connection or the language changes', async () => {
+    routes([], {
+      [PREVIEW]: () => ({ checks: allPassBut('ci_attestation', 'fail') }),
+      [previewOf('voc-agents-sandbox')]: () => ({ checks: ALL_PASS }),
+    }, [CONNECTION, SANDBOX])
+    const dialog = await openDialog()
+    const save = within(dialog).getByRole('button', { name: 'Save and enable' })
+    expect(await within(dialog).findByTestId('readiness-ci_attestation')).toHaveAttribute('data-status', 'fail')
+    expect(save).toBeDisabled()
+    await userEvent.selectOptions(within(dialog).getByLabelText('Repository connection'), 'voc-agents-sandbox')
+    await waitFor(() => { expect(within(dialog).getByTestId('readiness-ci_attestation')).toHaveAttribute('data-status', 'pass') })
+    expect(save).toBeEnabled()
+  })
+
+  it('reads the readiness again when the language changes', async () => {
+    routes([], {
+      [PREVIEW]: () => ({ checks: ALL_PASS }),
+      [previewOf('storefront', 'node')]: () => ({ checks: allPassBut('image', 'fail') }),
+    })
+    const dialog = await openDialog()
+    const save = within(dialog).getByRole('button', { name: 'Save and enable' })
+    await waitFor(() => { expect(save).toBeEnabled() })
+    await userEvent.selectOptions(within(dialog).getByLabelText('Language'), 'node')
+    await waitFor(() => { expect(within(dialog).getByTestId('readiness-image')).toHaveAttribute('data-status', 'fail') })
+    expect([save.hasAttribute('disabled'), fetchApi.mock.calls.some(([path]) => `GET ${path}` === previewOf('storefront', 'node'))])
+      .toStrictEqual([true, true])
+  })
+
+  it('holds Save and enable while a check it does not set fails, the way of working included', async () => {
+    routes([], { [PREVIEW]: () => ({ checks: allPassBut('dial', 'fail') }) })
+    const dialog = await openDialog()
+    await within(dialog).findByTestId('readiness-dial')
     expect(within(dialog).getByRole('button', { name: 'Save and enable' })).toBeDisabled()
     expect(within(dialog).getByText('Enable waits until every check a run needs passes.')).toBeInTheDocument()
   })
 
   it('shows the failing checks of a refused Enable, the settings saved', async () => {
     const failing = [check('image', 'fail', { fix: 'Push the node image.' })]
-    routes([check('connection', 'fail')], {
+    routes([], {
+      [PREVIEW]: () => ({ checks: [check('connection', 'pass')] }),
       [`PUT /agents/${AGENT}`]: () => ({ agent: agentOf() }),
       [`POST /agents/${AGENT}/enable`]: () => { throw new ApiError(409, 'API Error: 409', undefined, undefined, failing) },
     })
-    renderControl(agentOf({ engineering: { connection: null, language: null, feedback_type: 'bug' } }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openDialog()
     await within(dialog).findByTestId('readiness-connection')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and enable' }))
     const alert = await within(dialog).findByRole('alert')
     expect(within(alert).getByText('Push the node image.')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('fits the window: its body scrolls, the title and the buttons stay outside it, the passes folded', async () => {
+    const SEVENTEEN = ['connection', 'app_installation', 'ci_attestation', 'ci_protection', 'image', 'pack', 'tenets',
+      'issues_source', 'issue_label', 'dial', 'budget', 'hard_cap', 'bedrock_models', 'agentcore_quota', 'memory_setting',
+      'network', 'session_storage'].map((id) => check(id, id === 'ci_attestation' ? 'fail' : 'pass'))
+    routes([], { [PREVIEW]: () => ({ checks: SEVENTEEN }) })
+    const dialog = await openDialog()
+    const failing = await within(dialog).findByTestId('readiness-ci_attestation')
+    const body = dialog.querySelector('.dialog-body')
+    const footer = within(dialog).getByRole('button', { name: 'Cancel' }).closest('.dialog-footer')
+    const save = within(dialog).getByRole('button', { name: 'Save and enable' })
+    const heading = within(dialog).getByRole('heading', { name: /Set up/ })
+    // The panel is held to the window; the checks scroll in its body, the title and both buttons stay outside it.
+    expect([dialog.classList.contains('max-h-[90vh]'), body?.contains(failing), body?.contains(footer), footer?.contains(save),
+      body?.contains(heading)]).toStrictEqual([true, true, false, true, false])
+    // Compact: the summary, the failing check listed, the 16 that passed folded under one line.
+    expect(within(dialog).getByText('Failing: 1 · Unknown: 0 · Warnings: 0 · Passed: 16')).toBeInTheDocument()
+    const passed = within(dialog).getByTestId('readiness-passed')
+    expect([passed.tagName, passed.hasAttribute('open'), passed.contains(failing), within(passed).getAllByTestId(/^readiness-/).length])
+      .toStrictEqual(['DETAILS', false, false, 16])
+    expect(within(passed).getByText('Checks that passed (16)')).toBeInTheDocument()
   })
 })
 

@@ -21,6 +21,8 @@ class ReadyPorts:
     modes: dict[str, str] = field(default_factory=dict)
     default_mode: str = 'ai_driven'
     attestation: bool = True
+    #: The connections whose CI is attested (None: every connection, as ``attestation`` says).
+    attested_connections: frozenset[str] | None = None
     access: str = 'available'
 
     def connection(self, connection_id: str) -> Mapping[str, Any] | None:
@@ -33,8 +35,9 @@ class ReadyPorts:
         return frozenset({str(connection.get('repository', ''))}), False
 
     def attested(self, connection_id: str, repository: str) -> bool:
-        del connection_id, repository
-        return self.attestation
+        del repository
+        attested = self.attested_connections
+        return self.attestation and (attested is None or connection_id in attested)
 
     def ci_protection(self, connection: Mapping[str, Any]) -> bool | None:
         del connection

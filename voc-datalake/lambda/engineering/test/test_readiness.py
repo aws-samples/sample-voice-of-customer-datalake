@@ -15,6 +15,7 @@ from engineering.readiness import (
     LEARN,
     REQUIRED,
     Check,
+    PreviewRefused,
     ReadFailed,
     Settings,
     Subject,
@@ -22,6 +23,8 @@ from engineering.readiness import (
     flow_models,
     flow_requires,
     flow_roles,
+    mode_names,
+    preview,
 )
 
 SONNET, HAIKU, OPUS = ('global.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-haiku-5-5',
@@ -248,7 +251,7 @@ def test_the_issues_source_and_label_for_an_issue_trigger() -> None:
 def test_the_dial_reads_the_stored_mode_and_no_row_is_human_driven() -> None:
     found = checks(ports=Ports(modes={}))
     assert found['dial'].status == 'fail'
-    assert 'human-driven' in found['dial'].detail
+    assert 'Human-driven' in found['dial'].detail
     assert found['dial'].blocking
     assert checks(ports=Ports(modes={'admin-sub': 'ai_assisted'}))['dial'].status == 'pass'
     assert checks(replace(SUBJECT, person=''))['dial'].status == 'fail'
@@ -258,6 +261,67 @@ def test_the_dial_reads_the_stored_mode_and_no_row_is_human_driven() -> None:
     assert checks(triage, Ports(modes={}))['dial'].status == 'pass'
     declared = replace(SUBJECT, requires={'dial': ['ai_driven']})
     assert checks(declared, Ports(modes={'admin-sub': 'ai_assisted'}))['dial'].status == 'fail'
+
+
+def test_the_dial_says_who_the_runs_follow_and_each_way_of_working_by_its_name() -> None:
+    named = replace(SUBJECT, person_name='alice')
+    found = checks(named, Ports(modes={}))['dial']
+    assert found.detail == ('The runs follow alice, whose way of working is Human-driven, so a run would push nothing. '
+                            'This flow needs AI-assisted or AI-driven.')
+    assert found.fix == ('An administrator sets the way of working of alice to AI-assisted or AI-driven in '
+                         'Administration → Privacy & access → Users; with AI-assisted, each push waits for a person\'s '
+                         'go on the run.')
+    assert checks(named)['dial'].detail == ('The runs follow alice, whose way of working is AI-driven, which this flow '
+                                            'runs in.')
+    # A pushing way of working the flow does not run in pushes, so nothing is said of pushing nothing.
+    declared = replace(named, requires={'dial': ['ai_driven']})
+    found = checks(declared, Ports(modes={'admin-sub': 'ai_assisted'}))['dial']
+    assert found.detail == 'The runs follow alice, whose way of working is AI-assisted. This flow needs AI-driven.'
+    assert found.fix.endswith('to AI-driven in Administration → Privacy & access → Users.')
+    # No name known: who it would be, never an id.
+    assert checks(ports=Ports(modes={}))['dial'].detail.startswith(
+        'The runs follow the administrator who enables the agent, whose way of working is Human-driven')
+    for raw in ('human_driven', 'ai_assisted', 'ai_driven', 'ai-assisted, ai-driven'):
+        assert raw not in found.detail + found.fix
+    assert mode_names(['ai_driven', 'human_driven', 'ai_assisted']) == 'Human-driven, AI-assisted or AI-driven'
+
+
+def test_the_issues_source_fix_names_the_page_the_app_has() -> None:
+    fix = checks(ports=Ports(issues=False))['issues_source'].fix
+    assert fix.startswith('Administration → Data sources → GitHub Issues: add the repository')
+    assert 'Settings' not in fix
+
+
+def test_a_preview_answers_as_if_set_up_with_the_selected_connection_and_language() -> None:
+    sandbox = {**ROW, 'connection_id': 'sandbox', 'repository': 'example-org/sandbox'}
+    ports = Ports(rows={'shop': ROW, 'sandbox': sandbox, 'removed': None})
+    blank = replace(SUBJECT, connection='', language='')
+    seen = preview(blank, ports, ('python', 'node', 'java'), connection='sandbox', language='java')
+    assert (seen.connection, seen.language) == ('sandbox', 'java')
+    assert (blank.connection, blank.language) == ('', '')   # (read-only: the subject itself is unchanged)
+    report = evaluate(seen, ports, SETTINGS)
+    found = {check.id: check for check in report.checks}
+    assert found['ci_attestation'].status == 'pass'
+    assert 'attested sandbox example-org/sandbox' in ports.asked
+    assert found['image'].status == 'fail'   # (java is an image language, but this deployment has none)
+    # '' keeps the subject's own.
+    assert preview(SUBJECT, ports, ('python',)) == SUBJECT
+    assert preview(SUBJECT, ports, ('python',), language='python').connection == 'shop'
+
+
+@pytest.mark.parametrize(('asked', 'reason'), [
+    ({'connection': 'gone'}, 'no stored repository connection'),
+    ({'connection': 'removed'}, 'no stored repository connection'),
+    ({'language': 'cobol'}, 'language is one of node, python'),
+])
+def test_a_preview_names_a_stored_connection_and_a_language_with_an_image(asked: dict[str, str], reason: str) -> None:
+    with pytest.raises(PreviewRefused, match=reason):
+        preview(SUBJECT, Ports(rows={'shop': ROW, 'removed': None}), ('python', 'node'), **asked)
+
+
+def test_a_previews_connection_that_cannot_be_read_raises() -> None:
+    with pytest.raises(ReadFailed):
+        preview(SUBJECT, Ports(rows={'shop': ReadFailed('x')}), ('python',), connection='shop')
 
 
 def test_the_budget_and_the_hard_cap() -> None:

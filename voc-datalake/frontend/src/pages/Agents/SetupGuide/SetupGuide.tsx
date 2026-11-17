@@ -37,7 +37,7 @@ function StepBody({ step, facts, automations, statuses, progress }: Readonly<{
   step: SetupStepId; facts: GuideFacts; automations: Automations; statuses: StepStatuses; progress: SetupProgress
 }>) {
   if (step === 'prerequisites') return <PrerequisitesStep facts={facts} />
-  if (isAutomationStep(step)) return <AutomationStepBody step={step} agent={automations[step]} />
+  if (isAutomationStep(step)) return <AutomationStepBody step={step} agent={automations[step]} connections={facts.connections} />
   if (step === 'ready') return <ReadyStep statuses={statuses} automations={automations} progress={progress} />
   return <LaterStep />
 }

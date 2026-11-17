@@ -344,7 +344,8 @@ def _default_workflow_for(name: str, caller: Caller) -> str:
 @app.get('/agents')
 @tracer.capture_method
 def list_agents():
-    """Agents the caller may see, by name. Admins may add ``?include_archived=true``."""
+    """Agents the caller may see, by name, the engineering agents after the others with the seeded ones first in the
+    loop's order (``agent_seed.list_order``). Admins may add ``?include_archived=true``."""
     caller = _caller()
     include_archived = _query('include_archived') == 'true'
     if include_archived:
@@ -366,7 +367,7 @@ def list_agents():
         if (include_archived or agent.get('status') != store.AGENT_STATUS_ARCHIVED)
         and store.agent_visible(scope, agent) and _lists_engineering(agent, caller)
     ]
-    agents.sort(key=lambda agent: (str(agent.get('name') or '').lower(), str(agent.get('agent_id'))))
+    agents.sort(key=agent_seed.list_order)
     return {'items': agents, 'count': len(agents)}
 
 
@@ -1537,37 +1538,45 @@ def _readiness_settings() -> Any:
     return settings_from_environment(bundled().card_models(), os.environ.get('AWS_REGION', ''))
 
 
-def _readiness(subject: Any, *, required_only: bool = False) -> Any:
+def _readiness(subject: Any, *, required_only: bool = False, ports: Any = None) -> Any:
     from engineering.readiness import REQUIRED, evaluate
 
-    return evaluate(subject, _readiness_ports(), _readiness_settings(), REQUIRED if required_only else None)
+    return evaluate(subject, ports or _readiness_ports(), _readiness_settings(), REQUIRED if required_only else None)
 
 
-def _readiness_subject(caller: Caller) -> Any:
-    """``?automation=<agent id>`` (an engineering agent) or ``?flow=<template id>`` (with ``connection`` and
-    ``language`` to ask about, optionally): exactly one of them."""
+def _readiness_subject(caller: Caller, ports: Any) -> Any:
+    """``?automation=<agent id>`` (an engineering agent) or ``?flow=<template id>`` (a default flow): exactly one of
+    them, either with ``connection`` and ``language`` to ask about, optionally (7.50.01 for an agent: as if it were set
+    up with them, read-only). The connection must be stored and not removed, the language one with an agent image
+    (``readiness.preview``): 400 otherwise."""
+    from engineering.readiness import PreviewRefused, ReadFailed, preview
     from engineering.readiness_aws import agent_subject, template_subject
+    from engineering.runtime.egress import REGISTRY_HOSTS
+    from engineering.workspace.layout import CONNECTION
 
     automation, flow = _query('automation'), _query('flow')
     if (automation is None) == (flow is None):
         raise ValidationError('name exactly one of automation=<agent id> or flow=<template id>')
+    connection, language = _query('connection') or '', _query('language') or ''
+    if connection and not CONNECTION.fullmatch(connection):
+        raise ValidationError('connection is a connection id')
     if automation is not None:
         agent = _stored_agent(automation)
         if not store.is_engineering_agent(agent):
             raise ValidationError('automation names an engineering agent')
-        return agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject)
-    template = next((item for item in engineering_templates.list_templates() if item.get('template_id') == flow), None)
-    if template is None:
-        raise NotFoundError('no such flow template')
-    connection, language = _query('connection') or '', _query('language') or ''
-    from engineering.runtime.egress import REGISTRY_HOSTS
-    from engineering.workspace.layout import CONNECTION
-
-    if connection and not CONNECTION.fullmatch(connection):
-        raise ValidationError('connection is a connection id')
-    if language and language not in REGISTRY_HOSTS:
-        raise ValidationError(f'language is one of {", ".join(sorted(REGISTRY_HOSTS))}')
-    return template_subject(template, caller.subject, connection=connection, language=language)
+        subject = agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject, caller.username)
+    else:
+        template = next((item for item in engineering_templates.list_templates()
+                         if item.get('template_id') == flow), None)
+        if template is None:
+            raise NotFoundError('no such flow template')
+        subject = template_subject(template, caller.subject, caller.username)
+    try:
+        return preview(subject, ports, REGISTRY_HOSTS, connection=connection, language=language)
+    except PreviewRefused as refused:
+        raise ValidationError(str(refused)) from refused
+    except ReadFailed as failed:
+        raise ServiceUnavailableError('the connection could not be read: retry') from failed
 
 
 @app.get('/agents/engineering/readiness')
@@ -1579,15 +1588,16 @@ def get_engineering_readiness():
     _engineering_on()
     caller = _caller()
     require_admin_caller(caller)
-    return _readiness(_readiness_subject(caller)).view()
+    ports = _readiness_ports()
+    return _readiness(_readiness_subject(caller, ports), ports=ports).view()
 
 
 def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
     """Enable's gate (owner decision): 409 ``{error, checks}`` naming the required checks that fail, else None."""
     from engineering.readiness_aws import agent_subject
 
-    report = _readiness(agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject),
-                        required_only=True)
+    report = _readiness(agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject,
+                                      caller.username), required_only=True)
     if report.ready:
         return None
     return _json(409, {'error': NOT_READY, 'checks': [check.view() for check in report.failing]})

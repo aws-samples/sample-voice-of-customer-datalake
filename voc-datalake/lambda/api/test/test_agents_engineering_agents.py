@@ -73,6 +73,22 @@ def test_an_admin_listing_seeds_the_engineering_agents_beside_autonomous_product
     assert sorted(in_workspace) == sorted(agents)
 
 
+def test_the_list_orders_the_seeded_engineering_agents_as_the_loop_runs(lambda_context: Any) -> None:
+    """7.50.01: the agents that are not engineering ones by name, then the seeded engineering automations in the
+    loop's order (Issue triage, Bug fixer, Feature builder; the setup guide's), then any other engineering agent."""
+    flow = _seeded(lambda_context)['Bug fixer']['workflow_id']
+    scope = {'all': True, 'categories': [], 'subcategories': []}
+    for body in ({'name': 'Zeta digest', 'scope': scope},
+                 {'name': 'Another fixer', 'scope': scope, 'workflow_id': flow,
+                  'engineering': {'connection': None, 'language': None, 'feedback_type': 'bug'}}):
+        status, created = _call(lambda_context, 'POST', '/agents', body=body)
+        assert status == 201, created
+    status, body = _call(lambda_context, 'GET', '/agents')
+    assert status == 200, body
+    assert [agent['name'] for agent in body['items']] == [
+        'Autonomous Product', 'Zeta digest', 'Issue triage', 'Bug fixer', 'Feature builder', 'Another fixer']
+
+
 def test_engineering_agents_are_an_administrators_alone(lambda_context: Any) -> None:
     bug = _seeded(lambda_context)['Bug fixer']
     assert 'Bug fixer' not in _seeded(lambda_context, claims=USER)

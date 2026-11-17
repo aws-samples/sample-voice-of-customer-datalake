@@ -80,7 +80,7 @@
     "engineeringKind": "Inżynieria",
     "fromTemplate": "Zacznij od szablonu",
     "templatesTitle": "Zacznij od szablonu",
-    "templatesHint": "Sześć domyślnych przepływów inżynieryjnych na początek. Wybranie jednego otwiera kopię w edytorze: nic nie zostanie zapisane, dopóki jej nie zapiszesz."
+    "templatesHint": "Pięć domyślnych przepływów inżynieryjnych na początek. Wybranie jednego otwiera kopię w edytorze: nic nie zostanie zapisane, dopóki jej nie zapiszesz."
   },
   "fields": {
     "name": "Nazwa",
@@ -1519,6 +1519,8 @@
     "setWayOfWorking": "Ustaw swój sposób pracy w sekcji Użytkownicy",
     "enableWaits": "Włączenie czeka, aż przejdzie każda kontrola, której potrzebuje uruchomienie.",
     "enableRefused": "Nie włączono: te kontrole, których potrzebuje uruchomienie, nie przechodzą.",
+    "passedFolded": "Zaliczone kontrole ({{count, number}})",
+    "passedLabel": "Zaliczone kontrole",
     "status": {
       "pass": "Zaliczona",
       "fail": "Nie przechodzi",
@@ -1571,6 +1573,7 @@
     "order": "Zalecana kolejność: wymagania wstępne, zrozumienie repozytorium, zasady, triaż zgłoszeń, Bug fixer, Feature builder.",
     "orderFine": "Każdy wcześniejszy krok jest gotowy.",
     "orderMissing": "Niegotowe przed tym krokiem: {{list}}.",
+    "readinessFor": "Gotowość: {{name}}, po skonfigurowaniu",
     "later": "Jego przepływ pojawi się w 7.52. Na razie go pomiń: przewodnik zaproponuje go wtedy ponownie.",
     "steps": {
       "prerequisites": {
@@ -1620,7 +1623,10 @@
       "openDeploymentSources": "Otwórz Administracja → Źródła danych",
       "openSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
       "sourcesOutside": "Poza jakimkolwiek obszarem roboczym: automatyzacje czytają tylko źródła wdrożenia.",
-      "checksTitle": "Co mówi gotowość automatyzacji",
+      "deploymentTitle": "To wdrożenie",
+      "connectedAs": "Połączono przez aplikację: {{list}}.",
+      "ciFor": "CI poświadczone dla: {{list}}.",
+      "notConfigured": "Nieskonfigurowane",
       "noReadiness": "Źródło i jego etykietę sprawdza gotowość automatyzacji: nie znaleziono jeszcze żadnej automatyzacji."
     },
     "automation": {

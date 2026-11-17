@@ -23,7 +23,7 @@ import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
-import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
+import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, isStoredConnection, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
 import { bindSetupAgents, handleEngineeringSetupRoutes, readinessRefusal } from './mock-engineering-setup.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
@@ -3663,6 +3663,7 @@ const mockAgents = new Map([
 // The setup guide's readiness fixture (mock-engineering-setup.js) reads the agents and their flows' budgets here.
 bindSetupAgents({
   agent: (agentId) => mockAgents.get(agentId),
+  connectionStored: isStoredConnection,
   budgetOf: (agent) => {
     const flow = mockWorkflows.get(agent.workflow_id);
     return flow ? currentRevision(flow).definition.budget?.monthly_usd ?? null : null;
@@ -3745,12 +3746,21 @@ function createMockAgent(body) {
   return [201, { agent: agentView(agent) }];
 }
 
+// GET /agents' order (agent_seed.list_order, 7.50.01): the agents that are not engineering ones by name, then the
+// engineering ones, the seeded automations first in the loop's order, then any other by name.
+const LOOP_NAMES = ['issue triage', 'bug fixer', 'feature builder'];
+function listRank(agent) {
+  if (!agent.engineering) return 0;
+  const seeded = LOOP_NAMES.indexOf(String(agent.name).trim().toLowerCase());
+  return 1 + (seeded === -1 ? LOOP_NAMES.length : seeded);
+}
+
 function listMockAgents(params) {
   const includeArchived = params.get('include_archived') === 'true';
   if (includeArchived && !MOCK_AGENTS_ADMIN) return AGENTS_FORBIDDEN;
   const items = [...mockAgents.values()]
     .filter((agent) => includeArchived || agent.status !== 'archived')
-    .sort((a, b) => String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()))
+    .sort((a, b) => listRank(a) - listRank(b) || String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()))
     .map(agentView);
   return [200, { items, count: items.length }];
 }

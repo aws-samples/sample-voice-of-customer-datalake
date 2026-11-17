@@ -5,7 +5,9 @@
  *   and offers Skip for now;
  * - Issue triage, Bug fixer and Feature builder (steps 3 to 5): the seeded automation found for the step, its Set up
  *   and Enabled control as on its page (AgentEngineering.tsx: the Set up dialog, Enable waiting for the checks a run
- *   needs), and its readiness open, each check with its fix and doc link. An automation not found says why.
+ *   needs), and its readiness open, "for <automation>, once set up", each check with its fix and doc link, asked as
+ *   the guide's facts ask it (setupGuideRules.ts `guideSubject`: the deployment's only connection while it names
+ *   none). An automation not found says why.
  *
  * @module pages/Agents/SetupGuide/AutomationSteps
  */
@@ -15,7 +17,9 @@ import { Clock } from 'lucide-react'
 import { EngineeringEnableControl } from '../AgentEngineering'
 import { ReadinessSection } from '../ReadinessChecks'
 import { agentPath } from '../agentsPaths'
+import { guideSubject } from './setupGuideRules'
 import type { Agent } from '../../../api/agentsApi'
+import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
 import type { AutomationStep } from './setupGuideRules'
 
 /** Steps 1 and 2, whose flows arrive in 7.52. */
@@ -29,7 +33,9 @@ export function LaterStep() {
 }
 
 /** Steps 3 to 5: the automation found for `step`, or why none is. */
-export function AutomationStepBody({ step, agent }: Readonly<{ step: AutomationStep; agent: Agent | null }>) {
+export function AutomationStepBody({ step, agent, connections }: Readonly<{
+  step: AutomationStep; agent: Agent | null; connections: readonly EngineeringConnection[]
+}>) {
   const { t } = useTranslation('agents')
   if (agent === null) {
     return <p className="rounded-md border border-border p-3 text-sm text-muted">{t(`setupGuide.automation.missing.${step}`)}</p>
@@ -43,7 +49,10 @@ export function AutomationStepBody({ step, agent }: Readonly<{ step: AutomationS
         </div>
         <EngineeringEnableControl agent={agent} isAdmin withReadiness={false} />
       </div>
-      {!agent.enabled && <ReadinessSection subject={{ automation: agent.agent_id }} enabled />}
+      {!agent.enabled && (
+        <ReadinessSection subject={guideSubject(agent, connections)} enabled
+          title={t('setupGuide.readinessFor', { name: agent.name })} />
+      )}
     </div>
   )
 }

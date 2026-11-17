@@ -137,6 +137,13 @@ describe('the Start a run dialog', () => {
     expect(starts()).toHaveLength(1)
   })
 
+  it('fits the window: its body scrolls between the title and the buttons (7.50.01)', () => {
+    const { dialog } = renderDialog()
+    const body = dialog.querySelector('.dialog-body')
+    expect([dialog.classList.contains('max-h-[90vh]'), body?.contains(within(dialog).getByRole('button', { name: 'Cancel' })),
+      body?.contains(within(dialog).getByRole('button', { name: 'Start the run' }))]).toStrictEqual([true, false, false])
+  })
+
   it('says a flow has no budget, and closes on Cancel or Escape having sent nothing', async () => {
     const { dialog, onClose } = renderDialog(undefined, { ...FLOW, monthly_budget_usd: null })
     expect(within(dialog).getByText('The flow has no monthly budget.')).toBeInTheDocument()

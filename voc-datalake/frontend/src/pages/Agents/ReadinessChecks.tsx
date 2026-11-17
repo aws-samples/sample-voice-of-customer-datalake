@@ -6,13 +6,16 @@
  * check also links to Administration → Users, where an administrator sets their way of working (AI-driven for the
  * agents to push and open the pull request themselves). Every text is the server's, rendered as text.
  *
+ * Open (the dialog, the guide), the 17 checks stay compact (7.50.01): the summary line, the checks that do not pass
+ * (the ones a run needs first), and those that passed folded under one line.
+ *
  * @module pages/Agents/ReadinessChecks
  */
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, CheckCircle2, ExternalLink, HelpCircle, XCircle } from 'lucide-react'
 import clsx from 'clsx'
-import { WAY_OF_WORKING_CHECK, docsHref } from '../../api/engineeringReadinessApi'
+import { WAY_OF_WORKING_CHECK, docsHref, isBlocking } from '../../api/engineeringReadinessApi'
 import { adminPath } from '../Settings/adminPaths'
 import { useReadiness } from './useReadiness'
 import type { LucideIcon } from 'lucide-react'
@@ -71,10 +74,20 @@ function CheckRow({ check }: Readonly<{ check: ReadinessCheck }>) {
   )
 }
 
-/** The checks, failing ones first, then unknown ones, warnings and those that passed (the server's order within each). */
+const STATUS_ORDER: readonly CheckStatus[] = ['fail', 'unknown', 'warn', 'pass']
+
+/** How soon a check is read (lower first): one that holds Enable, then by status, a required one before advice. */
+const urgency = (check: ReadinessCheck): number =>
+  (isBlocking(check) ? 0 : 100) + STATUS_ORDER.indexOf(check.status) * 10 + (check.required ? 0 : 1)
+
+const byUrgency = (a: ReadinessCheck, b: ReadinessCheck): number => urgency(a) - urgency(b)
+
+/**
+ * The checks, those that hold Enable first (a required one that does not pass), then failing ones, unknown ones,
+ * warnings and those that passed, a required one before advice (the server's order within each).
+ */
 export function ReadinessList({ checks, label }: Readonly<{ checks: readonly ReadinessCheck[]; label: string }>) {
-  const order: readonly CheckStatus[] = ['fail', 'unknown', 'warn', 'pass']
-  const sorted = order.flatMap((status) => checks.filter((check) => check.status === status))
+  const sorted = [...checks].sort(byUrgency)
   return (
     <ul aria-label={label} className="divide-y divide-border">
       {sorted.map((check) => <CheckRow key={check.id} check={check} />)}
@@ -93,12 +106,33 @@ function ReadinessSummary({ checks }: Readonly<{ checks: readonly ReadinessCheck
   )
 }
 
+/** The checks that do not pass, listed, and those that passed folded under one line (an open section's body). */
+function CompactChecks({ checks }: Readonly<{ checks: readonly ReadinessCheck[] }>) {
+  const { t } = useTranslation('agents')
+  const open = checks.filter((check) => check.status !== 'pass')
+  const passed = checks.filter((check) => check.status === 'pass')
+  return (
+    <>
+      {open.length > 0 && <ReadinessList checks={open} label={t('readiness.label')} />}
+      {passed.length > 0 && (
+        <details className="rounded-md border border-border px-3 py-1" data-testid="readiness-passed">
+          <summary className="cursor-pointer py-1 text-[12px] text-muted focus-ring rounded-sm">
+            {t('readiness.passedFolded', { count: passed.length })}
+          </summary>
+          <ReadinessList checks={passed} label={t('readiness.passedLabel')} />
+        </details>
+      )}
+    </>
+  )
+}
+
 /**
  * The readiness of `subject` as a section: its state while it loads or when it fails (Enable stays the server's to
- * refuse then), else the checks. `collapsed` folds the list under its summary (the agents list's card).
+ * refuse then), else the checks, compact (CompactChecks), under `title` (default "Readiness"). `collapsed` folds the
+ * whole list under its summary (the agents list's card).
  */
-export function ReadinessSection({ subject, enabled, collapsed = false }: Readonly<{
-  subject: ReadinessSubject; enabled: boolean; collapsed?: boolean
+export function ReadinessSection({ subject, enabled, collapsed = false, title }: Readonly<{
+  subject: ReadinessSubject; enabled: boolean; collapsed?: boolean; title?: string
 }>) {
   const { t } = useTranslation('agents')
   const read = useReadiness(subject, enabled)
@@ -108,23 +142,23 @@ export function ReadinessSection({ subject, enabled, collapsed = false }: Readon
   if (read.isError) return <p className="text-[12px] text-warn">{t('readiness.loadFailed')}</p>
   const checks = read.data ?? []
   if (checks.length === 0) return <p className="text-[12px] text-muted">{t('readiness.none')}</p>
-  const list = <ReadinessList checks={checks} label={t('readiness.label')} />
+  const heading = title ?? t('readiness.title')
   if (!collapsed) {
     return (
-      <section className="space-y-1" aria-label={t('readiness.label')}>
+      <section className="space-y-1" aria-label={heading}>
         <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text-strong">
-          {t('readiness.title')} <ReadinessSummary checks={checks} />
+          {heading} <ReadinessSummary checks={checks} />
         </h3>
-        {list}
+        <CompactChecks checks={checks} />
       </section>
     )
   }
   return (
     <details className="rounded-md border border-border px-3 py-1 text-left">
       <summary className="cursor-pointer py-1 text-[12px] font-semibold text-text-strong focus-ring rounded-sm">
-        {t('readiness.title')} <ReadinessSummary checks={checks} />
+        {heading} <ReadinessSummary checks={checks} />
       </summary>
-      {list}
+      <ReadinessList checks={checks} label={t('readiness.label')} />
     </details>
   )
 }

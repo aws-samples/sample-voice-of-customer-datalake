@@ -1,5 +1,5 @@
 /**
- * @fileoverview "Start from a template" in the workflow library: the six default engineering flows, each with its
+ * @fileoverview "Start from a template" in the workflow library: the five default engineering flows, each with its
  * description. Choosing one opens the editor on an unsaved copy (`WorkflowTemplatePage`); nothing is created until
  * the person saves it there.
  *

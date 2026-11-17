@@ -3,9 +3,11 @@
 //   GET /agents/engineering/setup                      {steps, intro, revision, updated_at, updated_by}
 //   PUT /agents/engineering/setup {revision, steps?, intro?}   the same, as saved (409 once the revision moved)
 //     (lambda/shared/agents_engineering_setup_routes.py)
-//   GET /agents/engineering/readiness?automation=<agent id>|flow=<template id>
+//   GET /agents/engineering/readiness?automation=<agent id>|flow=<template id>[&connection=<id>&language=<language>]
 //     {subject, ready, checks: [{id, status: pass | fail | warn | unknown, detail, fix, docs, required}]}
-//     (the server's readiness checks, item B of 7.50.00: this fixture follows its shape and its check ids)
+//     (the server's readiness checks, item B of 7.50.00: this fixture follows its shape and its check ids; 7.50.01's
+//     `connection` and `language` answer for the agent as if set up with them, 400 for a connection not stored or a
+//     language with no image)
 // and the 409 `{error, checks}` an engineering agent's Enable answers while a required check does not pass
 // (`readinessRefusal`, called by mock-server.js's enable route).
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403, as the server answers. MOCK_ENGINEERING_DIAL=human makes
@@ -86,9 +88,9 @@ function agentChecks(agent, budgetOf) {
     check('issue_label', 'unknown', 'The trigger’s label is voc-agent; whether it exists on the repository is not read here.',
       'Create the label, and let only maintainers put it on an issue.', 'docs/github-issues.md'),
     human
-      ? check('dial', 'fail', 'Your way of working is human-driven: the agents would push nothing.',
-        'Set your way of working to AI-assisted or AI-driven in Administration → Users.', 'docs/ways-of-working.md')
-      : check('dial', 'pass', 'Your way of working is AI-driven: the agents push and open the pull request.'),
+      ? check('dial', 'fail', 'The runs follow admin-demo, whose way of working is Human-driven, so a run would push nothing. This flow needs AI-assisted or AI-driven.',
+        'An administrator sets the way of working of admin-demo to AI-assisted or AI-driven in Administration → Privacy & access → Users; with AI-assisted, each push waits for a person’s go on the run.', 'docs/ways-of-working.md')
+      : check('dial', 'pass', 'The runs follow admin-demo, whose way of working is AI-driven, which this flow runs in.'),
     budgetOf(agent) === null
       ? check('budget', 'fail', 'Its flow has no monthly budget.', 'Set it up: give its flow a monthly budget.')
       : check('budget', 'pass', `Its flow’s monthly budget is $${budgetOf(agent)}.`),
@@ -104,25 +106,41 @@ function agentChecks(agent, budgetOf) {
   return checks;
 }
 
-let bound = { agent: () => undefined, budgetOf: () => null };
+let bound = { agent: () => undefined, budgetOf: () => null, connectionStored: () => false };
 
-/** mock-server.js's agents: one by id, and the monthly budget of its flow. */
+/** mock-server.js's agents: one by id, the monthly budget of its flow, and whether a connection is stored. */
 export function bindSetupAgents(lookups) {
   bound = lookups;
+}
+
+const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
+
+/** The preview's 400, as the server's (readiness.preview), or null. */
+function previewError(connection, language) {
+  if (language && !IMAGE_LANGUAGES.includes(language)) return `language is one of ${IMAGE_LANGUAGES.join(', ')}`;
+  if (connection && !bound.connectionStored(connection)) return 'connection names no stored repository connection (Agents → Connections)';
+  return null;
 }
 
 function readiness(url) {
   const automation = url.searchParams.get('automation');
   const flow = url.searchParams.get('flow');
   if ((automation === null) === (flow === null)) return [400, { success: false, error: 'name automation=<agent id> or flow=<template id>' }];
+  const connection = url.searchParams.get('connection') ?? '';
+  const language = url.searchParams.get('language') ?? '';
+  const refused = previewError(connection, language);
+  if (refused) return [400, { success: false, error: refused }];
   if (flow !== null) {
     const checks = [check('connection', 'fail', 'No connection is named to ask about.', 'Name the connection the flow runs on.'),
       check('dial', 'pass', 'Your way of working is AI-driven.')];
     return [200, { subject: { kind: 'flow', id: flow, name: flow, connection: null, language: null },
       ready: !checks.some(blocking), checks }];
   }
-  const agent = bound.agent(automation);
-  if (!agent || agent.status === 'archived' || !agent.engineering) return [404, { success: false, error: 'Agent not found' }];
+  const stored = bound.agent(automation);
+  if (!stored || stored.status === 'archived' || !stored.engineering) return [404, { success: false, error: 'Agent not found' }];
+  // (read-only: the agent as if set up with the selection, nothing saved)
+  const agent = { ...stored, engineering: { ...stored.engineering, connection: connection || stored.engineering.connection,
+    language: language || stored.engineering.language } };
   const checks = agentChecks(agent, bound.budgetOf);
   return [200, { subject: { kind: 'automation', id: agent.agent_id, name: agent.name,
     connection: agent.engineering.connection, language: agent.engineering.language }, ready: !checks.some(blocking), checks }];

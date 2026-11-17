@@ -117,6 +117,20 @@ def _seed_of(automation_id: str, *, engineering: bool) -> Seed:
 DEFAULT_SEED: Final = _seed_of(DEFAULT_AUTOMATION, engineering=False)
 SEED_KEY: Final = DEFAULT_SEED.key
 ENGINEERING_SEEDS: Final = tuple(_seed_of(name, engineering=True) for name in ENGINEERING_AUTOMATIONS)
+#: The seeded engineering automations' names, folded, in the loop's order (Issue triage, Bug fixer, Feature builder).
+_LOOP_NAMES: Final = tuple(str(seed.body['name']).strip().lower() for seed in ENGINEERING_SEEDS)
+
+
+def list_order(agent: Mapping[str, Any]) -> tuple[int, str, str]:
+    """``GET /agents``' order (7.50.01): the agents that are not engineering agents by name, then the engineering ones,
+    the seeded automations first in the loop's order (Issue triage, Bug fixer, Feature builder: the setup guide's and
+    the docs'), each found by its seeded name as the guide finds it, then any other by name."""
+    name = str(agent.get('name') or '')
+    rank = 0
+    if store.is_engineering_agent(agent):
+        folded = name.strip().lower()
+        rank = 1 + (_LOOP_NAMES.index(folded) if folded in _LOOP_NAMES else len(_LOOP_NAMES))
+    return rank, name.lower(), str(agent.get('agent_id'))
 
 
 def _settled_marker(table: Any, key: Mapping[str, str] = SEED_KEY) -> bool:

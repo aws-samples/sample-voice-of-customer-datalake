@@ -691,6 +691,9 @@
         "path": "/agents/engineering/readiness?automation=ag_b0f1e2d3c4a5"
       },
       {
+        "path": "/agents/engineering/readiness?automation=ag_b0f1e2d3c4a5&connection=storefront&language=python"
+      },
+      {
         "path": "/agents/engineering/readiness?flow=bug-hunt-and-fix"
       }
     ]
@@ -826,6 +829,16 @@
     "probes": [
       {
         "path": "/agents/engineering/setup"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSetupApi.ts",
+    "method": "GET",
+    "call": "'/integrations/status'",
+    "probes": [
+      {
+        "path": "/integrations/status"
       }
     ]
   },

@@ -71,7 +71,9 @@ $50 (the owner's; `SEEDED_MONTHLY_BUDGET_USD`, changed in Set up or in the flow)
 
 Each runs at most once a day by default, scopes all reviews, has no instructions, and needs a repository connection and
 a language before it can be enabled (their card says so, on the Agents list for an administrator too since 7.49.00:
-**Set up**, or **Connect a repository first**).
+**Set up**, or **Connect a repository first**). The Agents list (`GET /agents`) shows the agents that are not
+engineering agents by name, then the engineering ones: these three first, in the loop's order of this table and the
+setup guide (7.50.01; each found by its seeded name), then any other by name.
 
 **To enable Bug fixer** (Feature builder alike, with feature requests; the [setup guide](#setup-guide) walks
 these steps, with Issue triage first):
@@ -91,7 +93,8 @@ these steps, with Issue triage first):
    attestation, an image for the language, Bedrock access to every model its flow runs on, the budget and your stored
    way of working: AI-assisted or AI-driven for a flow that pushes), and answers 409 naming each that fails;
    `GET /agents/engineering/readiness?automation=<agent id>` lists every check, the advisory ones too
-   ([autonomous-engineering.md](autonomous-engineering.md#readiness-75000)).
+   ([autonomous-engineering.md](autonomous-engineering.md#readiness-75000)); the Set up dialog asks it of the
+   connection and language you selected (`&connection=<id>&language=<language>`, 7.50.01), before anything is saved.
 5. **Label an issue** `voc-agent`. Once the source has ingested it, the next heartbeat (every 15 minutes) starts one
    run on it. On a public repository the label is the only way in; on a private one (`repository_private`) the
    trigger may also take a trusted author's issue (`trusted_authors`, off as seeded) or, with its label cleared, any
@@ -150,7 +153,7 @@ recommends (the first one neither done nor skipped).
 
 | Step | What it sets up | Done when |
 |---|---|---|
-| 0. Prerequisites | GitHub connected with the deployment's GitHub App in two clicks (Agents → Connections), the repository's CI points attested on its connection, and its issues ingested: the GitHub Issues source for the whole deployment (Administration → Data sources, `/admin/data-sources`, for a platform admin; outside any workspace, Administration → Sources → Source settings) signed in with that App, with the `voc-agent` label on the issues the agents may take | a GitHub connection made through an App has its CI attested, and no prerequisite check of an automation's readiness fails (the source and the label are known only from those) |
+| 0. Prerequisites | GitHub connected with the deployment's GitHub App in two clicks (Agents → Connections), the repository's CI points attested on its connection, and its issues ingested: the GitHub Issues source for the whole deployment (Administration → Data sources, `/admin/data-sources`, for a platform admin; outside any workspace, Administration → Sources → Source settings) signed in with that App, with the `voc-agent` label on the issues the agents may take | a GitHub connection made through an App has its CI attested, the deployment's GitHub Issues source is not reported unconfigured (7.50.01), and no prerequisite check of an automation's readiness fails (the source's reads and the label are known only from those) |
 | 1. Understand the repository | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
 | 2. Tenets | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
 | 3. Issue triage | the seeded Issue triage automation: its Set up and Enabled control, and its readiness | the automation is enabled |
@@ -163,9 +166,15 @@ recommends (the first one neither done nor skipped).
   the severity and starts without acceptance criteria) and which steps before it are not done. A skipped step can be
   taken back. What gates Enable is the readiness a run needs (below), never the guide's order.
 - **What is set up is read, not stored.** The guide reads only routes that already serve the deployment (the agents
-  list, `GET /agents/engineering/connections`, `GET /agents/engineering/github-apps`, each automation's readiness) and
-  its own progress. It finds each automation by its seeded name, then a renamed Bug fixer or Feature builder by what it
-  works on; a renamed Issue triage is not found until the agents API names an agent's seed.
+  list, `GET /agents/engineering/connections`, `GET /agents/engineering/github-apps`, each automation's readiness, and
+  since 7.50.01 `GET /integrations/status` in the deployment's scope, no workspace header) and its own progress. The
+  prerequisites step shows the deployment's own facts (GitHub connected through an App, and which connections; the CI
+  attested, and for which connections; the GitHub Issues source, **Not configured** while the deployment's integration
+  status says so, with the link to Administration → Data sources) apart from each automation's prerequisite checks,
+  "Readiness for <automation>, once set up". While an automation names no connection and the deployment has one it
+  could use, its readiness is asked of that connection (the readiness preview), so the two never contradict each
+  other. It finds each automation by its seeded name, then a renamed Bug fixer or Feature builder by what it works on;
+  a renamed Issue triage is not found until the agents API names an agent's seed.
 - **The progress** is the person's choices only: `GET /agents/engineering/setup` →
   `{steps: {<step>: pending | skipped | done}, intro: unseen | started | skipped, revision, updated_at, updated_by}`,
   and `PUT` `{revision, steps?, intro?}`, which changes only the steps it names, from the revision read (409 once
@@ -193,11 +202,21 @@ administrator's stored way of working. The others are advice.
   in the server's words and its doc link (a repository doc or an https address; anything else is not linked). The
   way-of-working check also links to Administration → Privacy & access → Users, where the administrator sets
   AI-driven: the agents fix, push and open the pull request, and a person approves and merges it on GitHub.
+- **The Set up dialog reads the readiness of its selection** (7.50.01):
+  `GET /agents/engineering/readiness?automation=<agent id>&connection=<id>&language=<language>` answers for the agent
+  as if it were set up with the connection and language selected, read-only (nothing is saved; 400 for a connection that is not stored or was removed, or a
+  language with no agent image), and the dialog reads it again whenever either changes. So on a first set-up the
+  connection's App installation, CI attestation and branch rules, the Issues source and the language's image are
+  those of the selection, never the stored agent's empty settings. The dialog fits the window: its checks scroll
+  between the title and **Cancel** and **Save and enable**, which stay in view; the summary line (Failing · Unknown ·
+  Warnings · Passed) heads them, the checks that do not pass come first (those a run needs first) and those that
+  passed are folded under one line.
 - **Enable waits** while a required check does not pass, an unknown one included; an advisory check never holds it.
-  In the Set up dialog the checks it sets itself (the connection, the language's image, the budget) do not hold its
-  **Save and enable**: they are checked again by the Enable after the save. An Enable the server refuses answers 409
-  `{error, checks}`, and the dialog or the switch shows those checks. A readiness that cannot be read is said so, and
-  Enable stays the server's to refuse.
+  In the Set up dialog only the budget, which the dialog saves itself (and checks as you type), does not hold its
+  **Save and enable**: it is checked again by the Enable after the save; every other required check, the way of
+  working of the administrator enabling it included, holds it for the selection. An Enable the server refuses answers
+  409 `{error, checks}`, and the dialog or the switch shows those checks. A readiness that cannot be read is said so,
+  and Enable stays the server's to refuse.
 
 ### Template updated
 
@@ -410,7 +429,7 @@ until it does, they answer 503 (the page offers them only where the bus and the 
 | POST | `…/messages` `{to: 'conductor' \| 'agent', agent?, text, thread_id?}` | a person's answer (`msg.answer`, at most 1 KB, refused if it holds something shaped like a credential) to the run's conductor or one of its agents, on the thread it answers (a new one if left out); the conversation records it |
 | GET | `/agents/engineering/settings` | the administrators' hard cap on engineering runs (`engineering/settings.py`, its row in voc-agents): `{hard_cap, updated_at, updated_by}`, off by default (docs/autonomous-engineering.md, Cost). Administrators only (a delegated credential gets 403); 404 while the module is off; 503 when the read fails (retry) |
 | PUT | `/agents/engineering/settings` | `{hard_cap: true \| false}`: an administrator turns the hard cap on or off, saved with its history row; the runtime reads it at a budgeted start. 400 for any other body, 403 for anyone but a signed-in administrator, 404 while the module is off, 503 when the write fails |
-| GET | `/agents/engineering/readiness?automation=<agent id>` or `?flow=<template id>[&connection=&language=]` | whether an engineering agent, or a default flow on a connection and language, can run here (7.50.00, [autonomous-engineering.md](autonomous-engineering.md#readiness-75000)): `{subject, ready, checks: [{id, status, detail, fix, docs, required}]}`, `ready` when no required check fails; Enable runs the required ones and answers 409 `{error, checks}` with those that fail. 400 for neither or both of `automation` and `flow`, an agent without engineering settings, a bad connection id or language; 404 for an unknown agent or template and while the module is off; 403 for anyone but an administrator acting for themselves |
+| GET | `/agents/engineering/readiness?automation=<agent id>` or `?flow=<template id>`, either `[&connection=&language=]` | whether an engineering agent, or a default flow, can run here (7.50.00, [autonomous-engineering.md](autonomous-engineering.md#readiness-75000)), on the connection and language named as if it were set up with them (read-only; 7.50.01 for an agent): `{subject, ready, checks: [{id, status, detail, fix, docs, required}]}`, `ready` when no required check fails; Enable runs the required ones and answers 409 `{error, checks}` with those that fail. 400 for neither or both of `automation` and `flow`, an agent without engineering settings, a connection that is not stored or was removed, a language with no agent image; 503 when the connection cannot be read; 404 for an unknown agent or template and while the module is off; 403 for anyone but an administrator acting for themselves |
 | GET | `/agents/engineering/spend?month=YYYY-MM&by=&workflow=` | what the runs spent in a month (default this one, UTC), from the spend ledger (docs/autonomous-engineering.md, Cost): its totals (dollars priced, tokens in and out, session seconds as `microvm_seconds`) and the same per group, `by` workflow (default), repo, run, agent (as `<run>/<agent>`: each run numbers its own), model or day, biggest first, only one workflow's with `workflow`; one Query of the month, `truncated` past 20,000 rows. 400 for a bad month, grouping or workflow, 503 when the table refuses the read (retry) |
 
 A failed call to the supervisor or the bus answers 503 (retry: the signal is idempotent), and so does a deployment

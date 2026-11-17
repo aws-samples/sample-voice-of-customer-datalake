@@ -79,7 +79,7 @@
     "engineeringKind": "Engenharia",
     "fromTemplate": "Começar com um modelo",
     "templatesTitle": "Começar com um modelo",
-    "templatesHint": "Seis fluxos de engenharia padrão para começar. Escolher um abre uma cópia no editor: nada é salvo até que você salve."
+    "templatesHint": "Cinco fluxos de engenharia padrão para começar. Escolher um abre uma cópia no editor: nada é salvo até que você salve."
   },
   "fields": {
     "name": "Nome",
@@ -1485,6 +1485,8 @@
     "setWayOfWorking": "Defina sua forma de trabalho em Usuários",
     "enableWaits": "Ativar aguarda até que cada verificação de que uma execução precisa seja aprovada.",
     "enableRefused": "Não ativado: estas verificações de que uma execução precisa falham.",
+    "passedFolded": "Verificações aprovadas ({{count, number}})",
+    "passedLabel": "Verificações aprovadas",
     "status": {
       "pass": "Aprovada",
       "fail": "Falha",
@@ -1537,6 +1539,7 @@
     "order": "Ordem recomendada: pré-requisitos, entender o repositório, princípios, triagem de issues, Bug fixer, Feature builder.",
     "orderFine": "Todas as etapas anteriores estão concluídas.",
     "orderMissing": "Não concluídas antes desta: {{list}}.",
+    "readinessFor": "Prontidão de {{name}}, depois de configurada",
     "later": "O fluxo dela chega na 7.52. Pule-a por enquanto: o guia a oferecerá novamente.",
     "steps": {
       "prerequisites": {
@@ -1586,7 +1589,10 @@
       "openDeploymentSources": "Abrir Administração → Fontes de dados",
       "openSources": "Abrir Administração → Fontes → Configurações de fontes",
       "sourcesOutside": "Fora de qualquer espaço de trabalho: as automações leem só as fontes da implantação.",
-      "checksTitle": "O que diz a prontidão das automações",
+      "deploymentTitle": "Esta implantação",
+      "connectedAs": "Conectado por um App: {{list}}.",
+      "ciFor": "CI atestada para {{list}}.",
+      "notConfigured": "Não configurado",
       "noReadiness": "A fonte e o rótulo são verificados pela prontidão de uma automação: nenhuma automação foi encontrada ainda."
     },
     "automation": {

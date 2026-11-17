@@ -79,7 +79,7 @@
     "engineeringKind": "Ingeniería",
     "fromTemplate": "Empezar con una plantilla",
     "templatesTitle": "Empezar con una plantilla",
-    "templatesHint": "Seis flujos de ingeniería predeterminados para empezar. Al elegir uno se abre una copia en el editor: no se guarda nada hasta que la guardes."
+    "templatesHint": "Cinco flujos de ingeniería predeterminados para empezar. Al elegir uno se abre una copia en el editor: no se guarda nada hasta que la guardes."
   },
   "fields": {
     "name": "Nombre",
@@ -1485,6 +1485,8 @@
     "setWayOfWorking": "Define tu forma de trabajo en Usuarios",
     "enableWaits": "Activar espera hasta que se supere cada comprobación que necesita una ejecución.",
     "enableRefused": "No activado: fallan estas comprobaciones que necesita una ejecución.",
+    "passedFolded": "Comprobaciones superadas ({{count, number}})",
+    "passedLabel": "Comprobaciones superadas",
     "status": {
       "pass": "Superada",
       "fail": "Falla",
@@ -1537,6 +1539,7 @@
     "order": "Orden recomendado: requisitos previos, entender el repositorio, principios, triaje de issues, Bug fixer, Feature builder.",
     "orderFine": "Todos los pasos anteriores están hechos.",
     "orderMissing": "Sin hacer antes de este: {{list}}.",
+    "readinessFor": "Preparación de {{name}}, una vez configurada",
     "later": "Su flujo llega en 7.52. Omítelo por ahora: la guía lo volverá a ofrecer entonces.",
     "steps": {
       "prerequisites": {
@@ -1586,7 +1589,10 @@
       "openDeploymentSources": "Abrir Administración → Fuentes de datos",
       "openSources": "Abrir Administración → Fuentes → Configuración de fuentes",
       "sourcesOutside": "Fuera de cualquier espacio de trabajo: las automatizaciones solo leen las fuentes del despliegue.",
-      "checksTitle": "Lo que dice la preparación de las automatizaciones",
+      "deploymentTitle": "Esta implementación",
+      "connectedAs": "Conectado mediante una App: {{list}}.",
+      "ciFor": "CI certificada para {{list}}.",
+      "notConfigured": "Sin configurar",
       "noReadiness": "La fuente y su etiqueta las comprueba la preparación de una automatización: aún no se ha encontrado ninguna automatización."
     },
     "automation": {
