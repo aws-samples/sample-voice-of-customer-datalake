@@ -5,6 +5,8 @@
  * - editable — drag, connect, delete, drop from the palette, multi-select;
  * - read-only (run graph) — nothing can be moved, connected or deleted; steps
  *   are lit by the run's event journal. A misclick there must not spend tokens.
+ *   An engineering run's canvas (7.51.00) adds each step's lanes, sibling nodes
+ *   the caller places (pages/Agents/RunWorkspace/runLanes.ts), with no edges.
  *
  * React Flow keeps its own measured node state, so the canvas holds the flow
  * nodes locally and re-derives them from the definition whenever it changes,
@@ -18,7 +20,7 @@ import './workflowCanvas.css'
 import { useCallback, useMemo, useState } from 'react'
 import { Background, Controls, MarkerType, MiniMap, ReactFlow, ReactFlowProvider, applyNodeChanges, useReactFlow } from '@xyflow/react'
 import { useTranslation } from 'react-i18next'
-import { LoopFrameNode, StepNode } from './CanvasNodes'
+import { LaneNode, LoopFrameNode, StepNode } from './CanvasNodes'
 import { FIT_VIEW_OPTIONS, focusStepId, startStepId, useFocusStep } from './canvasFocus'
 import { NO_EDGES, applyEdgeSelection } from './edgeSelection'
 import { PALETTE_MIME, addNode, connect, loopBounds, moveNodes, parseNodeType, removeEdges, removeNodes } from './model'
@@ -26,13 +28,13 @@ import type { DragEvent } from 'react'
 import type { TFunction } from 'i18next'
 import type { Connection, Edge, EdgeChange, NodeChange, NodeTypes, OnSelectionChangeParams } from '@xyflow/react'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowLoop } from '../../api/workflowsApi'
-import type { LoopFrameFlowNode, StepFlowNode } from './CanvasNodes'
+import type { LaneFlowNode, LoopFrameFlowNode, StepFlowNode } from './CanvasNodes'
 import type { CanvasSelection } from './selection'
 import type { StepState } from './runState'
 
-type FlowNode = StepFlowNode | LoopFrameFlowNode
+type FlowNode = StepFlowNode | LoopFrameFlowNode | LaneFlowNode
 
-const NODE_TYPES: NodeTypes = { step: StepNode, loopFrame: LoopFrameNode }
+const NODE_TYPES: NodeTypes = { step: StepNode, loopFrame: LoopFrameNode, lane: LaneNode }
 
 interface WorkflowCanvasProps {
   definition: WorkflowDefinition
@@ -41,6 +43,8 @@ interface WorkflowCanvasProps {
   issuesByNode?: ReadonlyMap<string, readonly string[]>
   /** Run-graph state per step id (read-only mode). */
   runStates?: ReadonlyMap<string, StepState>
+  /** An engineering run's lanes (read-only mode), placed by the caller: inert, drawn after the steps. */
+  lanes?: readonly LaneFlowNode[]
   /**
    * A selection made outside the canvas (side panel, palette): applied to the
    * canvas whenever this object changes, so both always show the same thing.
@@ -48,12 +52,13 @@ interface WorkflowCanvasProps {
   selection?: CanvasSelection
   onChange?: (definition: WorkflowDefinition) => void
   onSelectionChange?: (selection: CanvasSelection) => void
-  /** Selecting a step in read-only mode (event-log filter). */
+  /** Selecting a step, or a run's lane, in read-only mode (event-log filter, the run workspace's session). */
   onStepClick?: (nodeId: string) => void
 }
 
 const LOOP_PREFIX = 'loop:'
 const NO_ISSUES: readonly string[] = []
+const NO_LANES: readonly LaneFlowNode[] = []
 
 const loopIndexOfFrame = (id: string): number | null => {
   if (!id.startsWith(LOOP_PREFIX)) return null
@@ -66,6 +71,7 @@ function buildNodes(
   issuesByNode: ReadonlyMap<string, readonly string[]> | undefined,
   runStates: ReadonlyMap<string, StepState> | undefined,
   frameLabel: (loop: WorkflowLoop, index: number) => string,
+  lanes: readonly LaneFlowNode[],
 ): FlowNode[] {
   const frames: LoopFrameFlowNode[] = definition.loops.flatMap((loop, index) => {
     const box = loopBounds(definition, loop)
@@ -91,7 +97,7 @@ function buildNodes(
     position: step.position,
     data: { step, issues: issuesByNode?.get(step.id) ?? NO_ISSUES, run: runStates?.get(step.id) },
   }))
-  return [...frames, ...steps]
+  return [...frames, ...steps, ...lanes]
 }
 
 /** Keep React Flow's measurements, selection and in-flight drag positions across re-derivations. */
@@ -142,7 +148,7 @@ function edgeClass(edge: WorkflowEdge, runStates: ReadonlyMap<string, StepState>
 }
 
 function CanvasInner({
-  definition, readOnly = false, issuesByNode, runStates, selection, onChange, onSelectionChange, onStepClick,
+  definition, readOnly = false, issuesByNode, runStates, lanes = NO_LANES, selection, onChange, onSelectionChange, onStepClick,
 }: Readonly<WorkflowCanvasProps>) {
   const { t } = useTranslation('agents')
   const { screenToFlowPosition } = useReactFlow()
@@ -153,8 +159,8 @@ function CanvasInner({
     n: index + 1, until: t(`loopUntil.${loop.until}`), rounds: loop.max_rounds,
   }), [t])
   const derived = useMemo(
-    () => buildNodes(definition, issuesByNode, runStates, frameLabel),
-    [definition, issuesByNode, runStates, frameLabel],
+    () => buildNodes(definition, issuesByNode, runStates, frameLabel, lanes),
+    [definition, issuesByNode, runStates, frameLabel, lanes],
   )
   const [nodes, setNodes] = useState<FlowNode[]>(derived)
   const [synced, setSynced] = useState(derived)

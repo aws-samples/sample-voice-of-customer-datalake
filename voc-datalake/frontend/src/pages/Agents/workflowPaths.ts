@@ -13,11 +13,11 @@ export const workflowTemplatePath = (templateId: string): string =>
   `/agents/workflows/templates/${encodeURIComponent(templateId)}`
 
 /**
- * Where a flow's runs are listed: Agents → Spend grouped by run, narrowed to the flow (`/agents/spend?by=run&workflow=`;
- * there is no other list of runs yet). A run is listed there once it has used something (its MicroVM time or tokens).
+ * Where a flow's runs are listed (7.51.00): Agents → Runs narrowed to the flow (`/agents/runs?flow=`, this month's;
+ * RunWorkspace/runsFilters.ts reads the filter).
  */
 export const flowRunsPath = (workflowId: string): string =>
-  `${agentsPath({ view: 'spend' })}?${new URLSearchParams({ by: 'run', workflow: workflowId }).toString()}`
+  `${agentsPath({ view: 'runs' })}?${new URLSearchParams({ flow: workflowId }).toString()}`
 
-/** An engineering run's monitor (`agents/engineering/:runId`), where a run started from a flow's page opens. */
+/** An engineering run's workspace (`agents/engineering/:runId`), where a run started from a flow's page opens. */
 export const engineeringRunPagePath = (runId: string): string => `/agents/engineering/${encodeURIComponent(runId)}`

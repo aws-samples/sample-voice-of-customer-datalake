@@ -57,14 +57,16 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/workflows/:workflowId', kind: 'agents', label: 'workflow' },
   // A default engineering flow's unsaved copy: the same pack, nothing stored yet.
   { route: 'agents/workflows/templates/:templateId', kind: 'agents', label: 'workflow' },
-  // An engineering run's monitor: the agents pack, the run on screen (get_engineering_run's default), no agent.
-  { route: 'agents/engineering/:runId', kind: 'agents',
+  // An engineering run's workspace (and an agent open in it, 7.51.00): the agents pack, the run on screen
+  // (get_engineering_run's default), no agent.
+  { route: 'agents/engineering/:runId/*', kind: 'agents',
     param: { name: 'runId', field: 'engineeringRunId', shape: ENGINEERING_RUN_ID } },
   // Where GitHub sends an administrator back from the deployment's GitHub App (7.45.00): the agents pack, nothing in
   // context (the query is the page's alone, taken and removed from the address at once).
   { route: 'agents/connections/github/created', kind: 'agents' },
   { route: 'agents/connections/github/installed', kind: 'agents' },
   // The list's views (agentsPaths.ts), BEFORE `agents/:id/*`, or a view's name reads as an agent id.
+  { route: 'agents/runs/*', kind: 'agents' },
   { route: 'agents/workflows/*', kind: 'agents' },
   { route: 'agents/spend/*', kind: 'agents' },
   { route: 'agents/connections/*', kind: 'agents' },

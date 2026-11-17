@@ -1,11 +1,13 @@
 /**
  * @fileoverview An engineering run, as the run monitor reads it and acts on it (`/agents/engineering/<run_id>…`,
  * `lambda/engineering/monitor.py` and `views.py`, docs/autonomous-agents.md "An engineering run"): the overview (the
- * run, each agent's session as the supervisor keeps it, the tokens per model; no cost yet), the board, a page of the
- * conversation (where signals are recorded too, as `signal.*` messages), the reports (commit, PR and goal, each
- * version's Markdown), and an admin's signals, answers and (7.50.03) Stop of the whole run (`POST …/stop`, through the
- * start function: it ends the run whatever its agents are doing). Every read is lenient: a bad entry costs itself, an
- * unknown state or signal is kept as text.
+ * run, each agent's session as the supervisor keeps it, the tokens per model; since 7.51.00 the cost against the cap,
+ * each step's lanes, the gates' verdicts, the parent and child runs), the board, a page of the conversation (where
+ * signals are recorded too, as `signal.*` messages), the reports (commit, PR and goal, each version's Markdown), and an
+ * admin's signals (an agent's restart too), answers and (7.50.03) Stop of the whole run (`POST …/stop`, through the
+ * start function: it ends the run whatever its agents are doing). The run workspace's own reads are
+ * api/engineeringRunWorkspaceApi.ts. Every read is lenient: a bad entry costs itself, an unknown state or signal is
+ * kept as text.
  *
  * @module api/engineeringRunsApi
  */
@@ -76,6 +78,13 @@ const AgentSchema = z.object({
   recent_tools: lenientList((item: unknown): item is string => typeof item === 'string'),
   microvm_seconds: count,
   tokens: eachOf(TokensSchema),
+  /** (7.51.00) What its tokens cost at their prices, in USD; null when unsaid. */
+  cost_usd: maybeCount.optional().transform((usd) => usd ?? null),
+  /** The attempt of its task it is on (the one a signal to it names), its commit, its skill's label and its model. */
+  attempt: count.optional().transform((attempt) => attempt ?? 0),
+  commit: maybeText.optional().transform((commit) => commit ?? null),
+  skill_label: maybeText.optional().transform((label) => label ?? null),
+  model: maybeText.optional().transform((model) => model ?? null),
 })
 export type EngineeringAgent = z.output<typeof AgentSchema>
 
@@ -106,6 +115,15 @@ const PullRequestLinkSchema = z.object({
   host: RunHostSchema, number: LinkNumberSchema, url: z.string(), head: text, base: text,
 }).nullable().catch(null)
 export type RunIssueLink = NonNullable<z.output<typeof IssueLinkSchema>>
+/** (7.51.00) A run restarted from another: its parent (on the child), or a child (on the parent): who, when, how. */
+const RunLinkSchema = z.object({ run_id: z.string().min(1), mode: text, by: text, at: text })
+/** An ended run's manifest: what it cost and used, as its end wrote it; null before. */
+const ManifestSchema = z.object({ cost_usd: maybeCount, tokens: maybeCount, written_at: maybeText }).nullable().catch(null)
+/** (7.51.00) One task of a flow step and the agent on it: a lane of the step's stage on the canvas. */
+const LaneSchema = z.object({
+  agent: maybeText, role: text, status: maybeText, state: text, task_id: text, attempt: count, shard: maybeText,
+})
+export type RunLane = z.output<typeof LaneSchema>
 export type RunPullRequestLink = NonNullable<z.output<typeof PullRequestLinkSchema>>
 
 /** A person's Stop of the whole run (7.50.03): how it was asked and when; null for none. */
@@ -127,6 +145,12 @@ const OverviewSchema = z.object({
     flow_definition: z.unknown().optional().transform((definition) => normalizeDefinition(definition ?? null)),
     issue: IssueLinkSchema.optional().transform((issue) => issue ?? null),
     pull_request: PullRequestLinkSchema.optional().transform((pull) => pull ?? null),
+    /** (7.51.00) Its cost so far (Learn's apart) against its cap, in USD; null when unsaid. */
+    cost_usd: maybeCount.optional().transform((usd) => usd ?? null),
+    learn_cost_usd: maybeCount.optional().transform((usd) => usd ?? null),
+    cost_cap_usd: maybeCount.optional().transform((usd) => usd ?? null),
+    parent: RunLinkSchema.nullable().catch(null).optional().transform((parent) => parent ?? null),
+    manifest: ManifestSchema.optional().transform((manifest) => manifest ?? null),
   }),
   agents: eachOf(AgentSchema),
   /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */
@@ -137,6 +161,10 @@ const OverviewSchema = z.object({
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
   /** The latest read of people's reactions to the run's pull request (7.10.00); null for none. */
   reactions: ReactionsSchema.optional().transform((reactions) => reactions ?? null),
+  /** (7.51.00) Each flow step's lanes, each gate step's verdict (`GO`, `NO_GO`, …) and the runs restarted from it. */
+  lanes: z.record(z.string(), eachOf(LaneSchema)).catch({}).optional().transform((lanes) => lanes ?? {}),
+  gates: z.record(z.string(), z.string()).catch({}).optional().transform((gates) => gates ?? {}),
+  children: eachOf(RunLinkSchema),
 })
 export type EngineeringOverview = z.output<typeof OverviewSchema>
 
@@ -207,13 +235,19 @@ export interface ConversationPage {
   nextAfter: number
 }
 
+/** (7.51.00) Where a restarted agent starts again (monitor.py RESTART_FROM): its newest checkpoint, or its task afresh. */
+export const RESTART_FROM = ['checkpoint', 'fresh'] as const
+export type RestartFrom = (typeof RESTART_FROM)[number]
+
 export interface SignalRequest {
-  signal: EngineeringSignal
+  /** `restart` is an agent's only (its task and attempt, `from`, `confirm: true`). */
+  signal: EngineeringSignal | 'restart'
   /** With its `attempt` (the task's lease epoch): the agent on the task; neither: the whole run. */
   task_id?: string
   attempt?: number
   note?: string
   confirm?: boolean
+  from?: RestartFrom
 }
 
 /** A person's Stop of the whole run: `now` stops it at once, without a checkpoint (sent confirmed). */

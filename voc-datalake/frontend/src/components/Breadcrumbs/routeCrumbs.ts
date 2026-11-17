@@ -69,13 +69,14 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'workflows': { labelKey: 'common:breadcrumbs.workflows' },
   // `/agents/workflows/templates/:templateId` — the templates are offered in the library, so the crumb links there.
   'templates': { labelKey: 'common:breadcrumbs.templates', path: '/agents/workflows' },
-  // `/agents/spend` and `/agents/skills/…`: views of /agents, which the trail ends before (trailSegments).
+  // `/agents/spend`, `/agents/runs` and `/agents/skills/…`: views of /agents, which the trail ends before (trailSegments).
   'spend': { labelKey: 'common:breadcrumbs.spend', path: '/agents' },
+  'runs': { labelKey: 'common:breadcrumbs.runs', path: '/agents' },
   'skills': { labelKey: 'common:breadcrumbs.skills', path: '/agents' },
   // `/agents/setup/<step>` — the engineering setup guide; its steps are its own places (the trail ends at it).
   'setup': { labelKey: 'common:breadcrumbs.setupGuide' },
-  // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
-  'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
+  // `/agents/engineering/:runId[/a/<agent>]` — a run's workspace: the crumb is the list of runs (Agents → Runs).
+  'engineering': { labelKey: 'common:breadcrumbs.runs', path: '/agents/runs' },
   // `/agents/connections/github/created` and `…/installed`, where GitHub sends an administrator back from the
   // deployment's GitHub App: both crumbs above the page go to the Connections tab, where the App is managed.
   'connections': { labelKey: 'common:breadcrumbs.connections' },
@@ -127,10 +128,12 @@ export interface Crumb {
   isHome: boolean
 }
 
-/** `/agents/…`: a view of the list ends at Agents, an agent's tab at the agent; a workflow, a run and GitHub's return pages are pages. */
+/** `/agents/…`: a view of the list ends at Agents, an agent's tab at the agent, a run's workspace at the run (the agent
+ * open in it is its own place); a workflow and GitHub's return pages are pages. */
 function agentsTrail(segments: readonly string[]): string[] {
   const [, second] = segments
-  if (second === undefined || second === 'engineering') return [...segments]
+  if (second === 'engineering') return segments.slice(0, 3)
+  if (second === undefined) return [...segments]
   if (!AGENTS_PATH_VIEWS.has(second)) return segments.slice(0, 2)
   const page = (second === 'workflows' || second === 'connections') && segments.length > 2
   return page ? [...segments] : segments.slice(0, 1)

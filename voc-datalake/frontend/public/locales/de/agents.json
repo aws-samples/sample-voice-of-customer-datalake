@@ -23,7 +23,8 @@
     "workflows": "Workflows",
     "spend": "Ausgaben",
     "connections": "Verbindungen",
-    "skills": "Skills"
+    "skills": "Skills",
+    "runs": "Läufe"
   },
   "list": {
     "title": "Autonome Agenten",
@@ -288,7 +289,20 @@
       "fromNothing": "Gestartet, um in seinem Repository nach Fehlern zu suchen.",
       "followHint": "Verfolgen Sie ihn in seinem Lauf-Monitor oder stoppen Sie ihn hier: Dieser Lauf endet, wenn der Engineering-Lauf endet.",
       "openMonitor": "Lauf-Monitor öffnen"
-    }
+    },
+    "gate": {
+      "pass": "Prüfung bestanden",
+      "fail": "Prüfung nicht bestanden"
+    },
+    "here": "Sie sind hier",
+    "laneStates": {
+      "ran_ok": "Erledigt",
+      "ran_failed": "Fehlgeschlagen",
+      "running": "Arbeitet",
+      "stopped": "Gestoppt",
+      "planned": "Geplant"
+    },
+    "laneAttempt": "{{role}} · Versuch {{n, number}}"
   },
   "editor": {
     "methodology": {
@@ -1690,6 +1704,264 @@
       "body": "Noch ist nichts eingerichtet. Der Einrichtungsassistent führt Sie in der empfohlenen Reihenfolge hindurch: GitHub und die CI des Repositorys, seine Issues, dann die Automatisierungen, die einstufen, beheben und bauen.",
       "start": "Hilf mir beim Einrichten",
       "skip": "Überspringen"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "Orchestrator",
+    "working": "Arbeitet",
+    "loading": "Wird geladen…",
+    "flow": {
+      "canvas": "Arbeitsfläche",
+      "timeline": "Zeitleiste",
+      "view": "Darstellung des Ablaufs"
+    },
+    "canvas": {
+      "lane": "{{label}}: {{state}}"
+    },
+    "timeline": {
+      "label": "Was geschehen ist, Schritt für Schritt",
+      "empty": "Bisher ist nichts geschehen.",
+      "offFlow": "Keinem Schritt des Ablaufs zugeordnet",
+      "agents": "Agenten: {{count, number}}",
+      "attemptNow": "Versuch {{n, number}} (aktuell)",
+      "attempt": "Versuch {{n, number}}",
+      "states": {
+        "running": "Im Gange",
+        "ok": "Erledigt",
+        "failed": "Fehlgeschlagen",
+        "stopped": "Gestoppt",
+        "planned": "Noch nicht gelaufen"
+      }
+    },
+    "sessions": {
+      "title": "Sitzungen",
+      "label": "Die offenen Sitzungen",
+      "layout": "Layout",
+      "asTabs": "Tabs",
+      "asGrid": "Raster mit {{count, number}}",
+      "tabs": "Offene Sitzungen",
+      "close": "{{name}} schließen",
+      "more": "Weitere ({{count, number}})",
+      "choose": "Auswählen…",
+      "open": "Öffnen",
+      "noAgent": "Dieser Lauf hat keinen Agenten {{agent}}.",
+      "grid": "Die Sitzungen nebeneinander",
+      "divider": "Trennlinie verschieben",
+      "paneAgent": "Agent dieses Bereichs",
+      "closePane": "Diesen Bereich schließen",
+      "emptyPane": "Wählen Sie einen Agenten für diesen Bereich."
+    },
+    "thread": {
+      "label": "Thread von {{agent}}",
+      "empty": "Noch nichts in diesem Thread.",
+      "ended": "Diese Sitzung ist beendet.",
+      "notFound": "Der Thread dieses Agenten ist nicht vorhanden.",
+      "cut": "Hier gekürzt: Der Rest steht im Transkript.",
+      "thought": "Überlegung",
+      "toModel": "An das Modell, von {{id}}",
+      "steering": "Steuerung",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}} (eine Person)",
+        "conductor": "Orchestrator ({{id}})",
+        "system": "{{id}} (die Plattform)"
+      },
+      "kinds": {
+        "gate": "Prüfung",
+        "finding": "Befund",
+        "signal": "Signal",
+        "checkpoint": "Sicherungspunkt",
+        "crash": "Absturz",
+        "end": "Ende"
+      },
+      "tool": {
+        "event": "Der Aufruf",
+        "result": "Sein Ergebnis",
+        "noResult": "Noch kein Ergebnis.",
+        "ok": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "running": "Läuft",
+        "loadFailed": "Der Aufruf konnte nicht gelesen werden: Versuchen Sie es erneut."
+      }
+    },
+    "composer": {
+      "label": "Den Orchestrator steuern",
+      "placeholder": "Nachricht an den Orchestrator: Er entscheidet, was er an seine Agenten weitergibt…",
+      "placeholderAbout": "Nachricht an den Orchestrator zu {{agent}}: Er entscheidet, was er weitergibt…",
+      "about": "Zu {{agent}}",
+      "send": "An den Orchestrator senden",
+      "hint": "Enter sendet; Shift+Enter beginnt eine neue Zeile.",
+      "sent": "An den Orchestrator gesendet."
+    },
+    "agentControls": {
+      "save": "Sichern",
+      "stop": "Stoppen",
+      "restart": "Neu starten",
+      "restartTitle": "{{agent}} neu starten?",
+      "restartMessage": "Seine Sitzung endet und beginnt neu. Bei einem Neubeginn von vorn geht auch seine Arbeit seit dem letzten Sicherungspunkt verloren.",
+      "from": "Neu beginnen ab",
+      "fromChoices": {
+        "checkpoint": "Neuester Sicherungspunkt",
+        "fresh": "Seine Aufgabe, von vorn"
+      }
+    },
+    "restartRun": {
+      "open": "Lauf neu starten",
+      "ended": "Dieser Lauf ist beendet: Er kann als neuer Lauf erneut starten.",
+      "title": "Diesen Lauf neu starten?",
+      "message": "Ein neuer Lauf startet aus diesem, mit seinen Obergrenzen, seiner Verbindung und seinem Ablauf; bereits erledigte Schritte werden übernommen.",
+      "confirm": "Neuen Lauf starten",
+      "mode": "Wie",
+      "modes": {
+        "resume": "Fortsetzen: jeder Agent ab seinem neuesten Sicherungspunkt",
+        "restart": "Neu starten: ihre Aufgaben von vorn"
+      },
+      "base": "Auf welchem Commit",
+      "bases": {
+        "same": "Der eigene Commit des Laufs",
+        "head": "Der aktuelle Stand des Repositorys (mit Rebase; ein Konflikt geht an den Agenten)"
+      },
+      "agents": "Agenten",
+      "agentsHint": "Keiner angehakt: jede nicht erledigte Aufgabe."
+    },
+    "header": {
+      "cost": "Bisherige Kosten: {{cost}}",
+      "costOfCap": "Bisherige Kosten: {{cost}} von höchstens {{budget}}",
+      "share": "{{percent}} % der Obergrenze",
+      "learn": "Learn: {{cost}}",
+      "budgetUsed": "Verbrauchtes Budget",
+      "manifest": "Am Ende: {{cost}}, {{tokens}} Tokens",
+      "lineage": "Die Läufe, aus denen dieser hervorgeht oder zu denen er geführt hat",
+      "parent": {
+        "resume": "Fortgesetzt aus Lauf",
+        "restart": "Neu gestartet aus Lauf"
+      },
+      "child": {
+        "resume": "Fortgesetzt als Lauf",
+        "restart": "Neu gestartet als Lauf"
+      }
+    },
+    "inspector": {
+      "label": "Inspektor",
+      "title": "Inspektor",
+      "of": "Inspektor: {{agent}}",
+      "none": "Öffnen Sie die Sitzung eines Agenten, um sie zu inspizieren.",
+      "tabs": "Was inspiziert wird",
+      "tab": {
+        "changes": "Änderungen",
+        "files": "Dateien",
+        "gate": "Prüfung",
+        "assertions": "Zusicherungen",
+        "cost": "Kosten",
+        "memory": "Gedächtnis und Learn"
+      }
+    },
+    "changes": {
+      "patch": "Patch",
+      "sources": {
+        "submitted": "Eingereicht",
+        "checkpoint": "Sicherungspunkt"
+      },
+      "split": "Nebeneinander",
+      "unified": "Einheitlich",
+      "compareOn": "Änderung auf {{host}} öffnen",
+      "pullOn": "Pull Request auf {{host}} öffnen",
+      "partial": "Die Dateiliste ist unvollständig: Öffnen Sie die Änderung auf dem Host, um alles zu sehen.",
+      "large": "Diese Änderung ist groß: Der Host zeigt sie vollständig.",
+      "none": "Noch kein Patch von diesem Agenten.",
+      "files": "Geänderte Dateien",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "Hinzugefügt",
+        "deleted": "Gelöscht",
+        "renamed": "Umbenannt",
+        "copied": "Kopiert",
+        "modified": "Geändert"
+      },
+      "binaryShort": "binär",
+      "binary": "Eine Binärdatei: nicht angezeigt.",
+      "fileFailed": "Die Änderung dieser Datei konnte nicht gelesen werden: Versuchen Sie es erneut.",
+      "fileCut": "Bei 1 MB gekürzt: Der Host zeigt den Rest.",
+      "noLines": "Keine Zeilen geändert (eine Modusänderung oder eine leere Datei).",
+      "noNewline": "Kein Zeilenumbruch am Dateiende",
+      "mode": {
+        "executable": "jetzt ausführbar",
+        "notExecutable": "nicht mehr ausführbar",
+        "changed": "Modus geändert"
+      },
+      "unfold": "Unveränderte Zeilen anzeigen ({{count, number}})"
+    },
+    "files": {
+      "none": "Noch keine Datei gelesen oder geschrieben.",
+      "partial": "Nur die ersten Dateien sind aufgeführt.",
+      "read": "gelesen: {{count, number}}",
+      "written": "geschrieben: {{count, number}}",
+      "listed": "aufgelistet: {{count, number}}"
+    },
+    "gate": {
+      "none": "Dieser Agent hat keine Prüfung ausgeführt.",
+      "open": "Prüfung von {{agent}} ansehen",
+      "verdict": "Urteil: {{verdict}}",
+      "passed": "Checks bestanden",
+      "failed": "Checks fehlgeschlagen",
+      "ranAt": "Ausgeführt {{when}}",
+      "checks": "Deterministische Checks",
+      "findings": "Befunde der Prüfer",
+      "exit": "Exitcode {{code}}",
+      "duration": "{{seconds, number}} s",
+      "noOutput": "Keine Ausgabe.",
+      "finding": "{{reviewer}}: {{outcome}}"
+    },
+    "assertions": {
+      "none": "Der Ablauf dieses Laufs hat keine Zusicherungen.",
+      "status": {
+        "pass": "Bestanden",
+        "fail": "Nicht bestanden",
+        "pending": "Ausstehend",
+        "unread": "Nicht gelesen"
+      },
+      "onFail": {
+        "block": "blockiert",
+        "warn": "warnt"
+      },
+      "attempt": "Versuch {{n, number}}"
+    },
+    "cost": {
+      "cost": "Kosten",
+      "microvm": "MicroVM",
+      "model": "Modell",
+      "skill": "Skill",
+      "attempt": "Versuch",
+      "commit": "Commit",
+      "byAgent": "Kosten je Agent",
+      "agent": "Agent"
+    },
+    "memory": {
+      "recalled": "Abgerufene Lektionen",
+      "noneRecalled": "Sein Briefing hat keine Lektion abgerufen.",
+      "learned": "Was Learn aus seiner Aufgabe gemacht hat",
+      "noneLearned": "Learn hat noch nichts daraus gemacht.",
+      "coach": "Skill-Coach: {{coach}}",
+      "proposed": "vorgeschlagene Version {{n, number}}"
+    },
+    "runs": {
+      "hint": "Die Engineering-Läufe, die in einem Monat gestartet wurden, neueste zuerst. Öffnen Sie einen, um ihn zu verfolgen und zu steuern.",
+      "month": "Monat",
+      "flow": "Ablauf",
+      "allFlows": "Alle Abläufe",
+      "status": "Status",
+      "allStatuses": "Alle Status",
+      "statuses": {
+        "active": "Aktiv",
+        "needs_human": "Braucht eine Person",
+        "done": "Erledigt",
+        "failed": "Fehlgeschlagen",
+        "stopped": "Gestoppt"
+      },
+      "loadFailed": "Die Läufe konnten nicht gelesen werden.",
+      "more": "Mehr anzeigen",
+      "moreFailed": "Die nächste Seite konnte nicht gelesen werden.",
+      "empty": "In diesem Monat wurde kein Lauf gestartet."
     }
   }
 }

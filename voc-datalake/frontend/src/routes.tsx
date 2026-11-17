@@ -39,7 +39,7 @@ import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentDetail, SetupGuide,
-  WorkflowPage, WorkflowTemplatePage, EngineeringRun, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
+  WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
@@ -158,9 +158,11 @@ export const routes: RouteObject[] = [
       { path: 'memory/*', ...page(<Memory />) },
       { path: 'company/*', ...page(<Company />) },
       // The list's views are paths (Agents/agentsPaths.ts): /agents, /agents/workflows, /agents/spend,
-      // /agents/connections, /agents/skills[/<role>[/v/<n>]]. Each is listed, so it ranks above `agents/:id/*` (an
-      // agent's id is never a view's name: `ag_<12 hex>`); the pages below with a longer static path rank above both.
+      // /agents/connections, /agents/skills[/<role>[/v/<n>]], /agents/runs (7.51.00, the engineering runs, filtered by
+      // `?month=&flow=&status=`). Each is listed, so it ranks above `agents/:id/*` (an agent's id is never a view's
+      // name: `ag_<12 hex>`); the pages below with a longer static path rank above both.
       { path: 'agents', ...page(<Agents />) },
+      { path: 'agents/runs/*', ...page(<Agents />) },
       { path: 'agents/workflows/*', ...page(<Agents />) },
       { path: 'agents/spend/*', ...page(<Agents />) },
       { path: 'agents/connections/*', ...page(<Agents />) },
@@ -173,8 +175,9 @@ export const routes: RouteObject[] = [
       { path: 'agents/workflows/:workflowId', ...page(<WorkflowPage />) },
       // A default engineering flow's unsaved copy (Workflow library → Start from a template), saved as a new workflow.
       { path: 'agents/workflows/templates/:templateId', ...page(<WorkflowTemplatePage />) },
-      // An engineering run's monitor (reached by its run id: no list of runs yet).
-      { path: 'agents/engineering/:runId', ...page(<EngineeringRun />) },
+      // An engineering run's workspace (7.51.00, Agents/RunWorkspace): the orchestrator's session, or one agent's open in
+      // it (`/agents/engineering/<run>/a/<agent>`, RunWorkspace/runWorkspacePaths.ts). Listed in Agents → Runs.
+      { path: 'agents/engineering/:runId/*', ...page(<RunWorkspace />) },
       // Where GitHub sends an administrator back from the deployment's GitHub App (Agents → Connections → Connect
       // GitHub): its creation (the manifest's redirect_url, with the code and the state) and its installation (the
       // App's setup_url). Both addresses are fixed in the manifest the server writes, so they must not move. Their

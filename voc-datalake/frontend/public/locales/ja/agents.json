@@ -23,7 +23,8 @@
     "workflows": "ワークフロー",
     "spend": "費用",
     "connections": "接続",
-    "skills": "スキル"
+    "skills": "スキル",
+    "runs": "実行"
   },
   "list": {
     "title": "自律エージェント",
@@ -288,7 +289,20 @@
       "fromNothing": "リポジトリのバグを探すために開始しました。",
       "followHint": "実行モニターで進行を確認するか、ここで停止できます。エンジニアリング実行が終わると、この実行も終わります。",
       "openMonitor": "実行モニターを開く"
-    }
+    },
+    "gate": {
+      "pass": "ゲート合格",
+      "fail": "ゲート不合格"
+    },
+    "here": "現在地",
+    "laneStates": {
+      "ran_ok": "完了",
+      "ran_failed": "失敗",
+      "running": "作業中",
+      "stopped": "停止",
+      "planned": "予定"
+    },
+    "laneAttempt": "{{role}} · 試行 {{n, number}}"
   },
   "editor": {
     "methodology": {
@@ -1690,6 +1704,264 @@
       "body": "まだ何もセットアップされていません。セットアップガイドが推奨順に案内します。GitHub とリポジトリの CI、Issue、そしてトリアージ・修正・作成を行う自動化です。",
       "start": "セットアップを手伝って",
       "skip": "スキップ"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "オーケストレーター",
+    "working": "作業中",
+    "loading": "読み込み中…",
+    "flow": {
+      "canvas": "キャンバス",
+      "timeline": "タイムライン",
+      "view": "フローの表示方法"
+    },
+    "canvas": {
+      "lane": "{{label}}: {{state}}"
+    },
+    "timeline": {
+      "label": "これまでの出来事（ステップごと）",
+      "empty": "まだ何も起きていません。",
+      "offFlow": "フローのどのステップにも属さない",
+      "agents": "エージェント: {{count, number}}",
+      "attemptNow": "試行 {{n, number}}（現在）",
+      "attempt": "試行 {{n, number}}",
+      "states": {
+        "running": "進行中",
+        "ok": "完了",
+        "failed": "失敗",
+        "stopped": "停止",
+        "planned": "未実行"
+      }
+    },
+    "sessions": {
+      "title": "セッション",
+      "label": "開いているセッション一覧",
+      "layout": "レイアウト",
+      "asTabs": "タブ",
+      "asGrid": "{{count, number}} 分割",
+      "tabs": "開いているセッション",
+      "close": "{{name}} を閉じる",
+      "more": "その他（{{count, number}}）",
+      "choose": "選択…",
+      "open": "開く",
+      "noAgent": "この実行にはエージェント {{agent}} はいません。",
+      "grid": "セッションを並べて表示",
+      "divider": "区切り線を移動",
+      "paneAgent": "このペインのエージェント",
+      "closePane": "このペインを閉じる",
+      "emptyPane": "このペインに表示するエージェントを選んでください。"
+    },
+    "thread": {
+      "label": "{{agent}} のスレッド",
+      "empty": "このスレッドにはまだ何もありません。",
+      "ended": "このセッションは終了しました。",
+      "notFound": "このエージェントのスレッドが見つかりません。",
+      "cut": "ここで省略しています。続きはトランスクリプトにあります。",
+      "thought": "思考",
+      "toModel": "モデルへ（送信元: {{id}}）",
+      "steering": "指示",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}}（人）",
+        "conductor": "オーケストレーター（{{id}}）",
+        "system": "{{id}}（プラットフォーム）"
+      },
+      "kinds": {
+        "gate": "ゲート",
+        "finding": "指摘",
+        "signal": "シグナル",
+        "checkpoint": "チェックポイント",
+        "crash": "クラッシュ",
+        "end": "終了"
+      },
+      "tool": {
+        "event": "呼び出し",
+        "result": "結果",
+        "noResult": "まだ結果はありません。",
+        "ok": "成功",
+        "failed": "失敗",
+        "running": "実行中",
+        "loadFailed": "呼び出しを読み込めませんでした。もう一度お試しください。"
+      }
+    },
+    "composer": {
+      "label": "オーケストレーターに指示する",
+      "placeholder": "オーケストレーターへのメッセージ。エージェントに何を伝えるかはオーケストレーターが決めます…",
+      "placeholderAbout": "{{agent}} についてのオーケストレーターへのメッセージ。何を伝えるかはオーケストレーターが決めます…",
+      "about": "{{agent}} について",
+      "send": "オーケストレーターに送信",
+      "hint": "Enter で送信、Shift+Enter で改行します。",
+      "sent": "オーケストレーターに送信しました。"
+    },
+    "agentControls": {
+      "save": "保存",
+      "stop": "停止",
+      "restart": "再起動",
+      "restartTitle": "{{agent}} を再起動しますか？",
+      "restartMessage": "セッションが終了し、もう一度始まります。最初からやり直す場合は、最後のチェックポイント以降の作業も失われます。",
+      "from": "再起動の起点",
+      "fromChoices": {
+        "checkpoint": "最新のチェックポイント",
+        "fresh": "タスクを最初から"
+      }
+    },
+    "restartRun": {
+      "open": "実行をやり直す",
+      "ended": "この実行は終了しました。新しい実行としてやり直せます。",
+      "title": "この実行をやり直しますか？",
+      "message": "この実行をもとに新しい実行が始まります。上限、接続、フローを引き継ぎ、完了済みのステップもそのまま引き継がれます。",
+      "confirm": "新しい実行を開始",
+      "mode": "方法",
+      "modes": {
+        "resume": "再開: 各エージェントを最新のチェックポイントから",
+        "restart": "やり直し: タスクを最初から"
+      },
+      "base": "どのコミットで",
+      "bases": {
+        "same": "この実行自体のコミット",
+        "head": "リポジトリの現在の最新状態（リベースあり。競合はエージェントに渡されます）"
+      },
+      "agents": "エージェント",
+      "agentsHint": "何も選ばない場合: 未完了のすべてのタスク"
+    },
+    "header": {
+      "cost": "これまでの費用: {{cost}}",
+      "costOfCap": "これまでの費用: {{cost}}（上限 {{budget}}）",
+      "share": "上限の {{percent}}%",
+      "learn": "Learn: {{cost}}",
+      "budgetUsed": "使用済みの予算",
+      "manifest": "終了時: {{cost}}、{{tokens}} トークン",
+      "lineage": "この実行の元になった実行と、この実行から生まれた実行",
+      "parent": {
+        "resume": "再開元の実行",
+        "restart": "やり直し元の実行"
+      },
+      "child": {
+        "resume": "再開先の実行",
+        "restart": "やり直し先の実行"
+      }
+    },
+    "inspector": {
+      "label": "インスペクター",
+      "title": "インスペクター",
+      "of": "インスペクター: {{agent}}",
+      "none": "エージェントのセッションを開くと、ここで確認できます。",
+      "tabs": "確認する項目",
+      "tab": {
+        "changes": "変更",
+        "files": "ファイル",
+        "gate": "ゲート",
+        "assertions": "アサーション",
+        "cost": "費用",
+        "memory": "メモリと Learn"
+      }
+    },
+    "changes": {
+      "patch": "パッチ",
+      "sources": {
+        "submitted": "提出済み",
+        "checkpoint": "チェックポイント"
+      },
+      "split": "左右に並べて表示",
+      "unified": "統合表示",
+      "compareOn": "{{host}} で変更を開く",
+      "pullOn": "{{host}} でプルリクエストを開く",
+      "partial": "ファイル一覧は一部だけです。すべて見るにはホストで変更を開いてください。",
+      "large": "この変更は大きいため、全体はホストで表示されます。",
+      "none": "このエージェントのパッチはまだありません。",
+      "files": "変更されたファイル",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "追加",
+        "deleted": "削除",
+        "renamed": "名前変更",
+        "copied": "コピー",
+        "modified": "変更"
+      },
+      "binaryShort": "バイナリ",
+      "binary": "バイナリファイルのため表示しません。",
+      "fileFailed": "このファイルの変更を読み込めませんでした。もう一度お試しください。",
+      "fileCut": "1 MB で切り詰めました。残りはホストで表示されます。",
+      "noLines": "変更された行はありません（モードの変更または空のファイル）。",
+      "noNewline": "ファイル末尾に改行がありません",
+      "mode": {
+        "executable": "実行可能になりました",
+        "notExecutable": "実行可能ではなくなりました",
+        "changed": "モードが変更されました"
+      },
+      "unfold": "変更のない行を表示（{{count, number}}）"
+    },
+    "files": {
+      "none": "まだ読み書きしたファイルはありません。",
+      "partial": "最初のファイルのみ一覧表示しています。",
+      "read": "読み取り: {{count, number}}",
+      "written": "書き込み: {{count, number}}",
+      "listed": "一覧取得: {{count, number}}"
+    },
+    "gate": {
+      "none": "このエージェントはゲートを実行していません。",
+      "open": "{{agent}} のゲートを見る",
+      "verdict": "判定: {{verdict}}",
+      "passed": "チェック合格",
+      "failed": "チェック不合格",
+      "ranAt": "実行: {{when}}",
+      "checks": "決定的チェック",
+      "findings": "レビュアーの指摘",
+      "exit": "終了コード {{code}}",
+      "duration": "{{seconds, number}} 秒",
+      "noOutput": "出力はありません。",
+      "finding": "{{reviewer}}: {{outcome}}"
+    },
+    "assertions": {
+      "none": "この実行のフローにはアサーションがありません。",
+      "status": {
+        "pass": "合格",
+        "fail": "不合格",
+        "pending": "保留中",
+        "unread": "未取得"
+      },
+      "onFail": {
+        "block": "ブロック",
+        "warn": "警告"
+      },
+      "attempt": "試行 {{n, number}}"
+    },
+    "cost": {
+      "cost": "費用",
+      "microvm": "MicroVM",
+      "model": "モデル",
+      "skill": "スキル",
+      "attempt": "試行",
+      "commit": "コミット",
+      "byAgent": "エージェントごとの費用",
+      "agent": "エージェント"
+    },
+    "memory": {
+      "recalled": "呼び出された教訓",
+      "noneRecalled": "ブリーフで呼び出された教訓はありません。",
+      "learned": "Learn がこのタスクから得たこと",
+      "noneLearned": "Learn はまだ何も得ていません。",
+      "coach": "スキルコーチ: {{coach}}",
+      "proposed": "提案バージョン {{n, number}}"
+    },
+    "runs": {
+      "hint": "ある月に開始されたエンジニアリング実行（新しい順）。開くと、実行を見守り、指示を出せます。",
+      "month": "月",
+      "flow": "フロー",
+      "allFlows": "すべてのフロー",
+      "status": "ステータス",
+      "allStatuses": "すべてのステータス",
+      "statuses": {
+        "active": "アクティブ",
+        "needs_human": "人の対応が必要",
+        "done": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "loadFailed": "実行を読み込めませんでした。",
+      "more": "さらに表示",
+      "moreFailed": "次のページを読み込めませんでした。",
+      "empty": "この月に開始された実行はありません。"
     }
   }
 }

@@ -28,7 +28,7 @@ const PARAM_PAGES: Record<string, string> = {
   'agents/:id/*': 'pages/Agents/AgentDetail.tsx',
   'agents/workflows/:workflowId': 'pages/Agents/WorkflowPage.tsx',
   'agents/workflows/templates/:templateId': 'pages/Agents/WorkflowTemplatePage.tsx',
-  'agents/engineering/:runId': 'pages/Agents/EngineeringRun.tsx',
+  'agents/engineering/:runId/*': 'pages/Agents/RunWorkspace/RunWorkspace.tsx',
   'feature-requests/:slug/*': 'pages/FeatureRequests/BoardPage.tsx',
 }
 

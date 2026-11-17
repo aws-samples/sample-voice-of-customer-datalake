@@ -422,6 +422,16 @@ describe('route coverage', () => {
   })
 })
 
+describe('a run\'s workspace (/agents/engineering/:runId[/a/<agent>], 7.51.00)', () => {
+  it('trails Agents › Runs (to the list of runs) › the run, the agent open in it being the page\'s own place', () => {
+    renderWithRouter(['/agents/engineering/RUN1/a/fixer-3'])
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    expect(within(nav).getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '/agents/runs')
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Engineering run')
+    expect(within(nav).queryByText('fixer-3')).not.toBeInTheDocument()
+  })
+})
+
 describe('a library workflow (/agents/workflows/:workflowId)', () => {
   it('trails Agents › Workflows (to the library) › the workflow, named once loaded', () => {
     renderWithRouter(['/agents/workflows/wf_1'], (client) => {

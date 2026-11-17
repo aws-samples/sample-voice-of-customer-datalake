@@ -40,6 +40,10 @@ describe('pageContextFromLocation', () => {
     ['/agents/ag_1', '', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
     ['/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', '', { kind: 'agents',
       path: '/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', engineeringRunId: '01JDA7K3M9Q2R5T8V0W4X6Y1Z3' }],
+    // (7.51.00) An agent open in the run's workspace: the run is still the one on screen.
+    ['/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/a/fixer-3', '', { kind: 'agents',
+      path: '/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/a/fixer-3', engineeringRunId: '01JDA7K3M9Q2R5T8V0W4X6Y1Z3' }],
+    ['/agents/runs', '?month=2026-11', { kind: 'agents', path: '/agents/runs', tab: 'runs' }],
     // (not a run id: the run monitor answers not found, and the context names no run)
     ['/agents/engineering/run-1', '', { kind: 'agents', path: '/agents/engineering/run-1' }],
     ['/radar', '', { kind: 'radar', path: '/radar' }],

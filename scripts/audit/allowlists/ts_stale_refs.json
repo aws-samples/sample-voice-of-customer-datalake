@@ -13,6 +13,17 @@
     { "key": "voc-datalake/frontend/src/publicAssets.test.ts::*", "reason": "example public/ paths the public-asset spec reasons about (planted names, allowlist shapes)" },
     { "key": "voc-datalake/frontend/src/test/appSources.ts::path/from/src.tsx", "reason": "a placeholder for the `at` field's format" },
     { "key": "voc-datalake/frontend/src/theme/*.test.ts::website/src/index.css", "reason": "the KiroCrew website's stylesheet the palette specs cite as their source (another repository)" },
-    { "key": "voc-datalake/lambda/stream/src/assistant/*::*inputSchema.json", "reason": "the Bedrock tool spec field path `toolSpec.inputSchema.json`, not a file" }
+    { "key": "voc-datalake/lambda/stream/src/assistant/*::*inputSchema.json", "reason": "the Bedrock tool spec field path `toolSpec.inputSchema.json`, not a file" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/*::website/src/*", "reason": "a file of the KiroCrew website (another repository) an adapted module names in its \"Adapted from\" header (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/runState.ts::website/src/*", "reason": "a file of the KiroCrew website (another repository) an adapted module names in its \"Adapted from\" header (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/runState.ts::chipClass", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/runState.ts::GraphNodeState", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runLanes.ts::chipClass", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runLanes.ts::buildGraph", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runLanes.ts::nodeTitle", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/*::agentState", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runTimelineModel.ts::groupByPhase", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runTimelineModel.ts::phaseStatus", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/unifiedDiff.ts::modeWords", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" }
   ]
 }

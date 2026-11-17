@@ -33,7 +33,6 @@
     "workspaceSettings": "工作区设置",
     "workflows": "工作流列表",
     "workflow": "工作流",
-    "engineering": "工程",
     "engineeringRun": "工程运行",
     "templates": "模板",
     "template": "模板",
@@ -45,7 +44,8 @@
     "github": "GitHub",
     "githubAppCreated": "App 已创建",
     "githubAppInstalled": "App 已安装",
-    "setupGuide": "配置向导"
+    "setupGuide": "配置向导",
+    "runs": "运行记录"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",

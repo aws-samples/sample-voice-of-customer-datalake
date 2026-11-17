@@ -23,7 +23,8 @@
     "workflows": "워크플로",
     "spend": "비용",
     "connections": "연결",
-    "skills": "스킬"
+    "skills": "스킬",
+    "runs": "실행"
   },
   "list": {
     "title": "자율 에이전트",
@@ -288,7 +289,20 @@
       "fromNothing": "저장소의 버그를 찾기 위해 시작되었습니다.",
       "followHint": "실행 모니터에서 진행을 확인하거나 여기서 중지하세요. 엔지니어링 실행이 끝나면 이 실행도 끝납니다.",
       "openMonitor": "실행 모니터 열기"
-    }
+    },
+    "gate": {
+      "pass": "게이트 통과",
+      "fail": "게이트 실패"
+    },
+    "here": "현재 위치",
+    "laneStates": {
+      "ran_ok": "완료",
+      "ran_failed": "실패",
+      "running": "작업 중",
+      "stopped": "중지됨",
+      "planned": "예정"
+    },
+    "laneAttempt": "{{role}} · 시도 {{n, number}}"
   },
   "editor": {
     "methodology": {
@@ -1690,6 +1704,264 @@
       "body": "아직 구성된 것이 없습니다. 구성 가이드가 권장 순서대로 안내합니다: GitHub와 저장소의 CI, 이슈, 그리고 분류하고 수정하고 만드는 자동화.",
       "start": "구성 도와줘",
       "skip": "건너뛰기"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "오케스트레이터",
+    "working": "작업 중",
+    "loading": "불러오는 중…",
+    "flow": {
+      "canvas": "캔버스",
+      "timeline": "타임라인",
+      "view": "흐름 표시 방식"
+    },
+    "canvas": {
+      "lane": "{{label}}: {{state}}"
+    },
+    "timeline": {
+      "label": "지금까지 일어난 일, 단계별",
+      "empty": "아직 일어난 일이 없습니다.",
+      "offFlow": "흐름의 어느 단계에도 속하지 않음",
+      "agents": "에이전트: {{count, number}}",
+      "attemptNow": "시도 {{n, number}} (현재)",
+      "attempt": "시도 {{n, number}}",
+      "states": {
+        "running": "진행 중",
+        "ok": "완료",
+        "failed": "실패",
+        "stopped": "중지됨",
+        "planned": "아직 실행 안 됨"
+      }
+    },
+    "sessions": {
+      "title": "세션",
+      "label": "열린 세션 목록",
+      "layout": "레이아웃",
+      "asTabs": "탭",
+      "asGrid": "{{count, number}}분할 그리드",
+      "tabs": "열린 세션",
+      "close": "{{name}} 닫기",
+      "more": "더 보기 ({{count, number}})",
+      "choose": "선택…",
+      "open": "열기",
+      "noAgent": "이 실행에는 {{agent}} 에이전트가 없습니다.",
+      "grid": "세션 나란히 보기",
+      "divider": "구분선 이동",
+      "paneAgent": "이 패널의 에이전트",
+      "closePane": "이 패널 닫기",
+      "emptyPane": "이 패널에 표시할 에이전트를 선택하세요."
+    },
+    "thread": {
+      "label": "{{agent}}의 스레드",
+      "empty": "이 스레드에는 아직 아무것도 없습니다.",
+      "ended": "이 세션은 종료되었습니다.",
+      "notFound": "이 에이전트의 스레드가 없습니다.",
+      "cut": "여기서 잘렸습니다. 나머지는 트랜스크립트에 있습니다.",
+      "thought": "생각",
+      "toModel": "모델에게 ({{id}}에서 보냄)",
+      "steering": "지시",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}} (사람)",
+        "conductor": "오케스트레이터 ({{id}})",
+        "system": "{{id}} (플랫폼)"
+      },
+      "kinds": {
+        "gate": "게이트",
+        "finding": "발견 사항",
+        "signal": "신호",
+        "checkpoint": "체크포인트",
+        "crash": "크래시",
+        "end": "종료"
+      },
+      "tool": {
+        "event": "호출",
+        "result": "결과",
+        "noResult": "아직 결과가 없습니다.",
+        "ok": "성공",
+        "failed": "실패",
+        "running": "실행 중",
+        "loadFailed": "호출을 읽을 수 없습니다. 다시 시도하세요."
+      }
+    },
+    "composer": {
+      "label": "오케스트레이터에게 지시",
+      "placeholder": "오케스트레이터에게 메시지 보내기: 에이전트에게 무엇을 전달할지는 오케스트레이터가 정합니다…",
+      "placeholderAbout": "{{agent}} 관련 메시지를 오케스트레이터에게 보내기: 무엇을 전달할지는 오케스트레이터가 정합니다…",
+      "about": "{{agent}} 관련",
+      "send": "오케스트레이터에게 보내기",
+      "hint": "Enter로 보내고 Shift+Enter로 줄을 바꿉니다.",
+      "sent": "오케스트레이터에게 보냈습니다."
+    },
+    "agentControls": {
+      "save": "저장",
+      "stop": "중지",
+      "restart": "재시작",
+      "restartTitle": "{{agent}}을(를) 재시작할까요?",
+      "restartMessage": "세션이 종료되고 다시 시작됩니다. 처음부터 시작하면 마지막 체크포인트 이후의 작업도 사라집니다.",
+      "from": "다시 시작할 지점",
+      "fromChoices": {
+        "checkpoint": "가장 최근 체크포인트",
+        "fresh": "작업을 처음부터"
+      }
+    },
+    "restartRun": {
+      "open": "실행 재시작",
+      "ended": "이 실행은 종료되었습니다. 새 실행으로 다시 시작할 수 있습니다.",
+      "title": "이 실행을 재시작할까요?",
+      "message": "이 실행을 바탕으로 새 실행이 시작됩니다. 한도, 연결, 흐름을 그대로 가져가며 이미 완료된 단계는 이어받습니다.",
+      "confirm": "새 실행 시작",
+      "mode": "방식",
+      "modes": {
+        "resume": "재개: 각 에이전트를 가장 최근 체크포인트부터",
+        "restart": "재시작: 작업을 처음부터"
+      },
+      "base": "기준 커밋",
+      "bases": {
+        "same": "이 실행 자체의 커밋",
+        "head": "지금 저장소의 최신 상태(리베이스, 충돌은 에이전트가 처리)"
+      },
+      "agents": "에이전트",
+      "agentsHint": "아무것도 선택하지 않으면: 완료되지 않은 모든 작업"
+    },
+    "header": {
+      "cost": "지금까지의 비용: {{cost}}",
+      "costOfCap": "지금까지의 비용: {{cost}} (한도 {{budget}})",
+      "share": "한도의 {{percent}}%",
+      "learn": "Learn: {{cost}}",
+      "budgetUsed": "사용한 예산",
+      "manifest": "종료 시: {{cost}}, 토큰 {{tokens}}개",
+      "lineage": "이 실행의 원본 실행과 이 실행에서 이어진 실행",
+      "parent": {
+        "resume": "재개 원본 실행",
+        "restart": "재시작 원본 실행"
+      },
+      "child": {
+        "resume": "재개 후속 실행",
+        "restart": "재시작 후속 실행"
+      }
+    },
+    "inspector": {
+      "label": "인스펙터",
+      "title": "인스펙터",
+      "of": "인스펙터: {{agent}}",
+      "none": "에이전트의 세션을 열어 살펴보세요.",
+      "tabs": "살펴볼 항목",
+      "tab": {
+        "changes": "변경 사항",
+        "files": "파일",
+        "gate": "게이트",
+        "assertions": "어서션",
+        "cost": "비용",
+        "memory": "메모리와 Learn"
+      }
+    },
+    "changes": {
+      "patch": "패치",
+      "sources": {
+        "submitted": "제출됨",
+        "checkpoint": "체크포인트"
+      },
+      "split": "나란히 보기",
+      "unified": "통합 보기",
+      "compareOn": "{{host}}에서 변경 열기",
+      "pullOn": "{{host}}에서 풀 리퀘스트 열기",
+      "partial": "파일 목록이 일부만 표시됩니다. 전체를 보려면 호스트에서 변경을 여세요.",
+      "large": "이 변경은 커서 호스트에서 전체를 표시합니다.",
+      "none": "이 에이전트의 패치가 아직 없습니다.",
+      "files": "변경된 파일",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "추가됨",
+        "deleted": "삭제됨",
+        "renamed": "이름 변경됨",
+        "copied": "복사됨",
+        "modified": "수정됨"
+      },
+      "binaryShort": "바이너리",
+      "binary": "바이너리 파일: 표시하지 않습니다.",
+      "fileFailed": "이 파일의 변경을 읽을 수 없습니다. 다시 시도하세요.",
+      "fileCut": "1 MB에서 잘렸습니다. 나머지는 호스트에서 표시됩니다.",
+      "noLines": "변경된 줄이 없습니다(모드 변경 또는 빈 파일).",
+      "noNewline": "파일 끝에 줄바꿈 없음",
+      "mode": {
+        "executable": "이제 실행 가능",
+        "notExecutable": "더 이상 실행할 수 없음",
+        "changed": "모드 변경됨"
+      },
+      "unfold": "변경되지 않은 줄 표시 ({{count, number}})"
+    },
+    "files": {
+      "none": "아직 읽거나 쓴 파일이 없습니다.",
+      "partial": "처음 몇 개 파일만 표시됩니다.",
+      "read": "읽기: {{count, number}}",
+      "written": "쓰기: {{count, number}}",
+      "listed": "목록 조회: {{count, number}}"
+    },
+    "gate": {
+      "none": "이 에이전트는 게이트를 실행하지 않았습니다.",
+      "open": "{{agent}}의 게이트 보기",
+      "verdict": "판정: {{verdict}}",
+      "passed": "검사 통과",
+      "failed": "검사 실패",
+      "ranAt": "실행: {{when}}",
+      "checks": "결정적 검사",
+      "findings": "검토자 발견 사항",
+      "exit": "종료 코드 {{code}}",
+      "duration": "{{seconds, number}}초",
+      "noOutput": "출력이 없습니다.",
+      "finding": "{{reviewer}}: {{outcome}}"
+    },
+    "assertions": {
+      "none": "이 실행의 흐름에는 어서션이 없습니다.",
+      "status": {
+        "pass": "통과",
+        "fail": "실패",
+        "pending": "대기 중",
+        "unread": "읽지 못함"
+      },
+      "onFail": {
+        "block": "차단",
+        "warn": "경고"
+      },
+      "attempt": "시도 {{n, number}}"
+    },
+    "cost": {
+      "cost": "비용",
+      "microvm": "MicroVM",
+      "model": "모델",
+      "skill": "스킬",
+      "attempt": "시도",
+      "commit": "커밋",
+      "byAgent": "에이전트별 비용",
+      "agent": "에이전트"
+    },
+    "memory": {
+      "recalled": "불러온 교훈",
+      "noneRecalled": "브리프에서 불러온 교훈이 없습니다.",
+      "learned": "Learn이 이 작업에서 얻은 것",
+      "noneLearned": "Learn이 아직 얻은 것이 없습니다.",
+      "coach": "스킬 코치: {{coach}}",
+      "proposed": "제안된 버전 {{n, number}}"
+    },
+    "runs": {
+      "hint": "한 달 동안 시작된 엔지니어링 실행입니다(최신순). 실행을 열어 지켜보고 지시하세요.",
+      "month": "월",
+      "flow": "흐름",
+      "allFlows": "모든 흐름",
+      "status": "상태",
+      "allStatuses": "모든 상태",
+      "statuses": {
+        "active": "활성",
+        "needs_human": "사람이 필요함",
+        "done": "완료",
+        "failed": "실패",
+        "stopped": "중지됨"
+      },
+      "loadFailed": "실행을 읽을 수 없습니다.",
+      "more": "더 보기",
+      "moreFailed": "다음 페이지를 읽을 수 없습니다.",
+      "empty": "이 달에 시작된 실행이 없습니다."
     }
   }
 }

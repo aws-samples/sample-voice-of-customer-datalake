@@ -55,9 +55,11 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   'pages/Radar/Radar.tsx': { kind: 'filter', keys: ['brand', 'days'], reason: 'the brand picker and the window: filters of the one Radar page' },
   'pages/FeatureRequests/useBoardControls.ts': { kind: 'filter', keys: ['q', 'status', 'sort'], reason: 'a board list\'s search, status filter and sort' },
   'pages/FeatureRequests/useInsights.ts': { kind: 'filter', keys: ['board', 'days'], reason: 'the Insights tab\'s board picker and window' },
-  'pages/Agents/spendView.ts': { kind: 'filter', keys: ['month', 'by', 'workflow'], reason: 'the Spend view\'s month, grouping and workflow filter' },
+  'pages/Agents/spendView.ts': { kind: 'filter', keys: ['month', 'by', 'workflow'], reason: 'the Spend view\'s month, grouping and workflow filter, and the Runs list\'s month' },
   'pages/Agents/EngineeringSpend.tsx': { kind: 'filter', keys: [], reason: 'writes the Spend filters spendView.ts reads' },
   'pages/Agents/skillsView.ts': { kind: 'filter', keys: ['connection'], reason: 'the Skills scope picker (the shared skills or one connection); the role and version are the path' },
+  'pages/Agents/RunWorkspace/runsFilters.ts': { kind: 'filter', keys: ['flow', 'status'], reason: 'the Runs list\'s flow and status filters (7.51.00; its month through spendView.ts): they combine freely; a run and its agent are the path' },
+  'pages/Agents/RunWorkspace/RunsView.tsx': { kind: 'filter', keys: [], reason: 'writes the Runs filters runsFilters.ts reads' },
   // The review modal.
   'hooks/useReviewModal.ts': { kind: 'overlay', keys: ['review', 'reviewBrand'], reason: 'one review over whatever page is open; Back closes it' },
   // Prefilled forms.

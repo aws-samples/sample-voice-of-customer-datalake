@@ -31,7 +31,7 @@ export const SetupGuide = lazy(() => import('./pages/Agents/SetupGuide/SetupGuid
 export const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
 export const WorkflowTemplatePage = lazy(() => import('./pages/Agents/WorkflowTemplatePage'))
 // An engineering run's monitor, by its run id (docs/autonomous-agents.md "An engineering run").
-export const EngineeringRun = lazy(() => import('./pages/Agents/EngineeringRun'))
+export const RunWorkspace = lazy(() => import('./pages/Agents/RunWorkspace/RunWorkspace'))
 // Where GitHub sends an administrator back from creating and from installing the deployment's GitHub App (7.45.00).
 export const GitHubAppCreated = lazy(() => import('./pages/Agents/GitHubAppCreated'))
 export const GitHubAppInstalled = lazy(() => import('./pages/Agents/GitHubAppInstalled'))

@@ -111,6 +111,9 @@ Frontend design system:
 Quick theme: the palette, component look (src/styles/theme-palettes.css) and four-point spark mark (src/components/ThemeMark/QuickMark.tsx, public/favicons/quick.svg) are inspired by Quick
 
 
+Frontend run workspace (voc-datalake/frontend/src/pages/Agents/RunWorkspace, 7.51.00), code adapted from KiroCrew at commit 184ae0059379194c2e8413843d4cd16c2ab54c7c (each adapted file says so in its header):
+[kirodotdev/KiroCrew](https://github.com/kirodotdev/KiroCrew) - Apache-2.0, Copyright Amazon.com, Inc. or its affiliates (its NOTICE: "This product includes software developed at Amazon.com, Inc."): `website/src/components/workflows/WorkflowRunGraph.tsx` and `planModel.ts` (the stage and sibling model, the state-to-border mapping and the bounded titles: RunWorkspace/runLanes.ts and components/WorkflowEditor/runState.ts `laneBorder`), `WorkflowRunTree.tsx` and `runModel.ts` (the steps, agents and attempts: RunWorkspace/runTimelineModel.ts, RunTimeline.tsx), `website/src/components/GitBranchChanges.tsx` (collapsed, fetched on open: RunWorkspace/ChangesTab.tsx), `DiffBlock.tsx` `extractFilePath` and `FoldableDiffBlock.tsx` (the fold of long context: RunWorkspace/unifiedDiff.ts, FileDiff.tsx), `DiffPanel.tsx` (the split and unified toggle: RunWorkspace/FileDiff.tsx), `website/src/hooks/useSessionTabs.ts` with `website/src/lib/sessionTabs.ts`, and `website/src/hooks/useSessionGrid.ts` (the tabs and the immutable split tree: RunWorkspace/agentGridModel.ts). Not its Pierre diff renderer.
+
 Frontend document canvas, its Markdown reader and writer (voc-datalake/frontend, in the shared lazy `vendor-markdown` chunk that react-markdown already uses):
 [mdast-util-from-markdown@2.1.0](https://github.com/syntax-tree/mdast-util-from-markdown) - MIT
 [mdast-util-to-markdown@2.2.1](https://github.com/syntax-tree/mdast-util-to-markdown) - MIT

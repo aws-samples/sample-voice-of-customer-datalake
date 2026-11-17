@@ -33,7 +33,6 @@
     "workspaceSettings": "ワークスペースの設定",
     "workflows": "ワークフロー一覧",
     "workflow": "ワークフロー",
-    "engineering": "エンジニアリング",
     "engineeringRun": "エンジニアリング実行",
     "templates": "テンプレート",
     "template": "テンプレート",
@@ -45,7 +44,8 @@
     "github": "GitHub",
     "githubAppCreated": "App 作成済み",
     "githubAppInstalled": "App インストール済み",
-    "setupGuide": "セットアップガイド"
+    "setupGuide": "セットアップガイド",
+    "runs": "実行"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",

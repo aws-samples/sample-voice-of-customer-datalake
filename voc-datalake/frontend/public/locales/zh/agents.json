@@ -23,7 +23,8 @@
     "workflows": "工作流",
     "spend": "费用",
     "connections": "连接",
-    "skills": "技能"
+    "skills": "技能",
+    "runs": "运行记录"
   },
   "list": {
     "title": "自主智能体",
@@ -288,7 +289,20 @@
       "fromNothing": "为在其代码仓库中查找缺陷而启动。",
       "followHint": "请在运行监视器中跟踪它，或在此处停止它：工程运行结束时，此运行也随之结束。",
       "openMonitor": "打开运行监视器"
-    }
+    },
+    "gate": {
+      "pass": "门禁已通过",
+      "fail": "门禁未通过"
+    },
+    "here": "当前位置",
+    "laneStates": {
+      "ran_ok": "完成",
+      "ran_failed": "失败",
+      "running": "工作中",
+      "stopped": "已停止",
+      "planned": "计划中"
+    },
+    "laneAttempt": "{{role}} · 第 {{n, number}} 次尝试"
   },
   "editor": {
     "methodology": {
@@ -1690,6 +1704,264 @@
       "body": "尚未配置任何内容。配置向导会按推荐顺序引导你：GitHub 和仓库的 CI、其 issue，然后是负责分诊、修复和构建的自动化。",
       "start": "帮我配置",
       "skip": "跳过"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "编排者",
+    "working": "工作中",
+    "loading": "加载中…",
+    "flow": {
+      "canvas": "画布",
+      "timeline": "时间线",
+      "view": "流程的显示方式"
+    },
+    "canvas": {
+      "lane": "{{label}}：{{state}}"
+    },
+    "timeline": {
+      "label": "逐步记录发生的事情",
+      "empty": "还没有发生任何事情。",
+      "offFlow": "不属于流程中的任何步骤",
+      "agents": "智能体：{{count, number}}",
+      "attemptNow": "第 {{n, number}} 次尝试（当前）",
+      "attempt": "第 {{n, number}} 次尝试",
+      "states": {
+        "running": "进行中",
+        "ok": "完成",
+        "failed": "失败",
+        "stopped": "已停止",
+        "planned": "尚未运行"
+      }
+    },
+    "sessions": {
+      "title": "会话",
+      "label": "当前打开的会话",
+      "layout": "布局",
+      "asTabs": "标签页",
+      "asGrid": "{{count, number}} 宫格",
+      "tabs": "已打开的会话",
+      "close": "关闭 {{name}}",
+      "more": "更多（{{count, number}}）",
+      "choose": "选择…",
+      "open": "打开",
+      "noAgent": "此运行中没有智能体 {{agent}}。",
+      "grid": "并排显示的会话",
+      "divider": "移动分隔线",
+      "paneAgent": "此窗格的智能体",
+      "closePane": "关闭此窗格",
+      "emptyPane": "为此窗格选择一个智能体。"
+    },
+    "thread": {
+      "label": "{{agent}} 的线程",
+      "empty": "此线程中还没有内容。",
+      "ended": "此会话已结束。",
+      "notFound": "找不到此智能体的线程。",
+      "cut": "在此截断：其余内容见完整记录。",
+      "thought": "思考",
+      "toModel": "发给模型，来自 {{id}}",
+      "steering": "引导",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}}（人）",
+        "conductor": "编排者（{{id}}）",
+        "system": "{{id}}（平台）"
+      },
+      "kinds": {
+        "gate": "门禁",
+        "finding": "发现",
+        "signal": "信号",
+        "checkpoint": "检查点",
+        "crash": "崩溃",
+        "end": "结束"
+      },
+      "tool": {
+        "event": "调用",
+        "result": "结果",
+        "noResult": "还没有结果。",
+        "ok": "成功",
+        "failed": "失败",
+        "running": "运行中",
+        "loadFailed": "无法读取此调用：请重试。"
+      }
+    },
+    "composer": {
+      "label": "引导编排者",
+      "placeholder": "给编排者发消息：由它决定向其智能体转达什么…",
+      "placeholderAbout": "就 {{agent}} 给编排者发消息：由它决定转达什么…",
+      "about": "关于 {{agent}}",
+      "send": "发送给编排者",
+      "hint": "按 Enter 发送；按 Shift+Enter 换行。",
+      "sent": "已发送给编排者。"
+    },
+    "agentControls": {
+      "save": "保存",
+      "stop": "停止",
+      "restart": "重新开始",
+      "restartTitle": "重新开始 {{agent}}？",
+      "restartMessage": "它的会话会结束并重新开始。若从头开始，自上一个检查点以来的工作也会丢失。",
+      "from": "重新开始的起点",
+      "fromChoices": {
+        "checkpoint": "最新的检查点",
+        "fresh": "从头开始其任务"
+      }
+    },
+    "restartRun": {
+      "open": "重新开始运行",
+      "ended": "此运行已结束：可以作为新运行重新开始。",
+      "title": "重新开始此运行？",
+      "message": "将以此运行为基础开始一个新运行，沿用其上限、连接和流程；已完成的步骤会保留。",
+      "confirm": "开始新运行",
+      "mode": "方式",
+      "modes": {
+        "resume": "继续：每个智能体从其最新检查点继续",
+        "restart": "重新开始：从头执行其任务"
+      },
+      "base": "基于哪个提交",
+      "bases": {
+        "same": "此运行自身的提交",
+        "head": "仓库当前的最新状态（变基；冲突交给智能体处理）"
+      },
+      "agents": "智能体",
+      "agentsHint": "未勾选任何项：所有未完成的任务。"
+    },
+    "header": {
+      "cost": "目前费用：{{cost}}",
+      "costOfCap": "目前费用：{{cost}}（上限 {{budget}}）",
+      "share": "上限的 {{percent}}%",
+      "learn": "Learn：{{cost}}",
+      "budgetUsed": "已用预算",
+      "manifest": "结束时：{{cost}}，{{tokens}} 个令牌",
+      "lineage": "此运行的来源运行及由它产生的运行",
+      "parent": {
+        "resume": "继续自运行",
+        "restart": "重新开始自运行"
+      },
+      "child": {
+        "resume": "继续为运行",
+        "restart": "重新开始为运行"
+      }
+    },
+    "inspector": {
+      "label": "检查器",
+      "title": "检查器",
+      "of": "检查器：{{agent}}",
+      "none": "打开一个智能体的会话即可检查。",
+      "tabs": "检查内容",
+      "tab": {
+        "changes": "更改",
+        "files": "文件",
+        "gate": "门禁",
+        "assertions": "断言",
+        "cost": "费用",
+        "memory": "记忆与 Learn"
+      }
+    },
+    "changes": {
+      "patch": "补丁",
+      "sources": {
+        "submitted": "已递交",
+        "checkpoint": "检查点"
+      },
+      "split": "并排",
+      "unified": "统一",
+      "compareOn": "在 {{host}} 上打开变更",
+      "pullOn": "在 {{host}} 上打开拉取请求",
+      "partial": "文件列表不完整：请在托管平台上打开变更查看全部。",
+      "large": "此变更较大：托管平台上会完整显示。",
+      "none": "此智能体还没有补丁。",
+      "files": "已更改的文件",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "新增",
+        "deleted": "删除",
+        "renamed": "重命名",
+        "copied": "复制",
+        "modified": "修改"
+      },
+      "binaryShort": "二进制",
+      "binary": "二进制文件：不显示。",
+      "fileFailed": "无法读取此文件的更改：请重试。",
+      "fileCut": "在 1 MB 处截断：其余部分见托管平台。",
+      "noLines": "没有更改的行（模式更改或空文件）。",
+      "noNewline": "文件末尾没有换行符",
+      "mode": {
+        "executable": "现在可执行",
+        "notExecutable": "不再可执行",
+        "changed": "模式已更改"
+      },
+      "unfold": "显示未更改的行（{{count, number}}）"
+    },
+    "files": {
+      "none": "还没有读取或写入文件。",
+      "partial": "只列出了前面的文件。",
+      "read": "读取：{{count, number}}",
+      "written": "写入：{{count, number}}",
+      "listed": "列出：{{count, number}}"
+    },
+    "gate": {
+      "none": "此智能体没有运行门禁。",
+      "open": "查看 {{agent}} 的门禁",
+      "verdict": "结论：{{verdict}}",
+      "passed": "检查已通过",
+      "failed": "检查未通过",
+      "ranAt": "运行于 {{when}}",
+      "checks": "确定性检查",
+      "findings": "评审者的发现",
+      "exit": "退出码 {{code}}",
+      "duration": "{{seconds, number}} 秒",
+      "noOutput": "没有输出。",
+      "finding": "{{reviewer}}：{{outcome}}"
+    },
+    "assertions": {
+      "none": "此运行的流程没有断言。",
+      "status": {
+        "pass": "通过",
+        "fail": "失败",
+        "pending": "待定",
+        "unread": "未读取"
+      },
+      "onFail": {
+        "block": "阻止",
+        "warn": "警告"
+      },
+      "attempt": "第 {{n, number}} 次尝试"
+    },
+    "cost": {
+      "cost": "费用",
+      "microvm": "MicroVM",
+      "model": "模型",
+      "skill": "技能",
+      "attempt": "尝试",
+      "commit": "提交",
+      "byAgent": "每个智能体的费用",
+      "agent": "智能体"
+    },
+    "memory": {
+      "recalled": "调出的经验教训",
+      "noneRecalled": "其任务简报没有调出任何经验教训。",
+      "learned": "Learn 从其任务中得出的内容",
+      "noneLearned": "Learn 还没有从中得出任何内容。",
+      "coach": "技能教练：{{coach}}",
+      "proposed": "提议的版本 {{n, number}}"
+    },
+    "runs": {
+      "hint": "某个月内启动的工程运行，最新在前。打开一个即可查看并引导它。",
+      "month": "月份",
+      "flow": "流程",
+      "allFlows": "所有流程",
+      "status": "状态",
+      "allStatuses": "所有状态",
+      "statuses": {
+        "active": "活动",
+        "needs_human": "需要人处理",
+        "done": "完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "loadFailed": "无法读取运行记录。",
+      "more": "显示更多",
+      "moreFailed": "无法读取下一页。",
+      "empty": "这个月没有启动任何运行。"
     }
   }
 }

@@ -33,7 +33,8 @@ interface Tail {
 
 const EMPTY_TAIL: Tail = { messages: [], after: 0 }
 
-function useEnabled(runId: string): boolean {
+/** Whether a run's reads can go out: an API to read from and a run to read (the run workspace's reads too). */
+export function useRunReadable(runId: string): boolean {
   return useConfigStore((s) => s.config.apiEndpoint) !== '' && runId !== ''
 }
 
@@ -62,7 +63,7 @@ function nextRead(query: PollState, every: number): number {
  * follow it. Only a 404 stops them all.
  */
 export function useEngineeringOverview(runId: string) {
-  const enabled = useEnabled(runId)
+  const enabled = useRunReadable(runId)
   const query = useQuery({
     queryKey: engineeringRunsKeys.overview(runId),
     queryFn: () => engineeringRunsApi.overview(runId),
@@ -82,7 +83,7 @@ export function useEngineeringBoard(runId: string, live: boolean) {
   return useQuery({
     queryKey: engineeringRunsKeys.board(runId),
     queryFn: () => engineeringRunsApi.board(runId),
-    enabled: useEnabled(runId),
+    enabled: useRunReadable(runId),
     refetchInterval: pollWhile(live),
   })
 }
@@ -97,7 +98,7 @@ export function useEngineeringConversation(runId: string, live: boolean) {
       const page = await engineeringRunsApi.conversation(runId, known.after)
       return { messages: mergeBySeq(known.messages, page.items), after: page.nextAfter }
     },
-    enabled: useEnabled(runId),
+    enabled: useRunReadable(runId),
     refetchInterval: pollWhile(live),
   })
 }
@@ -107,7 +108,7 @@ export function useEngineeringReports(runId: string, live: boolean) {
   return useQuery({
     queryKey: engineeringRunsKeys.reports(runId),
     queryFn: () => engineeringRunsApi.reports(runId),
-    enabled: useEnabled(runId),
+    enabled: useRunReadable(runId),
     retry: retryOnceUnlessNotFound,
     refetchInterval: pollWhile(live, REPORTS_POLL_MS),
   })

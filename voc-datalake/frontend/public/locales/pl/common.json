@@ -31,7 +31,6 @@
     "workspaceSettings": "Ustawienia obszaru roboczego",
     "workflows": "Przepływy pracy",
     "workflow": "Przepływ pracy",
-    "engineering": "Inżynieria",
     "engineeringRun": "Przebieg inżynieryjny",
     "templates": "Szablony",
     "template": "Szablon",
@@ -43,7 +42,8 @@
     "github": "GitHub",
     "githubAppCreated": "App utworzona",
     "githubAppInstalled": "App zainstalowana",
-    "setupGuide": "Przewodnik konfiguracji"
+    "setupGuide": "Przewodnik konfiguracji",
+    "runs": "Przebiegi"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",

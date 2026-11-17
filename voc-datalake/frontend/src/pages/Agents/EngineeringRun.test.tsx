@@ -1,5 +1,5 @@
 /**
- * @fileoverview The run monitor of an engineering run: its header (no cost yet), the flow with the agents' steps lit,
+ * @fileoverview The run monitor of an engineering run, as the run workspace keeps it (7.51.00, RunWorkspace/): its header (no cost yet), the flow with the agents' steps lit,
  * the Agents, Board, Conversation and Reports panels (each report's versions, as Markdown only), an admin's signals (at the attempt the board shows; Stop now asks first;
  * a moved-on attempt says to reload) and answers (to the conductor, or on the thread replied to), the run's Stop
  * (7.50.03: always there for an admin on a run under way, through the start function, Stopping… while its agents
@@ -22,7 +22,7 @@ import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
 
-const { default: EngineeringRun } = await import('./EngineeringRun')
+const { default: EngineeringRun } = await import('./RunWorkspace/RunWorkspace')
 
 const BASE = '/agents/engineering/RUN1'
 
@@ -39,7 +39,7 @@ function routes(extra: Record<string, Handler> = {}) {
 function renderRun(runId = 'RUN1') {
   return renderWithQueryClient(
     <TestRouter initialEntries={[`/agents/engineering/${runId}`]}>
-      <Routes><Route path="/agents/engineering/:runId" element={<EngineeringRun />} /></Routes>
+      <Routes><Route path="/agents/engineering/:runId/*" element={<EngineeringRun />} /></Routes>
     </TestRouter>,
   )
 }
@@ -112,7 +112,8 @@ describe('the run monitor', () => {
     routes()
     renderRun()
     expect(await screen.findByText('Looks stuck: No progress for 10 minutes')).toBeInTheDocument()
-    expect([screen.getByText('Waiting').tagName, screen.getByText('continuation 1').tagName]).toStrictEqual(['SPAN', 'SPAN'])
+    const agentsPanel = within(screen.getByRole('tabpanel', { name: 'Agents' }))
+    expect([agentsPanel.getByText('Waiting').tagName, agentsPanel.getByText('continuation 1').tagName]).toStrictEqual(['SPAN', 'SPAN'])
     expect(screen.getAllByText('30 sec ago')).toHaveLength(3)
     await userEvent.click(screen.getByText('Recent tool calls (2)'))
     expect(screen.getByText('run_tests')).toBeVisible()
@@ -163,7 +164,7 @@ describe('the reports', () => {
 
   it('lists them by level, goal first, and shows the latest version of the one chosen as Markdown only', async () => {
     await openGoal()
-    const levels = within(screen.getByRole('tabpanel')).getAllByRole('region')
+    const levels = within(screen.getByRole('tabpanel', { name: 'Reports' })).getAllByRole('region')
     expect(levels.map((region) => region.getAttribute('aria-label')).slice(0, 2)).toStrictEqual(['Goal', 'Commits'])
     expect(within(screen.getByRole('region', { name: 'Commits' })).getByText(`${SHA} (v1)`)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Goal report' })).toBeInTheDocument()
@@ -210,7 +211,7 @@ describe('the reports', () => {
     renderRun()
     await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
     await screen.findByRole('region', { name: 'audit' })
-    const levels = within(screen.getByRole('tabpanel')).getAllByRole('region')
+    const levels = within(screen.getByRole('tabpanel', { name: 'Reports' })).getAllByRole('region')
     expect(levels.map((region) => region.getAttribute('aria-label'))).toStrictEqual(['Goal', 'Commits', 'audit'])
   })
 })

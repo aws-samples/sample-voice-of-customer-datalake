@@ -41,8 +41,9 @@
   font-family: inherit;
 }
 
-/* Step nodes render their own card; the library's node chrome stays out of the way. */
+/* Step nodes (and a run's lanes) render their own card; the library's node chrome stays out of the way. */
 .voc-workflow .react-flow__node-step,
+.voc-workflow .react-flow__node-lane,
 .voc-workflow .react-flow__node-loopFrame {
   padding: 0;
   border: none;

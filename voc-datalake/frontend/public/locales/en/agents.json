@@ -23,7 +23,8 @@
     "workflows": "Workflows",
     "spend": "Spend",
     "connections": "Connections",
-    "skills": "Skills"
+    "skills": "Skills",
+    "runs": "Runs"
   },
   "list": {
     "title": "Autonomous agents",
@@ -288,7 +289,20 @@
       "fromNothing": "Started to hunt for bugs in its repository.",
       "followHint": "Follow it on its run monitor, or stop it here: this run ends when the engineering run does.",
       "openMonitor": "Open the run monitor"
-    }
+    },
+    "gate": {
+      "pass": "Gate passed",
+      "fail": "Gate failed"
+    },
+    "here": "You are here",
+    "laneStates": {
+      "ran_ok": "Done",
+      "ran_failed": "Failed",
+      "running": "At work",
+      "stopped": "Stopped",
+      "planned": "Planned"
+    },
+    "laneAttempt": "{{role}} · attempt {{n, number}}"
   },
   "editor": {
     "methodology": {
@@ -1636,6 +1650,264 @@
       "body": "Nothing is set up yet. The setup guide walks you through it in the recommended order: GitHub and the repository's CI, its issues, then the automations that triage, fix and build.",
       "start": "Help me set up",
       "skip": "Skip"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "Orchestrator",
+    "working": "At work",
+    "loading": "Loading…",
+    "flow": {
+      "canvas": "Canvas",
+      "timeline": "Timeline",
+      "view": "How the flow is shown"
+    },
+    "canvas": {
+      "lane": "{{label}}: {{state}}"
+    },
+    "timeline": {
+      "label": "What has happened, step by step",
+      "empty": "Nothing has happened yet.",
+      "offFlow": "On no step of the flow",
+      "agents": "Agents: {{count, number}}",
+      "attemptNow": "attempt {{n, number}} (now)",
+      "attempt": "attempt {{n, number}}",
+      "states": {
+        "running": "Under way",
+        "ok": "Done",
+        "failed": "Failed",
+        "stopped": "Stopped",
+        "planned": "Not run yet"
+      }
+    },
+    "sessions": {
+      "title": "Sessions",
+      "label": "The sessions open",
+      "layout": "Layout",
+      "asTabs": "Tabs",
+      "asGrid": "A grid of {{count, number}}",
+      "tabs": "Open sessions",
+      "close": "Close {{name}}",
+      "more": "More ({{count, number}})",
+      "choose": "Choose…",
+      "open": "Open",
+      "noAgent": "This run has no agent {{agent}}.",
+      "grid": "The sessions side by side",
+      "divider": "Move the divider",
+      "paneAgent": "This pane's agent",
+      "closePane": "Close this pane",
+      "emptyPane": "Choose an agent for this pane."
+    },
+    "thread": {
+      "label": "The thread of {{agent}}",
+      "empty": "Nothing in this thread yet.",
+      "ended": "This session has ended.",
+      "notFound": "This agent's thread is not there.",
+      "cut": "Cut here: the rest is in the transcript.",
+      "thought": "Thinking",
+      "toModel": "To the model, from {{id}}",
+      "steering": "Steering",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}} (a person)",
+        "conductor": "Orchestrator ({{id}})",
+        "system": "{{id}} (the platform)"
+      },
+      "kinds": {
+        "gate": "Gate",
+        "finding": "Finding",
+        "signal": "Signal",
+        "checkpoint": "Checkpoint",
+        "crash": "Crash",
+        "end": "End"
+      },
+      "tool": {
+        "event": "The call",
+        "result": "Its result",
+        "noResult": "No result yet.",
+        "ok": "Worked",
+        "failed": "Failed",
+        "running": "Running",
+        "loadFailed": "The call could not be read: try again."
+      }
+    },
+    "composer": {
+      "label": "Steer the orchestrator",
+      "placeholder": "Message the orchestrator: it decides what to relay to its agents…",
+      "placeholderAbout": "Message the orchestrator about {{agent}}: it decides what to relay…",
+      "about": "About {{agent}}",
+      "send": "Send to the orchestrator",
+      "hint": "Enter sends; Shift+Enter starts a new line.",
+      "sent": "Sent to the orchestrator."
+    },
+    "agentControls": {
+      "save": "Save",
+      "stop": "Stop",
+      "restart": "Restart",
+      "restartTitle": "Restart {{agent}}?",
+      "restartMessage": "Its session ends and starts again. Afresh, its work since its last checkpoint is lost too.",
+      "from": "Start again from",
+      "fromChoices": {
+        "checkpoint": "Its newest checkpoint",
+        "fresh": "Its task, afresh"
+      }
+    },
+    "restartRun": {
+      "open": "Restart run",
+      "ended": "This run has ended: it can start again as a new run.",
+      "title": "Restart this run?",
+      "message": "A new run starts from this one, with its caps, its connection and its flow; the steps already done carry over.",
+      "confirm": "Start the new run",
+      "mode": "How",
+      "modes": {
+        "resume": "Resume: each agent from its newest checkpoint",
+        "restart": "Restart: their tasks afresh"
+      },
+      "base": "On which commit",
+      "bases": {
+        "same": "The run's own commit",
+        "head": "The repository's head now (rebased; a conflict goes to the agent)"
+      },
+      "agents": "Agents",
+      "agentsHint": "None ticked: every task not finished."
+    },
+    "header": {
+      "cost": "Cost so far: {{cost}}",
+      "costOfCap": "Cost so far: {{cost}} of its {{budget}} cap",
+      "share": "{{percent}}% of the cap",
+      "learn": "Learn: {{cost}}",
+      "budgetUsed": "Budget used",
+      "manifest": "At its end: {{cost}}, {{tokens}} tokens",
+      "lineage": "The runs this one comes from or led to",
+      "parent": {
+        "resume": "Resumed from run",
+        "restart": "Restarted from run"
+      },
+      "child": {
+        "resume": "Resumed as run",
+        "restart": "Restarted as run"
+      }
+    },
+    "inspector": {
+      "label": "Inspector",
+      "title": "Inspector",
+      "of": "Inspector: {{agent}}",
+      "none": "Open an agent's session to inspect it.",
+      "tabs": "What to inspect",
+      "tab": {
+        "changes": "Changes",
+        "files": "Files",
+        "gate": "Gate",
+        "assertions": "Assertions",
+        "cost": "Cost",
+        "memory": "Memory and Learn"
+      }
+    },
+    "changes": {
+      "patch": "Patch",
+      "sources": {
+        "submitted": "Submitted",
+        "checkpoint": "Checkpoint"
+      },
+      "split": "Side by side",
+      "unified": "Unified",
+      "compareOn": "Open the change on {{host}}",
+      "pullOn": "Open the pull request on {{host}}",
+      "partial": "The list of files is partial: open the change on the host for all of it.",
+      "large": "This change is large: the host shows it whole.",
+      "none": "No patch from this agent yet.",
+      "files": "Changed files",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "Added",
+        "deleted": "Deleted",
+        "renamed": "Renamed",
+        "copied": "Copied",
+        "modified": "Modified"
+      },
+      "binaryShort": "binary",
+      "binary": "A binary file: not shown.",
+      "fileFailed": "This file's change could not be read: try again.",
+      "fileCut": "Cut at 1 MB: the host shows the rest.",
+      "noLines": "No lines changed (a mode change or an empty file).",
+      "noNewline": "No newline at end of file",
+      "mode": {
+        "executable": "now executable",
+        "notExecutable": "no longer executable",
+        "changed": "mode changed"
+      },
+      "unfold": "Show unchanged lines ({{count, number}})"
+    },
+    "files": {
+      "none": "No file read or written yet.",
+      "partial": "Only the first files are listed.",
+      "read": "read: {{count, number}}",
+      "written": "written: {{count, number}}",
+      "listed": "listed: {{count, number}}"
+    },
+    "gate": {
+      "none": "This agent ran no gate.",
+      "open": "See the gate of {{agent}}",
+      "verdict": "Verdict: {{verdict}}",
+      "passed": "Checks passed",
+      "failed": "Checks failed",
+      "ranAt": "Ran {{when}}",
+      "checks": "Deterministic checks",
+      "findings": "Reviewers' findings",
+      "exit": "exit {{code}}",
+      "duration": "{{seconds, number}} s",
+      "noOutput": "No output.",
+      "finding": "{{reviewer}}: {{outcome}}"
+    },
+    "assertions": {
+      "none": "This run's flow has no assertions.",
+      "status": {
+        "pass": "Pass",
+        "fail": "Fail",
+        "pending": "Pending",
+        "unread": "Unread"
+      },
+      "onFail": {
+        "block": "blocks",
+        "warn": "warns"
+      },
+      "attempt": "attempt {{n, number}}"
+    },
+    "cost": {
+      "cost": "Cost",
+      "microvm": "MicroVM",
+      "model": "Model",
+      "skill": "Skill",
+      "attempt": "Attempt",
+      "commit": "Commit",
+      "byAgent": "Each agent's cost",
+      "agent": "Agent"
+    },
+    "memory": {
+      "recalled": "Lessons recalled",
+      "noneRecalled": "Its brief recalled no lesson.",
+      "learned": "What Learn made of its task",
+      "noneLearned": "Learn has made nothing of it yet.",
+      "coach": "Skill coach: {{coach}}",
+      "proposed": "proposed version {{n, number}}"
+    },
+    "runs": {
+      "hint": "The engineering runs started in a month, newest first. Open one to watch and steer it.",
+      "month": "Month",
+      "flow": "Flow",
+      "allFlows": "Every flow",
+      "status": "Status",
+      "allStatuses": "Every status",
+      "statuses": {
+        "active": "Active",
+        "needs_human": "Needs a person",
+        "done": "Done",
+        "failed": "Failed",
+        "stopped": "Stopped"
+      },
+      "loadFailed": "The runs could not be read.",
+      "more": "Show more",
+      "moreFailed": "The next page could not be read.",
+      "empty": "No run started in this month."
     }
   }
 }

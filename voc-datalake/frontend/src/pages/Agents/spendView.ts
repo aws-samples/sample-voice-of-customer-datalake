@@ -33,13 +33,18 @@ export function monthsOffered(month: string, now: Date = new Date()): string[] {
   return months.includes(month) ? months : [...months, month]
 }
 
+/** The month a view's address names (`?month=yyyy-mm`), else this one: the Spend tab's and the Runs list's (7.51.00). */
+export function monthOf(params: URLSearchParams, now: Date): string {
+  const month = params.get('month') ?? ''
+  return MONTH.test(month) ? month : currentMonth(now)
+}
+
 /** The view options in the address, each checked as the server would (a bad one is the default). */
 export function spendQueryOf(params: URLSearchParams, now: Date = new Date()): SpendQuery {
-  const month = params.get('month') ?? ''
   const by = params.get('by') ?? ''
   const workflow = params.get('workflow') ?? ''
   return {
-    month: MONTH.test(month) ? month : currentMonth(now),
+    month: monthOf(params, now),
     by: isSpendGrouping(by) ? by : 'workflow',
     workflow: workflow.length <= MAX_WORKFLOW_CHARS && !workflow.includes('#') ? workflow : '',
   }

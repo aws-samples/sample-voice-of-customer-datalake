@@ -836,6 +836,134 @@
     ]
   },
   {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, `/thread${query}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/thread?limit=200"
+      },
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/thread?after=eyJrIjoxLCJvIjoyNDQxLCJwIjoiMi4xLjIyNjAiLCJzIjoyLCJ2IjoxfQ&limit=200"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, `/thread/${encodeURIComponent(ref)}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/thread/2.1.2260"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, `/changes${queryOf({ key })}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/changes"
+      },
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/changes?key=ws%2Fdefault%2Fruns%2F01JDA7K3M9Q2R5T8V0W4X6Y1Z3%2Ffixer-3%2Fcommits%2F0123456789abcdef0123456789abcdef01234567%2F_patches%2Fattempt-2%2Fcheckpoint-000002-5e6f7a8b.diff"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, `/changes/file${queryOf({ key, path })}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/changes/file?key=ws%2Fdefault%2Fruns%2F01JDA7K3M9Q2R5T8V0W4X6Y1Z3%2Ffixer-3%2Fcommits%2F0123456789abcdef0123456789abcdef01234567%2F_patches%2Fattempt-2%2Ftask-fix-page-size-1a2b3c4d.diff&path=src%2Fpaging.py"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, '/files')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/files"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, '/gate')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/gate-runner-4/gate"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "agentRoute(runId, agent, '/memory')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/memory"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "runRoute(runId, '/assertions')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/assertions"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "GET",
+    "call": "`/agents/engineering/runs${search}`",
+    "probes": [
+      {
+        "path": "/agents/engineering/runs?month=2026-11"
+      },
+      {
+        "path": "/agents/engineering/runs?month=2026-11&status=stopped"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "POST",
+    "call": "runRoute(runId, '/steer')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/steer",
+        "body": {
+          "text": "Leave the docs for a later change.",
+          "about": "fixer-3"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunWorkspaceApi.ts",
+    "method": "POST",
+    "call": "runRoute(runId, '/restart')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA0B1C2D3E4F5G6H7J8K9M0/restart",
+        "body": {
+          "mode": "resume",
+          "base": "same",
+          "confirm": true
+        }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringSetupApi.ts",
     "method": "GET",
     "call": "SETUP_PATH",

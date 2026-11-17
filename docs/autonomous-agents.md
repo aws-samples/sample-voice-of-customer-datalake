@@ -404,7 +404,7 @@ the saved Understand flow and an estimate of the minutes and cost; only an admin
 get 403; the run records who started it), never the model and never a plan step; with no Understand flow saved, the card's
 Approve saves one from its template and starts nothing ([autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)). An administrator starts a run from a saved engineering flow's page (**Start a run**:
 the repository connection, the commit, the language and the goal, checked as the server checks them) or with
-`POST /agents/engineering/runs` (below); the run monitor then opens on it. The web app's page for a run is `/agents/engineering/<run_id>`:
+`POST /agents/engineering/runs` (below); the run's workspace then opens on it ([The run workspace](#the-run-workspace), 7.51.00, which replaced the run monitor at the same address and keeps its panels). The web app's page for a run is `/agents/engineering/<run_id>`:
 its flow (the run's own copy, as its start wrote it, each step lit as the conductor reads it: done, under way, waiting at a
 person, not run yet; for a run without a copy, the steps its agents are on: [autonomous-engineering.md](autonomous-engineering.md#the-flow-a-run-follows)),
 and the Agents, Board, Conversation and Reports panels (the reports by
@@ -443,6 +443,61 @@ its controls, says "Couldn't refresh" with a Retry, and polls on with a backoff;
 
 A failed call to the supervisor or the bus answers 503 (retry: the signal is idempotent), and so does a deployment
 without the runtime (`ENGINEERING_RUNTIME_FUNCTION`, for signals) or the bus (`ENGINEERING_BUS_NAME`).
+
+### The run workspace
+
+Since 7.51.00 a run's page is its **workspace**: one live screen, interactive like Slack rather than cards, at
+`/agents/engineering/<run_id>` (the orchestrator's session) or `/agents/engineering/<run_id>/a/<agent>` (one agent's
+session open in it); inside a workspace the address is `/workspace/<slug>/agents/engineering/…`. Where a person is lives
+in the path: the agent open is a path segment, never a query. **Agents → Runs** (`/agents/runs`, administrators, with
+the engineering agents on) lists the runs started in a month, newest first, a page at a time, with the month, the flow
+and the status as filters in the query (`?month=&flow=&status=`); a flow's page links its runs there, and each row
+opens its workspace and names the run it was resumed from. Everything on the screen is polled: the overview every 5 s
+while the run is under way, an open thread by its cursor (D51-5; the push comes in 7.53).
+
+- **Header:** the run's goal, status, repository, issue and pull request, the budget it used against its cap (its tokens
+  at their prices, Learn's apart), an ended run's manifest, and the runs it was resumed or restarted from and as.
+  Pause, Resume, Shut down and Stop now for the whole run (the run's signals); once the run has ended, **Restart run**.
+- **Canvas** (left): the run's own copy of its flow on the workflow editor's read-only canvas. Each step is a stage; the
+  agents on a step are sibling **lanes** under it (one per task posted for the step, placed from its `flow_step`), with
+  no edges between them, a spinner on an agent at work, dashed while planned and solid once it ran. A gate step shows
+  the board's verdict as pass or fail, and "You are here" marks the step the run is on. The canvas is inert: a click
+  opens a session, it never signals, restarts or spends anything. A toggle switches to the **timeline**: the steps in
+  the flow's order, the agents on each with their attempts, newest first, and the agents on no step of the flow last.
+- **Sessions** (centre): the open agents' threads, as tabs (the default; the ones past the strip in a menu) or a grid
+  of 1, 2 or 4 panes whose dividers move; the layout is kept for the run in this browser tab (sessionStorage, per
+  workspace, forgotten at sign-out). A thread is that agent's transcript and the conversation's messages about it, in
+  time order, kept once by each item's ref (a tool's result on a later page replaces its call in place): the agent's
+  words as Markdown, its thinking collapsed, each tool call on one line (tool, whether it worked, a one-line input)
+  that opens on a click into its whole event and result, the harness's messages to the model folded, a person's
+  steering, gate results, findings, signals, checkpoints, a crash and the end inline. Transcript text is rendered as
+  Markdown with no raw HTML and no images, its links opened apart, and cut to 4 KB per item.
+- **Composer:** an administrator's steering goes to the run's **orchestrator**, never to an agent
+  (`POST …/steer {text, about?}`, at most 1 KB with its "About <agent>: "); on an agent's thread it is about that agent
+  unless unticked, and its placeholder says so. The orchestrator decides what to relay. An answer to an agent's own
+  question still goes from the Conversation panel, on that question's thread.
+- **An agent's controls** (an administrator's, on a run under way): **Save** (a checkpoint now), **Stop** (shut down
+  after a checkpoint) and **Restart**, which asks whether it starts again from its newest checkpoint or its task afresh
+  (`signal: restart, from`), all on the agent's task at the attempt it is on.
+- **Inspector** (right), for the agent open: **Changes** (its patches in S3, the submitted one or a checkpoint's: the
+  files collapsed, each file's part of the patch read only when opened, unified or side by side, long unchanged runs
+  folded, renames, binary files and a missing final newline shown; links to the change and the pull request on GitHub
+  or GitLab, for a change too large to read here, offered only on the host's own domain under the run's repository),
+  **Files** (a tree of the files its tool calls read, listed or wrote), **Gate** (its gate record's verdict and findings,
+  and each deterministic check with its exit code, time and output tail; an agent that ran none offers the run's gate
+  agents), **Assertions** (the run's, by step: pass, fail, pending or unread, blocking or warning), **Cost** (its cost,
+  tokens per model, MicroVM time, model, skill and commit, beside every agent's cost) and **Memory and Learn** (the
+  lessons its brief recalled, and what Learn made of its task).
+- **Restart run** (an ended, stopped, spent or 30-day run): a new **child** run of it (`POST …/restart`), resuming
+  each agent from its newest checkpoint or restarting their tasks afresh, for the agents ticked (none: every unfinished
+  task), on the run's own commit or the repository's head; the child opens once started. An answer that could not be
+  read names the child to open rather than to start again.
+- Below the three panes, the run monitor's own panels stay: Agents, Board (with a person's actions on its tasks),
+  Conversation and Reports, and people's reactions on the host.
+
+The diff parser and renderer are the app's own (no diff library). The canvas's stage and lane model, the timeline,
+the collapsed changes, the fold, the split toggle and the tabs and grid are adapted from kirodotdev/KiroCrew
+(Apache-2.0, [THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md)).
 
 ### Methodology warnings
 

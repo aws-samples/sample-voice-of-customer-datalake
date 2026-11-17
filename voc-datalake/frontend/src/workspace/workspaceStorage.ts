@@ -20,8 +20,9 @@
  */
 import { PAGE_WORKSPACE } from './workspacePath'
 
-/** The persisted stores saved per workspace (assistant/store/assistantStore.ts, store/manualImportStore.ts, store/configStore.ts). */
-const WORKSPACE_STORES = ['voc-assistant-ui', 'voc-manual-import', 'voc-config'] as const
+/** The persisted stores saved per workspace (assistant/store/assistantStore.ts, store/manualImportStore.ts, store/configStore.ts,
+ * and since 7.51.00 the run workspace's layouts, in sessionStorage: pages/Agents/RunWorkspace/agentGridModel.ts). */
+const WORKSPACE_STORES = ['voc-assistant-ui', 'voc-manual-import', 'voc-config', 'voc-run-workspace'] as const
 type WorkspaceStore = (typeof WORKSPACE_STORES)[number]
 
 /** The persisted store `name` as this page load saves it: per workspace inside one, else `name` itself. */
@@ -48,7 +49,7 @@ const BROWSER_STORAGES: ReadonlyArray<() => Storage> = [() => window.localStorag
 const ASSISTANT_STORE: WorkspaceStore = 'voc-assistant-ui'
 
 /**
- * Forget every workspace's record of the three stores, in localStorage and sessionStorage (sign-out, an expired
+ * Forget every workspace's record of the stores, in localStorage and sessionStorage (sign-out, an expired
  * session): the next person on this browser finds no workspace's conversation in view, draft or filters. The
  * assistant's deployment-wide record goes too: before 6.15.00 the session's end reset it, and inside a workspace that
  * reset now writes the workspace's record instead. The plain draft and filters keep their old handling (kept).
@@ -61,7 +62,7 @@ export function forgetWorkspaceStores(): void {
 }
 
 /**
- * Forget the workspace `slug`'s own records of the three stores, in localStorage and sessionStorage: a workspace its
+ * Forget the workspace `slug`'s own records of the stores, in localStorage and sessionStorage: a workspace its
  * admin has just deleted leaves no conversation in view, draft or filters in this browser for a workspace that later
  * takes its slug.
  */

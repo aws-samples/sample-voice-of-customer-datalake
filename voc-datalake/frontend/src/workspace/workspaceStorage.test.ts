@@ -107,6 +107,19 @@ describe('forgetWorkspaceStores (sign-out, an expired session)', () => {
   })
 })
 
+describe('the run workspace\'s layouts (7.51.00, in sessionStorage)', () => {
+  it('are kept per workspace, and forgotten at sign-out and with their deleted workspace', async () => {
+    const { workspaceStorageName, forgetWorkspaceStores, forgetWorkspaceRecords } = await helpersAt('/workspace/acme/agents/runs')
+    expect(workspaceStorageName('voc-run-workspace')).toBe('voc-run-workspace:w/acme')
+    window.sessionStorage.setItem('voc-run-workspace:w/acme', '[]')
+    window.sessionStorage.setItem('voc-run-workspace:w/juniper', '[]')
+    forgetWorkspaceRecords('juniper')
+    expect(Object.keys(window.sessionStorage)).toStrictEqual(['voc-run-workspace:w/acme'])
+    forgetWorkspaceStores()
+    expect(Object.keys(window.sessionStorage)).toStrictEqual([])
+  })
+})
+
 describe('forgetOtherRecords (Reset local settings)', () => {
   it('removes every config record but the page load\'s own', async () => {
     seed()

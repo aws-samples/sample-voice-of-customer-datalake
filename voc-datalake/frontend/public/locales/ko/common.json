@@ -33,7 +33,6 @@
     "workspaceSettings": "워크스페이스 설정",
     "workflows": "워크플로 목록",
     "workflow": "워크플로",
-    "engineering": "엔지니어링",
     "engineeringRun": "엔지니어링 실행",
     "templates": "템플릿",
     "template": "템플릿",
@@ -45,7 +44,8 @@
     "github": "GitHub",
     "githubAppCreated": "App 생성됨",
     "githubAppInstalled": "App 설치됨",
-    "setupGuide": "구성 가이드"
+    "setupGuide": "구성 가이드",
+    "runs": "실행"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",

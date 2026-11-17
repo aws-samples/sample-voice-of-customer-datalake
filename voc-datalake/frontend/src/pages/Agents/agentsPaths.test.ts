@@ -45,7 +45,7 @@ describe('the list\'s views', () => {
     expect([agentsPath({ view: 'agents' }), agentsPath({ view: 'skills', role: 'fixer', version: 2 }), agentsPath({ view: 'spend', role: 'x' })])
       .toStrictEqual(['/agents', '/agents/skills/fixer/v/2', '/agents/spend'])
     expect([flowRunsPath('wf_1'), workflowPath('wf_1'), engineeringRunPagePath('r1')])
-      .toStrictEqual(['/agents/spend?by=run&workflow=wf_1', '/agents/workflows/wf_1', '/agents/engineering/r1'])
+      .toStrictEqual(['/agents/runs?flow=wf_1', '/agents/workflows/wf_1', '/agents/engineering/r1'])
   })
 })
 

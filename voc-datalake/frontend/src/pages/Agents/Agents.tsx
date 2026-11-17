@@ -5,7 +5,8 @@
  * the workflow library; and, when the engineering agents are on, a Spend tab
  * (`/agents/spend`): what they spent, from the spend ledger, a Connections tab
  * (`/agents/connections`): the repository connections they reach a repository through, and a Skills tab
- * (`/agents/skills`): their skill versions' history and scorecards, read only. Each view is a path
+ * (`/agents/skills`): their skill versions' history and scorecards, read only, and a Runs tab (`/agents/runs`, 7.51.00):
+ * the engineering runs by month, flow and status, each opening its workspace (RunWorkspace/). Each view is a path
  * (agentsPaths.ts), so Back walks them. With the engineering agents on, an administrator also gets **Setup guide**
  * (`/agents/setup`, SetupGuide/), offered on a first visit while nothing is set up (7.50.00).
  *
@@ -14,7 +15,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Bot, CircleDollarSign, GraduationCap, Hand, KeyRound, Plus, Workflow } from 'lucide-react'
+import { Bot, CircleDollarSign, GraduationCap, Hand, History, KeyRound, Plus, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -30,6 +31,7 @@ import { WorkflowLibrary } from './WorkflowLibrary'
 import { EngineeringSpend } from './EngineeringSpend'
 import { EngineeringConnections } from './EngineeringConnections'
 import { EngineeringSkills } from './EngineeringSkills'
+import { RunsView } from './RunWorkspace/RunsView'
 import { AgentRowActions } from './AgentRowActions'
 import { EngineeringSetUpCard } from './AgentEngineering'
 import { PlansList } from './PlansList'
@@ -102,12 +104,12 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
 }
 
 const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = {
-  agents: Bot, workflows: Workflow, spend: CircleDollarSign, connections: KeyRound, skills: GraduationCap,
+  agents: Bot, runs: History, workflows: Workflow, spend: CircleDollarSign, connections: KeyRound, skills: GraduationCap,
 }
 /** The engineering agents' views: their reads answer 404 while the module is off. */
-const ENGINEERING_VIEWS: ReadonlySet<AgentsView> = new Set(['spend', 'connections', 'skills'])
+const ENGINEERING_VIEWS: ReadonlySet<AgentsView> = new Set(['runs', 'spend', 'connections', 'skills'])
 
-/** The views an admin has: Spend, Connections and Skills only while the engineering agents are on. */
+/** The views an admin has: Runs, Spend, Connections and Skills only while the engineering agents are on. */
 const adminViews = (): readonly AgentsView[] => (isEngineeringAvailable() ? AGENTS_VIEWS : AGENTS_VIEWS.filter((id) => !ENGINEERING_VIEWS.has(id)))
 
 /** The path picks the view (`/agents/workflows`, agentsPaths.ts); only admins have the library and the spend. */
@@ -177,6 +179,18 @@ function ListActions({ onCreate }: Readonly<{ onCreate: () => void }>) {
   )
 }
 
+/** The view's own content. */
+function ViewBody({ view, isAdmin }: Readonly<{ view: AgentsView; isAdmin: boolean }>) {
+  switch (view) {
+    case 'agents': return <AgentList isAdmin={isAdmin} />
+    case 'runs': return <RunsView />
+    case 'workflows': return <WorkflowLibrary />
+    case 'spend': return <EngineeringSpend />
+    case 'connections': return <EngineeringConnections />
+    case 'skills': return <EngineeringSkills />
+  }
+}
+
 export default function Agents() {
   const { t } = useTranslation('agents')
   const isAdmin = useIsAdmin()
@@ -193,11 +207,7 @@ export default function Agents() {
       </div>
       {isAdmin && <ViewTabs view={view} onChange={setView} />}
       <div role={isAdmin ? 'tabpanel' : undefined} aria-label={isAdmin ? t(`views.${view}`) : undefined} className="space-y-4 sm:space-y-6">
-        {view === 'agents' && <AgentList isAdmin={isAdmin} />}
-        {view === 'workflows' && <WorkflowLibrary />}
-        {view === 'spend' && <EngineeringSpend />}
-        {view === 'connections' && <EngineeringConnections />}
-        {view === 'skills' && <EngineeringSkills />}
+        <ViewBody view={view} isAdmin={isAdmin} />
       </div>
       {creating && <CreateAgentDialog onClose={() => setCreating(false)} />}
     </div>

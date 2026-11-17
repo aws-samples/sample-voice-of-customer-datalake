@@ -35,7 +35,7 @@ function renderDialog(start?: Handler, workflow: WorkflowSummary = FLOW) {
     { path: '/agents/workflows/wf_1', element: <StartRunDialog workflow={workflow} onClose={onClose} /> },
     { path: '/agents/engineering/:runId', element: <p>Run monitor</p> },
     { path: '/agents', element: <p>Agents</p> },
-    { path: '/agents/spend', element: <p>Agents → Spend</p> },
+    { path: '/agents/runs', element: <p>Agents → Runs</p> },
   ], { initialEntries: ['/agents/workflows/wf_1'] })
   renderWithQueryClient(<RouterProvider router={router} />)
   return { router, onClose, dialog: screen.getByRole('dialog', { name: 'Start a run of Bug hunt' }) }
@@ -133,7 +133,7 @@ describe('the Start a run dialog', () => {
       .toStrictEqual([true, expect.objectContaining({ disabled: true })])
     await userEvent.click(within(alert).getByRole('link', { name: 'See the flow’s runs' }))
     await waitFor(() => expect(`${router.state.location.pathname}${router.state.location.search}`)
-      .toBe('/agents/spend?by=run&workflow=wf_1'))
+      .toBe('/agents/runs?flow=wf_1'))
     expect(starts()).toHaveLength(1)
   })
 

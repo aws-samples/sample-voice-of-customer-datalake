@@ -24,7 +24,8 @@
     "workflows": "Fluxos",
     "spend": "Gastos",
     "connections": "Conexões",
-    "skills": "Habilidades"
+    "skills": "Habilidades",
+    "runs": "Execuções"
   },
   "list": {
     "title": "Agentes autônomos",
@@ -289,7 +290,20 @@
       "fromNothing": "Iniciada para procurar bugs no seu repositório.",
       "followHint": "Acompanhe-a no monitor de execução ou pare-a aqui: esta execução termina quando a execução de engenharia termina.",
       "openMonitor": "Abrir o monitor de execução"
-    }
+    },
+    "gate": {
+      "pass": "Controle aprovado",
+      "fail": "Controle reprovado"
+    },
+    "here": "Você está aqui",
+    "laneStates": {
+      "ran_ok": "Concluído",
+      "ran_failed": "Falhou",
+      "running": "Trabalhando",
+      "stopped": "Parado",
+      "planned": "Planejado"
+    },
+    "laneAttempt": "{{role}} · tentativa {{n, number}}"
   },
   "editor": {
     "methodology": {
@@ -1697,6 +1711,264 @@
       "body": "Nada está configurado ainda. O guia de configuração conduz você na ordem recomendada: o GitHub e a CI do repositório, as issues e depois as automações que triam, corrigem e constroem.",
       "start": "Ajude-me a configurar",
       "skip": "Pular"
+    }
+  },
+  "runWorkspace": {
+    "orchestrator": "Orquestrador",
+    "working": "Trabalhando",
+    "loading": "Carregando…",
+    "flow": {
+      "canvas": "Tela",
+      "timeline": "Linha do tempo",
+      "view": "Como o fluxo é exibido"
+    },
+    "canvas": {
+      "lane": "{{label}}: {{state}}"
+    },
+    "timeline": {
+      "label": "O que aconteceu, passo a passo",
+      "empty": "Nada aconteceu ainda.",
+      "offFlow": "Fora dos passos do fluxo",
+      "agents": "Agentes: {{count, number}}",
+      "attemptNow": "tentativa {{n, number}} (atual)",
+      "attempt": "tentativa {{n, number}}",
+      "states": {
+        "running": "Em andamento",
+        "ok": "Concluído",
+        "failed": "Falhou",
+        "stopped": "Parado",
+        "planned": "Ainda não executado"
+      }
+    },
+    "sessions": {
+      "title": "Sessões",
+      "label": "As sessões abertas",
+      "layout": "Layout",
+      "asTabs": "Abas",
+      "asGrid": "Grade de {{count, number}}",
+      "tabs": "Sessões abertas",
+      "close": "Fechar {{name}}",
+      "more": "Mais ({{count, number}})",
+      "choose": "Escolher…",
+      "open": "Abrir",
+      "noAgent": "Esta execução não tem o agente {{agent}}.",
+      "grid": "As sessões lado a lado",
+      "divider": "Mover o divisor",
+      "paneAgent": "O agente deste painel",
+      "closePane": "Fechar este painel",
+      "emptyPane": "Escolha um agente para este painel."
+    },
+    "thread": {
+      "label": "O fio de {{agent}}",
+      "empty": "Ainda não há nada neste fio.",
+      "ended": "Esta sessão terminou.",
+      "notFound": "O fio deste agente não existe.",
+      "cut": "Cortado aqui: o resto está na transcrição.",
+      "thought": "Raciocínio",
+      "toModel": "Para o modelo, de {{id}}",
+      "steering": "Orientação",
+      "senders": {
+        "agent": "{{id}}",
+        "human": "{{id}} (uma pessoa)",
+        "conductor": "Orquestrador ({{id}})",
+        "system": "{{id}} (a plataforma)"
+      },
+      "kinds": {
+        "gate": "Controle",
+        "finding": "Descoberta",
+        "signal": "Sinal",
+        "checkpoint": "Ponto de controle",
+        "crash": "Travamento",
+        "end": "Fim"
+      },
+      "tool": {
+        "event": "A chamada",
+        "result": "O resultado",
+        "noResult": "Ainda sem resultado.",
+        "ok": "Funcionou",
+        "failed": "Falhou",
+        "running": "Em execução",
+        "loadFailed": "Não foi possível ler a chamada: tente de novo."
+      }
+    },
+    "composer": {
+      "label": "Orientar o orquestrador",
+      "placeholder": "Escreva ao orquestrador: ele decide o que repassar aos seus agentes…",
+      "placeholderAbout": "Escreva ao orquestrador sobre {{agent}}: ele decide o que repassar…",
+      "about": "Sobre {{agent}}",
+      "send": "Enviar ao orquestrador",
+      "hint": "Enter envia; Shift+Enter começa uma nova linha.",
+      "sent": "Enviado ao orquestrador."
+    },
+    "agentControls": {
+      "save": "Salvar",
+      "stop": "Parar",
+      "restart": "Reiniciar",
+      "restartTitle": "Reiniciar {{agent}}?",
+      "restartMessage": "A sessão dele termina e começa de novo. Do zero, o trabalho desde o último ponto de controle também se perde.",
+      "from": "Recomeçar a partir de",
+      "fromChoices": {
+        "checkpoint": "O ponto de controle mais recente",
+        "fresh": "A tarefa, do zero"
+      }
+    },
+    "restartRun": {
+      "open": "Reiniciar a execução",
+      "ended": "Esta execução terminou: ela pode recomeçar como uma nova execução.",
+      "title": "Reiniciar esta execução?",
+      "message": "Uma nova execução parte desta, com seus limites, sua conexão e seu fluxo; os passos já concluídos são mantidos.",
+      "confirm": "Iniciar a nova execução",
+      "mode": "Como",
+      "modes": {
+        "resume": "Retomar: cada agente a partir do seu ponto de controle mais recente",
+        "restart": "Reiniciar: as tarefas do zero"
+      },
+      "base": "Em qual commit",
+      "bases": {
+        "same": "O próprio commit da execução",
+        "head": "O estado atual do repositório (com rebase; um conflito vai para o agente)"
+      },
+      "agents": "Agentes",
+      "agentsHint": "Nenhum marcado: todas as tarefas não concluídas."
+    },
+    "header": {
+      "cost": "Custo até agora: {{cost}}",
+      "costOfCap": "Custo até agora: {{cost}} de um limite de {{budget}}",
+      "share": "{{percent}}% do limite",
+      "learn": "Learn: {{cost}}",
+      "budgetUsed": "Orçamento usado",
+      "manifest": "Ao terminar: {{cost}}, {{tokens}} tokens",
+      "lineage": "As execuções de onde esta vem ou a que levou",
+      "parent": {
+        "resume": "Retomada da execução",
+        "restart": "Reiniciada a partir da execução"
+      },
+      "child": {
+        "resume": "Retomada como a execução",
+        "restart": "Reiniciada como a execução"
+      }
+    },
+    "inspector": {
+      "label": "Inspetor",
+      "title": "Inspetor",
+      "of": "Inspetor: {{agent}}",
+      "none": "Abra a sessão de um agente para inspecioná-la.",
+      "tabs": "O que inspecionar",
+      "tab": {
+        "changes": "Alterações",
+        "files": "Arquivos",
+        "gate": "Controle",
+        "assertions": "Asserções",
+        "cost": "Custo",
+        "memory": "Memória e Learn"
+      }
+    },
+    "changes": {
+      "patch": "Patch",
+      "sources": {
+        "submitted": "Enviado",
+        "checkpoint": "Ponto de controle"
+      },
+      "split": "Lado a lado",
+      "unified": "Unificado",
+      "compareOn": "Abrir a alteração no {{host}}",
+      "pullOn": "Abrir a pull request no {{host}}",
+      "partial": "A lista de arquivos está incompleta: abra a alteração no host para ver tudo.",
+      "large": "Esta alteração é grande: o host a mostra inteira.",
+      "none": "Ainda não há patch deste agente.",
+      "files": "Arquivos alterados",
+      "renamed": "{{from}} → {{to}}",
+      "status": {
+        "added": "Adicionado",
+        "deleted": "Excluído",
+        "renamed": "Renomeado",
+        "copied": "Copiado",
+        "modified": "Modificado"
+      },
+      "binaryShort": "binário",
+      "binary": "Um arquivo binário: não exibido.",
+      "fileFailed": "Não foi possível ler a alteração deste arquivo: tente de novo.",
+      "fileCut": "Cortado em 1 MB: o host mostra o resto.",
+      "noLines": "Nenhuma linha alterada (uma mudança de modo ou um arquivo vazio).",
+      "noNewline": "Sem nova linha no fim do arquivo",
+      "mode": {
+        "executable": "agora executável",
+        "notExecutable": "não é mais executável",
+        "changed": "modo alterado"
+      },
+      "unfold": "Mostrar linhas sem alteração ({{count, number}})"
+    },
+    "files": {
+      "none": "Nenhum arquivo lido ou escrito ainda.",
+      "partial": "Só os primeiros arquivos estão listados.",
+      "read": "lidos: {{count, number}}",
+      "written": "escritos: {{count, number}}",
+      "listed": "listados: {{count, number}}"
+    },
+    "gate": {
+      "none": "Este agente não executou nenhum controle.",
+      "open": "Ver o controle de {{agent}}",
+      "verdict": "Veredito: {{verdict}}",
+      "passed": "Verificações aprovadas",
+      "failed": "Verificações com falha",
+      "ranAt": "Executado {{when}}",
+      "checks": "Verificações determinísticas",
+      "findings": "Descobertas dos revisores",
+      "exit": "código de saída {{code}}",
+      "duration": "{{seconds, number}} s",
+      "noOutput": "Sem saída.",
+      "finding": "{{reviewer}}: {{outcome}}"
+    },
+    "assertions": {
+      "none": "O fluxo desta execução não tem asserções.",
+      "status": {
+        "pass": "Aprovada",
+        "fail": "Reprovada",
+        "pending": "Pendente",
+        "unread": "Não lida"
+      },
+      "onFail": {
+        "block": "bloqueia",
+        "warn": "avisa"
+      },
+      "attempt": "tentativa {{n, number}}"
+    },
+    "cost": {
+      "cost": "Custo",
+      "microvm": "MicroVM",
+      "model": "Modelo",
+      "skill": "Habilidade",
+      "attempt": "Tentativa",
+      "commit": "Commit",
+      "byAgent": "Custo de cada agente",
+      "agent": "Agente"
+    },
+    "memory": {
+      "recalled": "Lições recuperadas",
+      "noneRecalled": "As instruções não recuperaram nenhuma lição.",
+      "learned": "O que o Learn tirou da tarefa",
+      "noneLearned": "O Learn ainda não tirou nada dela.",
+      "coach": "Coach de habilidades: {{coach}}",
+      "proposed": "versão proposta {{n, number}}"
+    },
+    "runs": {
+      "hint": "As execuções de engenharia iniciadas em um mês, das mais recentes para as mais antigas. Abra uma para acompanhá-la e orientá-la.",
+      "month": "Mês",
+      "flow": "Fluxo",
+      "allFlows": "Todos os fluxos",
+      "status": "Status",
+      "allStatuses": "Todos os status",
+      "statuses": {
+        "active": "Ativa",
+        "needs_human": "Precisa de uma pessoa",
+        "done": "Concluída",
+        "failed": "Falhou",
+        "stopped": "Parada"
+      },
+      "loadFailed": "Não foi possível ler as execuções.",
+      "more": "Mostrar mais",
+      "moreFailed": "Não foi possível ler a próxima página.",
+      "empty": "Nenhuma execução iniciada neste mês."
     }
   }
 }

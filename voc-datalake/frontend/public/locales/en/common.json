@@ -33,7 +33,6 @@
     "workspaceSettings": "Workspace settings",
     "workflows": "Workflows",
     "workflow": "Workflow",
-    "engineering": "Engineering",
     "engineeringRun": "Engineering run",
     "templates": "Templates",
     "template": "Template",
@@ -45,7 +44,8 @@
     "github": "GitHub",
     "githubAppCreated": "App created",
     "githubAppInstalled": "App installed",
-    "setupGuide": "Setup guide"
+    "setupGuide": "Setup guide",
+    "runs": "Runs"
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",

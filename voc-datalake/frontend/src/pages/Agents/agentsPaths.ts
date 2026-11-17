@@ -1,14 +1,15 @@
 /**
  * @fileoverview The Agents pages' addresses, as paths (7.49.00, utils/pathPlace.ts):
  *
- * - the list's views: `/agents` (the agents), `/agents/workflows`, `/agents/spend`, `/agents/connections`,
- *   `/agents/skills`; on Skills, a role's history `/agents/skills/<role>` and one version `/agents/skills/<role>/v/<n>`;
+ * - the list's views: `/agents` (the agents), `/agents/runs` (7.51.00, the engineering runs), `/agents/workflows`,
+ *   `/agents/spend`, `/agents/connections`, `/agents/skills`; on Skills, a role's history `/agents/skills/<role>` and
+ *   one version `/agents/skills/<role>/v/<n>`;
  * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings);
  * - the engineering setup guide, `/agents/setup[/<step>]` (SetupGuide/setupGuidePaths.ts), a page of its own.
  *
  * The view names are reserved: an agent's id is never one (`ag_<12 hex>`, lambda/shared/agents_store.py), and
  * routes.tsx lists each view before `agents/:id`. What a view shows stays in the query as a filter does: the Spend
- * tab's `?month=&by=&workflow=`, the Skills tab's scope `?connection=`.
+ * tab's `?month=&by=&workflow=`, the Skills tab's scope `?connection=`, the Runs tab's `?month=&flow=&status=`.
  *
  * The query names no view: no `?tab=` link of before is read (7.49.00, a pre-release change).
  *
@@ -21,7 +22,7 @@ import type { TabPage } from '../../utils/tabPaths'
 const AGENTS_PATH = '/agents'
 
 /** The list's views; `agents` is the list itself (`/agents`). */
-export const AGENTS_VIEWS = ['agents', 'workflows', 'spend', 'connections', 'skills'] as const
+export const AGENTS_VIEWS = ['agents', 'runs', 'workflows', 'spend', 'connections', 'skills'] as const
 
 /** The pages under `/agents` that are neither a view of the list nor an agent (`setup`: the setup guide). */
 const AGENTS_PAGES: ReadonlySet<string> = new Set(['setup'])

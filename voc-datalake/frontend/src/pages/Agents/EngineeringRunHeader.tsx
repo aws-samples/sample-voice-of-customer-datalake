@@ -2,7 +2,8 @@
  * @fileoverview The run monitor's header: the run's goal, repository, status and start, the issue it was started from
  * and its pull request (EngineeringRunLinks), and its MicroVM time, messages
  * and tokens per model, and its flow's monthly budget with the highest level its flow's month passed (the flag the
- * supervisor sets as it says each alert). No cost yet: it comes with the run control's own item.
+ * supervisor sets as it says each alert). The run workspace adds its cost and the runs it was restarted from or as
+ * (RunWorkspace/RunHeader.tsx, as `children`).
  *
  * @module pages/Agents/EngineeringRunHeader
  */
@@ -11,6 +12,7 @@ import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
 import { EngineeringRunLinks } from './EngineeringRunLinks'
 import { RunStatusChip } from './RunControlBar'
 import { shareTone } from './spendView'
+import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
 
 function Totals({ totals }: Readonly<{ totals: EngineeringOverview['totals'] }>) {
@@ -47,7 +49,7 @@ function BudgetFlag({ budget }: Readonly<{ budget: NonNullable<EngineeringOvervi
   )
 }
 
-export function EngineeringRunHeader({ overview }: Readonly<{ overview: EngineeringOverview }>) {
+export function EngineeringRunHeader({ overview, children }: Readonly<{ overview: EngineeringOverview; children?: ReactNode }>) {
   const { t, i18n } = useTranslation('agents')
   const { run } = overview
   return (
@@ -64,6 +66,7 @@ export function EngineeringRunHeader({ overview }: Readonly<{ overview: Engineer
       </div>
       <Totals totals={overview.totals} />
       {run.budget !== null && <BudgetFlag budget={run.budget} />}
+      {children}
     </div>
   )
 }
