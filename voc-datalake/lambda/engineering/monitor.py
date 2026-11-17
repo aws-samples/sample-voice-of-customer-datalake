@@ -26,10 +26,16 @@ The actions (the route lets only an admin acting for themselves take them, like 
   answer carries each agent's status.
 - ``message``: a person's answer (``msg.answer``, the one thing a person says on the bus) to an agent of the run or to
   its conductor, on the thread they reply to or a new one. The router writes it to the conversation, its record.
+- ``stop`` (7.50.03): a person's Stop of the whole run, ``stop`` (each agent saves a checkpoint, then the run ends) or
+  ``stop_now`` (at once, asking ``confirm``), through voc-engineering-start's ``stop_run`` (``LambdaStopper``: the
+  API's role invokes that function and never the runtime's), so it needs neither the runtime nor the bus here and
+  ends the run whatever its agents are doing, a run with no session at all included (``runtime/stop.py``). Its
+  record is the run's ``RUNLOG#`` row (who, how, when: D4); where the bus is configured the conversation records the
+  request and its outcome too, best effort. A whole-run Shut down or Stop now sent as a ``signal`` is this Stop.
 
-A run that has ended (``META.ended_at``) takes neither. Without the runtime or the bus configured the actions are
-``unavailable``; so is a failed call (the caller retries: the supervisor's signal is idempotent, and the record is
-sent again).
+A run that has ended (``META.ended_at``) takes none of them. Without the runtime or the bus configured the signals and
+answers are ``unavailable`` (``actions_available``); without the start function, the Stop (``stop_available``); so is a
+failed call (the caller retries: the supervisor's signal and the Stop are idempotent, and the record is sent again).
 """
 from __future__ import annotations
 
@@ -58,6 +64,12 @@ from shared.logging import logger
 
 API_SOURCE = 'voc.engineering/api'
 SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now')
+#: A person's Stop of the whole run (runtime/runs.py STOP, STOP_NOW), and the whole-run signal each one is.
+STOP, STOP_NOW = 'stop', 'stop_now'
+WHOLE_RUN_STOPS = {'shutdown': STOP, 'stop_now': STOP_NOW}
+SIGNAL_OF_STOP = {STOP: 'shutdown', STOP_NOW: 'stop_now'}
+#: What voc-engineering-start answers a Stop with (stop.Stopped): the run's status after it.
+STOP_STATUSES = frozenset({'stopped', 'stopping', 'done', 'failed'})
 #: The supervisor's answer for an agent another move held (supervisor.py: nothing was done).
 BUSY = 'busy'
 #: The supervisor's answer for an agent on another attempt than the one the signal named (nothing done).
@@ -175,6 +187,24 @@ def _note(note: Any) -> str:
 
 
 @dataclass(frozen=True)
+class StopRequest:
+    """A person's Stop of the whole run: ``stop`` (save, then stop) or ``stop_now``, and their note."""
+    mode: str
+    note: str
+
+
+def parse_stop(body: Mapping[str, Any]) -> StopRequest:
+    """``{now?, confirm?, note?}``: a Stop (the agents save first), or with ``now: true`` a Stop now, which stops
+    without a checkpoint and so asks ``confirm: true``."""
+    now, note = body.get('now', False), body.get('note', '')
+    if not isinstance(now, bool):
+        raise MonitorError('invalid', 'now is true (Stop now, without saving) or false (Stop: save, then stop)')
+    if now and body.get('confirm') is not True:
+        raise MonitorError('invalid', 'Stop now stops without a checkpoint: send confirm: true')
+    return StopRequest(STOP_NOW if now else STOP, _note(note))
+
+
+@dataclass(frozen=True)
 class Answer:
     to: Party
     text: str
@@ -253,15 +283,61 @@ class LambdaRuntime:
         return Applied(statuses, {agent: applied.get(agent) is True for agent in statuses})
 
 
+class Stopper(Protocol):
+    """A person's Stop of the whole run (``LambdaStopper`` calls voc-engineering-start's ``stop_run``)."""
+
+    def stop(self, run_id: str, mode: str, *, actor: str) -> dict[str, Any]: ...
+
+
+class LambdaStopper:
+    """The Stop through ``voc-engineering-start``: ``{action: stop_run, run_id, mode, actor}`` answers
+    ``runtime/stop.Stopped.view()`` (the run's status after it: ``stopped``, ``stopping``, or the end it had already).
+    Its refusal (an unknown run, a bad request) is a conflict in its words; any other failure is unavailable (sending
+    the Stop again is safe: every step of it is idempotent)."""
+
+    def __init__(self, client: Any, function_name: str) -> None:
+        self.client = client
+        self.function_name = function_name
+
+    def stop(self, run_id: str, mode: str, *, actor: str) -> dict[str, Any]:
+        request = {'action': 'stop_run', 'run_id': run_id, 'mode': mode, 'actor': actor}
+        try:
+            answer = self.client.invoke(FunctionName=self.function_name, InvocationType='RequestResponse',
+                                        Payload=json.dumps(request).encode())
+            payload = json.loads(answer['Payload'].read() or b'{}')
+        except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
+            raise MonitorError('unavailable', 'The run could not be reached: send the Stop again') from exc
+        if answer.get('FunctionError'):
+            if isinstance(payload, dict) and payload.get('errorType') in ('RuntimeRefused', 'RunNotActive'):
+                raise MonitorError('conflict', str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_LINE])
+            raise MonitorError('unavailable', 'The Stop could not be applied: send it again')
+        if not isinstance(payload, dict) or payload.get('status') not in STOP_STATUSES:
+            raise MonitorError('unavailable', 'The Stop could not be applied: send it again')
+        return payload
+
+
+def _stop_view(meta: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A person's Stop under way or done (META's ``stop_requested_at``, 7.50.03): how and when; None for none."""
+    at = int(amount_attr(meta, 'stop_requested_at'))
+    if not at:
+        return None
+    mode = string_attr(meta, 'stop_mode')
+    return {'mode': mode if mode in (STOP, STOP_NOW) else STOP,
+            'requested_at': datetime.fromtimestamp(at, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
 class RunMonitor:
     def __init__(self, client: Any, table: str, sessions: Sessions, *, runtime: Runtime | None,
-                 publisher: Publisher | None, now: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
+                 publisher: Publisher | None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
+                 stopper: Stopper | None = None) -> None:
         """``client`` is a low-level DynamoDB client on voc-engineering; ``sessions`` the supervisor's rows;
-        ``runtime`` and ``publisher`` the actions' (None: the actions are unavailable)."""
+        ``runtime`` and ``publisher`` the signals' and answers' (None: they are unavailable); ``stopper`` the Stop's
+        (None: it is unavailable)."""
         self.client, self.table = client, table
         self.sessions = sessions
         self.runtime = runtime
         self.publisher = publisher
+        self.stopper = stopper
         self.now = now
 
     def _get(self, run_id: str, sk: str) -> dict[str, Any] | None:
@@ -280,6 +356,11 @@ class RunMonitor:
                     'flow': string_attr(meta, 'flow'), 'status': string_attr(meta, 'status'),
                     'started_at': string_attr(meta, 'started_at') or None,
                     'ended_at': string_attr(meta, 'ended_at') or None,
+                    # The decision point a run waiting at a person waits at ('' for none), and a person's Stop of it
+                    # (7.50.03: None for none; stopping while it has not ended).
+                    'waiting_at': string_attr(meta, 'needs_human') if string_attr(meta, 'status') == 'needs_human'
+                    else '',
+                    'stop': _stop_view(meta),
                     # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
                     'budget': budget_view(meta), **self._flow_view(run_id, meta),
                     # The issue it was started from and its pull request (each None for none: run_links.py).
@@ -288,6 +369,8 @@ class RunMonitor:
             # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
             # the stack wires them, every action answers 503, so the page offers none).
             'actions_available': self.actions_available,
+            # Whether a person's Stop can reach the run (the start function named: 7.50.03), signals or not.
+            'stop_available': self.stopper is not None,
             # The messages numbered so far (META's counter: a redelivery or a failed write uses a number too).
             'totals': {'messages': int(amount_attr(meta, 'msg_seq')),
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
@@ -350,6 +433,68 @@ class RunMonitor:
             raise MonitorError('conflict', 'A person holds this task: no agent works on it to signal')
         return Party('agent', holder)
 
+    def stop(self, run_id: str, request: StopRequest, actor: Actor) -> dict[str, Any]:
+        """A person's Stop of the whole run (module doc): voc-engineering-start ends it, or (a Stop whose agents have
+        sessions) records it and has them save first; answers the run's status after it (``stopped`` or
+        ``stopping``), the tasks it closed, the agents asked to save, and whether it fell back to stopping at once.
+        Where the bus is configured the conversation records the request first and its outcome after (best effort:
+        the run's ``RUNLOG#`` row is its record either way)."""
+        if self.stopper is None:
+            raise MonitorError('unavailable', 'the run cannot be stopped from here: the deployment names no start '
+                                              'function')
+        self.open_run(run_id)
+        target = Party('run', run_id)
+        name = SIGNAL_OF_STOP[request.mode]
+        record = self._record_stop(run_id, Signal(name, '', 0, request.note), actor, target)
+        try:
+            answer = self.stopper.stop(run_id, request.mode, actor=actor.subject)
+        except MonitorError as refused:
+            if record is not None and self.publisher is not None:
+                self._outcome(self.publisher, record, f'not applied: {refused}')
+            raise
+        if record is not None and self.publisher is not None:
+            self._outcome(self.publisher, record, _stop_outcome(answer))
+        agents = answer.get('agents')
+        return {'run_id': run_id, 'mode': request.mode, 'status': str(answer.get('status')),
+                'already': answer.get('already') is True, 'fell_back': answer.get('fell_back') is True,
+                'tasks_closed': [str(task) for task in answer.get('tasks_closed') or []],
+                'saving': [str(agent) for agent in answer.get('saving') or []],
+                'agents': {str(k): str(v) for k, v in agents.items()} if isinstance(agents, dict) else {},
+                'recorded': record is not None, 'at': _at(self.now())}
+
+    def _record_stop(self, run_id: str, signal: Signal, actor: Actor, target: Party) -> Message | None:
+        """The Stop's request in the conversation, where the bus is configured; None where it is not, or the bus
+        refused it (logged: the Stop still goes ahead, its ``RUNLOG#`` row is its record)."""
+        if self.publisher is None:
+            return None
+        record = Message(
+            event_id=new_event_id(), ws=WORKSPACE, run_id=run_id, thread_id='signals', attempt=0,
+            sender=Party('human', actor.subject), to=target, type=f'signal.{signal.name}',
+            summary=_record(signal, actor, target), at=_at(self.now()))
+        try:
+            _publish(self.publisher, record)
+        except MonitorError as refused:
+            if refused.kind == 'invalid':
+                raise   # (a credential in the note: never sent, never applied)
+            logger.warning('run monitor: a Stop was not recorded in the conversation', extra={'run_id': run_id})
+            return None
+        return record
+
+    def origin(self, run_id: str) -> Mapping[str, str] | None:
+        """The engineering agent's run the run was started for (its first ``RUNLOG#`` row's ``via``: the agent and
+        its run, 7.47.00), None for a run an administrator started by hand."""
+        found = self.client.query(
+            TableName=self.table, KeyConditionExpression='pk = :pk AND begins_with(sk, :log)', Limit=5,
+            ExpressionAttributeValues={':pk': {'S': run_pk(WORKSPACE, run_id)}, ':log': {'S': 'RUNLOG#'}},
+            ConsistentRead=True).get('Items', [])
+        for item in found:
+            via = item.get('via', {}).get('M')
+            if isinstance(via, dict):
+                agent, run = via.get('agent_id', {}).get('S'), via.get('agent_run_id', {}).get('S')
+                if isinstance(agent, str) and isinstance(run, str) and agent and run:
+                    return {'agent_id': agent, 'agent_run_id': run}
+        return None
+
     def signal(self, run_id: str, signal: Signal, actor: Actor) -> dict[str, Any]:
         """The conversation records the request, then the supervisor applies it; answers each agent's status.
 
@@ -360,6 +505,12 @@ class RunMonitor:
         the supervisor could not apply is answered unavailable: sending it again publishes a new request and applies
         it once.
         """
+        if not signal.task_id and signal.name in WHOLE_RUN_STOPS and self.stopper is not None:
+            # A whole run's Shut down or Stop now is its Stop (7.50.03): it ends the run, signals reach it or not.
+            stopped = self.stop(run_id, StopRequest(WHOLE_RUN_STOPS[signal.name], signal.note), actor)
+            return {'event_id': None, 'signal': signal.name, 'target': {'kind': 'run', 'id': run_id}, 'attempt': 0,
+                    'agents': stopped['agents'], 'applied': dict.fromkeys(stopped['agents'], True),
+                    'at': stopped['at'], 'run': stopped}
         publisher = self.bus()
         if self.runtime is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the runtime is not configured')
@@ -419,6 +570,16 @@ class RunMonitor:
         if self.publisher is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the bus is not configured')
         return self.publisher
+
+
+def _stop_outcome(answer: Mapping[str, Any]) -> str:
+    """``stopped: 2 task(s) closed`` or ``stopping: fixer-2 saving`` (what the conversation says came of a Stop)."""
+    if answer.get('status') == 'stopping':
+        saving = ', '.join(str(agent) for agent in answer.get('saving') or []) or 'its agents'
+        return f'stopping: {saving} saving a checkpoint, then the run ends'
+    closed = len(answer.get('tasks_closed') or [])
+    fell_back = ' (the agents could not be asked to save: stopped at once)' if answer.get('fell_back') else ''
+    return f"{answer.get('status')}: {closed} task(s) closed{fell_back}"
 
 
 def _publish(publisher: Publisher, message: Message) -> None:

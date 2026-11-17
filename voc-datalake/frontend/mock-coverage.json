@@ -823,6 +823,19 @@
     ]
   },
   {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, '/stop')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/stop",
+        "body": {
+          "now": "x"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringSetupApi.ts",
     "method": "GET",
     "call": "SETUP_PATH",

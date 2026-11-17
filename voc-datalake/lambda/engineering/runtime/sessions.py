@@ -285,8 +285,9 @@ class SessionStore:
         self._runs_seen: dict[str, tuple[str, str]] = {}
 
     def create(self, session: AgentSession, labels: dict[str, str] | None = None) -> AgentSession:
-        """Write a new session's row, only while its run is active (``RunNotActive``: checked in the same write, so
-        a run that ends meanwhile gets no agent nothing supervises), and never over the agent's session in it.
+        """Write a new session's row, only while its run is active and no person's Stop of it is under way
+        (``RunNotActive``: checked in the same write, so a run that ends or starts stopping meanwhile gets no agent
+        nothing supervises, 7.50.03), and never over the agent's session in it.
 
         ``labels``: what the reports name the agent by (its model, its skill version), written once here; later
         writes set only the session's own attributes, so they stay.
@@ -298,7 +299,8 @@ class SessionStore:
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'ConditionCheck': {'TableName': name, 'Key': meta_key(session.run_id),
-                                    'ConditionExpression': '#status = :active',
+                                    'ConditionExpression': ('#status = :active '
+                                                            'AND attribute_not_exists(stop_requested_at)'),
                                     'ExpressionAttributeNames': {'#status': 'status'},
                                     'ExpressionAttributeValues': {':active': 'active'}}},
                 {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {}, extra)}},
@@ -496,6 +498,11 @@ class SessionStore:
     def of_run(self, run_id: str) -> list[AgentSession]:
         """Every session of one run, live or not (the run monitor's signals reach paused agents too)."""
         return self._agents_of(run_id)[0]
+
+    def of_run_with_holds(self, run_id: str) -> tuple[list[AgentSession], dict[str, int]]:
+        """``of_run``, with the launch holds of the run's agents that have no session yet (each hold's end, epoch
+        seconds; a run-out hold is 0): one query (a person's Stop runs them out, ``runtime/stop.py``)."""
+        return self._agents_of(run_id)
 
     def _agents_of(self, run_id: str) -> tuple[list[AgentSession], dict[str, int]]:
         """One query of the run's agent rows: its sessions, and the launch holds of agents with no session yet (each

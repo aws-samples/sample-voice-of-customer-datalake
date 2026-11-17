@@ -8,7 +8,8 @@ busy while its agent works, so an agent waiting on the model is never ended for 
 
 - ``run``: ``InvokeAgentRuntime`` on the agent's language's runtime with a ``runtimeSessionId`` of its own (one per
   agent and continuation, never reused), whose payload is the runner's ``start``: the agent's ids and its egress
-  allowlist. The session exists from that call on.
+  allowlist. The session exists from that call on. Its answer says which walls the session runs behind (7.50.03),
+  handed to ``on_walls`` (the runtime's record for readiness, ``sandbox.py``).
 - ``hand_session``, ``status``, ``suspend``, ``resume``: the runner's other ops, invocations of the same session
   (``unit_runner.Runner.invoke``: its role session, its report, hold and wake).
 - ``start_exec``, ``poll_exec``: ``InvokeAgentRuntimeCommand``, each call bounded (``COMMAND_SECONDS``, under the
@@ -46,6 +47,7 @@ from engineering.runtime.interface import (
     RuntimeSession,
     SessionsFull,
 )
+from engineering.runtime.sandbox import Walls
 from engineering.runtime.unit_runner import TAIL_CHARACTERS, bounded_status, scrub_text
 from shared.logging import logger
 
@@ -106,12 +108,16 @@ class AgentCoreRuntime:
     one."""
 
     def __init__(self, client: AgentCoreClient, runtimes: Mapping[str, Mapping[str, str]], *, region: str,
-                 build_roles: Iterable[str] = (), nonce: Callable[[], str] = lambda: secrets.token_hex(8)) -> None:
+                 build_roles: Iterable[str] = (), nonce: Callable[[], str] = lambda: secrets.token_hex(8),
+                 on_walls: Callable[[AgentSpec, RuntimeSession, Walls], None] | None = None) -> None:
+        """``on_walls``: told the walls a started session's runner said it runs behind (7.50.03: the runtime records
+        them for readiness, ``sandbox.record``); best effort, a failure of it logged and never the start's."""
         self._client = client
         self._runtimes = {language: dict(sizes) for language, sizes in runtimes.items()}
         self._region = region
         self._build_roles = frozenset(build_roles)
         self._nonce = nonce
+        self._on_walls = on_walls
 
     def runtime_arn(self, spec: AgentSpec) -> str:
         """The runtime ``spec``'s agent runs on: its language's, at its role's size."""
@@ -144,7 +150,8 @@ class AgentCoreRuntime:
         start = {'op': 'start', 'environment': {**spec.environment(), 'AWS_REGION': self._region},
                  'egress': list(agent_hosts), 'code_egress': list(code_hosts)}
         try:
-            started = self._invoke(vm, start).get('started') is True
+            answer = self._invoke(vm, start)
+            started = answer.get('started') is True
         except ClientError as error:
             # The account's active sessions are at the service's quota, or it throttles new ones: nothing started.
             if error.response.get('Error', {}).get('Code') in _FULL:
@@ -161,7 +168,18 @@ class AgentCoreRuntime:
         if not started:
             self._stop_unstarted(vm)
             raise RuntimeRefused('the agent\'s session did not start')
+        self._said_walls(spec, vm, answer.get('sandbox'))
         return vm
+
+    def _said_walls(self, spec: AgentSpec, vm: RuntimeSession, raw: object) -> None:
+        """The started session's walls, to ``on_walls`` (an image from before 7.50.03 says none: nothing is told)."""
+        walls = Walls.parse(raw)
+        if walls is None or self._on_walls is None:
+            return
+        try:
+            self._on_walls(spec, vm, walls)
+        except Exception:   # (a record that failed: the session started all the same, and the next start records)
+            logger.exception('runtime: a session\'s walls were not recorded', extra={'vm_id': vm.vm_id})
 
     def _stop_unstarted(self, vm: RuntimeSession) -> None:
         """End a session whose start failed. A failed end is logged and the start's own failure still raised (the

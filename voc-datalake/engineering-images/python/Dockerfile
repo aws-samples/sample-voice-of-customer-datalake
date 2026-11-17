@@ -33,7 +33,7 @@ COPY lambda/engineering/orchestration/__init__.py lambda/engineering/orchestrati
 COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json
 COPY templates/orchestration/gates/ /opt/voc/gates/
 COPY engineering-images/common/harness.py /opt/voc/harness.py
-COPY engineering-images/common/entrypoint.sh /opt/voc/entrypoint.sh
+COPY engineering-images/common/entrypoint.sh engineering-images/common/walls.sh /opt/voc/
 COPY engineering-images/common/check-runner.sh engineering-images/python/ready.sh engineering-images/python/validate.sh /opt/voc/hooks/
 
 ENV PIP_CACHE_DIR=/opt/voc/cache/pip NPM_CONFIG_CACHE=/opt/voc/cache/npm

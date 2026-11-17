@@ -158,6 +158,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/messages',
         'POST /agents/engineering/<run_id>/reactions',
         'POST /agents/engineering/<run_id>/signals',
+        'POST /agents/engineering/<run_id>/stop',
         'POST /agents/engineering/connections/<connection_id>/ci-attestation',
         'POST /agents/engineering/runs',
         'POST /agents/engineering/skills/<role>/template/adopt',

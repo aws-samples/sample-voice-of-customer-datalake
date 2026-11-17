@@ -174,6 +174,18 @@ def test_a_task_a_person_took_over_is_not_charged_to_the_agent_that_claimed_it(s
     assert (line.attempts, line.tasks_done, line.tasks_failed, line.reposts) == (1, 0, 0, 0)
 
 
+def test_a_task_closed_by_a_persons_stop_of_the_run_is_no_failure_of_its_agent() -> None:
+    """7.50.03: a Stop closes every task that has not ended (``failed``, op ``stop``); never a skill's failure."""
+    history = dict(record().history)
+    claim = history['t-units'][0]
+    history['t-units'] = [claim, replace(claim, state='failed', actor='human:admin-sub-1', op='stop',
+                                         at='2026-11-13T08:40:00Z', reason='stopped now from the run monitor')]
+    retro = retro_of_units(history, state='failed')
+    assert 't-units#1#failed' not in [failure.key for failure in retro.failures]
+    line = {(line.role, line.version): line for line in retro.scorecards}['fixer', 'fixer@2']
+    assert (line.attempts, line.tasks_failed) == (1, 0)
+
+
 def test_a_no_go_on_a_persons_take_over_is_not_the_agents() -> None:
     history = dict(record().history)
     claim = history['t-slug'][4]   # fixer-3's claim of attempt 2

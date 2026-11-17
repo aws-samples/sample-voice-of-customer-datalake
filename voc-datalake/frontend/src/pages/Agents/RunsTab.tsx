@@ -6,7 +6,9 @@
  * is deliberately not a control surface — only the explicit buttons act.
  * An engineering agent's run (7.47.00) is followed on its run monitor: its
  * row says what it started from and links there, and it is stopped there
- * (the agent's run ends when its engineering run does), never cancelled here.
+ * (the agent's run ends when its engineering run does), never cancelled here: while it is live an admin stops it
+ * here with the run monitor's own Stop (7.50.03, RunControlBar.tsx `StopControl`), which ends the engineering run and,
+ * with it, this run.
  *
  * @module pages/Agents/RunsTab
  */
@@ -31,6 +33,8 @@ import { RunSummaryCard } from './RunSummaryCard'
 import { useAgentMutations, useAgentRun, useAgentRuns, useRunEvents } from './useAgents'
 import { RunProjectsContext, useRunProjectName, useRunProjects } from './useRunProjects'
 import { engineeringRunPagePath } from './workflowPaths'
+import { StopControl, StopOutcome } from './RunControlBar'
+import { useEngineeringStop } from './useEngineeringRun'
 import { EngineeringStartError } from './EngineeringStartError'
 import { isEngineeringAgent } from '../../api/agentsApi'
 import type { Agent, AgentRun, RunEvent, RunNowBody } from '../../api/agentsApi'
@@ -172,6 +176,21 @@ function EngineeringMonitorLink({ run }: Readonly<{ run: AgentRun }>) {
   )
 }
 
+/** A live engineering agent's run is stopped here with its run monitor's own Stop (7.50.03): the engineering run ends,
+ *  and this run with it. */
+function EngineeringRunStop({ agentId, run }: Readonly<{ agentId: string; run: AgentRun }>) {
+  const stop = useEngineeringStop(run.engineering_run_id ?? '', agentId)
+  if (run.kind !== 'engineering' || run.engineering_run_id === null) return null
+  // (once the run has ended, what this Stop did stays said)
+  if (!isActiveRun(run)) return stop.isSuccess ? <StopOutcome stop={stop} /> : null
+  return (
+    <div className="space-y-1">
+      <StopControl stop={stop} stopping={false} />
+      <StopOutcome stop={stop} />
+    </div>
+  )
+}
+
 /** What an engineering agent's run started from, where it is followed, and its own short journal. */
 function EngineeringRunFacts({ run, events }: Readonly<{ run: AgentRun; events: readonly RunEvent[] }>) {
   const { t, i18n } = useTranslation('agents')
@@ -239,6 +258,7 @@ function RunHeader({ agentId, run, currentRevision, canControl, failureReason }:
         )}
         <span className="mr-auto" />
         <EngineeringMonitorLink run={run} />
+        {canControl && <EngineeringRunStop agentId={agentId} run={run} />}
         {canControl && isCancellable(run) && (
           <button type="button" className="btn btn-danger btn-sm" disabled={cancelRun.isPending} onClick={() => cancelRun.mutate(run.run_id)}>
             <Square size={14} aria-hidden="true" /> {t('run.cancel')}

@@ -83,6 +83,9 @@ from shared.workflow_engineering import BUDGET_RULE, budget_of, flow_settings
 
 #: How a run ends (``active`` and ``needs_human`` are its live statuses).
 ENDED: Final = frozenset({'done', 'failed', 'stopped'})
+#: A person's Stop of the whole run (7.50.03): ``stop`` (each agent saves a checkpoint, then stops) or ``stop_now``.
+STOP, STOP_NOW = 'stop', 'stop_now'
+STOP_MODES: Final = frozenset({STOP, STOP_NOW})
 MAX_TEXT: Final = 500
 MAX_TASKS_LIMIT: Final = 10_000
 #: Who changed a run's status when its caller named nobody (D4 keeps the gap visible rather than guessing).
@@ -159,6 +162,17 @@ class Run:
     #: took it there (0 for not yet): a run left at a person past its flow's hours learns once (7.50.00).
     needs_human_at: int = 0
     learn_swept_at: int = 0
+    #: A person's Stop of the whole run (7.50.03, ``request_stop``): when it was asked (epoch seconds; 0 for none),
+    #: how (``stop``: each agent saves a checkpoint, then the run ends; ``stop_now``: at once) and by whom. A run
+    #: with one is stopping: it launches no agent and takes no Resume, and it ends once no agent of it is live.
+    stop_requested_at: int = 0
+    stop_mode: str = ''
+    stop_requested_by: str = ''
+
+    @property
+    def stopping(self) -> bool:
+        """A person's Stop is under way: asked, and the run not ended yet."""
+        return bool(self.stop_requested_at) and self.status not in ENDED
 
 
 class StartReadFailed(RuntimeRefused):
@@ -473,13 +487,36 @@ class RunStore:
         if lost is not None:
             raise lost
 
-    def end(self, run_id: str, status: str, *, now: int, actor: str = '') -> None:
-        """End a live run with ``status`` (it stays listed until ``release``); ``RunNotActive`` when it is not live."""
+    def end(self, run_id: str, status: str, *, now: int, actor: str = '', reason: str = '') -> None:
+        """End a live run with ``status`` (it stays listed until ``release``); ``RunNotActive`` when it is not live.
+        ``reason``: why, on its ``RUNLOG#`` row (a person's Stop says how they stopped it)."""
         if status not in ENDED:
             raise RuntimeRefused(f'a run ends as one of {sorted(ENDED)}')
-        self._update_status(run_id, _history(run_id, status=status, actor=actor, now=now),
+        self._update_status(run_id, _history(run_id, status=status, actor=actor, now=now, reason=_text(reason)),
                             'SET #status = :status, ended_at = :ended', '#status IN (:active, :human)',
                             {':status': status, ':ended': _iso(now), ':active': 'active'})
+
+    def request_stop(self, run_id: str, *, mode: str, now: int, actor: str) -> None:
+        """A person's Stop of the whole run (7.50.03), recorded on META before anything else moves: when it was first
+        asked (a second Stop keeps that time, so its grace is never extended), how (``stop`` or ``stop_now``: a Stop
+        now after a Stop outranks it) and by whom. From then on the run launches no agent (``SessionStore.create``) and
+        takes no Resume; it ends once no agent of it is live (``runtime/stop.py``). ``RunNotActive`` when the run is
+        not live (never started, or ended)."""
+        if mode not in STOP_MODES:
+            raise RuntimeRefused(f'a stop is one of {sorted(STOP_MODES)}')
+        try:
+            self._table.update_item(
+                Key=meta_key(run_id),
+                UpdateExpression=('SET stop_requested_at = if_not_exists(stop_requested_at, :now), stop_mode = :mode, '
+                                  'stop_requested_by = :actor'),
+                ConditionExpression='#status IN (:active, :human)',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={':now': now, ':mode': mode, ':actor': _actor(actor), ':active': 'active',
+                                           ':human': 'needs_human'})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise RunNotActive(f'run {run_id} is not live') from error
+            raise
 
     def needs_human(self, run_id: str, reason: str, *, now: int, actor: str = SUPERVISOR) -> None:
         """The run waits at a human decision point (its agents are held, and none is launched, meanwhile). One it
@@ -550,7 +587,9 @@ class RunStore:
                    cache_fill_at=int(item.get('cache_fill_at', 0)),
                    waiting_at=str(item.get('needs_human', '')) if item.get('status') == 'needs_human' else '',
                    needs_human_at=int(item.get('needs_human_at', 0)),
-                   learn_swept_at=int(item.get('learn_swept_at', 0)))
+                   learn_swept_at=int(item.get('learn_swept_at', 0)),
+                   stop_requested_at=int(item.get('stop_requested_at', 0)),
+                   stop_mode=str(item.get('stop_mode', '')), stop_requested_by=str(item.get('stop_requested_by', '')))
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
@@ -776,8 +815,9 @@ class TableRunControl:
                              extra={'run_id': run_id, 'decision_point': reason})
 
     def is_active(self, run_id: str) -> bool:
+        """Active, and not stopping (a person's Stop under way never sends the run back to a person)."""
         run = self._runs.get(run_id)
-        return run is not None and run.status == 'active'
+        return run is not None and run.status == 'active' and not run.stopping
 
     def flow_stop(self, run_id: str) -> FlowStop | None:
         """The decision point the run's flow waits at (``flow:<step>``: a human decision point reached, a step blocked
@@ -793,8 +833,9 @@ class TableRunControl:
 
     def coordinator_awaited(self, run_id: str) -> tuple[int, bool] | None:
         run = self._runs.get(run_id)
-        if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
-            return None
+        if run is None or run.status != 'active' or run.stopping or not (run.connection and run.commit
+                                                                          and run.language):
+            return None   # (a stopping run waits for no coordinator: it ends instead)
         since = max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
         return since, run.cache_fill_at >= since
 

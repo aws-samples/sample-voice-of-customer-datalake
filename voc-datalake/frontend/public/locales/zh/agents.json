@@ -286,7 +286,7 @@
       "fromPrd": "由项目 {{project}} 的 PRD {{document}} 启动。",
       "fromReviews": "由其范围内的 {{n, number}} 条报告启动。",
       "fromNothing": "为在其代码仓库中查找缺陷而启动。",
-      "followHint": "请在运行监视器中跟踪并停止它：工程运行结束时，此运行也随之结束。",
+      "followHint": "请在运行监视器中跟踪它，或在此处停止它：工程运行结束时，此运行也随之结束。",
       "openMonitor": "打开运行监视器"
     }
   },
@@ -1307,20 +1307,49 @@
       "asGiven": "按开始时的输入记录，未在托管平台上核实",
       "opens": "{{label}}（在新标签页中打开）"
     },
-    "actionsUnavailable": "此部署尚无法发送信号和回复：它没有将运行监视器连接到工程运行时和总线。",
-    "runSignals": "整个运行",
+    "actionsUnavailable": "此部署尚无法发送暂停、继续、保存和回复：它没有将运行监视器连接到工程运行时和总线。“停止”可以使用。",
+    "runSignals": "运行控制",
     "agentSignals": "智能体 {{agent}}",
     "signals": {
       "save": "保存",
       "pause": "暂停",
       "resume": "继续",
-      "shutdown": "关闭",
-      "stop_now": "立即停止"
+      "shutdown": "停止",
+      "stop_now": "立即停止，不保存"
     },
     "signalSent": "已发送。",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "不保存就立即停止？",
-    "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“关闭”。",
+    "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“停止”。",
+    "stopNowAgentMessage": "代理会立即停止，不留检查点：它尚未保存的内容都会丢失。若要保留，请改用“停止”。",
+    "moreRun": "更多运行控制",
+    "moreFor": "{{target}} 的更多操作",
+    "saveCheckpoint": "保存检查点",
+    "refreshFailed": "无法刷新：这是上次读取的内容。",
+    "retry": "重试",
+    "runState": {
+      "running": "运行中",
+      "waiting": "等待人工处理",
+      "stopping": "正在停止…",
+      "done": "完成",
+      "failed": "失败",
+      "stopped": "已停止"
+    },
+    "stop": {
+      "group": "停止运行",
+      "more": "更多停止方式",
+      "nowItem": "立即停止，不保存…",
+      "stoppingButton": "正在停止…",
+      "unavailable": "从此部署无法停止此运行：它没有指定启动函数。",
+      "sent": "已发送停止",
+      "agentSaving": "{{agent}} 正在保存检查点…",
+      "stopping": "已发送停止：{{agents}} 正在保存检查点，之后运行会停止。",
+      "stopped_one": "已停止。已关闭 {{count, number}} 个未完成的任务。",
+      "stopped_other": "已停止。已关闭 {{count, number}} 个未完成的任务。",
+      "fellBack": "已立即停止：无法先请代理保存。",
+      "agentRunEnded": "其自动化的运行已取消，因此该自动化可以再次运行。",
+      "already": "此运行已经结束（{{status}}）。"
+    },
     "errors": {
       "forbidden": "只有管理员可以这样做。",
       "notFound": "此运行或任务已不存在：请重新加载运行。",
@@ -1543,7 +1572,8 @@
       "agentcore_quota": "AgentCore 配额",
       "memory_setting": "构建内存配置",
       "network": "网络",
-      "session_storage": "会话存储"
+      "session_storage": "会话存储",
+      "sandbox": "会话沙箱"
     },
     "required": "运行所需"
   },

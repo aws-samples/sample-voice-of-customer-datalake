@@ -37,7 +37,7 @@ from shared.timestamps import parse_iso
 #: How long a queued run may wait for its engineering run's ``META`` (the start answers in at most 30 s).
 START_GRACE: Final = timedelta(minutes=15)
 #: An engineering run's end, as the agent's run records it.
-ENDS: Final[Mapping[str, str]] = {'done': store.RUN_COMPLETED, 'failed': store.RUN_FAILED, 'stopped': store.RUN_CANCELLED}
+ENDS: Final[Mapping[str, str]] = eng_runs.AGENT_RUN_ENDS
 LIVE: Final = frozenset({'active', 'needs_human'})
 #: What a start needs of the invocation: the start's own wait (25 s) and the broker's resolve, with a margin.
 TIME_NEEDED_MS: Final = 60_000
@@ -106,10 +106,7 @@ def heal(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], now: date
     if status in LIVE:
         return True
     if status in ENDS:
-        error = None if status == 'done' else f'The engineering run ended {status}'
-        if store.finish_run(table, agent_id, run_id, ENDS[status], now=now, error=error) is not None:
-            store.append_event(table, agent_id, run_id, 'decision', f'Engineering run {status}', now=now,
-                               role='system')
+        eng_runs.end_agent_run(table, agent_id, run_id, status, now=now)   # (an end already recorded: a no-op)
         return False
     queued = parse_iso(run.get('started_at'))
     if queued is not None and now - queued < START_GRACE:

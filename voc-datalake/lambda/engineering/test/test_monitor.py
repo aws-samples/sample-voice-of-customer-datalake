@@ -21,10 +21,12 @@ from engineering.monitor import (
     Actor,
     Applied,
     LambdaRuntime,
+    LambdaStopper,
     MonitorError,
     RunMonitor,
     parse_message,
     parse_signal,
+    parse_stop,
 )
 from engineering.rows import run_pk
 from engineering.runtime.sessions import AgentSession
@@ -124,7 +126,8 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
-                           'issue': None, 'pull_request': None}   # (started from no issue, no pull request yet)
+                           'issue': None, 'pull_request': None,   # (started from no issue, no pull request yet)
+                           'waiting_at': '', 'stop': None}   # (at no person's decision point; nobody stopped it)
     coordinator, fixer = view['agents']
     assert fixer == {
         'agent': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1', 'status': 'working', 'continuation': 0,
@@ -136,6 +139,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
         {'model': 'model-a', 'input_tokens': 1050, 'output_tokens': 205},
         {'model': 'model-b', 'input_tokens': 7, 'output_tokens': 1}]}
     assert view['actions_available'] is True
+    assert view['stop_available'] is False   # (this monitor names no start function)
 
 
 def test_the_overview_says_the_actions_are_unavailable_without_the_runtime_or_the_bus(run) -> None:
@@ -442,3 +446,137 @@ def test_the_overview_lights_the_runs_flow_from_its_own_copy(run) -> None:
     broken = monitor.overview(RUN)
     assert broken is not None
     assert (broken['run']['flow_steps'], broken['run']['goal']) == (None, 'Fix the paging bug')
+
+
+# --- a person's Stop of the whole run (7.50.03) ---------------------------------------------------------------------
+
+class Stopper:
+    """voc-engineering-start's ``stop_run`` as the monitor calls it: records each call, answers ``answer``."""
+
+    def __init__(self, answer: dict[str, Any] | None = None) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+        self.answer = answer or {'run_id': RUN, 'status': 'stopped', 'mode': 'stop', 'tasks_closed': ['task-1'],
+                                 'holds_released': [], 'saving': [], 'already': False, 'fell_back': False,
+                                 'agents': {}}
+
+    def stop(self, run_id: str, mode: str, *, actor: str) -> dict[str, Any]:
+        self.calls.append((run_id, mode, actor))
+        return self.answer
+
+
+def _stopping_monitor(client: Any, stopper: Stopper, publisher: Publisher | None = None) -> RunMonitor:
+    """A monitor that reaches neither the runtime nor (by default) the bus: only the start function's Stop."""
+    return RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=publisher, now=lambda: START,
+                      stopper=stopper)
+
+
+@pytest.mark.parametrize(('body', 'mode'), [({}, 'stop'), ({'now': False}, 'stop'),
+                                            ({'now': True, 'confirm': True}, 'stop_now')])
+def test_a_stop_is_a_stop_or_a_confirmed_stop_now(body: dict[str, Any], mode: str) -> None:
+    assert parse_stop(body).mode == mode
+
+
+@pytest.mark.parametrize(('body', 'says'), [({'now': True}, 'confirm: true'), ({'now': 'yes'}, 'now is true'),
+                                            ({'note': 7}, 'note is a string')])
+def test_a_malformed_stop_says_what_to_send(body: dict[str, Any], says: str) -> None:
+    with pytest.raises(MonitorError, match=says) as refused:
+        parse_stop(body)
+    assert refused.value.kind == 'invalid'
+
+
+def test_a_stop_reaches_the_run_through_the_start_function_without_the_runtime_or_the_bus(run) -> None:
+    client, _, _, _, _ = run
+    stopper = Stopper()
+    monitor = _stopping_monitor(client, stopper)
+    view = monitor.overview(RUN)
+    assert view is not None
+    # (the signals cannot reach this run, its Stop can: the run monitor offers Stop alone)
+    assert (view['actions_available'], view['stop_available']) == (False, True)
+    stopped = monitor.stop(RUN, parse_stop({}), ADMIN)
+    assert stopper.calls == [(RUN, 'stop', 'admin-sub')]
+    assert (stopped['status'], stopped['tasks_closed'], stopped['recorded']) == ('stopped', ['task-1'], False)
+
+
+def test_a_whole_run_shut_down_or_stop_now_signal_is_the_runs_stop(run) -> None:
+    client, _, _, _, _ = run
+    stopper = Stopper({'status': 'stopping', 'saving': ['fixer-1'], 'agents': {'fixer-1': 'pause_requested'}})
+    monitor = _stopping_monitor(client, stopper)
+    sent = monitor.signal(RUN, parse_signal({'signal': 'shutdown'}), ADMIN)
+    assert (sent['agents'], sent['run']['status'], sent['run']['saving']) == (
+        {'fixer-1': 'pause_requested'}, 'stopping', ['fixer-1'])
+    monitor.signal(RUN, parse_signal({'signal': 'stop_now', 'confirm': True}), ADMIN)
+    assert [mode for _, mode, _ in stopper.calls] == ['stop', 'stop_now']
+    # An agent's Shut down is still the agent's signal: it needs the runtime and the bus, which this monitor lacks.
+    with pytest.raises(MonitorError) as agent:
+        monitor.signal(RUN, parse_signal({'signal': 'shutdown', 'task_id': 'task-1', 'attempt': 1}), ADMIN)
+    assert agent.value.kind == 'unavailable'
+
+
+def test_where_the_bus_is_configured_the_conversation_records_the_stop_and_its_outcome(run) -> None:
+    client, _, _, publisher, _ = run
+    monitor = _stopping_monitor(client, Stopper(), publisher)
+    monitor.stop(RUN, parse_stop({'now': True, 'confirm': True, 'note': 'wrong repository'}), ADMIN)
+    request, outcome = publisher.sent
+    assert (request.type, request.to.kind, request.sender.id) == ('signal.stop_now', 'run', 'admin-sub')
+    assert 'stop now requested from the run monitor by ada for the whole run. Note: wrong repository' in request.summary
+    assert outcome.summary == f'signal.stop_now request {request.event_id}: stopped: 1 task(s) closed'
+
+
+def test_a_stop_the_bus_refuses_to_record_still_stops_the_run(run) -> None:
+    client, _, _, publisher, _ = run
+    publisher.fail = PublishError('the bus is down')
+    stopper = Stopper()
+    stopped = _stopping_monitor(client, stopper, publisher).stop(RUN, parse_stop({}), ADMIN)
+    assert (stopped['status'], stopped['recorded'], len(stopper.calls)) == ('stopped', False, 1)
+
+
+def test_an_ended_run_or_a_deployment_without_the_start_function_takes_no_stop(run) -> None:
+    client, _, _, _, _ = run
+    with pytest.raises(MonitorError) as nowhere:
+        RunMonitor(client, TABLE, Sessions(), runtime=None, publisher=None).stop(RUN, parse_stop({}), ADMIN)
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET ended_at = :e', ExpressionAttributeValues={':e': {'S': '2026-11-12T09:30:00Z'}})
+    stopper = Stopper()
+    with pytest.raises(MonitorError) as ended:
+        _stopping_monitor(client, stopper).stop(RUN, parse_stop({}), ADMIN)
+    assert (nowhere.value.kind, ended.value.kind, stopper.calls) == ('unavailable', 'conflict', [])
+
+
+def test_the_overview_shows_a_stop_under_way_and_the_decision_point_a_run_waits_at(run) -> None:
+    client, monitor, _, _, _ = run
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET #s = :s, needs_human = :c, stop_requested_at = :at, stop_mode = :m',
+                       ExpressionAttributeNames={'#s': 'status'},
+                       ExpressionAttributeValues={':s': {'S': 'needs_human'}, ':c': {'S': 'coordinator'},
+                                                  ':at': {'N': '1794470400'}, ':m': {'S': 'stop'}})
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert (view['run']['waiting_at'], view['run']['stop']) == (
+        'coordinator', {'mode': 'stop', 'requested_at': '2026-11-12T08:00:00Z'})
+
+
+def test_the_lambda_stopper_calls_the_start_functions_stop_and_says_how_it_failed() -> None:
+    client = LambdaClient({'status': 'stopped', 'tasks_closed': ['coordinate']})
+    assert LambdaStopper(client, 'voc-engineering-start').stop(RUN, 'stop_now', actor='admin-1')['status'] == 'stopped'
+    (request,) = client.requests
+    assert (request['FunctionName'], request['InvocationType'], json.loads(request['Payload'])) == (
+        'voc-engineering-start', 'RequestResponse',
+        {'action': 'stop_run', 'run_id': RUN, 'mode': 'stop_now', 'actor': 'admin-1'})
+    kinds = []
+    for failing in (LambdaClient({'errorType': 'RuntimeRefused', 'errorMessage': 'no run R'}, 'Unhandled'),
+                    LambdaClient({'errorType': 'ClientError'}, 'Unhandled'), LambdaClient({'status': 'teleported'})):
+        with pytest.raises(MonitorError) as refused:
+            LambdaStopper(failing, 'f').stop(RUN, 'stop', actor='admin-1')
+        kinds.append(refused.value.kind)
+    assert kinds == ['conflict', 'unavailable', 'unavailable']
+
+
+def test_the_origin_is_the_engineering_agents_run_its_start_recorded(run) -> None:
+    client, monitor, _, _, _ = run
+    assert monitor.origin(RUN) is None   # (a run an administrator started by hand)
+    client.put_item(TableName=TABLE, Item={
+        'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'RUNLOG#2026-11-12T08:00:00Z#active#ab12cd34'},
+        'kind': {'S': 'run_status'}, 'status': {'S': 'active'},
+        'via': {'M': {'agent_id': {'S': 'ag_cd22db36272d'}, 'agent_run_id': {'S': 'ar_01a1e7bd34969e48d125'},
+                      'trigger': {'S': 'github_issue'}}}})
+    assert monitor.origin(RUN) == {'agent_id': 'ag_cd22db36272d', 'agent_run_id': 'ar_01a1e7bd34969e48d125'}

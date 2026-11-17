@@ -174,6 +174,30 @@ def _start(**overrides: Any) -> eng_runs.AgentStart:
     return eng_runs.AgentStart(**{**base, **overrides})
 
 
+@pytest.mark.parametrize(('status', 'ended'), [('stopped', 'cancelled'), ('done', 'completed'), ('failed', 'failed')])
+def test_an_engineering_runs_end_ends_its_agents_run_once_and_frees_the_lock_but_keeps_the_issue_claim(
+        status: str, ended: str) -> None:
+    """7.50.03: a person's Stop ends the agent's run at once (the API); the heartbeat's heal does the same later."""
+    with agents_env() as env:
+        agent, row = _engineering_agent(env)
+        started = eng_runs.start_agent_run(env.agents, agent, store.get_workflow(env.agents, agent['workflow_id']),
+                                           row, _start(), client=Lambda(), function='voc-engineering-start', now=NOW)
+        assert started.run is not None
+        run_id = started.run['run_id']
+        assert eng_runs.end_agent_run(env.agents, agent['agent_id'], run_id, status, now=NOW) is True
+        assert eng_runs.end_agent_run(env.agents, agent['agent_id'], run_id, status, now=NOW) is False   # (once)
+        run = store.get_run(env.agents, agent['agent_id'], run_id)
+        assert run is not None
+        assert (run['status'], store.get_agent(env.agents, agent['agent_id']).get('active_run_id')) == (ended, None)
+        # (one run per issue, ever: the issue's claim stays; only Run now {issue} reruns it)
+        assert 'Item' in env.agents.get_item(Key=store.issue_claim_key('example-org/shop', 7))
+        with pytest.raises(ValueError, match='not an engineering run end'):
+            eng_runs.end_agent_run(env.agents, agent['agent_id'], run_id, 'stopping', now=NOW)
+    # (its map is the runtime's ends to the agents store's own statuses, never a third spelling)
+    assert (eng_runs.AGENT_RUN_ENDS, frozenset(eng_runs.AGENT_RUN_ENDS)) == (
+        {'done': store.RUN_COMPLETED, 'failed': store.RUN_FAILED, 'stopped': store.RUN_CANCELLED}, runs.ENDED)
+
+
 def test_an_agents_run_claims_its_issue_with_the_run_and_invokes_the_start_as_its_owner() -> None:
     with agents_env() as env:
         agent, row = _engineering_agent(env)

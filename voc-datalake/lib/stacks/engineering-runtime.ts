@@ -55,7 +55,7 @@ import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-b
 import {
   EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, pricingEnvironment, refuseRemovedSettings,
 } from './engineering-agentcore';
-import { grantBudgetWork, grantRunEnd, grantSpendLedger, viaServices } from './engineering-runtime-grants';
+import { grantBudgetWork, grantLauncherRows, grantRunEnd, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
@@ -343,7 +343,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
     }));
-    grantSpendLedger(role, engineeringTable);
+    grantLauncherRows(role, engineeringTable);   // (the spend ledger; the walls a continuation it starts says)
     const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
     role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
     acknowledgeNag(role, [{
@@ -486,7 +486,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS, RUN_REGISTRY] } },
     }));
-    grantSpendLedger(role, engineeringTable);
+    grantLauncherRows(role, engineeringTable);   // (the spend ledger; each started session's walls, 7.50.03)
     // A flow's month total, its budget alerts' own partition and the hard cap's row (SpendTotals, BudgetAlerts,
     // HardCapSetting).
     grantBudgetWork(role, engineeringTable, props.agentsTable);

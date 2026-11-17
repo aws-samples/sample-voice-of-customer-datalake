@@ -7,8 +7,9 @@ deployment-wide Issues source's repository watermarks (``github_issues#repo#*`` 
 workspace bucket's create-only probe (``PROBE_KEY``: one object, ever, since every later put of it is refused by its
 own If-None-Match, which is the answer the probe wants). Since 7.50.02 the Issues source's settings too (as
 voc-engineering-issues-config answers them: connectors/issues_sync.py ``status``, never a secret) and each
-connection's label row in voc-agents. Every failed call raises ``ReadFailed``, which the check answers
-``unknown``; nothing here raises anything else of AWS's.
+connection's label row in voc-agents. The sessions' walls (7.50.03) are one GetItem of voc-engineering's
+``WS#default#SANDBOX`` row of the language, which the runtime writes. Every failed call raises ``ReadFailed``, which
+the check answers ``unknown``; nothing here raises anything else of AWS's.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.readiness import ReadFailed, Settings, Subject, flow_requires
+from engineering.readiness import ReadFailed, SandboxSeen, Settings, Subject, flow_requires
 
 #: AgentCore Runtime's "Active Session Workloads per Account" (its service code is bedrock-agentcore; 5,000 in
 #: us-east-1 and us-west-2, read 2026-11-16 with service-quotas list-service-quotas).
@@ -223,6 +224,21 @@ class AwsReadinessPorts:
         if not isinstance(value, int | float) or isinstance(value, bool):
             raise ReadFailed('the AgentCore sessions quota has no value')
         return float(value)
+
+    def sandbox_walls(self, language: str) -> SandboxSeen | None:
+        """The runtime's record of the language's last session's walls (``runtime/sandbox.py``: one GetItem of
+        voc-engineering, which this role reads already), None for none yet."""
+        from engineering.runtime.sandbox import read_record
+        try:
+            found = read_record(self.engineering_client, self.engineering_table, language)
+        except _AWS_ERRORS as error:
+            raise _failed('the sessions\' walls', error) from error
+        except ValueError as error:   # (a language off its shape names no record)
+            raise ReadFailed('the sessions\' walls: not a language') from error
+        if found is None:
+            return None
+        walls = found.walls
+        return SandboxSeen(walls.egress, walls.code, walls.hardlink_guard, found.at)
 
     def probe_storage(self) -> bool:
         """A create-only put of ``PROBE_KEY`` (answered, or refused as already there: either is a create-only put

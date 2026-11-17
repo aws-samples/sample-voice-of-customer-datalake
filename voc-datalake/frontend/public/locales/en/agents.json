@@ -286,7 +286,7 @@
       "fromPrd": "Started from the PRD {{document}} of project {{project}}.",
       "fromReviews": "Started from {{n, number}} reports in its scope.",
       "fromNothing": "Started to hunt for bugs in its repository.",
-      "followHint": "Follow it and stop it on its run monitor: this run ends when the engineering run does.",
+      "followHint": "Follow it on its run monitor, or stop it here: this run ends when the engineering run does.",
       "openMonitor": "Open the run monitor"
     }
   },
@@ -1253,20 +1253,49 @@
       "asGiven": "as given at the start, not checked on the host",
       "opens": "{{label}} (opens in a new tab)"
     },
-    "actionsUnavailable": "Signals and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus.",
-    "runSignals": "The whole run",
+    "actionsUnavailable": "Pause, Resume, Save and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus. Stop works.",
+    "runSignals": "Run controls",
     "agentSignals": "Agent {{agent}}",
     "signals": {
       "save": "Save",
       "pause": "Pause",
       "resume": "Resume",
-      "shutdown": "Shut down",
-      "stop_now": "Stop now"
+      "shutdown": "Stop",
+      "stop_now": "Stop now, without saving"
     },
     "signalSent": "Sent.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Stop now, without saving?",
-    "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Shut down instead.",
+    "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Stop instead.",
+    "stopNowAgentMessage": "The agent is stopped at once, with no checkpoint: anything it has not saved yet is lost. To keep it, use Stop instead.",
+    "moreRun": "More run controls",
+    "moreFor": "More for {{target}}",
+    "saveCheckpoint": "Save a checkpoint",
+    "refreshFailed": "Couldn't refresh: this is the last read.",
+    "retry": "Retry",
+    "runState": {
+      "running": "Running",
+      "waiting": "Waits for a person",
+      "stopping": "Stopping…",
+      "done": "Done",
+      "failed": "Failed",
+      "stopped": "Stopped"
+    },
+    "stop": {
+      "group": "Stop the run",
+      "more": "More ways to stop",
+      "nowItem": "Stop now, without saving…",
+      "stoppingButton": "Stopping…",
+      "unavailable": "Stop can't reach this run from this deployment: it names no start function.",
+      "sent": "Stop sent",
+      "agentSaving": "{{agent}} saving a checkpoint…",
+      "stopping": "Stop sent: {{agents}} saving a checkpoint, then the run stops.",
+      "stopped_one": "Stopped. {{count, number}} open task was closed.",
+      "stopped_other": "Stopped. {{count, number}} open tasks were closed.",
+      "fellBack": "Stopped at once: the agents couldn't be asked to save first.",
+      "agentRunEnded": "Its automation's run is cancelled, so the automation can run again.",
+      "already": "This run had already ended ({{status}})."
+    },
     "errors": {
       "forbidden": "Only an admin can do this.",
       "notFound": "This run or task is no longer there: reload the run.",
@@ -1489,7 +1518,8 @@
       "agentcore_quota": "AgentCore quota",
       "memory_setting": "Build memory setting",
       "network": "Network",
-      "session_storage": "Session storage"
+      "session_storage": "Session storage",
+      "sandbox": "Session sandbox"
     },
     "required": "Needed to run"
   },

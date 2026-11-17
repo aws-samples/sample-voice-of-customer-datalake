@@ -286,7 +286,7 @@
       "fromPrd": "프로젝트 {{project}}의 PRD {{document}}에서 시작되었습니다.",
       "fromReviews": "범위 안의 보고 {{n, number}}건에서 시작되었습니다.",
       "fromNothing": "저장소의 버그를 찾기 위해 시작되었습니다.",
-      "followHint": "실행 모니터에서 진행을 확인하고 중지하세요. 엔지니어링 실행이 끝나면 이 실행도 끝납니다.",
+      "followHint": "실행 모니터에서 진행을 확인하거나 여기서 중지하세요. 엔지니어링 실행이 끝나면 이 실행도 끝납니다.",
       "openMonitor": "실행 모니터 열기"
     }
   },
@@ -1307,20 +1307,49 @@
       "asGiven": "시작할 때 입력한 그대로, 호스트에서 확인하지 않음",
       "opens": "{{label}}(새 탭에서 열림)"
     },
-    "actionsUnavailable": "이 배포에서는 아직 신호와 답변을 보낼 수 없습니다. 실행 모니터가 엔지니어링 런타임과 버스에 연결되어 있지 않습니다.",
-    "runSignals": "실행 전체",
+    "actionsUnavailable": "이 배포에서는 아직 일시 중지, 다시 시작, 저장과 답변을 보낼 수 없습니다. 실행 모니터가 엔지니어링 런타임과 버스에 연결되어 있지 않습니다. 중지는 사용할 수 있습니다.",
+    "runSignals": "실행 제어",
     "agentSignals": "에이전트 {{agent}}",
     "signals": {
       "save": "저장",
       "pause": "일시 중지",
       "resume": "다시 시작",
-      "shutdown": "종료",
-      "stop_now": "즉시 중지"
+      "shutdown": "중지",
+      "stop_now": "저장하지 않고 즉시 중지"
     },
     "signalSent": "보냈습니다.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "저장하지 않고 즉시 중지할까요?",
-    "stopNowMessage": "작업이 체크포인트 없이 바로 중지되며, 아직 저장되지 않은 내용은 사라집니다. 보존하려면 대신 종료를 사용하세요.",
+    "stopNowMessage": "작업이 체크포인트 없이 바로 중지되며, 아직 저장되지 않은 내용은 사라집니다. 보존하려면 대신 중지를 사용하세요.",
+    "stopNowAgentMessage": "에이전트가 체크포인트 없이 바로 중지되며, 아직 저장하지 않은 내용은 사라집니다. 보존하려면 대신 중지를 사용하세요.",
+    "moreRun": "실행 제어 더 보기",
+    "moreFor": "{{target}} 더 보기",
+    "saveCheckpoint": "체크포인트 저장",
+    "refreshFailed": "새로 고치지 못했습니다. 마지막으로 읽은 내용입니다.",
+    "retry": "다시 시도",
+    "runState": {
+      "running": "실행 중",
+      "waiting": "사람의 결정 대기",
+      "stopping": "중지하는 중…",
+      "done": "완료",
+      "failed": "실패",
+      "stopped": "중지됨"
+    },
+    "stop": {
+      "group": "실행 중지",
+      "more": "다른 중지 방법",
+      "nowItem": "저장하지 않고 즉시 중지…",
+      "stoppingButton": "중지하는 중…",
+      "unavailable": "이 배포에서는 이 실행을 중지할 수 없습니다. 시작 함수가 지정되어 있지 않습니다.",
+      "sent": "중지를 보냈습니다",
+      "agentSaving": "{{agent}}이(가) 체크포인트를 저장하는 중…",
+      "stopping": "중지를 보냈습니다. {{agents}}이(가) 체크포인트를 저장한 뒤 실행이 중지됩니다.",
+      "stopped_one": "중지했습니다. 열린 작업 {{count, number}}개를 닫았습니다.",
+      "stopped_other": "중지했습니다. 열린 작업 {{count, number}}개를 닫았습니다.",
+      "fellBack": "즉시 중지했습니다. 에이전트에게 먼저 저장하도록 요청할 수 없었습니다.",
+      "agentRunEnded": "자동화의 실행이 취소되어 자동화를 다시 실행할 수 있습니다.",
+      "already": "이 실행은 이미 끝났습니다({{status}})."
+    },
     "errors": {
       "forbidden": "관리자만 할 수 있습니다.",
       "notFound": "이 실행 또는 작업이 더 이상 없습니다. 실행을 다시 불러오세요.",
@@ -1543,7 +1572,8 @@
       "agentcore_quota": "AgentCore 할당량",
       "memory_setting": "빌드 메모리 구성",
       "network": "네트워크",
-      "session_storage": "세션 저장소"
+      "session_storage": "세션 저장소",
+      "sandbox": "세션 샌드박스"
     },
     "required": "실행에 필요"
   },

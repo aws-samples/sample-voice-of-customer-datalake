@@ -1,7 +1,8 @@
 /**
  * @fileoverview An engineering agent's runs (7.47.00): the row says what the run started from and links to its run
- * monitor, with no Cancel (the monitor stops it); Run now asks for an issue (required for a feature agent) and sends
- * it; a start that may have been written names its engineering run.
+ * monitor, with no Cancel; while it is live an admin stops it here with the run monitor's own Stop (7.50.03), which
+ * ends its engineering run and so this run; Run now asks for an issue (required for a feature agent) and sends it; a
+ * start that may have been written names its engineering run.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -58,6 +59,39 @@ describe('an engineering agent\'s run', () => {
     expect(screen.getByRole('link', { name: 'Open the run monitor' })).toHaveAttribute('href', `/agents/engineering/${ENGINEERING_RUN}`)
     expect(screen.queryByRole('button', { name: 'Cancel run' })).not.toBeInTheDocument()
     expect(screen.getAllByText('GitHub issue').length).toBeGreaterThan(0)
+  })
+
+  it('stops a live run with the run monitor\'s Stop, says what it did and reads the runs again', async () => {
+    const user = userEvent.setup()
+    const now = { status: 'running' }
+    routes({
+      'GET /agents/ag_1/runs': () => ({ items: [run(now.status)] }),
+      'GET /agents/ag_1/runs/ar_0001': () => run(now.status),
+      [`POST /agents/engineering/${ENGINEERING_RUN}/stop`]: () => {
+        now.status = 'cancelled'
+        return { stop: { status: 'stopped', mode: 'stop', tasks_closed: ['coordinate'],
+          agent_run: { agent_id: 'ag_1', run_id: 'ar_0001', ended: true } } }
+      },
+    })
+    renderWithQueryClient(<TestRouter><RunsTab agent={agentOf('bug')} isAdmin /></TestRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Stop' }))
+    await waitFor(() => { expect(sentFetchApiBody(`/agents/engineering/${ENGINEERING_RUN}/stop`, 'POST')).toStrictEqual({}) })
+    // (the run is no longer live once the agent's runs are read again: its Stop goes, what it did stays said)
+    await waitFor(() => { expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument() })
+    expect(screen.getByText("Stopped. 1 open task was closed. Its automation's run is cancelled, so the automation can run again."))
+      .toBeInTheDocument()
+  })
+
+  it('offers no Stop for a run that has ended, nor to anyone but an admin', async () => {
+    routes({ 'GET /agents/ag_1/runs': () => ({ items: [run('completed')] }), 'GET /agents/ag_1/runs/ar_0001': () => run('completed') })
+    const { unmount } = renderWithQueryClient(<TestRouter><RunsTab agent={agentOf('bug')} isAdmin /></TestRouter>)
+    expect(await screen.findByText('Started from issue #42 of example-org/storefront.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    unmount()
+    routes()
+    renderWithQueryClient(<TestRouter><RunsTab agent={agentOf('bug')} isAdmin={false} /></TestRouter>)
+    expect(await screen.findByText('Started from issue #42 of example-org/storefront.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
   })
 
   it('names the engineering run a start may have written', async () => {

@@ -287,7 +287,7 @@
       "fromPrd": "Iniciada desde el PRD {{document}} del proyecto {{project}}.",
       "fromReviews": "Iniciada desde {{n, number}} informes de su alcance.",
       "fromNothing": "Iniciada para buscar errores en su repositorio.",
-      "followHint": "Síguela y detenla en su monitor de ejecución: esta ejecución termina cuando termina la de ingeniería.",
+      "followHint": "Síguela en su monitor de ejecución o detenla aquí: esta ejecución termina cuando termina la de ingeniería.",
       "openMonitor": "Abrir el monitor de ejecución"
     }
   },
@@ -1314,20 +1314,49 @@
       "asGiven": "tal como se indicó al inicio, sin comprobar en el host",
       "opens": "{{label}} (se abre en una pestaña nueva)"
     },
-    "actionsUnavailable": "Esta implementación aún no puede enviar señales ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería.",
-    "runSignals": "Toda la ejecución",
+    "actionsUnavailable": "Esta implementación aún no puede enviar Pausar, Reanudar, Guardar ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería. Parar sí funciona.",
+    "runSignals": "Controles de la ejecución",
     "agentSignals": "Agente {{agent}}",
     "signals": {
       "save": "Guardar",
       "pause": "Pausar",
       "resume": "Reanudar",
-      "shutdown": "Apagar",
-      "stop_now": "Parar ya"
+      "shutdown": "Parar",
+      "stop_now": "Parar ya, sin guardar"
     },
     "signalSent": "Enviado.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "¿Parar ya, sin guardar?",
-    "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Apagar.",
+    "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Parar.",
+    "stopNowAgentMessage": "El agente se para de inmediato, sin punto de control: se pierde lo que aún no haya guardado. Para conservarlo, usa Parar.",
+    "moreRun": "Más controles de la ejecución",
+    "moreFor": "Más para {{target}}",
+    "saveCheckpoint": "Guardar un punto de control",
+    "refreshFailed": "No se pudo actualizar: es la última lectura.",
+    "retry": "Reintentar",
+    "runState": {
+      "running": "En curso",
+      "waiting": "Espera a una persona",
+      "stopping": "Parando…",
+      "done": "Hecho",
+      "failed": "Fallido",
+      "stopped": "Detenido"
+    },
+    "stop": {
+      "group": "Parar la ejecución",
+      "more": "Más formas de parar",
+      "nowItem": "Parar ya, sin guardar…",
+      "stoppingButton": "Parando…",
+      "unavailable": "Parar no llega a esta ejecución desde esta implementación: no indica ninguna función de inicio.",
+      "sent": "Parada enviada",
+      "agentSaving": "{{agent}} guardando un punto de control…",
+      "stopping": "Parada enviada: {{agents}} guardando un punto de control; después se para la ejecución.",
+      "stopped_one": "Detenida. Se cerró {{count, number}} tarea abierta.",
+      "stopped_other": "Detenida. Se cerraron {{count, number}} tareas abiertas.",
+      "fellBack": "Detenida de inmediato: no se pudo pedir a los agentes que guardaran antes.",
+      "agentRunEnded": "La ejecución de su automatización está cancelada, así que la automatización puede volver a ejecutarse.",
+      "already": "Esta ejecución ya había terminado ({{status}})."
+    },
     "errors": {
       "forbidden": "Solo un administrador puede hacerlo.",
       "notFound": "Esta ejecución o tarea ya no existe: vuelve a cargar la ejecución.",
@@ -1550,7 +1579,8 @@
       "agentcore_quota": "Cuota de AgentCore",
       "memory_setting": "Ajuste de memoria de compilación",
       "network": "Red",
-      "session_storage": "Almacenamiento de sesiones"
+      "session_storage": "Almacenamiento de sesiones",
+      "sandbox": "Aislamiento de la sesión"
     },
     "required": "Necesaria para ejecutar"
   },

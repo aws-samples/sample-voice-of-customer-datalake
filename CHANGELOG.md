@@ -17,6 +17,119 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.50.03] - 2026-11-17
+
+The first real engineering run on the `b-` deployment found two problems, and both are fixed. The run monitor could stop nothing: the run sat waiting for a person, and its engineering agent's run stayed locked. A person's **Stop** now ends any run that has not ended, through the start function, with or without a live session, and the monitor always shows it. The coordinator's session never started, because AgentCore Runtime refuses the images' in-container iptables firewall (no CAP_NET_ADMIN, a read-only `/proc/sys`). The images now choose **whichever wall the container supports**: the firewall where iptables works, else a user and network namespace of its own for every command of the agent's and of repository code's, bridged by a forwarder to its own proxy over a Unix socket. They still fail closed when neither holds.
+
+### Fixed
+
+- **The run monitor could stop nothing.** The live run (`01M7KVTD…`) was waiting for a person (`needs_human` = `coordinator`): its coordinator's session never started, its `coordinate` task was open with `launched_agent` `coordinator-1`, and that agent's launch hold had run out. Its monitor offered no Stop, and the Bug fixer's agent run stayed locked behind it. There were two causes, found in the code and the deployed function's configuration (read-only):
+  - **The signals never reached the run.** By design the Agents API's role may invoke `voc-engineering-start`, never `voc-engineering-runtime`, so the API is not wired to the runtime or the bus (no `ENGINEERING_RUNTIME_FUNCTION`, no `ENGINEERING_BUS_NAME`). The overview therefore said `actions_available: false`, and the page showed one sentence where the signals would be. No signal was ever sent (the API logged none).
+  - **A whole-run stop ended nothing.** Where signals do reach the runtime, a whole run's **Shut down** or **Stop now** only moved its agents' sessions (`Supervisor.signal_detailed`). A run with no session answered "no agent yet" and stayed as it was, since only `end_run` ends a run and nothing calls it.
+- **A person's Stop now always ends a run that has not ended**, with or without a session or a reachable supervisor:
+  - **The route.** `POST /agents/engineering/<run_id>/stop` `{now?, confirm?, note?}` is for administrators acting for themselves. It goes through `voc-engineering-start`'s new `stop_run`, so the API needs neither the runtime nor the bus (the overview's new `stop_available`).
+  - **Stop.** The agents that have a session save a checkpoint and stop (the Shut down signal, handed on to the runtime's new `stop_run`), and the answer is `stopping`. The run ends once none has a session left, or at the latest 10 minutes after the request (each tick, `_finish_stops`). With no agent that has a session, it ends at once.
+  - **Stop now.** `now: true` with `confirm: true` ends the run at once.
+  - **While a Stop is under way**, the run launches no agent (`SessionStore.create` refuses it) and takes no Resume.
+  - **What ending the run does** (`lambda/engineering/runtime/stop.py`):
+    - writes META `stopped` with its `RUNLOG#` row naming the person and how (D4);
+    - closes every task that has not ended, as `failed` with a `stop` history row naming the person (`BoardStore.close_for_stop`). The retrospective reads it as handed back, never as an agent's failure for the coach;
+    - runs out every live launch hold, ends the run's sessions and releases it.
+  - **The issue's `ISSUE_RUN#` claim is kept**, as the design says: one run per issue, ever, and Run now `{issue}` reruns it.
+  - **The agent's run ends too.** Once the run has ended, the API ends its engineering agent's run at once: cancelled, its lock released (`shared/engineering_agent_runs.py` `end_agent_run`, which the heartbeat's lock heal now uses too). The agent can run again without waiting up to 15 minutes for the heartbeat.
+  - **A whole run's `shutdown` or `stop_now` sent as a signal is this Stop**, both through `/signals` where the start function is named and in the runtime's own `signal` action.
+- **The run monitor's controls** (the UX spec's "run monitor" part). For an administrator on any run that has not ended, one **Run controls** bar always has **Stop**:
+  - **Stop is a split button.** Stop saves first; its menu holds **Stop now, without saving…**, which asks first.
+  - **Where the signals reach the run**, the bar also has one **Pause/Resume** toggle by the run's state, and **Save a checkpoint** under ⋯. Where they do not, one line beside Stop says so.
+  - **While a Stop is under way**, the run's chip and the disabled Stop say **Stopping…** (`aria-disabled`), and a status line gives each agent's part ("fixer-2 saving a checkpoint…").
+  - **The answer says what happened**, for example "Stopped. 1 open task was closed. Its automation's run is cancelled, so the automation can run again." The run is read again, and the line stays once the run has ended.
+  - **Toned chips.** The run's status is a toned chip: running accent, waiting for a person warn, stopping warn, done ok, failed danger, stopped muted. Each agent's status is toned too.
+  - **Agent cards.** Each card's five buttons are now its **Stop** and a ⋯ menu: Save a checkpoint, Pause or Resume, Stop now.
+  - **Runs tab.** An engineering agent's **Runs** tab shows the same Stop for its live run; "stop it on its run monitor" is gone.
+  - **Files:** `frontend/src/pages/Agents/RunControlBar.tsx` (new), `EngineeringSignals.tsx`, `EngineeringRun.tsx`, `EngineeringRunHeader.tsx`, `EngineeringRunPanels.tsx`, `RunsTab.tsx` and `engineeringRunText.ts`. `assistant/components/MoreMenu.tsx` takes a trigger icon and class, for the split button's menu half. There are new strings in all nine languages.
+- **An idle session lived to its 8 hours.** The runner's `/ping` set `time_of_last_update` to the current time on every ping. The HTTP protocol contract says not to: "Do not set `time_of_last_update` to the current time on every ping. A timestamp that advances on every ping signals a continuous status change, which prevents the idle session timeout from ever firing — sessions then persist until `MaxLifetime` and can exhaust your session quota."
+  - The field is now when the runner last did real work: the status's last change (a command starting or the last one ending, a hold), an invocation that starts, hands over, holds or wakes the agent (`WORK_OPS`), or a command's start.
+  - A ping, a `status` read or a poll of a command's result never moves it.
+  - `HealthyBusy` stays as it was: only while a command runs and is not held.
+  - An idle or held session now ends at the runtime's idle timeout (an hour), never at its maximum lifetime (`unit_runner.Runner.ping`). The images carry the runner, so this ships with their rebuild.
+- **One failed read hid the controls.** `live` was false after a single failed overview read, so the controls disappeared and polling stopped while the run went on. `live` now comes from the last good read. After a failed read the page keeps that read and its controls, says "Couldn't refresh: this is the last read." with **Retry**, and keeps polling with a backoff (doubling, at most a minute). Only a 404 stops it (`useEngineeringRun.ts`).
+- **AgentCore Runtime refused the agents' egress firewall, so no session could start.** The coordinator's container refused `start`, and InvokeAgentRuntime got a 400 from the runtime.
+  - **What failed.** The 7.50.0 entry point could not install its iptables rules ("Permission denied (you must be root)"), nor write `/proc/sys/fs/protected_hardlinks` ("Read-only file system"). The runner, started without `--egress-firewall`, fails closed by design.
+  - **What a probe showed** (one throwaway session, which the owner approved; dated in docs/autonomous-engineering.md "Runtime"):
+    - the container runs as root, with Docker's default capabilities plus CAP_SYS_ADMIN and no CAP_NET_ADMIN, so iptables is refused (nft is absent);
+    - `NoNewPrivs` is 1 and there is no seccomp filter;
+    - unprivileged user and network namespaces work, for `unit` and `code` too;
+    - `/proc/sys` is read-only, but `protected_hardlinks` already reads 1, and the tmpfs `/run/voc` sits on its own device;
+    - `/dev/fuse` is present;
+    - the session's way out is link-local.
+  - **The entry point** (`engineering-images/common/walls.sh`, new) now chooses the wall:
+    - it tries iptables first, as before (`--egress-firewall --code-firewall`);
+    - otherwise it checks, for `unit` and for `code`, the chain the runner will use: drop to the user, take a user and network namespace of its own, bring its loopback up, see no other interface, drop every capability. It then passes `--egress-namespaces` and `--code-namespaces`;
+    - it passes `--hardlink-guard` with each guard that holds (`own_device`, `protected_hardlinks`). It reads these, and no longer writes `/proc/sys`.
+  - **The runner starts an agent only behind an egress wall**, takes the dependency step only behind a code wall, and runs repository code only with a hard-link guard. With none, it still refuses (`unit_runner.py`).
+  - **In namespace mode, every command runs in its own namespaces.** Every command of the agent's (as `unit`) and of repository code's (as `code`) runs in its own user and network namespace, with only a loopback and no capability.
+    - A forwarder inside (`unit_runner.py forward`) bridges `127.0.0.1:8081`/`3128` (the agent) and `3129` (the dependency step only) to Unix sockets that the root runner serves in `/run/voc-net`. The sockets are made at `start`, never in a V2 snapshot.
+    - Each socket is mode 0600, owned by its user, and uid-checked with `SO_PEERCRED` on every connection. The code proxy's socket is removed for good once other repository code runs.
+    - Link-local, credential and metadata endpoints and DNS are unreachable by construction: the namespace has no eth0.
+  - **The runner reports its walls.** Its `start` and `status` answers say which walls hold (`sandbox: {egress, code, hardlink_guard}`). The runtime keeps each language's last record (`WS#default#SANDBOX` / `LANG#<language>`, `runtime/sandbox.py`, wired through `AgentCoreRuntime`'s new `on_walls`).
+  - **Readiness has a new `sandbox` check**, which is advice, not required. It answers "unknown until the first session" with nothing recorded, never a pass; pass once a session's walls all held; fail when one did not. Its fix names the four images to rebuild.
+  - **The VPC fallback is not built.** The namespaces hold, and a security-group and DNS-firewall wall would be weaker: it cannot tell the agent from repository code, nor keep either off the link-local resolver.
+- **Tests:**
+  - `lambda/engineering/runtime/test/test_engineering_run_stop.py` (new) covers:
+    - the stuck run's own shape: started, its launch handed on and run out, sent to a person. Stop and Stop now end it: RUNLOG, the closed task and its history row, the hand-on of `finish_stop` (the runtime's `end_run` as stopped) that releases it;
+    - an active run with no session and a live launch hold, whose late launch is then refused;
+    - runs that ended done, failed or stopped: changed by nothing;
+    - a retried Stop;
+    - a working agent: saves, then the run ends at the next tick. A Resume and a new agent are refused meanwhile;
+    - an agent that never saves: stopped at the grace;
+    - Stop now with an agent at work, through the runtime's own signal;
+    - a whole run's Shut down with no session;
+    - a hand-on that fails, which stops the run at once;
+    - bad requests.
+  - `lambda/engineering/test/test_monitor.py`: Stop and Stop now parsed; the Stop reaching the run without the runtime or the bus; whole-run signals as the Stop; the conversation's record where the bus is named; an ended run; the overview's `stop` and `waiting_at`; `LambdaStopper`; the run's origin.
+  - `lambda/api/test/test_agents_engineering_stop.py` (new): the route, the engineering agent's run cancelled and its lock released, a Stop still saving, the gates, 409, 503.
+  - The lock release: `lambda/shared/test/test_engineering_agent_runs.py` (`end_agent_run` ends the agent's run once, frees the lock and keeps the issue's claim), and through the heartbeat `test_heartbeat_engineering.py` (stopped → cancelled).
+  - `test_engineering_runtime_handler.py`: the deployed runtime keeps each started session's walls as its language's last.
+  - `test_retrospective.py`: a stop-closed task is no failure.
+  - Sandbox tests:
+    - `test_engineering_walls.py` (new): the entry point's decision tree, as a harness of `walls.sh`;
+    - `test_engineering_local_runtime.py` and `test_engineering_images.py`: the runner refusing `start` with no wall and accepting each kind; the guards; pings alone never move the idle clock, a command is busy while it runs and the idle clock runs from its end, an invocation that does work moves it and a held agent is idle;
+    - `test_engineering_namespaces.py` (new, Linux only): the namespace wrapper and forwarder, run where `unshare -Urn` works, else skipped with the reason;
+    - `test_engineering_sandbox_record.py` (new): the record;
+    - `test_engineering_agentcore_runtime.py`;
+    - `test_readiness.py` and `test_readiness_aws.py`: the `sandbox` check.
+  - CDK: `engineering-runtime.test.ts`.
+  - Frontend: `EngineeringRun.test.tsx`, `RunsTab.engineering.test.tsx`, `engineeringRunsApi.test.ts`.
+
+### Changed
+
+- IAM:
+  - `voc-engineering-start`'s role gains `dynamodb:Query` of the runs' own partitions only (`StopRunReads`, LeadingKeys `WS#*#RUN#*`, never the registry): a Stop reads the run's tasks and agents.
+  - The supervisor's and the delivery function's roles gain `dynamodb:PutItem` of `WS#*#SANDBOX` only (`SandboxRecord`, `engineering-runtime-grants.ts` `grantLauncherRows`).
+  - The Agents API's role is unchanged: it already invokes the start function and reads the table.
+- Docs:
+  - `docs/autonomous-engineering.md`:
+    - the run monitor and its Stop;
+    - Trust and safety (the Stop built);
+    - Runtime: the "unchecked" list replaced by what the probe showed, dated, what the AgentCore guide does and does not say, the walls design with its socket table and its guarantees against the firewall's, whole-run stops and `end_run`;
+    - Readiness: the `sandbox` row.
+  - `docs/autonomous-agents.md`: the engineering agents' runs, the run monitor's actions, the `…/stop` route.
+  - `docs/deployment.md`: `engineeringImages`, which must all be rebuilt for 7.50.03.
+- `lib/test-support/baseline.json` regenerated (the IAM statements above and the version).
+
+### Upgrade notes
+
+- **Rebuild all four engineering images and deploy their digests with the stacks, in the same deploy.**
+  - Build and push python, node, java and rust for linux/arm64 from `voc-datalake/`, with new tags. The commands are in docs/deployment.md, `engineeringImages`; use the same Mountpoint and boto3 build arguments as 7.50.00.
+  - Read each digest, then deploy the stacks with `-c engineeringImages='{"python":"sha256:…","node":"sha256:…","java":"sha256:…","rust":"sha256:…"}'` and every other `-c` setting of the deployment. Then deploy the frontend.
+  - An image from before 7.50.03 refuses every agent's start on AgentCore Runtime, so a run's coordinator never starts until the new digests are deployed.
+- The Stop needs only the stacks (VocProcessingStack: the start function's code and its Query grant; VocApiStack: the route) and the frontend. Readiness's `sandbox` check says "unknown" until the first session of each image after the deploy records its walls.
+- **A run left waiting for a person before this release** (such as `01M7KVTD4PR8ZYYE3P7201810Y` on `b-`): after the deploy, open its run monitor as an administrator and press **Stop**. With no session it ends at once, its open task is closed and its engineering agent's run is cancelled, so the agent can run again. Rerun its issue with the agent's Run now `{issue}`.
+- **MMDSv2, checked.** The guide says AgentCore Runtime requires MMDSv2 from 2026-06-30 and rejects invocations of a runtime without `metadataConfiguration.requireMMDSV2`. The stacks cannot set it: neither aws-cdk-lib 2.275.0's `CfnRuntime` nor CloudFormation's `AWS::BedrockAgentCore::Runtime` schema (us-west-2, 2026-11-17) has the property. The `b-` python runtime made by these stacks already reads `requireMMDSV2: true` (`get-agent-runtime`, read-only), so nothing is to do now; docs/autonomous-engineering.md (Runtime, "MMDSv2") says to set and pin it once the property exists.
+- **Found, not fixed** (outside this patch):
+  - On `b-` the run monitor's Pause, Resume, Save and answers still cannot be sent (the Agents API names neither the runtime nor the bus); only the Stop has its way through the start function.
+- **Rollback.** An earlier release ignores META's `stop_*` attributes, and its images keep refusing to start on AgentCore Runtime. Runs that were stopped stay stopped.
+
 ## [7.50.02] - 2026-11-17
 
 The deployment's GitHub Issues source configures itself from Agents → Connections: connecting a repository through the deployment's GitHub App (the two-click **Connect GitHub**) is what makes its issues read, with no Data sources step, no token to paste and no repository webhook. The installation, and every **Check installation**, adds each connected repository to the source (merged, never overwritten: an administrator's own repositories stay, a source set to a token stays on the token), signs it in with the App, turns its schedule on, and creates the `voc-agent` label on each repository when it is missing; each connection has a **Read this repository's issues** switch (on by default), and removing a connection takes out only what its automation added. The Data sources card becomes the advanced view ("Managed by your GitHub connection"), App-first, and `/admin/data-sources/github_issues` opens it. The setup guide's first step is just Connect GitHub and Confirm CI, with the Issues source and the label as automatic ticks, and readiness passes them from that state. A live check also found every user shown as AI-driven on the Users page while the engineering dial, which takes only an explicitly saved choice, refused them: a person with nothing saved now shows **Not set**, readiness tells "Not set yet" from a saved Human-driven, and the Set up dialog offers **Set mine to AI-driven**. The pull request copy now says agents open pull requests for review and merging stays with a person.

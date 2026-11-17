@@ -4,7 +4,10 @@
  * role of its own holding only what a start needs (`startRole`), entered at `start_handler`, which takes `start_run` and refuses every other action before anything is read; it writes
  * the run and hands the coordinator's launch on to voc-engineering-runtime (`launch_coordinator`). The API's
  * role may invoke this function and never voc-engineering-runtime, so it can start a run and never tick, launch,
- * signal or end one. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
+ * signal an agent or end a run otherwise. Since 7.50.03 it also takes `stop_run`, the run monitor's Stop of a whole
+ * run (lambda/engineering/runtime/stop.py): it ends the run (its META, its tasks, its launch holds) or records the
+ * request, and hands the rest on to voc-engineering-runtime (`end_run`, `stop_run`), so a Stop never needs the
+ * runtime's own function or the bus. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
  * engineering agent's trigger), and a start that resolves its commit calls the broker's `head` (its function URL, which
  * admits this role for that operation alone). Pay per use: no fixed cost.
  */
@@ -65,13 +68,16 @@ interface StartProps {
 
 /** What a start writes (lambda/engineering/runtime/runs.py RunStore.start, needs_human): its run's partition, the registry. */
 const START_PARTITIONS = ['WS#*#RUN#*', 'WS#*#RUNS'];
+/** What a Stop reads (7.50.03: runtime/stop.py): the run's own partition (its tasks, its agents), never the registry. */
+const STOP_READ_PARTITIONS = ['WS#*#RUN#*'];
 
 /**
  * voc-engineering-start's own role (TENETS.md tenet 6: a role per Lambda), with only what `start_run` without its launch
  * uses: the run's rows and its registry row (GetItem, PutItem, UpdateItem: the start's transaction, a decision point),
  * a flow's month total and the hard cap's row (GetItem, at a budgeted start), the stack's key through DynamoDB, its
- * rule switched on (never off), and the runtime invoked by name for the launch. No agent session, no AssumeRole of an agent
- * role, no bus, no delete, no registry query: the supervisor's role keeps those.
+ * rule switched on (never off), and the runtime invoked by name for the launch. Since 7.50.03 a Stop: Query of the run's
+ * own partition (its tasks and agent rows, `StopRunReads`), its writes those of the run's rows above. No agent session,
+ * no AssumeRole of an agent role, no bus, no delete, no registry query: the supervisor's role keeps those.
  */
 function startRole(scope: Construct, props: StartProps): iam.Role {
   const role = workerRole(scope, 'EngineeringStartRole');
@@ -81,6 +87,10 @@ function startRole(scope: Construct, props: StartProps): iam.Role {
     actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
     resources: [props.engineeringTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': START_PARTITIONS } },
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'StopRunReads', actions: ['dynamodb:Query'], resources: [props.engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': STOP_READ_PARTITIONS } },
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'StartFlowMonthTotal', actions: ['dynamodb:GetItem'], resources: [props.engineeringTable.tableArn],

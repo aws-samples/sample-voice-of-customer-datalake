@@ -435,6 +435,27 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
     return AgentRunStarted(run, answer)
 
 
+#: An engineering run's end (runtime/runs.py ``ENDED``), and its engineering agent's run's status for it
+#: (agents_store's ``RUN_COMPLETED``, ``RUN_FAILED``, ``RUN_CANCELLED``; ``end_agent_run``, the heartbeat's heal).
+AGENT_RUN_ENDS: Final[Mapping[str, str]] = {'done': 'completed', 'failed': 'failed', 'stopped': 'cancelled'}
+
+
+def end_agent_run(table: Any, agent_id: str, run_id: str, status: str, *, now: Any) -> bool:
+    """The engineering agent's run ``run_id`` of an engineering run that ended ``status`` (``done``, ``failed`` or
+    ``stopped``): completed, failed or cancelled, the agent's lock released (``agents_store.finish_run``), with one
+    ``decision`` event; False when it had ended already (idempotent). The heartbeat's lock heal ends it so when it reads
+    the engineering run's end (agents/heartbeat/engineering.py ``heal``); since 7.50.03 the Agents API ends it so at
+    once after a person's Stop, so the agent may run again without waiting for the next heartbeat."""
+    from shared import agents_store as store
+    if status not in AGENT_RUN_ENDS:
+        raise ValueError(f'not an engineering run end: {status}')
+    error = None if status == 'done' else f'The engineering run ended {status}'
+    if store.finish_run(table, agent_id, run_id, AGENT_RUN_ENDS[status], now=now, error=error) is None:
+        return False
+    store.append_event(table, agent_id, run_id, 'decision', f'Engineering run {status}', now=now, role='system')
+    return True
+
+
 def feedback_of(items: Sequence[Mapping[str, Any]], count: int) -> Feedback:
     """The run's feedback from the items a trigger counted (at most ``MAX_FEEDBACK_IDS`` ids, their top category)."""
     ids = tuple(str(item['feedback_id']) for item in items if isinstance(item.get('feedback_id'), str))

@@ -311,7 +311,7 @@
       "fromPrd": "Uruchomiony z PRD {{document}} projektu {{project}}.",
       "fromReviews": "Uruchomiony z {{n, number}} opinii w jego zakresie.",
       "fromNothing": "Uruchomiony, aby szukać błędów w jego repozytorium.",
-      "followHint": "Śledź go i zatrzymaj w monitorze przebiegu: ten przebieg kończy się, gdy kończy się przebieg inżynieryjny.",
+      "followHint": "Śledź go w monitorze przebiegu albo zatrzymaj tutaj: ten przebieg kończy się, gdy kończy się przebieg inżynieryjny.",
       "openMonitor": "Otwórz monitor przebiegu"
     }
   },
@@ -1350,20 +1350,51 @@
       "asGiven": "tak, jak podano przy starcie, niesprawdzone na hoście",
       "opens": "{{label}} (otwiera się w nowej karcie)"
     },
-    "actionsUnavailable": "To wdrożenie nie może jeszcze wysyłać sygnałów ani odpowiedzi: nie łączy monitora przebiegu ze środowiskiem uruchomieniowym i magistralą inżynierii.",
-    "runSignals": "Cały przebieg",
+    "actionsUnavailable": "To wdrożenie nie może jeszcze wysyłać poleceń Wstrzymaj, Wznów, Zapisz ani odpowiedzi: nie łączy monitora przebiegu ze środowiskiem uruchomieniowym i magistralą inżynierii. Zatrzymaj działa.",
+    "runSignals": "Sterowanie przebiegiem",
     "agentSignals": "Agent {{agent}}",
     "signals": {
       "save": "Zapisz",
       "pause": "Wstrzymaj",
       "resume": "Wznów",
-      "shutdown": "Zamknij",
-      "stop_now": "Zatrzymaj od razu"
+      "shutdown": "Zatrzymaj",
+      "stop_now": "Zatrzymaj od razu, bez zapisu"
     },
     "signalSent": "Wysłano.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Zatrzymać od razu, bez zapisu?",
-    "stopNowMessage": "Praca zostanie przerwana natychmiast, bez punktu kontrolnego: to, co nie zostało jeszcze zapisane, przepadnie. Aby to zachować, wybierz Zamknij.",
+    "stopNowMessage": "Praca zostanie przerwana natychmiast, bez punktu kontrolnego: to, co nie zostało jeszcze zapisane, przepadnie. Aby to zachować, wybierz Zatrzymaj.",
+    "stopNowAgentMessage": "Agent zostanie przerwany natychmiast, bez punktu kontrolnego: to, czego jeszcze nie zapisał, przepadnie. Aby to zachować, wybierz Zatrzymaj.",
+    "moreRun": "Więcej sterowania przebiegiem",
+    "moreFor": "Więcej dla {{target}}",
+    "saveCheckpoint": "Zapisz punkt kontrolny",
+    "refreshFailed": "Nie udało się odświeżyć: to ostatni odczyt.",
+    "retry": "Spróbuj ponownie",
+    "runState": {
+      "running": "Trwa",
+      "waiting": "Czeka na osobę",
+      "stopping": "Zatrzymywanie…",
+      "done": "Gotowe",
+      "failed": "Nieudane",
+      "stopped": "Zatrzymany"
+    },
+    "stop": {
+      "group": "Zatrzymaj przebieg",
+      "more": "Inne sposoby zatrzymania",
+      "nowItem": "Zatrzymaj od razu, bez zapisu…",
+      "stoppingButton": "Zatrzymywanie…",
+      "unavailable": "Zatrzymaj nie dociera do tego przebiegu z tego wdrożenia: nie wskazuje ono funkcji startowej.",
+      "sent": "Wysłano zatrzymanie",
+      "agentSaving": "{{agent}} zapisuje punkt kontrolny…",
+      "stopping": "Wysłano zatrzymanie: {{agents}} zapisuje punkt kontrolny, potem przebieg się zatrzyma.",
+      "stopped_one": "Zatrzymano. Zamknięto {{count, number}} otwarte zadanie.",
+      "stopped_few": "Zatrzymano. Zamknięto {{count, number}} otwarte zadania.",
+      "stopped_many": "Zatrzymano. Zamknięto {{count, number}} otwartych zadań.",
+      "stopped_other": "Zatrzymano. Zamknięto {{count, number}} otwartego zadania.",
+      "fellBack": "Zatrzymano od razu: nie udało się najpierw poprosić agentów o zapis.",
+      "agentRunEnded": "Przebieg jego automatyzacji jest anulowany, więc automatyzacja może znów działać.",
+      "already": "Ten przebieg już się zakończył ({{status}})."
+    },
     "errors": {
       "forbidden": "Może to zrobić tylko administrator.",
       "notFound": "Tego przebiegu lub zadania już nie ma: odśwież przebieg.",
@@ -1586,7 +1617,8 @@
       "agentcore_quota": "Limit AgentCore",
       "memory_setting": "Ustawienie pamięci kompilacji",
       "network": "Sieć",
-      "session_storage": "Magazyn sesji"
+      "session_storage": "Magazyn sesji",
+      "sandbox": "Piaskownica sesji"
     },
     "required": "Potrzebna do uruchomienia"
   },

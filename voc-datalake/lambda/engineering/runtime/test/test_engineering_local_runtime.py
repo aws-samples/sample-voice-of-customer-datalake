@@ -11,12 +11,13 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 import pytest
 
 from engineering.runtime import egress, unit_runner
 from engineering.runtime.interface import AgentSpec, Command, ExecResult, RuntimeRefused, RuntimeSession
-from engineering.runtime.test.local_runtime import LocalAgentRuntime
+from engineering.runtime.test.local_runtime import LocalAgentRuntime, close_sockets
 from engineering.runtime.unit_runner import (
     CODE_PROXY_ENV,
     MASK,
@@ -176,9 +177,10 @@ def test_unknown_vm_exec_and_a_missing_program_are_refused():
 
 def test_a_session_starts_with_its_agents_ids_and_refuses_to_be_started_for_another(tmp_path):
     runner = _runner(tmp_path)
-    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
+    started = {'started': True, 'sandbox': NO_WALLS}
+    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == started
     # A retried start is answered as before; one for another agent is refused.
-    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
+    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == started
     with pytest.raises(ValueError, match='another agent'):
         runner.begin({'environment': {**SPEC.environment(), 'VOC_AGENT_ID': 'fixer-2'}, 'egress': []})
     # Nothing in the session (the agent's own call on loopback included) ever widens its egress.
@@ -225,10 +227,171 @@ def test_the_image_starts_no_agent_without_the_egress_firewall_and_both_proxies(
                 Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
                        egress_firewall=True, proxy=own, code_proxy=step).begin(start)
         runner = Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
-                        egress_firewall=True, proxy=agent, code_proxy=code)
-        assert runner.begin(start) == {'started': True}
+                        egress_firewall=True, code_firewall=True, proxy=agent, code_proxy=code)
+        assert runner.begin(start) == {'started': True,
+                                       'sandbox': {'egress': 'iptables', 'code': 'iptables', 'hardlink_guard': []}}
     finally:
         _close(agent, code)
+
+
+#: The walls of a runner with no sandbox (the local fake's): none holds, and it says so.
+NO_WALLS = {'egress': 'none', 'code': 'none', 'hardlink_guard': []}
+
+
+def _socket_dir() -> str:
+    """A short directory for Unix sockets (a socket's path is at most 104 bytes on macOS, 108 on Linux), removed when
+    the tests end."""
+    import atexit
+    import shutil
+    import tempfile
+    path = tempfile.mkdtemp(prefix='voc-ns-', dir='/tmp')
+    atexit.register(shutil.rmtree, path, True)
+    return path
+
+
+def _walled(tmp_path, proxies: tuple[EgressProxy, EgressProxy], *, egress_firewall: bool = False,
+            code_firewall: bool = False, egress_namespaces: bool = False, code_namespaces: bool = False) -> Runner:
+    """A sandboxed runner behind the walls named (its two users the test's own uid), the hard-link guard named."""
+    namespaces = unit_runner.Namespaces(socket_dir=os.path.join(_socket_dir(), 'net'), agent_uid=os.getuid(),
+                                        code_uid=os.getuid())
+    return Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
+                  proxy=proxies[0], code_proxy=proxies[1], namespaces=namespaces,
+                  hardlink_guard='own_device,protected_hardlinks', egress_firewall=egress_firewall,
+                  code_firewall=code_firewall, egress_namespaces=egress_namespaces, code_namespaces=code_namespaces)
+
+
+@pytest.mark.parametrize(('walls', 'answered'), [
+    ({}, None),
+    ({'code_firewall': True}, None),
+    ({'code_namespaces': True}, None),
+    ({'egress_firewall': True, 'code_firewall': True}, ('iptables', 'iptables')),
+    ({'egress_namespaces': True, 'code_namespaces': True}, ('namespaces', 'namespaces')),
+    ({'egress_namespaces': True}, ('namespaces', 'none')),
+], ids=['no-wall', 'only-the-code-firewall', 'only-code-namespaces', 'the-firewall', 'the-namespaces',
+        'the-agents-namespaces-only'])
+def test_start_is_refused_with_no_egress_wall_and_accepted_behind_either_kind(tmp_path, walls: dict,
+                                                                             answered: tuple[str, str] | None):
+    agent_hosts, code_hosts = egress.split(BOTH)
+    start = {'environment': SPEC.environment(), 'egress': list(agent_hosts), 'code_egress': list(code_hosts)}
+    proxies = _proxies()
+    runner = _walled(tmp_path, proxies, **walls)
+    try:
+        if answered is None:
+            # Fail closed: no egress wall, no agent (whatever else holds).
+            with pytest.raises(ValueError, match='no egress wall'):
+                runner.begin(start)
+            return
+        assert runner.begin(start) == {'started': True, 'sandbox': {
+            'egress': answered[0], 'code': answered[1], 'hardlink_guard': ['own_device', 'protected_hardlinks']}}
+        assert runner.status()['sandbox']['egress'] == answered[0]
+    finally:
+        close_sockets(runner)
+        _close(*proxies)
+
+
+class _Recorded:
+    """A ``CommandJob`` that records the argv it was given and runs nothing (the image's tools are not on this host)."""
+
+    started: ClassVar[list[list[str]]] = []
+
+    def __init__(self, argv: list[str], *_args: object, **_kwargs: object) -> None:
+        _Recorded.started.append(argv)
+        self.running = False
+
+    def kill(self) -> None:
+        """Nothing runs."""
+
+    def result(self) -> dict:
+        return {'exit_code': 0}
+
+
+@pytest.fixture
+def recorded(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Every argv the runner starts from now on, in order."""
+    _Recorded.started = []
+    monkeypatch.setattr(unit_runner, 'CommandJob', _Recorded)
+    return _Recorded.started
+
+
+def test_the_dependency_step_is_refused_without_a_code_wall_and_runs_behind_either(tmp_path, recorded):
+    proxies = _proxies()
+    step = {'argv': ['npm', 'ci'], 'timeout_seconds': 10, 'repository_code': True, 'network': True}
+    try:
+        with pytest.raises(ValueError, match='code firewall or its namespaces'):
+            _walled(tmp_path, proxies, egress_namespaces=True).start(step)
+        _walled(tmp_path, proxies, code_firewall=True).start(step)
+        namespaced = _walled(tmp_path, proxies, code_namespaces=True)
+        namespaced.start(step)
+        layout = namespaced.namespaces
+        assert layout is not None
+        firewalled, boxed = recorded
+        # Behind the firewall: root's PID namespace, the session's network (the firewall keeps it to its proxy).
+        assert '--net' not in firewalled
+        assert '--user' not in firewalled
+        # Behind the namespaces: its own user and network namespace, and only its proxy's socket bridged in.
+        assert boxed[:6] == ['/usr/bin/unshare', '--pid', '--fork', '--kill-child', '--mount-proc', '--']
+        own = boxed.index('--user')
+        # (made by `code` itself, after the drop: no capability of root's is used for its network namespace)
+        assert boxed[own - 1:own + 3] == ['/usr/bin/unshare', '--user', '--map-root-user', '--net']
+        assert boxed.index('--reuid=code') < own
+        assert f'3129={layout.code_proxy}' in boxed
+        assert f'8081={layout.agent_api}' not in boxed
+        assert f'3128={layout.agent_proxy}' not in boxed
+        assert boxed[-2:] == ['npm', 'ci']
+    finally:
+        _close(*proxies)
+
+
+def test_behind_the_namespaces_each_command_gets_its_own_and_the_firewalls_runtime_keeps_root_s(tmp_path):
+    proxies = _proxies()
+    try:
+        runner = _walled(tmp_path, proxies, egress_namespaces=True, code_namespaces=True)
+        layout = runner.namespaces
+        assert layout is not None
+        agent = runner._namespaces_for(repository_code=False)
+        code = runner._namespaces_for(repository_code=True)
+        assert (agent, code) == (layout, layout)
+        firewalled = _walled(tmp_path, proxies, egress_firewall=True, code_firewall=True)
+        assert firewalled._namespaces_for(repository_code=False) is None
+        assert firewalled._namespaces_for(repository_code=True) is None
+    finally:
+        _close(*proxies)
+
+
+def test_the_namespaces_sockets_open_at_the_start_each_its_users_and_the_dependency_steps_closes_for_good(
+        tmp_path, recorded):
+    agent_hosts, code_hosts = egress.split(BOTH)
+    start = {'environment': SPEC.environment(), 'egress': list(agent_hosts), 'code_egress': list(code_hosts)}
+    proxies = _proxies()
+    runner = _walled(tmp_path, proxies, egress_namespaces=True, code_namespaces=True)
+    layout = runner.namespaces
+    assert layout is not None
+    try:
+        assert not os.path.exists(layout.socket_dir)   # (nothing before a session: a V2 snapshot holds no socket)
+        runner.begin(start)
+        assert stat.S_IMODE(os.stat(layout.socket_dir).st_mode) == 0o711
+        for path in (layout.agent_api, layout.agent_proxy, layout.code_proxy):
+            assert stat.S_ISSOCK(os.stat(path).st_mode)
+            assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+        # The agent's API answers on its socket, as the forwarder in the agent's namespace reaches it.
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as api:
+            api.connect(layout.agent_api)
+            api.sendall(b'GET /status HTTP/1.0\r\n\r\n')
+            assert api.recv(4096).startswith(b'HTTP/1.0 200')
+        # Other repository code starts: the dependency step's proxy is gone, its socket with it, and it never returns.
+        runner.start({'argv': ['make'], 'timeout_seconds': 10})
+        assert (os.path.exists(layout.code_proxy), proxies[1]._unix is not None) == (False, False)
+        assert os.path.exists(layout.agent_proxy)
+        with pytest.raises(ValueError, match='before any repository code'):
+            runner.start({'argv': ['npm', 'ci'], 'timeout_seconds': 10, 'network': True})
+        # That code runs in a network namespace of its own with nothing bridged in; the agent's commands with theirs.
+        assert '/opt/voc/unit_runner.py' not in recorded[-1]
+        runner.start({'argv': ['git', 'status'], 'timeout_seconds': 10, 'repository_code': False})
+        assert [f'8081={layout.agent_api}', f'3128={layout.agent_proxy}'] == [
+            part for part in recorded[-1] if '=/' in part]
+    finally:
+        close_sockets(runner)
+        _close(*proxies)
 
 
 def _connect(proxy: EgressProxy, host: str) -> bool:
@@ -435,6 +598,69 @@ def test_a_held_agent_uses_no_cpu_until_it_is_woken_and_the_session_says_so_on_p
     assert runner.poll(exec_id) is not None
 
 
+def _wait_until(done: Any, seconds: float = 10.0) -> None:
+    deadline = time.time() + seconds
+    while not done():
+        assert time.time() < deadline, 'not reached in time'
+        time.sleep(0.02)
+
+
+def test_pings_alone_never_move_the_idle_clock(tmp_path):
+    """7.50.03: AgentCore measures a Healthy session's idle time from time_of_last_update ("Do not set it to the
+    current time on every ping": the HTTP protocol contract); before, every ping set it to now, so an idle session
+    lived until MaxLifetime. Now pings, status reads and result polls move nothing."""
+    runner = _runner(tmp_path)
+    started = runner.ping()['time_of_last_update']
+    later = [runner.ping(now=time.time() + offset) for offset in (60, 900, 3_599, 7_200)]
+    runner.invoke({'op': 'status'})
+    assert [(ping['status'], ping['time_of_last_update']) for ping in later] == [('Healthy', started)] * 4
+    assert runner.ping(now=time.time() + 9_999)['time_of_last_update'] == started
+
+
+def test_a_command_is_busy_while_it_runs_then_the_idle_clock_runs_from_its_end(tmp_path):
+    runner = _runner(tmp_path)
+    idle_since = runner.ping()['time_of_last_update']
+    time.sleep(1.1)   # (whole seconds on the wire: the command's start must read later than the runner's)
+    exec_id = runner.start({'argv': [sys.executable, '-c', 'import time; time.sleep(1.5)'], 'timeout_seconds': 30,
+                            'repository_code': False})
+    busy = [runner.ping(now=time.time() + offset) for offset in (0, 30, 600)]
+    # Busy while it runs (the session is kept alive), its clock at the command's start and not moved by the pings.
+    assert {ping['status'] for ping in busy} == {'HealthyBusy'}
+    assert len({ping['time_of_last_update'] for ping in busy}) == 1
+    assert busy[0]['time_of_last_update'] > idle_since
+    _wait_until(lambda: runner.poll(exec_id) is not None)
+    ended = runner.ping()
+    after = [runner.ping(now=time.time() + offset) for offset in (60, 3_600)]
+    # Healthy once it ends, the idle clock from that change, and no later ping moves it.
+    assert (ended['status'], ended['time_of_last_update'] >= busy[0]['time_of_last_update']) == ('Healthy', True)
+    assert [(ping['status'], ping['time_of_last_update']) for ping in after] == [
+        ('Healthy', ended['time_of_last_update'])] * 2
+
+
+def test_an_invocation_that_does_work_moves_the_idle_clock_and_a_held_agent_is_idle(tmp_path):
+    runner = _runner(tmp_path)
+    first = runner.ping()['time_of_last_update']
+    time.sleep(1.1)
+    runner.invoke({'op': 'wake'})   # (real work: the agent continued)
+    woken = runner.ping()['time_of_last_update']
+    time.sleep(1.1)
+    with pytest.raises(ValueError, match='op is one of'):
+        runner.invoke({'op': 'reboot'})   # (refused: no work, nothing moves)
+    runner.invoke({'op': 'status'})       # (a read)
+    assert (woken > first, runner.ping()['time_of_last_update']) == (True, woken)
+    # A held agent's commands run no more: Healthy, idle from the hold (the supervisor checkpoints it within the
+    # runtime's idle timeout; held forever, the session ends at that timeout, never at MaxLifetime).
+    exec_id = runner.start({'argv': [sys.executable, '-c', 'import time; time.sleep(30)'], 'timeout_seconds': 60,
+                            'repository_code': False})
+    assert runner.ping()['status'] == 'HealthyBusy'
+    runner.invoke({'op': 'hold'})
+    held = runner.ping()
+    assert (held['status'], held['time_of_last_update'] >= woken,
+            runner.ping(now=time.time() + 1_800)['time_of_last_update']) == ('Healthy', True, held['time_of_last_update'])
+    runner.kill_all()
+    _wait_until(lambda: runner.poll(exec_id) is not None)
+
+
 def test_the_runner_answers_agentcores_ping_and_invocations(tmp_path):
     server, base = _serving(tmp_path, 'service')
     try:
@@ -444,8 +670,9 @@ def test_the_runner_answers_agentcores_ping_and_invocations(tmp_path):
             return https_json(urllib.request.Request(f'{base}/invocations', data=json.dumps(body).encode(),
                                                      method='POST', headers={'Content-Type': 'application/json'}))
 
-        assert invoke({'op': 'start', 'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
-        assert invoke({'op': 'status'}) == {'step': '', 'recent_tools': [], 'tokens': {}}
+        assert invoke({'op': 'start', 'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {
+            'started': True, 'sandbox': NO_WALLS}
+        assert invoke({'op': 'status'}) == {'step': '', 'recent_tools': [], 'tokens': {}, 'sandbox': NO_WALLS}
         assert invoke({'op': 'hold'}) == {'held': True}
         assert invoke({'op': 'wake'}) == {'held': False}
         session = {'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
@@ -685,7 +912,7 @@ def _alive(pid: int) -> bool:
 
 def test_the_status_is_the_harnesss_report_bounded_and_scrubbed(tmp_path):
     runner = _runner(tmp_path)
-    assert runner.status() == {'step': '', 'recent_tools': [], 'tokens': {}}
+    assert runner.status() == {'step': '', 'recent_tools': [], 'tokens': {}, 'sandbox': NO_WALLS}
     voc = tmp_path / 'home' / '.voc'
     voc.mkdir()
     (voc / 'status.json').write_text(json.dumps({'step': 'token=' + 'x' * 30, 'recent_tools': ['read'] * 30,

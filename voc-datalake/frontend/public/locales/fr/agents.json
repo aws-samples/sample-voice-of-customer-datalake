@@ -287,7 +287,7 @@
       "fromPrd": "Lancée depuis le PRD {{document}} du projet {{project}}.",
       "fromReviews": "Lancée depuis {{n, number}} signalements de son périmètre.",
       "fromNothing": "Lancée pour chercher des bugs dans son dépôt.",
-      "followHint": "Suivez-la et arrêtez-la depuis son moniteur d'exécution : cette exécution se termine avec l'exécution d'ingénierie.",
+      "followHint": "Suivez-la depuis son moniteur d'exécution ou arrêtez-la ici : cette exécution se termine avec l'exécution d'ingénierie.",
       "openMonitor": "Ouvrir le moniteur d'exécution"
     }
   },
@@ -1314,20 +1314,49 @@
       "asGiven": "tel que donné au départ, non vérifié sur l’hébergeur",
       "opens": "{{label}} (s’ouvre dans un nouvel onglet)"
     },
-    "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer de signaux ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie.",
-    "runSignals": "Toute l’exécution",
+    "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer Pause, Reprendre, Enregistrer ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie. Arrêter fonctionne.",
+    "runSignals": "Commandes de l’exécution",
     "agentSignals": "Agent {{agent}}",
     "signals": {
       "save": "Enregistrer",
       "pause": "Mettre en pause",
       "resume": "Reprendre",
-      "shutdown": "Arrêter proprement",
-      "stop_now": "Arrêter tout de suite"
+      "shutdown": "Arrêter",
+      "stop_now": "Arrêter tout de suite, sans enregistrer"
     },
     "signalSent": "Envoyé.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Arrêter tout de suite, sans enregistrer ?",
-    "stopNowMessage": "Le travail s’arrête aussitôt, sans point de reprise : ce qui n’est pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter proprement.",
+    "stopNowMessage": "Le travail s’arrête aussitôt, sans point de reprise : ce qui n’est pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
+    "stopNowAgentMessage": "L’agent s’arrête aussitôt, sans point de reprise : ce qu’il n’a pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
+    "moreRun": "Autres commandes de l’exécution",
+    "moreFor": "Plus pour {{target}}",
+    "saveCheckpoint": "Enregistrer un point de reprise",
+    "refreshFailed": "Actualisation impossible : voici la dernière lecture.",
+    "retry": "Réessayer",
+    "runState": {
+      "running": "En cours",
+      "waiting": "Attend une personne",
+      "stopping": "Arrêt en cours…",
+      "done": "Terminé",
+      "failed": "Échoué",
+      "stopped": "Arrêté"
+    },
+    "stop": {
+      "group": "Arrêter l’exécution",
+      "more": "Autres façons d’arrêter",
+      "nowItem": "Arrêter tout de suite, sans enregistrer…",
+      "stoppingButton": "Arrêt en cours…",
+      "unavailable": "Arrêter n’atteint pas cette exécution depuis ce déploiement : il ne nomme aucune fonction de démarrage.",
+      "sent": "Arrêt envoyé",
+      "agentSaving": "{{agent}} enregistre un point de reprise…",
+      "stopping": "Arrêt envoyé : {{agents}} enregistre un point de reprise, puis l’exécution s’arrête.",
+      "stopped_one": "Arrêtée. {{count, number}} tâche ouverte a été fermée.",
+      "stopped_other": "Arrêtée. {{count, number}} tâches ouvertes ont été fermées.",
+      "fellBack": "Arrêtée aussitôt : les agents n’ont pas pu être invités à enregistrer d’abord.",
+      "agentRunEnded": "L’exécution de son automatisation est annulée : l’automatisation peut s’exécuter à nouveau.",
+      "already": "Cette exécution était déjà terminée ({{status}})."
+    },
     "errors": {
       "forbidden": "Seul un administrateur peut faire cela.",
       "notFound": "Cette exécution ou cette tâche n’existe plus : rechargez l’exécution.",
@@ -1550,7 +1579,8 @@
       "agentcore_quota": "Quota AgentCore",
       "memory_setting": "Réglage de mémoire de build",
       "network": "Réseau",
-      "session_storage": "Stockage des sessions"
+      "session_storage": "Stockage des sessions",
+      "sandbox": "Bac à sable de la session"
     },
     "required": "Nécessaire à l'exécution"
   },

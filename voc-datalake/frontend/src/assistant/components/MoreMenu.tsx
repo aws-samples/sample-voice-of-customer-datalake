@@ -58,6 +58,9 @@ interface MoreMenuProps {
   /** Lets a caller send focus back to the trigger later (after an inline rename). */
   readonly triggerRef?: RefObject<HTMLButtonElement | null>
   readonly iconSize?: number
+  /** The trigger's icon (default: MoreHorizontal) and class (default: `icon-btn`), for a split button's menu half. */
+  readonly triggerIcon?: ReactNode
+  readonly triggerClassName?: string
 }
 
 function enabledItems(menu: HTMLElement | null): HTMLElement[] {
@@ -110,7 +113,9 @@ function MenuEntry({ item, onDone }: Readonly<{ item: MoreMenuItem; onDone: () =
   )
 }
 
-export default function MoreMenu({ label, items, className, triggerRef, iconSize = 16 }: MoreMenuProps) {
+export default function MoreMenu({
+  label, items, className, triggerRef, iconSize = 16, triggerIcon, triggerClassName = 'icon-btn',
+}: MoreMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const popover = useDisclosurePopover(menuRef)
   const [host, setHost] = useState<HTMLElement | null>(null)
@@ -169,9 +174,9 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
         aria-controls={open ? panelId : undefined}
         aria-label={label}
         title={label}
-        className="icon-btn"
+        className={triggerClassName}
       >
-        <MoreHorizontal size={iconSize} aria-hidden />
+        {triggerIcon ?? <MoreHorizontal size={iconSize} aria-hidden />}
       </button>
       {open && host !== null && createPortal(
         <div

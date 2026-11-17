@@ -21,6 +21,7 @@ from engineering.runtime.agentcore import (
 )
 from engineering.runtime.interface import AgentSpec, CacheMount, Command, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.launcher import RoleSession
+from engineering.runtime.sandbox import Walls
 from engineering.runtime.unit_runner import MASK
 
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0AB'
@@ -91,6 +92,31 @@ def test_run_starts_one_session_on_its_languages_runtime_with_the_agents_ids_and
         'start', ['bedrock-runtime.eu-west-1.amazonaws.com'], ['crates.io', 'index.crates.io'])
     assert start['environment'] == {**SPEC.environment(), 'AWS_REGION': 'eu-west-1'}
     assert not [name for name in args if 'Role' in name or 'Credential' in name]
+
+
+NAMESPACES = {'egress': 'namespaces', 'code': 'namespaces', 'hardlink_guard': ['own_device', 'protected_hardlinks']}
+
+
+def test_a_started_sessions_walls_are_told_once_and_an_image_that_says_none_tells_nothing():
+    told: list[tuple[str, str, Walls]] = []
+    client = FakeAgentCore(answers=[{'started': True, 'sandbox': NAMESPACES}, {'started': True},
+                                    {'started': True, 'sandbox': {'egress': 'trust me'}}])
+    runtime = AgentCoreRuntime(client, RUNTIMES, region='eu-west-1', nonce=lambda: 'a1b2c3d4',
+                               on_walls=lambda spec, vm, walls: told.append((spec.language, vm.vm_id, walls)))
+    vm = runtime.run(SPEC)
+    runtime.run(SPEC)   # (an image from before 7.50.03: its start says no walls)
+    runtime.run(SPEC)   # (an answer off its shape is no record)
+    assert told == [('rust', vm.vm_id, Walls('namespaces', 'namespaces', ('own_device', 'protected_hardlinks')))]
+
+
+def test_a_record_of_the_walls_that_fails_never_fails_the_start():
+    def fails(*_args: object) -> None:
+        raise OSError('the table is away')
+
+    client = FakeAgentCore(answers=[{'started': True, 'sandbox': NAMESPACES}])
+    vm = AgentCoreRuntime(client, RUNTIMES, region='eu-west-1', nonce=lambda: 'a1b2c3d4', on_walls=fails).run(SPEC)
+    assert vm.agent_id == 'fixer-1'
+    assert [kind for kind, _ in client.calls] == ['invoke']   # (started, never stopped)
 
 
 def test_each_continuation_gets_a_session_of_its_own():

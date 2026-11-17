@@ -17,6 +17,7 @@ from engineering.readiness import (
     Check,
     PreviewRefused,
     ReadFailed,
+    SandboxSeen,
     Settings,
     Subject,
     evaluate,
@@ -47,6 +48,8 @@ BUG_FLOW = {'schema': 'voc-workflow/2', 'budget': {'monthly_usd': 50}, 'nodes': 
     node('agent', role='committer'), node('agent', role='pr-author', model=HAIKU), node('stop_at_pr')]}
 TRIAGE_FLOW = {'schema': 'voc-workflow/2', 'nodes': [node('start', learn={'enabled': False}),
                                                      node('agent', role='understander')]}
+#: What the live runtime's first 7.50.03 session would record (the probe of 2026-11-17).
+NAMESPACES_SEEN = SandboxSeen('namespaces', 'namespaces', ('own_device', 'protected_hardlinks'), '2026-11-17T12:00:00Z')
 
 
 @dataclass
@@ -69,6 +72,7 @@ class Ports:
     access: Any = None
     quota: Any = 5000.0
     probe: Any = True
+    walls: Any = field(default_factory=lambda: NAMESPACES_SEEN)
     asked: list[str] = field(default_factory=list)
 
     @staticmethod
@@ -129,8 +133,12 @@ class Ports:
     def probe_storage(self) -> bool:
         return self._answer(self.probe)
 
+    def sandbox_walls(self, language: str) -> SandboxSeen | None:
+        self.asked.append(f'walls {language}')
+        return self._answer(self.walls)
 
-SETTINGS = Settings(image_languages=frozenset({'python', 'node'}), network=True, build_memory_mib=0,
+
+SETTINGS =Settings(image_languages=frozenset({'python', 'node'}), network=True, build_memory_mib=0,
                     region='us-west-2', max_sessions=5000, card_models=CARDS)
 SUBJECT = Subject(kind='automation', id='agent_1', name='Bug fixer', definition=BUG_FLOW, person='admin-sub',
                   requires=flow_requires(BUG_FLOW), workflow_id='wf_1', connection='shop', language='python',
@@ -410,6 +418,44 @@ def test_the_agentcore_quota_the_memory_setting_the_network_and_the_probe() -> N
     assert checks(settings=replace(SETTINGS, network=False))['network'].status == 'fail'
     assert checks(ports=Ports(probe=False))['session_storage'].status == 'fail'
     assert checks(ports=Ports(probe=ReadFailed('x')))['session_storage'].status == 'unknown'
+
+
+def test_the_sandbox_passes_only_on_a_session_s_recorded_walls_never_before_one() -> None:
+    ports = Ports()
+    found = checks(ports=ports)['sandbox']
+    assert (found.status, found.required) == ('pass', False)
+    assert found.detail == ('Verified on the live runtime (2026-11-17): user and network namespaces; hard-link guard '
+                            'own_device, protected_hardlinks.')
+    assert 'walls python' in ports.asked
+    firewall = SandboxSeen('iptables', 'iptables', ('declared',), '2026-11-18T09:00:00Z')
+    assert checks(ports=Ports(walls=firewall))['sandbox'].detail.startswith(
+        'Verified on the live runtime (2026-11-18): the egress firewall (iptables)')
+
+
+def test_the_sandbox_is_unknown_until_the_first_session_and_says_what_to_rebuild() -> None:
+    unknown = checks(ports=Ports(walls=None))['sandbox']
+    assert unknown.status == 'unknown'
+    assert unknown.detail.startswith('Unknown until the first session: no python session has said')
+    assert '2026-11-17' in unknown.detail
+    assert 'Rebuild all four engineering images (python, node, java, rust)' in unknown.fix
+    assert 'docs/deployment.md' in unknown.fix
+    assert unknown.docs.endswith('#runtime-one-agentcore-session-per-agent')
+    # (advice, never Enable's gate: a deployment before its first session can still be set up)
+    assert not unknown.blocking
+    assert checks(ports=Ports(walls=ReadFailed('throttled')))['sandbox'].status == 'unknown'
+    assert checks(replace(SUBJECT, language='rust'))['sandbox'].status == 'unknown'   # (no rust image here)
+
+
+@pytest.mark.parametrize(('seen', 'missing'), [
+    (SandboxSeen('none', 'namespaces', ('own_device',), '2026-11-17T12:00:00Z'), 'had no egress wall for the agent'),
+    (SandboxSeen('namespaces', 'none', ('own_device',), '2026-11-17T12:00:00Z'), 'had no wall for repository code'),
+    (SandboxSeen('namespaces', 'namespaces', (), '2026-11-17T12:00:00Z'), 'had no hard-link guard'),
+], ids=['no-egress-wall', 'no-code-wall', 'no-hard-link-guard'])
+def test_a_recorded_session_without_a_wall_fails_the_sandbox(seen: SandboxSeen, missing: str) -> None:
+    found = checks(ports=Ports(walls=seen))['sandbox']
+    assert found.status == 'fail'
+    assert missing in found.detail
+    assert 'Rebuild all four engineering images' in found.fix
 
 
 def test_the_flows_requires_is_its_templates_else_what_its_roles_need() -> None:

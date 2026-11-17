@@ -10,6 +10,10 @@
 //                     outcome (each agent's status, or why not); 503 when the agent is busy
 //                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
+//   POST …/stop       {now?, confirm?} (7.50.03): admin; a person's Stop of the whole run (the start function's
+//                     stop_run): with no agent at work it ends the run at once (its open tasks closed); else the agents
+//                     save first (`stop` on the run, "Stopping…") and the run ends a few seconds later; now: true
+//                     needs confirm: true and ends it at once; 409 once the run has ended
 //   POST …/reactions  {}: admin; an ended run's reactions read asked for (202); 409 while it runs, 429 within the hour
 //   POST …/board/tasks {role, title, spec, priority?}: admin; a person posts a task (403 for the coordinator's role)
 //   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} | release (the
@@ -87,7 +91,7 @@ function agent(id, role, fields) {
 const run = {
   meta: {
     run_id: SAMPLE_RUN_ID, goal: 'Fix the paging bugs reported this week', repo: 'example-org/storefront',
-    flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null,
+    flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null, waiting_at: '', stop: null,
     // Its flow's $50 budget, copied at the start; the flow's month passed 80% of it (the supervisor's flag).
     budget: { monthly_usd: 50, alert_percent: 80, alert_month: new Date().toISOString().slice(0, 7) },
   },
@@ -172,7 +176,41 @@ say({ kind: 'system', id: 'board' }, { kind: 'role', id: 'fixer' }, 'task.posted
 say({ kind: 'agent', id: 'fixer-3' }, { kind: 'conductor', id: SAMPLE_RUN_ID }, 'msg.question', 'Is the page size inclusive of the last item?', { threadId: 't-page-size', at: minutesAgo(20) });
 say({ kind: 'system', id: 'board' }, { kind: 'run', id: SAMPLE_RUN_ID }, 'task.done', 'An empty search shows an error: done', { taskId: 'task-fix-empty', at: minutesAgo(14) });
 
+/** The run ended by a person's Stop: its agents stopped, its open tasks closed (`failed`, a `stop` move). */
+function endStopped() {
+  const at = new Date().toISOString();
+  const closed = [];
+  for (const task of run.tasks) {
+    if (FINAL.has(task.state)) continue;
+    task.history.push({ state: 'failed', at, by: 'human:mock-admin', op: 'stop', attempt: task.attempt, result_keys: 0 });
+    Object.assign(task, { state: 'failed', lease: null, updated_by: 'human:mock-admin', updated_at: at });
+    closed.push(task.task_id);
+  }
+  for (const a of run.agents) if (!['done', 'failed', 'stopped'].includes(a.status)) a.status = 'stopped';
+  Object.assign(run.meta, { status: 'stopped', ended_at: at });
+  say({ kind: 'supervisor', id: 'supervisor' }, { kind: 'run', id: SAMPLE_RUN_ID }, 'run.health',
+    `Stopped from the run monitor: ${run.agents.length} session(s) ended, ${closed.length} task(s) closed.`);
+  return closed;
+}
+
+/** A person's Stop (`POST …/stop`), as voc-engineering-start answers it (lambda/engineering/runtime/stop.py). */
+function stopRun(body) {
+  if (run.meta.ended_at !== null) return [409, { message: 'This run has ended' }];
+  if (body.now !== undefined && typeof body.now !== 'boolean') return [400, { message: 'now is true (Stop now, without saving) or false (Stop: save, then stop)' }];
+  if (body.now === true && body.confirm !== true) return [400, { message: 'Stop now stops without a checkpoint: send confirm: true' }];
+  const mode = body.now === true ? 'stop_now' : 'stop';
+  const saving = mode === 'stop_now' ? [] : run.agents.filter((a) => ['booting', 'working', 'pause_requested'].includes(a.status)).map((a) => a.agent);
+  const answer = { run_id: SAMPLE_RUN_ID, mode, holds_released: [], already: false, fell_back: false, agents: {}, agent_run: null };
+  if (saving.length === 0) return [200, { stop: { ...answer, status: 'stopped', tasks_closed: endStopped(), saving: [] } }];
+  run.meta.stop = { mode, requested_at: new Date().toISOString() };
+  run.stopDueAt = Date.now() + 8000;
+  for (const a of run.agents) if (saving.includes(a.agent)) a.status = 'pause_requested';
+  return [200, { stop: { ...answer, status: 'stopping', tasks_closed: [], saving } }];
+}
+
 function overview() {
+  // A Stop whose agents were saving ends a few seconds later (the supervisor's tick, once they have).
+  if (run.meta.stop !== null && run.meta.ended_at === null && Date.now() >= (run.stopDueAt ?? 0)) endStopped();
   for (const a of run.agents) {
     if (a.microvm_age !== null) a.microvm_age += 5;
     if (a.heartbeat_age !== null) a.heartbeat_age = a.agent === 'fixer-3' ? 5 : a.heartbeat_age + 5;
@@ -189,8 +227,10 @@ function overview() {
   return {
     run: run.meta,
     agents: run.agents,
-    // The dev mock plays a stack that names the runtime and the bus, so its actions answer.
+    // The dev mock plays a stack that names the runtime and the bus, so its actions answer; and the start function,
+    // so its Stop does (7.50.03).
     actions_available: true,
+    stop_available: true,
     totals: {
       messages: run.messages.length, microvm_seconds: run.agents.reduce((sum, a) => sum + a.microvm_seconds, 0),
       by_model: [...byModel.values()].sort((a, b) => a.model.localeCompare(b.model)),
@@ -459,6 +499,7 @@ function routePost(sub, rest, body) {
   if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
   if (sub === 'signals') return signal(body ?? {});
   if (sub === 'messages') return answer(body ?? {});
+  if (sub === 'stop') return stopRun(body ?? {});
   if (sub === 'reactions') return askReactions();
   return [404, { message: 'Engineering run not found' }];
 }

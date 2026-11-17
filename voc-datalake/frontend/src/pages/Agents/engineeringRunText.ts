@@ -1,6 +1,7 @@
 /**
- * @fileoverview What the run monitor's parts share: an age in the reader's units, the text of a refused action, and
- * the steps the agents are on (the run graph's light).
+ * @fileoverview What the run monitor's parts share: an age in the reader's units, the text of a refused action, the
+ * steps the agents are on (the run graph's light), and (7.50.03) the run's state as its chip says it and an agent's
+ * status tone (working accent, waiting or paused warn, done ok, failed danger, stopped muted).
  *
  * @module pages/Agents/engineeringRunText
  */
@@ -8,7 +9,29 @@ import { useTranslation } from 'react-i18next'
 import { apiErrorStatus, messageKeyForStatus } from '../../api/apiErrorStatus'
 import { serverReason } from '../../lib/errors'
 import type { StepState } from '../../components/WorkflowEditor/runState'
-import type { EngineeringAgent } from '../../api/engineeringRunsApi'
+import type { EngineeringAgent, EngineeringOverview } from '../../api/engineeringRunsApi'
+
+type Run = Pick<EngineeringOverview['run'], 'status' | 'stop'>
+export type RunState = 'running' | 'waiting' | 'stopping' | 'done' | 'failed' | 'stopped'
+
+/** The run's state as its chip says it; null for a status the page does not know (shown as it is named). */
+export function runState(run: Run): RunState | null {
+  if (run.status === 'done' || run.status === 'failed' || run.status === 'stopped') return run.status
+  if (run.stop !== null) return 'stopping'
+  if (run.status === 'needs_human') return 'waiting'
+  return run.status === 'active' || run.status === 'running' ? 'running' : null
+}
+
+/** A run under way that a person's Stop is ending (its agents saving first). */
+export const isStopping = (run: Run): boolean => runState(run) === 'stopping'
+
+const AGENT_TONES: Readonly<Record<string, string>> = {
+  booting: 'badge-accent', working: 'badge-accent', pause_requested: 'badge-warn', waiting: 'badge-warn',
+  paused: 'badge-warn', done: 'badge-ok', failed: 'badge-danger', stopped: 'badge-muted', reposted: 'badge-muted',
+}
+
+/** An agent's status tone (an unknown status is muted). */
+export const agentTone = (status: string): string => AGENT_TONES[status] ?? 'badge-muted'
 
 /** The largest whole unit of an age in seconds (never negative). */
 function ageParts(seconds: number): [number, 'second' | 'minute' | 'hour' | 'day'] {

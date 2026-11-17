@@ -286,7 +286,7 @@
       "fromPrd": "Gestartet vom PRD {{document}} des Projekts {{project}}.",
       "fromReviews": "Gestartet von {{n, number}} Meldungen in seinem Umfang.",
       "fromNothing": "Gestartet, um in seinem Repository nach Fehlern zu suchen.",
-      "followHint": "Verfolgen und stoppen Sie ihn in seinem Lauf-Monitor: Dieser Lauf endet, wenn der Engineering-Lauf endet.",
+      "followHint": "Verfolgen Sie ihn in seinem Lauf-Monitor oder stoppen Sie ihn hier: Dieser Lauf endet, wenn der Engineering-Lauf endet.",
       "openMonitor": "Lauf-Monitor öffnen"
     }
   },
@@ -1307,20 +1307,49 @@
       "asGiven": "wie beim Start angegeben, nicht beim Host geprüft",
       "opens": "{{label}} (öffnet sich in einem neuen Tab)"
     },
-    "actionsUnavailable": "Signale und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus.",
-    "runSignals": "Der ganze Lauf",
+    "actionsUnavailable": "Pausieren, Fortsetzen, Sichern und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus. Stoppen funktioniert.",
+    "runSignals": "Laufsteuerung",
     "agentSignals": "Agent {{agent}}",
     "signals": {
       "save": "Sichern",
       "pause": "Pausieren",
       "resume": "Fortsetzen",
-      "shutdown": "Herunterfahren",
-      "stop_now": "Sofort stoppen"
+      "shutdown": "Stoppen",
+      "stop_now": "Sofort stoppen, ohne zu sichern"
     },
     "signalSent": "Gesendet.",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Sofort stoppen, ohne zu sichern?",
-    "stopNowMessage": "Die Arbeit wird sofort beendet, ohne Sicherungspunkt: Was noch nicht gesichert ist, geht verloren. Um es zu behalten, wähle stattdessen Herunterfahren.",
+    "stopNowMessage": "Die Arbeit wird sofort beendet, ohne Sicherungspunkt: Was noch nicht gesichert ist, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
+    "stopNowAgentMessage": "Der Agent wird sofort beendet, ohne Sicherungspunkt: Was er noch nicht gesichert hat, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
+    "moreRun": "Weitere Laufsteuerung",
+    "moreFor": "Mehr für {{target}}",
+    "saveCheckpoint": "Sicherungspunkt setzen",
+    "refreshFailed": "Aktualisieren fehlgeschlagen: Das ist der letzte Stand.",
+    "retry": "Erneut versuchen",
+    "runState": {
+      "running": "Läuft",
+      "waiting": "Wartet auf eine Person",
+      "stopping": "Wird gestoppt…",
+      "done": "Fertig",
+      "failed": "Fehlgeschlagen",
+      "stopped": "Gestoppt"
+    },
+    "stop": {
+      "group": "Lauf stoppen",
+      "more": "Weitere Arten zu stoppen",
+      "nowItem": "Sofort stoppen, ohne zu sichern…",
+      "stoppingButton": "Wird gestoppt…",
+      "unavailable": "Stoppen erreicht diesen Lauf von dieser Bereitstellung aus nicht: Sie nennt keine Startfunktion.",
+      "sent": "Stopp gesendet",
+      "agentSaving": "{{agent}} setzt einen Sicherungspunkt…",
+      "stopping": "Stopp gesendet: {{agents}} setzt einen Sicherungspunkt, dann stoppt der Lauf.",
+      "stopped_one": "Gestoppt. {{count, number}} offene Aufgabe wurde geschlossen.",
+      "stopped_other": "Gestoppt. {{count, number}} offene Aufgaben wurden geschlossen.",
+      "fellBack": "Sofort gestoppt: Die Agenten konnten nicht vorher zum Sichern aufgefordert werden.",
+      "agentRunEnded": "Der Lauf seiner Automatisierung ist abgebrochen, die Automatisierung kann wieder laufen.",
+      "already": "Dieser Lauf war schon beendet ({{status}})."
+    },
     "errors": {
       "forbidden": "Das kann nur eine Admin-Person.",
       "notFound": "Dieser Lauf oder diese Aufgabe ist nicht mehr da: Lade den Lauf neu.",
@@ -1543,7 +1572,8 @@
       "agentcore_quota": "AgentCore-Kontingent",
       "memory_setting": "Build-Speichereinstellung",
       "network": "Netzwerk",
-      "session_storage": "Sitzungsspeicher"
+      "session_storage": "Sitzungsspeicher",
+      "sandbox": "Sitzungs-Sandbox"
     },
     "required": "Für einen Lauf nötig"
   },

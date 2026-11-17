@@ -52,7 +52,18 @@ from typing import Any
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-from engineering.board.model import CLAIMED, FINAL, MOVES, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Move, Task, task_key
+from engineering.board.model import (
+    CLAIMED,
+    FAILED,
+    FINAL,
+    MOVES,
+    NEEDS_HUMAN,
+    OPEN,
+    PERSON_PREFIX,
+    Move,
+    Task,
+    task_key,
+)
 from engineering.connectors.hosts import ACTIVE
 from engineering.quality_gate.text import redact
 from engineering.rows import Refused, get_row, run_pk, run_rows, string_attr
@@ -118,6 +129,9 @@ class Reposted:
 
 #: The ``updated_op`` (and history op) of a re-post.
 REPOST_OP = 'repost'
+#: The history op of a task closed by a person's Stop of its run (7.50.03, ``close_for_stop``): ended ``failed``,
+#: never an agent's failure (the retrospective reads it as handed back, learning/retrospective.py).
+STOP_OP = 'stop'
 
 
 def _reposted(task: Task, actor: str, *, written: bool) -> Reposted:
@@ -753,6 +767,44 @@ class BoardStore:
             remove='lease_agent, lease_epoch, lease_expires, progress_at, step',
             values={':open': {'S': OPEN}, ':one': {'N': '1'}}, done=done, pin_holder=True,
             row_attempt=current.attempt + 1)   # (its history row at the attempt it opens, as a re-post's)
+
+    def close_for_stop(self, ws: str, run_id: str, *, actor: str, reason: str) -> list[str]:
+        """A person's Stop of the run (7.50.03, ``runtime/stop.py``): every task that has not ended is closed,
+        ``failed`` with a ``stop`` history row naming ``actor`` and ``reason`` (D1, D4), its lease cleared, so no agent
+        or person moves it any more and nothing launches for it; the ids closed. Each write holds the state and
+        attempt it read; a task that moved meanwhile is read again (once) and closed as it is then, or left when it
+        ended. Idempotent: a retried Stop closes nothing twice. Called only once the run has ended or its sessions are
+        ended, so nothing is racing it but a last write already under way."""
+        closed: list[str] = []
+        for task in self.tasks(ws, run_id):
+            current: Task | None = task
+            for _ in range(2):   # (a racing write: read again once)
+                if current is None or current.state in FINAL:
+                    break
+                if self._close_one(ws, run_id, current, actor=actor, reason=reason):
+                    closed.append(current.task_id)
+                    break
+                current = self.task(ws, run_id, current.task_id)
+        return closed
+
+    def _close_one(self, ws: str, run_id: str, current: Task, *, actor: str, reason: str) -> bool:
+        """Close one task as read (``close_for_stop``); False when it moved meanwhile (nothing written)."""
+        at = self.now().isoformat()
+        try:
+            self._write(ws, run_id, current.task_id, _Write(
+                set_expr='SET #state = :failed, updated_by = :actor, updated_at = :at, updated_op = :op '
+                         'REMOVE lease_agent, lease_epoch, lease_expires, waiting',
+                condition='#state = :was AND attempt = :attempt', names={'#state': 'state'},
+                values={':failed': {'S': FAILED}, ':was': {'S': current.state}, ':actor': {'S': actor},
+                        ':at': {'S': at}, ':attempt': {'N': str(current.attempt)}, ':op': {'S': STOP_OP}},
+                already=lambda task: task.state == FAILED and task.updated_op == STOP_OP,
+                refusal='the task moved on while the run was being stopped'),
+                Move(current.task_id, FAILED, actor, at, current.attempt, STOP_OP, reason=reason).item(ws, run_id))
+        except BoardError as error:
+            if error.kind != 'conflict':
+                raise
+            return False
+        return True
 
     def person_go(self, ws: str, run_id: str, *, actor: str, reason: str = '') -> PersonGo:
         """A person's go on the run (an AI-assisted run's push and pull request wait for it: connectors/records.py):

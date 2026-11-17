@@ -286,7 +286,7 @@
       "fromPrd": "プロジェクト {{project}} の PRD {{document}} から開始しました。",
       "fromReviews": "対象範囲の {{n, number}} 件の報告から開始しました。",
       "fromNothing": "リポジトリのバグを探すために開始しました。",
-      "followHint": "実行モニターで進行を確認し、停止できます。エンジニアリング実行が終わると、この実行も終わります。",
+      "followHint": "実行モニターで進行を確認するか、ここで停止できます。エンジニアリング実行が終わると、この実行も終わります。",
       "openMonitor": "実行モニターを開く"
     }
   },
@@ -1307,20 +1307,49 @@
       "asGiven": "開始時に入力されたとおり、ホストでは未確認",
       "opens": "{{label}}（新しいタブで開きます）"
     },
-    "actionsUnavailable": "このデプロイからはまだシグナルや回答を送信できません。実行モニターがエンジニアリングのランタイムとバスに接続されていません。",
-    "runSignals": "実行全体",
+    "actionsUnavailable": "このデプロイからはまだ一時停止・再開・保存や回答を送信できません。実行モニターがエンジニアリングのランタイムとバスに接続されていません。停止は使えます。",
+    "runSignals": "実行の操作",
     "agentSignals": "エージェント {{agent}}",
     "signals": {
       "save": "保存",
       "pause": "一時停止",
       "resume": "再開",
-      "shutdown": "シャットダウン",
-      "stop_now": "今すぐ停止"
+      "shutdown": "停止",
+      "stop_now": "保存せずに今すぐ停止"
     },
     "signalSent": "送信しました。",
     "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "保存せずに今すぐ停止しますか？",
-    "stopNowMessage": "作業はチェックポイントなしで直ちに停止し、まだ保存されていない内容は失われます。残したい場合はシャットダウンを使ってください。",
+    "stopNowMessage": "作業はチェックポイントなしで直ちに停止し、まだ保存されていない内容は失われます。残したい場合は「停止」を使ってください。",
+    "stopNowAgentMessage": "エージェントはチェックポイントなしで直ちに停止し、まだ保存していない内容は失われます。残したい場合は「停止」を使ってください。",
+    "moreRun": "その他の実行の操作",
+    "moreFor": "{{target}} のその他の操作",
+    "saveCheckpoint": "チェックポイントを保存",
+    "refreshFailed": "更新できませんでした。最後に読み込んだ内容です。",
+    "retry": "再試行",
+    "runState": {
+      "running": "実行中",
+      "waiting": "人の判断待ち",
+      "stopping": "停止中…",
+      "done": "完了",
+      "failed": "失敗",
+      "stopped": "停止"
+    },
+    "stop": {
+      "group": "実行を停止",
+      "more": "その他の停止方法",
+      "nowItem": "保存せずに今すぐ停止…",
+      "stoppingButton": "停止中…",
+      "unavailable": "このデプロイからはこの実行を停止できません。開始関数が指定されていません。",
+      "sent": "停止を送信しました",
+      "agentSaving": "{{agent}} がチェックポイントを保存中…",
+      "stopping": "停止を送信しました。{{agents}} がチェックポイントを保存した後、実行は停止します。",
+      "stopped_one": "停止しました。未完了のタスク {{count, number}} 件を閉じました。",
+      "stopped_other": "停止しました。未完了のタスク {{count, number}} 件を閉じました。",
+      "fellBack": "すぐに停止しました。エージェントに先に保存するよう依頼できませんでした。",
+      "agentRunEnded": "自動化の実行はキャンセルされたので、自動化は再び実行できます。",
+      "already": "この実行はすでに終了していました（{{status}}）。"
+    },
     "errors": {
       "forbidden": "この操作は管理者のみ行えます。",
       "notFound": "この実行またはタスクはもうありません。実行を再読み込みしてください。",
@@ -1543,7 +1572,8 @@
       "agentcore_quota": "AgentCore のクォータ",
       "memory_setting": "ビルドメモリの構成",
       "network": "ネットワーク",
-      "session_storage": "セッションストレージ"
+      "session_storage": "セッションストレージ",
+      "sandbox": "セッションのサンドボックス"
     },
     "required": "実行に必要"
   },

@@ -106,6 +106,36 @@ AVAILABLE = {'regionAvailability': 'AVAILABLE', 'authorizationStatus': 'AUTHORIZ
              'entitlementAvailability': 'AVAILABLE', 'agreementAvailability': {'status': 'AVAILABLE'}}
 
 
+@dataclass
+class Rows:
+    """A low-level client's get_item of voc-engineering: ``items`` by (pk, sk); ``error`` raised instead."""
+
+    items: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    error: Exception | None = None
+
+    def get_item(self, *, TableName: str, Key: dict[str, Any], ConsistentRead: bool) -> dict[str, Any]:
+        assert (TableName, ConsistentRead) == ('voc-engineering', True)
+        if self.error is not None:
+            raise self.error
+        found = self.items.get((Key['pk']['S'], Key['sk']['S']))
+        return {} if found is None else {'Item': found}
+
+
+def test_the_sessions_walls_are_the_runtimes_record_of_the_language_or_none_yet() -> None:
+    from engineering.readiness import SandboxSeen
+    rows = Rows()
+    assert ports(client=rows).sandbox_walls('python') is None
+    rows.items[('WS#default#SANDBOX', 'LANG#python')] = {
+        'egress': {'S': 'namespaces'}, 'code': {'S': 'namespaces'},
+        'hardlink_guard': {'L': [{'S': 'own_device'}, {'S': 'protected_hardlinks'}]}, 'at': {'S': '2026-11-17T12:00:00Z'}}
+    assert ports(client=rows).sandbox_walls('python') == SandboxSeen(
+        'namespaces', 'namespaces', ('own_device', 'protected_hardlinks'), '2026-11-17T12:00:00Z')
+    with pytest.raises(ReadFailed, match='walls: ThrottlingException'):
+        ports(client=Rows(error=refused('ThrottlingException', 'GetItem'))).sandbox_walls('python')
+    with pytest.raises(ReadFailed, match='not a language'):
+        ports(client=rows).sandbox_walls('py thon')
+
+
 def test_each_models_access_is_read_by_its_foundation_id_within_a_budget() -> None:
     bedrock = Bedrock({'anthropic.claude-sonnet-5-5': AVAILABLE,
                        'anthropic.claude-opus-5-5': {**AVAILABLE, 'authorizationStatus': 'NOT_AUTHORIZED'},

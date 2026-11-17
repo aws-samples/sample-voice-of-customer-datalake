@@ -356,6 +356,9 @@ export class EngineeringAgentCore extends Construct {
       },
       protocolConfiguration: 'HTTP',
       lifecycleConfiguration: { idleRuntimeSessionTimeout: IDLE_TIMEOUT_SECONDS, maxLifetime: MAX_LIFETIME_SECONDS },
+      // MMDSv2 (required since 2026-06-30): neither this CfnRuntime nor CloudFormation's schema (us-west-2, 2026-11-17)
+      // has `metadataConfiguration`; the service sets `requireMMDSV2: true` on these runtimes itself (read back on b-:
+      // docs/autonomous-engineering.md, Runtime, "MMDSv2"). Set it here once both have the property.
       platformVersion: 'V2',
     });
     if (memory > 0) runtime.addPropertyOverride('ResourceConfigurations', [{ MinimumMemoryInMiB: memory }]);

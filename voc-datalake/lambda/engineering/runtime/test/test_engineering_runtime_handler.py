@@ -1009,6 +1009,21 @@ def test_the_deployed_handler_always_uses_agentcore_runtime(monkeypatch: pytest.
     spec = AgentSpec(run_id=RUN, agent_id='gate-runner-2', role='gate-runner', task_id='task-1', language='java',
                      egress=(), connection='conn-1')
     assert runtime.runtime_arn(spec) == IMAGE_ARNS['java']['standard']
+    # (7.50.03: each started session's walls are kept for readiness's sandbox check)
+    assert runtime._on_walls is handler._record_walls
+
+
+def test_a_started_sessions_walls_are_kept_as_its_languages_last(wired: Any):
+    """7.50.03: readiness's ``sandbox`` check reads what the runtime last saw a session of the language run behind."""
+    from engineering.runtime import sandbox
+    assert wired is not None
+    spec = AgentSpec(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python', egress=(),
+                     connection='conn-1')
+    walls = sandbox.Walls('namespaces', 'namespaces', ('own_device', 'protected_hardlinks'))
+    handler._record_walls(spec, RuntimeSession(vm_id='vm-1', agent_id='fixer-1', endpoint='arn:runtime/python'), walls)
+    kept = sandbox.read_record(boto3.client('dynamodb', region_name='us-east-1'), TABLE, 'python')
+    assert kept is not None
+    assert (kept.walls, kept.runtime, kept.walls.holds) == (walls, 'arn:runtime/python', True)
 
 
 def test_the_deployed_handler_prices_sessions_at_the_deployments_rates_and_sizes(monkeypatch: pytest.MonkeyPatch):

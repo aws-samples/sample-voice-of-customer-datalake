@@ -3,8 +3,9 @@
  * `lambda/engineering/monitor.py` and `views.py`, docs/autonomous-agents.md "An engineering run"): the overview (the
  * run, each agent's session as the supervisor keeps it, the tokens per model; no cost yet), the board, a page of the
  * conversation (where signals are recorded too, as `signal.*` messages), the reports (commit, PR and goal, each
- * version's Markdown), and an admin's signals and answers. Every read is lenient: a bad entry costs itself, an unknown state
- * or signal is kept as text.
+ * version's Markdown), and an admin's signals, answers and (7.50.03) Stop of the whole run (`POST …/stop`, through the
+ * start function: it ends the run whatever its agents are doing). Every read is lenient: a bad entry costs itself, an
+ * unknown state or signal is kept as text.
  *
  * @module api/engineeringRunsApi
  */
@@ -17,8 +18,10 @@ import { isRecord } from '../lib/typeGuards'
 import { normalizeDefinition } from './workflowsApi'
 import { ReactionsSchema } from './engineeringReactionsApi'
 
-export const ENGINEERING_SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now'] as const
-export type EngineeringSignal = (typeof ENGINEERING_SIGNALS)[number]
+/** The signals a run's agents take (`engineering/monitor.py` SIGNALS). */
+export type EngineeringSignal = 'save' | 'pause' | 'resume' | 'shutdown' | 'stop_now'
+/** A run's statuses once it has ended (`runtime/runs.py` ENDED): it takes no more actions. */
+export const ENDED_RUN_STATUSES: readonly string[] = ['done', 'failed', 'stopped']
 /** The board's states, in the order the monitor shows them (`engineering/board/model.py`). */
 export const TASK_STATES = ['open', 'claimed', 'in_progress', 'in_review', 'needs_human', 'failed', 'done'] as const
 /** The longest answer a person sends (voc-msg/1's summary, in UTF-8 bytes). */
@@ -105,9 +108,18 @@ const PullRequestLinkSchema = z.object({
 export type RunIssueLink = NonNullable<z.output<typeof IssueLinkSchema>>
 export type RunPullRequestLink = NonNullable<z.output<typeof PullRequestLinkSchema>>
 
+/** A person's Stop of the whole run (7.50.03): how it was asked and when; null for none. */
+const RunStopSchema = z.object({
+  mode: z.enum(['stop', 'stop_now']).catch('stop'),
+  requested_at: text,
+}).nullable().catch(null)
+
 const OverviewSchema = z.object({
   run: z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
+    /** The decision point a run at a person waits at (`coordinator`, `budget`, `flow:<step>`…); '' for none. */
+    waiting_at: z.string().optional().catch('').transform((point) => point ?? ''),
+    stop: RunStopSchema.optional().transform((stop) => stop ?? null),
     budget: RunBudgetSchema.optional().transform((budget) => budget ?? null),
     flow_steps: FlowStepsSchema.optional().transform((steps) => steps ?? null),
     flow_revision: FlowRevisionSchema.optional().transform((revision) => revision ?? null),
@@ -119,6 +131,8 @@ const OverviewSchema = z.object({
   agents: eachOf(AgentSchema),
   /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */
   actions_available: z.boolean().catch(false),
+  /** A person's Stop can reach the run (the stack names the start function, 7.50.03); false when unsaid. */
+  stop_available: z.boolean().catch(false),
   totals: z.object({ messages: count, microvm_seconds: count, by_model: eachOf(TokensSchema) })
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
   /** The latest read of people's reactions to the run's pull request (7.10.00); null for none. */
@@ -135,6 +149,22 @@ const SignalSentSchema = z.object({
   }),
 })
 export type SignalSent = z.output<typeof SignalSentSchema>['signal']
+
+/** What a Stop did (`POST …/stop`, lambda/engineering/runtime/stop.py): the run's status after it (`stopped`, or
+ *  `stopping` while its agents save), the tasks it closed, the agents saving, whether it had to stop at once, and its
+ *  engineering agent's run, ended with it (null for none, or not yet). */
+const StopSentSchema = z.object({
+  stop: z.object({
+    status: text,
+    mode: z.enum(['stop', 'stop_now']).catch('stop'),
+    already: z.boolean().catch(false),
+    fell_back: z.boolean().catch(false),
+    tasks_closed: lenientList((item: unknown): item is string => typeof item === 'string'),
+    saving: lenientList((item: unknown): item is string => typeof item === 'string'),
+    agent_run: z.object({ agent_id: text, run_id: text, ended: z.boolean().catch(false) }).nullable().catch(null),
+  }),
+})
+export type StopSent = z.output<typeof StopSentSchema>['stop']
 
 const MoveSchema = z.object({ state: text, at: text, by: text, op: text, attempt: count })
 const TaskSchema = z.object({
@@ -184,6 +214,11 @@ export interface SignalRequest {
   attempt?: number
   note?: string
   confirm?: boolean
+}
+
+/** A person's Stop of the whole run: `now` stops it at once, without a checkpoint (sent confirmed). */
+export interface StopRequest {
+  now: boolean
 }
 
 export interface AnswerRequest {
@@ -255,6 +290,13 @@ export const engineeringRunsApi = {
   },
   answer: async (runId: string, request: AnswerRequest): Promise<unknown> =>
     fetchApi<unknown>(engineeringRunPath(runId, '/messages'), post(request)),
+  /** A person's Stop of the whole run (admin); an answer that says no status is an error. */
+  stop: async (runId: string, { now }: StopRequest): Promise<StopSent> => {
+    const parsed = StopSentSchema.safeParse(await fetchApi<unknown>(engineeringRunPath(runId, '/stop'),
+      post(now ? { now: true, confirm: true } : {})))
+    if (!parsed.success || parsed.data.stop.status === '') throw new Error('The stop answer was unreadable')
+    return parsed.data.stop
+  },
   /** A person posts a task (admin); the board answers it, which the page reads again. */
   postTask: async (runId: string, task: NewTask): Promise<{ duplicate: boolean }> => {
     const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/board/tasks'), post(task))

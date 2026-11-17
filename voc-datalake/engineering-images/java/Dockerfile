@@ -35,7 +35,7 @@ COPY lambda/engineering/orchestration/__init__.py lambda/engineering/orchestrati
 COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json
 COPY templates/orchestration/gates/ /opt/voc/gates/
 COPY engineering-images/common/harness.py /opt/voc/harness.py
-COPY engineering-images/common/entrypoint.sh /opt/voc/entrypoint.sh
+COPY engineering-images/common/entrypoint.sh engineering-images/common/walls.sh /opt/voc/
 COPY engineering-images/common/check-runner.sh engineering-images/java/ready.sh engineering-images/java/validate.sh /opt/voc/hooks/
 # Maven reads no HTTPS_PROXY: the dependency step's settings point it at its own egress proxy (the firewall holds it
 # there either way).

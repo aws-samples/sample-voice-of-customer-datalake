@@ -24,7 +24,9 @@ Permissions:
 - an engineering run's monitor, board, conversation and reports (``/agents/engineering/<run_id>``
   and its ``/*``, lambda/engineering/views.py and monitor.py) are read by administrators only,
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
-  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
+  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a person's Stop of it
+  (``POST …/stop``, 7.50.03: the start function's ``stop_run``, below, which ends it whatever its agents are doing;
+  then its engineering agent's run is ended here too, its lock released) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
   engineering/board/api.py PersonBoard) and a person's go on a run (``POST …/go``, what an AI-assisted run's push
   waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
@@ -61,8 +63,8 @@ ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills stor
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
-code and role, which runs ``start_run`` and, since 7.10.00, ``ask_reactions``, and refuses every other action; never
-the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
+code and role, which runs ``start_run``, since 7.10.00 ``ask_reactions`` and since 7.50.03 ``stop_run``, and refuses
+every other action; never the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
 voc-engineering-app-tokens: the broker's code under its own role, which reads an App's key; this API asks it only
 ``inspect_installation`` and, since 7.50.02, ``ensure_label`` (the ``voc-agent`` label on one connected repository),
 neither of which answers a token), and, since 7.50.02, on the GitHub Issues settings function
@@ -73,8 +75,8 @@ settings and turns its schedule on; this role holds no grant on the secret or th
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
-their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
-answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
+their names, and the bus's resource policy is to let this role put that source (until then the monitor's signals
+and answers answer 503, and its overview says ``actions_available: false``; its Stop needs neither). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
 are in the engineering table, read with the Query its stack already grants, and so are the spend ledger's month
 partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 """
@@ -111,6 +113,7 @@ from shared.category_access import CategoryScope
 from shared.category_gate import read_categories_config, scope_for_caller
 from shared.engineering_agents import engineering_agents_on
 from shared.exceptions import (
+    ApiError,
     AuthorizationError,
     ConfigurationError,
     ConflictError,
@@ -1344,20 +1347,23 @@ def _engineering(run_id: str) -> Any:
 
 def _monitor(run_id: str) -> Any:
     """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
-    run's partition of the engineering table, read only); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION)
-    and the bus (ENGINEERING_BUS_NAME)."""
+    run's partition of the engineering table, read only); its signals and answers need the runtime
+    (ENGINEERING_RUNTIME_FUNCTION) and the bus (ENGINEERING_BUS_NAME); its Stop (7.50.03) only the start function
+    (ENGINEERING_START_FUNCTION, ``stop_run``: this role invokes no other runtime function)."""
     table, _ = _engineering_tables(run_id)
     from engineering.bus.publish import EventBridgePublisher
-    from engineering.monitor import API_SOURCE, LambdaRuntime, RunMonitor
+    from engineering.monitor import API_SOURCE, LambdaRuntime, LambdaStopper, RunMonitor
     from engineering.runtime.runs import RunStore
     from engineering.runtime.sessions import SessionStore
     from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_lambda_client
 
     bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
+    start = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     engineering = get_dynamodb_resource().Table(table)
     return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
                       runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
-                      publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None)
+                      publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None,
+                      stopper=LambdaStopper(_start_client(), start) if start else None)
 
 
 _MONITOR_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
@@ -2151,7 +2157,52 @@ def signal_engineering_run(run_id: str):
 
     sent = _monitor_action(monitor, caller, lambda m, body, actor: m.signal(run_id, parse_signal(body), actor))
     logger.info('Engineering run signalled', extra={'run_id': run_id, 'signal': sent['signal']})
+    stopped = sent.get('run')
+    if isinstance(stopped, dict):   # (a whole run's Shut down or Stop now: its Stop, 7.50.03)
+        stopped['agent_run'] = _end_agent_run_of(monitor, run_id, stopped)
     return {'signal': sent}
+
+
+def _end_agent_run_of(monitor: Any, run_id: str, stopped: dict[str, Any]) -> dict[str, Any] | None:
+    """After a Stop that ended the run, its engineering agent's run ended at once (cancelled, its lock released:
+    ``eng_runs.end_agent_run``), so the agent may run again now rather than at the heartbeat's next heal, which would
+    do the same; None for a run no agent started, or a Stop still waiting for its agents. Best effort: a failure is
+    logged and left to the heartbeat."""
+    if stopped.get('status') not in eng_runs.AGENT_RUN_ENDS:
+        return None
+    try:
+        via = monitor.origin(run_id)
+        if via is None:
+            return None
+        table = store.get_agents_table()
+        if table is None:
+            return None
+        ended = eng_runs.end_agent_run(table, via['agent_id'], via['agent_run_id'], str(stopped['status']),
+                                       now=datetime.now(UTC))
+    except (ApiError, ClientError, BotoCoreError, KeyError, ValueError):
+        logger.exception('engineering: the stopped run\'s agent run was not ended here; the heartbeat ends it',
+                         extra={'run_id': run_id})
+        return None
+    return {'agent_id': via['agent_id'], 'run_id': via['agent_run_id'], 'ended': ended}
+
+
+@app.post('/agents/engineering/<run_id>/stop')
+@tracer.capture_method
+def stop_engineering_run(run_id: str):
+    """``{now?, confirm?, note?}`` → ``{stop}`` (7.50.03): an administrator acting for themselves (a delegated
+    credential gets 403; 404 while the module is off or for an unknown run) stops the whole run through
+    voc-engineering-start's ``stop_run``, whatever its agents are doing, a run with no session included: a Stop has
+    its agents save first (``status: stopping`` until they have, ``stopped`` at once when none has a session), ``now:
+    true`` with ``confirm: true`` stops it at once. Once ended, its engineering agent's run is ended too
+    (``agent_run``). 409 for a run that has ended; 503 when the start function cannot be reached (send it again)."""
+    monitor, caller = _acting_monitor(run_id)
+    from engineering.monitor import parse_stop  # (the package ships only with the module)
+
+    stopped = _monitor_action(monitor, caller, lambda m, body, actor: m.stop(run_id, parse_stop(body), actor))
+    stopped['agent_run'] = _end_agent_run_of(monitor, run_id, stopped)
+    logger.info('Engineering run stopped', extra={'run_id': run_id, 'mode': stopped['mode'],
+                                                  'status': stopped['status']})
+    return {'stop': stopped}
 
 
 @app.post('/agents/engineering/<run_id>/messages')

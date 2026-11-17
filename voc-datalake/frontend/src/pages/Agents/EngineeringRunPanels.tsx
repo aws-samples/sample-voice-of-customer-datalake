@@ -4,7 +4,8 @@
  * - Agents: each agent's session as the supervisor keeps it: its role and status (and continuation), its step, its
  *   MicroVM's state and age, its heartbeat's age and its last progress, why it looks stuck (highlighted), its
  *   MicroVM time and tokens per model, and (Inspect) its recent tool calls. An admin signals an agent on its own
- *   task, at the attempt the board shows, while the agent holds it and the task is not over.
+ *   task, at the attempt the board shows, while the agent holds it and the task is not over (Stop, and ⋯: Save,
+ *   Pause or Resume, Stop now: EngineeringSignals.tsx); never while the run's Stop is under way.
  * - Board: the tasks grouped by state, each with its lease holder and attempt, and its history in a disclosure; for an
  *   admin on a run under way, the board controls (EngineeringBoardControls.tsx).
  *
@@ -15,7 +16,7 @@ import { formatDateTime, formatRelativeDate } from '../../utils/dateUtils'
 import { FINAL_TASK_STATES, TASK_STATES } from '../../api/engineeringRunsApi'
 import { EngineeringSignals } from './EngineeringSignals'
 import { PostTaskForm, TaskControls } from './EngineeringBoardControls'
-import { groupsInOrder, useAge } from './engineeringRunText'
+import { agentTone, groupsInOrder, useAge } from './engineeringRunText'
 import type { EngineeringAgent, EngineeringTask } from '../../api/engineeringRunsApi'
 
 /**
@@ -67,7 +68,7 @@ function AgentCard({ runId, agent, task, isAdmin, now }: Readonly<{
       <p className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-medium text-text-strong font-mono break-all">{agent.agent}</span>
         <span className="badge badge-muted">{agent.role || '—'}</span>
-        <span className="badge badge-info">{t(`engineeringRun.status.${agent.status}`, { defaultValue: agent.status })}</span>
+        <span className={`badge ${agentTone(agent.status)}`}>{t(`engineeringRun.status.${agent.status}`, { defaultValue: agent.status })}</span>
         {agent.continuation > 0 && (
           <span className="text-[12px] text-muted">{t('engineeringRun.agent.continuation', { n: agent.continuation })}</span>
         )}
@@ -85,7 +86,7 @@ function AgentCard({ runId, agent, task, isAdmin, now }: Readonly<{
           : <ol className="mt-1 list-decimal pl-5 font-mono break-all">{agent.recent_tools.map((tool, i) => <li key={`${String(i)}-${tool}`}>{tool}</li>)}</ol>}
       </details>
       {isAdmin && task !== undefined && lease !== null && (
-        <EngineeringSignals runId={runId} task={{ taskId: task.task_id, attempt: lease.epoch, agent: agent.agent }} />
+        <EngineeringSignals runId={runId} task={{ taskId: task.task_id, attempt: lease.epoch, agent: agent.agent, status: agent.status }} />
       )}
     </li>
   )

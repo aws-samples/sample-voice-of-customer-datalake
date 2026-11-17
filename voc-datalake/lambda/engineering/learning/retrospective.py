@@ -41,7 +41,7 @@ from decimal import Decimal
 from typing import Final, Literal
 
 from engineering.board.model import DONE, FAILED, IN_REVIEW, NEEDS_HUMAN, PERSON_PREFIX, Move, Task
-from engineering.board.store import REPOST_OP
+from engineering.board.store import REPOST_OP, STOP_OP
 from engineering.coach.failure import MAX_ATTEMPT, Evidence
 from engineering.quality_gate.text import redact
 from engineering.runtime.runs import SUPERVISOR
@@ -279,11 +279,16 @@ def _attempts(run: RunRecord) -> tuple[list[Attempt], dict[str, GateVerdict], in
             record = agents.get(agent)
             taken = next((i for i, move in enumerate(own) if move.op == TAKE_OP
                           and move.actor.startswith(PERSON_PREFIX)), None)
+            stopped = next((i for i, move in enumerate(own) if move.op == STOP_OP), None)
             if taken is not None:
                 # A person took the task over: the agent's part ends there, handed over (no failure, no tally), and
                 # whatever came after (the person's own moves, the gate's verdict on their work) is nobody's skill.
                 own = own[:taken]
                 ending, reason = 'released', 'taken over by a person'
+            elif stopped is not None:
+                # A person stopped the run (7.50.03): the task was closed under the agent, never its failure.
+                ending, reason = 'released', own[stopped].reason or 'the run was stopped'
+                own = own[:stopped]
             else:
                 ending, reason = _ending_of(task, number, ender, record)
             rounds = sum(move.state == IN_REVIEW for move in own)

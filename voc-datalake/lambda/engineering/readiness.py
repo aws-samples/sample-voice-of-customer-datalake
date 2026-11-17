@@ -14,7 +14,8 @@ where the flow's ``requires`` asks for them; the Issues source (deployment-wide)
 administrator's STORED way of working (``connectors/dial.py``: no row is Human-driven, which pushes nothing); the
 budget and the hard cap; Bedrock access for every model the flow's roles run on (their cards' models,
 ``skills/templates.py``, and any step's own ``model``); the AgentCore sessions quota and the build memory setting;
-the sessions' network; the workspace bucket's create-only probe.
+the sessions' network; the sessions' sandbox (7.50.03: the walls the language's last session said it ran behind,
+``runtime/sandbox.py``; unknown until a session of the image has started); the workspace bucket's create-only probe.
 
 ``REQUIRED`` (the owner's decision, 2026-11-16) are the checks a run truly needs: the connection, the CI attestation,
 the image, the models, the budget and the dial. Engineering Enable is refused (409) while one of them fails; the rest
@@ -39,7 +40,7 @@ READINESS_DOCS: Final = f'{DOCS}#readiness-75000'
 #: The checks, in the order they are answered.
 CHECK_IDS: Final = ('connection', 'app_installation', 'ci_attestation', 'ci_protection', 'image', 'pack', 'tenets',
                     'issues_source', 'issue_label', 'dial', 'budget', 'hard_cap', 'bedrock_models',
-                    'agentcore_quota', 'memory_setting', 'network', 'session_storage')
+                    'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'session_storage')
 #: What a run truly needs (owner decision): Enable is refused while one of these fails.
 REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_models', 'budget', 'dial'})
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
@@ -208,6 +209,21 @@ class ReadinessPorts(Protocol):
     def probe_storage(self) -> bool:
         """The workspace bucket's create-only probe: True when it answered as a create-only bucket does."""
         ...
+
+    def sandbox_walls(self, language: str) -> SandboxSeen | None:
+        """The walls the language's last session said it runs behind (the runtime's record), None for none yet."""
+        ...
+
+
+@dataclass(frozen=True)
+class SandboxSeen:
+    """A language's last recorded walls (``runtime/sandbox.py`` ``Recorded``, as readiness reads it): the agent's
+    egress wall and repository code's (``iptables``, ``namespaces`` or ``none``), the hard-link guards, and when."""
+
+    egress: str
+    code: str
+    hardlink_guard: tuple[str, ...]
+    at: str
 
 
 @dataclass(frozen=True)
@@ -655,6 +671,46 @@ def _network(ctx: _Context) -> Check:
                  'agents need (docs/deployment.md).', RUNTIME_DOCS)
 
 
+#: The walls a session may run behind (unit_runner.EGRESS_WALLS) and what the probe of the live runtime found.
+SANDBOX_WALLS: Final = frozenset({'iptables', 'namespaces'})
+SANDBOX_PROBED: Final = ('A live probe of AgentCore Runtime (2026-11-17) found the container refuses iptables (no '
+                         'CAP_NET_ADMIN) and allows each user its own user and network namespace, which the images '
+                         'from 7.50.03 use.')
+SANDBOX_FIX: Final = ('Rebuild all four engineering images (python, node, java, rust) from this release and deploy '
+                      'their digests with -c engineeringImages together with the stacks (docs/deployment.md, '
+                      'engineeringImages); the next session records its walls.')
+WALL_NAMES: Final = {'iptables': 'the egress firewall (iptables)', 'namespaces': 'user and network namespaces'}
+
+
+def _sandbox(ctx: _Context) -> Check:
+    """The walls the language's last session said it runs behind: a pass only from a record (never assumed), unknown
+    until a session of the language's image has started, a fail when the record names a missing wall."""
+    language = ctx.subject.language
+    if ctx.subject.requires.get('image') is False:
+        return _not_needed('sandbox', 'the flow runs no agent', RUNTIME_DOCS)
+    if not language or language not in ctx.settings.image_languages:
+        return Check('sandbox', 'unknown', 'No image of this language in this deployment: no session has said its '
+                     'walls.', SANDBOX_FIX, RUNTIME_DOCS)
+    try:
+        seen = ctx.ports.sandbox_walls(language)
+    except ReadFailed as error:
+        return _unknown('sandbox', 'The sessions\' walls', error, docs=RUNTIME_DOCS)
+    if seen is None:
+        return Check('sandbox', 'unknown', f'Unknown until the first session: no {language} session has said which '
+                     f'walls it runs behind yet. {SANDBOX_PROBED}', SANDBOX_FIX, RUNTIME_DOCS)
+    when = seen.at[:10]
+    missing = [what for what, held in (('egress wall for the agent', seen.egress in SANDBOX_WALLS),
+                                       ('wall for repository code', seen.code in SANDBOX_WALLS),
+                                       ('hard-link guard', bool(seen.hardlink_guard))) if not held]
+    if missing:
+        return Check('sandbox', 'fail', f'The last {language} session ({when}) had no {" and no ".join(missing)}: '
+                     'its runner refuses the work that needs it.', SANDBOX_FIX, RUNTIME_DOCS)
+    walls = WALL_NAMES[seen.egress] if seen.egress == seen.code else (
+        f'{WALL_NAMES[seen.egress]} for the agent, {WALL_NAMES[seen.code]} for repository code')
+    return Check('sandbox', 'pass', f'Verified on the live runtime ({when}): {walls}; hard-link guard '
+                 f'{", ".join(seen.hardlink_guard)}.', '', RUNTIME_DOCS)
+
+
 def _session_storage(ctx: _Context) -> Check:
     try:
         held = ctx.ports.probe_storage()
@@ -672,7 +728,7 @@ _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
     'ci_protection': _ci_protection, 'image': _image, 'pack': _pack, 'tenets': _tenets,
     'issues_source': _issues_source, 'issue_label': _issue_label, 'dial': _dial, 'budget': _budget,
     'hard_cap': _hard_cap, 'bedrock_models': _bedrock_models, 'agentcore_quota': _agentcore_quota,
-    'memory_setting': _memory_setting, 'network': _network, 'session_storage': _session_storage,
+    'memory_setting': _memory_setting, 'network': _network, 'sandbox': _sandbox, 'session_storage': _session_storage,
 }
 
 

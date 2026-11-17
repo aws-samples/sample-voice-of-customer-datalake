@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 import agents_handler
-from engineering.readiness import Settings
+from engineering.readiness import SandboxSeen, Settings
 from engineering.skills.templates import bundled
 
 
@@ -77,6 +77,11 @@ class ReadyPorts:
 
     def probe_storage(self) -> bool:
         return True
+
+    def sandbox_walls(self, language: str) -> SandboxSeen | None:
+        """The walls a session of ``language`` recorded (7.50.03): the namespaces, as on AgentCore Runtime."""
+        del language
+        return SandboxSeen('namespaces', 'namespaces', ('own_device', 'protected_hardlinks'), '2026-11-17T12:00:00Z')
 
 
 SETTINGS = Settings(image_languages=frozenset({'python', 'node', 'java', 'rust'}), network=True, build_memory_mib=0,

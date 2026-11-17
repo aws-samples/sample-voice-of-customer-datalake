@@ -1,8 +1,10 @@
 /**
  * @fileoverview The run monitor of an engineering run: its header (no cost yet), the flow with the agents' steps lit,
  * the Agents, Board, Conversation and Reports panels (each report's versions, as Markdown only), an admin's signals (at the attempt the board shows; Stop now asks first;
- * a moved-on attempt says to reload) and answers (to the conductor, or on the thread replied to), a non-admin's
- * read-only view, and the page for a run that is not there.
+ * a moved-on attempt says to reload) and answers (to the conductor, or on the thread replied to), the run's Stop
+ * (7.50.03: always there for an admin on a run under way, through the start function, Stopping… while its agents
+ * save), a failed read that keeps the page and its controls, a non-admin's read-only view, and the page for a run that
+ * is not there.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -240,14 +242,29 @@ describe('the reports while the run is under way', () => {
 })
 
 describe('an admin acts on the run', () => {
+  /** The agent's ⋯ menu item, opened from its card. */
+  const agentMenu = async (agent: string, item: string) => {
+    const card = await screen.findByRole('group', { name: `Agent ${agent}` })
+    await userEvent.click(within(card).getByRole('button', { name: `More for Agent ${agent}` }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: item }))
+  }
+
   it('pauses the agent on a task at the attempt the board shows', async () => {
     const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } } }))
     routes({ [`POST ${BASE}/signals`]: signal })
     renderRun()
-    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
-    await userEvent.click(within(fixer).getByRole('button', { name: 'Pause — Agent fixer-1' }))
+    await agentMenu('fixer-1', 'Pause')
     await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'pause', task_id: 'task-1', attempt: 2 }))
     expect(await screen.findByText('Sent. fixer-1: Pause requested')).toBeInTheDocument()
+  })
+
+  it('stops an agent (it saves first) with its own Stop, at the attempt the board shows', async () => {
+    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'shutdown', agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } } }))
+    routes({ [`POST ${BASE}/signals`]: signal })
+    renderRun()
+    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
+    await userEvent.click(within(fixer).getByRole('button', { name: 'Stop — Agent fixer-1' }))
+    await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'shutdown', task_id: 'task-1', attempt: 2 }))
   })
 
   it('reads the run again after a signal, but not its reports (a signal writes none)', async () => {
@@ -261,18 +278,20 @@ describe('an admin acts on the run', () => {
     await screen.findByText('No report has been written yet.')
     const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
     const before = overviewReads()
-    const run = screen.getByRole('group', { name: 'The whole run' })
-    await userEvent.click(within(run).getByRole('button', { name: 'Save — The whole run' }))
+    const controls = screen.getByRole('region', { name: 'Run controls' })
+    await userEvent.click(within(controls).getByRole('button', { name: 'More run controls' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Save a checkpoint' }))
     await waitFor(() => expect(overviewReads()).toBeGreaterThan(before))
     expect(reads.mock.calls).toHaveLength(1)
   })
 
-  it('says which agents a signal did nothing to', async () => {
+  it('says which agents a signal did nothing to, and offers Resume for a paused agent', async () => {
     const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'resume', agents: { 'fixer-1': 'working' }, applied: { 'fixer-1': false } } }))
-    routes({ [`POST ${BASE}/signals`]: signal })
+    const paused = engineeringOverview()
+    paused.agents = paused.agents.map((agent) => (agent.agent === 'fixer-1' ? { ...agent, status: 'paused' } : agent))
+    routes({ [`GET ${BASE}`]: () => paused, [`POST ${BASE}/signals`]: signal })
     renderRun()
-    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
-    await userEvent.click(within(fixer).getByRole('button', { name: 'Resume — Agent fixer-1' }))
+    await agentMenu('fixer-1', 'Resume')
     expect(await screen.findByText('Sent. fixer-1: Working (not applied)')).toBeInTheDocument()
   })
 
@@ -284,38 +303,122 @@ describe('an admin acts on the run', () => {
     expect(screen.queryByRole('group', { name: 'Agent coordinator-0' })).toBeNull()
   })
 
-  it('asks before Stop now, and sends it confirmed to the whole run', async () => {
-    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'stop_now' } }))
-    routes({ [`POST ${BASE}/signals`]: signal })
+  it('asks before Stop now, without saving, and sends it confirmed as the run\'s Stop', async () => {
+    const stop = vi.fn((_body: unknown) => ({ stop: { status: 'stopped', mode: 'stop_now', tasks_closed: ['task-1', 'task-2'] } }))
+    routes({ [`POST ${BASE}/stop`]: stop })
     renderRun()
-    const run = await screen.findByRole('group', { name: 'The whole run' })
-    await userEvent.click(within(run).getByRole('button', { name: 'Stop now — The whole run' }))
+    const controls = await screen.findByRole('region', { name: 'Run controls' })
+    await userEvent.click(within(controls).getByRole('button', { name: 'More ways to stop' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Stop now, without saving…' }))
     const dialog = await screen.findByRole('dialog')
-    expect(signal).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop now' }))
-    await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'stop_now', confirm: true }))
+    expect(stop).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop now, without saving' }))
+    await waitFor(() => expect(stop).toHaveBeenCalledWith({ now: true, confirm: true }))
+    expect(await within(controls).findByText('Stopped. 2 open tasks were closed.')).toBeInTheDocument()
   })
 
   it('shows the server\'s reason for a conflict, and says to reload when it gave none', async () => {
     const reasons = ['run RUN1 has spent its budget: raise it before resuming']
     routes({ [`POST ${BASE}/signals`]: () => { throw new ApiError(409, reasons.shift()) } })
     renderRun()
-    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
-    await userEvent.click(within(fixer).getByRole('button', { name: 'Resume — Agent fixer-1' }))
+    await agentMenu('fixer-1', 'Pause')
     expect(await screen.findByRole('alert')).toHaveTextContent('run RUN1 has spent its budget: raise it before resuming')
-    await userEvent.click(within(fixer).getByRole('button', { name: 'Save — Agent fixer-1' }))
+    await agentMenu('fixer-1', 'Save a checkpoint')
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('This has moved on since you looked'))
   })
 
   it('shows the 503 a busy agent answers, and nothing says it was sent', async () => {
     routes({ [`POST ${BASE}/signals`]: () => { throw new ApiError(503, 'The agent is busy with another move: send the signal again') } })
     renderRun()
-    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
-    await userEvent.click(within(fixer).getByRole('button', { name: 'Pause — Agent fixer-1' }))
+    await agentMenu('fixer-1', 'Pause')
     expect(await screen.findByRole('alert')).toHaveTextContent('The agent is busy with another move: send the signal again')
     expect(screen.queryByText(/^Sent\./)).toBeNull()
   })
+})
 
+describe('the run\'s Stop (7.50.03)', () => {
+  /** A run waiting for a person whose coordinator never started, in a deployment the signals cannot reach. */
+  const stuck = () => {
+    const overview = engineeringOverview({ status: 'needs_human', waiting_at: 'coordinator' }, false)
+    overview.agents = []
+    return overview
+  }
+
+  it('stops a run waiting for a person with no session, where the signals cannot reach it, says so and reads it again', async () => {
+    const run = { stopped: false }
+    const stop = vi.fn((_body: unknown) => {
+      run.stopped = true
+      return { stop: { status: 'stopped', mode: 'stop', tasks_closed: ['coordinate'],
+        agent_run: { agent_id: 'ag_1', run_id: 'ar_1', ended: true } } }
+    })
+    routes({
+      [`GET ${BASE}`]: () => (run.stopped ? { ...stuck(), run: { ...stuck().run, status: 'stopped', ended_at: '2026-11-17T06:00:00Z' } } : stuck()),
+      [`POST ${BASE}/stop`]: stop,
+    })
+    renderRun()
+    expect(await screen.findByText('Waits for a person')).toHaveClass('badge-warn')
+    const controls = screen.getByRole('region', { name: 'Run controls' })
+    // Stop is there although the monitor cannot send signals; Pause, Resume and Save are not.
+    expect([within(controls).queryByText(/Pause, Resume, Save and answers can't be sent/) !== null,
+      within(controls).queryByRole('button', { name: /Resume|Pause/ })]).toStrictEqual([true, null])
+    const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
+    const before = overviewReads()
+    await userEvent.click(within(controls).getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(stop).toHaveBeenCalledWith({}))
+    // Read again: the run has ended (its chip says so, its controls are gone), and what the Stop did stays said.
+    const chip = await screen.findByText('Stopped')
+    expect([chip.classList.contains('badge-muted'), overviewReads() > before, screen.queryByRole('button', { name: 'Stop' }),
+      screen.queryByText("Stopped. 1 open task was closed. Its automation's run is cancelled, so the automation can run again.") !== null])
+      .toStrictEqual([true, true, null, true])
+  })
+
+  it('shows a Stop under way as Stopping…, Stop disabled, and each agent\'s part of it', async () => {
+    const stop = vi.fn((_body: unknown) => ({ stop: { status: 'stopping' } }))
+    const stopping = engineeringOverview({ stop: { mode: 'stop', requested_at: '2026-11-17T05:00:00Z' } })
+    stopping.agents = stopping.agents.map((agent) => (agent.agent === 'fixer-1' ? { ...agent, status: 'pause_requested' }
+      : { ...agent, status: 'stopped' }))
+    routes({ [`GET ${BASE}`]: () => stopping, [`POST ${BASE}/stop`]: stop })
+    renderRun()
+    const controls = await screen.findByRole('region', { name: 'Run controls' })
+    expect(screen.getAllByText('Stopping…')[0]).toHaveClass('badge-warn')
+    const button = within(controls).getByRole('button', { name: 'Stopping…' })
+    await userEvent.click(button)
+    expect([button.getAttribute('aria-disabled'), stop.mock.calls.length]).toStrictEqual(['true', 0])
+    expect(within(controls).getByText('Stop sent · coordinator-0: Stopped · fixer-1 saving a checkpoint… · final-go-1: Stopped'))
+      .toBeInTheDocument()
+    // While it stops, no agent is signalled and Pause/Resume are gone.
+    expect([screen.queryByRole('group', { name: 'Agent fixer-1' }), within(controls).queryByRole('button', { name: 'Pause' })])
+      .toStrictEqual([null, null])
+  })
+
+  it('offers Resume for a run waiting for a person where the signals reach it, Pause otherwise', async () => {
+    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'resume', agents: {}, applied: {} } }))
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({ status: 'needs_human', waiting_at: 'budget' }),
+      [`POST ${BASE}/signals`]: signal })
+    renderRun()
+    const controls = await screen.findByRole('region', { name: 'Run controls' })
+    await userEvent.click(within(controls).getByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'resume' }))
+  })
+
+  it('says why the Stop was refused', async () => {
+    routes({ [`POST ${BASE}/stop`]: () => { throw new ApiError(503, 'The run could not be reached: send the Stop again') } })
+    renderRun()
+    const controls = await screen.findByRole('region', { name: 'Run controls' })
+    await userEvent.click(within(controls).getByRole('button', { name: 'Stop' }))
+    expect(await within(controls).findByRole('alert')).toHaveTextContent('The run could not be reached: send the Stop again')
+  })
+
+  it('says where the deployment cannot stop the run', async () => {
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, false, false) })
+    renderRun()
+    const controls = await screen.findByRole('region', { name: 'Run controls' })
+    expect(within(controls).getByText(/Stop can't reach this run from this deployment/)).toBeInTheDocument()
+    expect(within(controls).queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+})
+
+describe('an admin answers in the run', () => {
   it('answers the conductor, then an agent on the thread it replies to', async () => {
     const answer = vi.fn((_body: unknown) => ({ message: { event_id: 'e', thread_id: 't', at: '' } }))
     routes({ [`POST ${BASE}/messages`]: answer })
@@ -482,9 +585,10 @@ describe('who may act', () => {
     routes({ [`GET ${BASE}`]: () => engineeringOverview({}, available) })
     renderRun()
     await screen.findByRole('heading', { name: 'Fix the paging bugs' })
-    // Only an admin is told why: the deployment does not connect the monitor to the run yet.
-    expect(screen.queryByText(/Signals and answers can't be sent from this deployment yet/) !== null).toBe(told)
-    expect([screen.queryByRole('group', { name: 'The whole run' }), screen.queryByRole('group', { name: 'Agent fixer-1' })])
+    // Only an admin is told why: the deployment does not connect the monitor to the run yet; their Stop still works.
+    expect(screen.queryByText(/Pause, Resume, Save and answers can't be sent from this deployment yet/) !== null).toBe(told)
+    expect(screen.queryByRole('button', { name: 'Stop' }) !== null).toBe(admin)
+    expect([screen.queryByRole('button', { name: 'Pause' }), screen.queryByRole('group', { name: 'Agent fixer-1' })])
       .toStrictEqual([null, null])
     await userEvent.click(screen.getByRole('tab', { name: /Conversation/ }))
     expect(screen.queryByLabelText('Your message')).toBeNull()
@@ -497,10 +601,12 @@ describe('who may act', () => {
   })
 
   it('an ended run takes no more actions', async () => {
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({ ended_at: '2026-11-12T09:30:00Z', status: 'completed' }) })
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({ ended_at: '2026-11-12T09:30:00Z', status: 'stopped' }) })
     renderRun()
     await screen.findByRole('heading', { name: 'Fix the paging bugs' })
-    expect(screen.queryByRole('group', { name: 'The whole run' })).toBeNull()
+    expect(screen.getByText('Stopped')).toHaveClass('badge-muted')
+    expect([screen.queryByRole('region', { name: 'Run controls' }), screen.queryByRole('button', { name: 'Stop' })])
+      .toStrictEqual([null, null])
     await expectNoBoardControls()
   })
 })
@@ -549,6 +655,27 @@ describe('polling', () => {
     const before = overviewReads()
     await vi.advanceTimersByTimeAsync(11_000)
     expect(overviewReads()).toBeGreaterThan(before)
+  })
+
+  it('keeps the page and its controls after a failed read, says so, and reads again later', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const reads = { failing: false }
+    routes({ [`GET ${BASE}`]: () => {
+      if (reads.failing) throw new ApiError(500, 'down')
+      return engineeringOverview()
+    } })
+    renderRun()
+    await screen.findByRole('heading', { name: 'Fix the paging bugs' })
+    reads.failing = true
+    await vi.advanceTimersByTimeAsync(12_000)
+    expect(await screen.findByText("Couldn't refresh: this is the last read.")).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
+    const failed = overviewReads()
+    reads.failing = false
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(overviewReads()).toBeGreaterThan(failed)   // (polling goes on, backed off)
+    await waitFor(() => expect(screen.queryByText("Couldn't refresh: this is the last read.")).toBeNull())
   })
 
   it('stops once the run is not found', async () => {

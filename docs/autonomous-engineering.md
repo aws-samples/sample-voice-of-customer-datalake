@@ -1392,6 +1392,19 @@ N minutes, the same step repeated). A person can message the run coordinator or 
 signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
 [Stop](#trust-and-safety) of the run view, enforced by the supervisor, the launcher and the broker without the
 agent's help; Shut down falls back to it if the checkpoint does not come; Resume is refused for a stopped run.
+**The run's Stop (7.50.03).** For an administrator on a run that has not ended the monitor always shows **Stop**, in
+one Run controls bar: Stop has the agents with a session save a checkpoint, then ends the run ("Stopping…" until they
+have, 10 minutes at most), and its menu holds "Stop now, without saving" (asked first). It ends the run whatever its
+agents are doing, a run waiting for a person whose coordinator never started included, through voc-engineering-start's
+`stop_run` (`POST /agents/engineering/<run_id>/stop`), so it needs neither the runtime nor the bus on the Agents API,
+which every deployment so far lacks for the signals: META `stopped` with its `RUNLOG#` row (who, how), every task that
+has not ended closed `failed` with a `stop` history row (no agent's failure for the coach), its launch holds run out,
+its sessions ended, and its engineering agent's run ended with it (cancelled, the agent's lock released). The issue's
+claim is kept (one run per issue, ever). Pause and Resume are one toggle by the run's state, Save a checkpoint sits under
+⋯, and an agent's card has its own Stop and ⋯ (Save, Pause or Resume, Stop now); those need the signals to reach the
+run (`actions_available`), and where they do not one line beside Stop says so. A failed read keeps the page's last
+good read and its controls, says "Couldn't refresh" with a Retry, and polling backs off (`lambda/engineering/runtime/stop.py`,
+`frontend/src/pages/Agents/RunControlBar.tsx`).
 Messages and signals
 are API calls with the signed-in user, allowed only to whoever may make a `decision`, published as `message` and
 `signal` events that the router accepts only from the API's own source; an agent reads a person's message as DATA,
@@ -1679,22 +1692,103 @@ first run, in a test account, waits for the owner): the answers' shapes (the run
 `response`; the command's event stream), whether the CloudFormation resource takes `ResourceConfigurations`, the IAM
 action and ARN names (`bedrock-agentcore:InvokeAgentRuntime`, `…:InvokeAgentRuntimeCommand`,
 `…:StopRuntimeSession` on the runtime and its `runtime-endpoint/DEFAULT`), whether the Lambda runtime's own boto3
-knows the command API (else the layer pins one), whether a session's container may run `iptables`, `unshare`,
-`setpriv` and Mountpoint as it needs, how the runtime's execution role is offered inside a session (the firewall
-keeps both users off every link-local address), that the runtime's `/ping` keeps a session busy while its
-runner says so, whether AgentCore logs or traces an invocation's payload (the `session` invocation carries the agent
+knows the command API (else the layer pins one), whether Mountpoint mounts the cache in a session (`/dev/fuse` is there
+and root has CAP_SYS_ADMIN, below: the mount itself has not run yet), how the runtime's execution role is offered
+inside a session (the walls keep both users off every link-local address), that the runtime's `/ping` keeps a session busy while its
+runner says so and ends an idle one an hour after its last work (7.50.03's idle clock, "Idle and lifetime" below), whether AgentCore logs or traces an invocation's payload (the `session` invocation carries the agent
 role's short STS keys: if it does, the runner is to fetch the session by a reference instead, which the launcher's
 design allows but is not built), and the billing behind `caps.py` BUILD_SIZES (that a resource configuration's
 baseline is billed for its session's whole life at the committed rates, and only the burst above it at the
 consumption rates), whether each toolchain's dependency step honours its proxy (pip, npm and cargo read
 `HTTPS_PROXY`; Node's own fetch only with `NODE_USE_ENV_PROXY=1`, which the runner sets; Maven reads no variable, so
 the Java image gives `code` a `~/.m2/settings.xml` naming the proxy; Gradle reads the JVM's `https.proxyHost`, which
-`JAVA_TOOL_OPTIONS` sets; a toolchain that ignores all of them reaches nothing, since the firewall holds it either
+`JAVA_TOOL_OPTIONS` sets; a toolchain that ignores all of them reaches nothing, since the walls hold it either
 way), and whether a quota or throttle answer to a start (`ServiceQuotaExceededException`, `ThrottlingException`)
 guarantees no session was made (the runtime does not stop one then; on any other failed start it does), and how
 AgentCore gets the right to make a session's network interfaces in the deployment's subnets in VPC mode (likely its
 service-linked role, made on first use, which then needs `iam:CreateServiceLinkedRole` once, from the deployer;
 the stack grants nothing for it). Until that run the flag stays off, and this section is corrected to what it shows.
+
+**What a session's container is (probed on the live runtime, 2026-11-17; 7.50.03).** The first run's coordinator never
+started: its container refused `start`, because the 7.50.0 entry point could not install its iptables firewall
+(`iptables v1.8.9 (nf_tables): Could not fetch rule set generation id: Permission denied (you must be root)`) and could
+not write `/proc/sys/fs/protected_hardlinks` (`Read-only file system`), and the runner, without `--egress-firewall`,
+fails closed. One throwaway session of the python image (the owner's, stopped after) then showed:
+
+- the container runs as root (`uid=0 gid=0`) with Docker's default capability set plus CAP_SYS_ADMIN
+  (`CapEff = CapBnd = 0x00000000a82425fb`) and no CAP_NET_ADMIN: iptables is refused, and nft is not installed;
+  `NoNewPrivs: 1`, `Seccomp: 0`, kernel `6.1.166-24.303.amzn2023.aarch64`, `max_user_namespaces` 32057;
+- user and network namespaces work: `unshare -Urn` as root, `unshare -n` as root, and
+  `setpriv --reuid=10001 --regid=10000 --init-groups unshare -Urn` as `unit` (util-linux 2.38.1), each with only its
+  loopback (down until brought up);
+- `/proc/sys` is mounted read-only, but `fs.protected_hardlinks` already reads 1; the tmpfs mount on `/run/voc` works
+  (`/work` device 45, `/run/voc` device 47), so both hard-link guards hold;
+- `/dev/fuse` exists (`crw-rw-rw-`), so Mountpoint can mount;
+- the session's own way out is link-local: `eth0` holds 169.254.0.2/30 and 169.254.53.53/32 (and a global IPv6
+  /128), and `resolv.conf` names 127.0.0.2 and 169.254.53.53. The root runner and its proxies need that interface;
+  the agent's and repository code's commands must not reach any of it;
+- `ps` is not installed; the runner's `status` answered 200; `InvokeAgentRuntimeCommand` runs its command without a
+  shell (`/bin/sh -c` for a probe).
+
+The AgentCore developer guide says none of this (its container contract is an arm64 image serving `/ping` and
+`/invocations` on `0.0.0.0:8080`; each session "runs in a dedicated microVM with completely isolated CPU, memory, and
+filesystem resources"; a V2 runtime restores a snapshot taken at the first healthy `/ping`): the user, the
+capabilities, `/proc/sys`, user namespaces, FUSE and seccomp are the probe's alone, and a change of the service's could
+change them. So the entry point assumes none of them: it checks at every start, and the runner reports what held.
+
+**The walls, whichever the container supports (7.50.03).** The entry point's `walls.sh` (engineering-images/common)
+tries the egress firewall first (iptables owner rules, as before 7.50.03, for a container where root has
+CAP_NET_ADMIN), and otherwise checks, for each of `unit` and `code`, the chain the runner will use: drop to the user,
+make a user and network namespace of its own, bring its loopback up, find no other interface up, drop every
+capability. It passes the runner `--egress-firewall --code-firewall`, or `--egress-namespaces` and
+`--code-namespaces` for the users whose check held, and `--hardlink-guard` naming the guards that hold (`own_device`,
+`protected_hardlinks`: read, never written). The runner starts an agent only behind an egress wall (and both proxies),
+accepts the dependency step only behind a code wall, and runs repository code only with a hard-link guard; with none it
+fails closed, as before. Its `start` and `status` answers say which walls hold (`{"egress": "namespaces", "code":
+"namespaces", "hardlink_guard": ["own_device", "protected_hardlinks"]}`), the runtime records each language's last one
+(voc-engineering `WS#default#SANDBOX` / `LANG#<language>`, `runtime/sandbox.py`), and [readiness](#readiness-75000)'s
+`sandbox` check reads it.
+
+Behind the namespaces every command of the agent's (the harness and its git, as `unit`) and of repository code's (as
+`code`, in root's PID namespace and `/proc` of its own as before) runs in a user and network namespace of its own
+(`unit_runner.own_namespaces`): root of a user namespace that owns nothing but that network namespace, it brings its
+loopback up, drops every capability (an empty bounding set, no new privileges) and starts its command through the
+runner's forwarder (`unit_runner.py forward`), which binds `127.0.0.1:<port>` inside and bridges each connection to a
+Unix socket the root runner serves outside, in `/run/voc-net`, made at the session's start (never in a V2 snapshot):
+
+| In the namespace | Bridged to | Whose |
+| --- | --- | --- |
+| the agent's `127.0.0.1:8081` (the runner's agent API: `/exec`, `/status`) | `/run/voc-net/agent-api.sock` | `unit`'s |
+| the agent's `127.0.0.1:3128` (its egress proxy) | `/run/voc-net/agent-proxy.sock` | `unit`'s |
+| the dependency step's `127.0.0.1:3129` (its proxy) | `/run/voc-net/code-proxy.sock` | `code`'s, until other repository code runs |
+| any other repository code | nothing | |
+
+Each socket is mode 0600, owned by its user, and its server checks the connecting process's uid again on every
+connection (`SO_PEERCRED`, the real uid outside any namespace). A Unix socket's path, unlike a loopback port, is
+reachable from any network namespace, so the dependency step's socket is closed and removed for good the moment other
+repository code starts (from then on the runner refuses the dependency step anyway).
+
+What this keeps of the firewall's guarantees, and how it differs:
+
+- **The same:** the agent reaches only the runner's agent API (never 8080, the service's port) and its own proxy; the
+  dependency step reaches only its own proxy; other repository code reaches nothing; neither reaches a link-local
+  address, a credential or metadata endpoint, or a name server; each proxy resolves its allowlisted hosts itself and
+  refuses link-local and loopback answers; no command keeps a capability or regains one; the hard-link guard is the
+  same two guards, now read rather than set.
+- **Stronger:** there is no route at all instead of rules to get right (no interface but a loopback in the namespace,
+  so a missed rule, IPv6 or a raw socket changes nothing), and it holds without CAP_NET_ADMIN.
+- **Weaker, or new:** each command makes a user namespace, which widens the kernel interface it can reach (a user
+  namespace's root may make calls an unprivileged user may not, within namespaces it owns: a kernel bug there is the
+  risk, which the microVM per session bounds); the command sees itself as uid 0 of its namespace (files keep their
+  real owners: it reads and writes as its user); the forwarder is one more process per command (it dies with the
+  command); and a socket's path crosses namespaces, so its mode, its owner and the uid check are what keep the users
+  apart (pinned by the tests). The wall depends on the service keeping user namespaces open (a seccomp profile like
+  Docker's default would close them): the entry point then finds no wall, and the runner refuses every start.
+
+The VPC-level fallback (a security group allowing 443 only to the VPC endpoints' and the NAT's prefix lists, plus
+Route 53 Resolver DNS Firewall with an allowlist) is not built: the probe shows the namespaces hold, and that fallback
+would be weaker still (it cannot tell the agent from repository code, nor keep either off the link-local resolver and
+credential endpoints, which no security group filters). The session's VPC, TCP 443 out only, stays the second wall.
 
 The runtime names its agents as the [broker](#repository-connectors) and the
 [bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
@@ -1768,7 +1862,27 @@ microVM), from its language's image, with its own sparse checkout from the cache
   and at 8 hours (`maxLifetime` 28,800). The runner answers `/ping` `HealthyBusy` while a command of the agent runs and
   is not held, so an agent waiting on the model, a build or a tool is never ended for idleness; only a held one is
   idle, and the supervisor checkpoints a wait still open after 45 minutes and holds it without a session before the
-  hour. Continuation before the 8 hours stays the supervisor's (below).
+  hour. Continuation before the 8 hours stays the supervisor's (below). **The idle clock (7.50.03).** A `Healthy`
+  session's idle time is measured from the ping's `time_of_last_update`, and the HTTP protocol contract says: "Do not
+  set `time_of_last_update` to the current time on every ping. A timestamp that advances on every ping signals a
+  continuous status change, which prevents the idle session timeout from ever firing — sessions then persist until
+  `MaxLifetime` and can exhaust your session quota" ([HTTP protocol
+  contract](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-http-protocol-contract.html), read
+  2026-11-17). Until 7.50.03 the runner did exactly that, so a held or forgotten session lived to its 8 hours. Now
+  `time_of_last_update` is when the runner last did real work: the status's last change (a command starting, every
+  command ending, a hold), an invocation that starts, hands over, holds or wakes the agent, a command's start; never a
+  ping, a `status` read or a poll of a command's result (`unit_runner.Runner.ping`). An idle session ends an hour
+  after its last work.
+- **MMDSv2 (checked 2026-11-17).** The troubleshooting guide says: "Starting June 30, 2026, Amazon Bedrock AgentCore
+  Runtime requires all agent runtimes to use MMDSv2 (MicroVM Metadata Service Version 2). The service rejects
+  invocations targeting runtimes without `metadataConfiguration` set, or with `requireMMDSV2` set to `false` or
+  `null`" ([troubleshooting](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html)).
+  The stacks cannot set it: aws-cdk-lib 2.275.0's `CfnRuntime` has no such property, and CloudFormation's own
+  `AWS::BedrockAgentCore::Runtime` schema in us-west-2 has no `MetadataConfiguration` (a property override would fail
+  the deploy's validation). It holds anyway: the `b-` python runtime, made by these stacks, reads
+  `metadataConfiguration: {requireMMDSV2: true}` (`get-agent-runtime`, read-only), so the service sets it on the
+  runtimes CloudFormation makes, and invocations reach the container. When CloudFormation and aws-cdk-lib gain the
+  property, set it explicitly and pin it in `engineering-agentcore.test.ts`.
 - **Refused up front.** A run whose agents at once (its coordinator and one per task, at most the board's 999) are
   more than the deployment's sessions (`-c engineeringMaxSessions`, the account's 5,000 by default) is refused before
   anything is written, saying to lower its task cap; so is a start under clocks that would let an agent outlive its
@@ -1811,15 +1925,17 @@ wait closes.
   - the dependency step's (user `code`, port 3129, the one repository-code command with network): its language's
     package registries and the deployment's extra hosts. Never Bedrock, a bucket, the board or the broker.
 
-  The entry point's egress firewall sends each user to its own proxy only: `unit` reaches the runner and port 3128,
-  `code` port 3129, and neither reaches any other address or port, a link-local address or a name server. Each
+  The session's walls (the egress firewall where the container allows iptables, else each command's own user and
+  network namespace with a forwarder: [above](#runtime-one-agentcore-session-per-agent), 7.50.03) send each user to
+  its own proxy only: `unit` reaches the runner and port 3128, `code` port 3129 (in the dependency step only), and
+  neither reaches any other address or port, a link-local address or a name server. Each
   proxy resolves its host itself and refuses a link-local (169.254.0.0/16, fe80::/10), loopback or unspecified
   address, an IPv4-mapped, IPv4-compatible, 6to4 or NAT64 (64:ff9b::/96, 64:ff9b:1::/48) IPv6 address carrying one included, "this network" (0.0.0.0/8) and the EC2
   metadata service's IPv6 addresses (fd00:ec2::/32), whatever name resolved to it (a VPC endpoint's private address is allowed). An extra host shaped like one
   of the agent's own (a Bedrock runtime or S3 bucket endpoint, a function URL; other AWS hostnames are not judged) is refused at the launch: the two lists are parted by
   shape, so a registry mirror cannot sit on an S3 bucket's endpoint. Each user's
   commands are pointed at its own proxy (`HTTPS_PROXY`, and the JVM's proxy settings); every other repository command
-  runs in a network namespace of its own, with only its own loopback. Without every rule in place, or without either
+  runs in a network namespace of its own, with only its own loopback. Without an egress wall, or without either
   proxy, the runner starts no agent.
 
   **The recommended network** (the deployer's, outside the stacks; [deployment.md](deployment.md) has its rough
@@ -1876,14 +1992,17 @@ wait closes.
   ended and forgotten. The dependency step, the one repository-code command with
   network, runs before any other repository code, after every repository-code process still running is ended; once
   repository code has run, the runner refuses it, and any other repository code that starts ends a dependency step
-  still running. The entry point's code firewall, first in the output chain, stops `code` from reaching anything on
-  loopback, the runner's port on any address and link-local addresses (name lookups on port 53 excepted), over IPv4
-  and IPv6; without every rule in
-  place the runner refuses the dependency step. Repository code runs under umask 0002, the agent's own commands under
-  0022, and the checkout opens only its working tree to the group. The session lives on a file system of its own
-  (a tmpfs at `/run/voc`) and the kernel's protected hard links are turned on, so repository code cannot hard-link
-  the session into the checkout; unless one of the two holds, the runner runs no repository code at all. A killed or timed-out command is ended with its whole process group, and a boxed command's
-  namespace dies with it.
+  still running. A code wall keeps the dependency step to its own proxy: the entry point's code firewall (first in
+  the output chain, over IPv4 and IPv6: nothing on loopback but its proxy, not the runner's port on any address, no
+  link-local address), or, where iptables is refused (AgentCore Runtime), the step's own user and network namespace
+  whose one way out is its proxy's socket, closed for good once other repository code runs; without a code wall the
+  runner refuses the dependency step. Behind the namespaces, other repository code's network namespace is its own
+  too, made by `code` itself (root, without CAP_NET_ADMIN, could not bring a namespace's loopback up). Repository code runs under umask 0002, the agent's own commands under
+  0022, and the checkout opens only its working tree to the group. The hard-link guard: the session lives on a file
+  system of its own (a tmpfs at `/run/voc`), or the kernel's protected hard links are on (read, never set:
+  `/proc/sys` is read-only on AgentCore Runtime, where it reads 1), so repository code cannot hard-link the session
+  into the checkout; unless one of the two holds, the runner runs no repository code at all. A killed or timed-out command is ended with its whole process group, and a boxed command's
+  namespace dies with it (and its forwarder with it).
 - **Sparse partial clones.** The checkout cache (below) holds each run's commit under its connection's prefix,
   `engineering/cache/<connection>/<commit>/g<N>/repo.git`. With its first session the runner mounts the connection's
   prefix read-only at `/mnt/voc-cache` (Mountpoint for Amazon S3; nothing is written through it), and the agent clones
@@ -2166,9 +2285,10 @@ wait closes.
   start) sends the run to a person (the `coordinator` decision point, the run monitor's Resume prompt) and raises
   the failure, so a run is never left active with no coordinator and no session; that person's Resume launches it.
   A coordinator a person shut down or stopped is never replaced: the run stays active, with no coordinator, until a
-  person ends it or resumes that agent (the run monitor shows the coordinator's own status in its Agents panel, and
-  says nothing more about it yet); `end_run` sets its status
-  (`done`, `failed` or `stopped`) and end time, ends every session of it, and the run stops being listed once none
+  person ends it (the run monitor's Stop, 7.50.03, below) or resumes that agent (the run monitor shows the
+  coordinator's own status in its Agents panel, and says nothing more about it yet); `end_run` sets its status
+  (`done`, `failed` or `stopped`; a `stopped` end also closes the run's tasks that have not ended and runs out its
+  launch holds) and end time, ends every session of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended), then hands
   the run's retrospective on to an invocation of its own (best effort: the learning loop,
   [below](#getting-better-skills-the-coach-the-learning-loop-memory)). A retried
@@ -2260,7 +2380,20 @@ wait closes.
   (`applied`: false when busy, when its move failed, a refused port or a session call, when there was nothing to
   do in the agent's state, answered with its status, a final one meaning nothing to send again, or `stale`: given
   the `attempt` of the task the caller saw, with its `agent_id`, an agent on another attempt is left alone; a Stop
-  now is never stale). For each agent the row carries its current step and recent tool calls (the
+  now is never stale). **A whole run's Shut down or Stop now ends the run** (7.50.03, `runtime/stop.py`): before, it
+  only moved the run's sessions, so a run with none (its coordinator never started, waiting for a person) stayed where
+  it was. Now a Stop now, or a Shut down with no agent that has a session (none started, or each held or paused, so
+  checkpointed), ends it at once: `RunStore.end` (`stopped`, its `RUNLOG#` row naming the person and how), every task
+  that has not ended closed `failed` with a `stop` history row (`BoardStore.close_for_stop`, held to the state and
+  attempt read), every live launch hold run out, then every session ended and the run settled. A Shut down with agents
+  that have a session records the request on META (`stop_requested_at`, `stop_mode`, `stop_requested_by`:
+  `RunStore.request_stop`), asks each to save and stop, and each tick ends the run once none has a session left or
+  `STOP_GRACE_SECONDS` (10 minutes) after the request (`_finish_stops`); meanwhile `SessionStore.create` refuses a new
+  agent, a Resume is refused, and the supervisor neither sends the run to a person nor waits for a coordinator. The
+  Agents API reaches it through voc-engineering-start's `stop_run` (its role gains a Query of the run's partition,
+  `StopRunReads`), which ends a run with nothing to save itself and hands the rest on to this function's `finish_stop` (its `end_run` as stopped), or
+  records the request and hands the agents' save on to its `stop_run`; a hand-on that fails stops the run at once
+  instead (`fell_back`). For each agent the row carries its current step and recent tool calls (the
   harness's own report, bounded and scrubbed), its last progress, heartbeat age, session state and age, why it looks
   stuck, the last failed command's exit code and output tails, its session seconds (only while a session is up and
   not suspended) and its tokens per model.
@@ -2326,7 +2459,8 @@ wait closes.
   decision): every skill runs on the Converse loop (all twelve shipped records say `harness: converse`); the CLI adapter
   stays built and tested, and a CLI version is pinned and installed in the images only after the first session run.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
-  iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
+  iproute2, iptables, Python for the runner and the namespaces' forwarder, Mountpoint for Amazon S3, the two users)
+  and one entry point with its walls script (`walls.sh`, 7.50.03: rebuild every image for it), with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the
   toolchain and the runner; the hooks run as root before any repository code, from `/`. Mountpoint is pinned: an image is built with `MOUNTPOINT_VERSION` and the `.deb`'s
   `MOUNTPOINT_SHA256`, and the build fails without them or on a mismatch. Every image is built for linux/arm64
@@ -3059,13 +3193,15 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `agentcore_quota` | | AgentCore's "Active Session Workloads per Account" (`L-3E5722B2`) against `-c engineeringMaxSessions` | a quota increase, or a lower setting |
 | `memory_setting` | | `-c engineeringBuildMemoryMiB`: 8192 fails in a region whose CloudFormation does not take a runtime's resource configuration | deploy with `0` |
 | `network` | | `-c engineeringAgentNetwork` | name the sessions' private subnets |
+| `sandbox` (7.50.03) | | the walls the language's last session said it runs behind (the runtime's record, voc-engineering `WS#default#SANDBOX` / `LANG#<language>`): a pass only from that record ("verified on the live runtime (date): user and network namespaces; hard-link guard …"), unknown until the first session of the image, a fail when the record names no egress wall, no code wall or no hard-link guard ([Runtime](#runtime-one-agentcore-session-per-agent)) | rebuild all four images (python, node, java, rust) from 7.50.03 and deploy their digests with the stacks ([deployment](deployment.md)) |
 | `session_storage` | | a probe of the workspace bucket: one create-only put of its one object under `ws/default/_readiness/*` (`readiness_aws.py` `PROBE_KEY`; answered, or refused as already there), then the same put without `If-None-Match`, which the bucket's policy must refuse | redeploy VocCoreStack |
 
 The probe's one object is the deployment's, not a run's (no run key, nothing reads it); it is kept like every object
 of the bucket. The Agents API's role gains, with the module on, `bedrock:GetFoundationModelAvailability` and
 `servicequotas:GetServiceQuota` (both account-level: they take no resource ARN), `dynamodb:GetItem` of
 `voc-watermarks`' `github_issues#repo#*` keys only, and `s3:PutObject` on `ws/default/_readiness/*` only with the key
-through S3; nothing else.
+through S3; nothing else (the `sandbox` record is a GetItem of voc-engineering, which the role reads already; the
+supervisor's role alone puts it, `WS#*#SANDBOX` only).
 
 ## Models
 
@@ -3115,6 +3251,13 @@ ARN, in the change that first uses it.
 - **Stop.** A person's **Stop** on the run view (an API call, journalled as a `stop` event) does not wait for the
   agents: the supervisor ends the run's sessions at once, the launcher stops renewing their short role sessions (which
   lapse within 15 minutes, and serve no ended session meanwhile), and the broker refuses the run's operations. Enabled only stops new runs.
+  *Built* (7.50.03): the run monitor's Stop and "Stop now, without saving" (`POST /agents/engineering/<run_id>/stop`,
+  through voc-engineering-start's `stop_run`) end the run in every state that has not ended, a run with no session
+  included: Stop lets the agents with a session save first (10 minutes at most), Stop now does not wait; the run's
+  `RUNLOG#` row names the person (D4), its open tasks are closed, its sessions ended, and its engineering agent's run is
+  ended with it ([The run monitor](#how-the-agents-work-together)). Where the API names the bus, the conversation records
+  the request as `signal.shutdown` or `signal.stop_now`; where it does not (every deployment so far), the `RUNLOG#` row
+  is the record.
 
 ## Evaluation
 

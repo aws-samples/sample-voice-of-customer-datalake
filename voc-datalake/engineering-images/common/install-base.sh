@@ -1,7 +1,9 @@
 #!/bin/sh
 # Shared by every engineering image (run as root at build time, on a Debian-based toolchain image):
-# git, util-linux (setpriv, unshare: the runner's sandbox), iproute2 (a boxed command's own loopback), iptables
-# (the code firewall), python3 (the runner), Mountpoint for Amazon S3 (the read-only cache mount), and the two users:
+# git, util-linux (setpriv, unshare: the runner's sandbox, and each command's own user and network namespace, the
+# namespace wall: walls.sh), iproute2 (a boxed command's own loopback), iptables (the egress firewall, where the
+# container may set it up: AgentCore Runtime refuses it, 2026-11-17), python3 (the runner, and the namespaces'
+# forwarder), Mountpoint for Amazon S3 (the read-only cache mount), and the two users:
 # `unit` (the agent: the harness, the broker calls) and `code` (repository code: builds, tests, gate tools), both in
 # the group `work`, which owns only /work.
 #

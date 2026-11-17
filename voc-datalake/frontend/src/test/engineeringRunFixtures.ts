@@ -19,9 +19,10 @@ function agent(id: string, role: string, fields: Record<string, unknown> = {}) {
  * The run's overview: the coordinator waiting on the board step, the fixer working on its task (on the board step),
  * and the final-go agent, whose step is the harness's own words (no node of the flow) and whose task is done.
  */
-export function engineeringOverview(run: Record<string, unknown> = {}, actionsAvailable = true) {
+export function engineeringOverview(run: Record<string, unknown> = {}, actionsAvailable = true, stopAvailable = true) {
   return {
     actions_available: actionsAvailable,
+    stop_available: stopAvailable,
     run: {
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
       started_at: '2026-11-12T08:00:00Z', ended_at: null, ...run,

@@ -151,35 +151,64 @@ def test_each_ready_hook_names_only_its_own_registries(language):
     assert not [host for host in others if host in ready]
 
 
-def test_the_entry_point_turns_the_sandbox_on_and_mounts_nothing_before_a_session():
+def test_the_entry_point_turns_the_sandbox_on_behind_the_walls_and_mounts_nothing_before_a_session():
     entrypoint = (IMAGES / 'common' / 'entrypoint.sh').read_text()
-    assert '--secrets-dir /run/voc --sandbox $firewall' in entrypoint
-    assert "firewall='--code-firewall --egress-firewall'" in entrypoint
+    walls = (IMAGES / 'common' / 'walls.sh').read_text()
+    # The walls' flags are walls.sh's to print (whichever wall holds, or none: the runner then fails closed).
+    assert 'walls=$(/bin/sh /opt/voc/walls.sh)' in entrypoint
+    assert '--secrets-dir /run/voc --sandbox $walls' in entrypoint
+    assert "flags='--code-firewall --egress-firewall'" in walls
+    assert "flags='--egress-namespaces'" in walls
+    assert '--code-namespaces' in walls
     # The service's port, and the two egress proxies on loopback: the agent's and the dependency step's.
     assert '--port 8080 --agent-port 8081 --proxy-port 3128' in entrypoint
     assert '--code-proxy-port 3129 --workdir /work' in entrypoint
-    for tables in ('iptables', 'ip6tables'):
+    for tables in ('IPTABLES', 'IP6TABLES'):
         # First in OUTPUT: no earlier ACCEPT lets `code` or `unit` past them. Repository code reaches only its own
         # proxy; the agent only the runner and its own proxy; neither a name lookup, a link-local address, the other's
         # proxy nor anything else.
-        assert f'{tables} -I OUTPUT 1 -o lo -p tcp --dport 3129 -m owner --uid-owner code -j ACCEPT' in entrypoint
-        assert '--dport 3128 -m owner --uid-owner code' not in entrypoint
-        assert '--dport 3129 -m owner --uid-owner unit' not in entrypoint
-        assert f'{tables} -I OUTPUT 2 -m owner --uid-owner code -j REJECT' in entrypoint
+        assert f'"${tables}" -I OUTPUT 1 -o lo -p tcp --dport 3129 -m owner --uid-owner code -j ACCEPT' in walls
+        assert '--dport 3128 -m owner --uid-owner code' not in walls
+        assert '--dport 3129 -m owner --uid-owner unit' not in walls
+        assert f'"${tables}" -I OUTPUT 2 -m owner --uid-owner code -j REJECT' in walls
         # The agent reaches the runner's agent API (8081) only: never 8080, the service's (session, start, hold, wake).
-        assert f'{tables} -I OUTPUT 3 -o lo -p tcp --dport 8081 -m owner --uid-owner unit -j ACCEPT' in entrypoint
-        assert '--dport 8080 -m owner --uid-owner unit' not in entrypoint
-        assert f'{tables} -I OUTPUT 4 -o lo -p tcp --dport 3128 -m owner --uid-owner unit -j ACCEPT' in entrypoint
-        assert f'{tables} -I OUTPUT 5 -m owner --uid-owner unit -j REJECT' in entrypoint
-    assert ' -A OUTPUT' not in entrypoint
-    assert '--dport 53' not in entrypoint
+        assert f'"${tables}" -I OUTPUT 3 -o lo -p tcp --dport 8081 -m owner --uid-owner unit -j ACCEPT' in walls
+        assert '--dport 8080 -m owner --uid-owner unit' not in walls
+        assert f'"${tables}" -I OUTPUT 4 -o lo -p tcp --dport 3128 -m owner --uid-owner unit -j ACCEPT' in walls
+        assert f'"${tables}" -I OUTPUT 5 -m owner --uid-owner unit -j REJECT' in walls
+    assert ' -A OUTPUT' not in walls
+    assert '--dport 53' not in walls
     assert (unit_runner.AGENT_PORT, unit_runner.PROXY_PORT, unit_runner.CODE_PROXY_PORT) == (8081, 3128, 3129)
     assert f'http://127.0.0.1:{unit_runner.AGENT_PORT}' == runner_client.RUNNER_URL
     assert f'127.0.0.1:{unit_runner.AGENT_PORT}' in (IMAGES / 'common' / 'check-runner.sh').read_text()
-    # The hard-link guard is said only when the session's file system is its own or protected links are on.
-    assert "guard='--hardlink-guard'" in entrypoint
-    assert '--sandbox $firewall $guard' in entrypoint
+    # The hard-link guard is read, never written (/proc/sys is read-only on AgentCore Runtime), and named.
+    assert '/proc/sys/fs/protected_hardlinks' not in entrypoint
+    assert 'HARDLINKS=/proc/sys/fs/protected_hardlinks' in walls
+    assert '> "$HARDLINKS"' not in walls
+    assert '--hardlink-guard $guards' in walls
     assert 'mount-s3' not in entrypoint
+    assert 'mount-s3' not in walls
+
+
+def test_the_namespace_probe_is_the_runners_own_chain():
+    # walls.sh checks each user's namespaces exactly as the runner makes them (unit_runner.own_namespaces).
+    walls = (IMAGES / 'common' / 'walls.sh').read_text()
+    chain = unit_runner.own_namespaces(['true'], [])
+    assert chain[:5] == [unit_runner.UNSHARE, '--user', '--map-root-user', '--net', '--']
+    assert '"$UNSHARE" --user --map-root-user --net --' in walls
+    assert ('"$SETPRIV" --reuid="$1" --regid=work --clear-groups --inh-caps=-all --bounding-set=-all --no-new-privs'
+            in walls)
+    assert '--inh-caps=-all --bounding-set=-all --no-new-privs' in ' '.join(chain)
+    for tool, path in (('UNSHARE', unit_runner.UNSHARE), ('SETPRIV', unit_runner.SETPRIV), ('IP', unit_runner.IP),
+                       ('SH', unit_runner.SH)):
+        assert f'\n{tool}={path}\n' in walls
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_each_image_ships_the_walls_script_beside_its_entry_point(language):
+    assert ('COPY engineering-images/common/entrypoint.sh engineering-images/common/walls.sh /opt/voc/'
+            in (IMAGES / language / 'Dockerfile').read_text())
+    assert unit_runner.RUNNER_PATH == '/opt/voc/unit_runner.py'
 
 
 def _image_env(language: str) -> dict[str, str]:

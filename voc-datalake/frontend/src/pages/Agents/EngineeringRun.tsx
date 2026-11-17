@@ -6,10 +6,12 @@
  * revision its start copied, on the read-only canvas the agents' runs use) with each step lit as the conductor reads
  * it, or, for a run that follows no flow, the steps its agents are on; and
  * beside it the Agents, Board, Conversation and Reports panels (the conversation records the signals sent too; the
- * reports are the run's commit, PR and goal reports, each version's Markdown). An admin
- * signals the run or an agent on its task, and answers the conductor or an agent, where the deployment lets the
- * monitor reach the run (`actions_available`; else one line says why there are no controls). The
- * reads poll every few seconds while the run is under way (useEngineeringRun.ts: polling until the push lands).
+ * reports are the run's commit, PR and goal reports, each version's Markdown). An admin always has the run's Stop
+ * while it has not ended (RunControlBar.tsx, 7.50.03: through the start function, so it reaches a run the signals
+ * cannot), and signals the run or an agent on its task, and answers the conductor or an agent, where the deployment
+ * lets the monitor reach the run (`actions_available`; else one line beside Stop says so). The reads poll every few
+ * seconds while the run is under way (useEngineeringRun.ts: polling until the push lands); a failed read keeps the
+ * last good one and its controls on screen, says "Couldn't refresh" with a Retry, and polling backs off.
  *
  * @module pages/Agents/EngineeringRun
  */
@@ -30,7 +32,8 @@ import { EngineeringRunReactions } from './EngineeringRunReactions'
 import { AgentsPanel, BoardPanel } from './EngineeringRunPanels'
 import { ConversationPanel } from './EngineeringConversation'
 import { ReportsPanel } from './EngineeringReports'
-import { EngineeringSignals } from './EngineeringSignals'
+import { RunControlBar } from './RunControlBar'
+import { isStopping } from './engineeringRunText'
 import { liveSteps } from './engineeringRunText'
 import { useEngineeringBoard, useEngineeringConversation, useEngineeringOverview } from './useEngineeringRun'
 import type { EngineeringAgent, EngineeringOverview } from '../../api/engineeringRunsApi'
@@ -65,8 +68,10 @@ function FlowGraph({ run, agents }: Readonly<{ run: EngineeringOverview['run']; 
   return <WorkflowCanvas definition={definition} readOnly runStates={states} />
 }
 
-function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
+function Panels({ runId, overview, live, canAct, canSignal, readAt }: Readonly<{
   runId: string; overview: EngineeringOverview; live: boolean; canAct: boolean; readAt: number
+  /** An agent may be signalled from its card: an admin where the signals reach the run, no Stop under way. */
+  canSignal: boolean
 }>) {
   const { t } = useTranslation('agents')
   const [tab, setTab] = useState<Tab>('agents')
@@ -79,7 +84,7 @@ function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
       <IconTabs tabs={TABS} active={tab} icons={TAB_ICONS} label={t('engineeringRun.panels')}
         labelOf={(id) => t(`engineeringRun.tabs.${id}`)} onSelect={setTab} />
       <div role="tabpanel" aria-label={t(`engineeringRun.tabs.${tab}`)} className="max-h-[70vh] overflow-y-auto">
-        {tab === 'agents' && <AgentsPanel runId={runId} agents={overview.agents} tasks={tasks} isAdmin={canAct && live}
+        {tab === 'agents' && <AgentsPanel runId={runId} agents={overview.agents} tasks={tasks} isAdmin={canSignal && live}
           now={readAt} />}
         {tab === 'board' && <BoardPanel tasks={tasks} actor={canAct && live && me !== '' ? { runId, me } : undefined} />}
         {tab === 'conversation' && (
@@ -97,47 +102,55 @@ function RunMonitor({ runId, overview, live, readAt }: Readonly<{
 }>) {
   const { t } = useTranslation('agents')
   const isAdmin = useIsAdmin()
-  // An admin acts only where the monitor can reach the run; until then one line says why there are no controls.
+  // An admin signals and answers only where the monitor can reach the run; the run's Stop is always there.
   const canAct = isAdmin && overview.actions_available
   return (
     <>
       <EngineeringRunHeader overview={overview} />
-      {isAdmin && !overview.actions_available && (
-        <p className="card text-sm text-muted">{t('engineeringRun.actionsUnavailable')}</p>
-      )}
-      {canAct && live && (
-        <section className="card space-y-2" aria-labelledby="engineering-run-signals">
-          <h2 id="engineering-run-signals" className="text-sm font-medium text-text-strong">{t('engineeringRun.runSignals')}</h2>
-          <EngineeringSignals runId={runId} />
-        </section>
-      )}
+      {/* (an ended run: only what this page's Stop did, if it ended it) */}
+      {isAdmin && <RunControlBar runId={runId} overview={overview} />}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="card p-0 h-[420px] sm:h-[520px] overflow-hidden min-w-0" aria-label={t('engineeringRun.flow')}>
           <FlowGraph run={overview.run} agents={overview.agents} />
         </section>
-        <Panels runId={runId} overview={overview} live={live} canAct={canAct} readAt={readAt} />
+        <Panels runId={runId} overview={overview} live={live} canAct={canAct} canSignal={canAct && !isStopping(overview.run)}
+          readAt={readAt} />
       </div>
       <EngineeringRunReactions runId={runId} status={overview.run.status} reactions={overview.reactions} isAdmin={isAdmin} />
     </>
   )
 }
 
+/** A read that failed after a good one: the page keeps that read, says so, and offers a Retry (polling backs off). */
+function RefreshFailed({ onRetry, retrying }: Readonly<{ onRetry: () => void; retrying: boolean }>) {
+  const { t } = useTranslation('agents')
+  return (
+    <p role="status" className="flex flex-wrap items-center gap-2 text-[12px] text-warn">
+      <span>{t('engineeringRun.refreshFailed')}</span>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={retrying} onClick={onRetry}>{t('engineeringRun.retry')}</button>
+    </p>
+  )
+}
+
 export default function EngineeringRun() {
   const { t } = useTranslation('agents')
   const { runId = '' } = useParams()
-  const { data, dataUpdatedAt, error, isError, isLoading, refetch, isFetching, live } = useEngineeringOverview(runId)
+  const { data, dataUpdatedAt, error, isError, isLoading, refetch, isFetching, live, refreshFailed } =
+    useEngineeringOverview(runId)
+  const notFound = isError && apiErrorStatus(error) === 404
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0">
       <BackToAgents />
       {isLoading && <div className="skeleton h-40" />}
-      {isError && apiErrorStatus(error) === 404 && (
+      {notFound && (
         <div className="card space-y-1">
           <h1 className="text-xl font-semibold text-text-strong">{t('engineeringRun.notFound')}</h1>
           <p className="text-sm text-muted">{t('engineeringRun.notFoundHint')}</p>
         </div>
       )}
-      {isError && apiErrorStatus(error) !== 404 && <LoadFailed onRetry={() => { void refetch() }} retrying={isFetching} />}
-      {data !== undefined && <RunMonitor runId={runId} overview={data} live={live} readAt={dataUpdatedAt} />}
+      {isError && !notFound && data === undefined && <LoadFailed onRetry={() => { void refetch() }} retrying={isFetching} />}
+      {refreshFailed && <RefreshFailed onRetry={() => { void refetch() }} retrying={isFetching} />}
+      {data !== undefined && !notFound && <RunMonitor runId={runId} overview={data} live={live} readAt={dataUpdatedAt} />}
     </div>
   )
 }

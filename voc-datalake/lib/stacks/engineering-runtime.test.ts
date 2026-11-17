@@ -128,12 +128,19 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('gives the start function only what a start needs: no session, no agent role, no bus, no delete, no rule off', () => {
     const start = policyText(template, 'EngineeringStartRole');
-    expect(start).not.toMatch(/bedrock-agentcore|sts:|events:(PutEvents|DisableRule)|DeleteItem|dynamodb:Query|s3:|sqs:|bedrock:/);
+    expect(start).not.toMatch(/bedrock-agentcore|sts:|events:(PutEvents|DisableRule)|DeleteItem|s3:|sqs:|bedrock:/);
     const actions = new Set(start.match(/"(dynamodb|events|lambda|kms):[A-Za-z]+"/g)
       ?.filter((name) => !/LeadingKeys|ViaService|FunctionUrlAuthType|InvokedViaFunctionUrl/.test(name)));
     expect([...actions].sort((a, b) => a.localeCompare(b, 'en'))).toStrictEqual([
-      '"dynamodb:GetItem"', '"dynamodb:PutItem"', '"dynamodb:UpdateItem"', '"events:EnableRule"',
+      '"dynamodb:GetItem"', '"dynamodb:PutItem"', '"dynamodb:Query"', '"dynamodb:UpdateItem"', '"events:EnableRule"',
       '"kms:Decrypt"', '"kms:GenerateDataKey"', '"lambda:InvokeFunction"', '"lambda:InvokeFunctionUrl"']);
+    // A Stop's reads (7.50.03): Query of the run's own partition only, never the registry of the runs.
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]),
+      PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({
+        Sid: 'StopRunReads', Action: 'dynamodb:Query',
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } } })]) },
+    });
     // Its writes stay in the runs' partitions and the registry; its other reads are a flow's month and the hard cap.
     expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS"/);
     // The agent roles trust only the two launchers, never the start function.
@@ -504,6 +511,12 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(keyedGrants('EngineeringSupervisorRole', sid, action, keys)).toHaveLength(1);
     expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/#BUDGET#|SETTINGS#/);
   });
+
+  it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
+    'lets %s, a launcher, put the sessions\' walls (one row per language) and nothing else there', (role) => {
+      expect(keyedGrants(role, 'SandboxRecord', 'dynamodb:PutItem', 'WS#*#SANDBOX')).toHaveLength(1);
+      expect(policyText(template, role).match(/WS#\*#SANDBOX/g)).toHaveLength(1);
+    });
 
   it('gives the delivery role only UpdateItem on the spend ledger, whatever the statement', () => {
     const Statement = z.array(z.looseObject({ Action: z.union([z.string(), z.array(z.string())]), Condition: z.unknown().optional() }));

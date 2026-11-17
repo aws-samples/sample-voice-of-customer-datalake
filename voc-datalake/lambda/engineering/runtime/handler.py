@@ -14,9 +14,15 @@
   with no skill, is refused before anything is written. A retry of a run that is live switches the rule on again,
   keeps the first start's caps and launches the coordinator only if the run is active and no session of it exists
   yet.
-- ``{"action": "end_run", "run_id", "status", "actor"?}``: the run ended (``done``, ``failed`` or ``stopped``), every
-  session of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
-  retry of an ended run does the rest again and keeps the first end's status.
+- ``{"action": "end_run", "run_id", "status", "actor"?, "reason"?}``: the run ended (``done``, ``failed`` or
+  ``stopped``), every session of it ended (one busy with another move at the next tick, which sees the run ended),
+  then settled; a ``stopped`` end also closes the run's tasks that have not ended and runs out its launch holds
+  (``stop.close``). A retry of an ended run does the rest again and keeps the first end's status.
+- ``{"action": "finish_stop", "run_id", "actor", "reason"}`` (7.50.03): the rest of a person's Stop that
+  voc-engineering-start ended the run of (``end_run`` as ``stopped``: its sessions ended, the run settled).
+- ``{"action": "stop_run", "run_id", "actor"}`` (7.50.03): a person's Stop whose agents save first, handed on by
+  voc-engineering-start (below): each agent asked to checkpoint and stop, the run ended once none has a session left;
+  each tick ends a stopping run whose agents have, or whose grace has passed (``_finish_stops``, ``runtime/stop.py``).
 - ``{"action": "retrospective", "run_id", "failure"?}``: the learning loop (``learning/loop.py``). Without
   ``failure``: the ended run's scorecards written, and each failure it takes to the coach (at most three) handed on
   as an invocation of its own with its key; with it: that failure to the coach (one Converse call at most, ever)
@@ -44,7 +50,9 @@
   Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given). A
   Resume of the whole run also makes sure the run has a coordinator, as its start does (``_ensure_coordinator``: a
-  new one in place of one whose session failed).
+  new one in place of one whose session failed); it is refused while a person's Stop of the run is under way. A
+  whole run's Shut down or Stop now is the run's Stop (7.50.03, ``_stop_in_runtime``): it ends the run, a run with no
+  session at all included, and answers its outcome in ``run``.
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
@@ -52,13 +60,15 @@ recorded in the run's inbox and its addressees woken (``delivery.py``).
 
 ``start_handler`` is voc-engineering-start's entry point, the same code with a role of its own that holds only what
 a start needs (engineering-start.ts): the Agents API's ``POST /agents/engineering/runs``, whose role may invoke that
-function and never this one. It takes ``start_run`` and, since 7.10.00, ``ask_reactions`` (an administrator's hand
+function and never this one. It takes ``start_run``, since 7.10.00 ``ask_reactions`` (an administrator's hand
 trigger of an ended run's reactions read, ``POST /agents/engineering/<run_id>/reactions``: once per run and hour, then
-handed on to this function's ``reactions``), and nothing else: an event naming any other action, or none, is
-refused before anything is read, so the API's grant can start a run and ask for an ended run's reactions, and never
-tick, launch, signal or end one. It writes the run and answers; the coordinator's launch is handed on to this
-function's ``launch_coordinator`` (``{"run_id", "actor"}``, asynchronous, never raising: a failure sends the run to a
-person).
+handed on to this function's ``reactions``) and since 7.50.03 ``stop_run`` (the run monitor's Stop, ``POST
+/agents/engineering/<run_id>/stop``: the run ended at once when nothing is to be saved, its end's rest handed on to
+this function's ``finish_stop``; else the request recorded and the agents' save handed on to its ``stop_run``), and
+nothing else: an event naming any other action, or none, is refused before anything is read, so the API's grant can
+start a run, ask for an ended run's reactions and stop a run, and never tick, launch or signal an agent. It writes
+the run and answers; the coordinator's launch is handed on to this function's ``launch_coordinator`` (``{"run_id",
+"actor"}``, asynchronous, never raising: a failure sends the run to a person).
 
 ``actor`` is who asked (a person's id: the run monitor sends it with its signals, the Agents API with a start; nothing
 ends a run with it yet): a
@@ -76,6 +86,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from decimal import Decimal
 from functools import cache
 from typing import TYPE_CHECKING, Any, Final, TypeGuard
@@ -83,12 +94,13 @@ from typing import TYPE_CHECKING, Any, Final, TypeGuard
 from aws_lambda_powertools.metrics import MetricUnit
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError, BoardStore
 from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import FlowError
 from engineering.flow.settings import LearnSettings, learn_settings
 from engineering.runtime import caps, egress
+from engineering.runtime import stop as run_stop
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkout_cache import (
     DENIED,
@@ -102,10 +114,12 @@ from engineering.runtime.checkout_cache import (
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
 from engineering.runtime.harness.skills import harness_argv
-from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, check_run_id
+from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, RuntimeSession, check_run_id
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import (
     ENDED,
+    STOP,
+    STOP_NOW,
     UNATTRIBUTED,
     Run,
     RunCaps,
@@ -143,6 +157,7 @@ if TYPE_CHECKING:
     from engineering.learning.reactions_read import ReactionsRead
     from engineering.quality_gate.record import GateRecord
     from engineering.runtime.board_bus import SessionState
+    from engineering.runtime.sandbox import Walls
     from engineering.skills.resolve import Resolved
 
 MAX_HARNESS_ARGS: Final = 32
@@ -195,10 +210,28 @@ def _build_roles() -> frozenset[str]:
 
 
 def _runtime() -> AgentRuntime:
-    """AgentCore Runtime, always: the local fake (no sandbox) is for tests, which put it in place themselves."""
+    """AgentCore Runtime, always: the local fake (no sandbox) is for tests, which put it in place themselves. Each
+    started session's walls are kept as its language's last (``_record_walls``, 7.50.03)."""
     from engineering.runtime.agentcore import AgentCoreRuntime, runtimes_from
     return AgentCoreRuntime(_agentcore_client(), runtimes_from(os.environ.get('ENGINEERING_AGENT_RUNTIMES')),
-                            region=os.environ.get('AWS_REGION', 'us-east-1'), build_roles=_build_roles())
+                            region=os.environ.get('AWS_REGION', 'us-east-1'), build_roles=_build_roles(),
+                            on_walls=_record_walls)
+
+
+def _record_walls(spec: AgentSpec, vm: RuntimeSession, walls: Walls) -> None:
+    """A started session's walls, as its language's last (``runtime/sandbox.py``: readiness's ``sandbox`` check reads
+    it). Best effort: the runtime logs a failure here and the start still succeeds. A session that started without
+    every wall (its runner refuses the work the missing one guards: the dependency step, or any repository code) is
+    logged too, so the gap is seen before readiness is read."""
+    from engineering.runtime import sandbox
+    from shared.aws import get_dynamodb_client
+    if not walls.holds:
+        logger.warning('engineering runtime: a session started without every wall',
+                       extra={'run_id': spec.run_id, 'agent_id': spec.agent_id, 'language': spec.language,
+                              'egress': walls.egress, 'code': walls.code, 'guards': list(walls.hardlink_guard)})
+    at = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(clock()))
+    sandbox.record(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], spec.language, walls, at=at,
+                   runtime=vm.endpoint)
 
 
 def _pricing() -> caps.SessionPricing:
@@ -282,6 +315,7 @@ def _runs() -> RunStore:
 def tick(_event: Mapping[str, Any]) -> dict[str, Any]:
     now = clock()
     statuses = _supervisor().tick(int(now))
+    _finish_stops(int(now))
     _settle()
     # Embedded metrics (no API call), only while the rule runs: the heartbeat alarm's and the run monitor's.
     live = sum(count for status, count in statuses.items() if status in LIVE_STATUSES)
@@ -298,6 +332,14 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
     agent_id, run_id, kind = event.get('agent_id'), str(event.get('run_id', '')), str(event.get('signal', ''))
     attempt = _optional_number(event, 'attempt', int)
     after_fill = event.get('after_fill') is True
+    if agent_id is None and kind in WHOLE_RUN_STOPS:
+        # A whole run's Shut down or Stop now ends the run itself (7.50.03), whatever its agents are doing.
+        # (its release and the rule are the next tick's: this path is reached by name from the delivery function too)
+        stopped = _stop_in_runtime(run_id, str(event.get('actor') or ''), WHOLE_RUN_STOPS[kind])
+        return {'agents': stopped.agents, 'applied': dict.fromkeys(stopped.agents, True),
+                'run': stopped.view()}
+    if kind == 'resume':
+        _refuse_resume_while_stopping(run_id)
     if after_fill:
         # A person's Resume, carried on once the fill it handed on has landed: only while the run still waits at the
         # checkout cache's point, where that Resume left it; at any other (a flow step, the coordinator's) the person
@@ -332,6 +374,176 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
                                     actor=str(event.get('actor') or '') or UNATTRIBUTED)
     return {'agents': {agent: status for agent, (status, _) in answers.items()},
             'applied': {agent: applied for agent, (_, applied) in answers.items()}}
+
+
+#: The whole run's signals that end it (7.50.03): a Shut down saves first (``stop``), a Stop now does not.
+WHOLE_RUN_STOPS: Final[dict[str, str]] = {'shutdown': STOP, 'stop_now': STOP_NOW}
+
+
+def _refuse_resume_while_stopping(run_id: str) -> None:
+    """A Resume of a run a person is stopping is refused: the Stop decided (7.50.03)."""
+    run = _runs().get(run_id)
+    if run is not None and run.stopping:
+        raise RuntimeRefused(f'run {run_id} is being stopped: it cannot be resumed')
+
+
+def _board_store() -> BoardStore:
+    """The board's store on this function's client: the runtime's (its supervisor's) or the start function's own."""
+    from engineering.bus.publish import new_event_id
+    from shared.aws import get_dynamodb_client
+    return BoardStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], new_id=new_event_id)
+
+
+def _session_store() -> SessionStore:
+    """The sessions' rows without the supervisor (the start function builds no session client: its role has none), on
+    the runs' own table."""
+    runs = _runs()
+    return SessionStore(runs.table, runs)
+
+
+def _stopping_run(run_id: str, mode: str) -> tuple[Run | None, str]:
+    """The run a Stop is for, read once, and its mode checked: None for one that ended done or failed (nobody's Stop:
+    answered as it is, nothing of it closed); ``RuntimeRefused`` for no run or a bad mode."""
+    check_run_id(run_id)
+    mode = run_stop.check_mode(mode)
+    run = _runs().get(run_id)
+    if run is None:
+        raise RuntimeRefused(f'no run {run_id}')
+    return (None if run.status in ENDED and run.status != 'stopped' else run), mode
+
+
+def _stop_from_start(run_id: str, actor: str, mode: str) -> run_stop.Stopped:
+    """voc-engineering-start's part of a person's Stop of the whole run (``runtime/stop.py``), with its role's reads and
+    writes of the run's rows alone (no session, no bus). A Stop now, or a Stop with no agent that has a session, ends
+    the run here (META, tasks, holds) and hands the rest of its end (its sessions, its release) on to the runtime's
+    ``finish_stop``; a Stop with agents to save records the request and hands their save on to the runtime's
+    ``stop_run`` (whose tick ends the run once they have, ``_finish_stops``). A hand-on of the save that fails stops the run at
+    once instead (``fell_back``), never leaves it running. A run that ended done or failed is answered as it is; one
+    already stopped has what its Stop left undone done again."""
+    run, mode = _stopping_run(run_id, mode)
+    if run is None:
+        ended = _runs().get(run_id)
+        return run_stop.Stopped(run_id, ended.status if ended is not None else 'done', mode, already=True)
+    sessions = _session_store()
+    saving = run_stop.saving_agents(sessions.of_run(run_id))
+    if run.status in ENDED or mode == STOP_NOW or not saving:
+        return _close_and_hand_on_end(run_id, actor, mode, sessions)
+    _runs().request_stop(run_id, mode=STOP, now=int(clock()), actor=actor)
+    try:
+        _hand_on_runtime({'action': 'stop_run', 'run_id': run_id, 'actor': actor})
+    except Exception:
+        logger.exception('engineering stop: the agents could not be asked to save; the run is stopped now',
+                         extra={'run_id': run_id})
+        return replace(_close_and_hand_on_end(run_id, actor, STOP_NOW, sessions), mode=mode, fell_back=True)
+    logger.info('engineering stop: the agents are asked to save, then the run ends',
+                extra={'run_id': run_id, 'saving': len(saving)})
+    return run_stop.Stopped(run_id, 'stopping', mode, saving=saving)
+
+
+def _close_and_hand_on_end(run_id: str, actor: str, mode: str, sessions: SessionStore) -> run_stop.Stopped:
+    """The start function ends the run as stopped (``stop.close``) and hands the rest of its end on to the runtime's
+    ``finish_stop`` (``end_run`` as stopped), best effort (when it cannot, the supervisor's next tick ends the sessions:
+    the run has ended)."""
+    reason = run_stop.reason_of(mode)
+    stopped = run_stop.close(_runs(), _board_store(), sessions, run_id, actor=actor, mode=mode, now=int(clock()),
+                             reason=reason)
+    try:
+        _hand_on_runtime({'action': 'finish_stop', 'run_id': run_id, 'actor': actor, 'reason': reason})
+    except Exception:
+        logger.exception('engineering stop: the end was not handed on; the next tick ends its sessions',
+                         extra={'run_id': run_id})
+    return stopped
+
+
+def _hand_on_runtime(event: dict[str, Any]) -> None:
+    """``event`` to voc-engineering-runtime, asynchronously (the start function's hand-on, ENGINEERING_RUNTIME_FUNCTION:
+    its role may invoke it, the Agents API's never)."""
+    from shared.aws import invoke_lambda_async
+    invoke_lambda_async(os.environ['ENGINEERING_RUNTIME_FUNCTION'], event)
+
+
+def _stop_in_runtime(run_id: str, actor: str, mode: str) -> run_stop.Stopped:
+    """voc-engineering-runtime's part of a person's Stop of the whole run: a whole run's Shut down or Stop now
+    (``signal_action``) and the start function's handed-on ``stop_run``. A Stop now, or a Stop with no agent that has a
+    session, ends the run here, its sessions too (``_stop_here``); a Stop with agents to save records the request, asks
+    each to checkpoint and stop (the Shut down signal), and ends the run now if none has a session left (one waiting
+    or paused stops at once), else the tick does once they have (``_finish_stops``). Settling the run (its release, the
+    rule) is the caller's or the next tick's."""
+    run, mode = _stopping_run(run_id, mode)
+    if run is None:
+        ended = _runs().get(run_id)
+        return run_stop.Stopped(run_id, ended.status if ended is not None else 'done', mode, already=True)
+    supervisor, now = _supervisor(), int(clock())
+    if run.status in ENDED or mode == STOP_NOW or not run_stop.saving_agents(supervisor.sessions.of_run(run_id)):
+        return _stop_here(run_id, actor, mode, now)
+    _runs().request_stop(run_id, mode=STOP, now=now, actor=actor)
+    answers = supervisor.signal_detailed(run_id, None, 'shutdown', now)
+    agents = {agent: status for agent, (status, _) in answers.items()}
+    stopping, left = _runs().get(run_id), supervisor.sessions.of_run(run_id)
+    if stopping is not None and run_stop.due(stopping, left, now):
+        stopped = _stop_here(run_id, actor or stopping.stop_requested_by, STOP, now)
+        return replace(stopped, agents={**agents, **stopped.agents})
+    return run_stop.Stopped(run_id, 'stopping', STOP, saving=run_stop.saving_agents(left), agents=agents)
+
+
+def _stop_here(run_id: str, actor: str, mode: str, now: int) -> run_stop.Stopped:
+    """The runtime ends the run as stopped at once (``stop.close``), then every session of it, and says so."""
+    supervisor = _supervisor()
+    stopped = run_stop.close(_runs(), _board_store(), supervisor.sessions, run_id, actor=actor, mode=mode, now=now,
+                             reason=run_stop.reason_of(mode))
+    agents = supervisor.signal(run_id, None, 'stop_now', now)
+    _say_stopped(run_id, stopped, agents)
+    return replace(stopped, agents=agents)
+
+
+def finish_stop_action(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-runtime's ``finish_stop`` (``{"run_id", "actor", "reason"}``), handed on by voc-engineering-start
+    once its Stop has ended the run: the rest of the end (``end_run`` as ``stopped``: every session ended, the run
+    settled). Its own name, so the start function's hand-on names no function of this module's (a reachability sweep
+    matches such a name to its def)."""
+    return end_run({'run_id': event.get('run_id', ''), 'status': 'stopped', 'actor': event.get('actor') or '',
+                    'reason': event.get('reason') or ''})
+
+
+def stop_run_action(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-runtime's ``stop_run`` (``{"run_id", "actor"}``), handed on by voc-engineering-start for a Stop
+    whose agents save first (asynchronously): each agent asked to save and stop, the run ended once none is left
+    with a session (``_stop_in_runtime``; the tick finishes it otherwise), then settled. A run that has ended is
+    finished as it is."""
+    stopped = _stop_in_runtime(str(event.get('run_id', '')), str(event.get('actor') or ''), STOP)
+    _settle()
+    return stopped.view()
+
+
+def _finish_stops(now: int) -> None:
+    """Each tick: every listed run a person is stopping is ended once none of its agents has a session left, or its
+    grace has passed (``stop.due``); best effort per run, logged, never failing the tick."""
+    runs, supervisor = _runs(), _supervisor()
+    for run_id in runs.listed():
+        try:
+            run = runs.get(run_id)
+            left = supervisor.sessions.of_run(run_id) if run is not None and run.stopping else []
+            if run is None or not run_stop.due(run, left, now):
+                continue
+            grace = bool(run_stop.saving_agents(left))
+            stopped = run_stop.close(runs, _board_store(), supervisor.sessions, run_id, actor=run.stop_requested_by,
+                                     mode=STOP, now=now, reason=run_stop.reason_of(STOP, saved=not grace, grace=grace))
+            _say_stopped(run_id, stopped, supervisor.signal(run_id, None, 'stop_now', now))
+        except Exception:
+            logger.exception('engineering stop: a stopping run could not be ended this tick', extra={'run_id': run_id})
+
+
+def _say_stopped(run_id: str, stopped: run_stop.Stopped, agents: Mapping[str, str]) -> None:
+    """The run's conversation says it was stopped (``run.health``, as the supervisor's own stop does); best effort."""
+    if stopped.already:
+        return
+    ended = sum(status == 'stopped' for status in agents.values())
+    try:
+        _supervisor().bus.emit(run_id, 'run', 'run.health',
+                               f'Stopped from the run monitor: {ended} session(s) ended, '
+                               f'{len(stopped.tasks_closed)} task(s) closed.')
+    except Exception:
+        logger.exception('engineering stop: the stop was not said on the bus', extra={'run_id': run_id})
 
 
 def _switch(enabled: bool) -> None:
@@ -960,13 +1172,19 @@ def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
     """End a run and every session of it, then settle (which starts its retrospective once none of its agents is
     live: here, or at the tick that ends the last busy one; best effort, never failing the end)."""
     run_id, status, runs = str(event.get('run_id', '')), str(event.get('status', '')), _runs()
+    actor, reason = str(event.get('actor') or ''), str(event.get('reason') or '')
     try:
-        runs.end(run_id, status, now=int(clock()), actor=str(event.get('actor') or ''))
+        runs.end(run_id, status, now=int(clock()), actor=actor, reason=reason)
     except RunNotActive:
         run = runs.get(run_id)
         if run is None or run.status not in ENDED:
             raise
         status = run.status  # a retry: the rest of the first end is done again
+    if status == 'stopped':
+        # (a person's Stop: its tasks closed and its launch holds run out, whether voc-engineering-start's Stop did it
+        # first or not; each idempotent)
+        run_stop.close(runs, _board_store(), _supervisor().sessions, run_id, actor=actor, mode=STOP_NOW,
+                       now=int(clock()), reason=reason or run_stop.reason_of(STOP_NOW))
     agents = _supervisor().signal(run_id, None, 'stop_now', int(clock()))
     _settle()
     return {'run_id': run_id, 'status': status, 'agents': agents}
@@ -1367,6 +1585,21 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
 START_ACTION: Final = 'start_run'
 #: ... and its other one (7.10.00): an administrator's hand trigger of an ended run's reactions read.
 ASK_REACTIONS_ACTION: Final = 'ask_reactions'
+#: ... and (7.50.03) the run monitor's Stop of a whole run: an administrator's, through the Agents API.
+STOP_ACTION: Final = 'stop_run'
+
+
+def stop_from_api(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-start's ``stop_run`` (``{"run_id", "actor", "mode": "stop" | "stop_now"}``, the Agents API's
+    ``POST /agents/engineering/<run_id>/stop``, an administrator acting for themselves, 7.50.03): the run ended at once
+    when nothing is to be saved (``stop_now``, or no agent with a session), its tasks closed and its launch holds run
+    out, the rest of its end (its sessions, its release) handed on to voc-engineering-runtime's ``finish_stop``; else
+    the request recorded and the agents' save handed on to its ``stop_run`` (``_stop_from_start``). Answers
+    ``stop.Stopped.view()``; a run that is unknown is refused, one that has ended is answered as it is."""
+    actor = str(event.get('actor') or '')[:200]
+    if not actor:
+        raise RuntimeRefused('a Stop names the person who asked')
+    return _stop_from_start(str(event.get('run_id', '')), actor, run_stop.check_mode(event.get('mode'))).view()
 
 
 def ask_reactions(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -1441,10 +1674,12 @@ def _hand_on_launch(run_id: str, actor: str) -> None:
 @metrics.log_metrics
 @measure_invocation_cost
 def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
-    """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``) and, since 7.10.00,
-    its hand trigger of an ended run's reactions read (``ask_reactions``). Every other action, and an event naming
-    none, is refused before anything is read: the API's role may invoke this function only (engineering-start.ts,
-    pinned by its test), so it can start a run and ask for an ended run's reactions, and nothing more.
+    """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``), since 7.10.00 its
+    hand trigger of an ended run's reactions read (``ask_reactions``) and since 7.50.03 a person's Stop of a whole run
+    (``stop_run``: ``stop_from_api``). Every other action, and an event naming none, is refused before anything is
+    read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it can start a
+    run, ask for an ended run's reactions and stop a run, and never tick, launch, signal an agent or end a run
+    otherwise.
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
@@ -1453,11 +1688,13 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
     (the hand-on failed: still active), so it is never left active with nobody to launch its coordinator."""
     if event.get('action') == ASK_REACTIONS_ACTION:
         return ask_reactions(event)
+    if event.get('action') == STOP_ACTION:
+        return stop_from_api(event)
     if event.get('action') != START_ACTION:
         logger.warning('engineering start: an action other than start_run refused',
                        extra={'action': str(event.get('action'))[:40]})
-        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}) or asks for an ended '
-                             f"run's reactions ({ASK_REACTIONS_ACTION!r})")
+        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}), asks for an ended '
+                             f"run's reactions ({ASK_REACTIONS_ACTION!r}) or stops a run ({STOP_ACTION!r})")
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
     try:
         answer = start_run(event, launch=False)
@@ -1485,6 +1722,7 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
     'retrospective': retrospective, 'launch_coordinator': launch_coordinator, 'reactions': reactions_action,
+    'stop_run': stop_run_action, 'finish_stop': finish_stop_action,
 }
 
 

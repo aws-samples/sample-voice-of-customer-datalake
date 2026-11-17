@@ -9,6 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
 import { EngineeringRunLinks } from './EngineeringRunLinks'
+import { RunStatusChip } from './RunControlBar'
 import { shareTone } from './spendView'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
 
@@ -54,7 +55,7 @@ export function EngineeringRunHeader({ overview }: Readonly<{ overview: Engineer
       <div className="min-w-0">
         <h1 className="text-2xl font-bold tracking-tight text-text-strong break-words">{run.goal || t('engineeringRun.untitled')}</h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
-          <span className="badge badge-muted">{run.status || t('engineeringRun.statusUnknown')}</span>
+          <RunStatusChip run={run} />
           {run.repo !== '' && <span className="font-mono break-all">{run.repo}</span>}
           <span>{t('engineeringRun.started', { when: formatDateTime(run.started_at, i18n.language, '—') })}</span>
           {run.ended_at !== null && <span>{t('engineeringRun.ended', { when: formatDateTime(run.ended_at, i18n.language, '—') })}</span>}

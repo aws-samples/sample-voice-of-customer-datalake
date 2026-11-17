@@ -3,8 +3,8 @@
  * the spend ledger's update (the session store's priced writes), the supervisor's budget work (a flow's month total,
  * the budget alerts, the hard cap), the Deny that keeps every other voc-agents writer off the hard cap's row (the
  * agents' runtime, agent-runtime.ts), an issue's trusted triage row (7.50.00: the runtime's create-only write, and the
- * Deny that keeps every other voc-agents writer off it), the agents' transcripts and the runs' manifests (7.50.00) and
- * a KMS key's use through named services only.
+ * Deny that keeps every other voc-agents writer off it), the agents' transcripts and the runs' manifests (7.50.00), the
+ * sessions' walls record (7.50.03) and a KMS key's use through named services only.
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -24,13 +24,32 @@ import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
  * limit an update to ADDs: the code's ADD-only expressions do; the supervisor's own GetItem of a flow's month total
  * is a statement of its own, grantBudgetWork's SpendTotals).
  */
-export function grantSpendLedger(role: iam.IRole, table: dynamodb.ITable): void {
+function grantSpendLedger(role: iam.IRole, table: dynamodb.ITable): void {
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'SpendLedger',
     actions: ['dynamodb:UpdateItem'],
     resources: [table.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_SPEND_PARTITIONS] } },
   }));
+}
+
+/**
+ * The walls each language's sessions said they run behind (7.50.03, lambda/engineering/runtime/sandbox.py): one row
+ * per language, put by a launcher (the supervisor's or the delivery function's role) at each session's start, which the
+ * Agents API's readiness reads (`sandbox`, with the GetItem its role has already). PutItem only, on that partition only.
+ */
+function grantSandboxRecord(role: iam.IRole, table: dynamodb.ITable): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'SandboxRecord', actions: ['dynamodb:PutItem'], resources: [table.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SANDBOX'] } },
+  }));
+}
+
+/** A launcher's own rows beside the runs' (the supervisor's and the delivery function's roles): the spend ledger's
+ * update and the sessions' walls record. */
+export function grantLauncherRows(role: iam.IRole, table: dynamodb.ITable): void {
+  grantSpendLedger(role, table);
+  grantSandboxRecord(role, table);
 }
 
 /** The hard cap's partition in voc-agents (lambda/engineering/settings.py SETTINGS_KEY). */

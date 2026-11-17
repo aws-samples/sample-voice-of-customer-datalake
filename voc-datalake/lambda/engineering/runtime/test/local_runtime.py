@@ -28,7 +28,7 @@ from engineering.runtime.interface import (
     RuntimeRefused,
     RuntimeSession,
 )
-from engineering.runtime.unit_runner import Runner
+from engineering.runtime.unit_runner import Runner, _close_server
 
 
 @dataclass
@@ -114,3 +114,13 @@ class LocalAgentRuntime:
     def status(self, vm: RuntimeSession) -> AgentStatus:
         report = self._running(vm).runner.status()
         return AgentStatus(step=report['step'], recent_tools=tuple(report['recent_tools']), tokens=report['tokens'])
+
+
+def close_sockets(runner: Runner) -> None:
+    """Stop serving a runner's namespaces' sockets (a test's end: the runner itself serves them until its process ends)."""
+    if runner._agent_api is not None:
+        _close_server(runner._agent_api, runner._agent_api.server_address)
+        runner._agent_api = None
+    for proxy in (runner.proxy, runner.code_proxy):
+        if proxy is not None:
+            proxy.close_unix()
