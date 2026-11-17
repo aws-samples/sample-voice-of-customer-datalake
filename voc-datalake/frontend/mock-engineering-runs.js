@@ -522,22 +522,25 @@ function actOnTask(taskId, action, body) {
   return ACTIONS[action](task, body);
 }
 
+/** The run's own actions (`POST …/<run>/<action>`), each on its body. */
+const RUN_POSTS = {
+  signals: (body) => signal(body),
+  messages: (body) => answer(body),
+  stop: (body) => stopRun(body),
+  reactions: () => askReactions(),
+  steer: (body) => (run.meta.ended_at === null
+    ? steer(body, run.agents.map((a) => a.agent), say, SAMPLE_RUN_ID)
+    : [409, { message: 'This run has ended' }]),
+  restart: (body) => restart(SAMPLE_RUN_ID, body, run.meta.ended_at === null),
+};
+
 function routePost(sub, rest, body) {
   if (!isAdmin()) return [403, { message: 'Admin access required' }];
   if (run.meta.ended_at !== null && sub === 'board') return [409, { message: 'This run has ended' }];
   if (sub === 'board' && rest[0] === 'tasks' && rest.length === 1) return postTask(body ?? {});
   if (sub === 'board' && rest[0] === 'tasks' && rest.length === 3) return actOnTask(rest[1], rest[2], body ?? {});
-  if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
-  if (sub === 'signals') return signal(body ?? {});
-  if (sub === 'messages') return answer(body ?? {});
-  if (sub === 'stop') return stopRun(body ?? {});
-  if (sub === 'reactions') return askReactions();
-  if (sub === 'steer') {
-    if (run.meta.ended_at !== null) return [409, { message: 'This run has ended' }];
-    return steer(body ?? {}, run.agents.map((a) => a.agent), say, SAMPLE_RUN_ID);
-  }
-  if (sub === 'restart') return restart(SAMPLE_RUN_ID, body ?? {}, run.meta.ended_at === null);
-  return [404, { message: 'Engineering run not found' }];
+  if (rest.length > 0 || !Object.hasOwn(RUN_POSTS, sub)) return [404, { message: 'Engineering run not found' }];
+  return RUN_POSTS[sub](body ?? {});
 }
 
 // ── The spend ledger (GET /agents/engineering/spend?month=&by=&workflow=; lambda/engineering/spend.py) ──
@@ -906,26 +909,15 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
     otherRunRoute(req, res, send, shared, runId, sub);
     return true;
   }
-  if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) {
-    send(404, { message: 'Engineering run not found' });
-    return true;
-  }
-  if (!isAdmin()) {
-    send(403, { message: 'Admin access required' });
-    return true;
-  }
-  if (req.method === 'GET') {
-    const [status, payload] = routeGet(sub, rest, url);
-    send(status, payload);
-    return true;
-  }
-  if (req.method !== 'POST') {
-    send(405, { message: 'Method not allowed' });
-    return true;
-  }
-  shared.collectJson(req, res, (body) => {
-    const [status, payload] = routePost(sub, rest, body);
-    send(status, payload);
-  });
+  if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) send(404, { message: 'Engineering run not found' });
+  else sampleRunRoute(req, res, url, send, shared, sub, rest);
   return true;
+}
+
+/** The sample run's own routes (`…/<SAMPLE_RUN_ID>/<sub>/…`), for an admin: its reads and its actions. */
+function sampleRunRoute(req, res, url, send, shared, sub, rest) {
+  if (!isAdmin()) send(403, { message: 'Admin access required' });
+  else if (req.method === 'GET') send(...routeGet(sub, rest, url));
+  else if (req.method !== 'POST') send(405, { message: 'Method not allowed' });
+  else shared.collectJson(req, res, (body) => send(...routePost(sub, rest, body)));
 }

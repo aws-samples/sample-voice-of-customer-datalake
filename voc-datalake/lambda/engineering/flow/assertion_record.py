@@ -171,16 +171,3 @@ def record_assertions(client: Any, table: str, ws: str, run_id: str, plan: Plan,
             logger.exception('board: a step\'s assertions could not be evaluated', extra={'step': step})
     return written
 
-
-def assertion_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """The run's ``ASSERT#`` rows as ``[{step, attempt, check, status, detail, on_fail}]`` (the run workspace's)."""
-    found = []
-    for row in rows:
-        try:
-            listed = json.loads(string_attr(row, 'results') or '[]')
-        except ValueError:
-            continue
-        attempt = int(row.get('attempt', {}).get('N', '0'))
-        found += [{'step': string_attr(row, 'step'), 'attempt': attempt, **item} for item in listed
-                  if isinstance(item, dict)]
-    return found

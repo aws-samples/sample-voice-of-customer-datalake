@@ -3,7 +3,9 @@
  * Slack-like conversation in time order (ThreadItem.tsx), its header (who, role, its status in its tone, model and
  * skill, why it looks stuck, and for an admin on a run under way the agent's Stop and ⋯), and the composer that steers
  * the orchestrator about it (its Send the primary button only in the session in focus). An agent's own question in
- * the thread carries a Reply (QuestionReply.tsx), its thread read from the run's conversation. One conversation, one
+ * the thread carries a Reply (QuestionReply.tsx), its thread read from the run's conversation. Where the deployment
+ * does not connect the Agents API to the runtime and the bus (`actions_available` false), an admin's composer is
+ * shown off with why: steering and replies go over the bus, so they cannot be sent from there. One conversation, one
  * session: the thread is the run's own record, read live, never a private copy.
  *
  * The list follows its end while the reader is at it, and stays where they scrolled to otherwise.
@@ -24,6 +26,13 @@ import { statusChipClass, takesSignals } from './agentStatus'
 import type { ReactNode } from 'react'
 import type { EngineeringAgent, RunLane } from '../../../api/engineeringRunsApi'
 
+/**
+ * What a person may do in a session: `act` (an admin on a run under way that the signals, steering and answers
+ * reach), `unconnected` (the same where the deployment does not connect them: the composer is off, saying why) or
+ * `none` (not an admin, an ended run, or one a Stop is ending).
+ */
+export type SessionActions = 'act' | 'unconnected' | 'none'
+
 /** How close to its end (px) the list must be to follow new items. */
 const FOLLOW_SLACK = 80
 /** The conversation's type of an agent's question (bus schema `msg.question`). */
@@ -34,8 +43,7 @@ interface Props {
   /** The session's agent (the orchestrator's is the run's coordinator). */
   agent: EngineeringAgent
   orchestrator: boolean
-  /** An admin may act (signals, steering, answers) and the run is under way. */
-  canAct: boolean
+  actions: SessionActions
   /** The session in focus (the one the address names): its composer's Send is the primary button. */
   focused: boolean
   /** The run's lanes (an agent whose task is over takes no signal). */
@@ -110,13 +118,14 @@ function Items({ runId, agent, canAct }: Readonly<{ runId: string; agent: string
   )
 }
 
-export function SessionThread({ runId, agent, orchestrator, canAct, focused, lanes, tools }: Readonly<Props>) {
+export function SessionThread({ runId, agent, orchestrator, actions, focused, lanes, tools }: Readonly<Props>) {
+  const canAct = actions === 'act'
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col" aria-label={agent.agent}>
       <SessionHeader agent={agent} orchestrator={orchestrator} tools={tools} />
       {canAct && !orchestrator && takesSignals(agent, lanes) && <AgentControls runId={runId} agent={agent} />}
       <Items runId={runId} agent={agent.agent} canAct={canAct} />
-      {canAct && <SteerComposer runId={runId} agent={orchestrator ? null : agent.agent} primary={focused} />}
+      {actions !== 'none' && <SteerComposer runId={runId} agent={orchestrator ? null : agent.agent} primary={focused} connected={canAct} />}
     </section>
   )
 }

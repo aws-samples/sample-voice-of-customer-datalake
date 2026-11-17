@@ -11,6 +11,7 @@ import { AgentTabs } from './AgentTabs'
 import { AgentGrid } from './AgentGrid'
 import { SessionThread } from './SessionThread'
 import type { EngineeringAgent, RunLane } from '../../../api/engineeringRunsApi'
+import type { SessionActions } from './SessionThread'
 import type { useSessionLayout } from './useSessionLayout'
 
 interface Props {
@@ -20,7 +21,7 @@ interface Props {
   /** The session the address names (null: none to show yet). */
   current: string | null
   orchestrator: string | null
-  canAct: boolean
+  actions: SessionActions
   sessions: ReturnType<typeof useSessionLayout>
 }
 
@@ -43,7 +44,7 @@ function LayoutSwitch({ sessions }: Readonly<Pick<Props, 'sessions'>>) {
   )
 }
 
-export function SessionsPane({ runId, agents, lanes, current, orchestrator, canAct, sessions }: Readonly<Props>) {
+export function SessionsPane({ runId, agents, lanes, current, orchestrator, actions, sessions }: Readonly<Props>) {
   const { t } = useTranslation('agents')
   const shown = agents.find((agent) => agent.agent === current)
   return (
@@ -55,7 +56,7 @@ export function SessionsPane({ runId, agents, lanes, current, orchestrator, canA
       {sessions.mode === 'grid' && sessions.grid !== null ? (
         <div className="h-[min(36rem,70vh)] min-h-0">
           <AgentGrid runId={runId} grid={sessions.grid} agents={agents} orchestrator={orchestrator} current={current}
-            canAct={canAct} lanes={lanes} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
+            actions={actions} lanes={lanes} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
             onResize={sessions.resize} />
         </div>
       ) : (
@@ -65,7 +66,7 @@ export function SessionsPane({ runId, agents, lanes, current, orchestrator, canA
           <div className="flex h-[min(36rem,70vh)] min-h-0 flex-col" role="tabpanel">
             {shown === undefined
               ? <p className="p-3 text-sm text-muted">{current === null ? t('engineeringRun.noAgents') : t('runWorkspace.sessions.noAgent', { agent: current })}</p>
-              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} canAct={canAct}
+              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} actions={actions}
                 focused lanes={lanes} />}
           </div>
         </>

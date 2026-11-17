@@ -1328,7 +1328,6 @@
       "asGiven": "tal como se indicó al inicio, sin comprobar en el host",
       "opens": "{{label}} (se abre en una pestaña nueva)"
     },
-    "actionsUnavailable": "Esta implementación aún no puede enviar Pausar, Reanudar, Guardar ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería. Parar sí funciona.",
     "runSignals": "Controles de la ejecución",
     "agentSignals": "Agente {{agent}}",
     "signals": {
@@ -1341,26 +1340,8 @@
     "stopNowTitle": "¿Parar ya, sin guardar?",
     "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Parar.",
     "stopNowAgentMessage": "El agente se para de inmediato, sin punto de control: se pierde lo que aún no haya guardado. Para conservarlo, usa Parar.",
-    "moreRun": "Más controles de la ejecución",
-    "moreFor": "Más para {{target}}",
-    "saveCheckpoint": "Guardar un punto de control",
-    "refreshFailed": "No se pudo actualizar: es la última lectura.",
-    "retry": "Reintentar",
-    "runState": {
-      "running": "En curso",
-      "waiting": "Espera a una persona",
-      "stopping": "Parando…",
-      "done": "Hecho",
-      "failed": "Fallido",
-      "stopped": "Detenido"
-    },
     "stop": {
-      "group": "Parar la ejecución",
-      "more": "Más formas de parar",
-      "nowItem": "Parar ya, sin guardar…",
-      "stoppingButton": "Parando…",
       "unavailable": "Parar no llega a esta ejecución desde esta implementación: no indica ninguna función de inicio.",
-      "sent": "Parada enviada",
       "agentSaving": "{{agent}} guardando un punto de control…",
       "stopping": "Parada enviada: {{agents}} guardando un punto de control; después se para la ejecución.",
       "stopped_one": "Detenida. Se cerró {{count, number}} tarea abierta.",
@@ -1779,7 +1760,8 @@
       "about": "Sobre {{agent}}",
       "send": "Enviar al orquestador",
       "hint": "Enter envía; Shift+Enter empieza una línea nueva.",
-      "sent": "Enviado al orquestador."
+      "sent": "Enviado al orquestador.",
+      "unavailable": "Esta implementación aún no puede enviar orientaciones ni respuestas: no conecta la API de agentes con el entorno de ejecución y el bus de ingeniería."
     },
     "agentControls": {
       "restart": "Reiniciar",
@@ -1953,15 +1935,15 @@
       "empty": "No se inició ninguna ejecución en este mes."
     },
     "controls": {
-      "stopping": "Deteniendo…",
+      "stopping": "Parando…",
       "moreStop": "Más formas de detener",
       "stopNow": "Parar ya, sin guardar…",
-      "more": "Más acciones",
+      "more": "Más controles de la ejecución",
       "save": "Guardar un punto de control",
-      "limited": "Pausar, Reanudar y Guardar necesitan el entorno de ingeniería, que este despliegue aún no conecta. Detener sigue terminando la ejecución.",
+      "limited": "Pausar, Reanudar y Guardar necesitan el entorno y el bus de ingeniería, que este despliegue aún no conecta.",
       "refreshFailed": "No se pudo actualizar esta ejecución: ves su último estado correcto.",
       "retry": "Reintentar",
-      "stopSent": "Detención enviada"
+      "stopSent": "Parada enviada"
     }
   }
 }

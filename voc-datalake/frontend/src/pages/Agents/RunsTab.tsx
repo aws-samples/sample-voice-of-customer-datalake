@@ -7,7 +7,7 @@
  * An engineering agent's run (7.47.00) is followed on its run monitor: its
  * row says what it started from and links there, and it is stopped there
  * (the agent's run ends when its engineering run does), never cancelled here: while it is live an admin stops it
- * here with the run monitor's own Stop (7.50.03, RunControlBar.tsx `StopControl`), which ends the engineering run and,
+ * here with the run's own Stop (7.50.03, RunStop.tsx `StopControl`), which ends the engineering run and,
  * with it, this run.
  *
  * @module pages/Agents/RunsTab
@@ -33,7 +33,7 @@ import { RunSummaryCard } from './RunSummaryCard'
 import { useAgentMutations, useAgentRun, useAgentRuns, useRunEvents } from './useAgents'
 import { RunProjectsContext, useRunProjectName, useRunProjects } from './useRunProjects'
 import { engineeringRunPagePath } from './workflowPaths'
-import { StopControl, StopOutcome } from './RunControlBar'
+import { StopControl, StopOutcome } from './RunStop'
 import { useEngineeringStop } from './useEngineeringRun'
 import { EngineeringStartError } from './EngineeringStartError'
 import { isEngineeringAgent } from '../../api/agentsApi'

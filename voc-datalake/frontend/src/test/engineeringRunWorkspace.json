@@ -17,6 +17,8 @@
     "status": "active",
     "started_at": "2026-11-17T09:00:00.000000Z",
     "ended_at": null,
+    "waiting_at": "",
+    "stop": null,
     "budget": {
      "monthly_usd": 50.0,
      "alert_percent": null,
@@ -325,6 +327,7 @@
    },
    "children": [],
    "actions_available": true,
+   "stop_available": true,
    "totals": {
     "messages": 8,
     "microvm_seconds": 2150,
@@ -362,6 +365,8 @@
     "status": "stopped",
     "started_at": "2026-11-16T23:00:00.000000Z",
     "ended_at": "2026-11-17T07:00:00.000000Z",
+    "waiting_at": "",
+    "stop": null,
     "budget": {
      "monthly_usd": 50.0,
      "alert_percent": null,
@@ -398,6 +403,7 @@
     }
    ],
    "actions_available": true,
+   "stop_available": true,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,
@@ -419,6 +425,8 @@
     "status": "active",
     "started_at": "2026-11-17T08:00:00.000000Z",
     "ended_at": null,
+    "waiting_at": "",
+    "stop": null,
     "budget": {
      "monthly_usd": 50.0,
      "alert_percent": null,
@@ -447,6 +455,7 @@
    "gates": {},
    "children": [],
    "actions_available": true,
+   "stop_available": true,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,

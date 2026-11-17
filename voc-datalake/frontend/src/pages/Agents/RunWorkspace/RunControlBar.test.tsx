@@ -1,8 +1,8 @@
 /**
- * @fileoverview The run's control bar against the shared fixture (7.51.00, the UX audit's S8/S9): Stop sends the
- * shutdown (a checkpoint, then the end) and reads Stopping… with Stop inert and what each agent did; "Stop now,
- * without saving" is in Stop's menu and asked first; Pause and Resume are one toggle by the agents' state; the
- * run's status chip is toned; an agent and the run say Stop alike.
+ * @fileoverview The run's control bar against the shared fixture (7.51.00, the UX audit's S8/S9): Stop is the run's
+ * Stop (7.50.03, `POST …/stop`, never a signal: a checkpoint, then the end) and reads Stopping… with Stop inert and
+ * what each agent did; "Stop now, without saving" is in Stop's menu, asked first, and sent confirmed; Pause and Resume
+ * are one toggle by the agents' state; the run's status chip is toned; an agent and the run say Stop alike.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -18,10 +18,12 @@ vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m
 stubResizeObserverForSuite()
 
 const SIGNALS = `${RUN_PATH}/signals`
-const stopped = { signal: { event_id: 'e', signal: 'shutdown', agents: { 'fixer-3': 'stopped' }, applied: { 'fixer-3': true } } }
+const STOP = `${RUN_PATH}/stop`
+const stopped = { signal: { event_id: 'e', signal: 'resume', agents: { 'fixer-3': 'working' }, applied: { 'fixer-3': true } } }
+const saving = { stop: { status: 'stopping', mode: 'stop', tasks_closed: [], saving: ['fixer-3'] } }
 
-function withSignals(answer: RouteHandler = () => stopped, overview: unknown = fixture.overview.answer) {
-  workspaceRoutes({ [`GET ${RUN_PATH}`]: () => overview, [`POST ${SIGNALS}`]: answer })
+function withSignals(answer: RouteHandler = () => stopped, overview: unknown = fixture.overview.answer, stop: RouteHandler = () => saving) {
+  workspaceRoutes({ [`GET ${RUN_PATH}`]: () => overview, [`POST ${SIGNALS}`]: answer, [`POST ${STOP}`]: stop })
 }
 
 beforeEach(() => {
@@ -30,33 +32,48 @@ beforeEach(() => {
 })
 
 describe('the run control bar', () => {
-  it('shows the run\'s status in its tone, and Stop, Pause and More actions', async () => {
+  it('shows the run\'s status in its tone, and Stop, Pause and More run controls', async () => {
     withSignals()
     renderWorkspace(RUN_PATH)
     expect(await screen.findByText('Active')).toHaveClass('badge-accent')
     expect([screen.getByRole('button', { name: 'Pause' }), screen.getByRole('button', { name: 'More ways to stop' }),
-      screen.getByRole('button', { name: 'More actions' })]).toHaveLength(3)
+      screen.getByRole('button', { name: 'More run controls' })]).toHaveLength(3)
   })
 
-  it('stops the run with a checkpoint first, then reads Stopping… with Stop inert and what each agent did', async () => {
-    withSignals()
+  it('stops the run through its Stop (a checkpoint first), then reads Stopping… with Stop inert and what each agent did', async () => {
+    const run = { stopping: false }
+    const overview = fixture.overview.answer
+    workspaceRoutes({
+      [`GET ${RUN_PATH}`]: () => (run.stopping ? { ...overview, run: { ...overview.run, stop: { mode: 'stop', requested_at: '2026-11-17T09:30:00Z' } },
+        agents: overview.agents.map((agent) => (agent.agent === 'fixer-3' ? { ...agent, status: 'pause_requested' } : agent)) } : overview),
+      [`POST ${STOP}`]: () => {
+        run.stopping = true
+        return saving
+      },
+    })
     renderWorkspace(RUN_PATH)
-    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }))
-    await waitFor(() => expect(sentFetchApiBody(SIGNALS, 'POST')).toStrictEqual({ signal: 'shutdown' }))
-    expect(await screen.findByText('Stopping…')).toHaveClass('badge-warn')
-    expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByText('Stop sent · fixer-3: Stopped')).toHaveAttribute('role', 'status')
+    const bar = within(await screen.findByRole('region', { name: 'Run controls' }))
+    await userEvent.click(bar.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(sentFetchApiBody(STOP, 'POST')).toStrictEqual({}))
+    expect(await bar.findByText('Stopping…')).toHaveClass('badge-warn')
+    expect(bar.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'true')
+    // What the Stop said, and each agent's part of it, both announced; Pause is gone while it stops.
+    expect([bar.getByText('Stop sent: fixer-3 saving a checkpoint, then the run stops.').getAttribute('role'),
+      bar.getByText(/^Stop sent · .*fixer-3 saving a checkpoint…/).getAttribute('role'),
+      bar.queryByRole('button', { name: 'Pause' })]).toStrictEqual(['status', 'status', null])
   })
 
-  it('keeps "Stop now, without saving" in Stop\'s menu, and asks before it', async () => {
+  it('keeps "Stop now, without saving" in Stop\'s menu, asks before it, and sends it confirmed as the run\'s Stop', async () => {
     const signal = vi.fn((_body: unknown) => stopped)
-    withSignals(signal)
+    const stop = vi.fn((_body: unknown) => ({ stop: { status: 'stopped', mode: 'stop_now', tasks_closed: ['task-fix'] } }))
+    withSignals(signal, undefined, stop)
     renderWorkspace(RUN_PATH)
     await userEvent.click(await screen.findByRole('button', { name: 'More ways to stop' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Stop now, without saving…' }))
-    expect(signal).not.toHaveBeenCalled()
+    expect(stop).not.toHaveBeenCalled()
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stop now, without saving' }))
-    await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'stop_now', confirm: true }))
+    await waitFor(() => expect(stop).toHaveBeenCalledWith({ now: true, confirm: true }))
+    expect([await screen.findByText('Stopped. 1 open task was closed.'), signal.mock.calls]).toStrictEqual([expect.anything(), []])
   })
 
   it('offers Resume, not Pause, once every agent at work is paused', async () => {

@@ -1328,7 +1328,6 @@
       "asGiven": "como informado no início, não verificado no host",
       "opens": "{{label}} (abre em uma nova aba)"
     },
-    "actionsUnavailable": "Esta implantação ainda não pode enviar Pausar, Retomar, Guardar nem respostas: ela não conecta o monitor da execução ao runtime e ao barramento de engenharia. Parar funciona.",
     "runSignals": "Controlos da execução",
     "agentSignals": "Agente {{agent}}",
     "signals": {
@@ -1341,26 +1340,8 @@
     "stopNowTitle": "Parar já, sem guardar?",
     "stopNowMessage": "O trabalho para de imediato, sem ponto de controlo: perde-se o que ainda não estiver guardado. Para o manter, use Parar.",
     "stopNowAgentMessage": "O agente para de imediato, sem ponto de controlo: perde-se o que ainda não tiver guardado. Para o manter, use Parar.",
-    "moreRun": "Mais controlos da execução",
-    "moreFor": "Mais para {{target}}",
-    "saveCheckpoint": "Guardar um ponto de controlo",
-    "refreshFailed": "Não foi possível atualizar: esta é a última leitura.",
-    "retry": "Tentar de novo",
-    "runState": {
-      "running": "Em curso",
-      "waiting": "À espera de uma pessoa",
-      "stopping": "A parar…",
-      "done": "Feito",
-      "failed": "Falhou",
-      "stopped": "Parado"
-    },
     "stop": {
-      "group": "Parar a execução",
-      "more": "Mais formas de parar",
-      "nowItem": "Parar já, sem guardar…",
-      "stoppingButton": "A parar…",
       "unavailable": "Parar não chega a esta execução a partir desta implantação: ela não indica nenhuma função de início.",
-      "sent": "Paragem enviada",
       "agentSaving": "{{agent}} a guardar um ponto de controlo…",
       "stopping": "Paragem enviada: {{agents}} a guardar um ponto de controlo; depois a execução para.",
       "stopped_one": "Parada. Foi fechada {{count, number}} tarefa aberta.",
@@ -1779,7 +1760,8 @@
       "about": "Sobre {{agent}}",
       "send": "Enviar ao orquestrador",
       "hint": "Enter envia; Shift+Enter começa uma nova linha.",
-      "sent": "Enviado ao orquestrador."
+      "sent": "Enviado ao orquestrador.",
+      "unavailable": "Esta implantação ainda não pode enviar orientações nem respostas: ela não conecta a API de agentes ao runtime e ao barramento de engenharia."
     },
     "agentControls": {
       "restart": "Reiniciar",
@@ -1956,9 +1938,9 @@
       "stopping": "A parar…",
       "moreStop": "Outras formas de parar",
       "stopNow": "Parar já, sem guardar…",
-      "more": "Mais ações",
+      "more": "Mais controlos da execução",
       "save": "Guardar um ponto de controlo",
-      "limited": "Pausar, Retomar e Guardar precisam do ambiente de engenharia, que esta implementação ainda não liga. Parar continua a terminar a execução.",
+      "limited": "Pausar, Retomar e Guardar precisam do ambiente e do barramento de engenharia, que esta implementação ainda não liga.",
       "refreshFailed": "Não foi possível atualizar esta execução: vê o seu último estado válido.",
       "retry": "Tentar de novo",
       "stopSent": "Paragem enviada"

@@ -1321,7 +1321,6 @@
       "asGiven": "wie beim Start angegeben, nicht beim Host geprüft",
       "opens": "{{label}} (öffnet sich in einem neuen Tab)"
     },
-    "actionsUnavailable": "Pausieren, Fortsetzen, Sichern und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus. Stoppen funktioniert.",
     "runSignals": "Laufsteuerung",
     "agentSignals": "Agent {{agent}}",
     "signals": {
@@ -1334,26 +1333,8 @@
     "stopNowTitle": "Sofort stoppen, ohne zu sichern?",
     "stopNowMessage": "Die Arbeit wird sofort beendet, ohne Sicherungspunkt: Was noch nicht gesichert ist, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
     "stopNowAgentMessage": "Der Agent wird sofort beendet, ohne Sicherungspunkt: Was er noch nicht gesichert hat, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
-    "moreRun": "Weitere Laufsteuerung",
-    "moreFor": "Mehr für {{target}}",
-    "saveCheckpoint": "Sicherungspunkt setzen",
-    "refreshFailed": "Aktualisieren fehlgeschlagen: Das ist der letzte Stand.",
-    "retry": "Erneut versuchen",
-    "runState": {
-      "running": "Läuft",
-      "waiting": "Wartet auf eine Person",
-      "stopping": "Wird gestoppt…",
-      "done": "Fertig",
-      "failed": "Fehlgeschlagen",
-      "stopped": "Gestoppt"
-    },
     "stop": {
-      "group": "Lauf stoppen",
-      "more": "Weitere Arten zu stoppen",
-      "nowItem": "Sofort stoppen, ohne zu sichern…",
-      "stoppingButton": "Wird gestoppt…",
       "unavailable": "Stoppen erreicht diesen Lauf von dieser Bereitstellung aus nicht: Sie nennt keine Startfunktion.",
-      "sent": "Stopp gesendet",
       "agentSaving": "{{agent}} setzt einen Sicherungspunkt…",
       "stopping": "Stopp gesendet: {{agents}} setzt einen Sicherungspunkt, dann stoppt der Lauf.",
       "stopped_one": "Gestoppt. {{count, number}} offene Aufgabe wurde geschlossen.",
@@ -1772,7 +1753,8 @@
       "about": "Zu {{agent}}",
       "send": "An den Orchestrator senden",
       "hint": "Enter sendet; Shift+Enter beginnt eine neue Zeile.",
-      "sent": "An den Orchestrator gesendet."
+      "sent": "An den Orchestrator gesendet.",
+      "unavailable": "Steuerung und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Agents-API nicht mit der Engineering-Laufzeit und dem Bus."
     },
     "agentControls": {
       "restart": "Neu starten",
@@ -1949,9 +1931,9 @@
       "stopping": "Wird gestoppt…",
       "moreStop": "Weitere Arten zu stoppen",
       "stopNow": "Sofort stoppen, ohne zu sichern…",
-      "more": "Weitere Aktionen",
+      "more": "Weitere Laufsteuerung",
       "save": "Sicherungspunkt setzen",
-      "limited": "Pausieren, Fortsetzen und Sichern brauchen die Engineering-Laufzeit, die diese Bereitstellung noch nicht anbindet. Stoppen beendet den Lauf trotzdem.",
+      "limited": "Pausieren, Fortsetzen und Sichern brauchen die Engineering-Laufzeit und den Bus, die diese Bereitstellung noch nicht anbindet.",
       "refreshFailed": "Dieser Lauf ließ sich nicht aktualisieren: Sie sehen seinen letzten guten Stand.",
       "retry": "Erneut versuchen",
       "stopSent": "Stopp gesendet"

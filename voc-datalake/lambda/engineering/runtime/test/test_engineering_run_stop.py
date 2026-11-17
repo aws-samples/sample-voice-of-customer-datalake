@@ -178,9 +178,12 @@ def test_a_stop_with_an_agent_at_work_lets_it_save_then_ends_the_run(wired: Any,
     fixer = handler._supervisor().sessions.get(STUCK, 'fixer-2')
     assert fixer is not None
     assert (saving['status'], fixer.status, fixer.after_pause) == ('stopping', 'pause_requested', 'shutdown')
-    # While it stops: no Resume, no new agent.
-    with pytest.raises(RuntimeRefused, match='being stopped'):
+    # While it stops: no Resume, no Restart of an agent (7.51.00), no new agent.
+    with pytest.raises(RuntimeRefused, match='being stopped: it cannot be resumed'):
         handler.lambda_handler({'action': 'signal', 'run_id': STUCK, 'signal': 'resume', 'actor': ADMIN}, None)
+    with pytest.raises(RuntimeRefused, match='being stopped: it cannot be restarted'):
+        handler.lambda_handler({'action': 'signal', 'run_id': STUCK, 'agent_id': 'fixer-2', 'signal': 'restart',
+                                'restart_from': 'fresh', 'attempt': 1, 'actor': ADMIN}, None)
     with pytest.raises(RunNotActive):
         handler.lambda_handler({**FIXER_LAUNCH, 'agent_id': 'fixer-3'}, None)
     # Its agent saved and stopped: the next tick ends the run, as the person who asked.

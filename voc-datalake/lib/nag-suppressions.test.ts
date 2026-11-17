@@ -294,7 +294,9 @@ describe('cdk-nag acknowledgements', () => {
       // 122 -> 127 (7.51.00): the board's read of a done step's recorded outputs for its assertions (the agents'
       // findings and notes, their submitted patches, a triage: three findings of its one acknowledgement), and the
       // runtime's read of a parent run's patches and create-only writes of a child run's seeds (two findings).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 127, used: 127 });
+      // 127 -> 131 (7.51.00): the Agents API's reads of the runs' transcripts, patches, gate records and manifests
+      // for the run workspace (api-engineering-run-reads.ts: four findings of its one acknowledgement).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 131, used: 131 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

@@ -1267,7 +1267,6 @@
       "asGiven": "as given at the start, not checked on the host",
       "opens": "{{label}} (opens in a new tab)"
     },
-    "actionsUnavailable": "Pause, Resume, Save and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus. Stop works.",
     "runSignals": "Run controls",
     "agentSignals": "Agent {{agent}}",
     "signals": {
@@ -1280,26 +1279,8 @@
     "stopNowTitle": "Stop now, without saving?",
     "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Stop instead.",
     "stopNowAgentMessage": "The agent is stopped at once, with no checkpoint: anything it has not saved yet is lost. To keep it, use Stop instead.",
-    "moreRun": "More run controls",
-    "moreFor": "More for {{target}}",
-    "saveCheckpoint": "Save a checkpoint",
-    "refreshFailed": "Couldn't refresh: this is the last read.",
-    "retry": "Retry",
-    "runState": {
-      "running": "Running",
-      "waiting": "Waits for a person",
-      "stopping": "Stopping…",
-      "done": "Done",
-      "failed": "Failed",
-      "stopped": "Stopped"
-    },
     "stop": {
-      "group": "Stop the run",
-      "more": "More ways to stop",
-      "nowItem": "Stop now, without saving…",
-      "stoppingButton": "Stopping…",
       "unavailable": "Stop can't reach this run from this deployment: it names no start function.",
-      "sent": "Stop sent",
       "agentSaving": "{{agent}} saving a checkpoint…",
       "stopping": "Stop sent: {{agents}} saving a checkpoint, then the run stops.",
       "stopped_one": "Stopped. {{count, number}} open task was closed.",
@@ -1718,7 +1699,8 @@
       "about": "About {{agent}}",
       "send": "Send to the orchestrator",
       "hint": "Enter sends; Shift+Enter starts a new line.",
-      "sent": "Sent to the orchestrator."
+      "sent": "Sent to the orchestrator.",
+      "unavailable": "Steering and replies can't be sent from this deployment yet: it doesn't connect the Agents API to the engineering runtime and bus."
     },
     "agentControls": {
       "restart": "Restart",
@@ -1895,9 +1877,9 @@
       "stopping": "Stopping…",
       "moreStop": "More ways to stop",
       "stopNow": "Stop now, without saving…",
-      "more": "More actions",
+      "more": "More run controls",
       "save": "Save a checkpoint",
-      "limited": "Pause, Resume and Save need the engineering runtime, which this deployment doesn't connect yet. Stop still ends the run.",
+      "limited": "Pause, Resume and Save need the engineering runtime and bus, which this deployment doesn't connect yet.",
       "refreshFailed": "Couldn't refresh this run: what you see is its last good state.",
       "retry": "Retry",
       "stopSent": "Stop sent"

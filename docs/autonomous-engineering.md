@@ -1385,15 +1385,17 @@ reaches a repository through its stored connection (and starts only on one). *Pl
 repository" from the assistant (the same card rules). An engineering run's reads and its start are
 administrators-only, so no MCP tool while an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
-**The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
-live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
+**The run monitor** (since 7.51.00 the run workspace, [docs/autonomous-agents.md](autonomous-agents.md#the-run-workspace)).
+The run view shows every agent's status and where it is in the flow (the editor's graph with the
+live step highlighted, each step's agents as lanes), each agent's thread, the board and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
 its heartbeat's age, its session's state and age, its recent tool calls and, when it looks stuck, why (no progress for
-N minutes, the same step repeated). A person can message the run coordinator or an agent as a participant, and send
-signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
+N minutes, the same step repeated). A person steers the run through its orchestrator ([Steering](#steering-restart-and-the-runs-list-75100)),
+answers an agent on the thread its own question opened, and sends
+signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop), Stop now and (7.51.00) Restart. Stop now is the
 [Stop](#trust-and-safety) of the run view, enforced by the supervisor, the launcher and the broker without the
 agent's help; Shut down falls back to it if the checkpoint does not come; Resume is refused for a stopped run.
-**The run's Stop (7.50.03).** For an administrator on a run that has not ended the monitor always shows **Stop**, in
-one Run controls bar: Stop has the agents with a session save a checkpoint, then ends the run ("Stopping…" until they
+**The run's Stop (7.50.03).** For an administrator on a run that has not ended the monitor shows **Stop** wherever
+the deployment names the start function (`stop_available`), in one Run controls bar: Stop has the agents with a session save a checkpoint, then ends the run ("Stopping…" until they
 have, 10 minutes at most), and its menu holds "Stop now, without saving" (asked first). It ends the run whatever its
 agents are doing, a run waiting for a person whose coordinator never started included, through voc-engineering-start's
 `stop_run` (`POST /agents/engineering/<run_id>/stop`), so it needs neither the runtime nor the bus on the Agents API,
@@ -1401,10 +1403,12 @@ which every deployment so far lacks for the signals: META `stopped` with its `RU
 has not ended closed `failed` with a `stop` history row (no agent's failure for the coach), its launch holds run out,
 its sessions ended, and its engineering agent's run ended with it (cancelled, the agent's lock released). The issue's
 claim is kept (one run per issue, ever). Pause and Resume are one toggle by the run's state, Save a checkpoint sits under
-⋯, and an agent's card has its own Stop and ⋯ (Save, Pause or Resume, Stop now); those need the signals to reach the
-run (`actions_available`), and where they do not one line beside Stop says so. A failed read keeps the page's last
-good read and its controls, says "Couldn't refresh" with a Retry, and polling backs off (`lambda/engineering/runtime/stop.py`,
-`frontend/src/pages/Agents/RunControlBar.tsx`).
+⋯, and an agent's session has its own Stop and ⋯ (Save, Stop now, Restart); those, steering and answers need the
+signals and the bus to reach the run (`actions_available`), and where they do not one line beside Stop says so and the
+composer is off, saying why. While the Stop is under way no agent is signalled, restarted or steered. A failed read
+keeps the page's last good read and its controls, says "Couldn't refresh" with a Retry, and polling backs off
+(`lambda/engineering/runtime/stop.py`, `frontend/src/pages/Agents/RunStop.tsx` and
+`RunWorkspace/RunControlBar.tsx`).
 Messages and signals
 are API calls with the signed-in user, allowed only to whoever may make a `decision`, published as `message` and
 `signal` events that the router accepts only from the API's own source; an agent reads a person's message as DATA,
@@ -2576,6 +2580,53 @@ when the flow names an allowed one. Its calls count in the run's spend (`LEARN#s
 spend ledger, in one transaction: `learning/budget.py`; `RunStore.spend` adds it), and a call whose worst case would
 pass Learn's `budget_share` of the run's cost cap is not made (an outcome, recorded). A proposal still needs the
 benchmark gate and an administrator's accept (`skills/store.py`), never automatic.
+
+### Steering, Restart and the runs list (7.51.00)
+
+The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-workspace)) is built on these runtime parts:
+
+- **Steering goes to the orchestrator only.** A person's `POST …/steer {text, about?}` is `msg.steer` from the API to the
+  run's conductor (`bus/senders.py` admits that sender and no other; the router records it in the conversation, who and
+  when, D4, and delivery wakes the coordinator). The coordinator decides: `relay_steering(to, text)` (an agent
+  `<role>-<n>` or a role, never itself, a person or the run; 1 KB at most) goes through the board's `steer` op, which
+  publishes `msg.steer` from the conductor (agent sessions have no EventBridge egress), and `set_direction(text)` writes
+  a create-only `DIRECTION#v<nnnnnn>` row and moves META's `direction_version` in the same transaction. Every inbox page
+  names the direction's version; the harness reads the direction (the board's `direction` op) when it moves and at each
+  session's start. The harness renders steering in its own `<<<STEERING …>>>` fence, below the platform rules, and
+  `_shared/PLATFORM_RULES.md` says steering never changes the tools, the gates, the dial, the scope or the rules.
+  Steering and answers go over the bus: where the Agents API does not name it (`ENGINEERING_BUS_NAME`) they answer 503
+  and the workspace shows its composer off, saying why. The API's grants are not widened for them.
+- **Live transcripts.** The harness flushes the transcript events it holds every 15 s (`FLUSH_SECONDS`) besides at a
+  checkpoint, past 512 KB and at the end; each `tool_call`/`tool_result` carries `call_id`, `tool_kind` and `status`
+  (the ACP shapes), and each steering instruction that reaches the model is a `steer` event `{source, text, by}`.
+- **Restart one agent of a live run** (`signal.restart`, `{from: checkpoint | fresh}`): from its newest checkpoint (its
+  session ended, then continued at once in a new one) or afresh (its task re-posted as `restarted` at the next attempt,
+  its session ended as re-posted). Refused for a stopped run, past 30 days, with its budget spent, without an agent, for
+  a fresh restart of the coordinator, and while a person's Stop of the run is under way.
+- **Resume or Restart an ended run as a child run** (D51-3: never reopened). voc-engineering-start's `restart_run`
+  (`runtime/restart.py`, `POST …/restart {mode, agents?, base, confirm}`, 409 while the run is live) writes the child in
+  its start transaction: META `parent {run_id, mode, by, at, base}`, the parent's create-only `CHILD#<child>`, the
+  parent's caps, connection, language, goal, issue (no new claim) and flow copy at the same revision, and for a Resume
+  `STEP#<step>#inherited` rows the conductor treats as done (never a quality gate or a fixer's or builder's step). Then
+  the runtime's `seed_restart` ends the parent if it had not, writes for each task the child takes over
+  `ws/default/runs/<child>/_seed/<task>/patch.diff` and a `voc-resume-seed/1` record (the history as excerpts, or a
+  summary by Learn's model charged to the child above 40 events or 200 KB, with the people's steering), posts those
+  tasks with their `seed_key` and launches the child's coordinator. `base: head` rebases on the default branch's head
+  (the broker's `head`); the harness then applies the seed with `git apply --3way`, and a conflict reaches the agent as
+  data, never a crash.
+- **The runs list.** `WS#default#RUNLIST#<yyyy-mm>` / `RUN#<started_at>#<run>` rows `{run_id, flow, goal, status,
+  started_at, parent?}` are written in the start transaction and kept current on each status change; the end adds
+  `ended_at`, `cost_usd` and `learn_cost_usd` (a Stop's end too).
+- **Assertion records.** At the coordinator's `flow` read the board records create-only `ASSERT#<step>#<attempt>`
+  `{results: [{check, status pass | fail | unread, detail, on_fail}]}` (`orchestration/assertions.py`). They are records
+  only: the conductor does not block on them yet.
+- **`max_parallel`**, an optional setting (1 to 50) on agent, board and gate steps: the board's `launch` refuses past it.
+- **IAM** (pinned in CDK tests): voc-engineering-start `RestartReadsTheParent` (Query of `WS#*#RUN#*`) and the RUNLIST
+  partitions beside its run rows; voc-engineering-runtime `RunsListRows`, `RestartReadsPatches` and `WriteRestartSeeds`
+  (`ws/default/runs/*/_seed/*`, create-only); the board `ReadRecordedOutputs` with an explicit Deny on `_transcripts`
+  and `_checkpoints`; the Agents API `s3:GetObject` on the runs' transcripts, patches, gate records and manifests and
+  `s3:ListBucket` held to the transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). No agent role
+  gains anything.
 
 ## Reports
 

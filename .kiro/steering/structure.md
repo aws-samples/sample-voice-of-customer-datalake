@@ -146,7 +146,9 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── TimeRangeSelector/    # Date range picker
     │   │   │   ├── UserAdmin/            # User administration (platform admins: grant and revoke platform admin)
     │   │   │   └── UserProfileModal/     # User profile modal
-    │   │   ├── pages/                # Each page in its own folder (28 folders; a selection below)
+    │   │   ├── pages/                # Each page in its own folder (29 folders; a selection below)
+    │   │   │   ├── Agents/           # Agents, automations, engineering flows and Spend (docs/autonomous-agents.md)
+    │   │   │   │   └── RunWorkspace/ # An engineering run's page (7.51.00): canvas with lanes, threads, steering, inspector; Agents → Runs
     │   │   │   ├── Categories/       # Category breakdown and analysis
     │   │   │   ├── Chat/             # Full-page view of the unified AI assistant
     │   │   │   ├── Dashboard/        # Overview with charts and social feed

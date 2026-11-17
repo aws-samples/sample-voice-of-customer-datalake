@@ -45,7 +45,7 @@ export function AgentControls({ runId, agent }: Readonly<{ runId: string; agent:
       </div>
       {signal.isError && <p role="alert" className="text-[12px] text-danger">{errorText(signal.error)}</p>}
       {signal.isSuccess && <p role="status" className="text-[12px] text-muted">{t('engineeringRun.signalSent')}</p>}
-      <ConfirmModal isOpen={asking === 'stop_now'} title={t('engineeringRun.stopNowTitle')} message={t('engineeringRun.stopNowMessage')}
+      <ConfirmModal isOpen={asking === 'stop_now'} title={t('engineeringRun.stopNowTitle')} message={t('engineeringRun.stopNowAgentMessage')}
         confirmLabel={t('engineeringRun.signals.stop_now')} isLoading={signal.isPending} onCancel={() => setAsking(null)}
         onConfirm={() => {
           setAsking(null)

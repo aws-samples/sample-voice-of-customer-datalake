@@ -1321,7 +1321,6 @@
       "asGiven": "按开始时的输入记录，未在托管平台上核实",
       "opens": "{{label}}（在新标签页中打开）"
     },
-    "actionsUnavailable": "此部署尚无法发送暂停、继续、保存和回复：它没有将运行监视器连接到工程运行时和总线。“停止”可以使用。",
     "runSignals": "运行控制",
     "agentSignals": "智能体 {{agent}}",
     "signals": {
@@ -1334,26 +1333,8 @@
     "stopNowTitle": "不保存就立即停止？",
     "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“停止”。",
     "stopNowAgentMessage": "代理会立即停止，不留检查点：它尚未保存的内容都会丢失。若要保留，请改用“停止”。",
-    "moreRun": "更多运行控制",
-    "moreFor": "{{target}} 的更多操作",
-    "saveCheckpoint": "保存检查点",
-    "refreshFailed": "无法刷新：这是上次读取的内容。",
-    "retry": "重试",
-    "runState": {
-      "running": "运行中",
-      "waiting": "等待人工处理",
-      "stopping": "正在停止…",
-      "done": "完成",
-      "failed": "失败",
-      "stopped": "已停止"
-    },
     "stop": {
-      "group": "停止运行",
-      "more": "更多停止方式",
-      "nowItem": "立即停止，不保存…",
-      "stoppingButton": "正在停止…",
       "unavailable": "从此部署无法停止此运行：它没有指定启动函数。",
-      "sent": "已发送停止",
       "agentSaving": "{{agent}} 正在保存检查点…",
       "stopping": "已发送停止：{{agents}} 正在保存检查点，之后运行会停止。",
       "stopped_one": "已停止。已关闭 {{count, number}} 个未完成的任务。",
@@ -1772,7 +1753,8 @@
       "about": "关于 {{agent}}",
       "send": "发送给编排者",
       "hint": "按 Enter 发送；按 Shift+Enter 换行。",
-      "sent": "已发送给编排者。"
+      "sent": "已发送给编排者。",
+      "unavailable": "此部署尚无法发送引导和回复：它没有将智能体 API 连接到工程运行时和总线。"
     },
     "agentControls": {
       "restart": "重新开始",
@@ -1949,9 +1931,9 @@
       "stopping": "正在停止…",
       "moreStop": "更多停止方式",
       "stopNow": "不保存，立即停止…",
-      "more": "更多操作",
+      "more": "更多运行控制",
       "save": "保存检查点",
-      "limited": "暂停、继续和保存需要工程运行时，本部署尚未接入。停止仍会结束运行。",
+      "limited": "暂停、继续和保存需要工程运行时和总线，本部署尚未接入。",
       "refreshFailed": "无法刷新此运行：显示的是最后一次正常读取的状态。",
       "retry": "重试",
       "stopSent": "已发送停止"

@@ -21,7 +21,7 @@ from engineering.board.test.test_flow_ops import COORDINATOR, HUNTER, _finish
 from engineering.board.test.test_progress_repost import Bus
 from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
-from engineering.flow.assertion_record import assertion_rows, results
+from engineering.flow.assertion_record import results
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.orchestration.assertions import Recorded
 from engineering.rows import run_rows
@@ -89,7 +89,7 @@ def test_a_done_steps_assertions_are_recorded_once_at_its_attempt(bugs) -> None:
     call(board, COORDINATOR, op='flow')   # (read again: recorded once)
     rows = run_rows(board.client, TABLE, WS, RUN, 'ASSERT#')
     assert [(row['sk']['S'], row['by']['S']) for row in rows] == [('ASSERT#hunt#1', 'coordinator-1')]
-    assert [(item['check'], item['status']) for item in assertion_rows(rows)] == [
+    assert [(item['check'], item['status']) for item in json.loads(rows[0]['results']['S'])] == [
         ('findings.cite_evidence', 'pass'), ('tasks.posted', 'pass')]
 
 

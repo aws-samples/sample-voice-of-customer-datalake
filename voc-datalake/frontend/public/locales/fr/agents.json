@@ -1328,7 +1328,6 @@
       "asGiven": "tel que donné au départ, non vérifié sur l’hébergeur",
       "opens": "{{label}} (s’ouvre dans un nouvel onglet)"
     },
-    "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer Pause, Reprendre, Enregistrer ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie. Arrêter fonctionne.",
     "runSignals": "Commandes de l’exécution",
     "agentSignals": "Agent {{agent}}",
     "signals": {
@@ -1341,26 +1340,8 @@
     "stopNowTitle": "Arrêter tout de suite, sans enregistrer ?",
     "stopNowMessage": "Le travail s’arrête aussitôt, sans point de reprise : ce qui n’est pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
     "stopNowAgentMessage": "L’agent s’arrête aussitôt, sans point de reprise : ce qu’il n’a pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
-    "moreRun": "Autres commandes de l’exécution",
-    "moreFor": "Plus pour {{target}}",
-    "saveCheckpoint": "Enregistrer un point de reprise",
-    "refreshFailed": "Actualisation impossible : voici la dernière lecture.",
-    "retry": "Réessayer",
-    "runState": {
-      "running": "En cours",
-      "waiting": "Attend une personne",
-      "stopping": "Arrêt en cours…",
-      "done": "Terminé",
-      "failed": "Échoué",
-      "stopped": "Arrêté"
-    },
     "stop": {
-      "group": "Arrêter l’exécution",
-      "more": "Autres façons d’arrêter",
-      "nowItem": "Arrêter tout de suite, sans enregistrer…",
-      "stoppingButton": "Arrêt en cours…",
       "unavailable": "Arrêter n’atteint pas cette exécution depuis ce déploiement : il ne nomme aucune fonction de démarrage.",
-      "sent": "Arrêt envoyé",
       "agentSaving": "{{agent}} enregistre un point de reprise…",
       "stopping": "Arrêt envoyé : {{agents}} enregistre un point de reprise, puis l’exécution s’arrête.",
       "stopped_one": "Arrêtée. {{count, number}} tâche ouverte a été fermée.",
@@ -1779,7 +1760,8 @@
       "about": "Au sujet de {{agent}}",
       "send": "Envoyer à l’orchestrateur",
       "hint": "Enter envoie ; Shift+Enter commence une nouvelle ligne.",
-      "sent": "Envoyé à l’orchestrateur."
+      "sent": "Envoyé à l’orchestrateur.",
+      "unavailable": "Ce déploiement ne peut pas encore envoyer de consignes ni de réponses : il ne relie pas l’API des agents au runtime et au bus d’ingénierie."
     },
     "agentControls": {
       "restart": "Relancer",
@@ -1956,9 +1938,9 @@
       "stopping": "Arrêt en cours…",
       "moreStop": "Autres façons d’arrêter",
       "stopNow": "Arrêter tout de suite, sans enregistrer…",
-      "more": "Plus d’actions",
+      "more": "Autres commandes de l’exécution",
       "save": "Enregistrer un point de reprise",
-      "limited": "Mettre en pause, Reprendre et Enregistrer demandent l’environnement d’ingénierie, que ce déploiement ne relie pas encore. Arrêter termine quand même l’exécution.",
+      "limited": "Mettre en pause, Reprendre et Enregistrer demandent l’environnement et le bus d’ingénierie, que ce déploiement ne relie pas encore.",
       "refreshFailed": "Impossible d’actualiser cette exécution : vous voyez son dernier état valide.",
       "retry": "Réessayer",
       "stopSent": "Arrêt envoyé"

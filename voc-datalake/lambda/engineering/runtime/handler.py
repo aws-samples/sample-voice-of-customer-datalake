@@ -346,8 +346,8 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
         stopped = _stop_in_runtime(run_id, str(event.get('actor') or ''), WHOLE_RUN_STOPS[kind])
         return {'agents': stopped.agents, 'applied': dict.fromkeys(stopped.agents, True),
                 'run': stopped.view()}
-    if kind == 'resume':
-        _refuse_resume_while_stopping(run_id)
+    if kind in ('resume', 'restart'):
+        _refuse_while_stopping(run_id, kind)
     if after_fill:
         # A person's Resume, carried on once the fill it handed on has landed: only while the run still waits at the
         # checkout cache's point, where that Resume left it; at any other (a flow step, the coordinator's) the person
@@ -388,11 +388,13 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
 WHOLE_RUN_STOPS: Final[dict[str, str]] = {'shutdown': STOP, 'stop_now': STOP_NOW}
 
 
-def _refuse_resume_while_stopping(run_id: str) -> None:
-    """A Resume of a run a person is stopping is refused: the Stop decided (7.50.03)."""
+def _refuse_while_stopping(run_id: str, kind: str) -> None:
+    """A Resume of a run a person is stopping, or (7.51.00) a Restart of one of its agents, is refused: the Stop
+    decided (7.50.03)."""
     run = _runs().get(run_id)
     if run is not None and run.stopping:
-        raise RuntimeRefused(f'run {run_id} is being stopped: it cannot be resumed')
+        raise RuntimeRefused(f'run {run_id} is being stopped: it cannot be '
+                             f'{"resumed" if kind == "resume" else "restarted"}')
 
 
 def _board_store() -> BoardStore:

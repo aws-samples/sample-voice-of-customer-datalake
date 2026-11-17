@@ -11,6 +11,7 @@ import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SessionThread } from './SessionThread'
+import type { SessionActions } from './SessionThread'
 import { useSessionName } from './useSessionLayout'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import type { GridLeaf, GridNode, GridSplit } from './agentGridModel'
@@ -26,7 +27,7 @@ interface Props {
   agents: readonly EngineeringAgent[]
   orchestrator: string | null
   current: string | null
-  canAct: boolean
+  actions: SessionActions
   lanes: Readonly<Record<string, readonly RunLane[]>>
   onFocus: (agent: string) => void
   onFill: (paneId: string, agent: string | null) => void
@@ -83,7 +84,7 @@ function Pane({ pane, ...props }: Readonly<Omit<Props, 'grid'> & { pane: GridLea
     onPointerDown={() => { if (agent !== undefined && agent.agent !== props.current) props.onFocus(agent.agent) }}>
       {agent === undefined
         ? <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-muted">{t('runWorkspace.sessions.emptyPane')}<span className="ml-auto flex gap-1">{tools}</span></div>
-        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} canAct={props.canAct}
+        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} actions={props.actions}
           focused={agent.agent === props.current} lanes={props.lanes} tools={tools} />}
     </div>
   )
