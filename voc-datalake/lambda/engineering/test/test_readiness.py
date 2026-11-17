@@ -320,7 +320,7 @@ def test_the_dial_says_who_the_runs_follow_and_each_way_of_working_by_its_name()
     assert found.detail == ('The runs follow alice, whose way of working is Human-driven, so a run would push nothing. '
                             'This flow needs AI-assisted or AI-driven.')
     assert found.fix == ('An administrator sets the way of working of alice to AI-assisted or AI-driven in '
-                         'Administration → Privacy & access → Users (/admin/access/users); with AI-assisted, each push '
+                         'Administration → People (/admin/people); with AI-assisted, each push '
                          'waits for a person\'s go on the run.')
     unset = checks(named, Ports(modes={}))['dial']
     assert unset.detail == ('Not set yet: choose AI-assisted or AI-driven for alice. With nothing saved, a run pushes '
@@ -332,7 +332,7 @@ def test_the_dial_says_who_the_runs_follow_and_each_way_of_working_by_its_name()
     declared = replace(named, requires={'dial': ['ai_driven']})
     found = checks(declared, Ports(modes={'admin-sub': 'ai_assisted'}))['dial']
     assert found.detail == 'The runs follow alice, whose way of working is AI-assisted. This flow needs AI-driven.'
-    assert found.fix.endswith('to AI-driven in Administration → Privacy & access → Users (/admin/access/users).')
+    assert found.fix.endswith('to AI-driven in Administration → People (/admin/people).')
     # No name known: who it would be, never an id.
     assert checks(ports=Ports(modes={'admin-sub': 'human_driven'}))['dial'].detail.startswith(
         'The runs follow the administrator who enables the agent, whose way of working is Human-driven')
@@ -344,7 +344,8 @@ def test_the_dial_says_who_the_runs_follow_and_each_way_of_working_by_its_name()
 def test_the_issues_source_fix_names_the_connection_switch_and_the_card() -> None:
     fix = checks(ports=Ports(issues=False))['issues_source'].fix
     assert fix.startswith('Agents → Connections: turn on "Read this repository\'s issues" on its connection')
-    assert 'Administration → Data sources → GitHub Issues (/admin/data-sources/github_issues)' in fix
+    assert ('Administration → Data sources → GitHub Issues (Deployment) '
+            '(/admin/sources/github_issues?scope=deployment)') in fix
     assert 'Settings' not in fix
 
 
