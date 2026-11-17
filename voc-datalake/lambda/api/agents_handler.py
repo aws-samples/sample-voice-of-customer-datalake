@@ -780,7 +780,8 @@ SHARED_FLOW = ('other automations run this flow: saving changes each of them fro
                'confirm_shared: true to change them all')
 
 
-def _automation(agent: Mapping[str, Any]) -> dict[str, Any]:
+def _used_by_automation(agent: Mapping[str, Any]) -> dict[str, Any]:
+    """An automation as a workflow's ``used_by`` lists it (7.52.00)."""
     settings = agent.get('engineering') if isinstance(agent.get('engineering'), Mapping) else {}
     return {'agent_id': str(agent.get('agent_id')), 'name': str(agent.get('name') or agent.get('agent_id')),
             'kind': 'engineering' if store.is_engineering_agent(agent) else 'agents',
@@ -803,7 +804,7 @@ def _used_by(caller: Caller, workflows: list[dict] | None = None) -> dict[str, d
             scope = scope or _viewer_scope(caller)
             if not store.agent_visible(scope, agent):
                 continue
-        found.setdefault(workflow_id, {'automations': [], 'flows': []})['automations'].append(_automation(agent))
+        found.setdefault(workflow_id, {'automations': [], 'flows': []})['automations'].append(_used_by_automation(agent))
     rows = workflows if workflows is not None else store.list_workflows(_agents_table())
     for row in rows:
         if store.is_archived_workflow(row):
@@ -1717,12 +1718,14 @@ def _readiness_ports() -> Any:
         engineering_client=get_dynamodb_client(), engineering_table=table, s3=get_s3_client(),
         workspace_bucket=os.environ.get('ENGINEERING_WORKSPACE_BUCKET', ''), quotas=_service_quotas_client,
         bedrock=_bedrock_control_client, inspect=_invoke_app_tokens,
-        watermarks=resource.Table(watermarks) if watermarks else None, issues=_issues_follow(), ssm=_ssm_client)
+        watermarks=resource.Table(watermarks) if watermarks else None, issues=_issues_follow(),
+        ssm=_readiness_ssm_client)
 
 
 @cache
-def _ssm_client() -> Any:
-    """SSM for readiness's ``kiro`` check (7.53.00: the Kiro key parameter's metadata only, never its value)."""
+def _readiness_ssm_client() -> Any:
+    """SSM for readiness's ``kiro`` check (7.53.00: the Kiro key parameter's metadata only, never its value), with
+    short timeouts; the connections' own client (``_ssm_client``, below) keeps botocore's."""
     import boto3
     from botocore.config import Config
 
