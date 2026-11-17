@@ -17,6 +17,352 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.54.00] - 2026-11-17
+
+Administration is redesigned around what an administrator comes to do: it opens on a **home** with search and **Needs
+attention**, and its nine tabs are grouped by how often they come up (Everyday: People, Data sources, Logs; Regularly:
+Categories, Feedback boards; Set up once: AI models, Brand & appearance; Rare: Privacy, Platform), one page each, at new
+paths with no aliases. People is one table with an editor in a side sheet; Data sources has a This workspace |
+Deployment switch and an Advanced fold; every card says "Saved" the one way. This release also closes the
+7.51.01–7.54.00 batch: it is shipped together, the package versions go from 7.51.0 to 7.54.0, and the settings pages
+get 7.51.01's tooltips.
+
+### Added
+
+- **The Administration home** (`/admin`, `SettingsHome.tsx`):
+  - search (`SettingsSearch.tsx`, an APG combobox over `settingsIndex.ts`: every tab and card, plus Agents › Spend and
+    Connections and Account › Preferences, with each locale's own terms, `settings:search.terms.*`; `/` focuses it on
+    Administration pages; "Erase" finds Privacy › Erasure first, "GDPR" finds Privacy);
+  - **Needs attention** in a `role="status"`, hidden when empty: sources a breaker paused, enabled people with no way of
+    working saved, AI models this account cannot call (from the reads the pages already make: `/sources/status`,
+    `/users`, `/settings/model/capacity`; the Logs count from `/logs/summary?days=1`);
+  - the Everyday cards with their counts, the other groups as links, Elsewhere, and "Version X · Release notes"
+    (`/admin/version`).
+- **Navigation** (`adminTabs.ts`, `adminTabLabels.ts`, `adminPaths.ts`, `useAdminLocation.ts`, `AdminNav.tsx`): one page
+  per tab with a "← Administration" header, its name and its job; from `lg` a grouped
+  `<nav aria-label="Administration">` with `aria-current="page"`. A path that names a section scrolls to and focuses its
+  card (`SectionAnchor.tsx`). Paths: `/admin/people[/<username>|/invite]`,
+  `/admin/sources[/<source>|/inbox|/radar|/tokens][?scope=deployment]`, `/admin/logs`, `/admin/categories[/dimensions]`,
+  `/admin/boards[/<id>|/domains|/participants]`, `/admin/ai`, `/admin/brand[/theme]`, `/admin/privacy[/erasure]`,
+  `/admin/platform[/deployment-brand]` (platform admins only), `/admin/version`. `adminPaths.ts` is the one query reader
+  (`scope`, pinned in `locationParams.test.ts`).
+- **People** (`components/UserAdmin`): one table (Name, Role, Way of working, Flags, Status, Edit) and a person's editor
+  on the new **SideSheet** (`components/SideSheet`: `ModalShell` with `placement="end"`, `.sheet-panel`,
+  `--animate-slide-in-end`): role, category and source access, way of working (7.50.02's Not set, comparison and
+  radiogroup kept), fallback owner, memory reviewer, platform admin, name, reset password, disable or enable, and Delete
+  at the foot. **Invite person** is the tab's one primary.
+- **Data sources** (`DataSourcesPage.tsx`): the This workspace | Deployment switch for platform admins inside a
+  workspace (the deployment's sources are no longer a tab of their own), the two-sentence deployment notice, cards
+  health first (paused or failing on top, the order fixed on first read), 7.50.02's GitHub Issues managed view, and
+  Advanced with Email inbox, Radar and Design-system tokens (Integrations before), in this workspace's view only.
+- **One Saved pattern** (`components/SavedStatus`): every card says "Saved" in a `role="status"` until its next edit;
+  the 3 s and 2 s timers and the page-level Save are gone (brand, source credentials, theme, AI models, boards, domains,
+  participant email, Radar, Exa, inbox caps, draft editors, categories, People).
+
+### Changed
+
+- Feedback boards takes the Participant email card; Privacy holds Source policies and the erasure panels; Platform the
+  workspaces and the deployment brand; Brand & appearance the brand card (its own Save, with the unsaved-changes guard
+  on leaving the tab), the default theme and, in dev builds, the API endpoint under Advanced.
+- Account opens on Preferences (`/account`; the tab bar keeps Profile first).
+- Copy: the tabs', sections', home's, search's and scope's keys in 9 locales; every "Administration → …" pointer, the
+  assistant's guidance and tool text, and the backend messages that named the old places (design references, archive
+  imports, Radar, failure reasons, alerts) name the new ones; links across the app use the new paths, Agents' included
+  (`ReadinessChecks`, the setup guide's prerequisites, `agents:openSources`).
+- **Readiness's fixes** (`lambda/engineering/readiness.py`, the batch): "Administration → People" at `/admin/people`,
+  and the deployment's GitHub Issues card at `/admin/sources/github_issues?scope=deployment`.
+- **One side sheet** (the batch): the shared document component's `sheet` variant (7.52.00) is this release's
+  `SideSheet`, with a new `size="wide"` (44rem from `sm`): the sheet's own title, the document's details as its
+  description, the decision or Close in its footer. History's Open and Compare open on it (they were a centred dialog).
+- **Tooltips on the settings pages** (7.51.01's migration, which waited for this release): their 26 native titles
+  (pages/Settings, components/UserAdmin, pages/Account) become `Tooltip` (`label` for the selects and icon buttons,
+  `description` for a mode's meaning, a test's model and cost, a raw source id behind its name, a breaker's full error,
+  counts and hints), `TruncatedText` (names, ids, messages) and an `InfoTip` (the PR/FAQ and PRD unlocks); the S3 notice's
+  title, which only repeated it, is dropped. The admin-gated controls on Settings follow Scrapers: focusable with
+  `aria-disabled`, saying why in their tooltip and description, translated (`common:adminOnly`; the English
+  `ADMIN_ONLY_TITLE` constant is gone): the Enabled switch, Save to Secrets Manager, the breaker's Reset and the
+  validation logs' Clear. The native-title ratchet holds 9 titles in 7 files (the flow canvas and the document editor).
+
+### Removed
+
+- `DeploymentDataSources.tsx` (its test became `DataSourcesPage.test.tsx`), `SectionSwitch.tsx`, `UserFlagsPanel`,
+  `PlatformAdminPanel`, `AiModePanel`, `UserSettingsPanel.tsx`, `useUserSettingSave.ts`, `EditUserModal.tsx`,
+  `hooks/useResetAfter.ts` (with their tests); the mobile dropdown, the page-level Save and Header, `BrandConfigSection`;
+  the old `tabs.*` / `sections.*` keys and other dead keys in 9 locales; unused props (`SavedStatus.className`,
+  `SideSheet.dismissable`, `NameFields.autoFocusFirst`, `RefusalAlert.className`); `constants/admin.ts` (the batch).
+
+### Upgrade notes
+
+- **No address of before is aliased.** `/admin/access/users`, `/admin/data-sources[/…]`, `/admin/taxonomy/…`,
+  `/admin/system/…` and the other old tabs open the Administration home; an unknown section opens its tab. Update
+  bookmarks and runbooks ([account-vs-admin.md](docs/account-vs-admin.md) has the table of old and new paths).
+- No routes, IAM or stacks are added or changed by the redesign; deploy the frontend (and, for the batch, the stacks as
+  the 7.51.0x–7.53.00 notes below say: VocProcessingStack, then VocApiStack, then the frontend).
+- The e2e specs that name Administration's places (inventory, surfaces, boards, workspace admin, modals, …) are updated
+  but were not run here (they need a deployment).
+
+## [7.53.00] - 2026-11-17
+
+Agents can run as **Kiro CLI over ACP**, for a whole deployment or for chosen roles, with the native harness still the
+default. A **scheduled cross-run Learn pass**, off by default, reads a flow's recent runs once a week and only proposes.
+**MCP for runs** lets a local Kiro or Claude agent follow, analyse and steer runs through the global MCP server and ask
+for a Run now that an administrator confirms in the app. The harness's shipped skills and platform rules are now read
+from the compiled bundle, one source of truth.
+
+### Added
+
+- **The Kiro harness** (`runtime/harness/kiro.py`, `runtime/harness/acp.py`, `runtime/harness_switch.py`,
+  `lib/stacks/engineering-kiro.ts`, `engineering-images/common/install-kiro.sh`).
+  - `-c engineeringHarness=native|kiro|kiro:<role>,<role>`, `native` by default (`ENGINEERING_HARNESS` on the runtime,
+    the start function and readiness). A role on Kiro launches its skill with `--adapter kiro --kiro-version 3.4.0
+    --kiro-key-parameter <param>`; the session row keeps that argv, so a continuation stays on the harness it started on
+    (skill records still say `harness: converse`).
+  - kiro-cli (`kiro-cli acp --agent-engine=v3`) is the harness's child: it runs as `unit` in the harness's namespace,
+    its only way out the agent's proxy, with an isolated HOME (`~/.voc/kiro/home`, wiped each start), from an empty work
+    directory, never the checkout. Its one MCP server is the harness's own tool server, which serves exactly the
+    session's tools from the harness's registry (so 7.52.00's `read_tenets` and `write_tenets` arrive with no edit); no
+    Kiro builtin is ever offered. The session's agent config is the compiled `kiro-agents/<role>.json`, now shipped in
+    every image and MCP-only (`tools: ["@voc"]`, `allowedTools` and one `mcp` allow rule naming exactly those tools).
+  - The ACP mapping: the brief is `initialize` (no fs or terminal capability), `session/new {cwd, mcpServers: []}`,
+    `set_config_option mode=<role>` (refused unless Kiro reports that mode), then `session/prompt`; steering and the
+    run's direction are a mid-turn `session/prompt` in the `<<<STEERING>>>` fence (the first turn ends `cancelled`, each
+    stop reason recorded); a person's Stop, a Shut down or a save-and-stop is `session/cancel`, a 30 s wait for
+    `cancelled`, kiro-cli ended, a checkpoint and exit 75; `session/update` maps to progress (coalesced message and
+    thought chunks; Kiro's own and refused tool calls as `tool_call` / `tool_result`); `request_permission` answers
+    `allow_once` only for an offered `@voc/<tool>`, else `reject_once`, never `allow_always`; `fs/*` and `terminal/*` are
+    method-not-found; a resume is `session/load` from the Kiro session saved with each checkpoint
+    (`_kiro/attempt-<n>/<seq>-<nonce>.tgz`, named in `position.kiro`; a child run's `seed_restart` copies it as
+    `_seed/<task>/kiro.tgz`), falling back to 7.51.00's notes or seed.
+  - The key: an operator stores a SecureString at `/[<prefix>-]voc/engineering/_kiro/api-key`; the harness reads it
+    just in time and passes it only in kiro-cli's environment (the tool server's environment is blanked).
+  - Readiness: an advisory `kiro` check (the key's type only, never its value; its label in 9 locales). The runner
+    reports `kiro_cli`.
+- **The scheduled cross-run Learn pass** (`learning/cross_run*.py`, `lib/stacks/engineering-cross-run.ts`):
+  `-c engineeringCrossRunLearn=weekly|off`, `off` by default (the one Scheduler schedule, Mondays 06:00 UTC, is created
+  DISABLED). Once per flow per ISO week (one claim each), within Learn's `budget_share` of the flow's monthly budget, it
+  reads the flow's runs of the last 28 days, counts their recurring failures, step times and costs, makes at most one
+  model call, and only proposes (lessons as drafts, skill additions as proposed versions behind the benchmark gate).
+  The record is `ws/default/learn/<flow>/<week>/v1.json`, read by `GET /agents/engineering/learn`.
+- **MCP for runs** (`lambda/shared/mcp_global_tools_engineering.py`, docs/mcp.md): five tools for a write token minted
+  by an administrator who still is one, each admitted for its one operation and never as an admin, and audited (the two
+  that act at most 20 an hour per token): `engineering_runs_list`, `engineering_run_get`, `engineering_run_analysis`
+  (`GET /agents/engineering/<run>/retrospective`, new: Learn's record of the run, with `cross_run` the flow's newest
+  weekly record), `engineering_run_steer` (the minter's steering, marked as sent from a local assistant) and
+  `engineering_run_request`. A request for a Run now is a row (`engineering/run_requests.py`, `WS#default#RUNREQ#queue`)
+  that waits 24 hours for an administrator to confirm or decline it in Agents → Runs (`RunRequests`:
+  `GET/POST /agents/engineering/requests`, `GET …/requests/automations`, `POST …/requests/<id>/confirm|decline`); the
+  `voc-runs` MCP skill. TENETS.md tenet 4 says how.
+
+### Changed
+
+- **The shipped skills come from the bundle** (`runtime/harness/skills.py`): every shipped skill and the platform rules
+  are read from the compiled bundle the image (`/opt/voc/orchestration/bundle.json`) or the Lambda ships; the
+  hand-written records are gone (they lagged the templates: the coordinator is now v5 with `relay_steering` and
+  `set_direction`, the understander 7.52.00's v4), and a test holds every role to the bundle's record.
+- Every image installs kiro-cli 3.4.0 (the musl arm64 build from `prod.download.cli.kiro.dev`, checked against its
+  published sha256) and ships the compiled Kiro configs, whatever the harness.
+- `kiro` is an artifact kind beside 7.52.00's `tenets` (`workspace/layout.py`, `runtime/checkpoints.py`).
+
+### IAM (pinned in the CDK tests)
+
+- **Roles on Kiro only:** `KiroApiKey` (`ssm:GetParameter` on exactly the key's ARN) and `KiroApiKeyDecrypt`
+  (`kms:Decrypt` of the stack's key through SSM only, conditioned on `kms:EncryptionContext:PARAMETER_ARN`).
+- **voc-engineering-runtime:** `RestartReadsKiroSessions` (a restart's copy of the saved Kiro session); the cross-run
+  pass's `CrossRunListsIndex` (`s3:ListBucket` held to the index's prefix), `CrossRunReadsManifests`, `CrossRunRecords`
+  (`s3:PutObject` on `ws/default/learn/*`, create-only) and `CrossRunRows` (GetItem, PutItem, UpdateItem on
+  `WS#*#LEARN#*`); the schedule's own role invokes the runtime and nothing else.
+- **voc-agents-api:** `RunRequests` (PutItem and UpdateItem on `WS#*#RUNREQ#*` by `dynamodb:LeadingKeys`, no delete);
+  GetObject and a listing on `ws/default/learn/*`; `ssm:DescribeParameters` only when a role is on Kiro.
+- **Egress** (the agent proxy only): `runtime.us-east-1.kiro.dev`, `management.us-east-1.kiro.dev` and
+  `ssm.<region>.amazonaws.com`.
+- The MCP Lambda and the agent roles gain nothing. cdk-nag acknowledgements 135 → 137 (the learn records' put and read).
+
+### Upgrade notes
+
+- **Rebuild all four engineering images** and deploy their digests (`engineeringImages`), even on the native harness:
+  each now carries kiro-cli and the Kiro configs, and readiness's `kiro` check reads the runner's report.
+- **The Kiro API key is stored by an operator**, once, before a role runs on Kiro (no stack or function writes it):
+  `aws ssm put-parameter --region <region> --name /voc/engineering/_kiro/api-key --type SecureString --key-id
+  alias/<the deployment's voc-datalake-key alias> --value "file://<a file holding only the key>"`
+  (`/<prefix>-voc/engineering/_kiro/api-key` on a prefixed deployment; `--overwrite` to replace it). The sessions' way
+  out must admit the three egress hosts above. Keep `engineeringHarness=native` until a live run on Kiro has been
+  checked in a test account: kiro-cli behind the namespaces, the proxy and the NAT on AgentCore, the key read with the
+  agent's role, `session/load` across two microVMs and an hour-long tool call have not run live yet.
+- Deploy VocProcessingStack (runtime, start function, the schedule), then VocApiStack (the Agents API's routes and
+  grants), then the frontend.
+- The cross-run pass stays off until `-c engineeringCrossRunLearn=weekly`; it has no UI and no per-automation setting.
+- Not built: push notices and watchers (AppSync); a Kiro session's tokens are not counted (Kiro bills its own
+  credits).
+
+## [7.52.00] - 2026-11-17
+
+The engineering agents get their **Registry** (every role's card composed on the server, and cards made from an
+accepted skill), the **quality gates' and the assertions' data**, flows that **call another flow** at a pinned revision,
+**Used by** and the shared-flow guard, an exact **Paused** state, and the **knowledge flows**: an approved knowledge
+pack's `docs/agents/**` and the accepted tenets' `TENETS.md` opened as a pull request through the broker, a versioned
+tenets store with its flow, and triage held to the accepted tenets. The run workspace's reads gain a run's expansion,
+each agent's card, and a gate read with each check's pack and language, the round, the tools' versions and the
+final go's decision. A person can write a skill version as a proposal. The web app gets **one document component**
+(X1): Projects documents, History and the review page read, edit and compare through `DocumentSurface`, with Compare
+and merge on a stale save.
+
+### Added
+
+- **The knowledge docs pull request** (7.52 A).
+  - Approving a knowledge pack version records the repository docs it renders to (`knowledge/render_docs.py`: pure;
+    `docs/agents/index.md` and one `docs/agents/<package path>.md` per approved package, the root as
+    `repository.md`, `index` or `repository` packages as `*-package.md`, two packages on one file refused; the
+    `rendering_digest` is the sha256 of the sorted `[(path, sha256)]` JSON). `PackStore.approve` writes the digest
+    on the version and its `KPACKLOG` row, with `KDOCS` and a create-only `KDOCSLOG#<n>`, in one transaction (two
+    racing approvals: one is 409).
+  - Routes (`lambda/shared/agents_engineering_knowledge_routes.py`, administrators acting for themselves, 404 while
+    the module is off): `GET /agents/engineering/knowledge/<conn>[/<pkg>/versions/<v>]`, `POST …/approve`;
+    `GET /agents/engineering/tenets/<conn>[/versions/<v>]`, `POST …/versions/<v>/accept|reject`;
+    `GET /agents/engineering/docs/<conn>/preview?kind=knowledge|tenets` (`{files: [{path, sha256, bytes, text}],
+    digest, approved_digest, matches, branch, patch, patch_truncated, texts_truncated}`); `POST …/docs/<conn>/publish`
+    `{kind, digest, pr?}` → 202 `{pr: {url, number, branch}, kind, version, digest, draft}`, or 409 `human_driven`
+    (the API checks the stored way of working first), `already_published`, `digest_mismatch`, `not_approved`.
+  - The broker's `push_approved_docs`, voc-engineering-start's alone (every agent role and the runtime get 403): the
+    credential must name the stored repository; the approval is rendered again and the request's, the approval's and
+    the rendering's digests must be one; `write_policy.docs_paths` allows `docs/agents/**` for the knowledge and
+    exactly `TENETS.md` for the tenets, 4 MB at most; the requester's stored way of working is read again, failing
+    closed; the CI attestation and branch rules apply; one bot commit on `voc-agent/docs/<kind>-v<n>` from the
+    default branch's head (`RepositoryHost.tree_with`: a Git Data tree on GitHub, worked out from listings on
+    GitLab), and a ready or draft pull request (`pr`, else the flow's own). The push and the pull request are claims
+    in `WS#default#DOCS#<conn>`: a failed open is retried from the pushed branch, a second publish answers `repeated`.
+    voc-engineering-start's `publish_docs` (`runtime/docs_publish.py`) asks it.
+- **The tenets** (7.52 A).
+  - A versioned store in `WS#default#REPO#<conn>` (`knowledge/tenets.py`): `TENETS` (the counter, the accepted
+    version with its `TENETS.md` digest and ids), `TENETS#<v>`, create-only `TENETSLOG#<v>#<event>` and
+    `TENETSRUN#<run>` (one draft per run). Accept never moves the accepted version down; reject keeps the version.
+  - The **Tenets flow** (`flows/tenets.yaml`, the sixth default flow, after Understand): the understander reads the
+    approved pack, the repository's `TENETS.md` and the accepted tenets, and writes `voc-tenets/1` once with
+    `write_tenets` under `_tenets/attempt-<n>/`; `runtime/tenets_end.py` drafts it at the run's end. Its draft step
+    asserts `tenets.recorded`.
+  - The understander's card and skill are v4 (`read_tenets`, `write_tenets`; the shipped Python fallback too).
+    `issue-triage` v3 requires `tenets`; `understand-repository` v3 states `pr: ready`.
+  - **Triage cites accepted tenets only** (`outputs.unaccepted_tenets`): `write_triage` refuses an id the accepted
+    version does not hold and says which are accepted; the triage run's end refuses the trusted row
+    (`unaccepted_tenet`); with none accepted only `[]` passes. Readiness's `tenets` check reads the accepted version
+    (pass, or warn with none; never blocking), and `pack` names the docs' rendering.
+- **The Registry** (7.52 B; `lambda/shared/agents_engineering_registry_routes.py`, `lambda/engineering/registry/`):
+  `GET /agents/engineering/registry?connection=&month=` (every role's card composed on the server: its template, the
+  skill the scope runs, model, tools, gates, contracts, caps, scorecard and the month's spend; per-connection heads
+  without `?connection=`; the contract that every role has a card whose id is the role), `GET …/registry/<card>`,
+  and `POST …/registry/cards` `{from_skill: {role, connection?, version}, slug, purpose, title?, model?, caps?,
+  expected_version?}` → 201 `{card}` (an accepted skill version's model, tools and harness; caps at most the
+  template's; `WS#default#AGENTCARD#<id>` with `HEAD`, `VER#n`, `LOG#n#created` and the listing, in one transaction).
+- **The quality gates' data** (7.52 B and the integration): `GET /agents/engineering/gates?connection=` →
+  `{packs, aliases, own_gate, briefs, runners, defaults, stops, connection}`: each pack's tools, steps (every manifest
+  field, `messages`, `looked_at_nothing`) and briefs; the briefs as `{id, path, packs, digest, bytes}`;
+  `stops` `check_failed`, `looked_at_nothing`, `own_gate_changed`, `review_blocked`, `rounds_used_up` (each
+  `{code, decision, actions, text_key, text}`); with `?connection=` each pack's `recorded {tool_versions, run_id, at}`
+  from the connection's newest gate record (null otherwise). `GET …/gates/briefs/<id>` →
+  `{id, path, packs, digest, bytes, text}`.
+- **The assertions vocabulary** (7.52 B): `GET /agents/engineering/assertions` → `{checks: [{check, asks, label_key,
+  description_key, args, args_schema, kinds, on_fail}], on_fail, default_on_fail, max, roles}`. The integration adds
+  `tenets.recorded` (a `voc-tenets/1` record of 1-30 tenets, each with an id, a title and a statement), in the server
+  rules, the evaluator, the schema and the editor.
+- **Template sources** (the integration): `GET /agents/engineering/templates/<kind>/<id>/source` →
+  `{kind, id, path, text, digest, template_version}` for a role's `SKILL.md` (`skill`) or `agent.yaml` (`card`), a
+  flow's YAML (`flow`) or a gate brief (`brief`, no template version), from the bundle's new `sources`.
+- **A person's skill version** (the integration): `POST /agents/engineering/skills/<role>/versions?connection=`
+  `{base_version, instructions, examples, summary, reason?}` → 201 `{connection, role, version, event,
+  announcement}`: proposed on the version the scope runs (409 when that moved), with its tools, model and harness,
+  provenance `person`; accepted or rejected through the existing routes, never applied by itself.
+- **`call_flow`** (7.52 B; `shared/flow_expand.py`): a step that runs another saved flow at a pinned revision
+  (`{flow: 'wf_<12hex>@<rev>', inputs?, budget_share?}`), expanded in the API at both run starts (at most 2 deep,
+  60 steps, no cycles; a called flow that ends at a pull request only as its caller's last step); saves simulate the
+  expansion; `GET /workflows/<id>/expanded?revision=` previews it; the run records `expansion` on its copy's start
+  step and on the agent run row, and `POST /agents/engineering/runs` answers `run.expansion`. Flows declare their
+  `definition.inputs`; a quality gate's `runner` and `final_go` name who runs it (`<role>@latest|v<n>` or a card).
+- **Used by and the shared-flow guard** (7.52 B): `GET /workflows[/<id>]` answer `used_by {automations, flows}`;
+  `PUT /workflows/<id>` takes `confirm_shared` and answers 409 `{code: 'shared_flow', used_by}` without it.
+- **Paused** (7.52 B): `POST /agents/<id>/pause` and `…/resume` (an automation that is on; audited rows; the
+  heartbeat skips it; Run now still runs it; disabling ends the pause).
+- **The run workspace's reads** (the integration):
+  - the overview's run has `expansion` (`[{step, flow, revision, inputs?}]`), and each agent `card` and
+    `card_version` (the Registry card its step was made from, as its launch recorded it; null for a role's own step);
+  - the per-agent gate read (`GET …/<run>/agents/<agent>/gate`) adds each check's `pack` and `language`, `round`,
+    `tool_versions`, and the record's `verdict`, `stop {code, text_key, recorded}` and `final_go {verdict, agent,
+    model_id, reasons}`.
+- **The shared document component** (X1, UX part 6; `components/Document/`, docs/kiro-design-system.md › Documents):
+  - `DocumentSurface`, the app's one document viewer and editor: a feature passes its document through a
+    `DocumentAdapter` (`types.ts`: permissions, how a version is named, load, save with the version it was made on,
+    rename, conflict and refusal rules) and the surface never names a route. Variants `page`, `panel`, `sheet` and
+    `inline`; modes `read`, `edit` and `compare`; read-only reasons as visible text (`ReadOnlyNote`, with
+    `OlderVersionBanner`); loading, empty, saving / saved / unsaved, a refused save, a text past its limit, and the
+    stale-save conflict with **Compare and merge** (`conflict/ConflictBanner`, `MergeDialog`).
+  - The edit engine: the canvas editor and its Markdown round trip moved unchanged from
+    `components/DocumentCanvas/{editor,markdown}` to `components/Document/edit/` (the heading ids to `headingSlug.ts`);
+    the shared draft (`draft/useDocumentDraft`, `useSaveFlow`, `followVersion`, `saveShortcut`) holds
+    `useCanvasDocument`'s logic, generic over an adapter (`useCanvasDocument` is now the Projects binding;
+    `pages/ProjectDetail/useDocumentSave.ts` is gone).
+  - A light reader (`read/MarkdownRead`: react-markdown with `remarkParity`, so callouts, to-dos and heading ids read
+    as on the canvas, and Contents from the same parse) under two policies (`read/markdownPolicy.ts`: `stored` and
+    `model`; `SafeLink` and `safeHref` moved here from `assistant/components`), `ReadView` (Rendered | Source).
+  - Text views (`text/`: `CodeView`, `SourceEditor`, `frontMatter.ts` split and joined byte for byte, `PropertiesPanel`,
+    `limits.ts`) and diffs (`diff/`: `lineDiff.ts` from `assistant/approvals`, `BlockDiff`, `TextDiff` (the approval
+    card's), `DocumentDiff` rendered by default with a Source toggle, `merge.ts`: block-level merge on Revise's
+    exactly-once rule, which `reviseChanges.ts` now shares).
+  - On it: Projects documents (`pages/ProjectDetail/documentAdapter.ts`, the page variant through its page frame),
+    History's Open and Compare (the sheet variant) and the review page (`pages/Review/reviewDocumentAdapter.ts`: read,
+    comments, Contents). `readingColumn.ts`, `Outline` and `pageStyles.ts` moved into the component.
+  - The `documents` i18n namespace (9 locales): the 144 generic `projectDetail:canvas.*` keys with identical copy (Revise
+    keeps its 60 in `projectDetail:canvas.revise`), the conflict copy from `projectDetail:documentModal.*` and the
+    line-diff strings from `assistantTools:preview.diff.*`.
+  - ESLint under `components/Document/**`: no `rehype-raw`, no `dangerouslySetInnerHTML`, no import from a page or from
+    `DocumentCanvas` (the raw-HTML ban kept beside 7.51.01's native-title rule); CSS recipes `.md-content` callouts and
+    to-dos, `.md-content-compact`, `.code-view`.
+
+### Changed
+
+- **The tenets' decisions take a guard** (the integration): `POST …/tenets/<conn>/versions/<v>/accept|reject`
+  `{expected_accepted, reason?}`: the accepted version the screen showed (0 for none); 409 when it moved (an
+  acceptance holds it in the counter's conditional update; a rejection reads it before its write).
+- **The docs preview gives each file's text** (`text`, within 2 MB; `texts_truncated`), and the patch's 4 MB bound
+  now counts the texts.
+- **The gate runner's record keeps its tools' versions** (`tool_versions`, what `run_gate` found), which the harness
+  wrote as `{}` before.
+- **One helper for voc-engineering-start's synchronous actions** beyond a run's start (`eng_runs.ask_start`): the
+  reactions ask and the docs publish (the audit's near-clone allowlist entry is gone).
+- The orchestration bundle carries the gate briefs, steps and messages (B) and the templates' sources (the
+  integration): about 510 KB (from 89 KB). The SPA imports only `{flows}`.
+- The Kiro agent configs are recompiled: the understander's has `@voc/read_tenets` and `@voc/write_tenets` and its v4
+  prompt.
+- **The canvas renders an image only from a safe address** (X1; the policies' XSS corpus caught `data:` and
+  `javascript:` `src` values getting through); the stored Markdown is unchanged.
+- **History's Compare shows the rendered block diff** (X1), with a Source toggle, instead of the plain line diff.
+- **The `model` policy shows a text's raw HTML as inert source** (X1), as the pending-edit diff did, instead of skipping
+  it.
+
+### IAM (pinned in the CDK tests)
+
+- **voc-agents-api:** `SkillDecisions` gains `WS#*#AGENTCARD#*` (B); PutItem and UpdateItem on `WS#*#REPO#*` (by
+  LeadingKeys, `Null` false) and GetObject on `ws/default/knowledge/*` (A); pinned: no delete, no ConditionCheckItem on
+  REPO, no `DOCS#`, no `InvokeFunctionUrl`. The integration's gate reads (`?connection=`, the gate read's fields) use
+  7.51.00's table reads and `…/_gate/*` GetObject: no new grant.
+- **Broker:** GetItem on `WS#*#REPO#*`, GetObject on the packs' objects, claims extended to `WS#*#DOCS#*`; the start
+  role, not the agents, is the admitted caller of `push_approved_docs`.
+- **voc-engineering-runtime:** GetObject on `…/_tenets/*`, GetItem on `WS#*#REPO#*`, Put/Update pinned to the draft's
+  attributes (`TENETS_DRAFT_ATTRIBUTES`).
+- **Board:** `ReadRecordedOutputs` gains `ws/default/runs/*/*/commits/*/_tenets/*` (the integration: `tenets.recorded`
+  reads the draft the Tenets step recorded).
+- Agent roles: nothing new. cdk-nag acknowledgements 131 → 135 (A's three IAM5 findings, the board's one).
+
+### Upgrade notes
+
+- **Rebuild the four engineering images and deploy their digests with the stacks** (docs/deployment.md,
+  `engineeringImages`): the harness changed (`read_tenets`, `write_tenets`, the `write_triage` lock, and the gate
+  runner's record keeping its tools' versions). Old images: the tenets lock still holds at the run's end; their gate
+  records name no versions, so `GET …/gates?connection=` shows none for their runs.
+- Deploy VocProcessingStack (runtime, start function, broker, board) before VocApiStack (the Agents API's routes and
+  grants), then the frontend.
+- The Lambda bundles grow by about 420 KB (the orchestration bundle's gates data and template sources).
+- API callers of the tenets decisions (none outside the app) must send `expected_accepted`.
+- A Human-driven administrator gets 409 `human_driven` on a publish and applies the preview's patch by hand.
+- No new deploy flag.
+
 ## [7.51.04] - 2026-11-17
 
 The run workspace now says when a run has stopped, and why. The owner's first real run waited for a person because its orchestrator could not check out the repository (exit 128, "detected dubious ownership"), yet the canvas still showed "Understand and classify" spinning with "You are here", the timeline put coordinator-1 "On no step of the flow" beside an empty "Agents: 0" step, and the thread read "1 booting (tokens 0, cost_usd 0.00)". Now a banner says what happened, the step where the run stopped reads as failed, the orchestrator has its own row, and the supervisor's lines are in plain words.
@@ -52,7 +398,7 @@ The run workspace now says when a run has stopped, and why. The owner's first re
   - "You are here" and "Stopped here" are tags, not a ring; the open lane has the selected fill.
   - Neutral outlines answer a hover. Nothing is dimmed by opacity, and lane borders are at full strength.
   - `focusStepId` centres on the marked step first.
-- i18n: the new strings are in all 9 locales. Versions are 7.51.4.
+- i18n: the new strings are in all 9 locales.
 
 ## [7.51.03] - 2026-11-17
 
