@@ -21,7 +21,8 @@ interface Props {
   /** The session the address names (null: none to show yet). */
   current: string | null
   orchestrator: string | null
-  actions: SessionActions
+  /** What an admin may do in a session (null: nothing, SessionThread.tsx). */
+  actions: SessionActions | null
   sessions: ReturnType<typeof useSessionLayout>
 }
 

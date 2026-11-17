@@ -74,9 +74,11 @@ def test_only_a_posted_task_and_steering_go_to_a_role():
         steer(**{'from': RELAY, 'to': {'kind': 'role', 'id': 'janitor'}})
 
 
-def test_a_restart_signal_is_a_persons_alone():
+def test_a_restart_signal_is_said_by_nobody_on_the_bus():
+    """A person's restart of an agent is recorded on the run's RUNLOG# rows by voc-engineering-start (7.51.02), never said
+    on the bus; the supervisor never restarts one."""
     restart = parse(message(type='signal.restart', refs={'s3': []}, to={'kind': 'run', 'id': RUN}, **{'from': HUMAN}))
-    assert judge(restart, API).allowed
+    assert judge(restart, API).reason == 'api may not send signal.restart'
     by_supervisor = parse(message(type='signal.restart', refs={'s3': []}, to={'kind': 'run', 'id': RUN},
                                   **{'from': {'kind': 'supervisor', 'id': 'sup'}}))
     assert judge(by_supervisor, 'voc.engineering/supervisor').reason == 'supervisor may not send signal.restart'

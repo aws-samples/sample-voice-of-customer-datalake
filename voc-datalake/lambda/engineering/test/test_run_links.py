@@ -120,7 +120,7 @@ def test_the_overview_answers_the_runs_issue_and_pull_request() -> None:
         _meta(client, 'SET #repo = :r, #issue = :i', {':r': {'S': REPO}, ':i': {'M': {
             'host': {'S': 'github'}, 'number': {'N': '12'}, 'url': {'S': issue.url}, 'verified': {'BOOL': False}}}})
         _pull_request(client)
-        view = RunMonitor(client, TABLE, _NoSessions(), runtime=None, publisher=None).overview(RUN)
+        view = RunMonitor(client, TABLE, _NoSessions(), signaller=None, publisher=None).overview(RUN)
     assert view is not None
     assert (view['run']['issue'], view['run']['pull_request']) == (issue.view(), {
         'host': 'github', 'number': 7, 'url': PULL, 'head': BRANCH, 'base': 'main', 'superseded': []})

@@ -14,7 +14,8 @@ launches from 2.
 
 Every change of a run's status (its start, its end, a decision point, a person's resume) records who made it and
 when (D4): a row of its own, ``RUNLOG#<at>#<status>#<hex>`` (the status, the actor, the reason, the time), written in
-the same transaction as META's change, so the run's history is never only its last state. A decision point the run
+the same transaction as META's change, so the run's history is never only its last state. A person's signal to the
+run or one of its agents (7.51.02) has its own ``RUNLOG#<at>#signal#<hex>`` row, ``kind`` ``signal`` (``record_signal``). A decision point the run
 already waits at, for the same reason, changes nothing and writes no row (the supervisor asks for it on every tick
 while a budget stays spent). A change that loses a race with another write of META is tried again.
 
@@ -568,6 +569,24 @@ class RunStore:
             if is_conditional_check_failure(error):
                 raise RunNotActive(f'run {run_id} is not live') from error
             raise
+
+    def record_signal(self, run_id: str, signal: str, *, actor: str, now: int, agent_id: str = '', task_id: str = '',
+                      attempt: int = 0, restart_from: str = '', note: str = '') -> str:
+        """A person's signal to the run or to one of its agents (7.51.02: voc-engineering-start's ``signal_run``,
+        runtime/run_signals.py), on a ``RUNLOG#`` row of its own, ``kind`` ``signal`` (D4: who asked what of whom, when
+        and, with their ``note``, why), written before it is handed on, as a person's Stop is recorded with its change.
+        Create-only; its random suffix keeps two in one second apart. Answers the row's sort key."""
+        at = _iso(now)
+        item: dict[str, Any] = {'pk': run_pk(run_id), 'sk': f'RUNLOG#{at}#signal#{secrets.token_hex(4)}',
+                                'kind': 'signal', 'signal': signal, 'actor': _actor(actor), 'at': at}
+        if agent_id:
+            item |= {'agent_id': agent_id, 'task_id': task_id, 'attempt': attempt}
+        if restart_from:
+            item['restart_from'] = restart_from
+        if note:
+            item['note'] = _text(note)
+        self._table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
+        return str(item['sk'])
 
     def needs_human(self, run_id: str, reason: str, *, now: int, actor: str = SUPERVISOR) -> None:
         """The run waits at a human decision point (its agents are held, and none is launched, meanwhile). One it

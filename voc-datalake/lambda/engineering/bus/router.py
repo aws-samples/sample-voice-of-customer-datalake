@@ -1,11 +1,13 @@
 """The inbox router: the one Lambda every event on the engineering bus goes to (one fixed rule, never one per run).
 
-For each event it checks the schema and the sender (``senders.judge``), writes the message to the run's
+For each event it checks the schema, that the event's ``detail-type`` is its message's own type (7.51.02: a
+publisher's grant may be held to its detail types, as the Agents API's is, so a message may never say another type
+than the one its grant was checked on) and the sender (``senders.judge``), writes the message to the run's
 conversation, then fans it out (``routing.route``): a posted task, and a message for an agent or the run conductor, to
 the delivery function, with the message's conversation seq (``{"message": …, "seq": N}``: the delivery function keeps
 it on its ``INBOX#`` row and refuses a payload without one). Anything refused is dropped and journalled with its reason (never its
-content): a malformed message, a sender that may not send it, a run that does not exist, an event id reused for
-other content. A redelivered message (the bus is at-least-once) is fanned out again under the seq it was first written with, since
+content): a malformed message, one whose detail type is another, a sender that may not send it, a run that does not
+exist, an event id reused for other content. A redelivered message (the bus is at-least-once) is fanned out again under the seq it was first written with, since
 the first attempt may have stopped before its fan-out; the delivery function's once-per-event marker makes it write
 nothing (only the wake repeats).
 """
@@ -24,6 +26,10 @@ from shared.logging import logger
 
 DROP_REASONS = {REUSED: 'the event id is already in the conversation with other content',
                 UNKNOWN_RUN: 'the run does not exist'}
+#: Why an event whose detail type is not its message's own is dropped (every publisher puts one as the other:
+#: bus/publish.py).
+OTHER_DETAIL_TYPE = "the event's detail-type is not its message's type"
+
 
 
 @dataclass(frozen=True)
@@ -47,11 +53,14 @@ class Router:
         self.conversation = conversation
         self.deliver = deliver
 
-    def route_event(self, source: str, detail: Any) -> Routed:
+    def route_event(self, source: str, detail: Any, *, detail_type: str) -> Routed:
+        """``detail_type``: the event's own (EventBridge's ``detail-type``), which must be the message's type."""
         try:
             message = parse(detail)
         except MessageError as exc:
             return _dropped(source, str(exc))
+        if detail_type != message.type:
+            return _dropped(source, OTHER_DETAIL_TYPE, message)
         verdict = judge(message, source)
         if not verdict.allowed:
             return _dropped(source, verdict.reason, message)
@@ -86,5 +95,6 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     global _router   # the warm container's clients, built once
     if _router is None:
         _router = _from_environment()
-    routed = _router.route_event(str(event.get('source', '')), event.get('detail'))
+    routed = _router.route_event(str(event.get('source', '')), event.get('detail'),
+                                 detail_type=str(event.get('detail-type', '')))
     return {'status': routed.status, 'reason': routed.reason, 'seq': routed.seq}

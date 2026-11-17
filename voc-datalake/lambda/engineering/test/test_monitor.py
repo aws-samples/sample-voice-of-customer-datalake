@@ -1,6 +1,7 @@
 """The run monitor: the overview of a run (its agents as the supervisor's session rows hold them, their tokens and
-session time, the totals), and a person's signals (checked against the attempt they saw, applied by the supervisor,
-recorded in the conversation) and answers."""
+session time, the totals, and what of it can be reached from here, each by its own flag), and a person's signals
+(checked against the attempt they saw, then sent through voc-engineering-start, which records and hands them on: never
+said on the bus, 7.51.02), their Stop, and their answers and steering (the bus)."""
 from __future__ import annotations
 
 import json
@@ -14,18 +15,17 @@ from botocore.exceptions import ClientError
 
 from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
-from engineering.bus.publish import PublishError
-from engineering.bus.schema import Message, MessageError, Party, parse
+from engineering.bus.schema import Message, Party, parse
 from engineering.bus.test.messages import message
 from engineering.conversation.store import ConversationStore
 from engineering.monitor import (
     MAX_LINE,
     Actor,
-    Applied,
-    LambdaRuntime,
+    LambdaSignaller,
     LambdaStopper,
     MonitorError,
     RunMonitor,
+    Signal,
     parse_message,
     parse_signal,
     parse_steer,
@@ -65,32 +65,30 @@ class Sessions:
         return [session for session in self.sessions if session.run_id == run_id]
 
 
-class Runtime:
-    """The supervisor's signal: records each call, answers each agent's status (``fail``: it raises)."""
+class Signaller:
+    """voc-engineering-start's ``signal_run`` as the monitor calls it: records each call (the agent, the signal, the
+    attempt, who, a restart's start, the note), answers it sent (``fail``: it raises)."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str | None, str, int | None]] = []
+        self.calls: list[tuple[str, str, str, int]] = []
         self.fail: Exception | None = None
-        self.answer: dict[str, str] = {}
-        self.not_applied: set[str] = set()
         self.actors: list[str] = []
         self.restarts: list[str] = []
+        self.notes: list[str] = []
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
-               restart_from: str = '') -> Applied:
+    def signal(self, run_id: str, signal: Signal, *, actor: str, agent_id: str = '') -> dict[str, Any]:
         if self.fail is not None:
             raise self.fail
-        self.calls.append((run_id, agent_id, signal, attempt))
+        self.calls.append((run_id, agent_id, signal.name, signal.attempt))
         self.actors.append(actor)
-        self.restarts.append(restart_from)
-        agents = self.answer or {agent_id or 'fixer-1': 'paused'}
-        return Applied(agents, {agent: agent not in self.not_applied and status not in {'busy', 'stale'}
-                                for agent, status in agents.items()})
+        self.restarts.append(signal.restart_from)
+        self.notes.append(signal.note)
+        return {'run_id': run_id, 'signal': signal.name, 'status': 'sent', 'at': '2026-11-12T09:00:00Z'}
 
 
 @pytest.fixture
-def run() -> Iterator[tuple[Any, RunMonitor, Runtime, Publisher, str]]:
-    """A run with a goal, a claimed task, two agent sessions, the monitor, its runtime and its publisher."""
+def run() -> Iterator[tuple[Any, RunMonitor, Signaller, Publisher, str]]:
+    """A run with a goal, a claimed task, two agent sessions, the monitor, its signaller and its publisher."""
     with engineering_table() as client:
         client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
                            UpdateExpression='SET goal = :g, repo = :r, flow = :f, #s = :s, started_at = :t, msg_seq = :m',
@@ -102,10 +100,10 @@ def run() -> Iterator[tuple[Any, RunMonitor, Runtime, Publisher, str]]:
         task = tasks.post('default', RUN, role='fixer', title='Fix the page size', spec={'issue': 7}, parent_task='',
                           priority=1, actor='coordinator-1').task
         tasks.claim('default', RUN, task.task_id, role='fixer', agent='fixer-1')
-        runtime, publisher = Runtime(), Publisher()
-        monitor = RunMonitor(client, TABLE, Sessions(FIXER, COORDINATOR), runtime=runtime, publisher=publisher,
+        signaller, publisher = Signaller(), Publisher()
+        monitor = RunMonitor(client, TABLE, Sessions(FIXER, COORDINATOR), signaller=signaller, publisher=publisher,
                              now=lambda: START)
-        yield client, monitor, runtime, publisher, task.task_id
+        yield client, monitor, signaller, publisher, task.task_id
 
 
 @pytest.mark.parametrize(('fields', 'budget'), [
@@ -152,54 +150,71 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     assert view['totals'] == {'messages': 12, 'microvm_seconds': 300, 'by_model': [
         {'model': 'model-a', 'input_tokens': 1050, 'output_tokens': 205},
         {'model': 'model-b', 'input_tokens': 7, 'output_tokens': 1}]}
-    assert view['actions_available'] is True
-    assert view['stop_available'] is False   # (this monitor names no start function)
+    # (this monitor reaches the start function's signals and the bus; it names no Stop; no board action reaches a run)
+    assert [view[flag] for flag in FLAGS] == [True, True, False, False]
+    assert 'actions_available' not in view
 
 
-def test_the_overview_says_the_actions_are_unavailable_without_the_runtime_or_the_bus(run) -> None:
-    client, _, runtime, publisher, _ = run
-    for monitor in (RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=publisher),
-                    RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=None),
-                    RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=None)):
-        view = monitor.overview(RUN)
-        assert view is not None
-        assert view['actions_available'] is False
+#: What of a run can be reached from here (7.51.02), each by its own flag.
+FLAGS = ('steer_available', 'signals_available', 'stop_available', 'board_available')
+
+
+@pytest.mark.parametrize(('signals', 'bus', 'stop', 'flags'), [
+    (True, False, False, [False, True, False, False]),
+    (False, True, False, [True, False, False, False]),
+    (False, False, True, [False, False, True, False]),
+    (True, True, True, [True, True, True, False]),
+    (False, False, False, [False, False, False, False]),
+])
+def test_the_overview_says_what_reaches_the_run_each_by_its_own_flag(run, signals: bool, bus: bool, stop: bool,
+                                                                      flags: list[bool]) -> None:
+    client, _, signaller, publisher, _ = run
+    monitor = RunMonitor(client, TABLE, Sessions(FIXER), signaller=signaller if signals else None,
+                         publisher=publisher if bus else None, stopper=Stopper() if stop else None)
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert [view[flag] for flag in FLAGS] == flags
+
+
+def test_a_persons_board_actions_reach_no_run_since_the_api_says_only_steering_and_answers(run) -> None:
+    """Their task.* events would go out from the API's source, which the bus does not take from it (7.51.02)."""
+    _, monitor, _, publisher, _ = run
+    assert monitor.board_available is False
+    with pytest.raises(MonitorError, match='board actions cannot reach the run') as refused:
+        monitor.board_bus()
+    assert (refused.value.kind, publisher.sent) == ('unavailable', [])
 
 
 def test_an_unknown_run_has_no_overview() -> None:
     with engineering_table() as client:
-        monitor = RunMonitor(client, TABLE, Sessions(), runtime=None, publisher=None)
+        monitor = RunMonitor(client, TABLE, Sessions(), signaller=None, publisher=None)
         assert monitor.overview('01JD0000000000000000000009') is None
         view = monitor.overview(RUN)
         assert view is not None
         assert (view['agents'], view['totals']['messages']) == ([], 0)
 
 
-def test_a_signal_to_an_agent_is_recorded_then_applied_by_the_supervisor(run) -> None:
-    _, monitor, runtime, publisher, task_id = run
+def test_a_signal_to_an_agent_goes_through_the_start_function_at_the_attempt_seen(run) -> None:
+    _, monitor, signaller, publisher, task_id = run
     sent = monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1,
                                              'note': ' Holding for the review '}), ADMIN)
-    assert runtime.calls == [(RUN, 'fixer-1', 'pause', 1)]   # (the attempt seen goes along)
-    assert (sent['target'], sent['agents'], sent['attempt']) == ({'kind': 'agent', 'id': 'fixer-1'},
-                                                                  {'fixer-1': 'paused'}, 1)
-    record, outcome = publisher.sent
-    assert (outcome.type, outcome.to.kind, outcome.summary) == (
-        'signal.pause', 'run', f'signal.pause request {record.event_id}: applied: fixer-1 paused')
-    assert (record.type, record.sender.kind, record.sender.id, record.to.kind, record.task_id) == (
-        'signal.pause', 'human', 'admin-sub', 'run', task_id)   # (the supervisor tells the agent; the record stays)
-    assert record.summary == ('pause requested from the run monitor by ada for agent fixer-1. '
-                              'Note: Holding for the review')
+    # The agent holding the task at the attempt seen, who sent it and why: the start function records it (D4).
+    assert (signaller.calls, signaller.actors, signaller.notes) == (
+        [(RUN, 'fixer-1', 'pause', 1)], [ADMIN.subject], ['Holding for the review'])
+    assert sent == {'signal': 'pause', 'target': {'kind': 'agent', 'id': 'fixer-1'}, 'attempt': 1, 'status': 'sent',
+                    'agents': {}, 'applied': {}, 'at': '2026-11-12T09:00:00Z'}
+    # Nothing is said on the bus: the API's source says only steering and answers (7.51.02).
+    assert publisher.sent == []
 
 
 def test_a_signal_to_the_whole_run_names_no_agent(run) -> None:
-    _, monitor, runtime, publisher, _ = run
+    _, monitor, signaller, publisher, _ = run
     sent = monitor.signal(RUN, parse_signal({'signal': 'save'}), ADMIN)
-    assert (runtime.calls, sent['target'], publisher.sent[0].to.kind, publisher.sent[0].attempt) == (
-        [(RUN, None, 'save', None)], {'kind': 'run', 'id': RUN}, 'run', 0)
+    assert (signaller.calls, sent['target'], publisher.sent) == ([(RUN, '', 'save', 0)], {'kind': 'run', 'id': RUN}, [])
 
 
 def test_a_signal_for_an_attempt_that_moved_on_is_refused_before_anything_is_done(run) -> None:
-    client, monitor, runtime, publisher, task_id = run
+    client, monitor, signaller, publisher, task_id = run
     with pytest.raises(MonitorError) as stale:
         monitor.signal(RUN, parse_signal({'signal': 'shutdown', 'task_id': task_id, 'attempt': 2}), ADMIN)
     with pytest.raises(MonitorError) as missing:
@@ -210,28 +225,29 @@ def test_a_signal_for_an_attempt_that_moved_on_is_refused_before_anything_is_don
     with pytest.raises(MonitorError) as ended:   # (its lease stays on a done task: the state says it has ended)
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
     assert (stale.value.kind, missing.value.kind, ended.value.kind) == ('conflict', 'not_found', 'conflict')
-    assert (runtime.calls, publisher.sent) == ([], [])
+    assert (signaller.calls, publisher.sent) == ([], [])
 
 
 def test_an_open_task_has_no_agent_to_signal(run) -> None:
-    client, monitor, runtime, _, _ = run
+    client, monitor, signaller, _, _ = run
     task = BoardStore(client, TABLE, new_id=lambda: 'task-open').post(
         'default', RUN, role='fixer', title='Another', spec={'issue': 8}, parent_task='', priority=1,
         actor='coordinator-1').task
     with pytest.raises(MonitorError) as open_task:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task.task_id, 'attempt': 1}), ADMIN)
-    assert (open_task.value.kind, runtime.calls) == ('conflict', [])
+    assert (open_task.value.kind, signaller.calls) == ('conflict', [])
 
 
 def test_an_ended_or_unknown_run_takes_no_action(run) -> None:
-    client, monitor, runtime, publisher, _ = run
+    client, monitor, signaller, publisher, _ = run
     with pytest.raises(MonitorError) as unknown:
         monitor.signal('01JD0000000000000000000009', parse_signal({'signal': 'save'}), ADMIN)
     client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
                        UpdateExpression='SET ended_at = :e', ExpressionAttributeValues={':e': {'S': '2026-11-12T09:30:00Z'}})
     with pytest.raises(MonitorError) as ended:
         monitor.message(RUN, parse_message({'to': 'conductor', 'text': 'Hello'}, RUN), ADMIN)
-    assert (unknown.value.kind, ended.value.kind, runtime.calls, publisher.sent) == ('not_found', 'conflict', [], [])
+    assert (unknown.value.kind, ended.value.kind, signaller.calls, publisher.sent) == (
+        'not_found', 'conflict', [], [])
 
 
 @pytest.mark.parametrize(('body', 'says'), [
@@ -256,62 +272,31 @@ def test_stop_now_with_confirm_is_sent() -> None:
     assert parse_signal({'signal': 'stop_now', 'confirm': True}).name == 'stop_now'
 
 
-def test_a_long_record_is_cut_to_a_summary_on_a_character_boundary(run) -> None:
-    _, monitor, _, publisher, _ = run
-    monitor.signal(RUN, parse_signal({'signal': 'pause', 'note': 'é' * 250}), Actor('admin-sub', 'é' * 300))
-    summary = publisher.sent[0].summary
-    assert 1000 < len(summary.encode('utf-8')) <= 1024
-    assert summary.startswith('pause requested from the run monitor by éé')
-
-
-def test_a_request_is_recorded_even_when_the_supervisor_cannot_be_reached(run) -> None:
-    _, monitor, runtime, publisher, _ = run
-    runtime.fail = ClientError({'Error': {'Code': 'TooManyRequestsException'}}, 'Invoke')
+def test_a_signal_the_start_function_cannot_take_says_so(run) -> None:
+    _, monitor, signaller, publisher, _ = run
+    signaller.fail = MonitorError('unavailable', 'The run could not be reached: send the signal again')
     with pytest.raises(MonitorError, match='send the signal again') as down:
         monitor.signal(RUN, parse_signal({'signal': 'resume'}), ADMIN)
-    request, outcome = publisher.sent
-    assert (down.value.kind, request.type) == ('unavailable', 'signal.resume')
-    assert outcome.summary.endswith(f'{request.event_id}: not applied: the supervisor could not be reached')
+    signaller.fail = MonitorError('conflict', 'run R is being stopped: it takes no other signal')
+    with pytest.raises(MonitorError, match='being stopped') as stopping:
+        monitor.signal(RUN, parse_signal({'signal': 'resume'}), ADMIN)
+    assert (down.value.kind, stopping.value.kind, publisher.sent) == ('unavailable', 'conflict', [])
 
 
-def test_an_outcome_the_bus_refuses_still_answers_the_applied_signal(run) -> None:
-    client, _, runtime, publisher, _ = run
-
-    class FirstOnly(Publisher):
-        def publish(self, message: Message) -> None:
-            if self.sent:
-                raise PublishError('refused')
-            super().publish(message)
-
-    once = FirstOnly()
-    sent = RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=once, now=lambda: START).signal(
-        RUN, parse_signal({'signal': 'save'}), ADMIN)
-    assert (sent['agents'], [record.type for record in once.sent], publisher.sent) == (
-        {'fixer-1': 'paused'}, ['signal.save'], [])   # (the request is recorded; its outcome is best effort)
-
-
-def test_nothing_is_applied_when_the_request_cannot_be_recorded(run) -> None:
-    _, monitor, runtime, publisher, _ = run
-    publisher.fail = PublishError('refused')
-    with pytest.raises(MonitorError) as down:
-        monitor.signal(RUN, parse_signal({'signal': 'shutdown'}), ADMIN)
-    publisher.fail = MessageError('a credential-shaped part')
-    with pytest.raises(MonitorError, match='credential') as refused:
-        monitor.signal(RUN, parse_signal({'signal': 'shutdown'}), ADMIN)
-    assert (down.value.kind, refused.value.kind, runtime.calls) == ('unavailable', 'invalid', [])   # (D4: never unrecorded)
-
-
-def test_without_the_runtime_or_the_bus_the_actions_are_unavailable(run) -> None:
-    client, _, runtime, publisher, _ = run
-    for monitor in (RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=publisher),
-                    RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=None)):
-        with pytest.raises(MonitorError) as down:
-            monitor.signal(RUN, parse_signal({'signal': 'save'}), ADMIN)
-        assert down.value.kind == 'unavailable'
+def test_without_the_start_function_the_signals_are_unavailable_and_without_the_bus_the_words(run) -> None:
+    client, _, signaller, publisher, _ = run
+    with pytest.raises(MonitorError, match='names no start function') as unsignalled:
+        RunMonitor(client, TABLE, Sessions(FIXER), signaller=None, publisher=publisher).signal(
+            RUN, parse_signal({'signal': 'save'}), ADMIN)
+    unconnected = RunMonitor(client, TABLE, Sessions(FIXER), signaller=signaller, publisher=None)
     with pytest.raises(MonitorError) as unsent:
-        RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=None).message(
-            RUN, parse_message({'to': 'conductor', 'text': 'Hi'}, RUN), ADMIN)
-    assert (unsent.value.kind, runtime.calls) == ('unavailable', [])
+        unconnected.message(RUN, parse_message({'to': 'conductor', 'text': 'Hi'}, RUN), ADMIN)
+    with pytest.raises(MonitorError) as unsteered:
+        unconnected.steer(RUN, parse_steer({'text': 'Hi'}), ADMIN)
+    assert [refused.value.kind for refused in (unsignalled, unsent, unsteered)] == ['unavailable'] * 3
+    # Each needs its own wiring only: the signals reach the run without the bus.
+    assert unconnected.signal(RUN, parse_signal({'signal': 'save'}), ADMIN)['status'] == 'sent'
+    assert (signaller.calls, publisher.sent) == ([(RUN, '', 'save', 0)], [])
 
 
 def _asks(client: Any, thread: str, agent: str = 'fixer-1') -> None:
@@ -384,92 +369,70 @@ def test_an_answer_holding_a_credential_is_refused(run) -> None:
     assert (refused.value.kind, publisher.sent) == ('invalid', [])
 
 
-def test_the_lambda_runtime_calls_the_supervisors_signal_action() -> None:
-    client = LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}})
-    assert LambdaRuntime(client, 'voc-engineering-runtime').signal(RUN, 'fixer-1', 'pause', 2, actor='admin-1') == Applied(
-        {'fixer-1': 'pause_requested'}, {'fixer-1': True})
+def test_the_lambda_signaller_calls_the_start_functions_signal_run() -> None:
+    client = LambdaClient({'run_id': RUN, 'signal': 'pause', 'status': 'sent', 'at': '2026-11-12T09:00:00Z'})
+    pause = parse_signal({'signal': 'pause', 'task_id': 'task-1', 'attempt': 2, 'note': 'Lunch'})
+    sent = LambdaSignaller(client, 'voc-engineering-start').signal(RUN, pause, actor='admin-1', agent_id='fixer-1')
+    assert sent['status'] == 'sent'
     (request,) = client.requests
+    # voc-engineering-start, never voc-engineering-runtime: its signal_run checks, records and hands it on.
     assert (request['FunctionName'], request['InvocationType'], json.loads(request['Payload'])) == (
-        'voc-engineering-runtime', 'RequestResponse', {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
-                                                       'agent_id': 'fixer-1', 'attempt': 2, 'actor': 'admin-1'})
-    run_wide = LambdaClient({'agents': []})
-    assert LambdaRuntime(run_wide, 'f').signal(RUN, None, 'save', None, actor='admin-1') == Applied({}, {})
-    assert {'agent_id', 'attempt'} & set(json.loads(run_wide.requests[0]['Payload'])) == set()
-    left_out = LambdaClient({'agents': {'fixer-1': 'working', 'hunter-1': 'paused'}, 'applied': {'hunter-1': True}})
-    assert LambdaRuntime(left_out, 'f').signal(RUN, None, 'save', None, actor='admin-1').applied == {
-        'fixer-1': False, 'hunter-1': True}   # (an agent the map leaves out is never taken as done)
-    earlier = LambdaClient({'agents': {'fixer-1': 'working', 'hunter-1': 'busy'}})   # (the runtime before applied)
-    assert LambdaRuntime(earlier, 'f').signal(RUN, None, 'save', None, actor='admin-1').applied == {'fixer-1': True, 'hunter-1': False}
+        'voc-engineering-start', 'RequestResponse', {'action': 'signal_run', 'run_id': RUN, 'signal': 'pause',
+                                                     'actor': 'admin-1', 'note': 'Lunch', 'agent_id': 'fixer-1',
+                                                     'task_id': 'task-1', 'attempt': 2})
+    run_wide = LambdaClient({'status': 'sent'})
+    LambdaSignaller(run_wide, 'f').signal(RUN, parse_signal({'signal': 'save'}), actor='admin-1')
+    assert json.loads(run_wide.requests[0]['Payload']) == {'action': 'signal_run', 'run_id': RUN, 'signal': 'save',
+                                                           'actor': 'admin-1'}
 
 
-def test_the_supervisor_refusing_or_failing_says_so() -> None:
-    refused = LambdaClient({'errorType': 'RuntimeRefused', 'errorMessage': 'run R is stopped: it cannot be resumed'},
-                           'Unhandled')
-    with pytest.raises(MonitorError, match='cannot be resumed') as conflict:
-        LambdaRuntime(refused, 'f').signal(RUN, None, 'resume', None, actor='admin-1')
-    with pytest.raises(MonitorError) as failed:
-        LambdaRuntime(LambdaClient({'errorType': 'KeyError'}, 'Unhandled'), 'f').signal(RUN, None, 'save', None, actor='admin-1')
-    assert (conflict.value.kind, failed.value.kind) == ('conflict', 'unavailable')
+def test_the_start_function_refusing_or_failing_a_signal_says_so() -> None:
+    kinds = []
+    unsent = 'The signal could not be sent: send it again'
+    for failing in (LambdaClient({'errorType': 'RuntimeRefused', 'errorMessage': 'run R is being stopped'}, 'Unhandled'),
+                    LambdaClient({'errorType': 'RunNotActive', 'errorMessage': 'run R has ended'}, 'Unhandled'),
+                    LambdaClient({'errorType': 'KeyError'}, 'Unhandled'), LambdaClient({'status': 'applied'}),
+                    LambdaClient('not an answer')):
+        with pytest.raises(MonitorError) as refused:
+            LambdaSignaller(failing, 'f').signal(RUN, parse_signal({'signal': 'resume'}), actor='admin-1')
+        kinds.append((refused.value.kind, str(refused.value)))
+    assert kinds == [('conflict', 'run R is being stopped'), ('conflict', 'run R has ended'), ('unavailable', unsent),
+                     ('unavailable', unsent), ('unavailable', unsent)]
+
+    class Unreachable:
+        def invoke(self, **_request: Any) -> Any:
+            raise ClientError({'Error': {'Code': 'TooManyRequestsException'}}, 'Invoke')
+
+    with pytest.raises(MonitorError, match='could not be reached: send the signal again') as down:
+        LambdaSignaller(Unreachable(), 'f').signal(RUN, parse_signal({'signal': 'save'}), actor='admin-1')
+    assert down.value.kind == 'unavailable'
 
 
-def test_a_stop_now_carries_the_attempt_and_is_applied(run) -> None:
-    _, monitor, runtime, publisher, task_id = run
-    runtime.answer = {'fixer-1': 'stopped'}
+def test_an_agents_stop_now_carries_the_attempt_and_who_sent_it(run) -> None:
+    _, monitor, signaller, _, task_id = run
     sent = monitor.signal(RUN, parse_signal({'signal': 'stop_now', 'confirm': True, 'task_id': task_id,
                                              'attempt': 1}), ADMIN)
-    assert (runtime.calls, sent['applied'], publisher.sent[1].summary.endswith('applied: fixer-1 stopped')) == (
-        [(RUN, 'fixer-1', 'stop_now', 1)], {'fixer-1': True}, True)
-    # The supervisor is told who sent it, the signal record's sender (D4: who changed the run's status).
-    assert runtime.actors == [ADMIN.subject] == [publisher.sent[0].sender.id]
+    # (the person who sent it, for the record and for who changed the run's status: D4)
+    assert (signaller.calls, signaller.actors, sent['status']) == ([(RUN, 'fixer-1', 'stop_now', 1)], [ADMIN.subject],
+                                                                    'sent')
 
 
 def test_a_signal_to_a_task_a_person_took_is_refused_and_nothing_is_sent(run) -> None:
-    client, monitor, runtime, publisher, task_id = run
+    client, monitor, signaller, publisher, task_id = run
     board(client).take('default', RUN, task_id, actor='human:admin-1')
     with pytest.raises(MonitorError, match='A person holds this task') as held:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
-    assert (held.value.kind, runtime.calls, publisher.sent) == ('conflict', [], [])
-
-
-def test_a_stale_attempt_is_a_conflict_and_nothing_was_done(run) -> None:
-    _, monitor, runtime, publisher, task_id = run
-    runtime.answer = {'fixer-1': 'stale'}
-    with pytest.raises(MonitorError, match='moved on') as stale:
-        monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
-    _, outcome = publisher.sent
-    assert (stale.value.kind, outcome.summary.endswith('not applied: the agent has moved on to another attempt')) == (
-        'conflict', True)
-
-
-def test_each_agent_the_supervisor_did_not_apply_to_is_recorded_and_answered_so(run) -> None:
-    _, monitor, runtime, publisher, _ = run
-    runtime.answer = {'fixer-1': 'paused', 'coordinator-1': 'working'}
-    runtime.not_applied = {'coordinator-1'}   # (a Resume of an agent already running: nothing to do)
-    sent = monitor.signal(RUN, parse_signal({'signal': 'pause'}), ADMIN)
-    request, outcome = publisher.sent
-    assert sent['applied'] == {'fixer-1': True, 'coordinator-1': False}
-    assert outcome.summary == (f'signal.pause request {request.event_id}: applied: fixer-1 paused; '
-                               'not applied: coordinator-1 working')
-
-
-def test_a_signal_the_supervisor_did_not_apply_is_unavailable(run) -> None:
-    _, monitor, runtime, publisher, task_id = run
-    runtime.answer = {'fixer-1': 'busy'}
-    with pytest.raises(MonitorError, match='send the signal again') as busy:
-        monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
-    request, outcome = publisher.sent   # (the request stays recorded, as asked, and so does what came of it)
-    assert (busy.value.kind, outcome.summary) == (
-        'unavailable', f'signal.pause request {request.event_id}: not applied: the agent was busy with another move')
+    assert (held.value.kind, signaller.calls, publisher.sent) == ('conflict', [], [])
 
 
 def test_a_reposted_task_has_no_agent_to_signal(run) -> None:
-    client, monitor, runtime, _, task_id = run
+    client, monitor, signaller, _, task_id = run
     client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': f'TASK#{task_id}'}},
                        UpdateExpression='SET #s = :open', ExpressionAttributeNames={'#s': 'state'},
                        ExpressionAttributeValues={':open': {'S': 'open'}})   # (back to open, its old lease still set)
     with pytest.raises(MonitorError) as reposted:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
-    assert (reposted.value.kind, runtime.calls) == ('conflict', [])
+    assert (reposted.value.kind, signaller.calls) == ('conflict', [])
 
 
 def test_the_overview_lights_the_runs_flow_from_its_own_copy(run) -> None:
@@ -509,8 +472,8 @@ class Stopper:
 
 
 def _stopping_monitor(client: Any, stopper: Stopper, publisher: Publisher | None = None) -> RunMonitor:
-    """A monitor that reaches neither the runtime nor (by default) the bus: only the start function's Stop."""
-    return RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=publisher, now=lambda: START,
+    """A monitor that reaches neither the signals nor (by default) the bus: only the start function's Stop."""
+    return RunMonitor(client, TABLE, Sessions(FIXER), signaller=None, publisher=publisher, now=lambda: START,
                       stopper=stopper)
 
 
@@ -520,8 +483,7 @@ def test_a_stop_is_a_stop_or_a_confirmed_stop_now(body: dict[str, Any], mode: st
     assert parse_stop(body).mode == mode
 
 
-@pytest.mark.parametrize(('body', 'says'), [({'now': True}, 'confirm: true'), ({'now': 'yes'}, 'now is true'),
-                                            ({'note': 7}, 'note is a string')])
+@pytest.mark.parametrize(('body', 'says'), [({'now': True}, 'confirm: true'), ({'now': 'yes'}, 'now is true')])
 def test_a_malformed_stop_says_what_to_send(body: dict[str, Any], says: str) -> None:
     with pytest.raises(MonitorError, match=says) as refused:
         parse_stop(body)
@@ -534,11 +496,11 @@ def test_a_stop_reaches_the_run_through_the_start_function_without_the_runtime_o
     monitor = _stopping_monitor(client, stopper)
     view = monitor.overview(RUN)
     assert view is not None
-    # (the signals cannot reach this run, its Stop can: the run monitor offers Stop alone)
-    assert (view['actions_available'], view['stop_available']) == (False, True)
+    # (neither the signals nor the bus reach this run, its Stop does: the run monitor offers Stop alone)
+    assert [view[flag] for flag in FLAGS] == [False, False, True, False]
     stopped = monitor.stop(RUN, parse_stop({}), ADMIN)
     assert stopper.calls == [(RUN, 'stop', 'admin-sub')]
-    assert (stopped['status'], stopped['tasks_closed'], stopped['recorded']) == ('stopped', ['task-1'], False)
+    assert (stopped['status'], stopped['tasks_closed'], 'recorded' in stopped) == ('stopped', ['task-1'], False)
 
 
 def test_a_whole_run_shut_down_or_stop_now_signal_is_the_runs_stop(run) -> None:
@@ -550,34 +512,24 @@ def test_a_whole_run_shut_down_or_stop_now_signal_is_the_runs_stop(run) -> None:
         {'fixer-1': 'pause_requested'}, 'stopping', ['fixer-1'])
     monitor.signal(RUN, parse_signal({'signal': 'stop_now', 'confirm': True}), ADMIN)
     assert [mode for _, mode, _ in stopper.calls] == ['stop', 'stop_now']
-    # An agent's Shut down is still the agent's signal: it needs the runtime and the bus, which this monitor lacks.
+    # An agent's Shut down is still the agent's signal: it needs the start function's signal_run, unnamed here.
     with pytest.raises(MonitorError) as agent:
         monitor.signal(RUN, parse_signal({'signal': 'shutdown', 'task_id': 'task-1', 'attempt': 1}), ADMIN)
     assert agent.value.kind == 'unavailable'
 
 
-def test_where_the_bus_is_configured_the_conversation_records_the_stop_and_its_outcome(run) -> None:
+def test_a_stop_says_nothing_on_the_bus_even_where_the_bus_is_named(run) -> None:
+    """Its record is the run's RUNLOG# row (D4): the API's source says only steering and answers (7.51.02)."""
     client, _, _, publisher, _ = run
-    monitor = _stopping_monitor(client, Stopper(), publisher)
-    monitor.stop(RUN, parse_stop({'now': True, 'confirm': True, 'note': 'wrong repository'}), ADMIN)
-    request, outcome = publisher.sent
-    assert (request.type, request.to.kind, request.sender.id) == ('signal.stop_now', 'run', 'admin-sub')
-    assert 'stop now requested from the run monitor by ada for the whole run. Note: wrong repository' in request.summary
-    assert outcome.summary == f'signal.stop_now request {request.event_id}: stopped: 1 task(s) closed'
-
-
-def test_a_stop_the_bus_refuses_to_record_still_stops_the_run(run) -> None:
-    client, _, _, publisher, _ = run
-    publisher.fail = PublishError('the bus is down')
     stopper = Stopper()
-    stopped = _stopping_monitor(client, stopper, publisher).stop(RUN, parse_stop({}), ADMIN)
-    assert (stopped['status'], stopped['recorded'], len(stopper.calls)) == ('stopped', False, 1)
+    _stopping_monitor(client, stopper, publisher).stop(RUN, parse_stop({'now': True, 'confirm': True}), ADMIN)
+    assert (stopper.calls, publisher.sent) == ([(RUN, 'stop_now', 'admin-sub')], [])
 
 
 def test_an_ended_run_or_a_deployment_without_the_start_function_takes_no_stop(run) -> None:
     client, _, _, _, _ = run
     with pytest.raises(MonitorError) as nowhere:
-        RunMonitor(client, TABLE, Sessions(), runtime=None, publisher=None).stop(RUN, parse_stop({}), ADMIN)
+        RunMonitor(client, TABLE, Sessions(), signaller=None, publisher=None).stop(RUN, parse_stop({}), ADMIN)
     client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
                        UpdateExpression='SET ended_at = :e', ExpressionAttributeValues={':e': {'S': '2026-11-12T09:30:00Z'}})
     stopper = Stopper()
@@ -627,24 +579,21 @@ def test_the_origin_is_the_engineering_agents_run_its_start_recorded(run) -> Non
 # --- 7.51.00: an agent's restart, a person's steering ---------------------------------------------------------------
 
 @pytest.mark.parametrize('start', ['checkpoint', 'fresh'])
-def test_a_restart_is_recorded_then_sent_to_the_supervisor_with_where_it_starts(run, start: str) -> None:
-    _, monitor, runtime, publisher, task_id = run
+def test_a_restart_goes_through_the_start_function_with_where_it_starts(run, start: str) -> None:
+    _, monitor, signaller, publisher, task_id = run
     sent = monitor.signal(RUN, parse_signal({'signal': 'restart', 'from': start, 'task_id': task_id, 'attempt': 1,
                                              'confirm': True}), ADMIN)
-    assert (runtime.calls, runtime.restarts, sent['signal']) == ([(RUN, 'fixer-1', 'restart', 1)], [start], 'restart')
-    record = publisher.sent[0]
-    how = 'from its checkpoint' if start == 'checkpoint' else 'afresh'
-    assert (record.type, record.summary) == ('signal.restart',
-                                             f'restart {how} requested from the run monitor by ada for agent fixer-1.')
+    assert (signaller.calls, signaller.restarts, sent['signal'], publisher.sent) == (
+        [(RUN, 'fixer-1', 'restart', 1)], [start], 'restart', [])
 
 
-def test_the_lambda_runtime_sends_a_restarts_start() -> None:
-    client = LambdaClient({'agents': {'fixer-1': 'working'}, 'applied': {'fixer-1': True}})
-    LambdaRuntime(client, 'voc-engineering-runtime').signal(RUN, 'fixer-1', 'restart', 2, actor='admin-sub',
-                                                            restart_from='fresh')
+def test_the_lambda_signaller_sends_a_restarts_start() -> None:
+    client = LambdaClient({'status': 'sent'})
+    restart = parse_signal({'signal': 'restart', 'from': 'fresh', 'task_id': 'task-1', 'attempt': 2, 'confirm': True})
+    LambdaSignaller(client, 'voc-engineering-start').signal(RUN, restart, actor='admin-sub', agent_id='fixer-1')
     assert json.loads(client.requests[0]['Payload']) == {
-        'action': 'signal', 'run_id': RUN, 'signal': 'restart', 'actor': 'admin-sub', 'restart_from': 'fresh',
-        'agent_id': 'fixer-1', 'attempt': 2}
+        'action': 'signal_run', 'run_id': RUN, 'signal': 'restart', 'actor': 'admin-sub', 'agent_id': 'fixer-1',
+        'task_id': 'task-1', 'attempt': 2, 'restart_from': 'fresh'}
 
 
 @pytest.mark.parametrize(('body', 'says'), [
@@ -660,14 +609,14 @@ def test_a_restart_off_its_rule_says_what_to_send(body: dict[str, Any], says: st
 
 
 def test_a_person_steers_the_orchestrator_about_an_agent(run) -> None:
-    _, monitor, runtime, publisher, _ = run
+    _, monitor, signaller, publisher, _ = run
     sent = monitor.steer(RUN, parse_steer({'text': ' Keep the signature. ', 'about': 'fixer-1'}), ADMIN)
     [steer] = publisher.sent
     assert (steer.type, steer.sender, steer.to, steer.summary, steer.thread_id) == (
         'msg.steer', Party('human', 'admin-sub'), Party('conductor', RUN), 'About fixer-1: Keep the signature.',
         sent['thread_id'])
     assert sent['thread_id'].startswith('steer-')
-    assert runtime.calls == []
+    assert signaller.calls == []
     plain = monitor.steer(RUN, parse_steer({'text': 'Skip the docs', 'thread_id': 'steer-7'}), ADMIN)
     assert (publisher.sent[1].summary, plain['thread_id']) == ('Skip the docs', 'steer-7')
 
@@ -705,7 +654,7 @@ def test_the_overview_shows_the_lanes_the_gates_the_cost_and_the_family_of_a_run
         built = world.build()
         import boto3
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(world.TABLE)
-        monitor = RunMonitor(built.client, world.TABLE, SessionStore(table, RunStore(table)), runtime=None,
+        monitor = RunMonitor(built.client, world.TABLE, SessionStore(table, RunStore(table)), signaller=None,
                              publisher=None, objects=RunObjects(built.s3, world.BUCKET))
         view = monitor.overview(world.RUN)
         assert view is not None

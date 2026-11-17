@@ -2,15 +2,16 @@
 
 The router knows a sender only from the event's ``source``, so the bus's resource policy pins each source to its
 publisher's identity (lib/stacks/engineering-bus.ts): it admits the board's role, the supervisor's and the delivery
-function's roles and every agent role, and denies each every source but its own (the board's
-``voc.engineering/board``, the runtime's two ``voc.engineering/supervisor``, an agent role's from its session's
-workspace, run and agent, a run's coach its run's). A message must
+function's roles, every agent role and (7.51.02) the Agents API's role, and denies each every source but its own (the
+board's ``voc.engineering/board``, the runtime's two ``voc.engineering/supervisor``, an agent role's from its session's
+workspace, run and agent, a run's coach its run's, the Agents API's ``voc.engineering/api``). A message must
 also say, in its ``from``, the sender the source proves, and an agent or a run conductor may speak only in its own
 workspace and run. Everything else is dropped and journalled, so no agent can
 speak for another, for a person, for the board or for the supervisor.
 
-Sources: ``voc.engineering/api`` (a signed-in person, through the API), ``voc.engineering/board`` (the board API,
-as the board: a person's board actions go out from the API's source), ``voc.engineering/supervisor`` (the
+Sources: ``voc.engineering/api`` (a signed-in person, through the Agents API: since 7.51.02 their steering and their
+answers, ``API_TYPES``, and nothing else, which its role's grant on the bus holds it to as well), ``voc.engineering/board``
+(the board API, as the board), ``voc.engineering/supervisor`` (the
 supervisor, and the delivery function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
 ``voc.engineering/coach/<ws>/<run>`` (a run's coach: run-scoped, so the run and refs checks apply to it, and it speaks
 as ``coach``, never as ``system``) and ``voc.engineering/agent/<role>/<ws>/<run>/<agent>``, the role one of
@@ -23,8 +24,13 @@ conductor (the run coordinator) relays it to one agent or every agent of one rol
 through the board (its session's egress has no EventBridge endpoint): the board's ``steer`` op checks the caller is the
 run's current coordinator, from its IAM identity, and publishes the relay from the board's own source as the conductor
 (``RELAYED``), the one message the board sends as another kind than ``system``. No agent sends steering, and no one
-steers the API or the conductor but a person. ``signal.restart`` (an agent restarted from its checkpoint or afresh) is
-the API's alone.
+steers the API or the conductor but a person.
+
+The API's source says nothing else (7.51.02): a person's signals (an agent's restart among them) and Stop go through
+voc-engineering-start, which records each on the run's ``RUNLOG#`` rows (D4), so no ``signal.*`` comes from it; a
+person's board actions and an administrator's skill decisions (``task.*``, ``skill.*``) are not said on the bus from it
+either. A message of any other type from it is dropped, whatever its ``from`` says, and so is an event whose
+``detail-type`` is not its message's own type (router.py), since the role's grant is held to the detail type.
 """
 from __future__ import annotations
 
@@ -48,19 +54,24 @@ RELAYED: dict[tuple[str, str], frozenset[str]] = {('board', 'msg.steer'): frozen
 #: Who a steering message goes to, by its sender's kind: a person steers the conductor; the conductor steers an agent
 #: or a role's agents.
 STEERED: dict[str, frozenset[str]] = {'human': frozenset({'conductor'}), 'conductor': frozenset({'agent', 'role'})}
+#: What the API's source may say (7.51.02): a person's steering of the run's orchestrator and their answer to an agent
+#: or the conductor, the two types the Agents API publishes (engineering/monitor.py), and nothing else. Its role's
+#: ``events:PutEvents`` is held to these detail types and its source (lib/stacks/api-engineering-voice.ts), and the bus's
+#: policy denies it any other source.
+API_TYPES = frozenset({'msg.steer', 'msg.answer'})
 #: Per type family (or exact type), the kinds of source that may send it. A person (the API) talks only by
-#: answering; the supervisor signals agents too (the pause before a session's time is up).
+#: steering and answering (``API_TYPES``); the supervisor signals agents (the pause before a session's time is up).
 ALLOWED = {
-    # The board's changes, and a person's board actions (board.api.PersonBoard), which the API publishes as the
-    # signed-in person: its source proves from.kind human, never another kind (FROM_KINDS).
-    'task.': frozenset({'board', 'api'}),
+    # The board's changes.
+    'task.': frozenset({'board'}),
     # A task the supervisor re-posts (board.api.repost_task), published with the supervisor's own source.
-    'task.posted': frozenset({'board', 'supervisor', 'api'}),
-    'signal.': frozenset({'api', 'supervisor'}),
+    'task.posted': frozenset({'board', 'supervisor'}),
+    'signal.': frozenset({'supervisor'}),
     # The supervisor asks a silent agent for its state; a person's check-in is a message.
     'signal.check_in': frozenset({'supervisor'}),
-    # A person restarts an agent (7.51.00); the supervisor never does.
-    'signal.restart': frozenset({'api'}),
+    # A person's restart of an agent (7.51.00) is recorded on the run's RUNLOG# rows by voc-engineering-start
+    # (7.51.02), never said on the bus; the supervisor never restarts one.
+    'signal.restart': frozenset(),
     'gate.': frozenset({'agent'}),
     'run.': frozenset({'supervisor', 'board'}),
     'run.health': frozenset({'supervisor'}),
@@ -75,10 +86,11 @@ ALLOWED = {
     # board's for the coordinator's ``steer`` op): ``_steer_refusal`` holds who steers whom.
     'msg.steer': frozenset({'api', 'conductor', 'board'}),
     'review.': _TALK,
-    # The run's coach proposes; an administrator proposes, accepts, promotes and rolls back through the API.
-    'skill.proposed': frozenset({'coach', 'api'}),
-    'skill.accepted': frozenset({'api'}),
-    'skill.rolled_back': frozenset({'api'}),
+    # The run's coach proposes. An administrator's proposals, acceptances and rollbacks are kept on the skills' log
+    # rows (skills/actions.py), not said on the bus: the API's source never sends them (``API_TYPES``).
+    'skill.proposed': frozenset({'coach'}),
+    'skill.accepted': frozenset(),
+    'skill.rolled_back': frozenset(),
 }
 
 
@@ -120,7 +132,7 @@ def _kinds_for(message_type: str) -> frozenset[str]:
 
 def _source_refusal(message: Message, sender: Source) -> str:
     """Why the source may not send this message, as what it is and where it speaks ('' when it may)."""
-    if sender.kind not in _kinds_for(message.type):
+    if sender.kind not in _kinds_for(message.type) or (sender.kind == 'api' and message.type not in API_TYPES):
         return f'{sender.kind} may not send {message.type}'
     if message.sender.kind not in FROM_KINDS[sender.kind] | RELAYED.get((sender.kind, message.type), frozenset()):
         return f'from.kind {message.sender.kind} is not what the source {sender.kind} proves'

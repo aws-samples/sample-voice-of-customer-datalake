@@ -340,7 +340,7 @@ describe('an admin acts on the run and its agents', () => {
 describe('the run\'s Stop (7.50.03)', () => {
   /** A run waiting for a person whose coordinator never started, in a deployment the signals cannot reach. */
   const stuck = () => {
-    const overview = engineeringOverview({ status: 'needs_human', waiting_at: 'coordinator' }, false)
+    const overview = engineeringOverview({ status: 'needs_human', waiting_at: 'coordinator' }, { steer: false, signals: false })
     overview.agents = []
     return overview
   }
@@ -361,7 +361,7 @@ describe('the run\'s Stop (7.50.03)', () => {
     const bar = within(await controls())
     expect(bar.getByText('Needs a person')).toHaveClass('badge-warn')
     // Stop is there although the workspace cannot send signals; Pause, Resume and Save are not, and the bar says why.
-    expect([bar.queryByText(/Pause, Resume and Save need the engineering runtime and bus/) !== null,
+    expect([bar.queryByText(/Pause, Resume and Save can't reach this run from this deployment/) !== null,
       bar.queryByRole('button', { name: /Resume|Pause/ })]).toStrictEqual([true, null])
     const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
     const before = overviewReads()
@@ -426,7 +426,7 @@ describe('the run\'s Stop (7.50.03)', () => {
   })
 
   it('says where the deployment cannot stop the run', async () => {
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, false, false) })
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, signals: false, stop: false }) })
     renderRun()
     const bar = within(await controls())
     expect(bar.getByText(/Stop can't reach this run from this deployment/)).toBeInTheDocument()
@@ -575,16 +575,18 @@ describe('who may act', () => {
     await expectNoBoardControls()
   })
 
-  it('an admin, where the workspace cannot reach the runtime and the bus, still has Stop, and is told why the rest is off', async () => {
-    const question = { ref: 'c1', at: '2026-11-12T08:40:00Z', kind: 'message', from: { kind: 'agent', id: 'fixer-1' }, text: 'Message 1', cut: false, update: '' }
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, false),
+  /** An agent's own question in its thread, which a Reply answers. */
+  const question = { ref: 'c1', at: '2026-11-12T08:40:00Z', kind: 'message', from: { kind: 'agent', id: 'fixer-1' }, text: 'Message 1', cut: false, update: '' }
+
+  it('an admin, where neither the signals nor the bus reach the run, still has Stop, and is told why the rest is off', async () => {
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, signals: false, board: false }),
       [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
     renderRun('RUN1', 'fixer-1')
     await screen.findByRole('button', { name: 'Stop' })
-    expect(screen.getByText(/Pause, Resume and Save need the engineering runtime and bus/)).toBeInTheDocument()
-    // (b-: the composer and Reply go over the bus, so the composer is off and says why; no Reply, no agent signal)
+    expect(screen.getByText(/Pause, Resume and Save can't reach this run from this deployment/)).toBeInTheDocument()
+    // (the composer and Reply go over the bus, so the composer is off and says why; no Reply, no agent signal)
     const composer = await screen.findByRole('textbox', { name: 'Steer the orchestrator' })
-    expect(composer).toHaveAccessibleDescription(/Steering and replies can't be sent from this deployment yet/)
+    expect(composer).toHaveAccessibleDescription(/Steering and replies can't be sent from this deployment: it doesn't name the engineering bus/)
     await screen.findByText('Message 1')
     expect([composer.hasAttribute('disabled'), screen.queryByRole('button', { name: 'Pause' }),
       screen.queryByRole('button', { name: 'Reply to fixer-1' }), screen.queryByRole('group', { name: 'Agent fixer-1' })])
@@ -592,9 +594,35 @@ describe('who may act', () => {
     await expectNoBoardControls()
   })
 
-  it('reads an overview that does not say whether the actions are available as unavailable', () => {
-    expect(parseOverview({ ...engineeringOverview(), actions_available: undefined }).actions_available).toBe(false)
-    expect(parseOverview(engineeringOverview()).actions_available).toBe(true)
+  it('shows each control by its own flag (7.51.02): the signals without the bus, steering and Reply without the signals', async () => {
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, board: false }),
+      [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
+    const signalled = renderRun('RUN1', 'fixer-1')
+    // The signals reach the run (the start function): Pause, Save and the agent's own controls; the composer is off.
+    await screen.findByRole('button', { name: 'Pause' })
+    await screen.findByText('Message 1')
+    expect([screen.queryByRole('group', { name: 'Agent fixer-1' }) !== null, screen.queryByText(/Pause, Resume and Save can't reach/),
+      screen.getByRole('textbox', { name: 'Steer the orchestrator' }).hasAttribute('disabled'),
+      screen.queryByRole('button', { name: 'Reply to fixer-1' })]).toStrictEqual([true, null, true, null])
+    signalled.unmount()
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { signals: false, board: false }),
+      [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
+    renderRun('RUN1', 'fixer-1')
+    // Steering reaches it (the bus): the composer and Reply are on; Pause, Save and the agent's controls are not.
+    const composer = await screen.findByRole('textbox', { name: 'Steer the orchestrator' })
+    await screen.findByRole('button', { name: 'Reply to fixer-1' })
+    expect([composer.hasAttribute('disabled'), screen.queryByRole('button', { name: 'Pause' }),
+      screen.queryByRole('group', { name: 'Agent fixer-1' }), screen.queryByText(/Pause, Resume and Save can't reach/) !== null])
+      .toStrictEqual([false, null, null, true])
+    await expectNoBoardControls()
+  })
+
+  it('reads an overview that does not say what reaches the run as reaching none of it', () => {
+    const unsaid = parseOverview({ ...engineeringOverview(), steer_available: undefined, signals_available: undefined,
+      board_available: undefined })
+    expect([unsaid.steer_available, unsaid.signals_available, unsaid.board_available]).toStrictEqual([false, false, false])
+    const said = parseOverview(engineeringOverview())
+    expect([said.steer_available, said.signals_available, said.stop_available]).toStrictEqual([true, true, true])
   })
 
   it('an ended run takes no more signals: Restart run instead', async () => {

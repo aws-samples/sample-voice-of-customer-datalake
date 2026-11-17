@@ -23,8 +23,9 @@ Permissions:
   administrators only, where the engineering agents are on (404 elsewhere), as the library offers them;
 - an engineering run's monitor, board, conversation and reports (``/agents/engineering/<run_id>``
   and its ``/*``, lambda/engineering/views.py and monitor.py) are read by administrators only,
-  acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
-  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a person's Stop of it
+  acting for themselves (403 for anyone else, an MCP credential included), and so are its signals (since 7.51.02
+  through the start function's ``signal_run``, below) and a person's answers in it (``POST …/signals``,
+  ``…/messages``, like a decision) and a person's Stop of it
   (``POST …/stop``, 7.50.03: the start function's ``stop_run``, below, which ends it whatever its agents are doing;
   then its engineering agent's run is ended here too, its lock released) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
@@ -63,8 +64,9 @@ ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills stor
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
-code and role, which runs ``start_run``, since 7.10.00 ``ask_reactions`` and since 7.50.03 ``stop_run``, and refuses
-every other action; never the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
+code and role, which runs ``start_run``, since 7.10.00 ``ask_reactions``, since 7.50.03 ``stop_run`` and since
+7.51.02 ``signal_run`` (the monitor's signals: checked, recorded and handed on to the runtime by that function), and
+refuses every other action; never the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
 voc-engineering-app-tokens: the broker's code under its own role, which reads an App's key; this API asks it only
 ``inspect_installation`` and, since 7.50.02, ``ensure_label`` (the ``voc-agent`` label on one connected repository),
 neither of which answers a token), and, since 7.50.02, on the GitHub Issues settings function
@@ -72,11 +74,13 @@ neither of which answers a token), and, since 7.50.02, on the GitHub Issues sett
 settings and turns its schedule on; this role holds no grant on the secret or the rule), where that plugin is deployed
 (lib/stacks/api-engineering-issues-sync.ts), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
-``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
-``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
-monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
-their names, and the bus's resource policy is to let this role put that source (until then the monitor's signals
-and answers answer 503, and its overview says ``actions_available: false``; its Stop needs neither). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
+``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``), and, since 7.51.02,
+``events:PutEvents`` on the engineering bus alone (``ENGINEERING_BUS_NAME``) held to the source
+``voc.engineering/api`` and the detail types ``msg.steer`` and ``msg.answer`` (a person's steering and answers, the two
+things this API says there: lib/stacks/api-engineering-voice.ts); the bus's resource policy holds it to that source
+(lib/stacks/engineering-bus.ts: this role has a fixed name for it) and the router to those types
+(engineering/bus/senders.py, router.py). Nothing while
+the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
 are in the engineering table, read with the Query its stack already grants, and so are the spend ledger's month
 partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 """
@@ -1348,29 +1352,22 @@ def _engineering(run_id: str) -> Any:
 
 def _monitor(run_id: str) -> Any:
     """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
-    run's partition of the engineering table, read only); its signals and answers need the runtime
-    (ENGINEERING_RUNTIME_FUNCTION) and the bus (ENGINEERING_BUS_NAME); its Stop (7.50.03) only the start function
-    (ENGINEERING_START_FUNCTION, ``stop_run``: this role invokes no other runtime function)."""
+    run's partition of the engineering table, read only); its signals (7.51.02, ``signal_run``) and its Stop (7.50.03,
+    ``stop_run``) need the start function (ENGINEERING_START_FUNCTION: this role invokes no other runtime function),
+    its answers and steering the bus (ENGINEERING_BUS_NAME, where this role may put only those two types)."""
     table, bucket = _engineering_tables(run_id)
     from engineering.bus.publish import EventBridgePublisher
-    from engineering.monitor import API_SOURCE, LambdaRuntime, LambdaStopper, RunMonitor
+    from engineering.monitor import API_SOURCE, LambdaSignaller, LambdaStopper, RunMonitor
     from engineering.run_objects import RunObjects
     from engineering.runtime.runs import RunStore
     from engineering.runtime.sessions import SessionStore
-    from shared.aws import (
-        get_dynamodb_client,
-        get_dynamodb_resource,
-        get_eventbridge_client,
-        get_lambda_client,
-        get_s3_client,
-    )
+    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_s3_client
 
-    bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
-    start = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
+    bus, start = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     engineering = get_dynamodb_resource().Table(table)
     # (7.51.00: the workspace bucket's run objects, for an ended run's manifest)
     return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
-                      runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
+                      signaller=LambdaSignaller(_start_client(), start) if start else None,
                       publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None,
                       stopper=LambdaStopper(_start_client(), start) if start else None,
                       objects=RunObjects(get_s3_client(), bucket))
@@ -2164,7 +2161,10 @@ def get_engineering_run(run_id: str):
 @tracer.capture_method
 def signal_engineering_run(run_id: str):
     """``{signal, task_id?, attempt?, note?, confirm?}`` → ``{signal}``: an admin acting for themselves (never a
-    delegated credential), like a run's decision; the supervisor applies it (engineering/monitor.py)."""
+    delegated credential), like a run's decision; voc-engineering-start checks, records and hands it on to the
+    supervisor, which applies it (7.51.02, engineering/monitor.py): ``{signal: {status: sent}}``; a whole run's Shut
+    down or Stop now is its Stop. 409 for a run that ended, is being stopped or whose task moved on; 503 without the
+    start function, or when it cannot be reached (send it again)."""
     monitor, caller = _acting_monitor(run_id)
     from engineering.monitor import parse_signal  # (the package ships only with the module)
 
@@ -2231,8 +2231,9 @@ def message_engineering_run(run_id: str):
 
 
 # A person's board actions (engineering/board/api.py PersonBoard, plan v3 4.3): the same gate as the monitor's
-# actions (admins acting for themselves; 404 while the module is off or for an unknown run), the bus needed (503
-# without it, like a signal), each change written by the board store with the person as its actor.
+# actions (admins acting for themselves; 404 while the module is off or for an unknown run), the bus needed for their
+# events (503 without it; since 7.51.02 for every action that publishes, the API's source saying only steering and
+# answers: RunMonitor.board_available), each change written by the board store with the person as its actor.
 _BOARD_ERRORS = {**_MONITOR_ERRORS, 'forbidden': AuthorizationError, 'cap': TooManyRequestsError}
 
 
@@ -2240,7 +2241,8 @@ def _person_board_action(run_id: str, request: dict[str, str], *, publishes: boo
     """A person's board action (``request``: ``{op: post}``, ``{op: act, task_id, action}`` or ``{op: go}``) through
     the board function, whose own role writes the change (this role writes no board row: engineering/board/api.py
     person_request); the events it hands back are published here, from the API's source, as the person. An action
-    that ``publishes`` nothing (a go: its row is the record) needs no bus."""
+    that ``publishes`` nothing (a go: its row is the record) needs no bus; one that does is refused before the board
+    is asked while the bus takes no ``task.*`` from the API (``RunMonitor.board_bus``, 7.51.02)."""
     monitor, caller = _acting_monitor(run_id)
     from engineering.bus.publish import PublishError
     from engineering.bus.schema import parse
@@ -2249,7 +2251,9 @@ def _person_board_action(run_id: str, request: dict[str, str], *, publishes: boo
     board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
     try:
         monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
-        publisher = monitor.bus() if publishes else None  # (no bus, no change: its event could not be sent)
+        # (no change its event could not be sent for: since 7.51.02 the bus takes no task.* from the API's source,
+        # monitor.board_available, so every board action that publishes is refused here, before the board writes)
+        publisher = monitor.board_bus() if publishes else None
         if not board:
             raise ServiceUnavailableError('the board cannot be reached from here: the deployment names no board function')
         person = {**request, 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}

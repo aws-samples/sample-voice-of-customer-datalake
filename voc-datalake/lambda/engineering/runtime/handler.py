@@ -47,7 +47,8 @@
   (``checkout_cache.py``); ``launch_coordinator`` fills that entry first, invoking voc-engineering-cache
   (``ENGINEERING_CACHE_FUNCTION``) and waiting for it, then launches in an invocation of its own.
 - ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "restart_from"?, "actor"?}``: the run monitor's
-  Save, Pause, Resume, Shut down, Stop now and (7.51.00) Restart of one agent, ``restart_from`` ``checkpoint`` (the
+  Save, Pause, Resume, Shut down, Stop now and (7.51.00) Restart of one agent (since 7.51.02 handed on by
+  voc-engineering-start's ``signal_run``, which checked and recorded it), ``restart_from`` ``checkpoint`` (the
   default) or ``fresh`` (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given). A
   Resume of the whole run also makes sure the run has a coordinator, as its start does (``_ensure_coordinator``: a
@@ -71,9 +72,13 @@ ended run, as a child run: ``runtime/restart.py``), since 7.10.00 ``ask_reaction
 trigger of an ended run's reactions read, ``POST /agents/engineering/<run_id>/reactions``: once per run and hour, then
 handed on to this function's ``reactions``) and since 7.50.03 ``stop_run`` (the run monitor's Stop, ``POST
 /agents/engineering/<run_id>/stop``: the run ended at once when nothing is to be saved, its end's rest handed on to
-this function's ``finish_stop``; else the request recorded and the agents' save handed on to its ``stop_run``), and
-nothing else: an event naming any other action, or none, is refused before anything is read, so the API's grant can
-start a run, ask for an ended run's reactions and stop a run, and never tick, launch or signal an agent. It writes
+this function's ``finish_stop``; else the request recorded and the agents' save handed on to its ``stop_run``), since
+7.51.02 ``signal_run`` (the run workspace's Pause, Resume and Save, and an agent's Save, Pause, Resume, Shut down, Stop
+now and Restart, ``POST /agents/engineering/<run_id>/signals``: checked against the run, the agent and the state,
+recorded on a ``RUNLOG#`` row, then handed on to this function's ``signal``: ``runtime/run_signals.py``), and nothing
+else: an event naming any other action, or none, is refused before anything is read, so the API's grant can start a
+run, ask for an ended run's reactions, stop a run and hand a person's checked signal on, and never tick, launch, end a
+run or send this function anything else. It writes
 the run and answers; the coordinator's launch is handed on to this function's ``launch_coordinator`` (``{"run_id",
 "actor"}``, asynchronous, never raising: a failure sends the run to a person).
 
@@ -106,7 +111,7 @@ from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import FlowError
 from engineering.flow.settings import LearnSettings, learn_settings
-from engineering.runtime import caps, egress
+from engineering.runtime import caps, egress, run_signals
 from engineering.runtime import stop as run_stop
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkout_cache import (
@@ -1809,6 +1814,32 @@ def stop_from_api(event: Mapping[str, Any]) -> dict[str, Any]:
     return _stop_from_start(str(event.get('run_id', '')), actor, run_stop.check_mode(event.get('mode'))).view()
 
 
+def signal_from_api(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-start's ``signal_run`` (``{"run_id", "signal", "actor", "note"?, "agent_id"?, "task_id"?,
+    "attempt"?, "restart_from"?}``, the Agents API's ``POST /agents/engineering/<run_id>/signals``, an administrator acting for
+    themselves, 7.51.02): the run workspace's Pause, Resume and Save of the whole run and an agent's Save, Pause,
+    Resume, Shut down, Stop now and Restart, checked before anything is read, then against the run, the agent and the
+    state (no Stop under way), recorded on the run's ``RUNLOG#`` rows (D4) and handed on to voc-engineering-runtime's
+    ``signal`` (``runtime/run_signals.py``). Answers what was sent (``status: sent``); a hand-on that fails is raised
+    (its record stays: the person sends it again)."""
+    request = run_signals.parse(event)
+    runs = _runs()
+    run_signals.check(request, runs, _board_store(), _session_store())
+    now = int(clock())
+    runs.record_signal(request.run_id, request.signal, actor=request.actor, now=now, agent_id=request.agent_id,
+                       task_id=request.task_id, attempt=request.attempt, restart_from=request.restart_from,
+                       note=request.note)
+    try:
+        _hand_on_runtime(request.handed_on())
+    except Exception:
+        logger.exception('engineering signal: recorded but not handed on; the person sends it again',
+                         extra={'run_id': request.run_id, 'signal': request.signal})
+        raise
+    logger.info('engineering signal handed on', extra={'run_id': request.run_id, 'signal': request.signal,
+                                                        'agent_id': request.agent_id or None})
+    return request.view(_iso_now(now))
+
+
 def ask_reactions(event: Mapping[str, Any]) -> dict[str, Any]:
     """voc-engineering-start's ``ask_reactions`` (``{"run_id", "actor"}``, the Agents API's ``POST
     /agents/engineering/<run_id>/reactions``, an administrator acting for themselves): for an ended run, at most once
@@ -1883,11 +1914,12 @@ def _hand_on_launch(run_id: str, actor: str) -> None:
 def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
     """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``), since 7.10.00 its
     hand trigger of an ended run's reactions read (``ask_reactions``), since 7.50.03 a person's Stop of a whole run
-    (``stop_run``: ``stop_from_api``) and since 7.51.00 a person's Resume or Restart of an ended run as a child run
-    (``restart_run``). Every other action, and an event naming none, is refused before anything is
-    read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it can start a
-    run, restart an ended one, ask for an ended run's reactions and stop a run, and never tick, launch, signal an
-    agent or end a run otherwise.
+    (``stop_run``: ``stop_from_api``), since 7.51.00 a person's Resume or Restart of an ended run as a child run
+    (``restart_run``) and since 7.51.02 a person's signal to a live run or one of its agents (``signal_run``:
+    ``signal_from_api``, checked here, then handed on). Every other action, and an event naming none, is refused before
+    anything is read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it
+    can start a run, restart an ended one, ask for an ended run's reactions, stop a run and hand a person's checked
+    signal on, and never tick, launch, end a run or send the runtime anything else.
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
@@ -1898,6 +1930,8 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
         return ask_reactions(event)
     if event.get('action') == STOP_ACTION:
         return stop_from_api(event)
+    if event.get('action') == run_signals.SIGNAL_ACTION:
+        return signal_from_api(event)
     if event.get('action') == RESTART_ACTION:
         return restart_run(event)
     if event.get('action') != START_ACTION:
@@ -1905,7 +1939,8 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
                        extra={'action': str(event.get('action'))[:40]})
         raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}), restarts an ended one as a '
                              f"child run ({RESTART_ACTION!r}), asks for an ended run's reactions "
-                             f'({ASK_REACTIONS_ACTION!r}) or stops a run ({STOP_ACTION!r})')
+                             f'({ASK_REACTIONS_ACTION!r}), stops a run ({STOP_ACTION!r}) or hands a person\'s signal on '
+                             f'({run_signals.SIGNAL_ACTION!r})')
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
     try:
         answer = start_run(event, launch=False)

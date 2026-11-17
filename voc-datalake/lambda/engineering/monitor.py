@@ -1,4 +1,4 @@
-"""The run monitor (plan v3, 4.10): what a person sees of a run under way, and the two things they may do to it.
+"""The run monitor (plan v3, 4.10): what a person sees of a run under way, and the things they may do to it.
 
 ``overview``: the run (its ``META`` in voc-engineering: goal, repository, flow, status, times, how many messages it
 has numbered), and every agent as the supervisor last saw it: its session row in the run's partition
@@ -11,47 +11,56 @@ without a flow), and (7.09.00) the issue it was started from and its pull reques
 address (``engineering/run_links.py``; None for none), and (7.10.00) the latest read of people's reactions on the
 host to that pull request (``engineering/learning/reactions.py``; None for none). The run's cost is to come from the
 run control
-(``engineering.runtime.ports.RunControl.budget``) once it is wired.
+(``engineering.runtime.ports.RunControl.budget``) once it is wired. And (7.51.02) what of it can be reached from here,
+each by its own flag: ``steer_available`` (the bus is named: steering and answers), ``signals_available`` and
+``stop_available`` (the start function is: the signals and the Stop), ``board_available`` (a person's board actions:
+never yet, below).
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
 
-- ``signal``: ``save``, ``pause``, ``resume``, ``shutdown`` or ``stop_now`` (4.5), to the agent on a task or to the
-  whole run. A signal to an agent names the attempt the person saw (the task's lease epoch): if the task has moved on
-  (another attempt, no holder, or it has ended), it is refused, so nobody signals an agent they did not see.
-  ``stop_now`` (no checkpoint) asks for ``confirm``. The supervisor applies it (``voc-engineering-runtime``'s
-  ``signal`` action, idempotent per agent: a paused agent paused again is unchanged; an agent another move holds
-  answers ``busy``, which is refused here as unavailable, so the person sends it again). The request is recorded in
-  the conversation first (4.5: "recorded in the conversation with who/when"; D4) as ``signal.<name>`` from the API's
-  source, addressed to the run (the supervisor itself tells the agent): who asked what of whom, and the note; the
-  answer carries each agent's status.
-- ``message``: a person's answer (``msg.answer``, the one thing a person says on the bus) to an agent of the run or to
-  its conductor, on the thread they reply to or a new one. The router writes it to the conversation, its record.
+- ``signal``: ``save``, ``pause``, ``resume``, ``shutdown``, ``stop_now`` (4.5) or (7.51.00) ``restart``, to the agent
+  on a task or (Save, Pause, Resume) to the whole run. A signal to an agent names the attempt the person saw (the
+  task's lease epoch): if the task has moved on (another attempt, no holder, or it has ended), it is refused, so
+  nobody signals an agent they did not see. ``stop_now`` (no checkpoint) asks for ``confirm``. Since 7.51.02 it goes
+  through voc-engineering-start's ``signal_run`` (``LambdaSignaller``: the API's role invokes that function and never
+  the runtime's, whose actions IAM cannot tell apart), which checks the run, the agent and the state again (no signal
+  while a Stop is under way), records who asked what of whom on the run's ``RUNLOG#`` rows (D4, with the note) and
+  hands it on to the supervisor (``voc-engineering-runtime``'s ``signal``, idempotent per agent: a paused agent
+  paused again is unchanged; one another move holds is left as it is, and the person sends it again). The answer
+  says it was sent; the overview shows what came of it.
+- ``message``: a person's answer (``msg.answer``) to an agent of the run or to its conductor, on the thread they
+  reply to or a new one, and ``steer`` (7.51.00, ``msg.steer``): a person's instruction to the run's orchestrator.
+  The two things a person says on the bus, published from the API's own source (``API_SOURCE``), which since 7.51.02
+  may say those two types and nothing else (``bus/senders.py`` ``API_TYPES``; its role's grant on the bus is held to
+  them too). The router writes each to the conversation, its record.
 - ``stop`` (7.50.03): a person's Stop of the whole run, ``stop`` (each agent saves a checkpoint, then the run ends) or
-  ``stop_now`` (at once, asking ``confirm``), through voc-engineering-start's ``stop_run`` (``LambdaStopper``: the
-  API's role invokes that function and never the runtime's), so it needs neither the runtime nor the bus here and
-  ends the run whatever its agents are doing, a run with no session at all included (``runtime/stop.py``). Its
-  record is the run's ``RUNLOG#`` row (who, how, when: D4); where the bus is configured the conversation records the
-  request and its outcome too, best effort. A whole-run Shut down or Stop now sent as a ``signal`` is this Stop.
+  ``stop_now`` (at once, asking ``confirm``), through voc-engineering-start's ``stop_run`` (``LambdaStopper``), so it
+  needs neither the runtime nor the bus here and ends the run whatever its agents are doing, a run with no session at
+  all included (``runtime/stop.py``). Its record is the run's ``RUNLOG#`` row (who, how, when: D4). A whole-run Shut
+  down or Stop now sent as a ``signal`` is this Stop.
 
-A run that has ended (``META.ended_at``) takes none of them. Without the runtime or the bus configured the signals and
-answers are ``unavailable`` (``actions_available``); without the start function, the Stop (``stop_available``); so is a
-failed call (the caller retries: the supervisor's signal and the Stop are idempotent, and the record is sent again).
+A run that has ended (``META.ended_at``) takes none of them. Without the start function the signals and the Stop are
+``unavailable``; without the bus, steering and answers; so is a failed call (the caller retries: the supervisor's
+signal and the Stop are idempotent). A person's board actions (``board/api.py`` PersonBoard) publish the board's
+``task.*`` events as the person from the API's source, which the bus does not take from it (7.51.02): they are
+unavailable (``board_available`` false) and refused before the board changes anything.
 """
 from __future__ import annotations
 
 import json
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering import run_overview
-from engineering.board.model import FINAL, OPEN, PERSON_PREFIX, Task
+from engineering.board.model import EVENT_OF, FINAL, OPEN, PERSON_PREFIX, Task
 from engineering.bus.publish import PublishError, new_event_id
-from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
+from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, summary_text
+from engineering.bus.senders import API_TYPES
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.record import run_flow
 from engineering.learning.reactions import ReactionsStore
@@ -69,16 +78,16 @@ API_SOURCE = 'voc.engineering/api'
 SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart')
 #: Where a restarted agent starts again (7.51.00): its newest checkpoint, or its task afresh (its attempt re-posted).
 RESTART_FROM = ('checkpoint', 'fresh')
-#: A person's Stop of the whole run (runtime/runs.py STOP, STOP_NOW), and the whole-run signal each one is.
+#: A person's Stop of the whole run (runtime/runs.py STOP, STOP_NOW), and the whole-run signal that is each one.
 STOP, STOP_NOW = 'stop', 'stop_now'
 WHOLE_RUN_STOPS = {'shutdown': STOP, 'stop_now': STOP_NOW}
-SIGNAL_OF_STOP = {STOP: 'shutdown', STOP_NOW: 'stop_now'}
 #: What voc-engineering-start answers a Stop with (stop.Stopped): the run's status after it.
 STOP_STATUSES = frozenset({'stopped', 'stopping', 'done', 'failed'})
-#: The supervisor's answer for an agent another move held (supervisor.py: nothing was done).
-BUSY = 'busy'
-#: The supervisor's answer for an agent on another attempt than the one the signal named (nothing done).
-STALE = 'stale'
+#: What it answers a signal it recorded and handed on with (runtime/run_signals.py).
+SENT = 'sent'
+#: The board's events a person's board action publishes as the person (board/api.py PersonBoard: a post, a release
+#: and each state's change), which the bus does not take from the API's source (``API_TYPES``, 7.51.02).
+PERSON_BOARD_TYPES = frozenset({'task.posted', 'task.progress', *EVENT_OF.values()})
 #: The longest text the overview passes on from a row the runtime wrote (a step, a reason, a tool call).
 MAX_LINE = 280
 MAX_NOTE_BYTES = 500
@@ -98,21 +107,6 @@ class Sessions(Protocol):
     """The supervisor's session rows (engineering.runtime.sessions.SessionStore)."""
 
     def of_run(self, run_id: str) -> list[AgentSession]: ...
-
-
-@dataclass(frozen=True)
-class Applied:
-    """The supervisor's answer: each agent's status after the signal, and whether the signal did anything to it
-    (false when it was busy, its move failed, there was nothing to do, or the attempt was stale)."""
-    agents: dict[str, str]
-    applied: dict[str, bool]
-
-
-class Runtime(Protocol):
-    """The supervisor's signal (``LambdaRuntime`` calls voc-engineering-runtime)."""
-
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
-               restart_from: str = '') -> Applied: ...
 
 
 def _line(value: Any) -> str | None:
@@ -203,7 +197,8 @@ def _restart_from(body: Mapping[str, Any]) -> str:
 
 
 def _note(note: Any) -> str:
-    """The note, checked as the conversation's record will check it, before anything is done."""
+    """A signal's note (why), checked before anything is done: its ``RUNLOG#`` record keeps it (7.51.02), never a
+    credential-shaped string."""
     if not isinstance(note, str) or len(note.encode('utf-8')) > MAX_NOTE_BYTES:
         raise MonitorError('invalid', f'note is a string of at most {MAX_NOTE_BYTES} bytes')
     try:
@@ -214,20 +209,19 @@ def _note(note: Any) -> str:
 
 @dataclass(frozen=True)
 class StopRequest:
-    """A person's Stop of the whole run: ``stop`` (save, then stop) or ``stop_now``, and their note."""
+    """A person's Stop of the whole run: ``stop`` (save, then stop) or ``stop_now``."""
     mode: str
-    note: str
 
 
 def parse_stop(body: Mapping[str, Any]) -> StopRequest:
-    """``{now?, confirm?, note?}``: a Stop (the agents save first), or with ``now: true`` a Stop now, which stops
-    without a checkpoint and so asks ``confirm: true``."""
-    now, note = body.get('now', False), body.get('note', '')
+    """``{now?, confirm?}``: a Stop (the agents save first), or with ``now: true`` a Stop now, which stops without a
+    checkpoint and so asks ``confirm: true``. Its record is the run's ``RUNLOG#`` row, which says how it was stopped."""
+    now = body.get('now', False)
     if not isinstance(now, bool):
         raise MonitorError('invalid', 'now is true (Stop now, without saving) or false (Stop: save, then stop)')
     if now and body.get('confirm') is not True:
         raise MonitorError('invalid', 'Stop now stops without a checkpoint: send confirm: true')
-    return StopRequest(STOP_NOW if now else STOP, _note(note))
+    return StopRequest(STOP_NOW if now else STOP)
 
 
 @dataclass(frozen=True)
@@ -298,62 +292,63 @@ def _at(now: datetime) -> str:
     return now.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 
-def _record(signal: Signal, actor: Actor, target: Party) -> str:
-    """The request as the conversation keeps it: who asked what of whom, and their note."""
-    whom = f'agent {target.id}' if target.kind == 'agent' else 'the whole run'
-    note = f' Note: {signal.note}' if signal.note else ''
-    start = {'checkpoint': ' from its checkpoint', 'fresh': ' afresh'}.get(signal.restart_from, '')
-    return fit_summary(f"{signal.name.replace('_', ' ')}{start} requested from the run monitor by {actor.name} for "
-                       f'{whom}.{note}')
+#: The start function's refusals, answered as a conflict in its words (runtime/interface.py, runtime/runs.py).
+START_REFUSALS = ('RuntimeRefused', 'RunNotActive')
 
 
-def _outcome_text(answer: Applied) -> str:
-    """``applied: a working, b paused; not applied: c busy`` (or ``no agent yet``)."""
-    def listed(applied: bool) -> str:
-        return ', '.join(f'{agent} {status}' for agent, status in sorted(answer.agents.items())
-                         if answer.applied.get(agent, False) is applied)
+def _invoke_start(client: Any, function_name: str, request: Mapping[str, Any], *, unreachable: str,
+                  failed: str) -> Any:
+    """``request`` to voc-engineering-start, waited for: its answer's payload. Its refusal is a conflict in its words;
+    a call that failed is unavailable (``unreachable``), and so is any other function error (``failed``)."""
+    try:
+        answer = client.invoke(FunctionName=function_name, InvocationType='RequestResponse',
+                               Payload=json.dumps(request).encode())
+        payload = json.loads(answer['Payload'].read() or b'{}')
+    except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
+        raise MonitorError('unavailable', unreachable) from exc
+    if answer.get('FunctionError'):
+        if isinstance(payload, dict) and payload.get('errorType') in START_REFUSALS:
+            raise MonitorError('conflict', str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_LINE])
+        raise MonitorError('unavailable', failed)
+    return payload
 
-    done, not_done = listed(True), listed(False)
-    parts = [f'applied: {done}'] * bool(done) + [f'not applied: {not_done}'] * bool(not_done)
-    return '; '.join(parts) or 'no agent yet'
+
+class Signaller(Protocol):
+    """A person's signal to the run or one of its agents (``LambdaSignaller`` calls voc-engineering-start's
+    ``signal_run``)."""
+
+    def signal(self, run_id: str, signal: Signal, *, actor: str, agent_id: str = '') -> dict[str, Any]: ...
 
 
-class LambdaRuntime:
-    """The supervisor's signal through ``voc-engineering-runtime``: ``{action: signal, run_id, agent_id?, signal,
-    attempt?}`` answers ``{agents: {agent: status}, applied: {agent: bool}}``. The attempt goes with one agent, so the
-    supervisor itself refuses an agent that has moved on to another attempt (``stale``); a Stop now is never stale."""
+class LambdaSignaller:
+    """A person's signal through ``voc-engineering-start`` (7.51.02): ``{action: signal_run, run_id, signal, actor,
+    note?, agent_id?, task_id?, attempt?, restart_from?}``, which checks the run, the agent and the state, records it
+    on the run's ``RUNLOG#`` rows and hands it on to the supervisor (runtime/run_signals.py), answering ``{status:
+    sent, at}``. The API's role invokes that function and never voc-engineering-runtime. Its refusal (an ended run, a
+    Stop under way, a task that moved on) is a conflict in its words; any other failure is unavailable (sending it
+    again records it again, and the supervisor's signal is idempotent per agent)."""
 
     def __init__(self, client: Any, function_name: str) -> None:
         self.client = client
         self.function_name = function_name
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
-               restart_from: str = '') -> Applied:
-        """``actor``: the person who sent it (the signal record's sender), for the runtime to record who changed the
-        run's status (a whole-run Resume: D4, ``runtime/runs.py``) and name on a new coordinator's launch;
-        ``restart_from``: a restart's start (``checkpoint`` or ``fresh``)."""
-        request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal, 'actor': actor}
-        if restart_from:
-            request['restart_from'] = restart_from
-        if agent_id is not None:
-            request['agent_id'] = agent_id
-            if attempt is not None:
-                request['attempt'] = attempt
-        answer = self.client.invoke(FunctionName=self.function_name, InvocationType='RequestResponse',
-                                    Payload=json.dumps(request).encode())
-        payload = json.loads(answer['Payload'].read() or b'{}')
-        if answer.get('FunctionError'):
-            if isinstance(payload, dict) and payload.get('errorType') == 'RuntimeRefused':
-                raise MonitorError('conflict', str(payload.get('errorMessage', 'the supervisor refused it'))[:MAX_LINE])
-            raise MonitorError('unavailable', 'the supervisor could not apply it: retry')
-        answer_of = payload if isinstance(payload, dict) else {}
-        agents, applied = answer_of.get('agents'), answer_of.get('applied')
-        statuses = {str(agent): str(status) for agent, status in agents.items()} if isinstance(agents, dict) else {}
-        if not isinstance(applied, dict):
-            # The runtime from before ``applied`` (it ignores ``attempt`` too): what it answered busy did nothing.
-            return Applied(statuses, {agent: status not in {BUSY, STALE} for agent, status in statuses.items()})
-        # An agent the answer leaves out is taken as not applied (never claimed done on a guess).
-        return Applied(statuses, {agent: applied.get(agent) is True for agent in statuses})
+    def signal(self, run_id: str, signal: Signal, *, actor: str, agent_id: str = '') -> dict[str, Any]:
+        """``actor``: the person who sent it (its record's, and the runtime's for who changed the run's status, a
+        whole-run Resume: D4); ``agent_id``: the agent holding ``signal.task_id`` at ``signal.attempt`` ('' for the
+        whole run)."""
+        request: dict[str, Any] = {'action': 'signal_run', 'run_id': run_id, 'signal': signal.name, 'actor': actor}
+        if signal.note:
+            request['note'] = signal.note
+        if agent_id:
+            request |= {'agent_id': agent_id, 'task_id': signal.task_id, 'attempt': signal.attempt}
+        if signal.restart_from:
+            request['restart_from'] = signal.restart_from
+        payload = _invoke_start(self.client, self.function_name, request,
+                                unreachable='The run could not be reached: send the signal again',
+                                failed='The signal could not be sent: send it again')
+        if not isinstance(payload, dict) or payload.get('status') != SENT:
+            raise MonitorError('unavailable', 'The signal could not be sent: send it again')
+        return payload
 
 
 class Stopper(Protocol):
@@ -374,16 +369,9 @@ class LambdaStopper:
 
     def stop(self, run_id: str, mode: str, *, actor: str) -> dict[str, Any]:
         request = {'action': 'stop_run', 'run_id': run_id, 'mode': mode, 'actor': actor}
-        try:
-            answer = self.client.invoke(FunctionName=self.function_name, InvocationType='RequestResponse',
-                                        Payload=json.dumps(request).encode())
-            payload = json.loads(answer['Payload'].read() or b'{}')
-        except (ClientError, BotoCoreError, ValueError, KeyError, OSError) as exc:
-            raise MonitorError('unavailable', 'The run could not be reached: send the Stop again') from exc
-        if answer.get('FunctionError'):
-            if isinstance(payload, dict) and payload.get('errorType') in ('RuntimeRefused', 'RunNotActive'):
-                raise MonitorError('conflict', str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_LINE])
-            raise MonitorError('unavailable', 'The Stop could not be applied: send it again')
+        payload = _invoke_start(self.client, self.function_name, request,
+                                unreachable='The run could not be reached: send the Stop again',
+                                failed='The Stop could not be applied: send it again')
         if not isinstance(payload, dict) or payload.get('status') not in STOP_STATUSES:
             raise MonitorError('unavailable', 'The Stop could not be applied: send it again')
         return payload
@@ -400,17 +388,18 @@ def _stop_view(meta: Mapping[str, Any]) -> dict[str, Any] | None:
 
 
 class RunMonitor:
-    def __init__(self, client: Any, table: str, sessions: Sessions, *, runtime: Runtime | None,
+    def __init__(self, client: Any, table: str, sessions: Sessions, *, signaller: Signaller | None,
                  publisher: Publisher | None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
                  stopper: Stopper | None = None, objects: RunObjects | None = None) -> None:
         """``client`` is a low-level DynamoDB client on voc-engineering; ``sessions`` the supervisor's rows;
-        ``runtime`` and ``publisher`` the signals' and answers' (None: they are unavailable); ``stopper`` the Stop's
-        (None: it is unavailable); ``objects`` the workspace bucket's run objects (an ended run's manifest; None: not
-        read)."""
+        ``signaller`` the signals' (voc-engineering-start's ``signal_run``; None: they are unavailable), ``publisher``
+        the steering's and the answers' (the bus, from the API's source; None: they are unavailable), ``stopper`` the
+        Stop's (None: it is unavailable); ``objects`` the workspace bucket's run objects (an ended run's manifest;
+        None: not read)."""
         self.client, self.table = client, table
         self.objects = objects
         self.sessions = sessions
-        self.runtime = runtime
+        self.signaller = signaller
         self.publisher = publisher
         self.stopper = stopper
         self.now = now
@@ -454,11 +443,13 @@ class RunMonitor:
             # recorded it, and the runs restarted from this one.
             'lanes': run_overview.lanes(tasks, agents), 'gates': gates,
             'children': run_overview.children(run_rows(self.client, self.table, WORKSPACE, run_id, 'CHILD#')),
-            # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
-            # the stack wires them, every action answers 503, so the page offers none).
-            'actions_available': self.actions_available,
-            # Whether a person's Stop can reach the run (the start function named: 7.50.03), signals or not.
+            # What of it can be reached from here (7.51.02), each by its own flag: steering and answers (the bus
+            # named), the signals and the Stop (the start function named: 7.50.03 for the Stop), a person's board
+            # actions (never yet: board_available).
+            'steer_available': self.publisher is not None,
+            'signals_available': self.signaller is not None,
             'stop_available': self.stopper is not None,
+            'board_available': self.board_available,
             # The messages numbered so far (META's counter: a redelivery or a failed write uses a number too).
             'totals': {'messages': int(amount_attr(meta, 'msg_seq')),
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
@@ -494,9 +485,18 @@ class RunMonitor:
             dict(plan.verdicts)
 
     @property
-    def actions_available(self) -> bool:
-        """The runtime and the bus are both configured, so a signal or an answer can be sent."""
-        return self.runtime is not None and self.publisher is not None
+    def board_available(self) -> bool:
+        """A person's board actions can reach the run: their ``task.*`` events would go out from the API's source, which
+        the bus takes only steering and answers from (``API_TYPES``, 7.51.02: the router, and the API role's grant on
+        the bus), so they cannot, and the board routes refuse them before the board changes anything."""
+        return self.publisher is not None and PERSON_BOARD_TYPES <= API_TYPES
+
+    def board_bus(self) -> Publisher:
+        """The bus for a person's board actions' events (``board_available``), else unavailable."""
+        if not self.board_available:
+            raise MonitorError('unavailable', "a person's board actions cannot reach the run from here: the Agents API "
+                                              'says only steering and answers on the engineering bus')
+        return self.bus()
 
     def run_exists(self, run_id: str) -> bool:
         return self._get(run_id, 'META') is not None
@@ -526,49 +526,20 @@ class RunMonitor:
     def stop(self, run_id: str, request: StopRequest, actor: Actor) -> dict[str, Any]:
         """A person's Stop of the whole run (module doc): voc-engineering-start ends it, or (a Stop whose agents have
         sessions) records it and has them save first; answers the run's status after it (``stopped`` or
-        ``stopping``), the tasks it closed, the agents asked to save, and whether it fell back to stopping at once.
-        Where the bus is configured the conversation records the request first and its outcome after (best effort:
-        the run's ``RUNLOG#`` row is its record either way)."""
+        ``stopping``), the tasks it closed, the agents asked to save, and whether it fell back to stopping at once. Its
+        record is the run's ``RUNLOG#`` row (who, how, when: D4); nothing is said on the bus from here (7.51.02)."""
         if self.stopper is None:
             raise MonitorError('unavailable', 'the run cannot be stopped from here: the deployment names no start '
                                               'function')
         self.open_run(run_id)
-        target = Party('run', run_id)
-        name = SIGNAL_OF_STOP[request.mode]
-        record = self._record_stop(run_id, Signal(name, '', 0, request.note), actor, target)
-        try:
-            answer = self.stopper.stop(run_id, request.mode, actor=actor.subject)
-        except MonitorError as refused:
-            if record is not None and self.publisher is not None:
-                self._outcome(self.publisher, record, f'not applied: {refused}')
-            raise
-        if record is not None and self.publisher is not None:
-            self._outcome(self.publisher, record, _stop_outcome(answer))
+        answer = self.stopper.stop(run_id, request.mode, actor=actor.subject)
         agents = answer.get('agents')
         return {'run_id': run_id, 'mode': request.mode, 'status': str(answer.get('status')),
                 'already': answer.get('already') is True, 'fell_back': answer.get('fell_back') is True,
                 'tasks_closed': [str(task) for task in answer.get('tasks_closed') or []],
                 'saving': [str(agent) for agent in answer.get('saving') or []],
                 'agents': {str(k): str(v) for k, v in agents.items()} if isinstance(agents, dict) else {},
-                'recorded': record is not None, 'at': _at(self.now())}
-
-    def _record_stop(self, run_id: str, signal: Signal, actor: Actor, target: Party) -> Message | None:
-        """The Stop's request in the conversation, where the bus is configured; None where it is not, or the bus
-        refused it (logged: the Stop still goes ahead, its ``RUNLOG#`` row is its record)."""
-        if self.publisher is None:
-            return None
-        record = Message(
-            event_id=new_event_id(), ws=WORKSPACE, run_id=run_id, thread_id='signals', attempt=0,
-            sender=Party('human', actor.subject), to=target, type=f'signal.{signal.name}',
-            summary=_record(signal, actor, target), at=_at(self.now()))
-        try:
-            _publish(self.publisher, record)
-        except MonitorError as refused:
-            if refused.kind == 'invalid':
-                raise   # (a credential in the note: never sent, never applied)
-            logger.warning('run monitor: a Stop was not recorded in the conversation', extra={'run_id': run_id})
-            return None
-        return record
+                'at': _at(self.now())}
 
     def origin(self, run_id: str) -> Mapping[str, str] | None:
         """The engineering agent's run the run was started for (its first ``RUNLOG#`` row's ``via``: the agent and
@@ -586,64 +557,28 @@ class RunMonitor:
         return None
 
     def signal(self, run_id: str, signal: Signal, actor: Actor) -> dict[str, Any]:
-        """The conversation records the request, then the supervisor applies it; answers each agent's status.
-
-        Its record is published first (D4: who asked what, when and why, before anything moves): a request the bus
-        refuses is never applied. The router then writes it to the conversation (a record it drops, a malformed one,
-        is journalled by the router). After the supervisor answers, a second record says what came of it, naming the
-        request's event id: each agent's status, or why it was not applied (unreachable, busy, refused). A request
-        the supervisor could not apply is answered unavailable: sending it again publishes a new request and applies
-        it once.
-        """
+        """A person's signal to the run or to the agent on a task (module doc), through voc-engineering-start, which
+        checks the run, the agent and the state again, records it on the run's ``RUNLOG#`` rows (D4: who asked what of
+        whom, when, and their note) before anything moves, and hands it on to the supervisor. Answers that it was sent
+        (``status: sent``): the overview shows what came of it. A whole run's Shut down or Stop now is its Stop."""
         if not signal.task_id and signal.name in WHOLE_RUN_STOPS and self.stopper is not None:
-            # A whole run's Shut down or Stop now is its Stop (7.50.03): it ends the run, signals reach it or not.
-            stopped = self.stop(run_id, StopRequest(WHOLE_RUN_STOPS[signal.name], signal.note), actor)
-            return {'event_id': None, 'signal': signal.name, 'target': {'kind': 'run', 'id': run_id}, 'attempt': 0,
+            # A whole run's Shut down or Stop now is its Stop (7.50.03): it ends the run, whatever its agents do.
+            stopped = self.stop(run_id, StopRequest(WHOLE_RUN_STOPS[signal.name]), actor)
+            return {'signal': signal.name, 'target': {'kind': 'run', 'id': run_id}, 'attempt': 0,
                     'agents': stopped['agents'], 'applied': dict.fromkeys(stopped['agents'], True),
                     'at': stopped['at'], 'run': stopped}
-        publisher = self.bus()
-        if self.runtime is None:
-            raise MonitorError('unavailable', 'the run cannot be reached from here: the runtime is not configured')
+        if self.signaller is None:
+            raise MonitorError('unavailable', 'the run cannot be signalled from here: the deployment names no start '
+                                              'function')
         self.open_run(run_id)
         target = self._target(run_id, signal)
-        event_id, at = new_event_id(), _at(self.now())
-        record = Message(
-            event_id=event_id, ws=WORKSPACE, run_id=run_id, thread_id='signals', attempt=signal.attempt,
-            sender=Party('human', actor.subject), to=Party('run', run_id), type=f'signal.{signal.name}',
-            summary=_record(signal, actor, target), at=at, task_id=signal.task_id)
-        _publish(publisher, record)
-        one = target.kind == 'agent'
-        try:
-            answer = self.runtime.signal(run_id, target.id if one else None, signal.name,
-                                         signal.attempt if one else None, actor=actor.subject,
-                                         restart_from=signal.restart_from)
-        except (ClientError, BotoCoreError) as exc:
-            self._outcome(publisher, record, 'not applied: the supervisor could not be reached')
-            raise MonitorError('unavailable', 'The supervisor could not be reached: send the signal again') from exc
-        except MonitorError as refused:
-            self._outcome(publisher, record, f'not applied: {refused}')
-            raise
-        agents = answer.agents
-        if one and agents.get(target.id) == STALE:
-            # The agent moved on to another attempt between the check and the signal: nothing was done.
-            self._outcome(publisher, record, 'not applied: the agent has moved on to another attempt')
-            raise MonitorError('conflict', 'This task has moved on since you looked: reload the run')
-        if one and agents.get(target.id) == BUSY:
-            # Another move held the agent: nothing was done.
-            self._outcome(publisher, record, 'not applied: the agent was busy with another move')
-            raise MonitorError('unavailable', 'The agent is busy with another move: send the signal again')
-        self._outcome(publisher, record, _outcome_text(answer))
-        return {'event_id': event_id, 'signal': signal.name, 'target': {'kind': target.kind, 'id': target.id},
-                'attempt': signal.attempt, 'agents': agents, 'applied': answer.applied, 'at': at}
-
-    def _outcome(self, publisher: Publisher, request: Message, outcome: str) -> None:
-        """What came of a recorded request, in the conversation (best effort: the request itself is recorded)."""
-        try:
-            _publish(publisher, replace(request, event_id=new_event_id(), at=_at(self.now()),
-                                        summary=fit_summary(f'{request.type} request {request.event_id}: {outcome}')))
-        except MonitorError:
-            logger.warning('run monitor: a signal\'s outcome was not recorded',
-                           extra={'run_id': request.run_id, 'request': request.event_id})
+        sent = self.signaller.signal(run_id, signal, actor=actor.subject,
+                                     agent_id=target.id if target.kind == 'agent' else '')
+        logger.info('engineering: a person signalled the run', extra={
+            'run_id': run_id, 'by': actor.subject, 'signal': signal.name, 'agent': sent.get('agent_id')})
+        # (what the supervisor did is the overview's to show: the signal was handed on, not waited for)
+        return {'signal': signal.name, 'target': {'kind': target.kind, 'id': target.id}, 'attempt': signal.attempt,
+                'status': SENT, 'agents': {}, 'applied': {}, 'at': str(sent.get('at') or _at(self.now()))}
 
     def message(self, run_id: str, answer: Answer, actor: Actor) -> dict[str, Any]:
         """Publish a person's answer; answers its event and thread (the router writes it to the conversation)."""
@@ -702,16 +637,6 @@ class RunMonitor:
         if self.publisher is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the bus is not configured')
         return self.publisher
-
-
-def _stop_outcome(answer: Mapping[str, Any]) -> str:
-    """``stopped: 2 task(s) closed`` or ``stopping: fixer-2 saving`` (what the conversation says came of a Stop)."""
-    if answer.get('status') == 'stopping':
-        saving = ', '.join(str(agent) for agent in answer.get('saving') or []) or 'its agents'
-        return f'stopping: {saving} saving a checkpoint, then the run ends'
-    closed = len(answer.get('tasks_closed') or [])
-    fell_back = ' (the agents could not be asked to save: stopped at once)' if answer.get('fell_back') else ''
-    return f"{answer.get('status')}: {closed} task(s) closed{fell_back}"
 
 
 def _publish(publisher: Publisher, message: Message) -> None:

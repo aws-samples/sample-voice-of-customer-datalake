@@ -27,7 +27,8 @@ interface Props {
   agents: readonly EngineeringAgent[]
   orchestrator: string | null
   current: string | null
-  actions: SessionActions
+  /** What an admin may do in a session (null: nothing, SessionThread.tsx). */
+  actions: SessionActions | null
   lanes: Readonly<Record<string, readonly RunLane[]>>
   onFocus: (agent: string) => void
   onFill: (paneId: string, agent: string | null) => void

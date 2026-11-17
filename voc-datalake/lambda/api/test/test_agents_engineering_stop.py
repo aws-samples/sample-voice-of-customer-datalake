@@ -1,8 +1,8 @@
 """The Agents API's Stop of a whole engineering run (``POST /agents/engineering/<run_id>/stop``, 7.50.03).
 
 An administrator acting for themselves stops the run through voc-engineering-start's ``stop_run`` (the one function
-this role invokes for a run's controls), which needs neither the runtime nor the bus here: a deployment whose monitor
-cannot send signals (``actions_available: false``, every deployment until the stack wires them) still stops its runs.
+this role invokes for a run's controls, its signals' ``signal_run`` too since 7.51.02), which needs neither the runtime
+nor the bus here: a deployment that names no bus for the Agents API still stops its runs.
 Once the run has ended, its engineering agent's run ends with it at once, its lock released. 403 for anyone else,
 404 while the module is off or for an unknown run, 409 for a run that has ended, 503 when the start function cannot be
 reached.
@@ -103,12 +103,12 @@ def test_a_stop_now_is_confirmed_and_a_stop_still_saving_ends_no_agent_run(
     assert still['status'] == 'running'   # (its engineering run has not ended yet: the heartbeat ends it after)
 
 
-def test_the_overview_offers_the_stop_where_signals_cannot_reach_the_run(lambda_context: Any,
-                                                                         run: tuple[Any, Any]) -> None:
+def test_the_overview_offers_the_stop_and_the_signals_through_the_start_function_without_the_bus(
+        lambda_context: Any, run: tuple[Any, Any]) -> None:
     assert run is not None
     status, view = _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')
-    assert (status, view['actions_available'], view['stop_available'], view['run']['waiting_at']) == (
-        200, False, True, '')
+    flags = [view[flag] for flag in ('steer_available', 'signals_available', 'stop_available', 'board_available')]
+    assert (status, flags, view['run']['waiting_at']) == (200, [False, True, True, False], '')
 
 
 def test_a_whole_run_shut_down_signal_is_the_stop_and_ends_the_agents_run_too(
@@ -161,4 +161,6 @@ def test_without_the_start_function_the_stop_is_unavailable(lambda_context: Any,
     assert run is not None
     monkeypatch.delenv('ENGINEERING_START_FUNCTION')
     assert _call(lambda_context, 'POST', PATH, body={})[0] == 503
-    assert _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[1]['stop_available'] is False
+    assert _call(lambda_context, 'POST', f'/agents/engineering/{RUN}/signals', body={'signal': 'save'})[0] == 503
+    view = _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[1]
+    assert (view['stop_available'], view['signals_available']) == (False, False)

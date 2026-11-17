@@ -15,15 +15,20 @@ function agent(id: string, role: string, fields: Record<string, unknown> = {}) {
   }
 }
 
+/** What of a run the deployment reaches (7.51.02: the overview's flags), each on unless a spec says otherwise. */
+export interface RunReach { steer?: boolean; signals?: boolean; stop?: boolean; board?: boolean }
+
 /**
  * The run's overview: the coordinator waiting on the board step, the fixer working on its task (on the board step),
  * and the final-go agent, whose step is the harness's own words (no node of the flow) and whose task is done; their
- * lanes and attempts (7.51.00).
+ * lanes and attempts (7.51.00); and what of it the deployment reaches (`reach`: all of it unless said).
  */
-export function engineeringOverview(run: Record<string, unknown> = {}, actionsAvailable = true, stopAvailable = true) {
+export function engineeringOverview(run: Record<string, unknown> = {}, reach: RunReach = {}) {
   return {
-    actions_available: actionsAvailable,
-    stop_available: stopAvailable,
+    steer_available: reach.steer ?? true,
+    signals_available: reach.signals ?? true,
+    stop_available: reach.stop ?? true,
+    board_available: reach.board ?? true,
     run: {
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
       started_at: '2026-11-12T08:00:00Z', ended_at: null, ...run,

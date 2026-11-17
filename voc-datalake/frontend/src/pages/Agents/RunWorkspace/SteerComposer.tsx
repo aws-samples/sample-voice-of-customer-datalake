@@ -5,8 +5,8 @@
  * agent unless the person unticks it, and its placeholder says where it goes. Send is the primary button only in the
  * session in focus (a grid of four shows one). Enter sends, Shift+Enter starts a line;
  * the steering with its "About <agent>: " is at most 1 KB, as the server counts it. Where the deployment does not
- * connect the Agents API to the runtime and the bus (`connected` false: steering goes over the bus), it is shown off,
- * saying why, so an admin is never left with a Send that answers 503.
+ * name the engineering bus to the Agents API (`connected` false, the overview's `steer_available`: steering goes over
+ * the bus), it is shown off, saying why, so an admin is never left with a Send that answers 503.
  *
  * @module pages/Agents/RunWorkspace/SteerComposer
  */
@@ -30,7 +30,7 @@ interface Props {
   agent: string | null
   /** The session in focus: Send is the primary button there, and secondary in every other session of a grid. */
   primary: boolean
-  /** The deployment connects the Agents API to the runtime and the bus (the overview's `actions_available`). */
+  /** Steering reaches the run: the deployment names the engineering bus to the Agents API (`steer_available`). */
   connected: boolean
 }
 

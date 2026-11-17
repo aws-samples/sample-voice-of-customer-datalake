@@ -17,6 +17,51 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.51.02] - 2026-11-17
+
+A person's run controls now reach the agents. Until now the run workspace's steering composer, an agent question's Reply, and Pause, Resume and Save a checkpoint worked on no deployment: the Agents API named neither the engineering bus nor the runtime's function, so these controls answered 503 and the workspace showed them off. Only Stop worked, through the start function (7.50.03). Each control now has its own path. Steering and replies are published on the bus by the Agents API, under a grant held to their two detail types. The signals go through the start function, as Stop does. The workspace shows each control from its own flag.
+
+### Fixed
+
+- **Steering and Reply reach the run.** The Agents API publishes `msg.steer` (to the run's orchestrator) and `msg.answer` (to an agent or the conductor) from its own source, `voc.engineering/api`. `ENGINEERING_BUS_NAME` names the bus to it wherever `engineeringAgents=true`.
+- **Pause, Resume, Save a checkpoint and an agent's signals reach the run, through voc-engineering-start**, like Stop. The runtime function is still never invoked from the API.
+  - **The new action.** The start function's `signal_run` (`{run_id, signal, actor, note?, agent_id?, task_id?, attempt?, restart_from?}`, `lambda/engineering/runtime/run_signals.py`) takes Save, Pause and Resume of the whole run, and an agent's Save, Pause, Resume, Shut down, Stop now and Restart (`checkpoint` or `fresh`). A whole run's Shut down and Stop now stay its Stop (`stop_run`). Anything else is refused before anything is read.
+  - **Its checks.** The run must exist and must not have ended. It takes no signal while a Stop of it is under way. The agent needs a session row in the run, and must hold its task at the attempt the person saw. That task must not have ended or be open again.
+  - **Its record.** The person's create-only `RUNLOG#<at>#signal#<hex>` row records who asked what of whom, when, and why (the note): D4, `RunStore.record_signal`. It is written before the signal is handed on.
+  - **The hand-on.** The signal is handed on asynchronously to voc-engineering-runtime's `signal`, as `stop_run` and `finish_stop` are. The runtime keeps its own refusal of a Resume or Restart during a Stop.
+  - **The answer.** The API answers `{signal: {signal, target, attempt, status: sent, agents: {}, applied: {}, at}}`. The overview shows what came of it.
+- **The overview says what reaches the run, one flag per path.** `steer_available` (the bus is named), `signals_available` (the start function is named) and `stop_available` replace `actions_available`. `board_available` is false (below).
+- **The web app shows each control from its own flag**: the composer and Reply, Pause, Resume and Save, an agent's Stop and ⋯, and the Board tab's controls. A control that is off still says why: "Pause, Resume and Save can't reach this run from this deployment: it names no start function", or the composer's "it doesn't name the engineering bus to the Agents API". The dev mock and the shared fixture carry the new flags and the signal's new answer. All 9 locales are updated.
+
+### IAM
+
+- **The Agents API's role (VocApiStack)** gains one statement, `SpeakOnTheEngineeringBus`:
+  - `events:PutEvents` on `arn:<partition>:events:<region>:<account>:event-bus/[<prefix>-]voc-engineering-<account>-<region>` only;
+  - with `StringEquals` `events:source` = `voc.engineering/api` and `events:detail-type` = `msg.answer` or `msg.steer`.
+
+  It gets no other `events:` action, no other bus, no other source or type, and still no `lambda:InvokeFunction` on voc-engineering-runtime (pinned in `api-engineering-reads.test.ts`). With the module on, the role has a fixed name, `[<prefix>-]voc-agents-api-<account>-<region>`, so the bus's policy in VocProcessingStack can name it (that stack cannot reference VocApiStack). Without the module the role keeps its generated name.
+- **The engineering bus's policy (VocProcessingStack)** admits that role as every publisher is admitted:
+  - its ARN joins `OnlyTheEngineeringPublishers`;
+  - a new `OwnSourceOnlyAgentsApi` denies it every source but `voc.engineering/api`.
+
+  The detail types are not repeated in the bus's policy, which is near EventBridge's 10,240-character limit: 8,897 characters with 17 statements live on `b-` before this change. A test holds the worst case under the limit.
+- **The router** (`bus/senders.py` `API_TYPES`) admits `msg.steer` and `msg.answer` from the API's source and nothing else: no `task.*`, `signal.*` or `skill.*` from it any more. It also drops any event whose `detail-type` is not its message's own type, from any source, so a message cannot claim a type its grant was not checked on.
+- **voc-engineering-start's role is unchanged.** `signal_run` uses its run rows' GetItem and PutItem (`StartRunRows`) and its invoke of the runtime (`HandTheLaunchOn`). The role's statements are now pinned one by one (`engineering-runtime.test.ts`).
+
+### Changed
+
+- **Nothing else is said on the bus from the API.** A signal's and a Stop's `signal.*` conversation records are gone; their `RUNLOG#` rows are the record. The Stop's unused `note` is no longer read.
+- **A person's board actions stay off.** Post, take, block, priority, move and release publish the board's `task.*` from the API's source, which the bus no longer takes. They now answer 503 before the board is asked, so the board never changes what could not be said. The overview says `board_available: false`. A go on a run publishes nothing and still works. Making them reach a run is a decision for later: it would widen the grant and the router to `task.*`.
+
+### Upgrade notes
+
+- **Deploy VocProcessingStack, then VocApiStack, then the frontend.** VocProcessingStack holds the bus's policy, the router and the start function's `signal_run`. VocApiStack holds the Agents API's grant, its environment and its code.
+- **The Agents API's IAM role is replaced** on a deployment with `engineeringAgents=true`: it gains a fixed name, and CloudFormation creates the new role before it deletes the old one. Nothing outside VocApiStack names the old role.
+- **No image rebuild** is needed: the runtime's `signal` action is unchanged.
+- **Older signal records stay as they were.** Runs signalled before this release have no `RUNLOG#…#signal` rows. A `signal.*` conversation record that an earlier release published (none did on `b-`) stays in its conversation.
+- **API callers of `POST …/signals`** get `{signal: {status: sent, …}}` with empty `agents` and `applied`, and should read the overview to see the outcome. Callers of the board's actions get 503.
+- **Rollback.** Rolling back removes the grant, the bus name and the router's narrowing together, and gives the Agents API's role its generated name again (another replacement). An earlier release ignores the `RUNLOG#…#signal` rows.
+
 ## [7.51.01] - 2026-11-17
 
 Hover hints are instant: the app's one **Tooltip** replaces the native `title`, which waited for the browser's own 1–2 s delay and never showed on keyboard focus. It shows 80 ms after the pointer rests, at once when moving between tooltips and on keyboard focus, and closes on Escape. Native titles on DOM elements fell from 253 (154 files) to 45 (24 files): the ones left wait for the releases that rewrite their files, and a lint rule and a ratchet keep the count from rising (UX spec part 3 §3.6, part 4 §4.6; owner decision of 2026-11-17).

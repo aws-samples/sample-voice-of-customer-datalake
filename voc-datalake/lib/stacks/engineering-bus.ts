@@ -9,9 +9,11 @@
  *
  * - The bus: one EventBridge custom bus, no archive and no schema registry (nothing billed while idle). Its policy
  *   denies `events:PutEvents` to every principal but the publishers, whatever an identity policy grants: the board
- *   API's role, the runtime's supervisor and delivery roles, and the agent roles with a voice; and it denies each of
- *   those every `source` but its own (`addPublisher`: the board `voc.engineering/board`, the runtime's two roles
- *   `voc.engineering/supervisor`, each agent role its own, engineering-runtime.ts).
+ *   API's role, the runtime's supervisor and delivery roles, the agent roles with a voice and (7.51.02) the Agents
+ *   API's role, by its fixed name; and it denies each of those every `source` but its own (`addPublisher`: the board
+ *   `voc.engineering/board`, the runtime's two roles `voc.engineering/supervisor`, each agent role its own,
+ *   engineering-runtime.ts, the Agents API `voc.engineering/api`: `admitTheAgentsApi`). The policy is near EventBridge's
+ *   10,240-character limit for a bus's policy: a new publisher's two entries must fit.
  * - One fixed rule sends every event of this account on the bus to the inbox router (`engineering/bus/router.py`),
  *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and pushes a
  *   posted task, and a message for an agent or the conductor, to the delivery function with its conversation seq
@@ -88,6 +90,29 @@ export const ENGINEERING_DLQ_KEY_SID = 'AllowEventBridgeToEngineeringDeadLetter'
 /** The table's item actions both functions call (the stores' get_item, update_item and transactions' Put). */
 const TABLE_ACTIONS = ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'] as const;
 
+/** The bus's base name: VocApiStack names it for the Agents API too (api-engineering-voice.ts), which it cannot import. */
+export const ENGINEERING_BUS_BASE_NAME = 'voc-engineering';
+/**
+ * The Agents API's source on the bus and the only detail types it puts there (7.51.02): a person's steering of a run's
+ * orchestrator and their answer to an agent or the conductor (lambda/engineering/bus/senders.py API_TYPES, the router's
+ * allowlist for that source; engineering/monitor.py publishes them). Its role's grant is held to these
+ * (api-engineering-voice.ts); the bus's policy holds it to its source (`admitTheAgentsApi`).
+ */
+export const ENGINEERING_API_SOURCE = 'voc.engineering/api';
+export const ENGINEERING_API_DETAIL_TYPES = ['msg.answer', 'msg.steer'] as const;
+/**
+ * The Agents API's role name (VocApiStack), before the stack's `uniqueName`: fixed with the engineering agents on, so
+ * this bus's policy (VocProcessingStack, which VocApiStack depends on and cannot reference) names it by ARN, as
+ * VocCoreStack's raw bucket names the cache writer (core-buckets.ts).
+ */
+export const AGENTS_API_ROLE_BASE_NAME = 'voc-agents-api';
+
+/** That role's ARN in `scope`'s account, by the deployment's prefix-aware `uniqueName` (the one source of its name). */
+export function agentsApiRoleArn(scope: Construct, uniqueName: (baseName: string) => string): string {
+  return cdk.Arn.format({ service: 'iam', region: '', resource: 'role', resourceName: uniqueName(AGENTS_API_ROLE_BASE_NAME) },
+    cdk.Stack.of(scope));
+}
+
 export interface EngineeringBusProps {
   uniqueName: (baseName: string) => string;
   /** The agent roles' IAM role names, `{role}` standing for the role (identity.py ROLE_PLACEHOLDER). */
@@ -116,7 +141,7 @@ export class EngineeringBus extends Construct {
 
   constructor(scope: Construct, id: string, props: EngineeringBusProps) {
     super(scope, id);
-    this.bus = new events.EventBus(this, 'Bus', { eventBusName: props.uniqueName('voc-engineering') });
+    this.bus = new events.EventBus(this, 'Bus', { eventBusName: props.uniqueName(ENGINEERING_BUS_BASE_NAME) });
     // Its EventBridge grant on the Core key: VocCoreStack, from this name (allowEventBridgeToScheduleDlq).
     this.dlq = new sqs.Queue(this, 'DLQ', {
       queueName: props.uniqueName(ENGINEERING_DLQ_BASE_NAME), ...queueEncryption(props.kmsKey),
@@ -130,8 +155,21 @@ export class EngineeringBus extends Construct {
     const board = this.createBoardApi(props);
     this.board = board.fn;
     this.boardUrl = board.url;
+    this.admitTheAgentsApi(props.uniqueName);
     this.pinPublishers();
     this.createReports(props);
+  }
+
+  /**
+   * The Agents API's role (VocApiStack, by its fixed name: 7.51.02) as a publisher of a person's steering and answers,
+   * only with its own source (`addPublisher`, as every publisher). Its detail types are held by its own grant
+   * (api-engineering-voice.ts) and by the router, which admits that source for those two types alone and drops an
+   * event whose detail type is not its message's own. No detail-type statement here: the bus's policy is near
+   * EventBridge's 10,240-character limit for a bus policy (each publisher costs two of its statements' worth).
+   */
+  private admitTheAgentsApi(uniqueName: (baseName: string) => string): void {
+    this.addPublisher('AgentsApi', iam.Role.fromRoleArn(this, 'AgentsApiRole', agentsApiRoleArn(this, uniqueName),
+      { mutable: false }), ENGINEERING_API_SOURCE);
   }
 
   /**

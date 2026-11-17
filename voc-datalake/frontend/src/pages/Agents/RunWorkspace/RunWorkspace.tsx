@@ -7,7 +7,8 @@
  *
  * 1. the sessions: the open agents' threads in time order (tabs, or a grid of 1, 2 or 4), each with the composer that
  *    steers the ORCHESTRATOR about it, an agent's Stop and ⋯ (Save, Stop now, Restart), and a Reply under an agent's
- *    own question (where the deployment does not connect the bus and the runtime, the composer is off and says why);
+ *    own question, each shown by its own flag (7.51.02: steering and replies where the bus is named, an agent's
+ *    signals where the start function is; where the bus is not, the composer is off and says why);
  * 2. the flow: the run's canvas, each step a stage with its agents as sibling lanes, a gate's pass or fail, "you are
  *    here" and a spinner on an agent at work, inert (a click opens a session, never acts); or its timeline;
  * 3. the inspector: the agent open's Changes, Files, Gate, Cost and Memory/Learn, and the run's Assertions, Board and
@@ -43,13 +44,14 @@ import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 import type { SessionActions } from './SessionThread'
 
 /**
- * What an admin may do in the sessions: act on a run under way that the signals, steering and answers reach; where
- * the deployment does not connect them (`actions_available` false), see the composer off and why; nothing on an
- * ended run, or while a Stop of the run is under way (7.50.03: no agent is signalled while it stops).
+ * What an admin may do in the sessions of a run under way, each by its own flag (7.51.02): steer and reply where the
+ * bus reaches the run (`steer_available`; where not, the composer is off, saying why), signal an agent where the start
+ * function does (`signals_available`); nothing on an ended run, or while a Stop of the run is under way (7.50.03: no
+ * agent is signalled or steered while it stops).
  */
-function sessionActions(isAdmin: boolean, live: boolean, overview: EngineeringOverview): SessionActions {
-  if (!isAdmin || !live || isStopping(overview.run)) return 'none'
-  return overview.actions_available ? 'act' : 'unconnected'
+function sessionActions(isAdmin: boolean, live: boolean, overview: EngineeringOverview): SessionActions | null {
+  if (!isAdmin || !live || isStopping(overview.run)) return null
+  return { steer: overview.steer_available, signals: overview.signals_available }
 }
 
 /** The run's orchestrator: its coordinator, whose session the run's own address shows. */
@@ -62,8 +64,9 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
   refresh: { failed: boolean; retry: () => void }
 }>) {
   const isAdmin = useIsAdmin()
-  // Signals other than the run's Stop, steering, answers and the board's actions need the runtime and the bus.
-  const canAct = isAdmin && overview.actions_available
+  // A person's board actions by their own flag (7.51.02: none reaches a run yet, the bus taking only steering and
+  // answers from the Agents API).
+  const canAct = isAdmin && overview.board_available
   const orchestrator = orchestratorOf(overview)
   const current = agentInPath ?? orchestrator
   const agentIds = useMemo(() => new Set(overview.agents.map((agent) => agent.agent)), [overview.agents])

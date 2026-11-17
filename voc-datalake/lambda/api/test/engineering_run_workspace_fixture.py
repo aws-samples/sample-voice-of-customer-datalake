@@ -52,7 +52,8 @@ class Bus:
 
 
 class Lambdas:
-    """The Lambda functions the actions invoke: the supervisor's signal and the start function's restart."""
+    """The Lambda function the actions invoke: voc-engineering-start, its ``signal_run`` (7.51.02: a person's signals
+    go through it, never the runtime's own function) and its ``restart_run``."""
 
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
@@ -62,9 +63,10 @@ class Lambdas:
         self.requests.append(payload)
         if payload.get('action') == 'restart_run':
             answer: dict[str, Any] = {'run_id': payload['child_run_id'], 'status': 'active'}
-        else:
-            agent = payload.get('agent_id', '')
-            answer = {'agents': {agent: 'working'}, 'applied': {agent: True}}
+        else:   # (signal_run: recorded on the run's RUNLOG# rows and handed on to the supervisor)
+            answer = {'run_id': payload['run_id'], 'signal': payload['signal'], 'agent_id': payload.get('agent_id'),
+                      'task_id': payload.get('task_id'), 'attempt': payload.get('attempt', 0), 'status': 'sent',
+                      'at': NOW.strftime('%Y-%m-%dT%H:%M:%SZ')}
         return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
 
 
@@ -77,13 +79,13 @@ def workspace_api() -> Iterator[tuple[Any, Bus, Lambdas]]:
 
     bus, lambdas = Bus(), Lambdas()
     env = {'ENGINEERING_AGENTS': 'on', 'ENGINEERING_TABLE': world.TABLE, 'ENGINEERING_WORKSPACE_BUCKET': world.BUCKET,
-           'ENGINEERING_BUS_NAME': 'voc-engineering', 'ENGINEERING_RUNTIME_FUNCTION': 'voc-engineering-runtime',
-           'ENGINEERING_START_FUNCTION': 'voc-engineering-start'}
+           'ENGINEERING_BUS_NAME': 'voc-engineering', 'ENGINEERING_START_FUNCTION': 'voc-engineering-start'}
     with api(), patch.dict(os.environ, env), ExitStack() as stack:
         built = world.build()
         for target, value in (('shared.aws.get_dynamodb_client', built.client), ('shared.aws.get_s3_client', built.s3),
                               ('shared.aws.get_eventbridge_client', bus), ('shared.aws.get_lambda_client', lambdas),
-                              ('shared.agents_engineering_run_routes._start_client', lambdas)):
+                              ('shared.agents_engineering_run_routes._start_client', lambdas),
+                              ('agents_handler._start_client', lambdas)):
             stack.enter_context(patch(target, return_value=value))
         stack.enter_context(patch('engineering.monitor.new_event_id', return_value=EVENT_ID))
         stack.enter_context(patch('engineering.monitor.datetime', _FixedClock))

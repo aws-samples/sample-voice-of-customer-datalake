@@ -4,11 +4,11 @@
  * **Stop** with "Stop now, without saving" in its menu (asked first), and Save a checkpoint under ⋯; on an ended run,
  * **Restart run** (a child run, RestartRunDialog.tsx).
  *
- * Stop is the run's Stop (7.50.03, RunStop.tsx: `POST …/stop`, through the start function), never a signal, so it
- * works where the deployment does not connect the workspace to the runtime or the bus; it is there on every run that
- * has not ended wherever the deployment names the start function (`stop_available`), and a line says so where it
- * does not. Pause, Resume and Save are signals: they show only where the runtime and the bus are connected
- * (`actions_available`), and a line says why they are missing where not. While a Stop is under way (the run's `stop`)
+ * Stop is the run's Stop (7.50.03, RunStop.tsx: `POST …/stop`, through the start function), never a signal; it is
+ * there on every run that has not ended wherever the deployment names the start function (`stop_available`), and a
+ * line says so where it does not. Pause, Resume and Save are signals, which go through the start function too since
+ * 7.51.02: they show by their own flag (`signals_available`), and a line says why they are missing where it is off.
+ * While a Stop is under way (the run's `stop`)
  * the chip reads Stopping…, Stop is inert, Pause, Resume and Save are gone, and a status line says each agent's part;
  * what this page's Stop did stays said, on the ended run too. A read of the run that failed keeps the bar (its last
  * good state), with Retry.
@@ -65,7 +65,7 @@ function LiveControls({ overview, stopping, stop, send }: Readonly<{
   send: (signal: 'pause' | 'resume' | 'save') => void
 }>) {
   const { t } = useTranslation('agents')
-  const signals = overview.actions_available && !stopping
+  const signals = overview.signals_available && !stopping
   // (a run waiting for a person, or every agent at it paused, is resumed)
   const resume = overview.run.status === 'needs_human' || runPaused(overview.agents)
   return (
@@ -94,7 +94,7 @@ function BarNotes({ live, isAdmin, overview, refreshFailed, onRetry, error, done
   const admin = (shown: boolean) => isAdmin && shown
   return (
     <>
-      {admin(live && !overview.actions_available) && <p className="text-[12px] text-muted">{t('runWorkspace.controls.limited')}</p>}
+      {admin(live && !overview.signals_available) && <p className="text-[12px] text-muted">{t('runWorkspace.controls.limited')}</p>}
       {admin(live && !overview.stop_available) && <p className="text-[12px] text-muted">{t('engineeringRun.stop.unavailable')}</p>}
       {admin(!live) && <p className="text-[12px] text-muted">{t('runWorkspace.restartRun.ended')}</p>}
       {refreshFailed && (

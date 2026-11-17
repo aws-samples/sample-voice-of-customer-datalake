@@ -1398,20 +1398,24 @@ agent's help; Shut down falls back to it if the checkpoint does not come; Resume
 the deployment names the start function (`stop_available`), in one Run controls bar: Stop has the agents with a session save a checkpoint, then ends the run ("Stopping…" until they
 have, 10 minutes at most), and its menu holds "Stop now, without saving" (asked first). It ends the run whatever its
 agents are doing, a run waiting for a person whose coordinator never started included, through voc-engineering-start's
-`stop_run` (`POST /agents/engineering/<run_id>/stop`), so it needs neither the runtime nor the bus on the Agents API,
-which every deployment so far lacks for the signals: META `stopped` with its `RUNLOG#` row (who, how), every task that
+`stop_run` (`POST /agents/engineering/<run_id>/stop`), so it needs neither the runtime nor the bus on the Agents API:
+META `stopped` with its `RUNLOG#` row (who, how), every task that
 has not ended closed `failed` with a `stop` history row (no agent's failure for the coach), its launch holds run out,
 its sessions ended, and its engineering agent's run ended with it (cancelled, the agent's lock released). The issue's
 claim is kept (one run per issue, ever). Pause and Resume are one toggle by the run's state, Save a checkpoint sits under
-⋯, and an agent's session has its own Stop and ⋯ (Save, Stop now, Restart); those, steering and answers need the
-signals and the bus to reach the run (`actions_available`), and where they do not one line beside Stop says so and the
-composer is off, saying why. While the Stop is under way no agent is signalled, restarted or steered. A failed read
+⋯, and an agent's session has its own Stop and ⋯ (Save, Stop now, Restart). Since 7.51.02 those reach the run through
+voc-engineering-start too (`signals_available`, [Run controls reach the agents](#run-controls-reach-the-agents-75102)),
+and steering and answers over the bus (`steer_available`); each control shows by its own flag, and where one is off a
+line beside Stop says so, or the composer is off, saying why. While the Stop is under way no agent is signalled,
+restarted or steered. A failed read
 keeps the page's last good read and its controls, says "Couldn't refresh" with a Retry, and polling backs off
 (`lambda/engineering/runtime/stop.py`, `frontend/src/pages/Agents/RunStop.tsx` and
 `RunWorkspace/RunControlBar.tsx`).
-Messages and signals
-are API calls with the signed-in user, allowed only to whoever may make a `decision`, published as `message` and
-`signal` events that the router accepts only from the API's own source; an agent reads a person's message as DATA,
+Answers, steering and signals
+are API calls with the signed-in user, allowed only to whoever may make a `decision`: answers and steering published
+as `msg.answer` and `msg.steer` from the API's own source, the only types the router (and since 7.51.02 the API role's
+grant) take from it, the signals recorded on the run's `RUNLOG#` rows by voc-engineering-start (7.51.02); an agent
+reads a person's message as DATA,
 like everything else, and its work still goes through the gate. Cost and tokens show live per agent, per run and per
 flow (model tokens in and out per model, session seconds, events), against the run's budget.
 
@@ -2595,7 +2599,8 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
   session's start. The harness renders steering in its own `<<<STEERING …>>>` fence, below the platform rules, and
   `_shared/PLATFORM_RULES.md` says steering never changes the tools, the gates, the dial, the scope or the rules.
   Steering and answers go over the bus: where the Agents API does not name it (`ENGINEERING_BUS_NAME`) they answer 503
-  and the workspace shows its composer off, saying why. The API's grants are not widened for them.
+  and the workspace shows its composer off, saying why. Until 7.51.02 no deployment named it; since then every one
+  with the module does, with a grant held to these two types ([below](#run-controls-reach-the-agents-75102)).
 - **Live transcripts.** The harness flushes the transcript events it holds every 15 s (`FLUSH_SECONDS`) besides at a
   checkpoint, past 512 KB and at the end; each `tool_call`/`tool_result` carries `call_id`, `tool_kind` and `status`
   (the ACP shapes), and each steering instruction that reaches the model is a `steer` event `{source, text, by}`.
@@ -2627,6 +2632,47 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
   and `_checkpoints`; the Agents API `s3:GetObject` on the runs' transcripts, patches, gate records and manifests and
   `s3:ListBucket` held to the transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). No agent role
   gains anything.
+
+### Run controls reach the agents (7.51.02)
+
+Until 7.51.02 the run workspace's steering, its Reply and Pause, Resume and Save a checkpoint reached no run on any
+deployment: the Agents API named neither the bus nor the runtime's function, and a CDK test pins that it may never
+invoke voc-engineering-runtime, which takes many actions IAM cannot tell apart. Only Stop worked (7.50.03, through
+voc-engineering-start). Now each reaches its run by its own path:
+
+- **Steering and Reply: the Agents API publishes them itself, as narrowly as IAM allows.** Its role gets one statement,
+  `SpeakOnTheEngineeringBus`: `events:PutEvents` on the engineering bus's ARN alone, with `StringEquals`
+  `events:source` `voc.engineering/api` and `events:detail-type` `msg.steer` or `msg.answer`
+  (`lib/stacks/api-engineering-voice.ts`), and `ENGINEERING_BUS_NAME` with the module on. The bus's policy admits the
+  role as it admits every publisher (`OnlyTheEngineeringPublishers`, and `OwnSourceOnlyAgentsApi` denying it every
+  other source); it names the role by ARN, so the role is named `[<prefix>-]voc-agents-api-<account>-<region>` with
+  the module on (VocProcessingStack cannot reference VocApiStack, which depends on it). The router admits that source
+  for those two types and nothing else (`bus/senders.py` `API_TYPES`: no `task.*`, `signal.*` or `skill.*` from it any
+  more), and drops any event whose `detail-type` is not its message's own type (`bus/router.py`), so a message whose
+  body says another type than the one the grant checked is refused. The bus's policy does not repeat the detail types:
+  it is near EventBridge's 10,240-character limit for a bus policy (8,897 characters live on `b-` before this, a test
+  holds the worst case under it).
+- **Pause, Resume, Save and an agent's signals: through voc-engineering-start, like Stop.** Its `signal_run` (`{run_id,
+  signal, actor, note?, agent_id?, task_id?, attempt?, restart_from?}`, `runtime/run_signals.py`) takes Save, Pause and
+  Resume of the whole run (its Shut down and Stop now stay its Stop, `stop_run`) and an agent's Save, Pause, Resume,
+  Shut down, Stop now and Restart (`checkpoint` or `fresh`), and refuses anything else before it reads a thing. Then it
+  checks the run (there, not ended, no Stop under way: a Stop decided, so nothing else is sent meanwhile), the agent
+  (its session row in the run) and its task (held by it at the attempt the person saw, not ended, not open again),
+  writes the person's create-only `RUNLOG#<at>#signal#<hex>` row (`kind: signal`, who, what, of whom, the note: D4,
+  `RunStore.record_signal`) and hands the signal on to voc-engineering-runtime's `signal`, asynchronously, as it hands
+  on `stop_run` and `finish_stop` (a Resume may launch a coordinator, which does not fit behind API Gateway's 29 s).
+  The API answers `{signal: {status: sent}}`; the supervisor applies it as before, and the overview shows what came of
+  it (an agent busy with another move is left as it was: send it again). The start role's grants are unchanged (its run
+  rows' GetItem and PutItem, its invoke of the runtime) and pinned statement by statement; the Agents API gets nothing
+  new for it.
+- **Nothing else is said on the bus from the API.** A signal's and a Stop's conversation records (`signal.*`) are gone:
+  the `RUNLOG#` rows are their record. A person's board actions publish the board's `task.*` from the API's source,
+  which the bus no longer takes, so the overview says `board_available: false` and the board routes answer 503 before
+  the board is asked (their go, which publishes nothing, still works).
+- **The overview's flags.** `actions_available` is replaced by what is actually reachable: `steer_available` (the bus
+  is named), `signals_available` and `stop_available` (the start function is), `board_available` (false). The
+  workspace shows each control from its own flag: the composer and Reply, Pause, Resume and Save, an agent's Stop and
+  ⋯, the Board tab's controls; a control that is off keeps its line saying why.
 
 ### Kiro agent configs (7.53.00 prep)
 
@@ -2876,12 +2922,11 @@ reads it again. Any other 409 is the store's own refusal, said in its words. A r
 condition, so a version accepted meanwhile is never replaced silently.
 
 **The announcements** (`skill.accepted`, `skill.rolled_back`; a rejection and a benchmark announce nothing, as the
-store has it): the Agents API's role is not one of the engineering bus's publishers (the bus policy denies
-`events:PutEvents` to every principal but the board, the supervisor and the agent roles, each with its own source),
-and the bus lives in another stack than the API, so publishing would mean widening that policy across stacks. It is
-not widened: the store keeps each announcement (its id, type and line) on the action's create-only `LOG#` row, the
-answer returns it with `published: false`, and publishing it from the API's own source (`voc.engineering/api`, which
-`bus/senders.py` already allows for these types) is planned. **The grant**: one statement on the Agents API's role
+store has it): since 7.51.02 the Agents API's role is one of the engineering bus's publishers, but for a person's
+steering and answers alone (`msg.steer`, `msg.answer`: its grant's detail types and the router's `API_TYPES`), so these
+are not published: the store keeps each announcement (its id, type and line) on the action's create-only `LOG#` row,
+the answer returns it with `published: false`, and publishing it from the API's own source (`voc.engineering/api`)
+would widen both that grant and `bus/senders.py`, which refuses these types from it. **The grant**: one statement on the Agents API's role
 (`SkillDecisions`): `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on `voc-engineering`
 with `dynamodb:LeadingKeys` `WS#*#SKILL#*` (`ForAllValues:StringLike`, beside `Null` `false` so a request naming
 no key never matches it vacuously), exactly what the store's writes use (a
@@ -3355,9 +3400,8 @@ ARN, in the change that first uses it.
   through voc-engineering-start's `stop_run`) end the run in every state that has not ended, a run with no session
   included: Stop lets the agents with a session save first (10 minutes at most), Stop now does not wait; the run's
   `RUNLOG#` row names the person (D4), its open tasks are closed, its sessions ended, and its engineering agent's run is
-  ended with it ([The run monitor](#how-the-agents-work-together)). Where the API names the bus, the conversation records
-  the request as `signal.shutdown` or `signal.stop_now`; where it does not (every deployment so far), the `RUNLOG#` row
-  is the record.
+  ended with it ([The run monitor](#how-the-agents-work-together)). The `RUNLOG#` row is the record: the API says
+  nothing but a person's steering and answers on the bus (7.51.02).
 
 ## Evaluation
 

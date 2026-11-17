@@ -5,7 +5,7 @@
  * are one toggle by the agents' state; the run's status chip is toned; an agent and the run say Stop alike.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { adminFlag, resetFetchApi, sentFetchApiBody, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
 import { RUN_PATH, renderWorkspace, workspaceRoutes } from '@test/runWorkspaceHarness'
@@ -83,6 +83,32 @@ describe('the run control bar', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Resume' }))
     await waitFor(() => expect(sentFetchApiBody(SIGNALS, 'POST')).toStrictEqual({ signal: 'resume' }))
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull()
+  })
+
+  it('says a signal was sent as the start function answers it, the overview showing what came of it (7.51.02)', async () => {
+    withSignals(() => ({ signal: { signal: 'pause', target: { kind: 'run', id: fixture.run_id }, attempt: 0, status: 'sent', agents: {}, applied: {} } }))
+    renderWorkspace(RUN_PATH)
+    const bar = within(await screen.findByRole('region', { name: 'Run controls' }))
+    await userEvent.click(bar.getByRole('button', { name: 'Pause' }))
+    await waitFor(() => expect(sentFetchApiBody(SIGNALS, 'POST')).toStrictEqual({ signal: 'pause' }))
+    expect(await bar.findByText('Sent.')).toHaveAttribute('role', 'status')
+  })
+
+  it('shows Pause, Resume and Save by their own flag, Stop by its own, each saying why where it is off', async () => {
+    withSignals(undefined, { ...fixture.overview.answer, signals_available: false })
+    renderWorkspace(RUN_PATH)
+    const bar = within(await screen.findByRole('region', { name: 'Run controls' }))
+    expect([bar.queryByRole('button', { name: 'Pause' }), bar.queryByRole('button', { name: 'More run controls' }),
+      bar.getByRole('button', { name: 'Stop' }) !== null,
+      bar.getByText("Pause, Resume and Save can't reach this run from this deployment: it names no start function.") !== null])
+      .toStrictEqual([null, null, true, true])
+    cleanup()
+    withSignals(undefined, { ...fixture.overview.answer, stop_available: false })
+    renderWorkspace(RUN_PATH)
+    const signalling = within(await screen.findByRole('region', { name: 'Run controls' }))
+    expect([signalling.getByRole('button', { name: 'Pause' }) !== null, signalling.queryByRole('button', { name: 'Stop' }),
+      signalling.queryByText(/Pause, Resume and Save can't reach/), signalling.getByText(/Stop can't reach this run/) !== null])
+      .toStrictEqual([true, null, null, true])
   })
 
   it('uses the run\'s word for an agent\'s Stop, its other moves under ⋯', async () => {

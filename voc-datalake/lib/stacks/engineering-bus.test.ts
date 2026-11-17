@@ -5,12 +5,15 @@
  * IAM-authenticated function URL with no resource-based permission, each role holding exactly the calls its code
  * makes.
  */
+import * as fs from 'fs';
+import * as path from 'path';
+
 import { describe, expect, it } from 'vitest';
 import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { ENGINEERING_DLQ_BASE_NAME, ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
-import { ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
+import { ENGINEERING_API_DETAIL_TYPES, ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
   AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements as statementsOf, functionUrlAuthTypes,
@@ -19,6 +22,9 @@ import {
 import { byCodeUnit } from '../utils/compare';
 
 const template = processingSynths({ off: {}, on: { engineeringAgents: true } });
+/** The Agents API's role (VocApiStack's), by the fixed name the bus's policy admits it by (7.51.02). */
+const AGENTS_API_ROLE_ARN = { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':iam::111111111111:role/voc-agents-api-',
+  { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]] };
 
 /** The logical id of the ONE function whose physical name starts with `baseName`. */
 function functionId(synthesized: Template, baseName: string): string {
@@ -110,7 +116,7 @@ describe('the engineering bus', () => {
     expect(Object.keys(on.findResources('AWS::Events::Archive'))).toStrictEqual([]);
   });
 
-  it('has a bus policy that denies PutEvents to every principal but the board\'s role, the runtime\'s two and the agent roles', () => {
+  it('has a bus policy that denies PutEvents to every principal but the board\'s role, the runtime\'s two, the agent roles and the Agents API\'s', () => {
     const on = template('on');
     const [boardRole, supervisorRole, deliveryRole] = ['voc-engineering-board', 'voc-engineering-runtime',
       'voc-engineering-delivery'].map((name) => functionRoleId(on, functionId(on, name)));
@@ -124,9 +130,53 @@ describe('the engineering bus', () => {
     const only = statements.find((statement) => statement.Sid === 'cdk-OnlyTheEngineeringPublishers');
     const allowed = z.object({ ArnNotEquals: z.object({ 'aws:PrincipalArn': z.array(z.unknown()) }) })
       .parse(only?.Condition).ArnNotEquals['aws:PrincipalArn'];
-    expect(allowed).toStrictEqual([boardRole, ...speaking, supervisorRole, deliveryRole]
-      .map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })));
+    // (the Agents API's role is VocApiStack's, by its fixed name: 7.51.02)
+    expect(allowed).toStrictEqual([{ 'Fn::GetAtt': [boardRole, 'Arn'] }, AGENTS_API_ROLE_ARN,
+      ...[...speaking, supervisorRole, deliveryRole].map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] }))]);
     expect(JSON.stringify(only)).toContain(busId(on));
+  });
+
+  it('admits the Agents API\'s role with its own source alone, the types its grant and the router hold (7.51.02)', () => {
+    const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
+      .map((policy) => z.looseObject({ Sid: z.string() }).parse(policy.Properties?.Statement))
+      .filter((statement) => statement.Sid.endsWith('AgentsApi'));
+    expect(statements.map(({ Sid, Effect, Action, Condition }) => ({ Sid, Effect, Action, Condition }))).toStrictEqual([
+      { Sid: 'cdk-OwnSourceOnlyAgentsApi', Effect: 'Deny', Action: 'events:PutEvents',
+        Condition: { ArnEquals: { 'aws:PrincipalArn': AGENTS_API_ROLE_ARN },
+          StringNotEquals: { 'events:source': 'voc.engineering/api' } } },
+    ]);
+    // Its grant's detail types (api-engineering-voice.ts) are the router's for that source (bus/senders.py API_TYPES).
+    expect(fs.readFileSync(path.join(__dirname, '../../lambda/engineering/bus/senders.py'), 'utf8'))
+      .toContain(`API_TYPES = frozenset({'${ENGINEERING_API_DETAIL_TYPES[1]}', '${ENGINEERING_API_DETAIL_TYPES[0]}'})`);
+  });
+
+  it('keeps the bus\'s policy under EventBridge\'s 10,240 characters, every generated name at its longest (7.51.02)', () => {
+    // (each publisher costs two entries; one past the quota fails the deploy with PolicyLengthExceededException. A
+    // generated role name is at most 64 characters; the fixed ones are the template's with a deployment's prefix, in
+    // the widest region. The live b- policy measured 8,897 characters with 17 statements before the Agents API's.)
+    const account = '123456789012';
+    const region = 'ap-southeast-7';
+    const resolve = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(resolve);
+      if (value === null || typeof value !== 'object') return value;
+      const record = z.record(z.string(), z.unknown()).parse(value);
+      if ('Ref' in record) {
+        return { 'AWS::Partition': 'aws', 'AWS::AccountId': account, 'AWS::Region': region }[String(record.Ref)];
+      }
+      if ('Fn::GetAtt' in record) {
+        const [id] = z.tuple([z.string(), z.string()]).parse(record['Fn::GetAtt']);
+        return id.includes('Bus') ? `arn:aws:events:${region}:${account}:event-bus/b-voc-engineering-${account}-${region}`
+          : `arn:aws:iam::${account}:role/${'r'.repeat(64)}`;
+      }
+      if ('Fn::Join' in record) {
+        const [separator, parts] = z.tuple([z.string(), z.array(z.unknown())]).parse(record['Fn::Join']);
+        return parts.map((part) => String(resolve(part))).join(separator).replace(':role/voc-', ':role/b-voc-');
+      }
+      return Object.fromEntries(Object.entries(record).map(([key, inner]) => [key, resolve(inner)]));
+    };
+    const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
+      .map((policy) => resolve(policy.Properties?.Statement));
+    expect(JSON.stringify({ Version: '2012-10-17', Statement: statements }).length).toBeLessThan(10_240);
   });
 
   it('pins the board and the runtime\'s two roles to their own service source on the bus', () => {
@@ -141,8 +191,8 @@ describe('the engineering bus', () => {
   it('denies each publisher every bus source but its own, whatever its own policy says', () => {
     const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
       .map((policy) => JSON.stringify(policy.Properties?.Statement)).filter((text) => text.includes('OwnSourceOnly'));
-    // One per agent role (the coach's included), the board's, and the runtime's two.
-    expect([statements.length, statements.some((text) => text.includes('Coach'))]).toStrictEqual([16, true]);
+    // One per agent role (the coach's included), the board's, the runtime's two and (7.51.02) the Agents API's.
+    expect([statements.length, statements.some((text) => text.includes('Coach'))]).toStrictEqual([17, true]);
     const fixer = statements.find((text) => text.includes('cdk-OwnSourceOnlyFixer'));
     expect(fixer).toContain('"Effect":"Deny"');
     expect(fixer).toContain('"StringNotEquals":{"events:source":"voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}"}');
@@ -151,23 +201,23 @@ describe('the engineering bus', () => {
 
   it('writes the bus policy one statement at a time (each resource waits for the one before)', () => {
     const policies = Object.entries(template('on').findResources('AWS::Events::EventBusPolicy'));
-    expect(policies).toHaveLength(17);
+    expect(policies).toHaveLength(18);
     const ids = new Set(policies.map(([id]) => id));
     // Each policy's one dependency among them: the one written before it.
     const before = new Map(policies.map(([id, policy]) => [id,
       z.array(z.string()).parse([policy.DependsOn ?? []].flat()).filter((dep) => ids.has(dep))]));
     const first = [...before].filter(([, deps]) => deps.length === 0).map(([id]) => id);
     expect(first).toHaveLength(1);
-    // Walking back from every other policy, one step at a time, reaches all 17: one chain, no fan-out.
+    // Walking back from every other policy, one step at a time, reaches all 18: one chain, no fan-out.
     const next = new Map([...before].filter(([, deps]) => deps.length === 1).map(([id, [dep]]) => [dep, id]));
-    expect(next.size).toBe(16);
+    expect(next.size).toBe(17);
     let at: string | undefined = first[0];
     const seen: string[] = [];
     while (at !== undefined) {
       seen.push(at);
       at = next.get(at);
     }
-    expect(seen).toHaveLength(17);
+    expect(seen).toHaveLength(18);
   });
 
   it('hands the agent roles the real board and broker, and no role queue (they serve every run)', () => {

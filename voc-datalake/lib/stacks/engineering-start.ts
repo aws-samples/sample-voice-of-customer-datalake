@@ -9,7 +9,12 @@
  * signal an agent or end a run otherwise. Since 7.50.03 it also takes `stop_run`, the run monitor's Stop of a whole
  * run (lambda/engineering/runtime/stop.py): it ends the run (its META, its tasks, its launch holds) or records the
  * request, and hands the rest on to voc-engineering-runtime (`end_run`, `stop_run`), so a Stop never needs the
- * runtime's own function or the bus. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
+ * runtime's own function or the bus. Since 7.51.02 it takes `signal_run` too, a person's Pause, Resume and Save of a
+ * run and an agent's Save, Pause, Resume, Shut down, Stop now and Restart (lambda/engineering/runtime/run_signals.py):
+ * it checks the run, the agent and the state (never while a Stop is under way), records who asked on a `RUNLOG#` row
+ * (D4) and hands the signal on to voc-engineering-runtime's `signal`, with the grants it already had (its run rows'
+ * reads and puts, its invoke of the runtime): the Agents API reaches the signals through it, never the runtime's own
+ * function. Since 7.47.00 the agents' heartbeat invokes it too, by name (agent-heartbeat-engineering.ts: an
  * engineering agent's trigger), and a start that resolves its commit calls the broker's `head` (its function URL, which
  * admits this role for that operation alone). Pay per use: no fixed cost.
  */
@@ -85,8 +90,11 @@ const RUN_PARTITIONS = 'WS#*#RUN#*';
  * runs list row (GetItem, PutItem, UpdateItem: the start's transaction, a decision point),
  * a flow's month total and the hard cap's row (GetItem, at a budgeted start), the stack's key through DynamoDB, its
  * rule switched on (never off), and the runtime invoked by name for the launch. Since 7.50.03 a Stop: Query of the run's
- * own partition (its tasks and agent rows, `StopRunReads`), its writes those of the run's rows above. No agent session,
- * no AssumeRole of an agent role, no bus, no delete, no registry query: the supervisor's role keeps those.
+ * own partition (its tasks and agent rows, `StopRunReads`), its writes those of the run's rows above. Since 7.51.02 a
+ * person's signal, with nothing more: its checks read the run's META, the agent's row and its task (GetItem), its
+ * `RUNLOG#` row is a put in the run's partition (`StartRunRows`), its hand-on the runtime's invoke (`HandTheLaunchOn`).
+ * No agent session, no AssumeRole of an agent role, no bus, no delete, no registry query: the supervisor's role keeps
+ * those.
  */
 function startRole(scope: Construct, props: StartProps): iam.Role {
   const role = workerRole(scope, 'EngineeringStartRole');

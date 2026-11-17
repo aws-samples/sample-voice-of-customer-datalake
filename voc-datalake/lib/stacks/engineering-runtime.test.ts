@@ -148,6 +148,24 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
   });
 
+  it('hands a person\'s signal on with the grants a start had (7.51.02): its statements exactly, one invoke of the runtime', () => {
+    // signal_run reads the run's META, the agent's row and its task (GetItem), puts its RUNLOG# row in the run's
+    // partition (StartRunRows) and invokes the runtime's signal (HandTheLaunchOn): nothing was added for it.
+    const statements = z.array(z.looseObject({ Sid: z.string().optional(), Action: z.unknown(), Resource: z.unknown() }))
+      .parse(Object.values(template.findResources('AWS::IAM::Policy', {
+        Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]) },
+      })).flatMap((policy) => policy.Properties?.PolicyDocument?.Statement ?? []));
+    expect(statements.map((statement) => statement.Sid ?? [statement.Action].flat().join()).sort((a, b) => a.localeCompare(b, 'en')))
+      .toStrictEqual(['HandTheLaunchOn', 'kms:Decrypt,kms:GenerateDataKey', 'RestartReadsTheParent', 'StartBrokerHead',
+        'StartBrokerHeadThroughUrl', 'StartFlowMonthTotal', 'StartHardCapSetting', 'StartRunRows', 'StopRunReads',
+        'SwitchTheSupervisorOn']);
+    const invokes = statements.filter((statement) => JSON.stringify(statement.Action) === '"lambda:InvokeFunction"');
+    // (the runtime by its function's name, the broker through its function URL alone)
+    expect(invokes.map((statement) => JSON.stringify(statement.Resource))).toStrictEqual([
+      expect.stringMatching(/:function:",\{"Ref":"EngineeringRuntimeEngineeringSupervisor[0-9A-F]+"\}\]\]\}$/),
+      expect.stringMatching(/function:voc-engineering-broker"$/)]);
+  });
+
   it('lets a start resolve its commit through the broker\'s function URL alone, IAM-authenticated (7.47.00)', () => {
     const broker = `${ACCOUNT}:function:voc-engineering-broker`;
     template.hasResourceProperties('AWS::IAM::Policy', {

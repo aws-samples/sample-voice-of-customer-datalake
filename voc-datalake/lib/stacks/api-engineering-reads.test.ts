@@ -19,8 +19,10 @@ import { engineeringRunCaps } from './engineering-start';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 // (7.50.00: and the readiness checks' settings, api-engineering-readiness.ts)
+// (7.51.02: and the engineering bus, for a person's steering and answers: api-engineering-voice.ts)
 const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_AGENT_NETWORK', 'ENGINEERING_APP_TOKENS_FUNCTION',
-  'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_BUILD_MEMORY_MIB', 'ENGINEERING_IMAGE_LANGUAGES', 'ENGINEERING_MAX_SESSIONS',
+  'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_BUILD_MEMORY_MIB', 'ENGINEERING_BUS_NAME', 'ENGINEERING_IMAGE_LANGUAGES',
+  'ENGINEERING_MAX_SESSIONS',
   'ENGINEERING_PARAMETER_KEY', 'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP',
   'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WATERMARKS_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
@@ -152,6 +154,41 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(invokes)).not.toMatch(/voc-engineering-(runtime|delivery)/);
     expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_START_FUNCTION))
       .toMatch(/^"?\S*voc-engineering-start-/);
+  });
+
+  it('put a person\'s steering and answers on the engineering bus alone, from the API\'s own source (7.51.02)', () => {
+    const puts = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('events:')));
+    // One statement, one action, the one bus (VocProcessingStack's, by its name), held to the source and the two types.
+    expect(puts.map((statement) => [statement.actions, JSON.parse(statement.resource), statement.condition])).toStrictEqual([[
+      ['events:PutEvents'],
+      { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':events:us-east-1:111111111111:event-bus/voc-engineering-',
+        { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]] },
+      { StringEquals: { 'events:source': 'voc.engineering/api', 'events:detail-type': ['msg.answer', 'msg.steer'] } },
+    ]]);
+    // (the name the Agents API publishes to: steer_available)
+    expect(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_BUS_NAME).toStrictEqual(
+      { 'Fn::Join': ['', ['voc-engineering-', { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]] });
+  });
+
+  it('never put an event without both conditions, another detail type or on another bus, nor any other events call', () => {
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
+    const events = statements.filter((statement) => JSON.stringify(statement).includes('events:'));
+    expect(events.map((statement) => statement.actions)).toStrictEqual([['events:PutEvents']]);
+    const condition = JSON.stringify(events[0]?.condition);
+    // (no other detail type: a signal's, a board action's or a skill decision's; no wildcard; no other source)
+    expect(condition).not.toMatch(/signal\.|task\.|skill\.|\*|StringLike|ForAnyValue|"events:source":\[/);
+    expect(events[0]?.resource).not.toMatch(/\*|default/);
+    // Off, no events call at all.
+    expect(JSON.stringify(policyStatementsOf(apiTemplate(), 'AgentsLambdaRole'))).not.toMatch(/events:/);
+  });
+
+  it('name the Agents API\'s role with the module on (the bus\'s policy admits it by that ARN), generated without', () => {
+    const roleName = (template: Template) => Object.entries(template.findResources('AWS::IAM::Role'))
+      .find(([id]) => id.startsWith('AgentsLambdaRole'))?.[1]?.Properties?.RoleName;
+    expect(roleName(on())).toStrictEqual(
+      { 'Fn::Join': ['', ['voc-agents-api-', { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]] });
+    expect(roleName(apiTemplate())).toBeUndefined();
   });
 
   it('cap every run it starts: 50 USD and 10 million tokens by default, the deployment\'s own when set', () => {

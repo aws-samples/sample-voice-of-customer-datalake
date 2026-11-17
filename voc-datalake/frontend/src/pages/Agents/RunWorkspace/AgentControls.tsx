@@ -1,6 +1,7 @@
 /**
  * @fileoverview An agent's own controls in its session (7.51.00), an admin's on a run under way, through the
- * supervisor's signals (`POST …/signals`) on the agent's task at the attempt it is on, in the run's own words (the
+ * signals (`POST …/signals`: since 7.51.02 the start function's, which hands them on to the supervisor; shown where
+ * the overview's `signals_available` says they reach the run) on the agent's task at the attempt it is on, in the run's own words (the
  * control bar's, RunControlBar.tsx): **Stop** (a checkpoint, then the end: `shutdown`), and under ⋯ Save (a checkpoint
  * now), "Stop now, without saving" and Restart, each of the last two asked first; Restart asks where it starts again:
  * from its newest checkpoint, or its task afresh (its work since that checkpoint lost too). An agent whose task is

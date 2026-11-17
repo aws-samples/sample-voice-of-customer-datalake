@@ -334,7 +334,8 @@ def _acting_monitor(run_id: str) -> tuple[Any, Caller]:
 
     bus = os.environ.get('ENGINEERING_BUS_NAME', '')
     engineering = get_dynamodb_resource().Table(table)
-    monitor = RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)), runtime=None,
+    monitor = RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
+                         signaller=None,
                          publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None)
     caller = _caller()
     if not _read(lambda: monitor.run_exists(run_id)):

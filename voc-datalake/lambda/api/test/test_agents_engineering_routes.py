@@ -1,5 +1,5 @@
 """The Agents API's engineering routes: an engineering run's monitor, board, conversation and reports, and the
-monitor's actions (signals, a person's answers).
+monitor's actions (signals through voc-engineering-start since 7.51.02, a person's answers on the bus).
 
 On only with the engineering agents' table and bucket in the environment (404 otherwise); read by administrators only,
 acting for themselves, until a connection can be shared: a plain user and a delegated (MCP) credential, even one an
@@ -22,6 +22,7 @@ from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from botocore.exceptions import ClientError
 
+import agents_handler
 from engineering.runtime.runs import RunStore
 from engineering.runtime.sessions import SessionStore
 from engineering.test.run_fixture import BUCKET, FIXER, RUN, TABLE, EngineeringRun, LambdaClient, engineering_run
@@ -144,26 +145,29 @@ class Bus:
 
 @dataclass
 class Actions:
-    """What the actions reach: the bus and the supervisor's function (its answer)."""
+    """What the actions reach: the bus and voc-engineering-start (its answer to ``signal_run``)."""
     bus: Bus
-    runtime: LambdaClient
+    start: LambdaClient
 
 
 BOARD_FUNCTION = 'voc-engineering-board'
+START_FUNCTION = 'voc-engineering-start'
+#: What of a run the overview says reaches it (7.51.02), each by its own flag.
+FLAGS = ('steer_available', 'signals_available', 'stop_available', 'board_available')
 
 
 class Lambdas:
     """The Lambda client the routes get: the board function's direct invokes run the board's person path in process
-    (on the same table, as its own role would); every other invoke is the supervisor's fake."""
+    (on the same table, as its own role would); every other invoke is ``other``'s."""
 
-    def __init__(self, runtime: LambdaClient, client: Any) -> None:
-        self.runtime = runtime
+    def __init__(self, other: LambdaClient, client: Any) -> None:
+        self.other = other
         self.client = client
         self.board_requests: list[dict[str, Any]] = []
 
     def invoke(self, **request: Any) -> dict[str, Any]:
         if request['FunctionName'] != BOARD_FUNCTION:
-            return self.runtime.invoke(**request)
+            return self.other.invoke(**request)
         from engineering.board.api import person_request
         from engineering.board.store import BoardStore
         from engineering.bus.publish import new_event_id
@@ -185,12 +189,23 @@ def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) ->
     table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
     SessionStore(table, RunStore(table)).create(FIXER)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
-    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
     monkeypatch.setenv('ENGINEERING_BOARD_FUNCTION', BOARD_FUNCTION)
-    reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}}))
+    reached = Actions(Bus(), LambdaClient({'run_id': RUN, 'status': 'sent', 'at': '2026-11-17T09:00:00Z'}))
+    monkeypatch.setattr(agents_handler, '_start_client', lambda: reached.start)
     with patch('shared.aws.get_eventbridge_client', return_value=reached.bus), \
-            patch('shared.aws.get_lambda_client', return_value=Lambdas(reached.runtime, engineering.client)):
+            patch('shared.aws.get_lambda_client', return_value=Lambdas(reached.start, engineering.client)):
         yield reached
+
+
+@pytest.fixture
+def board_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bus that took a person's board events (``task.*``) from the API's source. No deployment's does since 7.51.02
+    (the API says only steering and answers there, and its board actions are refused before the board is asked:
+    ``test_a_persons_board_actions_are_refused_before_the_board_is_asked``); what the board routes do where one did."""
+    from engineering import monitor
+
+    monkeypatch.setattr(monitor, 'API_TYPES', monitor.API_TYPES | monitor.PERSON_BOARD_TYPES)
 
 
 @pytest.mark.usefixtures('actions')
@@ -198,17 +213,19 @@ def test_the_run_monitor_reads_the_run_and_the_supervisors_sessions(lambda_conte
     status, view = _call(lambda_context, 'GET', BASE)
     assert status == 200
     assert (view['run']['run_id'], [agent['agent'] for agent in view['agents']]) == (RUN, ['fixer-1'])
-    assert view['actions_available'] is True
+    # (the bus for steering and answers, the start function for the signals and the Stop; no board action reaches it)
+    assert ([view[flag] for flag in FLAGS], 'actions_available' in view) == ([True, True, True, False], False)
     assert _call(lambda_context, 'GET', '/agents/engineering/01JD0000000000000000000009')[0] == 404
 
 
 @pytest.mark.usefixtures('actions')
-@pytest.mark.parametrize('missing', ['ENGINEERING_RUNTIME_FUNCTION', 'ENGINEERING_BUS_NAME'])
-def test_the_overview_says_the_actions_are_unavailable_until_the_runtime_and_the_bus_are_named(
-        lambda_context: Any, monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+@pytest.mark.parametrize(('missing', 'flags'), [('ENGINEERING_START_FUNCTION', [True, False, False, False]),
+                                                ('ENGINEERING_BUS_NAME', [False, True, True, False])])
+def test_the_overview_says_what_reaches_the_run_each_by_its_own_wiring(
+        lambda_context: Any, monkeypatch: pytest.MonkeyPatch, missing: str, flags: list[bool]) -> None:
     monkeypatch.delenv(missing)
     status, view = _call(lambda_context, 'GET', BASE)
-    assert (status, view['actions_available']) == (200, False)
+    assert (status, [view[flag] for flag in FLAGS]) == (200, flags)
 
 
 @pytest.mark.parametrize('path', [f'/agents/engineering/{UNKNOWN}/signals', f'/agents/engineering/{UNKNOWN}/messages'])
@@ -216,7 +233,7 @@ def test_the_overview_says_the_actions_are_unavailable_until_the_runtime_and_the
 def test_an_unknown_run_is_404_before_the_body_is_read(lambda_context: Any, actions: Actions, path: str,
                                                        body: dict[str, str]) -> None:
     assert _call(lambda_context, 'POST', path, body=body)[0] == 404
-    assert (actions.bus.entries, actions.runtime.requests) == ([], [])
+    assert (actions.bus.entries, actions.start.requests) == ([], [])
 
 
 def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context: Any,
@@ -225,29 +242,29 @@ def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context
     _, engineering = run
     status, body = _call(lambda_context, 'POST', f'{BASE}/signals',
                          body={'signal': 'pause', 'task_id': engineering.task_id, 'attempt': 1})
-    assert (status, body['signal']['target'], body['signal']['agents']) == (
-        200, {'kind': 'agent', 'id': 'fixer-1'}, {'fixer-1': 'pause_requested'})
-    assert body['signal']['applied'] == {'fixer-1': True}
-    (invoked,) = actions.runtime.requests
-    assert json.loads(invoked['Payload']) == {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
-                                              'agent_id': 'fixer-1', 'attempt': 1, 'actor': 'admin-sub'}
-    entry, _outcome = actions.bus.entries
-    assert (entry['Source'], entry['DetailType']) == ('voc.engineering/api', 'signal.pause')
-    assert 'by alice' in json.loads(entry['Detail'])['summary']
+    assert (status, body['signal']['target'], body['signal']['status']) == (
+        200, {'kind': 'agent', 'id': 'fixer-1'}, 'sent')
+    # voc-engineering-start's signal_run (never the runtime's function), which records it and hands it on.
+    (invoked,) = actions.start.requests
+    assert (invoked['FunctionName'], json.loads(invoked['Payload'])) == (START_FUNCTION, {
+        'action': 'signal_run', 'run_id': RUN, 'signal': 'pause', 'actor': 'admin-sub', 'agent_id': 'fixer-1',
+        'task_id': engineering.task_id, 'attempt': 1})
+    # Nothing on the bus: the API's source says only steering and answers there (7.51.02).
+    assert actions.bus.entries == []
     stale = _call(lambda_context, 'POST', f'{BASE}/signals',
                   body={'signal': 'pause', 'task_id': engineering.task_id, 'attempt': 2})
     assert stale[0] == 409
     assert _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'stop_now'})[0] == 400
 
 
-def test_the_supervisor_refusing_answers_409_with_its_reason(lambda_context: Any, actions: Actions) -> None:
-    actions.runtime.payload = {'errorType': 'RuntimeRefused', 'errorMessage': 'run R has spent its budget'}
-    actions.runtime.function_error = 'Unhandled'
+def test_the_start_function_refusing_a_signal_answers_409_with_its_reason(lambda_context: Any,
+                                                                         actions: Actions) -> None:
+    actions.start.payload = {'errorType': 'RuntimeRefused', 'errorMessage': 'run R is being stopped'}
+    actions.start.function_error = 'Unhandled'
     status, body = _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'resume'})
-    assert (status, 'spent its budget' in json.dumps(body)) == (409, True)
-    request, outcome = (json.loads(entry['Detail']) for entry in actions.bus.entries)   # (asked, and its answer)
-    assert (request['type'], 'not applied: run R has spent its budget' in outcome['summary']) == (
-        'signal.resume', True)
+    assert (status, 'being stopped' in json.dumps(body), actions.bus.entries) == (409, True, [])
+    actions.start.payload = {'errorType': 'KeyError'}
+    assert _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'resume'})[0] == 503
 
 
 @pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN])
@@ -256,12 +273,14 @@ def test_only_an_admin_acting_for_themselves_signals_or_answers(lambda_context: 
     assert _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'save'}, claims=claims)[0] == 403
     assert _call(lambda_context, 'POST', f'{BASE}/messages', body={'to': 'conductor', 'text': 'Hi'},
                  claims=claims)[0] == 403
-    assert (actions.bus.entries, actions.runtime.requests) == ([], [])
+    assert (actions.bus.entries, actions.start.requests) == ([], [])
 
 
 def test_an_admin_answers_the_conductor_or_an_agent_of_the_run(lambda_context: Any, actions: Actions) -> None:
     status, body = _call(lambda_context, 'POST', f'{BASE}/messages', body={'to': 'conductor', 'text': 'Skip docs'})
-    assert (status, actions.bus.entries[0]['DetailType']) == (200, 'msg.answer')
+    # (the API's own source, the answer's own detail type: what its grant on the bus is held to, 7.51.02)
+    assert (status, actions.bus.entries[0]['Source'], actions.bus.entries[0]['DetailType']) == (
+        200, 'voc.engineering/api', 'msg.answer')
     assert body['message']['thread_id'].startswith('human-')
     # (7.51.00: an answer to an agent replies on the thread its own question opened, the fixture's t-1)
     assert _call(lambda_context, 'POST', f'{BASE}/messages',
@@ -280,6 +299,7 @@ def _board_task(engineering: EngineeringRun, task_id: str) -> dict[str, Any]:
     return {key: next(iter(value.values())) for key, value in item.items()}
 
 
+@pytest.mark.usefixtures('board_events')
 def test_an_admin_posts_a_task_published_as_themselves_from_the_api(lambda_context: Any, actions: Actions) -> None:
     status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks',
                          body={'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}})
@@ -292,6 +312,7 @@ def test_an_admin_posts_a_task_published_as_themselves_from_the_api(lambda_conte
                  body={'role': 'coordinator', 'title': 'x', 'spec': {'a': 1}})[0] == 403
 
 
+@pytest.mark.usefixtures('board_events')
 def test_an_admin_takes_moves_reprioritises_and_blocks_tasks(lambda_context: Any, run: tuple[Any, EngineeringRun],
                                                               actions: Actions) -> None:
     _, engineering = run
@@ -324,6 +345,7 @@ def test_only_an_admin_acting_for_themselves_acts_on_the_board(lambda_context: A
     assert actions.bus.entries == []
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_person_moves_only_a_task_they_took_and_a_lost_publish_is_retried(lambda_context: Any,
                                                                              run: tuple[Any, EngineeringRun],
                                                                              actions: Actions) -> None:
@@ -344,6 +366,7 @@ def test_a_person_moves_only_a_task_they_took_and_a_lost_publish_is_retried(lamb
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={})[0] == 400
 
 
+@pytest.mark.usefixtures('board_events')
 @pytest.mark.parametrize(('action', 'body'),[('take', {}), ('block', {'reason': 'Wrong repo'})])
 def test_another_persons_hold_is_ended_only_when_over_asks(lambda_context: Any, run: tuple[Any, EngineeringRun],
                                                            actions: Actions, action: str, body: dict[str, str]) -> None:
@@ -398,14 +421,13 @@ def test_an_ended_or_unknown_run_takes_no_go(lambda_context: Any, run: tuple[Any
         TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}},
         UpdateExpression='SET ended_at = :at', ExpressionAttributeValues={':at': {'S': '2026-11-13T12:00:00Z'}})
     assert _call(lambda_context, 'POST', f'{BASE}/go', body={})[0] == 409
-    assert actions.runtime.requests == []
+    assert actions.start.requests == []
 
 
 @pytest.mark.parametrize('events', [[{'not': 'an event'}], ['a person event']])
 def test_a_go_whose_board_hands_back_an_event_is_the_boards_fault(lambda_context: Any, actions: Actions,
                                                                    monkeypatch: pytest.MonkeyPatch,
                                                                    events: list[object]) -> None:
-    import agents_handler
     from engineering.board import api as board_api
 
     real = board_api.person_request
@@ -422,6 +444,7 @@ def _taken(lambda_context: Any, engineering: EngineeringRun) -> str:
     return engineering.task_id
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_no_op_publishes_nothing_and_a_retry_publishes_the_same_event(lambda_context: Any,
                                                                          run: tuple[Any, EngineeringRun],
                                                                          actions: Actions) -> None:
@@ -437,6 +460,7 @@ def test_a_no_op_publishes_nothing_and_a_retry_publishes_the_same_event(lambda_c
     assert first == again
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_person_releases_a_task_they_took_and_its_role_is_told(lambda_context: Any,
                                                                  run: tuple[Any, EngineeringRun],
                                                                  actions: Actions) -> None:
@@ -453,6 +477,7 @@ def test_a_person_releases_a_task_they_took_and_its_role_is_told(lambda_context:
     assert again['event_id'] == posted['event_id']
 
 
+@pytest.mark.usefixtures('board_events')
 def test_an_equal_post_after_a_later_change_is_answered_and_publishes_nothing(lambda_context: Any,
                                                                              actions: Actions) -> None:
     post = {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}
@@ -466,6 +491,7 @@ def test_an_equal_post_after_a_later_change_is_answered_and_publishes_nothing(la
     assert details[0]['event_id'] == details[1]['event_id']
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_bus_that_cannot_be_reached_after_the_write_says_the_board_changed(lambda_context: Any,
                                                                              run: tuple[Any, EngineeringRun],
                                                                              actions: Actions) -> None:
@@ -485,6 +511,7 @@ def test_a_bus_that_cannot_be_reached_after_the_write_says_the_board_changed(lam
     assert [entry['DetailType'] for entry in actions.bus.entries] == ['task.claimed', 'task.posted']
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_person_re_prioritises_an_open_task_and_its_role_is_not_told_again(lambda_context: Any,
                                                                               actions: Actions) -> None:
     status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks',
@@ -519,11 +546,12 @@ def test_board_actions_need_the_bus_and_are_404_while_the_module_is_off(lambda_c
     assert actions.bus.entries == []
 
 
+@pytest.mark.usefixtures('board_events')
 def test_board_actions_go_through_the_board_function_as_the_person(lambda_context: Any, run: tuple[Any, EngineeringRun],
                                                                    actions: Actions,
                                                                    monkeypatch: pytest.MonkeyPatch) -> None:
     _, engineering = run
-    lambdas = Lambdas(actions.runtime, engineering.client)
+    lambdas = Lambdas(actions.start, engineering.client)
     monkeypatch.setattr('shared.aws.get_lambda_client', lambda: lambdas)
     path = f'{BASE}/board/tasks/{engineering.task_id}/priority'
     assert _call(lambda_context, 'POST', path, body={'priority': 4})[0] == 200
@@ -533,6 +561,7 @@ def test_board_actions_go_through_the_board_function_as_the_person(lambda_contex
                                   'subject': 'admin-sub', 'body': {'priority': 4}}}
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_board_function_not_named_or_failing_is_a_503_and_nothing_is_sent(lambda_context: Any,
                                                                             run: tuple[Any, EngineeringRun],
                                                                             actions: Actions,
@@ -558,26 +587,28 @@ class _FailsAfterWriting(Lambdas):
         return {'StatusCode': 200, 'FunctionError': 'Unhandled', 'Payload': io.BytesIO(b'{"errorMessage": "timeout"}')}
 
 
+@pytest.mark.usefixtures('board_events')
 def test_a_board_that_fails_after_writing_is_a_503_and_the_retry_sends_the_event_once(
         lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch) -> None:
     _, engineering = run
     path = f'{BASE}/board/tasks/{engineering.task_id}/take'
-    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: _FailsAfterWriting(actions.runtime, engineering.client))
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: _FailsAfterWriting(actions.start, engineering.client))
     assert _call(lambda_context, 'POST', path, body={})[0] == 503
     assert (actions.bus.entries, _board_task(engineering, engineering.task_id)['lease_agent']) == ([], 'human:admin-sub')
-    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Lambdas(actions.runtime, engineering.client))
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Lambdas(actions.start, engineering.client))
     assert _call(lambda_context, 'POST', path, body={})[0] == 200   # (answered as it is: the same change)
     (entry,) = actions.bus.entries
     assert json.loads(entry['Detail'])['summary'].endswith('take by a person')
 
 
+@pytest.mark.usefixtures('board_events')
 @pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two', 'schema', 'summary', 'credential',
                                    'no answer'])
 def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_sent(
         lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch,
         forge: str) -> None:
     _, engineering = run
-    real = Lambdas(actions.runtime, engineering.client)
+    real = Lambdas(actions.start, engineering.client)
 
     class Forging(Lambdas):
         def invoke(self, **request: Any) -> dict[str, Any]:
@@ -597,17 +628,48 @@ def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_s
                 answer['events'] = [event, event] if forge == 'two' else [forged[forge]]
             return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
 
-    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Forging(actions.runtime, engineering.client))
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Forging(actions.start, engineering.client))
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] == 503
     assert actions.bus.entries == []
 
 
-def test_a_bus_that_refuses_or_a_missing_runtime_answers_503(lambda_context: Any, monkeypatch: pytest.MonkeyPatch,
-                                                             actions: Actions) -> None:
+def test_a_bus_that_refuses_or_a_missing_start_function_answers_503(lambda_context: Any,
+                                                                    monkeypatch: pytest.MonkeyPatch,
+                                                                    actions: Actions) -> None:
     actions.bus.failed = True
     assert _call(lambda_context, 'POST', f'{BASE}/messages', body={'to': 'conductor', 'text': 'Hi'})[0] == 503
-    monkeypatch.delenv('ENGINEERING_RUNTIME_FUNCTION')
+    monkeypatch.delenv('ENGINEERING_START_FUNCTION')
     assert _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'save'})[0] == 503
+    assert actions.start.requests == []
+
+
+def test_an_admin_steers_the_orchestrator_from_the_apis_own_source(lambda_context: Any, actions: Actions) -> None:
+    status, body = _call(lambda_context, 'POST', f'{BASE}/steer', body={'text': 'Keep the signature', 'about': 'fixer-1'})
+    (entry,) = actions.bus.entries
+    detail = json.loads(entry['Detail'])
+    assert (status, entry['Source'], entry['DetailType'], detail['type'], detail['to']) == (
+        202, 'voc.engineering/api', 'msg.steer', 'msg.steer', {'kind': 'conductor', 'id': RUN})
+    assert body['message']['thread_id'].startswith('steer-')
+
+
+@pytest.mark.parametrize(('path', 'body'), [
+    ('board/tasks', {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}),
+    ('board/tasks/{task}/take', {}), ('board/tasks/{task}/priority', {'priority': 4}),
+    ('board/tasks/{task}/block', {'reason': 'Wrong repo'}),
+])
+def test_a_persons_board_actions_are_refused_before_the_board_is_asked(
+        lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch,
+        path: str, body: dict[str, Any]) -> None:
+    """Their task.* events would go out from the API's source, which the bus takes only steering and answers from
+    (7.51.02): so the board never changes what could not be said (``board_available`` false)."""
+    _, engineering = run
+    lambdas = Lambdas(actions.start, engineering.client)
+    monkeypatch.setattr('shared.aws.get_lambda_client', lambda: lambdas)
+    before = _board_task(engineering, engineering.task_id)
+    status, refused = _call(lambda_context, 'POST', f"{BASE}/{path.format(task=engineering.task_id)}", body=body)
+    assert (status, "board actions cannot reach the run" in json.dumps(refused)) == (503, True)
+    assert (lambdas.board_requests, actions.bus.entries, _board_task(engineering, engineering.task_id)) == (
+        [], [], before)
 
 
 # --- the spend ledger's read (engineering/spend.py) ----------------------------------------------------------------

@@ -4,11 +4,12 @@
 //   GET  …            the overview (run, each agent's session, totals per model; no cost yet)
 //   GET  …/board      the tasks with their history
 //   GET  …/conversation?after=   the 20 below `after` again, a page above it; `next_after` its last seq (the server's)
-//   POST …/signals    {signal, task_id?, attempt?, note?, confirm?}: admin; 409 when the attempt moved on or the
-//                     task is over, and the supervisor's reason for resuming a run out of budget; stop_now needs
-//                     confirm: true; the request is recorded first as a signal.* message to the run, then its
-//                     outcome (each agent's status, or why not); 503 when the agent is busy
-//                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
+//   POST …/signals    {signal, task_id?, attempt?, note?, confirm?}: admin; 409 when the attempt moved on, the
+//                     task is over or a Stop of the run is under way; stop_now needs confirm: true; since 7.51.02 it is
+//                     sent through the start function (recorded on the run's own rows, never in the conversation) and
+//                     answered {signal: {status: sent}}, the supervisor applying it just after (the agents' statuses
+//                     change); an agent busy with another move (MOCK_ENGINEERING_AGENT_BUSY=1), or a Resume of a run out
+//                     of budget, is left as it was
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
 //   POST …/stop       {now?, confirm?} (7.50.03): admin; a person's Stop of the whole run (the start function's
 //                     stop_run): with no agent at work it ends the run at once (its open tasks closed); else the agents
@@ -162,10 +163,10 @@ const run = {
       ],
     },
   ],
-  /** MOCK_ENGINEERING_OUT_OF_BUDGET=1: the run has spent its budget, so a resume is refused with the supervisor's reason. */
+  /** MOCK_ENGINEERING_OUT_OF_BUDGET=1: the run has spent its budget, so the supervisor leaves a Resume undone. */
   outOfBudget: process.env.MOCK_ENGINEERING_OUT_OF_BUDGET === '1',
-  /** MOCK_ENGINEERING_AGENT_BUSY=1: the supervisor answers busy for an agent signalled (503; the request and its
-   *  "not applied" outcome are recorded). */
+  /** MOCK_ENGINEERING_AGENT_BUSY=1: the supervisor finds an agent signalled busy with another move, and leaves it as it
+   *  was (the signal was sent: the person sends it again). */
   agentBusy: process.env.MOCK_ENGINEERING_AGENT_BUSY === '1',
   messages: [],
 };
@@ -237,10 +238,13 @@ function overview() {
     run: { ...run.meta, ...workspace.run },
     agents: workspace.agents,
     lanes: workspace.lanes, gates: workspace.gates, children: workspace.children,
-    // The dev mock plays a stack that names the runtime and the bus, so its actions answer; and the start function,
-    // so its Stop does (7.50.03).
-    actions_available: true,
+    // The dev mock plays a stack that names the bus to the Agents API (steering and answers) and the start function
+    // (the signals since 7.51.02, the Stop since 7.50.03); a person's board actions reach no run (7.51.02: the bus
+    // takes only steering and answers from the Agents API), as the server says.
+    steer_available: true,
+    signals_available: true,
     stop_available: true,
+    board_available: false,
     totals: {
       messages: run.messages.length, microvm_seconds: run.agents.reduce((sum, a) => sum + a.microvm_seconds, 0),
       by_model: [...byModel.values()].sort((a, b) => a.model.localeCompare(b.model)),
@@ -322,36 +326,17 @@ function signal(body) {
   if (refused) return [400, { message: refused }];
   const target = signalTarget(body);
   if (Array.isArray(target)) return [target[0], { message: target[1] }];
-  // The request is recorded first (as the server does), then the supervisor applies it or refuses.
+  if (run.meta.stop !== null && run.meta.ended_at === null) {
+    return [409, { message: `run ${SAMPLE_RUN_ID} is being stopped: it takes no other signal` }];
+  }
+  // Sent through the start function (recorded on the run's own rows), then applied by the supervisor just after: an
+  // agent busy with another move, or a Resume of a run out of budget, is left as it was.
   const at = new Date().toISOString();
-  const whom = target.kind === 'agent' ? `agent ${target.id}` : 'the whole run';
-  const start = { checkpoint: ' from its checkpoint', fresh: ' afresh' }[body.from] ?? '';
-  const request = say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `${body.signal.replace('_', ' ')}${start} requested from the run monitor by alex for ${whom}.`, { threadId: 'signals', taskId: body.task_id, at });
-  const notApplied = (why) => say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `signal.${body.signal} request ${request}: not applied: ${why}`, { threadId: 'signals', taskId: body.task_id });
-  if (body.signal === 'resume' && run.outOfBudget) {
-    const reason = `run ${SAMPLE_RUN_ID} has spent its budget: raise it before resuming`;
-    notApplied(reason);
-    return [409, { message: reason }];
-  }
-  if (target.kind === 'agent' && run.agentBusy) {
-    notApplied('the agent was busy with another move');
-    return [503, { message: 'The agent is busy with another move: send the signal again' }];
-  }
-  const reached = run.agents.filter((a) => target.kind === 'run' || a.agent === target.id);
+  const left = (target.kind === 'agent' && run.agentBusy) || (body.signal === 'resume' && run.outOfBudget);
   const next = { save: null, pause: 'pause_requested', resume: 'working', shutdown: 'pause_requested', stop_now: 'stopped',
     restart: 'booting' }[body.signal];
-  // As the supervisor answers: a Save checkpoints (applied); any other signal is applied when it changes the status
-  // (a Resume of an agent already working is nothing to do).
-  const applied = Object.fromEntries(reached.map((a) => [a.agent, next === null || a.status !== next]));
-  for (const a of reached) if (next) a.status = next;
-  const agents = Object.fromEntries(reached.map((a) => [a.agent, a.status]));
-  const listed = (done) => Object.entries(agents).filter(([id]) => applied[id] === done).map(([id, status]) => `${id} ${status}`).join(', ');
-  const outcome = [listed(true) && `applied: ${listed(true)}`, listed(false) && `not applied: ${listed(false)}`].filter(Boolean).join('; ') || 'no agent yet';
-  say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `signal.${body.signal} request ${request}: ${outcome}`, { threadId: 'signals', taskId: body.task_id });
-  return [200, { signal: { event_id: request, signal: body.signal, target, attempt: body.attempt ?? 0, agents, applied, at } }];
+  if (!left && next) for (const a of run.agents) if (target.kind === 'run' || a.agent === target.id) a.status = next;
+  return [200, { signal: { signal: body.signal, target, attempt: body.attempt ?? 0, status: 'sent', agents: {}, applied: {}, at } }];
 }
 
 function answer(body) {

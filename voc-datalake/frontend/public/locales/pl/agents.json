@@ -1801,7 +1801,7 @@
       "send": "Wyślij do orkiestratora",
       "hint": "Enter wysyła; Shift+Enter zaczyna nowy wiersz.",
       "sent": "Wysłano do orkiestratora.",
-      "unavailable": "To wdrożenie nie może jeszcze wysyłać wskazówek ani odpowiedzi: nie łączy API agentów ze środowiskiem uruchomieniowym i magistralą inżynierii."
+      "unavailable": "To wdrożenie nie może wysyłać wskazówek ani odpowiedzi: nie wskazuje API agentów magistrali inżynierii."
     },
     "agentControls": {
       "restart": "Uruchom ponownie",
@@ -1980,7 +1980,7 @@
       "stopNow": "Zatrzymaj od razu, bez zapisu…",
       "more": "Więcej sterowania przebiegiem",
       "save": "Zapisz punkt kontrolny",
-      "limited": "Wstrzymanie, wznowienie i zapis wymagają środowiska i magistrali inżynierii, których to wdrożenie jeszcze nie łączy.",
+      "limited": "Wstrzymanie, wznowienie i zapis nie docierają do tego przebiegu z tego wdrożenia: nie wskazuje ono funkcji startowej.",
       "refreshFailed": "Nie udało się odświeżyć tego przebiegu: widzisz jego ostatni poprawny stan.",
       "retry": "Spróbuj ponownie",
       "stopSent": "Wysłano zatrzymanie"

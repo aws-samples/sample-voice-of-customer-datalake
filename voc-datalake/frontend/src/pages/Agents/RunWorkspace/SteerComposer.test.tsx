@@ -70,11 +70,11 @@ describe('the composer', () => {
     expect(screen.getByRole('button', { name: 'Send to the orchestrator' })).toHaveClass('btn-secondary')
   })
 
-  it('is off, saying why, where the deployment does not connect the Agents API to the runtime and the bus', async () => {
+  it('is off, saying why, where the deployment names no engineering bus to the Agents API', async () => {
     renderWithQueryClient(<SteerComposer runId={fixture.run_id} connected={false} primary agent={fixture.agent} />)
     expect([field(), screen.getByRole('button', { name: 'Send to the orchestrator' })].map((element) => element.hasAttribute('disabled')))
       .toStrictEqual([true, true])
-    expect(field()).toHaveAccessibleDescription(/Steering and replies can't be sent from this deployment yet/)
+    expect(field()).toHaveAccessibleDescription(/Steering and replies can't be sent from this deployment: it doesn't name the engineering bus/)
     await userEvent.type(field(), 'Keep the signature{Enter}')
     expect(posted()).toStrictEqual([])
   })

@@ -1754,7 +1754,7 @@
       "send": "An den Orchestrator senden",
       "hint": "Enter sendet; Shift+Enter beginnt eine neue Zeile.",
       "sent": "An den Orchestrator gesendet.",
-      "unavailable": "Steuerung und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Agents-API nicht mit der Engineering-Laufzeit und dem Bus."
+      "unavailable": "Steuerung und Antworten lassen sich von dieser Bereitstellung aus nicht senden: Sie nennt der Agents-API den Engineering-Bus nicht."
     },
     "agentControls": {
       "restart": "Neu starten",
@@ -1933,7 +1933,7 @@
       "stopNow": "Sofort stoppen, ohne zu sichern…",
       "more": "Weitere Laufsteuerung",
       "save": "Sicherungspunkt setzen",
-      "limited": "Pausieren, Fortsetzen und Sichern brauchen die Engineering-Laufzeit und den Bus, die diese Bereitstellung noch nicht anbindet.",
+      "limited": "Pausieren, Fortsetzen und Sichern erreichen diesen Lauf von dieser Bereitstellung aus nicht: Sie nennt keine Startfunktion.",
       "refreshFailed": "Dieser Lauf ließ sich nicht aktualisieren: Sie sehen seinen letzten guten Stand.",
       "retry": "Erneut versuchen",
       "stopSent": "Stopp gesendet"

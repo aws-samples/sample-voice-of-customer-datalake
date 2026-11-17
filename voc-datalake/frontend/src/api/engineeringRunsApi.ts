@@ -2,10 +2,11 @@
  * @fileoverview An engineering run, as the run monitor reads it and acts on it (`/agents/engineering/<run_id>…`,
  * `lambda/engineering/monitor.py` and `views.py`, docs/autonomous-agents.md "An engineering run"): the overview (the
  * run, each agent's session as the supervisor keeps it, the tokens per model; since 7.51.00 the cost against the cap,
- * each step's lanes, the gates' verdicts, the parent and child runs), the board, a page of the conversation (where
- * signals are recorded too, as `signal.*` messages), the reports (commit, PR and goal, each version's Markdown), and an
- * admin's signals (an agent's restart too), answers and (7.50.03) Stop of the whole run (`POST …/stop`, through the
- * start function: it ends the run whatever its agents are doing). The run workspace's own reads are
+ * each step's lanes, the gates' verdicts, the parent and child runs; since 7.51.02 what of it this deployment reaches,
+ * each by its own flag), the board, a page of the conversation, the reports (commit, PR and goal, each version's
+ * Markdown), and an admin's signals (an agent's restart too: since 7.51.02 through the start function, which records
+ * them on the run's own rows and hands them on), answers and (7.50.03) Stop of the whole run (`POST …/stop`, through
+ * the start function: it ends the run whatever its agents are doing). The run workspace's own reads are
  * api/engineeringRunWorkspaceApi.ts. Every read is lenient: a bad entry costs itself, an unknown state or signal is
  * kept as text.
  *
@@ -153,10 +154,14 @@ const OverviewSchema = z.object({
     manifest: ManifestSchema.optional().transform((manifest) => manifest ?? null),
   }),
   agents: eachOf(AgentSchema),
-  /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */
-  actions_available: z.boolean().catch(false),
-  /** A person's Stop can reach the run (the stack names the start function, 7.50.03); false when unsaid. */
+  /** (7.51.02) What reaches the run from here, each false when unsaid: steering and answers (the stack names the
+   *  engineering bus to the Agents API), Pause, Resume, Save and an agent's signals (it names the start function), a
+   *  person's Stop (the start function, 7.50.03), and a person's board actions (never yet: the bus takes only steering
+   *  and answers from the Agents API). */
+  steer_available: z.boolean().catch(false),
+  signals_available: z.boolean().catch(false),
   stop_available: z.boolean().catch(false),
+  board_available: z.boolean().catch(false),
   totals: z.object({ messages: count, microvm_seconds: count, by_model: eachOf(TokensSchema) })
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
   /** The latest read of people's reactions to the run's pull request (7.10.00); null for none. */
@@ -168,8 +173,9 @@ const OverviewSchema = z.object({
 })
 export type EngineeringOverview = z.output<typeof OverviewSchema>
 
-/** What a signal did: each agent's status after it, and whether it did anything to it, as the supervisor answered
- *  (an agent the answer does not say was applied is shown as not applied). */
+/** What a signal did: since 7.51.02 it is sent (the start function recorded it and handed it on; the overview shows
+ *  what came of it), so no agent's status comes back; a whole run's Shut down or Stop now (its Stop) still says each
+ *  agent's (an agent the answer does not say was applied is shown as not applied). */
 const SignalSentSchema = z.object({
   signal: z.object({
     agents: z.record(z.string(), z.string()).catch({}),

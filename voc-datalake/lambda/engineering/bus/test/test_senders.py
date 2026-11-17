@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from engineering.bus.schema import parse
-from engineering.bus.senders import Source, judge, parse_source
+from engineering.bus.schema import TYPES, parse
+from engineering.bus.senders import API_TYPES, Source, judge, parse_source
 from engineering.bus.test.messages import AGENT_SOURCE, RUN, message
 
 TASK = {'type': 'task.posted', 'task_id': 'task-1', 'to': {'kind': 'role', 'id': 'fixer'}}
@@ -36,8 +36,6 @@ def test_sources(source, expected):
 @pytest.mark.parametrize(('changes', 'source'), [
     ({}, AGENT_SOURCE),
     ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/board'),
-    ({'type': 'signal.stop_now', 'from': {'kind': 'human', 'id': 'user-1'}, 'to': {'kind': 'run', 'id': RUN}},
-     'voc.engineering/api'),
     ({'type': 'msg.answer', 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/api'),
     ({'type': 'gate.go', 'from': {'kind': 'agent', 'id': 'go-1'}, 'to': {'kind': 'run', 'id': RUN}},
      f'voc.engineering/agent/final-go/default/{RUN}/go-1'),
@@ -47,13 +45,6 @@ def test_sources(source, expected):
     ({'type': 'run.ended', 'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}}, BOARD),
     ({'type': 'msg.handoff', 'from': {'kind': 'conductor', 'id': 'c'}}, CONDUCTOR),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH),
-    # A person's board actions (board.api.PersonBoard), published by the API as its user.
-    ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/api'),
-    ({**TASK, 'type': 'task.needs_human', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'human', 'id': 'user-1'}},
-     'voc.engineering/api'),
-    # An administrator's proposal, acceptance (or promotion) and rollback, published by the API as its user.
-    *(({'type': kind, 'from': {'kind': 'human', 'id': 'user-1'}, 'refs': {'s3': []}}, 'voc.engineering/api')
-      for kind in ('skill.proposed', 'skill.accepted', 'skill.rolled_back')),
     ({'type': 'msg.finding', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
     ({'type': 'review.result', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
     ({'type': 'signal.check_in', 'from': {'kind': 'supervisor', 'id': 'supervisor'}}, SUPERVISOR),
@@ -75,14 +66,20 @@ def test_allowed(changes, source):
 
 @pytest.mark.parametrize(('changes', 'source', 'reason'), [
     (TASK, AGENT_SOURCE, 'agent may not send task.posted'),
-    # The API's task.* is a person's only: never the board's or an agent's voice (the drop the bus pins).
-    ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/api',
-     'from.kind system is not what the source api proves'),
-    # A person's board actions go out from the API's source: the board's never speaks for a person.
+    # The API says a person's steering and answers only (7.51.02): no task.*, as a person or as anyone else.
+    ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/api', 'api may not send task.posted'),
+    ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/api', 'api may not send task.posted'),
+    ({**TASK, 'type': 'task.needs_human', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'human', 'id': 'user-1'}},
+     'voc.engineering/api', 'api may not send task.needs_human'),
+    # ... no signal: a person's signals and Stop are recorded on the run's RUNLOG# rows by voc-engineering-start.
+    ({'type': 'signal.stop_now', 'from': {'kind': 'human', 'id': 'user-1'}, 'to': {'kind': 'run', 'id': RUN}},
+     'voc.engineering/api', 'api may not send signal.stop_now'),
+    # ... and no skill decision (kept on the skills' log rows).
+    *(({'type': kind, 'from': {'kind': 'human', 'id': 'user-1'}, 'refs': {'s3': []}}, 'voc.engineering/api',
+       f'api may not send {kind}') for kind in ('skill.proposed', 'skill.accepted', 'skill.rolled_back')),
+    # The board's never speaks for a person.
     ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/board',
      'from.kind human is not what the source board proves'),
-    ({**TASK, 'type': 'task.claimed', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'agent', 'id': 'fixer-1'}},
-     'voc.engineering/api', 'from.kind agent is not what the source api proves'),
     ({'type': 'signal.pause', 'to': {'kind': 'run', 'id': RUN}}, AGENT_SOURCE, 'agent may not send signal.pause'),
     ({'type': 'gate.go', 'to': {'kind': 'run', 'id': RUN}}, AGENT_SOURCE,
      'only the final-go agent gives the verdict, not fixer'),
@@ -110,7 +107,7 @@ def test_allowed(changes, source):
     ({'type': 'skill.accepted', 'from': {'kind': 'system', 'id': 'b'}, 'refs': {'s3': []}}, BOARD,
      'board may not send skill.accepted'),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, 'voc.engineering/api',
-     'from.kind coach is not what the source api proves'),
+     'api may not send skill.proposed'),
     ({'type': 'skill.proposed', 'from': {'kind': 'system', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
      'from.kind system is not what the source coach proves'),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'run_id': 'other-run',
@@ -132,3 +129,22 @@ def test_refused(changes, source, reason):
     verdict = judge(parse(message(**changes)), source)
     assert not verdict.allowed
     assert reason in verdict.reason
+
+
+def _as_a_person(kind: str) -> dict:
+    """A well-formed message of ``kind`` from a person, addressed where its type may go."""
+    if kind == 'task.posted':
+        return message(**TASK, **{'from': {'kind': 'human', 'id': 'user-1'}})
+    to = {'kind': 'conductor', 'id': RUN} if kind == 'msg.steer' else {'kind': 'agent', 'id': 'fixer-1'}
+    return message(type=kind, to=to, refs={'s3': []}, **{'from': {'kind': 'human', 'id': 'user-1'}})
+
+
+@pytest.mark.parametrize('kind', sorted(TYPES))
+def test_the_api_says_exactly_a_persons_steering_and_answers_and_nothing_else(kind):
+    """7.51.02: the Agents API's grant on the bus is held to msg.steer and msg.answer (lib/stacks/engineering-bus.ts),
+    and the router admits from its source those two types and no other."""
+    assert judge(parse(_as_a_person(kind)), 'voc.engineering/api').allowed is (kind in API_TYPES)
+
+
+def test_the_api_types_are_the_steering_and_the_answer():
+    assert {'msg.steer', 'msg.answer'} == API_TYPES

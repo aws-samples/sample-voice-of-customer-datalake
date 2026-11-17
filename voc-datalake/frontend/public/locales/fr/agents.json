@@ -1761,7 +1761,7 @@
       "send": "Envoyer à l’orchestrateur",
       "hint": "Enter envoie ; Shift+Enter commence une nouvelle ligne.",
       "sent": "Envoyé à l’orchestrateur.",
-      "unavailable": "Ce déploiement ne peut pas encore envoyer de consignes ni de réponses : il ne relie pas l’API des agents au runtime et au bus d’ingénierie."
+      "unavailable": "Ce déploiement ne peut pas envoyer de consignes ni de réponses : il ne nomme pas le bus d’ingénierie à l’API des agents."
     },
     "agentControls": {
       "restart": "Relancer",
@@ -1940,7 +1940,7 @@
       "stopNow": "Arrêter tout de suite, sans enregistrer…",
       "more": "Autres commandes de l’exécution",
       "save": "Enregistrer un point de reprise",
-      "limited": "Mettre en pause, Reprendre et Enregistrer demandent l’environnement et le bus d’ingénierie, que ce déploiement ne relie pas encore.",
+      "limited": "Mettre en pause, Reprendre et Enregistrer n’atteignent pas cette exécution depuis ce déploiement : il ne nomme aucune fonction de démarrage.",
       "refreshFailed": "Impossible d’actualiser cette exécution : vous voyez son dernier état valide.",
       "retry": "Réessayer",
       "stopSent": "Arrêt envoyé"

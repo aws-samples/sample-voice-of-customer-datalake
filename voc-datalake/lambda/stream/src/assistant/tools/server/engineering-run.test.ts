@@ -18,7 +18,7 @@ const overview = () => ({
     { agent: 'hunter-4', role: 'hunter', task_id: null, status: 'booting' },
     { agent: 'mapper-5', role: 'mapper', task_id: null, status: 'paused', step: 'held for a person' },
   ],
-  actions_available: true,
+  steer_available: true, signals_available: true, stop_available: true, board_available: false,
 });
 const board = () => ({ tasks: [{ task_id: 'task-1', title: 'The last page shows one item too many', state: 'in_progress',
   attempt: 2, lease: { agent: 'fixer-3' }, spec: { instructions: 'x' } }] });

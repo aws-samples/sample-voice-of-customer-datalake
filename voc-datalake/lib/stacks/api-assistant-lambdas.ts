@@ -31,6 +31,7 @@ import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-t
 import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
 import { grantEngineeringRunReads } from './api-engineering-run-reads';
+import { agentsApiRole, grantEngineeringVoice } from './api-engineering-voice';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 import { denyIssueTriageWrites } from './engineering-runtime-grants';
@@ -104,7 +105,9 @@ export interface AssistantLambdas {
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Since 7.51.00 the run workspace's reads of the agents'
  * transcripts, patches and gate records and the runs' manifests, with a listing held to the transcripts' and patches'
- * prefixes (api-engineering-run-reads.ts). Returns the env that turns the routes on (shared/engineering_agents.py),
+ * prefixes (api-engineering-run-reads.ts). Since 7.51.02 `events:PutEvents` on the engineering bus, held to the API's
+ * source and a person's steering and answer (api-engineering-voice.ts); a person's signals go through the start
+ * function's `signal_run`, on the invoke below. Returns the env that turns the routes on (shared/engineering_agents.py),
  * or undefined: off, the role gets nothing and the routes answer 404.
  */
 function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
@@ -136,8 +139,9 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // reached by its deterministic name, as the plan-step runner reaches this stack's functions).
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME)], 'BoardPersonActions');
   // A run's start (`POST /agents/engineering/runs`) through the start function, by name: the runtime's code with a role of
-  // its own (engineering-start.ts), entered where it takes `start_run` and refuses every other action. Never voc-engineering-runtime itself, so this
-  // role can start a run and never tick, launch, signal or end one.
+  // its own (engineering-start.ts), entered where it takes `start_run` (and its few other actions: a Stop, a restart, a
+  // person's checked signal since 7.51.02) and refuses every other one. Never voc-engineering-runtime itself, so this
+  // role can never tick, launch or end a run, nor send the runtime anything unchecked.
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME)], 'StartEngineeringRuns');
   // A GitHub App's installation, read for the in-app connect flow (7.45.00, lambda/engineering/connectors/github_apps.py)
   // through the token function, by name: its own role reads the App's key, and this role asks it for
@@ -164,9 +168,12 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // The GitHub Issues source configured from the connections (7.50.02, api-engineering-issues-sync.ts): its settings in
   // the shared secret and its schedule rule turned on, where the github_issues plugin is deployed.
   const issues = grantIssuesSourceFollow(ctx, role);
+  // A person's steering and answers on the engineering bus, and nothing else there (7.51.02, api-engineering-voice.ts).
+  const voice = grantEngineeringVoice(ctx, role);
   return {
     ...readiness,
     ...issues,
+    ...voice,
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,
@@ -283,7 +290,8 @@ export function createAssistantLambdas(
   // are admin-only in the handler. "Run now" writes the queued RUN row and
   // starts voc-agent-run; cancel marks the run and stops the execution. No
   // DeleteItem: DELETE /agents/{id} archives.
-  const agentsRole = ctx.role('AgentsLambdaRole');
+  // (a fixed name with the engineering agents on, for the engineering bus's policy: api-engineering-voice.ts)
+  const agentsRole = agentsApiRole(ctx);
   agentsTable.grant(agentsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
   // (an issue's trusted triage rows: the engineering runtime's alone, 7.50.00)
   denyIssueTriageWrites(ctx.stack, agentsRole, agentsTable);

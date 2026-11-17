@@ -326,8 +326,10 @@
     "gate": "GO"
    },
    "children": [],
-   "actions_available": true,
+   "steer_available": true,
+   "signals_available": true,
    "stop_available": true,
+   "board_available": false,
    "totals": {
     "messages": 8,
     "microvm_seconds": 2150,
@@ -402,8 +404,10 @@
      "at": "2026-11-17T08:00:00.000000Z"
     }
    ],
-   "actions_available": true,
+   "steer_available": true,
+   "signals_available": true,
    "stop_available": true,
+   "board_available": false,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,
@@ -454,8 +458,10 @@
    "lanes": {},
    "gates": {},
    "children": [],
-   "actions_available": true,
+   "steer_available": true,
+   "signals_available": true,
    "stop_available": true,
+   "board_available": false,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,
@@ -1251,20 +1257,16 @@
   "status": 200,
   "answer": {
    "signal": {
-    "event_id": "01JDAB0000000000000000STER",
     "signal": "restart",
     "target": {
      "kind": "agent",
      "id": "fixer-3"
     },
     "attempt": 2,
-    "agents": {
-     "fixer-3": "working"
-    },
-    "applied": {
-     "fixer-3": true
-    },
-    "at": "2026-11-17T09:45:00.000000Z"
+    "status": "sent",
+    "agents": {},
+    "applied": {},
+    "at": "2026-11-17T09:45:00Z"
    }
   }
  },

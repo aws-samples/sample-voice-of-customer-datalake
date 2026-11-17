@@ -36,7 +36,8 @@ describe('parseOverview', () => {
       messages: 3, microvm_seconds: 900, by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],
     })
     expect(Object.keys(overview)).toStrictEqual(
-      ['run', 'agents', 'actions_available', 'stop_available', 'totals', 'reactions', 'lanes', 'gates', 'children'])
+      ['run', 'agents', 'steer_available', 'signals_available', 'stop_available', 'board_available', 'totals', 'reactions',
+        'lanes', 'gates', 'children'])
   })
 
   it('reads a Stop under way and the decision point a run waits at; an unsaid Stop is unavailable', () => {

@@ -1761,7 +1761,7 @@
       "send": "Enviar al orquestador",
       "hint": "Enter envía; Shift+Enter empieza una línea nueva.",
       "sent": "Enviado al orquestador.",
-      "unavailable": "Esta implementación aún no puede enviar orientaciones ni respuestas: no conecta la API de agentes con el entorno de ejecución y el bus de ingeniería."
+      "unavailable": "Esta implementación no puede enviar orientaciones ni respuestas: no indica el bus de ingeniería a la API de agentes."
     },
     "agentControls": {
       "restart": "Reiniciar",
@@ -1940,7 +1940,7 @@
       "stopNow": "Parar ya, sin guardar…",
       "more": "Más controles de la ejecución",
       "save": "Guardar un punto de control",
-      "limited": "Pausar, Reanudar y Guardar necesitan el entorno y el bus de ingeniería, que este despliegue aún no conecta.",
+      "limited": "Pausar, Reanudar y Guardar no llegan a esta ejecución desde esta implementación: no indica ninguna función de inicio.",
       "refreshFailed": "No se pudo actualizar esta ejecución: ves su último estado correcto.",
       "retry": "Reintentar",
       "stopSent": "Parada enviada"

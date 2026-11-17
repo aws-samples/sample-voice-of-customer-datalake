@@ -752,9 +752,11 @@ class PersonBoard:
     The Agents API's routes (``/agents/engineering/<run_id>/board/tasks…``) call it for an administrator acting for
     themselves, never a delegated credential, like the run monitor's signals. Each change is the board store's own
     conditional write, with a history row naming ``human:<subject>`` (D1, D4), then the board's ``task.*`` event,
-    published from the API's own source (``voc.engineering/api``) with ``from.kind`` human: the only way the bus
-    takes a ``task.*`` from the API (bus/senders.py). A failed publish raises after the row is written; a retry is
-    the same change, so the same event (a redelivery). Never the coordinate task (signal the run instead)."""
+    to be published from the API's own source (``voc.engineering/api``) with ``from.kind`` human. Since 7.51.02 the
+    bus takes only a person's steering and answers from that source (bus/senders.py ``API_TYPES``, and the API role's
+    grant), so the Agents API refuses these actions before it asks the board (engineering/monitor.py
+    ``board_available``); this stays the board's side of them. A failed publish raises after the row is written; a
+    retry is the same change, so the same event (a redelivery). Never the coordinate task (signal the run instead)."""
 
     store: BoardStore
     publisher: Publisher

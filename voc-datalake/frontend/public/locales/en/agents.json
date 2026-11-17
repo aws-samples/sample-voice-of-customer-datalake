@@ -1700,7 +1700,7 @@
       "send": "Send to the orchestrator",
       "hint": "Enter sends; Shift+Enter starts a new line.",
       "sent": "Sent to the orchestrator.",
-      "unavailable": "Steering and replies can't be sent from this deployment yet: it doesn't connect the Agents API to the engineering runtime and bus."
+      "unavailable": "Steering and replies can't be sent from this deployment: it doesn't name the engineering bus to the Agents API."
     },
     "agentControls": {
       "restart": "Restart",
@@ -1879,7 +1879,7 @@
       "stopNow": "Stop now, without saving…",
       "more": "More run controls",
       "save": "Save a checkpoint",
-      "limited": "Pause, Resume and Save need the engineering runtime and bus, which this deployment doesn't connect yet.",
+      "limited": "Pause, Resume and Save can't reach this run from this deployment: it names no start function.",
       "refreshFailed": "Couldn't refresh this run: what you see is its last good state.",
       "retry": "Retry",
       "stopSent": "Stop sent"

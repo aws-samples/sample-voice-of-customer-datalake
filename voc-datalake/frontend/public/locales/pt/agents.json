@@ -1761,7 +1761,7 @@
       "send": "Enviar ao orquestrador",
       "hint": "Enter envia; Shift+Enter começa uma nova linha.",
       "sent": "Enviado ao orquestrador.",
-      "unavailable": "Esta implantação ainda não pode enviar orientações nem respostas: ela não conecta a API de agentes ao runtime e ao barramento de engenharia."
+      "unavailable": "Esta implantação não pode enviar orientações nem respostas: ela não indica o barramento de engenharia à API de agentes."
     },
     "agentControls": {
       "restart": "Reiniciar",
@@ -1940,7 +1940,7 @@
       "stopNow": "Parar já, sem guardar…",
       "more": "Mais controlos da execução",
       "save": "Guardar um ponto de controlo",
-      "limited": "Pausar, Retomar e Guardar precisam do ambiente e do barramento de engenharia, que esta implementação ainda não liga.",
+      "limited": "Pausar, Retomar e Guardar não chegam a esta execução a partir desta implantação: ela não indica nenhuma função de início.",
       "refreshFailed": "Não foi possível atualizar esta execução: vê o seu último estado válido.",
       "retry": "Tentar de novo",
       "stopSent": "Paragem enviada"

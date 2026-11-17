@@ -184,17 +184,17 @@ def test_a_restart_whose_answer_is_lost_names_the_child_to_open(lambda_context: 
     assert (status, answer['run_id']) == (503, CHILD_ID)
 
 
-def test_a_restart_signal_reaches_the_supervisor_with_where_it_starts(lambda_context: Any,
-                                                                      api: tuple[Any, Bus, Lambdas]) -> None:
+def test_a_restart_signal_goes_through_the_start_function_with_where_it_starts(lambda_context: Any,
+                                                                               api: tuple[Any, Bus, Lambdas]) -> None:
     _, bus, lambdas = api
-    status, _ = _call(lambda_context, 'POST', f'{BASE}/signals', body={
+    status, answer = _call(lambda_context, 'POST', f'{BASE}/signals', body={
         'signal': 'restart', 'from': 'fresh', 'task_id': world.FIX_TASK, 'attempt': 2, 'confirm': True})
-    assert status == 200
-    assert lambdas.requests == [{'action': 'signal', 'run_id': world.RUN, 'signal': 'restart', 'actor': 'admin-sub',
-                                 'restart_from': 'fresh', 'agent_id': world.FIXER, 'attempt': 2}]
-    record = json.loads(bus.entries[0]['Detail'])
-    assert (record['type'], record['summary']) == (
-        'signal.restart', 'restart afresh requested from the run monitor by alice for agent fixer-3.')
+    assert (status, answer['signal']['status']) == (200, 'sent')
+    # (voc-engineering-start's signal_run records who asked on the run's RUNLOG# rows and hands it on: 7.51.02)
+    assert lambdas.requests == [{'action': 'signal_run', 'run_id': world.RUN, 'signal': 'restart',
+                                 'actor': 'admin-sub', 'agent_id': world.FIXER, 'task_id': world.FIX_TASK, 'attempt': 2,
+                                 'restart_from': 'fresh'}]
+    assert bus.entries == []   # (nothing on the bus: the API's source says only steering and answers)
 
 
 def test_an_answer_to_an_agent_goes_only_on_its_own_questions_thread(lambda_context: Any,
