@@ -36,16 +36,24 @@
 //                     month, grouping or workflow id), from a few sample rows over this month and last
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers (admins only).
+// 7.51.00, the run workspace (mock-engineering-run-workspace.js, from the shared fixture): the runs list (GET …/runs), an
+// agent's thread and inspector tabs (…/agents/<agent>/{thread,changes,files,gate,memory}), the assertions, a person's
+// steering (POST …/steer), an ended run's restart as a child run (POST …/restart; the ended run and its child are served
+// too), the restart signal ({signal: restart, from: checkpoint | fresh, …, confirm: true}), and an answer to an agent
+// only on the thread its own question opened (400 without a thread_id, 404 on another thread).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
 // agent id).
 
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
 import { handleIssuesSourceRoutes } from './mock-issues-source.js';
+import {
+  CHILD_RUN_ID, ENDED_RUN_ID, agentRoute, assertions, otherOverview, restart, runsList, steer, workspaceOverview,
+} from './mock-engineering-run-workspace.js';
 
 export const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
 export const SAMPLE_FLOW_ID = 'wf_7c2d9e41a0b3';
 const PREFIX = '/agents/engineering/';
-const SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now'];
+const SIGNALS = ['save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart'];
 const TAIL_WINDOW = 20;
 const MAX_ANSWER_BYTES = 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -224,9 +232,11 @@ function overview() {
       byModel.set(row.model, sum);
     }
   }
+  const workspace = workspaceOverview(run.agents);
   return {
-    run: run.meta,
-    agents: run.agents,
+    run: { ...run.meta, ...workspace.run },
+    agents: workspace.agents,
+    lanes: workspace.lanes, gates: workspace.gates, children: workspace.children,
     // The dev mock plays a stack that names the runtime and the bus, so its actions answer; and the start function,
     // so its Stop does (7.50.03).
     actions_available: true,
@@ -297,16 +307,27 @@ function signalTarget(body) {
   return { kind: 'agent', id: task.lease.agent };
 }
 
+/** Why a signal's body is refused (the server's parse_signal), or null. */
+function signalRefusal(body) {
+  if (!SIGNALS.includes(body?.signal)) return `signal is one of ${SIGNALS.join(', ')}`;
+  if (body.signal === 'stop_now' && body.confirm !== true) return 'stop_now stops without a checkpoint: send confirm: true';
+  if (body.signal !== 'restart') return null;
+  if (!['checkpoint', 'fresh'].includes(body.from)) return "a restart's from is checkpoint or fresh";
+  if (body.confirm !== true) return "a restart ends the agent's session: send confirm: true";
+  return body.task_id === undefined ? "a restart is an agent's: name its task_id and the attempt you saw" : null;
+}
+
 function signal(body) {
-  if (!SIGNALS.includes(body?.signal)) return [400, { message: `signal is one of ${SIGNALS.join(', ')}` }];
-  if (body.signal === 'stop_now' && body.confirm !== true) return [400, { message: 'stop_now stops without a checkpoint: send confirm: true' }];
+  const refused = signalRefusal(body);
+  if (refused) return [400, { message: refused }];
   const target = signalTarget(body);
   if (Array.isArray(target)) return [target[0], { message: target[1] }];
   // The request is recorded first (as the server does), then the supervisor applies it or refuses.
   const at = new Date().toISOString();
   const whom = target.kind === 'agent' ? `agent ${target.id}` : 'the whole run';
+  const start = { checkpoint: ' from its checkpoint', fresh: ' afresh' }[body.from] ?? '';
   const request = say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `${body.signal.replace('_', ' ')} requested from the run monitor by alex for ${whom}.`, { threadId: 'signals', taskId: body.task_id, at });
+    `${body.signal.replace('_', ' ')}${start} requested from the run monitor by alex for ${whom}.`, { threadId: 'signals', taskId: body.task_id, at });
   const notApplied = (why) => say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
     `signal.${body.signal} request ${request}: not applied: ${why}`, { threadId: 'signals', taskId: body.task_id });
   if (body.signal === 'resume' && run.outOfBudget) {
@@ -319,7 +340,8 @@ function signal(body) {
     return [503, { message: 'The agent is busy with another move: send the signal again' }];
   }
   const reached = run.agents.filter((a) => target.kind === 'run' || a.agent === target.id);
-  const next = { save: null, pause: 'pause_requested', resume: 'working', shutdown: 'pause_requested', stop_now: 'stopped' }[body.signal];
+  const next = { save: null, pause: 'pause_requested', resume: 'working', shutdown: 'pause_requested', stop_now: 'stopped',
+    restart: 'booting' }[body.signal];
   // As the supervisor answers: a Save checkpoints (applied); any other signal is applied when it changes the status
   // (a Resume of an agent already working is nothing to do).
   const applied = Object.fromEntries(reached.map((a) => [a.agent, next === null || a.status !== next]));
@@ -339,8 +361,15 @@ function answer(body) {
   if (body.to !== 'conductor' && !(body.to === 'agent' && typeof body.agent === 'string')) {
     return [400, { message: "to is 'conductor', or 'agent' with the agent's id in agent" }];
   }
+  if (to.kind === 'agent' && body.thread_id === undefined) {
+    return [400, { message: 'an answer to an agent names the thread_id of its question (to steer it, steer the run)' }];
+  }
   if (to.kind === 'agent' && !run.agents.some((a) => a.agent === to.id)) return [404, { message: 'no such agent in this run' }];
   if (body.thread_id !== undefined && !ID.test(String(body.thread_id))) return [400, { message: 'thread_id is the id of the thread you answer' }];
+  const asked = run.messages.some((m) => m.type === 'msg.question' && m.message.from.id === to.id && m.message.thread_id === body.thread_id);
+  if (to.kind === 'agent' && !asked) {
+    return [404, { message: `agent ${to.id} asked no question on this thread: an answer to an agent replies on the thread its own question opened` }];
+  }
   const threadId = body.thread_id ?? `human-${run.messages.length + 1}`;
   const at = new Date().toISOString();
   say({ kind: 'human', id: 'mock-admin' }, to, 'msg.answer', text, { threadId, at });
@@ -380,10 +409,12 @@ function reports(rest, url) {
 
 function routeGet(sub, rest, url) {
   if (sub === 'reports') return reports(rest, url);
+  if (sub === 'agents' && rest.length >= 2) return agentRoute(rest[0], rest.slice(1), url, run.agents.map((a) => a.agent));
   if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
   if (sub === undefined) return [200, overview()];
   if (sub === 'board') return [200, { tasks: run.tasks }];
   if (sub === 'conversation') return [200, conversation(url)];
+  if (sub === 'assertions') return assertions();
   return [404, { message: 'Engineering run not found' }];
 }
 
@@ -501,6 +532,11 @@ function routePost(sub, rest, body) {
   if (sub === 'messages') return answer(body ?? {});
   if (sub === 'stop') return stopRun(body ?? {});
   if (sub === 'reactions') return askReactions();
+  if (sub === 'steer') {
+    if (run.meta.ended_at !== null) return [409, { message: 'This run has ended' }];
+    return steer(body ?? {}, run.agents.map((a) => a.agent), say, SAMPLE_RUN_ID);
+  }
+  if (sub === 'restart') return restart(SAMPLE_RUN_ID, body ?? {}, run.meta.ended_at === null);
   return [404, { message: 'Engineering run not found' }];
 }
 
@@ -824,8 +860,9 @@ function startRun(body) {
   return [202, { run: { run_id: SAMPLE_RUN_ID, status: 'active', workflow_id: fields.workflow_id, started_by: 'sub-admin-demo' } }];
 }
 
-function startRoute(req, res, send, shared) {
-  if (req.method !== 'POST') send(405, { message: 'Method not allowed' });
+function startRoute(req, res, send, shared, url) {
+  if (req.method === 'GET') send(...(isAdmin() ? runsList(url) : [403, { message: 'Admin access required' }]));
+  else if (req.method !== 'POST') send(405, { message: 'Method not allowed' });
   else if (!isAdmin()) send(403, { message: 'Admin access required' });
   else shared.collectJson(req, res, (body) => send(...startRun(body)));
 }
@@ -834,6 +871,15 @@ function spendRoute(req, res, send, _shared, url) {
   if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
   else if (isAdmin()) send(...monthSpend(url));
   else send(403, { message: 'Admin access required' });
+}
+
+/** The ended run and its child (7.51.00): their overviews, and the ended run's restart (the child is live: 409). */
+function otherRunRoute(req, res, send, shared, runId, sub) {
+  if (!isAdmin()) send(403, { message: 'Admin access required' });
+  else if (req.method === 'GET' && sub === undefined) send(200, otherOverview(runId));
+  else if (req.method === 'POST' && sub === 'restart') {
+    shared.collectJson(req, res, (body) => send(...restart(runId, body ?? {}, runId === CHILD_RUN_ID)));
+  } else send(404, { message: 'Engineering run not found' });
 }
 
 /** The routes of one exact path under the prefix. */
@@ -855,7 +901,11 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
     return true;
   }
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
-  const nested = (req.method === 'GET' && sub === 'reports') || (req.method === 'POST' && sub === 'board');
+  const nested = (req.method === 'GET' && ['reports', 'agents'].includes(sub)) || (req.method === 'POST' && sub === 'board');
+  if ([ENDED_RUN_ID, CHILD_RUN_ID].includes(runId) && rest.length === 0) {
+    otherRunRoute(req, res, send, shared, runId, sub);
+    return true;
+  }
   if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) {
     send(404, { message: 'Engineering run not found' });
     return true;

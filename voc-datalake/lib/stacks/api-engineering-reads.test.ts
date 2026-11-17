@@ -62,10 +62,41 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
       ['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject', 's3:PutObject']);
     expect(JSON.stringify(statements)).not.toMatch(/Delete|BatchWrite/);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
-    expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
+    // (7.51.00: and the run workspace's reads of the agents' own objects, below)
+    expect(objects.map((statement) => statement.resource)).toStrictEqual([
+      expect.stringMatching(/"\/ws\/default\/reports\/\*"/), expect.stringMatching(/_transcripts/)]);
     const puts = statements.filter((statement) => statement.actions.includes('s3:PutObject'));
     expect(puts.map((statement) => [statement.actions, statement.resource])).toStrictEqual(
       [[['s3:PutObject'], expect.stringMatching(/"\/ws\/default\/_readiness\/\*"/)]]);
+  });
+
+  it('read the run workspace\'s objects exactly: transcripts, patches, gate records and manifests, no write', () => {
+    // (7.51.00, api-engineering-run-reads.ts: an agent's thread, changes and gate, an ended run's manifest)
+    const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
+    const reads = statements.filter((statement) => /_transcripts|_patches|_gate|_manifest/.test(
+      `${statement.resource}${JSON.stringify(statement.condition ?? {})}`));
+    expect(reads.map((statement) => [statement.actions, statement.condition])).toStrictEqual([
+      [['s3:GetObject'], undefined], [['s3:ListBucket'], { StringLike: { 's3:prefix': [
+        'ws/default/runs/*/*/commits/*/_transcripts/*', 'ws/default/runs/*/*/commits/*/_patches/*'] } }]]);
+    // The exact object keys, in order: never a checkpoint, a finding, a seed or a run's other objects.
+    const keys = [...reads[0]?.resource.matchAll(/"(\/ws\/[^"]*)"/g) ?? []].map((match) => match[1]);
+    expect(keys).toStrictEqual(['/ws/default/runs/*/*/commits/*/_transcripts/*',
+      '/ws/default/runs/*/*/commits/*/_patches/*', '/ws/default/runs/*/*/commits/*/_gate/*',
+      '/ws/default/runs/*/_manifest/*']);
+    expect(JSON.stringify(statements)).not.toMatch(/_checkpoints|_seed|s3:\*/);
+  });
+
+  it('list the workspace bucket only under the transcripts\' and patches\' prefixes, in one statement', () => {
+    const listings = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.some((action) => action.startsWith('s3:List')));
+    // (the bucket itself, never an object pattern; no other listing reaches it, conditioned or not)
+    expect(listings.map((statement) => [statement.actions, /\/ws\//.test(statement.resource)])).toStrictEqual(
+      [[['s3:ListBucket'], false]]);
+  });
+
+  it('give the agents API no read of a run\'s own objects while the module is off', () => {
+    expect(JSON.stringify(policyStatementsOf(apiTemplate(), 'AgentsLambdaRole'))).not.toMatch(
+      /_transcripts|_patches|_manifest|ListBucket/);
   });
 
   it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read', () => {

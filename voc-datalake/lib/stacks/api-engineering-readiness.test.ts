@@ -57,9 +57,12 @@ describe('the readiness checks\' grants on the agents API', { timeout: SYNTH_TIM
     expect(puts.map((statement) => statement.resource)).toStrictEqual(
       [expect.stringContaining(`/${ENGINEERING_WORKSPACE_READINESS_KEYS}"`)]);
     expect(ENGINEERING_WORKSPACE_READINESS_KEYS).toBe('ws/default/_readiness/*');
-    // The runs' objects stay unreadable and unwritable to this role, and nothing is deleted.
-    expect(JSON.stringify(all.filter((statement) => statement.actions.some((action) => action.startsWith('s3:')))))
-      .not.toMatch(/\/runs\/|DeleteObject|PutObjectAcl|PutBucket/);
+    // The runs' objects stay unwritable to this role, and nothing is deleted; it reads only the run workspace's
+    // (7.51.00, api-engineering-reads.test.ts pins them), and only the probe's key is written.
+    const s3 = all.filter((statement) => statement.actions.some((action) => action.startsWith('s3:')));
+    expect(JSON.stringify(s3)).not.toMatch(/DeleteObject|PutObjectAcl|PutBucket/);
+    expect(JSON.stringify(s3.filter((statement) => !statement.actions.every((action) => ['s3:GetObject',
+      's3:ListBucket'].includes(action))))).not.toMatch(/\/runs\//);
   });
 
   it('give no role here a merge, a ruleset or branch protection write, nor any write of a repository host', () => {

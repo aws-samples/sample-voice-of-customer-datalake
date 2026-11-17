@@ -30,6 +30,7 @@ import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParamete
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
+import { grantEngineeringRunReads } from './api-engineering-run-reads';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 import { denyIssueTriageWrites } from './engineering-runtime-grants';
@@ -99,9 +100,11 @@ export interface AssistantLambdas {
  * runtime's own function) and, since 7.45.00, on the GitHub Apps' token function for an installation's read
  * (engineering-app-tokens.ts: it reads an App's key with its own role; this one never does), and GetObject on the workspace
  * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
- * DynamoDB-only grant, `AgentsTablesKey`). No ListBucket (it would list every
+ * DynamoDB-only grant, `AgentsTablesKey`). No unconditioned ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
- * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
+ * missing (404), since the role may read every report key. Since 7.51.00 the run workspace's reads of the agents'
+ * transcripts, patches and gate records and the runs' manifests, with a listing held to the transcripts' and patches'
+ * prefixes (api-engineering-run-reads.ts). Returns the env that turns the routes on (shared/engineering_agents.py),
  * or undefined: off, the role gets nothing and the routes answer 404.
  */
 function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
@@ -152,6 +155,9 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     reason: 'Read-only on the engineering workspace\'s report objects (one per run, level, subject and version, known only at run time); never the runs\' own objects',
     findings: [resourceFinding(reports)],
   }]);
+  // The run workspace's reads of the agents' transcripts, patches and gate records and the runs' manifests, and its
+  // listings of the transcripts' and patches' prefixes alone (7.51.00, api-engineering-run-reads.ts).
+  grantEngineeringRunReads(role, engineeringWorkspaceBucket);
   const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
   // The readiness checks' own reads and the workspace bucket's probe (7.50.00, api-engineering-readiness.ts).
   const readiness = grantEngineeringReadiness(ctx, role);
