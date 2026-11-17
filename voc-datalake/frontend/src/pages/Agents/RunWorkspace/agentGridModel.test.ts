@@ -1,13 +1,13 @@
 /**
  * @fileoverview Several agents at once: the tabs (open beside the active one, close and the next active, the live
- * ones with the active one kept, the overflow), the grid's split tree of agent leaves (1, 2 or 4 panes, a pane filled,
+ * ones with the active one kept), the grid's split tree of agent leaves (1, 2 or 4 panes, a pane filled,
  * closed with its split collapsing, a divider moved no further than MIN_FRAC, a resize keeping the agents), and the
  * layout kept per run in this tab's sessionStorage, per workspace; and the workspace's addresses.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  DEFAULT_LAYOUT, MIN_FRAC, VISIBLE_TABS, gridOf, leavesOf, liveTabs, loadLayout, nextActiveAfterClose, openTab, regrid,
-  removeLeaf, replaceLeaf, resizeSplit, saveLayout, sizeOf, splitOverflow,
+  DEFAULT_LAYOUT, MIN_FRAC, gridOf, leavesOf, liveTabs, loadLayout, nextActiveAfterClose, openTab, regrid,
+  removeLeaf, replaceLeaf, resizeSplit, saveLayout, sizeOf,
 } from './agentGridModel'
 import { readRunAddress, runWorkspacePath } from './runWorkspacePaths'
 import type { GridSplit } from './agentGridModel'
@@ -29,12 +29,6 @@ describe('the tabs', () => {
 
   it('drops the tabs of agents no longer in the run and keeps the active session a tab', () => {
     expect(liveTabs(['o', 'gone', 'a'], new Set(['o', 'a', 'b']), 'b')).toStrictEqual(['o', 'a', 'b'])
-  })
-
-  it('puts the tabs past the strip in the overflow, the active one always on the strip', () => {
-    const tabs = Array.from({ length: VISIBLE_TABS + 2 }, (_, index) => `t${String(index)}`)
-    const { shown, more } = splitOverflow(tabs, tabs.at(-1) ?? null)
-    expect([shown.length, shown.includes(tabs.at(-1) ?? ''), more.length]).toStrictEqual([VISIBLE_TABS, true, 2])
   })
 })
 

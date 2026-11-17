@@ -1,16 +1,18 @@
 /**
- * @fileoverview The open sessions as tabs (7.51.00, the default; KiroCrew's SessionTabStrip, adapted in agentGridModel.ts):
- * one tab per session open, the one shown selected, a spinner on an agent at work, a close on each, the tabs past
- * the strip's room in a "more" menu, and a picker that opens any other agent of the run.
+ * @fileoverview The open sessions as tabs (7.51.00, the default; KiroCrew's SessionTabStrip, adapted in
+ * agentGridModel.ts), on the app's own tabs component (IconTabs: the `tabs-rail` that scrolls, one `tab` per session,
+ * the one shown selected, a spinner on an agent at work). Following the APG tabs pattern, nothing but the tabs sits in
+ * the tablist: the close button (a 28 px `icon-btn`, "Close <session>") is beside it and closes the session shown,
+ * and one "Open another agent" menu opens any agent of the run not open yet.
  *
  * @module pages/Agents/RunWorkspace/AgentTabs
  */
 import { useId } from 'react'
-import clsx from 'clsx'
-import { Loader2, X } from 'lucide-react'
+import { Bot, Loader2, Workflow, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { splitOverflow } from './agentGridModel'
+import { IconTabs } from '../../../components/IconTabs/IconTabs'
 import { useSessionName } from './useSessionLayout'
+import type { LucideIcon } from 'lucide-react'
 import type { EngineeringAgent } from '../../../api/engineeringRunsApi'
 
 interface Props {
@@ -24,42 +26,33 @@ interface Props {
 
 export function AgentTabs({ tabs, current, agents, orchestrator, onOpen, onClose }: Readonly<Props>) {
   const { t } = useTranslation('agents')
-  const moreId = useId()
+  const openId = useId()
   const nameOf = useSessionName(orchestrator)
-  const { shown, more } = splitOverflow(tabs, current)
   const others = agents.filter((agent) => !tabs.includes(agent.agent))
   const working = new Set(agents.filter((agent) => agent.status === 'working').map((agent) => agent.agent))
+  const icons: Readonly<Record<string, LucideIcon>> = Object.fromEntries(tabs.map((tab) => [tab, tab === orchestrator ? Workflow : Bot]))
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border px-2 py-1">
-      <div role="tablist" aria-label={t('runWorkspace.sessions.tabs')} className="flex min-w-0 flex-wrap gap-1">
-        {shown.map((tab) => (
-          <span key={tab} className={clsx('inline-flex items-center rounded-md border', tab === current ? 'border-accent bg-accent-subtle' : 'border-border')}>
-            <button type="button" role="tab" aria-selected={tab === current} onClick={() => onOpen(tab)}
-              className="inline-flex max-w-[12rem] items-center gap-1 px-2 py-0.5 text-[12px] font-medium">
+      <div className="min-w-0 flex-1">
+        <IconTabs tabs={tabs} active={current ?? ''} icons={icons} label={t('runWorkspace.sessions.tabs')} onSelect={onOpen}
+          labelOf={(tab) => (
+            <>
+              <span className="max-w-[12rem] truncate">{nameOf(tab)}</span>
               {working.has(tab) && <Loader2 size={12} className="animate-spin text-accent-text" aria-label={t('runWorkspace.working')} />}
-              <span className="truncate">{nameOf(tab)}</span>
-            </button>
-            <button type="button" className="px-1 text-muted hover:text-text" onClick={() => onClose(tab)}
-              aria-label={t('runWorkspace.sessions.close', { name: nameOf(tab) })}>
-              <X size={12} aria-hidden="true" />
-            </button>
-          </span>
-        ))}
+            </>
+          )} />
       </div>
-      {more.length > 0 && (
-        <span className="inline-flex items-center gap-1 text-[12px]">
-          <label htmlFor={`${moreId}-more`} className="text-muted">{t('runWorkspace.sessions.more', { count: more.length })}</label>
-          <select id={`${moreId}-more`} className="select w-auto text-[12px]" value="" onChange={(event) => onOpen(event.target.value)}>
-            <option value="" disabled>{t('runWorkspace.sessions.choose')}</option>
-            {more.map((tab) => <option key={tab} value={tab}>{nameOf(tab)}</option>)}
-          </select>
-        </span>
+      {current !== null && tabs.includes(current) && (
+        <button type="button" className="icon-btn" onClick={() => onClose(current)}
+          aria-label={t('runWorkspace.sessions.close', { name: nameOf(current) })} title={t('runWorkspace.sessions.close', { name: nameOf(current) })}>
+          <X size={16} aria-hidden="true" />
+        </button>
       )}
       {others.length > 0 && (
-        <span className="ml-auto inline-flex items-center gap-1 text-[12px]">
-          <label htmlFor={`${moreId}-open`} className="text-muted">{t('runWorkspace.sessions.open')}</label>
-          <select id={`${moreId}-open`} className="select w-auto text-[12px]" value="" onChange={(event) => onOpen(event.target.value)}>
-            <option value="" disabled>{t('runWorkspace.sessions.choose')}</option>
+        <span className="inline-flex items-center gap-1 text-[12px]">
+          <label htmlFor={openId} className="sr-only">{t('runWorkspace.sessions.openAnother')}</label>
+          <select id={openId} className="select w-auto text-[12px]" value="" onChange={(event) => onOpen(event.target.value)}>
+            <option value="" disabled>{t('runWorkspace.sessions.openAnother')}</option>
             {others.map((agent) => <option key={agent.agent} value={agent.agent}>{nameOf(agent.agent)}</option>)}
           </select>
         </span>

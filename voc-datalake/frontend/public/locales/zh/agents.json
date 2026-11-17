@@ -1325,14 +1325,12 @@
     "runSignals": "运行控制",
     "agentSignals": "智能体 {{agent}}",
     "signals": {
-      "save": "保存",
       "pause": "暂停",
       "resume": "继续",
       "shutdown": "停止",
       "stop_now": "立即停止，不保存"
     },
     "signalSent": "已发送。",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "不保存就立即停止？",
     "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“停止”。",
     "stopNowAgentMessage": "代理会立即停止，不留检查点：它尚未保存的内容都会丢失。若要保留，请改用“停止”。",
@@ -1378,12 +1376,9 @@
       "progress": "最近进展",
       "metering": "用量",
       "stuck": "似乎卡住了：{{reason}}",
-      "inspect": "最近的工具调用（{{n, number}}）",
-      "noTools": "还没有工具调用。",
       "for": "已 {{age}}",
       "ago": "{{age}}前",
       "started": "开始",
-      "continuation": "第 {{n, number}} 次续接",
       "microvmTime": "MicroVM 时间 {{seconds, number}} 秒"
     },
     "noAgents": "还没有智能体开始工作。",
@@ -1403,23 +1398,11 @@
       "failed": "失败",
       "done": "完成"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "回复",
     "replyTo": "回复 {{who}}",
-    "answerTo": "发送给",
-    "conductor": "运行的指挥者",
-    "replyingIn": "在线程 {{thread}} 中回复",
-    "newThread": "开始新线程",
     "answer": "你的消息",
     "bytes": "{{used, number}} / {{max, number}} 字节",
     "send": "发送",
-    "noMessages": "还没有消息。",
-    "tabs": {
-      "agents": "智能体",
-      "board": "看板",
-      "conversation": "对话",
-      "reports": "报告"
-    },
     "board": {
       "post": "发布任务",
       "role": "角色",
@@ -1443,7 +1426,6 @@
       "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。",
       "release": "交还给代理"
     },
-    "panels": "运行的代理、看板、对话和报告",
     "reports": {
       "title": "报告：{{subject}}",
       "version": "版本",
@@ -1741,15 +1723,14 @@
       "asGrid": "{{count, number}} 宫格",
       "tabs": "已打开的会话",
       "close": "关闭 {{name}}",
-      "more": "更多（{{count, number}}）",
       "choose": "选择…",
-      "open": "打开",
       "noAgent": "此运行中没有智能体 {{agent}}。",
       "grid": "并排显示的会话",
       "divider": "移动分隔线",
       "paneAgent": "此窗格的智能体",
       "closePane": "关闭此窗格",
-      "emptyPane": "为此窗格选择一个智能体。"
+      "emptyPane": "为此窗格选择一个智能体。",
+      "openAnother": "打开其他代理"
     },
     "thread": {
       "label": "{{agent}} 的线程",
@@ -1794,8 +1775,6 @@
       "sent": "已发送给编排者。"
     },
     "agentControls": {
-      "save": "保存",
-      "stop": "停止",
       "restart": "重新开始",
       "restartTitle": "重新开始 {{agent}}？",
       "restartMessage": "它的会话会结束并重新开始。若从头开始，自上一个检查点以来的工作也会丢失。",
@@ -1803,7 +1782,9 @@
       "fromChoices": {
         "checkpoint": "最新的检查点",
         "fresh": "从头开始其任务"
-      }
+      },
+      "more": "{{agent}} 的更多操作",
+      "restartItem": "重新开始…"
     },
     "restartRun": {
       "open": "重新开始运行",
@@ -1852,6 +1833,8 @@
         "files": "文件",
         "gate": "门禁",
         "assertions": "断言",
+        "board": "看板",
+        "reports": "报告",
         "cost": "费用",
         "memory": "记忆与 Learn"
       }
@@ -1928,7 +1911,6 @@
     },
     "cost": {
       "cost": "费用",
-      "microvm": "MicroVM",
       "model": "模型",
       "skill": "技能",
       "attempt": "尝试",
@@ -1962,6 +1944,17 @@
       "more": "显示更多",
       "moreFailed": "无法读取下一页。",
       "empty": "这个月没有启动任何运行。"
+    },
+    "controls": {
+      "stopping": "正在停止…",
+      "moreStop": "更多停止方式",
+      "stopNow": "不保存，立即停止…",
+      "more": "更多操作",
+      "save": "保存检查点",
+      "limited": "暂停、继续和保存需要工程运行时，本部署尚未接入。停止仍会结束运行。",
+      "refreshFailed": "无法刷新此运行：显示的是最后一次正常读取的状态。",
+      "retry": "重试",
+      "stopSent": "已发送停止"
     }
   }
 }

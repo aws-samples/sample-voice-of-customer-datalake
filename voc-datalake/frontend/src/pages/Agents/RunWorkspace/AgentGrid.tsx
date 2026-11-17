@@ -14,7 +14,7 @@ import { SessionThread } from './SessionThread'
 import { useSessionName } from './useSessionLayout'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import type { GridLeaf, GridNode, GridSplit } from './agentGridModel'
-import type { EngineeringAgent } from '../../../api/engineeringRunsApi'
+import type { EngineeringAgent, RunLane } from '../../../api/engineeringRunsApi'
 
 /** How far one arrow key moves a divider. */
 const KEY_STEP = 0.05
@@ -27,6 +27,7 @@ interface Props {
   orchestrator: string | null
   current: string | null
   canAct: boolean
+  lanes: Readonly<Record<string, readonly RunLane[]>>
   onFocus: (agent: string) => void
   onFill: (paneId: string, agent: string | null) => void
   onClosePane: (paneId: string) => void
@@ -82,7 +83,8 @@ function Pane({ pane, ...props }: Readonly<Omit<Props, 'grid'> & { pane: GridLea
     onPointerDown={() => { if (agent !== undefined && agent.agent !== props.current) props.onFocus(agent.agent) }}>
       {agent === undefined
         ? <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-muted">{t('runWorkspace.sessions.emptyPane')}<span className="ml-auto flex gap-1">{tools}</span></div>
-        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} canAct={props.canAct} tools={tools} />}
+        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} canAct={props.canAct}
+          focused={agent.agent === props.current} lanes={props.lanes} tools={tools} />}
     </div>
   )
 }

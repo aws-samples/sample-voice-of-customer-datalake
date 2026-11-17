@@ -1325,14 +1325,12 @@
     "runSignals": "実行の操作",
     "agentSignals": "エージェント {{agent}}",
     "signals": {
-      "save": "保存",
       "pause": "一時停止",
       "resume": "再開",
       "shutdown": "停止",
       "stop_now": "保存せずに今すぐ停止"
     },
     "signalSent": "送信しました。",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "保存せずに今すぐ停止しますか？",
     "stopNowMessage": "作業はチェックポイントなしで直ちに停止し、まだ保存されていない内容は失われます。残したい場合は「停止」を使ってください。",
     "stopNowAgentMessage": "エージェントはチェックポイントなしで直ちに停止し、まだ保存していない内容は失われます。残したい場合は「停止」を使ってください。",
@@ -1378,12 +1376,9 @@
       "progress": "最新の進捗",
       "metering": "使用量",
       "stuck": "停滞しているようです: {{reason}}",
-      "inspect": "最近のツール呼び出し（{{n, number}}）",
-      "noTools": "まだツール呼び出しはありません。",
       "for": "{{age}} 経過",
       "ago": "{{age}} 前",
       "started": "開始",
-      "continuation": "継続 {{n, number}}",
       "microvmTime": "MicroVM 時間 {{seconds, number}} 秒"
     },
     "noAgents": "まだ開始したエージェントはいません。",
@@ -1403,23 +1398,11 @@
       "failed": "失敗",
       "done": "完了"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "返信",
     "replyTo": "{{who}} に返信",
-    "answerTo": "宛先",
-    "conductor": "実行のコンダクター",
-    "replyingIn": "スレッド {{thread}} で返信中",
-    "newThread": "新しいスレッドを始める",
     "answer": "メッセージ",
     "bytes": "{{used, number}} / {{max, number}} バイト",
     "send": "送信",
-    "noMessages": "まだメッセージはありません。",
-    "tabs": {
-      "agents": "エージェント",
-      "board": "ボード",
-      "conversation": "会話",
-      "reports": "レポート"
-    },
     "board": {
       "post": "タスクを投稿",
       "role": "ロール",
@@ -1443,7 +1426,6 @@
       "blockOverMessage": "別の人が担当しています ({{holder}})。ブロックするとその人の担当は終わります。",
       "release": "エージェントに戻す"
     },
-    "panels": "実行のエージェント、ボード、会話、レポート",
     "reports": {
       "title": "レポート: {{subject}}",
       "version": "バージョン",
@@ -1741,15 +1723,14 @@
       "asGrid": "{{count, number}} 分割",
       "tabs": "開いているセッション",
       "close": "{{name}} を閉じる",
-      "more": "その他（{{count, number}}）",
       "choose": "選択…",
-      "open": "開く",
       "noAgent": "この実行にはエージェント {{agent}} はいません。",
       "grid": "セッションを並べて表示",
       "divider": "区切り線を移動",
       "paneAgent": "このペインのエージェント",
       "closePane": "このペインを閉じる",
-      "emptyPane": "このペインに表示するエージェントを選んでください。"
+      "emptyPane": "このペインに表示するエージェントを選んでください。",
+      "openAnother": "別のエージェントを開く"
     },
     "thread": {
       "label": "{{agent}} のスレッド",
@@ -1794,8 +1775,6 @@
       "sent": "オーケストレーターに送信しました。"
     },
     "agentControls": {
-      "save": "保存",
-      "stop": "停止",
       "restart": "再起動",
       "restartTitle": "{{agent}} を再起動しますか？",
       "restartMessage": "セッションが終了し、もう一度始まります。最初からやり直す場合は、最後のチェックポイント以降の作業も失われます。",
@@ -1803,7 +1782,9 @@
       "fromChoices": {
         "checkpoint": "最新のチェックポイント",
         "fresh": "タスクを最初から"
-      }
+      },
+      "more": "{{agent}} のその他の操作",
+      "restartItem": "再起動…"
     },
     "restartRun": {
       "open": "実行をやり直す",
@@ -1852,6 +1833,8 @@
         "files": "ファイル",
         "gate": "ゲート",
         "assertions": "アサーション",
+        "board": "ボード",
+        "reports": "レポート",
         "cost": "費用",
         "memory": "メモリと Learn"
       }
@@ -1928,7 +1911,6 @@
     },
     "cost": {
       "cost": "費用",
-      "microvm": "MicroVM",
       "model": "モデル",
       "skill": "スキル",
       "attempt": "試行",
@@ -1962,6 +1944,17 @@
       "more": "さらに表示",
       "moreFailed": "次のページを読み込めませんでした。",
       "empty": "この月に開始された実行はありません。"
+    },
+    "controls": {
+      "stopping": "停止中…",
+      "moreStop": "その他の停止方法",
+      "stopNow": "保存せずに今すぐ停止…",
+      "more": "その他の操作",
+      "save": "チェックポイントを保存",
+      "limited": "一時停止、再開、保存にはエンジニアリングランタイムが必要ですが、このデプロイではまだ接続されていません。停止すれば実行は終了します。",
+      "refreshFailed": "この実行を更新できませんでした。表示は最後に取得できた状態です。",
+      "retry": "再試行",
+      "stopSent": "停止を送信しました"
     }
   }
 }

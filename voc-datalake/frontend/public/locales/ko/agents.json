@@ -1325,14 +1325,12 @@
     "runSignals": "실행 제어",
     "agentSignals": "에이전트 {{agent}}",
     "signals": {
-      "save": "저장",
       "pause": "일시 중지",
       "resume": "다시 시작",
       "shutdown": "중지",
       "stop_now": "저장하지 않고 즉시 중지"
     },
     "signalSent": "보냈습니다.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "저장하지 않고 즉시 중지할까요?",
     "stopNowMessage": "작업이 체크포인트 없이 바로 중지되며, 아직 저장되지 않은 내용은 사라집니다. 보존하려면 대신 중지를 사용하세요.",
     "stopNowAgentMessage": "에이전트가 체크포인트 없이 바로 중지되며, 아직 저장하지 않은 내용은 사라집니다. 보존하려면 대신 중지를 사용하세요.",
@@ -1378,12 +1376,9 @@
       "progress": "최근 진행",
       "metering": "사용량",
       "stuck": "멈춘 것 같습니다: {{reason}}",
-      "inspect": "최근 도구 호출 ({{n, number}})",
-      "noTools": "아직 도구 호출이 없습니다.",
       "for": "{{age}} 동안",
       "ago": "{{age}} 전",
       "started": "시작",
-      "continuation": "계속 {{n, number}}",
       "microvmTime": "MicroVM 시간 {{seconds, number}}초"
     },
     "noAgents": "아직 시작한 에이전트가 없습니다.",
@@ -1403,23 +1398,11 @@
       "failed": "실패",
       "done": "완료"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "답장",
     "replyTo": "{{who}}에게 답장",
-    "answerTo": "받는 사람",
-    "conductor": "실행의 지휘자",
-    "replyingIn": "스레드 {{thread}}에서 답장 중",
-    "newThread": "새 스레드 시작",
     "answer": "메시지",
     "bytes": "{{used, number}} / {{max, number}}바이트",
     "send": "보내기",
-    "noMessages": "아직 메시지가 없습니다.",
-    "tabs": {
-      "agents": "에이전트",
-      "board": "보드",
-      "conversation": "대화",
-      "reports": "보고서"
-    },
     "board": {
       "post": "작업 게시",
       "role": "역할",
@@ -1443,7 +1426,6 @@
       "blockOverMessage": "다른 사람이 맡고 있습니다 ({{holder}}). 차단하면 그 사람의 담당이 끝납니다.",
       "release": "에이전트에게 돌려주기"
     },
-    "panels": "실행의 에이전트, 보드, 대화, 보고서",
     "reports": {
       "title": "보고서: {{subject}}",
       "version": "버전",
@@ -1741,15 +1723,14 @@
       "asGrid": "{{count, number}}분할 그리드",
       "tabs": "열린 세션",
       "close": "{{name}} 닫기",
-      "more": "더 보기 ({{count, number}})",
       "choose": "선택…",
-      "open": "열기",
       "noAgent": "이 실행에는 {{agent}} 에이전트가 없습니다.",
       "grid": "세션 나란히 보기",
       "divider": "구분선 이동",
       "paneAgent": "이 패널의 에이전트",
       "closePane": "이 패널 닫기",
-      "emptyPane": "이 패널에 표시할 에이전트를 선택하세요."
+      "emptyPane": "이 패널에 표시할 에이전트를 선택하세요.",
+      "openAnother": "다른 에이전트 열기"
     },
     "thread": {
       "label": "{{agent}}의 스레드",
@@ -1794,8 +1775,6 @@
       "sent": "오케스트레이터에게 보냈습니다."
     },
     "agentControls": {
-      "save": "저장",
-      "stop": "중지",
       "restart": "재시작",
       "restartTitle": "{{agent}}을(를) 재시작할까요?",
       "restartMessage": "세션이 종료되고 다시 시작됩니다. 처음부터 시작하면 마지막 체크포인트 이후의 작업도 사라집니다.",
@@ -1803,7 +1782,9 @@
       "fromChoices": {
         "checkpoint": "가장 최근 체크포인트",
         "fresh": "작업을 처음부터"
-      }
+      },
+      "more": "{{agent}} 추가 작업",
+      "restartItem": "재시작…"
     },
     "restartRun": {
       "open": "실행 재시작",
@@ -1852,6 +1833,8 @@
         "files": "파일",
         "gate": "게이트",
         "assertions": "어서션",
+        "board": "보드",
+        "reports": "보고서",
         "cost": "비용",
         "memory": "메모리와 Learn"
       }
@@ -1928,7 +1911,6 @@
     },
     "cost": {
       "cost": "비용",
-      "microvm": "MicroVM",
       "model": "모델",
       "skill": "스킬",
       "attempt": "시도",
@@ -1962,6 +1944,17 @@
       "more": "더 보기",
       "moreFailed": "다음 페이지를 읽을 수 없습니다.",
       "empty": "이 달에 시작된 실행이 없습니다."
+    },
+    "controls": {
+      "stopping": "중지하는 중…",
+      "moreStop": "다른 중지 방법",
+      "stopNow": "저장하지 않고 즉시 중지…",
+      "more": "추가 작업",
+      "save": "체크포인트 저장",
+      "limited": "일시 중지, 재개, 저장에는 엔지니어링 런타임이 필요하지만 이 배포에는 아직 연결되어 있지 않습니다. 중지는 그래도 실행을 끝냅니다.",
+      "refreshFailed": "이 실행을 새로 고칠 수 없습니다. 마지막으로 정상 확인된 상태를 표시합니다.",
+      "retry": "다시 시도",
+      "stopSent": "중지 요청을 보냄"
     }
   }
 }

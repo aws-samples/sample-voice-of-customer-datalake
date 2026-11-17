@@ -2,8 +2,9 @@
  * @fileoverview One item of an agent's thread, as a Slack-like line (7.51.00; threadModel.ts says how each reads):
  * the agent's words as Markdown, its thinking collapsed (ACP's thought chunks), a tool call on ONE line (its
  * tool, whether it worked and a one-line input) that expands on click into its whole event and result (read then,
- * `…/thread/<ref>`), the harness's messages to the model folded, the conversation's messages, a person's steering
- * marked, and the run's events (gate results, findings, signals, checkpoints, a crash, the end) inline.
+ * `…/thread/<ref>`), the harness's messages to the model folded, the conversation's messages (an agent's own question
+ * with a Reply), a person's steering marked, and the run's events (gate results, findings, signals, checkpoints, a
+ * crash, the end) inline.
  *
  * Transcript text is the model's and the tools': rendered as Markdown with NO raw HTML (`skipHtml`), no images (no
  * request leaves for an address a transcript names), links opened apart with no opener or referrer, and cut to a
@@ -24,6 +25,7 @@ import { formatTime } from '../../../utils/dateUtils'
 import { isRecord } from '../../../lib/typeGuards'
 import { boundedText, lookOf } from './threadModel'
 import { useThreadItem } from './useRunWorkspace'
+import { QuestionReply } from './QuestionReply'
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { Components } from 'react-markdown'
@@ -182,14 +184,18 @@ function ItemBody({ runId, agent, item }: Readonly<{ runId: string; agent: strin
   }
 }
 
-/** One item; `header` starts a message group (who, and when). */
-export function ThreadItemView({ runId, agent, item, header }: Readonly<{
-  runId: string; agent: string; item: ThreadItem; header: boolean
+/**
+ * One item; `header` starts a message group (who, and when); `reply`: the thread of the agent's own question this
+ * item is, which an admin may answer on (QuestionReply.tsx).
+ */
+export function ThreadItemView({ runId, agent, item, header, reply }: Readonly<{
+  runId: string; agent: string; item: ThreadItem; header: boolean; reply?: string
 }>) {
   return (
     <li className="px-3 py-0.5" data-ref={item.ref}>
       {header && <SenderLine item={item} />}
       <ItemBody runId={runId} agent={agent} item={item} />
+      {reply !== undefined && <QuestionReply runId={runId} agent={agent} threadId={reply} />}
     </li>
   )
 }

@@ -14,8 +14,6 @@
 import { z } from 'zod'
 import { workspaceStorageName } from '../../../workspace/workspaceStorage'
 
-/** The tabs shown before the rest go to the overflow menu. */
-export const VISIBLE_TABS = 5
 /** A pane can't be shrunk below this share of its split. */
 export const MIN_FRAC = 0.12
 export const GRID_SIZES = [1, 2, 4] as const
@@ -62,13 +60,6 @@ export function nextActiveAfterClose(tabs: readonly string[], key: string, activ
 export function liveTabs(tabs: readonly string[], live: ReadonlySet<string>, active: string | null): string[] {
   const kept = tabs.filter((tab) => live.has(tab))
   return active === null || kept.includes(active) ? kept : [...kept, active]
-}
-
-/** The tabs on the strip and the ones in the overflow menu (the active one always on the strip). */
-export function splitOverflow(tabs: readonly string[], active: string | null): { shown: string[]; more: string[] } {
-  const shown = tabs.slice(0, VISIBLE_TABS)
-  if (active !== null && tabs.includes(active) && !shown.includes(active)) shown.splice(VISIBLE_TABS - 1, 1, active)
-  return { shown, more: tabs.filter((tab) => !shown.includes(tab)) }
 }
 
 // ── the grid: an immutable split tree of agent leaves ─────────────────────

@@ -1271,14 +1271,12 @@
     "runSignals": "Run controls",
     "agentSignals": "Agent {{agent}}",
     "signals": {
-      "save": "Save",
       "pause": "Pause",
       "resume": "Resume",
       "shutdown": "Stop",
       "stop_now": "Stop now, without saving"
     },
     "signalSent": "Sent.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Stop now, without saving?",
     "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Stop instead.",
     "stopNowAgentMessage": "The agent is stopped at once, with no checkpoint: anything it has not saved yet is lost. To keep it, use Stop instead.",
@@ -1324,12 +1322,9 @@
       "progress": "Last progress",
       "metering": "Use",
       "stuck": "Looks stuck: {{reason}}",
-      "inspect": "Recent tool calls ({{n, number}})",
-      "noTools": "No tool calls yet.",
       "for": "for {{age}}",
       "ago": "{{age}} ago",
       "started": "Started",
-      "continuation": "continuation {{n, number}}",
       "microvmTime": "{{seconds, number}} s of MicroVM time"
     },
     "noAgents": "No agent has started yet.",
@@ -1349,23 +1344,11 @@
       "failed": "Failed",
       "done": "Done"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Reply",
     "replyTo": "Reply to {{who}}",
-    "answerTo": "Answer",
-    "conductor": "The run’s conductor",
-    "replyingIn": "Replying in thread {{thread}}",
-    "newThread": "Start a new thread",
     "answer": "Your message",
     "bytes": "{{used, number}} / {{max, number}} bytes",
     "send": "Send",
-    "noMessages": "No messages yet.",
-    "tabs": {
-      "agents": "Agents",
-      "board": "Board",
-      "conversation": "Conversation",
-      "reports": "Reports"
-    },
     "board": {
       "post": "Post a task",
       "role": "Role",
@@ -1389,7 +1372,6 @@
       "blockOverMessage": "Another person holds it ({{holder}}): blocking it ends their hold.",
       "release": "Give back to the agents"
     },
-    "panels": "The run’s agents, board, conversation and reports",
     "reports": {
       "title": "Report: {{subject}}",
       "version": "Version",
@@ -1687,15 +1669,14 @@
       "asGrid": "A grid of {{count, number}}",
       "tabs": "Open sessions",
       "close": "Close {{name}}",
-      "more": "More ({{count, number}})",
       "choose": "Choose…",
-      "open": "Open",
       "noAgent": "This run has no agent {{agent}}.",
       "grid": "The sessions side by side",
       "divider": "Move the divider",
       "paneAgent": "This pane's agent",
       "closePane": "Close this pane",
-      "emptyPane": "Choose an agent for this pane."
+      "emptyPane": "Choose an agent for this pane.",
+      "openAnother": "Open another agent"
     },
     "thread": {
       "label": "The thread of {{agent}}",
@@ -1740,8 +1721,6 @@
       "sent": "Sent to the orchestrator."
     },
     "agentControls": {
-      "save": "Save",
-      "stop": "Stop",
       "restart": "Restart",
       "restartTitle": "Restart {{agent}}?",
       "restartMessage": "Its session ends and starts again. Afresh, its work since its last checkpoint is lost too.",
@@ -1749,7 +1728,9 @@
       "fromChoices": {
         "checkpoint": "Its newest checkpoint",
         "fresh": "Its task, afresh"
-      }
+      },
+      "more": "More for {{agent}}",
+      "restartItem": "Restart…"
     },
     "restartRun": {
       "open": "Restart run",
@@ -1798,6 +1779,8 @@
         "files": "Files",
         "gate": "Gate",
         "assertions": "Assertions",
+        "board": "Board",
+        "reports": "Reports",
         "cost": "Cost",
         "memory": "Memory and Learn"
       }
@@ -1874,7 +1857,6 @@
     },
     "cost": {
       "cost": "Cost",
-      "microvm": "MicroVM",
       "model": "Model",
       "skill": "Skill",
       "attempt": "Attempt",
@@ -1908,6 +1890,17 @@
       "more": "Show more",
       "moreFailed": "The next page could not be read.",
       "empty": "No run started in this month."
+    },
+    "controls": {
+      "stopping": "Stopping…",
+      "moreStop": "More ways to stop",
+      "stopNow": "Stop now, without saving…",
+      "more": "More actions",
+      "save": "Save a checkpoint",
+      "limited": "Pause, Resume and Save need the engineering runtime, which this deployment doesn't connect yet. Stop still ends the run.",
+      "refreshFailed": "Couldn't refresh this run: what you see is its last good state.",
+      "retry": "Retry",
+      "stopSent": "Stop sent"
     }
   }
 }

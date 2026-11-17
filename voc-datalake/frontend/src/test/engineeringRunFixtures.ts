@@ -17,7 +17,8 @@ function agent(id: string, role: string, fields: Record<string, unknown> = {}) {
 
 /**
  * The run's overview: the coordinator waiting on the board step, the fixer working on its task (on the board step),
- * and the final-go agent, whose step is the harness's own words (no node of the flow) and whose task is done.
+ * and the final-go agent, whose step is the harness's own words (no node of the flow) and whose task is done; their
+ * lanes and attempts (7.51.00).
  */
 export function engineeringOverview(run: Record<string, unknown> = {}, actionsAvailable = true, stopAvailable = true) {
   return {
@@ -28,12 +29,17 @@ export function engineeringOverview(run: Record<string, unknown> = {}, actionsAv
       started_at: '2026-11-12T08:00:00Z', ended_at: null, ...run,
     },
     agents: [
-      agent('coordinator-0', 'coordinator', { status: 'waiting', step: 'board' }),
-      agent('fixer-1', 'fixer', { step: 'board', task_id: 'task-1', continuation: 1, recent_tools: ['read_file', 'run_tests'] }),
+      agent('coordinator-0', 'coordinator', { status: 'waiting', step: 'board', attempt: 1 }),
+      agent('fixer-1', 'fixer', { step: 'board', task_id: 'task-1', attempt: 2, continuation: 1, recent_tools: ['read_file', 'run_tests'] }),
       agent('final-go-1', 'final-go', {
-        task_id: 'task-3', step: 'Reading the review rounds', stuck_why: 'No progress for 10 minutes', tokens: [],
+        task_id: 'task-3', attempt: 1, step: 'Reading the review rounds', stuck_why: 'No progress for 10 minutes', tokens: [],
       }),
     ],
+    // (7.51.00) Each step's tasks and the agent on each: the fixer's under way, the final go's done.
+    lanes: {
+      board: [{ agent: 'fixer-1', role: 'fixer', status: 'working', state: 'in_progress', task_id: 'task-1', attempt: 2, shard: null }],
+      gate: [{ agent: 'final-go-1', role: 'final-go', status: 'working', state: 'done', task_id: 'task-3', attempt: 1, shard: null }],
+    },
     totals: {
       messages: 3, microvm_seconds: 900,
       by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],

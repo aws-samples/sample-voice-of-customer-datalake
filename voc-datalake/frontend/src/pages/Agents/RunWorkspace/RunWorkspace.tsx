@@ -5,15 +5,18 @@
  * orchestrator's session without an agent, and it replaced the run monitor at the same place (7.51.00: no redirect
  * needed). Three panes, all live (the overview polled every 5 s while the run is under way):
  *
- * 1. the flow: the run's canvas, each step a stage with its agents as sibling lanes, a gate's pass or fail, "you are
+ * 1. the sessions: the open agents' threads in time order (tabs, or a grid of 1, 2 or 4), each with the composer that
+ *    steers the ORCHESTRATOR about it, an agent's Stop and ⋯ (Save, Stop now, Restart), and a Reply under an agent's
+ *    own question;
+ * 2. the flow: the run's canvas, each step a stage with its agents as sibling lanes, a gate's pass or fail, "you are
  *    here" and a spinner on an agent at work, inert (a click opens a session, never acts); or its timeline;
- * 2. the sessions: the open agents' threads in time order (tabs, or a grid of 1, 2 or 4), each with the composer that
- *    steers the ORCHESTRATOR about it, and an agent's Save, Stop and Restart;
- * 3. the inspector of the agent open: Changes, Files, Gate, Assertions, Cost and Memory/Learn.
+ * 3. the inspector: the agent open's Changes, Files, Gate, Cost and Memory/Learn, and the run's Assertions, Board and
+ *    Reports.
  *
- * Above them the header (status, budget used against the cap, the parent and child runs) and the run's controls
- * (Pause, Resume, Stop; Restart run once it ended); below them the run monitor's own panels (agents, board,
- * conversation, reports) and people's reactions on the host.
+ * Wide, the flow comes first and the inspector last; narrow, the sessions (the main task) come first. Above them the
+ * header (budget used against the cap, the parent and child runs) with the run's control bar (RunControlBar.tsx:
+ * Pause or Resume, Stop with "Stop now, without saving", Save; Restart run once it ended), which a failed read keeps
+ * (its last good state, retried with a backoff); below them people's reactions on the host.
  *
  * @module pages/Agents/RunWorkspace/RunWorkspace
  */
@@ -31,22 +34,23 @@ import { useEngineeringOverview } from '../useEngineeringRun'
 import { readRunAddress } from './runWorkspacePaths'
 import { useSessionLayout } from './useSessionLayout'
 import { RunHeader } from './RunHeader'
-import { RunControls } from './RunControls'
+import { RunControlBar } from './RunControlBar'
 import { FlowPane } from './FlowPane'
 import { SessionsPane } from './SessionsPane'
 import { Inspector } from './Inspector'
-import { RunPanels } from './RunPanels'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 
 /** The run's orchestrator: its coordinator, whose session the run's own address shows. */
 const orchestratorOf = (overview: EngineeringOverview) =>
   overview.agents.find((agent) => agent.task_id === COORDINATE_TASK || agent.role === 'coordinator')?.agent ?? null
 
-function Workspace({ runId, agentInPath, overview, live, readAt }: Readonly<{
+function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Readonly<{
   runId: string; agentInPath: string | null; overview: EngineeringOverview; live: boolean; readAt: number
+  /** The last read of the run failed (the one shown is the last good one), and its retry. */
+  refresh: { failed: boolean; retry: () => void }
 }>) {
   const isAdmin = useIsAdmin()
-  // An admin acts only where the workspace can reach the run; until then RunControls says why there are no controls.
+  // Signals other than Stop, steering, answers and the board's actions need the runtime and the bus.
   const canAct = isAdmin && overview.actions_available
   const orchestrator = orchestratorOf(overview)
   const current = agentInPath ?? orchestrator
@@ -55,17 +59,21 @@ function Workspace({ runId, agentInPath, overview, live, readAt }: Readonly<{
   const shown = overview.agents.find((agent) => agent.agent === current)
   return (
     <>
-      <RunHeader overview={overview} />
-      <RunControls runId={runId} overview={overview} live={live} isAdmin={isAdmin} />
+      <RunHeader overview={overview} controls={(
+        <RunControlBar runId={runId} overview={overview} live={live} isAdmin={isAdmin} refreshFailed={refresh.failed} onRetry={refresh.retry} />
+      )} />
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,26rem)]">
-        <FlowPane overview={overview} current={current} onOpen={sessions.open} />
-        <SessionsPane runId={runId} agents={overview.agents} current={current} orchestrator={orchestrator}
-          canAct={canAct && live} sessions={sessions} />
-        <div className="lg:col-span-2 2xl:col-span-1">
-          <Inspector runId={runId} overview={overview} agent={shown} live={live} onOpen={sessions.open} />
+        <div className="order-2 min-w-0 2xl:order-1">
+          <FlowPane overview={overview} current={current} onOpen={sessions.open} />
+        </div>
+        <div className="order-1 min-w-0 2xl:order-2">
+          <SessionsPane runId={runId} agents={overview.agents} lanes={overview.lanes} current={current} orchestrator={orchestrator}
+            canAct={canAct && live} sessions={sessions} />
+        </div>
+        <div className="order-3 min-w-0 lg:col-span-2 2xl:col-span-1">
+          <Inspector runId={runId} overview={overview} agent={shown} live={live} canAct={canAct} readAt={readAt} onOpen={sessions.open} />
         </div>
       </div>
-      <RunPanels runId={runId} overview={overview} live={live} canAct={canAct} readAt={readAt} />
       <EngineeringRunReactions runId={runId} status={overview.run.status} reactions={overview.reactions} isAdmin={isAdmin} />
     </>
   )
@@ -93,9 +101,10 @@ export default function RunWorkspace() {
     <div className="space-y-4 sm:space-y-6 min-w-0">
       <BackToAgents />
       {isLoading && <div className="skeleton h-40" />}
-      {isError && <NotRead error={error} retry={() => { void refetch() }} retrying={isFetching} />}
+      {isError && data === undefined && <NotRead error={error} retry={() => { void refetch() }} retrying={isFetching} />}
       {data !== undefined && (
-        <Workspace runId={runId} agentInPath={read?.place.agent ?? null} overview={data} live={live} readAt={dataUpdatedAt} />
+        <Workspace runId={runId} agentInPath={read?.place.agent ?? null} overview={data} live={live} readAt={dataUpdatedAt}
+          refresh={{ failed: isError, retry: () => { void refetch() } }} />
       )}
     </div>
   )

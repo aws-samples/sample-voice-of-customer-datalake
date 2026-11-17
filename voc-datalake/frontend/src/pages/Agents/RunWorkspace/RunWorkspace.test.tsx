@@ -147,13 +147,21 @@ describe('the sessions', () => {
     expect(window.sessionStorage.getItem('voc-run-workspace')).toContain('"mode":"grid"')
   })
 
+  it('keeps only tabs in the tablist: the session\'s close button sits beside it, and one menu opens another agent', async () => {
+    renderWorkspace(RUN_PATH)
+    const tablist = await screen.findByRole('tablist', { name: 'Open sessions' })
+    expect(within(tablist).queryAllByRole('button')).toStrictEqual([])
+    expect(screen.getByRole('button', { name: 'Close Orchestrator' })).toHaveClass('icon-btn')
+    expect(screen.getByRole('combobox', { name: 'Open another agent' })).toBeInTheDocument()
+  })
+
   it('shows a non-admin the run read-only: no composer, no controls', async () => {
     adminFlag.isAdmin = false
     renderWorkspace(AT_FIXER)
     const thread = await threadOf()
     await thread.findByText('I will read the paging helper first.')
     expect(screen.queryByRole('textbox', { name: 'Steer the orchestrator' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Restart' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
   })
 })
 
@@ -161,7 +169,8 @@ describe('an agent\'s controls', () => {
   it('restarts the agent from its checkpoint through a signal, at the attempt it is on, after asking', async () => {
     workspaceRoutes({ [`POST ${fixture.signal_restart.path}`]: () => fixture.signal_restart.answer })
     renderWorkspace(AT_FIXER)
-    await userEvent.click(await screen.findByRole('button', { name: 'Restart' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'More for fixer-3' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Restart…' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restart' }))
     await waitFor(() => expect(sentFetchApiBody(fixture.signal_restart.path, 'POST')).toStrictEqual(fixture.signal_restart.body))
   })

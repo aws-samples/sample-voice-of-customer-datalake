@@ -1332,14 +1332,12 @@
     "runSignals": "Controles de la ejecución",
     "agentSignals": "Agente {{agent}}",
     "signals": {
-      "save": "Guardar",
       "pause": "Pausar",
       "resume": "Reanudar",
       "shutdown": "Parar",
       "stop_now": "Parar ya, sin guardar"
     },
     "signalSent": "Enviado.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "¿Parar ya, sin guardar?",
     "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Parar.",
     "stopNowAgentMessage": "El agente se para de inmediato, sin punto de control: se pierde lo que aún no haya guardado. Para conservarlo, usa Parar.",
@@ -1385,12 +1383,9 @@
       "progress": "Último avance",
       "metering": "Uso",
       "stuck": "Parece atascado: {{reason}}",
-      "inspect": "Llamadas a herramientas recientes ({{n, number}})",
-      "noTools": "Aún no hay llamadas a herramientas.",
       "for": "desde hace {{age}}",
       "ago": "hace {{age}}",
       "started": "Empezó",
-      "continuation": "continuación {{n, number}}",
       "microvmTime": "{{seconds, number}} s de MicroVM"
     },
     "noAgents": "Aún no ha empezado ningún agente.",
@@ -1410,23 +1405,11 @@
       "failed": "Fallida",
       "done": "Hecha"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Responder",
     "replyTo": "Responder a {{who}}",
-    "answerTo": "Responder a",
-    "conductor": "El conductor de la ejecución",
-    "replyingIn": "Respondiendo en el hilo {{thread}}",
-    "newThread": "Empezar un hilo nuevo",
     "answer": "Tu mensaje",
     "bytes": "{{used, number}} / {{max, number}} bytes",
     "send": "Enviar",
-    "noMessages": "Aún no hay mensajes.",
-    "tabs": {
-      "agents": "Agentes",
-      "board": "Tablero",
-      "conversation": "Conversación",
-      "reports": "Informes"
-    },
     "board": {
       "post": "Publicar una tarea",
       "role": "Rol",
@@ -1450,7 +1433,6 @@
       "blockOverMessage": "Otra persona la tiene ({{holder}}): bloquearla pone fin a su asignación.",
       "release": "Devolver a los agentes"
     },
-    "panels": "Los agentes, el tablero, la conversación y los informes de la ejecución",
     "reports": {
       "title": "Informe: {{subject}}",
       "version": "Versión",
@@ -1748,15 +1730,14 @@
       "asGrid": "Cuadrícula de {{count, number}}",
       "tabs": "Sesiones abiertas",
       "close": "Cerrar {{name}}",
-      "more": "Más ({{count, number}})",
       "choose": "Elegir…",
-      "open": "Abrir",
       "noAgent": "Esta ejecución no tiene el agente {{agent}}.",
       "grid": "Las sesiones en paralelo",
       "divider": "Mover el divisor",
       "paneAgent": "El agente de este panel",
       "closePane": "Cerrar este panel",
-      "emptyPane": "Elige un agente para este panel."
+      "emptyPane": "Elige un agente para este panel.",
+      "openAnother": "Abrir otro agente"
     },
     "thread": {
       "label": "El hilo de {{agent}}",
@@ -1801,8 +1782,6 @@
       "sent": "Enviado al orquestador."
     },
     "agentControls": {
-      "save": "Guardar",
-      "stop": "Detener",
       "restart": "Reiniciar",
       "restartTitle": "¿Reiniciar {{agent}}?",
       "restartMessage": "Su sesión termina y vuelve a empezar. Desde cero, también se pierde su trabajo desde su último punto de control.",
@@ -1810,7 +1789,9 @@
       "fromChoices": {
         "checkpoint": "Su punto de control más reciente",
         "fresh": "Su tarea, desde cero"
-      }
+      },
+      "more": "Más para {{agent}}",
+      "restartItem": "Reiniciar…"
     },
     "restartRun": {
       "open": "Reiniciar la ejecución",
@@ -1859,6 +1840,8 @@
         "files": "Archivos",
         "gate": "Control",
         "assertions": "Aserciones",
+        "board": "Tablero",
+        "reports": "Informes",
         "cost": "Coste",
         "memory": "Memoria y Learn"
       }
@@ -1935,7 +1918,6 @@
     },
     "cost": {
       "cost": "Coste",
-      "microvm": "MicroVM",
       "model": "Modelo",
       "skill": "Habilidad",
       "attempt": "Intento",
@@ -1969,6 +1951,17 @@
       "more": "Mostrar más",
       "moreFailed": "No se pudo leer la página siguiente.",
       "empty": "No se inició ninguna ejecución en este mes."
+    },
+    "controls": {
+      "stopping": "Deteniendo…",
+      "moreStop": "Más formas de detener",
+      "stopNow": "Parar ya, sin guardar…",
+      "more": "Más acciones",
+      "save": "Guardar un punto de control",
+      "limited": "Pausar, Reanudar y Guardar necesitan el entorno de ingeniería, que este despliegue aún no conecta. Detener sigue terminando la ejecución.",
+      "refreshFailed": "No se pudo actualizar esta ejecución: ves su último estado correcto.",
+      "retry": "Reintentar",
+      "stopSent": "Detención enviada"
     }
   }
 }

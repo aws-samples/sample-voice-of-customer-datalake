@@ -1332,14 +1332,12 @@
     "runSignals": "Commandes de l’exécution",
     "agentSignals": "Agent {{agent}}",
     "signals": {
-      "save": "Enregistrer",
       "pause": "Mettre en pause",
       "resume": "Reprendre",
       "shutdown": "Arrêter",
       "stop_now": "Arrêter tout de suite, sans enregistrer"
     },
     "signalSent": "Envoyé.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Arrêter tout de suite, sans enregistrer ?",
     "stopNowMessage": "Le travail s’arrête aussitôt, sans point de reprise : ce qui n’est pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
     "stopNowAgentMessage": "L’agent s’arrête aussitôt, sans point de reprise : ce qu’il n’a pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter.",
@@ -1385,12 +1383,9 @@
       "progress": "Dernier progrès",
       "metering": "Utilisation",
       "stuck": "Semble bloqué : {{reason}}",
-      "inspect": "Appels d’outils récents ({{n, number}})",
-      "noTools": "Aucun appel d’outil pour l’instant.",
       "for": "depuis {{age}}",
       "ago": "il y a {{age}}",
       "started": "Démarré",
-      "continuation": "reprise {{n, number}}",
       "microvmTime": "{{seconds, number}} s de MicroVM"
     },
     "noAgents": "Aucun agent n’a encore commencé.",
@@ -1410,23 +1405,11 @@
       "failed": "Échouée",
       "done": "Terminée"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Répondre",
     "replyTo": "Répondre à {{who}}",
-    "answerTo": "Répondre à",
-    "conductor": "Le chef d’orchestre de l’exécution",
-    "replyingIn": "Réponse dans le fil {{thread}}",
-    "newThread": "Commencer un nouveau fil",
     "answer": "Votre message",
     "bytes": "{{used, number}} / {{max, number}} octets",
     "send": "Envoyer",
-    "noMessages": "Aucun message pour l’instant.",
-    "tabs": {
-      "agents": "Agents",
-      "board": "Tableau",
-      "conversation": "Conversation",
-      "reports": "Rapports"
-    },
     "board": {
       "post": "Publier une tâche",
       "role": "Rôle",
@@ -1450,7 +1433,6 @@
       "blockOverMessage": "Une autre personne la détient ({{holder}}) : la bloquer met fin à sa prise en charge.",
       "release": "Rendre aux agents"
     },
-    "panels": "Les agents, le tableau, la conversation et les rapports de l’exécution",
     "reports": {
       "title": "Rapport : {{subject}}",
       "version": "Version",
@@ -1748,15 +1730,14 @@
       "asGrid": "Grille de {{count, number}}",
       "tabs": "Sessions ouvertes",
       "close": "Fermer {{name}}",
-      "more": "Plus ({{count, number}})",
       "choose": "Choisir…",
-      "open": "Ouvrir",
       "noAgent": "Cette exécution n’a pas d’agent {{agent}}.",
       "grid": "Les sessions côte à côte",
       "divider": "Déplacer le séparateur",
       "paneAgent": "L’agent de ce panneau",
       "closePane": "Fermer ce panneau",
-      "emptyPane": "Choisissez un agent pour ce panneau."
+      "emptyPane": "Choisissez un agent pour ce panneau.",
+      "openAnother": "Ouvrir un autre agent"
     },
     "thread": {
       "label": "Le fil de {{agent}}",
@@ -1801,8 +1782,6 @@
       "sent": "Envoyé à l’orchestrateur."
     },
     "agentControls": {
-      "save": "Enregistrer",
-      "stop": "Arrêter",
       "restart": "Relancer",
       "restartTitle": "Relancer {{agent}} ?",
       "restartMessage": "Sa session se termine puis recommence. En repartant de zéro, son travail depuis son dernier point de reprise est aussi perdu.",
@@ -1810,7 +1789,9 @@
       "fromChoices": {
         "checkpoint": "Son point de reprise le plus récent",
         "fresh": "Sa tâche, depuis zéro"
-      }
+      },
+      "more": "Plus pour {{agent}}",
+      "restartItem": "Relancer…"
     },
     "restartRun": {
       "open": "Relancer l’exécution",
@@ -1859,6 +1840,8 @@
         "files": "Fichiers",
         "gate": "Contrôle",
         "assertions": "Assertions",
+        "board": "Tableau",
+        "reports": "Rapports",
         "cost": "Coût",
         "memory": "Mémoire et Learn"
       }
@@ -1935,7 +1918,6 @@
     },
     "cost": {
       "cost": "Coût",
-      "microvm": "MicroVM",
       "model": "Modèle",
       "skill": "Compétence",
       "attempt": "Tentative",
@@ -1969,6 +1951,17 @@
       "more": "Afficher plus",
       "moreFailed": "La page suivante n’a pas pu être lue.",
       "empty": "Aucune exécution lancée durant ce mois."
+    },
+    "controls": {
+      "stopping": "Arrêt en cours…",
+      "moreStop": "Autres façons d’arrêter",
+      "stopNow": "Arrêter tout de suite, sans enregistrer…",
+      "more": "Plus d’actions",
+      "save": "Enregistrer un point de reprise",
+      "limited": "Mettre en pause, Reprendre et Enregistrer demandent l’environnement d’ingénierie, que ce déploiement ne relie pas encore. Arrêter termine quand même l’exécution.",
+      "refreshFailed": "Impossible d’actualiser cette exécution : vous voyez son dernier état valide.",
+      "retry": "Réessayer",
+      "stopSent": "Arrêt envoyé"
     }
   }
 }

@@ -43,7 +43,7 @@ export function FlowPane({ overview, current, onOpen }: Readonly<Props>) {
           {toggle('timeline', ListTree)}
         </span>
       </div>
-      <div className="h-[28rem] min-h-0 sm:h-[34rem] overflow-hidden">
+      <div className="h-[min(34rem,70vh)] min-h-[18rem] overflow-hidden">
         {view === 'timeline' && <div className="h-full overflow-y-auto"><RunTimeline steps={steps} current={current} onOpen={onOpen} /></div>}
         {view === 'canvas' && overview.run.flow !== '' && isLoading && <div className="skeleton h-full" />}
         {view === 'canvas' && !isLoading && (isError || definition === null) && <p className="p-4 text-sm text-muted">{t('engineeringRun.noFlow')}</p>}

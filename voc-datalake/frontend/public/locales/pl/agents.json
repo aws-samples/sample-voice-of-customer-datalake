@@ -1368,14 +1368,12 @@
     "runSignals": "Sterowanie przebiegiem",
     "agentSignals": "Agent {{agent}}",
     "signals": {
-      "save": "Zapisz",
       "pause": "Wstrzymaj",
       "resume": "Wznów",
       "shutdown": "Zatrzymaj",
       "stop_now": "Zatrzymaj od razu, bez zapisu"
     },
     "signalSent": "Wysłano.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Zatrzymać od razu, bez zapisu?",
     "stopNowMessage": "Praca zostanie przerwana natychmiast, bez punktu kontrolnego: to, co nie zostało jeszcze zapisane, przepadnie. Aby to zachować, wybierz Zatrzymaj.",
     "stopNowAgentMessage": "Agent zostanie przerwany natychmiast, bez punktu kontrolnego: to, czego jeszcze nie zapisał, przepadnie. Aby to zachować, wybierz Zatrzymaj.",
@@ -1423,12 +1421,9 @@
       "progress": "Ostatni postęp",
       "metering": "Zużycie",
       "stuck": "Wygląda na zablokowanego: {{reason}}",
-      "inspect": "Ostatnie wywołania narzędzi ({{n, number}})",
-      "noTools": "Nie ma jeszcze wywołań narzędzi.",
       "for": "od {{age}}",
       "ago": "{{age}} temu",
       "started": "Start",
-      "continuation": "kontynuacja {{n, number}}",
       "microvmTime": "{{seconds, number}} s czasu MicroVM"
     },
     "noAgents": "Żaden agent jeszcze nie zaczął.",
@@ -1448,23 +1443,11 @@
       "failed": "Nieudane",
       "done": "Gotowe"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Odpowiedz",
     "replyTo": "Odpowiedz: {{who}}",
-    "answerTo": "Odpowiedź do",
-    "conductor": "Dyrygent przebiegu",
-    "replyingIn": "Odpowiedź w wątku {{thread}}",
-    "newThread": "Zacznij nowy wątek",
     "answer": "Twoja wiadomość",
     "bytes": "{{used, number}} / {{max, number}} bajtów",
     "send": "Wyślij",
-    "noMessages": "Nie ma jeszcze wiadomości.",
-    "tabs": {
-      "agents": "Agenci",
-      "board": "Tablica",
-      "conversation": "Rozmowa",
-      "reports": "Raporty"
-    },
     "board": {
       "post": "Opublikuj zadanie",
       "role": "Rola",
@@ -1488,7 +1471,6 @@
       "blockOverMessage": "Trzyma je inna osoba ({{holder}}): zablokowanie kończy jej przydział.",
       "release": "Oddaj agentom"
     },
-    "panels": "Agenci, tablica, rozmowa i raporty przebiegu",
     "reports": {
       "title": "Raport: {{subject}}",
       "version": "Wersja",
@@ -1788,15 +1770,14 @@
       "asGrid": "Siatka {{count, number}}",
       "tabs": "Otwarte sesje",
       "close": "Zamknij {{name}}",
-      "more": "Więcej ({{count, number}})",
       "choose": "Wybierz…",
-      "open": "Otwórz",
       "noAgent": "Ten przebieg nie ma agenta {{agent}}.",
       "grid": "Sesje obok siebie",
       "divider": "Przesuń separator",
       "paneAgent": "Agent tego panelu",
       "closePane": "Zamknij ten panel",
-      "emptyPane": "Wybierz agenta dla tego panelu."
+      "emptyPane": "Wybierz agenta dla tego panelu.",
+      "openAnother": "Otwórz innego agenta"
     },
     "thread": {
       "label": "Wątek agenta {{agent}}",
@@ -1841,8 +1822,6 @@
       "sent": "Wysłano do orkiestratora."
     },
     "agentControls": {
-      "save": "Zapisz",
-      "stop": "Zatrzymaj",
       "restart": "Uruchom ponownie",
       "restartTitle": "Uruchomić ponownie agenta {{agent}}?",
       "restartMessage": "Jego sesja kończy się i zaczyna od nowa. Przy starcie od zera przepada też jego praca od ostatniego punktu kontrolnego.",
@@ -1850,7 +1829,9 @@
       "fromChoices": {
         "checkpoint": "Od najnowszego punktu kontrolnego",
         "fresh": "Zadanie od zera"
-      }
+      },
+      "more": "Więcej dla {{agent}}",
+      "restartItem": "Uruchom ponownie…"
     },
     "restartRun": {
       "open": "Uruchom przebieg ponownie",
@@ -1899,6 +1880,8 @@
         "files": "Pliki",
         "gate": "Kontrola",
         "assertions": "Asercje",
+        "board": "Tablica",
+        "reports": "Raporty",
         "cost": "Koszt",
         "memory": "Pamięć i Learn"
       }
@@ -1975,7 +1958,6 @@
     },
     "cost": {
       "cost": "Koszt",
-      "microvm": "MicroVM",
       "model": "Model",
       "skill": "Umiejętność",
       "attempt": "Próba",
@@ -2009,6 +1991,17 @@
       "more": "Pokaż więcej",
       "moreFailed": "Nie udało się odczytać następnej strony.",
       "empty": "W tym miesiącu nie rozpoczęto żadnego przebiegu."
+    },
+    "controls": {
+      "stopping": "Zatrzymywanie…",
+      "moreStop": "Inne sposoby zatrzymania",
+      "stopNow": "Zatrzymaj od razu, bez zapisu…",
+      "more": "Więcej działań",
+      "save": "Zapisz punkt kontrolny",
+      "limited": "Wstrzymanie, wznowienie i zapis wymagają środowiska inżynierskiego, którego to wdrożenie jeszcze nie łączy. Zatrzymanie i tak kończy przebieg.",
+      "refreshFailed": "Nie udało się odświeżyć tego przebiegu: widzisz jego ostatni poprawny stan.",
+      "retry": "Spróbuj ponownie",
+      "stopSent": "Wysłano zatrzymanie"
     }
   }
 }

@@ -2,7 +2,8 @@
  * @fileoverview The thread's composer (7.51.00): a person's steering, sent to the run's ORCHESTRATOR
  * (`POST …/steer {text, about?}`), never to an agent: the orchestrator decides and relays it to the agents concerned,
  * fenced below the platform rules (docs/autonomous-engineering.md, "Steering"). On an agent's thread it is "about" that
- * agent unless the person unticks it, and its placeholder says where it goes. Enter sends, Shift+Enter starts a line;
+ * agent unless the person unticks it, and its placeholder says where it goes. Send is the primary button only in the
+ * session in focus (a grid of four shows one). Enter sends, Shift+Enter starts a line;
  * the steering with its "About <agent>: " is at most 1 KB, as the server counts it.
  *
  * @module pages/Agents/RunWorkspace/SteerComposer
@@ -25,9 +26,11 @@ interface Props {
   runId: string
   /** The agent whose thread is open (null: the orchestrator's own). */
   agent: string | null
+  /** The session in focus: Send is the primary button there, and secondary in every other session of a grid. */
+  primary: boolean
 }
 
-export function SteerComposer({ runId, agent }: Readonly<Props>) {
+export function SteerComposer({ runId, agent, primary }: Readonly<Props>) {
   const { t, i18n } = useTranslation('agents')
   const fieldId = useId()
   const steer = useSteer(runId)
@@ -54,7 +57,7 @@ export function SteerComposer({ runId, agent }: Readonly<Props>) {
         <textarea id={fieldId} rows={2} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={onKeyDown}
           placeholder={about === null ? t('runWorkspace.composer.placeholder') : t('runWorkspace.composer.placeholderAbout', { agent: about })}
           className="input min-h-[2.5rem] flex-1 resize-y text-[13px]" aria-invalid={tooLong} />
-        <button type="submit" className="btn btn-primary btn-sm" disabled={blank || tooLong || steer.isPending}
+        <button type="submit" className={primary ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} disabled={blank || tooLong || steer.isPending}
           aria-label={t('runWorkspace.composer.send')}>
           <Send size={14} aria-hidden="true" />
         </button>

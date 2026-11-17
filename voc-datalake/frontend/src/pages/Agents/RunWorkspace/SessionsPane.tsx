@@ -10,12 +10,13 @@ import { GRID_SIZES, sizeOf } from './agentGridModel'
 import { AgentTabs } from './AgentTabs'
 import { AgentGrid } from './AgentGrid'
 import { SessionThread } from './SessionThread'
-import type { EngineeringAgent } from '../../../api/engineeringRunsApi'
+import type { EngineeringAgent, RunLane } from '../../../api/engineeringRunsApi'
 import type { useSessionLayout } from './useSessionLayout'
 
 interface Props {
   runId: string
   agents: readonly EngineeringAgent[]
+  lanes: Readonly<Record<string, readonly RunLane[]>>
   /** The session the address names (null: none to show yet). */
   current: string | null
   orchestrator: string | null
@@ -42,7 +43,7 @@ function LayoutSwitch({ sessions }: Readonly<Pick<Props, 'sessions'>>) {
   )
 }
 
-export function SessionsPane({ runId, agents, current, orchestrator, canAct, sessions }: Readonly<Props>) {
+export function SessionsPane({ runId, agents, lanes, current, orchestrator, canAct, sessions }: Readonly<Props>) {
   const { t } = useTranslation('agents')
   const shown = agents.find((agent) => agent.agent === current)
   return (
@@ -52,19 +53,20 @@ export function SessionsPane({ runId, agents, current, orchestrator, canAct, ses
         <span className="ml-auto"><LayoutSwitch sessions={sessions} /></span>
       </div>
       {sessions.mode === 'grid' && sessions.grid !== null ? (
-        <div className="h-[36rem] min-h-0">
+        <div className="h-[min(36rem,70vh)] min-h-0">
           <AgentGrid runId={runId} grid={sessions.grid} agents={agents} orchestrator={orchestrator} current={current}
-            canAct={canAct} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
+            canAct={canAct} lanes={lanes} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
             onResize={sessions.resize} />
         </div>
       ) : (
         <>
           <AgentTabs tabs={sessions.tabs} current={current} agents={agents} orchestrator={orchestrator}
             onOpen={sessions.open} onClose={sessions.close} />
-          <div className="flex h-[32rem] min-h-0 flex-col" role="tabpanel">
+          <div className="flex h-[min(36rem,70vh)] min-h-0 flex-col" role="tabpanel">
             {shown === undefined
               ? <p className="p-3 text-sm text-muted">{current === null ? t('engineeringRun.noAgents') : t('runWorkspace.sessions.noAgent', { agent: current })}</p>
-              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} canAct={canAct} />}
+              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} canAct={canAct}
+                focused lanes={lanes} />}
           </div>
         </>
       )}

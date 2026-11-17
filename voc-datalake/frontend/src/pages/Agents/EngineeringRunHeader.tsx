@@ -1,5 +1,6 @@
 /**
- * @fileoverview The run monitor's header: the run's goal, repository, status and start, the issue it was started from
+ * @fileoverview The run monitor's header: the run's goal, repository and start (its status is the control bar's chip,
+ * RunWorkspace/RunControlBar.tsx), the issue it was started from
  * and its pull request (EngineeringRunLinks), and its MicroVM time, messages
  * and tokens per model, and its flow's monthly budget with the highest level its flow's month passed (the flag the
  * supervisor sets as it says each alert). The run workspace adds its cost and the runs it was restarted from or as
@@ -10,7 +11,6 @@
 import { useTranslation } from 'react-i18next'
 import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
 import { EngineeringRunLinks } from './EngineeringRunLinks'
-import { RunStatusChip } from './RunControlBar'
 import { shareTone } from './spendView'
 import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
@@ -57,7 +57,6 @@ export function EngineeringRunHeader({ overview, children }: Readonly<{ overview
       <div className="min-w-0">
         <h1 className="text-2xl font-bold tracking-tight text-text-strong break-words">{run.goal || t('engineeringRun.untitled')}</h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
-          <RunStatusChip run={run} />
           {run.repo !== '' && <span className="font-mono break-all">{run.repo}</span>}
           <span>{t('engineeringRun.started', { when: formatDateTime(run.started_at, i18n.language, '—') })}</span>
           {run.ended_at !== null && <span>{t('engineeringRun.ended', { when: formatDateTime(run.ended_at, i18n.language, '—') })}</span>}

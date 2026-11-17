@@ -1325,14 +1325,12 @@
     "runSignals": "Laufsteuerung",
     "agentSignals": "Agent {{agent}}",
     "signals": {
-      "save": "Sichern",
       "pause": "Pausieren",
       "resume": "Fortsetzen",
       "shutdown": "Stoppen",
       "stop_now": "Sofort stoppen, ohne zu sichern"
     },
     "signalSent": "Gesendet.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Sofort stoppen, ohne zu sichern?",
     "stopNowMessage": "Die Arbeit wird sofort beendet, ohne Sicherungspunkt: Was noch nicht gesichert ist, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
     "stopNowAgentMessage": "Der Agent wird sofort beendet, ohne Sicherungspunkt: Was er noch nicht gesichert hat, geht verloren. Um es zu behalten, wähle stattdessen Stoppen.",
@@ -1378,12 +1376,9 @@
       "progress": "Letzter Fortschritt",
       "metering": "Verbrauch",
       "stuck": "Scheint festzuhängen: {{reason}}",
-      "inspect": "Letzte Tool-Aufrufe ({{n, number}})",
-      "noTools": "Noch keine Tool-Aufrufe.",
       "for": "seit {{age}}",
       "ago": "vor {{age}}",
       "started": "Gestartet",
-      "continuation": "Fortsetzung {{n, number}}",
       "microvmTime": "{{seconds, number}} s MicroVM-Zeit"
     },
     "noAgents": "Noch kein Agent hat begonnen.",
@@ -1403,23 +1398,11 @@
       "failed": "Fehlgeschlagen",
       "done": "Erledigt"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Antworten",
     "replyTo": "{{who}} antworten",
-    "answerTo": "Antwort an",
-    "conductor": "Die Steuerung des Laufs",
-    "replyingIn": "Antwort im Thread {{thread}}",
-    "newThread": "Neuen Thread beginnen",
     "answer": "Deine Nachricht",
     "bytes": "{{used, number}} / {{max, number}} Bytes",
     "send": "Senden",
-    "noMessages": "Noch keine Nachrichten.",
-    "tabs": {
-      "agents": "Agenten",
-      "board": "Board",
-      "conversation": "Unterhaltung",
-      "reports": "Berichte"
-    },
     "board": {
       "post": "Aufgabe einstellen",
       "role": "Rolle",
@@ -1443,7 +1426,6 @@
       "blockOverMessage": "Eine andere Person hält sie ({{holder}}): Das Blockieren beendet ihre Übernahme.",
       "release": "An die Agenten zurückgeben"
     },
-    "panels": "Agenten, Board, Unterhaltung und Berichte des Laufs",
     "reports": {
       "title": "Bericht: {{subject}}",
       "version": "Version",
@@ -1741,15 +1723,14 @@
       "asGrid": "Raster mit {{count, number}}",
       "tabs": "Offene Sitzungen",
       "close": "{{name}} schließen",
-      "more": "Weitere ({{count, number}})",
       "choose": "Auswählen…",
-      "open": "Öffnen",
       "noAgent": "Dieser Lauf hat keinen Agenten {{agent}}.",
       "grid": "Die Sitzungen nebeneinander",
       "divider": "Trennlinie verschieben",
       "paneAgent": "Agent dieses Bereichs",
       "closePane": "Diesen Bereich schließen",
-      "emptyPane": "Wählen Sie einen Agenten für diesen Bereich."
+      "emptyPane": "Wählen Sie einen Agenten für diesen Bereich.",
+      "openAnother": "Weiteren Agenten öffnen"
     },
     "thread": {
       "label": "Thread von {{agent}}",
@@ -1794,8 +1775,6 @@
       "sent": "An den Orchestrator gesendet."
     },
     "agentControls": {
-      "save": "Sichern",
-      "stop": "Stoppen",
       "restart": "Neu starten",
       "restartTitle": "{{agent}} neu starten?",
       "restartMessage": "Seine Sitzung endet und beginnt neu. Bei einem Neubeginn von vorn geht auch seine Arbeit seit dem letzten Sicherungspunkt verloren.",
@@ -1803,7 +1782,9 @@
       "fromChoices": {
         "checkpoint": "Neuester Sicherungspunkt",
         "fresh": "Seine Aufgabe, von vorn"
-      }
+      },
+      "more": "Mehr für {{agent}}",
+      "restartItem": "Neu starten…"
     },
     "restartRun": {
       "open": "Lauf neu starten",
@@ -1852,6 +1833,8 @@
         "files": "Dateien",
         "gate": "Prüfung",
         "assertions": "Zusicherungen",
+        "board": "Board",
+        "reports": "Berichte",
         "cost": "Kosten",
         "memory": "Gedächtnis und Learn"
       }
@@ -1928,7 +1911,6 @@
     },
     "cost": {
       "cost": "Kosten",
-      "microvm": "MicroVM",
       "model": "Modell",
       "skill": "Skill",
       "attempt": "Versuch",
@@ -1962,6 +1944,17 @@
       "more": "Mehr anzeigen",
       "moreFailed": "Die nächste Seite konnte nicht gelesen werden.",
       "empty": "In diesem Monat wurde kein Lauf gestartet."
+    },
+    "controls": {
+      "stopping": "Wird gestoppt…",
+      "moreStop": "Weitere Arten zu stoppen",
+      "stopNow": "Sofort stoppen, ohne zu sichern…",
+      "more": "Weitere Aktionen",
+      "save": "Sicherungspunkt setzen",
+      "limited": "Pausieren, Fortsetzen und Sichern brauchen die Engineering-Laufzeit, die diese Bereitstellung noch nicht anbindet. Stoppen beendet den Lauf trotzdem.",
+      "refreshFailed": "Dieser Lauf ließ sich nicht aktualisieren: Sie sehen seinen letzten guten Stand.",
+      "retry": "Erneut versuchen",
+      "stopSent": "Stopp gesendet"
     }
   }
 }

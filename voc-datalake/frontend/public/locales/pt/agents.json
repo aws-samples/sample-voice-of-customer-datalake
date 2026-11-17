@@ -1332,14 +1332,12 @@
     "runSignals": "Controlos da execução",
     "agentSignals": "Agente {{agent}}",
     "signals": {
-      "save": "Guardar",
       "pause": "Pausar",
       "resume": "Retomar",
       "shutdown": "Parar",
       "stop_now": "Parar já, sem guardar"
     },
     "signalSent": "Enviado.",
-    "signalFor": "{{signal}} — {{target}}",
     "stopNowTitle": "Parar já, sem guardar?",
     "stopNowMessage": "O trabalho para de imediato, sem ponto de controlo: perde-se o que ainda não estiver guardado. Para o manter, use Parar.",
     "stopNowAgentMessage": "O agente para de imediato, sem ponto de controlo: perde-se o que ainda não tiver guardado. Para o manter, use Parar.",
@@ -1385,12 +1383,9 @@
       "progress": "Último avanço",
       "metering": "Uso",
       "stuck": "Parece encravado: {{reason}}",
-      "inspect": "Chamadas recentes a ferramentas ({{n, number}})",
-      "noTools": "Ainda não há chamadas a ferramentas.",
       "for": "há {{age}}",
       "ago": "há {{age}}",
       "started": "Começou",
-      "continuation": "continuação {{n, number}}",
       "microvmTime": "{{seconds, number}} s de MicroVM"
     },
     "noAgents": "Ainda nenhum agente começou.",
@@ -1410,23 +1405,11 @@
       "failed": "Falhou",
       "done": "Feita"
     },
-    "fromTo": "{{from}} → {{to}}",
     "reply": "Responder",
     "replyTo": "Responder a {{who}}",
-    "answerTo": "Responder a",
-    "conductor": "O condutor da execução",
-    "replyingIn": "A responder no fio {{thread}}",
-    "newThread": "Começar um fio novo",
     "answer": "A sua mensagem",
     "bytes": "{{used, number}} / {{max, number}} bytes",
     "send": "Enviar",
-    "noMessages": "Ainda não há mensagens.",
-    "tabs": {
-      "agents": "Agentes",
-      "board": "Quadro",
-      "conversation": "Conversa",
-      "reports": "Relatórios"
-    },
     "board": {
       "post": "Publicar uma tarefa",
       "role": "Função",
@@ -1450,7 +1433,6 @@
       "blockOverMessage": "Outra pessoa a tem ({{holder}}): bloqueá-la encerra a atribuição dela.",
       "release": "Devolver aos agentes"
     },
-    "panels": "Os agentes, o quadro, a conversa e os relatórios da execução",
     "reports": {
       "title": "Relatório: {{subject}}",
       "version": "Versão",
@@ -1748,15 +1730,14 @@
       "asGrid": "Grade de {{count, number}}",
       "tabs": "Sessões abertas",
       "close": "Fechar {{name}}",
-      "more": "Mais ({{count, number}})",
       "choose": "Escolher…",
-      "open": "Abrir",
       "noAgent": "Esta execução não tem o agente {{agent}}.",
       "grid": "As sessões lado a lado",
       "divider": "Mover o divisor",
       "paneAgent": "O agente deste painel",
       "closePane": "Fechar este painel",
-      "emptyPane": "Escolha um agente para este painel."
+      "emptyPane": "Escolha um agente para este painel.",
+      "openAnother": "Abrir outro agente"
     },
     "thread": {
       "label": "O fio de {{agent}}",
@@ -1801,8 +1782,6 @@
       "sent": "Enviado ao orquestrador."
     },
     "agentControls": {
-      "save": "Salvar",
-      "stop": "Parar",
       "restart": "Reiniciar",
       "restartTitle": "Reiniciar {{agent}}?",
       "restartMessage": "A sessão dele termina e começa de novo. Do zero, o trabalho desde o último ponto de controle também se perde.",
@@ -1810,7 +1789,9 @@
       "fromChoices": {
         "checkpoint": "O ponto de controle mais recente",
         "fresh": "A tarefa, do zero"
-      }
+      },
+      "more": "Mais para {{agent}}",
+      "restartItem": "Reiniciar…"
     },
     "restartRun": {
       "open": "Reiniciar a execução",
@@ -1859,6 +1840,8 @@
         "files": "Arquivos",
         "gate": "Controle",
         "assertions": "Asserções",
+        "board": "Quadro",
+        "reports": "Relatórios",
         "cost": "Custo",
         "memory": "Memória e Learn"
       }
@@ -1935,7 +1918,6 @@
     },
     "cost": {
       "cost": "Custo",
-      "microvm": "MicroVM",
       "model": "Modelo",
       "skill": "Habilidade",
       "attempt": "Tentativa",
@@ -1969,6 +1951,17 @@
       "more": "Mostrar mais",
       "moreFailed": "Não foi possível ler a próxima página.",
       "empty": "Nenhuma execução iniciada neste mês."
+    },
+    "controls": {
+      "stopping": "A parar…",
+      "moreStop": "Outras formas de parar",
+      "stopNow": "Parar já, sem guardar…",
+      "more": "Mais ações",
+      "save": "Guardar um ponto de controlo",
+      "limited": "Pausar, Retomar e Guardar precisam do ambiente de engenharia, que esta implementação ainda não liga. Parar continua a terminar a execução.",
+      "refreshFailed": "Não foi possível atualizar esta execução: vê o seu último estado válido.",
+      "retry": "Tentar de novo",
+      "stopSent": "Paragem enviada"
     }
   }
 }

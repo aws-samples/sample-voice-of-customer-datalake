@@ -44,7 +44,7 @@ describe('Restart run', () => {
   it('is offered once the run has ended, never on a run under way', async () => {
     workspaceRoutes()
     renderWorkspace(`/agents/engineering/${fixture.run_id}`)
-    expect(await screen.findByRole('button', { name: 'Pause — The whole run' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Restart run' })).not.toBeInTheDocument()
   })
 

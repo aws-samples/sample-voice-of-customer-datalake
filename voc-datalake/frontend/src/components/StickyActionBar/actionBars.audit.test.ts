@@ -79,7 +79,6 @@ const EXEMPT: Readonly<Record<string, string>> = {
   ReadyStep: 'Run on an issue now is the Ready to go step\'s action inside the step\'s card (it opens a confirmation dialog); nothing left unsaved',
   WorkflowPage: 'Start a run is a page-header action beside the title (it opens a dialog)',
   WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
-  EngineeringConversation: 'Send is a chat composer\'s, under the conversation it adds to (a message, not a form\'s save row)',
   SteerComposer: 'Send is the run workspace thread\'s composer, under the session pane it steers (a message to the orchestrator, not a form\'s save row)',
   EngineeringBoardControls: 'Post is a small fold-out form\'s at the top of the board it adds a task to (an action, not a page\'s save row)',
   RunDecisionForm: 'Make the decision sits in the decision card at the top of the selected run, above the graph, left-aligned',

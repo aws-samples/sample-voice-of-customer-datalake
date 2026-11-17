@@ -2,7 +2,7 @@
  * @fileoverview The run workspace's header (7.51.00): the run monitor's (goal, status, repository, times, issue and
  * pull request, MicroVM time and tokens, the flow's budget), with the budget this run used against its cap (its
  * tokens at their prices, Learn's apart), what an ended run's manifest recorded, and the runs it was restarted from
- * and as (a child run is a new run of an ended one: D51-3).
+ * and as (a child run is a new run of an ended one: D51-3), and the run's control bar.
  *
  * @module pages/Agents/RunWorkspace/RunHeader
  */
@@ -12,6 +12,7 @@ import { formatCount } from '../../../utils/numberFormat'
 import { EngineeringRunHeader } from '../EngineeringRunHeader'
 import { shareTone, budgetShare } from '../spendView'
 import { runWorkspacePath } from './runWorkspacePaths'
+import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 
 function useDollars(): (value: number) => string {
@@ -83,11 +84,13 @@ function RunLineage({ overview }: Readonly<{ overview: EngineeringOverview }>) {
   )
 }
 
-export function RunHeader({ overview }: Readonly<{ overview: EngineeringOverview }>) {
+/** The header, with the run's control bar (RunControlBar.tsx) at its foot. */
+export function RunHeader({ overview, controls }: Readonly<{ overview: EngineeringOverview; controls: ReactNode }>) {
   return (
     <EngineeringRunHeader overview={overview}>
       <RunCost run={overview.run} />
       <RunLineage overview={overview} />
+      {controls}
     </EngineeringRunHeader>
   )
 }
