@@ -12,6 +12,7 @@ run workspace's world (engineering/test/run_workspace_world.py).
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import patch
@@ -176,13 +177,14 @@ def test_the_retrospective_names_the_failures_learn_took_to_the_coach(lambda_con
 
 
 @pytest.mark.usefixtures('api')
-def test_the_retrospective_of_an_unknown_run_or_off_module_is_404(lambda_context: Any,
-                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_retrospective_of_an_unknown_run_or_off_module_is_404(lambda_context: Any) -> None:
     assert _call(lambda_context, 'GET', '/agents/engineering/01JDZZZZZZZZZZZZZZZZZZZZZZ/retrospective',
                  claims=ADMIN)[0] == 404
     assert _call(lambda_context, 'GET', '/agents/engineering/a.b/retrospective', claims=ADMIN)[0] == 404
-    monkeypatch.setenv('ENGINEERING_AGENTS', 'off')
-    assert _call(lambda_context, 'GET', f'{BASE}/retrospective', claims=mcp('run_analysis'))[0] == 404
+    # (inside the api fixture's own patch of the environment: a monkeypatch torn down after it would put the module's
+    # 'on' back into os.environ, which every later test of the worker then reads)
+    with patch.dict(os.environ, {'ENGINEERING_AGENTS': 'off'}):
+        assert _call(lambda_context, 'GET', f'{BASE}/retrospective', claims=mcp('run_analysis'))[0] == 404
 
 
 def test_the_retrospective_is_a_routes_answer_and_the_loop_names_its_row_the_same() -> None:
