@@ -3,7 +3,8 @@ harness; the flows as voc-workflow/2 definitions the server keeps as written; th
 from __future__ import annotations
 
 import json
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -11,18 +12,23 @@ from engineering.connectors.identity import AGENT_ROLES
 from engineering.orchestration import bundle as bundled
 from engineering.orchestration.compile import (
     BUNDLE_FILE,
+    KIRO_BUILTINS,
+    KIRO_DIR,
     LAMBDA_COPY,
     agent_body,
     compile_bundle,
     definition,
     digest,
+    kiro_files,
     load,
     render,
     skill_ref,
 )
 from engineering.orchestration.schema import ROOT
-from engineering.runtime.harness.skills import Skill, skill_label
-from engineering.runtime.harness.tools import role_specs
+from engineering.runtime.harness.cli import TOOL_SERVER
+from engineering.runtime.harness.converse_loop import system_prompt
+from engineering.runtime.harness.skills import Skill, platform_rules, skill_label
+from engineering.runtime.harness.tools import AgentContext, role_specs
 from shared import engineering_templates
 from shared.workflow_engineering import flow_settings, step_assertions
 from shared.workflow_schema import validate_definition
@@ -31,6 +37,7 @@ SOURCES = load()
 BUNDLE = compile_bundle(SOURCES)
 AGENTS = {agent['id']: agent for agent in BUNDLE['agents']}
 FLOWS = {flow['template_id']: flow for flow in BUNDLE['flows']}
+KIRO = {name.removesuffix('.json'): json.loads(text) for name, text in kiro_files(SOURCES).items()}
 
 #: 7.47.00's skill records (runtime/harness/skills.py before the templates): each role's tool policy, model and
 #: harness. A compiled record keeps them; a tool the platform offers since (``promote-pending`` moved it out of the
@@ -178,3 +185,62 @@ def test_a_file_that_is_not_a_bundle_is_refused(tmp_path) -> None:
     other.write_text('{"schema": "voc-workflow-templates/1"}', encoding='utf-8')
     with pytest.raises(bundled.BundleError, match='is not voc-orchestration-bundle/1'):
         bundled.load(other)
+
+
+def test_one_kiro_agent_config_per_launchable_role_none_for_the_coach_committed_as_compiled() -> None:
+    files = kiro_files(SOURCES)
+    assert sorted(KIRO) == sorted(AGENT_ROLES - {'coach'})
+    assert len(KIRO) == 12
+    assert kiro_files(load()) == files   # (deterministic)
+    assert sorted(path.name for path in (ROOT / KIRO_DIR).iterdir()) == sorted(files)
+    assert all((ROOT / KIRO_DIR / name).read_text(encoding='utf-8') == text for name, text in files.items())
+
+
+def test_the_fixers_kiro_config_allows_its_reads_and_platform_tools_and_leaves_writes_and_commands_to_ask() -> None:
+    fixer = KIRO['fixer']
+    assert list(fixer) == ['name', 'description', 'prompt', 'tools', 'allowedTools', 'mcpServers', 'resources',
+                           'permissions']
+    assert (fixer['name'], fixer['description']) == ('fixer', SOURCES.cards['fixer']['purpose'])
+    assert fixer['tools'] == ['@voc', 'glob', 'grep', 'read', 'shell', 'write']
+    assert fixer['allowedTools'] == ['read', 'grep', 'glob', '@voc/submit_work', '@voc/read_issue',
+                                     '@voc/report_progress', '@voc/save_checkpoint', '@voc/finish']
+    assert fixer['mcpServers'] == {'voc': {'command': '/usr/bin/python3',
+                                           'args': ['-I', '/opt/voc/harness.py', 'tool-server']}}
+    assert fixer['resources'] == []
+    # (what `kiro-cli agent upgrade` derives from tools and allowedTools: the mcp match sorted)
+    assert fixer['permissions'] == {'rules': [
+        {'capability': 'fs_read', 'effect': 'allow'},
+        {'capability': 'mcp', 'match': ['voc/finish', 'voc/read_issue', 'voc/report_progress', 'voc/save_checkpoint',
+                                        'voc/submit_work'], 'effect': 'allow'},
+        {'capability': 'skill', 'effect': 'allow'}]}
+    assert 'kiroUpgrade' not in fixer
+
+
+@pytest.mark.parametrize('role', sorted(SKILLS_7_47))
+def test_each_kiro_config_grants_only_its_cards_tools_and_never_a_write_or_a_command(role: str) -> None:
+    config, card = KIRO[role], SOURCES.cards[role]
+    tools = list(card['tools'])
+    platform = [tool for tool in tools if tool not in KIRO_BUILTINS]
+    assert set(config['tools']) == {name for tool in tools for name in KIRO_BUILTINS.get(tool, ())} | {'@voc'}
+    assert ('write' in config['tools'], 'shell' in config['tools']) == (
+        'write_file' in tools, bool({'run', 'install_dependencies'} & set(tools)))
+    assert not {'subagent', '@builtin', 'web_search', 'web_fetch'} & set(config['tools'])
+    assert config['allowedTools'] == ['read', 'grep', 'glob', *(f'@voc/{tool}' for tool in platform)]
+    rules = config['permissions']['rules']
+    assert [rule['capability'] for rule in rules] == ['fs_read', 'mcp', 'skill']
+    assert rules[1]['match'] == sorted(f'voc/{tool}' for tool in platform)
+    assert all(rule['effect'] == 'allow' and rule['capability'] not in ('fs_write', 'shell') for rule in rules)
+    server = config['mcpServers']['voc']
+    assert [server['command'], *server['args']] == list(TOOL_SERVER)
+
+
+def test_a_kiro_configs_prompt_is_the_harness_system_prompt_less_the_sessions_fence_line() -> None:
+    rules = BUNDLE['platform_rules']['text']
+    for role, config in KIRO.items():
+        skill = Skill.from_record(AGENTS[role]['skill'])
+        context = cast(AgentContext, SimpleNamespace(role=role, fence='F3NC3', platform_rules=rules))
+        assert config['prompt'].startswith(f'{rules.strip()}\n\n{skill.instructions}')
+        assert system_prompt(context, skill) == config['prompt'].replace(
+            rules.strip(), platform_rules('F3NC3', rules), 1)
+    assert 'Example 1. When: The task says `divide(7, 2)` returns 3' in KIRO['fixer']['prompt']
+    assert 'F3NC3' not in json.dumps(KIRO)

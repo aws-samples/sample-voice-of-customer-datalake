@@ -2628,6 +2628,55 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
   `s3:ListBucket` held to the transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). No agent role
   gains anything.
 
+### Kiro agent configs (7.53.00 prep)
+
+*Templates only*: nothing loads them yet. The Kiro harness, kiro-cli over ACP (the Agent Client Protocol), comes in
+7.53. Until then the CLI adapter does not offer kiro-cli ([above](#runtime-one-agentcore-session-per-agent)).
+
+`npm run orchestration:compile` writes one Kiro CLI agent config per launchable role to
+`voc-datalake/templates/orchestration/kiro-agents/<role>.json` (twelve; the coach is never launched). The files are
+committed, and `orchestration:validate` holds them to a fresh compile, as it does both bundles
+(`lambda/engineering/orchestration/compile.py`, [the templates' README](../voc-datalake/templates/orchestration/README.md#kiro-agent-configs-75300-prep)).
+They are in Kiro's v3 universal format. kiro-cli 3.3.0 has two agent engines: one reads `tools` and `allowedTools`,
+the other `permissions.rules`. Each file has both.
+
+- **What a config holds.** `name` is the role and `description` its card's purpose. `prompt` is the platform rules
+  and then the role's skill, as the harness builds its system prompt, without the session's fence line (a nonce
+  each session draws).
+- **Its tools are its card's.** They are mapped to Kiro's builtins: `read_file` is `read`, `list_files` is `grep`
+  and `glob`, `write_file` is `write`, and `run` and `install_dependencies` are `shell`. The card's other tools are
+  the harness's tool server, `@voc`, started as the CLI adapter starts it
+  (`/usr/bin/python3 -I /opt/voc/harness.py tool-server`, `cli.py` `TOOL_SERVER`). No config has `subagent`, a web
+  tool or `@builtin`.
+- **What runs without asking.** Three things: the read builtins (an `fs_read` allow rule), each platform tool on
+  the card (an `mcp` allow rule on `voc/<tool>`), and skills. The rules are exactly what `kiro-cli agent upgrade`
+  derives from `allowedTools`, so kiro-cli leaves the files as they are.
+- **A write or a command always asks.** No config allows `fs_write` or `shell`, or puts `write` or `shell` in
+  `allowedTools`. Each such call reaches the orchestrator as `session/request_permission`, and the orchestrator
+  answers it. A write or a command is where text from the repository or an issue could become an action. Data is
+  never an instruction, so the model never approves its own writes or commands.
+
+**How 7.53 will load one** (*planned*): kiro-cli gets a fresh home of its own (`HOME`), as the CLI adapter's
+`claude` does, and the role's config goes in that home's `.kiro/agents/`. No developer's or repository's Kiro agents
+or settings are loaded. Checked with kiro-cli 3.3.0: in such a home, `kiro-cli agent list` lists the twelve and
+Kiro's built-in agents only, and `kiro-cli agent upgrade --dry-run` calls all twelve already universal. The fence
+line and the tool server's environment (`VOC_SESSION_FILES` and the rest that `cli.py` passes) belong to the
+session, so the copy in the session's home adds them. Before any run, 7.53 also has to settle three gaps:
+
+- The `fs_read` allow names no path, so a read reaches anything the session's user can read. A deny rule would not
+  close it: kiro-cli's V3 engine reads outside the workspace without asking even when one matches
+  (`scripts/ai-review/lib.mjs`).
+- kiro-cli also loads the agents of a `.kiro/agents/` in its working directory (its "Workspace" agents), so it must
+  not start in the checkout.
+- The skills name the harness's tools (`read_file`, `run`), not Kiro's.
+
+**The validator.** It refuses a config that does not parse, that names a tool beyond its card's, `subagent`, or a
+tool server other than the harness's, that allows a write or a command, or whose prompt does not start with the
+platform rules. When kiro-cli is on `PATH` and the developer's Kiro API key is in `~/.config/voc-kiro/api-key`, it
+also runs `kiro-cli agent validate --path <file>` on each config. kiro-cli runs in a temporary home of its own, with
+the key as `KIRO_API_KEY`, and the key is never printed. Without kiro-cli or the key the validator says it skipped
+that check: kiro-cli is never required.
+
 ## Reports
 
 *Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,

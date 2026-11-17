@@ -5,7 +5,8 @@ A card lists in ``pending_tools`` the tools its SKILL.md names that the harness 
 so the card cannot lag behind). This command makes the move: each entry the harness's ``role_specs(role)`` or the
 broker's ``permitted(role, op)`` now offers goes into ``tools`` (before the housekeeping tools, report_progress,
 save_checkpoint and finish) or ``broker_ops``; the card's template version and its SKILL.md's go up by one; both
-bundle copies are compiled again. What is still not offered stays pending. It prints what moved.
+bundle copies and the Kiro agent configs are compiled again. What is still not offered stays pending. It prints what
+moved.
 
 The card is edited as text, key by key (the YAML's comments and layout kept): a top-level key's value runs to the
 next line that is not indented.
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Final
 
 from engineering.connectors.broker import permitted
-from engineering.orchestration.compile import compile_bundle, load, render, write
+from engineering.orchestration.compile import compile_bundle, kiro_files, load, render, write, write_kiro_agents
 from engineering.orchestration.schema import ROOT, read_yaml
 from engineering.runtime.harness.tools import READ_TOOLS, role_specs
 
@@ -98,9 +99,12 @@ def _promote_card(directory: Path) -> Promoted | None:
 
 
 def promote(root: Path = ROOT) -> tuple[Promoted, ...]:
-    """Every card's promotions under ``root``, written, and the bundle compiled again when any moved."""
+    """Every card's promotions under ``root``, written, and the bundle and the Kiro agent configs compiled again when
+    any moved."""
     moved = tuple(found for directory in sorted((root / 'agents').iterdir())
                   if directory.is_dir() and (found := _promote_card(directory)) is not None)
     if moved:
-        write(render(compile_bundle(load(root))), root)
+        sources = load(root)
+        write(render(compile_bundle(sources)), root)
+        write_kiro_agents(kiro_files(sources), root)
     return moved

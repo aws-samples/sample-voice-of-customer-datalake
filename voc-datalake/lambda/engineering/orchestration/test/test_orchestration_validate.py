@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from engineering.orchestration import compile as compiler
 from engineering.orchestration import validate
-from engineering.orchestration.compile import compile_bundle, load, render, write
+from engineering.orchestration.compile import compile_bundle, kiro_files, load, render, write, write_kiro_agents
 from engineering.orchestration.schema import ROOT
 
 
@@ -21,10 +24,12 @@ def test_the_shipped_templates_and_both_bundles_pass_every_check() -> None:
 
 @pytest.fixture
 def copy(tmp_path: Path) -> Path:
-    """A copy of the templates folder, its two bundles beside it compiled."""
+    """A copy of the templates folder, its two bundles beside it and its Kiro agent configs compiled."""
     root = tmp_path / 'orchestration'
     shutil.copytree(ROOT, root)
-    write(render(compile_bundle(load(root))), root)
+    sources = load(root)
+    write(render(compile_bundle(sources)), root)
+    write_kiro_agents(kiro_files(sources), root)
     return root
 
 
@@ -150,3 +155,145 @@ def test_a_source_that_does_not_read_is_the_one_problem(copy: Path) -> None:
     (copy / 'flows' / 'feature.yaml').write_text('steps: [unclosed', encoding='utf-8')
     [problem] = validate.problems(copy)
     assert problem.startswith('flows/feature.yaml: not readable YAML')
+
+
+SERVER = r"its one tool server is the harness's, voc: /usr/bin/python3 -I /opt/voc/harness\.py tool-server"
+
+
+@pytest.mark.parametrize(('role', 'change', 'problem'), [
+    ('fixer', lambda d: d['tools'].append('subagent'), r'fixer\.json: names subagent'),
+    ('fixer', lambda d: d['tools'].append('web_fetch'),
+     r"fixer\.json: its tools are among its card's as Kiro names them \(@voc, glob, grep, read, shell, write\)"),
+    ('committer', lambda d: d['tools'].append('write'), r"committer\.json: its tools are among its card's"),
+    ('mapper', lambda d: d.update(tools='read'), r"mapper\.json: its tools are among its card's"),
+    ('fixer', lambda d: d['permissions']['rules'].append({'capability': 'fs_write', 'effect': 'allow'}),
+     r'fixer\.json: allows fs_write without asking: a write and a command always ask the orchestrator'),
+    ('hunter', lambda d: d['permissions']['rules'].append({'capability': 'shell', 'match': ['*'], 'effect': 'allow'}),
+     r'hunter\.json: allows shell without asking'),
+    ('builder', lambda d: d['allowedTools'].append('write'), r'builder\.json: allows write without asking'),
+    ('fixer', lambda d: d.update(prompt='You are a helpful agent.'),
+     r'fixer\.json: its prompt starts with the platform rules'),
+    ('fixer', lambda d: d['mcpServers']['voc'].update(command='/usr/local/bin/python3'), SERVER),
+    ('fixer', lambda d: d['mcpServers']['voc'].update(args=['/opt/voc/harness.py', 'tool-server']), SERVER),
+    ('fixer', lambda d: d['mcpServers'].update(other={'command': '/usr/bin/true'}), SERVER),
+    ('fixer', lambda d: d.update(mcpServers=[]), SERVER),
+])
+def test_each_kiro_agent_check_catches_what_it_is_for(copy: Path, role: str, change: Callable[[dict], None],
+                                                      problem: str) -> None:
+    _json(copy / 'kiro-agents' / f'{role}.json', change)
+    found = validate.problems(copy)
+    assert any(re.search(problem, line) for line in found), found
+    assert f"kiro-agents/{role}.json: it is not the compile's output (npm run orchestration:compile writes it)" in found
+
+
+def test_a_kiro_agent_config_that_does_not_parse_is_missing_is_stray_or_is_stale_is_a_problem(copy: Path) -> None:
+    folder = copy / 'kiro-agents'
+    (folder / 'fixer.json').write_text('{"name": "fixer",', encoding='utf-8')
+    (folder / 'mapper.json').write_text('["mapper"]', encoding='utf-8')
+    (folder / 'hunter.json').unlink()
+    (folder / 'coach.json').write_text('{}', encoding='utf-8')
+    _json(folder / 'builder.json', lambda d: d.update(permissions='all', allowedTools={'read': True}))
+    found = validate.problems(copy)
+    assert found[:2] == [found[0], 'kiro-agents/mapper.json: not a JSON object']
+    assert found[0].startswith('kiro-agents/fixer.json: not readable JSON (')
+    # (malformed permissions and allowedTools only differ from the compile's output: never a crash)
+    assert found[2:] == [
+        "kiro-agents/mapper.json: it is not the compile's output (npm run orchestration:compile writes it)",
+        "kiro-agents/hunter.json: it is not the compile's output (npm run orchestration:compile writes it)",
+        "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)",
+        "kiro-agents/builder.json: it is not the compile's output (npm run orchestration:compile writes it)",
+        "kiro-agents/coach.json: not a launchable role's config (npm run orchestration:compile removes it)"]
+    changed = write_kiro_agents(kiro_files(load(copy)), copy)
+    assert sorted(path.name for path in changed) == ['builder.json', 'coach.json', 'fixer.json', 'hunter.json',
+                                                     'mapper.json']
+    assert validate.problems(copy) == []
+
+
+def test_a_card_change_is_drift_of_its_kiro_config_and_a_compile_that_would_allow_a_command_is_refused(
+        copy: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _edit(copy / 'agents' / 'fixer' / 'agent.yaml', 'purpose: Smallest fix', 'purpose: The smallest fix')
+    found = validate.problems(copy)
+    assert "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)" in found
+    assert [line for line in found if line.startswith('kiro-agents/')] == [
+        "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)"]
+    monkeypatch.setattr(compiler, 'KIRO_READS', (*compiler.KIRO_READS, 'shell'))
+    found = validate.problems(copy, drift=False)
+    assert 'kiro-agents/fixer.json: allows shell without asking: a write and a command always ask the orchestrator' in found
+    assert 'kiro-agents/mapper.json' not in ' '.join(found)   # (the mapper runs no command)
+
+
+KEY = 'kiro-key-that-is-never-shown'
+
+
+def _home(tmp_path: Path, key: str | None = KEY) -> Path:
+    home = tmp_path / 'home'
+    (home / '.config' / 'voc-kiro').mkdir(parents=True)
+    if key is not None:
+        (home / '.config' / 'voc-kiro' / 'api-key').write_text(f'{key}\n', encoding='utf-8')
+    return home
+
+
+def _kiro(*, code: Callable[[str], int] = lambda _name: 0, said: str = '',
+          calls: list[dict[str, Any]] | None = None) -> Callable[..., subprocess.CompletedProcess[str]]:
+    def run(argv: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        if calls is not None:
+            calls.append({'argv': argv, **options, 'home_there': Path(options['env']['HOME']).is_dir()})
+        name = Path(argv[-1]).name
+        return subprocess.CompletedProcess(argv, code(name), '', said if code(name) else '')
+    return run
+
+
+def test_kiro_cli_is_optional_without_it_or_its_key_the_check_is_skipped_with_a_notice(tmp_path: Path) -> None:
+    def never(*_args: object, **_options: object) -> subprocess.CompletedProcess[str]:
+        raise AssertionError('kiro-cli is not run')
+
+    assert validate.kiro_cli_problems(ROOT, which=lambda _name: None, run=never, home=_home(tmp_path)) == (
+        [], 'kiro-cli: skipped, kiro-cli is not on PATH (its check of the Kiro agent configs is optional)')
+    assert validate.kiro_cli_problems(ROOT, which=lambda _name: '/opt/kiro/kiro-cli', run=never,
+                                      home=_home(tmp_path / 'b', key=None)) == (
+        [], ('kiro-cli: skipped, no Kiro API key in ~/.config/voc-kiro/api-key (its check of the Kiro agent configs '
+             'is optional)'))
+
+
+def test_kiro_cli_validates_each_config_in_a_fresh_home_of_its_own_with_the_key_alone(tmp_path: Path) -> None:
+    calls: list[dict[str, Any]] = []
+    home = _home(tmp_path)
+    found = validate.kiro_cli_problems(ROOT, which=lambda _name: '/opt/kiro/kiro-cli', run=_kiro(calls=calls),
+                                       home=home)
+    assert found == ([], 'kiro-cli: the 12 Kiro agent configs pass `kiro-cli agent validate`')
+    assert sorted(call['argv'][-1] for call in calls) == sorted(
+        str(ROOT / 'kiro-agents' / name) for name in kiro_files(load()))
+    for call in calls:
+        assert call['argv'][:4] == ['/opt/kiro/kiro-cli', 'agent', 'validate', '--path']
+        assert set(call['env']) == {'PATH', 'HOME', 'KIRO_API_KEY'}
+        assert (call['env']['KIRO_API_KEY'], call['cwd'], call['home_there']) == (KEY, call['env']['HOME'], True)
+        assert not Path(call['env']['HOME']).exists()   # (removed after its run)
+        assert not call['env']['HOME'].startswith(str(home))
+        assert (call['check'], call['timeout']) == (False, validate.KIRO_CLI_SECONDS)
+    assert len({call['env']['HOME'] for call in calls}) == 12
+
+
+def test_a_config_kiro_cli_refuses_is_a_problem_and_the_key_never_shows(tmp_path: Path) -> None:
+    said = f'\x1b[38;5;9mError: \x1b[0mJson supplied at fixer.json is invalid: key {KEY}\n  at line 1'
+    problems, notice = validate.kiro_cli_problems(
+        ROOT, which=lambda _name: '/opt/kiro/kiro-cli', run=_kiro(code=lambda name: int(name == 'fixer.json'),
+                                                                   said=said), home=_home(tmp_path))
+    assert (problems, notice) == ([('kiro-agents/fixer.json: kiro-cli agent validate refuses it: Error: Json '
+                                    'supplied at fixer.json is invalid: key <the key> at line 1')], '')
+    assert KEY not in ' '.join(problems)
+
+
+@pytest.mark.parametrize(('failure', 'notice'), [
+    (subprocess.TimeoutExpired(['kiro-cli'], 60), 'kiro-cli: skipped, it did not run (TimeoutExpired)'),
+    (PermissionError('not executable'), 'kiro-cli: skipped, it did not run (PermissionError)'),
+    (None, 'kiro-cli: skipped, it says it is not logged in'),
+])
+def test_kiro_cli_that_does_not_run_or_is_not_logged_in_is_skipped(tmp_path: Path, failure: Exception | None,
+                                                                   notice: str) -> None:
+    def run(argv: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+        if failure is not None:
+            raise failure
+        return subprocess.CompletedProcess(argv, 1, '', 'error: You are not logged in, please log in with kiro-cli login')
+
+    assert validate.kiro_cli_problems(ROOT, which=lambda _name: '/opt/kiro/kiro-cli', run=run,
+                                      home=_home(tmp_path)) == ([], notice)

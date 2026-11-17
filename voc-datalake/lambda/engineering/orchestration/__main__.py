@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from engineering.orchestration import calibrate, promote, runner, validate
-from engineering.orchestration.compile import compile_bundle, load, render, write
+from engineering.orchestration.compile import compile_bundle, kiro_files, load, render, write, write_kiro_agents
 from engineering.orchestration.schema import ROOT
 
 Out = Callable[[str], None]
@@ -26,9 +26,15 @@ Out = Callable[[str], None]
 
 def _validate(_args: argparse.Namespace, out: Out) -> int:
     found = validate.problems(ROOT)
+    notice = ''
+    if not found:
+        found, notice = validate.kiro_cli_problems(ROOT)   # (optional: kiro-cli's own check, when it is there)
     for problem in found:
         out(problem)
-    out(f'orchestration: {len(found)} problem(s)' if found else 'orchestration: the templates and both bundles are valid')
+    out(f'orchestration: {len(found)} problem(s)' if found
+        else 'orchestration: the templates, both bundles and the Kiro agent configs are valid')
+    if notice:
+        out(notice)
     return 1 if found else 0
 
 
@@ -38,14 +44,16 @@ def _compile(args: argparse.Namespace, out: Out) -> int:
         for problem in found:
             out(problem)
         return 1
-    text = render(compile_bundle(load(ROOT)))
+    sources = load(ROOT)
+    text, configs = render(compile_bundle(sources)), kiro_files(sources)
     if args.check:
-        drift = validate.drift_problems(text, ROOT)
+        drift = validate.drift_problems(text, ROOT) + validate.kiro_drift_problems(configs, ROOT)
         for problem in drift:
             out(problem)
         return 1 if drift else 0
-    written = write(text, ROOT)
-    out(f'wrote {", ".join(str(path) for path in written)}' if written else 'both bundles are up to date')
+    written = write(text, ROOT) + write_kiro_agents(configs, ROOT)
+    out(f'wrote {", ".join(str(path) for path in written)}' if written
+        else 'both bundles and the Kiro agent configs are up to date')
     return 0
 
 
@@ -76,9 +84,10 @@ def parser() -> argparse.ArgumentParser:
     parse = argparse.ArgumentParser(prog='python -m engineering.orchestration', description=__doc__,
                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parse.add_subparsers(dest='command', required=True)
-    commands.add_parser('validate', help='every check of the templates and both bundles').set_defaults(act=_validate)
-    compiling = commands.add_parser('compile', help='write bundle.json and its Lambda copy')
-    compiling.add_argument('--check', action='store_true', help='only say whether both are up to date')
+    commands.add_parser('validate', help='every check of the templates, both bundles and the Kiro agent '
+                        'configs').set_defaults(act=_validate)
+    compiling = commands.add_parser('compile', help='write bundle.json, its Lambda copy and the Kiro agent configs')
+    compiling.add_argument('--check', action='store_true', help='only say whether they are up to date')
     compiling.set_defaults(act=_compile)
     commands.add_parser('promote-pending', help='move the tools and broker operations the platform now offers out '
                         'of pending').set_defaults(act=_promote)

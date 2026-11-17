@@ -18,8 +18,16 @@ What it makes of each source (``schema.py`` reads them):
 - ``gates/<pack>/manifest.toml`` and ``evals/<flow>/cases/<case>/``: listed (packs with their images, the aliases,
   each case with its kind), so a reader needs no walk of the folder.
 
-The output is deterministic (sources in a fixed order, JSON with one-space indents), so ``validate`` can hold the
-committed ``bundle.json`` and its Lambda copy (``lambda/shared/orchestration_bundle.json``) to a fresh compile.
+Beside the bundle, one Kiro CLI agent config per launchable role, ``kiro-agents/<role>.json`` (Kiro's v3 universal
+agent JSON; 7.53.00 prep: nothing loads them yet). Its prompt is the platform rules and then the role's skill, as the
+harness's system prompt puts them (``converse_loop.system_prompt``, less the session's fence line: a template has no
+session). Its tools are the card's, mapped to Kiro's builtins (``KIRO_BUILTINS``); the card's other tools are the
+harness's tool server, ``@voc``, started as the CLI adapter starts it (``cli.TOOL_SERVER``). Reads and the platform's
+tools are allowed. A write (``write``) or a command (``shell``) is never allowed, so it always asks the orchestrator.
+
+The output is deterministic (sources in a fixed order, JSON with one-space indents, a Kiro config with two), so
+``validate`` can hold the committed ``bundle.json``, its Lambda copy (``lambda/shared/orchestration_bundle.json``) and
+``kiro-agents/`` to a fresh compile.
 """
 from __future__ import annotations
 
@@ -33,7 +41,9 @@ from typing import Any, Final
 from engineering.orchestration.bundle import SCHEMA as BUNDLE_SCHEMA
 from engineering.orchestration.schema import ROOT, SkillText, read_skill, read_yaml, relative
 from engineering.quality_gate.packs import ALIASES, load_packs
+from engineering.runtime.harness.cli import TOOL_SERVER
 from engineering.runtime.harness.skills import Example, Skill, skill_record
+from engineering.runtime.harness.tool_server import SERVER_NAME
 from shared.workflow_engineering import ENGINEERING_ROLES
 from shared.workflow_schema import DEFAULT_WORKFLOW_ID, SCHEMA_V2
 
@@ -302,3 +312,75 @@ def write(text: str, root: Path = ROOT) -> tuple[Path, ...]:
             path.write_text(text, encoding='utf-8')
             written.append(path)
     return tuple(written)
+
+
+#: The Kiro CLI agent configs' folder, beside the bundle: ``<role>.json`` per launchable role.
+KIRO_DIR: Final = 'kiro-agents'
+#: The card's tools that Kiro's own builtins (v3 names) stand for. Every other tool on a card is the platform's,
+#: from the harness's tool server (``@<SERVER_NAME>``). No ``subagent``, no web tool, no ``@builtin``.
+KIRO_BUILTINS: Final = {'read_file': ('read',), 'list_files': ('grep', 'glob'), 'write_file': ('write',),
+                        'run': ('shell',), 'install_dependencies': ('shell',)}
+#: The builtins that only read: allowed without asking (``allowedTools``, and the ``fs_read`` rule).
+KIRO_READS: Final = ('read', 'grep', 'glob')
+#: The builtins that always ask the orchestrator (its answer to ``session/request_permission``): never allowed.
+KIRO_ASKS: Final = frozenset({'write', 'shell'})
+
+
+def kiro_tools(card: Mapping[str, Any]) -> tuple[list[str], list[str]]:
+    """The card's tools as Kiro sees them: the builtins they map to, and the platform's own (the tool server's)."""
+    tools = [str(tool) for tool in card['tools']]
+    builtins = list(dict.fromkeys(name for tool in tools for name in KIRO_BUILTINS.get(tool, ())))
+    return builtins, [tool for tool in tools if tool not in KIRO_BUILTINS]
+
+
+def kiro_prompt(platform_rules: str, skill: Skill) -> str:
+    """The platform rules, then the skill's instructions and examples: the harness's system prompt
+    (``converse_loop.system_prompt``) without the session's fence line, which only a session has."""
+    return f'{platform_rules.strip()}\n\n{skill.system_prompt()}'
+
+
+def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str) -> dict[str, Any]:
+    """The role's Kiro agent config (v3 universal: ``tools`` and ``allowedTools`` for one engine, ``permissions`` for
+    the other). It allows the reads and the platform's tools on the card, and never a write or a command.
+
+    The rules are what ``kiro-cli agent upgrade`` derives from the other half (kiro-cli 3.3.0: an ``fs_read`` allow for
+    the read builtins, the ``mcp`` match sorted, a ``skill`` allow), so kiro-cli takes the file as already universal
+    and leaves it as it is. No ``kiroUpgrade`` marker: it is machine-specific (scripts/ai-review/agent-guard.mjs)."""
+    builtins, platform = kiro_tools(card)
+    reads = [name for name in KIRO_READS if name in builtins]
+    rules: list[dict[str, Any]] = [{'capability': 'fs_read', 'effect': 'allow'}] if reads else []
+    if platform:
+        rules.append({'capability': 'mcp', 'match': sorted(f'{SERVER_NAME}/{tool}' for tool in platform),
+                      'effect': 'allow'})
+    rules.append({'capability': 'skill', 'effect': 'allow'})
+    return {'name': card['id'], 'description': card['purpose'],
+            'prompt': kiro_prompt(platform_rules, skill_of(card, skill)),
+            'tools': sorted({*builtins, *([f'@{SERVER_NAME}'] if platform else [])}),
+            'allowedTools': [*reads, *(f'@{SERVER_NAME}/{tool}' for tool in platform)],
+            'mcpServers': {SERVER_NAME: {'command': TOOL_SERVER[0], 'args': list(TOOL_SERVER[1:])}},
+            'resources': [], 'permissions': {'rules': rules}}
+
+
+def kiro_files(sources: Sources) -> dict[str, str]:
+    """Every launchable role's Kiro agent config, rendered, by file name (the coach is never launched: none)."""
+    return {f'{role}.json': json.dumps(kiro_agent(sources.cards[role], sources.skills[role], sources.platform_rules),
+                                       indent=2, ensure_ascii=False) + '\n'
+            for role in role_order(sources.cards)
+            if sources.cards[role]['harness'] != 'learn' and role in sources.skills}
+
+
+def write_kiro_agents(files: Mapping[str, str], root: Path = ROOT) -> tuple[Path, ...]:
+    """Write each config whose content differs and remove any other ``*.json`` there; the files written or removed."""
+    folder = root / KIRO_DIR
+    folder.mkdir(exist_ok=True)
+    changed = []
+    for name, text in files.items():
+        path = folder / name
+        if not path.is_file() or path.read_text(encoding='utf-8') != text:
+            path.write_text(text, encoding='utf-8')
+            changed.append(path)
+    for path in sorted(folder.glob('*.json')):
+        if path.name not in files:
+            path.unlink()
+            changed.append(path)
+    return tuple(changed)

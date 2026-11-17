@@ -18,13 +18,28 @@ Each check answers a list of problems (``<file>: <what is wrong>``); the command
 - every automation names a flow there is, a budget above 0 for an engineering one, and every readiness check its
   flow and triggers need;
 - no placeholder is left in a source (``TODO``, ``TBD``, ``FIXME``, ``XXX``, ``<LIKE_THIS>``);
-- ``bundle.json`` and its Lambda copy are exactly the compile's output.
+- ``bundle.json`` and its Lambda copy are exactly the compile's output;
+- each Kiro agent config (``kiro-agents/<role>.json``), compiled and committed, parses; its tools are among its card's
+  as Kiro names them (``compile.KIRO_BUILTINS``, the platform's ``@voc``), never ``subagent``; it allows no write and
+  no command (no ``fs_write`` or ``shell`` allow rule, no ``write`` or ``shell`` in ``allowedTools``: those always
+  ask the orchestrator); its prompt starts with the platform rules; its one tool server is the harness's, started as
+  ``cli.TOOL_SERVER``; and ``kiro-agents/`` holds exactly the compile's output.
+
+The command line adds one optional check (``kiro_cli_problems``): ``kiro-cli agent validate`` on each Kiro agent
+config, when kiro-cli is on PATH and the developer's Kiro API key is in ``~/.config/voc-kiro/api-key``. Otherwise it
+says so and skips; kiro-cli is never a dependency.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any, Final
 
@@ -35,12 +50,16 @@ from engineering.orchestration import assertions
 from engineering.orchestration.assertions import SEVERITY, TRIAGE_KINDS
 from engineering.orchestration.compile import (
     BUILTIN_FLOWS,
+    KIRO_ASKS,
+    KIRO_DIR,
     LAMBDA_COPY,
     LEARN_CARD,
     Sources,
     compile_bundle,
     eval_cases,
     kind_of,
+    kiro_files,
+    kiro_tools,
     load,
     outputs,
     render,
@@ -49,7 +68,9 @@ from engineering.orchestration.compile import (
 )
 from engineering.orchestration.schema import EXAMPLES, REQUIRED_SECTIONS, ROOT, TemplateError, errors, relative, schema
 from engineering.quality_gate.packs import PackError, load_packs
+from engineering.runtime.harness.cli import TOOL_SERVER
 from engineering.runtime.harness.skills import SkillError
+from engineering.runtime.harness.tool_server import SERVER_NAME
 from engineering.runtime.harness.tools import role_specs
 from shared.model_config import ALLOWED_MODEL_IDS
 from shared.workflow_schema import validate_definition
@@ -286,6 +307,132 @@ def drift_problems(text: str, root: Path = ROOT) -> Problems:
             if not path.is_file() or path.read_text(encoding='utf-8') != text]
 
 
+#: The capabilities a Kiro agent config never allows: a write and a command always ask the orchestrator.
+ASKING_CAPABILITIES: Final = frozenset({'fs_write', 'shell'})
+
+
+def _strings(value: object) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _allowed(config: Mapping[str, Any]) -> set[str]:
+    """The capabilities the config's ``permissions.rules`` allow."""
+    permissions = config.get('permissions')
+    rules = permissions.get('rules') if isinstance(permissions, Mapping) else None
+    return {str(rule.get('capability')) for rule in (rules if isinstance(rules, list) else [])
+            if isinstance(rule, Mapping) and rule.get('effect') == 'allow'}
+
+
+def _tool_server(config: Mapping[str, Any]) -> list[str]:
+    """The argv of the config's tool server when it has one only, the harness's (``SERVER_NAME``); else []."""
+    servers = config.get('mcpServers')
+    server = servers.get(SERVER_NAME) if isinstance(servers, Mapping) and set(servers) == {SERVER_NAME} else None
+    return [str(server.get('command')), *_strings(server.get('args'))] if isinstance(server, Mapping) else []
+
+
+def _kiro_config_problems(where: str, config: Mapping[str, Any], card: Mapping[str, Any], rules_text: str) -> Problems:
+    builtins, platform = kiro_tools(card)
+    mapped = {*builtins, *([f'@{SERVER_NAME}'] if platform else [])}
+    tools, allowed = _strings(config.get('tools')), _strings(config.get('allowedTools'))
+    found = []
+    if not isinstance(config.get('tools'), list) or not set(tools) <= mapped:
+        found.append(f"{where}: its tools are among its card's as Kiro names them ({', '.join(sorted(mapped))})")
+    if 'subagent' in tools + allowed:
+        found.append(f'{where}: names subagent: a role starts no agent of its own')
+    asking = sorted((_allowed(config) & ASKING_CAPABILITIES) | (set(allowed) & KIRO_ASKS))
+    if asking:
+        found.append(f'{where}: allows {", ".join(asking)} without asking: a write and a command always ask the '
+                     'orchestrator')
+    if not str(config.get('prompt', '')).startswith(rules_text.strip()):
+        found.append(f'{where}: its prompt starts with the platform rules (_shared/PLATFORM_RULES.md)')
+    if _tool_server(config) != list(TOOL_SERVER):
+        found.append(f"{where}: its one tool server is the harness's, {SERVER_NAME}: {' '.join(TOOL_SERVER)} "
+                     '(cli.TOOL_SERVER)')
+    return found
+
+
+def kiro_agent_problems(documents: Mapping[str, Any], sources: Sources) -> Problems:
+    """Each Kiro agent config (by its file name in ``kiro-agents/``) against its role's card. A file of no launchable
+    role is left to ``kiro_drift_problems``."""
+    found = []
+    for name, config in documents.items():
+        card = sources.cards.get(name.removesuffix('.json'))
+        if card is None or card.get('harness') == 'learn':
+            continue
+        where = f'{KIRO_DIR}/{name}'
+        if isinstance(config, Mapping):
+            found += _kiro_config_problems(where, config, card, sources.platform_rules)
+        else:
+            found.append(f'{where}: not a JSON object')
+    return found
+
+
+def kiro_file_problems(root: Path, sources: Sources) -> Problems:
+    """The committed Kiro agent configs: each parses, and passes ``kiro_agent_problems``."""
+    found, documents = [], {}
+    for path in sorted((root / KIRO_DIR).glob('*.json')):
+        try:
+            documents[path.name] = json.loads(path.read_text(encoding='utf-8'))
+        except ValueError as error:
+            found.append(f'{KIRO_DIR}/{path.name}: not readable JSON ({error})')
+    return found + kiro_agent_problems(documents, sources)
+
+
+def kiro_drift_problems(files: Mapping[str, str], root: Path = ROOT) -> Problems:
+    """``kiro-agents/`` holds exactly ``files``, the compile's Kiro agent configs."""
+    folder = root / KIRO_DIR
+    found = [f"{KIRO_DIR}/{name}: it is not the compile's output (npm run orchestration:compile writes it)"
+             for name, text in files.items()
+             if not (folder / name).is_file() or (folder / name).read_text(encoding='utf-8') != text]
+    found += [f"{KIRO_DIR}/{path.name}: not a launchable role's config (npm run orchestration:compile removes it)"
+              for path in sorted(folder.glob('*.json')) if path.name not in files]
+    return found
+
+
+KIRO_CLI: Final = 'kiro-cli'
+#: The developer's Kiro API key, under their home: kiro-cli's ``KIRO_API_KEY``, read and never printed.
+KIRO_KEY_FILE: Final = Path('.config') / 'voc-kiro' / 'api-key'
+KIRO_CLI_SECONDS: Final = 60
+_ANSI: Final = re.compile(r'\x1b\[[0-9;]*m')
+
+Run = Callable[..., subprocess.CompletedProcess[str]]
+
+
+def _kiro_validate(binary: str, key: str, path: Path, *, run: Run) -> tuple[Path, int, str]:
+    """``kiro-cli agent validate`` on ``path`` in a fresh home of its own (no developer's Kiro settings, agents or
+    login are read or written), with the key alone: (path, exit code, what it said)."""
+    with tempfile.TemporaryDirectory(prefix='voc-kiro-') as home:
+        done = run([binary, 'agent', 'validate', '--path', str(path)], cwd=home, capture_output=True, text=True,
+                   timeout=KIRO_CLI_SECONDS, check=False,
+                   env={'PATH': os.environ.get('PATH', ''), 'HOME': home, 'KIRO_API_KEY': key})
+    said = ' '.join(_ANSI.sub('', f'{done.stdout}\n{done.stderr}').split()).replace(key, '<the key>')
+    return path, done.returncode, said[:300]
+
+
+def kiro_cli_problems(root: Path = ROOT, *, which: Callable[[str], str | None] = shutil.which, run: Run = subprocess.run,
+                      home: Path | None = None) -> tuple[Problems, str]:
+    """The optional check: ``kiro-cli agent validate`` on each Kiro agent config, when kiro-cli is on PATH and the
+    developer's key is in ``~/.config/voc-kiro/api-key`` (``home``: the developer's home). Answers (problems, a
+    notice); skipped, the notice saying why, when either is missing, kiro-cli does not run or it is not logged in."""
+    binary = which(KIRO_CLI)
+    key_file = (home or Path.home()) / KIRO_KEY_FILE
+    key = key_file.read_text(encoding='utf-8').strip() if binary is not None and key_file.is_file() else ''
+    if binary is None or not key:
+        why = 'kiro-cli is not on PATH' if binary is None else f'no Kiro API key in ~/{KIRO_KEY_FILE.as_posix()}'
+        return [], f'kiro-cli: skipped, {why} (its check of the Kiro agent configs is optional)'
+    paths = sorted((root / KIRO_DIR).glob('*.json'))
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(partial(_kiro_validate, binary, key, run=run), paths))
+    except (OSError, subprocess.SubprocessError) as error:
+        return [], f'kiro-cli: skipped, it did not run ({type(error).__name__})'
+    if any('not logged in' in said for _path, _code, said in results):
+        return [], 'kiro-cli: skipped, it says it is not logged in'
+    found = [f'{KIRO_DIR}/{path.name}: kiro-cli agent validate refuses it: {said}'
+             for path, code, said in results if code != 0]
+    return found, '' if found else f'kiro-cli: the {len(paths)} Kiro agent configs pass `kiro-cli agent validate`'
+
+
 def _guarded(check: Callable[[], Problems], what: str) -> Problems:
     try:
         return check()
@@ -311,12 +458,16 @@ def problems(root: Path = ROOT, *, drift: bool = True) -> Problems:
     if found:
         return found
     bundle: dict[str, Any] = {}
+    configs: dict[str, str] = {}
 
     def compiled() -> Problems:
         bundle.update(compile_bundle(sources))
-        return _compiled_problems(bundle)
+        configs.update(kiro_files(sources))
+        return _compiled_problems(bundle) + kiro_agent_problems(
+            {name: json.loads(text) for name, text in configs.items()}, sources)
 
     found += _guarded(compiled, 'compile')
     if not found and drift:
-        found += drift_problems(render(bundle), root)
+        found += drift_problems(render(bundle), root) + kiro_file_problems(root, sources)
+        found += kiro_drift_problems(configs, root)
     return found

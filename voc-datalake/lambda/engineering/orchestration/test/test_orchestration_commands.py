@@ -9,8 +9,8 @@ import pytest
 import yaml
 
 from engineering.orchestration import __main__ as cli
-from engineering.orchestration import calibrate, promote, runner
-from engineering.orchestration.compile import compile_bundle, load, render, write
+from engineering.orchestration import calibrate, promote, runner, validate
+from engineering.orchestration.compile import compile_bundle, kiro_files, load, render, write
 from engineering.orchestration.schema import ROOT, read_yaml
 from engineering.runtime.harness import tools
 
@@ -30,9 +30,22 @@ def _replace(path: Path, changes: dict[str, str]) -> None:
     path.write_text(text, encoding='utf-8')
 
 
-def test_validate_and_compile_check_say_the_shipped_templates_are_valid_and_compiled() -> None:
-    assert _main('validate') == (0, ['orchestration: the templates and both bundles are valid'])
+VALID = 'orchestration: the templates, both bundles and the Kiro agent configs are valid'
+
+
+def test_validate_and_compile_check_say_the_shipped_templates_are_valid_and_compiled(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(validate, 'kiro_cli_problems', lambda _root: ([], 'kiro-cli: skipped, (a test)'))
+    assert _main('validate') == (0, [VALID, 'kiro-cli: skipped, (a test)'])
     assert _main('compile', '--check') == (0, [])
+
+
+def test_validate_runs_kiro_clis_own_check_last_and_fails_on_what_it_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    refused = 'kiro-agents/fixer.json: kiro-cli agent validate refuses it: Error: ...'
+    monkeypatch.setattr(validate, 'kiro_cli_problems', lambda _root: ([refused], ''))
+    assert _main('validate') == (1, [refused, 'orchestration: 1 problem(s)'])
+    monkeypatch.setattr(validate, 'kiro_cli_problems', lambda _root: ([], ''))
+    assert _main('validate') == (0, [VALID])
 
 
 def test_compile_writes_only_what_changed_and_refuses_templates_with_problems(
@@ -40,10 +53,20 @@ def test_compile_writes_only_what_changed_and_refuses_templates_with_problems(
     root = tmp_path / 'orchestration'
     shutil.copytree(ROOT, root)
     monkeypatch.setattr(cli, 'ROOT', root)
+    monkeypatch.setattr(validate, 'kiro_cli_problems', lambda _root: ([], ''))
     code, lines = _main('compile')
     assert (code, lines[0].startswith('wrote ')) == (0, True)
-    assert _main('compile') == (0, ['both bundles are up to date'])
+    assert _main('compile') == (0, ['both bundles and the Kiro agent configs are up to date'])
     assert _main('compile', '--check') == (0, [])
+    (root / 'kiro-agents' / 'fixer.json').unlink()
+    (root / 'kiro-agents' / 'coach.json').write_text('{}\n', encoding='utf-8')
+    code, lines = _main('compile', '--check')
+    assert (code, lines) == (1, [
+        "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)",
+        "kiro-agents/coach.json: not a launchable role's config (npm run orchestration:compile removes it)"])
+    assert _main('compile') == (0, [f'wrote {root / "kiro-agents" / "fixer.json"}, {root / "kiro-agents" / "coach.json"}'])
+    assert sorted(path.name for path in (root / 'kiro-agents').iterdir()) == sorted(kiro_files(load(root)))
+    assert _main('validate') == (0, [VALID])
     (root / 'bundle.json').write_text('{}\n', encoding='utf-8')
     assert _main('compile', '--check')[0] == 1
     assert _main('validate')[0] == 1
@@ -91,6 +114,9 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
     assert next(agent for agent in bundle['agents'] if agent['id'] == 'fixer')['skill']['tool_policy'] == fixer['tools']
     assert (root / 'orchestration_bundle.json').read_text(encoding='utf-8') == (root / 'bundle.json').read_text(
         encoding='utf-8')
+    kiro = (root / 'kiro-agents' / 'fixer.json').read_text(encoding='utf-8')
+    assert kiro == kiro_files(load(root))['fixer.json']
+    assert '@voc/read_issue' in json.loads(kiro)['allowedTools']
 
 
 def test_a_flow_list_wraps_under_its_first_value_and_a_key_can_go() -> None:
