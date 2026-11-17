@@ -11,7 +11,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { NoImage, SafeLink } from '../components/SafeLink'
+import { NoImage, SafeLink } from '../../components/Document/read/SafeLink'
 
 /** Results longer than this start collapsed. */
 const RESULT_COLLAPSE_CHARS = 600

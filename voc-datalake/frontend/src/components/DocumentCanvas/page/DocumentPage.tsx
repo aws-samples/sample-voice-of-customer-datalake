@@ -43,17 +43,18 @@ import { featureRequestIdsOf, linkFeatureRequestCitations } from '../../../pages
 import { useDocumentComments } from '../../../pages/ProjectDetail/useDocumentComments'
 import { useProjectPlace } from '../../../pages/ProjectDetail/useProjectPlace'
 import AssistantDiffOnCanvas from '../actions/AssistantDiffOnCanvas'
-import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../comments/readingColumn'
+import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../../Document/readingColumn'
 import DocumentActionsBar from '../actions/DocumentActionsBar'
 import { useCanvasDocument } from '../actions/useCanvasDocument'
+import DocumentSurface from '../../Document/DocumentSurface'
+import { useProjectDocumentAdapter } from '../../../pages/ProjectDetail/documentAdapter'
 import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
 import DocumentMeta from './DocumentMeta'
 import DocumentProvenance from './DocumentProvenance'
 import EvidenceCards from './EvidenceCards'
 import InlineTitle from './InlineTitle'
 import OlderVersion from './OlderVersion'
-import Outline from './Outline'
-import { PAGE_SHEET_CLASS, PAGE_SHEET_WIDE_CLASS } from './pageStyles'
+import Outline from '../../Document/Outline'
 import { useFocusView } from './useFocusView'
 import { useOlderVersion } from './useOlderVersion'
 import { usePageView, type PageView } from './usePageView'
@@ -69,7 +70,8 @@ import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasDocument as CanvasDocumentState } from '../actions/useCanvasDocument'
 import type { PageRename } from '../../../pages/ProjectDetail/useDocumentCardActions'
-import type { CanvasEditorHandle, OutlineItem } from '../../Document/edit/editor/CanvasEditor'
+import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/types'
 
 /** Document types shown with margin comments, persona review and a review link (docs/document-review.md). */
 const COMMENTABLE_TYPES: ReadonlySet<string> = new Set(['prfaq', 'prd'])
@@ -262,15 +264,15 @@ function PageHeading({ project, document, state, markdown, titleRef, selectOnOpe
 
 /** The page's own version under its header: the title, the assistant's pending edit, the coaching, the text. */
 function OwnVersion({
-  hidden, project, document, documents, canEdit, state, markdown, view, opening, titleRef, onSelectDoc, onActions,
+  project, document, documents, canEdit, state, markdown, view, opening, titleRef, onSelectDoc, onActions,
 }: Readonly<{
-  hidden: boolean; project: Project; document: ProjectDocument; documents: ProjectDocument[]; canEdit: boolean
+  project: Project; document: ProjectDocument; documents: ProjectDocument[]; canEdit: boolean
   state: CanvasDocumentState; markdown: string; view: PageView; opening: DocumentPageProps['openOn']
   titleRef: RefObject<HTMLInputElement | null>; onSelectDoc: (doc: ProjectDocument) => void
   onActions: (actions: ReviewActions | null) => void
 }>) {
   return (
-    <div hidden={hidden}>
+    <>
       <div className="mb-6">
         <PageHeading project={project} document={document} state={state} markdown={markdown} titleRef={titleRef}
           selectOnOpen={opening === 'title'} />
@@ -282,18 +284,8 @@ function OwnVersion({
       ) : null}
       <PageText project={project} document={document} documents={documents} state={state} markdown={markdown}
         view={view} autoFocus={opening === 'text'} onSelectDoc={onSelectDoc} onActions={onActions} />
-    </div>
+    </>
   )
-}
-
-/** The pane: a card on the page, or (focus view) the window; unsaved, room under the text for a phone's Save bar. */
-function paneClass(focusActive: boolean, dirty: boolean): string {
-  return clsx('bg-card min-w-0', focusActive ? 'min-h-screen' : 'rounded-xl border lg:min-h-[500px]', dirty && 'max-sm:pb-20')
-}
-
-/** The sheet the text sits on: centred and capped, or the full width (the reading column uncapped too). */
-function sheetClass(fullWidth: boolean): string {
-  return clsx(fullWidth ? PAGE_SHEET_WIDE_CLASS : PAGE_SHEET_CLASS, fullWidth && '[&_[data-reading-column]]:max-w-none')
 }
 
 export default function DocumentPage({
@@ -301,6 +293,7 @@ export default function DocumentPage({
 }: DocumentPageProps) {
   // Stored ids inside generated text (`technical_support`, `proj_…`) read as their names.
   const labelIds = useLabelKnownIds()
+  const adapter = useProjectDocumentAdapter(project, document)
   const state = useCanvasDocument({ project, document, onSelectDoc })
   usePageRename(onPageRename, document.document_id, state)
   const commentable = COMMENTABLE_TYPES.has(document.document_type)
@@ -327,29 +320,24 @@ export default function DocumentPage({
     project, document, canEdit, state, onDeleteDoc, isDeleting, focus, focusButtonRef, view, onRename: renameTitle,
     viewing: viewed?.number ?? null, onChooseVersion: chooseVersion, review: viewed === null ? reviewActions : null,
   }
+  // The shared surface's page frame (components/Document/surface/PageFrame): unsaved, a phone pins the Save bar over
+  // the page's foot and the pane keeps room for it; in focus view the page is the window. The page keeps its own bar
+  // (menus, status, toolbar), its older version and its body (the canvas, or the review view around it).
   return (
-    // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines. In focus view
-    // the page is the window (the shell has stepped aside): no card edge, its full height.
-    <div data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
-      className={paneClass(focus.active, state.dirty)}>
-      <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{pageNote(focus.active, viewed, t)}</p>
-      {/* The canvas's menu bar and actions: one row (wrapping on a phone), kept in reach while the text scrolls (from
-          lg). The focus view brings it to the top of the window and keeps it there at every width: its way out is in
-          it, and the page reflowing as the app's chrome steps aside must not scroll it away. */}
-      <header ref={headerRef} className={clsx('border-b border-border bg-card px-3 py-1.5 sm:px-4',
-        focus.active ? 'sticky top-0 z-20' : 'rounded-t-xl lg:sticky lg:top-0 lg:z-20')}>
-        {commentable ? <CommentableActionsBar {...barProps} /> : <DocumentActionsBar {...barProps} share={null} threads={null} />}
-      </header>
-      <div className={sheetClass(view.fullWidth.on)}>
-        {viewed === null ? null : (
+    <DocumentSurface adapter={adapter} variant="page" title={document.title} headingLevel={1} meta={null} stored={document}
+      mode={editable ? 'edit' : 'read'} compare={null} comments={null} onSaved={onSelectDoc} fullPath={null} footer={null}
+      page={{
+        focusActive: focus.active, fullWidth: view.fullWidth.on, dirty: state.dirty, note: pageNote(focus.active, viewed, t),
+        headerRef,
+        bar: commentable ? <CommentableActionsBar {...barProps} /> : <DocumentActionsBar {...barProps} share={null} threads={null} />,
+        aside: viewed === null ? null : (
           <OlderVersion projectId={project.project_id} document={document} viewed={viewed} canRestore={state.editable}
             showOutline={view.outline.on} onRestored={state.selectDoc} onBack={backToLatest} />
-        )}
-        {/* The page's own version: out of sight while an older one shows, never unmounted (its draft, its comments). */}
-        <OwnVersion hidden={viewed !== null} project={project} document={document} documents={documents} canEdit={canEdit}
-          state={state} markdown={markdown} view={view} opening={opening} titleRef={titleRef} onSelectDoc={onSelectDoc}
-          onActions={setReviewActions} />
-      </div>
-    </div>
+        ),
+      }}>
+      <OwnVersion project={project} document={document} documents={documents} canEdit={canEdit} state={state}
+        markdown={markdown} view={view} opening={opening} titleRef={titleRef} onSelectDoc={onSelectDoc}
+        onActions={setReviewActions} />
+    </DocumentSurface>
   )
 }

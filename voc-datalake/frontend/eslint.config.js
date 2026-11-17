@@ -26,9 +26,9 @@ const PENDING_SOURCE = {}
 const PENDING_SPEC = {}
 const PENDING_SUPPRESSION = {}
 
-// Every `no-restricted-syntax` entry of the app's TypeScript (ESLint keeps only the last setting of a rule,
-// so the block below that adds the native-title ban repeats these).
-const RESTRICTED_SYNTAX = [
+// The bans every source file shares (no-restricted-syntax keeps only its last setting: a block that adds to it
+// spreads these first, as the document component's and the native-title blocks below do).
+const BASE_RESTRICTED_SYNTAX = [
   {
     selector: 'VariableDeclaration[kind="let"]',
     message: 'Use const. Avoid mutation.',
@@ -52,6 +52,15 @@ const NATIVE_TITLE_SELECTORS = [
   },
 ]
 const NATIVE_TITLE_PENDING = NATIVE_TITLE.entries.map((entry) => entry.key.replace(/^voc-datalake\/frontend\//u, ''))
+
+// The shared document component never renders raw HTML (markdownPolicy.tsx is the one policy): its own block and,
+// for its UI under rule 16, the last block repeat this.
+const RAW_HTML_SELECTORS = [
+  {
+    selector: 'JSXAttribute[name.name="dangerouslySetInnerHTML"]',
+    message: 'Raw HTML is never rendered in a document (markdownPolicy.tsx).',
+  },
+]
 
 export default tseslint.config(
   {
@@ -99,7 +108,7 @@ export default tseslint.config(
       'no-inline-comments': 'off',
       'spaced-comment': 'off',
       // Ban let - use const only
-      'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX],
+      'no-restricted-syntax': ['error', ...BASE_RESTRICTED_SYNTAX],
       // No any types
       // A leading underscore marks a binding kept on purpose (a mock's positional parameter, a
       // loop counter, a destructured field dropped from a rest copy), as in ruff's dummy regex.
@@ -155,6 +164,21 @@ export default tseslint.config(
     },
   },
   {
+    // The shared document component (docs/kiro-design-system.md → Documents) renders text people, models and agents
+    // wrote: never as raw HTML (no rehype-raw, no dangerouslySetInnerHTML; markdownPolicy.tsx is the one policy), and it
+    // knows no feature (a page passes an adapter; the component never imports one).
+    files: ['src/components/Document/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['rehype-raw', 'rehype-raw/*'], message: 'Raw HTML is never rendered in a document (markdownPolicy.tsx).' },
+          { group: ['**/pages/**', '**/DocumentCanvas/**'], message: 'The document component knows no feature: take it through the adapter.' },
+        ],
+      }],
+      'no-restricted-syntax': ['error', ...BASE_RESTRICTED_SYNTAX, ...RAW_HTML_SELECTORS],
+    },
+  },
+  {
     // Specs and `src/test/**` are excluded from `tsconfig.app.json`, so the project service cannot
     // type them and every type-aware rule would report a parse error instead of a finding. Point
     // them at `tsconfig.test.json`, which includes all of `src`, rather than widening the app project.
@@ -177,6 +201,12 @@ export default tseslint.config(
     // The app's UI, not its specs (a spec may render a titled element to test what reads it).
     files: ['src/**/*.tsx'],
     ignores: [...SPEC_FILES, 'src/test/**', ...NATIVE_TITLE_PENDING],
-    rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX, ...NATIVE_TITLE_SELECTORS] },
+    rules: { 'no-restricted-syntax': ['error', ...BASE_RESTRICTED_SYNTAX, ...NATIVE_TITLE_SELECTORS] },
+  },
+  {
+    // The document component's UI keeps its raw-HTML ban under rule 16 (the block above replaced its setting).
+    files: ['src/components/Document/**/*.tsx'],
+    ignores: [...SPEC_FILES, 'src/test/**', ...NATIVE_TITLE_PENDING],
+    rules: { 'no-restricted-syntax': ['error', ...BASE_RESTRICTED_SYNTAX, ...NATIVE_TITLE_SELECTORS, ...RAW_HTML_SELECTORS] },
   },
 )

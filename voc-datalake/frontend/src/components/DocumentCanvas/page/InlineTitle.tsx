@@ -12,7 +12,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ignoreRejection } from '../../../lib/rejections'
-import { TITLE_INPUT_CLASS, TITLE_TEXT_CLASS } from './pageStyles'
+import { TITLE_INPUT_CLASS, TITLE_TEXT_CLASS } from '../../Document/pageStyles'
 import { titleEditOf } from './titleEdit'
 import type { KeyboardEvent, RefObject } from 'react'
 

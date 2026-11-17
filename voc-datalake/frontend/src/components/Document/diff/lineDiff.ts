@@ -1,7 +1,7 @@
 /**
  * @fileoverview A small line diff for the `update_document` approval preview,
  * and the same diff over Markdown blocks for the document canvas
- * (components/DocumentCanvas/actions/BlockDiff).
+ * (components/Document/diff/BlockDiff).
  *
  * Longest-common-subsequence over lines, after trimming the common prefix and
  * suffix (which is what makes the typical "edit one section" case cheap). The DP
@@ -13,9 +13,9 @@
  * and the one property that matters — applying the diff to `before` yields
  * `after` — is pinned by `lineDiff.test.ts`.
  *
- * @module assistant/approvals/lineDiff
+ * @module components/Document/diff/lineDiff
  */
-import { commonPrefixLength } from '../../utils/commonPrefix'
+import { commonPrefixLength } from '../../../utils/commonPrefix'
 
 type DiffLineKind = 'same' | 'add' | 'del'
 

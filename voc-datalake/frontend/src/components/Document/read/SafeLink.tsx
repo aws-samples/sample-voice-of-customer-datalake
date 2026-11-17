@@ -14,14 +14,14 @@
  * its own text reads as a short "host/path" (the full URL stays in the tooltip),
  * so a long address never runs across the answer.
  *
- * @module assistant/components/SafeLink
+ * @module components/Document/read/SafeLink
  */
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink } from 'lucide-react'
 import { classifyHref } from './safeHref'
-import ReviewLink from '../../components/ReviewLink/ReviewLink'
-import { leaveFullscreenOnPlainClick } from '../../hooks/useRouteNavigate'
+import ReviewLink from '../../ReviewLink/ReviewLink'
+import { leaveFullscreenOnPlainClick } from '../../../hooks/useRouteNavigate'
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from 'react'
 
 const LINK_CLASS = 'text-accent-text underline decoration-accent-text/45 hover:decoration-accent-text'
@@ -59,8 +59,9 @@ function ExternalAnchor({ href, host, children }: Readonly<{ href: string; host:
           positioned, which blockifies the span). Stating it keeps the space before the
           suffix in the accessible name everywhere: a name computation trims an inline
           span's own text, and jsdom applies no Tailwind CSS. A space outside the span
-          would show as an underlined gap in this inline link. */}
-      <span className="sr-only" style={SR_SUFFIX_STYLE}> {t('message.externalLink', { host: host.replace(/^www\./u, '') })}</span>
+          would show as an underlined gap in this inline link. Not part of the text a comment quotes
+          (`data-anchor-skip`, components/DocumentComments/anchors.ts). */}
+      <span className="sr-only" style={SR_SUFFIX_STYLE} data-anchor-skip=""> {t('message.externalLink', { host: host.replace(/^www\./u, '') })}</span>
     </a>
   )
 }

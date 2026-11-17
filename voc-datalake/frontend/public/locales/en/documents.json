@@ -181,6 +181,85 @@
     "viewingOne": "Viewing {{version}}",
     "readOnly": "read only",
     "backToLatest": "Back to latest",
-    "announce": "Showing {{version}}, an older version, read only."
+    "announce": "Showing {{version}}, an older version, read only.",
+    "number": "v{{number}}",
+    "restore": "Restore",
+    "restoreNamed": "Restore {{version}}"
+  },
+  "view": {
+    "label": "Show the text",
+    "rendered": "Rendered",
+    "source": "Source",
+    "sourceOf": "Source of {{title}}"
+  },
+  "code": {
+    "wrap": "Wrap lines",
+    "copy": "Copy",
+    "copied": "Copied",
+    "lines": "Lines: {{n, number}}"
+  },
+  "count": {
+    "chars": "Characters: {{n, number}} of {{max, number}}",
+    "lines": "Lines: {{n, number}} of {{max, number}}",
+    "over": {
+      "chars": "Too long: shorten it to save.",
+      "lines": "Too many lines: shorten it to save."
+    }
+  },
+  "prompt": {
+    "asWritten": "Sent to the model as written."
+  },
+  "properties": {
+    "label": "Properties"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} lines added, {{removed, number}} lines removed",
+      "unchanged": "… {{n, number}} unchanged lines …",
+      "same": "Unchanged:",
+      "add": "Added:",
+      "del": "Removed:",
+      "tooLarge": "The document is too large to compare line by line. Showing the beginning of each version.",
+      "label": "Changes to the document"
+    }
+  },
+  "readOnly": {
+    "viewer": "You can read this and comment.",
+    "olderVersion": "An earlier version, read only.",
+    "managedByTemplate": "From the template. It changes with a release, in templates/orchestration.",
+    "decided": "Accepted. An accepted version never changes.",
+    "proposalOnly": "Changes to this are proposed, then accepted by an administrator.",
+    "editedElsewhere": "This is edited in another place."
+  },
+  "conflict": {
+    "merge": "Compare and merge",
+    "mergeTitle": "Merge the latest version into your draft",
+    "mergeIntro": "Their changes that still fit your draft are ticked. Nothing is saved until you save.",
+    "take": "Take this change",
+    "status": {
+      "applies": "Fits your draft",
+      "already": "Already in your draft",
+      "conflict": "Conflicts with your draft: yours is kept"
+    },
+    "before": "Before",
+    "theirs": "In the latest version",
+    "tooLarge": "Too long to compare block by block. Load the latest, or save yours anyway.",
+    "nothing": "The latest version changes nothing your draft does not already have.",
+    "cancel": "Cancel",
+    "takeChosen": "Merge into my draft",
+    "title": "Someone saved a newer version of this document meanwhile.",
+    "loadLatest": "Load the latest",
+    "saveAnyway": "Save mine anyway"
+  },
+  "surface": {
+    "loading": "Loading the document…",
+    "empty": "Nothing written yet."
+  },
+  "save": {
+    "saved": "Saved",
+    "refused": "The server did not save this. Nothing was saved; your draft is kept."
+  },
+  "panel": {
+    "openFull": "Open full page"
   }
 }

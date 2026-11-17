@@ -23,7 +23,9 @@ import { useTranslation } from 'react-i18next'
 import { useNow } from '../../../hooks/useNow'
 import { useRegisterActionBar } from '../../StickyActionBar/actionBarRegistry'
 import { isVersionManagedDocument } from '../../../api/documentLineage'
-import { ConflictBanner, ReviseRefusedBanner } from './ConflictBanner'
+import { ConflictBanner } from '../../Document/conflict/ConflictBanner'
+import MergeDialog from '../../Document/conflict/MergeDialog'
+import { ReviseRefusedBanner } from './ReviseRefusedBanner'
 import DocumentMenu, { DocumentDialogs } from './DocumentMenu'
 import { historyOffered, shareOffered } from './documentOffers'
 import DocumentToolbar from './DocumentToolbar'
@@ -155,6 +157,9 @@ export default function DocumentActionsBar({
         </div>
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
+      {state.merge?.proposal == null ? null : (
+        <MergeDialog changes={state.merge.proposal.changes} onTake={state.merge.take} onClose={state.merge.close} />
+      )}
       {state.reviseRefused === null ? null : <ReviseRefusedBanner refused={state.reviseRefused} />}
       {state.guardDialog}
       <DocumentDialogs dialog={dialog} project={project} document={document} canEdit={canEdit} state={state}

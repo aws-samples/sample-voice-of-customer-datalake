@@ -187,6 +187,85 @@
     "viewingOne": "Wyświetlasz {{version}}",
     "readOnly": "tylko do odczytu",
     "backToLatest": "Wróć do najnowszej",
-    "announce": "Wyświetlana jest {{version}}, starsza wersja, tylko do odczytu."
+    "announce": "Wyświetlana jest {{version}}, starsza wersja, tylko do odczytu.",
+    "number": "v{{number}}",
+    "restore": "Przywróć",
+    "restoreNamed": "Przywróć {{version}}"
+  },
+  "view": {
+    "label": "Pokaż tekst",
+    "rendered": "Sformatowany",
+    "source": "Źródło",
+    "sourceOf": "Źródło: {{title}}"
+  },
+  "code": {
+    "wrap": "Zawijaj wiersze",
+    "copy": "Kopiuj",
+    "copied": "Skopiowano",
+    "lines": "Wiersze: {{n, number}}"
+  },
+  "count": {
+    "chars": "Znaki: {{n, number}} z {{max, number}}",
+    "lines": "Wiersze: {{n, number}} z {{max, number}}",
+    "over": {
+      "chars": "Za długie: skróć, aby zapisać.",
+      "lines": "Za dużo wierszy: skróć, aby zapisać."
+    }
+  },
+  "prompt": {
+    "asWritten": "Trafia do modelu dokładnie w tej postaci."
+  },
+  "properties": {
+    "label": "Właściwości"
+  },
+  "diff": {
+    "lines": {
+      "stats": "Dodano wierszy: {{added, number}}, usunięto wierszy: {{removed, number}}",
+      "unchanged": "… {{n, number}} niezmienionych wierszy …",
+      "same": "Bez zmian:",
+      "add": "Dodano:",
+      "del": "Usunięto:",
+      "tooLarge": "Dokument jest zbyt duży, aby porównać go wiersz po wierszu. Pokazano początek każdej wersji.",
+      "label": "Zmiany w dokumencie"
+    }
+  },
+  "readOnly": {
+    "viewer": "Możesz to przeczytać i skomentować.",
+    "olderVersion": "Wcześniejsza wersja, tylko do odczytu.",
+    "managedByTemplate": "Z szablonu. Zmienia się wraz z wydaniem, w templates/orchestration.",
+    "decided": "Zaakceptowana. Zaakceptowana wersja nigdy się nie zmienia.",
+    "proposalOnly": "Zmiany są proponowane, a następnie akceptowane przez administratora.",
+    "editedElsewhere": "To jest edytowane w innym miejscu."
+  },
+  "conflict": {
+    "merge": "Porównaj i scal",
+    "mergeTitle": "Scal najnowszą wersję ze swoim szkicem",
+    "mergeIntro": "Zmiany, które nadal pasują do szkicu, są zaznaczone. Nic nie zostanie zapisane, dopóki nie zapiszesz.",
+    "take": "Przyjmij tę zmianę",
+    "status": {
+      "applies": "Pasuje do szkicu",
+      "already": "Już w szkicu",
+      "conflict": "Koliduje ze szkicem: zostaje Twoja wersja"
+    },
+    "before": "Przedtem",
+    "theirs": "W najnowszej wersji",
+    "tooLarge": "Za długie, by porównać blok po bloku. Wczytaj najnowszą wersję lub mimo to zapisz swoją.",
+    "nothing": "Najnowsza wersja nie zmienia niczego, czego nie ma już w szkicu.",
+    "cancel": "Anuluj",
+    "takeChosen": "Scal z moim szkicem",
+    "title": "W międzyczasie ktoś zapisał nowszą wersję tego dokumentu.",
+    "loadLatest": "Wczytaj najnowszą",
+    "saveAnyway": "Mimo to zapisz moją"
+  },
+  "surface": {
+    "loading": "Wczytywanie dokumentu…",
+    "empty": "Nic jeszcze nie napisano."
+  },
+  "save": {
+    "saved": "Zapisano",
+    "refused": "Serwer tego nie zapisał. Nic nie zostało zapisane; szkic pozostaje."
+  },
+  "panel": {
+    "openFull": "Otwórz pełną stronę"
   }
 }

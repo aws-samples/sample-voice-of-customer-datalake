@@ -9,18 +9,19 @@
  * @module components/DocumentCanvas/page/OlderVersion
  */
 import clsx from 'clsx'
-import { History, Loader2, RotateCcw } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../ConfirmModal/ConfirmModal'
 import { useLabelKnownIds } from '../../../hooks/useLabelKnownIds'
 import { linkFeatureRequestCitations } from '../../../pages/ProjectDetail/featureRequestCitations'
 import { useVersionRestore } from '../../../pages/ProjectDetail/useVersionRestore'
-import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../comments/readingColumn'
+import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../../Document/readingColumn'
 import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
-import Outline from './Outline'
-import { TITLE_TEXT_CLASS } from './pageStyles'
-import type { CanvasEditorHandle, OutlineItem } from '../../Document/edit/editor/CanvasEditor'
+import Outline from '../../Document/Outline'
+import { ReadOnlyNote } from '../../Document/surface/ReadOnlyNote'
+import { TITLE_TEXT_CLASS } from '../../Document/pageStyles'
+import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/types'
 import type { DocumentVersion } from '../../../api/projectDetailSchema'
 import type { ProjectDocument } from '../../../api/types'
 
@@ -43,33 +44,6 @@ interface OlderVersionProps {
   readonly onBack: () => void
   /** The restored version, a new one: the page moves to it. */
   readonly onRestored: (document: ProjectDocument) => void
-}
-
-function VersionBanner({ viewed, canRestore, restoring, onBack, onRestore }: Readonly<{
-  viewed: ViewedVersion; canRestore: boolean; restoring: boolean; onBack: () => void; onRestore: () => void
-}>) {
-  const { t } = useTranslation('projectDetail')
-  const label = t('documents.versions.label', { n: viewed.number })
-  const text = viewed.latest === null
-    ? t('documents:versions.viewingOne', { version: label })
-    : t('documents:versions.viewing', { version: label, latest: viewed.latest })
-  return (
-    <section aria-label={t('documents:versions.bannerLabel')} data-testid="older-version-banner"
-      className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-subtle p-3 text-sm text-text">
-      <History size={14} className="text-info" aria-hidden="true" />
-      <p className="mr-auto min-w-0 break-words">
-        <span className="font-medium">{text}</span> · {t('documents:versions.readOnly')}
-      </p>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>{t('documents:versions.backToLatest')}</button>
-      {canRestore && viewed.version !== null ? (
-        <button type="button" className="btn btn-secondary btn-sm" disabled={restoring} onClick={onRestore}
-          aria-label={t('documents.versions.restoreNamed', { label })}>
-          {restoring ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={14} aria-hidden="true" />}
-          {t('documents.versions.restore')}
-        </button>
-      ) : null}
-    </section>
-  )
 }
 
 /** The version's text on the read-only canvas, with its Contents. */
@@ -105,8 +79,12 @@ export default function OlderVersion({ projectId, document, viewed, canRestore, 
   const title = version?.title === undefined || version.title === '' ? document.title : version.title
   return (
     <div data-testid="older-version">
-      <VersionBanner viewed={viewed} canRestore={canRestore} restoring={restore.isPending} onBack={onBack}
-        onRestore={() => { restore.reset(); setConfirming(true) }} />
+      <ReadOnlyNote reason="olderVersion" olderVersion={{
+        number: viewed.number, latest: viewed.latest, onBack,
+        restore: canRestore && version !== null
+          ? { onRestore: () => { restore.reset(); setConfirming(true) }, restoring: restore.isPending }
+          : null,
+      }} />
       {restore.isError ? <p role="alert" className="mb-3 text-[12px] text-danger">{t('documents.versions.restoreFailed')}</p> : null}
       <h2 className={clsx(TITLE_TEXT_CLASS, 'mb-6')}>{title}</h2>
       {version === null ? <VersionPending failed={viewed.loadFailed} /> : <VersionText version={version} title={title} showOutline={showOutline} />}

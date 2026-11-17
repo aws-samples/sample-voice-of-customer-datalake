@@ -705,6 +705,49 @@
 .md-content table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.8125rem; }
 .md-content :where(th, td) { border: 1px solid var(--border); padding: .35rem .6rem; text-align: left; vertical-align: top; min-width: 6rem; word-break: normal; overflow-wrap: break-word; }
 .md-content th { background: var(--bg-accent); color: var(--text-strong); font-weight: 600; }
+/* The light reader (components/Document/read/remarkParity.ts): the canvas's callouts, to-dos and raw source, so a
+   text reads alike in both engines (the canvas's own rules: components/Document/edit/editor/CanvasEditor.css). */
+.md-content [data-callout] {
+  border: 1px solid var(--border); border-left: 4px solid var(--info); border-radius: var(--radius-md);
+  background: var(--bg-elevated); padding: .75rem 1rem; margin: .5rem 0;
+}
+.md-content [data-callout]::before {
+  content: attr(aria-label); display: block; font-size: .8125rem; font-weight: 600; color: var(--info); margin-bottom: .25rem;
+}
+.md-content [data-callout="tip"] { border-left-color: var(--ok); }
+.md-content [data-callout="tip"]::before { color: var(--ok); }
+.md-content [data-callout="important"] { border-left-color: var(--accent); }
+.md-content [data-callout="important"]::before { color: var(--accent-text); }
+.md-content [data-callout="warning"] { border-left-color: var(--warn); background: var(--warn-subtle); }
+.md-content [data-callout="warning"]::before { color: var(--warn); }
+.md-content [data-callout="caution"] { border-left-color: var(--danger); background: var(--danger-subtle); }
+.md-content [data-callout="caution"]::before { color: var(--danger); }
+.md-content .contains-task-list { list-style: none; padding-left: .25rem; }
+.md-content .task-list-item > input, .md-content .task-list-item > p > input {
+  accent-color: var(--accent); width: 1rem; height: 1rem; margin-right: .5rem; vertical-align: -0.15em;
+}
+.md-content pre.canvas-raw { border-style: dashed; color: var(--muted-strong); }
+.md-content code.canvas-raw-inline { color: var(--muted-strong); border: 1px dashed var(--border-strong); background: none; }
+/* A document in a 360 px panel (DocumentSurface variant="panel"): the same recipe a size down, 13 px body text. */
+.md-content-compact { font-size: 0.8125rem; line-height: 1.55; }
+.md-content-compact h1 { font-size: 0.9375rem; }
+.md-content-compact h2 { font-size: 0.875rem; }
+.md-content-compact :where(h3, h4, h5, h6) { font-size: 0.8125rem; font-weight: 600; }
+/* A text shown exactly as stored (components/Document/source/CodeView.tsx): 12 px mono, decorative line numbers
+   (never selected), wrapped by default; a long line scrolls inside the view when wrapping is off. */
+.code-view { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-accent); }
+.code-view__bar {
+  display: flex; align-items: center; gap: .25rem; padding: .25rem .5rem; border-bottom: 1px solid var(--border);
+  font-size: 0.75rem; color: var(--muted);
+}
+.code-view__body {
+  max-height: min(70vh, 40rem); overflow: auto; padding: .5rem 0;
+  font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6; color: var(--text);
+}
+.code-view__line { display: flex; gap: .75rem; padding: 0 .75rem; }
+.code-view__number { flex: none; min-width: 2.5ch; text-align: right; color: var(--muted); user-select: none; }
+.code-view__text { white-space: pre; }
+.code-view[data-wrap] .code-view__text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 /* Document comments (components/DocumentComments): the quoted passages, painted with the CSS Custom
    Highlight API so React's DOM is never rewritten. The active thread's passage is stronger. */
 ::highlight(voc-comment) { background-color: var(--warn-subtle); }

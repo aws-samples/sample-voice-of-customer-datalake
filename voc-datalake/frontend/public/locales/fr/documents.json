@@ -181,6 +181,85 @@
     "viewingOne": "Vous lisez {{version}}",
     "readOnly": "lecture seule",
     "backToLatest": "Revenir à la dernière",
-    "announce": "{{version}} est affichée : une version antérieure, en lecture seule."
+    "announce": "{{version}} est affichée : une version antérieure, en lecture seule.",
+    "number": "v{{number}}",
+    "restore": "Restaurer",
+    "restoreNamed": "Restaurer {{version}}"
+  },
+  "view": {
+    "label": "Afficher le texte",
+    "rendered": "Mis en forme",
+    "source": "Source",
+    "sourceOf": "Source de {{title}}"
+  },
+  "code": {
+    "wrap": "Renvoyer à la ligne",
+    "copy": "Copier",
+    "copied": "Copié",
+    "lines": "Lignes : {{n, number}}"
+  },
+  "count": {
+    "chars": "Caractères : {{n, number}} sur {{max, number}}",
+    "lines": "Lignes : {{n, number}} sur {{max, number}}",
+    "over": {
+      "chars": "Trop long : raccourcissez-le pour enregistrer.",
+      "lines": "Trop de lignes : raccourcissez-le pour enregistrer."
+    }
+  },
+  "prompt": {
+    "asWritten": "Envoyé au modèle tel quel."
+  },
+  "properties": {
+    "label": "Propriétés"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} lignes ajoutées, {{removed, number}} lignes supprimées",
+      "unchanged": "… {{n, number}} lignes inchangées …",
+      "same": "Inchangé :",
+      "add": "Ajouté :",
+      "del": "Supprimé :",
+      "tooLarge": "Le document est trop volumineux pour une comparaison ligne par ligne. Le début de chaque version est affiché.",
+      "label": "Modifications du document"
+    }
+  },
+  "readOnly": {
+    "viewer": "Vous pouvez lire et commenter ce document.",
+    "olderVersion": "Une version antérieure, en lecture seule.",
+    "managedByTemplate": "Issu du modèle. Il change avec une version, dans templates/orchestration.",
+    "decided": "Acceptée. Une version acceptée ne change jamais.",
+    "proposalOnly": "Les modifications sont proposées, puis acceptées par un administrateur.",
+    "editedElsewhere": "Ce contenu se modifie ailleurs."
+  },
+  "conflict": {
+    "merge": "Comparer et fusionner",
+    "mergeTitle": "Fusionner la dernière version dans votre brouillon",
+    "mergeIntro": "Les modifications qui s'appliquent encore à votre brouillon sont cochées. Rien n'est enregistré tant que vous n'enregistrez pas.",
+    "take": "Reprendre cette modification",
+    "status": {
+      "applies": "S'applique à votre brouillon",
+      "already": "Déjà dans votre brouillon",
+      "conflict": "En conflit avec votre brouillon : le vôtre est conservé"
+    },
+    "before": "Avant",
+    "theirs": "Dans la dernière version",
+    "tooLarge": "Trop long pour une comparaison bloc par bloc. Chargez la dernière version ou enregistrez la vôtre quand même.",
+    "nothing": "La dernière version ne change rien que votre brouillon n'ait déjà.",
+    "cancel": "Annuler",
+    "takeChosen": "Fusionner dans mon brouillon",
+    "title": "Entre-temps, quelqu’un a enregistré une version plus récente de ce document.",
+    "loadLatest": "Charger la plus récente",
+    "saveAnyway": "Enregistrer la mienne quand même"
+  },
+  "surface": {
+    "loading": "Chargement du document…",
+    "empty": "Rien d'écrit pour l'instant."
+  },
+  "save": {
+    "saved": "Enregistré",
+    "refused": "Le serveur n'a pas enregistré ce contenu. Rien n'a été enregistré ; votre brouillon est conservé."
+  },
+  "panel": {
+    "openFull": "Ouvrir en pleine page"
   }
 }

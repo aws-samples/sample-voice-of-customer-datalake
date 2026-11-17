@@ -6,11 +6,6 @@
     "personaMessage": "Sind Sie sicher, dass Sie diese Persona löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
     "personaTitle": "Persona löschen?"
   },
-  "documentModal": {
-    "conflict": "Inzwischen hat jemand eine neuere Version dieses Dokuments gespeichert.",
-    "conflictReload": "Neueste laden",
-    "conflictSaveAnyway": "Meine trotzdem speichern"
-  },
   "documents": {
     "deleteDocument": "Dokument löschen",
     "card": {

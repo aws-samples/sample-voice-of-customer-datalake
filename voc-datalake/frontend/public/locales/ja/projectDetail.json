@@ -6,11 +6,6 @@
     "personaMessage": "このペルソナを削除してもよろしいですか? この操作は取り消せません。",
     "personaTitle": "ペルソナを削除しますか?"
   },
-  "documentModal": {
-    "conflict": "この間に、誰かがこのドキュメントの新しいバージョンを保存しました。",
-    "conflictReload": "最新を読み込む",
-    "conflictSaveAnyway": "自分の変更をそのまま保存"
-  },
   "documents": {
     "deleteDocument": "ドキュメントを削除",
     "card": {

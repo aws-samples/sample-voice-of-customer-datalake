@@ -90,14 +90,7 @@
     "unknownCategory": "La catégorie « {{category}} » ne fait pas partie de celles que vous voyez : la modification sera refusée.",
     "brandMerged": "Paramètres après enregistrement (les champs non mentionnés conservent leur valeur actuelle) :",
     "diff": {
-      "label": "Modifications du document",
-      "stats": "{{added, number}} lignes ajoutées, {{removed, number}} lignes supprimées",
-      "unchanged": "… {{n, number}} lignes inchangées …",
-      "same": "Inchangé :",
-      "add": "Ajouté :",
-      "del": "Supprimé :",
       "noChanges": "Le contenu proposé est identique au document actuel.",
-      "tooLarge": "Le document est trop volumineux pour une comparaison ligne par ligne. Le début de chaque version est affiché.",
       "currentUnavailable": "Le document actuel n'a pas pu être chargé. Contenu proposé :"
     },
     "job": {

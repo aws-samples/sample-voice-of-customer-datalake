@@ -181,6 +181,85 @@
     "viewingOne": "Sie sehen {{version}}",
     "readOnly": "schreibgeschützt",
     "backToLatest": "Zur neuesten",
-    "announce": "{{version}} wird angezeigt, eine ältere Version, schreibgeschützt."
+    "announce": "{{version}} wird angezeigt, eine ältere Version, schreibgeschützt.",
+    "number": "v{{number}}",
+    "restore": "Wiederherstellen",
+    "restoreNamed": "{{version}} wiederherstellen"
+  },
+  "view": {
+    "label": "Text anzeigen",
+    "rendered": "Formatiert",
+    "source": "Quelltext",
+    "sourceOf": "Quelltext von {{title}}"
+  },
+  "code": {
+    "wrap": "Zeilen umbrechen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "lines": "Zeilen: {{n, number}}"
+  },
+  "count": {
+    "chars": "Zeichen: {{n, number}} von {{max, number}}",
+    "lines": "Zeilen: {{n, number}} von {{max, number}}",
+    "over": {
+      "chars": "Zu lang: kürzen Sie den Text, um zu speichern.",
+      "lines": "Zu viele Zeilen: kürzen Sie den Text, um zu speichern."
+    }
+  },
+  "prompt": {
+    "asWritten": "Wird dem Modell so gesendet, wie es hier steht."
+  },
+  "properties": {
+    "label": "Eigenschaften"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} Zeilen hinzugefügt, {{removed, number}} Zeilen entfernt",
+      "unchanged": "… {{n, number}} unveränderte Zeilen …",
+      "same": "Unverändert:",
+      "add": "Hinzugefügt:",
+      "del": "Entfernt:",
+      "tooLarge": "Das Dokument ist zu groß für einen zeilenweisen Vergleich. Der Anfang jeder Version wird angezeigt.",
+      "label": "Änderungen am Dokument"
+    }
+  },
+  "readOnly": {
+    "viewer": "Sie können dies lesen und kommentieren.",
+    "olderVersion": "Eine frühere Version, nur zum Lesen.",
+    "managedByTemplate": "Aus der Vorlage. Sie ändert sich mit einem Release, in templates/orchestration.",
+    "decided": "Angenommen. Eine angenommene Version ändert sich nie.",
+    "proposalOnly": "Änderungen hieran werden vorgeschlagen und dann von einem Administrator angenommen.",
+    "editedElsewhere": "Dies wird an anderer Stelle bearbeitet."
+  },
+  "conflict": {
+    "merge": "Vergleichen und zusammenführen",
+    "mergeTitle": "Die neueste Version in Ihren Entwurf übernehmen",
+    "mergeIntro": "Ihre Änderungen, die noch zu Ihrem Entwurf passen, sind angehakt. Gespeichert wird erst, wenn Sie speichern.",
+    "take": "Diese Änderung übernehmen",
+    "status": {
+      "applies": "Passt zu Ihrem Entwurf",
+      "already": "Bereits in Ihrem Entwurf",
+      "conflict": "Widerspricht Ihrem Entwurf: Ihre Fassung bleibt"
+    },
+    "before": "Vorher",
+    "theirs": "In der neuesten Version",
+    "tooLarge": "Zu lang für einen blockweisen Vergleich. Laden Sie die neueste Version oder speichern Sie Ihre trotzdem.",
+    "nothing": "Die neueste Version ändert nichts, was Ihr Entwurf nicht schon hat.",
+    "cancel": "Abbrechen",
+    "takeChosen": "In meinen Entwurf übernehmen",
+    "title": "Inzwischen hat jemand eine neuere Version dieses Dokuments gespeichert.",
+    "loadLatest": "Neueste laden",
+    "saveAnyway": "Meine trotzdem speichern"
+  },
+  "surface": {
+    "loading": "Dokument wird geladen …",
+    "empty": "Noch nichts geschrieben."
+  },
+  "save": {
+    "saved": "Gespeichert",
+    "refused": "Der Server hat dies nicht gespeichert. Nichts wurde gespeichert; Ihr Entwurf bleibt erhalten."
+  },
+  "panel": {
+    "openFull": "Ganze Seite öffnen"
   }
 }

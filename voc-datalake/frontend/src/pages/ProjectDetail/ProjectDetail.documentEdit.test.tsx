@@ -13,7 +13,6 @@ import {
 import type { ProjectDocument } from '../../api/types'
 import { ApiError } from '../../lib/errors'
 import { useConfigStore } from '../../store/configStore'
-import enProjectDetail from '../../../public/locales/en/projectDetail.json'
 import enDocuments from '../../../public/locales/en/documents.json'
 import enComponents from '../../../public/locales/en/components.json'
 import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
@@ -254,7 +253,7 @@ describe('ProjectDetail document stale-save conflict', () => {
     await editAndSave(user, 'my edit')
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(enProjectDetail.documentModal.conflict)
+    expect(alert).toHaveTextContent(enDocuments.conflict.title)
     expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveValue('my edit')
     expect(screen.getByTestId('canvas-save-status')).toHaveTextContent(actions.status.unsaved)
   })
@@ -268,7 +267,7 @@ describe('ProjectDetail document stale-save conflict', () => {
       project, personas: [], documents: [{ ...customDocument, content: 'their edit', revision: 3 }],
     })
 
-    await user.click(within(await screen.findByRole('alert')).getByRole('button', { name: enProjectDetail.documentModal.conflictReload }))
+    await user.click(within(await screen.findByRole('alert')).getByRole('button', { name: enDocuments.conflict.loadLatest }))
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveValue('their edit'))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -285,7 +284,7 @@ describe('ProjectDetail document stale-save conflict', () => {
     renderPage()
     await editAndSave(user, 'my edit')
 
-    await user.click(within(await screen.findByRole('alert')).getByRole('button', { name: enProjectDetail.documentModal.conflictSaveAnyway }))
+    await user.click(within(await screen.findByRole('alert')).getByRole('button', { name: enDocuments.conflict.saveAnyway }))
 
     await waitFor(() => expect(mockUpdateDocument).toHaveBeenCalledTimes(2))
     const [, , body] = mockUpdateDocument.mock.calls[1] ?? []

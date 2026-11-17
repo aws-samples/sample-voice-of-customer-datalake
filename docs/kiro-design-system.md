@@ -565,7 +565,36 @@ delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/T
 
 ### Markdown
 
-`.md-content` styles rendered markdown: headings, lists with muted markers, accent links, inline code in `bg-bg-hover`/`text-accent-text`, bordered `pre` and tables, and blockquotes with an accent rule.
+`.md-content` styles rendered markdown: headings, lists with muted markers, accent links, inline code in `bg-bg-hover`/`text-accent-text`, bordered `pre` and tables, and blockquotes with an accent rule. It also styles the canvas's callouts (`[data-callout]`), to-dos (`.contains-task-list`) and raw source (`pre.canvas-raw`, `code.canvas-raw-inline`) in the light reader, so a text reads alike in both engines. `.md-content-compact` is the same recipe a size down for a 360 px panel: 13 px body, h1 15 px, h2 14 px, h3 13 px semibold.
+
+### Documents
+
+**What a document is.** A text is a document when it is Markdown, or versioned, or reviewed or approved by someone other than its writer, or over 4,000 characters. A document uses `DocumentSurface` (`components/Document/`). Everything else is a form field (`.input`), a chat composer or a log.
+
+**One surface, an adapter per feature.** A feature passes a `DocumentAdapter` (`components/Document/types.ts`: permissions, how a version is named, load, save with the version it was made on, rename, conflict and refusal rules); the surface never names a route. Projects documents (`pages/ProjectDetail/documentAdapter.ts`), the review page and History are on it.
+
+| Variant | Use | Layout |
+|---|---|---|
+| `page` | a document's own page | the page frame: bar, sheet at the reading width or full width, focus view; Contents from three headings |
+| `panel` | a 360 px inspector | compact title, the text scrolling inside `max-h-[min(70vh,40rem)]`, `.md-content-compact`, Open full page; edits plain text only |
+| `sheet` | a dialog or side sheet | header, body, sticky footer (the decision, Close) |
+| `inline` | inside a card or a `<details>` | no chrome |
+
+| Mode | Shows |
+|---|---|
+| Read | the light reader with **Rendered · Source** (`tabs-track`, `aria-pressed`); Source is the code view |
+| Edit | the save row (status, Discard, Save, ⌘/Ctrl+S), the canvas (its chunk loaded on Edit) or, for plain text and prompts, the field with its count; the unsaved-changes guard |
+| Compare | `DocumentDiff`: rendered blocks by default, the line diff under Source |
+
+**States.** Loading shows the heading and three `skeleton h-4` lines; an empty text says "Nothing written yet."; a stale save (409) is a `role="alert"` banner with **Compare and merge** (the latest version's changes taken into the draft where they still apply, by Revise's exactly-once rule; a true conflict is shown side by side and never applied), **Load the latest** and **Save mine anyway**, all waiting while a save or a load is on its way; a text past its limit turns its count `text-danger` and Save says why.
+
+**Read-only reasons are visible text, never disabled inputs** (an `info` note with at most one action): `viewer`, `olderVersion` (the version banner: Back to latest, Restore), `managedByTemplate`, `decided`, `proposalOnly`, `editedElsewhere`.
+
+**Safe Markdown.** Every rendered text goes through `components/Document/read/markdownPolicy.ts`: `stored` (links only where the canvas writes them: http(s), mailto, in-app paths; images only from a safe address, never `data:`) and `model` (safe links, no images). Raw HTML is never rendered: it shows as its inert source, as on the canvas. ESLint forbids `rehype-raw` and `dangerouslySetInnerHTML` under `components/Document/**`.
+
+**Code view** (`.code-view`): the text exactly as stored, 12 px mono, decorative line numbers (`aria-hidden`, never selected), Wrap lines, Copy, a named focusable `region`. No syntax highlighting. A SKILL.md's YAML front-matter is split off byte for byte and shown read only as **Properties** (a definition list when every line is a flat `key: value`, else the code view).
+
+**Bundle.** Reading never loads the editor: nothing under `components/Document/{read,text,diff}` and no Agents page imports `@tiptap/*` statically (`src/build/readEngineImports.test.ts`).
 
 ### Choosing a component
 

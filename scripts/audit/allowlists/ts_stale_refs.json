@@ -1,6 +1,7 @@
 {
   "$comment": "Comment references of scripts/audit/ts_stale_refs.mjs that are not stale. Triaged 5.34 (docs/code-audit.md).",
   "entries": [
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/unifiedDiff.ts::assistant/approvals/lineDiff.ts", "reason": "X1 moved lineDiff.ts to components/Document/diff/ while 7.52 rewrites pages/Agents/**: the comment is updated there (remove this entry then)" },
     { "key": "voc-datalake/frontend/src/components/ModalShell/ModalShell.tsx::initialFocusRef", "reason": "names a prop the component deliberately does not have (why it is absent)" },
     { "key": "voc-datalake/frontend/src/components/ThemeToggle/ThemeToggle.tsx::cycleMode", "reason": "a function of the KiroCrew website, the design source the cycle order follows (another repository)" },
     { "key": "voc-datalake/frontend/src/services/sessionExpiry.ts::ForTests", "reason": "a naming suffix the comment explains, not an identifier" },

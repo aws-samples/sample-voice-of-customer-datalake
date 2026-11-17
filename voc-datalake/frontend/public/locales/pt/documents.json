@@ -181,6 +181,85 @@
     "viewingOne": "A ver {{version}}",
     "readOnly": "só de leitura",
     "backToLatest": "Voltar à mais recente",
-    "announce": "A mostrar {{version}}, uma versão anterior, só de leitura."
+    "announce": "A mostrar {{version}}, uma versão anterior, só de leitura.",
+    "number": "v{{number}}",
+    "restore": "Restaurar",
+    "restoreNamed": "Restaurar {{version}}"
+  },
+  "view": {
+    "label": "Mostrar o texto",
+    "rendered": "Formatado",
+    "source": "Código-fonte",
+    "sourceOf": "Código-fonte de {{title}}"
+  },
+  "code": {
+    "wrap": "Quebrar linhas",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "lines": "Linhas: {{n, number}}"
+  },
+  "count": {
+    "chars": "Caracteres: {{n, number}} de {{max, number}}",
+    "lines": "Linhas: {{n, number}} de {{max, number}}",
+    "over": {
+      "chars": "Longo demais: encurte para salvar.",
+      "lines": "Linhas demais: encurte para salvar."
+    }
+  },
+  "prompt": {
+    "asWritten": "Enviado ao modelo como está escrito."
+  },
+  "properties": {
+    "label": "Propriedades"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} linhas adicionadas, {{removed, number}} linhas removidas",
+      "unchanged": "… {{n, number}} linhas inalteradas …",
+      "same": "Inalterado:",
+      "add": "Adicionado:",
+      "del": "Removido:",
+      "tooLarge": "O documento é grande demais para comparar linha a linha. Exibindo o início de cada versão.",
+      "label": "Alterações no documento"
+    }
+  },
+  "readOnly": {
+    "viewer": "Você pode ler e comentar.",
+    "olderVersion": "Uma versão anterior, somente leitura.",
+    "managedByTemplate": "Do modelo. Muda com cada versão, em templates/orchestration.",
+    "decided": "Aceita. Uma versão aceita nunca muda.",
+    "proposalOnly": "As alterações são propostas e depois aceitas por um administrador.",
+    "editedElsewhere": "Isto é editado em outro lugar."
+  },
+  "conflict": {
+    "merge": "Comparar e mesclar",
+    "mergeTitle": "Mesclar a versão mais recente no seu rascunho",
+    "mergeIntro": "As alterações que ainda se aplicam ao seu rascunho estão marcadas. Nada é salvo até você salvar.",
+    "take": "Aplicar esta alteração",
+    "status": {
+      "applies": "Aplica-se ao seu rascunho",
+      "already": "Já está no seu rascunho",
+      "conflict": "Conflita com seu rascunho: o seu é mantido"
+    },
+    "before": "Antes",
+    "theirs": "Na versão mais recente",
+    "tooLarge": "Longo demais para comparar bloco a bloco. Carregue a mais recente ou salve a sua mesmo assim.",
+    "nothing": "A versão mais recente não muda nada que seu rascunho ainda não tenha.",
+    "cancel": "Cancelar",
+    "takeChosen": "Mesclar no meu rascunho",
+    "title": "Entretanto, alguém salvou uma versão mais recente deste documento.",
+    "loadLatest": "Carregar a mais recente",
+    "saveAnyway": "Salvar a minha mesmo assim"
+  },
+  "surface": {
+    "loading": "Carregando o documento…",
+    "empty": "Nada escrito ainda."
+  },
+  "save": {
+    "saved": "Salvo",
+    "refused": "O servidor não salvou isto. Nada foi salvo; seu rascunho foi mantido."
+  },
+  "panel": {
+    "openFull": "Abrir página inteira"
   }
 }

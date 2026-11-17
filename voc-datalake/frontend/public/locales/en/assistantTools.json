@@ -87,14 +87,7 @@
     "unknownCategory": "The category “{{category}}” is not one you can see — the change will be refused.",
     "brandMerged": "Settings after saving (fields not mentioned keep their current value):",
     "diff": {
-      "label": "Changes to the document",
-      "stats": "{{added, number}} lines added, {{removed, number}} lines removed",
-      "unchanged": "… {{n, number}} unchanged lines …",
-      "same": "Unchanged:",
-      "add": "Added:",
-      "del": "Removed:",
       "noChanges": "The proposed content is identical to the current document.",
-      "tooLarge": "The document is too large to compare line by line. Showing the beginning of each version.",
       "currentUnavailable": "The current document couldn't be loaded. Proposed content:"
     },
     "job": {

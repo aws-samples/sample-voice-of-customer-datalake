@@ -5,7 +5,7 @@
  * malformed values, so a stored URL can never become anything but a web link.
  * @module utils/httpHref
  */
-import { classifyHref } from '../assistant/components/safeHref'
+import { classifyHref } from '../components/Document/read/safeHref'
 
 /** The normalised `href` for an absolute http(s) URL, else undefined (render no link). */
 export function httpHref(value: string | null | undefined): string | undefined {

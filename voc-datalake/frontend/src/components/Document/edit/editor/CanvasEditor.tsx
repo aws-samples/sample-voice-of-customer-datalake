@@ -21,6 +21,7 @@ import { CanvasController, CanvasKeys } from './controller'
 import { HeadingIds, headingsOf } from './headingIds'
 import { orNothing } from './orNothing'
 import { useCanvasSync } from './useCanvasSync'
+import type { OutlineItem } from '../../types'
 import './CanvasEditor.css'
 
 /**
@@ -30,8 +31,6 @@ import './CanvasEditor.css'
 const chrome = orNothing(() => import('./CanvasChrome'))
 const CanvasChrome = lazy(() => chrome)
 
-/** A heading of the page's "Contents": h1-h3 (a contents list of every h4 is a second copy of the text). */
-export interface OutlineItem { readonly id: string; readonly level: 1 | 2 | 3; readonly text: string }
 export interface CanvasEditorHandle {
   /** The editable DOM (ProseMirror view.dom); comment anchors (components/DocumentComments/anchors.ts) index it. */
   readonly root: () => HTMLElement | null

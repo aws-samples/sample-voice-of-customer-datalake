@@ -6,11 +6,6 @@
     "personaMessage": "Tem certeza de que deseja deletar esta persona? Esta ação não pode ser desfeita.",
     "personaTitle": "Deletar Persona?"
   },
-  "documentModal": {
-    "conflict": "Entretanto, alguém salvou uma versão mais recente deste documento.",
-    "conflictReload": "Carregar a mais recente",
-    "conflictSaveAnyway": "Salvar a minha mesmo assim"
-  },
   "documents": {
     "deleteDocument": "Deletar documento",
     "card": {

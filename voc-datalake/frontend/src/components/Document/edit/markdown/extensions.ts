@@ -13,7 +13,7 @@ import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table
 import { Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
 import type { CalloutKind } from './callout'
-import { isSafeHref } from './links'
+import { isSafeHref, isSafeImageSrc } from './links'
 import { Callout, RawBlock, RawInline } from './nodes'
 
 export interface CanvasSchemaOptions {
@@ -61,6 +61,25 @@ const CanvasTaskItem = TaskItem.extend({
   },
 })
 
+/**
+ * An image shows only from an address the canvas would link to (never `data:` or `javascript:`: the shared policy,
+ * components/Document/read/markdownPolicy.tsx). Its stored source is kept as written: only the rendered `src` goes.
+ */
+const CanvasImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      src: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          const { src } = attributes
+          return typeof src === 'string' && isSafeImageSrc(src) ? { src } : {}
+        },
+      },
+    }
+  },
+})
+
 /** Inline code may sit inside bold, italic, strike and links (**`x`**), as Markdown allows. */
 const CanvasCode = Code.extend({ excludes: 'code' })
 
@@ -94,7 +113,7 @@ export function canvasExtensions(options: CanvasSchemaOptions): AnyExtension[] {
     TableRow,
     CanvasTableHeader,
     CanvasTableCell,
-    Image.configure({ inline: true, allowBase64: false }),
+    CanvasImage.configure({ inline: true, allowBase64: false }),
     Callout.configure({ labels: options.calloutLabels }),
     RawBlock,
     RawInline,

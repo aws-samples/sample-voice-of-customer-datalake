@@ -78,14 +78,7 @@
       "listReadFailed": "Nie udało się odczytać list uczestników, więc lista jest pokazana po identyfikatorze; sprawdź ją w Uczestnikach przed zatwierdzeniem."
     },
     "diff": {
-      "label": "Zmiany w dokumencie",
-      "stats": "Dodano wierszy: {{added, number}}, usunięto wierszy: {{removed, number}}",
-      "unchanged": "… {{n, number}} niezmienionych wierszy …",
-      "same": "Bez zmian:",
-      "add": "Dodano:",
-      "del": "Usunięto:",
       "noChanges": "Proponowana treść jest identyczna z bieżącym dokumentem.",
-      "tooLarge": "Dokument jest zbyt duży, aby porównać go wiersz po wierszu. Pokazano początek każdej wersji.",
       "currentUnavailable": "Nie udało się wczytać bieżącego dokumentu. Proponowana treść:"
     },
     "job": {

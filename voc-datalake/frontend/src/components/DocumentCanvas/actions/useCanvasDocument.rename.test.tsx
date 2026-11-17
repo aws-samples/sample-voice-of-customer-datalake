@@ -1,5 +1,5 @@
 /**
- * Renaming a document in place (useCanvasDocument `rename`, useDocumentSave): a research / custom title is saved at
+ * Renaming a document in place (useCanvasDocument `rename`, the shared useDocumentDraft): a research / custom title is saved at
  * once as ONE new version carrying the title alone (no content: the server keeps the stored text, so what was typed
  * and not saved stays the draft), with the revision the canvas holds; the same name saves nothing; a PRD / PR/FAQ
  * title (its series') is never sent; a rename that meets a newer save is the conflict, with the name kept unsaved.

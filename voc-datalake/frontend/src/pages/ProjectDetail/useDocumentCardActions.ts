@@ -3,7 +3,7 @@
  * and ask to delete it.
  *
  * Rename is the canvas's own (Document → Rename): ONE new version carrying the title alone, with the revision check
- * (useDocumentSave's `renameOf`, through the document PUT). The document open on its page is renamed through the page
+ * (documentAdapter's `renameOf`, through the document PUT). The document open on its page is renamed through the page
  * instead (its canvas's `rename`, handed over as a {@link PageRename} while the page is open): that keeps its unsaved
  * text as the draft, waits for a save on its way and moves the page to the renamed version. Renamed behind the page's
  * back, the page would stay on the old version and its next save would meet the rename as a conflict. A 409 refetches
@@ -17,7 +17,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { projectKey } from '../../api/projectQueryKeys'
-import { renameOf } from './useDocumentSave'
+import { renameOf } from './documentAdapter'
 import { useUpdateDocument } from './useProjectData'
 import type { DocumentCardActions } from './DocumentCard'
 import type { ProjectDocument } from '../../api/types'

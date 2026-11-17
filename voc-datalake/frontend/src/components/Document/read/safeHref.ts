@@ -4,7 +4,7 @@
  * `/feedback/<id>` (one of our reviews, optionally with a query or fragment) is its own kind: it
  * opens the review modal over the page instead of navigating away from the conversation.
  *
- * @module assistant/components/safeHref
+ * @module components/Document/read/safeHref
  */
 export type SafeHref =
   | { kind: 'external'; href: string; host: string }

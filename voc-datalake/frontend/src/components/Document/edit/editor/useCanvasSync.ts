@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { noCleanup } from '../../../../hooks/noCleanup'
 import { docToMarkdown, markdownToDoc, prepareStored } from '../markdown/convert'
 import { headingsIn } from './headingIds'
-import type { OutlineItem } from './CanvasEditor'
+import type { OutlineItem } from '../../types'
 
 const DEBOUNCE_MS = 150
 

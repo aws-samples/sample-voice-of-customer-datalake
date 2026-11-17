@@ -87,14 +87,7 @@
     "unknownCategory": "カテゴリ「{{category}}」はあなたが閲覧できるカテゴリではないため、変更は拒否されます。",
     "brandMerged": "保存後の設定（指定されていない項目は現在の値のままです）：",
     "diff": {
-      "label": "ドキュメントの変更",
-      "stats": "{{added, number}} 行追加、{{removed, number}} 行削除",
-      "unchanged": "… 変更のない {{n, number}} 行 …",
-      "same": "変更なし：",
-      "add": "追加：",
-      "del": "削除：",
       "noChanges": "提案された内容は現在のドキュメントと同一です。",
-      "tooLarge": "ドキュメントが大きすぎるため行ごとに比較できません。各バージョンの冒頭を表示しています。",
       "currentUnavailable": "現在のドキュメントを読み込めませんでした。提案された内容："
     },
     "job": {

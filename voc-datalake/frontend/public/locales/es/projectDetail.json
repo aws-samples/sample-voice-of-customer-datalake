@@ -6,11 +6,6 @@
     "personaMessage": "¿Estás seguro de que deseas eliminar esta persona? Esta acción no se puede deshacer.",
     "personaTitle": "¿Eliminar Persona?"
   },
-  "documentModal": {
-    "conflict": "Mientras tanto, alguien guardó una versión más reciente de este documento.",
-    "conflictReload": "Cargar la más reciente",
-    "conflictSaveAnyway": "Guardar la mía de todos modos"
-  },
   "documents": {
     "deleteDocument": "Eliminar documento",
     "card": {

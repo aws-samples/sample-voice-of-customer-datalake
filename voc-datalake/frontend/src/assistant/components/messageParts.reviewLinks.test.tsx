@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../../test/query-client'
 import { NavigationChips, SourcesBlock } from './messageParts'
-import { SafeLink } from './SafeLink'
+import { SafeLink } from '../../components/Document/read/SafeLink'
 import { shownMode, useAssistantUiStore } from '../store/assistantStore'
 import type { ReactNode } from 'react'
 

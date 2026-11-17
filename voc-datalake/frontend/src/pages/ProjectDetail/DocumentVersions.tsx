@@ -10,20 +10,19 @@
  *
  * @module pages/ProjectDetail/DocumentVersions
  */
-import { useId, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, RotateCcw } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import ModalShell from '../../components/ModalShell/ModalShell'
-import { ContentDiff } from '../../assistant/approvals/previews/DocumentDiffPreview'
+import DocumentSurface from '../../components/Document/DocumentSurface'
 import { projectsApi } from '../../api/projectsApi'
 import { useVersionRestore } from './useVersionRestore'
 import { formatDateTime } from '../../utils/dateUtils'
 import { documentVersionsKey } from './documentEdit'
+import type { DocumentAdapter } from '../../components/Document/types'
 import type { DocumentVersion } from '../../api/projectDetailSchema'
 import type { ProjectDocument } from '../../api/types'
 
@@ -96,30 +95,35 @@ function VersionDialog({ version, current, mode, onClose }: Readonly<{
   version: DocumentVersion; current: DocumentVersion | undefined; mode: ViewMode; onClose: () => void
 }>) {
   const { t, i18n } = useTranslation('projectDetail')
-  const titleId = useId()
   const label = t('documents.versions.label', { n: version.version })
+  const comparing = mode === 'compare' && current !== undefined
+  const title = comparing ? t('documents.versions.compareTitle', { label }) : `${version.title} · ${label}`
+  const adapter = useMemo(() => versionAdapter(version), [version])
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="w-full max-w-3xl">
-      <div className="dialog-header">
-        <div>
-          <h2 id={titleId} className="dialog-title">
-            {mode === 'compare' ? t('documents.versions.compareTitle', { label }) : `${version.title} · ${label}`}
-          </h2>
-          <p className="dialog-description">{formatDateTime(version.created_at, i18n.language)}</p>
-        </div>
-      </div>
-      <div className="dialog-body max-h-[70vh] overflow-y-auto">
-        {mode === 'compare' && current !== undefined ? (
-          <ContentDiff before={version.content} after={current.content} identicalText={t('documents.versions.identical')} />
-        ) : (
-          <div className="md-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{version.content}</ReactMarkdown></div>
-        )}
-      </div>
-      <div className="dialog-footer">
-        <button type="button" className="btn btn-secondary" onClick={onClose}>{t('documents.versions.close')}</button>
-      </div>
+    <ModalShell isOpen onClose={onClose} ariaLabel={title} panelClassName="w-full max-w-3xl p-5">
+      <DocumentSurface adapter={adapter} variant="sheet" title={title} headingLevel={2} stored={comparing ? current : version}
+        meta={<p className="dialog-description">{formatDateTime(version.created_at, i18n.language)}</p>}
+        mode={comparing ? 'compare' : 'read'} comments={null} onSaved={onClose} fullPath={null} page={null}
+        compare={comparing ? {
+          before: version.content, beforeLabel: label, afterLabel: t('documents.versions.current'),
+          identicalText: t('documents.versions.identical'),
+        } : null}
+        footer={<div className="flex justify-end"><button type="button" className="btn btn-secondary" onClick={onClose}>{t('documents.versions.close')}</button></div>}>
+        {null}
+      </DocumentSurface>
     </ModalShell>
   )
+}
+
+/** A version opened from History, as a read-only document (an earlier one says so; the current one needs no note). */
+function versionAdapter(version: DocumentVersion): DocumentAdapter<DocumentVersion> {
+  return {
+    id: `version:${version.version_id}`,
+    contentType: 'markdown',
+    permissions: { edit: version.current ? true : 'olderVersion' },
+    versionOf: (stored) => ({ token: stored.version_id, number: stored.version }),
+    load: (stored) => Promise.resolve(stored),
+  }
 }
 
 /**

@@ -5,7 +5,7 @@
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
-import { MAX_DIFF_CHARS } from '../../../assistant/approvals/lineDiff'
+import { MAX_DIFF_CHARS } from './lineDiff'
 import BlockDiff from './BlockDiff'
 
 const UNSAFE = '![pixel](https://tracker.example/p.gif)\n\n[open me](javascript:alert(1))'

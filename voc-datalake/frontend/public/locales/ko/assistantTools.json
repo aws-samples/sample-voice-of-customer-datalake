@@ -87,14 +87,7 @@
     "unknownCategory": "“{{category}}” 카테고리는 볼 수 있는 카테고리가 아니므로 변경이 거부됩니다.",
     "brandMerged": "저장 후 설정 (언급되지 않은 항목은 현재 값을 유지합니다):",
     "diff": {
-      "label": "문서 변경 사항",
-      "stats": "{{added, number}}줄 추가, {{removed, number}}줄 삭제",
-      "unchanged": "… 변경 없는 {{n, number}}줄 …",
-      "same": "변경 없음:",
-      "add": "추가됨:",
-      "del": "삭제됨:",
       "noChanges": "제안된 내용이 현재 문서와 동일합니다.",
-      "tooLarge": "문서가 너무 커서 줄 단위로 비교할 수 없습니다. 각 버전의 앞부분을 표시합니다.",
       "currentUnavailable": "현재 문서를 불러오지 못했습니다. 제안된 내용:"
     },
     "job": {

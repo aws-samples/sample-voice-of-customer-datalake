@@ -87,14 +87,7 @@
     "unknownCategory": "类别“{{category}}”不在你可见的范围内，此更改将被拒绝。",
     "brandMerged": "保存后的设置（未提及的字段保留当前值）：",
     "diff": {
-      "label": "文档更改",
-      "stats": "新增 {{added, number}} 行，删除 {{removed, number}} 行",
-      "unchanged": "… {{n, number}} 行未更改 …",
-      "same": "未更改：",
-      "add": "新增：",
-      "del": "删除：",
       "noChanges": "建议的内容与当前文档完全相同。",
-      "tooLarge": "文档过大，无法逐行比较。显示每个版本的开头部分。",
       "currentUnavailable": "无法加载当前文档。建议的内容："
     },
     "job": {

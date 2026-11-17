@@ -6,11 +6,6 @@
     "personaMessage": "确定要删除此人物角色吗？此操作无法撤销。",
     "personaTitle": "删除人物角色？"
   },
-  "documentModal": {
-    "conflict": "在此期间，有人保存了此文档的更新版本。",
-    "conflictReload": "加载最新版本",
-    "conflictSaveAnyway": "仍然保存我的修改"
-  },
   "documents": {
     "deleteDocument": "删除文档",
     "card": {

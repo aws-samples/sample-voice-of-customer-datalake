@@ -181,6 +181,85 @@
     "viewingOne": "{{version}} 보는 중",
     "readOnly": "읽기 전용",
     "backToLatest": "최신으로 돌아가기",
-    "announce": "이전 버전 {{version}}을(를) 읽기 전용으로 표시하고 있습니다."
+    "announce": "이전 버전 {{version}}을(를) 읽기 전용으로 표시하고 있습니다.",
+    "number": "v{{number}}",
+    "restore": "복원",
+    "restoreNamed": "{{version}} 복원"
+  },
+  "view": {
+    "label": "텍스트 표시",
+    "rendered": "서식 적용",
+    "source": "원본",
+    "sourceOf": "{{title}} 원본"
+  },
+  "code": {
+    "wrap": "줄 바꿈",
+    "copy": "복사",
+    "copied": "복사됨",
+    "lines": "줄 수: {{n, number}}"
+  },
+  "count": {
+    "chars": "글자 수: {{n, number}} / {{max, number}}",
+    "lines": "줄 수: {{n, number}} / {{max, number}}",
+    "over": {
+      "chars": "너무 깁니다. 저장하려면 줄이세요.",
+      "lines": "줄이 너무 많습니다. 저장하려면 줄이세요."
+    }
+  },
+  "prompt": {
+    "asWritten": "작성한 그대로 모델에 전송됩니다."
+  },
+  "properties": {
+    "label": "속성"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}}줄 추가, {{removed, number}}줄 삭제",
+      "unchanged": "… 변경 없는 {{n, number}}줄 …",
+      "same": "변경 없음:",
+      "add": "추가됨:",
+      "del": "삭제됨:",
+      "tooLarge": "문서가 너무 커서 줄 단위로 비교할 수 없습니다. 각 버전의 앞부분을 표시합니다.",
+      "label": "문서 변경 사항"
+    }
+  },
+  "readOnly": {
+    "viewer": "읽고 댓글을 달 수 있습니다.",
+    "olderVersion": "이전 버전이며 읽기 전용입니다.",
+    "managedByTemplate": "템플릿에서 가져왔습니다. 릴리스 시 templates/orchestration에서 변경됩니다.",
+    "decided": "승인되었습니다. 승인된 버전은 바뀌지 않습니다.",
+    "proposalOnly": "변경 사항은 제안된 후 관리자가 승인합니다.",
+    "editedElsewhere": "이 항목은 다른 곳에서 편집합니다."
+  },
+  "conflict": {
+    "merge": "비교 후 병합",
+    "mergeTitle": "최신 버전을 초안에 병합",
+    "mergeIntro": "초안에 아직 적용되는 변경 사항이 선택되어 있습니다. 저장하기 전에는 아무것도 저장되지 않습니다.",
+    "take": "이 변경 사항 적용",
+    "status": {
+      "applies": "초안에 적용 가능",
+      "already": "이미 초안에 있음",
+      "conflict": "초안과 충돌: 내 내용을 유지합니다"
+    },
+    "before": "이전",
+    "theirs": "최신 버전",
+    "tooLarge": "너무 길어 블록 단위로 비교할 수 없습니다. 최신 버전을 불러오거나 내 버전을 그대로 저장하세요.",
+    "nothing": "최신 버전에는 초안에 없는 변경 사항이 없습니다.",
+    "cancel": "취소",
+    "takeChosen": "내 초안에 병합",
+    "title": "그사이 다른 사람이 이 문서의 최신 버전을 저장했습니다.",
+    "loadLatest": "최신 버전 불러오기",
+    "saveAnyway": "그래도 내 변경 저장"
+  },
+  "surface": {
+    "loading": "문서를 불러오는 중…",
+    "empty": "아직 작성된 내용이 없습니다."
+  },
+  "save": {
+    "saved": "저장됨",
+    "refused": "서버가 저장하지 않았습니다. 아무것도 저장되지 않았으며 초안은 유지됩니다."
+  },
+  "panel": {
+    "openFull": "전체 페이지로 열기"
   }
 }

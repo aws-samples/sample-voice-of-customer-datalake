@@ -3,7 +3,7 @@
  * characters wide) and the canvas's reading typography. The page's plain canvas and the commented
  * one (PR/FAQ, PRD, the review page) take both from here, so every kind of document reads alike.
  *
- * @module components/DocumentCanvas/comments/readingColumn
+ * @module components/Document/readingColumn
  */
 
 /** The reading column: never wider than ~70 characters, and it may shrink to the screen. */

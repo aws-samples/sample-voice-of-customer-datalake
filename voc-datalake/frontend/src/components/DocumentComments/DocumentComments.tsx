@@ -1,5 +1,6 @@
 /**
- * @fileoverview A PR/FAQ or PRD rendered as plain Markdown with its comment threads: the review
+ * @fileoverview A PR/FAQ or PRD read through the shared light reader (callouts, to-dos and heading ids as on the
+ * canvas, the stored-text link policy) with its comment threads: the review
  * page (`/review/:shareId`) reads the document this way (docs/document-review.md -> Comments).
  *
  * The rail, bubbles, highlights and filters are `CommentedDocument`'s; this view adds the
@@ -12,14 +13,15 @@
 import { MessageSquarePlus } from 'lucide-react'
 import { useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import CommentedDocument from './CommentedDocument'
+import MarkdownRead from '../Document/read/MarkdownRead'
+import { markdownPolicy } from '../Document/read/markdownPolicy'
 import { useSelectionAnchor } from './useSelectionAnchor'
-import { READING_TEXT_CLASS } from '../DocumentCanvas/comments/readingColumn'
+import { READING_TEXT_CLASS } from '../Document/readingColumn'
 import type { CommentedDocumentHandle } from './CommentedDocument'
 import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentThread } from '../../api/documentReviewSchema'
+import type { OutlineItem } from '../Document/types'
 
 interface DocumentCommentsProps {
   /** The markdown, already prepared for display. */
@@ -28,9 +30,11 @@ interface DocumentCommentsProps {
   readonly viewed: ViewedVersion
   readonly actions: CommentActions
   readonly canComment: boolean
+  /** The text's h1–h3, after each parse (the surface's Contents). */
+  readonly onOutline: (items: readonly OutlineItem[]) => void
 }
 
-export default function DocumentComments({ markdown, threads, viewed, actions, canComment }: DocumentCommentsProps) {
+export default function DocumentComments({ markdown, threads, viewed, actions, canComment, onOutline }: DocumentCommentsProps) {
   const { t } = useTranslation('components')
   const rootRef = useRef<HTMLDivElement>(null)
   const commentRef = useRef<CommentedDocumentHandle>(null)
@@ -39,9 +43,8 @@ export default function DocumentComments({ markdown, threads, viewed, actions, c
   return (
     <CommentedDocument contentRoot={contentRoot} revision={markdown} threads={threads} viewed={viewed}
       actions={actions} canComment={canComment} commentRef={commentRef}>
-      <div ref={rootRef} className={READING_TEXT_CLASS}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
-      </div>
+      <MarkdownRead source={markdown} policy={markdownPolicy.stored} className={READING_TEXT_CLASS} rootRef={rootRef}
+        onOutline={onOutline} />
       {selected === null ? null : (
         <button type="button" className="btn btn-primary btn-sm absolute z-20 shadow-md"
           style={{ top: selected.top, left: selected.left }}

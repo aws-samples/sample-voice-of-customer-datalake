@@ -3,7 +3,7 @@
  * (generous width, the text itself held to a comfortable ~70 characters by the reading column) and a large title
  * typed over in place. Design-system tokens only, so the dark and the light theme both hold.
  *
- * @module components/DocumentCanvas/page/pageStyles
+ * @module components/Document/pageStyles
  */
 
 /** The sheet the title, its details and the text sit on: centred, wide, with room around it. */

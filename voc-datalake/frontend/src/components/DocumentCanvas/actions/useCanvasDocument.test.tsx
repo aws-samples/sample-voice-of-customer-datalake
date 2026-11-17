@@ -19,7 +19,7 @@ import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixture
 import { VIEWER_ACCESS } from '../../../pages/ProjectDetail/projectAccess-fixtures'
 import { useGuardedAction } from '../../UnsavedChangesGuard/guardRegistry'
 import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
-import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
+import enDocuments from '../../../../public/locales/en/documents.json'
 import { FakeCanvasEditor } from './canvas-editor-fixtures'
 import { canvas, custom, mount, prd, project, putStores as storesFor } from './canvas-document-fixtures'
 import { Harness } from './canvas-harness-fixtures'
@@ -364,8 +364,8 @@ describe('useCanvasDocument', () => {
       const { get } = await loadingAfterConflict()
       const banner = within(screen.getByRole('alert'))
 
-      expect(banner.getByRole('button', { name: enProjectDetail.documentModal.conflictSaveAnyway })).toBeDisabled()
-      expect(banner.getByRole('button', { name: enProjectDetail.documentModal.conflictReload })).toBeDisabled()
+      expect(banner.getByRole('button', { name: enDocuments.conflict.saveAnyway })).toBeDisabled()
+      expect(banner.getByRole('button', { name: enDocuments.conflict.loadLatest })).toBeDisabled()
       await get.answer()
       await waitFor(() => expect(canvas()).toHaveValue('theirs'))
     })

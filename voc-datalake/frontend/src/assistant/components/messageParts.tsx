@@ -10,7 +10,7 @@ import {
   Brain, CheckCircle2, ChevronDown, ChevronRight, Globe, Loader2, MessageSquareQuote, Navigation, ShieldQuestion, XCircle,
 } from 'lucide-react'
 import { humanizeToolName } from './messageHelpers'
-import { classifyHref } from './safeHref'
+import { classifyHref } from '../../components/Document/read/safeHref'
 import ReviewLink from '../../components/ReviewLink/ReviewLink'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useReviewModal } from '../../hooks/useReviewModal'

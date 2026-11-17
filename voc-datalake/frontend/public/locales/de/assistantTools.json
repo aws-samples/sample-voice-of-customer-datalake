@@ -87,14 +87,7 @@
     "unknownCategory": "Die Kategorie „{{category}}“ ist für Sie nicht sichtbar – die Änderung wird abgelehnt.",
     "brandMerged": "Einstellungen nach dem Speichern (nicht genannte Felder behalten ihren aktuellen Wert):",
     "diff": {
-      "label": "Änderungen am Dokument",
-      "stats": "{{added, number}} Zeilen hinzugefügt, {{removed, number}} Zeilen entfernt",
-      "unchanged": "… {{n, number}} unveränderte Zeilen …",
-      "same": "Unverändert:",
-      "add": "Hinzugefügt:",
-      "del": "Entfernt:",
       "noChanges": "Der vorgeschlagene Inhalt ist identisch mit dem aktuellen Dokument.",
-      "tooLarge": "Das Dokument ist zu groß für einen zeilenweisen Vergleich. Der Anfang jeder Version wird angezeigt.",
       "currentUnavailable": "Das aktuelle Dokument konnte nicht geladen werden. Vorgeschlagener Inhalt:"
     },
     "job": {

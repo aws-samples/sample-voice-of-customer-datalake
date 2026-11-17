@@ -90,14 +90,7 @@
     "unknownCategory": "A categoria “{{category}}” não está entre as que você pode ver — a alteração será recusada.",
     "brandMerged": "Configurações após salvar (campos não mencionados mantêm o valor atual):",
     "diff": {
-      "label": "Alterações no documento",
-      "stats": "{{added, number}} linhas adicionadas, {{removed, number}} linhas removidas",
-      "unchanged": "… {{n, number}} linhas inalteradas …",
-      "same": "Inalterado:",
-      "add": "Adicionado:",
-      "del": "Removido:",
       "noChanges": "O conteúdo proposto é idêntico ao documento atual.",
-      "tooLarge": "O documento é grande demais para comparar linha a linha. Exibindo o início de cada versão.",
       "currentUnavailable": "Não foi possível carregar o documento atual. Conteúdo proposto:"
     },
     "job": {

@@ -181,6 +181,85 @@
     "viewingOne": "正在查看 {{version}}",
     "readOnly": "只读",
     "backToLatest": "回到最新版本",
-    "announce": "正在以只读方式显示较早的版本 {{version}}。"
+    "announce": "正在以只读方式显示较早的版本 {{version}}。",
+    "number": "v{{number}}",
+    "restore": "恢复",
+    "restoreNamed": "恢复 {{version}}"
+  },
+  "view": {
+    "label": "文本显示方式",
+    "rendered": "渲染",
+    "source": "源文本",
+    "sourceOf": "{{title}} 的源文本"
+  },
+  "code": {
+    "wrap": "自动换行",
+    "copy": "复制",
+    "copied": "已复制",
+    "lines": "行数：{{n, number}}"
+  },
+  "count": {
+    "chars": "字符数：{{n, number}} / {{max, number}}",
+    "lines": "行数：{{n, number}} / {{max, number}}",
+    "over": {
+      "chars": "过长：请缩短后再保存。",
+      "lines": "行数过多：请缩短后再保存。"
+    }
+  },
+  "prompt": {
+    "asWritten": "按原文发送给模型。"
+  },
+  "properties": {
+    "label": "属性"
+  },
+  "diff": {
+    "lines": {
+      "stats": "新增 {{added, number}} 行，删除 {{removed, number}} 行",
+      "unchanged": "… {{n, number}} 行未更改 …",
+      "same": "未更改：",
+      "add": "新增：",
+      "del": "删除：",
+      "tooLarge": "文档过大，无法逐行比较。显示每个版本的开头部分。",
+      "label": "文档更改"
+    }
+  },
+  "readOnly": {
+    "viewer": "您可以阅读并发表评论。",
+    "olderVersion": "较早的版本，只读。",
+    "managedByTemplate": "来自模板。它随版本发布在 templates/orchestration 中更改。",
+    "decided": "已接受。已接受的版本不会再更改。",
+    "proposalOnly": "对此的更改需先提议，再由管理员接受。",
+    "editedElsewhere": "此内容在其他位置编辑。"
+  },
+  "conflict": {
+    "merge": "比较并合并",
+    "mergeTitle": "将最新版本合并到您的草稿",
+    "mergeIntro": "仍适用于您草稿的更改已勾选。在您保存之前不会保存任何内容。",
+    "take": "采用此更改",
+    "status": {
+      "applies": "可应用于草稿",
+      "already": "草稿中已有",
+      "conflict": "与草稿冲突：保留您的内容"
+    },
+    "before": "之前",
+    "theirs": "最新版本中",
+    "tooLarge": "内容过长，无法逐块比较。请加载最新版本，或仍然保存您的版本。",
+    "nothing": "最新版本没有草稿中尚未包含的更改。",
+    "cancel": "取消",
+    "takeChosen": "合并到我的草稿",
+    "title": "在此期间，有人保存了此文档的更新版本。",
+    "loadLatest": "加载最新版本",
+    "saveAnyway": "仍然保存我的修改"
+  },
+  "surface": {
+    "loading": "正在加载文档…",
+    "empty": "尚未撰写任何内容。"
+  },
+  "save": {
+    "saved": "已保存",
+    "refused": "服务器未保存。未保存任何内容，您的草稿已保留。"
+  },
+  "panel": {
+    "openFull": "打开完整页面"
   }
 }

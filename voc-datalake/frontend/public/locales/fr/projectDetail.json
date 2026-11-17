@@ -6,11 +6,6 @@
     "personaMessage": "Êtes-vous sûr de vouloir supprimer ce persona ? Cette action ne peut pas être annulée.",
     "personaTitle": "Supprimer le persona ?"
   },
-  "documentModal": {
-    "conflict": "Entre-temps, quelqu’un a enregistré une version plus récente de ce document.",
-    "conflictReload": "Charger la plus récente",
-    "conflictSaveAnyway": "Enregistrer la mienne quand même"
-  },
   "documents": {
     "deleteDocument": "Supprimer le document",
     "card": {

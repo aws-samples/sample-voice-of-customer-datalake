@@ -10,28 +10,21 @@
  * @module components/DocumentCanvas/revise/reviseChanges
  */
 import { commonPrefixLength } from '../../../utils/commonPrefix'
+import { applyOnce, occursOnce } from '../../Document/diff/merge'
 import type { TFunction } from 'i18next'
 import type { CommentThread, ReviseChange } from '../../../api/documentReviewSchema'
 
 /**
- * `needle` occurs at exactly one place in `text` (the server's `_only_place`). Overlapping places count: `aa` is at
- * two places in `aaa`. An empty needle occurs nowhere.
+ * The change's `before` no longer occurs exactly once in the draft (the server's `_only_place`; the shared rule of
+ * components/Document/diff/merge.ts, which Compare and merge applies too): it cannot be accepted.
  */
-function occursOnce(text: string, needle: string): boolean {
-  const first = text.indexOf(needle)
-  return needle !== '' && first !== -1 && !text.slice(first + 1).includes(needle)
-}
-
-/** The change's `before` no longer occurs exactly once in the draft: it cannot be accepted. */
 export function isOutOfDate(draft: string, change: ReviseChange): boolean {
   return !occursOnce(draft, change.before)
 }
 
 /** The draft with the change's one `before` replaced by its `after`; null when it is out of date. */
 export function applyChange(draft: string, change: ReviseChange): string | null {
-  if (isOutOfDate(draft, change)) return null
-  const at = draft.indexOf(change.before)
-  return draft.slice(0, at) + change.after + draft.slice(at + change.before.length)
+  return applyOnce(draft, change)
 }
 
 /**

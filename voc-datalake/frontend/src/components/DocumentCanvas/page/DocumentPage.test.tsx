@@ -17,7 +17,7 @@ import DocumentPage from './DocumentPage'
 import { useFocusViewActive } from './focusView'
 import type { ReactNode } from 'react'
 import type { ProjectDocument } from '../../../api/types'
-import type { OutlineItem } from '../../Document/edit/editor/CanvasEditor'
+import type { OutlineItem } from '../../Document/types'
 
 const handle = {
   root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(),

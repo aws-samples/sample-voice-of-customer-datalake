@@ -12,6 +12,11 @@ export function isSafeHref(url: string): boolean {
   return SAFE_SCHEMES.has(scheme)
 }
 
+/** An image's address both engines render: a safe link's (http(s), a path in the app), never mailto:. */
+export function isSafeImageSrc(url: string): boolean {
+  return isSafeHref(url) && !/^mailto:/iu.test(strip(url))
+}
+
 /**
  * A scheme-less address is a path in the app only when no browser can read it as another host: `//host/x` is
  * protocol-relative and browsers read a backslash as a slash (`\\host`, `/\host`), so neither counts. What is left:

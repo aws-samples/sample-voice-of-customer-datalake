@@ -181,6 +181,85 @@
     "viewingOne": "{{version}} を表示中",
     "readOnly": "読み取り専用",
     "backToLatest": "最新に戻る",
-    "announce": "以前のバージョン {{version}} を読み取り専用で表示しています。"
+    "announce": "以前のバージョン {{version}} を読み取り専用で表示しています。",
+    "number": "v{{number}}",
+    "restore": "復元",
+    "restoreNamed": "{{version}} を復元"
+  },
+  "view": {
+    "label": "テキストの表示",
+    "rendered": "表示",
+    "source": "ソース",
+    "sourceOf": "{{title}} のソース"
+  },
+  "code": {
+    "wrap": "行を折り返す",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "lines": "行数: {{n, number}}"
+  },
+  "count": {
+    "chars": "文字数: {{n, number}} / {{max, number}}",
+    "lines": "行数: {{n, number}} / {{max, number}}",
+    "over": {
+      "chars": "長すぎます。保存するには短くしてください。",
+      "lines": "行数が多すぎます。保存するには短くしてください。"
+    }
+  },
+  "prompt": {
+    "asWritten": "書いたとおりにモデルへ送信されます。"
+  },
+  "properties": {
+    "label": "プロパティ"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} 行追加、{{removed, number}} 行削除",
+      "unchanged": "… 変更のない {{n, number}} 行 …",
+      "same": "変更なし：",
+      "add": "追加：",
+      "del": "削除：",
+      "tooLarge": "ドキュメントが大きすぎるため行ごとに比較できません。各バージョンの冒頭を表示しています。",
+      "label": "ドキュメントの変更"
+    }
+  },
+  "readOnly": {
+    "viewer": "閲覧とコメントができます。",
+    "olderVersion": "以前のバージョンです（読み取り専用）。",
+    "managedByTemplate": "テンプレート由来です。リリース時に templates/orchestration で変更されます。",
+    "decided": "承認済みです。承認されたバージョンは変更されません。",
+    "proposalOnly": "変更は提案され、管理者が承認します。",
+    "editedElsewhere": "これは別の場所で編集します。"
+  },
+  "conflict": {
+    "merge": "比較して統合",
+    "mergeTitle": "最新バージョンを下書きに統合",
+    "mergeIntro": "下書きにまだ適用できる変更にはチェックが入っています。保存するまで何も保存されません。",
+    "take": "この変更を取り込む",
+    "status": {
+      "applies": "下書きに適用可能",
+      "already": "下書きに反映済み",
+      "conflict": "下書きと競合: あなたの内容を残します"
+    },
+    "before": "変更前",
+    "theirs": "最新バージョン",
+    "tooLarge": "長すぎるためブロック単位で比較できません。最新版を読み込むか、自分の版をそのまま保存してください。",
+    "nothing": "最新バージョンには、下書きにない変更はありません。",
+    "cancel": "キャンセル",
+    "takeChosen": "下書きに統合",
+    "title": "この間に、誰かがこのドキュメントの新しいバージョンを保存しました。",
+    "loadLatest": "最新を読み込む",
+    "saveAnyway": "自分の変更をそのまま保存"
+  },
+  "surface": {
+    "loading": "ドキュメントを読み込んでいます…",
+    "empty": "まだ何も書かれていません。"
+  },
+  "save": {
+    "saved": "保存しました",
+    "refused": "サーバーは保存しませんでした。何も保存されておらず、下書きは残っています。"
+  },
+  "panel": {
+    "openFull": "全画面で開く"
   }
 }

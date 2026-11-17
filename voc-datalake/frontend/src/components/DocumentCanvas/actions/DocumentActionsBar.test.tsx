@@ -174,13 +174,13 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
 
   it('shows the conflict banner under the bar', () => {
     renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: false, loading: false } }) })
-    expect(screen.getByRole('alert')).toHaveTextContent(enProjectDetail.documentModal.conflict)
+    expect(screen.getByRole('alert')).toHaveTextContent(enDocuments.conflict.title)
   })
 
   it('draws both of the conflict\'s ways out as bordered buttons (a ghost button misses AA on the warning tint)', () => {
     renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: false, loading: false } }) })
     const alert = within(screen.getByRole('alert'))
-    const looks = [enProjectDetail.documentModal.conflictReload, enProjectDetail.documentModal.conflictSaveAnyway]
+    const looks = [enDocuments.conflict.loadLatest, enDocuments.conflict.saveAnyway]
       .map((name) => alert.getByRole('button', { name }).classList.contains('btn-secondary'))
     expect(looks).toStrictEqual([true, true])
   })
@@ -188,9 +188,9 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
   it('holds both of the conflict\'s ways out while a save is on its way, and says so', () => {
     renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: true, loading: false } }) })
     const alert = within(screen.getByRole('alert'))
-    expect(alert.getByRole('button', { name: enProjectDetail.documentModal.conflictReload })).toBeDisabled()
+    expect(alert.getByRole('button', { name: enDocuments.conflict.loadLatest })).toBeDisabled()
     expect(alert.getByRole('button', { name: enDocuments.actions.status.saving })).toBeDisabled()
-    expect(alert.queryByRole('button', { name: enProjectDetail.documentModal.conflictSaveAnyway })).not.toBeInTheDocument()
+    expect(alert.queryByRole('button', { name: enDocuments.conflict.saveAnyway })).not.toBeInTheDocument()
   })
 })
 

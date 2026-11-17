@@ -6,11 +6,6 @@
     "personaMessage": "Are you sure you want to delete this persona? This action cannot be undone.",
     "personaTitle": "Delete Persona?"
   },
-  "documentModal": {
-    "conflict": "Someone saved a newer version of this document meanwhile.",
-    "conflictReload": "Load the latest",
-    "conflictSaveAnyway": "Save mine anyway"
-  },
   "documents": {
     "deleteDocument": "Delete document",
     "card": {

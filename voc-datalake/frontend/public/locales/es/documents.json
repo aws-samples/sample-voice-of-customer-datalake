@@ -181,6 +181,85 @@
     "viewingOne": "Viendo {{version}}",
     "readOnly": "solo lectura",
     "backToLatest": "Volver a la última",
-    "announce": "Se muestra {{version}}, una versión anterior, en solo lectura."
+    "announce": "Se muestra {{version}}, una versión anterior, en solo lectura.",
+    "number": "v{{number}}",
+    "restore": "Restaurar",
+    "restoreNamed": "Restaurar {{version}}"
+  },
+  "view": {
+    "label": "Mostrar el texto",
+    "rendered": "Con formato",
+    "source": "Fuente",
+    "sourceOf": "Fuente de {{title}}"
+  },
+  "code": {
+    "wrap": "Ajustar líneas",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "lines": "Líneas: {{n, number}}"
+  },
+  "count": {
+    "chars": "Caracteres: {{n, number}} de {{max, number}}",
+    "lines": "Líneas: {{n, number}} de {{max, number}}",
+    "over": {
+      "chars": "Demasiado largo: acórtelo para guardar.",
+      "lines": "Demasiadas líneas: acórtelo para guardar."
+    }
+  },
+  "prompt": {
+    "asWritten": "Se envía al modelo tal como está escrito."
+  },
+  "properties": {
+    "label": "Propiedades"
+  },
+  "diff": {
+    "lines": {
+      "stats": "{{added, number}} líneas añadidas, {{removed, number}} líneas eliminadas",
+      "unchanged": "… {{n, number}} líneas sin cambios …",
+      "same": "Sin cambios:",
+      "add": "Añadido:",
+      "del": "Eliminado:",
+      "tooLarge": "El documento es demasiado grande para compararlo línea por línea. Se muestra el inicio de cada versión.",
+      "label": "Cambios en el documento"
+    }
+  },
+  "readOnly": {
+    "viewer": "Puede leer esto y comentarlo.",
+    "olderVersion": "Una versión anterior, solo lectura.",
+    "managedByTemplate": "De la plantilla. Cambia con cada versión, en templates/orchestration.",
+    "decided": "Aceptada. Una versión aceptada nunca cambia.",
+    "proposalOnly": "Los cambios se proponen y luego los acepta un administrador.",
+    "editedElsewhere": "Esto se edita en otro lugar."
+  },
+  "conflict": {
+    "merge": "Comparar y combinar",
+    "mergeTitle": "Combinar la última versión con su borrador",
+    "mergeIntro": "Los cambios que aún encajan en su borrador están marcados. No se guarda nada hasta que guarde.",
+    "take": "Aplicar este cambio",
+    "status": {
+      "applies": "Encaja en su borrador",
+      "already": "Ya está en su borrador",
+      "conflict": "Choca con su borrador: se conserva el suyo"
+    },
+    "before": "Antes",
+    "theirs": "En la última versión",
+    "tooLarge": "Demasiado largo para comparar bloque a bloque. Cargue la última versión o guarde la suya de todos modos.",
+    "nothing": "La última versión no cambia nada que su borrador no tenga ya.",
+    "cancel": "Cancelar",
+    "takeChosen": "Combinar con mi borrador",
+    "title": "Mientras tanto, alguien guardó una versión más reciente de este documento.",
+    "loadLatest": "Cargar la más reciente",
+    "saveAnyway": "Guardar la mía de todos modos"
+  },
+  "surface": {
+    "loading": "Cargando el documento…",
+    "empty": "Aún no hay nada escrito."
+  },
+  "save": {
+    "saved": "Guardado",
+    "refused": "El servidor no lo guardó. No se guardó nada; su borrador se conserva."
+  },
+  "panel": {
+    "openFull": "Abrir página completa"
   }
 }

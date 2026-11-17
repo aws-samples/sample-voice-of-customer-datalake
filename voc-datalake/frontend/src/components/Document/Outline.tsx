@@ -3,15 +3,15 @@
  * the page scrolls. Sticky beside the text on wide screens; on narrow screens a "Contents" disclosure above it.
  * Following a link scrolls the canvas to the heading and moves focus there (CanvasEditorHandle.scrollToHeading).
  *
- * @module components/DocumentCanvas/page/Outline
+ * @module components/Document/Outline
  */
 import clsx from 'clsx'
 import { ChevronDown } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { noCleanup } from '../../../hooks/noCleanup'
+import { noCleanup } from '../../hooks/noCleanup'
 import type { KeyboardEvent, MouseEvent } from 'react'
-import type { OutlineItem } from '../../Document/edit/editor/CanvasEditor'
+import type { OutlineItem } from './types'
 
 const INDENT: Readonly<Record<OutlineItem['level'], string>> = { 1: 'pl-2', 2: 'pl-5', 3: 'pl-8' }
 

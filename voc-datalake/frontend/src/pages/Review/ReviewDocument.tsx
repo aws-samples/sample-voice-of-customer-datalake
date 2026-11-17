@@ -1,6 +1,7 @@
 /**
  * @fileoverview The shared document on `/review/:shareId` for a signed-in reviewer: its newest
- * version, the reviewer's own comment threads, and comment / reply (docs/document-review.md).
+ * version, the reviewer's own comment threads, and comment / reply (docs/document-review.md), read on the
+ * shared document surface (Rendered / Source, Contents, callouts as on the canvas; reviewDocumentAdapter).
  *
  * @module pages/Review/ReviewDocument
  */
@@ -8,9 +9,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import DocumentComments from '../../components/DocumentComments/DocumentComments'
+import DocumentSurface from '../../components/Document/DocumentSurface'
 import { createReviewApi } from '../../api/documentReviewApi'
 import { formatDate } from '../../utils/dateUtils'
+import { reviewDocumentAdapter } from './reviewDocumentAdapter'
 import type { FetchApi } from '../../api/requestKit'
 import type { NewComment } from '../../api/documentReviewApi'
 import type { CommentActions } from '../../components/DocumentComments/commentTypes'
@@ -29,6 +31,7 @@ export default function ReviewDocument({ shareId, fetchApi, session }: ReviewDoc
   const api = useMemo(() => createReviewApi(fetchApi), [fetchApi])
   const key = useMemo(() => ['review', session, shareId] as const, [session, shareId])
   const query = useQuery({ queryKey: key, queryFn: () => api.get(shareId), retry: false })
+  const adapter = useMemo(() => reviewDocumentAdapter(shareId, () => api.get(shareId)), [api, shareId])
   const actions = useMemo<CommentActions>(() => ({
     create: async (comment: NewComment) => {
       await api.comment(shareId, comment)
@@ -52,18 +55,21 @@ export default function ReviewDocument({ shareId, fetchApi, session }: ReviewDoc
   }
   const { document, share, threads } = query.data
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <h1 className="text-xl font-bold tracking-tight text-text-strong break-words">{document.title}</h1>
+    <DocumentSurface adapter={adapter} variant="page" title={document.title} headingLevel={1} stored={document} mode="read"
+      compare={null} comments={{ threads, viewed: { documentId: document.document_id }, actions, canComment: true }}
+      onSaved={ignoreSaved} fullPath={null} footer={null} page={null}
+      meta={(
         <p className="text-sm text-muted">
           {t('reviewPage.intro')}
           {share.expires_at === '' ? null : ` ${t('reviewPage.expires', { date: formatDate(share.expires_at, i18n.language) })}`}
         </p>
-      </div>
-      <div className="bg-card rounded-xl border border-border p-4 sm:p-6">
-        <DocumentComments markdown={document.content} threads={threads}
-          viewed={{ documentId: document.document_id }} actions={actions} canComment />
-      </div>
-    </div>
+      )}>
+      {null}
+    </DocumentSurface>
   )
+}
+
+/** A reviewer never saves the document (it is read only here). */
+function ignoreSaved(): void {
+  // Nothing to select: the review page shows the newest version only.
 }
