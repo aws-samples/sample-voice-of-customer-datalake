@@ -12,6 +12,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
+import type { Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { remarkParity } from './remarkParity'
 import type { Ref } from 'react'
@@ -37,19 +38,19 @@ interface MarkdownReadProps {
 function MarkdownRead({ source, policy, className, onOutline, headingIds = true, rootRef }: MarkdownReadProps) {
   const { t } = useTranslation('documents')
   const outline = useRef<readonly OutlineItem[]>([])
-  const plugins = useMemo(() => {
+  const plugins = useMemo<NonNullable<Options['remarkPlugins']>>(() => {
     const calloutLabels: Record<CalloutKind, string> = {
       note: t('editor.callout.note'), tip: t('editor.callout.tip'), important: t('editor.callout.important'),
       warning: t('editor.callout.warning'), caution: t('editor.callout.caution'),
     }
     const onHeadings = (items: readonly OutlineItem[]) => { outline.current = items }
-    return [remarkGfm, [remarkParity, { calloutLabels, ids: headingIds, onHeadings }]] as const
+    return [remarkGfm, [remarkParity, { calloutLabels, ids: headingIds, onHeadings }]]
   }, [headingIds, t])
   // The parse ran in this render (react-markdown parses as it renders): its Contents go out once it committed.
   useEffect(() => { onOutline?.(outline.current) }, [onOutline, plugins, source])
   return (
     <div ref={rootRef} className={className}>
-      <ReactMarkdown remarkPlugins={[...plugins]} components={policy.components}
+      <ReactMarkdown remarkPlugins={plugins} components={policy.components}
         urlTransform={policy.urlTransform}>
         {source}
       </ReactMarkdown>
