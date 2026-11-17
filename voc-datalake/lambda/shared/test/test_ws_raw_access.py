@@ -458,6 +458,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.50.00: Learn's spend, its LEARN#spend row in the run's partition with its spend ledger rows, one transaction
     # (the engineering agents' own table, the deployment's like the sessions' metering until agents move: 3g3).
     'lambda/engineering/learning/budget.py': (3, {'meta.client': 1, 'transact': 1}),
+    # (7.53.00: the scheduled cross-run Learn pass's spend, its flow's SPEND# row and the ledger in one transaction)
+    'lambda/engineering/learning/cross_run.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/engineering/rows.py': (3, {'transact': 1}),
     'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
     # The readiness probe's create-only put of its one object (7.50.00, ws/default/_readiness/probe.json).

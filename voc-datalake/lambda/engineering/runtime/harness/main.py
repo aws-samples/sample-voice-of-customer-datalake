@@ -1,8 +1,10 @@
 """The harness's entry point in the image: ``/usr/bin/python3 -I /opt/voc/harness.py <command> ...``.
 
-- ``run --adapter converse|cli --model <model id> [--cli claude --cli-binary <path> --cli-version <v>]``: run the
-  agent's session (its skill picks the adapter and model; the launch request carries this argv) and exit
-  with the runtime's code: 0 done, 75 paused after its checkpoint, 1 (Python's, on anything raised) a crash.
+- ``run --adapter converse|cli|kiro --model <model id> [--cli claude --cli-binary <path> --cli-version <v>]
+  [--kiro-version <v> --kiro-key-parameter <name>]``: run the agent's session (its skill picks the model and the
+  converse or cli adapter; a deployment that runs the role on Kiro, ``-c engineeringHarness``, has its launch name
+  ``kiro``: runtime/harness_switch.py; the launch request carries this argv) and exit with the runtime's code: 0 done,
+  75 paused after its checkpoint, 1 (Python's, on anything raised) a crash.
 - ``tool-server``: the platform's tools for a CLI (``tool_server``), started by that CLI.
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
@@ -50,6 +52,7 @@ from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.gate_tools import configured_gates_dir
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
+from engineering.runtime.harness.kiro import KEY_ENV, KIRO_BINARY, KiroAcp, ssm_key
 from engineering.runtime.harness.ports import (
     Board,
     Broker,
@@ -391,15 +394,24 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
                  planner=BoardPlanner(transport, run_id), knowledge=BoardKnowledge(transport, run_id, task_id))
 
 
+#: What the tool server a CLI or kiro-cli starts gets of the harness's environment (its ids, its session, its fence).
+TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
+                   'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
+                   'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+#: Beside them, for kiro-cli's tool server: the agent's proxy (its boto3 reaches S3, the board and the broker through
+#: it, as the harness's own does).
+KIRO_TOOL_ENV: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'AWS_SDK_LOAD_CONFIG')
+
+
 def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Callable[[], Any]) -> Adapter:
     if args.adapter == 'converse':
         return ConverseAdapter(bedrock(), args.model)
+    if args.adapter == 'kiro':
+        return KiroAcp(binary=args.kiro_binary, version=args.kiro_version, agent_home=env['HOME'], environment=env,
+                       tool_env={name: env[name] for name in (*TOOL_ENV, *KIRO_TOOL_ENV) if name in env},
+                       key=ssm_key(args.kiro_key_parameter, env['AWS_REGION']))
     choose_cli(args.cli)
-    tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
-                                              'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT', 'VOC_BOARD_URL',
-                                              'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV, 'VOC_GATES_DIR',
-                                              'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
-                if name in env}
+    tool_env = {name: env[name] for name in TOOL_ENV if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],
                      aws_config=env['AWS_CONFIG_FILE'], tool_env=tool_env)
@@ -409,11 +421,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='harness')
     commands = parser.add_subparsers(dest='command', required=True)
     run = commands.add_parser('run')
-    run.add_argument('--adapter', choices=('converse', 'cli'), required=True)
+    run.add_argument('--adapter', choices=('converse', 'cli', 'kiro'), required=True)
     run.add_argument('--model', required=True)
     run.add_argument('--cli', default=CLAUDE)
     run.add_argument('--cli-binary', default='/usr/local/bin/claude')
     run.add_argument('--cli-version', default='')
+    run.add_argument('--kiro-binary', default=KIRO_BINARY)
+    run.add_argument('--kiro-version', default='')
+    run.add_argument('--kiro-key-parameter', default='')
     commands.add_parser('tool-server')
     return parser
 
@@ -431,6 +446,9 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         import boto3
         s3 = boto3.client('s3', region_name=env.get('AWS_REGION'))
     if args.command == 'tool-server':
+        # (kiro-cli's key is its own: its config blanks it for this server, and nothing here would hold it anyway)
+        os.environ.pop(KEY_ENV, None)
+        env = {name: value for name, value in env.items() if name != KEY_ENV}
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient(), restore=False)
         serve(session.tools, SessionFiles(env['VOC_SESSION_FILES']), sys.stdin, sys.stdout)
         return DONE_EXIT_CODE

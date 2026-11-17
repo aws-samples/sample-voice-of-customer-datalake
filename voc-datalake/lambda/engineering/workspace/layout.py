@@ -31,7 +31,7 @@ from engineering.runtime.checkpoints import SHA
 from engineering.runtime.outputs import encode_package as harness_encode_package
 
 #: The kinds of non-finding artifact an agent writes under a commit.
-ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage', 'tenets'})
+ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage', 'tenets', 'kiro'})
 REPORT_LEVELS = frozenset({'commit', 'pr', 'goal'})
 _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
 #: A package segment: plain characters and ``=XX`` escapes, not beginning with ``_`` (escaped as ``=5F``).

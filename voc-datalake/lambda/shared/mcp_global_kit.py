@@ -84,6 +84,15 @@ class GlobalTool:
     board_route: bool = False
     # Reaches data of every project the minter can view (not one project): refused to a project-pinned token.
     workspace_wide: bool = False
+    # (7.53.00) The engineering run operation the tool serves (project_access.MCP_ENGINEERING_OPS), '' for none. Such a
+    # tool is ``admin_only`` and needs a write token even to read (``needs_write_token``); its delegated call carries
+    # that one operation as ``voc:mcp_engineering``, never the ``agents_run`` claim.
+    engineering_op: str = ''
+
+    @property
+    def needs_write_token(self) -> bool:
+        """A write tool, or an engineering one (offered only to a write token minted by an administrator)."""
+        return self.write or bool(self.engineering_op)
 
     def declaration(self) -> dict:
         """The tool as `tools/list` publishes it.

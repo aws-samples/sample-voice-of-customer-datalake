@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Protocol
 
@@ -70,6 +71,9 @@ class AgentSession:
     seed: dict[str, Any] | None = None
     seed_conflict: str = ''
     seed_refused: str = ''
+    #: What an adapter adds to each checkpoint's position (7.53.00: the Kiro adapter's ``kiro`` entry, its ACP session id
+    #: and the key of that session's saved state), given the checkpoint's sequence number; None for nothing.
+    checkpoint_extra: Callable[[int], dict[str, Any]] | None = None
 
     def seed_parts(self) -> list[str]:
         """What the opening says of the seed: the earlier run's notes, plan and history as data, its steering in the
@@ -175,6 +179,9 @@ class AgentSession:
                 # The notes and plan are saved with the last working tree saved; the continuation is told so.
                 position['patch_refused'] = str(refused)[:300]
                 context.status.at(f'checkpoint with an older working tree: {str(refused)[:150]}')
+        if self.checkpoint_extra is not None:
+            # (never the position's own fields: an adapter only adds its entry beside them)
+            position.update({name: value for name, value in self.checkpoint_extra(seq).items() if name not in position})
         for cut in (None, *_NOTE_CUTS):
             notes = self.notes if cut is None else self.notes[:cut]
             plan = self.plan if cut is None else self.plan[:5]

@@ -13,8 +13,9 @@ package (the first of ``BUNDLE_PATHS``). The parts read here::
      "platform_rules": {"text": "...", "digest": "sha256:..."}, ...}
 
 A deployment without a bundle reads the skills the harness ships (runtime/harness/skills.py ``SKILLS``), each as its own
-template version, and the harness's own rules. Either way a template is a role's skill as shipped: no person accepted
-it, so it comes last, after any version the skills store holds for the role.
+template version, and the harness's rules; since 7.53.00 those are read from the same compiled bundle (the image's or
+the Lambdas' copy), so both ways are the templates'. Either way a template is a role's skill as shipped: no person
+accepted it, so it comes last, after any version the skills store holds for the role.
 """
 from __future__ import annotations
 

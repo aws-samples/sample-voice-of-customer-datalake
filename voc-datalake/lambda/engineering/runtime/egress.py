@@ -6,7 +6,9 @@ agent reaches only Amazon Bedrock in its region, two buckets in S3 (the raw buck
 the workspace bucket for its run's keys and its own puts), the platform's two function URLs (the board's and the
 broker's, each by its own host, on the agent's own proxy) and, for the agents that run repository code, its language's
 package registries (the dependency step is the only command with network: ``unit_runner.sandboxed_argv``; its proxy
-never gets a function URL). The list is checked host by host
+never gets a function URL). An agent on the Kiro harness (7.53.00, ``harness_switch.py``) also reaches, on its own proxy,
+the Kiro service's two hosts (``KIRO_SERVICE_HOSTS``) and SSM in its region (its key, read with its own session). The
+list is checked host by host
 (a plain DNS name: no scheme, port, path, wildcard or IP address) and travels with the agent
 (``AgentSpec.egress``).
 """
@@ -31,6 +33,12 @@ REGISTRY_HOSTS: Final[dict[str, tuple[str, ...]]] = {
     'java': ('repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org'),
 }
 MAX_EXTRA_HOSTS: Final = 10
+#: The Kiro service, for an agent on the Kiro harness (7.53.00): measured with kiro-cli 3.4.0 and an API key of the
+#: us-east-1 profile, behind a proxy that let only these two through: its model runtime, and its management API (the
+#: model registry a prompt needs; without it a prompt fails ``ModelRegistryUnavailableError``). Everything else it
+#: tries (app.kiro.dev, desktop-release.q.us-east-1.amazonaws.com, the other partitions' and regions' management hosts,
+#: telemetry) was refused and the session worked without it. A key of another Kiro region needs that region's pair.
+KIRO_SERVICE_HOSTS: Final = ('management.us-east-1.kiro.dev', 'runtime.us-east-1.kiro.dev')
 _REGION_RE: Final = re.compile(r'^[a-z]{2}(-[a-z]+)+-\d\Z')
 _BUCKET_RE: Final = re.compile(r'^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\Z')
 
@@ -68,9 +76,17 @@ def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     return (f'bedrock-runtime.{region}.amazonaws.com', *(f'{bucket}.s3.{region}.amazonaws.com' for bucket in buckets))
 
 
+def kiro_hosts(region: str) -> tuple[str, ...]:
+    """What an agent on the Kiro harness reaches beside the others: the Kiro service, and SSM in ``region`` (its
+    ``ssm:GetParameter`` of the key, on exactly that parameter)."""
+    if not _REGION_RE.match(region):
+        raise RuntimeRefused(f'{region!r} is not an AWS region name')
+    return (*KIRO_SERVICE_HOSTS, f'ssm.{region}.amazonaws.com')
+
+
 def egress_allowlist(
     *, role: str, language: str, region: str, bucket: str, workspace_bucket: str | None = None,
-    extra_hosts: Iterable[str] = (), service_urls: Iterable[str] = (),
+    extra_hosts: Iterable[str] = (), service_urls: Iterable[str] = (), kiro: bool = False,
 ) -> tuple[str, ...]:
     """The sorted, de-duplicated hosts one agent's session may reach, both of its users together (``split`` parts
     them: the agent's own and the dependency step's).
@@ -78,7 +94,7 @@ def egress_allowlist(
     ``extra_hosts`` (at most 10, from the deployment's configuration) add e.g. a private registry
     mirror; they are for the agents that run code only, like the registries, and only the dependency step reaches
     them. ``service_urls`` are the platform's function URLs every agent calls (the board's and the broker's), by their
-    own host: never a generic Lambda endpoint.
+    own host: never a generic Lambda endpoint. ``kiro``: the agent runs on the Kiro harness (``kiro_hosts``).
     """
     if language not in REGISTRY_HOSTS:
         raise RuntimeRefused(f'no toolchain image for language {language!r}')
@@ -87,12 +103,14 @@ def egress_allowlist(
         raise RuntimeRefused(f'at most {MAX_EXTRA_HOSTS} extra egress hosts')
     # ``split`` parts the hosts by their shape: an extra host (the dependency step's) shaped like the agent's own (a
     # Bedrock or S3 endpoint, a function URL) would land on the agent's proxy, so none may be.
-    shaped = [host for host in extra if _AGENT_HOST_RE.match(host) or FUNCTION_URL_RE.match(host)]
+    shaped = [host for host in extra if _agents(host)]
     if shaped:
         raise RuntimeRefused(f'extra egress host {shaped[0]!r} is shaped like an AWS service endpoint or a function URL '
                              'the agent reaches: extra hosts are for the dependency step only')
     hosts = set(aws_hosts(region, bucket, *([workspace_bucket] if workspace_bucket else [])))
     hosts.update(service_host(url) for url in service_urls)
+    if kiro:
+        hosts.update(kiro_hosts(region))
     if role in CODE_ROLES:
         hosts.update(REGISTRY_HOSTS[language], extra)
     return tuple(sorted(hosts))
@@ -101,16 +119,23 @@ def egress_allowlist(
 #: The hosts only the agent itself reaches: Bedrock, its buckets' own S3 endpoints (``aws_hosts``), and the platform's
 #: function URLs (``service_host``).
 _AGENT_HOST_RE: Final = re.compile(
-    r'^(?:bedrock-runtime\.[a-z0-9-]+|[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\.s3\.[a-z0-9-]+)\.amazonaws\.com\Z')
+    r'^(?:bedrock-runtime\.[a-z0-9-]+|[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\.s3\.[a-z0-9-]+|ssm\.[a-z0-9-]+)\.amazonaws\.com\Z')
+
+
+def _agents(host: str) -> bool:
+    """Whether ``host`` is shaped like one only the agent reaches (``_AGENT_HOST_RE``: Bedrock, a bucket, SSM; a
+    function URL; the Kiro service)."""
+    return bool(_AGENT_HOST_RE.match(host) or FUNCTION_URL_RE.match(host)) or host in KIRO_SERVICE_HOSTS
 
 
 def split(hosts: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``egress_allowlist``'s hosts parted by who reaches them, each through a proxy of its own in the session: the
-    agent's (Bedrock, its buckets, the board's and the broker's function URLs) and the dependency step's (its language's
+    agent's (Bedrock, its buckets, the board's and the broker's function URLs; on the Kiro harness the Kiro service and
+    SSM) and the dependency step's (its language's
     registries and the deployment's extra hosts). The agent never reaches a registry; repository code never reaches
     Bedrock, a bucket, the board or the broker. It parts them by their shape, which is why ``egress_allowlist`` refuses an extra host shaped
     like one of the agent's (the limit: a registry mirror on an S3 bucket's endpoint cannot be an extra host)."""
     agent, code = [], []
     for host in hosts:
-        (agent if _AGENT_HOST_RE.match(host) or FUNCTION_URL_RE.match(host) else code).append(host)
+        (agent if _agents(host) else code).append(host)
     return tuple(sorted(agent)), tuple(sorted(code))

@@ -2,7 +2,8 @@
 
 Which CLI: the same order as the repository's own AI reviews (scripts/ai-review/lib.mjs: kiro-cli, else
 claude), minus any that needs an endpoint or a login other than Bedrock with the agent's session. kiro-cli
-signs in to its own service, which a session neither reaches nor holds a login for, so it is not offered;
+signs in to its own service with a login of its own, so it is not offered here (7.53.00: it runs on the kiro adapter,
+over ACP, with its key: ``kiro.py``);
 ``claude`` reaches models through Bedrock (``CLAUDE_CODE_USE_BEDROCK=1``, the agent's session through
 ``AWS_CONFIG_FILE``) and is offered at one pinned version only.
 
@@ -41,7 +42,8 @@ from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 
 CLAUDE: Final = 'claude'
 #: The CLIs the repository's AI reviews know, and why each is or is not offered in a session.
-NOT_OFFERED: Final = {'kiro': 'kiro-cli signs in to its own service: a session has no such login or endpoint'}
+NOT_OFFERED: Final = {'kiro': 'kiro-cli signs in to its own service, with its own login: it runs on the kiro adapter '
+                               '(over ACP, kiro.py), never as this CLI'}
 #: The harness's own tool server, as the CLI starts it (the image's copy of this package; ``-I``: isolated).
 TOOL_SERVER: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'tool-server')
 INBOX_POLL_SECONDS: Final = 5.0
@@ -151,7 +153,7 @@ class ClaudeCli:
             # A batch the tool server took reached the model (its next tool call's answer carries it). Listed before
             # the notes are synced, seen after: a batch counts only for notes the model saved after having it.
             taken = [name for name in posted if not files.waiting(name)]
-            seen = _sync(session, files, seen, turn)
+            seen = sync_notes(session, files, seen, turn)
             for name in taken:
                 session.saw(posted.pop(name))
             if files.read('crashed') is not None:
@@ -162,7 +164,7 @@ class ClaudeCli:
                 # Ended first, so nothing it writes after the checkpoint is lost; a git command its tool server
                 # started may still be finishing in the runner, which the checkpoint's own git waits for.
                 self._end(process)
-                _sync(session, files, seen, turn)
+                sync_notes(session, files, seen, turn)
                 session.checkpoint(turn=turn)
                 return 'paused'
             if others:
@@ -171,7 +173,7 @@ class ClaudeCli:
                 posted[name] = [message.event_id for message in others]
             turn += 1
             self._sleep(INBOX_POLL_SECONDS)
-        _sync(session, files, seen, turn)
+        sync_notes(session, files, seen, turn)
         crashed = files.read('crashed')
         if crashed is not None or (files.read('finished') is None and process.returncode != 0):
             # Its work so far is saved before the crash, so the continuation starts from it.
@@ -185,8 +187,10 @@ class ClaudeCli:
         return 'done'
 
 
-def _sync(session: AgentSession, files: SessionFiles, seen: dict[str, Any] | None, turn: int) -> dict[str, Any] | None:
-    """Take what the tool server recorded (its step); a new ``save_checkpoint`` is saved at once."""
+def sync_notes(session: AgentSession, files: SessionFiles, seen: dict[str, Any] | None,
+               turn: int) -> dict[str, Any] | None:
+    """Take what the tool server recorded (its step); a new ``save_checkpoint`` is saved at once (the CLI's and the Kiro
+    adapter's: both hear their tool server through ``SessionFiles``)."""
     state = files.read('state')
     if state is not None:
         session.context.status.step = str(state.get('step', ''))

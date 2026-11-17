@@ -150,6 +150,18 @@ def _decoded(text: object) -> dict[str, Any]:
     return data
 
 
+def decoded(text: object) -> dict[str, Any]:
+    """``text`` as one JSON object, read as strictly as the coach's answer (its size, its depth, no key twice, a code
+    fence allowed): the scheduled cross-run Learn pass's answer is read the same way (learning/cross_run_answer.py)."""
+    return _decoded(text)
+
+
+def forbidden_topic(text: str) -> str:
+    """The never-by-an-agent topic ``text`` writes about ('' for none): what the cross-run pass refuses a lesson for
+    too, before agent memory's own hygiene."""
+    return _topic(text)
+
+
 def _check_fields(data: dict[str, Any]) -> None:
     person = sorted(set(PERSON_ONLY_FIELDS) & set(data))
     if person:

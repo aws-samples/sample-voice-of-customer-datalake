@@ -170,6 +170,8 @@ export const runWorkspaceKeys = {
     ['engineering-runs', runId, tab, agent] as const,
   assertions: (runId: string) => ['engineering-runs', runId, 'assertions'] as const,
   runs: (query: RunsQuery) => ['engineering-runs', 'list', query.month, query.flow, query.status] as const,
+  /** Every page of the runs list, whatever its filters (what a confirmed run request changes, 7.53.00). */
+  runsLists: () => ['engineering-runs', 'list'] as const,
 }
 
 export const runWorkspaceApi = {

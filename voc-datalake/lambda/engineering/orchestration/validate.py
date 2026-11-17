@@ -19,11 +19,12 @@ Each check answers a list of problems (``<file>: <what is wrong>``); the command
   flow and triggers need;
 - no placeholder is left in a source (``TODO``, ``TBD``, ``FIXME``, ``XXX``, ``<LIKE_THIS>``);
 - ``bundle.json`` and its Lambda copy are exactly the compile's output;
-- each Kiro agent config (``kiro-agents/<role>.json``), compiled and committed, parses; its tools are among its card's
-  as Kiro names them (``compile.KIRO_BUILTINS``, the platform's ``@voc``), never ``subagent``; it allows no write and
-  no command (no ``fs_write`` or ``shell`` allow rule, no ``write`` or ``shell`` in ``allowedTools``: those always
-  ask the orchestrator); its prompt starts with the platform rules; its one tool server is the harness's, started as
-  ``cli.TOOL_SERVER``; and ``kiro-agents/`` holds exactly the compile's output.
+- each Kiro agent config (``kiro-agents/<role>.json``), compiled and committed, parses; it offers the platform's
+  tool server alone (``tools`` is ``["@voc"]``: no Kiro builtin, no ``subagent``, no ``@builtin``); what it allows
+  without asking is among its card's tools (``allowedTools`` ``@voc/<tool>``, and only ``mcp`` allow rules matching
+  ``voc/<tool>``: no ``fs_read``, ``fs_write``, ``shell`` or ``skill`` allow, 7.53.00); its prompt starts with the
+  platform rules; its one tool server is the harness's, started as ``cli.TOOL_SERVER``; and ``kiro-agents/`` holds
+  exactly the compile's output.
 
 The command line adds one optional check (``kiro_cli_problems``): ``kiro-cli agent validate`` on each Kiro agent
 config, when kiro-cli is on PATH and the developer's Kiro API key is in ``~/.config/voc-kiro/api-key``. Otherwise it
@@ -50,8 +51,8 @@ from engineering.orchestration import assertions
 from engineering.orchestration.assertions import SEVERITY, TRIAGE_KINDS
 from engineering.orchestration.compile import (
     BUILTIN_FLOWS,
-    KIRO_ASKS,
     KIRO_DIR,
+    KIRO_TOOLS,
     LAMBDA_COPY,
     LEARN_CARD,
     Sources,
@@ -318,20 +319,14 @@ def drift_problems(text: str, root: Path = ROOT) -> Problems:
             if not path.is_file() or path.read_text(encoding='utf-8') != text]
 
 
-#: The capabilities a Kiro agent config never allows: a write and a command always ask the orchestrator.
-ASKING_CAPABILITIES: Final = frozenset({'fs_write', 'shell'})
-
-
 def _strings(value: object) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _allowed(config: Mapping[str, Any]) -> set[str]:
-    """The capabilities the config's ``permissions.rules`` allow."""
+def _rules(config: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     permissions = config.get('permissions')
     rules = permissions.get('rules') if isinstance(permissions, Mapping) else None
-    return {str(rule.get('capability')) for rule in (rules if isinstance(rules, list) else [])
-            if isinstance(rule, Mapping) and rule.get('effect') == 'allow'}
+    return [rule for rule in rules if isinstance(rule, Mapping)] if isinstance(rules, list) else []
 
 
 def _tool_server(config: Mapping[str, Any]) -> list[str]:
@@ -342,18 +337,25 @@ def _tool_server(config: Mapping[str, Any]) -> list[str]:
 
 
 def _kiro_config_problems(where: str, config: Mapping[str, Any], card: Mapping[str, Any], rules_text: str) -> Problems:
-    builtins, platform = kiro_tools(card)
-    mapped = {*builtins, *([f'@{SERVER_NAME}'] if platform else [])}
+    card_tools = set(kiro_tools(card))
     tools, allowed = _strings(config.get('tools')), _strings(config.get('allowedTools'))
     found = []
-    if not isinstance(config.get('tools'), list) or not set(tools) <= mapped:
-        found.append(f"{where}: its tools are among its card's as Kiro names them ({', '.join(sorted(mapped))})")
-    if 'subagent' in tools + allowed:
-        found.append(f'{where}: names subagent: a role starts no agent of its own')
-    asking = sorted((_allowed(config) & ASKING_CAPABILITIES) | (set(allowed) & KIRO_ASKS))
-    if asking:
-        found.append(f'{where}: allows {", ".join(asking)} without asking: a write and a command always ask the '
-                     'orchestrator')
+    if tools != list(KIRO_TOOLS):
+        found.append(f"{where}: it offers the platform's tool server alone ({', '.join(KIRO_TOOLS)}): no Kiro builtin, "
+                     'no subagent')
+    beyond = sorted(name for name in allowed if name.removeprefix(f'@{SERVER_NAME}/') not in card_tools
+                    or not name.startswith(f'@{SERVER_NAME}/'))
+    if beyond:
+        found.append(f"{where}: allows {', '.join(beyond)} without asking: only its card's tools, as @{SERVER_NAME}/<tool>")
+    for rule in _rules(config):
+        if rule.get('effect') != 'allow':
+            continue
+        matched = _strings(rule.get('match'))
+        if rule.get('capability') != 'mcp' or not matched or not all(
+                name.removeprefix(f'{SERVER_NAME}/') in card_tools and name.startswith(f'{SERVER_NAME}/')
+                for name in matched):
+            found.append(f"{where}: allows {rule.get('capability')} {', '.join(matched) or '(anything)'} without "
+                         "asking: only an mcp rule for its card's tools (anything else asks the harness, which refuses)")
     if not str(config.get('prompt', '')).startswith(rules_text.strip()):
         found.append(f'{where}: its prompt starts with the platform rules (_shared/PLATFORM_RULES.md)')
     if _tool_server(config) != list(TOOL_SERVER):

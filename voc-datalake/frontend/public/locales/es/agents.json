@@ -1574,7 +1574,8 @@
       "memory_setting": "Ajuste de memoria de compilación",
       "network": "Red",
       "session_storage": "Almacenamiento de sesiones",
-      "sandbox": "Aislamiento de la sesión"
+      "sandbox": "Aislamiento de la sesión",
+      "kiro": "Harness de Kiro"
     },
     "required": "Necesaria para ejecutar"
   },
@@ -1989,6 +1990,22 @@
       "more": "Mostrar más",
       "moreFailed": "No se pudo leer la página siguiente.",
       "empty": "No se inició ninguna ejecución en este mes."
+    },
+    "requests": {
+      "title": "Solicitudes de ejecución",
+      "hint": "Un asistente local pidió estas ejecuciones por MCP. Nada empieza hasta que confirmes: la ejecución empieza entonces en tu nombre, como con «Ejecutar ahora».",
+      "onIssue": "issue #{{number}}",
+      "onPrd": "PRD {{document}} del proyecto {{project}}",
+      "onHunt": "una búsqueda de errores en el repositorio",
+      "note": "Nota: {{note}}",
+      "asked": "Pedida por MCP por {{via}}, {{when}}",
+      "expires": "caduca {{when}}",
+      "confirm": "Confirmar y ejecutar",
+      "decline": "Rechazar",
+      "confirmed": "Confirmada: la ejecución está empezando.",
+      "openRun": "Abrir la ejecución",
+      "declined": "Rechazada: no empezó nada.",
+      "loadFailed": "No se pudieron leer las solicitudes de ejecución."
     },
     "controls": {
       "stopping": "Parando…",

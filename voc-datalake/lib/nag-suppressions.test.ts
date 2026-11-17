@@ -272,7 +272,7 @@ describe('cdk-nag acknowledgements', () => {
       // 91 -> 92: the agents API's put and delete of the repository connections' parameters (one path), its IAM5.
       // 92 -> 95: the checkout cache's writer (7.05.00): its writes under engineering/cache/ and its read of the
       // entries' READY markers (two prefixes), and the read of those markers by the supervisor and by the delivery
-      // function (a wake's continuation), one acknowledgement for both (engineering-runtime.ts grantCacheReadyReads:
+      // function (a wake's continuation), one acknowledgement for both (engineering-runtime-grants.ts grantCacheReadyReads:
       // the same finding and reason), their IAM5. Its read of the connections' parameters is the broker's own
       // acknowledgement (one helper, the same finding and reason).
       // 95 -> 96: the engineering runtime's create of a run's one reactions schedule (7.10.00, engineering-reactions.ts:
@@ -301,7 +301,10 @@ describe('cdk-nag acknowledgements', () => {
       // docs the broker renders again) and the runtime's of the understanders' tenets records (`…/_tenets/*`).
       // 134 -> 135 (7.52.00): the board's read of a Tenets run's draft for its tenets.recorded assertion (one more
       // finding of its recorded outputs' acknowledgement, engineering-bus.ts).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 135, used: 135 });
+      // 135 -> 137 (7.53.00): the scheduled cross-run Learn pass's records, `ws/default/learn/*`: the runtime's
+      // create-only put (engineering-cross-run.ts) and the Agents API's read (api-engineering-run-reads.ts, a fifth
+      // finding of its one acknowledgement); the pass's read of the manifests shares the run's end's finding.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 137, used: 137 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

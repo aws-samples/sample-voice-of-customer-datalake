@@ -25,6 +25,7 @@ import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
 import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, isStoredConnection, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
+import { handleEngineeringRunRequestRoutes } from './mock-engineering-run-requests.js';
 import { bindSetupAgents, handleEngineeringSetupRoutes, readinessRefusal } from './mock-engineering-setup.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
@@ -1504,6 +1505,8 @@ function handleDomainModules(req, res, url) {
     || handleEngineeringSkillRoutes(req, res, url, send, shared)
     // (before the runs' routes, which would read `setup` and `readiness` as a run id)
     || handleEngineeringSetupRoutes(req, res, url, send, shared)
+    // (7.53.00: the run requests, before the runs' routes too)
+    || handleEngineeringRunRequestRoutes(req, res, url, send, shared)
     || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)

@@ -699,6 +699,38 @@
     ]
   },
   {
+    "file": "api/engineeringRunRequestsApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/requests'",
+    "probes": [
+      {
+        "path": "/agents/engineering/requests"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunRequestsApi.ts",
+    "method": "POST",
+    "call": "`/agents/engineering/requests/${encodeURIComponent(requestId)}/confirm`",
+    "probes": [
+      {
+        "path": "/agents/engineering/requests/01JDB2000000000000000REQ03/confirm",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunRequestsApi.ts",
+    "method": "POST",
+    "call": "`/agents/engineering/requests/${encodeURIComponent(requestId)}/decline`",
+    "probes": [
+      {
+        "path": "/agents/engineering/requests/01JDB1000000000000000REQ02/decline",
+        "body": {}
+      }
+    ]
+  },
+  {
     "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "'/agents/engineering/runs'",

@@ -2,7 +2,8 @@
 
 Every tool is a thin translation from MCP arguments to ONE route of the domain
 Lambda that owns the data (``shared.mcp_delegate``): metrics, settings, memory,
-projects, agents, engagement (the feedback boards), radar, feedback edits or integrations (source status). The tool never reads a table itself, so the route's own
+projects, agents (and, since 7.53.00, the engineering runs: shared/mcp_global_tools_engineering.py), engagement (the
+feedback boards), radar, feedback edits or integrations (source status). The tool never reads a table itself, so the route's own
 validation, category filtering and per-project access rules apply to the call,
 evaluated for the token's minter (never admin, capped at editor).
 
@@ -10,8 +11,8 @@ What this module adds on top of the route is only what a bearer credential needs
 
 * strict argument validation, so caller text never becomes a path segment
   (``is_path_id``) or an unbounded body;
-* ``write`` / ``admin_only`` / ``project_scoped`` flags the handler gates on
-  (token scope, the admin-minted check for ``agents_run``, the project pin);
+* ``write`` / ``admin_only`` / ``project_scoped`` / ``engineering_op`` flags the handler gates on
+  (token scope, the admin-minted check for ``agents_run`` and the engineering tools, the project pin);
 * output projections that drop storage keys and signed URLs — a credential
   pasted into a third-party client must not carry pre-signed CDN links out.
 
@@ -55,6 +56,7 @@ from shared.mcp_global_kit import (
     stripped,
     text_arg,
 )
+from shared.mcp_global_tools_engineering import ENGINEERING_TOOLS
 from shared.mcp_global_tools_steps import LEGACY_REVISE_STEP, STEP_TOOLS, legacy_revise
 from shared.mcp_global_tools_work import WORK_TOOLS
 from shared.prototype_pins import STATUSES as PIN_STATUSES
@@ -475,7 +477,7 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 # Every name starts with its area (AREAS), so a client that lists or searches tools finds an area's tools
 # together; each description says what the tool does, its nouns and verbs, when to use it and its key
 # arguments (the whole list's budget: test_mcp_global_tools_budget.py).
-AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'agents',
+AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'agents', 'engineering',
                                  'feature_requests', 'radar', 'prioritization')
 
 _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
@@ -609,6 +611,8 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
     *STEP_TOOLS,
     # The feedback catalogue and sources, Prioritization and board writes (shared/mcp_global_tools_work.py).
     *WORK_TOOLS,
+    # The engineering runs, for an administrator's write token only (7.53.00, shared/mcp_global_tools_engineering.py).
+    *ENGINEERING_TOOLS,
 )
 
 

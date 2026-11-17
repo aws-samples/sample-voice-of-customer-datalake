@@ -62,6 +62,15 @@ Permissions:
   /agents/<id>/pause``, ``…/resume``) are administrators' too (7.52.00, the same router); a workflow's ``used_by``
   (the automations that run it, read as the agents are, and the flows that call it) is answered with it, and the
   save of a flow other automations run needs ``confirm_shared: true`` (409 ``shared_flow`` with them otherwise).
+- MCP for runs (7.53.00, docs/mcp.md): the global MCP server's five engineering tools reach five operations, and only
+  those, each admitted for itself (``_engineering_caller``, ``project_access.delegated_engineering_allowed``) for a
+  write token whose minter is still an administrator, never as an admin: the runs list, a run's overview
+  (``GET /agents/engineering/<run_id>``), its retrospective and its steering (shared/agents_engineering_run_routes.py),
+  and a request for a Run now (``POST /agents/engineering/requests``, engineering/run_requests.py: a row that waits
+  until an administrator confirms it here, ``POST …/requests/<id>/confirm``, which runs the Run now as that
+  administrator, or declines it; ``GET …/requests`` lists them, and ``GET …/requests/automations`` the enabled
+  automations a request may name). Signals, go, restart, Stop, answers, approvals, the registry, the connections, the
+  dial and a request's confirm or decline stay an administrator's acting for themselves.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
@@ -81,6 +90,7 @@ neither of which answers a token), and, since 7.50.02, on the GitHub Issues sett
 (``ENGINEERING_ISSUES_CONFIG_FUNCTION``, voc-engineering-issues-config: its own role reads and writes the source's
 settings and turns its schedule on; this role holds no grant on the secret or the rule), where that plugin is deployed
 (lib/stacks/api-engineering-issues-sync.ts), and
+``dynamodb:PutItem`` and ``UpdateItem`` on the run requests' partitions only (``WS#*#RUNREQ#*``, 7.53.00), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``), and, since 7.51.02,
 ``events:PutEvents`` on the engineering bus alone (``ENGINEERING_BUS_NAME``) held to the source
@@ -111,6 +121,7 @@ from shared import (
     agent_run_resume,
     agent_seed,
     agents_engineering_knowledge_routes,
+    agents_engineering_learn_routes,
     agents_engineering_registry_routes,
     agents_engineering_run_routes,
     agents_engineering_setup_routes,
@@ -582,18 +593,19 @@ def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: i
     return eng_runs.hunt_sentence(repository)
 
 
-def _run_engineering_agent(table: Any, agent: dict, caller: Caller) -> Response:
+def _run_engineering_agent(table: Any, agent: dict, caller: Caller, body: Mapping[str, Any] | None = None) -> Response:
     """Run now of an engineering agent (7.47.00): ``{issue?} | {prd?}`` → 202 ``{run}``. An administrator acting for
     themselves only (a delegated credential gets 403), as the person the run's pushes follow; 404 while the module is
     off; 409 until the agent is set up, or while it has a run in progress. A run of an issue reruns it (the one way to:
     a trigger starts an issue once, ever). The start's refusal is 409 in its words, a start known not written 503; one
-    that may have been written is 503 naming its engineering run (open it, never start another)."""
+    that may have been written is 503 naming its engineering run (open it, never start another). ``body``: a confirmed
+    run request's (7.53.00), else the request's own."""
     require_admin_caller(caller)
     _engineering_on()
     function = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
-    body = json_object_body(app)
+    body = json_object_body(app) if body is None else body
     if not set(body) <= {'issue', 'prd'} or {'issue', 'prd'} <= set(body):
         raise ValidationError('the body is {issue?: number} or {prd?: {project_id, document_id}}, or none')
     settings = agent['engineering']
@@ -1470,13 +1482,24 @@ def get_engineering_scorecards(role: str):
 app.include_router(agents_engineering_knowledge_routes.app)
 
 
-def _engineering_tables(run_id: str) -> tuple[str, str]:
-    """The engineering table and bucket, for an administrator (403 for anyone else; 404 for a bad run id and while
-    the module is off)."""
+def _engineering_caller(op: str | None = None) -> Caller:
+    """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
+    operation (7.53.00: never an admin, ``project_access.delegated_engineering_allowed``); 403 for anyone else."""
+    caller = _caller()
+    if op is not None and caller.delegated and not caller.agent_id and project_access.delegated_engineering_allowed(
+            project_access.claims_from_event(app.current_event.raw_event), op):
+        return caller
+    require_admin_caller(caller)
+    return caller
+
+
+def _engineering_tables(run_id: str, op: str | None = None) -> tuple[str, str]:
+    """The engineering table and bucket, for an administrator (or ``op``'s MCP tool; 403 for anyone else; 404 for a
+    bad run id and while the module is off)."""
     table, bucket = os.environ.get('ENGINEERING_TABLE', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
     if not (engineering_agents_on() and table and bucket):
         raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
-    require_admin_caller(_caller())
+    _engineering_caller(op)
     # Imported here: the package ships only in a deployment with the engineering agents on.
     from engineering.workspace.layout import ID
 
@@ -1496,12 +1519,13 @@ def _engineering(run_id: str) -> Any:
     return EngineeringViews(get_dynamodb_client(), table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True))
 
 
-def _monitor(run_id: str) -> Any:
-    """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
-    run's partition of the engineering table, read only); its signals (7.51.02, ``signal_run``) and its Stop (7.50.03,
-    ``stop_run``) need the start function (ENGINEERING_START_FUNCTION: this role invokes no other runtime function),
-    its answers and steering the bus (ENGINEERING_BUS_NAME, where this role may put only those two types)."""
-    table, bucket = _engineering_tables(run_id)
+def _monitor(run_id: str, op: str | None = None) -> Any:
+    """The run monitor, for an administrator (as the views; or ``op``'s MCP tool): the agents from the supervisor's
+    session rows (the run's partition of the engineering table, read only); its signals (7.51.02, ``signal_run``) and
+    its Stop (7.50.03, ``stop_run``) need the start function (ENGINEERING_START_FUNCTION: this role invokes no other
+    runtime function), its answers and steering the bus (ENGINEERING_BUS_NAME, where this role may put only those two
+    types)."""
+    table, bucket = _engineering_tables(run_id, op)
     from engineering.bus.publish import EventBridgePublisher
     from engineering.monitor import API_SOURCE, LambdaSignaller, LambdaStopper, RunMonitor
     from engineering.run_objects import RunObjects
@@ -1693,7 +1717,16 @@ def _readiness_ports() -> Any:
         engineering_client=get_dynamodb_client(), engineering_table=table, s3=get_s3_client(),
         workspace_bucket=os.environ.get('ENGINEERING_WORKSPACE_BUCKET', ''), quotas=_service_quotas_client,
         bedrock=_bedrock_control_client, inspect=_invoke_app_tokens,
-        watermarks=resource.Table(watermarks) if watermarks else None, issues=_issues_follow())
+        watermarks=resource.Table(watermarks) if watermarks else None, issues=_issues_follow(), ssm=_ssm_client)
+
+
+@cache
+def _ssm_client() -> Any:
+    """SSM for readiness's ``kiro`` check (7.53.00: the Kiro key parameter's metadata only, never its value)."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client('ssm', config=Config(connect_timeout=2, read_timeout=3, retries={'total_max_attempts': 1}))
 
 
 def _readiness_settings() -> Any:
@@ -1769,6 +1802,174 @@ def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
     return _json(409, {'error': NOT_READY, 'checks': [check.view() for check in report.failing]})
 
 
+# --------------------------------------------------------------------------
+# Run requests (7.53.00, "MCP for runs", D53-3; engineering/run_requests.py): a local assistant's request for a Run now
+# of an enabled engineering automation, made with the global MCP server's engineering_run_request tool, waits until an
+# administrator signed in confirms it (the Run now above, as that administrator) or declines it, because a run pushes
+# code. Registered before /agents/engineering/<run_id>, which would read `requests` as a run id.
+# --------------------------------------------------------------------------
+
+_REQUEST_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
+                   'cap': TooManyRequestsError}
+REQUEST_FIELDS = frozenset({'agent_id', 'issue', 'prd', 'note'})
+REQUEST_NOT_FOUND = 'Run request not found'
+NOT_AN_AUTOMATION = 'No such enabled engineering automation'
+#: What each kind of automation's Run now takes ('none': a bug hunt of the whole repository).
+_TAKES: Final = {'bug': ['issue', 'none'], 'feature_request': ['issue', 'prd']}
+
+
+def _run_requests(op: str | None = None) -> tuple[Any, Caller]:
+    """The run requests and their caller: 404 while the module is off, then 403 for anyone but an administrator acting
+    for themselves (or, for ``op``, the MCP tool engineering_run_request)."""
+    table = os.environ.get('ENGINEERING_TABLE', '')
+    if not (engineering_agents_on() and table):
+        raise NotFoundError(REQUEST_NOT_FOUND)
+    caller = _engineering_caller(op)
+    from engineering.run_requests import RunRequests  # (the package ships only with the module)
+    from shared.aws import get_dynamodb_client
+
+    return RunRequests(get_dynamodb_client(), table, lambda: datetime.now(UTC)), caller
+
+
+def _requested(act: Any) -> Any:
+    """``act()``, a refusal answered with its status, a failed read or write 503."""
+    from engineering.run_requests import RequestError
+
+    try:
+        return act()
+    except RequestError as refused:
+        raise _REQUEST_ERRORS[refused.kind](str(refused)) from refused
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the run requests could not be read or written')
+        raise ServiceUnavailableError('the run requests could not be reached: retry') from exc
+
+
+def _automation(agent_id: object) -> dict:
+    """An enabled, set-up engineering automation (404 for anything else: what a request may name)."""
+    agent = store.get_agent(_agents_table(), str(agent_id)) if store.is_agent_id(agent_id) else None
+    if (agent is None or agent.get('status') == store.AGENT_STATUS_ARCHIVED or not store.is_engineering_agent(agent)
+            or not agent.get('enabled')):
+        raise NotFoundError(NOT_AN_AUTOMATION)
+    return agent
+
+
+def _automation_view(table: Any, agent: Mapping[str, Any]) -> dict[str, Any]:
+    settings = agent.get('engineering') or {}
+    row = eng_runs.connection_row(table, settings['connection']) if settings.get('connection') else None
+    kind = str(settings.get('feedback_type') or 'bug')
+    return {'agent_id': agent['agent_id'], 'name': str(agent.get('name', '')), 'kind': kind,
+            'repository': str((row or {}).get('repository', '')) or None, 'takes': _TAKES.get(kind, ['issue'])}
+
+
+def _request_body(body: Mapping[str, Any]) -> tuple[dict, dict[str, Any], str]:
+    """``{agent_id, issue? | prd?, note?}``: the automation, its Run now's body (checked as Run now checks it) and the
+    note; 400 for anything off, 404 for an agent that is not an enabled automation."""
+    if not set(body) <= REQUEST_FIELDS or 'agent_id' not in body or {'issue', 'prd'} <= set(body):
+        raise ValidationError('the body is {agent_id, issue? | prd?, note?}')
+    agent = _automation(body['agent_id'])
+    note = body.get('note', '')
+    if not isinstance(note, str):
+        raise ValidationError('note is text')
+    run_now = {name: body[name] for name in ('issue', 'prd') if name in body}
+    issue, prd = _start_issue(run_now), _run_prd(run_now)
+    _engineering_sentence(agent.get('engineering') or {}, '', issue, prd, _issue_stage(agent))   # (its own 400s)
+    return agent, {**({'issue': issue} if issue is not None else {}), **({'prd': prd} if prd else {})}, note.strip()
+
+
+@app.get('/agents/engineering/requests')
+@tracer.capture_method
+def list_engineering_run_requests():
+    """The run requests, newest first (``{requests}``: the pending ones, those decided and those expired): an
+    administrator acting for themselves."""
+    requests, _ = _run_requests()
+    return {'requests': _requested(requests.listed)}
+
+
+@app.get('/agents/engineering/requests/automations')
+@tracer.capture_method
+def list_engineering_requestable_automations():
+    """``{automations: [{agent_id, name, kind, repository, takes}]}``: the enabled engineering automations a run request
+    may name (the MCP tool engineering_run_request without an agent, or an administrator)."""
+    _run_requests('run_request')
+    table = _agents_table()
+    agents = [agent for agent in store.list_agents(table)
+              if store.is_engineering_agent(agent) and agent.get('enabled')
+              and agent.get('status') != store.AGENT_STATUS_ARCHIVED]
+    agents.sort(key=agent_seed.list_order)
+    return {'automations': [_automation_view(table, agent) for agent in agents]}
+
+
+@app.post('/agents/engineering/requests')
+@tracer.capture_method
+def request_engineering_run():
+    """``{agent_id, issue? | prd?, note?}`` → 202 ``{request}``: the MCP tool engineering_run_request asks for a Run now
+    of an enabled automation, which waits until an administrator confirms it. Only that tool's (an administrator signed
+    in uses Run now itself: 400); 409 for the same Run now already waiting, 429 past a cap, 404 for an agent that is not
+    an enabled automation."""
+    requests, caller = _run_requests('run_request')
+    via = project_access.mcp_via(caller, project_access.claims_from_event(app.current_event.raw_event))
+    if via is None:
+        raise ValidationError('a run request is how a local assistant asks for a Run now: start it with Run now')
+    agent, run_now, note = _request_body(json_object_body(app))
+    from engineering.run_requests import NewRequest
+
+    made = _requested(lambda: requests.create(NewRequest(
+        request_id=eng_runs.new_run_id(), agent_id=agent['agent_id'], agent_name=str(agent.get('name', '')), via=via,
+        requested_for=caller.subject, issue=run_now.get('issue'), prd=run_now.get('prd'), note=note)))
+    logger.info('engineering: a Run now was asked over MCP', extra={
+        'request_id': made['request_id'], 'agent_id': agent['agent_id'], 'via': via, 'for': caller.subject})
+    return _json(202, {'request': made})
+
+
+@app.post('/agents/engineering/requests/<request_id>/decline')
+@tracer.capture_method
+def decline_engineering_run_request(request_id: str):
+    """``{}`` → ``{request}``: an administrator acting for themselves declines a waiting request (409 once decided or
+    expired)."""
+    requests, caller = _run_requests()
+    if not LONG_OPAQUE_ID_RE.fullmatch(request_id):
+        raise NotFoundError(REQUEST_NOT_FOUND)
+    declined = _requested(lambda: requests.decide(request_id, 'decline', caller.subject))
+    logger.info('engineering: a run request declined', extra={'request_id': request_id, 'by': caller.subject})
+    return {'request': declined}
+
+
+@app.post('/agents/engineering/requests/<request_id>/confirm')
+@tracer.capture_method
+def confirm_engineering_run_request(request_id: str):
+    """``{}`` → 202 ``{request, run}``: an administrator acting for themselves confirms a waiting request, which runs the
+    automation's Run now as them (the same checks, answers and 409s as ``POST /agents/<agent_id>/run``). The request is
+    decided first, so it starts at most one run; what came of it is recorded on it (``outcome``)."""
+    requests, caller = _run_requests()
+    if not LONG_OPAQUE_ID_RE.fullmatch(request_id):
+        raise NotFoundError(REQUEST_NOT_FOUND)
+    wanted = _requested(lambda: requests.get(request_id))
+    if wanted is None:
+        raise NotFoundError(REQUEST_NOT_FOUND)
+    agent = _automation(wanted['agent_id'])   # (still an enabled automation: else 404, and the request stays)
+    decided = _requested(lambda: requests.decide(request_id, 'confirm', caller.subject))
+    body = {**({'issue': decided['issue']} if decided['issue'] is not None else {}),
+            **({'prd': decided['prd']} if decided['prd'] else {})}
+    try:
+        answer = _run_engineering_agent(_agents_table(), agent, caller, body)
+    except ApiError as refused:
+        said = f'refused: {refused}'
+        _requested(lambda: requests.record(request_id, said))
+        raise
+    started = json.loads(answer.body) if isinstance(answer.body, str) else {}
+    run = started.get('run') if isinstance(started.get('run'), dict) else {}
+    outcome = 'started' if answer.status_code == 202 else 'uncertain'
+    _requested(lambda: requests.record(request_id, outcome, run_id=str(run.get('run_id') or ''),
+                                       engineering_run_id=str(run.get('engineering_run_id') or started.get('run_id')
+                                                              or '')))
+    logger.info('engineering: a run request confirmed', extra={'request_id': request_id, 'by': caller.subject,
+                                                               'via': wanted['via'], 'outcome': outcome})
+    if answer.status_code != 202:
+        return answer
+    return _json(202, {'request': {**decided, 'outcome': outcome, 'run_id': run.get('run_id'),
+                                   'engineering_run_id': run.get('engineering_run_id')}, 'run': run})
+
+
 # The setup guide's progress (7.50.00, GET/PUT /agents/engineering/setup: shared/agents_engineering_setup_routes.py).
 app.include_router(agents_engineering_setup_routes.app)
 # The run workspace (7.51.00: the runs list, an agent's thread and tabs, the assertions, steering, a child run's restart;
@@ -1776,6 +1977,9 @@ app.include_router(agents_engineering_setup_routes.app)
 app.include_router(agents_engineering_run_routes.app)
 # The Registry, gates, assertions, a flow's expansion, pause/resume (7.52.00: shared/agents_engineering_registry_routes.py).
 app.include_router(agents_engineering_registry_routes.app)
+# The scheduled cross-run Learn pass's weekly record (7.53.00, GET /agents/engineering/learn:
+# shared/agents_engineering_learn_routes.py), before /agents/engineering/<run_id>.
+app.include_router(agents_engineering_learn_routes.app)
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository
@@ -2303,8 +2507,10 @@ def start_engineering_run():
 @app.get('/agents/engineering/<run_id>')
 @tracer.capture_method
 def get_engineering_run(run_id: str):
-    """The run monitor's view of a run: the run, its agents and their metering, the totals (cost and budget come with the run control)."""
-    return _found(_monitor(run_id).overview(run_id))
+    """The run monitor's view of a run: the run, its agents and their metering, the totals (cost and budget come with the run control).
+    Also the MCP tool ``engineering_run_get``'s (7.53.00), which keeps its status, steps, agents, cost and links."""
+    monitor = _monitor(run_id, 'run_get')
+    return _found(monitor.overview(run_id))
 
 
 @app.post('/agents/engineering/<run_id>/signals')

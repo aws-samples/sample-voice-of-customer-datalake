@@ -5,9 +5,10 @@ person past its flow's ``learn.after_needs_human_hours``), create-only, in voc-e
 
     ws/<ws>/runs/<run>/_manifest/v<nnnn>.json                   voc-run-manifest/1: the flow and its revision, the
                                                                 day, the run's status, its agents and their sessions
-                                                                (role, skill, model, tokens, cost, session time),
-                                                                its models' tokens, the run's tokens and cost, and
-                                                                every agent's transcript prefix and outputs
+                                                                (role, flow step, skill, model, tokens, cost,
+                                                                session time), its models' tokens, the run's
+                                                                tokens and cost, and every agent's transcript
+                                                                prefix and outputs
     ws/<ws>/transcripts-index/<flow>/<yyyy-mm-dd>/<run>.json    voc-transcripts-index/1: the run by its flow and the
                                                                 day it started (the owner's browsing), and its
                                                                 manifest's key
@@ -84,6 +85,8 @@ def build(run: Run, agents: Sequence[Mapping[str, Any]], tasks: Sequence[Any], *
     reads them) and its board's tasks (their recorded outputs)."""
     models: dict[str, dict[str, int]] = {}
     rows = []
+    # (each agent's flow step, from its task: the cross-run Learn pass's step figures, 7.53.00; '' for none)
+    steps = {str(getattr(task, 'task_id', '')): str(getattr(task, 'flow_step', '') or '') for task in tasks}
     for item in sorted(agents, key=lambda row: _text(row, 'sk'))[:MAX_AGENTS]:
         agent = _text(item, 'sk').removeprefix('AGENT#')
         if 'seq' not in item or not agent:
@@ -99,7 +102,7 @@ def build(run: Run, agents: Sequence[Mapping[str, Any]], tasks: Sequence[Any], *
         except Exception:  # noqa: BLE001 - a row off its shape names no transcript, and the manifest still stands
             transcripts = ''
         rows.append({'agent': agent, 'role': _text(item, 'role'), 'task': _text(item, 'task_id'),
-                     'attempt': attempt, 'status': _text(item, 'status'), 'model': _text(item, 'model'),
+                     'step': steps.get(_text(item, 'task_id'), ''), 'attempt': attempt, 'status': _text(item, 'status'), 'model': _text(item, 'model'),
                      'skill': _text(item, 'skill_version'), 'tokens': tokens,
                      'cost_usd': str(item.get('cost_usd', 0)),
                      'session_seconds': _number(item, 'microvm_seconds'), 'continuations': _number(item, 'continuation'),

@@ -440,8 +440,9 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('lets the run\'s end write only its manifest and index entry: never a transcript, never an agent\'s keys', () => {
     const puts = supervisorStatements().filter((statement) => JSON.stringify(statement).includes('"s3:PutObject"'));
+    // (7.53.00: and the cross-run Learn pass's weekly records, engineering-cross-run.test.ts)
     expect(puts.map((statement) => statement.Sid ?? '').sort((a, b) => a.localeCompare(b, 'en')))
-      .toStrictEqual(['WriteRestartSeeds', 'WriteRunManifests']);
+      .toStrictEqual(['CrossRunRecords', 'WriteRestartSeeds', 'WriteRunManifests']);
     const written = JSON.stringify(puts.find((statement) => statement.Sid === 'WriteRunManifests')?.Resource);
     expect([written.includes('/ws/default/runs/*/_manifest/*'), written.includes('/ws/default/transcripts-index/*'),
       written.includes('_transcripts')]).toStrictEqual([true, true, false]);

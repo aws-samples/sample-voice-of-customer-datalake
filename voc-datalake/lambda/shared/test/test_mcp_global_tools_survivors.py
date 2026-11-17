@@ -149,7 +149,7 @@ class TestExamples:
 
     def test_a_tool_with_no_area_ranks_after_the_last_area(self):
         tool = tools.GlobalTool('misc', 'T', 'd', {}, lambda _a, _p: tools.RouteRequest('x', 'GET', '/'))
-        assert tools._area_rank(tool) == len(tools.AREAS) == 9
+        assert tools._area_rank(tool) == len(tools.AREAS) == 10
 
     def test_a_non_row_before_the_rows_is_skipped_not_the_end(self):
         answer = FEATURE_SEARCH.shape({'items': ['odd', {'request_id': 'fr_1'}, {'request_id': 'fr_2'}]}, {})

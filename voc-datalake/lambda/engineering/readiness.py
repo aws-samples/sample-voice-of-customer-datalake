@@ -15,7 +15,9 @@ administrator's STORED way of working (``connectors/dial.py``: no row is Human-d
 budget and the hard cap; Bedrock access for every model the flow's roles run on (their cards' models,
 ``skills/templates.py``, and any step's own ``model``); the AgentCore sessions quota and the build memory setting;
 the sessions' network; the sessions' sandbox (7.50.03: the walls the language's last session said it ran behind,
-``runtime/sandbox.py``; unknown until a session of the image has started); the workspace bucket's create-only probe.
+``runtime/sandbox.py``; unknown until a session of the image has started); the Kiro harness (7.53.00, ``kiro``: for a
+deployment that runs a role of the flow on Kiro, its API key stored as a SecureString and the image's kiro-cli the pinned
+one, as the language's last session said); the workspace bucket's create-only probe.
 
 ``REQUIRED`` (the owner's decision, 2026-11-16) are the checks a run truly needs: the connection, the CI attestation,
 the image, the models, the budget and the dial. Engineering Enable is refused (409) while one of them fails; the rest
@@ -40,7 +42,7 @@ READINESS_DOCS: Final = f'{DOCS}#readiness-75000'
 #: The checks, in the order they are answered.
 CHECK_IDS: Final = ('connection', 'app_installation', 'ci_attestation', 'ci_protection', 'image', 'pack', 'tenets',
                     'issues_source', 'issue_label', 'dial', 'budget', 'hard_cap', 'bedrock_models',
-                    'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'session_storage')
+                    'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'kiro', 'session_storage')
 #: What a run truly needs (owner decision): Enable is refused while one of these fails.
 REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_models', 'budget', 'dial'})
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
@@ -143,6 +145,11 @@ class Settings:
     max_sessions: int = 0
     #: The model each role's card names (``skills/templates.py`` ``card_models``).
     card_models: Mapping[str, str] = field(default_factory=dict)
+    #: The roles this deployment runs on Kiro (7.53.00, ``-c engineeringHarness``: runtime/harness_switch.py), its key's
+    #: parameter, and the kiro-cli version its images must hold (harness/kiro.py ``KIRO_CLI_VERSION``).
+    kiro_roles: frozenset[str] = frozenset()
+    kiro_key_parameter: str = ''
+    kiro_version: str = ''
 
 
 class ReadinessPorts(Protocol):
@@ -223,6 +230,11 @@ class ReadinessPorts(Protocol):
         """The walls the language's last session said it runs behind (the runtime's record), None for none yet."""
         ...
 
+    def kiro_key(self, parameter: str) -> str | None:
+        """The Kiro key parameter's type as SSM describes it (``SecureString``, ``String``, …), None when it is not
+        stored: its metadata only, never its value."""
+        ...
+
 
 @dataclass(frozen=True)
 class SandboxSeen:
@@ -233,6 +245,8 @@ class SandboxSeen:
     code: str
     hardlink_guard: tuple[str, ...]
     at: str
+    #: The image's kiro-cli version as that session's runner said it (7.53.00; '' for none).
+    kiro_cli: str = ''
 
 
 @dataclass(frozen=True)
@@ -736,6 +750,60 @@ def _sandbox(ctx: _Context) -> Check:
                  f'{", ".join(seen.hardlink_guard)}.', '', RUNTIME_DOCS)
 
 
+KIRO_DOCS: Final = f'{DOCS}#the-kiro-harness-75300'
+
+
+def _kiro(ctx: _Context) -> Check:
+    """The Kiro harness (7.53.00), for a deployment that runs a role of the flow on it: its API key stored as a
+    SecureString (its metadata read, never its value), and the image's kiro-cli the pinned version, as the language's
+    last session said (unknown until one has started; never assumed). Advice, as ``sandbox``: Enable is not refused (a
+    first session is what records the image), and an agent whose key cannot be read crashes at its start, saying so."""
+    on_kiro = sorted(flow_roles(ctx.subject.definition) & ctx.settings.kiro_roles)
+    if not on_kiro or ctx.subject.requires.get('image') is False:
+        return _not_needed('kiro', 'this deployment runs the flow\'s agents on the native harness', KIRO_DOCS)
+    roles = ', '.join(on_kiro)
+    return _kiro_key(ctx, roles) or _kiro_image(ctx, roles)
+
+
+def _kiro_key(ctx: _Context, roles: str) -> Check | None:
+    """A failing ``kiro`` check when the key is not stored as a SecureString (or cannot be read); None when it is."""
+    parameter = ctx.settings.kiro_key_parameter
+    store = (f'aws ssm put-parameter --name {parameter} --type SecureString --key-id <the deployment\'s '
+             'voc-datalake-key alias> --value file://<a file holding the key> (docs/deployment.md, engineeringHarness)')
+    try:
+        kind = ctx.ports.kiro_key(parameter)
+    except ReadFailed as error:
+        return _unknown('kiro', 'The Kiro API key', error, store, KIRO_DOCS)
+    if kind is None:
+        return Check('kiro', 'fail', f'{roles} run on Kiro, but no Kiro API key is stored at {parameter}: their '
+                     'sessions crash at the start.', store, KIRO_DOCS)
+    if kind != 'SecureString':
+        return Check('kiro', 'fail', f'The Kiro API key at {parameter} is a {kind}, not a SecureString.',
+                     f'Delete it and store it again as a SecureString: {store}', KIRO_DOCS)
+    return None
+
+
+def _kiro_image(ctx: _Context, roles: str) -> Check:
+    """The image's kiro-cli, as the language's last session said it (the key is stored)."""
+    language, pinned = ctx.subject.language, ctx.settings.kiro_version
+    if not language or language not in ctx.settings.image_languages:
+        return Check('kiro', 'unknown', 'The key is stored; no image of this language in this deployment has said '
+                     'which kiro-cli it holds.', SANDBOX_FIX, KIRO_DOCS)
+    try:
+        seen = ctx.ports.sandbox_walls(language)
+    except ReadFailed as error:
+        return _unknown('kiro', 'The image\'s kiro-cli', error, docs=KIRO_DOCS)
+    if seen is None:
+        return Check('kiro', 'unknown', f'The key is stored; the {language} image\'s kiro-cli is unknown until its '
+                     f'first session (it must be {pinned}).', SANDBOX_FIX, KIRO_DOCS)
+    if seen.kiro_cli != pinned:
+        held = f'kiro-cli {seen.kiro_cli}' if seen.kiro_cli else 'no kiro-cli'
+        return Check('kiro', 'fail', f'The last {language} session ({seen.at[:10]}) had {held}, not the pinned '
+                     f'{pinned}: a session on Kiro refuses it.', SANDBOX_FIX, KIRO_DOCS)
+    return Check('kiro', 'pass', f'{roles} run on Kiro: the key is stored as a SecureString, and the {language} image '
+                 f'holds kiro-cli {seen.kiro_cli} ({seen.at[:10]}).', '', KIRO_DOCS)
+
+
 def _session_storage(ctx: _Context) -> Check:
     try:
         held = ctx.ports.probe_storage()
@@ -753,7 +821,8 @@ _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
     'ci_protection': _ci_protection, 'image': _image, 'pack': _pack, 'tenets': _tenets,
     'issues_source': _issues_source, 'issue_label': _issue_label, 'dial': _dial, 'budget': _budget,
     'hard_cap': _hard_cap, 'bedrock_models': _bedrock_models, 'agentcore_quota': _agentcore_quota,
-    'memory_setting': _memory_setting, 'network': _network, 'sandbox': _sandbox, 'session_storage': _session_storage,
+    'memory_setting': _memory_setting, 'network': _network, 'sandbox': _sandbox, 'kiro': _kiro,
+    'session_storage': _session_storage,
 }
 
 

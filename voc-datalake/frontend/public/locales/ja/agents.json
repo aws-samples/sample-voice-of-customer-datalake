@@ -1567,7 +1567,8 @@
       "memory_setting": "ビルドメモリの構成",
       "network": "ネットワーク",
       "session_storage": "セッションストレージ",
-      "sandbox": "セッションのサンドボックス"
+      "sandbox": "セッションのサンドボックス",
+      "kiro": "Kiro ハーネス"
     },
     "required": "実行に必要"
   },
@@ -1982,6 +1983,22 @@
       "more": "さらに表示",
       "moreFailed": "次のページを読み込めませんでした。",
       "empty": "この月に開始された実行はありません。"
+    },
+    "requests": {
+      "title": "実行リクエスト",
+      "hint": "ローカルのアシスタントが MCP 経由でこれらの実行をリクエストしました。確認するまで何も開始されません。確認すると、「今すぐ実行」と同じくあなたとして実行が開始されます。",
+      "onIssue": "Issue #{{number}}",
+      "onPrd": "プロジェクト {{project}} の PRD {{document}}",
+      "onHunt": "リポジトリのバグ探し",
+      "note": "メモ: {{note}}",
+      "asked": "{{via}} が MCP 経由でリクエスト ({{when}})",
+      "expires": "期限 {{when}}",
+      "confirm": "確認して実行",
+      "decline": "却下",
+      "confirmed": "確認しました: 実行を開始しています。",
+      "openRun": "実行を開く",
+      "declined": "却下しました: 何も開始されていません。",
+      "loadFailed": "実行リクエストを読み込めませんでした。"
     },
     "controls": {
       "stopping": "停止中…",

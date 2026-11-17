@@ -170,6 +170,8 @@ export const ENGINEERING_GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attem
  */
 export const ENGINEERING_PATCH_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_patches/*`;
 export const ENGINEERING_SEED_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_seed/*`;
+/** 7.53.00: the Kiro harness's saved ACP sessions (`…/_kiro/attempt-<n>/<seq>-<nonce>.tgz`), which a child run's seed copies. */
+export const ENGINEERING_KIRO_SESSION_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_kiro/*`;
 export const ENGINEERING_FINDING_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/*/attempt-*/*.jsonl`;
 export const ENGINEERING_TRIAGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_triage/*`;
 /** An understander's tenets draft (7.52.00, runtime/harness/tenets_tools.py), which the Tenets flow's assertion reads. */

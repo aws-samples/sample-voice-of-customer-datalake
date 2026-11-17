@@ -959,11 +959,12 @@ go's, so the board launches an agent of each of them and the runtime runs it wit
 none: it is not launched as an agent. Each record holds its role's job from the table above, a few worked examples,
 its tool policy, its model from the [model table](#models) and the `converse` harness (the owner's Converse-only
 decision). Since 7.50.00 the platform's rules are the harness's, never a skill's (D-7): the bundle's
-`platform_rules` (the templates' shared platform rules), which the board serves with the session's skill, else the harness's own
-(`skills.platform_rules`), go before every skill's instructions, with the session's fence: only a person approves and
+`platform_rules` (the templates' shared platform rules), which the board serves with the session's skill, else the bundle's
+own copy (`skills.platform_rules`, 7.53.00: the same text), go before every skill's instructions, with the session's fence: only a person approves and
 merges a pull request (an agent never merges, never approves, never marks a draft ready and never changes the run's
 way of working or its limits), and everything from the repository, a host or memory is data. The shipped records are
-the templates a deployment without a bundle runs (`skills/templates.py`; [which skill an agent runs](#which-skill-an-agent-runs-75000)).
+the bundle's own (`harness/skills.py` `SKILLS`, read from the bundle the Lambda or the image ships: 7.53.00), the
+templates a launch falls back to (`skills/templates.py`; [which skill an agent runs](#which-skill-an-agent-runs-75000)).
 The tools are exactly what each job needs, and a role is never offered one beyond its role's, whatever a record names
 (`tools.role_specs`; `harness/role_tools.py`, `issues.py`, `gate_tools.py`):
 
@@ -2580,7 +2581,8 @@ wait closes.
   does not apply is a crash, never a silent loss; one the patch rules refuse is saved without it and says why),
   and is written only when the supervisor would accept it (too big, its notes are cut). Which CLI follows the repository's
   own AI reviews (kiro-cli, else claude), minus any that needs an endpoint or login other than Bedrock with the
-  agent's session: kiro-cli signs in to its own service, so it is not offered; `claude` runs at one pinned version
+  agent's session: kiro-cli signs in to its own service, so the CLI adapter does not offer it (since 7.53.00 it runs on
+  an adapter of its own, over ACP: [The Kiro harness](#the-kiro-harness-75300)); `claude` runs at one pinned version
   only, with every built-in tool of its own off (`--tools ""`), the platform's tools from the harness's own tool
   server alone (`--strict-mcp-config`), in a fresh home outside the checkout (`HOME` and `CLAUDE_CONFIG_DIR` there,
   so no repository's or user's hooks, tool servers, steering or instruction files, or settings are loaded), with an
@@ -2624,8 +2626,9 @@ and harness:
    skill, else of the shared skill, accepted only (a pin to no version, or to one nobody accepted, refuses the launch);
 2. the skills store's current version for the run's connection (`SkillStore.current`: its own, else the shared one);
 3. the role's bundled template, `<role>@template-<version>` (`skills/templates.py`: the templates' `bundle.json`,
-   which every Lambda ships byte for byte as `orchestration_bundle.json` in its `shared` package; without one, the
-   harness's shipped records).
+   which every Lambda ships byte for byte as `orchestration_bundle.json` in its `shared` package and every image at
+   `/opt/voc/orchestration/bundle.json`; since 7.53.00 the harness's shipped records, `harness/skills.py` `SKILLS`, are
+   read from that same bundle, never written out a second time, and a test holds each to it).
 
 A store that cannot be read refuses the launch (the board answers 503 and the coordinator asks again): a template never
 stands in for a version a person accepted. An agent step made from a Registry card (7.52.00, `params.card`
@@ -2803,54 +2806,298 @@ voc-engineering-start). Now each reaches its run by its own path:
   workspace shows each control from its own flag: the composer and Reply, Pause, Resume and Save, an agent's Stop and
   ⋯, the Board tab's controls; a control that is off keeps its line saying why.
 
-### Kiro agent configs (7.53.00 prep)
+### MCP for runs (7.53.00)
 
-*Templates only*: nothing loads them yet. The Kiro harness, kiro-cli over ACP (the Agent Client Protocol), comes in
-7.53. Until then the CLI adapter does not offer kiro-cli ([above](#runtime-one-agentcore-session-per-agent)).
+Tenet 4: a local Kiro or Claude agent follows, analyses, steers and asks for runs through the global MCP server
+(`/mcp/global`) and the existing Agents API, so nothing new listens and nothing is public
+([docs/mcp.md](mcp.md#engineering-runs-75300)). Five tools, `lambda/shared/mcp_global_tools_engineering.py`:
+
+| Tool | Route | What it gives or does |
+|---|---|---|
+| `engineering_runs_list` | `GET /agents/engineering/runs` | a month's runs, newest first |
+| `engineering_run_get` | `GET /agents/engineering/<run>` | status, steps and lanes, gates, agents, cost, links; no transcript text, no diff |
+| `engineering_run_analysis` | `GET /agents/engineering/<run>/retrospective` | the retrospective and the cross-run summary, labelled as model text |
+| `engineering_run_steer` | `POST /agents/engineering/<run>/steer` | steering to the run's orchestrator |
+| `engineering_run_request` | `POST /agents/engineering/requests` | a request for a Run now that an administrator confirms in the app |
+
+- **Who.** Only a write token minted by an administrator who still is one: the MCP Lambda re-checks the minter in
+  `admins` on every call and refuses a read, a non-admin's or a project-pinned token. The call is never an admin:
+  it carries `voc:mcp_engineering` set to its one operation, and the route admits it for that operation alone
+  (`_engineering_caller` in `agents_handler.py` and `shared/agents_engineering_run_routes.py`, through
+  `project_access.delegated_engineering_allowed`). Signals, go, restart, Stop, answers, board actions, approvals, the
+  registry, the connections, the dial and a request's confirm or decline refuse every delegated credential.
+- **The retrospective** (`GET …/<run>/retrospective`, an administrator's too) is Learn's record of the run, built by
+  rule from its own rows and gate records (`learning/records.py`, `learning/retrospective.py`, no model call): its
+  failures (at most 50, the most severe first, each reason redacted and cut to 400 characters), a scorecard line per
+  skill version, the failures Learn took to the coach (`RETRO#coach`) and what came of each (`LEARNED#`: the lesson and
+  the coach's words). A live run's is its record so far (`ended: false`). `cross_run` is the newest weekly record of
+  the run's flow from the scheduled cross-run Learn pass ([below](#the-scheduled-cross-run-learn-pass-75300)): its
+  week and key, the model's analysis under its model-text `label`, the convergence and at most 20 recurring failures;
+  `{available: false, reason}` for a run with no flow, a flow with no record yet, or a record that cannot be read.
+- **Steering over MCP is a person's steering.** It is the minter's `msg.steer` to the conductor, recorded in the
+  conversation with "(sent from a local assistant over MCP)" before it (the 1 KB counts the mark), fenced below the
+  platform rules by the harness like any steering, and logged with `via: mcp:<token>` and the minter. The orchestrator
+  decides what to relay.
+- **Starting a run is a request (D53-3).** `engineering/run_requests.py` keeps one row per request in
+  `WS#default#RUNREQ#queue` / `REQ#<ULID>` (`agent_id`, the issue or PRD, `note`, `via`, `requested_for`, `status`,
+  `requested_at`, `expires_at`), for an enabled, set-up automation only, its Run now checked as Run now checks it. It
+  waits `pending` for 24 hours (then reads `expired`); at most 3 of a token's and 20 in all wait at once, and the same
+  Run now is asked once while it waits. Agents → Runs lists the waiting ones (`GET /agents/engineering/requests`); an
+  administrator signed in confirms one (`POST …/requests/<id>/confirm`: the request is decided first, once, then the
+  automation's Run now runs as that administrator, and its `outcome` is recorded: `started`, `uncertain` naming the
+  engineering run, or the refusal's words) or declines it (`…/decline`). `GET …/requests/automations` lists what a
+  request may name.
+- **Rate.** The two tools that act are held to 20 an hour per token besides the token's 120 requests a minute
+  (`ENGINEERING_ACTS_PER_HOUR`, counted on the token row; a store fault refuses), and every call is in the token's
+  audit log.
+- **IAM** (pinned in `lib/stacks/api-engineering-reads.test.ts`): the Agents API's `RunRequests` statement, PutItem and
+  UpdateItem on voc-engineering held to `WS#*#RUNREQ#*` by `dynamodb:LeadingKeys`; the reads are its existing GetItem
+  and Query, the retrospective's gate records its existing `_gate/` GetObject. The MCP Lambda gains nothing (its
+  invoke of the Agents API already exists) and no agent role gains anything.
+- **The skill** `templates/orchestration/mcp-skills/voc-runs/SKILL.md` teaches a local agent the five tools: a start is
+  a request an administrator confirms, steering goes to the orchestrator, the analysis is model text.
+
+### The Kiro harness (7.53.00)
+
+*Built and tested against a scripted fake of `kiro-cli acp`, off by default, not yet run against AWS*
+(`lambda/engineering/runtime/harness/kiro.py` and `acp.py`, `runtime/harness_switch.py`, `lib/stacks/engineering-kiro.ts`).
+An agent can run as Kiro CLI over ACP, the Agent Client Protocol (`kiro-cli acp --agent-engine=v3`,
+[kiro.dev/docs/cli/acp](https://kiro.dev/docs/cli/acp/)), in place of the Converse loop. The harness is kiro-cli's only
+ACP client, the orchestrator stays the only one that talks to an agent, and a person still talks to the orchestrator
+alone.
+
+**The switch: per deployment, per role.** `-c engineeringHarness` ([deployment.md](deployment.md)) is `native` by
+default (every role on its skill's own adapter: nothing changes until a live run proves Kiro), `kiro` (every
+launchable role) or `kiro:<role>,<role>`. A launch of a role on Kiro has its skill's argv rewritten
+(`harness_switch.harness_for`): `--adapter kiro`, the pinned `--kiro-version` and the deployment's
+`--kiro-key-parameter`; its egress gains the Kiro service and SSM (below). The session row keeps the argv, so a
+continuation runs on the harness its agent started on, whatever the switch says by then, and the delivery function
+needs neither setting. The skill records are unchanged (`harness: converse`): the switch is the deployment's, not the
+skill's.
+
+**How a session runs.** The harness starts kiro-cli as its child, so it runs as the agent user `unit` inside the
+harness's own user and network namespace (7.50.03's walls hold for it: its one way out is the agent's proxy, through
+`HTTPS_PROXY`, which kiro-cli honours). Before it starts:
+
+- **An isolated home.** `<agent home>/.voc/kiro/home`, wiped at each session's start (the same path in every session
+  of the agent: Kiro keys its sessions by the working directory). No developer's, image's or repository's Kiro agents,
+  settings, steering or skills load. kiro-cli starts in that home's empty `work/` directory, never the checkout (a
+  `.kiro/agents` there would load as the workspace's), with an environment the harness builds (`kiro_env`: its home,
+  its temporary and runtime directories in it, the agent's proxy, the key; no AWS variable, nothing inherited).
+- **The agent's config, from the compiled bundle.** The role's compiled config (`templates/orchestration/kiro-agents/
+  <role>.json`, in every image at `/opt/voc/orchestration/kiro-agents/`; [below](#kiro-agent-configs-75300)) is
+  checked (its one tool server is the harness's, it offers no Kiro tool) and written to the home's `.kiro/agents/`
+  for this session (`session_agent`): the session's own prompt (the platform rules with this session's fence, then the
+  skill the board served), `tools: ["@voc"]`, and `allowedTools` and one `mcp` allow rule naming exactly the tools of
+  the session's `ToolBox`.
+- **The tools, generically.** The one MCP server is the harness's tool server (`tool_server.py`, `harness.py
+  tool-server`, as the CLI adapter's), which serves exactly the session's `ToolBox.specs`: the role's skill's tool
+  policy within its role, from the harness's own registry (`tools.role_specs`). A tool a release adds (7.52's
+  `read_tenets`, `write_tenets`) reaches Kiro with no edit to the adapter. A read is the checkout's walled `read_file`,
+  a write `write_file`, a command the sandbox runner's `run` (as `code`), as on every harness. Kiro's own tools
+  (`read`, `write`, `shell`, `grep`, `glob`, web tools, `subagent`) are never offered, so the 7.53 prep's three gaps are
+  closed: kiro-cli's V3 engine reads and writes outside its workspace without asking even when a deny rule matches
+  (`scripts/ai-review/lib.mjs`), a builtin command would run as the agent rather than as `code`, and the skills name
+  the harness's tools. The tool server's environment is the CLI's plus the agent's proxy, with `KIRO_API_KEY` blanked
+  (and dropped again by the tool server itself), and Kiro's tool call timeout is an hour and ten minutes (a command may
+  run its hour).
+
+**The ACP mapping, as built.**
+
+| Control | ACP | Notes |
+| --- | --- | --- |
+| The brief | `initialize` (no `fs`, no `terminal` capability), `session/new {cwd: <home>/work, mcpServers: []}`, `session/set_config_option {configId: mode, value: <role>}`, `session/prompt` with the opening | Refused (a crash) unless Kiro answers that the mode is the role: on any other agent its prompt and rules would not apply. |
+| Steering: 7.51's `relay_steering` and the run's direction | a `session/prompt` sent mid-turn, its text the session's `<<<STEERING …>>>` blocks below the platform rules | Kiro cancels the running turn (`cancelled`) and goes on with the new prompt, keeping its context (the spike; the fake pins it). Each `steer` event is in the transcript; the message is seen once the prompt is taken, and done once the model saves notes after it (the CLI's rule). |
+| Other inbox messages (answers, notices) | none: they wait for the tool server's next result, as data | As the CLI adapter's. |
+| A person's Stop, a Shut down, a save-and-stop (`signal.pause`) | `session/cancel`, the turn's `cancelled` waited for (30 s), kiro-cli ended, then the checkpoint, exit 75 | A Stop now is still `StopRuntimeSession`. |
+| `signal.save`, `save_checkpoint` | none: the checkpoint, Kiro's session state saved with it | |
+| Progress | `session/update` | `agent_message_chunk` and `agent_thought_chunk` coalesced into one event per run of chunks; Kiro's own tool calls and refused calls as `tool_call` / `tool_result` with the ACP `call_id`, `tool_kind` and `status` (the platform's tools are the tool server's to record, with their results); `plan`, `usage_update`; each prompt's stop reason (`prompt_end`). |
+| A permission request | `session/request_permission`, answered at once by the harness's policy | Below. |
+| A continuation, a Restart from a checkpoint | `initialize`, then `session/load {sessionId}` | Below; falls back to `session/new` with the checkpoint's notes. |
+| A child run (a Resume or Restart of an ended run) | `session/load` of the parent's session, copied with its seed | Falls back to the 7.51 seed's history. |
+| `fs/*`, `terminal/*`, any other request | JSON-RPC method-not-found | No such capability is advertised. |
+
+A turn that ends without the model's `finish` is nudged once, and a second ends the session unfinished (the task goes
+to a person, as the Converse loop's two answers without a tool); a turn Kiro stops at its own token or request limit is
+continued, 20 times at most in a session; a `finish` whose turn goes on is cancelled after two minutes.
+
+**The permission policy, fail closed** (`permission_answer`). `allow_once` only for a `@voc/<tool>` the session's
+ToolBox offers (which the tool server enforces again); `reject_once` for everything else: a Kiro tool, another
+server's, a tool the role may not have, a call it cannot read. Never `allow_always`; `cancelled` when the option it
+would answer is missing. Each decision is a `permission` event in the transcript, a refusal also on the session's
+status. With the configs above Kiro asks for nothing the session may use: the allowed tools run without asking, and a
+request is the trace of a call the platform does not allow.
+
+**Where Kiro keeps a session, and resume.** kiro-cli keeps its ACP sessions in its home,
+`$HOME/.kiro/sessions/<workspace hash>/<session id>/` (`session.json`, `messages.jsonl`: the conversation as Kiro holds
+it), checked with kiro-cli 3.4.0 (a new process in a fresh home holding only that folder and the agent's config
+`session/load`ed the session and replayed its history). Each checkpoint saves that folder under the agent's own keys,
+`ws/default/runs/<run>/<agent>/commits/<sha>/_kiro/attempt-<n>/<seq>-<nonce>.tgz` (create-only; plain files only, a
+JSON Lines file cut at its last newline since kiro-cli may be writing it, at most 32 MB packed), and its position
+names it: `kiro: {session_id, state}`. A continuation (after a pause, a crash or a Restart from a checkpoint) unpacks it
+into the new home (plain relative names only, no link, bounded) and sends `session/load`; its replay is counted, not
+recorded again (the earlier session's transcript has it), and its first prompt says it continues. A state that is not
+under the agent's own keys, cannot be read, is off its shape, or that kiro-cli refuses to load, opens a fresh session
+instead, from the checkpoint's notes, as before 7.53. A child run's `seed_restart` copies the parent's newest saved
+state beside the seed (`_seed/<task>/kiro.tgz`, `voc-resume-seed/1`'s `kiro` entry; the runtime's role gains
+`RestartReadsKiroSessions`, `s3:GetObject` on `ws/default/runs/*/*/commits/*/_kiro/*`), and the child's agent loads it,
+else takes the 7.51 seed's history.
+
+**The key.** `KIRO_API_KEY` lives in one SSM SecureString under the deployment's path,
+`/[<prefix>-]voc/engineering/_kiro/api-key`, which an operator stores ([deployment.md](deployment.md),
+`engineeringHarness`: `aws ssm put-parameter --type SecureString …`); no stack and no function writes it. Only the
+agent roles that run on Kiro may read it (`KiroApiKey`: `ssm:GetParameter` on exactly that parameter;
+`KiroApiKeyDecrypt`: `kms:Decrypt` of the stack's key only through SSM and only for that parameter,
+`kms:EncryptionContext:PARAMETER_ARN`). The harness reads it just in time with the agent's own role session and
+hands it to kiro-cli's environment only: never an argument, a file, a log line, the transcript, the status or the tool
+server. (As the connections' credentials and the GitHub Apps' keys under the same path, the broker's role, which reads
+`/[<prefix>-]voc/engineering/*`, could read it too; it never does.) Readiness reads its type, never its value.
+
+**Egress.** An agent on Kiro reaches, on its own proxy only (`egress.kiro_hosts`; an extra host of that shape is
+refused, so the dependency step never gets them): `runtime.us-east-1.kiro.dev` (the model runtime),
+`management.us-east-1.kiro.dev` (its model registry: a prompt fails `ModelRegistryUnavailableError` without it), and
+`ssm.<region>.amazonaws.com` (the key). Measured with kiro-cli 3.4.0 and a key of Kiro's us-east-1 profile behind a
+proxy that refused every other host: `app.kiro.dev`, `desktop-release.q.us-east-1.amazonaws.com`, the other regions'
+and partitions' management hosts and telemetry were refused, and the session worked. A key of another Kiro region
+needs that region's two hosts (a code change). The sessions' NAT, and any egress firewall in front of it, must admit
+them.
+
+**The image.** Every image installs kiro-cli 3.4.0 (`engineering-images/common/install-kiro.sh`: the musl build for
+arm64 from `https://prod.download.cli.kiro.dev/stable/3.4.0/`, checked against the sha256 Kiro publishes in its release
+index; one binary, root's, at `/usr/local/bin/kiro-cli`; its version in `/opt/voc/kiro/VERSION`), so a switch needs no
+other image. The runner reports it (`walls`' `kiro_cli`), the runtime records it with the language's walls
+(`WS#default#SANDBOX`), and the harness refuses a kiro-cli that is not the pinned version.
+
+**Bounds and failing closed.** Frames over 4 MB, frames that are not JSON objects and answers to no pending request
+are dropped (`acp.py`); the client sends only `initialize`, `session/new`, `session/load`, `session/set_config_option`,
+`session/prompt` and the notification `session/cancel`. Deadlines: `initialize` and `session/new` 2 minutes,
+`session/load` 5, the mode 1, a cancel 30 seconds; a turn with no frame for an hour and a quarter, kiro-cli ending
+before its finish, a refused prompt, a mode that is not the role, a key that cannot be read, a missing or unpinned
+kiro-cli, or a role with no compiled config is a crash, the work saved first, which the supervisor continues as any.
+kiro-cli and its whole process group (its tool server too) are ended on every way out.
+
+**Readiness (`kiro`).** Advice, as `sandbox`: not needed unless a role of the flow runs on Kiro; then it fails while
+the key is not stored as a SecureString, and while the language's last session had no kiro-cli or another version, and
+is unknown until a session of the image has started (Enable is not refused: a first session is what records the image).
+
+**What it does not do yet, and what it costs.** A session's tokens are not counted (Kiro bills its own credits; a
+`usage_update`, when Kiro sends one, is recorded). The code and issue text an agent reads go to the Kiro service.
+kiro-cli runs as the agent user, so it could read what the harness can (as the CLI adapter's `claude`): it is offered
+no tool that reads, at a pinned and checked version. **Still needs a live run**: a session on AgentCore Runtime
+starting kiro-cli behind the namespaces, its proxy and the NAT; the key read through SSM with the agent's session;
+`session/load` across two microVMs; the tool server's calls through kiro-cli for an hour-long command; Kiro's behaviour
+on a long run (its own compaction). Until then keep `-c engineeringHarness=native` outside a test account.
+
+### Kiro agent configs (7.53.00)
 
 `npm run orchestration:compile` writes one Kiro CLI agent config per launchable role to
 `voc-datalake/templates/orchestration/kiro-agents/<role>.json` (twelve; the coach is never launched). The files are
-committed, and `orchestration:validate` holds them to a fresh compile, as it does both bundles
-(`lambda/engineering/orchestration/compile.py`, [the templates' README](../voc-datalake/templates/orchestration/README.md#kiro-agent-configs-75300-prep)).
-They are in Kiro's v3 universal format. kiro-cli 3.3.0 has two agent engines: one reads `tools` and `allowedTools`,
-the other `permissions.rules`. Each file has both.
+committed, `orchestration:validate` holds them to a fresh compile, as it does both bundles
+(`lambda/engineering/orchestration/compile.py`, [the templates' README](../voc-datalake/templates/orchestration/README.md#kiro-agent-configs-75300)),
+and every image ships them: the Kiro harness writes each session's agent from its role's ([above](#the-kiro-harness-75300)).
+They are in Kiro's v3 universal format (one engine reads `tools` and `allowedTools`, the other `permissions.rules`;
+each file has both).
 
 - **What a config holds.** `name` is the role and `description` its card's purpose. `prompt` is the platform rules
-  and then the role's skill, as the harness builds its system prompt, without the session's fence line (a nonce
-  each session draws).
-- **Its tools are its card's.** They are mapped to Kiro's builtins: `read_file` is `read`, `list_files` is `grep`
-  and `glob`, `write_file` is `write`, and `run` and `install_dependencies` are `shell`. The card's other tools are
-  the harness's tool server, `@voc`, started as the CLI adapter starts it
-  (`/usr/bin/python3 -I /opt/voc/harness.py tool-server`, `cli.py` `TOOL_SERVER`). No config has `subagent`, a web
-  tool or `@builtin`.
-- **What runs without asking.** Three things: the read builtins (an `fs_read` allow rule), each platform tool on
-  the card (an `mcp` allow rule on `voc/<tool>`), and skills. The rules are exactly what `kiro-cli agent upgrade`
-  derives from `allowedTools`, so kiro-cli leaves the files as they are.
-- **A write or a command always asks.** No config allows `fs_write` or `shell`, or puts `write` or `shell` in
-  `allowedTools`. Each such call reaches the orchestrator as `session/request_permission`, and the orchestrator
-  answers it. A write or a command is where text from the repository or an issue could become an action. Data is
-  never an instruction, so the model never approves its own writes or commands.
+  and then the role's skill, as the harness builds its system prompt, without the session's fence line (a nonce each
+  session draws).
+- **Its tools are its card's, all of them the platform's.** `tools` is `["@voc"]`, the harness's tool server, started
+  as the CLI adapter starts it (`/usr/bin/python3 -I /opt/voc/harness.py tool-server`, `cli.py` `TOOL_SERVER`). No
+  config offers a Kiro builtin, `subagent`, a web tool or `@builtin` (7.53.00; the prep mapped `read_file` to Kiro's
+  `read` and `run` to its `shell`, which the harness never offers).
+- **What runs without asking.** Each tool on the card: `allowedTools` `@voc/<tool>`, and one `mcp` allow rule on
+  `voc/<tool>`, sorted, as `kiro-cli agent upgrade` derives it. No `fs_read`, `fs_write`, `shell` or `skill` rule:
+  anything else asks the harness, which refuses it. kiro-cli 3.4.0's `agent upgrade` would add an `fs_read` allow on
+  `./**` (its default); the files are kept without it, and `kiro-cli acp` loads them as they are.
 
-**How 7.53 will load one** (*planned*): kiro-cli gets a fresh home of its own (`HOME`), as the CLI adapter's
-`claude` does, and the role's config goes in that home's `.kiro/agents/`. No developer's or repository's Kiro agents
-or settings are loaded. Checked with kiro-cli 3.3.0: in such a home, `kiro-cli agent list` lists the twelve and
-Kiro's built-in agents only, and `kiro-cli agent upgrade --dry-run` calls all twelve already universal. The fence
-line and the tool server's environment (`VOC_SESSION_FILES` and the rest that `cli.py` passes) belong to the
-session, so the copy in the session's home adds them. Before any run, 7.53 also has to settle three gaps:
+**The validator.** It refuses a config that does not parse, that offers anything but `@voc`, allows without asking
+anything beyond its card's tools (an `allowedTools` entry, or an allow rule other than `mcp` on them), or a tool server
+other than the harness's, or whose prompt does not start with the platform rules. When kiro-cli is on `PATH` and the
+developer's Kiro API key is in `~/.config/voc-kiro/api-key`, it also runs `kiro-cli agent validate --path <file>` on
+each config. kiro-cli runs in a temporary home of its own, with the key as `KIRO_API_KEY`, and the key is never
+printed. Without kiro-cli or the key the validator says it skipped that check: kiro-cli is never required.
 
-- The `fs_read` allow names no path, so a read reaches anything the session's user can read. A deny rule would not
-  close it: kiro-cli's V3 engine reads outside the workspace without asking even when one matches
-  (`scripts/ai-review/lib.mjs`).
-- kiro-cli also loads the agents of a `.kiro/agents/` in its working directory (its "Workspace" agents), so it must
-  not start in the checkout.
-- The skills name the harness's tools (`read_file`, `run`), not Kiro's.
+### The scheduled cross-run Learn pass (7.53.00)
 
-**The validator.** It refuses a config that does not parse, that names a tool beyond its card's, `subagent`, or a
-tool server other than the harness's, that allows a write or a command, or whose prompt does not start with the
-platform rules. When kiro-cli is on `PATH` and the developer's Kiro API key is in `~/.config/voc-kiro/api-key`, it
-also runs `kiro-cli agent validate --path <file>` on each config. kiro-cli runs in a temporary home of its own, with
-the key as `KIRO_API_KEY`, and the key is never printed. Without kiro-cli or the key the validator says it skipped
-that check: kiro-cli is never required.
+Learn's step (above) sees one run. The cross-run pass sees a flow's recent runs together, once a week, for what keeps
+failing and whether the flow converges, and proposes; **it applies nothing**: everything it proposes waits for a
+person (`learning/cross_run.py`, `cross_run_input.py`, `cross_run_answer.py`).
+
+- **When.** One EventBridge Scheduler schedule, `voc-eng-cross-run-learn` (Mondays 06:00 UTC, no retry,
+  `lib/stacks/engineering-cross-run.ts`), **created DISABLED**; `-c engineeringCrossRunLearn=weekly` enables it
+  ([deployment.md](deployment.md)). It invokes voc-engineering-runtime with `{"action": "learn_cross_run"}` through
+  a role of its own (assumed by EventBridge Scheduler for that schedule only; it may invoke the runtime and nothing
+  else). That invocation lists the transcripts' index's flows (at most 100; `no-flow` left out) and hands each on as
+  an invocation of its own, `{"action": "learn_cross_run", "flow"}`, as the retrospective hands on its failures, so
+  each flow's model call gets the function's whole time.
+- **Once a week.** A flow with no run in the last 28 days, or whose newest run's flow copy says `learn.enabled:
+  false`, is skipped with nothing written. Otherwise the pass first claims the ISO week (UTC), a create-only
+  `WS#default#LEARN#<flow>` / `WEEK#<yyyy-Www>` row: a second invocation that week finds it and does nothing. From
+  there every outcome is recorded, beside the claim in `WEEK#<week>#outcome` (create-only) and in the record.
+- **What it reads**, bounded, never a whole-bucket or whole-table read: the flow's runs of the last 28 days from the
+  index (newest day first, at most 50; the key names the run, so no entry is read), each run's first manifest
+  (`v0001`, the one its index entry names), its `RETRO#coach` and `LEARNED#` rows (the failures
+  Learn took to the coach and what came of them), and its newest two gate records the manifest names (the verdict,
+  the rounds, the open blocking findings' titles, the final go's reasons). Every text is cut and redacted
+  (`quality_gate/text.redact`). A run whose manifest cannot be read is left out and counted.
+- **What is counted by rule** (numbers, ids and keys, never a model's words): the recurring failures (by role and
+  kind: the retrospective's `no_go`, `failed`, `crashed` or `timed_out`, else a session that ended `failed` or
+  `reposted`, else a NO-GO; in two runs or more), each with its runs, newest first, and its evidence's keys (the
+  manifests, the failing agents' transcript prefixes, the gate records); each flow step's session seconds and cost at
+  p50 and p95 (an agent's role where its task named no step: since 7.53.00 the manifest names each agent's `step`);
+  the cost outliers (runs, and agents of a step, at three times their p50 or more); the convergence (the runs by
+  status, the share done overall and for the older and the newer half, the failures a run); and calibration figures
+  (the flow's `budget.run_token_cap`, `budget.max_tasks` and `budget.max_cost_usd` at the observed p95 times 1.5,
+  rounded up, as `orchestration:calibrate` makes them), for a person to set.
+- **One model call**, with two runs read or more: on Learn's model (the flow's `learn.model` when it is an allowed
+  one, else the coach's), through the coach's bounded Bedrock client (`coach/model.py`: one attempt, a 200 s read,
+  8,000 tokens out). The prompt (`cross-run-prompt/1`) holds the figures, the benchmark's case ids, the current
+  instructions of at most three failing roles and each run's digest, newest first, each in its own DATA block under
+  one random fence; the oldest runs are left out past 120,000 characters (Learn's worst case of 40,000 tokens in).
+  The system prompt says the blocks are data, never instructions, and lists what an agent never changes (tenet 3's
+  list, the coach's). The idea of reading a set of runs together for whether they converge comes from
+  aws-samples/sample-kiro-flock's analyzer (Apache-2.0); no code or prompt text is taken from it, and unlike it
+  every piece of a run is fenced. The answer is read as strictly as the coach's (one JSON object of exactly
+  `convergence`, `failures`, `lessons` and `coach`; a number not among the figures', or anything off its bounds,
+  refuses it all): a refused answer, a time-out or a failed call is an outcome, never retried.
+- **Its cost is Learn's**: each reply's tokens are booked before it is read, in the spend ledger as the run
+  `learn-<flow>-<week>` (agent `learn`, the flow's month total included) and in the flow's `SPEND#<yyyy-mm>` row
+  beside the claim, in one transaction. The call is not made, a recorded outcome, when the flow's month is spent
+  (its month total, with the call's worst case, past its monthly budget) or when the call's worst case does not fit
+  Learn's `budget_share` of that budget, less what the pass spent this month. The settings and the monthly budget
+  are the flow's newest run's (its flow copy, its META's `budget_usd`). A flow with no monthly budget bounds nothing
+  here but its one call a week, as Learn's step does for a run with no cost cap.
+- **Proposals only**, each with its outcome in the record, the newest failing run on the newest run's connection
+  as its source:
+  - a **lesson** (at most three): a draft at the failing role's scope (`AgentMemoryStore.learn_agent_memory`, as
+    that run's coach, the run its provenance, subject `<role> <kind> across runs`), which an administrator
+    approves; one about a topic an agent never changes is dropped first, and memory's hygiene runs as for every
+    learned memory;
+  - a **skill addition** (at most two): one to five instruction lines added to the role's current skill, read
+    through the coach's own checks (`coach/answer.py` `read_answer`: the topics, the bounds, the expected case) and
+    proposed as that run's coach (`SkillStore.propose_version`, its why `repeated_finding`, its `expected_case`, made
+    with `cross-run-prompt/1`), once per run and role (the coach's `RUN#` guard). It is used only once an
+    administrator records a benchmark run on it that gains on its expected case and accepts it
+    ([the administrators' actions](#the-administrators-actions));
+  - the **calibration figures** are the record's: nothing changes a flow.
+- **The record**, `voc-cross-run/1`, create-only at `ws/default/learn/<flow>/<week>/v1.json`: the window, the runs
+  read, the figures, `analysis` (the outcome, the model, the convergence paragraph, a note per recurring failure)
+  and `proposals`, labelled as model text (`model_text` names the model's parts). `GET
+  /agents/engineering/learn?flow=&week=` (an administrator acting for themselves; 403 for anyone else, a delegated
+  credential included; 404 while the module is off or for a week with no record; `shared/agents_engineering_learn_routes.py`)
+  answers it with the flow's recorded weeks (one listing, newest first; `week` left out is the newest), its
+  `label` and `model_text`. No web view yet.
+- **IAM** (pinned in `engineering-cross-run.test.ts` and `api-engineering-reads.test.ts`): on the runtime's role
+  `CrossRunListsIndex` (`s3:ListBucket` held to `ws/default/transcripts-index/*`), `CrossRunReadsManifests`
+  (`s3:GetObject` on `ws/default/runs/*/_manifest/*`), `CrossRunRecords` (`s3:PutObject` on `ws/default/learn/*`,
+  create-only by the bucket's rule) and `CrossRunRows` (GetItem, PutItem and UpdateItem with `dynamodb:LeadingKeys`
+  `WS#*#LEARN#*`; never a delete); its model, the ledger's ADDs and the flow's month total, the skills' and the
+  roles' lessons' rows, the runs' rows, the gate records and the invoke of itself it holds already. On the Agents
+  API's role, `ws/default/learn/*` is added to its run reads' `s3:GetObject` and to its listing's prefixes. No agent
+  role gains anything. The grants are there whether or not the schedule is enabled.
+- **Not built**: a hand trigger (`POST /agents/engineering/learn/<flow>/run`, at most once a day): a run a day by
+  hand does not fit the once-a-week claim and the week's one create-only record, so it needs a claim and record
+  versions of its own first; a flow's own opt-out beyond `learn.enabled`; and the web app's view.
 
 ## Reports
 

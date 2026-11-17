@@ -9,6 +9,8 @@
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *   a coordinator's launch (waited for) ──▶ voc-engineering-cache {connection, commit, generation} (the cache's writer)
  *   a run's one reactions schedule ───────▶ voc-engineering-runtime {action: reactions} (engineering-reactions.ts)
+ *   the weekly cross-run Learn schedule ──▶ voc-engineering-runtime {action: learn_cross_run} (engineering-cross-run.ts,
+ *                                           DISABLED unless -c engineeringCrossRunLearn=weekly)
  *
  * One AgentCore Runtime session (its own microVM) per agent, on its language's runtime (engineering-agentcore.ts: the
  * images' repositories, the runtimes, their network and their execution role). Its agent user gets a 15-minute session
@@ -55,14 +57,18 @@ import { ENGINEERING_CACHE_PREFIX, ENGINEERING_GATE_RECORD_KEYS } from './core-b
 import {
   EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, pricingEnvironment, refuseRemovedSettings,
 } from './engineering-agentcore';
-import { grantBudgetWork, grantLauncherRows, grantRunEnd, viaServices } from './engineering-runtime-grants';
+import {
+  grantBudgetWork, grantCacheReadyReads, grantLauncherRows, grantRunEnd, viaServices,
+} from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { type ConnectionParameters, engineeringAgentsEnabled } from './engineering-broker';
-import { CACHE_READY_KEYS, createEngineeringCache } from './engineering-cache';
+import { createEngineeringCache } from './engineering-cache';
+import { grantCrossRunLearn } from './engineering-cross-run';
 import { grantReactions } from './engineering-reactions';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createEngineeringStart } from './engineering-start';
+import { wireKiroHarness } from './engineering-kiro';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
 
 /** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
@@ -111,7 +117,7 @@ export function benchmarkCaseIds(dir: string = EVALS_DIR): string[] {
  * The agent roles of lambda/engineering/runtime/interface.py ROLES, which is the broker's connectors/identity.py
  * AGENT_ROLES (one execution role each); a Python test keeps this list and ROLES equal.
  */
-const AGENT_ROLES = [
+export const AGENT_ROLES = [
   'builder', 'coach', 'commit-reviewer', 'committer', 'coordinator', 'final-go', 'fixer', 'gate-runner', 'hunter',
   'mapper', 'pr-author', 'pr-reviewer', 'understander',
 ];
@@ -202,6 +208,7 @@ class EngineeringRuntime extends Construct {
     const deliveryRole = workerRole(this, 'EngineeringDeliveryRole');
     const agentRoles = new Map(AGENT_ROLES.map((agentRole) => [agentRole, this.createAgentRole(props, agentRole,
       [supervisorRole, deliveryRole])]));
+    const kiro = wireKiroHarness(this, agentRoles, props.kmsKey, props.peers.connectionParameters.prefix);
     for (const [id, role] of [['Supervisor', supervisorRole], ['Delivery', deliveryRole]] as const) {
       this.grantSupervisorVoice(props, id, role);
     }
@@ -209,7 +216,7 @@ class EngineeringRuntime extends Construct {
     // The supervisor runs commands in a session; the delivery wakes and continues sessions, never a command.
     grantSessions(supervisorRole, sessions.runtimeArns, true);
     grantSessions(deliveryRole, sessions.runtimeArns, false);
-    const environment = this.environment(props, agentRoles, ruleName, sessions);
+    const environment = { ...this.environment(props, agentRoles, ruleName, sessions), ...kiro };
     // The checkout cache's writer: the supervisor fills a run's commit before its coordinator's launch (only it: the
     // start and the delivery never launch an agent).
     const cacheWriter = this.grantCheckoutCache(props, supervisorRole);
@@ -222,6 +229,8 @@ class EngineeringRuntime extends Construct {
       { ...environment, ENGINEERING_CACHE_FUNCTION: cacheWriter.functionName, ...reactions });
     createEngineeringStart(this, { ...props, ...props.peers, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
+    // The scheduled cross-run Learn pass (7.53.00): its weekly schedule, DISABLED unless asked for, and its grants.
+    grantCrossRunLearn(this, { ...props, runtime: fn, runtimeRole: supervisorRole });
     // A wake's continuation looks the cache up again (the generation it clones), as the supervisor's does.
     grantCacheReadyReads(deliveryRole, props.rawDataBucket);
     this.createDelivery(props, deliveryRole, agentRoles, environment);
@@ -371,8 +380,8 @@ class EngineeringRuntime extends Construct {
       environment: Object.fromEntries(Object.entries(environment)
         .filter(([name]) => ![
           'ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_BENCHMARK_CASES', 'ENGINEERING_SETTINGS_TABLE',
-          // (nor the session ceiling: it launches nobody, so it is never refused for room)
-          'ENGINEERING_MAX_SESSIONS',
+          // (nor the session ceiling: it launches nobody; nor the harness: a continuation runs its session row's)
+          'ENGINEERING_MAX_SESSIONS', 'ENGINEERING_HARNESS', 'ENGINEERING_KIRO_KEY_PARAMETER',
         ].includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
       retryAttempts: 2,
@@ -604,22 +613,6 @@ class EngineeringRuntime extends Construct {
       alarmDescription: 'The engineering supervisor failed 3 times in 5 minutes: agents may not be watched.',
     });
   }
-}
-
-/**
- * `s3:GetObject` on the checkout cache's READY markers only (`engineering/cache/*\/*\/*\/READY`, their manifests): a launch
- * and a continuation take the generation they find (lambda/engineering/runtime/checkout_cache.py). No entry's files,
- * no list (a missing marker answers 403, read as missing).
- */
-function grantCacheReadyReads(role: iam.Role, rawDataBucket: s3.IBucket): void {
-  const ready = rawDataBucket.arnForObjects(CACHE_READY_KEYS);
-  role.addToPrincipalPolicy(new iam.PolicyStatement({ sid: 'CheckoutCacheReady', actions: ['s3:GetObject'], resources: [ready] }));
-  acknowledgeNag(role, [{
-    id: 'AwsSolutions-IAM5',
-    reason: 'Read-only on the checkout cache\'s READY markers (one per connection, commit and generation, known only at '
-      + 'run time): a launch or a continuation takes the generation it finds; no entry\'s files, no list',
-    findings: [resourceFinding(ready)],
-  }]);
 }
 
 /**

@@ -139,6 +139,31 @@ def test_seeding_writes_each_taken_over_tasks_seed_posts_it_and_launches_the_coo
     assert len(started) == 1   # (the child's coordinator)
 
 
+def test_a_parents_saved_kiro_session_is_copied_beside_its_seed_for_the_childs_session_load(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """7.53.00: a parent agent on the Kiro harness saved its ACP session with its checkpoint; the child's seed names a
+    copy under the child's own _seed/, which its agent ``session/load``s (harness/kiro.py)."""
+    assert wired is not None
+    _store, _hunt, fix = _parent(monkeypatch)
+    s3 = boto3.client('s3', region_name='us-east-1')
+    state = f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 1, "kiro")}000003-cd.tgz'
+    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=state, Body=b'packed kiro session')
+    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{checkpoint_prefix(PARENT, "fixer-2", COMMIT, 1)}000003-cd.json',
+                  Body=json.dumps({'position': {'turn': 5, 'task_id': fix, 'kiro': {'session_id': 'sess_parent',
+                                                                                    'state': state}},
+                                   'plan': [], 'notes': 'on kiro', 'patch': None}))
+    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda *_: None)
+    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
+                           'base': 'same', 'actor': 'admin-2'}, None)
+    _recording(monkeypatch)
+    handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
+    record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
+    assert record is not None
+    assert record['kiro'] == {'session_id': 'sess_parent', 'state': seed.kiro_key(CHILD, fix)}
+    assert s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.kiro_key(CHILD, fix))['Body'].read() == b'packed kiro session'
+
+
 def test_a_live_run_is_restarted_through_its_signals_never_as_a_child(wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     monkeypatch.setattr(handler, '_hand_on_launch', lambda *_: None)

@@ -24,6 +24,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.readiness import ReadFailed, SandboxSeen, Settings, Subject, flow_requires
+from engineering.runtime.harness.kiro import KIRO_CLI_VERSION
 
 #: AgentCore Runtime's "Active Session Workloads per Account" (its service code is bedrock-agentcore; 5,000 in
 #: us-east-1 and us-west-2, read 2026-11-16 with service-quotas list-service-quotas).
@@ -39,6 +40,9 @@ NETWORK_ENV: Final = 'ENGINEERING_AGENT_NETWORK'
 BUILD_MEMORY_ENV: Final = 'ENGINEERING_BUILD_MEMORY_MIB'
 MAX_SESSIONS_ENV: Final = 'ENGINEERING_MAX_SESSIONS'
 WATERMARKS_TABLE_ENV: Final = 'ENGINEERING_WATERMARKS_TABLE'
+#: The deployment's harness switch and its Kiro key's parameter (7.53.00, api-engineering-readiness.ts).
+HARNESS_ENV: Final = 'ENGINEERING_HARNESS'
+KIRO_KEY_PARAMETER_ENV: Final = 'ENGINEERING_KIRO_KEY_PARAMETER'
 #: The agent sessions a deployment runs at once when it names none (engineering-agentcore.ts SESSION_QUOTA).
 DEFAULT_MAX_SESSIONS: Final = 5000
 #: How long the models' access reads may take in all (the Agents API answers within API Gateway's 29 s).
@@ -61,7 +65,19 @@ def settings_from_environment(card_models: Mapping[str, str], region: str) -> Se
         build_memory_mib=int(raw_mib) if raw_mib.isdigit() else -1,
         region=region,
         max_sessions=int(raw_sessions) if raw_sessions.isdigit() else DEFAULT_MAX_SESSIONS,
-        card_models=dict(card_models))
+        card_models=dict(card_models), kiro_roles=_kiro_roles(os.environ.get(HARNESS_ENV)),
+        kiro_key_parameter=os.environ.get(KIRO_KEY_PARAMETER_ENV, ''), kiro_version=KIRO_CLI_VERSION)
+
+
+def _kiro_roles(value: str | None) -> frozenset[str]:
+    """The roles the switch runs on Kiro (runtime/harness_switch.py); none for a switch off its shape (the stack
+    refuses one at synth, so it is never deployed)."""
+    from engineering.runtime.harness_switch import kiro_roles
+    from engineering.runtime.interface import RuntimeRefused
+    try:
+        return kiro_roles(value)
+    except RuntimeRefused:
+        return frozenset()
 
 
 @dataclass(frozen=True)
@@ -83,6 +99,8 @@ class AwsReadinessPorts:
     bedrock: Callable[[], Any]
     inspect: Callable[[dict[str, Any]], dict[str, Any]]
     watermarks: Any = None
+    #: SSM's client (7.53.00: the Kiro key's metadata, ``kiro_key``), built at the first read; None: not wired.
+    ssm: Callable[[], Any] | None = None
     #: The connections' follow of the GitHub Issues source (connectors/issues_sync.py ``IssuesFollow``: its ``status``
     #: through voc-engineering-issues-config; None, or not ``deployed``: not deployed here).
     issues: Any = None
@@ -257,7 +275,20 @@ class AwsReadinessPorts:
         if found is None:
             return None
         walls = found.walls
-        return SandboxSeen(walls.egress, walls.code, walls.hardlink_guard, found.at)
+        return SandboxSeen(walls.egress, walls.code, walls.hardlink_guard, found.at, walls.kiro_cli)
+
+    def kiro_key(self, parameter: str) -> str | None:
+        """The key parameter's type (``ssm:DescribeParameters`` filtered to its exact name: metadata, never the value),
+        None when it is not stored."""
+        if self.ssm is None:
+            raise ReadFailed('the Kiro API key: SSM is not wired here')
+        try:
+            answer = self.ssm().describe_parameters(
+                ParameterFilters=[{'Key': 'Name', 'Option': 'Equals', 'Values': [parameter]}], MaxResults=1)
+        except _AWS_ERRORS as error:
+            raise _failed('the Kiro API key', error) from error
+        found = [item for item in answer.get('Parameters', []) if item.get('Name') == parameter]
+        return str(found[0].get('Type', '')) if found else None
 
     def probe_storage(self) -> bool:
         """A create-only put of ``PROBE_KEY`` (answered, or refused as already there: either is a create-only put

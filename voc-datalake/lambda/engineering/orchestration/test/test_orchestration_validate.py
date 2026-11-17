@@ -160,17 +160,26 @@ def test_a_source_that_does_not_read_is_the_one_problem(copy: Path) -> None:
 SERVER = r"its one tool server is the harness's, voc: /usr/bin/python3 -I /opt/voc/harness\.py tool-server"
 
 
+ONLY_SERVER = r"tool server alone \(@voc\): no Kiro builtin, no subagent"
+
+
 @pytest.mark.parametrize(('role', 'change', 'problem'), [
-    ('fixer', lambda d: d['tools'].append('subagent'), r'fixer\.json: names subagent'),
-    ('fixer', lambda d: d['tools'].append('web_fetch'),
-     r"fixer\.json: its tools are among its card's as Kiro names them \(@voc, glob, grep, read, shell, write\)"),
-    ('committer', lambda d: d['tools'].append('write'), r"committer\.json: its tools are among its card's"),
-    ('mapper', lambda d: d.update(tools='read'), r"mapper\.json: its tools are among its card's"),
+    ('fixer', lambda d: d['tools'].append('subagent'), rf'fixer\.json: it offers the platform\'s {ONLY_SERVER}'),
+    ('fixer', lambda d: d['tools'].append('web_fetch'), rf'fixer\.json: it offers the platform\'s {ONLY_SERVER}'),
+    ('committer', lambda d: d['tools'].append('write'), rf'committer\.json: it offers the platform\'s {ONLY_SERVER}'),
+    ('mapper', lambda d: d.update(tools='read'), rf'mapper\.json: it offers the platform\'s {ONLY_SERVER}'),
     ('fixer', lambda d: d['permissions']['rules'].append({'capability': 'fs_write', 'effect': 'allow'}),
-     r'fixer\.json: allows fs_write without asking: a write and a command always ask the orchestrator'),
+     r'fixer\.json: allows fs_write \(anything\) without asking: only an mcp rule for its card\'s tools'),
+    ('fixer', lambda d: d['permissions']['rules'].append({'capability': 'fs_read', 'match': ['./**'],
+                                                          'effect': 'allow'}),
+     r'fixer\.json: allows fs_read \./\*\* without asking'),
     ('hunter', lambda d: d['permissions']['rules'].append({'capability': 'shell', 'match': ['*'], 'effect': 'allow'}),
-     r'hunter\.json: allows shell without asking'),
+     r'hunter\.json: allows shell \* without asking'),
+    ('mapper', lambda d: d['permissions']['rules'].append({'capability': 'mcp', 'match': ['voc/run'], 'effect': 'allow'}),
+     r'mapper\.json: allows mcp voc/run without asking'),
     ('builder', lambda d: d['allowedTools'].append('write'), r'builder\.json: allows write without asking'),
+    ('mapper', lambda d: d['allowedTools'].append('@voc/push_commit'),
+     r'mapper\.json: allows @voc/push_commit without asking'),
     ('fixer', lambda d: d.update(prompt='You are a helpful agent.'),
      r'fixer\.json: its prompt starts with the platform rules'),
     ('fixer', lambda d: d['mcpServers']['voc'].update(command='/usr/local/bin/python3'), SERVER),
@@ -216,10 +225,9 @@ def test_a_card_change_is_drift_of_its_kiro_config_and_a_compile_that_would_allo
     assert "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)" in found
     assert [line for line in found if line.startswith('kiro-agents/')] == [
         "kiro-agents/fixer.json: it is not the compile's output (npm run orchestration:compile writes it)"]
-    monkeypatch.setattr(compiler, 'KIRO_READS', (*compiler.KIRO_READS, 'shell'))
+    monkeypatch.setattr(compiler, 'KIRO_TOOLS', ('@voc', 'shell'))
     found = validate.problems(copy, drift=False)
-    assert 'kiro-agents/fixer.json: allows shell without asking: a write and a command always ask the orchestrator' in found
-    assert 'kiro-agents/mapper.json' not in ' '.join(found)   # (the mapper runs no command)
+    assert "kiro-agents/fixer.json: it offers the platform's tool server alone (@voc): no Kiro builtin, no subagent" in found
 
 
 KEY = 'kiro-key-that-is-never-shown'

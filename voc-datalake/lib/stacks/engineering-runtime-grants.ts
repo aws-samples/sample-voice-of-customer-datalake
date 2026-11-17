@@ -4,7 +4,8 @@
  * the budget alerts, the hard cap), the Deny that keeps every other voc-agents writer off the hard cap's row (the
  * agents' runtime, agent-runtime.ts), an issue's trusted triage row (7.50.00: the runtime's create-only write, and the
  * Deny that keeps every other voc-agents writer off it), the agents' transcripts and the runs' manifests (7.50.00), the
- * sessions' walls record (7.50.03) and a KMS key's use through named services only.
+ * sessions' walls record (7.50.03), a KMS key's use through named services only, and the checkout cache's READY
+ * markers' read (a launch's and a continuation's).
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -14,10 +15,11 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
 
 import {
-  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_PATCH_KEYS, ENGINEERING_REPO_PARTITIONS,
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_KIRO_SESSION_KEYS, ENGINEERING_PATCH_KEYS, ENGINEERING_REPO_PARTITIONS,
   ENGINEERING_RUNLIST_PARTITIONS, ENGINEERING_SEED_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
 } from './core-buckets';
 import { engineeringAgentsEnabled } from './engineering-broker';
+import { CACHE_READY_KEYS } from './engineering-cache';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
 /**
@@ -181,6 +183,8 @@ function grantChildRuns(role: iam.IRole, table: dynamodb.ITable, workspaceBucket
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_RUNLIST_PARTITIONS] } },
   }));
   const granted = ([['RestartReadsPatches', 's3:GetObject', ENGINEERING_PATCH_KEYS],
+    // 7.53.00: a Kiro agent's saved session, copied beside its seed (the child's agent session/loads it).
+    ['RestartReadsKiroSessions', 's3:GetObject', ENGINEERING_KIRO_SESSION_KEYS],
     ['WriteRestartSeeds', 's3:PutObject', ENGINEERING_SEED_KEYS]] as const).map(([sid, action, keys]) => {
     const objects = workspaceBucket.arnForObjects(keys);
     role.addToPrincipalPolicy(new iam.PolicyStatement({ sid, actions: [action], resources: [objects] }));
@@ -188,7 +192,7 @@ function grantChildRuns(role: iam.IRole, table: dynamodb.ITable, workspaceBucket
   });
   acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
-    reason: 'The agents\' patch objects of every run (read only: a child run\'s seed copies its parent\'s) and the runs\' seeds (create-only, each under its child run\'s own _seed/): known only at run time',
+    reason: 'The agents\' patch objects and saved Kiro sessions of every run (read only: a child run\'s seed copies its parent\'s) and the runs\' seeds (create-only, each under its child run\'s own _seed/): known only at run time',
     findings: granted.map(resourceFinding),
   }]);
 }
@@ -291,3 +295,18 @@ function grantTranscripts(role: iam.IRole, workspaceBucket: s3.IBucket): void {
   }]);
 }
 
+/**
+ * `s3:GetObject` on the checkout cache's READY markers only (`engineering/cache/*\/*\/*\/READY`, their manifests): a launch
+ * and a continuation take the generation they find (lambda/engineering/runtime/checkout_cache.py). No entry's files,
+ * no list (a missing marker answers 403, read as missing).
+ */
+export function grantCacheReadyReads(role: iam.Role, rawDataBucket: s3.IBucket): void {
+  const ready = rawDataBucket.arnForObjects(CACHE_READY_KEYS);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({ sid: 'CheckoutCacheReady', actions: ['s3:GetObject'], resources: [ready] }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the checkout cache\'s READY markers (one per connection, commit and generation, known only at '
+      + 'run time): a launch or a continuation takes the generation it finds; no entry\'s files, no list',
+    findings: [resourceFinding(ready)],
+  }]);
+}

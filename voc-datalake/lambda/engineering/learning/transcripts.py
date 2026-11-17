@@ -49,6 +49,8 @@ def render(event: Mapping[str, Any]) -> str:
         return _clip(f'{event.get("tool")} {how}: {event.get("text", "")}', MAX_LINE)
     if kind == 'message' and event.get('role') == 'assistant':
         return _clip(f'the agent said: {_content(event.get("content"))}', MAX_LINE)
+    if kind == 'agent_message_chunk':   # (7.53.00: the Kiro harness's answer, coalesced from ACP's chunks)
+        return _clip(f'the agent said: {event.get("text", "")}', MAX_LINE)
     if kind in ('crash', 'end'):
         fields = {name: value for name, value in event.items() if name not in ('schema', 'at')}
         return _clip(f'{kind}: {json.dumps(fields, sort_keys=True)}', MAX_LINE)

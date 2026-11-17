@@ -1567,7 +1567,8 @@
       "memory_setting": "Build-Speichereinstellung",
       "network": "Netzwerk",
       "session_storage": "Sitzungsspeicher",
-      "sandbox": "Sitzungs-Sandbox"
+      "sandbox": "Sitzungs-Sandbox",
+      "kiro": "Kiro-Harness"
     },
     "required": "Für einen Lauf nötig"
   },
@@ -1982,6 +1983,22 @@
       "more": "Mehr anzeigen",
       "moreFailed": "Die nächste Seite konnte nicht gelesen werden.",
       "empty": "In diesem Monat wurde kein Lauf gestartet."
+    },
+    "requests": {
+      "title": "Laufanfragen",
+      "hint": "Ein lokaler Assistent hat diese Läufe über MCP angefragt. Nichts startet, bevor Sie bestätigen: Der Lauf startet dann in Ihrem Namen, wie bei „Jetzt ausführen“.",
+      "onIssue": "Issue #{{number}}",
+      "onPrd": "PRD {{document}} des Projekts {{project}}",
+      "onHunt": "eine Fehlersuche im Repository",
+      "note": "Notiz: {{note}}",
+      "asked": "Über MCP angefragt von {{via}}, {{when}}",
+      "expires": "läuft ab {{when}}",
+      "confirm": "Bestätigen und ausführen",
+      "decline": "Ablehnen",
+      "confirmed": "Bestätigt: Der Lauf startet.",
+      "openRun": "Lauf öffnen",
+      "declined": "Abgelehnt: Nichts wurde gestartet.",
+      "loadFailed": "Die Laufanfragen konnten nicht gelesen werden."
     },
     "controls": {
       "stopping": "Wird gestoppt…",

@@ -2,7 +2,8 @@
  * @fileoverview Agents → Runs (7.51.00; admins, with the engineering agents on): the deployment's engineering runs by
  * the month they started, newest first, a page at a time (`GET /agents/engineering/runs`), narrowed to one flow or one
  * status. The filters are the query (`/agents/runs?month=&flow=&status=`, runsFilters.ts); each run opens its workspace,
- * and a run restarted from another names its parent.
+ * and a run restarted from another names its parent. Above them (7.53.00), the run requests a local assistant made
+ * over MCP, waiting for an administrator's confirm (RunRequests.tsx).
  *
  * @module pages/Agents/RunWorkspace/RunsView
  */
@@ -18,6 +19,7 @@ import { formatCalendarMonth, formatDateTime } from '../../../utils/dateUtils'
 import { monthsOffered } from '../spendView'
 import { runWorkspacePath } from './runWorkspacePaths'
 import { runsQueryOf } from './runsFilters'
+import { RunRequests } from './RunRequests'
 import type { ListedRun, RunsQuery } from '../../../api/engineeringRunWorkspaceApi'
 
 /** The engineering flows' names by id (the library's list, which the Workflows tab reads too). */
@@ -104,6 +106,7 @@ export function RunsView() {
   return (
     <section className="space-y-4" aria-label={t('views.runs')}>
       <p className="text-sm text-muted max-w-prose">{t('runWorkspace.runs.hint')}</p>
+      <RunRequests />
       <Filters query={query} flows={flows} onChange={change} />
       <CursorPagesList query={pages} count={rows.length} copy={copy}>
         <ul className="space-y-2">{rows.map((run) => <RunRow key={run.run_id} run={run} flows={flows} />)}</ul>

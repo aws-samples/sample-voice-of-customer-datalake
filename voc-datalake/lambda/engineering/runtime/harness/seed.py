@@ -6,6 +6,8 @@ unfinished, one seed under the CHILD's own run keys, create-only::
 
     ws/<ws>/runs/<child>/_seed/<parent task>/seed.json     this record (at most ``MAX_SEED_BYTES``)
     ws/<ws>/runs/<child>/_seed/<parent task>/patch.diff    the parent's newest working tree (or its submitted patch)
+    ws/<ws>/runs/<child>/_seed/<parent task>/kiro.tgz      7.53.00: the parent's Kiro session (``kiro``), when it ran
+                                                           on the Kiro harness and its checkpoint saved one
 
 The child's task for it names the record in its spec (``seed_key``). The agent's role reads its run's keys only
 (lib/stacks/engineering-runtime.ts ``RUN_KEYS``), and the harness takes a seed key only under its own run's
@@ -34,6 +36,10 @@ SCHEMA: Final = 'voc-resume-seed/1'
 MAX_SEED_BYTES: Final = 256 * 1024
 SEED_FILE: Final = 'seed.json'
 PATCH_FILE: Final = 'patch.diff'
+#: The parent's saved Kiro session (7.53.00, ``harness/kiro.py``): the child's agent ``session/load``s it.
+KIRO_FILE: Final = 'kiro.tgz'
+#: A Kiro session id as a seed names it (``harness/kiro.py`` SESSION_ID_RE's shape).
+_KIRO_SESSION_CHARACTERS: Final = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-')
 #: Past these, the parent attempt's history is a summary by Learn's model rather than its excerpts.
 SUMMARY_EVENTS: Final = 40
 SUMMARY_BYTES: Final = 200 * 1024
@@ -82,6 +88,12 @@ def patch_key(run_id: str, parent_task: str) -> str:
     if not _is_id(parent_task):
         raise SeedError('a task id is an id')
     return f'{seed_prefix(run_id)}{parent_task}/{PATCH_FILE}'
+
+
+def kiro_key(run_id: str, parent_task: str) -> str:
+    if not _is_id(parent_task):
+        raise SeedError('a task id is an id')
+    return f'{seed_prefix(run_id)}{parent_task}/{KIRO_FILE}'
 
 
 def check_seed_key(key: object, run_id: str) -> str:
@@ -170,6 +182,20 @@ def _steering(raw: object) -> list[dict[str, str]]:
     return [{'at': item['at'][:40], 'by': item['by'][:200], 'text': item['text'][:MAX_STEER_TEXT]} for item in raw]
 
 
+def _kiro(raw: object, run_id: str) -> dict[str, str] | None:
+    """The parent's Kiro session (7.53.00): ``{session_id, state}``, its state under the run's own ``_seed/``; None for
+    none."""
+    if raw is None:
+        return None
+    session_id = raw.get('session_id') if isinstance(raw, Mapping) else None
+    state = raw.get('state') if isinstance(raw, Mapping) else None
+    if not (isinstance(session_id, str) and 0 < len(session_id) <= 128 and set(session_id) <= _KIRO_SESSION_CHARACTERS
+            and isinstance(state, str) and state.startswith(seed_prefix(run_id)) and '..' not in state.split('/')
+            and state.endswith(f'/{KIRO_FILE}')):
+        raise SeedError('kiro is {session_id, state} under the run\'s own _seed/, or null')
+    return {'session_id': session_id, 'state': state}
+
+
 def checked(record: object, run_id: str) -> dict[str, Any]:
     """``record`` as a seed of run ``run_id`` (its fields bounded as the schema says), else ``SeedError``. The patch
     it names is under the same run's ``_seed/`` (``''``: none)."""
@@ -186,10 +212,11 @@ def checked(record: object, run_id: str) -> dict[str, Any]:
     if not isinstance(memory, list) or not all(isinstance(item, str) and 0 < len(item) <= MAX_MEMORY_ID
                                                for item in memory):
         raise SeedError('memory_ids are ids')
+    kiro = _kiro(record.get('kiro'), run_id)
     return {'schema': SCHEMA, 'parent': _parent(record.get('parent')), 'task': _task(record.get('task')),
             'checkpoint': _checkpoint(record.get('checkpoint')), 'patch_key': patch, 'base': base,
             'history': _history(record.get('history')), 'steering': _steering(record.get('steering')),
-            'memory_ids': list(memory[:MAX_MEMORY_IDS])}
+            'memory_ids': list(memory[:MAX_MEMORY_IDS]), **({'kiro': kiro} if kiro is not None else {})}
 
 
 def encode(record: Mapping[str, Any], run_id: str) -> bytes:

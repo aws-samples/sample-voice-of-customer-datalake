@@ -12,8 +12,8 @@ from engineering.connectors.identity import AGENT_ROLES
 from engineering.orchestration import bundle as bundled
 from engineering.orchestration.compile import (
     BUNDLE_FILE,
-    KIRO_BUILTINS,
     KIRO_DIR,
+    KIRO_TOOLS,
     LAMBDA_COPY,
     agent_body,
     compile_bundle,
@@ -201,40 +201,36 @@ def test_one_kiro_agent_config_per_launchable_role_none_for_the_coach_committed_
     assert all((ROOT / KIRO_DIR / name).read_text(encoding='utf-8') == text for name, text in files.items())
 
 
-def test_the_fixers_kiro_config_allows_its_reads_and_platform_tools_and_leaves_writes_and_commands_to_ask() -> None:
+def test_the_fixers_kiro_config_offers_only_the_platforms_tool_server_each_card_tool_allowed() -> None:
     fixer = KIRO['fixer']
     assert list(fixer) == ['name', 'description', 'prompt', 'tools', 'allowedTools', 'mcpServers', 'resources',
                            'permissions']
     assert (fixer['name'], fixer['description']) == ('fixer', SOURCES.cards['fixer']['purpose'])
-    assert fixer['tools'] == ['@voc', 'glob', 'grep', 'read', 'shell', 'write']
-    assert fixer['allowedTools'] == ['read', 'grep', 'glob', '@voc/submit_work', '@voc/read_issue',
+    # (7.53.00: no Kiro builtin at all: a read, a write and a command are the platform's, through its tool server)
+    assert fixer['tools'] == ['@voc'] == list(KIRO_TOOLS)
+    assert fixer['allowedTools'] == ['@voc/read_file', '@voc/list_files', '@voc/write_file', '@voc/run',
+                                     '@voc/install_dependencies', '@voc/submit_work', '@voc/read_issue',
                                      '@voc/report_progress', '@voc/save_checkpoint', '@voc/finish']
     assert fixer['mcpServers'] == {'voc': {'command': '/usr/bin/python3',
                                            'args': ['-I', '/opt/voc/harness.py', 'tool-server']}}
     assert fixer['resources'] == []
-    # (what `kiro-cli agent upgrade` derives from tools and allowedTools: the mcp match sorted)
+    # (the mcp match sorted, as `kiro-cli agent upgrade` derives it from allowedTools; no fs_read, no skill allow)
     assert fixer['permissions'] == {'rules': [
-        {'capability': 'fs_read', 'effect': 'allow'},
-        {'capability': 'mcp', 'match': ['voc/finish', 'voc/read_issue', 'voc/report_progress', 'voc/save_checkpoint',
-                                        'voc/submit_work'], 'effect': 'allow'},
-        {'capability': 'skill', 'effect': 'allow'}]}
+        {'capability': 'mcp', 'match': ['voc/finish', 'voc/install_dependencies', 'voc/list_files', 'voc/read_file',
+                                        'voc/read_issue', 'voc/report_progress', 'voc/run', 'voc/save_checkpoint',
+                                        'voc/submit_work', 'voc/write_file'], 'effect': 'allow'}]}
     assert 'kiroUpgrade' not in fixer
 
 
 @pytest.mark.parametrize('role', sorted(SKILLS_7_47))
-def test_each_kiro_config_grants_only_its_cards_tools_and_never_a_write_or_a_command(role: str) -> None:
+def test_each_kiro_config_grants_only_its_cards_tools_through_the_tool_server(role: str) -> None:
     config, card = KIRO[role], SOURCES.cards[role]
     tools = list(card['tools'])
-    platform = [tool for tool in tools if tool not in KIRO_BUILTINS]
-    assert set(config['tools']) == {name for tool in tools for name in KIRO_BUILTINS.get(tool, ())} | {'@voc'}
-    assert ('write' in config['tools'], 'shell' in config['tools']) == (
-        'write_file' in tools, bool({'run', 'install_dependencies'} & set(tools)))
-    assert not {'subagent', '@builtin', 'web_search', 'web_fetch'} & set(config['tools'])
-    assert config['allowedTools'] == ['read', 'grep', 'glob', *(f'@voc/{tool}' for tool in platform)]
-    rules = config['permissions']['rules']
-    assert [rule['capability'] for rule in rules] == ['fs_read', 'mcp', 'skill']
-    assert rules[1]['match'] == sorted(f'voc/{tool}' for tool in platform)
-    assert all(rule['effect'] == 'allow' and rule['capability'] not in ('fs_write', 'shell') for rule in rules)
+    assert config['tools'] == ['@voc']
+    assert not {'subagent', '@builtin', 'web_search', 'web_fetch', 'read', 'write', 'shell'} & set(config['tools'])
+    assert config['allowedTools'] == [f'@voc/{tool}' for tool in tools]
+    assert config['permissions']['rules'] == [{'capability': 'mcp', 'match': sorted(f'voc/{tool}' for tool in tools),
+                                               'effect': 'allow'}]
     server = config['mcpServers']['voc']
     assert [server['command'], *server['args']] == list(TOOL_SERVER)
 

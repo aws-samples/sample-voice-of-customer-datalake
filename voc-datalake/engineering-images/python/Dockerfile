@@ -19,6 +19,13 @@ COPY engineering-images/common/install-node.sh /tmp/install-node.sh
 RUN sh /tmp/install-node.sh 24.22.3 261af2af250dfd7e9f25cf151d1b2713a0adf8f10a9ad116c4947f68627affe8 \
  && rm /tmp/install-node.sh
 
+# Kiro CLI (7.53.00, the Kiro harness: -c engineeringHarness), pinned, its archive checked against the sha256 Kiro
+# publishes in its release index (engineering-images/common/install-kiro.sh; test_engineering_images.py holds the version
+# equal to harness/kiro.py KIRO_CLI_VERSION).
+COPY engineering-images/common/install-kiro.sh /tmp/install-kiro.sh
+RUN sh /tmp/install-kiro.sh 3.4.0 187905a1c931fde45ef0e03edd80d201f4f608e1a844d9508d80f558a593d499 \
+ && rm /tmp/install-kiro.sh
+
 COPY lambda/engineering/runtime/unit_runner.py /opt/voc/unit_runner.py
 # The harness, root-owned and outside the checkout: the runtime's pure modules and the harness package.
 COPY lambda/engineering/__init__.py /opt/voc/engineering/__init__.py
@@ -31,6 +38,8 @@ COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harnes
 COPY lambda/engineering/quality_gate/__init__.py lambda/engineering/quality_gate/packs.py lambda/engineering/quality_gate/checks.py lambda/engineering/quality_gate/runner.py lambda/engineering/quality_gate/text.py /opt/voc/engineering/quality_gate/
 COPY lambda/engineering/orchestration/__init__.py lambda/engineering/orchestration/bundle.py /opt/voc/engineering/orchestration/
 COPY templates/orchestration/bundle.json /opt/voc/orchestration/bundle.json
+# The compiled Kiro agent configs (7.53.00): the Kiro harness writes a session's agent from its role's.
+COPY templates/orchestration/kiro-agents/ /opt/voc/orchestration/kiro-agents/
 COPY templates/orchestration/gates/ /opt/voc/gates/
 COPY engineering-images/common/harness.py /opt/voc/harness.py
 COPY engineering-images/common/entrypoint.sh engineering-images/common/walls.sh /opt/voc/

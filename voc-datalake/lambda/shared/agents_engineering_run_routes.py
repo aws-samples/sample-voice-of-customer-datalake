@@ -12,6 +12,9 @@
     GET  /agents/engineering/<run>/agents/<agent>/memory                  -> {recalled, learned}
     GET  /agents/engineering/<run>/assertions                             -> [{step, check, args, on_fail, status,
                                                                               detail, attempt, at}]
+    GET  /agents/engineering/<run>/retrospective                         -> {run_id, status, ended, failure_count,
+                                                                              failures, scorecards, coached, learned,
+                                                                              cross_run}
     POST /agents/engineering/<run>/steer {text, about?, thread_id?}       -> 202 {message: {event_id, thread_id, at}}
     POST /agents/engineering/<run>/restart {mode, agents?, base, confirm} -> 202 {run: {run_id, parent_run_id, status}}
 
@@ -23,6 +26,14 @@ Administrators only, acting for themselves (403 for anyone else, a delegated cre
 ``/agents/engineering/*`` route; 404 while the engineering agents are off, for an unknown run or an agent not in it;
 503 when the table or the bucket cannot be read. Engineering data is the deployment's (``WS#default#…``,
 ``ws/default/…``), like the agents (phase 3 of docs/multi-workspace.md).
+
+**MCP for runs (7.53.00).** Three of these routes also admit the global MCP server's engineering tools
+(shared/mcp_global_tools_engineering.py), each for its one operation (``_engineering_caller``, through
+``project_access.delegated_engineering_allowed``): the runs list (``runs_list``), the retrospective (``run_analysis``)
+and the steering (``run_steer``). The principal is never an admin (a write token whose minter is still an
+administrator, re-checked by the MCP Lambda on every call); its steering is logged with ``via: mcp:<token>`` and the
+minter, and the conversation records it as the minter's, marked as sent over MCP (``MCP_STEER_MARK``). Every other
+route here, the restart included, refuses it.
 
 - **Steering** is a person's instruction to the run's orchestrator (D51-4): ``msg.steer`` from the API's source to the
   run's conductor, recorded in the conversation by the router (who and when, D4) and logged with the person; the
@@ -66,7 +77,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
-from shared.project_access import Caller
+from shared.project_access import Caller, claims_from_event, delegated_engineering_allowed, mcp_via
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 
@@ -84,12 +95,33 @@ RESTART_BASES: Final = ('same', 'head')
 RESTART_FIELDS: Final = frozenset({'mode', 'agents', 'base', 'confirm'})
 MAX_RESTART_AGENTS: Final = 50
 MAX_QUERY_TEXT: Final = 1_000
+#: What the conversation records before steering a local assistant sent over MCP (7.53.00): it is the minter's, and
+#: said to be relayed, so the run's own record shows how it came.
+MCP_STEER_MARK: Final = '(sent from a local assistant over MCP) '
+#: A retrospective's failures, at most (its count covers all of them), and each reason or note, at most.
+MAX_LISTED_FAILURES: Final = 50
+MAX_REASON_CHARS: Final = 400
+#: The cross-run summary of a run that follows no flow (7.53.00, the scheduled cross-run Learn pass: its newest weekly
+#: record of the run's flow otherwise, ``agents_engineering_learn_routes.latest_summary``).
+CROSS_RUN_UNAVAILABLE: Final = {'available': False, 'reason': 'the run follows no flow'}
 
 app = Router()
 
 
 def _caller() -> Caller:
     return caller_from_event(app.current_event.raw_event)
+
+
+def _engineering_caller(op: str | None = None) -> Caller:
+    """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
+    operation (never an admin: see the module's header); 403 for anyone else."""
+    caller = _caller()
+    if op is not None and caller.delegated and not caller.agent_id and delegated_engineering_allowed(
+            claims_from_event(app.current_event.raw_event), op):
+        return caller
+    require_admin_caller(caller)
+    return caller
+
 
 
 def _query(name: str) -> str | None:
@@ -104,12 +136,13 @@ def _json(status: int, body: Mapping[str, Any] | list[Any]) -> Response:
     return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
 
 
-def _tables() -> tuple[str, str]:
-    """The engineering table and bucket, for an administrator: 404 while the module is off, then 403 for anyone else."""
+def _tables(op: str | None = None) -> tuple[str, str]:
+    """The engineering table and bucket, for an administrator (or ``op``'s MCP tool): 404 while the module is off,
+    then 403 for anyone else."""
     table, bucket = os.environ.get('ENGINEERING_TABLE', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
     if not (engineering_agents_on() and table and bucket):
         raise NotFoundError(RUN_NOT_FOUND)
-    require_admin_caller(_caller())
+    _engineering_caller(op)
     return table, bucket
 
 
@@ -178,8 +211,8 @@ def _found[T](value: T | None, missing: str = RUN_NOT_FOUND) -> T:
 def list_engineering_runs():
     """The deployment's runs by the month they started (``?month=yyyy-mm``, this month by default), newest first, of
     one flow (``flow=<workflow id>``) or in one status (``status=``) when named, a page at a time (``cursor=`` the
-    ``next`` a page gave; ``limit`` at most 100)."""
-    table, _ = _tables()
+    ``next`` a page gave; ``limit`` at most 100). Also the MCP tool ``engineering_runs_list``'s."""
+    table, _ = _tables('runs_list')
     from engineering.views import MAX_RUNS_PAGE, EngineeringViews, ListCursorError
     from engineering.workspace.layout import ID
     from engineering.workspace.store import WorkspaceStore
@@ -314,17 +347,89 @@ def get_engineering_assertions(run_id: str):
     return _json(200, _found(_read(lambda: views.assertions(run_id))))
 
 
+#: The run's row naming the failures its retrospective took to the coach (engineering/learning/loop.py CHOSEN_SK).
+RETRO_CHOSEN_SK: Final = 'RETRO#coach'
+
+
+def _failure_view(failure: Any, display: Callable[[str], str]) -> dict[str, Any]:
+    attempt = failure.attempt
+    return {'key': failure.key, 'task_id': attempt.task.task_id, 'attempt': attempt.attempt, 'role': attempt.role,
+            'agent': attempt.agent or None, 'version': attempt.version, 'how': failure.how,
+            'reason': display(attempt.reason)[:MAX_REASON_CHARS] or None}
+
+
+def _score_view(line: Any) -> dict[str, Any]:
+    return {'role': line.role, 'version': line.version, 'tasks_done': line.tasks_done,
+            'tasks_failed': line.tasks_failed, 'needs_human': line.needs_human, 'reposts': line.reposts,
+            'review_rounds': line.review_rounds, 'attempts': line.attempts, 'cost_usd': float(line.cost_usd),
+            'seconds': line.seconds}
+
+
+def _learned_view(row: Mapping[str, Any], display: Callable[[str], str]) -> dict[str, Any]:
+    from engineering.rows import string_attr
+
+    version = row.get('proposed_version', {}).get('N', '0') if isinstance(row.get('proposed_version'), Mapping) else '0'
+    return {'key': string_attr(row, 'sk').removeprefix('LEARNED#'),
+            'lesson': display(string_attr(row, 'lesson'))[:MAX_REASON_CHARS] or None,
+            'coach': display(string_attr(row, 'coach'))[:MAX_REASON_CHARS] or None,
+            'proposed_version': int(version) if str(version).isdigit() and int(version) > 0 else None,
+            'memory_id': string_attr(row, 'memory_id') or None, 'at': string_attr(row, 'at') or None}
+
+
+@app.get('/agents/engineering/<run_id>/retrospective')
+@tracer.capture_method
+def get_engineering_retrospective(run_id: str):
+    """The run's retrospective, as Learn builds it from the run's own record (engineering/learning/retrospective.py, by
+    rule, no model call): its failures (most severe first, at most 50), a scorecard line per skill version, the failures
+    Learn took to the coach and what came of each (the lesson it drafted, the coach's words: model text), and the
+    cross-run summary's seam. A live run's is its record so far (``ended`` false). Also the MCP tool
+    ``engineering_run_analysis``'s (7.53.00)."""
+    table, bucket = _tables('run_analysis')
+    _id(run_id, RUN_NOT_FOUND)
+    from engineering.learning.records import RunRecordReader
+    from engineering.learning.retrospective import build_retrospective
+    from engineering.rows import get_row, run_pk, run_rows
+    from engineering.runtime.runs import ENDED
+    from engineering.views_thread import display
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+
+    client = get_dynamodb_client()
+    reader = RunRecordReader(client, table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True))
+    record = _found(_read(lambda: reader.read('default', run_id)))
+    retro = build_retrospective(record)
+    chosen = _read(lambda: get_row(client, table, {'pk': {'S': run_pk('default', run_id)},
+                                                   'sk': {'S': RETRO_CHOSEN_SK}}))
+    learned = _read(lambda: run_rows(client, table, 'default', run_id, 'LEARNED#'))
+    keys = (chosen or {}).get('keys', {}).get('L') if chosen is not None else None
+    meta = _read(lambda: get_row(client, table, {'pk': {'S': run_pk('default', run_id)}, 'sk': {'S': 'META'}}))
+    flow = str((meta or {}).get('flow', {}).get('S', '')) if meta is not None else ''
+    if flow:
+        from shared.agents_engineering_learn_routes import latest_summary
+        cross_run = latest_summary(get_s3_client(), bucket, flow)
+    else:
+        cross_run = dict(CROSS_RUN_UNAVAILABLE)
+    return {'run_id': run_id, 'status': record.status, 'ended': record.status in ENDED,
+            'failure_count': retro.failure_count,
+            'failures': [_failure_view(failure, display) for failure in retro.failures[:MAX_LISTED_FAILURES]],
+            'scorecards': [_score_view(line) for line in retro.scorecards],
+            'coached': None if keys is None else [str(key.get('S', '')) for key in keys if isinstance(key, Mapping)],
+            'learned': [_learned_view(row, display) for row in learned],
+            # (the scheduled cross-run Learn pass's newest weekly record of the run's flow, labelled as model text)
+            'cross_run': cross_run}
+
+
 # ── The actions ──────────────────────────────────────────────────────────────
 
 _MONITOR_ERRORS: Final = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
                           'unavailable': ServiceUnavailableError}
 
 
-def _acting_monitor(run_id: str) -> tuple[Any, Caller]:
+def _acting_monitor(run_id: str, op: str | None = None) -> tuple[Any, Caller]:
     """The run monitor and its caller for an action, checked before the body is read: while the module is off every
-    caller gets 404, then anyone but an administrator 403, then a bad or unknown run id 404. Its bus is the API's
-    source on the engineering bus (none: the steering answers 503)."""
-    table, _ = _tables()
+    caller gets 404, then anyone but an administrator (or ``op``'s MCP tool) 403, then a bad or unknown run id 404.
+    Its bus is the API's source on the engineering bus (none: the steering answers 503)."""
+    table, _ = _tables(op)
     _id(run_id, RUN_NOT_FOUND)
     from engineering.bus.publish import EventBridgePublisher
     from engineering.monitor import API_SOURCE, RunMonitor
@@ -358,12 +463,19 @@ def _refused(act: Callable[[], Any]) -> Any:
 def steer_engineering_run(run_id: str):
     """``{text, about?, thread_id?}`` → 202 ``{message: {event_id, thread_id, at}}``: a person's instruction to the run's
     orchestrator (``msg.steer`` to the conductor; recorded in the conversation, logged with who sent it)."""
-    monitor, caller = _acting_monitor(run_id)
+    monitor, caller = _acting_monitor(run_id, 'run_steer')
     from engineering.monitor import Actor, parse_steer
 
     body = json_object_body(app)
+    via = mcp_via(caller, claims_from_event(app.current_event.raw_event))
+    if via is not None and isinstance(body.get('text'), str):
+        # (MCP for runs: the minter's steering, marked as relayed by a local assistant; the 1 KB holds with the mark)
+        body = {**body, 'text': f'{MCP_STEER_MARK}{body["text"].strip()}'}
     sent = _refused(lambda: monitor.steer(run_id, parse_steer(body), Actor(caller.subject,
                                                                             caller.username or caller.subject)))
+    if via is not None:
+        logger.info('engineering: steering sent over MCP', extra={'run_id': run_id, 'via': via, 'by': caller.subject,
+                                                                  'event_id': sent.get('event_id')})
     return _json(202, {'message': sent})
 
 

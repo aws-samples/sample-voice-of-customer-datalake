@@ -1135,6 +1135,26 @@ def test_every_launchable_role_runs_its_skills_harness_and_is_labelled_by_it(wir
     assert (row['model'], row['skill_version']) == (skill.model, template.label)
 
 
+def test_a_role_the_deployment_runs_on_kiro_launches_the_kiro_adapter_with_its_egress(wired: Any, monkeypatch: Any):
+    """7.53.00: -c engineeringHarness (ENGINEERING_HARNESS) runs the named roles as Kiro CLI over ACP; the others, and
+    every role of a native deployment, keep their skill's own adapter."""
+    assert wired is not None
+    monkeypatch.setenv('ENGINEERING_HARNESS', 'kiro:fixer')
+    monkeypatch.setenv('ENGINEERING_KIRO_KEY_PARAMETER', '/voc/engineering/_kiro/api-key')
+    for role in ('fixer', 'hunter'):
+        handler.lambda_handler({**LAUNCH, 'agent_id': f'{role}-1', 'role': role}, None)
+    fixer, hunter = (handler._supervisor().sessions.get(RUN, f'{role}-1') for role in ('fixer', 'hunter'))
+    assert fixer is not None
+    assert hunter is not None
+    model = SKILLS['fixer'].model
+    assert fixer.harness == ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run', '--adapter', 'kiro', '--model',
+                             model, '--kiro-version', '3.4.0', '--kiro-key-parameter', '/voc/engineering/_kiro/api-key')
+    assert '--adapter' in hunter.harness
+    assert 'kiro' not in hunter.harness
+    assert {'runtime.us-east-1.kiro.dev', 'management.us-east-1.kiro.dev'} <= set(fixer.egress)
+    assert not {host for host in hunter.egress if 'kiro' in host or host.startswith('ssm.')}
+
+
 def _accepted(role: str, connection: str, model: str = 'global.anthropic.claude-haiku-5-5') -> int:
     """An accepted version of ``role``'s skill in the store (the shipped record on another model): its number."""
     from engineering.knowledge.store import Actor

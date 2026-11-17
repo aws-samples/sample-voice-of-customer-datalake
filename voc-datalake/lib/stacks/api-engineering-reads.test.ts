@@ -1,8 +1,9 @@
 /**
  * The agents API's reads of an engineering run (api-assistant-lambdas.ts; lambda/engineering/views.py): nothing by
  * default; with -c engineeringAgents=true the agents API gets the switch, the table and the bucket, exactly the reads
- * its views make, and the engineering package in its bundle. The reads are admin-only, so the global MCP endpoint
- * (whose tokens never act as an admin) gets no engineering tool and nothing of the module.
+ * its views make, and the engineering package in its bundle. The reads are admin-only; the global MCP endpoint (whose
+ * tokens never act as an admin) gets nothing of the module: its five engineering tools (7.53.00) reach the agents API
+ * through the invoke it already holds, each admitted there for its one operation.
  */
 import { describe, expect, it } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
@@ -16,6 +17,7 @@ import {
 import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { engineeringRunCaps } from './engineering-start';
+import { RUN_REQUEST_PARTITIONS } from './api-assistant-lambdas';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 // (7.50.00: and the readiness checks' settings, api-engineering-readiness.ts)
@@ -79,18 +81,20 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
     const reads = statements.filter((statement) => /_transcripts|_patches|_gate|_manifest/.test(
       `${statement.resource}${JSON.stringify(statement.condition ?? {})}`));
+    // (7.53.00: and a flow's weekly cross-run Learn records, read and their weeks listed: GET /agents/engineering/learn)
     expect(reads.map((statement) => [statement.actions, statement.condition])).toStrictEqual([
       [['s3:GetObject'], undefined], [['s3:ListBucket'], { StringLike: { 's3:prefix': [
-        'ws/default/runs/*/*/commits/*/_transcripts/*', 'ws/default/runs/*/*/commits/*/_patches/*'] } }]]);
+        'ws/default/runs/*/*/commits/*/_transcripts/*', 'ws/default/runs/*/*/commits/*/_patches/*',
+        'ws/default/learn/*'] } }]]);
     // The exact object keys, in order: never a checkpoint, a finding, a seed or a run's other objects.
     const keys = [...reads[0]?.resource.matchAll(/"(\/ws\/[^"]*)"/g) ?? []].map((match) => match[1]);
     expect(keys).toStrictEqual(['/ws/default/runs/*/*/commits/*/_transcripts/*',
       '/ws/default/runs/*/*/commits/*/_patches/*', '/ws/default/runs/*/*/commits/*/_gate/*',
-      '/ws/default/runs/*/_manifest/*']);
+      '/ws/default/runs/*/_manifest/*', '/ws/default/learn/*']);
     expect(JSON.stringify(statements)).not.toMatch(/_checkpoints|_seed|s3:\*/);
   });
 
-  it('list the workspace bucket only under the transcripts\' and patches\' prefixes, in one statement', () => {
+  it('list the workspace bucket only under the transcripts\', patches\' and cross-run records\' prefixes, in one statement', () => {
     const listings = policyStatementsOf(on(), 'AgentsLambdaRole')
       .filter((statement) => statement.actions.some((action) => action.startsWith('s3:List')));
     // (the bucket itself, never an object pattern; no other listing reaches it, conditioned or not)
@@ -100,7 +104,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
 
   it('give the agents API no read of a run\'s own objects while the module is off', () => {
     expect(JSON.stringify(policyStatementsOf(apiTemplate(), 'AgentsLambdaRole'))).not.toMatch(
-      /_transcripts|_patches|_manifest|ListBucket/);
+      /_transcripts|_patches|_manifest|ws\/default\/learn|ListBucket/);
   });
 
   it('read the skills\' history and the scorecards (WS#*#SKILL#*, WS#*#SCORE#*) with the one table read', () => {
@@ -114,18 +118,20 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
 
   it('write the skills\' and the Registry cards\' partitions with exactly the stores\' actions, keyed by dynamodb:LeadingKeys', () => {
     // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions; 7.52.00: a
-    // card made from a skill, its HEAD, create-only version and log rows and its listing row, nothing else)
+    // card made from a skill, its HEAD, create-only version and log rows and its listing row, nothing else; 7.53.00:
+    // and the run requests' partition, below, in a statement of its own)
     const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
       && statement.actions.some((action) => /^dynamodb:(Put|Update|ConditionCheck)/.test(action)));
     // (7.52.00: and the repositories' partitions, the knowledge flows' decisions: below)
     expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
       [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
-        ['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
+        ['dynamodb:PutItem', 'dynamodb:UpdateItem'], ['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
     expect(writes[0]?.condition).toStrictEqual({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*', 'WS#*#AGENTCARD#*'] },
       Null: { 'dynamodb:LeadingKeys': 'false' },
     });
-    expect(writes[0]?.resource).toMatch(/^\{"Fn::ImportValue":"[^"]*Engineering/);
+    expect(writes.map((statement) => statement.resource)).toStrictEqual(
+      Array.from({ length: 3 }, () => expect.stringMatching(/^\{"Fn::ImportValue":"[^"]*Engineering/)));
     // (the Registry is in-app only, owner decision 7.52.00: no AWS Agent Registry client, so no grant of it)
     expect(JSON.stringify(policyStatementsOf(on(), 'AgentsLambdaRole'))).not.toMatch(/agent-registry|bedrock-agentcore:.*Registry/);
   });
@@ -145,9 +151,20 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(policyStatementsOf(on(), 'AgentsLambdaRole'))).not.toMatch(/DOCS#|InvokeFunctionUrl/);
   });
 
+  it('write the run requests\' partition alone, PutItem and UpdateItem by dynamodb:LeadingKeys, no delete (7.53.00)', () => {
+    // (a local assistant's request for a Run now over MCP, an administrator's confirm or decline: run_requests.py)
+    const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
+      && JSON.stringify(statement.condition ?? {}).includes('RUNREQ'));
+    expect(writes.map((statement) => [[...statement.actions].sort(byCodeUnit), statement.condition])).toStrictEqual([[
+      ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+      { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUNREQ#*'] }, Null: { 'dynamodb:LeadingKeys': 'false' } },
+    ]]);
+    expect(RUN_REQUEST_PARTITIONS).toBe('WS#*#RUNREQ#*');
+  });
+
   it('give the agents API no write of the engineering table while the module is off', () => {
     const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
-    expect(JSON.stringify(statements)).not.toMatch(/SKILL|AGENTCARD|ConditionCheckItem/);
+    expect(JSON.stringify(statements)).not.toMatch(/SKILL|AGENTCARD|RUNREQ|ConditionCheckItem/);
   });
 
   it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
@@ -289,9 +306,11 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(statements)).not.toMatch(/ssm:|PARAMETER_ARN/);
   });
 
-  it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {
+  it('give the MCP endpoint nothing of the module: its engineering tools (7.53.00) go through the agents API', () => {
+    // (an MCP token is never an admin: each engineering tool is admitted by the agents API for its one operation)
     const env = serviceEnvironment(on(), GLOBAL_MCP_SERVICE_NAME);
     expect(Object.keys(env).filter((name) => name.startsWith('ENGINEERING_'))).toStrictEqual([]);
+    expect(JSON.stringify(policyStatementsOf(on(), 'GlobalEndpointRole'))).not.toMatch(/Engineering|RUNREQ/);
   });
 });
 

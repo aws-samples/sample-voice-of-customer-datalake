@@ -38,6 +38,9 @@ import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 import { denyIssueTriageWrites } from './engineering-runtime-grants';
 
+/** The run requests' partition (7.53.00, lambda/engineering/run_requests.py `WS#default#RUNREQ#queue`). */
+export const RUN_REQUEST_PARTITIONS = 'WS#*#RUNREQ#*';
+
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
  * integration timeout (api-routes.ts; a response-streaming integration may run
@@ -112,8 +115,10 @@ export interface AssistantLambdas {
  * transcripts, patches and gate records and the runs' manifests, with a listing held to the transcripts' and patches'
  * prefixes (api-engineering-run-reads.ts). Since 7.51.02 `events:PutEvents` on the engineering bus, held to the API's
  * source and a person's steering and answer (api-engineering-voice.ts); a person's signals go through the start
- * function's `signal_run`, on the invoke below. Returns the env that turns the routes on (shared/engineering_agents.py),
- * or undefined: off, the role gets nothing and the routes answer 404.
+ * function's `signal_run`, on the invoke below. Since 7.53.00 the run requests' writes (`RunRequests`: PutItem and
+ * UpdateItem on `WS#*#RUNREQ#*` alone, a local assistant's request for a Run now over MCP and an administrator's
+ * decision on it). Returns the env that turns the routes on (shared/engineering_agents.py), or undefined: off, the
+ * role gets nothing and the routes answer 404.
  */
 function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
   if (!engineeringAgentsEnabled(ctx.stack)) return undefined;
@@ -145,6 +150,18 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // role writes no row of the table. The agent roles may invoke the board only through its function URL
   // (`lambda:InvokedViaFunctionUrl`), so a direct invoke is this role's (VocProcessingStack deploys the function first;
   // reached by its deterministic name, as the plan-step runner reaches this stack's functions).
+  // The run requests (7.53.00, lambda/engineering/run_requests.py): a local assistant's request for a Run now over MCP
+  // (a create-only PutItem) and an administrator's confirm or decline of it and what came of it (a conditional
+  // UpdateItem), on their one partition only. No delete; the Query that lists them is the table read above.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'RunRequests',
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+    resources: [engineeringTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_REQUEST_PARTITIONS] },
+      Null: { 'dynamodb:LeadingKeys': 'false' },
+    },
+  }));
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME)], 'BoardPersonActions');
   // A run's start (`POST /agents/engineering/runs`) through the start function, by name: the runtime's code with a role of
   // its own (engineering-start.ts), entered where it takes `start_run` (and its few other actions: a Stop, a restart, a

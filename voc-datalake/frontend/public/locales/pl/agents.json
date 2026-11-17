@@ -1612,7 +1612,8 @@
       "memory_setting": "Ustawienie pamięci kompilacji",
       "network": "Sieć",
       "session_storage": "Magazyn sesji",
-      "sandbox": "Piaskownica sesji"
+      "sandbox": "Piaskownica sesji",
+      "kiro": "Środowisko Kiro"
     },
     "required": "Potrzebna do uruchomienia"
   },
@@ -2029,6 +2030,22 @@
       "more": "Pokaż więcej",
       "moreFailed": "Nie udało się odczytać następnej strony.",
       "empty": "W tym miesiącu nie rozpoczęto żadnego przebiegu."
+    },
+    "requests": {
+      "title": "Prośby o przebiegi",
+      "hint": "Lokalny asystent poprosił przez MCP o te przebiegi. Nic się nie zacznie, dopóki nie potwierdzisz: przebieg zacznie się wtedy w Twoim imieniu, jak przy „Uruchom teraz”.",
+      "onIssue": "zgłoszenie #{{number}}",
+      "onPrd": "PRD {{document}} projektu {{project}}",
+      "onHunt": "szukanie błędów w repozytorium",
+      "note": "Notatka: {{note}}",
+      "asked": "Poproszono przez MCP: {{via}}, {{when}}",
+      "expires": "wygasa {{when}}",
+      "confirm": "Potwierdź i uruchom",
+      "decline": "Odrzuć",
+      "confirmed": "Potwierdzono: przebieg się zaczyna.",
+      "openRun": "Otwórz przebieg",
+      "declined": "Odrzucono: nic się nie zaczęło.",
+      "loadFailed": "Nie udało się odczytać próśb o przebiegi."
     },
     "controls": {
       "stopping": "Zatrzymywanie…",

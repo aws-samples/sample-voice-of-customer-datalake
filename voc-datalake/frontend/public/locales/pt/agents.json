@@ -1574,7 +1574,8 @@
       "memory_setting": "Configuração de memória de build",
       "network": "Rede",
       "session_storage": "Armazenamento de sessões",
-      "sandbox": "Isolamento da sessão"
+      "sandbox": "Isolamento da sessão",
+      "kiro": "Harness do Kiro"
     },
     "required": "Necessária para executar"
   },
@@ -1989,6 +1990,22 @@
       "more": "Mostrar mais",
       "moreFailed": "Não foi possível ler a próxima página.",
       "empty": "Nenhuma execução iniciada neste mês."
+    },
+    "requests": {
+      "title": "Pedidos de execução",
+      "hint": "Um assistente local pediu estas execuções por MCP. Nada começa até você confirmar: a execução começa então em seu nome, como em \"Executar agora\".",
+      "onIssue": "issue #{{number}}",
+      "onPrd": "PRD {{document}} do projeto {{project}}",
+      "onHunt": "uma caça a bugs no repositório",
+      "note": "Nota: {{note}}",
+      "asked": "Pedido por MCP por {{via}}, {{when}}",
+      "expires": "expira {{when}}",
+      "confirm": "Confirmar e executar",
+      "decline": "Recusar",
+      "confirmed": "Confirmado: a execução está começando.",
+      "openRun": "Abrir a execução",
+      "declined": "Recusado: nada começou.",
+      "loadFailed": "Não foi possível ler os pedidos de execução."
     },
     "controls": {
       "stopping": "A parar…",

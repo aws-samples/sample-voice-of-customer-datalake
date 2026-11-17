@@ -99,6 +99,15 @@ ACTING_SUBJECT_CLAIM: Final = 'voc:acting_subject'
 # Cognito. Honoured only beside a delegated `mcp:` subject acting for a person (see
 # delegated_agent_run_allowed) — API Gateway never produces either from a JWT.
 MCP_AGENT_RUN_CLAIM: Final = 'voc:mcp_agent_run'
+# Claim the GLOBAL MCP Lambda adds to an engineering tool's call (7.53.00, "MCP for runs"), after the same per-call
+# check as `agents_run` (a write token minted by an administrator who is STILL one): its value is the ONE engineering
+# operation the tool serves, so a route admits the call only for its own operation (delegated_engineering_allowed).
+MCP_ENGINEERING_CLAIM: Final = 'voc:mcp_engineering'
+# The engineering operations a global-MCP write token may reach, and nothing else of the engineering routes: list the
+# runs, read one run and its retrospective, steer it through its orchestrator, ask for a Run now (which waits for an
+# administrator's confirm in the app). Never a signal, a go, a restart, a Stop, an approval, the registry, the
+# connections, the dial or a request's confirm or decline.
+MCP_ENGINEERING_OPS: Final = frozenset({'runs_list', 'run_get', 'run_analysis', 'run_steer', 'run_request'})
 ADMIN_GROUP: Final = 'admins'
 
 # The autonomous-agent principal (see the module docstring). Like the MCP
@@ -264,6 +273,29 @@ def delegated_agent_run_allowed(claims: Mapping[str, Any]) -> bool:
         and claim_text(claims, MCP_AGENT_RUN_CLAIM) == 'true'
         and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
     )
+
+
+def delegated_engineering_allowed(claims: Mapping[str, Any], op: str) -> bool:
+    """True for a global-MCP engineering call the MCP Lambda has cleared for exactly ``op`` (7.53.00).
+
+    As narrow as ``delegated_agent_run_allowed``: an ``mcp:`` subject acting for a real person, carrying
+    ``MCP_ENGINEERING_CLAIM`` equal to ``op``, one of ``MCP_ENGINEERING_OPS``. The claim is never forwarded from a
+    request; the MCP Lambda adds it from the stored token row after its own per-call admin check. The principal is
+    still not an admin: a route that admits it does so for its one operation, and records who it is.
+    """
+    return (
+        op in MCP_ENGINEERING_OPS
+        and claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
+        and claim_text(claims, MCP_ENGINEERING_CLAIM) == op
+        and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
+    )
+
+
+def mcp_via(caller: Caller, claims: Mapping[str, Any]) -> str | None:
+    """``mcp:<token>`` for a global-MCP call (its delegated subject, what an engineering route records as ``via``),
+    None for anyone else."""
+    sub = claim_text(claims, 'sub')
+    return sub if caller.delegated and sub.startswith(DELEGATED_SUBJECT_PREFIX) else None
 
 
 def _agent_caller(claims: Mapping[str, Any], agent_id: str) -> Caller:

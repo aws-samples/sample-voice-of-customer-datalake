@@ -87,6 +87,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/reactions',
         # A person's Stop of a whole run (7.50.03, the start function's stop_run): the same gate.
         'POST /agents/engineering/<run_id>/stop',
+        # The run requests (7.53.00, engineering/run_requests.py): the MCP tool engineering_run_request asks (the one
+        # delegated path here, for that operation alone: _engineering_caller, and a person signed in is refused it),
+        # an administrator acting for themselves confirms (the Run now above, as them) or declines.
+        'POST /agents/engineering/requests', 'POST /agents/engineering/requests/<request_id>/confirm',
+        'POST /agents/engineering/requests/<request_id>/decline',
         # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
         'PUT /agents/engineering/settings',
         # The repository connections and their credentials (engineering/connectors/connections.py): the same gate.
@@ -121,7 +126,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # The engineering setup guide's progress (7.50.00, included by agents_handler.py): an admin acting for themselves.
     'agents_engineering_setup_routes.py': frozenset({'PUT /agents/engineering/setup'}),
     # The run workspace's actions (7.51.00, included by agents_handler.py): a person's steering to a run's orchestrator
-    # and an ended run's restart as a child run; an admin acting for themselves, like the run's signals.
+    # and an ended run's restart as a child run; an admin acting for themselves, like the run's signals. The steering
+    # also admits the MCP tool engineering_run_steer, for that operation alone (7.53.00, _engineering_caller).
     'agents_engineering_run_routes.py': frozenset({
         'POST /agents/engineering/<run_id>/steer', 'POST /agents/engineering/<run_id>/restart',
     }),
@@ -1114,7 +1120,10 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     # The run workspace's reads (7.51.00, included by agents_handler.py): the runs list, an agent's thread and its
     # inspector's tabs (its transcripts, patches and gate records), a run's assertions; administrators acting for
     # themselves, like every engineering run read.
+    # (7.53.00: and a run's retrospective; the runs list and the retrospective also admit their MCP tools, each for its
+    # one operation, never as an admin)
     'agents_engineering_run_routes.py': frozenset({
+        'GET /agents/engineering/<run_id>/retrospective',
         'GET /agents/engineering/runs', 'GET /agents/engineering/<run_id>/agents/<agent_id>/thread',
         'GET /agents/engineering/<run_id>/agents/<agent_id>/thread/<ref>',
         'GET /agents/engineering/<run_id>/agents/<agent_id>/changes',
@@ -1122,6 +1131,15 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
         'GET /agents/engineering/<run_id>/agents/<agent_id>/files',
         'GET /agents/engineering/<run_id>/agents/<agent_id>/gate',
         'GET /agents/engineering/<run_id>/agents/<agent_id>/memory', 'GET /agents/engineering/<run_id>/assertions',
+    }),
+    # The scheduled cross-run Learn pass's weekly record (7.53.00, included by agents_handler.py): a flow's runs read
+    # together and the model's text on them; administrators acting for themselves, like every engineering run read.
+    'agents_engineering_learn_routes.py': frozenset({'GET /agents/engineering/learn'}),
+    # The run requests (7.53.00): their list, an administrator's; the automations a request may name, theirs and the MCP
+    # tool engineering_run_request's. A run's overview also admits the MCP tool engineering_run_get.
+    'agents_handler.py': frozenset({
+        'GET /agents/engineering/requests', 'GET /agents/engineering/requests/automations',
+        'GET /agents/engineering/<run_id>',
     }),
 }
 

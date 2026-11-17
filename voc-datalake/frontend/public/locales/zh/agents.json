@@ -1567,7 +1567,8 @@
       "memory_setting": "构建内存配置",
       "network": "网络",
       "session_storage": "会话存储",
-      "sandbox": "会话沙箱"
+      "sandbox": "会话沙箱",
+      "kiro": "Kiro 运行环境"
     },
     "required": "运行所需"
   },
@@ -1982,6 +1983,22 @@
       "more": "显示更多",
       "moreFailed": "无法读取下一页。",
       "empty": "这个月没有启动任何运行。"
+    },
+    "requests": {
+      "title": "运行请求",
+      "hint": "本地助手通过 MCP 请求了这些运行。在你确认之前不会开始任何运行：确认后，运行会以你的身份开始，与“立即运行”相同。",
+      "onIssue": "Issue #{{number}}",
+      "onPrd": "项目 {{project}} 的 PRD {{document}}",
+      "onHunt": "在代码库中查找缺陷",
+      "note": "备注：{{note}}",
+      "asked": "由 {{via}} 通过 MCP 请求，{{when}}",
+      "expires": "{{when}} 过期",
+      "confirm": "确认并运行",
+      "decline": "拒绝",
+      "confirmed": "已确认：运行正在开始。",
+      "openRun": "打开运行",
+      "declined": "已拒绝：没有开始任何运行。",
+      "loadFailed": "无法读取运行请求。"
     },
     "controls": {
       "stopping": "正在停止…",

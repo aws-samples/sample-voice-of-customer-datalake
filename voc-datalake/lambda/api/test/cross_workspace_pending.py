@@ -140,6 +140,13 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/<run_id>/reports',
         'GET /agents/engineering/<run_id>/reports/<level>/<subject>',
         'GET /agents/engineering/connections',
+        # The run requests (7.53.00, engineering/run_requests.py: WS#default#RUNREQ#queue), the deployment's like the
+        # runs they ask for.
+        'GET /agents/engineering/requests',
+        'GET /agents/engineering/requests/automations',
+        'POST /agents/engineering/requests',
+        'POST /agents/engineering/requests/<request_id>/confirm',
+        'POST /agents/engineering/requests/<request_id>/decline',
         # The deployment's GitHub Issues source as its connections configure it (7.50.02, engineering/connectors/
         # issues_sync.py): the deployment's source (D8), with the connections until 3g3.
         'GET /agents/engineering/issues-source',
@@ -216,6 +223,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/<run_id>/agents/<agent_id>/thread',
         'GET /agents/engineering/<run_id>/agents/<agent_id>/thread/<ref>',
         'GET /agents/engineering/<run_id>/assertions',
+        'GET /agents/engineering/<run_id>/retrospective',
         'GET /agents/engineering/runs',
         'POST /agents/engineering/<run_id>/restart',
         'POST /agents/engineering/<run_id>/steer',
@@ -248,6 +256,9 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/resume',
         'POST /agents/engineering/registry/cards',
     }),
+    # The scheduled cross-run Learn pass's weekly record (7.53.00, included by agents_handler.py): the deployment's
+    # flows' records (ws/default/learn/), so it moves with the engineering agents in 3g3.
+    'agents_engineering_learn_routes.py': frozenset({'GET /agents/engineering/learn'}),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

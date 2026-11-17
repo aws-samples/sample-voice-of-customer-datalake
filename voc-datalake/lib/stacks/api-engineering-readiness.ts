@@ -8,7 +8,10 @@
  * - `dynamodb:GetItem` of voc-watermarks' `github_issues#repo#*` keys only: whether the deployment-wide GitHub Issues
  *   source has read a repository (its key through DynamoDB is the role's `AgentsTablesKey`);
  * - `s3:PutObject` on the workspace bucket's `ws/default/_readiness/*` only, with `kms:GenerateDataKey` through S3: the
- *   create-only probe (one object, ever: the bucket refuses any put without If-None-Match, which the probe checks).
+ *   create-only probe (one object, ever: the bucket refuses any put without If-None-Match, which the probe checks);
+ * - 7.53.00, only where a role runs on Kiro (`-c engineeringHarness`): `ssm:DescribeParameters`, which takes no resource,
+ *   for the `kiro` check's one call, filtered to the Kiro key's exact name: its type and metadata, never its value (no
+ *   `ssm:GetParameter`, no KMS grant).
  *
  * No write anywhere else, no delete, no read of a run's objects. Returns the checks' environment.
  */
@@ -22,6 +25,9 @@ import { ENGINEERING_WORKSPACE_READINESS_KEYS } from './core-buckets';
 import {
   agentNetworkConfigured, buildMemoryMiB, maxSessions, runtimeLanguages,
 } from './engineering-agentcore';
+import { engineeringParameterPrefix } from './engineering-broker';
+import { engineeringHarness, kiroKeyParameterName } from './engineering-kiro';
+import { AGENT_ROLES } from './engineering-runtime';
 
 /** AgentCore Runtime's "Active Session Workloads per Account" (lambda/engineering/readiness_aws.py). */
 export const AGENTCORE_SESSIONS_QUOTA = 'bedrock-agentcore/L-3E5722B2';
@@ -60,7 +66,22 @@ export function grantEngineeringReadiness(ctx: ApiStackContext, role: iam.Role):
     reason: 'The readiness probe\'s one create-only object (ws/default/_readiness/*, beside the runs\' keys): put only, never a read or a delete',
     findings: [resourceFinding(probe)],
   }]);
+  const harness = engineeringHarness(stack, AGENT_ROLES);
+  if (harness.kiroRoles.length > 0) {
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'EngineeringReadinessKiroKey', actions: ['ssm:DescribeParameters'], resources: ['*'],
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'ssm:DescribeParameters takes no resource ARN: the kiro check\'s one call filters it to the Kiro key\'s exact '
+        + 'name and reads its type only, never a value (no GetParameter, no decrypt)',
+      findings: ['Resource::*'],
+    }]);
+  }
   return {
+    ENGINEERING_HARNESS: harness.value,
+    ...(harness.kiroRoles.length > 0
+      ? { ENGINEERING_KIRO_KEY_PARAMETER: kiroKeyParameterName(engineeringParameterPrefix(ctx.deploymentPrefix)) } : {}),
     ENGINEERING_IMAGE_LANGUAGES: runtimeLanguages(stack).join(','),
     ENGINEERING_AGENT_NETWORK: agentNetworkConfigured(stack) ? 'vpc' : 'none',
     ENGINEERING_BUILD_MEMORY_MIB: String(buildMemoryMiB(stack)),

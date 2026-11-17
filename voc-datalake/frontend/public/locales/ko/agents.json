@@ -1567,7 +1567,8 @@
       "memory_setting": "빌드 메모리 구성",
       "network": "네트워크",
       "session_storage": "세션 저장소",
-      "sandbox": "세션 샌드박스"
+      "sandbox": "세션 샌드박스",
+      "kiro": "Kiro 하네스"
     },
     "required": "실행에 필요"
   },
@@ -1982,6 +1983,22 @@
       "more": "더 보기",
       "moreFailed": "다음 페이지를 읽을 수 없습니다.",
       "empty": "이 달에 시작된 실행이 없습니다."
+    },
+    "requests": {
+      "title": "실행 요청",
+      "hint": "로컬 어시스턴트가 MCP로 이 실행들을 요청했습니다. 확인하기 전에는 아무것도 시작되지 않습니다. 확인하면 \"지금 실행\"처럼 사용자 본인으로 실행이 시작됩니다.",
+      "onIssue": "이슈 #{{number}}",
+      "onPrd": "프로젝트 {{project}}의 PRD {{document}}",
+      "onHunt": "저장소의 버그 찾기",
+      "note": "메모: {{note}}",
+      "asked": "{{via}}이(가) MCP로 요청, {{when}}",
+      "expires": "{{when}} 만료",
+      "confirm": "확인하고 실행",
+      "decline": "거절",
+      "confirmed": "확인됨: 실행을 시작하는 중입니다.",
+      "openRun": "실행 열기",
+      "declined": "거절됨: 아무것도 시작되지 않았습니다.",
+      "loadFailed": "실행 요청을 읽을 수 없습니다."
     },
     "controls": {
       "stopping": "중지하는 중…",

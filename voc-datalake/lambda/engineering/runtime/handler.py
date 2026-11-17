@@ -35,6 +35,11 @@
   (``learning/reactions_read.py``): the run's one EventBridge Scheduler schedule (``asked_by`` ``schedule``, created at
   its retrospective, deleting itself after it runs) or a person's hand trigger (``actor``, through voc-engineering-
   start). A run with no recorded pull request records nothing and says so. Never raises.
+- ``{"action": "learn_cross_run", "flow"?}`` (7.53.00): the scheduled cross-run Learn pass
+  (``learning/cross_run.py``). Without ``flow`` (the weekly EventBridge Scheduler schedule, DISABLED unless
+  ``-c engineeringCrossRunLearn=weekly``): the transcripts' index's flows listed (at most 100) and each handed on as an
+  invocation of its own, as the retrospective hands on its failures; with it: that flow's pass this ISO week (once:
+  its week's create-only claim), one model call at most, its proposals only proposals. Never raises.
 - ``{"action": "tick"}``: the supervisor's EventBridge rule, every minute while any run is listed
   (``supervisor.Supervisor.tick``), then settled; records the heartbeat metrics.
 - Settling: an ended run without a live agent is no longer listed (``RunStore.release``), its retrospective handed
@@ -111,7 +116,7 @@ from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import FlowError
 from engineering.flow.settings import LearnSettings, learn_settings
-from engineering.runtime import caps, egress, run_signals
+from engineering.runtime import caps, egress, harness_switch, run_signals
 from engineering.runtime import stop as run_stop
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkout_cache import (
@@ -168,6 +173,7 @@ from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
 
 if TYPE_CHECKING:
+    from engineering.learning.cross_run import CrossRunLearn
     from engineering.learning.loop import LearningLoop
     from engineering.learning.reactions_read import ReactionsRead
     from engineering.quality_gate.record import GateRecord
@@ -1475,6 +1481,66 @@ def _learn_from(run_id: str, failure: str, *, at_a_person: bool = False) -> dict
             'skipped': learned.skipped}
 
 
+def _cross_run() -> CrossRunLearn:
+    """The cross-run Learn pass on this function's clients (7.53.00): the index listed and the manifests read through
+    its grants on them alone (``CrossRunListsIndex``, ``CrossRunReadsManifests``), its model the coach's bounded
+    client on Learn's model, every reply's tokens booked first (learning/cross_run.py ``CrossRunBudget``)."""
+    from engineering.agent_memory.store import AgentMemoryStore
+    from engineering.coach.model import BedrockCoachModel
+    from engineering.learning.budget import MeteredCoachModel
+    from engineering.learning.cross_run import CrossRunBudget, CrossRunLearn
+    from engineering.learning.cross_run_input import RunInputReader, s3_lister
+    from engineering.skills.store import SkillStore
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+    client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
+    s3, bucket = get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET']
+    # (a manifest never written answers 403 without ListBucket on its prefix: read as missing, and counted)
+    workspace, runs = WorkspaceStore(s3, bucket, denied_is_missing=True), _runs()
+    cases = json.loads(os.environ['ENGINEERING_BENCHMARK_CASES'])
+    return CrossRunLearn(
+        lister=s3_lister(s3, bucket), reader=RunInputReader(runs.table, workspace.read_text), runs=runs,
+        skills=SkillStore(client, table), memory=AgentMemoryStore(client, table, is_user=lambda _user: False),
+        budget=CrossRunBudget(runs.table, _token_price),
+        model_for=lambda model, on_reply: MeteredCoachModel(BedrockCoachModel(model), on_reply),
+        put_once=workspace.put_once, cases=tuple(str(case) for case in cases) if isinstance(cases, list) else ())
+
+
+def _hand_on_cross_run(event: dict[str, Any]) -> None:
+    """One flow's pass to this function again, asynchronously, so each flow's model call gets the whole time limit;
+    run here and now with no function name (a local run, the tests). Best effort: logged, never raised."""
+    try:
+        if not _function_name:
+            learn_cross_run(event)
+            return
+        from shared.aws import invoke_lambda_async
+        invoke_lambda_async(_function_name, event)
+    except Exception:
+        logger.exception('engineering cross-run learn: a flow\'s pass was not started', extra={'flow': event.get('flow')})
+
+
+def learn_cross_run(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``learn_cross_run`` action (7.53.00): ``{}`` (the weekly schedule) hands each of the index's flows on;
+    ``{"flow"}`` runs that flow's pass this week (learning/cross_run.py). Never raises: an asynchronous invocation
+    that raised would be retried, and a retry finds the week's claim and does nothing new."""
+    flow = event.get('flow')
+    named = str(flow)[:200] if flow is not None else ''
+    try:
+        if flow is None:
+            from engineering.learning.cross_run_input import flows
+            names, more = flows(_cross_run().lister)
+            for name in names:
+                _hand_on_cross_run({'action': 'learn_cross_run', 'flow': name})
+            logger.info('engineering cross-run learn: flows handed on', extra={'flows': len(names), 'more': more})
+            return {'status': 'handed_on', 'flows': list(names), 'more': more}
+        answer = _cross_run().run(named).view()
+    except Exception:
+        logger.exception('engineering cross-run learn failed', extra={'flow': named})
+        return {'flow': named, 'status': 'failed'}
+    logger.info('engineering cross-run learn', extra=answer)
+    return answer
+
+
 def _strings(value: object) -> TypeGuard[list[str]]:
     """``value`` is a JSON list of strings (never one string, which would be read character by character)."""
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
@@ -1523,6 +1589,8 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
                                             int(clock())):
         raise SessionBusy(f'a launch of {event.get("agent_id", "")} is under way: ask again in a few minutes')
     harness, labels = _harness(event)
+    # (7.53.00: the deployment's switch, -c engineeringHarness: the role on Kiro over ACP, or its skill's own adapter)
+    harness = harness_switch.harness_for(harness, str(event.get('role', '')), os.environ)
     paths = event.get('paths', [])
     if not _strings(paths):
         raise RuntimeRefused('paths must be a list of repository paths')
@@ -1539,7 +1607,7 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
         role=role, language=language, region=os.environ.get('AWS_REGION', 'us-east-1'), bucket=supervisor.bucket,
         workspace_bucket=supervisor.workspace_bucket,
         extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')),
-        service_urls=[supervisor.board_url, supervisor.broker_url])
+        service_urls=[supervisor.board_url, supervisor.broker_url], kiro=harness_switch.is_kiro(harness))
     attempt = _attempt(supervisor, str(event.get('run_id', '')), str(event.get('task_id', '')),
                        _optional_number(event, 'attempt', int))
     spec = AgentSpec(run_id=str(event.get('run_id', '')), agent_id=str(event.get('agent_id', '')), role=role,
@@ -1998,6 +2066,7 @@ ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
     'retrospective': retrospective, 'launch_coordinator': launch_coordinator, 'reactions': reactions_action,
     'stop_run': stop_run_action, 'finish_stop': finish_stop_action, 'seed_restart': seed_restart_action,
+    'learn_cross_run': learn_cross_run,
 }
 
 

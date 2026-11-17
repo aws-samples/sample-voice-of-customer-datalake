@@ -1513,7 +1513,8 @@
       "memory_setting": "Build memory setting",
       "network": "Network",
       "session_storage": "Session storage",
-      "sandbox": "Session sandbox"
+      "sandbox": "Session sandbox",
+      "kiro": "Kiro harness"
     },
     "required": "Needed to run"
   },
@@ -1928,6 +1929,22 @@
       "more": "Show more",
       "moreFailed": "The next page could not be read.",
       "empty": "No run started in this month."
+    },
+    "requests": {
+      "title": "Run requests",
+      "hint": "A local assistant asked for these runs over MCP. Nothing starts until you confirm: the run then starts as you, as Run now does.",
+      "onIssue": "issue #{{number}}",
+      "onPrd": "PRD {{document}} of project {{project}}",
+      "onHunt": "a bug hunt of the repository",
+      "note": "Note: {{note}}",
+      "asked": "Asked over MCP by {{via}}, {{when}}",
+      "expires": "expires {{when}}",
+      "confirm": "Confirm and run",
+      "decline": "Decline",
+      "confirmed": "Confirmed: the run is starting.",
+      "openRun": "Open the run",
+      "declined": "Declined: nothing started.",
+      "loadFailed": "The run requests could not be read."
     },
     "controls": {
       "stopping": "Stopping…",

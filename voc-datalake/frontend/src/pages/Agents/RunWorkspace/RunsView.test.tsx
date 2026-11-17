@@ -32,6 +32,8 @@ beforeEach(() => {
     [`GET ${LIST}?month=2026-11&status=stopped`]: () => ({ runs: [fixture.runs.answer.runs[2]], next: 'page-2' }),
     [`GET ${LIST}?month=2026-11&status=stopped&cursor=page-2`]: () => ({ runs: [{ ...fixture.runs.answer.runs[2], run_id: 'OLDER' }], next: null }),
     'GET /workflows': () => ({ workflows: [FLOW] }),
+    // (7.53.00: the run requests above the list, none waiting: RunRequests.test.tsx)
+    'GET /agents/engineering/requests': () => ({ requests: [] }),
   })
 })
 

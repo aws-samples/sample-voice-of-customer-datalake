@@ -115,17 +115,24 @@ that the minter is *still* in `admins`. Only then does it add the claim
 principal acting for a person (`project_access.delegated_agent_run_allowed`) — the
 credential is still not an admin anywhere else.
 
+The five `engineering_` tools (7.53.00, [Engineering runs](#engineering-runs-75300)) are gated the same way, with
+one more limit: they are offered only to a **write** token minted by an **admin** (even the three that only read),
+never to a project-pinned one, and the minter is re-checked in `admins` on every call. The claim they carry is not
+`voc:mcp_agent_run` but `voc:mcp_engineering`, set to the tool's ONE operation (`runs_list`, `run_get`,
+`run_analysis`, `run_steer` or `run_request`); each Agents API route admits it for its own operation alone
+(`project_access.delegated_engineering_allowed`), and every other engineering route still refuses the credential.
+
 ## Tools
 
 **Names and descriptions.** Every tool's name starts with its area: `feedback_`, `memory_`, `company_`,
-`projects_`, `documents_`, `agents_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
+`projects_`, `documents_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
 `lambda/shared/mcp_global_tools.py`), and `tools/list` lists them grouped by area, so a client that lists or
 searches tools by name finds an area's tools together. Each description is written for a model choosing a tool:
 what it does, its main nouns and verbs (and the words a person might use for them: review, vote, upvote,
 roadmap), when to use it, its key arguments and, for a write, that it needs a write token and the user's
 confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
-**Budget.** The whole list (what an administrator's write token is shown: 35 tools) stays under an estimated
+**Budget.** The whole list (what an administrator's write token is shown: 40 tools) stays under an estimated
 10,000 tokens (`test_mcp_global_tools_budget.py`). Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
@@ -188,17 +195,53 @@ MCP call never sees an archived board.
 | `prioritization_score` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
 | `feature_requests_write` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
 | `agents_run` | write + admin-minted | `POST /agents/{id}/run` (agents) |
+| `engineering_runs_list` | admin-minted write token | `GET /agents/engineering/runs?month=&flow=&status=&cursor=&limit=` (agents): a month's engineering runs, newest first (`run_id`, `flow`, `goal`, `status`, `started_at`, `ended_at`, `cost_usd`, `parent`) and `next` |
+| `engineering_run_get` | admin-minted write token | `GET /agents/engineering/{run_id}` (agents), cut field by field: the run's status, flow steps and lanes, gates, agents (role, task, status, step, attempt, model, cost), cost against its cap, parent and child runs, totals, and `links` (issue, pull request, the run's page in the app). Never its transcripts, diffs, flow definition, an agent's recent tool calls or people's comments |
+| `engineering_run_analysis` | admin-minted write token | `GET /agents/engineering/{run_id}/retrospective` (agents): the run's retrospective (failures, scorecards, the failures Learn took to the coach and what came of each) and `cross_run`, under a `label` that says it is model text |
+| `engineering_run_steer` | write + admin-minted | `POST /agents/engineering/{run_id}/steer` (agents) `{text, about?}`: steering to the run's orchestrator, never to an agent |
+| `engineering_run_request` | write + admin-minted | `POST /agents/engineering/requests` (agents) `{agent_id, issue? \| prd?, note?}`: a request for a Run now that waits for an administrator's confirm in the app; without `agent_id`, `GET /agents/engineering/requests/automations` |
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
 (the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
-there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, a board
-request's status, and, for now, reading an engineering run: its board, conversation and reports
-(`GET /agents/engineering/{run_id}/…`, only with `-c engineeringAgents=true`) are for administrators only until a
-repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet
-(the web app's AI assistant reads them for an administrator, `get_engineering_run`, with that administrator's own
-sign-in: an MCP token is still refused there). Starting an engineering run (`POST /agents/engineering/runs`) is
-admin work too, so it has no tool either, and neither has the assistant's "refresh the knowledge pack"
-(`propose_knowledge_refresh`, an approval card whose Approve starts that route with the administrator's own sign-in).
+there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, and a
+board request's status. Of an engineering run (only with `-c engineeringAgents=true`), the five `engineering_` tools
+reach the runs list, its overview, its retrospective, its steering and a request for a Run now
+([Engineering runs](#engineering-runs-75300)); its board, conversation, reports, threads and changes stay the
+administrators' in the app (the web app's AI assistant reads some for an administrator, `get_engineering_run`, with
+that administrator's own sign-in), and so do its signals, go, restart, Stop and answers, the skills' approvals, the
+registry, the connections, the dial, a run's start from a flow (`POST /agents/engineering/runs`) and a run request's
+confirm or decline: no tool. Neither has the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`,
+an approval card whose Approve starts that route with the administrator's own sign-in).
+
+### Engineering runs (7.53.00)
+
+Tenet 4 ("MCP for runs"): a local Kiro or Claude agent follows, analyses, steers and asks for the deployment's
+engineering runs through this server and the existing Agents API, with no new endpoint, no new listener and nothing
+public (`lambda/shared/mcp_global_tools_engineering.py`). The skill
+`voc-datalake/templates/orchestration/mcp-skills/voc-runs/SKILL.md` teaches a local agent the five tools.
+
+- **Who gets them.** A write token minted by an administrator who still is one, re-checked in Cognito on every call,
+  never a read, a non-admin's or a project-pinned token ([Who a token acts as](#who-a-token-acts-as)). The principal
+  is never an admin: each route admits `voc:mcp_engineering` for its one operation, and records `via: mcp:<token>`
+  and the minter in its log line.
+- **Reads.** `engineering_runs_list`, `engineering_run_get` and `engineering_run_analysis` are the runs list, the
+  overview and the retrospective, each cut field by field by the tool: no transcript text, no diff. The analysis's
+  reasons, lessons and coach notes are the run's agents' and Learn's model's words: the answer says so (`label`). Its
+  `cross_run` is the newest weekly record of the run's flow from the scheduled cross-run Learn pass (its analysis
+  labelled as model text), or `{available: false, reason}` when there is none.
+- **Steering goes to the orchestrator.** `engineering_run_steer` is the run workspace's `POST …/steer`: `msg.steer`
+  from the person (the minter) to the run's conductor, fenced below the platform rules by the harness, recorded in
+  the run's conversation as the minter's with "(sent from a local assistant over MCP)" before it. The orchestrator
+  decides what to relay; a person never talks to an agent directly.
+- **Starting is a request (D53-3: a run pushes code).** `engineering_run_request` writes a row
+  (`WS#default#RUNREQ#queue` / `REQ#<id>`) that waits in Agents → Runs until an administrator signed in confirms it,
+  which runs the automation's Run now as that administrator, or declines it; it expires after 24 hours. At most 3 of
+  a token's and 20 in all wait at once, and the same Run now (automation, issue or PRD) is asked once while it waits.
+- **Rate.** Besides the token's 120 requests a minute, the two that act (steering, a request) count against
+  `ENGINEERING_ACTS_PER_HOUR` (20 an hour per token, on the token row); past it, or when the count cannot be written,
+  the call is refused (a tool error, audited `denied`). Every call writes its audit row like any tool.
+- **Never offered.** Signals, go, restart, Stop, answers, approvals, the registry, the connections, the dial and a
+  request's confirm or decline: those routes refuse every delegated credential.
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Revise from comments, prototype-draft,
 Radar and feedback-edit tools in `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
@@ -609,7 +652,13 @@ answering, audited under the new names); `test_mcp_global_tools_mutation.py` pin
 that neither the draft nor the applied version carries a signed URL out.
 `lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,
 refusals, the pin, the board claims), and `test_projects_prioritization_delegated.py` that a token's ballot is its
-minter's own.
+minter's own. The engineering tools (7.53.00): `lambda/api/test/test_mcp_global_engineering_tools.py` pins the tool
+list, the refusals (a read, a non-admin's, a pinned or a demoted admin's token), the one-operation claim, that no
+tool builds another engineering route, the act budget, the audit row and the cut answers;
+`test_agents_engineering_mcp_runs.py` drives the Agents API's routes with those claims (each admits its own
+operation, and the signals, go, restart, Stop, answers and a request's confirm or decline refuse every one), and
+`test_agents_engineering_run_requests.py` the request queue (asked over MCP, confirmed or declined by an
+administrator, once).
 
 These tests run every layer between the JSON-RPC frame and the DynamoDB row except API Gateway's own token
 authorizer, Cognito (an in-memory fake at the boto3 surface) and Step Functions. To check a real client, deploy,

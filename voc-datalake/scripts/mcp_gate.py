@@ -219,6 +219,8 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_work_tools': 36,
     # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).
     'test_mcp_feature_request_person': 3,
+    # 7.53.00 (MCP for runs): the five engineering tools, their gates, claims, act budget, answers and skill.
+    'test_mcp_global_engineering_tools': 53,
     'test_mcp_global_prompts': 35,
     'test_mcp_global_alarms': 14,
     'test_mcp_tokens_handler_mutation': 93,

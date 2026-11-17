@@ -135,6 +135,20 @@ PYTHON: Final = '/usr/bin/python3'
 RUNNER_PATH: Final = '/opt/voc/unit_runner.py'
 #: The namespaces' Unix sockets (``Namespaces``): a root-owned directory of their own, made at the session's start.
 SOCKET_DIR: Final = '/run/voc-net'
+#: The kiro-cli version the image installed (7.53.00, engineering-images/common/install-kiro.sh writes it, root-owned,
+#: after the archive's sha256 matched): what ``walls`` reports as ``kiro_cli`` ('' for an image without it).
+KIRO_VERSION_FILE: Final = '/opt/voc/kiro/VERSION'
+KIRO_VERSION_RE: Final = re.compile(r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}\Z')
+
+
+def kiro_cli_version(path: str = KIRO_VERSION_FILE) -> str:
+    """The image's kiro-cli version as its install recorded it: a plain version, else ''."""
+    try:
+        with open(path, encoding='ascii') as stream:
+            text = stream.read(32).strip()
+    except (OSError, ValueError):
+        return ''
+    return text if KIRO_VERSION_RE.fullmatch(text) else ''
 #: The walls a session's egress may stand behind (``Runner.walls``: ``none`` when neither holds).
 EGRESS_WALLS: Final = ('iptables', 'namespaces')
 #: The hard-link guards (entrypoint.sh): the secrets on a file system of their own, the kernel's protected hard links.
@@ -462,13 +476,14 @@ class Runner:
 
     def walls(self) -> dict[str, Any]:
         """Which walls hold: the agent's egress and repository code's (``iptables``, ``namespaces`` or ``none``) and
-        the hard-link guards (none: an empty list). What ``start`` and ``status`` answer, and the runtime records."""
+        the hard-link guards (none: an empty list), and the image's kiro-cli (7.53.00: its version, '' for none). What
+        ``start`` and ``status`` answer, and the runtime records."""
         def wall(firewall: bool, namespaces: bool) -> str:
             return 'iptables' if firewall else 'namespaces' if namespaces and self.namespaces is not None else 'none'
 
         return {'egress': wall(self.egress_firewall, self.egress_namespaces),
                 'code': wall(self.code_firewall, self.code_namespaces),
-                'hardlink_guard': list(self.hardlink_guards)}
+                'hardlink_guard': list(self.hardlink_guards), 'kiro_cli': kiro_cli_version()}
 
     def _namespaces_for(self, *, repository_code: bool) -> Namespaces | None:
         """The namespace wall a command runs behind; None for the firewall's (or no sandbox)."""

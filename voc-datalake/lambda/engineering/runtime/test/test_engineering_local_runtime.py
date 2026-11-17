@@ -229,13 +229,15 @@ def test_the_image_starts_no_agent_without_the_egress_firewall_and_both_proxies(
         runner = Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
                         egress_firewall=True, code_firewall=True, proxy=agent, code_proxy=code)
         assert runner.begin(start) == {'started': True,
-                                       'sandbox': {'egress': 'iptables', 'code': 'iptables', 'hardlink_guard': []}}
+                                       'sandbox': {'egress': 'iptables', 'code': 'iptables', 'hardlink_guard': [],
+                                                   'kiro_cli': ''}}
     finally:
         _close(agent, code)
 
 
 #: The walls of a runner with no sandbox (the local fake's): none holds, and it says so.
-NO_WALLS = {'egress': 'none', 'code': 'none', 'hardlink_guard': []}
+#: (``kiro_cli``, 7.53.00: the image's kiro-cli version; '' off an image)
+NO_WALLS = {'egress': 'none', 'code': 'none', 'hardlink_guard': [], 'kiro_cli': ''}
 
 
 def _socket_dir() -> str:
@@ -282,7 +284,8 @@ def test_start_is_refused_with_no_egress_wall_and_accepted_behind_either_kind(tm
                 runner.begin(start)
             return
         assert runner.begin(start) == {'started': True, 'sandbox': {
-            'egress': answered[0], 'code': answered[1], 'hardlink_guard': ['own_device', 'protected_hardlinks']}}
+            'egress': answered[0], 'code': answered[1], 'hardlink_guard': ['own_device', 'protected_hardlinks'],
+            'kiro_cli': ''}}
         assert runner.status()['sandbox']['egress'] == answered[0]
     finally:
         close_sockets(runner)

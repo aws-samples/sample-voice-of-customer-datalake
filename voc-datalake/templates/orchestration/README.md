@@ -19,6 +19,8 @@ gates/<language>/manifest.toml     voc-gate-pack/1, one per language; gates/brie
 evals/<flow>/cases/<case>/         the eval cases (voc-bench/1 for the benchmark, voc-triage-case/1 for Issue triage)
 bundle.json                        GENERATED: the compile of all of the above (do not edit; validate holds it)
 kiro-agents/<role>.json            GENERATED: each launchable role's Kiro CLI agent config (below; validate holds them)
+mcp-skills/voc-runs/SKILL.md       7.53.00: the skill a local Kiro or Claude agent uses to follow, analyse, steer and ask
+                                   for runs over the VoC MCP server (not compiled: docs/mcp.md, Engineering runs)
 ```
 
 ## Editing
@@ -79,43 +81,44 @@ npm run orchestration:calibrate -- --run <run id> --manifest <its voc-run-manife
 `scripts/validate.sh` runs the validator, and a pytest test runs it too
 (`lambda/engineering/orchestration/test/test_orchestration_validate.py`).
 
-## Kiro agent configs (7.53.00 prep)
+## Kiro agent configs (7.53.00)
 
 `kiro-agents/<role>.json` is one Kiro CLI agent config for each launchable role (twelve; the coach is never
-launched), in Kiro's v3 universal format: kiro-cli 3.3.0 has two agent engines, one reads `tools` and
-`allowedTools`, the other `permissions.rules`, and both halves are here. They are templates: nothing loads them
-yet. The Kiro harness, kiro-cli over ACP, comes in 7.53. The compiler writes them from each card and skill
-(`compile.py` `kiro_agent`). Do not edit them.
+launched), in Kiro's v3 universal format (`tools` and `allowedTools` for one engine, `permissions.rules` for the
+other). The Kiro harness (7.53.00, `lambda/engineering/runtime/harness/kiro.py`) writes each session's agent from its
+role's: every image ships the folder at `/opt/voc/orchestration/kiro-agents/`. The compiler writes them from each card
+and skill (`compile.py` `kiro_agent`). Do not edit them.
 
 - `name` is the role and `description` its card's `purpose`. `prompt` is `_shared/PLATFORM_RULES.md` and then the
   role's compiled skill (its instructions, then its examples), as the harness builds its system prompt. The session's
-  fence line is left out: each session draws its own.
-- `tools` are the card's tools, as Kiro's builtins: `read_file` is `read`, `list_files` is `grep` and `glob`,
-  `write_file` is `write`, and `run` and `install_dependencies` are `shell`. Every other tool on the card is the
-  platform's, `@voc`: the harness's tool server, started as the CLI adapter starts it (`mcpServers`, from
-  `TOOL_SERVER` in `lambda/engineering/runtime/harness/cli.py`). There is no `subagent`, no web tool and no
-  `@builtin`.
-- Some tools run without asking: the read builtins (`allowedTools`, and an `fs_read` allow rule), each platform tool
-  on the card (`@voc/<tool>`, and an `mcp` allow rule on `voc/<tool>`), and skills. The rules are exactly what
-  `kiro-cli agent upgrade` derives from `allowedTools`, so kiro-cli takes each file as already universal and leaves
-  it unchanged. No file has a `kiroUpgrade` marker.
-- **A write or a command always asks.** No config allows `fs_write` or `shell`, and none puts `write` or `shell` in
-  `allowedTools`. Each such call reaches the orchestrator as `session/request_permission`, and the orchestrator
-  answers it. A write or a command is where text from the repository or an issue could become an action, so the
-  model never approves its own.
+  fence line is left out: each session draws its own, and the session's copy has the prompt of the skill the board
+  served it.
+- `tools` is `["@voc"]` and nothing else: the platform's tool server, started as the CLI adapter starts it
+  (`mcpServers`, from `TOOL_SERVER` in `lambda/engineering/runtime/harness/cli.py`). No Kiro builtin is offered (no
+  `read`, `write`, `shell`, `grep`, `glob`, web tool, `subagent` or `@builtin`): a read is the checkout's
+  `read_file`, a write the walled `write_file`, a command the sandbox runner's `run`, as on every harness. This
+  closes the three gaps the 7.53 prep left open: kiro-cli's V3 engine reads and writes outside its workspace without
+  asking even when a deny rule matches (`scripts/ai-review/lib.mjs`), a builtin command would run as the agent rather
+  than the sandbox's `code`, and the skills name the harness's tools.
+- `allowedTools` is each card tool as `@voc/<tool>`, and `permissions.rules` one `mcp` allow rule matching
+  `voc/<tool>` for each (sorted, as `kiro-cli agent upgrade` derives it): those run without asking. Nothing else is
+  allowed: no `fs_read`, `fs_write`, `shell` or `skill` rule. Any other call reaches the harness as
+  `session/request_permission`, and the harness refuses it. kiro-cli 3.4.0's `agent upgrade` would add an `fs_read`
+  allow on `./**` (its default); the files are kept without it, and `kiro-cli acp` loads them as they are. No file has
+  a `kiroUpgrade` marker.
 
-How 7.53 will load one: kiro-cli gets a fresh home of its own (`HOME`), as the CLI adapter's `claude` does, and the
-role's config goes in that home's `.kiro/agents/`. No developer's or repository's Kiro agents or settings are loaded.
-Checked with kiro-cli 3.3.0: in such a home, `kiro-cli agent list` lists the twelve and Kiro's built-in agents, and
-nothing else. The session's fence line and the tool server's environment belong to the session, so the copy in the
-session's home adds them.
+How a session loads one: kiro-cli gets a fresh home of its own (`HOME`, under the agent's home), and the session's
+copy goes in that home's `.kiro/agents/`. No developer's, image's or repository's Kiro agents or settings are loaded,
+and kiro-cli starts in an empty directory of that home, never the checkout. The session's copy adds the fence, the
+tool server's environment (its key blanked) and a tool call timeout of an hour and ten minutes, and allows exactly the
+tools the session's `ToolBox` offers.
 
-`npm run orchestration:validate` holds every file to its card: it parses; its tools are among its card's; it has no
-`subagent`; it allows no write and no command; its prompt starts with the platform rules; its tool server is
-`TOOL_SERVER`. `kiro-agents/` must hold exactly the compile's output. When kiro-cli is on `PATH` and your Kiro API
-key is in `~/.config/voc-kiro/api-key`, the validator also runs `kiro-cli agent validate --path <file>` on each file.
-It runs kiro-cli in a temporary home with `KIRO_API_KEY` and never prints the key. Without kiro-cli or the key it
-says it skipped that check. kiro-cli is never required.
+`npm run orchestration:validate` holds every file to its card: it parses; it offers `@voc` alone; what it allows
+without asking is among its card's tools (`@voc/<tool>`, and only `mcp` rules matching `voc/<tool>`); its prompt
+starts with the platform rules; its tool server is `TOOL_SERVER`. `kiro-agents/` must hold exactly the compile's
+output. When kiro-cli is on `PATH` and your Kiro API key is in `~/.config/voc-kiro/api-key`, the validator also runs
+`kiro-cli agent validate --path <file>` on each file. It runs kiro-cli in a temporary home with `KIRO_API_KEY` and
+never prints the key. Without kiro-cli or the key it says it skipped that check. kiro-cli is never required.
 
 ## Releasing
 

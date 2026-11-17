@@ -1574,7 +1574,8 @@
       "memory_setting": "Réglage de mémoire de build",
       "network": "Réseau",
       "session_storage": "Stockage des sessions",
-      "sandbox": "Bac à sable de la session"
+      "sandbox": "Bac à sable de la session",
+      "kiro": "Harnais Kiro"
     },
     "required": "Nécessaire à l'exécution"
   },
@@ -1989,6 +1990,22 @@
       "more": "Afficher plus",
       "moreFailed": "La page suivante n’a pas pu être lue.",
       "empty": "Aucune exécution lancée durant ce mois."
+    },
+    "requests": {
+      "title": "Demandes d’exécution",
+      "hint": "Un assistant local a demandé ces exécutions par MCP. Rien ne démarre avant votre confirmation : l’exécution démarre alors en votre nom, comme « Exécuter maintenant ».",
+      "onIssue": "issue n° {{number}}",
+      "onPrd": "PRD {{document}} du projet {{project}}",
+      "onHunt": "une chasse aux bugs dans le dépôt",
+      "note": "Note : {{note}}",
+      "asked": "Demandée par MCP par {{via}}, {{when}}",
+      "expires": "expire {{when}}",
+      "confirm": "Confirmer et exécuter",
+      "decline": "Refuser",
+      "confirmed": "Confirmée : l’exécution démarre.",
+      "openRun": "Ouvrir l’exécution",
+      "declined": "Refusée : rien n’a démarré.",
+      "loadFailed": "Les demandes d’exécution n’ont pas pu être lues."
     },
     "controls": {
       "stopping": "Arrêt en cours…",

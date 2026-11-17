@@ -2,7 +2,8 @@
 them (7.50.03; docs/autonomous-engineering.md → Runtime).
 
 A session's runner says which walls hold in its ``start`` answer and on every ``status`` (``unit_runner.Runner.walls``:
-the agent's egress wall and repository code's, ``iptables``, ``namespaces`` or ``none``, and the hard-link guards).
+the agent's egress wall and repository code's, ``iptables``, ``namespaces`` or ``none``, the hard-link guards, and
+since 7.53.00 the image's kiro-cli version, which readiness's ``kiro`` check reads).
 The runtime keeps the last start's word per language in voc-engineering, ``WS#<ws>#SANDBOX`` / ``LANG#<language>``
 (``record``: overwritten by each later start, so it is what the runtime last saw, with when), and readiness reads it
 (``read_record``; engineering/readiness.py ``sandbox``): with none recorded yet, the walls are unknown until the first
@@ -16,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from engineering.connectors.identity import WORKSPACE
-from engineering.runtime.unit_runner import DECLARED_GUARD, EGRESS_WALLS, HARDLINK_GUARDS
+from engineering.runtime.unit_runner import DECLARED_GUARD, EGRESS_WALLS, HARDLINK_GUARDS, KIRO_VERSION_RE
 
 #: The partition of the deployment's sandbox records (one row per language).
 RECORD_PK: Final = f'WS#{WORKSPACE}#SANDBOX'
@@ -31,6 +32,8 @@ class Walls:
     egress: str
     code: str
     hardlink_guard: tuple[str, ...]
+    #: The image's kiro-cli version (7.53.00, ``unit_runner.kiro_cli_version``), '' for an image without one.
+    kiro_cli: str = ''
 
     @classmethod
     def parse(cls, raw: object) -> Walls | None:
@@ -43,7 +46,9 @@ class Walls:
             return None
         if not all(guard in (*HARDLINK_GUARDS, DECLARED_GUARD) for guard in guards):
             return None
-        return cls(str(egress), str(code), tuple(str(guard) for guard in guards))
+        kiro = raw.get('kiro_cli', '')
+        return cls(str(egress), str(code), tuple(str(guard) for guard in guards),
+                   kiro if isinstance(kiro, str) and KIRO_VERSION_RE.fullmatch(kiro) else '')
 
     @property
     def holds(self) -> bool:
@@ -52,7 +57,7 @@ class Walls:
 
     def item(self) -> dict[str, Any]:
         return {'egress': {'S': self.egress}, 'code': {'S': self.code},
-                'hardlink_guard': {'L': [{'S': guard} for guard in self.hardlink_guard]}}
+                'hardlink_guard': {'L': [{'S': guard} for guard in self.hardlink_guard]}, 'kiro_cli': {'S': self.kiro_cli}}
 
 
 @dataclass(frozen=True)
@@ -83,7 +88,7 @@ def read_record(client: Any, table: str, language: str) -> Recorded | None:
         return None
     guards = [entry.get('S') for entry in item.get('hardlink_guard', {}).get('L', []) if isinstance(entry, Mapping)]
     walls = Walls.parse({'egress': item.get('egress', {}).get('S'), 'code': item.get('code', {}).get('S'),
-                         'hardlink_guard': guards})
+                         'hardlink_guard': guards, 'kiro_cli': item.get('kiro_cli', {}).get('S', '')})
     at = item.get('at', {}).get('S')
     if walls is None or not isinstance(at, str):
         return None

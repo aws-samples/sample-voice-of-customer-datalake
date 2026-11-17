@@ -59,6 +59,8 @@ RESTART_ACTOR: Final = 'restart'
 MAX_SEEDED: Final = 50
 MAX_STEERING: Final = seed.MAX_STEERING
 MAX_PATCH_COPY: Final = 50 * 1024 * 1024
+#: The largest Kiro session state a seed copies (harness/kiro.py MAX_STATE_BYTES, which its harness takes at most).
+MAX_KIRO_COPY: Final = 32 * 1024 * 1024
 #: A summary's input: the attempt's last events rendered, at most.
 MAX_SUMMARY_LINES: Final = 400
 MAX_SUMMARY_INPUT: Final = 40_000
@@ -71,6 +73,22 @@ SUMMARY_SYSTEM: Final = (
 
 #: A run's 30 days (supervisor.THIRTY_DAYS: past them, only a stop is left).
 THIRTY_DAYS: Final = 30 * 24 * 60 * 60
+
+
+def _kiro_state(raw: object, where: Attempt) -> dict[str, str] | None:
+    """A parent checkpoint's Kiro session (7.53.00, harness/kiro.py ``save_state``): its id and its state's key, the key
+    under the attempt's own ``_kiro/`` (anything else is never copied); None for none."""
+    if not isinstance(raw, Mapping):
+        return None
+    session_id, state = raw.get('session_id'), raw.get('state')
+    try:
+        own = artifact_prefix(where.run_id, where.agent_id, where.commit, where.attempt, 'kiro')
+    except RuntimeRefused:
+        return None
+    if (isinstance(session_id, str) and isinstance(state, str) and state.startswith(own)
+            and '/' not in state.removeprefix(own) and state.endswith('.tgz')):
+        return {'session_id': session_id, 'state': state}
+    return None
 
 
 def may_restart(status: str, waiting_at: str, started_at: int, now: int) -> None:
@@ -205,17 +223,19 @@ class Seeder:
             if error.response.get('Error', {}).get('Code') != 'PreconditionFailed':
                 raise
 
-    def checkpoint(self, where: Attempt) -> tuple[dict[str, Any] | None, str]:
-        """The attempt's newest valid checkpoint (position, plan, notes) and its working tree's key ('' for none)."""
+    def checkpoint(self, where: Attempt) -> tuple[dict[str, Any] | None, str, dict[str, str] | None]:
+        """The attempt's newest valid checkpoint (position, plan, notes), its working tree's key ('' for none), and
+        its Kiro session (7.53.00: ``{session_id, state}`` under the attempt's own ``_kiro/``, None for none)."""
         key = self.checkpoints.latest(where.run_id, where.agent_id, where.commit, where.attempt)
         body = self._get(key, seed.MAX_SEED_BYTES) if key else None
         if body is None or not is_valid(body):
-            return None, ''
+            return None, '', None
         state = json.loads(body)
         tree = state.get('patch') if isinstance(state.get('patch'), str) else ''
-        return {'position': {name: value for name, value in (state.get('position') or {}).items()
-                             if name in ('task_id', 'turn', 'step')},
-                'plan': state.get('plan') or [], 'notes': str(state.get('notes') or '')}, tree
+        position = state.get('position') if isinstance(state.get('position'), dict) else {}
+        return ({'position': {name: value for name, value in position.items() if name in ('task_id', 'turn', 'step')},
+                 'plan': state.get('plan') or [], 'notes': str(state.get('notes') or '')}, tree,
+                _kiro_state(position.get('kiro'), where))
 
     def history(self, where: Attempt, child_id: str) -> dict[str, Any]:
         """The attempt's history: its transcript's events as excerpts, or past the bounds Learn's summary of them."""
@@ -257,7 +277,7 @@ class Seeder:
                    keep_work: bool, steering: Sequence[Mapping[str, str]]) -> str:
         """The seed of ``task`` (the parent's) under the child's ``_seed/<task>/``; its key."""
         where = Attempt(parent_id, task.launched_agent or task.lease_agent, parent_commit, max(task.attempt, 1))
-        checkpoint, tree = self.checkpoint(where) if keep_work and where.agent_id else (None, '')
+        checkpoint, tree, kiro = self.checkpoint(where) if keep_work and where.agent_id else (None, '', None)
         submitted = next((key for key in task.result_keys if is_submitted_patch(key, parent_id, parent_commit)), '')
         source = (submitted if task.state == DONE and submitted else tree) if keep_work else ''
         patch_key = ''
@@ -266,6 +286,14 @@ class Seeder:
             if body:
                 patch_key = seed.patch_key(child_id, task.task_id)
                 self._put(patch_key, body)
+        kiro_seed = None
+        if kiro is not None:
+            # (the parent's Kiro session, 7.53.00: copied beside its seed, which the child's agent loads; one that
+            # cannot be read leaves the 7.51 seed, its history, alone)
+            body = self._get(kiro['state'], MAX_KIRO_COPY)
+            if body:
+                kiro_seed = {'session_id': kiro['session_id'], 'state': seed.kiro_key(child_id, task.task_id)}
+                self._put(kiro_seed['state'], body)
         spec = json.loads(task.spec)
         instructions = spec.get('instructions') if isinstance(spec.get('instructions'), str) else json.dumps(spec)
         record = {'schema': seed.SCHEMA,
@@ -275,7 +303,7 @@ class Seeder:
                            'flow_step': task.flow_step, 'shard': task.shard},
                   'checkpoint': checkpoint, 'patch_key': patch_key, 'base': base,
                   'history': self.history(where, child_id) if where.agent_id else {'kind': 'excerpts', 'lines': []},
-                  'steering': list(steering), 'memory_ids': []}
+                  'steering': list(steering), 'memory_ids': [], **({'kiro': kiro_seed} if kiro_seed else {})}
         key = seed.check_seed_key(seed.seed_key(child_id, task.task_id), child_id)   # (the key its harness takes)
         self._put(key, _encoded(record, child_id))
         return key

@@ -43,9 +43,11 @@ describe('people\'s reactions on the host', () => {
       ({ template, admitted } = runtimeStack({ engineeringAgents: 'true' }));
     }, SYNTH_TIMEOUT_MS);
 
-    it('creates one schedule group and no schedule (each run\'s is created at its end)', () => {
+    it('creates one schedule group and no schedule in it (each run\'s is created at its end)', () => {
       expect(count(template, 'AWS::Scheduler::ScheduleGroup', { Name: 'voc-engineering-reactions' })).toBe(1);
-      expect(count(template, 'AWS::Scheduler::Schedule')).toBe(0);
+      // (the one schedule the stack holds is the weekly cross-run Learn pass's, in the default group:
+      // engineering-cross-run.test.ts)
+      expect(count(template, 'AWS::Scheduler::Schedule', { GroupName: 'voc-engineering-reactions' })).toBe(0);
     });
 
     it('gives the scheduler a role of its own that only this account\'s group assumes and that only invokes the runtime', () => {
