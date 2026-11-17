@@ -18,6 +18,7 @@
     "started_at": "2026-11-17T09:00:00.000000Z",
     "ended_at": null,
     "waiting_at": "",
+    "waiting_detail": null,
     "stop": null,
     "budget": {
      "monthly_usd": 50.0,
@@ -202,7 +203,9 @@
      "model": "model-large",
      "card": null,
      "card_version": null,
-     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
+     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
+     "last_exit": null,
+     "last_failure": null
     },
     {
      "agent": "final-go-5",
@@ -233,7 +236,9 @@
      "model": "model-large",
      "card": null,
      "card_version": null,
-     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
+     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
+     "last_exit": null,
+     "last_failure": null
     },
     {
      "agent": "fixer-3",
@@ -264,7 +269,9 @@
      "model": "model-medium",
      "card": "fixer-careful",
      "card_version": 2,
-     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
+     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
+     "last_exit": null,
+     "last_failure": null
     },
     {
      "agent": "gate-runner-4",
@@ -295,7 +302,9 @@
      "model": "model-small",
      "card": null,
      "card_version": null,
-     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ"
+     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
+     "last_exit": null,
+     "last_failure": null
     }
    ],
    "lanes": {
@@ -377,6 +386,7 @@
     "started_at": "2026-11-16T23:00:00.000000Z",
     "ended_at": "2026-11-17T07:00:00.000000Z",
     "waiting_at": "",
+    "waiting_detail": null,
     "stop": null,
     "budget": {
      "monthly_usd": 50.0,
@@ -440,6 +450,7 @@
     "started_at": "2026-11-17T08:00:00.000000Z",
     "ended_at": null,
     "waiting_at": "",
+    "waiting_detail": null,
     "stop": null,
     "budget": {
      "monthly_usd": 50.0,
@@ -481,6 +492,299 @@
    "reactions": null
   }
  },
+ "failed_run_id": "01JDAF5Q0C8R2N7W4X6Y1Z3K9M",
+ "failed_overview": {
+  "method": "GET",
+  "path": "/agents/engineering/01JDAF5Q0C8R2N7W4X6Y1Z3K9M",
+  "status": 200,
+  "answer": {
+   "run": {
+    "run_id": "01JDAF5Q0C8R2N7W4X6Y1Z3K9M",
+    "goal": "Triage issue #12: the cart total ignores the discount",
+    "repo": "example-org/storefront",
+    "flow": "wf_3e8a1c5d7f90",
+    "status": "needs_human",
+    "started_at": "2026-11-16T21:20:00.000000Z",
+    "ended_at": null,
+    "waiting_at": "checkout_failed",
+    "waiting_detail": "The repository checkout failed (git clone, exit 128): fatal: detected dubious ownership in repository at '/mnt/voc-cache/storefront/0123456789ab'",
+    "stop": null,
+    "budget": {
+     "monthly_usd": 50.0,
+     "alert_percent": null,
+     "alert_month": null
+    },
+    "flow_revision": 1,
+    "flow_copied_at": "2026-11-16T21:20:00.000000Z",
+    "flow_definition": {
+     "edges": [
+      {
+       "id": "e1",
+       "source": "start",
+       "target": "classify"
+      },
+      {
+       "id": "e2",
+       "source": "classify",
+       "target": "locate"
+      },
+      {
+       "id": "e3",
+       "source": "locate",
+       "target": "end"
+      }
+     ],
+     "loops": [],
+     "name": "Issue triage",
+     "nodes": [
+      {
+       "data": {
+        "params": {},
+        "title": "Start"
+       },
+       "id": "start",
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "type": "start"
+      },
+      {
+       "data": {
+        "params": {
+         "role": "understander"
+        },
+        "title": "Understand and classify"
+       },
+       "id": "classify",
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "type": "agent"
+      },
+      {
+       "data": {
+        "params": {
+         "role": "hunter"
+        },
+        "title": "Reproduce or locate"
+       },
+       "id": "locate",
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "type": "agent"
+      },
+      {
+       "data": {
+        "params": {
+         "status": "completed"
+        },
+        "title": "The triage on the issue"
+       },
+       "id": "end",
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "type": "end"
+      }
+     ],
+     "schema": "voc-workflow/2"
+    },
+    "flow_steps": {
+     "start": "done",
+     "classify": "ready",
+     "locate": "waiting",
+     "end": "waiting"
+    },
+    "flow_outcome": {
+     "outcome": "running",
+     "at": null,
+     "reason": null
+    },
+    "expansion": [],
+    "issue": null,
+    "pull_request": null,
+    "cost_usd": 0.03,
+    "learn_cost_usd": 0.0,
+    "cost_cap_usd": 50.0,
+    "parent": null,
+    "manifest": null
+   },
+   "agents": [
+    {
+     "agent": "coordinator-1",
+     "role": "coordinator",
+     "task_id": "coordinate",
+     "status": "failed",
+     "continuation": 2,
+     "started_at": 1794864300,
+     "step": null,
+     "microvm_state": null,
+     "microvm_age": null,
+     "heartbeat_age": 20,
+     "last_progress_at": null,
+     "stuck_why": null,
+     "recent_tools": [],
+     "microvm_seconds": 40,
+     "tokens": [],
+     "cost_usd": 0.03,
+     "attempt": 1,
+     "commit": "0123456789abcdef0123456789abcdef01234567",
+     "skill_label": null,
+     "model": "model-large",
+     "card": null,
+     "card_version": null,
+     "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
+     "last_exit": {
+      "exit_code": 128,
+      "timed_out": false,
+      "duration_seconds": 2,
+      "stderr_tail": "fatal: detected dubious ownership in repository at '/mnt/voc-cache/storefront/0123456789ab'"
+     },
+     "last_failure": "The repository checkout failed (git clone, exit 128): fatal: detected dubious ownership in repository at '/mnt/voc-cache/storefront/0123456789ab'"
+    }
+   ],
+   "lanes": {},
+   "gates": {},
+   "children": [],
+   "steer_available": true,
+   "signals_available": true,
+   "stop_available": true,
+   "board_available": false,
+   "totals": {
+    "messages": 9,
+    "microvm_seconds": 40,
+    "by_model": []
+   },
+   "reactions": null
+  }
+ },
+ "failed_thread": {
+  "method": "GET",
+  "path": "/agents/engineering/01JDAF5Q0C8R2N7W4X6Y1Z3K9M/agents/coordinator-1/thread",
+  "query": {
+   "limit": "200"
+  },
+  "status": 200,
+  "answer": {
+   "items": [
+    {
+     "ref": "c1",
+     "at": "2026-11-16T21:20:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "1 booting (tokens 0, cost_usd 0.00)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c2",
+     "at": "2026-11-16T21:21:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "1 booting (tokens 0, cost_usd 0.00)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c3",
+     "at": "2026-11-16T21:22:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "1 booting (tokens 0, cost_usd 0.00)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c4",
+     "at": "2026-11-16T21:23:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "coordinator-1 continued in a new session (1). (continuation 1, after crash, checkpoint none)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c5",
+     "at": "2026-11-16T21:24:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "1 booting (tokens 0, cost_usd 0.01)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c6",
+     "at": "2026-11-16T21:25:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "coordinator-1 continued in a new session (2). (continuation 2, after crash, checkpoint none)",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c7",
+     "at": "2026-11-16T21:26:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "coordinator-1 crashed 3 times.",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c8",
+     "at": "2026-11-16T21:26:06.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "coordinator-1 could not start. The repository checkout failed (git clone, exit 128): fatal: detected dubious ownership in repository at '/mnt/voc-cache/storefront/0123456789ab'",
+     "cut": false,
+     "update": "user_message_chunk"
+    },
+    {
+     "ref": "c9",
+     "at": "2026-11-16T21:27:00.000000Z",
+     "kind": "message",
+     "from": {
+      "kind": "supervisor",
+      "id": "supervisor"
+     },
+     "text": "1 failed (tokens 0, cost_usd 0.03)",
+     "cut": false,
+     "update": "user_message_chunk"
+    }
+   ],
+   "done": true,
+   "next": "eyJrIjowLCJvIjowLCJzIjo5LCJ2IjoxfQ"
+  }
+ },
  "runs": {
   "method": "GET",
   "path": "/agents/engineering/runs",
@@ -520,6 +824,16 @@
      "status": "stopped",
      "started_at": "2026-11-16T23:00:00.000000Z",
      "ended_at": "2026-11-17T07:00:00.000000Z",
+     "cost_usd": null,
+     "parent": null
+    },
+    {
+     "run_id": "01JDAF5Q0C8R2N7W4X6Y1Z3K9M",
+     "flow": "wf_3e8a1c5d7f90",
+     "goal": "Triage issue #12: the cart total ignores the discount",
+     "status": "needs_human",
+     "started_at": "2026-11-16T21:20:00.000000Z",
+     "ended_at": null,
      "cost_usd": null,
      "parent": null
     }
