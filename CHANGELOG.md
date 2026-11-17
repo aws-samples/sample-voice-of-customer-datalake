@@ -204,7 +204,9 @@ tenets store with its flow, and triage held to the accepted tenets. The run work
 each agent's card, and a gate read with each check's pack and language, the round, the tools' versions and the
 final go's decision. A person can write a skill version as a proposal. The web app gets **one document component**
 (X1): Projects documents, History and the review page read, edit and compare through `DocumentSurface`, with Compare
-and merge on a stale save.
+and merge on a stale save. The web app gets **Agent orchestration** (Automations with one state each, the Set up
+drawer, an automation's page, Spend and Connections rebuilt), **the flow canvas** (each kind its shape, one canvas and
+inspector for build, view and run, the shared-flow guard) and **the Registry, Skills, Knowledge and Tenets** screens.
 
 ### Added
 
@@ -314,6 +316,56 @@ and merge on a stale save.
   - ESLint under `components/Document/**`: no `rehype-raw`, no `dangerouslySetInnerHTML`, no import from a page or from
     `DocumentCanvas` (the raw-HTML ban kept beside 7.51.01's native-title rule); CSS recipes `.md-content` callouts and
     to-dos, `.md-content-compact`, `.code-view`.
+- **Agent orchestration, the web app** (7.52 C1; UX parts 1, 4):
+  - The section is renamed Agent orchestration everywhere in the app and its 9 locales. Its tabs are, in order,
+    Automations · Runs · Skills · Spend · Flows · Registry · Connections, each a path (the paths of before are kept,
+    none aliased); Runs and Skills show what waits for a person ("Runs (2 need you)", "Skills (1 to review)").
+  - **Automations:** two groups (Engineering, Product) under a Needs you strip. Each row has one state chip (Needs
+    setup, Can't run, Paused, Ready, Enabled), "N to fix", the last run, usage against the flow's budget or the model
+    calls, one action and a ⋯ menu (`components/RowActionsMenu`: Open, Edit settings, Change setup…, Rename…, Pause or
+    Resume, Turn off, Run now, All runs, Delete…). Paused is the server's exact state (`POST /agents/<id>/pause|resume`,
+    audited). A first-run prompt or one "needs a GitHub connection" banner heads the Engineering group.
+  - **The Set up drawer** on the one side sheet: the repository `owner/name` first, language, a `$` budget, and "Before
+    it can run" with the fixes in place; Save works while a check holds Enable ("Enable waits for N fixes"), Save and
+    enable once nothing does.
+  - **An automation's page:** its chip, one primary and a ⋯ menu; tabs by kind (engineering Runs · Triggers ·
+    Settings · Flow · Budget; product adds Personas, Budget & models), Runs first once it has run, Instructions inside
+    Settings; the Flow tab read only on the flow canvas, a step opening its setup beside it, with Edit in Flows and Run
+    another flow ▾.
+  - **Spend:** run rows named by goal, flow and day (the id in a tooltip), agent rows by role, with a one-line hint.
+  - **Connections:** grouped by GitHub App with its repositories as rows (CI, the issues switch, label, one action,
+    a details popover with the ids, row and App menus), a status line, Check now, More ways to connect folded; "Create
+    the App on GitHub" is the only primary while nothing is connected. Empty states on Runs and an automation's Runs.
+- **The flow canvas** (7.52 C2; UX part 5): `components/WorkflowEditor/FlowCanvas.tsx` and `FlowInspector.tsx`, one
+  canvas and inspector for build, view and run.
+  - Each kind in its own shape: an agent card with its role's avatar, a gate hexagon, a stacked "calls a flow" card, a
+    "person decides" pill with a diamond, Start and End pills, square platform steps; every outline at 3:1 contrast or
+    more in every theme. Tone says who acts; a run's state is the outline and a corner badge, with "You are here" or
+    "Stopped here" as a tag above the step.
+  - Clicking a step, or Enter on it, opens its setup: "In this flow" holds what you edit, "From the card" is read
+    only (and opens the card in the Registry). Gate inspectors show packs, steps, tools and the owner's brief (the
+    Registry's own brief panel); call inspectors the flow, its revision, inputs and expansion. A gate's GO and NO-GO
+    are two handles: where you drag from sets the arrow's verdict.
+  - The palette is grouped by kind and offers the Registry's cards, gate packs and other flows; a drag shows the node
+    it will make, and Enter adds the step after the selected one, connected.
+  - In a run, a step opens its Step view (Agents, Setup, Checks) and a lane its session; a called flow's steps are
+    framed under their call, with how many are done.
+  - **Shared flows:** the library shows "Used by" and "Called by", the editor names the automations that run the flow,
+    and a save asks first, then sends `confirm_shared`; the assistant's approval cards and plan steps
+    (`update_workflow` in the stream Lambda takes `confirm_shared`) handle the server's 409 `shared_flow`.
+- **The Registry, Skills, Knowledge and Tenets** (7.52 C3; UX part 6) on the document component:
+  - **Registry** (`/agents/registry`): agent cards for the roles and for cards made from a skill (skill version,
+    provenance, model, tools, caps, inputs and outputs, scorecard, spend, template source); **Quality gates**
+    (`/agents/registry/gates`): packs, steps and recorded tool versions, the owner's brief read only when opened (a
+    brief on its own page at `/agents/registry/gates/briefs/<id>`); **Create from a skill** makes a card from an
+    accepted skill version.
+  - **Skills:** the roles table shows what waits for review and the template; a version opens as a sheet with Open
+    full page (`/agents/skills/<role>/versions/<n>`); a proposal opens on its diff, Accept the primary; **Propose a
+    version**: you write it, review the diff, and it is only ever proposed; Template updated is a compare.
+  - **Knowledge and Tenets reviews** in the setup guide: publish opens a pull request ready for review, and only a
+    person merges it.
+  - **Run reports:** a version menu; the version on screen never changes by itself. **Instructions** are prompt fields
+    with a character count (the flow editor's step instructions too).
 
 ### Changed
 
