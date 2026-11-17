@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import LogsSection from './LogsSection'
 
 const auth = vi.hoisted(() => ({ isAdmin: true }))
@@ -270,7 +270,7 @@ describe('LogsSection', () => {
       await renderOnTab(user, /validation failures/i)
 
       await waitFor(() => {
-        expect(screen.getByText('Web scraper')).toHaveAttribute('title', 'webscraper')
+        expect(screen.getByText('Web scraper')).toHaveAccessibleDescription('webscraper')
         // Pluralised through i18n: one failure, not "1 failures"
         expect(screen.getByText('1 failure')).toBeInTheDocument()
         expect(screen.getByText('msg-123')).toBeInTheDocument()
@@ -315,21 +315,21 @@ describe('LogsSection', () => {
       await renderOnTab(user, /validation failures/i)
       const clear = await screen.findByRole('button', { name: /clear/i })
       expect(clear).toBeEnabled()
-      expect(clear).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(clear).not.toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(clear)
 
       await waitFor(() => expect(mockClearValidationLogs).toHaveBeenCalledWith('webscraper'))
     })
 
-    it('disables Clear for a non-admin: DELETE /logs/* is admin-only', async () => {
+    it('turns Clear off for a non-admin, focusable and saying why: DELETE /logs/* is admin-only', async () => {
       const user = userEvent.setup()
       auth.isAdmin = false
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
       await renderOnTab(user, /validation failures/i)
       const clear = await screen.findByRole('button', { name: /clear/i })
-      expect(clear).toBeDisabled()
-      expect(clear).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(clear).toHaveAttribute('aria-disabled', 'true')
+      expect(clear).toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(clear)
 
       expect(mockClearValidationLogs).not.toHaveBeenCalled()

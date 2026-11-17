@@ -4,7 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { sortedStrings } from '@test/stringLists'
 import { SYNTHETIC_PLUGIN_MANIFEST } from './scrapers-fixtures'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import { ApiError } from '../../lib/errors'
 import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
 import enCommon from '../../../public/locales/en/common.json'
@@ -559,7 +559,7 @@ describe('Scrapers', () => {
       role.isAdmin = false
       await renderLoaded()
 
-      const gated = screen.getAllByRole('button', { description: ADMIN_ONLY_TITLE })
+      const gated = screen.getAllByRole('button', { description: ADMIN_ONLY })
       // Two scrapers × (Run, Delete); scraper-1 and scraper-2 both have a URL.
       expect(gated.map((button) => button.getAttribute('aria-disabled'))).toStrictEqual(['true', 'true', 'true', 'true'])
       expect(gated.map((button) => button.textContent === 'Run now' || button.getAttribute('aria-label') === 'Delete'))
@@ -570,7 +570,7 @@ describe('Scrapers', () => {
       role.isAdmin = false
       const user = await renderLoaded()
 
-      for (const button of screen.getAllByRole('button', { description: ADMIN_ONLY_TITLE })) {
+      for (const button of screen.getAllByRole('button', { description: ADMIN_ONLY })) {
         await user.click(button)
       }
       expect(mockRunScraper).not.toHaveBeenCalled()
@@ -580,7 +580,7 @@ describe('Scrapers', () => {
     it('the control: an admin gets enabled Run and Delete', async () => {
       await renderLoaded()
 
-      expect(screen.queryAllByRole('button', { description: ADMIN_ONLY_TITLE })).toHaveLength(0)
+      expect(screen.queryAllByRole('button', { description: ADMIN_ONLY })).toHaveLength(0)
       for (const button of [...screen.getAllByRole('button', { name: 'Run now' }), ...screen.getAllByRole('button', { name: 'Delete' })]) {
         expect(button).toBeEnabled()
         expect(button).not.toHaveAttribute('aria-disabled')

@@ -125,12 +125,12 @@ describe('the image model row', () => {
 })
 
 describe('testing the image model', () => {
-  it('tests only the image model, telling the cost in the button title', async () => {
+  it('tests only the image model, telling the cost in the button\'s description', async () => {
     const user = userEvent.setup()
     const row = await imageRow()
     const button = within(row).getByRole('button', { name: 'Test' })
 
-    expect(button).toHaveAttribute('title', expect.stringContaining('costs a few US cents'))
+    expect(button).toHaveAccessibleDescription(/costs a few US cents/)
     await user.click(button)
 
     expect(testModel.mock.calls).toStrictEqual([[IMAGE_ID]])

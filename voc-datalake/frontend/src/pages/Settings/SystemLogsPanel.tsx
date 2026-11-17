@@ -12,6 +12,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, ChevronDown, Download, Info, Loader2, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import { useIsAdmin } from '../../store/authStore'
 import { formatDateTime } from '../../utils/dateUtils'
 import { SYSTEM_LOG_FILTERS, canShowRequest, type SystemLogFilter, type SystemLogGroup, type SystemLogLevel } from '../../api/systemLogs'
@@ -46,16 +48,17 @@ export default function SystemLogsPanel({ days }: { readonly days: number }) {
 
   return (
     <div className="space-y-3">
-      <select
-        value={level}
-        onChange={(e) => setLevel(SYSTEM_LOG_FILTERS.find((f) => f === e.target.value) ?? 'error')}
-        aria-label={t('logs.system.levelLabel')}
-        title={t('logs.system.levelLabel')}
-        className="select-sm select w-auto"
-      >
-        <option value="error">{t('logs.system.levelError')}</option>
-        <option value="warning">{t('logs.system.levelWarning')}</option>
-      </select>
+      <Tooltip kind="label" content={t('logs.system.levelLabel')}>
+        <select
+          value={level}
+          onChange={(e) => setLevel(SYSTEM_LOG_FILTERS.find((f) => f === e.target.value) ?? 'error')}
+          aria-label={t('logs.system.levelLabel')}
+          className="select-sm select w-auto"
+        >
+          <option value="error">{t('logs.system.levelError')}</option>
+          <option value="warning">{t('logs.system.levelWarning')}</option>
+        </select>
+      </Tooltip>
       <SystemFailureQueues />
       <SystemEnvironment />
       <SystemLogsResult days={days} level={level} />
@@ -85,21 +88,20 @@ function SystemLogsResult({ days, level }: { readonly days: number; readonly lev
           {t('logs.system.searched', { count: data.log_groups })}
         </p>
         <div className="flex items-center gap-2">
-          <button
+          <Tooltip kind="description" content={t('logs.system.downloadTitle')}><button
             type="button"
             onClick={() => {
               setExporting(true)
               void downloadSystemLogs(queryClient, { data, days, level }).finally(() => setExporting(false))
             }}
             disabled={exporting}
-            title={t('logs.system.downloadTitle')}
             className="btn btn-secondary btn-sm flex items-center gap-1.5"
           >
             {exporting
               ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
               : <Download size={14} aria-hidden="true" />}
             {t('logs.system.download')}
-          </button>
+          </button></Tooltip>
           <button
             type="button"
             onClick={() => {
@@ -173,17 +175,21 @@ function SystemLogRow({ group, isExpanded, onToggle }: Readonly<{
         <div className="flex items-center gap-2 min-w-0">
           <span className={clsx('badge font-mono flex-shrink-0', LEVEL_BADGE[group.level])}>{group.level}</span>
           {group.source !== 'lambda' && (
-            <span className="badge badge-muted flex-shrink-0" title={t('logs.system.sourceTitle')}>
-              {group.source === 'api' ? t('logs.system.sourceApi') : t('logs.system.sourceWorkflow')}
-            </span>
+            <Tooltip kind="description" content={t('logs.system.sourceTitle')}>
+              <span className="badge badge-muted flex-shrink-0">
+                {group.source === 'api' ? t('logs.system.sourceApi') : t('logs.system.sourceWorkflow')}
+              </span>
+            </Tooltip>
           )}
           <span className="text-xs font-mono text-text-strong flex-shrink-0">{group.function}</span>
-          <span className="text-sm text-text truncate" title={group.message}>{group.message}</span>
+          <TruncatedText className="text-sm text-text truncate" text={group.message} />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-xs font-mono text-muted" title={t('logs.system.occurrences', { count: group.count })}>
-            {t('logs.system.times', { n: group.count })}
-          </span>
+          <Tooltip kind="description" content={t('logs.system.occurrences', { count: group.count })}>
+            <span className="text-xs font-mono text-muted">
+              {t('logs.system.times', { n: group.count })}
+            </span>
+          </Tooltip>
           <span className="text-xs text-muted">{formatTimestamp(group.last_seen, t, i18n.language)}</span>
           <ChevronDown size={14} className={clsx('text-muted transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
         </div>

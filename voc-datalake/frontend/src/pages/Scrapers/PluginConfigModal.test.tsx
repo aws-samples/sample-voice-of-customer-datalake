@@ -5,8 +5,8 @@ import { createQueryWrapper } from '../Categories/categories-fixtures'
 import { expectScheduleToggleLocked, sourceScheduleMocks } from './scrapers-fixtures'
 import PluginConfigModal from './PluginConfigModal'
 // Imported rather than restated: the subject of these assertions is the GATE, not
-// the wording (the English catalogue's common:adminOnly is the same text).
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+// the wording (the English catalogue's common:adminOnly).
+import { ADMIN_ONLY } from '@test/adminOnly'
 import { ApiError } from '../../lib/errors'
 import { PLUGIN_NOT_ENABLED } from '../../workspace/workspaceRefusals'
 import type { PluginManifest } from '../../plugins/types'
@@ -265,7 +265,7 @@ describe('PluginConfigModal', () => {
 
       const run = screen.getByRole('button', { name: /run now/i })
       expect(run).toHaveAttribute('aria-disabled', 'true')
-      expect(run).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+      expect(run).toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(run)
       expect(mockRunSource).not.toHaveBeenCalled()
     })
@@ -299,7 +299,7 @@ describe('PluginConfigModal', () => {
 
       const save = screen.getByRole('button', { name: 'Save' })
       expect(save).toHaveAttribute('aria-disabled', 'true')
-      expect(save).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+      expect(save).toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(save)
       expect(mockSaveAppConfig).not.toHaveBeenCalled()
     })
@@ -313,7 +313,7 @@ describe('PluginConfigModal', () => {
       const perApp = screen.getAllByRole('button').filter((el) => el.querySelector('svg.lucide-trash-2') !== null)
       expect(perApp.map((el) => [el.getAttribute('aria-disabled'), el.getAttribute('aria-describedby') === null]))
         .toStrictEqual([['true', false], ['true', false]])
-      expect(at(perApp, 0)).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+      expect(at(perApp, 0)).toHaveAccessibleDescription(ADMIN_ONLY)
 
       await user.click(at(perApp, 0))
       // No confirmation dialog, so the mutation is unreachable rather than merely

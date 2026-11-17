@@ -12,6 +12,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import AddPasskeyButton from '../../components/PasskeyPrompt/AddPasskeyButton'
 import { passkeyErrorText } from '../../components/PasskeyPrompt/passkeyErrorText'
 import { usePasskeyList, useRegisterPasskey, useRemovePasskey } from '../../components/PasskeyPrompt/usePasskey'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { canUsePasskeys } from '../../services/passkeyAuth'
 import type { PasskeyInfo } from '../../services/passkeyAuth'
 import { formatDate } from '../../utils/dateUtils'
@@ -27,15 +28,16 @@ function PasskeyRow({ passkey, onRemove }: Readonly<{ passkey: PasskeyInfo; onRe
           <p className="text-xs text-muted">{t('passkey.section.addedOn', { date: formatDate(passkey.createdAt, i18n.language) })}</p>
         ) : null}
       </div>
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label={t('passkey.section.remove', { name })}
-        title={t('passkey.section.remove', { name })}
-        onClick={() => onRemove(passkey)}
-      >
-        <Trash2 size={16} aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={t('passkey.section.remove', { name })}>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t('passkey.section.remove', { name })}
+          onClick={() => onRemove(passkey)}
+        >
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
     </li>
   )
 }

@@ -20,6 +20,7 @@ import { alertsApi, alertsKey } from '../../api/alertsApi'
 import type { AlertRecipient, AlertsStatus } from '../../api/alertsApi'
 import { messageKeyForStatus } from '../../api/apiErrorStatus'
 import SwitchField from '../../components/SwitchField/SwitchField'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
 import { formatDateTime } from '../../utils/dateUtils'
 import { ReadOnlyNotice, SettingsLoading, SettingsNotice } from './SettingsNotice'
@@ -174,16 +175,17 @@ function RecipientRow({ recipient, removing, onRemove }: RecipientRowProps) {
         {confirmed ? t('logs.alerts.confirmed') : t('logs.alerts.pending')}
       </span>
       {onRemove === undefined ? null : (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={removing}
-          onClick={onRemove}
-          aria-label={t('logs.alerts.remove', { email: recipient.email })}
-          title={t('logs.alerts.remove', { email: recipient.email })}
-        >
-          {removing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-        </button>
+        <Tooltip kind="label" content={t('logs.alerts.remove', { email: recipient.email })}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={removing}
+            onClick={onRemove}
+            aria-label={t('logs.alerts.remove', { email: recipient.email })}
+          >
+            {removing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+          </button>
+        </Tooltip>
       )}
     </li>
   )

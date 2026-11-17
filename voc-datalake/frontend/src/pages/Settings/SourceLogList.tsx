@@ -9,6 +9,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, ChevronDown, Loader2, RefreshCw, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { formatTimestamp, groupBySource } from './logsFormat'
 import type { SourceLog } from './logsFormat'
@@ -70,15 +71,21 @@ function SourceLogGroup<T extends SourceLog>({ source, badge, action, logs, view
 }>) {
   const { t, i18n } = useTranslation('settings')
   const name = useDisplayLabels().source(source)
+  // The raw source id behind its name, when they differ.
+  const label = (
+    <Tooltip kind="description" content={name === source ? undefined : source}>
+      <span className="font-medium text-text-strong">{name}</span>
+    </Tooltip>
+  )
   return (
     <div className="card">
       <div className={clsx('flex flex-wrap items-center gap-2 mb-3', action !== undefined && 'justify-between')}>
         {action === undefined ? <>
-          <span className="font-medium text-text-strong" title={source}>{name}</span>
+          {label}
           {badge}
         </> : <>
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <span className="font-medium text-text-strong" title={source}>{name}</span>
+            {label}
             {badge}
           </div>
           {action}

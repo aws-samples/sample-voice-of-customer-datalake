@@ -7,6 +7,7 @@
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, Save, Undo2 } from 'lucide-react'
 import SavedStatus from '../../components/SavedStatus/SavedStatus'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import ModelTestPill from './ModelTestPill'
 import type { ModelTestResult } from '../../api/modelTestSchema'
 
@@ -61,15 +62,16 @@ export default function AiModelSurfaceRow(props: SurfaceRowProps) {
             <option value="">{t('aiModel.automaticOption', { model: automaticLabel })}</option>
             <ModelOptions models={models} recommendedId={props.recommendedId} />
           </select>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={props.testDisabled}
-            title={t('aiModel.test.testTitle', { model: props.resolvedLabel, surface: surfaceLabel })}
-            onClick={props.onTest}
-          >
-            <FlaskConical size={14} aria-hidden="true" /> {t('aiModel.test.test')}
-          </button>
+          <Tooltip kind="description" content={t('aiModel.test.testTitle', { model: props.resolvedLabel, surface: surfaceLabel })}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={props.testDisabled}
+              onClick={props.onTest}
+            >
+              <FlaskConical size={14} aria-hidden="true" /> {t('aiModel.test.test')}
+            </button>
+          </Tooltip>
         </div>
       </div>
       <RowStatus {...props} />

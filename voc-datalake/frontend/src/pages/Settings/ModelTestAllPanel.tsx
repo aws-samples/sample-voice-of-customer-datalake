@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { FlaskConical, History, Loader2 } from 'lucide-react'
 import ModelAgreementNotice from './ModelAgreementNotice'
 import ModelTestPill from './ModelTestPill'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { useModelTestFigures } from './modelTestStatus'
 import { useModelCapacity } from './useModelCapacity'
 import type { ModelTests } from './useModelTests'
@@ -73,10 +74,12 @@ export default function ModelTestAllPanel({ models, tests }: ModelTestAllPanelPr
                   <td className="py-1.5 font-mono text-text">
                     {figures.tokensPerMinute(quota?.tokens_per_minute)}
                     {quota?.stale === true && (
-                      <span className="ml-1.5 inline-flex align-middle text-muted" title={t('aiModel.test.quotaStale')}>
-                        <History size={12} aria-hidden="true" />
-                        <span className="sr-only">{t('aiModel.test.quotaStale')}</span>
-                      </span>
+                      <Tooltip kind="label" content={t('aiModel.test.quotaStale')}>
+                        <span className="ml-1.5 inline-flex align-middle text-muted">
+                          <History size={12} aria-hidden="true" />
+                          <span className="sr-only">{t('aiModel.test.quotaStale')}</span>
+                        </span>
+                      </Tooltip>
                     )}
                   </td>
                 </tr>

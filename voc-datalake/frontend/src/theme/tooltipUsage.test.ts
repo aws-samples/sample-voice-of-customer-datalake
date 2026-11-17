@@ -23,11 +23,9 @@ const ALLOWLIST = z.object({
   entries: z.array(z.object({ key: z.string().startsWith(PREFIX), count: z.number().int().positive(), reason: z.string().min(1) })),
 }).parse(JSON.parse(readFileSync(join(REPO, 'scripts/audit/allowlists/native_title.json'), 'utf8')))
 
-/** The paths whose titles wait for a release that rewrites them (7.54 settings; the canvas and the document editor). */
-const WAITING = [
-  /^pages\/Settings\//, /^components\/UserAdmin\//, /^pages\/Account\//, /^pages\/WorkspaceSettings\//,
-  /^components\/WorkflowEditor\//, /^components\/DocumentCanvas\//,
-]
+/** The paths whose titles wait for a release that rewrites them: the canvas and the document editor (the 7.54.00
+ * settings paths, pages/Settings, components/UserAdmin and pages/Account, were migrated once it landed). */
+const WAITING = [/^components\/WorkflowEditor\//, /^components\/DocumentCanvas\//]
 
 /** Every production .tsx under src (specs and test support excluded). */
 function sourceFiles(dir: string): string[] {

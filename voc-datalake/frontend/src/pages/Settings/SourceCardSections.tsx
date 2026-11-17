@@ -8,7 +8,8 @@ import { useTranslation } from 'react-i18next'
 import {
   Save, Check, Loader2, Copy, ExternalLink, Eye, EyeOff, Webhook, Key,
 } from 'lucide-react'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { ConfigFieldOptions } from '../Scrapers/PluginConfigParts'
 import type { ConfigField, SetupInfo, WebhookInfo } from '../../plugins/types'
 import SavedStatus from '../../components/SavedStatus/SavedStatus'
@@ -23,20 +24,22 @@ import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
  * Whether `Save to Secrets Manager` is available, and if not, whether to say why.
  *
  * A helper rather than two expressions inline, so the admin reason and the two
- * ordinary ones are decided in one place: a `title` that outlived its condition
+ * ordinary ones are decided in one place: a reason that outlived its condition
  * would tell a non-admin their access was refused while the button worked, or the
  * reverse. (It also keeps `CredentialsSection` under the complexity limit.)
  *
- * `title` is set ONLY for the admin case. Pending and empty-form are transient and
- * evident from the form itself; the 403 behind `PUT /integrations/{source}/credentials`
- * is neither, and is the one a user cannot otherwise discover — that mutation has no
- * `onError`, so before this gate the refusal rendered nothing at all.
+ * The reason (`common:adminOnly`, the button's Tooltip and description) is given ONLY
+ * for the admin case, where the button stays focusable (`aria-disabled`, 7.51.01's
+ * pattern). Pending and empty-form are transient and evident from the form itself
+ * (`disabled`); the 403 behind `PUT /integrations/{source}/credentials` is neither,
+ * and is the one a user cannot otherwise discover — that mutation has no `onError`,
+ * so before this gate the refusal rendered nothing at all.
  */
 function getSaveButtonState(
   isPending: boolean, hasCredentials: boolean, isAdmin: boolean
-): { disabled: boolean; title?: string } {
-  if (!isAdmin) return { disabled: true, title: ADMIN_ONLY_TITLE }
-  return { disabled: isPending || !hasCredentials }
+): { disabled: boolean; adminGated: boolean } {
+  if (!isAdmin) return { disabled: false, adminGated: true }
+  return { disabled: isPending || !hasCredentials, adminGated: false }
 }
 
 // ============================================
@@ -74,15 +77,16 @@ export function WebhooksSection({ webhooks, sourceKey, webhookBaseUrl, copiedUrl
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-bg-elevated px-2 py-1.5 rounded-sm border border-border overflow-x-auto">{webhookUrl}</code>
-                <button
-                  type="button"
-                  onClick={() => onCopy(webhookUrl, webhookId)}
-                  aria-label={t('sourceCard.copyWebhookUrl')}
-                  title={t('sourceCard.copyWebhookUrl')}
-                  className="btn btn-secondary p-1.5 sm:p-2 flex-shrink-0"
-                >
-                  {copiedUrl === webhookId ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
-                </button>
+                <Tooltip kind="label" content={t('sourceCard.copyWebhookUrl')}>
+                  <button
+                    type="button"
+                    onClick={() => onCopy(webhookUrl, webhookId)}
+                    aria-label={t('sourceCard.copyWebhookUrl')}
+                    className="btn btn-secondary p-1.5 sm:p-2 flex-shrink-0"
+                  >
+                    {copiedUrl === webhookId ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                  </button>
+                </Tooltip>
               </div>
               <p className="text-xs text-muted mt-1.5 sm:mt-2">{t('sourceCard.events', { events: webhook.events.join(', ') })}</p>
             </div>
@@ -118,6 +122,7 @@ export function CredentialsSection({
   const saveState = getSaveButtonState(
     updateCredentialsMutation.isPending, Object.keys(credentials).length > 0, isAdmin
   )
+  const adminOnly = useAdminOnlyReason(isAdmin)
 
   return (
     <div>
@@ -143,16 +148,18 @@ export function CredentialsSection({
             {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
             {showSecrets ? t('sourceCard.hide') : t('sourceCard.show')}
           </button>
-          <button
-            onClick={() => updateCredentialsMutation.mutate(credentials)}
-            disabled={saveState.disabled}
-            title={saveState.title}
-            className="btn btn-primary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-          >
-            {updateCredentialsMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            <span className="hidden xs:inline">{t('sourceCard.saveToSecrets')}</span>
-            <span className="xs:hidden">{t('sourceCard.save')}</span>
-          </button>
+          <Tooltip kind="description" content={adminOnly}>
+            <button
+              onClick={saveState.adminGated ? undefined : () => updateCredentialsMutation.mutate(credentials)}
+              disabled={saveState.disabled}
+              aria-disabled={saveState.adminGated ? true : undefined}
+              className="btn btn-primary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
+            >
+              {updateCredentialsMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              <span className="hidden xs:inline">{t('sourceCard.saveToSecrets')}</span>
+              <span className="xs:hidden">{t('sourceCard.save')}</span>
+            </button>
+          </Tooltip>
           {/* The one Saved (components/SavedStatus): until the next edit of these fields. */}
           <SavedStatus saved={saveSuccess} />
         </StickyActionBar>

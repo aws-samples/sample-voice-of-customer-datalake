@@ -16,7 +16,9 @@ import {
 import { api } from '../../api/client'
 import { logsSummaryKey } from '../../api/queryKeys'
 import type { ProcessingLogEntry } from '../../api/types'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { formatCount } from '../../utils/numberFormat'
 import { useIsAdmin } from '../../store/authStore'
 import clsx from 'clsx'
@@ -70,17 +72,18 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
             <FileWarning className="text-warn" size={16} />
             <h2 className={SECTION_TITLE}>{t('logs.title')}</h2>
           </div>
-          <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            aria-label={t('logs.periodLabel')}
-            title={t('logs.periodLabel')}
-            className="select-sm select w-auto"
-          >
-            <option value={1}>{t('logs.last24Hours')}</option>
-            <option value={7}>{t('logs.last7Days')}</option>
-            <option value={30}>{t('logs.last30Days')}</option>
-          </select>
+          <Tooltip kind="label" content={t('logs.periodLabel')}>
+            <select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              aria-label={t('logs.periodLabel')}
+              className="select-sm select w-auto"
+            >
+              <option value={1}>{t('logs.last24Hours')}</option>
+              <option value={7}>{t('logs.last7Days')}</option>
+              <option value={30}>{t('logs.last30Days')}</option>
+            </select>
+          </Tooltip>
         </div>
 
         <LogsSummaryCard days={days} />
@@ -212,7 +215,7 @@ function toValidationLogs(raw: readonly unknown[]): ValidationLogView[] {
 const VALIDATION_VIEW: LogEntryView<ValidationLogView> = {
   summary: (log) => <>
     <AlertTriangle size={14} className="text-warn flex-shrink-0" />
-    <span className="text-sm font-mono text-text truncate" title={log.message_id}>{log.message_id}</span>
+    <TruncatedText className="text-sm font-mono text-text truncate" text={log.message_id} />
   </>,
   detail: (log) => <ValidationLogDetail log={log} />,
 }
@@ -242,8 +245,9 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   // `DELETE /logs/validation/{source}` is admin-only server-side (logs_handler.py);
-  // the disabled control only explains the 403 it would get.
+  // the control, focusable with aria-disabled, only explains the 403 it would get.
   const isAdmin = useIsAdmin()
+  const adminOnly = useAdminOnlyReason(isAdmin)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['validation-logs', days],
@@ -267,16 +271,18 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
       view={VALIDATION_VIEW}
       badge={(count) => <span className="badge badge-warn font-mono">{t('logs.failures', { count })}</span>}
       action={(source) => (
-        <button
-          type="button"
-          onClick={() => { if (isAdmin) clearMutation.mutate(source) }}
-          disabled={!isAdmin || clearMutation.isPending}
-          title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
-          className="btn btn-secondary btn-sm flex items-center gap-1.5"
-        >
-          {clearMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-          {t('logs.clear')}
-        </button>
+        <Tooltip kind="description" content={adminOnly}>
+          <button
+            type="button"
+            onClick={() => { if (isAdmin) clearMutation.mutate(source) }}
+            disabled={isAdmin && clearMutation.isPending}
+            aria-disabled={isAdmin ? undefined : true}
+            className="btn btn-secondary btn-sm flex items-center gap-1.5"
+          >
+            {clearMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            {t('logs.clear')}
+          </button>
+        </Tooltip>
       )}
     />
   )
@@ -285,7 +291,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
 const PROCESSING_VIEW: LogEntryView<ProcessingLogEntry> = {
   summary: (log) => <>
     <XCircle size={14} className="text-danger flex-shrink-0" />
-    <span className="text-sm font-medium text-danger truncate" title={log.error_type}>{log.error_type}</span>
+    <TruncatedText className="text-sm font-medium text-danger truncate" text={log.error_type} />
   </>,
   detail: (log) => <ProcessingLogDetail log={log} />,
 }

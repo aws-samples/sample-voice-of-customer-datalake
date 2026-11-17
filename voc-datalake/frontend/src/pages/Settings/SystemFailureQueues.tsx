@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { CheckCircle, ChevronDown, Inbox } from 'lucide-react'
 import clsx from 'clsx'
 import type { SystemFailureQueue } from '../../api/systemDiagnostics'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import { SettingsLoading, SettingsNotice } from './SettingsNotice'
 import { formatTimestamp } from './logsFormat'
 import { useSystemFailureQueues } from './useSystemLogs'
@@ -69,7 +70,7 @@ function QueueRow({ queue }: { readonly queue: SystemFailureQueue }) {
         aria-expanded={open}
         className="w-full flex items-center justify-between gap-3 p-2 text-left hover:bg-bg-hover"
       >
-        <span className="text-xs font-mono text-text-strong truncate" title={queue.name}>{queue.name}</span>
+        <TruncatedText className="text-xs font-mono text-text-strong truncate" text={queue.name} />
         <span className="flex items-center gap-2 flex-shrink-0 text-xs text-muted">
           {queue.messages === null
             ? <span className="badge badge-warn">{t('logs.system.queues.unreadable')}</span>

@@ -8,7 +8,8 @@
  */
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { formatTimestamp } from './logsFormat'
 import type { SourceCircuit } from '../../api/sourcesStatusSchema'
 
@@ -30,6 +31,7 @@ interface Props {
 
 export default function SourceCircuitNotice({ circuit, isAdmin, resetting, resetFailed, onReset }: Props) {
   const { t, i18n } = useTranslation('settings')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   if (!circuit.tripped) return null
 
   const reason = circuit.last_error === null || circuit.last_error === '' ? null : shortReason(circuit.last_error)
@@ -46,25 +48,30 @@ export default function SourceCircuitNotice({ circuit, isAdmin, resetting, reset
             <span>{t('sourceCard.circuit.failures', { n: circuit.failure_count })}</span>
           </p>
           {reason === null ? null : (
-            <p className="text-muted break-words" title={circuit.last_error ?? undefined}>
-              {t('sourceCard.circuit.reason', { reason })}
-            </p>
+            // (the stored error in full behind its one short line)
+            <Tooltip kind="description" content={circuit.last_error ?? undefined}>
+              <p className="text-muted break-words">
+                {t('sourceCard.circuit.reason', { reason })}
+              </p>
+            </Tooltip>
           )}
           <p className="text-muted">{t('sourceCard.circuit.enableResets')}</p>
           {resetFailed && <p className="text-warn" role="alert">{t('sourceCard.circuit.resetFailed')}</p>}
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          disabled={!isAdmin || resetting}
-          title={isAdmin ? t('sourceCard.circuit.resetHint') : ADMIN_ONLY_TITLE}
-          className="btn btn-secondary btn-sm flex items-center gap-1.5 self-start disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {resetting
-            ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-            : <RotateCcw size={14} aria-hidden="true" />}
-          {resetting ? t('sourceCard.circuit.resetting') : t('sourceCard.circuit.reset')}
-        </button>
+        <Tooltip kind="description" content={adminOnly ?? t('sourceCard.circuit.resetHint')}>
+          <button
+            type="button"
+            onClick={isAdmin ? onReset : undefined}
+            disabled={isAdmin && resetting}
+            aria-disabled={isAdmin ? undefined : true}
+            className="btn btn-secondary btn-sm flex items-center gap-1.5 self-start disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {resetting
+              ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+              : <RotateCcw size={14} aria-hidden="true" />}
+            {resetting ? t('sourceCard.circuit.resetting') : t('sourceCard.circuit.reset')}
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

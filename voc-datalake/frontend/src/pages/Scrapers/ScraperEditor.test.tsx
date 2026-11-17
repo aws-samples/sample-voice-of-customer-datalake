@@ -26,7 +26,7 @@ import ScraperEditor from './ScraperEditor'
 import { scrapersApi } from '../../api/scrapersApi'
 // Imported rather than restated: the subject of these assertions is the GATE, not
 // the wording. See the constant's own docstring.
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import { DEFAULT_SCRAPER } from './constants'
 import { at } from '@test/defined'
 import type { ScraperConfig, ScraperTemplate } from '../../api/types'
@@ -177,7 +177,7 @@ describe('ScraperEditor is read-only for a non-admin', () => {
 
     const save = saveButton()
     expect(save).toBeEnabled()
-    expect(save).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(save).not.toHaveAccessibleDescription(ADMIN_ONLY)
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
     await user.click(save)
     expect(onSave).toHaveBeenCalledTimes(1)
@@ -187,7 +187,7 @@ describe('ScraperEditor is read-only for a non-admin', () => {
     renderWith(true)
 
     expect(autoDetectButton()).toBeEnabled()
-    expect(autoDetectButton()).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(autoDetectButton()).not.toHaveAccessibleDescription(ADMIN_ONLY)
   })
 
   it('the control: an admin changes the frequency and it is saved as chosen', async () => {

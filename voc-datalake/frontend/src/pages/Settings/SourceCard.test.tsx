@@ -11,7 +11,7 @@ import { renderWithQueryClient } from '../../test/query-client'
 import SourceCard from './SourceCard'
 // Imported rather than restated: the subject of these assertions is the admin GATE,
 // not the wording, so a later decision to translate the tooltip must not fail them.
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import type { PluginManifest, SetupInfo } from '../../plugins/types'
 import { expectScheduleToggleLocked, sourceScheduleMocks } from '../Scrapers/scrapers-fixtures'
 
@@ -265,17 +265,16 @@ describe('SourceCard', () => {
       it('explains why the toggle is disabled', () => {
         renderCard({ isAdmin: false })
 
-        // On the label, not the input: a disabled input does not reliably surface
-        // its own title on hover.
-        expect(screen.getByTitle(ADMIN_ONLY_TITLE)).toBeInTheDocument()
+        // On the label, the switch's visible part (its input is the sr-only peer).
+        expect(screen.getByRole('checkbox').closest('label')).toHaveAccessibleDescription(ADMIN_ONLY)
       })
 
-      it('leaves the toggle untitled for an admin', () => {
+      it('gives the toggle no admin-only reason for an admin', () => {
         /** Non-vacuity for the case above: a title rendered unconditionally would
          *  satisfy it while telling an admin their access is refused. */
         renderCard()
 
-        expect(screen.queryByTitle(ADMIN_ONLY_TITLE)).not.toBeInTheDocument()
+        expect(screen.getByRole('checkbox').closest('label')).not.toHaveAccessibleDescription(ADMIN_ONLY)
       })
     })
   })
@@ -377,11 +376,11 @@ describe('SourceCard', () => {
         return screen.getByRole('button', { name: /save/i })
       }
 
-      it('disables save and issues no credential write when it is clicked', async () => {
+      it('turns save off, focusable, and issues no credential write when it is clicked', async () => {
         const user = userEvent.setup()
         const save = await expandAndType(user, false)
 
-        expect(save).toBeDisabled()
+        expect(save).toHaveAttribute('aria-disabled', 'true')
 
         await user.click(save)
 
@@ -394,16 +393,16 @@ describe('SourceCard', () => {
         const user = userEvent.setup()
         const save = await expandAndType(user, false)
 
-        expect(save).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+        expect(save).toHaveAccessibleDescription(ADMIN_ONLY)
       })
 
-      it('leaves save untitled for an admin', async () => {
+      it('gives save no admin-only reason for an admin', async () => {
         /** Non-vacuity for the case above: a title rendered unconditionally would
          *  satisfy it while telling an administrator their access is refused. */
         const user = userEvent.setup()
         const save = await expandAndType(user, true)
 
-        expect(save).not.toHaveAttribute('title')
+        expect(save).not.toHaveAccessibleDescription(ADMIN_ONLY)
       })
 
       it('leaves the credential fields editable and gates only Save', async () => {
@@ -426,7 +425,7 @@ describe('SourceCard', () => {
         // carries no admin-only reason.
         const show = screen.getByRole('button', { name: /show/i })
         expect(show).toBeEnabled()
-        expect(show).not.toHaveAttribute('title')
+        expect(show).not.toHaveAccessibleDescription(ADMIN_ONLY)
       })
     })
   })
@@ -478,7 +477,7 @@ describe('SourceCard', () => {
 
       expect(screen.queryByTestId('s3-import-explorer')).not.toBeInTheDocument()
       const notice = screen.getByText(i18n.t('components:s3Import.adminOnly'))
-      expect(notice).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(notice).toBeVisible()
     })
   })
 

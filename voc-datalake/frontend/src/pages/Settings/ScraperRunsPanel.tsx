@@ -19,6 +19,7 @@ import { api } from '../../api/client'
 import { getPluginManifests } from '../../plugins'
 import type { PluginManifest } from '../../plugins/types'
 import { supportsAppConfigs, WEB_REVIEWS_PLUGIN_ID } from '../Scrapers/scraper-helpers'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import { formatTimestamp } from './logsFormat'
 import { LogsEmptyState, LogsLoadingState } from './SourceLogList'
 import { scrapersKey, sourceRunStatusKey } from '../../api/queryKeys'
@@ -129,7 +130,7 @@ function ScraperLogCard({ scraperId, scraperName, days }: { readonly scraperId: 
       >
         <div className="flex items-center gap-2 min-w-0">
           <RefreshCw size={16} className="text-muted flex-shrink-0" />
-          <span className="font-medium text-text-strong truncate" title={scraperName}>{scraperName}</span>
+          <TruncatedText className="font-medium text-text-strong truncate" text={scraperName} />
           {latestRun && (
             <ScraperStatusBadge status={latestRun.status} />
           )}

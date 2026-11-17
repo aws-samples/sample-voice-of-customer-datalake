@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import { at } from '@test/defined'
 import { createQueryWrapper } from '../Categories/categories-fixtures'
 import TemplateSelector from './TemplateSelector'
@@ -84,7 +84,7 @@ describe('TemplateSelector scraper templates are admin-only', () => {
 
     for (const tile of scraperTemplateTiles()) {
       expect(tile).toHaveAttribute('aria-disabled', 'true')
-      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(tile)
     }
     expect(onSelect).not.toHaveBeenCalled()
@@ -123,7 +123,7 @@ describe('TemplateSelector imports are admin-only', () => {
 
     for (const tile of importTiles()) {
       expect(tile).toHaveAttribute('aria-disabled', 'true')
-      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY)
       await user.click(tile)
     }
     expect(callCounts(calls)).toStrictEqual({ manual: 0, json: 0, csv: 0, plugin: 0 })

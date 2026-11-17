@@ -17,6 +17,7 @@ import type { ModelTests } from './useModelTests'
 import type { ImageAccessStatus, ImageModelCapacity, ImageModelInfo } from '../../api/imageModelSchema'
 import type { Tone } from '../../theme/tones'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 const ACCESS_META: Record<ImageAccessStatus, { readonly tone: Tone; readonly icon: LucideIcon }> = {
   available: { tone: 'ok', icon: CheckCircle2 },
@@ -49,15 +50,16 @@ export default function ImageModelRow({ info, tests }: ImageModelRowProps) {
           </h3>
           <p className="text-xs text-muted">{t('aiModel.image.description')}</p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm shrink-0 self-start"
-          disabled={busy}
-          title={t('aiModel.image.testTitle', { model: label })}
-          onClick={() => void tests.runTest(info.id)}
-        >
-          <FlaskConical size={14} aria-hidden="true" /> {t('aiModel.test.test')}
-        </button>
+        <Tooltip kind="description" content={t('aiModel.image.testTitle', { model: label })}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm shrink-0 self-start"
+            disabled={busy}
+            onClick={() => void tests.runTest(info.id)}
+          >
+            <FlaskConical size={14} aria-hidden="true" /> {t('aiModel.test.test')}
+          </button>
+        </Tooltip>
       </div>
       <dl className="mt-2 grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted">{t('aiModel.image.model')}</dt>

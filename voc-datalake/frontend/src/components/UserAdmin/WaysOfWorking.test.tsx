@@ -111,7 +111,7 @@ describe('WaysOfWorking', () => {
     renderFor()
 
     expect(within(modes()).getByRole('radio', { name: 'Human-driven' }))
-      .toHaveAttribute('title', 'AI answers questions, explains the method and reviews; it never writes the document for you.')
+      .toHaveAccessibleDescription('AI answers questions, explains the method and reviews; it never writes the document for you.')
   })
 
   it('sends nothing when the saved mode is clicked again', async () => {

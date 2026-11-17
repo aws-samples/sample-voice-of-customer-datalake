@@ -15,7 +15,7 @@ import type { Mock } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import { DEFAULT_SCRAPER } from './constants'
 import type { PluginManifest } from '../../plugins/types'
 import type { ScraperConfig } from '../../api/types'
@@ -105,7 +105,7 @@ export async function expectAdminGatedButton(iconClass: string, callback: Mock) 
   const user = userEvent.setup()
   const button = buttonWithIcon(iconClass)
   expect(button).toHaveAttribute('aria-disabled', 'true')
-  expect(button).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+  expect(button).toHaveAccessibleDescription(ADMIN_ONLY)
   await user.click(button)
   expect(callback).not.toHaveBeenCalled()
 }

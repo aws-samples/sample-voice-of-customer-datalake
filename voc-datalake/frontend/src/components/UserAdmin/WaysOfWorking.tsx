@@ -24,6 +24,8 @@ import type { AiModeName, AiModePatch, StoredAiMode } from '../../api/aiModeApi'
 import type { CognitoUser } from '../../api/types'
 import { myAiModeKey } from '../../api/queryKeys'
 import { RADIO_KEYS, rovingIndex } from '../../utils/rovingIndex'
+import { InfoTip } from '../Tooltip/InfoTip'
+import { Tooltip } from '../Tooltip/Tooltip'
 import { MODE_KEYS } from './aiModeCopy'
 import SheetSection from './SheetSection'
 import { useSheetSave } from './useSheetSave'
@@ -92,19 +94,19 @@ function ModeChoice({ labelId, mode, disabled, onChange }: ModesProps & { readon
         <div role="radiogroup" aria-labelledby={labelId} aria-describedby={selected === null ? notSetId : undefined}
           className="tabs-track" onKeyDown={onRadioKey}>
           {AI_MODES.map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="radio"
-              aria-checked={selected === name}
-              tabIndex={name === tabStop ? 0 : -1}
-              title={t(MODE_KEYS[name].tooltipKey)}
-              disabled={disabled}
-              onClick={() => { if (selected !== name) onChange({ ai_mode: name }) }}
-              className={clsx('tab', selected === name && 'tab-active')}
-            >
-              {t(MODE_KEYS[name].labelKey)}
-            </button>
+            <Tooltip key={name} kind="description" content={t(MODE_KEYS[name].tooltipKey)}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected === name}
+                tabIndex={name === tabStop ? 0 : -1}
+                disabled={disabled}
+                onClick={() => { if (selected !== name) onChange({ ai_mode: name }) }}
+                className={clsx('tab', selected === name && 'tab-active')}
+              >
+                {t(MODE_KEYS[name].labelKey)}
+              </button>
+            </Tooltip>
           ))}
         </div>
         {selected === null ? <span className="badge badge-warn">{t('userAdmin.aiMode.notSet')}</span> : null}
@@ -122,7 +124,7 @@ const UNLOCKS = [
 function UnlockBoxes({ mode, disabled, onChange }: ModesProps) {
   const { t } = useTranslation('components')
   return (
-    <div className="flex flex-wrap items-center gap-3" title={t('userAdmin.aiMode.unlockTooltip')}>
+    <div className="flex flex-wrap items-center gap-3">
       {UNLOCKS.map(({ field, labelKey }) => (
         <label key={field} className="flex items-center gap-2 text-[13px] text-text">
           <input
@@ -135,6 +137,7 @@ function UnlockBoxes({ mode, disabled, onChange }: ModesProps) {
           {t(labelKey)}
         </label>
       ))}
+      <InfoTip text={t('userAdmin.aiMode.unlockTooltip')} />
     </div>
   )
 }

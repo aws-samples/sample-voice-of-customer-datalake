@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { createQueryWrapper } from '../Categories/categories-fixtures'
 import GeneratorConfigModal from './GeneratorConfigModal'
 // Imported rather than restated — see PluginConfigModal.test.tsx for the reason.
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import type { PluginManifest } from '../../plugins/types'
 
 const mockGetIntegrationCredentials = vi.fn<(...args: unknown[]) => unknown>()
@@ -112,7 +112,7 @@ describe('GeneratorConfigModal', () => {
     // The Generate button is off for non-admins regardless of field state (aria-disabled: it says why).
     const generateButton = screen.getByRole('button', { name: /generat/i })
     expect(generateButton).toHaveAttribute('aria-disabled', 'true')
-    expect(generateButton).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+    expect(generateButton).toHaveAccessibleDescription(ADMIN_ONLY)
 
     // Give queries time to fire if they were going to.
     await new Promise((resolve) => setTimeout(resolve, 50))

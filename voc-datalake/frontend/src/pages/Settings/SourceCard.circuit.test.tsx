@@ -8,7 +8,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import SourceCard from './SourceCard'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import type { PluginManifest } from '../../plugins/types'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { ACME } from '../../test/workspaceFixtures'
@@ -112,7 +112,7 @@ describe('SourceCard circuit breaker notice', () => {
     expect(screen.queryByText(/Last error/)).not.toBeInTheDocument()
   })
 
-  it('cuts a long reason to one short line and keeps the full text as its title', async () => {
+  it('cuts a long reason to one short line and keeps the full text as its description', async () => {
     const long = `ValueError: ${'x'.repeat(400)}\nTraceback line`
     mockGetSourcesStatus.mockResolvedValue(statusWith({ ...TRIPPED, last_error: long }))
     renderCard()
@@ -120,7 +120,7 @@ describe('SourceCard circuit breaker notice', () => {
     const reason = await screen.findByText(/^Last error:/)
     expect(reason.textContent.length).toBeLessThan(200)
     expect(reason.textContent).not.toContain('Traceback')
-    expect(reason).toHaveAttribute('title', long)
+    expect(reason).toHaveAccessibleDescription(/^ValueError: x{400}\s+Traceback line$/)
   })
 
   it('Reset closes the breaker without enabling the schedule', async () => {
@@ -148,12 +148,14 @@ describe('SourceCard circuit breaker notice', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
   })
 
-  it('Reset is disabled for a non-admin, with the admin-only explanation', async () => {
+  it('Reset is off for a non-admin, focusable, with the admin-only explanation', async () => {
     renderCard(false)
 
     const reset = await screen.findByRole('button', { name: 'Reset' })
-    expect(reset).toBeDisabled()
-    expect(reset).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(reset).toHaveAttribute('aria-disabled', 'true')
+    expect(reset).toHaveAccessibleDescription(ADMIN_ONLY)
+    await userEvent.click(reset)
+    expect(mockResetSource).not.toHaveBeenCalled()
   })
 
   it('enabling the source also clears the notice', async () => {

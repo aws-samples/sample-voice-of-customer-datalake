@@ -10,7 +10,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
 import AppConfigList from './AppConfigList'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ADMIN_ONLY } from '@test/adminOnly'
 import type { WebReviewMethodRecord } from '../../api/webReviewMethodsApi'
 import type { PluginManifest } from '../../plugins/types'
 
@@ -144,6 +144,6 @@ describe('Re-check methods', () => {
     renderList(false)
     const button = await within(await card('Reviews - Acme')).findByRole('button', { name: 'Re-check methods' })
     expect(button).toHaveAttribute('aria-disabled', 'true')
-    expect(button).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
+    expect(button).toHaveAccessibleDescription(ADMIN_ONLY)
   })
 })

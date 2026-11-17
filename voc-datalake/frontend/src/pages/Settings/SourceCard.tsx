@@ -18,7 +18,8 @@ import {
 import { IconGlyph } from '../../components/SourceIcon/SourceIcon'
 import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import { api } from '../../api/client'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { SetupInstructionsSection, WebhooksSection } from './SourceCardSections'
 import SourceCredentials from './SourceCredentials'
 import { storedCredentialsKey } from './githubSignIn'
@@ -185,7 +186,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
                   non-admin is told so instead of an explorer whose every call 403s. */}
               {isAdmin
                 ? <S3ImportExplorer />
-                : <p className="text-sm text-muted" title={ADMIN_ONLY_TITLE}>{t('components:s3Import.adminOnly')}</p>}
+                : <p className="text-sm text-muted">{t('components:s3Import.adminOnly')}</p>}
             </div>
           )}
         </div>
@@ -246,6 +247,7 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
   const copy = usePluginCopy()(manifest)
   const nameId = useId()
   const statusId = useId()
+  const adminOnly = useAdminOnlyReason(isAdmin)
   // The row is a plain container with two independent controls — the expand
   // button (name, description, chevron) and the enable switch — so neither is nested inside the other.
   return (
@@ -270,10 +272,9 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
             <CheckCircle2 size={12} /> {t('sourceCard.connected')}
           </span>
         )}
-        {serverStatus.exists === false ? <NoScheduleLabel manifest={manifest} /> : <label
-          className="flex items-center gap-2 min-h-9"
-          title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
-        >
+        {serverStatus.exists === false ? <NoScheduleLabel manifest={manifest} /> : (
+        // (the reason on the label, the switch's visible part: its input is the sr-only peer)
+        <Tooltip kind="description" content={adminOnly}><label className="flex items-center gap-2 min-h-9">
           {serverStatus.loading ? (
             <Loader2 size={16} className="animate-spin text-accent" />
           ) : (
@@ -281,8 +282,9 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
               <input
                 type="checkbox"
                 checked={serverStatus.enabled}
-                onChange={(e) => onToggleEnabled(e.target.checked)}
-                disabled={!apiEndpoint || !isAdmin}
+                onChange={(e) => { if (isAdmin) onToggleEnabled(e.target.checked) }}
+                disabled={!apiEndpoint}
+                aria-disabled={isAdmin ? undefined : true}
                 aria-labelledby={`${nameId} ${statusId}`}
                 className="peer sr-only"
               />
@@ -291,6 +293,7 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
                 aria-hidden="true"
                 className={clsx(
                   'switch peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 peer-disabled:cursor-not-allowed',
+                  'peer-aria-disabled:opacity-50 peer-aria-disabled:cursor-not-allowed',
                   serverStatus.enabled && 'switch-on'
                 )}
               >
@@ -299,7 +302,8 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
             </span>
           )}
           <span id={statusId} className="text-xs sm:text-sm text-text w-16">{serverStatus.enabled ? t('sourceCard.enabled') : t('sourceCard.disabled')}</span>
-        </label>}
+        </label></Tooltip>
+        )}
       </div>
     </div>
   )
