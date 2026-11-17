@@ -479,6 +479,9 @@ def test_the_images_entry_script_imports_the_harness_from_its_own_directory_unde
         shutil.copy(module, target)
     shutil.copy(RUNTIME.parent / '__init__.py', opt / 'engineering' / '__init__.py')
     shutil.copy(IMAGES / 'common' / 'harness.py', opt / 'harness.py')
+    # (7.53.00: the shipped skills are read from the compiled bundle, which the image copies beside them)
+    (opt / 'orchestration').mkdir()
+    shutil.copy(IMAGES.parent / 'templates' / 'orchestration' / 'bundle.json', opt / 'orchestration' / 'bundle.json')
     shown = subprocess.run([sys.executable, '-I', str(opt / 'harness.py'), '--help'], capture_output=True, text=True,
                            timeout=60, cwd=tmp_path, check=False)
     assert shown.returncode == 0, shown.stderr

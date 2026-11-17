@@ -560,13 +560,13 @@ TOKEN = 'ghp_' + 'A1b2C3d4' * 5
 
 
 def test_the_overview_says_why_an_agent_failed_redacted_and_bounded(run) -> None:
-    client, _, runtime, publisher, _ = run
+    client, _, signaller, publisher, _ = run
     failed = replace(COORDINATOR, status='failed', inspect={
         'last_failure': f'the boot took too long\x07 ({TOKEN})',
         'last_exit': {'exit_code': 128, 'timed_out': False, 'duration_seconds': 3, 'stdout_tail': 'never shown',
                       'stderr_tail': f"fatal: detected dubious ownership in repository at '/mnt/voc-cache/x'\x00 {TOKEN}"}})
     long_tail = replace(FIXER, inspect={'last_exit': {'exit_code': None, 'timed_out': True, 'stderr_tail': 'e' * 900}})
-    monitor = RunMonitor(client, TABLE, Sessions(long_tail, failed), runtime=runtime, publisher=publisher,
+    monitor = RunMonitor(client, TABLE, Sessions(long_tail, failed), signaller=signaller, publisher=publisher,
                          now=lambda: START)
     view = monitor.overview(RUN)
     assert view is not None

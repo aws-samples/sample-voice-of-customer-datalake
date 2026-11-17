@@ -59,8 +59,9 @@ def test_a_decision_point_is_this_exact_update(aws: Any, sent: Requests) -> None
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
     runs.needs_human(RUN, 'budget', now=60)
+    # (7.51.03: a decision point without a detail clears the plain reason an earlier one left)
     assert _meta_update(sent['transact'][-1]) == {
-        'UpdateExpression': 'SET #status = :human, needs_human = :reason, needs_human_at = :at',
+        'UpdateExpression': 'SET #status = :human, needs_human = :reason, needs_human_at = :at REMOVE needs_human_detail',
         'ConditionExpression': ('#status = :active OR (#status = :human AND needs_human <> :reason '
                                 'AND needs_human <> :thirty)')}
 
@@ -70,8 +71,9 @@ def test_a_resume_is_this_exact_update(aws: Any, sent: Requests) -> None:
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
     runs.needs_human(RUN, 'budget', now=60)
     runs.resume(RUN, now=120, actor='person-1')
+    # (7.51.03: a Resume removes the decision point's plain reason with it)
     assert _meta_update(sent['transact'][-1]) == {
-        'UpdateExpression': 'SET #status = :active, resumed_epoch = :now REMOVE needs_human',
+        'UpdateExpression': 'SET #status = :active, resumed_epoch = :now REMOVE needs_human, needs_human_detail',
         'ConditionExpression': '#status = :human AND needs_human <> :thirty'}
 
 
@@ -82,7 +84,7 @@ def test_a_resume_at_a_flow_steps_decision_point_holds_it_to_that_point(aws: Any
     runs.resume(RUN, now=120, actor='person-1')
     request = sent['transact'][-1]
     assert _meta_update(request) == {
-        'UpdateExpression': 'SET #status = :active, resumed_epoch = :now REMOVE needs_human',
+        'UpdateExpression': 'SET #status = :active, resumed_epoch = :now REMOVE needs_human, needs_human_detail',
         'ConditionExpression': '#status = :human AND needs_human <> :thirty AND needs_human = :point'}
     assert request['TransactItems'][0]['Update']['ExpressionAttributeValues'][':point'] == 'flow:review'
 

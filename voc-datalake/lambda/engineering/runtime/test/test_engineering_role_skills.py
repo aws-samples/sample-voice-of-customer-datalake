@@ -342,8 +342,9 @@ def test_the_gate_runners_checks_are_the_ones_the_harness_saw_and_a_go_needs_the
                                       {'name': 'py.test@.: unit tests', 'status': 'pass'}])
     # (7.52.00: the versions run_gate found of its packs' tools, as it answered them, kept on the record)
     assert (dict(record.tool_versions), list(ran['tool_versions'])) == (ran['tool_versions'], ['python'])
-    # A free-form command is no gate: the gate runner has no run, and a GO needs run_gate.
-    assert 'no tool' in tools.call('run', {'argv': ['true']}).text
+    # A free-form command is no gate (7.53.00: the shipped skill is the template's, whose gate runner may run one):
+    # it answers its own exit, and only run_gate's checks reach a record.
+    assert tools.call('run', {'argv': ['true']}).text.startswith('exit code 0')
     # A failed check: no GO, whatever the model says; its record is NO-GO, or STOPPED with why.
     failing = gated(tmp_path, 'failing')
     failing.session.context.gate_tree = failing.runner.tree = TREE

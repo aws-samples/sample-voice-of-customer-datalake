@@ -74,9 +74,10 @@ def test_the_coordinators_skill_is_a_versioned_record_the_skills_store_can_keep(
     assert Skill.from_record(json.loads(json.dumps(record))) == COORDINATOR
     # (the coach is the one role with no skill: it is not launched as an agent)
     assert (skill_label(COORDINATOR.name, COORDINATOR.version), SKILLS.get('coordinator'), SKILLS.get('coach')) == (
-        'coordinator@3', COORDINATOR, None)
+        'coordinator@5', COORDINATOR, None)
     # Version 2 follows the run's flow: its tools to read the plan and record the steps it does itself; version 3
-    # reads the run's issue (7.50.00).
+    # reads the run's issue (7.50.00); version 5 relays a person's steering (7.51.00). Since 7.53.00 the shipped
+    # record is the compiled bundle's, so it is the template's version.
     assert {'read_flow', 'complete_step', 'fan_out', 'read_issue'} <= set(COORDINATOR.tool_policy)
     # Written for a model the platform allows, run by the harness's own loop.
     assert (COORDINATOR.model in ALLOWED_MODEL_IDS, COORDINATOR.harness) == (True, 'converse')
