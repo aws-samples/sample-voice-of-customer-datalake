@@ -17,6 +17,14 @@ as ``coach``, never as ``system``) and ``voc.engineering/agent/<role>/<ws>/<run>
 ``schema.ROLES``: the roles that claim tasks, the gate runner among them (it claims its quality gate step's tasks),
 which sends only its gate results (``msg.finding``, ``review.result``), never a verdict (``gate.*`` is the final-go
 agent's).
+
+Steering (7.51.00, ``msg.steer``): a person's instruction goes from the API to the run's conductor only, and the
+conductor (the run coordinator) relays it to one agent or every agent of one role only. The coordinator reaches the bus
+through the board (its session's egress has no EventBridge endpoint): the board's ``steer`` op checks the caller is the
+run's current coordinator, from its IAM identity, and publishes the relay from the board's own source as the conductor
+(``RELAYED``), the one message the board sends as another kind than ``system``. No agent sends steering, and no one
+steers the API or the conductor but a person. ``signal.restart`` (an agent restarted from its checkpoint or afresh) is
+the API's alone.
 """
 from __future__ import annotations
 
@@ -34,6 +42,12 @@ FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system'}),
               'supervisor': frozenset({'supervisor'}), 'coach': frozenset({'coach'}),
               'webhook': frozenset({'system'}), 'conductor': frozenset({'conductor'}), 'agent': frozenset({'agent'})}
 _TALK = frozenset({'agent', 'conductor'})
+#: The ``from.kind`` a source may claim for one type, beyond its own (``FROM_KINDS``): the board relays the run
+#: coordinator's steering as the conductor, once its ``steer`` op checked the caller is the run's coordinator.
+RELAYED: dict[tuple[str, str], frozenset[str]] = {('board', 'msg.steer'): frozenset({'conductor'})}
+#: Who a steering message goes to, by its sender's kind: a person steers the conductor; the conductor steers an agent
+#: or a role's agents.
+STEERED: dict[str, frozenset[str]] = {'human': frozenset({'conductor'}), 'conductor': frozenset({'agent', 'role'})}
 #: Per type family (or exact type), the kinds of source that may send it. A person (the API) talks only by
 #: answering; the supervisor signals agents too (the pause before a session's time is up).
 ALLOWED = {
@@ -45,6 +59,8 @@ ALLOWED = {
     'signal.': frozenset({'api', 'supervisor'}),
     # The supervisor asks a silent agent for its state; a person's check-in is a message.
     'signal.check_in': frozenset({'supervisor'}),
+    # A person restarts an agent (7.51.00); the supervisor never does.
+    'signal.restart': frozenset({'api'}),
     'gate.': frozenset({'agent'}),
     'run.': frozenset({'supervisor', 'board'}),
     'run.health': frozenset({'supervisor'}),
@@ -55,6 +71,9 @@ ALLOWED = {
     'outcome.': frozenset({'webhook'}),
     'msg.': _TALK,
     'msg.answer': _TALK | {'api'},
+    # A person's steering to the conductor (the API's), and the conductor's relay of it (its own source, or the
+    # board's for the coordinator's ``steer`` op): ``_steer_refusal`` holds who steers whom.
+    'msg.steer': frozenset({'api', 'conductor', 'board'}),
     'review.': _TALK,
     # The run's coach proposes; an administrator proposes, accepts, promotes and rolls back through the API.
     'skill.proposed': frozenset({'coach', 'api'}),
@@ -103,7 +122,7 @@ def _source_refusal(message: Message, sender: Source) -> str:
     """Why the source may not send this message, as what it is and where it speaks ('' when it may)."""
     if sender.kind not in _kinds_for(message.type):
         return f'{sender.kind} may not send {message.type}'
-    if message.sender.kind not in FROM_KINDS[sender.kind]:
+    if message.sender.kind not in FROM_KINDS[sender.kind] | RELAYED.get((sender.kind, message.type), frozenset()):
         return f'from.kind {message.sender.kind} is not what the source {sender.kind} proves'
     if sender.run_id and (sender.ws, sender.run_id) != (message.ws, message.run_id):
         return f'{sender.kind} of run {sender.ws}/{sender.run_id} may not speak in another run'
@@ -124,10 +143,19 @@ def _agent_refusal(message: Message, sender: Source) -> str:
     return ''
 
 
+def _steer_refusal(message: Message) -> str:
+    """Why this steering may not go where it is addressed ('' when it may, or for any other type)."""
+    if message.type != 'msg.steer':
+        return ''
+    if message.to.kind not in STEERED.get(message.sender.kind, frozenset()):
+        return f'steering from {message.sender.kind} may not go to {message.to.kind}'
+    return ''
+
+
 def judge(message: Message, source: str) -> Verdict:
     """Whether the router may deliver ``message``, put on the bus with ``source``, and why not."""
     sender = parse_source(source)
     if sender is None:
         return Verdict(False, 'unknown source')
-    reason = _source_refusal(message, sender) or _agent_refusal(message, sender)
+    reason = _source_refusal(message, sender) or _agent_refusal(message, sender) or _steer_refusal(message)
     return Verdict(not reason, reason)

@@ -33,16 +33,20 @@ FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'coach', 'human', 's
 TO_KINDS = frozenset({'role', 'agent', 'conductor', 'run'})
 TYPES = frozenset({
     'task.posted', 'task.claimed', 'task.progress', 'task.review', 'task.done', 'task.failed', 'task.needs_human',
-    'msg.question', 'msg.answer', 'msg.finding', 'msg.handoff',
+    'msg.question', 'msg.answer', 'msg.finding', 'msg.handoff', 'msg.steer',
     'review.requested', 'review.result',
     'gate.go', 'gate.no_go',
     'run.started', 'run.health', 'run.paused', 'run.resumed', 'run.ended',
     'run.agent_continued', 'run.agent_timed_out', 'run.agent_failed', 'run.budget_alert',
     'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now', 'signal.check_in',
+    'signal.restart',
     'skill.proposed', 'skill.accepted', 'skill.rolled_back',
     'outcome.pr_opened', 'outcome.accepted', 'outcome.merged', 'outcome.closed', 'outcome.reverted',
     'outcome.review_posted',
 })
+#: The types a message may address to a role: a posted task (for the role's agents to claim), and a person's
+#: steering the run's conductor relays to every agent of a role (7.51.00: ``msg.steer``, bus/senders.py).
+ROLE_TYPES = frozenset({'task.posted', 'msg.steer'})
 FIELDS = frozenset({'schema', 'event_id', 'ws', 'run_id', 'thread_id', 'task_id', 'attempt', 'from', 'to', 'type',
                     'summary', 'refs', 'at'})
 REF_KEYS = frozenset({'s3', 'commit', 'pr', 'files'})
@@ -189,9 +193,10 @@ def parse(data: Any) -> Message:
         at=_text(data, 'at', _AT))
     if message.to.kind == 'role' and message.to.id not in ROLES:
         raise MessageError('unknown role')
-    if (message.type == 'task.posted') != (message.to.kind == 'role') or (
-            message.type == 'task.posted' and not message.task_id):
-        raise MessageError('only a posted task is addressed to a role, and it names its task')
+    if (message.to.kind == 'role' and message.type not in ROLE_TYPES) or (
+            message.type == 'task.posted' and (message.to.kind != 'role' or not message.task_id)):
+        raise MessageError('only a posted task is addressed to a role (and relayed steering), and a posted task '
+                           'names its task')
     if len(message.to_json().encode('utf-8')) > MAX_EVENT_BYTES:
         raise MessageError(f'the message is over {MAX_EVENT_BYTES} bytes: put its payload in S3')
     return message

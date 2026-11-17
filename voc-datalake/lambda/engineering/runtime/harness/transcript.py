@@ -34,6 +34,21 @@ MAX_TEXT: Final = 20_000
 #: The chunk numbers a session tries past a taken one (a continuation's, the CLI's tool server's).
 MAX_SKIPS: Final = 200
 MAX_CHUNK: Final = 9_999
+#: Each platform tool's kind as ACP names a tool call's (7.51.00; ``session/update`` ``tool_call``'s ``kind``: read, edit,
+#: delete, move, search, execute, think, fetch, other), recorded on every ``tool_call`` event so the transcript and
+#: 7.53.00's ACP channel tell one stream; a tool not listed is ``other``.
+TOOL_KINDS: Final = {
+    'read_file': 'read', 'list_files': 'read', 'read_board': 'read', 'read_flow': 'read', 'read_gate_record': 'read',
+    'read_findings': 'read', 'read_knowledge': 'fetch', 'read_issue': 'fetch', 'write_file': 'edit', 'run': 'execute',
+    'install_dependencies': 'execute', 'run_gate': 'execute',
+}
+#: A tool call's statuses as ACP names them (``tool_call_update``'s ``status``).
+TOOL_STATUSES: Final = ('pending', 'in_progress', 'completed', 'failed')
+
+
+def tool_kind(name: str) -> str:
+    """The ACP kind of a platform tool (``other`` for one not listed)."""
+    return TOOL_KINDS.get(name, 'other')
 
 
 class Store(Protocol):
