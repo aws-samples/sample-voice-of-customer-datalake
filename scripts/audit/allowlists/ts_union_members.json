@@ -1,13 +1,6 @@
 {
   "entries": [
     { "key": "frontend:src/assistant/notifications/runNotifications.ts#NotificationAccess.'granted'", "reason": "Produced by the browser: Notification.permission / requestPermission() answer 'granted'." },
-    { "key": "frontend:src/pages/ProjectDetail/overviewState.ts#OverviewStep.'remix'", "reason": "A key of the Record<OverviewStep, …> steps table (steps.remix renders the remix card); no value of OverviewStep is ever 'remix' by design, which is why RecommendableStep excludes it (the 5.28 fix)." },
-    { "key": "frontend:src/components/Document/types.ts#SurfaceVariant.'panel'", "reason": "X1 ships the shared document surface's panel variant (pinned by DocumentSurface.test.tsx); 7.52 C's inspectors (gate brief, Reports) are its first callers. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#SurfaceVariant.'inline'", "reason": "X1 ships the shared document surface's inline variant; 7.52 C's gate brief <details> and the Prioritization preview are its first callers. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#ContentType.'plain'", "reason": "X1 ships plain text and prompts on the shared surface (SourceEditor, pinned by DocumentSurface.test.tsx); 7.52 C's prompt adapters (automation and step instructions) are the first. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#ContentType.'code'", "reason": "X1 ships the read-only code view (D6-5); 7.52 C and later YAML/patch sources are the first adapters. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#ReadOnlyReason.'managedByTemplate'", "reason": "X1 ships the template lock as visible text (pinned by DocumentSurface.test.tsx); 7.52 C's gate brief and skill adapters produce it. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#ReadOnlyReason.'decided'", "reason": "X1 ships the accepted-version note; 7.52 C's skill adapter produces it. Remove this entry there." },
-    { "key": "frontend:src/components/Document/types.ts#ReadOnlyReason.'proposalOnly'", "reason": "X1 ships the proposal-only note; 7.52 C's skill and tenets adapters produce it. Remove this entry there." }
+    { "key": "frontend:src/pages/ProjectDetail/overviewState.ts#OverviewStep.'remix'", "reason": "A key of the Record<OverviewStep, …> steps table (steps.remix renders the remix card); no value of OverviewStep is ever 'remix' by design, which is why RecommendableStep excludes it (the 5.28 fix)." }
   ]
 }

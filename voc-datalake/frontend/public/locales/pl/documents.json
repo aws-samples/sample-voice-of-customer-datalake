@@ -267,5 +267,9 @@
   },
   "panel": {
     "openFull": "Otwórz pełną stronę"
+  },
+  "live": {
+    "newer": "Gotowa jest nowsza wersja: {{version}}.",
+    "show": "Pokaż {{version}}"
   }
 }

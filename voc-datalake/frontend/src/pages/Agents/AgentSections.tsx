@@ -16,6 +16,7 @@ import { API_AGENT_LIMITS, API_ENGINEERING_LIMITS } from '../../api/agentsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
+import PromptField from '../../components/Document/text/PromptField'
 import { ClampedNumberField } from './ClampedNumberField'
 import { useVisibleCategories } from '../../hooks/useCategories'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
@@ -168,12 +169,10 @@ export function InstructionsSection({ draft, readOnly, onChange, engineering = f
   const { t } = useTranslation('agents')
   const max = engineering ? API_ENGINEERING_LIMITS.maxInstructionsChars : API_AGENT_LIMITS.maxInstructionsChars
   const hint = engineering ? t('fields.engineeringInstructionsHint', { n: max }) : t('fields.instructionsHint', { n: max })
+  // A prompt the automation's Save writes (§6.4 step 7): edited as written with its count, read only as text.
   return (
-    <LabeledField label={t('fields.instructions')} hint={hint}>
-      {(id) => <textarea id={id} rows={engineering ? 5 : 14} className="input w-full font-mono text-[13px]" disabled={readOnly}
-        value={draft.instructions} maxLength={max}
-        onChange={(e) => onChange({ ...draft, instructions: e.target.value })} />}
-    </LabeledField>
+    <PromptField label={t('fields.instructions')} hint={hint} value={draft.instructions} readOnly={readOnly} maxChars={max}
+      onChange={(instructions) => onChange({ ...draft, instructions })} />
   )
 }
 

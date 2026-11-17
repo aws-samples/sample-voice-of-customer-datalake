@@ -1276,7 +1276,7 @@
     }
   },
   "skills": {
-    "hint": "各エンジニアリングエージェントはスキル（指示、例、ツール、モデル、ハーネス）に従って作業します。変更はすべて新しいバージョンとなり、その理由、提案者と承認者、ベンチマークとともに保存されます。共有スキルは、独自のバージョンを持たないすべての接続に適用されます。",
+    "hint": "各ロールのスキルはバージョン管理されます。すべての変更はここで提案、確認、承認されます。",
     "scope": "スキルの範囲",
     "shared": "共有スキル",
     "connection": "接続 {{name}}",
@@ -1285,8 +1285,9 @@
     "columns": {
       "role": "ロール",
       "current": "現在のバージョン",
-      "versions": "バージョン数",
-      "latest": "最新の変更"
+      "waiting": "確認待ち",
+      "template": "テンプレート",
+      "lastChange": "最終変更"
     },
     "openRole": "{{role}} の履歴を開く",
     "role": {
@@ -1348,10 +1349,6 @@
     "diff": {
       "added": "追加:",
       "removed": "削除:",
-      "title": "ベースからの変更",
-      "firstTitle": "最初のバージョン: すべてが新規です",
-      "none": "ベースからの変更はありません。",
-      "instructions": "指示",
       "examples": "例",
       "example": "状況: {{situation}} | 行動: {{action}}",
       "tools": "ツールポリシー",
@@ -1359,14 +1356,6 @@
       "model": "モデル: {{from}} → {{to}}",
       "harness": "ハーネス: {{from}} → {{to}}",
       "nothing": "（なし）"
-    },
-    "record": {
-      "title": "スキル全体",
-      "model": "モデル",
-      "harness": "ハーネス",
-      "tools": "ツール",
-      "instructions": "指示",
-      "examples": "例（{{n, number}}）"
     },
     "noBase": "以前のバージョンなしで作成されました。",
     "baseShared": "共有バージョン {{version}} をもとに作成されました。",
@@ -1469,19 +1458,96 @@
     },
     "template": {
       "title": "テンプレートが更新されました",
-      "badge": "テンプレート更新 (v{{version}})",
-      "explain": "このロールのリポジトリのテンプレートに、このスコープで実行中のものより新しいバージョンがあります。変更内容を確認してから提案として採用してください。管理者が下の履歴で承認して初めて実行されます。自動では何も変わりません。",
+      "badge": "更新あり（v{{version}}）",
+      "explain": "このロールのリポジトリのテンプレートは、この範囲のバージョンより新しくなっています。使用中のバージョンと比較してから提案してください。管理者が承認するまで実行されません。自動的には何も変わりません。",
       "show": "変更内容を表示",
       "loading": "テンプレートを読み込んでいます",
       "readFailed": "テンプレートを読み込めませんでした。",
       "diffTitle": "テンプレート v{{version}} と現在のバージョン v{{current}} の比較",
       "diffTitleFirst": "テンプレート v{{version}}(現在のバージョンはまだありません)",
-      "adopt": "提案として採用",
+      "adopt": "テンプレートから v{{version}} を提案",
       "adoptHint": "あなたの提案になります。管理者は他のバージョンと同様に承認または却下します。",
       "adoptFailed": "テンプレートを採用できませんでした。",
       "notNewer": "このテンプレートはすでに提案済みか承認済みです。",
-      "proposed": "テンプレートはバージョン {{version}} として提案されました。実行するには履歴で承認してください。",
-      "openProposed": "バージョン {{version}} を開く"
+      "proposed": "テンプレートはバージョン {{version}} として提案されました。開いて承認または却下してください。",
+      "openProposed": "提案を開く",
+      "documentTitle": "テンプレート v{{version}}",
+      "label": "テンプレート v{{version}}"
+    },
+    "connectionRepository": "{{repository}}（{{name}}）",
+    "toReview": "v{{version}} を確認",
+    "review": "確認",
+    "reviewVersion": "{{role}} のバージョン {{version}} を確認",
+    "templateUnknown": "未読",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "指示",
+      "examples": "例（{{n, number}}）",
+      "noExamples": "例はありません。",
+      "situation": "状況",
+      "action": "行動",
+      "view": {
+        "label": "表示",
+        "read": "読む",
+        "changes": "変更"
+      },
+      "comparedWith": "書かれた元のバージョン v{{version}} と比較しています。",
+      "nothing": "なし",
+      "identical": "指示は同じです。",
+      "baseFailed": "元のバージョンを読み込めなかったため、変更を表示できません。しばらくしてからもう一度お試しください。"
+    },
+    "provenance": {
+      "coach": "コーチの提案"
+    },
+    "changes": {
+      "title": "例、ツール、モデル、ハーネス",
+      "none": "例、ツール、モデル、ハーネス: 変更なし。"
+    },
+    "propose": {
+      "button": "バージョンを提案",
+      "title": "{{role}} のバージョンを提案",
+      "writtenOn": "使用中のバージョン v{{version}} をもとに書きます。これは提案です。管理者がほかの提案と同じように承認します。",
+      "summary": "概要: 何を変えるかを 1 行で",
+      "instructions": "指示",
+      "examples": "例",
+      "exampleN": "例 {{n, number}}",
+      "removeExample": "例 {{n, number}} を削除",
+      "addExample": "例を追加",
+      "examplesFull": "スキルの例は最大 {{max, number}} 件です。",
+      "reason": "理由（任意）",
+      "cancel": "キャンセル",
+      "review": "変更を確認",
+      "reviewHint": "あなたのバージョンが v{{version}} から変える内容です。何も適用されません。提案され、ほかのバージョンと同じように承認または却下されます。",
+      "outOfDate": "v{{base}} をもとに書かれましたが、現在は v{{current}} が使用中です。以下の変更は v{{current}} との比較です。提案する前に確認してください。",
+      "yours": "あなたの版",
+      "back": "編集に戻る",
+      "submit": "このバージョンを提案",
+      "stale": "開いた後に使用中のバージョンが変わりました。もう一度読み込んでください。下書きは保持され、確認画面で使用中のバージョンと比較されます。",
+      "readAgain": "もう一度読み込む",
+      "refused": "提案は拒否されました: {{message}}",
+      "failed": "提案を送信できませんでした。しばらくしてからもう一度お試しください。",
+      "noBase": "この範囲ではまだ使用中のバージョンがないため、もとにするバージョンがありません。",
+      "loading": "使用中のバージョンを読み込んでいます…",
+      "issues": {
+        "summaryMissing": "概要を書いてください: バージョンが何を変えるかを 1 行で。",
+        "summaryLong": "概要は 200 文字以内にしてください。",
+        "summaryLines": "概要は 1 行にしてください。",
+        "instructionsMissing": "指示を空にすることはできません。",
+        "instructionsLong": "指示は最大 20,000 文字です。",
+        "instructionsLines": "指示は最大 500 行です。",
+        "examplesHeading": "「## Examples」見出しを削除してください。例は下のリストで、見出しがあると本文が例に移動します。",
+        "examplesTooMany": "スキルの例は最大 {{max, number}} 件です。",
+        "exampleMissing": "各例に状況と行動の両方を入力するか、削除してください。",
+        "exampleLong": "例の各項目は最大 2,000 文字です。",
+        "reasonLong": "理由は 400 文字以内にしてください。",
+        "unchanged": "このバージョンはまだ何も変えていません。指示か例を編集してください。"
+      },
+      "discard": {
+        "title": "下書きを破棄しますか?",
+        "message": "まだ何も提案していません。概要、指示、例は失われます。",
+        "confirm": "破棄",
+        "keep": "編集を続ける"
+      }
     }
   },
   "engineeringRun": {
@@ -1784,7 +1850,6 @@
     "orderFine": "この手順より前の手順はすべて完了しています。",
     "orderMissing": "この手順より前で未完了: {{list}}。",
     "readinessFor": "設定後の {{name}} の準備状況",
-    "later": "このフローは 7.52 で提供されます。今はスキップしてください。その時にガイドが改めて案内します。",
     "steps": {
       "prerequisites": {
         "title": "前提条件",
@@ -2557,6 +2622,264 @@
       "gates": "変更に対するチェックとレビュー。「自動検出」はリポジトリのパックを選びます。",
       "flows": "保存済みの別のフローを、そのリビジョンで呼び出します。",
       "platform": "プラットフォームが実行するステップ: シャード分割、シャードの集約、ボード、メモリ、Learn。"
+    }
+  },
+  "registry": {
+    "hint": "各エージェントはカードです。ロールとそのスキルバージョンの 1 つに、モデル、ツール、上限、入力、出力が付きます。承認済みのスキルバージョンからカードを作成し、名前と目的を付けましょう。",
+    "notAvailable": "レジストリは、エンジニアリングエージェントが有効な環境の管理者向けです。",
+    "loading": "レジストリを読み込んでいます…",
+    "failed": "レジストリを読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "scope": "カードの範囲",
+    "filters": {
+      "label": "表示",
+      "cards": "エージェント",
+      "gates": "品質ゲート"
+    },
+    "roles": "ロール",
+    "rolesHint": "各ロール固有のカード。その範囲で実行されるスキルに基づきます。",
+    "made": "スキルから作成",
+    "empty": {
+      "title": "エージェントカードはまだありません。",
+      "hint": "スキルバージョンから作成しましょう。"
+    },
+    "open": "{{title}} を開く",
+    "kind": {
+      "role": "ロール",
+      "card": "スキルから作成"
+    },
+    "card": {
+      "back": "すべてのカード",
+      "missing": "レジストリにカード {{card}} はありません。",
+      "failed": "カードを読み込めませんでした。しばらくしてからもう一度お試しください。",
+      "purpose": "目的",
+      "skill": "スキル",
+      "skillTemplate": "テンプレート（{{label}}）",
+      "skillStore": "{{label}}: v{{version}}、{{status}}",
+      "openSkill": "スキルバージョンを開く",
+      "fromTemplate": "テンプレート v{{version}} から",
+      "model": "モデル",
+      "tools": "ツール",
+      "harness": "ハーネス",
+      "caps": "上限",
+      "inputs": "読み取り",
+      "outputs": "書き込み",
+      "from": "{{from}} から",
+      "recordedOn": "{{on}} に記録",
+      "required": "必須",
+      "trust": "{{trust}} として扱う",
+      "gates": "ゲートパック",
+      "template": "テンプレート",
+      "scorecard": "スコアカード",
+      "noScorecard": "スコアカードは接続ごとです。上で接続を選んでください。",
+      "scorecardLine": "{{runs, number}} 回実行 · 成功率 {{rate}} · {{cost}}",
+      "spend": "今月",
+      "spendLine": "{{usd}}（{{month}}）",
+      "made": "作成",
+      "madeBy": "{{who}} が作成、{{at}}",
+      "versions": "バージョン",
+      "source": "ソース",
+      "sourceHint": "リポジトリにあるロールのテンプレートそのままで、読み取り専用です。リリースとともに templates/orchestration で変わります。",
+      "sourceFile": "ファイル",
+      "sourceFailed": "ソースを読み込めませんでした。"
+    },
+    "create": {
+      "button": "スキルから作成",
+      "title": "スキルからエージェントカードを作成",
+      "description": "ロールとその承認済みスキルバージョンの 1 つに、名前と目的を付けます。モデル、ツール、ハーネスはそのバージョンのものです。",
+      "role": "ロール",
+      "scope": "スキルの範囲",
+      "version": "スキルバージョン",
+      "versionPick": "承認済みのバージョンを選択",
+      "versionNone": "このロールにはこの範囲で承認済みのバージョンがありません。先にスキルで承認してください。",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "ロールのバージョンを読み込めませんでした。",
+      "slug": "スラッグ",
+      "slugHint": "小文字、数字、ハイフン。カードの ID は {{id}} です。",
+      "cardTitle": "タイトル（任意）",
+      "purpose": "目的",
+      "caps": "上限（任意）",
+      "capsHint": "空欄の上限はテンプレートの値のままです。上限はテンプレートの値以下です。",
+      "cap": "{{name}}（最大 {{max, number}}）",
+      "cancel": "キャンセル",
+      "submit": "カードを作成",
+      "refused": "カードは作成されませんでした: {{message}}",
+      "failed": "カードを作成できませんでした。しばらくしてからもう一度お試しください。",
+      "issues": {
+        "role": "ロールを選んでください。",
+        "version": "承認済みのスキルバージョンを選んでください。",
+        "slugMissing": "カードにスラッグを付けてください。",
+        "slugShape": "1〜40 文字の小文字、数字、ハイフンを使ってください（先頭と末尾にハイフン不可）。",
+        "titleLong": "タイトルは 80 文字以内にしてください。",
+        "titleText": "タイトルは 1 行のプレーンテキストにしてください。",
+        "purposeMissing": "カードの目的を書いてください。",
+        "purposeLong": "目的は {{max, number}} 文字以内にしてください。",
+        "purposeText": "目的は 1 行のプレーンテキストにしてください。",
+        "capShape": "上限は 0 より大きい整数です。",
+        "capOver": "上限はテンプレートの値以下です。"
+      }
+    }
+  },
+  "gates": {
+    "hint": "品質ゲートが実行するチェックを言語パックごとに、各パックのオーナーによるガイドとともに示します。読み取り専用です。リリースとともに templates/orchestration/gates で提供されます。",
+    "loading": "品質ゲートを読み込んでいます…",
+    "failed": "品質ゲートを読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "ownGate": "リポジトリ独自のゲートも実行されます: {{file}}。",
+    "packs": "ゲートパック",
+    "languages": "言語",
+    "image": "イメージ",
+    "network": "ネットワーク（セットアップのみ）",
+    "tools": "ツール",
+    "toolsPins": "リポジトリ自身が固定したバージョン。",
+    "toolsRecorded": "リポジトリ自身が固定したバージョン。最終記録: {{list}}",
+    "steps": "ステップ",
+    "stepsOf": "{{pack}} のステップ",
+    "stepAlways": "常に",
+    "stepWhen": "リポジトリに {{list}} がある場合",
+    "lookedAtNothing": "何もチェックしなかった場合は失敗: {{rule}}",
+    "stopsTitle": "ゲートが人の判断で止まるとき",
+    "stops": {
+      "check_failed": "チェックが失敗し、修正しても通りませんでした。",
+      "looked_at_nothing": "ゲートは何もチェックしませんでした。リポジトリを対象とするチェックがないか、チェック対象が見つかりませんでした。",
+      "own_gate_changed": "変更がリポジトリ独自のゲート（{{own_gate}}）に触れています。",
+      "review_blocked": "レビューがブロックしました。最終判定は NO-GO でした。",
+      "rounds_used_up": "最終ラウンドの後もブロッキングの指摘が残りました。"
+    },
+    "runners": "誰も指定しないゲートは {{list}} が実行します。",
+    "brief": {
+      "toggle": "オーナーのガイド · {{file}} · {{kb}} KB",
+      "fromTemplate": "テンプレートから",
+      "packs": "{{list}} 用",
+      "missing": "このリリースにはガイド {{id}} がありません。",
+      "failed": "ガイドを読み込めませんでした。",
+      "back": "品質ゲート"
+    }
+  },
+  "knowledge": {
+    "label": "ナレッジパック",
+    "loading": "ナレッジパックを読み込んでいます…",
+    "failed": "ナレッジパックを読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "none": "ナレッジパックはまだありません。この接続で「リポジトリの理解」を実行してください。パックはここで承認できます。",
+    "noConnection": "まずリポジトリを接続してください（前提条件）。そのナレッジと原則がここに表示されます。",
+    "repository": "リポジトリ",
+    "for": "{{repository}} 用",
+    "rendering": "承認済みドキュメントを生成済み: 生成 {{version}}。",
+    "publishButton": "プルリクエストとして開く",
+    "rootPackage": "リポジトリ",
+    "package": "パッケージ {{name}}",
+    "version": "バージョン",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "下書き",
+      "approved": "承認済み"
+    },
+    "inUse": "使用中",
+    "byAgent": "エージェントが作成",
+    "written": "作成 {{at}}",
+    "builtFrom": "{{commit}} から",
+    "view": {
+      "label": "表示",
+      "read": "読む",
+      "compare": "v{{version}} と比較"
+    },
+    "kinds": {
+      "label": "ドキュメント",
+      "architecture": "アーキテクチャ",
+      "convention": "規約",
+      "review-guide": "レビューガイド",
+      "test-strategy": "テスト戦略",
+      "ci": "CI",
+      "glossary": "用語集",
+      "how-we-work": "私たちの働き方"
+    },
+    "kindMissing": "このバージョンにはこの種類のドキュメントがありません。",
+    "identical": "ドキュメントは両バージョンで同じです。",
+    "versionFailed": "バージョンを読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "approve": "v{{version}} を承認",
+    "approved": "v{{version}} を承認しました。",
+    "stale": "読み込んだ後に、このバージョンか承認済みのバージョンが変わりました。承認する前にもう一度読み込んでください。",
+    "readAgain": "もう一度読み込む",
+    "approveFailed": "承認を保存できませんでした。しばらくしてからもう一度お試しください。",
+    "refused": "承認は拒否されました: {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "ナレッジドキュメントをプルリクエストとして開く",
+        "tenets": "TENETS.md をプルリクエストとして開く"
+      },
+      "branch": "ブランチ {{branch}}、承認済みバージョン {{version}} から。マージするのは人だけです。",
+      "loading": "承認済みドキュメントを生成しています…",
+      "previewFailed": "ドキュメントをプレビューできませんでした。しばらくしてからもう一度お試しください。",
+      "hint": "承認済みドキュメントの現在の生成結果をファイルごとに示します。プルリクエストはレビュー可能な状態で開かれ、ホスト上でマージするのは人だけです。",
+      "mismatch": "保存されたレコードはもう承認時の内容を生成しないため、公開は拒否されます。バージョンをもう一度承認してください。",
+      "files": "ファイル（{{n, number}}）",
+      "size": "{{kb}} KB",
+      "textsCut": "一部のファイルは大きすぎてここに表示できません。パッチに含まれています。",
+      "inPatch": "このファイルは大きすぎてここに表示できません。パッチに含まれています。",
+      "submit": "プルリクエストを開く",
+      "close": "閉じる",
+      "opened": "プルリクエスト #{{number}} をレビュー可能な状態で開きました。",
+      "openedDraft": "プルリクエスト #{{number}} を下書きとして開きました。",
+      "personMerges": "ホスト上でマージするのは人だけです。",
+      "openPr": "プルリクエストを開く",
+      "failed": "プルリクエストを開けませんでした。もう一度公開しても安全です。開かれるのは最大 1 件です。",
+      "readAgain": "もう一度読み込む",
+      "download": "パッチをダウンロード",
+      "patchCut": "パッチはここで途切れています。全体を表示するには大きすぎます。",
+      "patchLabel": "ドキュメントを追加するパッチ",
+      "refused": {
+        "human_driven": "あなたは「人が主導」で作業しています。プラットフォームはあなたの代わりに何もプッシュしません。このパッチを自分で適用するか、作業方法を変更してください。",
+        "already_published": "このバージョンのドキュメントにはすでにプルリクエストがあります。新しい承認済みバージョンで新しいものが開かれます。",
+        "digest_mismatch": "このプレビュー以降にドキュメントが変わりました。もう一度読み込んでから公開してください。",
+        "not_approved": "まだ何も承認されていません。先にバージョンを承認してください。"
+      }
+    }
+  },
+  "tenets": {
+    "label": "原則",
+    "loading": "原則を読み込んでいます…",
+    "failed": "原則を読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "none": "原則の下書きはまだありません。この接続で原則フローを実行してください。下書きはここで承認または却下できます。",
+    "version": "バージョン",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "下書き",
+      "accepted": "承認済み",
+      "rejected": "却下"
+    },
+    "noneAccepted": "まだ承認済みのバージョンはありません。承認されるまで、トリアージは原則を引用しません。",
+    "accepted": "v{{version}} が承認済みです。トリアージが引用できるのはこの内容です。",
+    "publish": "プルリクエストとして開く",
+    "title": "原則 v{{version}}",
+    "byAgent": "エージェントが作成",
+    "drafted": "下書き {{at}}",
+    "decided": "{{who}} が決定、{{at}}",
+    "comparedWith": "v{{version}} と比較しています。",
+    "reason": "理由（任意）",
+    "reject": "却下",
+    "accept": "v{{version}} を承認",
+    "stale": "読み込んだ後に承認済みの原則が変わりました。決定する前にもう一度読み込んでください。",
+    "readAgain": "もう一度読み込む",
+    "refused": "決定は拒否されました: {{message}}",
+    "decideFailed": "決定を保存できませんでした。しばらくしてからもう一度お試しください。",
+    "versionFailed": "バージョンを読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "projection": {
+      "summary": "概要",
+      "why": "理由:",
+      "cites": "引用:"
+    },
+    "changes": {
+      "label": "変更",
+      "first": "すべての原則が新規です",
+      "none": "変更された原則はありません。",
+      "added": "追加",
+      "changed": "変更",
+      "removed": "削除",
+      "fields": "変更箇所: {{list}}"
+    },
+    "fields": {
+      "title": "タイトル",
+      "statement": "内容",
+      "rationale": "根拠",
+      "citations": "引用"
     }
   }
 }

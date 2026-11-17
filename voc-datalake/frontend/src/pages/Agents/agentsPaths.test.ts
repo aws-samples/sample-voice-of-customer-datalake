@@ -18,13 +18,13 @@ describe('the list\'s views', () => {
     ['/agents/connections', { view: 'connections', role: null, version: null }],
     ['/agents/skills', { view: 'skills', role: null, version: null }],
     ['/agents/skills/fixer', { view: 'skills', role: 'fixer', version: null }],
-    ['/agents/skills/fixer/v/3', { view: 'skills', role: 'fixer', version: 3 }],
+    ['/agents/skills/fixer/versions/3', { view: 'skills', role: 'fixer', version: 3 }],
   ])('%s is %o, as it is', (pathname, place) => {
     expect(read(pathname, '?month=2026-11')).toStrictEqual({ place, replaceWith: null })
   })
 
   it.each([
-    ['/agents/skills/fixer/v/x', '', '/agents/skills/fixer', ''],
+    ['/agents/skills/fixer/versions/x', '', '/agents/skills/fixer', ''],
     ['/agents/spend/extra', '?by=day', '/agents/spend', '?by=day'],
   ])('replaces %s%s by %s%s', (pathname, search, to, kept) => {
     expect(read(pathname, search)?.replaceWith).toStrictEqual({ pathname: to, search: kept })
@@ -53,7 +53,7 @@ describe('the list\'s views', () => {
 
   it('builds the links', () => {
     expect([agentsPath({ view: 'agents' }), agentsPath({ view: 'skills', role: 'fixer', version: 2 }), agentsPath({ view: 'spend', role: 'x' })])
-      .toStrictEqual(['/agents', '/agents/skills/fixer/v/2', '/agents/spend'])
+      .toStrictEqual(['/agents', '/agents/skills/fixer/versions/2', '/agents/spend'])
     expect([flowRunsPath('wf_1'), workflowPath('wf_1'), engineeringRunPagePath('r1')])
       .toStrictEqual(['/agents/runs?flow=wf_1', '/agents/workflows/wf_1', '/agents/engineering/r1'])
   })

@@ -261,5 +261,9 @@
   },
   "panel": {
     "openFull": "전체 페이지로 열기"
+  },
+  "live": {
+    "newer": "더 새로운 버전이 있습니다: {{version}}.",
+    "show": "{{version}} 보기"
   }
 }

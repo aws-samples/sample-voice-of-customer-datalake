@@ -69,6 +69,11 @@ export interface DocumentAdapter<S extends StoredDocument = StoredDocument> {
   /** `split`: a YAML front-matter (SKILL.md) is kept apart byte for byte; the editor sees the body only. */
   readonly frontMatter?: 'split'
   readonly limits?: DocumentLimits
+  /**
+   * How the rendered text is read (read/markdownPolicy.ts): `stored` (the default: text people stored) or `model` (text
+   * an agent or a model wrote that a person reviews: safe links and no images, so nothing it names is fetched).
+   */
+  readonly policy?: 'stored' | 'model'
   readonly permissions: DocumentPermissions
   /** Which stored version `stored` is. */
   readonly versionOf: (stored: S) => VersionRef

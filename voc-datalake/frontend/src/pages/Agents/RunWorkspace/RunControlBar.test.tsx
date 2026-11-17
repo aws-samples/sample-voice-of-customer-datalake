@@ -13,7 +13,11 @@ import fixture from '@test/engineeringRunWorkspace.json'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
+// (the original kept beside the doubles: the shared safe-Markdown policy's links reach the assistant's store)
+vi.mock('../../../store/authStore', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../store/authStore')>()),
+  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
+}))
 
 stubResizeObserverForSuite()
 

@@ -19,19 +19,24 @@ interface SourceEditorProps {
   readonly limits: DocumentLimits | undefined
   /** A prompt: the note that the model reads it exactly as written. */
   readonly prompt: boolean
+  /** The field's id, for a visible `<label htmlFor>` (its name then; without one, `label` names it). */
+  readonly id?: string
+  /** A hard cap on typing (a field its form saves, whose own validation takes no more); the count still shows. */
+  readonly maxLength?: number
 }
 
 const MIN_ROWS = 4
 const MAX_ROWS = 24
 
-export default function SourceEditor({ value, onChange, label, limits, prompt }: SourceEditorProps) {
+export default function SourceEditor({ value, onChange, label, limits, prompt, id, maxLength }: SourceEditorProps) {
   const { t } = useTranslation('documents')
   const countId = useId()
   const lines = value.split('\n').length
   const over = overLimit(value, limits)
   return (
     <div className="space-y-1.5">
-      <textarea className="input font-mono text-[13px] leading-6" value={value} aria-label={label}
+      <textarea id={id} className="input font-mono text-[13px] leading-6" value={value} aria-label={id === undefined ? label : undefined}
+        maxLength={maxLength}
         aria-describedby={countId} aria-invalid={over === null ? undefined : true}
         rows={Math.min(MAX_ROWS, Math.max(MIN_ROWS, lines))} onChange={(event) => onChange(event.target.value)} />
       {/* A space between the parts (outside them: a name computation trims a span's own text), so the field's

@@ -1,25 +1,35 @@
 /**
- * @fileoverview Agent orchestration's Skills and Registry tabs as routes (7.52.00): the pages 7.52.00 C3 builds, mounted
- * under the shell (Agents.tsx, a layout route) by routes.tsx with one spread: `...registryRoutes.map(underOrchestration)`.
+ * @fileoverview The Registry's and the Skills' routes (7.52.00 C3), for the Agents section's route table (C1 spreads
+ * `registryRoutes` into routes.tsx's protected layout, beside the other agents routes; paths are relative to it, as
+ * the table's are):
  *
- * The contract (C1's side, for C3's file to keep):
- * - export `registryRoutes: RouteObject[]`, the routes of `/agents/skills[/…]` and `/agents/registry[/…]`; a path may be
- *   written absolute (`/agents/registry/*`), from the app's root (`agents/registry/*`) or under the shell
- *   (`registry/*`): routes.tsx makes each one the shell's child. Give each a splat when its page has places under it;
- * - an element (or `lazy`) is the tab's CONTENT only: the shell draws the header and the tab bar above it, and wraps
- *   it in a Suspense; it neither replaces nor reads these tabs' places (agentsPaths.ts parses Skills' role and version
- *   for today's page, and leaves every place under `/agents/registry` to its page);
- * - keep this file free of components (react-refresh): load the pages with `lazy` (or from lazyPages.ts).
+ * - `agents/registry/*`: the Registry (Registry/registryPaths.ts): the cards at `/agents/registry`, its **Quality
+ *   gates** filter at `/agents/registry/gates` (a brief on its own page at `/agents/registry/gates/briefs/<id>`), and
+ *   one card at `/agents/registry/<card>`;
+ * - `agents/skills/*`: Skills (agentsPaths.ts): the scope's roles at `/agents/skills`, a role at
+ *   `/agents/skills/<role>`, one version at `/agents/skills/<role>/versions/<n>`; the scope stays in the query
+ *   (`?connection=`).
  *
- * This is C1's stand-in until C3's lands: today's Skills page, and an empty Registry. C3 overwrites it.
+ * Each element is the view's content (its tab row and header are the section's); each page loads on its own, and none
+ * imports the editor (build/readEngineImports.test.ts: the canvas loads on Edit only). Both static paths rank above
+ * `agents/:id/*` (an agent's id is never `registry` or `skills`).
  *
  * @module pages/Agents/orchestrationRoutes.registry
  */
+import { Suspense } from 'react'
+import PageLoader from '../../components/PageLoader/PageLoader'
+import RouteErrorBoundary from '../../components/RouteErrorBoundary'
+import { RegistryPage, SkillsPage } from './registryLazyPages'
+import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 
+/** A lazy page with the table's suspense fallback and its route-scoped error boundary (routes.tsx `page`). */
+const routePage = (element: ReactNode) => ({
+  element: <Suspense fallback={<PageLoader />}>{element}</Suspense>,
+  errorElement: <RouteErrorBoundary />,
+})
+
 export const registryRoutes: RouteObject[] = [
-  // Skills: the role's history `/agents/skills/<role>` and one version `/agents/skills/<role>/v/<n>` (agentsPaths.ts).
-  { path: '/agents/skills/*', lazy: async () => ({ Component: (await import('./EngineeringSkills')).EngineeringSkills }) },
-  // Registry, with Quality gates as its filter: C3's page; nothing until it lands.
-  { path: '/agents/registry/*', element: null },
+  { path: 'agents/registry/*', ...routePage(<RegistryPage />) },
+  { path: 'agents/skills/*', ...routePage(<SkillsPage />) },
 ]

@@ -9,6 +9,11 @@
  * adopt?connection=` `{expected_current, template_version}`): the template becomes a new version PROPOSED by that
  * person (provenance `template`), which an administrator then accepts like any other; the answer is that version.
  *
+ * Since 7.52.00 (gap M, D6-2) an administrator writes a version of their own (`POST /agents/engineering/skills/<role>/
+ * versions?connection=` `{base_version, instructions, examples, summary, reason?}` → 201): a PROPOSAL on the version
+ * the scope runs (its tools, model and harness), never applied by itself; 409 when the scope runs another version than
+ * `base_version` now, 400 for a version that changes nothing or a body off its shape.
+ *
  * @module api/engineeringSkillActionsApi
  */
 import { z } from 'zod'
@@ -64,6 +69,19 @@ const actionPath = (connection: string, role: SkillRole, version: number, action
   return `${ACTION_PATHS[action](base)}?${new URLSearchParams({ connection }).toString()}`
 }
 
+const proposePath = (connection: string, role: SkillRole) =>
+  `/agents/engineering/skills/${encodeURIComponent(role)}/versions?${new URLSearchParams({ connection }).toString()}`
+
+/** What a person's own version sends (gap M): the version it is written on as the screen showed it (0 for none), its
+ * instructions and examples, the one-line summary of what it changes, and an optional reason. */
+export interface ProposeBody {
+  base_version: number
+  instructions: string
+  examples: { situation: string; action: string }[]
+  summary: string
+  reason?: string
+}
+
 const adoptPath = (connection: string, role: SkillRole) =>
   `/agents/engineering/skills/${encodeURIComponent(role)}/template/adopt?${new URLSearchParams({ connection }).toString()}`
 
@@ -74,6 +92,8 @@ export interface AdoptBody {
 }
 
 export const engineeringSkillActionsApi = {
+  propose: async (connection: string, role: SkillRole, body: ProposeBody): Promise<ActionResult> =>
+    parseActionResult(await fetchApi<unknown>(proposePath(connection, role), post(body))),
   adopt: async (connection: string, role: SkillRole, body: AdoptBody): Promise<ActionResult> =>
     parseActionResult(await fetchApi<unknown>(adoptPath(connection, role), post(body))),
   act: async (connection: string, role: SkillRole, version: number, body: ActionBody, reason: string): Promise<ActionResult> => {

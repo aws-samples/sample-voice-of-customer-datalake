@@ -1347,7 +1347,7 @@
     }
   },
   "skills": {
-    "hint": "Każdy agent inżynieryjny pracuje według umiejętności: swoich instrukcji, przykładów, narzędzi, modelu i uprzęży. Każda zmiana to nowa wersja, zapisana z powodem, osobą, która ją zaproponowała i zaakceptowała, oraz jej benchmarkiem. Wspólne umiejętności obowiązują każde połączenie bez własnej wersji.",
+    "hint": "Umiejętność każdej roli ma wersje; każda zmiana jest tu proponowana, sprawdzana i akceptowana.",
     "scope": "Umiejętności dla",
     "shared": "Wspólne umiejętności",
     "connection": "Połączenie {{name}}",
@@ -1356,8 +1356,9 @@
     "columns": {
       "role": "Rola",
       "current": "Bieżąca wersja",
-      "versions": "Wersje",
-      "latest": "Ostatnia zmiana"
+      "waiting": "Czeka na sprawdzenie",
+      "template": "Szablon",
+      "lastChange": "Ostatnia zmiana"
     },
     "openRole": "Otwórz historię roli {{role}}",
     "role": {
@@ -1419,10 +1420,6 @@
     "diff": {
       "added": "Dodano:",
       "removed": "Usunięto:",
-      "title": "Zmiany względem wersji bazowej",
-      "firstTitle": "Pierwsza wersja: wszystko jest nowe",
-      "none": "Brak zmian względem wersji bazowej.",
-      "instructions": "Instrukcje",
       "examples": "Przykłady",
       "example": "Gdy: {{situation}} | Zrób: {{action}}",
       "tools": "Zasady narzędzi",
@@ -1430,14 +1427,6 @@
       "model": "Model: {{from}} → {{to}}",
       "harness": "Uprząż: {{from}} → {{to}}",
       "nothing": "(brak)"
-    },
-    "record": {
-      "title": "Cała umiejętność",
-      "model": "Model",
-      "harness": "Uprząż",
-      "tools": "Narzędzia",
-      "instructions": "Instrukcje",
-      "examples": "Przykłady ({{n, number}})"
     },
     "noBase": "Napisana bez wcześniejszej wersji.",
     "baseShared": "Napisana na wspólnej wersji {{version}}.",
@@ -1540,19 +1529,96 @@
     },
     "template": {
       "title": "Szablon zaktualizowany",
-      "badge": "Szablon zaktualizowany (v{{version}})",
-      "explain": "Szablon repozytorium dla tej roli ma nowszą wersję niż ta, którą uruchamia ten zakres. Przeczytaj, co zmienia, a potem przyjmij go jako propozycję: działa dopiero wtedy, gdy administrator zaakceptuje go w historii poniżej. Nic nie zmienia się samo.",
+      "badge": "Dostępna aktualizacja (v{{version}})",
+      "explain": "Szablon repozytorium dla tej roli jest nowszy niż wersje tego zakresu. Porównaj go z używaną wersją, a potem zaproponuj: działa dopiero, gdy administrator go zaakceptuje. Nic nie zmienia się samo.",
       "show": "Pokaż, co zmienia",
       "loading": "Odczytywanie szablonu",
       "readFailed": "Nie udało się odczytać szablonu.",
       "diffTitle": "Szablon v{{version}} w porównaniu z bieżącą wersją v{{current}}",
       "diffTitleFirst": "Szablon v{{version}} (żadna wersja nie jest jeszcze bieżąca)",
-      "adopt": "Przyjmij jako propozycję",
+      "adopt": "Zaproponuj v{{version}} z szablonu",
       "adoptHint": "Zaproponowana przez Ciebie; administrator akceptuje ją lub odrzuca jak każdą inną wersję.",
       "adoptFailed": "Nie udało się przyjąć szablonu.",
       "notNewer": "Ten szablon jest już zaproponowany lub zaakceptowany.",
-      "proposed": "Szablon zaproponowano jako wersję {{version}}: zaakceptuj go w historii, aby działał.",
-      "openProposed": "Otwórz wersję {{version}}"
+      "proposed": "Szablon zaproponowano jako wersję {{version}}. Otwórz ją, aby ją zaakceptować lub odrzucić.",
+      "openProposed": "Otwórz propozycję",
+      "documentTitle": "Szablon v{{version}}",
+      "label": "Szablon v{{version}}"
+    },
+    "connectionRepository": "{{repository}} ({{name}})",
+    "toReview": "v{{version}} do sprawdzenia",
+    "review": "Sprawdź",
+    "reviewVersion": "Sprawdź wersję {{version}} roli {{role}}",
+    "templateUnknown": "Nie odczytano",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "Instrukcje",
+      "examples": "Przykłady ({{n, number}})",
+      "noExamples": "Brak przykładów.",
+      "situation": "Gdy",
+      "action": "Zrób",
+      "view": {
+        "label": "Pokaż",
+        "read": "Czytaj",
+        "changes": "Zmiany"
+      },
+      "comparedWith": "W porównaniu z v{{version}}, wersją, na której ją napisano.",
+      "nothing": "Nic",
+      "identical": "Instrukcje są takie same.",
+      "baseFailed": "Nie udało się odczytać wersji, na której ją napisano, więc nie można pokazać jej zmian. Spróbuj ponownie za chwilę."
+    },
+    "provenance": {
+      "coach": "Zaproponowana przez coacha"
+    },
+    "changes": {
+      "title": "Przykłady, narzędzia, model i harness",
+      "none": "Przykłady, narzędzia, model i harness: bez zmian."
+    },
+    "propose": {
+      "button": "Zaproponuj wersję",
+      "title": "Zaproponuj wersję roli {{role}}",
+      "writtenOn": "Napisana na v{{version}}, używanej wersji. To propozycja: administrator akceptuje ją jak każdą inną.",
+      "summary": "Podsumowanie: co zmienia, w jednym wierszu",
+      "instructions": "Instrukcje",
+      "examples": "Przykłady",
+      "exampleN": "Przykład {{n, number}}",
+      "removeExample": "Usuń przykład {{n, number}}",
+      "addExample": "Dodaj przykład",
+      "examplesFull": "Umiejętność ma najwyżej {{max, number}} przykładów.",
+      "reason": "Powód (opcjonalnie)",
+      "cancel": "Anuluj",
+      "review": "Sprawdź swoją zmianę",
+      "reviewHint": "Co twoja wersja zmienia względem v{{version}}. Nic nie jest stosowane: zostaje zaproponowana, a potem zaakceptowana lub odrzucona jak każda inna wersja.",
+      "outOfDate": "Napisana na v{{base}}; teraz używana jest v{{current}}. Zmiany poniżej są względem v{{current}}: sprawdź je, zanim zaproponujesz.",
+      "yours": "Twoja",
+      "back": "Wróć do edycji",
+      "submit": "Zaproponuj tę wersję",
+      "stale": "Używana wersja zmieniła się od czasu, gdy ją otwarto. Odczytaj ją ponownie: twój szkic zostaje, a sprawdzenie porówna go wtedy z używaną wersją.",
+      "readAgain": "Odczytaj ponownie",
+      "refused": "Propozycję odrzucono: {{message}}",
+      "failed": "Nie udało się wysłać propozycji. Spróbuj ponownie za chwilę.",
+      "noBase": "W tym zakresie nie jest jeszcze używana żadna wersja, więc nie ma na czym napisać wersji.",
+      "loading": "Odczytywanie używanej wersji…",
+      "issues": {
+        "summaryMissing": "Napisz podsumowanie: jeden wiersz o tym, co zmienia wersja.",
+        "summaryLong": "Podsumowanie może mieć najwyżej 200 znaków.",
+        "summaryLines": "Podsumowanie musi mieścić się w jednym wierszu.",
+        "instructionsMissing": "Instrukcje nie mogą być puste.",
+        "instructionsLong": "Instrukcje mają najwyżej 20 000 znaków.",
+        "instructionsLines": "Instrukcje mają najwyżej 500 wierszy.",
+        "examplesHeading": "Usuń nagłówek „## Examples”: przykłady to lista poniżej, a nagłówek przeniósłby do nich twój tekst.",
+        "examplesTooMany": "Umiejętność ma najwyżej {{max, number}} przykładów.",
+        "exampleMissing": "Podaj w każdym przykładzie sytuację i co zrobić albo go usuń.",
+        "exampleLong": "Każda połowa przykładu ma najwyżej 2000 znaków.",
+        "reasonLong": "Powód może mieć najwyżej 400 znaków.",
+        "unchanged": "Twoja wersja jeszcze nic nie zmienia: edytuj jej instrukcje lub przykłady."
+      },
+      "discard": {
+        "title": "Odrzucić szkic?",
+        "message": "Nic nie zostało zaproponowane. Twoje podsumowanie, instrukcje i przykłady zostaną utracone.",
+        "confirm": "Odrzuć",
+        "keep": "Edytuj dalej"
+      }
     }
   },
   "engineeringRun": {
@@ -1859,7 +1925,6 @@
     "orderFine": "Każdy wcześniejszy krok jest gotowy.",
     "orderMissing": "Niegotowe przed tym krokiem: {{list}}.",
     "readinessFor": "Gotowość: {{name}}, po skonfigurowaniu",
-    "later": "Jego przepływ pojawi się w 7.52. Na razie go pomiń: przewodnik zaproponuje go wtedy ponownie.",
     "steps": {
       "prerequisites": {
         "title": "Wymagania wstępne",
@@ -2644,6 +2709,264 @@
       "gates": "Sprawdzenia i przeglądy zmiany; Wykrywanie automatyczne wybiera pakiety w repozytorium.",
       "flows": "Inny zapisany przepływ, wywoływany w swojej wersji.",
       "platform": "Kroki uruchamiane przez platformę: podział na części, scalanie części, tablica, pamięć, Learn."
+    }
+  },
+  "registry": {
+    "hint": "Każdy agent to karta: rola na jednej z wersji swojej umiejętności, z modelem, narzędziami, limitami, wejściami i wyjściami. Utwórz kartę z zaakceptowanej wersji umiejętności, aby nadać jej nazwę i cel.",
+    "notAvailable": "Rejestr jest dla administratorów, tam gdzie agenci inżynieryjni są włączeni.",
+    "loading": "Wczytywanie Rejestru…",
+    "failed": "Nie udało się wczytać Rejestru. Spróbuj ponownie za chwilę.",
+    "scope": "Karty dla",
+    "filters": {
+      "label": "Pokaż",
+      "cards": "Agenci",
+      "gates": "Bramki jakości"
+    },
+    "roles": "Role",
+    "rolesHint": "Własna karta każdej roli, na umiejętności, którą uruchamia jej zakres.",
+    "made": "Utworzone z umiejętności",
+    "empty": {
+      "title": "Nie ma jeszcze kart agentów.",
+      "hint": "Utwórz kartę z wersji umiejętności."
+    },
+    "open": "Otwórz {{title}}",
+    "kind": {
+      "role": "Rola",
+      "card": "Utworzona z umiejętności"
+    },
+    "card": {
+      "back": "Wszystkie karty",
+      "missing": "Rejestr nie ma karty {{card}}.",
+      "failed": "Nie udało się wczytać karty. Spróbuj ponownie za chwilę.",
+      "purpose": "Cel",
+      "skill": "Umiejętność",
+      "skillTemplate": "Szablon ({{label}})",
+      "skillStore": "{{label}}: v{{version}}, {{status}}",
+      "openSkill": "Otwórz wersję umiejętności",
+      "fromTemplate": "Z szablonu v{{version}}",
+      "model": "Model",
+      "tools": "Narzędzia",
+      "harness": "Harness",
+      "caps": "Limity",
+      "inputs": "Czyta",
+      "outputs": "Zapisuje",
+      "from": "z {{from}}",
+      "recordedOn": "zapisywane w {{on}}",
+      "required": "wymagane",
+      "trust": "traktowane jako {{trust}}",
+      "gates": "Pakiety bramek",
+      "template": "Szablon",
+      "scorecard": "Wyniki",
+      "noScorecard": "Wyniki należą do połączenia: wybierz je powyżej.",
+      "scorecardLine": "{{runs, number}} uruchomień · skuteczność {{rate}} · {{cost}}",
+      "spend": "W tym miesiącu",
+      "spendLine": "{{usd}} ({{month}})",
+      "made": "Utworzona",
+      "madeBy": "Utworzona przez {{who}}, {{at}}",
+      "versions": "Wersje",
+      "source": "Źródło",
+      "sourceHint": "Tak, jak repozytorium przechowuje szablon roli, tylko do odczytu: zmienia się z wydaniem, w templates/orchestration.",
+      "sourceFile": "Plik",
+      "sourceFailed": "Nie udało się odczytać źródła."
+    },
+    "create": {
+      "button": "Utwórz z umiejętności",
+      "title": "Utwórz kartę agenta z umiejętności",
+      "description": "Rola na jednej z zaakceptowanych wersji swojej umiejętności, z nazwą i celem. Jej model, narzędzia i harness pochodzą z wersji.",
+      "role": "Rola",
+      "scope": "Umiejętność z",
+      "version": "Wersja umiejętności",
+      "versionPick": "Wybierz zaakceptowaną wersję",
+      "versionNone": "Ta rola nie ma w tym zakresie zaakceptowanej wersji: najpierw zaakceptuj jedną w Umiejętnościach.",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "Nie udało się odczytać wersji roli.",
+      "slug": "Slug",
+      "slugHint": "Małe litery, cyfry i myślniki. Identyfikator karty to {{id}}.",
+      "cardTitle": "Tytuł (opcjonalnie)",
+      "purpose": "Cel",
+      "caps": "Limity (opcjonalnie)",
+      "capsHint": "Zostaw limit pusty, aby zachować limit szablonu. Limit jest najwyżej taki jak w szablonie.",
+      "cap": "{{name}} (najwyżej {{max, number}})",
+      "cancel": "Anuluj",
+      "submit": "Utwórz kartę",
+      "refused": "Karty nie utworzono: {{message}}",
+      "failed": "Nie udało się utworzyć karty. Spróbuj ponownie za chwilę.",
+      "issues": {
+        "role": "Wybierz rolę.",
+        "version": "Wybierz zaakceptowaną wersję umiejętności.",
+        "slugMissing": "Nadaj karcie slug.",
+        "slugShape": "Użyj od 1 do 40 małych liter, cyfr i myślników, bez myślnika na początku i na końcu.",
+        "titleLong": "Tytuł może mieć najwyżej 80 znaków.",
+        "titleText": "Tytuł musi być zwykłym tekstem w jednym wierszu.",
+        "purposeMissing": "Napisz, do czego służy karta.",
+        "purposeLong": "Cel może mieć najwyżej {{max, number}} znaków.",
+        "purposeText": "Cel musi być zwykłym tekstem w jednym wierszu.",
+        "capShape": "Limit to liczba całkowita większa od 0.",
+        "capOver": "Limit jest najwyżej taki jak w szablonie."
+      }
+    }
+  },
+  "gates": {
+    "hint": "Kontrole, które uruchamia bramka jakości, według pakietu języka, z wytycznymi właściciela dla każdego. Tylko do odczytu: przychodzą z wydaniem, w templates/orchestration/gates.",
+    "loading": "Wczytywanie bramek jakości…",
+    "failed": "Nie udało się wczytać bramek jakości. Spróbuj ponownie za chwilę.",
+    "ownGate": "Uruchamiana jest też własna bramka repozytorium: {{file}}.",
+    "packs": "Pakiety bramek",
+    "languages": "Języki",
+    "image": "Obraz",
+    "network": "Sieć (tylko przygotowanie)",
+    "tools": "Narzędzia",
+    "toolsPins": "Wersje przypięte przez samo repozytorium.",
+    "toolsRecorded": "Wersje przypięte przez samo repozytorium. Ostatnio zapisane: {{list}}",
+    "steps": "Kroki",
+    "stepsOf": "Kroki pakietu {{pack}}",
+    "stepAlways": "zawsze",
+    "stepWhen": "jeśli repozytorium ma {{list}}",
+    "lookedAtNothing": "Kończy się błędem, jeśli niczego nie sprawdziła: {{rule}}",
+    "stopsTitle": "Kiedy bramka zatrzymuje się przy człowieku",
+    "stops": {
+      "check_failed": "Kontrola się nie powiodła, a poprawki nie sprawiły, że przeszła.",
+      "looked_at_nothing": "Bramka niczego nie sprawdziła: żadna kontrola nie obejmuje repozytorium albo kontrola nie znalazła nic do sprawdzenia.",
+      "own_gate_changed": "Zmiana dotyka własnej bramki repozytorium ({{own_gate}}).",
+      "review_blocked": "Przegląd ją zablokował: końcowa decyzja brzmiała NO-GO.",
+      "rounds_used_up": "Po ostatniej rundzie zostały blokujące ustalenia."
+    },
+    "runners": "Bramkę, która nikogo nie wskazuje, uruchamia {{list}}.",
+    "brief": {
+      "toggle": "Wytyczne właściciela · {{file}} · {{kb}} KB",
+      "fromTemplate": "Z szablonu",
+      "packs": "Dla {{list}}",
+      "missing": "To wydanie nie ma wytycznych {{id}}.",
+      "failed": "Nie udało się odczytać wytycznych.",
+      "back": "Bramki jakości"
+    }
+  },
+  "knowledge": {
+    "label": "Pakiet wiedzy",
+    "loading": "Wczytywanie pakietu wiedzy…",
+    "failed": "Nie udało się wczytać pakietu wiedzy. Spróbuj ponownie za chwilę.",
+    "none": "Nie ma jeszcze pakietu wiedzy. Uruchom Zrozumienie repozytorium na tym połączeniu: jego pakiet trafi tu do zatwierdzenia.",
+    "noConnection": "Najpierw połącz repozytorium (Wymagania wstępne): jego wiedza i zasady trafią tutaj.",
+    "repository": "Repozytorium",
+    "for": "Dla {{repository}}",
+    "rendering": "Wygenerowano zatwierdzone dokumenty: generacja {{version}}.",
+    "publishButton": "Otwórz jako pull request",
+    "rootPackage": "Repozytorium",
+    "package": "Pakiet {{name}}",
+    "version": "Wersja",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Szkic",
+      "approved": "Zatwierdzona"
+    },
+    "inUse": "Używana",
+    "byAgent": "Napisane przez agenta",
+    "written": "Napisano {{at}}",
+    "builtFrom": "z {{commit}}",
+    "view": {
+      "label": "Pokaż",
+      "read": "Czytaj",
+      "compare": "Porównaj z v{{version}}"
+    },
+    "kinds": {
+      "label": "Dokument",
+      "architecture": "Architektura",
+      "convention": "Konwencje",
+      "review-guide": "Przewodnik przeglądu",
+      "test-strategy": "Strategia testów",
+      "ci": "CI",
+      "glossary": "Słownik",
+      "how-we-work": "Jak pracujemy"
+    },
+    "kindMissing": "Ta wersja nie ma dokumentu tego rodzaju.",
+    "identical": "Dokument jest taki sam w obu wersjach.",
+    "versionFailed": "Nie udało się odczytać wersji. Spróbuj ponownie za chwilę.",
+    "approve": "Zatwierdź v{{version}}",
+    "approved": "Zatwierdzono v{{version}}.",
+    "stale": "Wersja lub zatwierdzona wersja zmieniła się od twojego odczytu. Odczytaj je ponownie, zanim zatwierdzisz.",
+    "readAgain": "Odczytaj ponownie",
+    "approveFailed": "Nie udało się zapisać zatwierdzenia. Spróbuj ponownie za chwilę.",
+    "refused": "Zatwierdzenie odrzucono: {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "Otwórz dokumenty wiedzy jako pull request",
+        "tenets": "Otwórz TENETS.md jako pull request"
+      },
+      "branch": "Gałąź {{branch}}, z zatwierdzonej wersji {{version}}. Scala ją tylko człowiek.",
+      "loading": "Generowanie zatwierdzonych dokumentów…",
+      "previewFailed": "Nie udało się wyświetlić podglądu dokumentów. Spróbuj ponownie za chwilę.",
+      "hint": "Co dają teraz zatwierdzone dokumenty, plik po pliku. Pull request zostaje otwarty jako gotowy do przeglądu; scala go tylko człowiek, na hoście.",
+      "mismatch": "Zapisane rekordy nie dają już tego, co zatwierdzono, więc publikacja zostanie odrzucona. Zatwierdź wersję ponownie.",
+      "files": "Pliki ({{n, number}})",
+      "size": "{{kb}} KB",
+      "textsCut": "Niektóre pliki są za duże, aby je tu pokazać: są w łatce.",
+      "inPatch": "Ten plik jest za duży, aby go tu pokazać: jest w łatce.",
+      "submit": "Otwórz pull request",
+      "close": "Zamknij",
+      "opened": "Otwarto pull request nr {{number}}, gotowy do przeglądu.",
+      "openedDraft": "Otwarto pull request nr {{number}} jako szkic.",
+      "personMerges": "Scala go tylko człowiek, na hoście.",
+      "openPr": "Otwórz pull request",
+      "failed": "Nie udało się otworzyć pull requesta. Ponowna publikacja jest bezpieczna: otwiera najwyżej jeden.",
+      "readAgain": "Odczytaj ponownie",
+      "download": "Pobierz łatkę",
+      "patchCut": "Łatka jest tu ucięta: jest za duża, aby pokazać ją w całości.",
+      "patchLabel": "Łatka dodająca dokumenty",
+      "refused": {
+        "human_driven": "Pracujesz w trybie Kierowane przez człowieka: platforma niczego za ciebie nie wypycha. Zastosuj tę łatkę samodzielnie albo zmień sposób pracy.",
+        "already_published": "Ta wersja dokumentów ma już swój pull request: nowa zatwierdzona wersja otwiera nowy.",
+        "digest_mismatch": "Dokumenty zmieniły się od tego podglądu. Odczytaj go ponownie, a potem opublikuj.",
+        "not_approved": "Nic z tego nie jest jeszcze zatwierdzone: najpierw zatwierdź wersję."
+      }
+    }
+  },
+  "tenets": {
+    "label": "Zasady",
+    "loading": "Wczytywanie zasad…",
+    "failed": "Nie udało się wczytać zasad. Spróbuj ponownie za chwilę.",
+    "none": "Nie ma jeszcze szkicu zasad. Uruchom przepływ Zasady na tym połączeniu: jego szkic trafi tu do zaakceptowania lub odrzucenia.",
+    "version": "Wersja",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Szkic",
+      "accepted": "Zaakceptowana",
+      "rejected": "Odrzucona"
+    },
+    "noneAccepted": "Żadna wersja nie jest jeszcze zaakceptowana: triaż nie cytuje żadnej zasady, dopóki jakaś nie zostanie zaakceptowana.",
+    "accepted": "v{{version}} jest zaakceptowana: to może cytować triaż.",
+    "publish": "Otwórz jako pull request",
+    "title": "Zasady v{{version}}",
+    "byAgent": "Napisane przez agenta",
+    "drafted": "Szkic z {{at}}",
+    "decided": "Zdecydował(a) {{who}}, {{at}}",
+    "comparedWith": "W porównaniu z v{{version}}.",
+    "reason": "Powód (opcjonalnie)",
+    "reject": "Odrzuć",
+    "accept": "Zaakceptuj v{{version}}",
+    "stale": "Zaakceptowane zasady zmieniły się od twojego odczytu. Odczytaj je ponownie, zanim zdecydujesz.",
+    "readAgain": "Odczytaj ponownie",
+    "refused": "Decyzję odrzucono: {{message}}",
+    "decideFailed": "Nie udało się zapisać decyzji. Spróbuj ponownie za chwilę.",
+    "versionFailed": "Nie udało się odczytać wersji. Spróbuj ponownie za chwilę.",
+    "projection": {
+      "summary": "Podsumowanie",
+      "why": "Dlaczego:",
+      "cites": "Cytuje:"
+    },
+    "changes": {
+      "label": "Zmiany",
+      "first": "Każda zasada jest nowa",
+      "none": "Żadna zasada się nie zmienia.",
+      "added": "Dodano",
+      "changed": "Zmieniono",
+      "removed": "Usunięto",
+      "fields": "pola: {{list}}"
+    },
+    "fields": {
+      "title": "tytuł",
+      "statement": "treść",
+      "rationale": "uzasadnienie",
+      "citations": "cytaty"
     }
   }
 }

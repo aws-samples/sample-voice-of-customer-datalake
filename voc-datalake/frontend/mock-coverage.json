@@ -1072,23 +1072,51 @@
           "expected_status": "proposed",
           "before": 1,
           "after": 1,
-          "cases": ["pagination-review"],
+          "cases": [
+            "pagination-review"
+          ],
           "passed": true,
-          "reasons": ["no regression"],
+          "reasons": [
+            "no regression"
+          ],
           "failure_case": "pagination-review"
         }
       },
       {
         "path": "/agents/engineering/skills/fixer/versions/2/reject?connection=storefront",
-        "body": { "expected_status": "proposed", "reason": "Too slow for small fixes." }
+        "body": {
+          "expected_status": "proposed",
+          "reason": "Too slow for small fixes."
+        }
       },
       {
         "path": "/agents/engineering/skills/fixer/versions/1/rollback?connection=",
-        "body": { "expected_current": 3 }
+        "body": {
+          "expected_current": 3
+        }
       },
       {
         "path": "/agents/engineering/skills/coordinator/versions/1/accept?connection=",
-        "body": { "expected_status": "accepted", "expected_current": 1 }
+        "body": {
+          "expected_status": "accepted",
+          "expected_current": 1
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillActionsApi.ts",
+    "method": "POST",
+    "call": "proposePath(connection, role)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skills/fixer/versions?connection=",
+        "body": {
+          "base_version": 3,
+          "instructions": "Plan the smallest fix.",
+          "examples": [],
+          "summary": "A probe version"
+        }
       }
     ]
   },
@@ -5354,7 +5382,12 @@
     "probes": [
       {
         "path": "/projects/proj_1/documents/prd_1/comments/addressed",
-        "body": { "thread_ids": ["dc_00000000000000000000000000"], "addressed": true }
+        "body": {
+          "thread_ids": [
+            "dc_00000000000000000000000000"
+          ],
+          "addressed": true
+        }
       }
     ]
   },
@@ -5580,6 +5613,178 @@
     "probes": [
       {
         "path": "/workflows/wf_b0f1e2d3c4a5/expanded"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "GET",
+    "call": "cardsListPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry"
+      },
+      {
+        "path": "/agents/engineering/registry?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "GET",
+    "call": "cardPath(card, connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry/fixer"
+      },
+      {
+        "path": "/agents/engineering/registry/fixer-careful?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "POST",
+    "call": "'/agents/engineering/registry/cards'",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry/cards",
+        "body": {
+          "from_skill": {
+            "role": "fixer",
+            "version": 3
+          },
+          "slug": "probe",
+          "purpose": "A probe card."
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "GET",
+    "call": "gatesPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/gates"
+      },
+      {
+        "path": "/agents/engineering/gates?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "GET",
+    "call": "briefPath(brief)",
+    "probes": [
+      {
+        "path": "/agents/engineering/gates/briefs/python-ts"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
+    "method": "GET",
+    "call": "sourcePath(kind, id)",
+    "probes": [
+      {
+        "path": "/agents/engineering/templates/skill/fixer/source"
+      },
+      {
+        "path": "/agents/engineering/templates/card/fixer/source"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "GET",
+    "call": "knowledgePath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/knowledge/storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "GET",
+    "call": "packVersionPath(connection, segment, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/knowledge/storefront/%3D2E/versions/2"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "POST",
+    "call": "approvePath(connection, segment, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/knowledge/storefront/packages%3D2Fweb/versions/1/approve",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "GET",
+    "call": "tenetsPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/tenets/storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "GET",
+    "call": "tenetsVersionPath(connection, version)",
+    "probes": [
+      {
+        "path": "/agents/engineering/tenets/storefront/versions/2"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "POST",
+    "call": "decisionPath(connection, version, decision)",
+    "probes": [
+      {
+        "path": "/agents/engineering/tenets/storefront/versions/2/reject",
+        "body": {
+          "expected_accepted": 1,
+          "reason": "probe"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "GET",
+    "call": "previewPath(connection, kind)",
+    "probes": [
+      {
+        "path": "/agents/engineering/docs/storefront/preview?kind=knowledge"
+      },
+      {
+        "path": "/agents/engineering/docs/storefront/preview?kind=tenets"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringKnowledgeApi.ts",
+    "method": "POST",
+    "call": "publishPath(connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/docs/storefront/publish",
+        "body": {
+          "kind": "knowledge",
+          "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
       }
     ]
   }

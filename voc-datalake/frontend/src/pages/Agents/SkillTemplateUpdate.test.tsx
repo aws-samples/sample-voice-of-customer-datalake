@@ -1,9 +1,10 @@
 /**
- * @fileoverview Agents → Skills, "Template updated" (7.50.00): a role whose history names a bundled template newer
- * than its versions (`template: {version, label, newer}`) says **Template updated (vN)** on its panel; the panel shows
- * the template's diff against the current version once asked, then Adopt, which makes it a version the administrator
- * proposed (never accepted by itself) and offers to open it. A role whose template is not newer, or a history that
- * names none, says nothing of it.
+ * @fileoverview Agents → Skills, "Template updated" (7.50.00; 7.52.00 on the shared document component): a role whose
+ * history names a bundled template newer than its versions (`template: {version, label, newer}`) says **Update
+ * available (vN)** in `badge-info` on its panel; the panel compares the template with the version in use once asked
+ * (the instructions as the document reads, what else changes listed), then **Propose vN from the template**, which
+ * makes it a version the administrator proposed (never accepted by itself) and opens it for review. A role whose
+ * template is not newer, or a history that names none, says nothing of it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -32,6 +33,12 @@ const UPDATE = {
   record: { instructions: 'Read the issue first.', examples: [], tool_policy: ['read_issue'], model: 'm', harness: 'converse' },
   diff: { ...NO_DIFF, instructions: [['+', 'Read the issue with read_issue first.']], tools_added: ['read_issue'] },
 }
+const CURRENT = { connection: '', role: 'fixer', version: {
+  version: 3, status: 'accepted', summary: 'One more example', why: { run_id: '', failure: '', comment: '' }, proposed_by: 'alice',
+  proposed_by_kind: 'person', proposed_at: '2026-11-10T09:00:00Z', base: null, benchmark: { claimed: null, measured: null },
+  events: [], made_with: null, record: { instructions: 'Plan the smallest fix.', examples: [], tool_policy: [], model: 'm', harness: 'converse' },
+  diff: { instructions: [], examples: [], tools_added: [], tools_removed: [], tools_reordered: false, model: null, harness: null, first: true },
+} }
 const ADOPTED = {
   version: 4, status: 'proposed', summary: 'Adopted the repository’s template v2', proposed_by: 'alice',
   proposed_by_kind: 'person', proposed_at: '2026-11-16T12:00:00Z',
@@ -78,6 +85,7 @@ describe('Template updated', () => {
   const ADOPTABLE = {
     [HISTORY]: () => history(NEWER),
     'GET /agents/engineering/skills/fixer/template?connection=': () => UPDATE,
+    'GET /agents/engineering/skills/fixer/versions/3?connection=': () => CURRENT,
     'POST /agents/engineering/skills/fixer/template/adopt?connection=': () => ({ connection: '', role: 'fixer', version: ADOPTED }),
   }
 
@@ -91,29 +99,34 @@ describe('Template updated', () => {
     return panel
   }
 
-  it('badges the role\'s panel, reading the template and offering Adopt only once its diff is asked for', async () => {
+  it('badges the role\'s panel as an update (badge-info), reading the template only once its compare is asked for', async () => {
     route(ADOPTABLE)
     renderSkills()
     const panel = await screen.findByRole('region', { name: 'Template updated' })
-    expect([within(panel).getByText('Template updated (v2)'), within(panel).getByText(/Nothing changes by itself/)]).toHaveLength(2)
-    expect(within(panel).queryByRole('button', { name: 'Adopt as a proposal' })).toBeNull()
+    expect(within(panel).getByText('Update available (v2)')).toHaveClass('badge', 'badge-info')
+    expect(within(panel).queryByRole('button', { name: 'Propose v2 from the template' })).toBeNull()
     expect(fetchApi.mock.calls.some(([path]) => path.includes('/template'))).toBe(false)
   })
 
-  it('shows the template\'s diff against the current version', async () => {
+  it('compares the template with the version in use as the document reads, and lists what else it changes', async () => {
     const panel = await shownDiff()
-    expect(within(panel).getByText('Read the issue with read_issue first.')).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Adopt as a proposal' })).toBeEnabled()
+    expect(await within(panel).findByText('Read the issue first.')).toBeInTheDocument()
+    expect(within(panel).getByText('read_issue').closest('li')).toHaveTextContent('Added: read_issue')
+    expect(within(panel).getByRole('button', { name: 'Propose v2 from the template' })).toBeEnabled()
   })
 
-  it('adopts it as a proposal from what the screen showed, and offers to open it', async () => {
-    const panel = await shownDiff()
-    await userEvent.click(within(panel).getByRole('button', { name: 'Adopt as a proposal' }))
+  it('proposes it from what the screen showed, and opens the proposal for review', async () => {
+    route({ ...ADOPTABLE, 'GET /agents/engineering/skills/fixer/versions/4?connection=': () => ({ ...CURRENT,
+      version: { ...CURRENT.version, version: 4, status: 'proposed', base: { shared: true, version: 3 } } }) })
+    renderSkills()
+    const panel = await screen.findByRole('region', { name: 'Template updated' })
+    await userEvent.click(within(panel).getByRole('button', { name: 'Show what it changes' }))
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Propose v2 from the template' }))
     expect(await within(panel).findByRole('status')).toHaveTextContent('The template is proposed as version 4')
     expect(sentFetchApiBody('/agents/engineering/skills/fixer/template/adopt?connection=', 'POST'))
       .toStrictEqual({ expected_current: 3, template_version: 2 })
-    await userEvent.click(within(panel).getByRole('button', { name: 'Open version 4' }))
-    await waitFor(() => { expect(screen.getByTestId('where')).toHaveTextContent('/agents/skills/fixer/v/4') })
+    await userEvent.click(within(panel).getByRole('button', { name: 'Open the proposal' }))
+    expect(await screen.findByRole('dialog', { name: 'Fixer · v4' })).toBeInTheDocument()
   })
 
   it('shows the server\'s refusal of an adoption', async () => {
@@ -126,7 +139,7 @@ describe('Template updated', () => {
     renderSkills()
     const panel = await screen.findByRole('region', { name: 'Template updated' })
     await userEvent.click(within(panel).getByRole('button', { name: 'Show what it changes' }))
-    await userEvent.click(await within(panel).findByRole('button', { name: 'Adopt as a proposal' }))
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Propose v2 from the template' }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent("The template couldn't be adopted.")
   })
 

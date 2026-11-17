@@ -92,7 +92,7 @@ describe('Agents → Skills: a scope\'s roles', () => {
       'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }),
       'GET /agents/engineering/skills?connection=storefront': () => ({ connection: 'storefront', roles: [] }),
     })
-    renderSkills('/agents/skills/fixer/v/2?connection=storefront')
+    renderSkills('/agents/skills/fixer/versions/2?connection=storefront')
     await userEvent.click(await screen.findByRole('button', { name: 'All roles' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Skills of' }), 'Shared skills')
     expect(await screen.findByRole('button', { name: 'Open the history of Fixer' })).toBeInTheDocument()
@@ -109,8 +109,55 @@ describe('Agents → Skills, its role and version as paths', () => {
       'GET /agents/engineering/skills/fixer/versions/2?connection=storefront': () => ({ connection: 'storefront', role: 'fixer', version: null }),
       'GET /agents/engineering/scorecards/fixer?connection=storefront': () => ({ connection: 'storefront', role: 'fixer', versions: [], cards: [] }),
     })
-    renderSkills('/agents/skills/fixer/v/2?connection=storefront')
-    expect(await screen.findByRole('heading', { name: /Fixer/ })).toBeInTheDocument()
-    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills\/fixer\/v\/2\?connection=storefront$/)
+    renderSkills('/agents/skills/fixer/versions/2?connection=storefront')
+    expect(await screen.findByRole('heading', { name: 'Fixer · v2' })).toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills\/fixer\/versions\/2\?connection=storefront$/)
+  })
+})
+
+describe('Agents → Skills: what waits for review, and a newer template (7.52.00)', () => {
+  const HUNTER = {
+    role: 'hunter', current_version: 4, versions: 5,
+    latest: { version: 5, status: 'proposed', summary: 'Ask for the failing test first', proposed_at: '2026-11-16T09:00:00Z' },
+  }
+  const REGISTRY = 'GET /agents/engineering/registry'
+  const roleCard = (id: string, newer: boolean) => ({
+    kind: 'role', id, template: { version: 4, label: `${id}@template-4`, digest: 'sha256:x' }, skill: { template_newer: newer },
+  })
+
+  it('lists a role with a proposal waiting first, and Review opens that version', async () => {
+    route({ [SHARED_ROLES]: () => ({ connection: '', roles: [FIXER, HUNTER] }), [REGISTRY]: () => ({ cards: [] }) })
+    renderSkills()
+    const table = await screen.findByRole('table', { name: 'Agent roles with a skill version in this scope' })
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Bug hunter')
+    expect(within(table).getByText('v5 to review')).toHaveClass('badge', 'badge-warn')
+    await userEvent.click(within(table).getByRole('button', { name: 'Review version 5 of Bug hunter' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/agents\/skills\/hunter\/versions\/5$/)
+  })
+
+  it('says a newer template in badge-info, from the Registry\'s cards', async () => {
+    route({ [SHARED_ROLES]: () => ({ connection: '', roles: [FIXER] }), [REGISTRY]: () => ({ cards: [roleCard('fixer', true)] }) })
+    renderSkills()
+    const table = await screen.findByRole('table', { name: 'Agent roles with a skill version in this scope' })
+    expect(await within(table).findByText('Update available (v4)')).toHaveClass('badge', 'badge-info')
+  })
+
+  it('opens a version from the history beside it, as a sheet with Open full page', async () => {
+    const line = { version: 3, status: 'accepted', summary: 'One more example', why: { run_id: '', failure: '', comment: '' },
+      proposed_by: 'alice', proposed_by_kind: 'person', proposed_at: '2026-11-10T09:00:00Z', base: null,
+      benchmark: { claimed: null, measured: null }, events: [] }
+    route({
+      [SHARED_ROLES]: () => ({ connection: '', roles: [FIXER] }),
+      'GET /agents/engineering/skills/fixer/versions?connection=': () => ({ current_version: 3, versions: [line], next_page: null }),
+      'GET /agents/engineering/skills/fixer/versions/3?connection=': () => ({ connection: '', role: 'fixer', version: { ...line,
+        record: { instructions: '## Steps\n\nPlan the smallest fix.', examples: [], tool_policy: ['read_file'], model: 'm', harness: 'converse' },
+        diff: { instructions: [], examples: [], tools_added: [], tools_removed: [], tools_reordered: false, model: null, harness: null, first: true },
+      } }),
+    })
+    renderSkills('/agents/skills/fixer')
+    await userEvent.click(await screen.findByRole('button', { name: 'Open version 3 and its changes' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Fixer · v3' })
+    expect(await within(sheet).findByRole('heading', { name: 'Steps' })).toBeInTheDocument()
+    expect(within(sheet).getByRole('link', { name: /Open full page/ })).toHaveAttribute('href', '/agents/skills/fixer/versions/3')
   })
 })

@@ -7,21 +7,22 @@
  * crash, the end) inline; (7.51.04) the supervisor's own lines in plain words, their raw text behind "Details"
  * (SupervisorLine.tsx).
  *
- * Transcript text is the model's and the tools': rendered as Markdown with NO raw HTML (`skipHtml`), no images (no
- * request leaves for an address a transcript names), links opened apart with no opener or referrer, and cut to a
- * bounded length first (bridge doc S8).
+ * Transcript text is the model's and the tools': rendered through the app's one safe-Markdown policy for model text
+ * (7.52.00: components/Document/read/markdownPolicy.ts `model`): no raw HTML (shown as its inert source), no images
+ * (no request leaves for an address a transcript names), only http(s) and in-app links (opened apart with no opener
+ * or referrer), and cut to a bounded length first (bridge doc S8).
  *
  * @module pages/Agents/RunWorkspace/ThreadItem
  */
 import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   Activity, AlertTriangle, Bot, Brain, CheckCircle2, ChevronRight, Circle, Compass, Flag, Loader2, Radio, Save, Search,
   ShieldCheck, User, Workflow, XCircle,
 } from 'lucide-react'
+import MarkdownRead from '../../../components/Document/read/MarkdownRead'
+import { markdownPolicy } from '../../../components/Document/read/markdownPolicy'
 import { formatTime } from '../../../utils/dateUtils'
 import { isRecord } from '../../../lib/typeGuards'
 import { boundedText, lookOf } from './threadModel'
@@ -31,26 +32,15 @@ import { SupervisorLineView } from './SupervisorLine'
 import { isSupervisors, readSupervisorLine } from './supervisorLines'
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import type { Components } from 'react-markdown'
 import type { ThreadEvent, ThreadItem } from '../../../api/engineeringRunWorkspaceApi'
 
 /** The longest whole event or result shown when a tool call is opened. */
 const MAX_DETAIL = 8000
 
-const MARKDOWN_COMPONENTS: Components = {
-  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="link">{children}</a>,
-}
-
-/** Transcript text as Markdown only: no raw HTML, no images, bounded before it is parsed. */
+/** Transcript text as model text: the shared `model` policy (no raw HTML, no images), bounded before it is parsed. A
+ * thread's headings take no ids: a deep link names a document's heading, never a line of a transcript. */
 function TranscriptMarkdown({ text }: Readonly<{ text: string }>) {
-  return (
-    <div className="md-content text-[13px]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml disallowedElements={['img']} unwrapDisallowed
-        components={MARKDOWN_COMPONENTS}>
-        {text}
-      </ReactMarkdown>
-    </div>
-  )
+  return <MarkdownRead source={text} policy={markdownPolicy.model} className="md-content text-[13px]" headingIds={false} />
 }
 
 const SENDER_ICONS: Readonly<Record<string, LucideIcon>> = { agent: Bot, human: User, conductor: Workflow, supervisor: Activity }

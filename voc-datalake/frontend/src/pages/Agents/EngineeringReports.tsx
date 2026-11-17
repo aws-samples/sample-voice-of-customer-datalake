@@ -1,82 +1,118 @@
 /**
- * @fileoverview The run monitor's Reports panel: the run's commit, PR and goal reports (`…/reports`, the report
- * builder's versions in the workspace bucket), grouped by level, goal first. Choosing one shows its latest version's
- * Markdown, with a picker for any earlier version (a version is never changed: a newer one is written beside it).
+ * @fileoverview The run's Reports (the run workspace's Reports tab, 7.51.00): the run's commit, PR and goal reports
+ * (`…/reports`, the report builder's versions in the workspace bucket), grouped by level, goal first. Choosing one
+ * shows it on the shared document component (§6.4 [52] step 4: the panel variant, documents/runReportDocument.ts),
+ * at the version picked from its menu (a version is never changed: a newer one is written beside it).
+ *
+ * The version on screen never changes by itself: a newer one the index lists says so, with **Show v<n>**.
  *
  * The Markdown is the server's (`engineering/reports/render.py`), made from the run's records and its agents' findings:
- * it is rendered as Markdown only (no raw HTML), like the other documents the app shows.
+ * it is read through the shared safe-Markdown policy for agent text (`model`: safe links, no images, no raw HTML).
  *
  * @module pages/Agents/EngineeringReports
  */
 import { useId, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
+import DocumentSurface from '../../components/Document/DocumentSurface'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { apiErrorStatus, retryOnceUnlessNotFound } from '../../api/apiErrorStatus'
 import { REPORT_LEVELS, engineeringRunsApi, engineeringRunsKeys } from '../../api/engineeringRunsApi'
 import { formatDateTime } from '../../utils/dateUtils'
 import { groupsInOrder } from './engineeringRunText'
 import { useEngineeringReports } from './useEngineeringRun'
+import { newerReport, reportDocumentOf, reportVersions, runReportAdapter } from './documents/runReportDocument'
+import { neverSaved } from './documents/readOnly'
+import type { ReactNode } from 'react'
 import type { EngineeringReport, EngineeringReportEntry } from '../../api/engineeringRunsApi'
 
 const sameReport = (a: EngineeringReportEntry, b: EngineeringReportEntry) => a.level === b.level && a.subject === b.subject
 
-function ReportView({ runId, entry }: Readonly<{ runId: string; entry: EngineeringReportEntry }>) {
-  const { t, i18n } = useTranslation('agents')
+/** The version menu: the latest first, then each earlier one. */
+function VersionMenu({ entry, version, onChange }: Readonly<{
+  entry: EngineeringReportEntry; version: number; onChange: (n: number) => void
+}>) {
+  const { t } = useTranslation('agents')
   const pickerId = useId()
-  // null: the latest the index names (so a newer version written later is read when the index shows it); a number:
-  // that version. Either way the read names its version, which never changes once written.
-  const [version, setVersion] = useState<number | null>(null)
-  const shown = version ?? entry.latest_version
-  const query = useQuery({
-    queryKey: engineeringRunsKeys.report(runId, entry.level, entry.subject, shown),
-    queryFn: () => engineeringRunsApi.report(runId, entry.level, entry.subject, shown),
-    staleTime: Infinity,
-    retry: retryOnceUnlessNotFound,
-    // Following the latest: the version on screen stays until the newer one is read (a picked version never does).
-    placeholderData: version === null ? keepPreviousData : undefined,
-  })
-  // A version below the latest can have been counted and never written (its build failed before the put): its 404
-  // is for good, so it says so, with no retry. The latest the index lists was written, so its 404 is a failed read.
-  const missing = query.isError && apiErrorStatus(query.error) === 404 && shown < entry.latest_version
-  const versions = Array.from({ length: entry.latest_version }, (_, index) => entry.latest_version - index)
   return (
-    <section className="space-y-2" aria-label={t('engineeringRun.reports.title', { subject: entry.subject })}>
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={pickerId} className="text-[12px] text-muted">{t('engineeringRun.reports.version')}</label>
-        <select id={pickerId} className="input input-sm w-auto" value={version ?? ''}
-          onChange={(event) => setVersion(event.target.value === '' ? null : Number(event.target.value))}>
-          <option value="">{t('engineeringRun.reports.latest', { n: entry.latest_version })}</option>
-          {versions.slice(1).map((n) => <option key={n} value={n}>{t('engineeringRun.reports.versionN', { n })}</option>)}
-        </select>
-        {query.data !== undefined && query.data.builtAt !== '' && (
-          <span className="text-[12px] text-muted">
-            {t('engineeringRun.reports.builtAt', { when: formatDateTime(query.data.builtAt, i18n.language, '—') })}
-          </span>
-        )}
-      </div>
-      <ReportBody query={query} missing={missing} />
-    </section>
+    <div className="flex items-center gap-2">
+      <label htmlFor={pickerId} className="text-[12px] text-muted">{t('engineeringRun.reports.version')}</label>
+      <select id={pickerId} className="select select-sm w-auto" value={version} onChange={(event) => onChange(Number(event.target.value))}>
+        {reportVersions(entry).map((n) => (
+          <option key={n} value={n}>
+            {n === entry.latest_version ? t('engineeringRun.reports.latest', { n }) : t('engineeringRun.reports.versionN', { n })}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 
-/** The version's Markdown, or why it is not shown: loading, never written (no retry), or a failed read (a retry). */
-function ReportBody({ query, missing }: Readonly<{ query: UseQueryResult<EngineeringReport, unknown>; missing: boolean }>) {
+/** A newer version than the one on screen: said, and shown only when asked (the screen never moves by itself). */
+function NewerVersion({ entry, version, onShow }: Readonly<{
+  entry: EngineeringReportEntry; version: number; onShow: (n: number) => void
+}>) {
+  const { t } = useTranslation('documents')
+  const newer = newerReport(entry, version)
+  return (
+    <p role="status" className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+      {newer === null ? null : (
+        <>
+          {t('live.newer', { version: `v${String(newer)}` })}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onShow(newer)}>
+            {t('live.show', { version: `v${String(newer)}` })}
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
+
+/** The version on the panel, or why it is not shown: never written (no retry), or a failed read (a retry). */
+function ReportBody({ runId, entry, version, query, missing, meta }: Readonly<{
+  runId: string; entry: EngineeringReportEntry; version: number; query: UseQueryResult<EngineeringReport, unknown>
+  missing: boolean; meta: ReactNode
+}>) {
   const { t } = useTranslation('agents')
-  if (query.isLoading) return <div className="skeleton h-24" />
   if (missing) return <p className="text-sm text-muted">{t('engineeringRun.reports.missing')}</p>
   if (query.isError) {
     return <LoadFailed message={t('engineeringRun.reports.readFailed')} onRetry={() => { void query.refetch() }}
       retrying={query.isFetching} />
   }
-  if (query.data === undefined) return null
   return (
-    <div className="md-content break-words [overflow-wrap:anywhere]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{query.data.markdown}</ReactMarkdown>
-    </div>
+    <DocumentSurface adapter={runReportAdapter(runId, entry)} variant="panel" title={entry.subject} headingLevel={3} meta={meta}
+      stored={query.data === undefined ? undefined : reportDocumentOf(entry, version, query.data)} mode="read" compare={null}
+      comments={null} onSaved={neverSaved} fullPath={null} footer={null} onClose={null} page={null}>
+      {null}
+    </DocumentSurface>
+  )
+}
+
+function ReportView({ runId, entry }: Readonly<{ runId: string; entry: EngineeringReportEntry }>) {
+  const { t, i18n } = useTranslation('agents')
+  // The version on screen: the latest the index named when the report was opened, then the one picked.
+  const [version, setVersion] = useState(entry.latest_version)
+  const query = useQuery({
+    queryKey: engineeringRunsKeys.report(runId, entry.level, entry.subject, version),
+    queryFn: () => engineeringRunsApi.report(runId, entry.level, entry.subject, version),
+    staleTime: Infinity,
+    retry: retryOnceUnlessNotFound,
+  })
+  // A version below the latest can have been counted and never written (its build failed before the put): its 404
+  // is for good, so it says so, with no retry. The latest the index lists was written, so its 404 is a failed read.
+  const missing = query.isError && apiErrorStatus(query.error) === 404 && version < entry.latest_version
+  const builtAt = query.data?.builtAt ?? ''
+  const meta = builtAt === '' ? null
+    : <p className="text-[12px] text-muted">{t('engineeringRun.reports.builtAt', { when: formatDateTime(builtAt, i18n.language, '—') })}</p>
+  return (
+    <section className="space-y-2" aria-label={t('engineeringRun.reports.title', { subject: entry.subject })}>
+      <div className="flex flex-wrap items-center gap-2">
+        <VersionMenu entry={entry} version={version} onChange={setVersion} />
+        <NewerVersion entry={entry} version={version} onShow={setVersion} />
+      </div>
+      <ReportBody runId={runId} entry={entry} version={version} query={query} missing={missing} meta={meta} />
+    </section>
   )
 }
 

@@ -3,9 +3,9 @@
  *
  * - Agent orchestration's tabs (7.52.00 C1), in their order: Automations `/agents`, Runs `/agents/runs` (7.51.00, the
  *   engineering runs), Skills `/agents/skills` (a role's history `/agents/skills/<role>`, one version
- *   `/agents/skills/<role>/v/<n>`), Spend `/agents/spend`, Flows `/agents/workflows`, Registry `/agents/registry` (its
- *   own places under it are its page's: 7.52.00 C3) and Connections `/agents/connections` (the paths of before are kept,
- *   D52-1; none is aliased);
+ *   `/agents/skills/<role>/versions/<n>`: 7.52.00 C3, was `/v/<n>`, a pre-release change), Spend `/agents/spend`, Flows
+ *   `/agents/workflows`, Registry `/agents/registry` (its own places under it are its page's: 7.52.00 C3) and
+ *   Connections `/agents/connections` (the paths of before are kept, D52-1; none is aliased);
  * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings);
  * - the engineering setup guide, `/agents/setup[/<step>]` (SetupGuide/setupGuidePaths.ts), a page of its own.
  *
@@ -48,7 +48,7 @@ export interface AgentsPlace {
 }
 
 const LIST: AgentsPlace = { view: 'agents', role: null, version: null }
-const VERSION_SEGMENT = 'v'
+const VERSION_SEGMENT = 'versions'
 const POSITIVE_INTEGER = /^[1-9]\d{0,5}$/
 
 function isView(value: string | null | undefined): value is AgentsView {

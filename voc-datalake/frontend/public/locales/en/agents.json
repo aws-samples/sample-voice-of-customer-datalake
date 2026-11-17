@@ -1222,7 +1222,7 @@
     }
   },
   "skills": {
-    "hint": "Each engineering agent works from a skill: its instructions, examples, tools, model and harness. Every change is a new version, kept with why it was made, who proposed and accepted it, and its benchmark. The shared skills apply to every connection that has no version of its own.",
+    "hint": "Each role's skill is versioned; every change is proposed, reviewed and accepted here.",
     "scope": "Skills of",
     "shared": "Shared skills",
     "connection": "Connection {{name}}",
@@ -1231,8 +1231,9 @@
     "columns": {
       "role": "Role",
       "current": "Current version",
-      "versions": "Versions",
-      "latest": "Latest change"
+      "waiting": "Waiting for review",
+      "template": "Template",
+      "lastChange": "Last change"
     },
     "openRole": "Open the history of {{role}}",
     "role": {
@@ -1294,10 +1295,6 @@
     "diff": {
       "added": "Added:",
       "removed": "Removed:",
-      "title": "Changes from its base",
-      "firstTitle": "Its first version: everything is new",
-      "none": "No change from its base.",
-      "instructions": "Instructions",
       "examples": "Examples",
       "example": "When: {{situation}} | Do: {{action}}",
       "tools": "Tool policy",
@@ -1305,14 +1302,6 @@
       "model": "Model: {{from}} → {{to}}",
       "harness": "Harness: {{from}} → {{to}}",
       "nothing": "(none)"
-    },
-    "record": {
-      "title": "The whole skill",
-      "model": "Model",
-      "harness": "Harness",
-      "tools": "Tools",
-      "instructions": "Instructions",
-      "examples": "Examples ({{n, number}})"
     },
     "noBase": "Written on no earlier version.",
     "baseShared": "Written on shared version {{version}}.",
@@ -1415,19 +1404,96 @@
     },
     "template": {
       "title": "Template updated",
-      "badge": "Template updated (v{{version}})",
-      "explain": "The repository's template for this role has a newer version than the one this scope runs. Read what it changes, then adopt it as a proposal: it runs only once an administrator accepts it in the history below. Nothing changes by itself.",
+      "badge": "Update available (v{{version}})",
+      "explain": "The repository's template for this role is newer than the versions of this scope. Compare it with the version in use, then propose it: it runs only once an administrator accepts it. Nothing changes by itself.",
       "show": "Show what it changes",
       "loading": "Reading the template",
       "readFailed": "The template couldn't be read.",
       "diffTitle": "Template v{{version}} against the current version v{{current}}",
       "diffTitleFirst": "Template v{{version}} (no version is current yet)",
-      "adopt": "Adopt as a proposal",
+      "adopt": "Propose v{{version}} from the template",
       "adoptHint": "Proposed by you; an administrator accepts or rejects it like any other version.",
       "adoptFailed": "The template couldn't be adopted.",
       "notNewer": "This template is proposed or accepted already.",
-      "proposed": "The template is proposed as version {{version}}: accept it in the history to run it.",
-      "openProposed": "Open version {{version}}"
+      "proposed": "The template is proposed as version {{version}}. Open it to accept or reject it.",
+      "openProposed": "Open the proposal",
+      "documentTitle": "Template v{{version}}",
+      "label": "Template v{{version}}"
+    },
+    "connectionRepository": "{{repository}} ({{name}})",
+    "toReview": "v{{version}} to review",
+    "review": "Review",
+    "reviewVersion": "Review version {{version}} of {{role}}",
+    "templateUnknown": "Not read",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "Instructions",
+      "examples": "Examples ({{n, number}})",
+      "noExamples": "No examples.",
+      "situation": "When",
+      "action": "Do",
+      "view": {
+        "label": "Show",
+        "read": "Read",
+        "changes": "Changes"
+      },
+      "comparedWith": "Compared with v{{version}}, the version it was written on.",
+      "nothing": "Nothing",
+      "identical": "The instructions are the same.",
+      "baseFailed": "The version it was written on could not be read, so its changes cannot be shown. Try again in a moment."
+    },
+    "provenance": {
+      "coach": "Proposed by the coach"
+    },
+    "changes": {
+      "title": "Examples, tools, model and harness",
+      "none": "Examples, tools, model and harness: unchanged."
+    },
+    "propose": {
+      "button": "Propose a version",
+      "title": "Propose a version of {{role}}",
+      "writtenOn": "Written on v{{version}}, the version in use. It is a proposal: an administrator accepts it like any other.",
+      "summary": "Summary: what it changes, on one line",
+      "instructions": "Instructions",
+      "examples": "Examples",
+      "exampleN": "Example {{n, number}}",
+      "removeExample": "Remove example {{n, number}}",
+      "addExample": "Add an example",
+      "examplesFull": "A skill has at most {{max, number}} examples.",
+      "reason": "Reason (optional)",
+      "cancel": "Cancel",
+      "review": "Review your change",
+      "reviewHint": "What your version changes from v{{version}}. Nothing is applied: it is proposed, then accepted or rejected like any other version.",
+      "outOfDate": "Written on v{{base}}; v{{current}} is in use now. The changes below are against v{{current}}: check them before you propose.",
+      "yours": "Yours",
+      "back": "Back to editing",
+      "submit": "Propose this version",
+      "stale": "The version in use changed since you opened it. Read it again: your draft is kept, and the review then compares it with the version in use.",
+      "readAgain": "Read it again",
+      "refused": "The proposal was refused: {{message}}",
+      "failed": "The proposal could not be sent. Try again in a moment.",
+      "noBase": "No version is in use in this scope yet, so there is none to write a version on.",
+      "loading": "Reading the version in use…",
+      "issues": {
+        "summaryMissing": "Write a summary: one line that says what the version changes.",
+        "summaryLong": "Keep the summary to 200 characters.",
+        "summaryLines": "Keep the summary on one line.",
+        "instructionsMissing": "The instructions cannot be empty.",
+        "instructionsLong": "The instructions are at most 20,000 characters.",
+        "instructionsLines": "The instructions are at most 500 lines.",
+        "examplesHeading": "Take out the “## Examples” heading: the examples are the list below, and the heading would move your text into them.",
+        "examplesTooMany": "A skill has at most {{max, number}} examples.",
+        "exampleMissing": "Give every example both its situation and what to do, or remove it.",
+        "exampleLong": "Each half of an example is at most 2,000 characters.",
+        "reasonLong": "Keep the reason to 400 characters.",
+        "unchanged": "Your version changes nothing yet: edit its instructions or its examples."
+      },
+      "discard": {
+        "title": "Discard your draft?",
+        "message": "Nothing has been proposed. Your summary, instructions and examples will be lost.",
+        "confirm": "Discard",
+        "keep": "Keep editing"
+      }
     }
   },
   "engineeringRun": {
@@ -1730,7 +1796,6 @@
     "orderFine": "Every step before this one is done.",
     "orderMissing": "Not done before this one: {{list}}.",
     "readinessFor": "Readiness for {{name}}, once set up",
-    "later": "Its flow arrives in 7.52. Skip it for now: the guide offers it again then.",
     "steps": {
       "prerequisites": {
         "title": "Prerequisites",
@@ -2503,6 +2568,264 @@
       "gates": "Checks and reviews on the change; Auto-detect picks the packs in the repository.",
       "flows": "Another saved flow, called at its revision.",
       "platform": "Steps the platform runs: sharding, bringing shards together, a board, memory, Learn."
+    }
+  },
+  "registry": {
+    "hint": "Each agent is a card: a role on one of its skill versions, with its model, tools, caps, inputs and outputs. Make a card from an accepted skill version to give it a name and a purpose.",
+    "notAvailable": "The Registry is for administrators, where the engineering agents are on.",
+    "loading": "Loading the Registry…",
+    "failed": "The Registry could not be loaded. Try again in a moment.",
+    "scope": "Cards for",
+    "filters": {
+      "label": "Show",
+      "cards": "Agents",
+      "gates": "Quality gates"
+    },
+    "roles": "Roles",
+    "rolesHint": "Every role's own card, on the skill its scope runs.",
+    "made": "Made from a skill",
+    "empty": {
+      "title": "No agent cards yet.",
+      "hint": "Make one from a skill version."
+    },
+    "open": "Open {{title}}",
+    "kind": {
+      "role": "Role",
+      "card": "Made from a skill"
+    },
+    "card": {
+      "back": "All cards",
+      "missing": "The Registry has no card {{card}}.",
+      "failed": "The card could not be loaded. Try again in a moment.",
+      "purpose": "Purpose",
+      "skill": "Skill",
+      "skillTemplate": "The template ({{label}})",
+      "skillStore": "{{label}}: v{{version}}, {{status}}",
+      "openSkill": "Open the skill version",
+      "fromTemplate": "From the template v{{version}}",
+      "model": "Model",
+      "tools": "Tools",
+      "harness": "Harness",
+      "caps": "Caps",
+      "inputs": "Reads",
+      "outputs": "Writes",
+      "from": "from {{from}}",
+      "recordedOn": "recorded on {{on}}",
+      "required": "required",
+      "trust": "trusted as {{trust}}",
+      "gates": "Gate packs",
+      "template": "Template",
+      "scorecard": "Scorecard",
+      "noScorecard": "Scorecards belong to a connection: pick one above.",
+      "scorecardLine": "{{runs, number}} runs · pass rate {{rate}} · {{cost}}",
+      "spend": "This month",
+      "spendLine": "{{usd}} ({{month}})",
+      "made": "Made",
+      "madeBy": "Made by {{who}}, {{at}}",
+      "versions": "Versions",
+      "source": "Source",
+      "sourceHint": "As the repository holds the role's template, read only: it changes with a release, in templates/orchestration.",
+      "sourceFile": "File",
+      "sourceFailed": "The source could not be read."
+    },
+    "create": {
+      "button": "Create from a skill",
+      "title": "Create an agent card from a skill",
+      "description": "A role on one of its accepted skill versions, with a name and a purpose. Its model, tools and harness are the version's.",
+      "role": "Role",
+      "scope": "Skill from",
+      "version": "Skill version",
+      "versionPick": "Pick an accepted version",
+      "versionNone": "This role has no accepted version in this scope: accept one in Skills first.",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "The role's versions could not be read.",
+      "slug": "Slug",
+      "slugHint": "Lowercase letters, digits and dashes. The card's id is {{id}}.",
+      "cardTitle": "Title (optional)",
+      "purpose": "Purpose",
+      "caps": "Caps (optional)",
+      "capsHint": "Leave a cap empty to keep the template's. A cap is at most the template's.",
+      "cap": "{{name}} (at most {{max, number}})",
+      "cancel": "Cancel",
+      "submit": "Create card",
+      "refused": "The card was not made: {{message}}",
+      "failed": "The card could not be made. Try again in a moment.",
+      "issues": {
+        "role": "Pick a role.",
+        "version": "Pick an accepted skill version.",
+        "slugMissing": "Give the card a slug.",
+        "slugShape": "Use 1 to 40 lowercase letters, digits and dashes, not at either end.",
+        "titleLong": "Keep the title to 80 characters.",
+        "titleText": "Keep the title to plain text on one line.",
+        "purposeMissing": "Say what the card is for.",
+        "purposeLong": "Keep the purpose to {{max, number}} characters.",
+        "purposeText": "Keep the purpose to plain text on one line.",
+        "capShape": "A cap is a whole number above 0.",
+        "capOver": "A cap is at most the template's."
+      }
+    }
+  },
+  "gates": {
+    "hint": "The checks a quality gate runs, by language pack, with the owner's brief for each. Read only: they ship with a release, in templates/orchestration/gates.",
+    "loading": "Loading the quality gates…",
+    "failed": "The quality gates could not be loaded. Try again in a moment.",
+    "ownGate": "A repository's own gate runs too: {{file}}.",
+    "packs": "Gate packs",
+    "languages": "Languages",
+    "image": "Image",
+    "network": "Network (setup only)",
+    "tools": "Tools",
+    "toolsPins": "The repository's own pins.",
+    "toolsRecorded": "The repository's own pins. Last recorded: {{list}}",
+    "steps": "Steps",
+    "stepsOf": "Steps of {{pack}}",
+    "stepAlways": "always",
+    "stepWhen": "if the repository has {{list}}",
+    "lookedAtNothing": "Fails if it looked at nothing: {{rule}}",
+    "stopsTitle": "When a gate stops at a person",
+    "stops": {
+      "check_failed": "A check failed, and the fixes did not make it pass.",
+      "looked_at_nothing": "The gate looked at nothing: no check covers the repository, or a check found nothing to check.",
+      "own_gate_changed": "The change touches the repository's own gate ({{own_gate}}).",
+      "review_blocked": "A review blocked it: the final go said NO-GO.",
+      "rounds_used_up": "Blocking findings were left after the last round."
+    },
+    "runners": "A gate that names nobody is run by {{list}}.",
+    "brief": {
+      "toggle": "The owner's brief · {{file}} · {{kb}} KB",
+      "fromTemplate": "From the template",
+      "packs": "For {{list}}",
+      "missing": "This release has no brief {{id}}.",
+      "failed": "The brief could not be read.",
+      "back": "Quality gates"
+    }
+  },
+  "knowledge": {
+    "label": "Knowledge pack",
+    "loading": "Loading the knowledge pack…",
+    "failed": "The knowledge pack could not be loaded. Try again in a moment.",
+    "none": "No knowledge pack yet. Run Understand the repository on this connection: its pack comes here to approve.",
+    "noConnection": "Connect a repository first (Prerequisites): its knowledge and tenets come here.",
+    "repository": "Repository",
+    "for": "For {{repository}}",
+    "rendering": "Approved docs rendered: rendering {{version}}.",
+    "publishButton": "Open as a pull request",
+    "rootPackage": "The repository",
+    "package": "Package {{name}}",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Draft",
+      "approved": "Approved"
+    },
+    "inUse": "In use",
+    "byAgent": "Written by an agent",
+    "written": "Written {{at}}",
+    "builtFrom": "from {{commit}}",
+    "view": {
+      "label": "Show",
+      "read": "Read",
+      "compare": "Compare with v{{version}}"
+    },
+    "kinds": {
+      "label": "Document",
+      "architecture": "Architecture",
+      "convention": "Conventions",
+      "review-guide": "Review guide",
+      "test-strategy": "Test strategy",
+      "ci": "CI",
+      "glossary": "Glossary",
+      "how-we-work": "How we work"
+    },
+    "kindMissing": "This version has no document of this kind.",
+    "identical": "The document is the same in both versions.",
+    "versionFailed": "The version could not be read. Try again in a moment.",
+    "approve": "Approve v{{version}}",
+    "approved": "Approved v{{version}}.",
+    "stale": "The version or the approved one changed since you read them. Read it again before you approve.",
+    "readAgain": "Read it again",
+    "approveFailed": "The approval could not be saved. Try again in a moment.",
+    "refused": "The approval was refused: {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "Open the knowledge docs as a pull request",
+        "tenets": "Open TENETS.md as a pull request"
+      },
+      "branch": "Branch {{branch}}, from approved version {{version}}. Only a person merges it.",
+      "loading": "Rendering the approved docs…",
+      "previewFailed": "The docs could not be previewed. Try again in a moment.",
+      "hint": "What the approved docs render to now, file by file. The pull request is opened ready for review; only a person merges it, on the host.",
+      "mismatch": "The stored records no longer render to what was approved, so a publish will be refused. Approve the version again.",
+      "files": "Files ({{n, number}})",
+      "size": "{{kb}} KB",
+      "textsCut": "Some files are too large to show here: they are in the patch.",
+      "inPatch": "This file is too large to show here: it is in the patch.",
+      "submit": "Open the pull request",
+      "close": "Close",
+      "opened": "Pull request #{{number}} opened, ready for review.",
+      "openedDraft": "Pull request #{{number}} opened as a draft.",
+      "personMerges": "Only a person merges it, on the host.",
+      "openPr": "Open the pull request",
+      "failed": "The pull request could not be opened. Publishing again is safe: it opens one at most.",
+      "readAgain": "Read it again",
+      "download": "Download the patch",
+      "patchCut": "The patch is cut short here: it is too large to show whole.",
+      "patchLabel": "The patch adding the docs",
+      "refused": {
+        "human_driven": "You work Human-driven: the platform pushes nothing for you. Apply this patch yourself, or change your way of working.",
+        "already_published": "This version of the docs has its pull request already: a new approved version opens a new one.",
+        "digest_mismatch": "The docs changed since this preview. Read it again, then publish.",
+        "not_approved": "Nothing of this is approved yet: approve a version first."
+      }
+    }
+  },
+  "tenets": {
+    "label": "Tenets",
+    "loading": "Loading the tenets…",
+    "failed": "The tenets could not be loaded. Try again in a moment.",
+    "none": "No tenets drafted yet. Run the Tenets flow on this connection: its draft comes here to accept or reject.",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Draft",
+      "accepted": "Accepted",
+      "rejected": "Rejected"
+    },
+    "noneAccepted": "No version is accepted yet: a triage cites no tenet until one is.",
+    "accepted": "v{{version}} is accepted: what a triage may cite.",
+    "publish": "Open as a pull request",
+    "title": "Tenets v{{version}}",
+    "byAgent": "Written by an agent",
+    "drafted": "Drafted {{at}}",
+    "decided": "Decided by {{who}}, {{at}}",
+    "comparedWith": "Compared with v{{version}}.",
+    "reason": "Reason (optional)",
+    "reject": "Reject",
+    "accept": "Accept v{{version}}",
+    "stale": "The accepted tenets changed since you read them. Read it again before you decide.",
+    "readAgain": "Read it again",
+    "refused": "The decision was refused: {{message}}",
+    "decideFailed": "The decision could not be saved. Try again in a moment.",
+    "versionFailed": "The version could not be read. Try again in a moment.",
+    "projection": {
+      "summary": "Summary",
+      "why": "Why:",
+      "cites": "Cites:"
+    },
+    "changes": {
+      "label": "Changes",
+      "first": "Every tenet is new",
+      "none": "No tenet changes.",
+      "added": "Added",
+      "changed": "Changed",
+      "removed": "Removed",
+      "fields": "its {{list}}"
+    },
+    "fields": {
+      "title": "title",
+      "statement": "statement",
+      "rationale": "rationale",
+      "citations": "citations"
     }
   }
 }

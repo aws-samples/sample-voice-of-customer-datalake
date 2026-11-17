@@ -23,6 +23,8 @@ const READ_PATH = [
 const AGENTS_PAGES = [
   'pages/Agents/Agents.tsx', 'pages/Agents/AgentDetail.tsx', 'pages/Agents/SetupGuide/SetupGuide.tsx',
   'pages/Agents/WorkflowPage.tsx', 'pages/Agents/WorkflowTemplatePage.tsx', 'pages/Agents/RunWorkspace/RunWorkspace.tsx',
+  // 7.52.00 C3: the Registry and Skills pages (orchestrationRoutes.registry.tsx); the Propose sheet loads the canvas on Edit.
+  'pages/Agents/Registry/RegistryPage.tsx', 'pages/Agents/EngineeringSkills.tsx',
 ]
 
 /** What a graph reaches of the editor: TipTap's packages and the canvas's own modules. */

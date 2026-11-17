@@ -4,7 +4,8 @@
  *
  * 0. Prerequisites: GitHub connected with the deployment's GitHub App, the repository's CI attested, its issues
  *    ingested deployment-wide with the `voc-agent` label;
- * 1. Understand the repository and 2. Tenets: their flows arrive in 7.52 (skip for now);
+ * 1. Understand the repository and 2. Tenets (7.52.00): the repository's knowledge pack to compare and approve, and its
+ *    tenets drafts to accept or reject, each then opened as a pull request (Knowledge/RepositoryReviewStep.tsx);
  * 3. Issue triage, 4. Bug fixer, 5. Feature builder: each seeded automation set up and enabled, its readiness shown;
  * 6. Ready to go: the summary, Run on an issue now, every run learns (proposals wait in Skills).
  *
@@ -22,7 +23,8 @@ import { useIsAdmin } from '../../../store/authStore'
 import { isEngineeringAvailable } from '../../../runtimeConfig'
 import { useReplaceAddress } from '../../../utils/pathPlace'
 import { BackToAgents } from '../BackToAgents'
-import { AutomationStepBody, LaterStep } from './AutomationSteps'
+import { RepositoryReviewStep } from '../Knowledge/RepositoryReviewStep'
+import { AutomationStepBody } from './AutomationSteps'
 import { PrerequisitesStep } from './PrerequisitesStep'
 import { ReadyStep } from './ReadyStep'
 import { isAutomationStep, recommendedGuideStep } from './setupGuideRules'
@@ -39,7 +41,7 @@ function StepBody({ step, facts, automations, statuses, progress }: Readonly<{
   if (step === 'prerequisites') return <PrerequisitesStep facts={facts} />
   if (isAutomationStep(step)) return <AutomationStepBody step={step} agent={automations[step]} connections={facts.connections} />
   if (step === 'ready') return <ReadyStep statuses={statuses} automations={automations} progress={progress} />
-  return <LaterStep />
+  return <RepositoryReviewStep kind={step === 'understand' ? 'knowledge' : 'tenets'} connections={facts.connections} />
 }
 
 function Guide({ requested }: Readonly<{ requested: SetupStepId | null }>) {

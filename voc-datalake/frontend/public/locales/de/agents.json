@@ -1276,7 +1276,7 @@
     }
   },
   "skills": {
-    "hint": "Jeder Engineering-Agent arbeitet nach einem Skill: seinen Anweisungen, Beispielen, Werkzeugen, seinem Modell und Harness. Jede Änderung ist eine neue Version, gespeichert mit ihrem Grund, wer sie vorgeschlagen und angenommen hat, und ihrem Benchmark. Die gemeinsamen Skills gelten für jede Verbindung ohne eigene Version.",
+    "hint": "Der Skill jeder Rolle ist versioniert; jede Änderung wird hier vorgeschlagen, geprüft und angenommen.",
     "scope": "Skills von",
     "shared": "Gemeinsame Skills",
     "connection": "Verbindung {{name}}",
@@ -1285,8 +1285,9 @@
     "columns": {
       "role": "Rolle",
       "current": "Aktuelle Version",
-      "versions": "Versionen",
-      "latest": "Letzte Änderung"
+      "waiting": "Wartet auf Prüfung",
+      "template": "Vorlage",
+      "lastChange": "Letzte Änderung"
     },
     "openRole": "Verlauf von {{role}} öffnen",
     "role": {
@@ -1348,10 +1349,6 @@
     "diff": {
       "added": "Hinzugefügt:",
       "removed": "Entfernt:",
-      "title": "Änderungen gegenüber der Basis",
-      "firstTitle": "Erste Version: alles ist neu",
-      "none": "Keine Änderung gegenüber der Basis.",
-      "instructions": "Anweisungen",
       "examples": "Beispiele",
       "example": "Wenn: {{situation}} | Dann: {{action}}",
       "tools": "Werkzeugrichtlinie",
@@ -1359,14 +1356,6 @@
       "model": "Modell: {{from}} → {{to}}",
       "harness": "Harness: {{from}} → {{to}}",
       "nothing": "(keines)"
-    },
-    "record": {
-      "title": "Der ganze Skill",
-      "model": "Modell",
-      "harness": "Harness",
-      "tools": "Werkzeuge",
-      "instructions": "Anweisungen",
-      "examples": "Beispiele ({{n, number}})"
     },
     "noBase": "Auf keiner früheren Version geschrieben.",
     "baseShared": "Auf der gemeinsamen Version {{version}} geschrieben.",
@@ -1469,19 +1458,96 @@
     },
     "template": {
       "title": "Vorlage aktualisiert",
-      "badge": "Vorlage aktualisiert (v{{version}})",
-      "explain": "Die Vorlage des Repositorys für diese Rolle hat eine neuere Version als die, mit der dieser Bereich läuft. Lesen Sie, was sie ändert, und übernehmen Sie sie dann als Vorschlag: Sie läuft erst, wenn ein Administrator sie im Verlauf unten annimmt. Nichts ändert sich von selbst.",
+      "badge": "Aktualisierung verfügbar (v{{version}})",
+      "explain": "Die Vorlage des Repositorys für diese Rolle ist neuer als die Versionen dieses Bereichs. Vergleichen Sie sie mit der verwendeten Version und schlagen Sie sie dann vor: Sie läuft erst, wenn eine Administratorin oder ein Administrator sie annimmt. Nichts ändert sich von selbst.",
       "show": "Zeigen, was sie ändert",
       "loading": "Liest die Vorlage",
       "readFailed": "Die Vorlage konnte nicht gelesen werden.",
       "diffTitle": "Vorlage v{{version}} gegenüber der aktuellen Version v{{current}}",
       "diffTitleFirst": "Vorlage v{{version}} (noch keine Version aktuell)",
-      "adopt": "Als Vorschlag übernehmen",
+      "adopt": "v{{version}} aus der Vorlage vorschlagen",
       "adoptHint": "Von Ihnen vorgeschlagen; ein Administrator nimmt ihn an oder lehnt ihn ab wie jede andere Version.",
       "adoptFailed": "Die Vorlage konnte nicht übernommen werden.",
       "notNewer": "Diese Vorlage ist bereits vorgeschlagen oder angenommen.",
-      "proposed": "Die Vorlage ist als Version {{version}} vorgeschlagen: Nehmen Sie sie im Verlauf an, damit sie läuft.",
-      "openProposed": "Version {{version}} öffnen"
+      "proposed": "Die Vorlage ist als Version {{version}} vorgeschlagen. Öffnen Sie sie, um sie anzunehmen oder abzulehnen.",
+      "openProposed": "Vorschlag öffnen",
+      "documentTitle": "Vorlage v{{version}}",
+      "label": "Vorlage v{{version}}"
+    },
+    "connectionRepository": "{{repository}} ({{name}})",
+    "toReview": "v{{version}} zu prüfen",
+    "review": "Prüfen",
+    "reviewVersion": "Version {{version}} von {{role}} prüfen",
+    "templateUnknown": "Nicht gelesen",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "Anweisungen",
+      "examples": "Beispiele ({{n, number}})",
+      "noExamples": "Keine Beispiele.",
+      "situation": "Wenn",
+      "action": "Tun",
+      "view": {
+        "label": "Anzeigen",
+        "read": "Lesen",
+        "changes": "Änderungen"
+      },
+      "comparedWith": "Verglichen mit v{{version}}, der Version, auf der sie geschrieben wurde.",
+      "nothing": "Nichts",
+      "identical": "Die Anweisungen sind gleich.",
+      "baseFailed": "Die Version, auf der sie geschrieben wurde, konnte nicht gelesen werden, daher lassen sich ihre Änderungen nicht zeigen. Versuchen Sie es gleich noch einmal."
+    },
+    "provenance": {
+      "coach": "Vom Coach vorgeschlagen"
+    },
+    "changes": {
+      "title": "Beispiele, Werkzeuge, Modell und Harness",
+      "none": "Beispiele, Werkzeuge, Modell und Harness: unverändert."
+    },
+    "propose": {
+      "button": "Eine Version vorschlagen",
+      "title": "Eine Version von {{role}} vorschlagen",
+      "writtenOn": "Geschrieben auf v{{version}}, der verwendeten Version. Es ist ein Vorschlag: Eine Administratorin oder ein Administrator nimmt ihn wie jeden anderen an.",
+      "summary": "Zusammenfassung: was sie ändert, in einer Zeile",
+      "instructions": "Anweisungen",
+      "examples": "Beispiele",
+      "exampleN": "Beispiel {{n, number}}",
+      "removeExample": "Beispiel {{n, number}} entfernen",
+      "addExample": "Beispiel hinzufügen",
+      "examplesFull": "Ein Skill hat höchstens {{max, number}} Beispiele.",
+      "reason": "Grund (optional)",
+      "cancel": "Abbrechen",
+      "review": "Änderung prüfen",
+      "reviewHint": "Was Ihre Version gegenüber v{{version}} ändert. Nichts wird angewendet: Sie wird vorgeschlagen und dann wie jede andere Version angenommen oder abgelehnt.",
+      "outOfDate": "Geschrieben auf v{{base}}; jetzt wird v{{current}} verwendet. Die Änderungen unten beziehen sich auf v{{current}}: Prüfen Sie sie, bevor Sie vorschlagen.",
+      "yours": "Ihre",
+      "back": "Zurück zum Bearbeiten",
+      "submit": "Diese Version vorschlagen",
+      "stale": "Die verwendete Version hat sich geändert, seit Sie sie geöffnet haben. Lesen Sie sie erneut: Ihr Entwurf bleibt erhalten, und die Prüfung vergleicht ihn dann mit der verwendeten Version.",
+      "readAgain": "Erneut lesen",
+      "refused": "Der Vorschlag wurde abgelehnt: {{message}}",
+      "failed": "Der Vorschlag konnte nicht gesendet werden. Versuchen Sie es gleich noch einmal.",
+      "noBase": "In diesem Bereich wird noch keine Version verwendet, daher gibt es keine, auf der sich eine Version schreiben lässt.",
+      "loading": "Die verwendete Version wird gelesen…",
+      "issues": {
+        "summaryMissing": "Schreiben Sie eine Zusammenfassung: eine Zeile, die sagt, was die Version ändert.",
+        "summaryLong": "Halten Sie die Zusammenfassung bei 200 Zeichen.",
+        "summaryLines": "Halten Sie die Zusammenfassung in einer Zeile.",
+        "instructionsMissing": "Die Anweisungen dürfen nicht leer sein.",
+        "instructionsLong": "Die Anweisungen haben höchstens 20.000 Zeichen.",
+        "instructionsLines": "Die Anweisungen haben höchstens 500 Zeilen.",
+        "examplesHeading": "Entfernen Sie die Überschrift „## Examples“: Die Beispiele sind die Liste unten, und die Überschrift würde Ihren Text in sie verschieben.",
+        "examplesTooMany": "Ein Skill hat höchstens {{max, number}} Beispiele.",
+        "exampleMissing": "Geben Sie jedem Beispiel seine Situation und was zu tun ist, oder entfernen Sie es.",
+        "exampleLong": "Jede Hälfte eines Beispiels hat höchstens 2.000 Zeichen.",
+        "reasonLong": "Halten Sie den Grund bei 400 Zeichen.",
+        "unchanged": "Ihre Version ändert noch nichts: Bearbeiten Sie ihre Anweisungen oder Beispiele."
+      },
+      "discard": {
+        "title": "Entwurf verwerfen?",
+        "message": "Es wurde nichts vorgeschlagen. Ihre Zusammenfassung, Anweisungen und Beispiele gehen verloren.",
+        "confirm": "Verwerfen",
+        "keep": "Weiter bearbeiten"
+      }
     }
   },
   "engineeringRun": {
@@ -1784,7 +1850,6 @@
     "orderFine": "Jeder Schritt vor diesem ist erledigt.",
     "orderMissing": "Vor diesem nicht erledigt: {{list}}.",
     "readinessFor": "Bereitschaft von {{name}}, sobald eingerichtet",
-    "later": "Sein Ablauf kommt mit 7.52. Überspringen Sie ihn vorerst: Der Assistent bietet ihn dann erneut an.",
     "steps": {
       "prerequisites": {
         "title": "Voraussetzungen",
@@ -2557,6 +2622,264 @@
       "gates": "Checks und Reviews zur Änderung; „Automatisch erkennen“ wählt die Prüfpakete im Repository.",
       "flows": "Ein anderer gespeicherter Ablauf, aufgerufen in seiner Revision.",
       "platform": "Schritte, die die Plattform ausführt: Aufteilen, Zusammenführen der Stücke, ein Board, Gedächtnis, Learn."
+    }
+  },
+  "registry": {
+    "hint": "Jeder Agent ist eine Karte: eine Rolle auf einer ihrer Skill-Versionen, mit Modell, Werkzeugen, Limits, Eingaben und Ausgaben. Erstellen Sie eine Karte aus einer angenommenen Skill-Version, um ihr einen Namen und einen Zweck zu geben.",
+    "notAvailable": "Die Registry ist für Administratoren, wo die Engineering-Agenten aktiv sind.",
+    "loading": "Die Registry wird geladen…",
+    "failed": "Die Registry konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "scope": "Karten für",
+    "filters": {
+      "label": "Anzeigen",
+      "cards": "Agenten",
+      "gates": "Qualitätsprüfungen"
+    },
+    "roles": "Rollen",
+    "rolesHint": "Die eigene Karte jeder Rolle, auf dem Skill, den ihr Bereich ausführt.",
+    "made": "Aus einem Skill erstellt",
+    "empty": {
+      "title": "Noch keine Agentenkarten.",
+      "hint": "Erstellen Sie eine aus einer Skill-Version."
+    },
+    "open": "{{title}} öffnen",
+    "kind": {
+      "role": "Rolle",
+      "card": "Aus einem Skill erstellt"
+    },
+    "card": {
+      "back": "Alle Karten",
+      "missing": "Die Registry hat keine Karte {{card}}.",
+      "failed": "Die Karte konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+      "purpose": "Zweck",
+      "skill": "Skill",
+      "skillTemplate": "Die Vorlage ({{label}})",
+      "skillStore": "{{label}}: v{{version}}, {{status}}",
+      "openSkill": "Skill-Version öffnen",
+      "fromTemplate": "Aus der Vorlage v{{version}}",
+      "model": "Modell",
+      "tools": "Werkzeuge",
+      "harness": "Harness",
+      "caps": "Limits",
+      "inputs": "Liest",
+      "outputs": "Schreibt",
+      "from": "von {{from}}",
+      "recordedOn": "erfasst bei {{on}}",
+      "required": "erforderlich",
+      "trust": "vertraut als {{trust}}",
+      "gates": "Prüfpakete",
+      "template": "Vorlage",
+      "scorecard": "Scorecard",
+      "noScorecard": "Scorecards gehören zu einer Verbindung: Wählen Sie oben eine.",
+      "scorecardLine": "{{runs, number}} Läufe · Erfolgsquote {{rate}} · {{cost}}",
+      "spend": "Diesen Monat",
+      "spendLine": "{{usd}} ({{month}})",
+      "made": "Erstellt",
+      "madeBy": "Erstellt von {{who}}, {{at}}",
+      "versions": "Versionen",
+      "source": "Quelle",
+      "sourceHint": "So, wie das Repository die Vorlage der Rolle enthält, schreibgeschützt: Sie ändert sich mit einem Release, in templates/orchestration.",
+      "sourceFile": "Datei",
+      "sourceFailed": "Die Quelle konnte nicht gelesen werden."
+    },
+    "create": {
+      "button": "Aus einem Skill erstellen",
+      "title": "Agentenkarte aus einem Skill erstellen",
+      "description": "Eine Rolle auf einer ihrer angenommenen Skill-Versionen, mit Namen und Zweck. Modell, Werkzeuge und Harness sind die der Version.",
+      "role": "Rolle",
+      "scope": "Skill aus",
+      "version": "Skill-Version",
+      "versionPick": "Angenommene Version wählen",
+      "versionNone": "Diese Rolle hat in diesem Bereich keine angenommene Version: Nehmen Sie zuerst eine unter Skills an.",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "Die Versionen der Rolle konnten nicht gelesen werden.",
+      "slug": "Slug",
+      "slugHint": "Kleinbuchstaben, Ziffern und Bindestriche. Die ID der Karte ist {{id}}.",
+      "cardTitle": "Titel (optional)",
+      "purpose": "Zweck",
+      "caps": "Limits (optional)",
+      "capsHint": "Lassen Sie ein Limit leer, um das der Vorlage zu behalten. Ein Limit ist höchstens das der Vorlage.",
+      "cap": "{{name}} (höchstens {{max, number}})",
+      "cancel": "Abbrechen",
+      "submit": "Karte erstellen",
+      "refused": "Die Karte wurde nicht erstellt: {{message}}",
+      "failed": "Die Karte konnte nicht erstellt werden. Versuchen Sie es gleich noch einmal.",
+      "issues": {
+        "role": "Wählen Sie eine Rolle.",
+        "version": "Wählen Sie eine angenommene Skill-Version.",
+        "slugMissing": "Geben Sie der Karte einen Slug.",
+        "slugShape": "Verwenden Sie 1 bis 40 Kleinbuchstaben, Ziffern und Bindestriche, nicht am Anfang oder Ende.",
+        "titleLong": "Halten Sie den Titel bei 80 Zeichen.",
+        "titleText": "Halten Sie den Titel bei reinem Text in einer Zeile.",
+        "purposeMissing": "Sagen Sie, wofür die Karte ist.",
+        "purposeLong": "Halten Sie den Zweck bei {{max, number}} Zeichen.",
+        "purposeText": "Halten Sie den Zweck bei reinem Text in einer Zeile.",
+        "capShape": "Ein Limit ist eine ganze Zahl über 0.",
+        "capOver": "Ein Limit ist höchstens das der Vorlage."
+      }
+    }
+  },
+  "gates": {
+    "hint": "Die Prüfungen, die eine Qualitätsprüfung ausführt, nach Sprachpaket, mit dem Briefing des Inhabers für jedes. Schreibgeschützt: Sie kommen mit einem Release, in templates/orchestration/gates.",
+    "loading": "Die Qualitätsprüfungen werden geladen…",
+    "failed": "Die Qualitätsprüfungen konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "ownGate": "Die eigene Prüfung eines Repositorys läuft ebenfalls: {{file}}.",
+    "packs": "Prüfpakete",
+    "languages": "Sprachen",
+    "image": "Image",
+    "network": "Netzwerk (nur Einrichtung)",
+    "tools": "Werkzeuge",
+    "toolsPins": "Die eigenen Versionen des Repositorys.",
+    "toolsRecorded": "Die eigenen Versionen des Repositorys. Zuletzt erfasst: {{list}}",
+    "steps": "Schritte",
+    "stepsOf": "Schritte von {{pack}}",
+    "stepAlways": "immer",
+    "stepWhen": "wenn das Repository {{list}} hat",
+    "lookedAtNothing": "Schlägt fehl, wenn sie nichts geprüft hat: {{rule}}",
+    "stopsTitle": "Wann eine Prüfung bei einer Person anhält",
+    "stops": {
+      "check_failed": "Eine Prüfung ist fehlgeschlagen, und die Korrekturen haben sie nicht bestehen lassen.",
+      "looked_at_nothing": "Die Prüfung hat nichts geprüft: Keine Prüfung deckt das Repository ab, oder eine Prüfung fand nichts zu prüfen.",
+      "own_gate_changed": "Die Änderung berührt die eigene Prüfung des Repositorys ({{own_gate}}).",
+      "review_blocked": "Ein Review hat sie blockiert: Das finale Go sagte NO-GO.",
+      "rounds_used_up": "Nach der letzten Runde blieben blockierende Befunde."
+    },
+    "runners": "Eine Prüfung, die niemanden nennt, führt {{list}} aus.",
+    "brief": {
+      "toggle": "Briefing des Inhabers · {{file}} · {{kb}} KB",
+      "fromTemplate": "Aus der Vorlage",
+      "packs": "Für {{list}}",
+      "missing": "Dieses Release hat kein Briefing {{id}}.",
+      "failed": "Das Briefing konnte nicht gelesen werden.",
+      "back": "Qualitätsprüfungen"
+    }
+  },
+  "knowledge": {
+    "label": "Wissenspaket",
+    "loading": "Das Wissenspaket wird geladen…",
+    "failed": "Das Wissenspaket konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "none": "Noch kein Wissenspaket. Führen Sie „Repository verstehen“ für diese Verbindung aus: Ihr Paket kommt hierher zur Freigabe.",
+    "noConnection": "Verbinden Sie zuerst ein Repository (Voraussetzungen): Sein Wissen und seine Grundsätze kommen hierher.",
+    "repository": "Repository",
+    "for": "Für {{repository}}",
+    "rendering": "Freigegebene Dokumente gerendert: Rendering {{version}}.",
+    "publishButton": "Als Pull Request öffnen",
+    "rootPackage": "Das Repository",
+    "package": "Paket {{name}}",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Entwurf",
+      "approved": "Freigegeben"
+    },
+    "inUse": "In Verwendung",
+    "byAgent": "Von einem Agenten geschrieben",
+    "written": "Geschrieben {{at}}",
+    "builtFrom": "aus {{commit}}",
+    "view": {
+      "label": "Anzeigen",
+      "read": "Lesen",
+      "compare": "Mit v{{version}} vergleichen"
+    },
+    "kinds": {
+      "label": "Dokument",
+      "architecture": "Architektur",
+      "convention": "Konventionen",
+      "review-guide": "Review-Leitfaden",
+      "test-strategy": "Teststrategie",
+      "ci": "CI",
+      "glossary": "Glossar",
+      "how-we-work": "Wie wir arbeiten"
+    },
+    "kindMissing": "Diese Version hat kein Dokument dieser Art.",
+    "identical": "Das Dokument ist in beiden Versionen gleich.",
+    "versionFailed": "Die Version konnte nicht gelesen werden. Versuchen Sie es gleich noch einmal.",
+    "approve": "v{{version}} freigeben",
+    "approved": "v{{version}} freigegeben.",
+    "stale": "Die Version oder die freigegebene hat sich geändert, seit Sie sie gelesen haben. Lesen Sie sie erneut, bevor Sie freigeben.",
+    "readAgain": "Erneut lesen",
+    "approveFailed": "Die Freigabe konnte nicht gespeichert werden. Versuchen Sie es gleich noch einmal.",
+    "refused": "Die Freigabe wurde abgelehnt: {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "Die Wissensdokumente als Pull Request öffnen",
+        "tenets": "TENETS.md als Pull Request öffnen"
+      },
+      "branch": "Branch {{branch}}, aus der freigegebenen Version {{version}}. Nur eine Person führt ihn zusammen.",
+      "loading": "Die freigegebenen Dokumente werden gerendert…",
+      "previewFailed": "Die Vorschau der Dokumente konnte nicht erstellt werden. Versuchen Sie es gleich noch einmal.",
+      "hint": "Was die freigegebenen Dokumente jetzt ergeben, Datei für Datei. Der Pull Request wird bereit zur Prüfung geöffnet; nur eine Person führt ihn zusammen, beim Host.",
+      "mismatch": "Die gespeicherten Datensätze ergeben nicht mehr das Freigegebene, daher wird eine Veröffentlichung abgelehnt. Geben Sie die Version erneut frei.",
+      "files": "Dateien ({{n, number}})",
+      "size": "{{kb}} KB",
+      "textsCut": "Einige Dateien sind zu groß, um sie hier zu zeigen: Sie sind im Patch.",
+      "inPatch": "Diese Datei ist zu groß, um sie hier zu zeigen: Sie ist im Patch.",
+      "submit": "Pull Request öffnen",
+      "close": "Schließen",
+      "opened": "Pull Request #{{number}} geöffnet, bereit zur Prüfung.",
+      "openedDraft": "Pull Request #{{number}} als Entwurf geöffnet.",
+      "personMerges": "Nur eine Person führt ihn zusammen, beim Host.",
+      "openPr": "Pull Request öffnen",
+      "failed": "Der Pull Request konnte nicht geöffnet werden. Erneutes Veröffentlichen ist sicher: Es öffnet höchstens einen.",
+      "readAgain": "Erneut lesen",
+      "download": "Patch herunterladen",
+      "patchCut": "Der Patch ist hier gekürzt: Er ist zu groß, um ihn ganz zu zeigen.",
+      "patchLabel": "Der Patch, der die Dokumente hinzufügt",
+      "refused": {
+        "human_driven": "Sie arbeiten „Von Menschen gesteuert“: Die Plattform pusht nichts für Sie. Wenden Sie diesen Patch selbst an oder ändern Sie Ihre Arbeitsweise.",
+        "already_published": "Diese Version der Dokumente hat bereits ihren Pull Request: Eine neue freigegebene Version öffnet einen neuen.",
+        "digest_mismatch": "Die Dokumente haben sich seit dieser Vorschau geändert. Lesen Sie sie erneut und veröffentlichen Sie dann.",
+        "not_approved": "Hiervon ist noch nichts freigegeben: Geben Sie zuerst eine Version frei."
+      }
+    }
+  },
+  "tenets": {
+    "label": "Grundsätze",
+    "loading": "Die Grundsätze werden geladen…",
+    "failed": "Die Grundsätze konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+    "none": "Noch keine Grundsätze entworfen. Führen Sie den Ablauf „Grundsätze“ für diese Verbindung aus: Sein Entwurf kommt hierher zum Annehmen oder Ablehnen.",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Entwurf",
+      "accepted": "Angenommen",
+      "rejected": "Abgelehnt"
+    },
+    "noneAccepted": "Noch keine Version angenommen: Eine Triage zitiert keinen Grundsatz, bis eine angenommen ist.",
+    "accepted": "v{{version}} ist angenommen: Das darf eine Triage zitieren.",
+    "publish": "Als Pull Request öffnen",
+    "title": "Grundsätze v{{version}}",
+    "byAgent": "Von einem Agenten geschrieben",
+    "drafted": "Entworfen {{at}}",
+    "decided": "Entschieden von {{who}}, {{at}}",
+    "comparedWith": "Verglichen mit v{{version}}.",
+    "reason": "Grund (optional)",
+    "reject": "Ablehnen",
+    "accept": "v{{version}} annehmen",
+    "stale": "Die angenommenen Grundsätze haben sich geändert, seit Sie sie gelesen haben. Lesen Sie sie erneut, bevor Sie entscheiden.",
+    "readAgain": "Erneut lesen",
+    "refused": "Die Entscheidung wurde abgelehnt: {{message}}",
+    "decideFailed": "Die Entscheidung konnte nicht gespeichert werden. Versuchen Sie es gleich noch einmal.",
+    "versionFailed": "Die Version konnte nicht gelesen werden. Versuchen Sie es gleich noch einmal.",
+    "projection": {
+      "summary": "Zusammenfassung",
+      "why": "Warum:",
+      "cites": "Zitiert:"
+    },
+    "changes": {
+      "label": "Änderungen",
+      "first": "Jeder Grundsatz ist neu",
+      "none": "Keine Änderungen an Grundsätzen.",
+      "added": "Hinzugefügt",
+      "changed": "Geändert",
+      "removed": "Entfernt",
+      "fields": "sein {{list}}"
+    },
+    "fields": {
+      "title": "Titel",
+      "statement": "Aussage",
+      "rationale": "Begründung",
+      "citations": "Zitate"
     }
   }
 }

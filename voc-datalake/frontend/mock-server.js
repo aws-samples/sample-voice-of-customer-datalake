@@ -26,6 +26,8 @@ import { handlePlanRoutes } from './mock-plans.js';
 import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, isStoredConnection, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
 import { handleFlowSetupRoutes } from './mock-flow-setup.js';
+import { handleEngineeringRegistryRoutes } from './mock-engineering-registry.js';
+import { handleEngineeringKnowledgeRoutes } from './mock-engineering-knowledge.js';
 import { handleEngineeringRunRequestRoutes } from './mock-engineering-run-requests.js';
 import { bindSetupAgents, handleEngineeringSetupRoutes, readinessRefusal } from './mock-engineering-setup.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
@@ -1504,7 +1506,11 @@ function handleDomainModules(req, res, url) {
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
     || handleEngineeringSkillRoutes(req, res, url, send, shared)
-    // (7.52.00 C2: the Registry, the gates and the assertions, before the runs' routes, which would read them as a run id)
+    // (7.52.00: the Registry, the quality gates and the templates' sources; the knowledge, tenets and docs — before
+    // the runs' routes too, which would read `registry`, `gates`, `knowledge` … as a run id)
+    || handleEngineeringRegistryRoutes(req, res, url, send, shared)
+    || handleEngineeringKnowledgeRoutes(req, res, url, send, shared)
+    // (7.52.00 C2: what the Registry's routes above leave, the assertions' vocabulary)
     || handleFlowSetupRoutes(req, res, url, send)
     // (before the runs' routes, which would read `setup` and `readiness` as a run id)
     || handleEngineeringSetupRoutes(req, res, url, send, shared)

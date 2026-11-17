@@ -9,6 +9,8 @@
 //     skills views); GET /agents/engineering/skills/<role>/template?connection= answers it against the
 //     scope's current version {template, current_version, record, diff}, and POST …/template/adopt
 //     {expected_current, template_version} makes it a version a person proposed (item C's, served by this fixture)
+//   7.52.00 (gap M): POST /agents/engineering/skills/<role>/versions?connection= {base_version, instructions, examples,
+//     summary, reason?} → 201, a person's own version PROPOSED on the one the scope runs (409 when that moved)
 // The server's checks: a role of the catalog, a version from 1, a connection id's shape ('' for the shared skills),
 // a page token made for the same history, 1-10 versions each once, scorecards only for a connection (400 otherwise).
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers.
@@ -386,8 +388,61 @@ function templateRoute(req, res, url, send, shared, match) {
   return shared.collectJson(req, res, (body) => send(...adopt(connection, role, body ?? {})));
 }
 
+/** The version a scope runs of a role: its own current one, else (a connection) the shared skill's. */
+function inUseOf(connection, role) {
+  const own = SCOPES[connection]?.[role] ?? [];
+  const current = currentOf(own);
+  if (current !== 0 || connection === '') return { shared: connection === '', version: current, versions: own };
+  const sharedVersions = SCOPES['']?.[role] ?? [];
+  return { shared: true, version: currentOf(sharedVersions), versions: sharedVersions };
+}
+
+/** A person's own version (7.52.00, gap M, skills/actions.py `propose`): PROPOSED on the version the scope runs, with
+ * its tools, model and harness; never applied by itself. 409 when the scope runs another version than `base_version`. */
+function propose(connection, role, body) {
+  if (typeof body.base_version !== 'number' || typeof body.instructions !== 'string' || !Array.isArray(body.examples)) {
+    return [400, { error: 'the body is {base_version, instructions, examples, summary, reason?}' }];
+  }
+  const used = inUseOf(connection, role);
+  if (body.base_version !== used.version) {
+    const now = used.version ? `v${used.version}` : 'none';
+    return changed(`the version the scope runs was v${body.base_version} and is ${now} now`);
+  }
+  const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+  if (summary === '' || summary.length > 200 || summary.includes('\n')) {
+    return [400, { error: 'summary is one line of 1-200 characters: what the version changes' }];
+  }
+  const base = used.versions.find((v) => v.version === used.version);
+  const before = base?.record ?? TEMPLATES[role]?.record ?? record([], []);
+  const next = { ...before, instructions: body.instructions, examples: body.examples };
+  if (JSON.stringify(next) === JSON.stringify(before)) return [400, { error: 'the version changes nothing: edit its instructions or its examples' }];
+  SCOPES[connection] ??= {};
+  const versions = (SCOPES[connection][role] ??= []);
+  const at = new Date().toISOString();
+  const proposed = version(versions.length + 1, {
+    status: 'proposed', summary, why: why(typeof body.reason === 'string' ? body.reason : ''), proposed_by: 'sub-admin-demo',
+    proposed_at: at, base: used.version ? { shared: used.shared, version: used.version } : null, record: next,
+    diff: templateDiff(base, next), events: [],
+  });
+  versions.push(proposed);
+  return [201, { connection, role, version: line(proposed), event: { event: 'proposed', by: 'sub-admin-demo', at, comment: '' }, announcement: null }];
+}
+
+function proposeRoute(req, res, url, send, shared, role) {
+  const connection = scopeOf(url);
+  if (!isAdmin()) return send(403, { message: 'Admin access required' });
+  if (!ROLES.includes(role)) return send(400, { error: `role is one of the agent roles: ${ROLES.join(', ')}` });
+  if (connection === null) return send(400, { error: 'connection is a connection id, or empty for the shared skills' });
+  return shared.collectJson(req, res, (body) => send(...propose(connection, role, body ?? {})));
+}
+
 export function handleEngineeringSkillRoutes(req, res, url, send, shared) {
   const path = url.pathname;
+  const proposing = req.method === 'POST' ? HISTORY_PATH.exec(path) : null;
+  if (proposing && proposing[2] === undefined) {
+    proposeRoute(req, res, url, send, shared, decodeURIComponent(proposing[1]));
+    return true;
+  }
   const template = TEMPLATE_PATH.exec(path);
   if (template) {
     templateRoute(req, res, url, send, shared, template);

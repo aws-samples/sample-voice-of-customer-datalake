@@ -1294,7 +1294,7 @@
     }
   },
   "skills": {
-    "hint": "Cada agente de engenharia trabalha a partir de uma habilidade: as suas instruções, exemplos, ferramentas, modelo e harness. Cada alteração é uma nova versão, guardada com o motivo, quem a propôs e aceitou, e o seu benchmark. As habilidades partilhadas aplicam-se a todas as conexões sem versão própria.",
+    "hint": "A habilidade de cada papel tem versões; cada alteração é proposta, revista e aceite aqui.",
     "scope": "Habilidades de",
     "shared": "Habilidades partilhadas",
     "connection": "Conexão {{name}}",
@@ -1303,8 +1303,9 @@
     "columns": {
       "role": "Função",
       "current": "Versão atual",
-      "versions": "Versões",
-      "latest": "Última alteração"
+      "waiting": "A aguardar revisão",
+      "template": "Modelo",
+      "lastChange": "Última alteração"
     },
     "openRole": "Abrir o histórico de {{role}}",
     "role": {
@@ -1366,10 +1367,6 @@
     "diff": {
       "added": "Adicionado:",
       "removed": "Removido:",
-      "title": "Alterações em relação à base",
-      "firstTitle": "A sua primeira versão: tudo é novo",
-      "none": "Sem alterações em relação à base.",
-      "instructions": "Instruções",
       "examples": "Exemplos",
       "example": "Quando: {{situation}} | Fazer: {{action}}",
       "tools": "Política de ferramentas",
@@ -1377,14 +1374,6 @@
       "model": "Modelo: {{from}} → {{to}}",
       "harness": "Harness: {{from}} → {{to}}",
       "nothing": "(nenhum)"
-    },
-    "record": {
-      "title": "A habilidade completa",
-      "model": "Modelo",
-      "harness": "Harness",
-      "tools": "Ferramentas",
-      "instructions": "Instruções",
-      "examples": "Exemplos ({{n, number}})"
     },
     "noBase": "Escrita sem versão anterior.",
     "baseShared": "Escrita sobre a versão partilhada {{version}}.",
@@ -1487,19 +1476,96 @@
     },
     "template": {
       "title": "Modelo atualizado",
-      "badge": "Modelo atualizado (v{{version}})",
-      "explain": "O modelo do repositório para esta função tem uma versão mais nova do que a que este escopo executa. Leia o que ele muda e depois adote-o como proposta: ele só é executado quando um administrador o aceita no histórico abaixo. Nada muda sozinho.",
+      "badge": "Atualização disponível (v{{version}})",
+      "explain": "O modelo do repositório para este papel é mais recente do que as versões deste âmbito. Compare-o com a versão em uso e depois proponha-o: só é executado quando um administrador o aceita. Nada muda sozinho.",
       "show": "Mostrar o que ele muda",
       "loading": "Lendo o modelo",
       "readFailed": "Não foi possível ler o modelo.",
       "diffTitle": "Modelo v{{version}} comparado à versão atual v{{current}}",
       "diffTitleFirst": "Modelo v{{version}} (ainda não há versão atual)",
-      "adopt": "Adotar como proposta",
+      "adopt": "Propor v{{version}} a partir do modelo",
       "adoptHint": "Proposta por você; um administrador a aceita ou rejeita como qualquer outra versão.",
       "adoptFailed": "Não foi possível adotar o modelo.",
       "notNewer": "Este modelo já está proposto ou aceito.",
-      "proposed": "O modelo foi proposto como versão {{version}}: aceite-o no histórico para executá-lo.",
-      "openProposed": "Abrir a versão {{version}}"
+      "proposed": "O modelo está proposto como versão {{version}}. Abra-a para a aceitar ou rejeitar.",
+      "openProposed": "Abrir a proposta",
+      "documentTitle": "Modelo v{{version}}",
+      "label": "Modelo v{{version}}"
+    },
+    "connectionRepository": "{{repository}} ({{name}})",
+    "toReview": "v{{version}} por rever",
+    "review": "Rever",
+    "reviewVersion": "Rever a versão {{version}} de {{role}}",
+    "templateUnknown": "Não lido",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "Instruções",
+      "examples": "Exemplos ({{n, number}})",
+      "noExamples": "Sem exemplos.",
+      "situation": "Quando",
+      "action": "Fazer",
+      "view": {
+        "label": "Mostrar",
+        "read": "Ler",
+        "changes": "Alterações"
+      },
+      "comparedWith": "Comparada com v{{version}}, a versão sobre a qual foi escrita.",
+      "nothing": "Nada",
+      "identical": "As instruções são iguais.",
+      "baseFailed": "Não foi possível ler a versão sobre a qual foi escrita, por isso as suas alterações não podem ser mostradas. Tente novamente daqui a pouco."
+    },
+    "provenance": {
+      "coach": "Proposta pelo coach"
+    },
+    "changes": {
+      "title": "Exemplos, ferramentas, modelo e harness",
+      "none": "Exemplos, ferramentas, modelo e harness: sem alterações."
+    },
+    "propose": {
+      "button": "Propor uma versão",
+      "title": "Propor uma versão de {{role}}",
+      "writtenOn": "Escrita sobre v{{version}}, a versão em uso. É uma proposta: um administrador aceita-a como qualquer outra.",
+      "summary": "Resumo: o que altera, numa linha",
+      "instructions": "Instruções",
+      "examples": "Exemplos",
+      "exampleN": "Exemplo {{n, number}}",
+      "removeExample": "Remover o exemplo {{n, number}}",
+      "addExample": "Adicionar um exemplo",
+      "examplesFull": "Uma habilidade tem no máximo {{max, number}} exemplos.",
+      "reason": "Motivo (opcional)",
+      "cancel": "Cancelar",
+      "review": "Rever a sua alteração",
+      "reviewHint": "O que a sua versão altera em relação a v{{version}}. Nada é aplicado: é proposta e depois aceite ou rejeitada como qualquer outra versão.",
+      "outOfDate": "Escrita sobre v{{base}}; agora está em uso v{{current}}. As alterações abaixo são em relação a v{{current}}: verifique-as antes de propor.",
+      "yours": "A sua",
+      "back": "Voltar à edição",
+      "submit": "Propor esta versão",
+      "stale": "A versão em uso mudou desde que a abriu. Leia-a novamente: o seu rascunho é mantido, e a revisão compara-o depois com a versão em uso.",
+      "readAgain": "Ler novamente",
+      "refused": "A proposta foi recusada: {{message}}",
+      "failed": "Não foi possível enviar a proposta. Tente novamente daqui a pouco.",
+      "noBase": "Ainda não há nenhuma versão em uso neste âmbito, por isso não há nenhuma sobre a qual escrever uma versão.",
+      "loading": "A ler a versão em uso…",
+      "issues": {
+        "summaryMissing": "Escreva um resumo: uma linha que diga o que a versão altera.",
+        "summaryLong": "Mantenha o resumo em 200 caracteres.",
+        "summaryLines": "Mantenha o resumo numa linha.",
+        "instructionsMissing": "As instruções não podem estar vazias.",
+        "instructionsLong": "As instruções têm no máximo 20 000 caracteres.",
+        "instructionsLines": "As instruções têm no máximo 500 linhas.",
+        "examplesHeading": "Retire o título «## Examples»: os exemplos são a lista abaixo, e o título moveria o seu texto para eles.",
+        "examplesTooMany": "Uma habilidade tem no máximo {{max, number}} exemplos.",
+        "exampleMissing": "Dê a cada exemplo a sua situação e o que fazer, ou remova-o.",
+        "exampleLong": "Cada metade de um exemplo tem no máximo 2000 caracteres.",
+        "reasonLong": "Mantenha o motivo em 400 caracteres.",
+        "unchanged": "A sua versão ainda não altera nada: edite as suas instruções ou os seus exemplos."
+      },
+      "discard": {
+        "title": "Descartar o seu rascunho?",
+        "message": "Nada foi proposto. O seu resumo, instruções e exemplos serão perdidos.",
+        "confirm": "Descartar",
+        "keep": "Continuar a editar"
+      }
     }
   },
   "engineeringRun": {
@@ -1803,7 +1869,6 @@
     "orderFine": "Todas as etapas anteriores estão concluídas.",
     "orderMissing": "Não concluídas antes desta: {{list}}.",
     "readinessFor": "Prontidão de {{name}}, depois de configurada",
-    "later": "O fluxo dela chega na 7.52. Pule-a por enquanto: o guia a oferecerá novamente.",
     "steps": {
       "prerequisites": {
         "title": "Pré-requisitos",
@@ -2576,6 +2641,264 @@
       "gates": "Verificações e revisões da alteração; Detecção automática escolhe os pacotes do repositório.",
       "flows": "Outro fluxo salvo, chamado na sua revisão.",
       "platform": "Etapas que a plataforma executa: divisão em partes, junção das partes, um quadro, memória, Learn."
+    }
+  },
+  "registry": {
+    "hint": "Cada agente é um cartão: um papel sobre uma das suas versões de habilidade, com o seu modelo, ferramentas, limites, entradas e saídas. Crie um cartão a partir de uma versão de habilidade aceite para lhe dar um nome e um propósito.",
+    "notAvailable": "O Registo é para administradores, onde os agentes de engenharia estão ativos.",
+    "loading": "A carregar o Registo…",
+    "failed": "Não foi possível carregar o Registo. Tente novamente daqui a pouco.",
+    "scope": "Cartões de",
+    "filters": {
+      "label": "Mostrar",
+      "cards": "Agentes",
+      "gates": "Controlos de qualidade"
+    },
+    "roles": "Papéis",
+    "rolesHint": "O cartão próprio de cada papel, sobre a habilidade que o seu âmbito executa.",
+    "made": "Criados a partir de uma habilidade",
+    "empty": {
+      "title": "Ainda não há cartões de agente.",
+      "hint": "Crie um a partir de uma versão de habilidade."
+    },
+    "open": "Abrir {{title}}",
+    "kind": {
+      "role": "Papel",
+      "card": "Criado a partir de uma habilidade"
+    },
+    "card": {
+      "back": "Todos os cartões",
+      "missing": "O Registo não tem o cartão {{card}}.",
+      "failed": "Não foi possível carregar o cartão. Tente novamente daqui a pouco.",
+      "purpose": "Propósito",
+      "skill": "Habilidade",
+      "skillTemplate": "O modelo ({{label}})",
+      "skillStore": "{{label}}: v{{version}}, {{status}}",
+      "openSkill": "Abrir a versão da habilidade",
+      "fromTemplate": "Do modelo v{{version}}",
+      "model": "Modelo",
+      "tools": "Ferramentas",
+      "harness": "Harness",
+      "caps": "Limites",
+      "inputs": "Lê",
+      "outputs": "Escreve",
+      "from": "de {{from}}",
+      "recordedOn": "registado em {{on}}",
+      "required": "obrigatório",
+      "trust": "tratado como {{trust}}",
+      "gates": "Pacotes de controlo",
+      "template": "Modelo",
+      "scorecard": "Resultados",
+      "noScorecard": "Os resultados pertencem a uma ligação: escolha uma acima.",
+      "scorecardLine": "{{runs, number}} execuções · taxa de sucesso {{rate}} · {{cost}}",
+      "spend": "Este mês",
+      "spendLine": "{{usd}} ({{month}})",
+      "made": "Criado",
+      "madeBy": "Criado por {{who}}, {{at}}",
+      "versions": "Versões",
+      "source": "Fonte",
+      "sourceHint": "Tal como o repositório guarda o modelo do papel, só de leitura: muda com uma versão do produto, em templates/orchestration.",
+      "sourceFile": "Ficheiro",
+      "sourceFailed": "Não foi possível ler a fonte."
+    },
+    "create": {
+      "button": "Criar a partir de uma habilidade",
+      "title": "Criar um cartão de agente a partir de uma habilidade",
+      "description": "Um papel sobre uma das suas versões de habilidade aceites, com um nome e um propósito. O seu modelo, ferramentas e harness são os da versão.",
+      "role": "Papel",
+      "scope": "Habilidade de",
+      "version": "Versão da habilidade",
+      "versionPick": "Escolha uma versão aceite",
+      "versionNone": "Este papel não tem nenhuma versão aceite neste âmbito: aceite uma em Habilidades primeiro.",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "Não foi possível ler as versões do papel.",
+      "slug": "Slug",
+      "slugHint": "Letras minúsculas, dígitos e hífenes. O id do cartão é {{id}}.",
+      "cardTitle": "Título (opcional)",
+      "purpose": "Propósito",
+      "caps": "Limites (opcional)",
+      "capsHint": "Deixe um limite vazio para manter o do modelo. Um limite é no máximo o do modelo.",
+      "cap": "{{name}} (no máximo {{max, number}})",
+      "cancel": "Cancelar",
+      "submit": "Criar o cartão",
+      "refused": "O cartão não foi criado: {{message}}",
+      "failed": "Não foi possível criar o cartão. Tente novamente daqui a pouco.",
+      "issues": {
+        "role": "Escolha um papel.",
+        "version": "Escolha uma versão de habilidade aceite.",
+        "slugMissing": "Dê um slug ao cartão.",
+        "slugShape": "Use de 1 a 40 letras minúsculas, dígitos e hífenes, sem hífen no início nem no fim.",
+        "titleLong": "Mantenha o título em 80 caracteres.",
+        "titleText": "Mantenha o título em texto simples numa linha.",
+        "purposeMissing": "Diga para que serve o cartão.",
+        "purposeLong": "Mantenha o propósito em {{max, number}} caracteres.",
+        "purposeText": "Mantenha o propósito em texto simples numa linha.",
+        "capShape": "Um limite é um número inteiro maior do que 0.",
+        "capOver": "Um limite é no máximo o do modelo."
+      }
+    }
+  },
+  "gates": {
+    "hint": "As verificações que um controlo de qualidade executa, por pacote de linguagem, com as indicações do proprietário para cada um. Só de leitura: chegam com uma versão do produto, em templates/orchestration/gates.",
+    "loading": "A carregar os controlos de qualidade…",
+    "failed": "Não foi possível carregar os controlos de qualidade. Tente novamente daqui a pouco.",
+    "ownGate": "O controlo próprio do repositório também é executado: {{file}}.",
+    "packs": "Pacotes de controlo",
+    "languages": "Linguagens",
+    "image": "Imagem",
+    "network": "Rede (só na preparação)",
+    "tools": "Ferramentas",
+    "toolsPins": "As versões fixadas do próprio repositório.",
+    "toolsRecorded": "As versões fixadas do próprio repositório. Último registo: {{list}}",
+    "steps": "Passos",
+    "stepsOf": "Passos de {{pack}}",
+    "stepAlways": "sempre",
+    "stepWhen": "se o repositório tiver {{list}}",
+    "lookedAtNothing": "Falha se não verificou nada: {{rule}}",
+    "stopsTitle": "Quando um controlo para numa pessoa",
+    "stops": {
+      "check_failed": "Uma verificação falhou, e as correções não a fizeram passar.",
+      "looked_at_nothing": "O controlo não verificou nada: nenhuma verificação cobre o repositório, ou uma verificação não encontrou nada para verificar.",
+      "own_gate_changed": "A alteração mexe no controlo próprio do repositório ({{own_gate}}).",
+      "review_blocked": "Uma revisão bloqueou-a: a aprovação final disse NO-GO.",
+      "rounds_used_up": "Ficaram constatações bloqueantes depois da última ronda."
+    },
+    "runners": "Um controlo que não nomeia ninguém é executado por {{list}}.",
+    "brief": {
+      "toggle": "Indicações do proprietário · {{file}} · {{kb}} KB",
+      "fromTemplate": "Do modelo",
+      "packs": "Para {{list}}",
+      "missing": "Esta versão do produto não tem as indicações {{id}}.",
+      "failed": "Não foi possível ler as indicações.",
+      "back": "Controlos de qualidade"
+    }
+  },
+  "knowledge": {
+    "label": "Pacote de conhecimento",
+    "loading": "A carregar o pacote de conhecimento…",
+    "failed": "Não foi possível carregar o pacote de conhecimento. Tente novamente daqui a pouco.",
+    "none": "Ainda não há pacote de conhecimento. Execute Entender o repositório nesta ligação: o seu pacote chega aqui para ser aprovado.",
+    "noConnection": "Ligue primeiro um repositório (Pré-requisitos): o seu conhecimento e os seus princípios chegam aqui.",
+    "repository": "Repositório",
+    "for": "Para {{repository}}",
+    "rendering": "Documentos aprovados gerados: geração {{version}}.",
+    "publishButton": "Abrir como pull request",
+    "rootPackage": "O repositório",
+    "package": "Pacote {{name}}",
+    "version": "Versão",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Rascunho",
+      "approved": "Aprovada"
+    },
+    "inUse": "Em uso",
+    "byAgent": "Escrito por um agente",
+    "written": "Escrito {{at}}",
+    "builtFrom": "a partir de {{commit}}",
+    "view": {
+      "label": "Mostrar",
+      "read": "Ler",
+      "compare": "Comparar com v{{version}}"
+    },
+    "kinds": {
+      "label": "Documento",
+      "architecture": "Arquitetura",
+      "convention": "Convenções",
+      "review-guide": "Guia de revisão",
+      "test-strategy": "Estratégia de testes",
+      "ci": "CI",
+      "glossary": "Glossário",
+      "how-we-work": "Como trabalhamos"
+    },
+    "kindMissing": "Esta versão não tem nenhum documento deste tipo.",
+    "identical": "O documento é igual em ambas as versões.",
+    "versionFailed": "Não foi possível ler a versão. Tente novamente daqui a pouco.",
+    "approve": "Aprovar v{{version}}",
+    "approved": "v{{version}} aprovada.",
+    "stale": "A versão ou a aprovada mudaram desde que as leu. Leia-as novamente antes de aprovar.",
+    "readAgain": "Ler novamente",
+    "approveFailed": "Não foi possível guardar a aprovação. Tente novamente daqui a pouco.",
+    "refused": "A aprovação foi recusada: {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "Abrir os documentos de conhecimento como pull request",
+        "tenets": "Abrir TENETS.md como pull request"
+      },
+      "branch": "Ramo {{branch}}, a partir da versão aprovada {{version}}. Só uma pessoa o junta.",
+      "loading": "A gerar os documentos aprovados…",
+      "previewFailed": "Não foi possível pré-visualizar os documentos. Tente novamente daqui a pouco.",
+      "hint": "O que os documentos aprovados geram agora, ficheiro a ficheiro. O pull request é aberto pronto para revisão; só uma pessoa o junta, no host.",
+      "mismatch": "Os registos guardados já não geram o que foi aprovado, por isso a publicação será recusada. Aprove a versão novamente.",
+      "files": "Ficheiros ({{n, number}})",
+      "size": "{{kb}} KB",
+      "textsCut": "Alguns ficheiros são demasiado grandes para os mostrar aqui: estão no patch.",
+      "inPatch": "Este ficheiro é demasiado grande para o mostrar aqui: está no patch.",
+      "submit": "Abrir o pull request",
+      "close": "Fechar",
+      "opened": "Pull request n.º {{number}} aberto, pronto para revisão.",
+      "openedDraft": "Pull request n.º {{number}} aberto como rascunho.",
+      "personMerges": "Só uma pessoa o junta, no host.",
+      "openPr": "Abrir o pull request",
+      "failed": "Não foi possível abrir o pull request. Publicar novamente é seguro: abre no máximo um.",
+      "readAgain": "Ler novamente",
+      "download": "Transferir o patch",
+      "patchCut": "O patch está cortado aqui: é demasiado grande para o mostrar inteiro.",
+      "patchLabel": "O patch que adiciona os documentos",
+      "refused": {
+        "human_driven": "Trabalha em modo Conduzido por pessoas: a plataforma não faz push por si. Aplique este patch pessoalmente, ou mude a sua forma de trabalhar.",
+        "already_published": "Esta versão dos documentos já tem o seu pull request: uma nova versão aprovada abre outro.",
+        "digest_mismatch": "Os documentos mudaram desde esta pré-visualização. Leia-a novamente e depois publique.",
+        "not_approved": "Ainda nada disto está aprovado: aprove primeiro uma versão."
+      }
+    }
+  },
+  "tenets": {
+    "label": "Princípios",
+    "loading": "A carregar os princípios…",
+    "failed": "Não foi possível carregar os princípios. Tente novamente daqui a pouco.",
+    "none": "Ainda não há princípios redigidos. Execute o fluxo Princípios nesta ligação: o seu rascunho chega aqui para ser aceite ou rejeitado.",
+    "version": "Versão",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Rascunho",
+      "accepted": "Aceite",
+      "rejected": "Rejeitada"
+    },
+    "noneAccepted": "Ainda não há nenhuma versão aceite: uma triagem não cita nenhum princípio até haver uma.",
+    "accepted": "v{{version}} está aceite: é o que uma triagem pode citar.",
+    "publish": "Abrir como pull request",
+    "title": "Princípios v{{version}}",
+    "byAgent": "Escrito por um agente",
+    "drafted": "Redigido {{at}}",
+    "decided": "Decidido por {{who}}, {{at}}",
+    "comparedWith": "Comparado com v{{version}}.",
+    "reason": "Motivo (opcional)",
+    "reject": "Rejeitar",
+    "accept": "Aceitar v{{version}}",
+    "stale": "Os princípios aceites mudaram desde que os leu. Leia-os novamente antes de decidir.",
+    "readAgain": "Ler novamente",
+    "refused": "A decisão foi recusada: {{message}}",
+    "decideFailed": "Não foi possível guardar a decisão. Tente novamente daqui a pouco.",
+    "versionFailed": "Não foi possível ler a versão. Tente novamente daqui a pouco.",
+    "projection": {
+      "summary": "Resumo",
+      "why": "Porquê:",
+      "cites": "Cita:"
+    },
+    "changes": {
+      "label": "Alterações",
+      "first": "Todos os princípios são novos",
+      "none": "Nenhum princípio muda.",
+      "added": "Adicionado",
+      "changed": "Alterado",
+      "removed": "Removido",
+      "fields": "o seu {{list}}"
+    },
+    "fields": {
+      "title": "título",
+      "statement": "enunciado",
+      "rationale": "justificação",
+      "citations": "citações"
     }
   }
 }

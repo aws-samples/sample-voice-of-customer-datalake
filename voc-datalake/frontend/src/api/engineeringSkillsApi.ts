@@ -197,6 +197,8 @@ export const engineeringSkillsKeys = {
   history: (connection: string, role: SkillRole) => ['engineering-skills', connection, role] as const,
   version: (connection: string, role: SkillRole, version: number) => ['engineering-skills', connection, role, version] as const,
   template: (connection: string, role: SkillRole) => ['engineering-skills', connection, role, 'template'] as const,
+  /** A role's accepted versions in a scope (Registry → Create from a skill: only an accepted version makes a card). */
+  accepted: (connection: string, role: string) => ['engineering-skills', connection, role, 'accepted'] as const,
   scorecards: (connection: string, role: SkillRole, versions: readonly number[]) =>
     ['engineering-scorecards', connection, role, versions.join(',')] as const,
 }

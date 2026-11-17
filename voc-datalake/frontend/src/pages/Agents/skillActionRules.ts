@@ -20,6 +20,12 @@ export function inUse(target: ActionTarget): ScopedVersion | null {
   return target.connection !== '' && target.sharedCurrent !== 0 ? { shared: true, version: target.sharedCurrent } : null
 }
 
+/** Whether `target` is the version its scope runs now (a person's own version is written on that one, gap M). */
+export function isVersionInUse(target: ActionTarget): boolean {
+  const used = inUse(target)
+  return used !== null && used.version === target.detail.version && used.shared === (target.connection === '')
+}
+
 /** Whether a version's base is the version the scope runs now (acceptance needs it; the store checks it again). */
 export function baseIsInUse(target: ActionTarget): boolean {
   const base = target.detail.base

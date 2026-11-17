@@ -22,7 +22,11 @@ import { parseOverview } from '../../api/engineeringRunsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
+// (the original kept beside the doubles: the shared safe-Markdown policy's links reach the assistant's store)
+vi.mock('../../store/authStore', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../store/authStore')>()),
+  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
+}))
 
 const { default: EngineeringRun } = await import('./RunWorkspace/RunWorkspace')
 
@@ -215,7 +219,7 @@ describe('the reports', () => {
 describe('the reports while the run is under way', () => {
   afterEach(() => { vi.useRealTimers() })
 
-  it('follows the latest: a newer version the index shows is read, the one on screen kept until it comes', async () => {
+  it('keeps the version on screen when a newer one is written, says so, and shows it when asked (7.52.00)', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const index = { latest: 2 }
     const gate: { open?: () => void } = {}
@@ -232,8 +236,10 @@ describe('the reports while the run is under way', () => {
     await screen.findByText('Version 2')
     index.latest = 3
     await vi.advanceTimersByTimeAsync(16_000)
-    expect([await screen.findByRole('option', { name: 'Latest (v3)' }), screen.getByText('Version 2')]).toHaveLength(2)
+    expect([await screen.findByRole('option', { name: 'Latest (v3)' }), screen.getByText('Version 2'),
+      screen.getByText('A newer version is ready: v3.')]).toHaveLength(3)
     gate.open?.()
+    await userEvent.click(screen.getByRole('button', { name: 'Show v3' }))
     expect(await screen.findByText('Version 3')).toBeInTheDocument()
   })
 })

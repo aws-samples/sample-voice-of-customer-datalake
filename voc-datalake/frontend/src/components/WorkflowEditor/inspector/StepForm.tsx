@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { WORKFLOW_NODE_ROLES } from '@stream/assistant/tools/agent-limits'
 import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../../api/workflowsApi'
 import { LabeledField } from '../../LabeledField/LabeledField'
+import PromptField from '../../Document/text/PromptField'
 import { removeNodes, updateNode } from '../model'
 import { NodeTypeIcon } from '../NodeTypeIcon'
 import { ParamsFields } from '../ParamsFields'
@@ -67,13 +68,10 @@ export function StepForm({ node, definition, issues, readOnly, onChange, showTyp
           )}
         </LabeledField>
       )}
-      <LabeledField label={t(node.type === 'custom_llm' ? 'editor.fields.instructionsRequired' : 'editor.fields.instructions')}>
-        {(id) => (
-          <textarea id={id} rows={5} className="input w-full resize-y" disabled={readOnly}
-            maxLength={API_WORKFLOW_LIMITS.maxInstructionsChars} value={node.data.instructions ?? ''}
-            onChange={(e) => patch((n) => ({ ...n, data: { ...n.data, instructions: e.target.value } }))} />
-        )}
-      </LabeledField>
+      {/* A prompt the flow's Save writes (§6.4 step 7, 7.52.00 C3): edited as written with its count, read only as text. */}
+      <PromptField label={t(node.type === 'custom_llm' ? 'editor.fields.instructionsRequired' : 'editor.fields.instructions')}
+        hint={null} value={node.data.instructions ?? ''} readOnly={readOnly} maxChars={API_WORKFLOW_LIMITS.maxInstructionsChars}
+        onChange={(instructions) => patch((n) => ({ ...n, data: { ...n.data, instructions } }))} />
       <ParamsFields node={node} readOnly={readOnly} onParams={(params) => patch((n) => ({ ...n, data: { ...n.data, params } }))} />
     </div>
   )

@@ -58,6 +58,7 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   'pages/Agents/spendView.ts': { kind: 'filter', keys: ['month', 'by', 'workflow'], reason: 'the Spend view\'s month, grouping and workflow filter, and the Runs list\'s month' },
   'pages/Agents/EngineeringSpend.tsx': { kind: 'filter', keys: [], reason: 'writes the Spend filters spendView.ts reads' },
   'pages/Agents/skillsView.ts': { kind: 'filter', keys: ['connection'], reason: 'the Skills scope picker (the shared skills or one connection); the role and version are the path' },
+  'pages/Agents/Registry/RegistryPage.tsx': { kind: 'filter', keys: ['connection'], reason: 'the Registry\'s scope picker (the shared skills or one connection, 7.52.00); the cards, the gates and a card are the path' },
   'pages/Agents/RunWorkspace/runsFilters.ts': { kind: 'filter', keys: ['flow', 'status'], reason: 'the Runs list\'s flow and status filters (7.51.00; its month through spendView.ts): they combine freely; a run and its agent are the path' },
   'pages/Agents/RunWorkspace/RunsView.tsx': { kind: 'filter', keys: [], reason: 'writes the Runs filters runsFilters.ts reads' },
   'pages/Settings/adminPaths.ts': { kind: 'filter', keys: ['scope'], reason: 'the Data sources scope switch (this workspace or the deployment); the tab, card and source are the path' },

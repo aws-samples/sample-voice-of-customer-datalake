@@ -1,6 +1,6 @@
-/** The Skills view's rules: the address's options, a status's badge, the versions a person types, an empty diff. */
+/** The Skills view's rules: the address's options, a status's badge, the versions a person types, a diff's side changes. */
 import { describe, it, expect } from 'vitest'
-import { diffIsEmpty, parseVersionsInput, skillsViewOf, statusTone } from './skillsView'
+import { parseVersionsInput, sideChangesEmpty, skillsViewOf, statusTone } from './skillsView'
 
 const view = (query: string, role: string | null = null, version: number | null = null) =>
   skillsViewOf({ role, version }, new URLSearchParams(query))
@@ -30,9 +30,9 @@ describe('the Skills view', () => {
       { ok: false, reason: 'tooMany' }, { ok: false, reason: 'repeated' }])
   })
 
-  it('tells a diff that changes nothing from one that changes a part', () => {
-    expect(diffIsEmpty(NO_CHANGE)).toBe(true)
+  it('tells a diff that changes nothing beside its instructions from one that changes a part', () => {
+    expect(sideChangesEmpty({ ...NO_CHANGE, instructions: [['+', 'Run the tests.']] })).toBe(true)
     expect([{ tools_reordered: true }, { model: MOVED }, { tools_removed: ['run'] }]
-      .map((part) => diffIsEmpty({ ...NO_CHANGE, ...part }))).toStrictEqual([false, false, false])
+      .map((part) => sideChangesEmpty({ ...NO_CHANGE, ...part }))).toStrictEqual([false, false, false])
   })
 })

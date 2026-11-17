@@ -261,5 +261,9 @@
   },
   "panel": {
     "openFull": "打开完整页面"
+  },
+  "live": {
+    "newer": "有更新的版本：{{version}}。",
+    "show": "显示 {{version}}"
   }
 }

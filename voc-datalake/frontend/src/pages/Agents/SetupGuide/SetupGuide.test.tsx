@@ -1,8 +1,9 @@
 /**
  * @fileoverview The setup guide (7.50.00): the steps in the recommended order with where each stands, the step the
  * guide recommends at `/agents/setup`, Skip for now on any step (saved from the revision read, moving on to the next
- * step still open) with what skipping costs, Understand and Tenets arriving in 7.52, an automation's step with its
- * control and readiness, Ready to go, and the Agents list's first-visit offer. Administrators only, where the
+ * step still open) with what skipping costs, Understand and Tenets reviewing the repository's knowledge and tenets
+ * (7.52.00), an automation's step with its control and readiness, Ready to go, and the Agents list's first-visit
+ * offer. Administrators only, where the
  * engineering agents are on. 7.50.01: the deployment's own facts apart from each automation's readiness ("once set
  * up"), asked of the deployment's only connection while the automation names none. 7.50.02: step 0 is Connect GitHub
  * and Confirm CI, and the GitHub Issues source and its label are automatic ticks read from the source as the
@@ -240,7 +241,7 @@ describe('the guide', () => {
     routes({ 'PUT /agents/engineering/setup': () => progress({ understand: 'skipped' }, { revision: 3 }) })
     renderGuide('/agents/setup/understand')
     const step = await screen.findByTestId('setup-step')
-    expect([within(step).getByText(/Its flow arrives in 7.52/), within(step).getByText('What skipping costs'),
+    expect([within(step).getByText('For example-org/storefront'), within(step).getByText('What skipping costs'),
       within(step).getByText(/the agents learn the repository from scratch on every run/),
       within(step).getByText(/Not done before this one: Prerequisites\./)]).toHaveLength(4)
     await userEvent.click(within(step).getByRole('button', { name: 'Skip for now' }))
@@ -261,7 +262,10 @@ describe('the guide', () => {
   })
 
   it('says so when another administrator saved the guide meanwhile', async () => {
-    routes({ 'PUT /agents/engineering/setup': () => { throw new ApiError(409, 'the setup guide changed since you opened it') } })
+    routes({
+      'PUT /agents/engineering/setup': () => { throw new ApiError(409, 'the setup guide changed since you opened it') },
+      'GET /agents/engineering/tenets/storefront': () => ({ connection: 'storefront', head: { versions: 0, accepted_version: null }, versions: [] }),
+    })
     renderGuide('/agents/setup/tenets')
     const step = await screen.findByTestId('setup-step')
     await userEvent.click(within(step).getByRole('button', { name: 'Skip for now' }))

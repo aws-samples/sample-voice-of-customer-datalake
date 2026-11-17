@@ -1,18 +1,30 @@
 /**
  * @fileoverview Agents → Skills, the view's rules (EngineeringSkills.tsx): what the address says is open (the role
- * and the version are the path, `/agents/skills/<role>/v/<n>`, agentsPaths.ts; the scope is a filter of the query,
- * `?connection=`), a status's badge, and the versions a person types to compare (1 to 10 whole numbers, each once).
+ * and the version are the path, `/agents/skills/<role>/versions/<n>`, agentsPaths.ts; the scope is a filter of the query,
+ * `?connection=`), a status's badge, the versions a person types to compare (1 to 10 whole numbers, each once), and
+ * whether a diff changes anything beside its instructions.
  *
  * @module pages/Agents/skillsView
  */
 import { MAX_COMPARED, isSkillRole } from '../../api/engineeringSkillsApi'
-import type { SkillDiff, SkillRole } from '../../api/engineeringSkillsApi'
+import type { SkillDiff, SkillRole, SkillRoleLine } from '../../api/engineeringSkillsApi'
 import type { AgentsPlace } from './agentsPaths'
 
-/** A diff that changes nothing (an administrator's version written again as it was). */
-export function diffIsEmpty(diff: SkillDiff): boolean {
-  const parts = [diff.instructions, diff.examples, diff.tools_added, diff.tools_removed]
+/**
+ * A diff that changes nothing beside the instructions (its examples, tools, model and harness): the instructions are
+ * compared as the document reads (SkillVersionDetail.tsx), the rest listed (SkillChanges.tsx).
+ */
+export function sideChangesEmpty(diff: SkillDiff): boolean {
+  const parts = [diff.examples, diff.tools_added, diff.tools_removed]
   return parts.every((part) => part.length === 0) && !diff.tools_reordered && diff.model === null && diff.harness === null
+}
+
+/** A role with a proposal waiting: its newest version is proposed. */
+const waiting = (line: SkillRoleLine) => line.latest?.status === 'proposed'
+
+/** The roles in the table's order (SkillRolesTable.tsx): a proposal waiting first, then as the catalog lists them. */
+export function rolesInOrder(roles: readonly SkillRoleLine[]): SkillRoleLine[] {
+  return [...roles.filter(waiting), ...roles.filter((line) => !waiting(line))]
 }
 
 export interface SkillsView {

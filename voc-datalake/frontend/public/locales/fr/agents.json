@@ -1294,7 +1294,7 @@
     }
   },
   "skills": {
-    "hint": "Chaque agent d’ingénierie travaille selon une compétence : ses instructions, exemples, outils, son modèle et son harnais. Chaque changement est une nouvelle version, conservée avec sa raison, qui l’a proposée et acceptée, et son benchmark. Les compétences partagées s’appliquent à toute connexion qui n’a pas de version propre.",
+    "hint": "La compétence de chaque rôle est versionnée ; chaque changement est proposé, examiné et accepté ici.",
     "scope": "Compétences de",
     "shared": "Compétences partagées",
     "connection": "Connexion {{name}}",
@@ -1303,8 +1303,9 @@
     "columns": {
       "role": "Rôle",
       "current": "Version actuelle",
-      "versions": "Versions",
-      "latest": "Dernier changement"
+      "waiting": "En attente d’examen",
+      "template": "Modèle",
+      "lastChange": "Dernier changement"
     },
     "openRole": "Ouvrir l’historique de {{role}}",
     "role": {
@@ -1366,10 +1367,6 @@
     "diff": {
       "added": "Ajouté :",
       "removed": "Supprimé :",
-      "title": "Changements par rapport à sa base",
-      "firstTitle": "Sa première version : tout est nouveau",
-      "none": "Aucun changement par rapport à sa base.",
-      "instructions": "Instructions",
       "examples": "Exemples",
       "example": "Quand : {{situation}} | Faire : {{action}}",
       "tools": "Politique d’outils",
@@ -1377,14 +1374,6 @@
       "model": "Modèle : {{from}} → {{to}}",
       "harness": "Harnais : {{from}} → {{to}}",
       "nothing": "(aucun)"
-    },
-    "record": {
-      "title": "La compétence entière",
-      "model": "Modèle",
-      "harness": "Harnais",
-      "tools": "Outils",
-      "instructions": "Instructions",
-      "examples": "Exemples ({{n, number}})"
     },
     "noBase": "Écrite sans version antérieure.",
     "baseShared": "Écrite sur la version partagée {{version}}.",
@@ -1487,19 +1476,96 @@
     },
     "template": {
       "title": "Modèle mis à jour",
-      "badge": "Modèle mis à jour (v{{version}})",
-      "explain": "Le modèle du dépôt pour ce rôle a une version plus récente que celle qu'exécute ce périmètre. Lisez ce qu'il change, puis adoptez-le comme proposition : il ne s'exécute qu'une fois qu'un administrateur l'accepte dans l'historique ci-dessous. Rien ne change de lui-même.",
+      "badge": "Mise à jour disponible (v{{version}})",
+      "explain": "Le modèle du dépôt pour ce rôle est plus récent que les versions de ce périmètre. Comparez-le à la version utilisée, puis proposez-le : il ne s’exécute qu’une fois accepté par un administrateur. Rien ne change de lui-même.",
       "show": "Afficher ce qu'il change",
       "loading": "Lecture du modèle",
       "readFailed": "Le modèle n'a pas pu être lu.",
       "diffTitle": "Modèle v{{version}} par rapport à la version actuelle v{{current}}",
       "diffTitleFirst": "Modèle v{{version}} (aucune version n'est encore actuelle)",
-      "adopt": "Adopter comme proposition",
+      "adopt": "Proposer v{{version}} depuis le modèle",
       "adoptHint": "Proposé par vous ; un administrateur l'accepte ou le rejette comme toute autre version.",
       "adoptFailed": "Le modèle n'a pas pu être adopté.",
       "notNewer": "Ce modèle est déjà proposé ou accepté.",
-      "proposed": "Le modèle est proposé comme version {{version}} : acceptez-le dans l'historique pour l'exécuter.",
-      "openProposed": "Ouvrir la version {{version}}"
+      "proposed": "Le modèle est proposé comme version {{version}}. Ouvrez-la pour l’accepter ou la refuser.",
+      "openProposed": "Ouvrir la proposition",
+      "documentTitle": "Modèle v{{version}}",
+      "label": "Modèle v{{version}}"
+    },
+    "connectionRepository": "{{repository}} ({{name}})",
+    "toReview": "v{{version}} à examiner",
+    "review": "Examiner",
+    "reviewVersion": "Examiner la version {{version}} de {{role}}",
+    "templateUnknown": "Non lu",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "Instructions",
+      "examples": "Exemples ({{n, number}})",
+      "noExamples": "Aucun exemple.",
+      "situation": "Quand",
+      "action": "Faire",
+      "view": {
+        "label": "Afficher",
+        "read": "Lire",
+        "changes": "Changements"
+      },
+      "comparedWith": "Comparée à v{{version}}, la version sur laquelle elle a été écrite.",
+      "nothing": "Rien",
+      "identical": "Les instructions sont identiques.",
+      "baseFailed": "La version sur laquelle elle a été écrite n’a pas pu être lue : ses changements ne peuvent pas être affichés. Réessayez dans un instant."
+    },
+    "provenance": {
+      "coach": "Proposée par le coach"
+    },
+    "changes": {
+      "title": "Exemples, outils, modèle et harness",
+      "none": "Exemples, outils, modèle et harness : inchangés."
+    },
+    "propose": {
+      "button": "Proposer une version",
+      "title": "Proposer une version de {{role}}",
+      "writtenOn": "Écrite sur v{{version}}, la version utilisée. C’est une proposition : un administrateur l’accepte comme toute autre.",
+      "summary": "Résumé : ce qu’elle change, sur une ligne",
+      "instructions": "Instructions",
+      "examples": "Exemples",
+      "exampleN": "Exemple {{n, number}}",
+      "removeExample": "Retirer l’exemple {{n, number}}",
+      "addExample": "Ajouter un exemple",
+      "examplesFull": "Une compétence a au plus {{max, number}} exemples.",
+      "reason": "Raison (facultatif)",
+      "cancel": "Annuler",
+      "review": "Examiner votre changement",
+      "reviewHint": "Ce que votre version change par rapport à v{{version}}. Rien n’est appliqué : elle est proposée, puis acceptée ou refusée comme toute autre version.",
+      "outOfDate": "Écrite sur v{{base}} ; v{{current}} est utilisée maintenant. Les changements ci-dessous sont par rapport à v{{current}} : vérifiez-les avant de proposer.",
+      "yours": "La vôtre",
+      "back": "Revenir à l’édition",
+      "submit": "Proposer cette version",
+      "stale": "La version utilisée a changé depuis que vous l’avez ouverte. Relisez-la : votre brouillon est conservé, et l’examen le compare ensuite à la version utilisée.",
+      "readAgain": "Relire",
+      "refused": "La proposition a été refusée : {{message}}",
+      "failed": "La proposition n’a pas pu être envoyée. Réessayez dans un instant.",
+      "noBase": "Aucune version n’est encore utilisée dans ce périmètre : il n’y en a aucune sur laquelle écrire une version.",
+      "loading": "Lecture de la version utilisée…",
+      "issues": {
+        "summaryMissing": "Écrivez un résumé : une ligne qui dit ce que la version change.",
+        "summaryLong": "Limitez le résumé à 200 caractères.",
+        "summaryLines": "Gardez le résumé sur une ligne.",
+        "instructionsMissing": "Les instructions ne peuvent pas être vides.",
+        "instructionsLong": "Les instructions comptent au plus 20 000 caractères.",
+        "instructionsLines": "Les instructions comptent au plus 500 lignes.",
+        "examplesHeading": "Retirez le titre « ## Examples » : les exemples sont la liste ci-dessous, et le titre y déplacerait votre texte.",
+        "examplesTooMany": "Une compétence a au plus {{max, number}} exemples.",
+        "exampleMissing": "Donnez à chaque exemple sa situation et ce qu’il faut faire, ou retirez-le.",
+        "exampleLong": "Chaque moitié d’un exemple compte au plus 2 000 caractères.",
+        "reasonLong": "Limitez la raison à 400 caractères.",
+        "unchanged": "Votre version ne change encore rien : modifiez ses instructions ou ses exemples."
+      },
+      "discard": {
+        "title": "Abandonner votre brouillon ?",
+        "message": "Rien n’a été proposé. Votre résumé, vos instructions et vos exemples seront perdus.",
+        "confirm": "Abandonner",
+        "keep": "Continuer l’édition"
+      }
     }
   },
   "engineeringRun": {
@@ -1803,7 +1869,6 @@
     "orderFine": "Chaque étape précédente est faite.",
     "orderMissing": "Non fait avant celle-ci : {{list}}.",
     "readinessFor": "Préparation de {{name}}, une fois configurée",
-    "later": "Son flux arrive avec 7.52. Ignorez-la pour l'instant : le guide la proposera de nouveau.",
     "steps": {
       "prerequisites": {
         "title": "Prérequis",
@@ -2576,6 +2641,264 @@
       "gates": "Vérifications et revues du changement ; Détection automatique choisit les packs du dépôt.",
       "flows": "Un autre flux enregistré, appelé à sa révision.",
       "platform": "Étapes exécutées par la plateforme : découpage en lots, regroupement des lots, un tableau, la mémoire, Learn."
+    }
+  },
+  "registry": {
+    "hint": "Chaque agent est une fiche : un rôle sur l’une de ses versions de compétence, avec son modèle, ses outils, ses limites, ses entrées et ses sorties. Créez une fiche à partir d’une version de compétence acceptée pour lui donner un nom et un objectif.",
+    "notAvailable": "Le Registre est réservé aux administrateurs, là où les agents d’ingénierie sont activés.",
+    "loading": "Chargement du Registre…",
+    "failed": "Le Registre n’a pas pu être chargé. Réessayez dans un instant.",
+    "scope": "Fiches pour",
+    "filters": {
+      "label": "Afficher",
+      "cards": "Agents",
+      "gates": "Contrôles qualité"
+    },
+    "roles": "Rôles",
+    "rolesHint": "La fiche propre à chaque rôle, sur la compétence que son périmètre exécute.",
+    "made": "Créées à partir d’une compétence",
+    "empty": {
+      "title": "Aucune fiche d’agent pour l’instant.",
+      "hint": "Créez-en une à partir d’une version de compétence."
+    },
+    "open": "Ouvrir {{title}}",
+    "kind": {
+      "role": "Rôle",
+      "card": "Créée à partir d’une compétence"
+    },
+    "card": {
+      "back": "Toutes les fiches",
+      "missing": "Le Registre n’a pas de fiche {{card}}.",
+      "failed": "La fiche n’a pas pu être chargée. Réessayez dans un instant.",
+      "purpose": "Objectif",
+      "skill": "Compétence",
+      "skillTemplate": "Le modèle ({{label}})",
+      "skillStore": "{{label}} : v{{version}}, {{status}}",
+      "openSkill": "Ouvrir la version de la compétence",
+      "fromTemplate": "Issue du modèle v{{version}}",
+      "model": "Modèle",
+      "tools": "Outils",
+      "harness": "Harness",
+      "caps": "Limites",
+      "inputs": "Lit",
+      "outputs": "Écrit",
+      "from": "depuis {{from}}",
+      "recordedOn": "enregistré sur {{on}}",
+      "required": "obligatoire",
+      "trust": "traité comme {{trust}}",
+      "gates": "Paquets de contrôle",
+      "template": "Modèle",
+      "scorecard": "Bilan",
+      "noScorecard": "Les bilans appartiennent à une connexion : choisissez-en une ci-dessus.",
+      "scorecardLine": "{{runs, number}} exécutions · taux de réussite {{rate}} · {{cost}}",
+      "spend": "Ce mois-ci",
+      "spendLine": "{{usd}} ({{month}})",
+      "made": "Créée",
+      "madeBy": "Créée par {{who}}, {{at}}",
+      "versions": "Versions",
+      "source": "Source",
+      "sourceHint": "Tel que le dépôt contient le modèle du rôle, en lecture seule : il change avec une version du produit, dans templates/orchestration.",
+      "sourceFile": "Fichier",
+      "sourceFailed": "La source n’a pas pu être lue."
+    },
+    "create": {
+      "button": "Créer à partir d’une compétence",
+      "title": "Créer une fiche d’agent à partir d’une compétence",
+      "description": "Un rôle sur l’une de ses versions de compétence acceptées, avec un nom et un objectif. Son modèle, ses outils et son harness sont ceux de la version.",
+      "role": "Rôle",
+      "scope": "Compétence de",
+      "version": "Version de la compétence",
+      "versionPick": "Choisissez une version acceptée",
+      "versionNone": "Ce rôle n’a aucune version acceptée dans ce périmètre : acceptez-en une dans Compétences d’abord.",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "Les versions du rôle n’ont pas pu être lues.",
+      "slug": "Slug",
+      "slugHint": "Lettres minuscules, chiffres et tirets. L’identifiant de la fiche est {{id}}.",
+      "cardTitle": "Titre (facultatif)",
+      "purpose": "Objectif",
+      "caps": "Limites (facultatif)",
+      "capsHint": "Laissez une limite vide pour garder celle du modèle. Une limite est au plus celle du modèle.",
+      "cap": "{{name}} (au plus {{max, number}})",
+      "cancel": "Annuler",
+      "submit": "Créer la fiche",
+      "refused": "La fiche n’a pas été créée : {{message}}",
+      "failed": "La fiche n’a pas pu être créée. Réessayez dans un instant.",
+      "issues": {
+        "role": "Choisissez un rôle.",
+        "version": "Choisissez une version de compétence acceptée.",
+        "slugMissing": "Donnez un slug à la fiche.",
+        "slugShape": "Utilisez de 1 à 40 lettres minuscules, chiffres et tirets, sans tiret au début ni à la fin.",
+        "titleLong": "Limitez le titre à 80 caractères.",
+        "titleText": "Gardez le titre en texte simple sur une ligne.",
+        "purposeMissing": "Dites à quoi sert la fiche.",
+        "purposeLong": "Limitez l’objectif à {{max, number}} caractères.",
+        "purposeText": "Gardez l’objectif en texte simple sur une ligne.",
+        "capShape": "Une limite est un nombre entier supérieur à 0.",
+        "capOver": "Une limite est au plus celle du modèle."
+      }
+    }
+  },
+  "gates": {
+    "hint": "Les vérifications qu’exécute un contrôle qualité, par paquet de langage, avec les consignes du propriétaire pour chacun. En lecture seule : elles arrivent avec une version du produit, dans templates/orchestration/gates.",
+    "loading": "Chargement des contrôles qualité…",
+    "failed": "Les contrôles qualité n’ont pas pu être chargés. Réessayez dans un instant.",
+    "ownGate": "Le contrôle propre au dépôt s’exécute aussi : {{file}}.",
+    "packs": "Paquets de contrôle",
+    "languages": "Langages",
+    "image": "Image",
+    "network": "Réseau (installation seulement)",
+    "tools": "Outils",
+    "toolsPins": "Les versions épinglées du dépôt lui-même.",
+    "toolsRecorded": "Les versions épinglées du dépôt lui-même. Dernier relevé : {{list}}",
+    "steps": "Étapes",
+    "stepsOf": "Étapes de {{pack}}",
+    "stepAlways": "toujours",
+    "stepWhen": "si le dépôt contient {{list}}",
+    "lookedAtNothing": "Échoue s’il n’a rien vérifié : {{rule}}",
+    "stopsTitle": "Quand un contrôle s’arrête devant une personne",
+    "stops": {
+      "check_failed": "Une vérification a échoué, et les corrections ne l’ont pas fait passer.",
+      "looked_at_nothing": "Le contrôle n’a rien vérifié : aucune vérification ne couvre le dépôt, ou une vérification n’a rien trouvé à vérifier.",
+      "own_gate_changed": "Le changement touche le contrôle propre au dépôt ({{own_gate}}).",
+      "review_blocked": "Une revue l’a bloqué : le feu vert final a dit NO-GO.",
+      "rounds_used_up": "Des constats bloquants restaient après le dernier tour."
+    },
+    "runners": "Un contrôle qui ne nomme personne est exécuté par {{list}}.",
+    "brief": {
+      "toggle": "Consignes du propriétaire · {{file}} · {{kb}} Ko",
+      "fromTemplate": "Issu du modèle",
+      "packs": "Pour {{list}}",
+      "missing": "Cette version du produit n’a pas de consignes {{id}}.",
+      "failed": "Les consignes n’ont pas pu être lues.",
+      "back": "Contrôles qualité"
+    }
+  },
+  "knowledge": {
+    "label": "Paquet de connaissances",
+    "loading": "Chargement du paquet de connaissances…",
+    "failed": "Le paquet de connaissances n’a pas pu être chargé. Réessayez dans un instant.",
+    "none": "Aucun paquet de connaissances pour l’instant. Lancez Comprendre le dépôt sur cette connexion : son paquet arrive ici pour être approuvé.",
+    "noConnection": "Connectez d’abord un dépôt (Prérequis) : ses connaissances et ses principes arrivent ici.",
+    "repository": "Dépôt",
+    "for": "Pour {{repository}}",
+    "rendering": "Documents approuvés générés : génération {{version}}.",
+    "publishButton": "Ouvrir en pull request",
+    "rootPackage": "Le dépôt",
+    "package": "Paquet {{name}}",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Brouillon",
+      "approved": "Approuvée"
+    },
+    "inUse": "Utilisée",
+    "byAgent": "Écrit par un agent",
+    "written": "Écrit {{at}}",
+    "builtFrom": "depuis {{commit}}",
+    "view": {
+      "label": "Afficher",
+      "read": "Lire",
+      "compare": "Comparer à v{{version}}"
+    },
+    "kinds": {
+      "label": "Document",
+      "architecture": "Architecture",
+      "convention": "Conventions",
+      "review-guide": "Guide de revue",
+      "test-strategy": "Stratégie de test",
+      "ci": "CI",
+      "glossary": "Glossaire",
+      "how-we-work": "Notre façon de travailler"
+    },
+    "kindMissing": "Cette version n’a aucun document de ce type.",
+    "identical": "Le document est identique dans les deux versions.",
+    "versionFailed": "La version n’a pas pu être lue. Réessayez dans un instant.",
+    "approve": "Approuver v{{version}}",
+    "approved": "v{{version}} approuvée.",
+    "stale": "La version ou celle approuvée a changé depuis votre lecture. Relisez-les avant d’approuver.",
+    "readAgain": "Relire",
+    "approveFailed": "L’approbation n’a pas pu être enregistrée. Réessayez dans un instant.",
+    "refused": "L’approbation a été refusée : {{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "Ouvrir les documents de connaissances en pull request",
+        "tenets": "Ouvrir TENETS.md en pull request"
+      },
+      "branch": "Branche {{branch}}, depuis la version approuvée {{version}}. Seule une personne la fusionne.",
+      "loading": "Génération des documents approuvés…",
+      "previewFailed": "Les documents n’ont pas pu être prévisualisés. Réessayez dans un instant.",
+      "hint": "Ce que donnent maintenant les documents approuvés, fichier par fichier. La pull request est ouverte prête pour la revue ; seule une personne la fusionne, sur l’hébergeur.",
+      "mismatch": "Les enregistrements stockés ne donnent plus ce qui a été approuvé : la publication sera refusée. Approuvez à nouveau la version.",
+      "files": "Fichiers ({{n, number}})",
+      "size": "{{kb}} Ko",
+      "textsCut": "Certains fichiers sont trop volumineux pour être affichés ici : ils sont dans le correctif.",
+      "inPatch": "Ce fichier est trop volumineux pour être affiché ici : il est dans le correctif.",
+      "submit": "Ouvrir la pull request",
+      "close": "Fermer",
+      "opened": "Pull request n° {{number}} ouverte, prête pour la revue.",
+      "openedDraft": "Pull request n° {{number}} ouverte en brouillon.",
+      "personMerges": "Seule une personne la fusionne, sur l’hébergeur.",
+      "openPr": "Ouvrir la pull request",
+      "failed": "La pull request n’a pas pu être ouverte. Publier à nouveau est sans risque : cela en ouvre une au plus.",
+      "readAgain": "Relire",
+      "download": "Télécharger le correctif",
+      "patchCut": "Le correctif est tronqué ici : il est trop volumineux pour être affiché en entier.",
+      "patchLabel": "Le correctif qui ajoute les documents",
+      "refused": {
+        "human_driven": "Vous travaillez en mode Piloté par l’humain : la plateforme ne pousse rien pour vous. Appliquez ce correctif vous-même, ou changez votre façon de travailler.",
+        "already_published": "Cette version des documents a déjà sa pull request : une nouvelle version approuvée en ouvre une nouvelle.",
+        "digest_mismatch": "Les documents ont changé depuis cet aperçu. Relisez-le, puis publiez.",
+        "not_approved": "Rien de cela n’est encore approuvé : approuvez d’abord une version."
+      }
+    }
+  },
+  "tenets": {
+    "label": "Principes",
+    "loading": "Chargement des principes…",
+    "failed": "Les principes n’ont pas pu être chargés. Réessayez dans un instant.",
+    "none": "Aucun principe rédigé pour l’instant. Lancez le flux Principes sur cette connexion : son brouillon arrive ici pour être accepté ou refusé.",
+    "version": "Version",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "Brouillon",
+      "accepted": "Acceptée",
+      "rejected": "Refusée"
+    },
+    "noneAccepted": "Aucune version n’est encore acceptée : un tri ne cite aucun principe tant qu’il n’y en a pas.",
+    "accepted": "v{{version}} est acceptée : c’est ce qu’un tri peut citer.",
+    "publish": "Ouvrir en pull request",
+    "title": "Principes v{{version}}",
+    "byAgent": "Écrit par un agent",
+    "drafted": "Rédigé {{at}}",
+    "decided": "Décidé par {{who}}, {{at}}",
+    "comparedWith": "Comparé à v{{version}}.",
+    "reason": "Raison (facultatif)",
+    "reject": "Refuser",
+    "accept": "Accepter v{{version}}",
+    "stale": "Les principes acceptés ont changé depuis votre lecture. Relisez-les avant de décider.",
+    "readAgain": "Relire",
+    "refused": "La décision a été refusée : {{message}}",
+    "decideFailed": "La décision n’a pas pu être enregistrée. Réessayez dans un instant.",
+    "versionFailed": "La version n’a pas pu être lue. Réessayez dans un instant.",
+    "projection": {
+      "summary": "Résumé",
+      "why": "Pourquoi :",
+      "cites": "Cite :"
+    },
+    "changes": {
+      "label": "Changements",
+      "first": "Chaque principe est nouveau",
+      "none": "Aucun principe ne change.",
+      "added": "Ajouté",
+      "changed": "Modifié",
+      "removed": "Retiré",
+      "fields": "son {{list}}"
+    },
+    "fields": {
+      "title": "titre",
+      "statement": "énoncé",
+      "rationale": "justification",
+      "citations": "citations"
     }
   }
 }

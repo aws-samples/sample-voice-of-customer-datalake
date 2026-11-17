@@ -16,6 +16,7 @@ import { READING_TEXT_CLASS } from '../readingColumn'
 import CodeView from '../text/CodeView'
 import PropertiesPanel from '../text/PropertiesPanel'
 import { splitFrontMatter } from '../text/frontMatter'
+import type { MarkdownPolicy } from '../read/markdownPolicy'
 import type { CommentActions, ViewedVersion } from '../../DocumentComments/commentTypes'
 import type { CommentThread } from '../../../api/documentReviewSchema'
 import type { ContentType, OutlineItem, SurfaceVariant } from '../types'
@@ -38,6 +39,8 @@ interface ReadBodyProps {
   readonly split: boolean
   readonly variant: SurfaceVariant
   readonly comments: SurfaceComments | null
+  /** How the rendered text is read (the adapter's: `stored` by default). */
+  readonly policy?: MarkdownPolicy
 }
 
 /** Bring a heading of the rendered text into view and give it the focus (it is not focusable on its own). */
@@ -50,8 +53,8 @@ function goTo(id: string) {
   target.focus({ preventScroll: true })
 }
 
-function MarkdownBody({ body, title, variant, comments }: Readonly<{
-  body: string; title: string; variant: SurfaceVariant; comments: SurfaceComments | null
+function MarkdownBody({ body, title, variant, comments, policy }: Readonly<{
+  body: string; title: string; variant: SurfaceVariant; comments: SurfaceComments | null; policy: MarkdownPolicy
 }>) {
   const [outline, setOutline] = useState<readonly OutlineItem[]>([])
   const onOutline = useCallback((items: readonly OutlineItem[]) => setOutline(items), [])
@@ -65,7 +68,7 @@ function MarkdownBody({ body, title, variant, comments }: Readonly<{
       {contents ? <Outline items={outline} onNavigate={goTo} className="mb-4 lg:mb-0" /> : null}
       <div className="min-w-0">
         {comments === null
-          ? <ReadView source={body} policy={markdownPolicy.stored} title={title} className={textClass} onOutline={onOutline}
+          ? <ReadView source={body} policy={policy} title={title} className={textClass} onOutline={onOutline}
             headingIds={ownsIds} />
           : (
             <DocumentComments markdown={body} threads={comments.threads} viewed={comments.viewed} actions={comments.actions}
@@ -76,14 +79,14 @@ function MarkdownBody({ body, title, variant, comments }: Readonly<{
   )
 }
 
-export default function ReadBody({ content, title, contentType, split, variant, comments }: ReadBodyProps) {
+export default function ReadBody({ content, title, contentType, split, variant, comments, policy = markdownPolicy.stored }: ReadBodyProps) {
   const { t } = useTranslation('documents')
   const { frontMatter, body } = split ? splitFrontMatter(content) : { frontMatter: null, body: content }
   if (content.trim() === '') return <p className="text-sm text-muted">{t('surface.empty')}</p>
   return (
     <>
       {frontMatter === null ? null : <PropertiesPanel frontMatter={frontMatter} />}
-      {contentType === 'markdown' ? <MarkdownBody body={body} title={title} variant={variant} comments={comments} /> : null}
+      {contentType === 'markdown' ? <MarkdownBody body={body} title={title} variant={variant} comments={comments} policy={policy} /> : null}
       {contentType === 'plain' ? <p className="whitespace-pre-wrap break-words text-sm text-text">{body}</p> : null}
       {contentType === 'code' ? <CodeView text={body} label={t('view.sourceOf', { title })} /> : null}
     </>

@@ -29,6 +29,7 @@ import EditBody from './surface/EditBody'
 import PageFrame from './surface/PageFrame'
 import ReadBody from './surface/ReadBody'
 import { ReadOnlyNote } from './surface/ReadOnlyNote'
+import { splitFrontMatter } from './text/frontMatter'
 import SideSheet from '../SideSheet/SideSheet'
 import type { ReactNode } from 'react'
 import type { SurfaceComments } from './surface/ReadBody'
@@ -107,13 +108,19 @@ function Body<S extends StoredDocument>({ props, stored }: Readonly<{ props: Doc
   const editable = adapter.permissions.edit === true && adapter.contentType !== 'code'
     && (variant !== 'panel' || adapter.contentType === 'plain')
   if (mode === 'edit' && editable) return <EditBody adapter={adapter} stored={stored} title={title} onSaved={onSaved} />
+  const policy = markdownPolicy[adapter.policy ?? 'stored']
   if (mode === 'compare' && compare !== null) {
+    // A split front-matter is compared by the feature (its properties), never as Markdown: the bodies are diffed.
+    const bodyOf = (text: string) => (split ? splitFrontMatter(text).body : text)
     return (
-      <DocumentDiff before={compare.before} after={stored.content} policy={markdownPolicy.stored} identicalText={compare.identicalText}
-        beforeLabel={compare.beforeLabel} afterLabel={compare.afterLabel} />
+      <DocumentDiff before={bodyOf(compare.before)} after={bodyOf(stored.content)} policy={policy}
+        identicalText={compare.identicalText} beforeLabel={compare.beforeLabel} afterLabel={compare.afterLabel} />
     )
   }
-  return <ReadBody content={stored.content} title={title} contentType={adapter.contentType} split={split} variant={variant} comments={comments} />
+  return (
+    <ReadBody content={stored.content} title={title} contentType={adapter.contentType} split={split} variant={variant}
+      comments={comments} policy={policy} />
+  )
 }
 
 /** The surface's own section: its heading, details and read-only note, its body, and a footer. */

@@ -1276,7 +1276,7 @@
     }
   },
   "skills": {
-    "hint": "每个工程智能体都按一项技能工作：它的指令、示例、工具、模型和运行框架。每次更改都是一个新版本，连同更改原因、提议者和接受者以及基准测试一起保存。共享技能适用于所有没有自有版本的连接。",
+    "hint": "每个角色的技能都有版本；每次更改都在这里提议、审阅并接受。",
     "scope": "技能范围",
     "shared": "共享技能",
     "connection": "连接 {{name}}",
@@ -1285,8 +1285,9 @@
     "columns": {
       "role": "角色",
       "current": "当前版本",
-      "versions": "版本数",
-      "latest": "最近更改"
+      "waiting": "等待审阅",
+      "template": "模板",
+      "lastChange": "最近更改"
     },
     "openRole": "打开 {{role}} 的历史记录",
     "role": {
@@ -1348,10 +1349,6 @@
     "diff": {
       "added": "新增：",
       "removed": "删除：",
-      "title": "相对其基础版本的更改",
-      "firstTitle": "第一个版本：所有内容都是新的",
-      "none": "相对其基础版本没有更改。",
-      "instructions": "指令",
       "examples": "示例",
       "example": "情况：{{situation}} | 做法：{{action}}",
       "tools": "工具策略",
@@ -1359,14 +1356,6 @@
       "model": "模型：{{from}} → {{to}}",
       "harness": "运行框架：{{from}} → {{to}}",
       "nothing": "（无）"
-    },
-    "record": {
-      "title": "完整技能",
-      "model": "模型",
-      "harness": "运行框架",
-      "tools": "工具",
-      "instructions": "指令",
-      "examples": "示例（{{n, number}}）"
     },
     "noBase": "未基于任何更早的版本编写。",
     "baseShared": "基于共享版本 {{version}} 编写。",
@@ -1469,19 +1458,96 @@
     },
     "template": {
       "title": "模板已更新",
-      "badge": "模板已更新（v{{version}}）",
-      "explain": "此角色的仓库模板有比此范围正在运行的版本更新的版本。请阅读它的改动，然后将其作为提案采用：只有管理员在下方历史中接受后才会运行。不会自动改变。",
+      "badge": "有可用更新（v{{version}}）",
+      "explain": "此角色的仓库模板比此范围内的版本更新。请将它与正在使用的版本对比，然后提议：只有在管理员接受后才会运行。不会自动发生任何更改。",
       "show": "显示改动",
       "loading": "正在读取模板",
       "readFailed": "无法读取模板。",
       "diffTitle": "模板 v{{version}} 与当前版本 v{{current}} 对比",
       "diffTitleFirst": "模板 v{{version}}（尚无当前版本）",
-      "adopt": "作为提案采用",
+      "adopt": "从模板提议 v{{version}}",
       "adoptHint": "由你提出；管理员会像对待其他版本一样接受或拒绝它。",
       "adoptFailed": "无法采用该模板。",
       "notNewer": "此模板已被提出或接受。",
-      "proposed": "模板已作为版本 {{version}} 提出：在历史中接受它即可运行。",
-      "openProposed": "打开版本 {{version}}"
+      "proposed": "模板已被提议为版本 {{version}}。打开它以接受或拒绝。",
+      "openProposed": "打开提议",
+      "documentTitle": "模板 v{{version}}",
+      "label": "模板 v{{version}}"
+    },
+    "connectionRepository": "{{repository}}（{{name}}）",
+    "toReview": "v{{version}} 待审阅",
+    "review": "审阅",
+    "reviewVersion": "审阅 {{role}} 的版本 {{version}}",
+    "templateUnknown": "未读取",
+    "document": {
+      "title": "{{role}} · v{{version}}",
+      "instructions": "指令",
+      "examples": "示例（{{n, number}}）",
+      "noExamples": "没有示例。",
+      "situation": "情况",
+      "action": "做法",
+      "view": {
+        "label": "显示",
+        "read": "阅读",
+        "changes": "更改"
+      },
+      "comparedWith": "与它所基于的版本 v{{version}} 对比。",
+      "nothing": "无",
+      "identical": "指令相同。",
+      "baseFailed": "无法读取它所基于的版本，因此无法显示其更改。请稍后再试。"
+    },
+    "provenance": {
+      "coach": "由教练提议"
+    },
+    "changes": {
+      "title": "示例、工具、模型和 harness",
+      "none": "示例、工具、模型和 harness：未更改。"
+    },
+    "propose": {
+      "button": "提议一个版本",
+      "title": "提议 {{role}} 的一个版本",
+      "writtenOn": "基于正在使用的版本 v{{version}} 编写。这是一个提议：管理员会像对待其他提议一样接受它。",
+      "summary": "摘要：一行说明它更改了什么",
+      "instructions": "指令",
+      "examples": "示例",
+      "exampleN": "示例 {{n, number}}",
+      "removeExample": "删除示例 {{n, number}}",
+      "addExample": "添加示例",
+      "examplesFull": "一个技能最多有 {{max, number}} 个示例。",
+      "reason": "原因（可选）",
+      "cancel": "取消",
+      "review": "审阅你的更改",
+      "reviewHint": "你的版本相对于 v{{version}} 的更改。不会应用任何内容：它会被提议，然后像其他版本一样被接受或拒绝。",
+      "outOfDate": "基于 v{{base}} 编写；现在正在使用 v{{current}}。下面的更改是相对于 v{{current}} 的：提议前请检查。",
+      "yours": "你的版本",
+      "back": "返回编辑",
+      "submit": "提议此版本",
+      "stale": "自你打开以来，正在使用的版本已更改。请重新读取：你的草稿会保留，审阅会将它与正在使用的版本对比。",
+      "readAgain": "重新读取",
+      "refused": "提议被拒绝：{{message}}",
+      "failed": "无法发送提议。请稍后再试。",
+      "noBase": "此范围内还没有正在使用的版本，因此没有可作为基础的版本。",
+      "loading": "正在读取正在使用的版本…",
+      "issues": {
+        "summaryMissing": "请写一段摘要：用一行说明该版本更改了什么。",
+        "summaryLong": "摘要请控制在 200 个字符以内。",
+        "summaryLines": "摘要请保持在一行。",
+        "instructionsMissing": "指令不能为空。",
+        "instructionsLong": "指令最多 20,000 个字符。",
+        "instructionsLines": "指令最多 500 行。",
+        "examplesHeading": "请删除“## Examples”标题：示例是下面的列表，这个标题会把你的文本移入示例。",
+        "examplesTooMany": "一个技能最多有 {{max, number}} 个示例。",
+        "exampleMissing": "请为每个示例同时填写情况和做法，或将其删除。",
+        "exampleLong": "示例的每一部分最多 2,000 个字符。",
+        "reasonLong": "原因请控制在 400 个字符以内。",
+        "unchanged": "你的版本尚未更改任何内容：请编辑其指令或示例。"
+      },
+      "discard": {
+        "title": "放弃你的草稿？",
+        "message": "尚未提议任何内容。你的摘要、指令和示例将会丢失。",
+        "confirm": "放弃",
+        "keep": "继续编辑"
+      }
     }
   },
   "engineeringRun": {
@@ -1784,7 +1850,6 @@
     "orderFine": "此步骤之前的每一步都已完成。",
     "orderMissing": "此步骤之前未完成：{{list}}。",
     "readinessFor": "设置后 {{name}} 的就绪情况",
-    "later": "它的流程将在 7.52 推出。请暂时跳过：届时向导会再次提供。",
     "steps": {
       "prerequisites": {
         "title": "前提条件",
@@ -2557,6 +2622,264 @@
       "gates": "对变更的检查和评审；“自动检测”会选取仓库中的检查包。",
       "flows": "另一个已保存的流程，按其修订版本调用。",
       "platform": "由平台运行的步骤：拆分分片、汇总分片、看板、记忆、Learn。"
+    }
+  },
+  "registry": {
+    "hint": "每个智能体都是一张卡片：一个角色及其某个技能版本，带有模型、工具、上限、输入和输出。从已接受的技能版本创建卡片，为它命名并说明用途。",
+    "notAvailable": "注册表供启用了工程智能体的部署中的管理员使用。",
+    "loading": "正在加载注册表…",
+    "failed": "无法加载注册表。请稍后再试。",
+    "scope": "卡片范围",
+    "filters": {
+      "label": "显示",
+      "cards": "智能体",
+      "gates": "质量门禁"
+    },
+    "roles": "角色",
+    "rolesHint": "每个角色自己的卡片，基于其范围运行的技能。",
+    "made": "由技能创建",
+    "empty": {
+      "title": "还没有智能体卡片。",
+      "hint": "从技能版本创建一张。"
+    },
+    "open": "打开 {{title}}",
+    "kind": {
+      "role": "角色",
+      "card": "由技能创建"
+    },
+    "card": {
+      "back": "所有卡片",
+      "missing": "注册表中没有卡片 {{card}}。",
+      "failed": "无法加载卡片。请稍后再试。",
+      "purpose": "用途",
+      "skill": "技能",
+      "skillTemplate": "模板（{{label}}）",
+      "skillStore": "{{label}}：v{{version}}，{{status}}",
+      "openSkill": "打开技能版本",
+      "fromTemplate": "来自模板 v{{version}}",
+      "model": "模型",
+      "tools": "工具",
+      "harness": "Harness",
+      "caps": "上限",
+      "inputs": "读取",
+      "outputs": "写入",
+      "from": "来自 {{from}}",
+      "recordedOn": "记录于 {{on}}",
+      "required": "必需",
+      "trust": "按 {{trust}} 对待",
+      "gates": "门禁包",
+      "template": "模板",
+      "scorecard": "成绩卡",
+      "noScorecard": "成绩卡属于某个连接：请在上方选择一个。",
+      "scorecardLine": "{{runs, number}} 次运行 · 通过率 {{rate}} · {{cost}}",
+      "spend": "本月",
+      "spendLine": "{{usd}}（{{month}}）",
+      "made": "创建",
+      "madeBy": "由 {{who}} 创建，{{at}}",
+      "versions": "版本",
+      "source": "源文件",
+      "sourceHint": "与仓库中保存的角色模板一致，只读：它随版本发布在 templates/orchestration 中更改。",
+      "sourceFile": "文件",
+      "sourceFailed": "无法读取源文件。"
+    },
+    "create": {
+      "button": "从技能创建",
+      "title": "从技能创建智能体卡片",
+      "description": "一个角色及其某个已接受的技能版本，带有名称和用途。其模型、工具和 harness 都来自该版本。",
+      "role": "角色",
+      "scope": "技能来源",
+      "version": "技能版本",
+      "versionPick": "选择一个已接受的版本",
+      "versionNone": "此角色在此范围内没有已接受的版本：请先在技能中接受一个。",
+      "versionLabel": "v{{version}} · {{summary}}",
+      "versionsFailed": "无法读取该角色的版本。",
+      "slug": "Slug",
+      "slugHint": "小写字母、数字和连字符。卡片的 ID 为 {{id}}。",
+      "cardTitle": "标题（可选）",
+      "purpose": "用途",
+      "caps": "上限（可选）",
+      "capsHint": "留空的上限保持模板的值。上限不能超过模板的值。",
+      "cap": "{{name}}（最多 {{max, number}}）",
+      "cancel": "取消",
+      "submit": "创建卡片",
+      "refused": "未创建卡片：{{message}}",
+      "failed": "无法创建卡片。请稍后再试。",
+      "issues": {
+        "role": "请选择一个角色。",
+        "version": "请选择一个已接受的技能版本。",
+        "slugMissing": "请为卡片设置 slug。",
+        "slugShape": "请使用 1 到 40 个小写字母、数字和连字符，首尾不能是连字符。",
+        "titleLong": "标题请控制在 80 个字符以内。",
+        "titleText": "标题请使用一行纯文本。",
+        "purposeMissing": "请说明卡片的用途。",
+        "purposeLong": "用途请控制在 {{max, number}} 个字符以内。",
+        "purposeText": "用途请使用一行纯文本。",
+        "capShape": "上限是大于 0 的整数。",
+        "capOver": "上限不能超过模板的值。"
+      }
+    }
+  },
+  "gates": {
+    "hint": "质量门禁按语言包运行的检查，以及所有者为每个包写的说明。只读：它们随版本发布，位于 templates/orchestration/gates。",
+    "loading": "正在加载质量门禁…",
+    "failed": "无法加载质量门禁。请稍后再试。",
+    "ownGate": "仓库自己的门禁也会运行：{{file}}。",
+    "packs": "门禁包",
+    "languages": "语言",
+    "image": "镜像",
+    "network": "网络（仅限安装）",
+    "tools": "工具",
+    "toolsPins": "仓库自己固定的版本。",
+    "toolsRecorded": "仓库自己固定的版本。最近记录：{{list}}",
+    "steps": "步骤",
+    "stepsOf": "{{pack}} 的步骤",
+    "stepAlways": "总是",
+    "stepWhen": "如果仓库有 {{list}}",
+    "lookedAtNothing": "若未检查任何内容则失败：{{rule}}",
+    "stopsTitle": "门禁何时停下交给人",
+    "stops": {
+      "check_failed": "一项检查失败，修复后仍未通过。",
+      "looked_at_nothing": "门禁没有检查任何内容：没有检查覆盖该仓库，或某项检查没有找到可检查的内容。",
+      "own_gate_changed": "此更改涉及仓库自己的门禁（{{own_gate}}）。",
+      "review_blocked": "一项评审阻止了它：最终放行判定为 NO-GO。",
+      "rounds_used_up": "最后一轮之后仍有阻塞性问题。"
+    },
+    "runners": "未指定任何人的门禁由 {{list}} 运行。",
+    "brief": {
+      "toggle": "所有者的说明 · {{file}} · {{kb}} KB",
+      "fromTemplate": "来自模板",
+      "packs": "适用于 {{list}}",
+      "missing": "此版本没有说明 {{id}}。",
+      "failed": "无法读取说明。",
+      "back": "质量门禁"
+    }
+  },
+  "knowledge": {
+    "label": "知识包",
+    "loading": "正在加载知识包…",
+    "failed": "无法加载知识包。请稍后再试。",
+    "none": "还没有知识包。请在此连接上运行“理解仓库”：其知识包会在这里等待批准。",
+    "noConnection": "请先连接一个仓库（前提条件）：它的知识和原则会显示在这里。",
+    "repository": "仓库",
+    "for": "适用于 {{repository}}",
+    "rendering": "已生成批准的文档：第 {{version}} 次生成。",
+    "publishButton": "以拉取请求打开",
+    "rootPackage": "仓库",
+    "package": "包 {{name}}",
+    "version": "版本",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "草稿",
+      "approved": "已批准"
+    },
+    "inUse": "使用中",
+    "byAgent": "由智能体编写",
+    "written": "编写于 {{at}}",
+    "builtFrom": "来自 {{commit}}",
+    "view": {
+      "label": "显示",
+      "read": "阅读",
+      "compare": "与 v{{version}} 对比"
+    },
+    "kinds": {
+      "label": "文档",
+      "architecture": "架构",
+      "convention": "约定",
+      "review-guide": "评审指南",
+      "test-strategy": "测试策略",
+      "ci": "CI",
+      "glossary": "术语表",
+      "how-we-work": "我们的工作方式"
+    },
+    "kindMissing": "此版本没有这种文档。",
+    "identical": "两个版本中的文档相同。",
+    "versionFailed": "无法读取该版本。请稍后再试。",
+    "approve": "批准 v{{version}}",
+    "approved": "已批准 v{{version}}。",
+    "stale": "自你读取以来，该版本或已批准的版本已更改。批准前请重新读取。",
+    "readAgain": "重新读取",
+    "approveFailed": "无法保存批准。请稍后再试。",
+    "refused": "批准被拒绝：{{message}}",
+    "publish": {
+      "title": {
+        "knowledge": "以拉取请求打开知识文档",
+        "tenets": "以拉取请求打开 TENETS.md"
+      },
+      "branch": "分支 {{branch}}，来自已批准的版本 {{version}}。只有人可以合并它。",
+      "loading": "正在生成批准的文档…",
+      "previewFailed": "无法预览文档。请稍后再试。",
+      "hint": "已批准的文档现在生成的内容，逐个文件显示。拉取请求以可供评审的状态打开；只有人可以在托管平台上合并它。",
+      "mismatch": "已存储的记录不再生成当初批准的内容，因此发布会被拒绝。请重新批准该版本。",
+      "files": "文件（{{n, number}}）",
+      "size": "{{kb}} KB",
+      "textsCut": "部分文件太大，无法在此显示：它们包含在补丁中。",
+      "inPatch": "此文件太大，无法在此显示：它包含在补丁中。",
+      "submit": "打开拉取请求",
+      "close": "关闭",
+      "opened": "已打开拉取请求 #{{number}}，可供评审。",
+      "openedDraft": "已将拉取请求 #{{number}} 作为草稿打开。",
+      "personMerges": "只有人可以在托管平台上合并它。",
+      "openPr": "打开拉取请求",
+      "failed": "无法打开拉取请求。再次发布是安全的：最多只会打开一个。",
+      "readAgain": "重新读取",
+      "download": "下载补丁",
+      "patchCut": "补丁在此被截断：它太大，无法完整显示。",
+      "patchLabel": "添加这些文档的补丁",
+      "refused": {
+        "human_driven": "你以“人工主导”方式工作：平台不会替你推送任何内容。请自行应用此补丁，或更改你的工作方式。",
+        "already_published": "此版本的文档已有拉取请求：新的已批准版本会打开新的拉取请求。",
+        "digest_mismatch": "自此预览以来文档已更改。请重新读取，然后再发布。",
+        "not_approved": "这些内容尚未获得批准：请先批准一个版本。"
+      }
+    }
+  },
+  "tenets": {
+    "label": "原则",
+    "loading": "正在加载原则…",
+    "failed": "无法加载原则。请稍后再试。",
+    "none": "还没有起草的原则。请在此连接上运行原则流程：其草稿会在这里等待接受或拒绝。",
+    "version": "版本",
+    "versionOption": "v{{version}} · {{status}}",
+    "status": {
+      "draft": "草稿",
+      "accepted": "已接受",
+      "rejected": "已拒绝"
+    },
+    "noneAccepted": "还没有已接受的版本：在有版本被接受之前，分诊不会引用任何原则。",
+    "accepted": "v{{version}} 已被接受：分诊可以引用的就是它。",
+    "publish": "以拉取请求打开",
+    "title": "原则 v{{version}}",
+    "byAgent": "由智能体编写",
+    "drafted": "起草于 {{at}}",
+    "decided": "由 {{who}} 决定，{{at}}",
+    "comparedWith": "与 v{{version}} 对比。",
+    "reason": "原因（可选）",
+    "reject": "拒绝",
+    "accept": "接受 v{{version}}",
+    "stale": "自你读取以来，已接受的原则已更改。决定前请重新读取。",
+    "readAgain": "重新读取",
+    "refused": "决定被拒绝：{{message}}",
+    "decideFailed": "无法保存决定。请稍后再试。",
+    "versionFailed": "无法读取该版本。请稍后再试。",
+    "projection": {
+      "summary": "摘要",
+      "why": "原因：",
+      "cites": "引用："
+    },
+    "changes": {
+      "label": "更改",
+      "first": "所有原则都是新的",
+      "none": "没有原则更改。",
+      "added": "已添加",
+      "changed": "已更改",
+      "removed": "已删除",
+      "fields": "更改了：{{list}}"
+    },
+    "fields": {
+      "title": "标题",
+      "statement": "陈述",
+      "rationale": "理由",
+      "citations": "引用"
     }
   }
 }
