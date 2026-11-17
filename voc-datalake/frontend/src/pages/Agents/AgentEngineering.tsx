@@ -19,7 +19,8 @@
  * whenever either changes), so the connection's App installation, CI attestation and branch rules, the Issues source
  * and the language's image are those of what it would save; only the budget, which it saves itself, does not hold its
  * Save and enable (the Enable after the save checks it again). The dialog fits the window (`max-h-[90vh]`): its body
- * scrolls between the title and the buttons, which stay in view.
+ * scrolls between the title and the buttons, which stay in view. A failing way of working (`dial`) offers the person
+ * setting it up to set their own to AI-driven there (7.50.02, DialFix.tsx), its readiness read again after.
  *
  * Once set up, the switch as for any agent, with who it runs as and a way back to the set-up.
  *
@@ -44,6 +45,7 @@ import { useAgentMutations } from './useAgents'
 import { RUN_LANGUAGES } from './startRunRules'
 import { readinessOf, usableConnections } from './engineeringAgentRules'
 import { FailingChecks, ReadinessSection } from './ReadinessChecks'
+import { DialFix } from './DialFix'
 import { useReadiness } from './useReadiness'
 import type { Readiness } from './engineeringAgentRules'
 import type { Agent } from '../../api/agentsApi'
@@ -174,6 +176,8 @@ function SetupDialog({ agent, workflow, connections, onClose }: Readonly<{
   // (the readiness of the selection: read again whenever the connection or the language changes)
   const selection: ReadinessSubject = { automation: agent.agent_id, connection: form.connection, language: form.language }
   const hold = useEnableHold(agent, selection, true, true)
+  // (the same read as the section's: one cache entry)
+  const checks = useReadiness(selection, true).data
   const held = hold.held
   const typed = form.budget.trim() !== ''
   const ready = typed && isMonthlyBudgetUsd(Number(form.budget)) && form.connection !== '' && !held
@@ -195,6 +199,7 @@ function SetupDialog({ agent, workflow, connections, onClose }: Readonly<{
             onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))} />
           <p className="text-[12px] text-muted">{t('engineeringAgent.deploymentFeedback')}</p>
           <ReadinessSection subject={selection} enabled />
+          <DialFix subject={selection} checks={checks} />
           {hold.shown && <p className="text-[12px] text-warn">{t('readiness.enableWaits')}</p>}
           {save.isError && <EnableError error={save.error} fallback={t('engineeringAgent.setupFailed')} />}
         </div>

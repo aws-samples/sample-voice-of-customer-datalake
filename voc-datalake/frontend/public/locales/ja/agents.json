@@ -274,8 +274,8 @@
       "decision": "決定",
       "artifact": "成果物"
     },
-    "engineeringConfirmBug": "エージェントがリポジトリでエンジニアリング実行を開始します。専用のブランチで作業し、ドラフトのプルリクエストで止まります。Issue 番号を指定するとその Issue を修正します（以前に実行した Issue でも再実行します）。空欄ならバグを探します。",
-    "engineeringConfirmFeature": "エージェントが Issue からリポジトリでエンジニアリング実行を開始します。専用のブランチで機能を構築し、ドラフトのプルリクエストで止まります。PRD から構築するには、PRD を開いて「この PRD から構築」を選んでください。",
+    "engineeringConfirmBug": "エージェントがリポジトリでエンジニアリング実行を開始します。専用のブランチで作業し、レビュー用のプルリクエストを作成します（フローで指定されていればドラフト）。マージは人が行います。Issue 番号を指定するとその Issue を修正します（以前に実行した Issue でも再実行します）。空欄ならバグを探します。",
+    "engineeringConfirmFeature": "エージェントが Issue からリポジトリでエンジニアリング実行を開始します。専用のブランチで機能を構築し、レビュー用のプルリクエストを作成します（フローで指定されていればドラフト）。マージは人が行います。PRD から構築するには、PRD を開いて「この PRD から構築」を選んでください。",
     "issueOptional": "Issue 番号（任意）",
     "issueRequired": "Issue 番号",
     "issueInvalid": "Issue の番号：1 以上の整数。",
@@ -822,6 +822,41 @@
       "removed": "{{slug}} をこのデプロイから削除しました。GitHub の設定でも削除してください。",
       "via": "{{slug}} 経由"
     },
+    "issues": {
+      "switch": "このリポジトリの Issue を読み取る",
+      "reading": "Issue は自動で読み取られます。",
+      "reasons": {
+        "off": "Issue は読み取られていません: スイッチがオフです。",
+        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → データソースでこのリポジトリを追加してください。",
+        "other_app": "GitHub Issues ソースは別の GitHub App でサインインしています: このリポジトリの Issue はそれでは読み取られません。",
+        "limit": "GitHub Issues ソースが読み取るリポジトリは最大 {{limit, number}} 件です: このリポジトリを読み取るには、管理 → データソースで 1 件外してください。",
+        "not_app": "デプロイの GitHub App 経由の接続だけが、Issue を自動で読み取ります。",
+        "not_deployed": "ここには GitHub Issues ソースがデプロイされていないため、Issue は読み取られません。",
+        "pending": "まだ読み取られていません: GitHub Issues ソースの一覧にありません。",
+        "unknown": "Issue は読み取られていません。"
+      },
+      "openSources": "管理 → データソースを開く",
+      "readNow": "今すぐ Issue を読み取る",
+      "label": {
+        "created": "ラベル {{label}}: 作成済み。",
+        "present": "ラベル {{label}}: リポジトリにあります。",
+        "failed": "ラベル {{label}} を作成できませんでした: 「インストールを確認」で再試行されます。"
+      },
+      "follow": {
+        "reading_one": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
+        "reading_other": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
+        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → データソースでこれらのリポジトリを追加してください。",
+        "labelsCreated": "ラベル {{label}}: {{list}} にあります。",
+        "labelsFailed": "{{list}} にラベル {{label}} を作成できませんでした: 「インストールを確認」で再試行されます。",
+        "skipped": {
+          "off": "読み取りなし (オフ): {{list}}。",
+          "other_app": "読み取りなし (ソースは別の GitHub App でサインイン): {{list}}。",
+          "limit": "読み取りなし (ソースはすでに {{limit, number}} 件のリポジトリを読み取り中): {{list}}。"
+        },
+        "scheduleOff": "GitHub Issues ソースのスケジュールがオフです: 管理 → データソースでオンにしてください。",
+        "error": "GitHub Issues ソースを自動で設定できませんでした: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "エージェント → 接続 に戻る",
       "createdTitle": "GitHub App を作成しました",
@@ -979,7 +1014,7 @@
     "ci": {
       "attested": "CI 確認済み",
       "notAttested": "CI 未確認",
-      "attestedBy": "{{who}} が確認（{{when}}）: エージェントは voc-agent/* ブランチへのプッシュとドラフトのプルリクエスト作成ができます。",
+      "attestedBy": "{{who}} が {{when}} に証明: エージェントは voc-agent/* ブランチへのプッシュとレビュー用のプルリクエストの作成ができます。マージは人が行います。",
       "none": "このリポジトリの CI がエージェントのブランチに価値あるものを渡さないことを管理者が確認するまで、エージェントは何もプッシュしません。",
       "withdrawnBy": "{{who}} が取り消し（{{when}}）: 再び確認されるまで、エージェントは何もプッシュしません。",
       "voidedRepository": "接続のリポジトリが変わったため無効になりました。このリポジトリの CI を確認してください。",
@@ -1459,7 +1494,7 @@
     "button": "この PRD から構築",
     "started": "実行モニターを開く",
     "title": "この PRD から構築しますか？",
-    "message": "{{name}} がエンジニアリング実行を開始し、この PRD に書かれた機能を専用のブランチで構築して、ドラフトのプルリクエストで止まります。",
+    "message": "{{name}} がエンジニアリング実行を開始し、この PRD に書かれた機能を専用のブランチで構築して、レビュー用のプルリクエストを作成します（フローで指定されていればドラフト）。マージは人が行います。",
     "confirm": "構築を開始",
     "agent": "エージェント",
     "inputHint": "実行にはこの PRD が ID で入力として渡されます。"
@@ -1476,6 +1511,11 @@
     "docs": "ドキュメント",
     "opensNewTab": "(新しいタブで開きます)",
     "setWayOfWorking": "ユーザーで作業スタイルを設定",
+    "setDialMine": "自分の働き方を AI 主導にする",
+    "dialConfirm": "あなたが有効にした自動化が voc-agent/* ブランチへプッシュしてプルリクエストを作成できるようになり、AI があなたの PR/FAQ と PRD を書けるようになります。",
+    "dialConfirmAction": "AI 主導にする",
+    "dialSaved": "保存しました: AI 主導。",
+    "dialFailed": "働き方を保存できませんでした。もう一度お試しください。",
     "enableWaits": "実行に必要なチェックがすべて合格するまで、有効化は待機します。",
     "enableRefused": "有効化されませんでした: 実行に必要な次のチェックが失敗しています。",
     "passedFolded": "合格したチェック ({{count, number}})",
@@ -1574,7 +1614,6 @@
       "label": "前提条件",
       "github": "デプロイの GitHub App で GitHub を接続します。App を作成し、リポジトリにインストールします(2 クリック)。",
       "ci": "接続でリポジトリの CI を証明します。保護されたシークレット、読み取り専用トークン、固定された OIDC、セルフホストランナーなし、特権付きのプルリクエストワークフローなし。",
-      "issues": "Issue を取り込みます。デプロイ全体の GitHub Issues ソースにリポジトリを登録してその App でサインインし、エージェントが扱ってよい各 Issue に voc-agent ラベルを付けます。",
       "met": "完了",
       "notMet": "未完了",
       "unknown": "まだ不明",
@@ -1585,8 +1624,16 @@
       "deploymentTitle": "このデプロイ",
       "connectedAs": "App で接続済み: {{list}}。",
       "ciFor": "CI を証明済み: {{list}}。",
-      "notConfigured": "未設定",
-      "noReadiness": "ソースとそのラベルは自動化の準備状況でチェックされます。自動化はまだ見つかっていません。"
+      "noReadiness": "ソースとそのラベルは自動化の準備状況でチェックされます。自動化はまだ見つかっていません。",
+      "automatic": "自動",
+      "issuesRead_one": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
+      "issuesRead_other": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
+      "issuesNone": "Issue: App 経由でリポジトリを接続すると自動で読み取ります。",
+      "issuesUnknown": "Issue: App 経由で接続した各リポジトリから自動で読み取ります。",
+      "issuesNotDeployed": "Issue: ここには GitHub Issues ソースがデプロイされていません。",
+      "issuesToken": "Issue: GitHub Issues ソースはトークンでサインインしているため、リポジトリは手動で一覧に入れます。",
+      "labelCreated": "ラベル {{label}}: 作成済み。",
+      "labelPending": "ラベル {{label}}: Issue を読み取る各リポジトリに自動で作成されます。"
     },
     "automation": {
       "open": "{{name}} を開く",

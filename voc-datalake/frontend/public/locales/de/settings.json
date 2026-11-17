@@ -375,12 +375,21 @@
     "runsOnUpload": "Läuft beim Hochladen",
     "runsOnDemand": "Läuft bei Bedarf – kein Zeitplan",
     "githubSignIn": {
-      "label": "Anmelden mit",
-      "token": "Einem feingranularen Token",
-      "app": "Einer der GitHub Apps dieses Deployments",
+      "appIntro": "Meldet sich mit Ihrer GitHub App an: kein Token zum Einfügen. Issues und Kommentare werden mit kurzlebigen Tokens nur zum Lesen gelesen.",
       "appLabel": "GitHub App",
-      "appHint": "Jeder Lauf erhält von der App ein kurzlebiges Token nur für diese Repositorys (Issues und Metadata, nur Lesen) und gibt es am Ende zurück. Installieren Sie die App zuerst auf den Repositorys (Agenten → Verbindungen).",
-      "tokenHint": "Ein feingranulares persönliches Zugriffstoken mit Issues und Metadata nur zum Lesen auf diesen Repositorys."
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "App wählen",
+      "appHint": "Die App liest nur die Repositorys, auf denen sie installiert ist: Installieren Sie sie unter Agenten → Verbindungen auf weiteren.",
+      "useToken": "Stattdessen ein feingranulares Token verwenden",
+      "tokenHint": "Ein feingranulares persönliches Zugriffstoken mit Issues und Metadata nur zum Lesen auf diesen Repositorys.",
+      "useApp": "Stattdessen mit Ihrer GitHub App anmelden",
+      "connectHint": "Oder verbinden Sie GitHub unter Agenten → Verbindungen: Die GitHub App der Bereitstellung entsteht mit zwei Klicks, und diese Quelle liest dann die Issues der verbundenen Repositorys von selbst.",
+      "connect": "GitHub verbinden",
+      "managed_one": "Von Ihrer GitHub-Verbindung verwaltet: Issues aus {{count, number}} Repository.",
+      "managed_other": "Von Ihrer GitHub-Verbindung verwaltet: Issues aus {{count, number}} Repositorys.",
+      "managedHint": "Jedes über die GitHub App unter Agenten → Verbindungen verbundene Repository wird automatisch gelesen; schalten Sie es dort ab.",
+      "openConnections": "Agenten → Verbindungen öffnen",
+      "manual": "Manuell konfigurieren (erweitert)"
     }
   },
   "subtitle": "Konfigurieren Sie Ihre VoC-Plattform",
@@ -994,7 +1003,7 @@
     "title": "Die Datenquellen der Bereitstellung",
     "feeds": "Diese Quellen speisen die Bereitstellung: Das Feedback, das sie einlesen, gilt für die ganze Bereitstellung, außerhalb jedes Arbeitsbereichs, gleich in welchem Arbeitsbereich Sie gerade sind. Zugangsdaten, Zeitpläne und Pausen auf dieser Seite sind die der Bereitstellung.",
     "engineering": "Nur dieses Feedback lesen die Engineering-Automatisierungen (Bug fixer, Feature builder, Issue triage): Ihre Läufe nehmen nie das Feedback eines Arbeitsbereichs.",
-    "appSignIn": "Melden Sie die GitHub-Issues-Quelle hier mit der GitHub App der Bereitstellung an (auf ihrer Karte unter „Anmelden mit“) und führen Sie die Repositorys auf, an denen die Agenten arbeiten.",
+    "appSignIn": "Die GitHub-Issues-Quelle richtet sich selbst ein, wenn Sie GitHub unter Agenten → Verbindungen verbinden: Die Issues jedes verbundenen Repositorys werden mit der GitHub App der Bereitstellung gelesen. Ihre Karte hier ist die erweiterte Ansicht.",
     "inWorkspace": "Sie sind in {{name}}, aber nichts auf dieser Seite ändert diesen Arbeitsbereich: Seine eigenen Quellen finden Sie im Tab Quellen."
   }
 }

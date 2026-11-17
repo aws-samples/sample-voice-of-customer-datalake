@@ -247,3 +247,20 @@ def test_an_agents_subject_follows_its_enabler_and_a_templates_the_asker() -> No
     assert (flow.kind, flow.person, flow.person_name, flow.budget_usd, flow.requires) == (
         'flow', 'asker', 'alice', Decimal(50), {'dial': ['human_driven'], 'issues_source': True})
     assert (flow.connection, flow.language) == ('', '')   # (readiness.preview names them)
+
+
+def test_the_issues_source_lists_a_repository_as_the_settings_function_answers() -> None:
+    """7.50.02: the source's settings come from voc-engineering-issues-config (``status``), never the secret here."""
+    from engineering.connectors.issues_sync import IssuesFollow
+    from engineering.connectors.test.issues_fakes import FakeConfigFunction, FakeEvents, FakeSecrets
+
+    secrets = FakeSecrets({'github_issues_repos': 'example-org/shop', 'github_issues_github_app_id': '4242'})
+    config = FakeConfigFunction(secrets, FakeEvents())
+    found = AwsReadinessPorts(**{**vars(ports()), 'issues': IssuesFollow(config, None, lambda _request: {})})
+    assert found.issues_source_lists('example-org/shop') is True
+    assert found.issues_source_lists('example-org/other') is False
+    assert [request['action'] for request in config.requests] == ['status', 'status']
+    assert ports().issues_source_lists('example-org/shop') is None   # (not deployed here)
+    secrets.fail = True
+    with pytest.raises(ReadFailed):
+        found.issues_source_lists('example-org/shop')

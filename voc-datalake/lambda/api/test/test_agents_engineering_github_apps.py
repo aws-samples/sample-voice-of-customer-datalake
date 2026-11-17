@@ -84,7 +84,7 @@ def test_an_administrator_creates_installs_checks_and_removes_an_app(lambda_cont
     assert (status, [c['connection']['connection_id'] for c in done['connections']]) == (200, ['refund-service'])
     assert _call(lambda_context, 'GET', PATH)[1]['apps'][0]['connections'] == ['refund-service']
     assert _call(lambda_context, 'POST', f'{PATH}/{APP_ID}/check', body={}) == (
-        200, {'repositories': ['example-org/refund-service'], 'missing': []})
+        200, {'repositories': ['example-org/refund-service'], 'missing': [], 'issues': None})
     status, again = _call(lambda_context, 'POST', f'{PATH}/{APP_ID}/install', body={})
     assert status == 200
     assert again['install_url'].startswith('https://github.com/apps/')

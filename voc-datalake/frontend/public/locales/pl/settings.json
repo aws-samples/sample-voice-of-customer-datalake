@@ -407,12 +407,23 @@
     "runsOnUpload": "Uruchamia się po przesłaniu pliku",
     "runsOnDemand": "Uruchamiane na żądanie — bez harmonogramu",
     "githubSignIn": {
-      "label": "Logowanie przez",
-      "token": "Szczegółowy token",
-      "app": "Jedną z GitHub Apps tego wdrożenia",
+      "appIntro": "Loguje się przez Twoją GitHub App: bez tokenu do wklejania. Issues i komentarze są czytane krótkotrwałymi tokenami tylko do odczytu.",
       "appLabel": "GitHub App",
-      "appHint": "Każde uruchomienie dostaje od App krótkotrwały token tylko dla tych repozytoriów (Issues i Metadata, tylko odczyt) i oddaje go na końcu. Najpierw zainstaluj App w tych repozytoriach (Agenci → Połączenia).",
-      "tokenHint": "Szczegółowy osobisty token dostępu z Issues i Metadata tylko do odczytu w tych repozytoriach."
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "Wybierz App",
+      "appHint": "App czyta tylko repozytoria, w których jest zainstalowana: zainstaluj ją w kolejnych w Agenci → Połączenia.",
+      "useToken": "Użyj zamiast tego szczegółowego tokenu",
+      "tokenHint": "Szczegółowy osobisty token dostępu z Issues i Metadata tylko do odczytu w tych repozytoriach.",
+      "useApp": "Zaloguj się zamiast tego przez GitHub App",
+      "connectHint": "Albo połącz GitHub w Agenci → Połączenia: GitHub App wdrożenia powstaje w dwóch kliknięciach, a to źródło samo czyta wtedy issues połączonych repozytoriów.",
+      "connect": "Połącz GitHub",
+      "managed_one": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytorium.",
+      "managed_few": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
+      "managed_many": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
+      "managed_other": "Zarządzane przez Twoje połączenie z GitHub: issues z {{count, number}} repozytoriów.",
+      "managedHint": "Każde repozytorium połączone przez GitHub App w Agenci → Połączenia jest czytane automatycznie; wyłącz je tam.",
+      "openConnections": "Otwórz Agenci → Połączenia",
+      "manual": "Skonfiguruj ręcznie (zaawansowane)"
     }
   },
   "subtitle": "Konfiguruj platformę dla wszystkich (tylko administratorzy).",
@@ -1050,7 +1061,7 @@
     "title": "Źródła danych wdrożenia",
     "feeds": "Te źródła zasilają wdrożenie: opinie, które pobierają, dotyczą całego wdrożenia, poza każdym obszarem roboczym, niezależnie od tego, w którym obszarze roboczym teraz jesteś. Dane logowania, harmonogramy i wstrzymania na tej stronie należą do samego wdrożenia.",
     "engineering": "To jedyne opinie, które czytają automatyzacje inżynieryjne (Bug fixer, Feature builder, Issue triage): ich uruchomienia nigdy nie biorą opinii obszaru roboczego.",
-    "appSignIn": "Zaloguj tutaj źródło GitHub Issues przez GitHub App wdrożenia (na jego karcie „Logowanie przez”), podając repozytoria, nad którymi pracują agenci.",
+    "appSignIn": "Źródło GitHub Issues konfiguruje się samo, gdy połączysz GitHub w Agenci → Połączenia: issues każdego połączonego repozytorium są czytane przez GitHub App wdrożenia. Jego karta tutaj to widok zaawansowany.",
     "inWorkspace": "Jesteś w {{name}}, ale nic na tej stronie go nie zmienia: własne źródła tego obszaru roboczego są na karcie Źródła."
   }
 }

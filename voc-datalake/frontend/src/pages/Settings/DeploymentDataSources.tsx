@@ -8,7 +8,10 @@
  * `X-Workspace-Id`, from any address, inside a workspace too. What these sources ingest is deployment-wide feedback,
  * outside every workspace, and that is the only feedback the engineering automations read (Bug fixer, Feature builder,
  * Issue triage: D8, until agents move per workspace); the copy above the cards says so, and, inside a workspace, that
- * nothing here changes it (its own sources are its Administration → Sources).
+ * nothing here changes it (its own sources are its Administration → Sources). The GitHub Issues source configures
+ * itself from Agents → Connections (7.50.02: each repository connected through the deployment's GitHub App is read),
+ * so its card here is the advanced view; `/admin/data-sources/<source>` opens a source's card (useAdminLocation.ts
+ * `useSourceInPath`: the readiness fix and the setup guide open the GitHub Issues card so).
  *
  * @module pages/Settings/DeploymentDataSources
  */
@@ -19,13 +22,14 @@ import { ConfigScopeContext } from '../../workspace/configScope'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { DataSourcesSection } from './SettingsSections'
 import { SECTION_TITLE } from './sectionTitle'
+import { useSourceInPath } from './useAdminLocation'
 
 interface DeploymentDataSourcesProps {
   readonly apiEndpoint: string
   readonly isAdmin: boolean
 }
 
-/** What these sources feed (the deployment), who reads it (the engineering automations), and where the App sign-in is. */
+/** What these sources feed (the deployment), who reads it (the engineering automations), and how GitHub Issues is set. */
 function DeploymentNotice() {
   const { t } = useTranslation('settings')
   const titleId = useId()
@@ -50,11 +54,12 @@ function DeploymentNotice() {
 }
 
 export default function DeploymentDataSources({ apiEndpoint, isAdmin }: DeploymentDataSourcesProps) {
+  const openSource = useSourceInPath()
   return (
     <div className="space-y-4">
       <DeploymentNotice />
       <ConfigScopeContext.Provider value="deployment">
-        <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+        <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} openSource={openSource} />
       </ConfigScopeContext.Provider>
     </div>
   )

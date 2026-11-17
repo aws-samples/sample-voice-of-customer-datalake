@@ -1,8 +1,9 @@
 # Ways of working with AI
 
-Each person has a **way of working with AI** for PR/FAQs and PRDs. An administrator sets it per
-user in **Administration → Privacy & access → Users** ("Ways of working with AI"). Every other
-document type (research, custom, prototypes, decisions) behaves the same in every mode.
+Each person has a **way of working with AI** for PR/FAQs and PRDs, and (with the engineering agents) for whether those
+agents may push and open pull requests for them. An administrator sets it per user in **Administration → Privacy &
+access → Users** ("Ways of working with AI"). Every other document type (research, custom, prototypes, decisions)
+behaves the same in every mode.
 
 | Mode | What the AI does for a PR/FAQ or PRD |
 |---|---|
@@ -13,6 +14,16 @@ document type (research, custom, prototypes, decisions) behaves the same in ever
 The modes are cumulative: each one adds to the one before it. **AI-driven is the default for
 everyone, admins included**, so nothing changes on upgrade until an administrator moves someone.
 There is no deploy flag.
+
+**Not set (7.50.02).** The default is for documents only. The engineering agents' dial
+(`lambda/engineering/connectors/dial.py`) fails closed: a run pushes and opens a pull request only for a person whose
+AI-assisted or AI-driven was **saved**. So the Users page shows a person with nothing saved as "Not set (documents
+default to AI-driven; engineering agents push nothing until it is set)", with no option selected: one click on
+AI-driven saves it. The `ai_mode` block of `GET /users`, `PUT /users/{username}/flags` and `GET /users/me/ai-mode`
+carries `saved` (false: nothing stored). Readiness's `dial` check says "Not set yet: choose AI-assisted or AI-driven
+for <name>" for it, and "Human-driven" only when Human-driven was saved; the engineering agent's Set up dialog offers
+**Set my way of working to AI-driven**, which saves the caller's own (`PUT /users/<their username>/flags`, an
+administrator's route), never another person's.
 
 Inside Human-driven, the administrator can unlock **PR/FAQ with AI** and/or **PRD with AI** for a
 person once they have learned. An unlocked type behaves as AI-assisted for that person (editor and

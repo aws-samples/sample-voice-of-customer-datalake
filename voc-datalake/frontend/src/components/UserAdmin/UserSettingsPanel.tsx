@@ -23,6 +23,8 @@ interface UserRowEdit<Patch> {
 interface UserSettingsPanelProps<Patch> {
   readonly icon: LucideIcon
   readonly copy: { readonly title: string; readonly description: string; readonly saveFailed: string }
+  /** Shown under the description, before the rows (the ways of working's "How the modes differ"). */
+  readonly lead?: ReactNode
   /** Save one user's change; the users list (and `alsoRefresh`) is refetched once it settles. */
   readonly save: (username: string, patch: Patch) => Promise<unknown>
   readonly alsoRefresh?: readonly QueryKey[]
@@ -33,7 +35,7 @@ interface UserSettingsPanelProps<Patch> {
   readonly refusals?: readonly Refusal[]
 }
 
-export default function UserSettingsPanel<Patch>({ icon: Icon, copy, save, alsoRefresh, users, row, refusals }: UserSettingsPanelProps<Patch>) {
+export default function UserSettingsPanel<Patch>({ icon: Icon, copy, save, alsoRefresh, users, row, refusals, lead }: UserSettingsPanelProps<Patch>) {
   const mutation = useUserSettingSave(({ username, patch }: { username: string; patch: Patch }) => save(username, patch), alsoRefresh)
   return (
     // A fieldset, not a heading: the Settings card owns the only section heading.
@@ -42,6 +44,7 @@ export default function UserSettingsPanel<Patch>({ icon: Icon, copy, save, alsoR
         <Icon size={14} className="text-accent" /> {copy.title}
       </legend>
       <p className="text-xs text-muted mb-3">{copy.description}</p>
+      {lead}
       {mutation.isError && refusals !== undefined ? <RefusalAlert error={mutation.error} refusals={refusals} className="mb-2" /> : null}
       {mutation.isError && refusals === undefined ? (
         <p role="alert" className="text-xs text-danger flex items-center gap-1 mb-2">

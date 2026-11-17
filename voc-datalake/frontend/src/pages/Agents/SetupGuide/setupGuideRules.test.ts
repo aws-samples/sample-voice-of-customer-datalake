@@ -8,12 +8,14 @@ import { describe, expect, it } from 'vitest'
 import { normalizeAgent } from '../../../api/agentsApi'
 import { parseConnection } from '../../../api/engineeringConnectionsApi'
 import { SETUP_STEP_IDS } from '../../../api/engineeringSetupApi'
+import { parseIssuesSource } from '../../../api/issuesSourceApi'
 import {
-  attestedConnections, canSkip, findAutomations, guideSubject, issueRunner, nextOpenStep, notDoneBefore, nothingSetUp,
-  offersIntro, prerequisiteChecks, prerequisiteChecksOf, prerequisitesMet, progressCount, recommendedGuideStep, stepStatus,
-  stepStatuses,
+  attestedConnections, canSkip, findAutomations, guideSubject, issueRunner, issuesTick, labelTick, nextOpenStep,
+  notDoneBefore, nothingSetUp, offersIntro, prerequisiteChecks, prerequisiteChecksOf, prerequisitesMet, progressCount,
+  recommendedGuideStep, stepStatus, stepStatuses,
 } from './setupGuideRules'
 import type { Agent } from '../../../api/agentsApi'
+import type { IssuesSourceView } from '../../../api/issuesSourceApi'
 import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
 import type { ReadinessCheck } from '../../../api/engineeringReadinessApi'
 import type { SetupProgress, SetupStepId, StepChoice } from '../../../api/engineeringSetupApi'
@@ -65,8 +67,16 @@ const bugFixer = agent('2', 'Bug fixer')
 const featureBuilder = agent('3', 'Feature builder', { engineering: FEATURES })
 
 function facts(extra: Partial<GuideFacts> = {}): GuideFacts {
-  return { agents: [triage, bugFixer, featureBuilder], connections: [connection()], apps: 1, issuesSource: null, readiness: {},
+  return { agents: [triage, bugFixer, featureBuilder], connections: [connection()], apps: 1, issues: null, readiness: {},
     ...extra }
+}
+
+/** The GitHub Issues source as the connections drive it (7.50.02), its connections `entries`. */
+function issues(entries: Record<string, unknown>[], extra: Record<string, unknown> = {}): IssuesSourceView {
+  return parseIssuesSource({ deployed: true, signs_in: 'app', app_id: '123', repositories: [], managed: [], schedule: 'on',
+    label: 'voc-agent', connections: entries.map((entry, index) => ({ connection_id: `c${String(index)}`,
+      repository: `example-org/r${String(index)}`, read: true, reading: true, reason: null, label: 'created', ...entry })),
+    ...extra })
 }
 
 describe('the seeded automations', () => {
@@ -103,9 +113,22 @@ describe('the prerequisites', () => {
     ]).toStrictEqual([true, false, false, false])
   })
 
-  it('wait while the deployment\'s GitHub Issues source is not configured, never while that is not known', () => {
-    expect([prerequisitesMet(facts({ issuesSource: false })), prerequisitesMet(facts({ issuesSource: true })),
-      prerequisitesMet(facts({ issuesSource: null }))]).toStrictEqual([false, true, true])
+  it('wait while the GitHub Issues source reads none of the connected repositories, never while that is not known', () => {
+    const unread = issues([{ reading: false, reason: 'off', label: null }])
+    const absent = issues([{ reading: false, reason: 'not_deployed', label: null }], { deployed: false })
+    expect([prerequisitesMet(facts({ issues: unread })), prerequisitesMet(facts({ issues: issues([{}]) })),
+      prerequisitesMet(facts({ issues: null })), prerequisitesMet(facts({ issues: absent }))]).toStrictEqual([false, true, true, true])
+  })
+
+  it('tick the issues once one connected repository is read, and the label once every one read has it (7.50.02)', () => {
+    expect([issuesTick(null), issuesTick(issues([{}])), issuesTick(issues([{ reading: false, reason: 'pending', label: null }])),
+      issuesTick(issues([]))]).toStrictEqual(['unknown', 'met', 'notMet', 'notMet'])
+    expect([
+      labelTick(null), labelTick(issues([{}, { label: 'present' }])), labelTick(issues([{}, { label: 'failed' }])),
+      labelTick(issues([{}, { label: null }])), labelTick(issues([{ reading: false, reason: 'off', label: null }])),
+      // (a connection not read does not hold the label's tick)
+      labelTick(issues([{}, { reading: false, reason: 'off', label: null }])),
+    ]).toStrictEqual(['unknown', 'met', 'notMet', 'unknown', 'notMet', 'met'])
   })
 
   it('name the connections made through an App whose CI is attested (the deployment\'s fact)', () => {

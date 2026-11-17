@@ -275,8 +275,8 @@
       "decision": "Decisión",
       "artifact": "Artefacto"
     },
-    "engineeringConfirmBug": "El agente inicia una ejecución de ingeniería en su repositorio: trabaja en una rama propia y se detiene en un borrador de pull request. Indica un número de incidencia para corregirla (aunque ya se ejecutara antes) o déjalo vacío para buscar errores.",
-    "engineeringConfirmFeature": "El agente inicia una ejecución de ingeniería en su repositorio a partir de una incidencia: construye la funcionalidad en una rama propia y se detiene en un borrador de pull request. Para construir desde un PRD, abre el PRD y elige «Construir desde este PRD».",
+    "engineeringConfirmBug": "El agente inicia una ejecución de ingeniería en su repositorio: trabaja en una rama propia y abre una pull request para revisión (un borrador si su flujo lo indica); la fusión sigue en manos de una persona. Indica un número de incidencia para corregirla (aunque ya se ejecutara antes) o déjalo vacío para buscar errores.",
+    "engineeringConfirmFeature": "El agente inicia una ejecución de ingeniería en su repositorio a partir de una incidencia: construye la funcionalidad en una rama propia y abre una pull request para revisión (un borrador si su flujo lo indica); la fusión sigue en manos de una persona. Para construir desde un PRD, abre el PRD y elige «Construir desde este PRD».",
     "issueOptional": "Número de incidencia (opcional)",
     "issueRequired": "Número de incidencia",
     "issueInvalid": "El número de la incidencia: un número entero desde 1.",
@@ -828,6 +828,41 @@
       "removed": "{{slug}} se ha eliminado de este despliegue. Bórrala también en la configuración de GitHub.",
       "via": "mediante {{slug}}"
     },
+    "issues": {
+      "switch": "Leer las incidencias de este repositorio",
+      "reading": "Las incidencias se leen automáticamente.",
+      "reasons": {
+        "off": "Sus incidencias no se leen: el interruptor está desactivado.",
+        "token": "La fuente GitHub Issues inicia sesión con un token: añade este repositorio en Administración → Fuentes de datos.",
+        "other_app": "La fuente GitHub Issues inicia sesión con otra GitHub App: las incidencias de este repositorio no se leen a través de ella.",
+        "limit": "La fuente GitHub Issues lee como máximo {{limit, number}} repositorios: quita uno en Administración → Fuentes de datos para leer este.",
+        "not_app": "Solo una conexión hecha mediante la GitHub App del despliegue lee sus incidencias automáticamente.",
+        "not_deployed": "La fuente GitHub Issues no está desplegada aquí, así que no se leen incidencias.",
+        "pending": "Aún no se lee: no está en la lista de la fuente GitHub Issues.",
+        "unknown": "Sus incidencias no se leen."
+      },
+      "openSources": "Abrir Administración → Fuentes de datos",
+      "readNow": "Leer sus incidencias ahora",
+      "label": {
+        "created": "Etiqueta {{label}}: creada.",
+        "present": "Etiqueta {{label}}: en el repositorio.",
+        "failed": "No se pudo crear la etiqueta {{label}}: Comprobar instalación lo vuelve a intentar."
+      },
+      "follow": {
+        "reading_one": "Incidencias: se leen automáticamente de {{count, number}} repositorio.",
+        "reading_other": "Incidencias: se leen automáticamente de {{count, number}} repositorios.",
+        "token": "La fuente GitHub Issues inicia sesión con un token: añade estos repositorios en Administración → Fuentes de datos.",
+        "labelsCreated": "Etiqueta {{label}}: en {{list}}.",
+        "labelsFailed": "No se pudo crear la etiqueta {{label}} en {{list}}: Comprobar instalación lo vuelve a intentar.",
+        "skipped": {
+          "off": "No se leen (desactivado): {{list}}.",
+          "other_app": "No se leen (la fuente inicia sesión con otra GitHub App): {{list}}.",
+          "limit": "No se leen (la fuente ya lee {{limit, number}} repositorios): {{list}}."
+        },
+        "scheduleOff": "La programación de la fuente GitHub Issues está desactivada: actívala en Administración → Fuentes de datos.",
+        "error": "No se pudo configurar automáticamente la fuente GitHub Issues: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "Volver a Agentes → Conexiones",
       "createdTitle": "GitHub App creada",
@@ -985,7 +1020,7 @@
     "ci": {
       "attested": "CI certificada",
       "notAttested": "CI sin certificar",
-      "attestedBy": "Certificada por {{who}}, {{when}}: los agentes pueden hacer push a ramas voc-agent/* y abrir borradores de pull request.",
+      "attestedBy": "Certificado por {{who}}, {{when}}: los agentes pueden hacer push a ramas voc-agent/* y abrir pull requests para revisión; la fusión sigue en manos de una persona.",
       "none": "Los agentes no hacen push a este repositorio hasta que un administrador certifique que su CI no da nada de valor a las ramas de los agentes.",
       "withdrawnBy": "Retirada por {{who}}, {{when}}: los agentes no hacen push hasta que se certifique de nuevo.",
       "voidedRepository": "Anulada al cambiar el repositorio de la conexión: certifique la CI de este repositorio.",
@@ -1466,7 +1501,7 @@
     "button": "Construir desde este PRD",
     "started": "Abrir el monitor de ejecución",
     "title": "¿Construir desde este PRD?",
-    "message": "{{name}} inicia una ejecución de ingeniería que construye la funcionalidad que describe este PRD, en una rama propia, y se detiene en un borrador de pull request.",
+    "message": "{{name}} inicia una ejecución de ingeniería que construye la funcionalidad que describe este PRD, en una rama propia, y abre una pull request para revisión (un borrador si su flujo lo indica); la fusión sigue en manos de una persona.",
     "confirm": "Iniciar la construcción",
     "agent": "Agente",
     "inputHint": "La ejecución recibe este PRD como entrada, por su id."
@@ -1483,6 +1518,11 @@
     "docs": "Documentación",
     "opensNewTab": "(se abre en una pestaña nueva)",
     "setWayOfWorking": "Define tu forma de trabajo en Usuarios",
+    "setDialMine": "Poner la mía en Dirigido por IA",
+    "dialConfirm": "Esto permite que las automatizaciones que actives hagan push a ramas voc-agent/* y abran pull requests, y que la IA escriba tus PR/FAQ y PRD.",
+    "dialConfirmAction": "Poner en Dirigido por IA",
+    "dialSaved": "Guardado: Dirigido por IA.",
+    "dialFailed": "No se pudo guardar tu forma de trabajar: inténtalo de nuevo.",
     "enableWaits": "Activar espera hasta que se supere cada comprobación que necesita una ejecución.",
     "enableRefused": "No activado: fallan estas comprobaciones que necesita una ejecución.",
     "passedFolded": "Comprobaciones superadas ({{count, number}})",
@@ -1581,7 +1621,6 @@
       "label": "Requisitos previos",
       "github": "Conecta GitHub con la GitHub App del despliegue: crea la App y luego instálala en el repositorio (dos clics).",
       "ci": "Certifica la CI del repositorio en su conexión: secretos protegidos, un token de solo lectura, OIDC fijado, ningún runner autoalojado, ningún flujo de pull request con privilegios.",
-      "issues": "Ingiere sus issues: la fuente GitHub Issues para todo el despliegue, con el repositorio y con sesión iniciada con esa App, y la etiqueta voc-agent en cada issue que los agentes puedan tomar.",
       "met": "Hecho",
       "notMet": "Pendiente",
       "unknown": "Aún no se sabe",
@@ -1592,8 +1631,16 @@
       "deploymentTitle": "Esta implementación",
       "connectedAs": "Conectado mediante una App: {{list}}.",
       "ciFor": "CI certificada para {{list}}.",
-      "notConfigured": "Sin configurar",
-      "noReadiness": "La fuente y su etiqueta las comprueba la preparación de una automatización: aún no se ha encontrado ninguna automatización."
+      "noReadiness": "La fuente y su etiqueta las comprueba la preparación de una automatización: aún no se ha encontrado ninguna automatización.",
+      "automatic": "Automático",
+      "issuesRead_one": "Incidencias: se leen automáticamente de {{count, number}} repositorio.",
+      "issuesRead_other": "Incidencias: se leen automáticamente de {{count, number}} repositorios.",
+      "issuesNone": "Incidencias: se leen automáticamente en cuanto se conecta un repositorio mediante la App.",
+      "issuesUnknown": "Incidencias: se leen automáticamente de cada repositorio conectado mediante la App.",
+      "issuesNotDeployed": "Incidencias: la fuente GitHub Issues no está desplegada aquí.",
+      "issuesToken": "Incidencias: la fuente GitHub Issues inicia sesión con un token, así que sus repositorios se listan a mano.",
+      "labelCreated": "Etiqueta {{label}}: creada.",
+      "labelPending": "Etiqueta {{label}}: se crea automáticamente en cada repositorio cuyas incidencias se leen."
     },
     "automation": {
       "open": "Abrir {{name}}",

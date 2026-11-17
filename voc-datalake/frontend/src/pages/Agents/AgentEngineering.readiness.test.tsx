@@ -4,14 +4,15 @@
  * waits while a required check does not pass, never for an advisory one (in the dialog, only the budget it sets itself
  * does not hold it); an Enable refused with 409 `{error, checks}` shows the checks it names; the way-of-working check
  * links to Users. 7.50.01: the dialog reads the readiness of its selection (read again when the connection or the
- * language changes), fits the window with its buttons in view, and folds the checks that passed.
+ * language changes), fits the window with its buttons in view, and folds the checks that passed. 7.50.02: a failing way
+ * of working offers "Set mine to AI-driven", whose inline confirm saves the caller's own and reads the readiness again.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
-import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { workflowView } from '@test/workflowFixtures'
 import { findEngineeringTemplate } from '../../api/engineeringTemplates'
 import { normalizeAgent } from '../../api/agentsApi'
@@ -210,6 +211,70 @@ describe('the Set up dialog', () => {
     await within(dialog).findByTestId('readiness-dial')
     expect(within(dialog).getByRole('button', { name: 'Save and enable' })).toBeDisabled()
     expect(within(dialog).getByText('Enable waits until every check a run needs passes.')).toBeInTheDocument()
+  })
+
+  describe('a failing way of working (7.50.02)', () => {
+    const MINE = 'PUT /users/me/ai-mode'
+    const SET_MINE = 'Set mine to AI-driven'
+    const saved = () => ({ success: true, ai_mode: { mode: 'ai_driven', ai_writing_prfaq: false, ai_writing_prd: false, saved: true } })
+
+    /** The dialog, with its fix's inline confirm open. */
+    async function openConfirm(): Promise<{ dialog: HTMLElement; confirm: HTMLElement }> {
+      const dialog = await openDialog()
+      await userEvent.click(await within(dialog).findByRole('button', { name: SET_MINE }))
+      return { dialog, confirm: within(dialog).getByRole('group', { name: /lets AI write your PR\/FAQs and PRDs/ }) }
+    }
+
+    it('opens an inline confirm naming both effects, which takes focus, and saves nothing yet', async () => {
+      const mine = vi.fn(saved)
+      routes([], { [PREVIEW]: () => ({ checks: allPassBut('dial', 'fail') }), [MINE]: mine })
+      const { confirm } = await openConfirm()
+      expect(confirm).toHaveTextContent('This lets the automations you enable push to voc-agent/* branches and open pull requests')
+      expect([document.activeElement === confirm, mine.mock.calls.length]).toStrictEqual([true, 0])
+    })
+
+    it('saves nothing on Cancel, and the button is back', async () => {
+      const mine = vi.fn(saved)
+      routes([], { [PREVIEW]: () => ({ checks: allPassBut('dial', 'fail') }), [MINE]: mine })
+      const { dialog, confirm } = await openConfirm()
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+      expect([within(dialog).queryByRole('group', { name: /lets AI write your PR\/FAQs/ }), mine.mock.calls.length]).toStrictEqual([null, 0])
+      expect(within(dialog).getByRole('button', { name: SET_MINE })).toBeInTheDocument()
+    })
+
+    it('saves the caller\'s own way of working on Set to AI-driven, and reads the readiness again', async () => {
+      const mine = vi.fn(saved)
+      routes([], {
+        // (the readiness the server answers once the way of working is saved)
+        [PREVIEW]: () => ({ checks: mine.mock.calls.length > 0 ? ALL_PASS : allPassBut('dial', 'fail') }),
+        [MINE]: mine,
+      })
+      const { dialog, confirm } = await openConfirm()
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Set to AI-driven' }))
+      await waitFor(() => { expect(within(dialog).getByTestId('readiness-dial')).toHaveAttribute('data-status', 'pass') })
+      // (PUT /users/me/ai-mode: the caller's own subject, never another person's flags)
+      expect([sentFetchApiBody('/users/me/ai-mode', 'PUT'), mine.mock.calls.length,
+        fetchApi.mock.calls.some(([path]) => path.endsWith('/flags'))]).toStrictEqual([{ ai_mode: 'ai_driven' }, 1, false])
+      expect([within(dialog).queryByTestId('dial-fix'), within(dialog).getByRole('button', { name: 'Save and enable' }).hasAttribute('disabled')])
+        .toStrictEqual([null, false])
+    })
+
+    it('is not offered while the way of working passes, nor for another failing check', async () => {
+      routes([], { [PREVIEW]: () => ({ checks: allPassBut('ci_attestation', 'fail') }) })
+      const dialog = await openDialog()
+      await within(dialog).findByTestId('readiness-ci_attestation')
+      expect([within(dialog).queryByTestId('dial-fix'), within(dialog).queryByRole('button', { name: SET_MINE })]).toStrictEqual([null, null])
+    })
+
+    it('says a refused save in the server\'s words', async () => {
+      routes([], {
+        [PREVIEW]: () => ({ checks: allPassBut('dial', 'fail') }),
+        [MINE]: () => { throw new ApiError(403, 'Admin access required') },
+      })
+      const { dialog, confirm } = await openConfirm()
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Set to AI-driven' }))
+      expect(await within(within(dialog).getByTestId('dial-fix')).findByRole('alert')).toHaveTextContent('Admin access required')
+    })
   })
 
   it('shows the failing checks of a refused Enable, the settings saved', async () => {

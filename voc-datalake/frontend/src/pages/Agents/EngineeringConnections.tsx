@@ -8,26 +8,31 @@
  * attestation too (CiAttestation.tsx): an administrator attests that the repository's CI meets the setup guide, which
  * the agents' pushes and pull requests wait for, or withdraws it. Since 7.45.00 the "Connect GitHub" panel
  * (GitHubAppPanel.tsx) makes a GitHub App from a manifest and saves a connection for each repository it is installed
- * on; such a connection says which App it goes through ("via <slug>").
+ * on; such a connection says which App it goes through ("via <slug>"). Since 7.50.02 such a connection's issues are
+ * read automatically by the deployment's GitHub Issues source, with its "Read this repository's issues" switch and its
+ * `voc-agent` label (ConnectionIssues.tsx, `GET /agents/engineering/issues-source`).
  *
  * @module pages/Agents/EngineeringConnections
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitBranch, KeyRound, Plus } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringConnectionsApi, engineeringConnectionsKeys, isCiAttested } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
+import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
 import { useConfigStore } from '../../store/configStore'
 import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
 import { EXPIRY_WARNING_DAYS, todayUtc, tokenExpiry } from './connectionRules'
 import { AttestDialog, CiAttestationLine, WithdrawConfirm } from './CiAttestation'
 import { ConnectionDialog } from './ConnectionDialog'
+import { ConnectionIssues } from './ConnectionIssues'
 import { CredentialGuidance } from './ConnectionFields'
 import { ConnectionChangeConfirm } from './ConnectionModals'
 import { GitHubAppPanel } from './GitHubAppPanel'
 import type { ConnectionList, EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
+import type { IssuesSourceView } from '../../api/issuesSourceApi'
 
 /** The dialog open: adding (null) or editing a connection, removing it, or attesting or withdrawing its CI. */
 type Open =
@@ -91,8 +96,14 @@ function CredentialLine({ connection, appSlugs }: Readonly<{ connection: Enginee
   )
 }
 
-function ConnectionRow({ connection, actions, appSlugs }: Readonly<{
-  connection: EngineeringConnection; actions: RowActions; appSlugs: AppSlugs
+/** What every row reads beside its connection: the Apps' slugs, and the GitHub Issues source's view (once read). */
+interface RowContext {
+  appSlugs: AppSlugs
+  issues: IssuesSourceView | undefined
+}
+
+function ConnectionRow({ connection, actions, context }: Readonly<{
+  connection: EngineeringConnection; actions: RowActions; context: RowContext
 }>) {
   const { t, i18n } = useTranslation('agents')
   const { repository, credential } = connection
@@ -108,9 +119,10 @@ function ConnectionRow({ connection, actions, appSlugs }: Readonly<{
             {t('connections.branch', { branch: connection.default_branch })}
           </span>
         </p>
-        <CredentialLine connection={connection} appSlugs={appSlugs} />
+        <CredentialLine connection={connection} appSlugs={context.appSlugs} />
         {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
         <CiAttestationLine connection={connection} />
+        <ConnectionIssues connection={connection} view={context.issues} />
         {when !== '' && (
           <p className="text-[12px] text-muted">
             {t('connections.updated', { when, who: connection.updated_by ?? t('connections.unknownEditor') })}
@@ -140,18 +152,24 @@ function RemoveConfirm({ connection, onDone, onCancel }: Readonly<{
   connection: EngineeringConnection; onDone: () => void; onCancel: () => void
 }>) {
   const { t } = useTranslation('agents')
+  const queryClient = useQueryClient()
   const { repository } = connection
   const without = (list: ConnectionList): ConnectionList =>
     ({ ...list, connections: list.connections.filter((c) => c.connection_id !== connection.connection_id) })
+  // (its repository leaves the GitHub Issues source when its connection had added it: the view is read again)
+  const removed = () => {
+    void queryClient.invalidateQueries({ queryKey: issuesSourceKeys.view() })
+    onDone()
+  }
   return (
     <ConnectionChangeConfirm variant="danger" title={t('connections.confirm.title', { repository })}
       message={t('connections.confirm.message', { repository })} confirmLabel={t('connections.confirm.confirm')}
       change={() => engineeringConnectionsApi.remove(connection.connection_id)} update={without}
-      onDone={onDone} onCancel={onCancel} />
+      onDone={removed} onCancel={onCancel} />
   )
 }
 
-function ConnectionsBody({ list, actions, appSlugs }: Readonly<{ list: ConnectionList; actions: RowActions; appSlugs: AppSlugs }>) {
+function ConnectionsBody({ list, actions, context }: Readonly<{ list: ConnectionList; actions: RowActions; context: RowContext }>) {
   const { t } = useTranslation('agents')
   if (list.connections.length === 0) {
     return (
@@ -165,7 +183,7 @@ function ConnectionsBody({ list, actions, appSlugs }: Readonly<{ list: Connectio
   return (
     <ul className="space-y-2" aria-label={t('connections.title')}>
       {list.connections.map((connection) => (
-        <ConnectionRow key={connection.connection_id} connection={connection} actions={actions} appSlugs={appSlugs} />
+        <ConnectionRow key={connection.connection_id} connection={connection} actions={actions} context={context} />
       ))}
     </ul>
   )
@@ -203,6 +221,8 @@ export function EngineeringConnections() {
   const read = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list, enabled: configured })
   const apps = useQuery({ queryKey: githubAppsKeys.list(), queryFn: githubAppsApi.list, enabled: configured })
   const appSlugs: AppSlugs = new Map((apps.data?.apps ?? []).map((app) => [app.app_id, app.slug]))
+  // (the deployment's: sent without a workspace header; a failed read shows no issues line, never a made-up one)
+  const issues = useQuery({ queryKey: issuesSourceKeys.view(), queryFn: issuesSourceApi.get, enabled: configured, retry: false })
   const [open, setOpen] = useState<Open>(null)
   const [notice, setNotice] = useState('')
   const list = read.data
@@ -234,7 +254,7 @@ export function EngineeringConnections() {
         <LoadFailed message={t('connections.loadFailed')} onRetry={() => { void read.refetch() }} retrying={read.isFetching} />
       )}
       {list !== undefined && (
-        <ConnectionsBody list={list} actions={actions} appSlugs={appSlugs} />
+        <ConnectionsBody list={list} actions={actions} context={{ appSlugs, issues: issues.data }} />
       )}
       <GitHubAppPanel read={apps} onNotice={setNotice} />
       <CredentialGuidance />

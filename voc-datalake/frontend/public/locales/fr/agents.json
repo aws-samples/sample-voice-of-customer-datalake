@@ -275,8 +275,8 @@
       "decision": "Décision",
       "artifact": "Artefact"
     },
-    "engineeringConfirmBug": "L'agent lance une exécution d'ingénierie sur son dépôt : il travaille sur sa propre branche et s'arrête à une pull request en brouillon. Indiquez un numéro de ticket pour corriger ce ticket (même s'il a déjà été traité), ou laissez vide pour chercher des bugs.",
-    "engineeringConfirmFeature": "L'agent lance une exécution d'ingénierie sur son dépôt à partir d'un ticket : il construit la fonctionnalité sur sa propre branche et s'arrête à une pull request en brouillon. Pour construire depuis un PRD, ouvrez le PRD et choisissez « Construire depuis ce PRD ».",
+    "engineeringConfirmBug": "L'agent lance une exécution d'ingénierie sur son dépôt : il travaille sur sa propre branche et ouvre une pull request à relire (en brouillon si son flux le prévoit) ; la fusion reste à une personne. Indiquez un numéro de ticket pour corriger ce ticket (même s'il a déjà été traité), ou laissez vide pour chercher des bugs.",
+    "engineeringConfirmFeature": "L'agent lance une exécution d'ingénierie sur son dépôt à partir d'un ticket : il construit la fonctionnalité sur sa propre branche et ouvre une pull request à relire (en brouillon si son flux le prévoit) ; la fusion reste à une personne. Pour construire depuis un PRD, ouvrez le PRD et choisissez « Construire depuis ce PRD ».",
     "issueOptional": "Numéro du ticket (facultatif)",
     "issueRequired": "Numéro du ticket",
     "issueInvalid": "Le numéro du ticket : un nombre entier à partir de 1.",
@@ -828,6 +828,41 @@
       "removed": "{{slug}} est supprimée de ce déploiement. Supprimez-la aussi dans les paramètres de GitHub.",
       "via": "via {{slug}}"
     },
+    "issues": {
+      "switch": "Lire les tickets de ce dépôt",
+      "reading": "Les tickets sont lus automatiquement.",
+      "reasons": {
+        "off": "Ses tickets ne sont pas lus : l’interrupteur est désactivé.",
+        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ce dépôt dans Administration → Sources de données.",
+        "other_app": "La source GitHub Issues se connecte avec une autre GitHub App : les tickets de ce dépôt ne sont pas lus par elle.",
+        "limit": "La source GitHub Issues lit au plus {{limit, number}} dépôts : retirez-en un dans Administration → Sources de données pour lire celui-ci.",
+        "not_app": "Seule une connexion faite via la GitHub App du déploiement voit ses tickets lus automatiquement.",
+        "not_deployed": "La source GitHub Issues n’est pas déployée ici : aucun ticket n’est lu.",
+        "pending": "Pas encore lu : il n’est pas dans la liste de la source GitHub Issues.",
+        "unknown": "Ses tickets ne sont pas lus."
+      },
+      "openSources": "Ouvrir Administration → Sources de données",
+      "readNow": "Lire ses tickets maintenant",
+      "label": {
+        "created": "Libellé {{label}} : créé.",
+        "present": "Libellé {{label}} : présent sur le dépôt.",
+        "failed": "Le libellé {{label}} n’a pas pu être créé : Vérifier l’installation réessaie."
+      },
+      "follow": {
+        "reading_one": "Tickets : lus automatiquement depuis {{count, number}} dépôt.",
+        "reading_other": "Tickets : lus automatiquement depuis {{count, number}} dépôts.",
+        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ces dépôts dans Administration → Sources de données.",
+        "labelsCreated": "Libellé {{label}} : sur {{list}}.",
+        "labelsFailed": "Le libellé {{label}} n’a pas pu être créé sur {{list}} : Vérifier l’installation réessaie.",
+        "skipped": {
+          "off": "Non lus (désactivé) : {{list}}.",
+          "other_app": "Non lus (la source se connecte avec une autre GitHub App) : {{list}}.",
+          "limit": "Non lus (la source lit déjà {{limit, number}} dépôts) : {{list}}."
+        },
+        "scheduleOff": "La planification de la source GitHub Issues est désactivée : activez-la dans Administration → Sources de données.",
+        "error": "La source GitHub Issues n’a pas pu être configurée automatiquement : {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "Retour à Agents → Connexions",
       "createdTitle": "GitHub App créée",
@@ -985,7 +1020,7 @@
     "ci": {
       "attested": "CI attestée",
       "notAttested": "CI non attestée",
-      "attestedBy": "Attestée par {{who}}, {{when}} : les agents peuvent pousser sur les branches voc-agent/* et ouvrir des brouillons de pull request.",
+      "attestedBy": "Attesté par {{who}}, {{when}} : les agents peuvent pousser sur les branches voc-agent/* et ouvrir des pull requests à relire ; la fusion reste à une personne.",
       "none": "Les agents ne poussent rien sur ce dépôt tant qu’un administrateur n’a pas attesté que sa CI ne donne rien de précieux aux branches des agents.",
       "withdrawnBy": "Retirée par {{who}}, {{when}} : les agents ne poussent rien tant qu’elle n’est pas attestée à nouveau.",
       "voidedRepository": "Annulée quand le dépôt de la connexion a changé : attestez la CI de ce dépôt.",
@@ -1466,7 +1501,7 @@
     "button": "Construire depuis ce PRD",
     "started": "Ouvrir le moniteur d'exécution",
     "title": "Construire depuis ce PRD ?",
-    "message": "{{name}} lance une exécution d'ingénierie qui construit la fonctionnalité décrite par ce PRD, sur sa propre branche, et s'arrête à une pull request en brouillon.",
+    "message": "{{name}} lance une exécution d'ingénierie qui construit la fonctionnalité décrite par ce PRD, sur sa propre branche, et ouvre une pull request à relire (en brouillon si son flux le prévoit) ; la fusion reste à une personne.",
     "confirm": "Lancer la construction",
     "agent": "Agent",
     "inputHint": "L'exécution reçoit ce PRD en entrée, par son identifiant."
@@ -1483,6 +1518,11 @@
     "docs": "Documentation",
     "opensNewTab": "(s'ouvre dans un nouvel onglet)",
     "setWayOfWorking": "Définir votre façon de travailler dans Utilisateurs",
+    "setDialMine": "Passer la mienne en Piloté par l’IA",
+    "dialConfirm": "Cela permet aux automatisations que vous activez de pousser sur les branches voc-agent/* et d’ouvrir des pull requests, et à l’IA d’écrire vos PR/FAQ et PRD.",
+    "dialConfirmAction": "Passer en Piloté par l’IA",
+    "dialSaved": "Enregistré : Piloté par l’IA.",
+    "dialFailed": "Votre façon de travailler n’a pas pu être enregistrée : réessayez.",
     "enableWaits": "Activer attend que chaque vérification dont une exécution a besoin réussisse.",
     "enableRefused": "Non activé : ces vérifications dont une exécution a besoin échouent.",
     "passedFolded": "Vérifications réussies ({{count, number}})",
@@ -1581,7 +1621,6 @@
       "label": "Prérequis",
       "github": "Connectez GitHub avec la GitHub App du déploiement : créez l'App, puis installez-la sur le dépôt (deux clics).",
       "ci": "Attestez la CI du dépôt sur sa connexion : secrets protégés, jeton en lecture seule, OIDC fixé, aucun runner auto-hébergé, aucun workflow de pull request privilégié.",
-      "issues": "Ingérez ses issues : la source GitHub Issues pour tout le déploiement, listant le dépôt et connectée avec cette App, et le label voc-agent sur chaque issue que les agents peuvent prendre.",
       "met": "Fait",
       "notMet": "À faire",
       "unknown": "Pas encore connu",
@@ -1592,8 +1631,16 @@
       "deploymentTitle": "Ce déploiement",
       "connectedAs": "Connecté via une App : {{list}}.",
       "ciFor": "CI attestée pour {{list}}.",
-      "notConfigured": "Non configuré",
-      "noReadiness": "La source et son label sont vérifiés par la préparation d'une automatisation : aucune automatisation n'est encore trouvée."
+      "noReadiness": "La source et son label sont vérifiés par la préparation d'une automatisation : aucune automatisation n'est encore trouvée.",
+      "automatic": "Automatique",
+      "issuesRead_one": "Tickets : lus automatiquement depuis {{count, number}} dépôt.",
+      "issuesRead_other": "Tickets : lus automatiquement depuis {{count, number}} dépôts.",
+      "issuesNone": "Tickets : lus automatiquement dès qu’un dépôt est connecté via l’App.",
+      "issuesUnknown": "Tickets : lus automatiquement depuis chaque dépôt connecté via l’App.",
+      "issuesNotDeployed": "Tickets : la source GitHub Issues n’est pas déployée ici.",
+      "issuesToken": "Tickets : la source GitHub Issues se connecte avec un jeton, ses dépôts sont donc listés à la main.",
+      "labelCreated": "Libellé {{label}} : créé.",
+      "labelPending": "Libellé {{label}} : créé automatiquement sur chaque dépôt dont les tickets sont lus."
     },
     "automation": {
       "open": "Ouvrir {{name}}",

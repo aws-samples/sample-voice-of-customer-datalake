@@ -4,6 +4,8 @@
  * 7.45.00). The page takes the query, removes it from the address at once and, for an installation started from Agents
  * → Connections (its state), sends it once (`POST /agents/engineering/github-apps/installations`): the server saves a
  * connection for every repository the installation covers, up to the connection limit, and says which it skipped.
+ * Since 7.50.02 their issues follow: the page says what the deployment's GitHub Issues source reads now and each
+ * repository's `voc-agent` label (ConnectionIssues.tsx `IssuesFollowLines`).
  *
  * Nothing is sent when GitHub says an owner must approve the installation first (`setup_action=request`: the state
  * stays good until it expires), nor for a return without the page's state (an installation changed in GitHub's own
@@ -17,6 +19,8 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
+import { issuesSourceKeys } from '../../api/issuesSourceApi'
+import { IssuesFollowLines } from './ConnectionIssues'
 import { useConnectionError } from './connectionText'
 import { GitHubReturnFrame } from './GitHubReturnFrame'
 import { useSingleRequest, useTakenQuery } from './githubCallback'
@@ -66,6 +70,7 @@ function Saved({ installation }: Readonly<{ installation: Installation }>) {
           {connections.map(({ connection }) => <li key={connection.connection_id}>{connection.repository}</li>)}
         </ul>
       )}
+      <IssuesFollowLines follow={installation.issues} />
       <p className="text-sm text-text">{t('connections.githubReturn.ciNext')}</p>
       {skipped.length > 0 && (
         <div className="space-y-1">
@@ -111,6 +116,7 @@ export default function GitHubAppInstalled() {
       const installation = await githubAppsApi.installed(returned)
       void queryClient.invalidateQueries({ queryKey: githubAppsKeys.list() })
       void queryClient.invalidateQueries({ queryKey: engineeringConnectionsKeys.list() })
+      void queryClient.invalidateQueries({ queryKey: issuesSourceKeys.view() })
       return installation
     }
   })

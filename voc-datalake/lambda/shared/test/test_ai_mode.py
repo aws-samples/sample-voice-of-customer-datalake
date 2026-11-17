@@ -49,7 +49,7 @@ class TestTheDefault:
 
     def test_the_default_reads_as_ai_driven_with_both_unlocks_false(self):
         assert ai_mode.DEFAULT_AI_MODE.to_dict() == {
-            'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
+            'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False, 'saved': False}
 
     def test_the_flags_body_accepts_exactly_the_mode_and_the_two_unlocks(self):
         assert ai_mode.FIELD_NAMES == ('ai_mode', 'ai_writing_prfaq', 'ai_writing_prd')
@@ -84,7 +84,8 @@ class TestReadingAStoredRow:
 
     def test_to_dict_reports_the_mode_and_both_unlocks(self):
         mode = ai_mode.AiMode('human_driven', frozenset({'prd'}))
-        assert mode.to_dict() == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True}
+        assert mode.to_dict() == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True,
+                                  'saved': False}
 
     def test_the_gate_reads_strongly_consistent_at_the_persons_key(self):
         table = MagicMock()

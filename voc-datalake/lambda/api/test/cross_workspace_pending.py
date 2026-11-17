@@ -140,6 +140,9 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/<run_id>/reports',
         'GET /agents/engineering/<run_id>/reports/<level>/<subject>',
         'GET /agents/engineering/connections',
+        # The deployment's GitHub Issues source as its connections configure it (7.50.02, engineering/connectors/
+        # issues_sync.py): the deployment's source (D8), with the connections until 3g3.
+        'GET /agents/engineering/issues-source',
         # Readiness (7.50.00, engineering/readiness.py): the deployment's connections, images, quotas and agents.
         'GET /agents/engineering/readiness',
         'GET /agents/engineering/scorecards/<role>',
@@ -163,6 +166,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/engineering/skills/<role>/versions/<version>/reject',
         'POST /agents/engineering/skills/<role>/versions/<version>/rollback',
         'PUT /agents/engineering/connections/<connection_id>',
+        'PUT /agents/engineering/connections/<connection_id>/issues',
         'PUT /agents/engineering/settings',
         'GET /workflows/templates',
         'GET /agents',
@@ -443,5 +447,7 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /users/<username>/enable',
         'PUT /users/<username>/flags',
         'PUT /users/<username>/group',
+        # An administrator's own way of working (7.50.02: the engineering Set up dialog's "Set mine to AI-driven").
+        'PUT /users/me/ai-mode',
     }),
 }

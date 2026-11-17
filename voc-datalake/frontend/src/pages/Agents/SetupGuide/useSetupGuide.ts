@@ -1,7 +1,8 @@
 /**
  * @fileoverview The setup guide's reads and its one write (7.50.00). It reads only routes that already serve the
  * deployment (the agents list, the repository connections, the GitHub Apps, each found automation's readiness, and
- * since 7.50.01 the deployment's integration status for its GitHub Issues source) and its own progress
+ * since 7.50.02 the deployment's GitHub Issues source as its connections drive it, `GET /agents/engineering/issues-source`
+ * without a workspace header) and its own progress
  * (`GET /agents/engineering/setup`), and writes only that progress (`PUT`): a step skipped or taken back, the guide
  * finished, the first visit's choice. An automation's readiness is asked of what the guide knows it would run on
  * (setupGuideRules.ts `guideSubject`: the deployment's only connection while it has none), once the connections are
@@ -13,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../../api/engineeringConnectionsApi'
 import { engineeringSetupApi, engineeringSetupKeys } from '../../../api/engineeringSetupApi'
 import { githubAppsApi, githubAppsKeys } from '../../../api/githubAppsApi'
+import { issuesSourceApi, issuesSourceKeys } from '../../../api/issuesSourceApi'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { useConfigStore } from '../../../store/configStore'
 import { useAgentList } from '../useAgents'
@@ -23,6 +25,7 @@ import type { ConnectionList, EngineeringConnection } from '../../../api/enginee
 import type { ReadinessCheck } from '../../../api/engineeringReadinessApi'
 import type { SetupChange, SetupProgress } from '../../../api/engineeringSetupApi'
 import type { GitHubAppList } from '../../../api/githubAppsApi'
+import type { IssuesSourceView } from '../../../api/issuesSourceApi'
 import type { Automations, GuideFacts, StepStatuses } from './setupGuideRules'
 
 /** The guide's progress (what a person chose), read while `enabled`. */
@@ -64,16 +67,15 @@ function useAutomationReadiness(agent: Agent | null, connections: readonly Engin
   return useReadiness(subject, enabled && agent !== null && connections !== undefined).data
 }
 
-/** Whether the deployment's GitHub Issues source is configured (no workspace header); null until known. */
-function useIssuesSource(enabled: boolean): boolean | null {
-  const read = useQuery({ queryKey: engineeringSetupKeys.issuesSource(), queryFn: engineeringSetupApi.issuesSource,
-    enabled, retry: false })
+/** The deployment's GitHub Issues source as its connections drive it (no workspace header); null until known. */
+function useIssuesSource(enabled: boolean): IssuesSourceView | null {
+  const read = useQuery({ queryKey: issuesSourceKeys.view(), queryFn: issuesSourceApi.get, enabled, retry: false })
   return read.data ?? null
 }
 
 /** The facts, once the agents, the connections and the Apps are read (the readiness follows as it comes). */
 function factsOf(agents: readonly Agent[] | undefined, connections: ConnectionList | undefined, apps: GitHubAppList | undefined,
-  rest: Pick<GuideFacts, 'issuesSource' | 'readiness'>): GuideFacts | undefined {
+  rest: Pick<GuideFacts, 'issues' | 'readiness'>): GuideFacts | undefined {
   if (agents === undefined || connections === undefined || apps === undefined) return undefined
   return { agents, connections: connections.connections, apps: apps.apps.length, ...rest }
 }
@@ -92,9 +94,9 @@ export function useSetupGuide(enabled: boolean): GuideState {
     feature_builder: useAutomationReadiness(automations.feature_builder, stored, enabled),
   }
   // (a read that fails or is refused leaves it unknown: the guide still shows the rest)
-  const issuesSource = useIssuesSource(enabled)
+  const issues = useIssuesSource(enabled)
   const reads = [agents, connections, apps, progress]
-  const facts = factsOf(agents.data, connections.data, apps.data, { issuesSource, readiness })
+  const facts = factsOf(agents.data, connections.data, apps.data, { issues, readiness })
   return {
     facts,
     automations,

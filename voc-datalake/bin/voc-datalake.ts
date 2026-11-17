@@ -262,6 +262,8 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   userPool: coreStack.userPool,
   realtime: coreStack.realtime,
   processingQueue: ingestionStack.processingQueue,
+  // The GitHub Issues settings function's one secret (7.50.02, lib/stacks/engineering-issues-config.ts).
+  apiSecretsArn: ingestionStack.secretsArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,

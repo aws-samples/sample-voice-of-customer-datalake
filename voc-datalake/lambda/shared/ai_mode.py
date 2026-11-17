@@ -11,14 +11,16 @@
 - ``ai_driven`` — plus autonomous agents and approved plans may write documents for them.
 
 No row (or an unreadable mode) is ``ai_driven``: today's behaviour, for everyone,
-admins included. The row has its own sort key next to the flags row
+admins included, for documents. ``saved`` (7.50.02) says whether a mode was stored at all: the engineering agents'
+dial (engineering/connectors/dial.py) lets a person's runs push only on an EXPLICITLY saved AI-assisted or
+AI-driven, so the Users page shows a person with nothing saved as "Not set", never as AI-driven. The row has its own sort key next to the flags row
 (shared/user_flags.py) so neither writer can overwrite the other's attributes.
 Only the users Lambda writes it (admin, ``PUT /users/{username}/flags``); readers are
 the gate (shared/ai_writing.py), ``GET /users/me/ai-mode`` and the stream Lambda.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from shared.timestamps import now_iso
@@ -38,15 +40,18 @@ FIELD_NAMES: Final = ('ai_mode', *UNLOCK_FIELDS.values())
 
 @dataclass(frozen=True)
 class AiMode:
-    """One user's way of working; ``unlocked`` = doc types AI may write in Human-driven."""
+    """One user's way of working; ``unlocked`` = doc types AI may write in Human-driven; ``saved``: whether a mode is
+    stored (False: ``mode`` is the default; two AiModes of the same mode and unlocks are equal either way)."""
 
     mode: str = DEFAULT_MODE
     unlocked: frozenset[str] = frozenset()
+    saved: bool = field(default=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             'mode': self.mode,
-            **{field: doc_type in self.unlocked for doc_type, field in UNLOCK_FIELDS.items()},
+            **{name: doc_type in self.unlocked for doc_type, name in UNLOCK_FIELDS.items()},
+            'saved': self.saved,
         }
 
 
@@ -58,12 +63,13 @@ def ai_mode_key(sub: str) -> dict[str, str]:
 
 
 def ai_mode_of(item: dict | None) -> AiMode:
-    """The stored row as an AiMode; anything unreadable falls back to the default."""
+    """The stored row as an AiMode; anything unreadable falls back to the default (``saved`` False)."""
     item = item or {}
     mode = item.get('mode')
     return AiMode(
         mode=mode if mode in MODES else DEFAULT_MODE,
-        unlocked=frozenset(t for t, field in UNLOCK_FIELDS.items() if item.get(field) is True),
+        unlocked=frozenset(t for t, name in UNLOCK_FIELDS.items() if item.get(name) is True),
+        saved=mode in MODES,
     )
 
 
@@ -88,8 +94,8 @@ def set_ai_mode(table: Any, *, sub: str, changes: dict[str, Any], actor_sub: str
     current = get_ai_mode(table, sub)
     mode = changes.get('ai_mode', current.mode)
     unlocks = {
-        field: changes.get(field, doc_type in current.unlocked)
-        for doc_type, field in UNLOCK_FIELDS.items()
+        name: changes.get(name, doc_type in current.unlocked)
+        for doc_type, name in UNLOCK_FIELDS.items()
     }
     row = {'mode': mode, **unlocks}
     table.put_item(Item={**ai_mode_key(sub), **row, 'updated_at': now_iso(), 'updated_by': actor_sub})

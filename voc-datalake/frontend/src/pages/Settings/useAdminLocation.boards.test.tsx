@@ -2,15 +2,19 @@
  * @fileoverview Administration's place is its path (`/admin/<tab>/<section>[/<boardId>]`, adminPaths.ts): each path
  * opens its tab and section; a path that is not the canonical form of where it leads is replaced in place, the query
  * kept; the query names no place (no old `?tab=&section=&board=` link is redirected); a switch is a history entry,
- * so Back walks it; a board's editor belongs to Boards (a section switch closes it).
+ * so Back walks it; a board's editor belongs to Boards (a section switch closes it); the deployment's Data sources
+ * opens a source's card from `/admin/data-sources/<source>` (7.50.02), a source the page shows only.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { TestRouter } from '@test/TestRouter'
-import { readAdminAddress } from './adminPaths'
-import { useBoardInPath, useAdminLocation } from './useAdminLocation'
+import { deploymentSourcePath, readAdminAddress } from './adminPaths'
+import { useBoardInPath, useAdminLocation, useSourceInPath } from './useAdminLocation'
+
+// (the Data sources page's plugins: the cards a path may open)
+vi.mock('../../plugins', () => ({ getEnabledPlugins: () => [{ id: 'github_issues' }, { id: 'webscraper' }] }))
 
 function mount(entry: string, isAdmin = true, isPlatformAdmin = false) {
   const wrapper = ({ children }: Readonly<{ children: ReactNode }>) => (
@@ -19,7 +23,10 @@ function mount(entry: string, isAdmin = true, isPlatformAdmin = false) {
   return renderHook(() => {
     const location = useLocation()
     const [boardId, openBoard] = useBoardInPath()
-    return { ...useAdminLocation(isAdmin, isPlatformAdmin), boardId, openBoard, at: `${location.pathname}${location.search}`, navigate: useNavigate() }
+    return {
+      ...useAdminLocation(isAdmin, isPlatformAdmin), boardId, openBoard, source: useSourceInPath(),
+      at: `${location.pathname}${location.search}`, navigate: useNavigate(),
+    }
   }, { wrapper })
 }
 
@@ -63,7 +70,39 @@ describe('a path off its form', () => {
 
   it('reads no place from the query: an old link is General, as it is (no redirect)', () => {
     expect(readAdminAddress({ pathname: '/admin', search: '?tab=access&section=boards&board=brd_1' }, true, false))
-      .toStrictEqual({ place: { tab: 'brand', section: null, boardId: null }, replaceWith: null })
+      .toStrictEqual({ place: { tab: 'brand', section: null, boardId: null, sourceId: null }, replaceWith: null })
+  })
+})
+
+describe('the deployment\'s Data sources opened at a card', () => {
+  it('builds the card\'s path', () => {
+    expect(deploymentSourcePath('github_issues')).toBe('/admin/data-sources/github_issues')
+  })
+
+  it('keeps /admin/data-sources/<source> for a platform admin, and names the card it opens', () => {
+    const { result } = mount('/admin/data-sources/github_issues?review=r1', true, true)
+    expect([result.current.location, result.current.source, result.current.at]).toStrictEqual([
+      { tab: 'data-sources', section: null }, 'github_issues', '/admin/data-sources/github_issues?review=r1'])
+  })
+
+  it.each([
+    ['/admin/data-sources/nope', '/admin/data-sources'],
+    ['/admin/data-sources/github_issues/more', '/admin/data-sources/github_issues'],
+  ])('replaces %s by %s, in place', (entry, expected) => {
+    const { result } = mount(entry, true, true)
+    expect(result.current.at).toBe(expected)
+  })
+
+  it('opens no card for anyone else, nor outside Data sources', () => {
+    expect(mount('/admin/data-sources/github_issues', true, false).result.current.at).toBe('/admin/brand')
+    expect(readAdminAddress({ pathname: '/admin/sources/github_issues', search: '' }, true, true, ['github_issues'])?.place.sourceId)
+      .toBeNull()
+  })
+
+  it('leaves the card when another tab is chosen', () => {
+    const { result } = mount('/admin/data-sources/github_issues', true, true)
+    act(() => { result.current.selectTab('system') })
+    expect([result.current.at, result.current.source]).toStrictEqual(['/admin/system/logs', null])
   })
 })
 

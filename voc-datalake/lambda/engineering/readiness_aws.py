@@ -5,8 +5,10 @@ lib/stacks/api-engineering-readiness.ts): ``bedrock:GetFoundationModelAvailabili
 ``shared.model_access``), ``servicequotas:GetServiceQuota`` (AgentCore's active sessions quota) and GetItem of the
 deployment-wide Issues source's repository watermarks (``github_issues#repo#*`` in voc-watermarks); and one write, the
 workspace bucket's create-only probe (``PROBE_KEY``: one object, ever, since every later put of it is refused by its
-own If-None-Match, which is the answer the probe wants). Every failed call raises ``ReadFailed``, which the check
-answers ``unknown``; nothing here raises anything else of AWS's.
+own If-None-Match, which is the answer the probe wants). Since 7.50.02 the Issues source's settings too (as
+voc-engineering-issues-config answers them: connectors/issues_sync.py ``status``, never a secret) and each
+connection's label row in voc-agents. Every failed call raises ``ReadFailed``, which the check answers
+``unknown``; nothing here raises anything else of AWS's.
 """
 from __future__ import annotations
 
@@ -80,6 +82,9 @@ class AwsReadinessPorts:
     bedrock: Callable[[], Any]
     inspect: Callable[[dict[str, Any]], dict[str, Any]]
     watermarks: Any = None
+    #: The connections' follow of the GitHub Issues source (connectors/issues_sync.py ``IssuesFollow``: its ``status``
+    #: through voc-engineering-issues-config; None, or not ``deployed``: not deployed here).
+    issues: Any = None
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
     clock: Callable[[], float] = time.monotonic
 
@@ -142,11 +147,36 @@ class AwsReadinessPorts:
             raise _failed('the Issues source', error) from error
         return 'Item' in item
 
+    def issues_source_lists(self, repository: str) -> bool | None:
+        from engineering.connectors.connections import ConnectionRefused
+        if self.issues is None or not self.issues.deployed:
+            return None
+        try:
+            state = self.issues.status().state
+        except ConnectionRefused as refused:
+            raise ReadFailed(f'the Issues source: {refused}') from refused
+        return state.signs_in != 'none' and state.lists(repository)
+
+    def label_state(self, connection_id: str) -> str:
+        from engineering.connectors.connections import PARTITION, ConnectionRefused, check_connection_id
+        from engineering.connectors.issues_sync import LABEL_STATES, ROW_PREFIX
+        try:
+            check_connection_id(connection_id)
+        except ConnectionRefused:
+            return ''
+        try:
+            row = self.agents.get_item(Key={'pk': PARTITION, 'sk': f'{ROW_PREFIX}{connection_id}'},
+                                       ConsistentRead=True).get('Item') or {}
+        except _AWS_ERRORS as error:
+            raise _failed('the label', error) from error
+        state = row.get('label_state')
+        return state if state in LABEL_STATES and row.get('removed') is not True else ''
+
     def mode(self, person: str) -> str:
         from engineering.connectors.dial import WaysOfWorking
         from engineering.connectors.hosts import Unavailable
         try:
-            return WaysOfWorking(self.aggregates).mode(person)
+            return WaysOfWorking(self.aggregates).stored(person)
         except Unavailable as error:
             raise ReadFailed('the way of working') from error
 

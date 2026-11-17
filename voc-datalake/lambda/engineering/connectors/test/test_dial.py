@@ -89,3 +89,16 @@ def test_a_read_that_fails_is_unavailable_never_a_pass() -> None:
 
     with pytest.raises(Unavailable):
         WaysOfWorking(Down()).mode('person-sub-1')
+
+
+@pytest.mark.parametrize(('stored', 'read'), [(None, ''), ('ai_first', ''), ('', ''), ('human_driven', 'human_driven'),
+                                              ('ai_assisted', 'ai_assisted'), ('ai_driven', 'ai_driven')])
+def test_stored_tells_nothing_saved_from_a_saved_human_driven(table: Any, stored: str | None, read: str) -> None:
+    """7.50.02: readiness tells "not set yet" from an explicit Human-driven; ``mode`` still reads both as Human-driven
+    (the broker's rule is unchanged)."""
+    if stored is not None:
+        table.put_item(Item={'pk': 'USERFLAGS#person-sub-4', 'sk': 'ai_mode', 'mode': stored})
+    assert WaysOfWorking(table).stored('person-sub-4') == read
+    assert WaysOfWorking(table).stored('agent:bug-fixer') == ''
+    expected = read if read in ('ai_assisted', 'ai_driven') else 'human_driven'
+    assert WaysOfWorking(table).mode('person-sub-4') == expected

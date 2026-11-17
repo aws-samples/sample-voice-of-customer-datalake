@@ -722,18 +722,30 @@ stored` or `removed`, never the key).
 
 **The token function** (`voc-engineering-app-tokens`, VocProcessingStack, `lib/stacks/engineering-app-tokens.ts`): the
 broker's code under a role of its own, with the broker's signing layer, entered at `connectors/app_tokens.lambda_handler`,
-which takes `inspect_installation` (above) and `issues_token` and refuses every other action, and any request off its
-shape or naming a workspace, before anything is read. Its role holds `ssm:GetParameter` on `…/_github-app/*/key` only
+which takes `inspect_installation` (above), `issues_token` and, since 7.50.02, `ensure_label`, and refuses every other
+action, and any request off its shape or naming a workspace, before anything is read. Its role holds `ssm:GetParameter` on `…/_github-app/*/key` only
 and `kms:Decrypt` through SSM for those parameters alone (`PARAMETER_ARN`): no table, no bucket, no function URL, no
 resource policy. The Agents API's role and the github_issues ingestor's may invoke it by name (IAM cannot tell which
-action an invoker asks for: the Agents API's code asks `inspect_installation` only). `issues_token` `{app_id,
+action an invoker asks for: the Agents API's code asks `inspect_installation` and `ensure_label` only). `ensure_label`
+`{app_id, installation_id, repository, label}` (7.50.02, the connections' follow of the GitHub Issues source,
+[github-issues.md](github-issues.md#configured-by-your-github-connection-75002)): `label` must be exactly `voc-agent`,
+the installation the one GitHub says covers the repository, and the token exactly `{issues: write}` for that one
+repository; it reads the label, creates it only on a 404 (color `5319e7`, "Picked up by the VoC agents"), revokes the
+token and answers `{repository, label, created}`. `issues_token` `{app_id,
 repositories}` (the github_issues source's sign-in, [github-issues.md](github-issues.md#signing-in-with-a-github-app-74500)):
 for each repository the installation covering it (`GET /repos/<o>/<r>/installation` with the JWT; a 404 is
 `uncovered`), then one token per installation, exactly `{issues: read, metadata: read}`, `repositories` narrowed to
 the run's ones it covers; the ingestor revokes each when its run ends.
 
 **IAM, per role.** The Agents API: `lambda:InvokeFunction` on the token function by name, no new SSM grant (the Apps'
-parameters are under the connections' path its put and delete already cover), still no `ssm:GetParameter`. The token
+parameters are under the connections' path its put and delete already cover), still no `ssm:GetParameter`; since
+7.50.02, where the github_issues plugin is deployed, `lambda:InvokeFunction` on `voc-engineering-issues-config` by name
+and nothing on the shared secret or the schedule rule (`lib/stacks/api-engineering-issues-sync.ts`; pinned: no
+`secretsmanager:*`, no `events:EnableRule`). The GitHub Issues settings function (`voc-engineering-issues-config`,
+VocProcessingStack, `lib/stacks/engineering-issues-config.ts`, with the module and github_issues only): exactly
+`secretsmanager:GetSecretValue` and `PutSecretValue` on the shared API-credentials secret's ARN and
+`events:DescribeRule` and `EnableRule` on the github_issues schedule rule, no function URL, no resource policy, no
+table, no bucket ([github-issues.md](github-issues.md#configured-by-your-github-connection-75002)). The token
 function: above. The github_issues ingestor (its own role): `lambda:InvokeFunction` on the token function, only with the
 module on. The shared webhook role: `ssm:GetParameter` on `…/_github-app/*/webhook` only, only where the github_issues
 webhook and the module are both deployed (its `kms:Decrypt` is the role's grant of the stack's key). The broker and the
@@ -3038,9 +3050,9 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |
 | `pack` | | the connection's approved knowledge pack, where the flow requires one | the Understand flow, then approve its pack |
 | `tenets` | | where the flow requires them: `warn`, the tenets store arrives in a later release | write the repository's TENETS.md by hand meanwhile |
-| `issues_source` | | the deployment-wide GitHub Issues source's watermark of the repository (`voc-watermarks`, `github_issues#repo#<owner/name>`) | add the repository to Administration → Data sources → GitHub Issues |
-| `issue_label` | | the trigger's label (a public repository needs one); whether it exists on the repository is `unknown` here | create the label, and let only maintainers put it on an issue |
-| `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator, else the one asking; no row is Human-driven, which pushes nothing), against the flow's `requires.dial`; the check names the person and each way of working by its name (Human-driven, AI-assisted, AI-driven) | Administration → Privacy & access → Users |
+| `issues_source` | | the deployment-wide GitHub Issues source's settings naming the repository with a sign-in (7.50.02: its connection adds it, [github-issues.md](github-issues.md#configured-by-your-github-connection-75002)), else its watermark (`voc-watermarks`, `github_issues#repo#<owner/name>`) | Agents → Connections: turn on "Read this repository's issues"; or Administration → Data sources → GitHub Issues (`/admin/data-sources/github_issues`) |
+| `issue_label` | | the trigger's label (a public repository needs one); `voc-agent` passes once its connection created it or found it (7.50.02: the token function's `ensure_label`); another label's presence is `unknown` here | Agents → Connections → Check installation; or create the label, and let only maintainers put it on an issue |
+| `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator, else the one asking), against the flow's `requires.dial`; nothing saved fails as "Not set yet: choose AI-assisted or AI-driven for <name>" (7.50.02: a run pushes nothing, whatever the documents' default), a saved Human-driven as Human-driven; the check names the person and each way of working by its name (Human-driven, AI-assisted, AI-driven) | Administration → Privacy & access → Users (`/admin/access/users`); in the Set up dialog, **Set my way of working to AI-driven** (the caller's own) |
 | `budget` | yes | the flow's monthly budget | the flow's Workflow tab |
 | `hard_cap` | | the hard cap's setting and this month's spend of the flow (`warn` while it is off) | Agents → Spend |
 | `bedrock_models` | yes | Bedrock access (`GetFoundationModelAvailability`) of every model the flow's roles run on (their cards' models, a step's own `model`, Learn's) | Model access in the Bedrock console |

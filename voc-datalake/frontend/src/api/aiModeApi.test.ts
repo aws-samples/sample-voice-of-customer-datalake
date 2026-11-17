@@ -4,8 +4,12 @@
  * with the Human-driven unlocks. The server (`lambda/shared/ai_writing.py`) enforces the same
  * rule; the SPA only mirrors it.
  */
-import { describe, it, expect } from 'vitest'
-import { DEFAULT_AI_MODE, aiMayWrite, isGatedDocType, readAiMode } from './aiModeApi'
+import { describe, it, expect, vi } from 'vitest'
+
+const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
+vi.mock('./client', () => ({ fetchApi: (endpoint: string, options?: RequestInit) => fetchApi(endpoint, options) }))
+
+const { DEFAULT_AI_MODE, aiMayWrite, aiModeApi, isGatedDocType, readAiMode, readStoredAiMode } = await import('./aiModeApi')
 import type { AiMode, AiModeName } from './aiModeApi'
 
 const mode = (name: AiModeName, unlocks: Partial<Pick<AiMode, 'ai_writing_prfaq' | 'ai_writing_prd'>> = {}): AiMode => ({
@@ -25,6 +29,44 @@ describe('readAiMode', () => {
 
   it('reads an unknown mode as AI-driven and an unreadable unlock as locked', () => {
     expect(readAiMode({ ai_mode: { mode: 'robot', ai_writing_prfaq: 'yes' } })).toStrictEqual(DEFAULT_AI_MODE)
+  })
+})
+
+describe('readStoredAiMode', () => {
+  const human = { mode: 'human_driven', ai_writing_prfaq: false, ai_writing_prd: true }
+
+  it('reads whether a mode is saved (7.50.02)', () => {
+    expect(readStoredAiMode({ ai_mode: { ...human, saved: true } }))
+      .toStrictEqual({ mode: 'human_driven', ai_writing_prfaq: false, ai_writing_prd: true, saved: true })
+    expect(readStoredAiMode({ ai_mode: { mode: 'ai_driven', ai_writing_prfaq: false, ai_writing_prd: false, saved: false } }))
+      .toStrictEqual({ ...DEFAULT_AI_MODE, saved: false })
+  })
+
+  it('counts a mode named without `saved` (an older answer) as saved, and an unreadable one as not', () => {
+    expect(readStoredAiMode({ ai_mode: human }).saved).toBe(true)
+    expect(readStoredAiMode({ ai_mode: { ...human, saved: 'yes' } }).saved).toBe(true)
+    expect(readStoredAiMode({ ai_mode: { mode: 'robot', saved: true } })).toStrictEqual({ ...DEFAULT_AI_MODE, saved: false })
+  })
+
+  it('reads no block as nothing saved', () => {
+    expect([readStoredAiMode({ username: 'vic' }), readStoredAiMode(null)])
+      .toStrictEqual([{ ...DEFAULT_AI_MODE, saved: false }, { ...DEFAULT_AI_MODE, saved: false }])
+  })
+
+  it('leaves readAiMode as it was: no saved field, the documents\' default for nothing saved', () => {
+    expect(readAiMode({ ai_mode: { ...human, saved: true } })).toStrictEqual(human)
+    expect(readAiMode({ ai_mode: { mode: 'ai_driven', saved: false } })).toStrictEqual(DEFAULT_AI_MODE)
+  })
+})
+
+describe('aiModeApi.saveMine', () => {
+  it('PUTs the caller\'s own mode to /users/me/ai-mode and reads the stored answer', async () => {
+    fetchApi.mockResolvedValueOnce({ success: true, ai_mode: { mode: 'ai_driven', ai_writing_prfaq: false, ai_writing_prd: false, saved: true } })
+
+    const saved = await aiModeApi.saveMine('ai_driven')
+
+    expect(fetchApi.mock.calls).toStrictEqual([['/users/me/ai-mode', { method: 'PUT', body: '{"ai_mode":"ai_driven"}' }]])
+    expect(saved).toStrictEqual({ mode: 'ai_driven', ai_writing_prfaq: false, ai_writing_prd: false, saved: true })
   })
 })
 

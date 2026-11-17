@@ -503,14 +503,34 @@
     },
     "aiMode": {
       "title": "Formas de trabajar con IA",
-      "description": "Cuánto ayuda la IA a cada persona a escribir PR/FAQ y PRD. Cada modo amplía el anterior; dirigido por IA es el valor predeterminado. Los demás documentos no cambian.",
+      "description": "Define, por persona, cuánto escribe la IA de sus PR/FAQ y PRD, y si las automatizaciones de ingeniería que activa pueden subir código y abrir pull requests.",
+      "notSet": "Sin definir",
+      "notSetEffect": "Los documentos usan Dirigido por IA · las automatizaciones no suben nada hasta que elijas",
+      "compareTitle": "En qué se diferencian los modos",
+      "compare": {
+        "mode": "Modo",
+        "documents": "Tus PR/FAQ y PRD",
+        "automations": "Automatizaciones que activas",
+        "humanDriven": {
+          "documents": "La IA responde, explica y revisa; nunca los escribe por ti (salvo que un administrador desbloquee un tipo).",
+          "automations": "No suben nada."
+        },
+        "aiAssisted": {
+          "documents": "La IA los redacta, sugiere y reescribe contigo.",
+          "automations": "Pueden subir código y abrir pull requests; cada subida espera el visto bueno de una persona."
+        },
+        "aiDriven": {
+          "documents": "Asistido por IA y, además, los agentes y los planes pueden escribirlos por ti.",
+          "automations": "Pueden subir código y abrir pull requests para que una persona los revise."
+        }
+      },
       "saveFailed": "No se pudo actualizar la forma de trabajar. Inténtalo de nuevo.",
       "humanDriven": "Dirigido por personas",
       "aiAssisted": "Asistido por IA",
       "aiDriven": "Dirigido por IA",
       "humanDrivenTooltip": "La IA responde preguntas, explica el método y revisa; nunca escribe el documento por ti.",
       "aiAssistedTooltip": "La IA redacta, sugiere y reescribe contigo en el editor y el chat.",
-      "aiDrivenTooltip": "Asistido por IA y, además, los agentes autónomos y los planes pueden escribir documentos por ti.",
+      "aiDrivenTooltip": "Asistido por IA y, además, los agentes pueden escribir documentos por ti y subir código para las automatizaciones que activas.",
       "unlockPrfaq": "PR/FAQ con IA",
       "unlockPrd": "PRD con IA",
       "unlockPrfaqFor": "PR/FAQ con IA: {{user}}",

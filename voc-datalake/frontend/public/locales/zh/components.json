@@ -480,14 +480,34 @@
     },
     "aiMode": {
       "title": "与 AI 协作的方式",
-      "description": "AI 在每个人撰写 PR/FAQ 和 PRD 时提供多少帮助。每种模式都在前一种基础上增加能力；默认为 AI 主导。其他文档不受影响。",
+      "description": "按人设置 AI 为其撰写多少 PR/FAQ 和 PRD，以及其启用的工程自动化是否可以推送代码并打开拉取请求。",
+      "notSet": "未设置",
+      "notSetEffect": "文档按 AI 主导处理 · 在你选择之前自动化不会推送",
+      "compareTitle": "各模式的区别",
+      "compare": {
+        "mode": "模式",
+        "documents": "你的 PR/FAQ 和 PRD",
+        "automations": "你启用的自动化",
+        "humanDriven": {
+          "documents": "AI 回答、讲解并评审；它从不替你撰写（除非管理员解锁某种类型）。",
+          "automations": "不推送任何内容。"
+        },
+        "aiAssisted": {
+          "documents": "AI 与你一起起草、建议和改写。",
+          "automations": "可以推送并打开拉取请求；每次推送都等待一个人的批准。"
+        },
+        "aiDriven": {
+          "documents": "在 AI 辅助的基础上，代理和计划还可以替你撰写。",
+          "automations": "可以推送并打开供人评审的拉取请求。"
+        }
+      },
       "saveFailed": "无法更新协作方式，请重试。",
       "humanDriven": "人工主导",
       "aiAssisted": "AI 辅助",
       "aiDriven": "AI 主导",
       "humanDrivenTooltip": "AI 回答问题、讲解方法并进行评审；它从不替你撰写文档。",
       "aiAssistedTooltip": "AI 在编辑器和聊天中与你一起起草、建议和改写。",
-      "aiDrivenTooltip": "在 AI 辅助的基础上，自主代理和计划还可以替你撰写文档。",
+      "aiDrivenTooltip": "在 AI 辅助的基础上，代理还可以替你撰写文档，并为你启用的自动化推送代码。",
       "unlockPrfaq": "用 AI 写 PR/FAQ",
       "unlockPrd": "用 AI 写 PRD",
       "unlockPrfaqFor": "用 AI 写 PR/FAQ：{{user}}",

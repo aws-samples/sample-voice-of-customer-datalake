@@ -4,10 +4,11 @@
  * 
  * Renders a data source configuration card based on plugin manifest. Its reads and writes are the current
  * workspace's, or in the deployment's scope (Administration → Data sources, workspace/configScope.ts) the
- * deployment's, inside a workspace too: they then never send `X-Workspace-Id`.
+ * deployment's, inside a workspace too: they then never send `X-Workspace-Id`. A card the address opens
+ * (`/admin/data-sources/<source>`, 7.50.02: `initiallyOpen`) starts expanded and is scrolled into view.
  */
 
-import { useState, useId, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useId, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { usePluginCopy } from '../../plugins/pluginCopy'
@@ -20,6 +21,7 @@ import { api } from '../../api/client'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { SetupInstructionsSection, WebhooksSection } from './SourceCardSections'
 import SourceCredentials from './SourceCredentials'
+import { storedCredentialsKey } from './githubSignIn'
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
@@ -52,6 +54,8 @@ interface SourceCardProps {
    *  indication it had been refused. A disabled control fails visibly; that one
    *  failed silently. */
   readonly isAdmin: boolean
+  /** The card the address opens (`/admin/data-sources/<source>`): it starts expanded, scrolled into view. */
+  readonly initiallyOpen?: boolean
 }
 
 /**
@@ -63,6 +67,15 @@ const RAW_CONFIG_SOURCES: ReadonlySet<string> = new Set(['webscraper'])
 
 /** Which sources have credentials set (`GET /integrations/status`), scoped per request scope (`scopedKey`). */
 const INTEGRATION_STATUS_KEY = ['integration-status'] as const
+
+/** The card's element, scrolled into view once, on mount, when the address opens it (a later expand scrolls nothing). */
+function useOpenedCard(opened: boolean) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (opened) ref.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [opened])
+  return ref
+}
 
 function AdvancedWhenRaw({ sourceId, children }: Readonly<{ sourceId: string; children: ReactNode }>) {
   const { t } = useTranslation('settings')
@@ -76,11 +89,12 @@ function AdvancedWhenRaw({ sourceId, children }: Readonly<{ sourceId: string; ch
   )
 }
 
-export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCardProps) {
+export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOpen }: SourceCardProps) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const scope = useConfigScope()
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(initiallyOpen === true)
+  const cardRef = useOpenedCard(initiallyOpen === true)
   const [showSecrets, setShowSecrets] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string>>({})
   // "Saved" clears itself after 3 s; the timer goes with the card.
@@ -104,13 +118,15 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
     onSuccess: () => {
       showSaveSuccess(true)
       void queryClient.invalidateQueries({ queryKey: scopedKey(INTEGRATION_STATUS_KEY, scope) })
+      // (what the card read of its stored values, the GitHub Issues card's sign-in: githubSignIn.ts)
+      void queryClient.invalidateQueries({ queryKey: storedCredentialsKey(manifest.id) })
     },
   })
 
   const webhookBaseUrl = apiEndpoint ? `${apiEndpoint}webhooks/` : ''
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div ref={cardRef} className="border border-border rounded-lg overflow-hidden scroll-mt-4">
       <SourceCardHeader
         manifest={manifest}
         sourceStatus={sourceStatus}

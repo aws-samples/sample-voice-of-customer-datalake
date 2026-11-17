@@ -834,16 +834,6 @@
   },
   {
     "file": "api/engineeringSetupApi.ts",
-    "method": "GET",
-    "call": "'/integrations/status'",
-    "probes": [
-      {
-        "path": "/integrations/status"
-      }
-    ]
-  },
-  {
-    "file": "api/engineeringSetupApi.ts",
     "method": "PUT",
     "call": "SETUP_PATH",
     "probes": [
@@ -1092,6 +1082,29 @@
     "probes": [
       {
         "path": "/agents/engineering/github-apps/271828"
+      }
+    ]
+  },
+  {
+    "file": "api/issuesSourceApi.ts",
+    "method": "GET",
+    "call": "ISSUES_SOURCE_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/issues-source"
+      }
+    ]
+  },
+  {
+    "file": "api/issuesSourceApi.ts",
+    "method": "PUT",
+    "call": "connectionIssuesPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/billing-api/issues",
+        "body": {
+          "read": true
+        }
       }
     ]
   },
@@ -3460,6 +3473,19 @@
     "probes": [
       {
         "path": "/users/me/ai-mode"
+      }
+    ]
+  },
+  {
+    "file": "api/aiModeApi.ts",
+    "method": "PUT",
+    "call": "'/users/me/ai-mode'",
+    "probes": [
+      {
+        "path": "/users/me/ai-mode",
+        "body": {
+          "ai_mode": "ai_driven"
+        }
       }
     ]
   },

@@ -39,7 +39,10 @@ Permissions:
   clicks (7.45.00: ``GET /agents/engineering/github-apps``, ``POST …/github-apps/manifest``, ``…/conversions``,
   ``…/installations``, ``…/github-apps/<app_id>/install``, ``…/<app_id>/check``, ``DELETE …/github-apps/<app_id>``;
   engineering/connectors/github_apps.py: an App's key and webhook secret in SSM, written here and never read, its row
-  and single-use setup states in the agents table), and a run's start
+  and single-use setup states in the agents table), and the deployment's GitHub Issues source configured from those
+  connections (7.50.02: ``GET /agents/engineering/issues-source``, ``PUT …/connections/<id>/issues``, and the
+  installation, check and removal steps; engineering/connectors/issues_sync.py: each connection's switch and label
+  row with its audit rows, the source's settings through voc-engineering-issues-config), and a run's start
   (``POST /agents/engineering/runs``, a saved engineering flow on a stored connection's commit: the start
   function, below), and the agents' skills and scorecards, read only (``GET /agents/engineering/skills``,
   ``…/skills/<role>/versions[/<version>]``, ``GET /agents/engineering/scorecards/<role>``: engineering/skills/views.py)
@@ -61,7 +64,11 @@ events back for this role to publish as the person (engineering/board/api.py per
 code and role, which runs ``start_run`` and, since 7.10.00, ``ask_reactions``, and refuses every other action; never
 the runtime's own function), and, since 7.45.00, on the token function (``ENGINEERING_APP_TOKENS_FUNCTION``,
 voc-engineering-app-tokens: the broker's code under its own role, which reads an App's key; this API asks it only
-``inspect_installation``, which answers no token), and
+``inspect_installation`` and, since 7.50.02, ``ensure_label`` (the ``voc-agent`` label on one connected repository),
+neither of which answers a token), and, since 7.50.02, on the GitHub Issues settings function
+(``ENGINEERING_ISSUES_CONFIG_FUNCTION``, voc-engineering-issues-config: its own role reads and writes the source's
+settings and turns its schedule on; this role holds no grant on the secret or the rule), where that plugin is deployed
+(lib/stacks/api-engineering-issues-sync.ts), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
@@ -1527,7 +1534,7 @@ def _readiness_ports() -> Any:
         engineering_client=get_dynamodb_client(), engineering_table=table, s3=get_s3_client(),
         workspace_bucket=os.environ.get('ENGINEERING_WORKSPACE_BUCKET', ''), quotas=_service_quotas_client,
         bedrock=_bedrock_control_client, inspect=_invoke_app_tokens,
-        watermarks=resource.Table(watermarks) if watermarks else None)
+        watermarks=resource.Table(watermarks) if watermarks else None, issues=_issues_follow())
 
 
 def _readiness_settings() -> Any:
@@ -1689,18 +1696,62 @@ def put_engineering_connection(connection_id: str):
 def delete_engineering_connection(connection_id: str):
     """``{reason?}`` (the body optional) → ``{removed: true}``: removes the connection's credential (its runs' broker
     calls are refused once a warm broker's five-minute copy goes) and marks its row removed, with its audit row (the
-    reason on it). 404 for a connection that is not stored."""
+    reason on it). 404 for a connection that is not stored. Then its repository leaves the GitHub Issues source when
+    the connection's automation added it (7.50.02, best effort: issues_sync.py ``connection_removed``)."""
     connections, caller = _connection_store()
     from engineering.connectors.connections import parse_reason
 
-    def remove() -> None:
+    def remove() -> dict | None:
         body = json_object_body(app)
         if not set(body) <= {'reason'}:
             raise ValidationError('the body is {reason?}, or none')
+        stored = next((c for c in connections.list() if c['connection_id'] == connection_id), None)
         connections.remove(connection_id, _connection_actor(caller), parse_reason(body.get('reason')))
+        return stored
 
-    _connection_call(remove)
+    removed = _connection_call(remove)
+    if removed is not None:
+        _issues_follow().connection_removed(removed, _connection_actor(caller))
     return {'removed': True}
+
+
+# The deployment's GitHub Issues source, configured from the connections (7.50.02, engineering/connectors/issues_sync.py;
+# docs/github-issues.md): the connections' gate (404 while the module is off, then administrators acting for
+# themselves). Deployment-wide like the connections: the source is the deployment's (D8), never a workspace's.
+@app.get('/agents/engineering/issues-source')
+@tracer.capture_method(capture_response=False)
+def get_engineering_issues_source():
+    """``{deployed, signs_in, app_id, repositories, managed, schedule, label, connections: [{connection_id, repository,
+    read, reading, reason, label}]}``: whether the deployment's GitHub Issues source reads each connection's
+    repository, and why not (never a token or a secret)."""
+    connections, _ = _connection_store()
+    return _connection_call(lambda: _issues_follow().view(connections.list()))
+
+
+@app.put('/agents/engineering/connections/<connection_id>/issues')
+@tracer.capture_method(capture_response=False)
+def put_engineering_connection_issues(connection_id: str):
+    """``{read: boolean}`` → the issues source's view (as ``GET …/issues-source``): the connection's "Read this
+    repository's issues" switch, its repository added to the source or taken out (only when its automation added it),
+    with an audit row. 404 for a connection that is not stored; 409 for a connection not made through the deployment's
+    GitHub App turned on, or where the source is not deployed."""
+    connections, caller = _connection_store()
+    from engineering.connectors.connections import check_connection_id
+
+    def switch() -> dict:
+        check_connection_id(connection_id)
+        body = json_object_body(app)
+        if set(body) != {'read'} or not isinstance(body['read'], bool):
+            raise ValidationError('the body is {read: true or false}')
+        stored = connections.list()
+        connection = next((c for c in stored if c['connection_id'] == connection_id), None)
+        if connection is None:
+            raise NotFoundError('Connection not found')
+        follow = _issues_follow()
+        follow.set_read(connection, body['read'], _connection_actor(caller))
+        return follow.view(stored)
+
+    return _connection_call(switch)
 
 
 # A connection's CI attestation (engineering/connectors/attestations.py; docs/autonomous-engineering.md, "The target's
@@ -1761,6 +1812,22 @@ _APP_TOKENS_REFUSALS = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 
                         'HostError': 'unavailable'}
 
 
+#: The GitHub Issues settings function's errors (7.50.02, engineering/connectors/issues_config.py): a request off its
+#: shape is this API's 400, settings too large a 409, a failed read or write "try again".
+_ISSUES_CONFIG_REFUSALS = {'IssuesConfigRefused': 'invalid', 'IssuesSettingsFull': 'conflict',
+                           'IssuesSettingsUnavailable': 'unavailable'}
+
+
+def _issues_follow() -> Any:
+    """The GitHub Issues source's follow of the connections (engineering/connectors/issues_sync.py) over the settings
+    function this environment names (none: not deployed here, the follow answers so)."""
+    from engineering.connectors.issues_sync import IssuesFollow
+    from shared.engineering_agents import ISSUES_CONFIG_FUNCTION_ENV
+
+    config = _invoke_issues_config if os.environ.get(ISSUES_CONFIG_FUNCTION_ENV) else None
+    return IssuesFollow(config, _agents_table(), _invoke_app_tokens)
+
+
 def _github_apps() -> tuple[Any, Caller]:
     """The Apps' store and its caller (``_connection_store``'s gate)."""
     connections, caller = _connection_store()
@@ -1770,37 +1837,62 @@ def _github_apps() -> tuple[Any, Caller]:
     return GitHubApps(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
                       os.environ.get(PARAMETER_KEY_ENV, ''), connections, _invoke_app_tokens,
                       frontend_url=os.environ.get(FRONTEND_URL_ENV, ''),
-                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, '')), caller
+                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow()), caller
 
 
-def _invoke_app_tokens(request: dict[str, Any]) -> dict[str, Any]:
-    """The token function's answer to ``request`` (``inspect_installation`` only, from here), or a
-    ``ConnectionRefused``: its refusals in its words (409), anything else "try again" (503). Read-only on GitHub, so a
-    lost answer is safe to ask again."""
+def _invoke_peer(env: str, refusals: Mapping[str, str], request: dict[str, Any], *, what: str, unnamed: str,
+                 unreadable: str, refused: str) -> dict[str, Any]:
+    """``request``'s answer from the function ``env`` names, by a direct invoke, or a ``ConnectionRefused``: its
+    errors in ``refusals`` in its words (``invalid`` 400, ``conflict`` 409, ``unavailable`` 503), anything else
+    ``unreadable`` (503); ``unnamed`` (503) where no function is named."""
     from engineering.connectors.connections import ConnectionRefused
-    from shared.engineering_agents import APP_TOKENS_FUNCTION_ENV
 
-    function = os.environ.get(APP_TOKENS_FUNCTION_ENV, '')
-    unreadable = ConnectionRefused('unavailable', 'GitHub could not be read for the App: try again')
+    function = os.environ.get(env, '')
     if not function:
-        raise ConnectionRefused('unavailable', 'GitHub Apps cannot be read here: the deployment names no token function')
+        raise ConnectionRefused('unavailable', unnamed)
+    failed = ConnectionRefused('unavailable', unreadable)
     try:
         response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse',
                                           Payload=json.dumps(request).encode())
         payload = json.loads(response['Payload'].read() or b'{}')
     except (BotoCoreError, ClientError, ValueError, KeyError, OSError) as exc:
-        logger.warning('engineering: the app tokens function did not answer', extra={'error_type': type(exc).__name__})
-        raise unreadable from None
+        logger.warning(f'engineering: the {what} function did not answer', extra={'error_type': type(exc).__name__})
+        raise failed from None
     if not isinstance(payload, dict):
-        raise unreadable
+        raise failed
     if response.get('FunctionError'):
         error_type = payload.get('errorType')
-        logger.warning('engineering: the app tokens function refused', extra={'error_type': str(error_type)[:60]})
-        kind = _APP_TOKENS_REFUSALS.get(str(error_type))
+        logger.warning(f'engineering: the {what} function refused', extra={'error_type': str(error_type)[:60]})
+        kind = refusals.get(str(error_type))
         if kind is None:
-            raise unreadable
-        raise ConnectionRefused(kind, str(payload.get('errorMessage') or 'GitHub refused the App: try again')[:300])
+            raise failed
+        raise ConnectionRefused(kind, str(payload.get('errorMessage') or refused)[:300])
     return payload
+
+
+def _invoke_app_tokens(request: dict[str, Any]) -> dict[str, Any]:
+    """The token function's answer to ``request`` (``inspect_installation`` or ``ensure_label``, from here): its
+    refusals in its words (409), anything else "try again" (503). Both are safe to ask again: a read, and a label
+    created only when it is missing."""
+    from shared.engineering_agents import APP_TOKENS_FUNCTION_ENV
+
+    return _invoke_peer(APP_TOKENS_FUNCTION_ENV, _APP_TOKENS_REFUSALS, request, what='app tokens',
+                        unnamed='GitHub Apps cannot be read here: the deployment names no token function',
+                        unreadable='GitHub could not be read for the App: try again',
+                        refused='GitHub refused the App: try again')
+
+
+def _invoke_issues_config(request: dict[str, Any]) -> dict[str, Any]:
+    """The GitHub Issues settings function's answer to ``request`` (``follow``, ``unfollow`` or ``status``,
+    voc-engineering-issues-config: the one function that reads and writes the source's settings; this role holds no
+    grant on the secret or the schedule): ``{repos, repos_managed, github_app_id, sign_in, token_set,
+    schedule_enabled}``, never a secret. Each is safe to ask again: a follow adds a repository once."""
+    from shared.engineering_agents import ISSUES_CONFIG_FUNCTION_ENV
+
+    return _invoke_peer(ISSUES_CONFIG_FUNCTION_ENV, _ISSUES_CONFIG_REFUSALS, request, what='issues config',
+                        unnamed='the GitHub Issues source cannot be configured here: the deployment names no function',
+                        unreadable='the GitHub Issues source could not be read: try again',
+                        refused='the GitHub Issues source refused the change: try again')
 
 
 def _empty_body() -> None:

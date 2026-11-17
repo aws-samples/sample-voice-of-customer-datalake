@@ -375,12 +375,21 @@
     "runsOnUpload": "Runs on upload",
     "runsOnDemand": "Runs on demand — no schedule",
     "githubSignIn": {
-      "label": "Sign in with",
-      "token": "A fine-grained token",
-      "app": "One of this deployment's GitHub Apps",
+      "appIntro": "Signs in with your GitHub App: no token to paste. Issues and comments are read with short-lived, read-only tokens.",
       "appLabel": "GitHub App",
-      "appHint": "Each run gets a short-lived token from the App for these repositories only (Issues and Metadata, read-only) and gives it back at its end. Install the App on the repositories first (Agents → Connections).",
-      "tokenHint": "A fine-grained personal access token with read-only Issues and Metadata on these repositories."
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "Choose an App",
+      "appHint": "The App reads only the repositories it is installed on: install it on more under Agents → Connections.",
+      "useToken": "Use a fine-grained token instead",
+      "tokenHint": "A fine-grained personal access token with read-only Issues and Metadata on these repositories.",
+      "useApp": "Sign in with your GitHub App instead",
+      "connectHint": "Or connect GitHub under Agents → Connections: the deployment's GitHub App is made in two clicks, and this source then reads the connected repositories' issues by itself.",
+      "connect": "Connect GitHub",
+      "managed_one": "Managed by your GitHub connection: issues from {{count, number}} repository.",
+      "managed_other": "Managed by your GitHub connection: issues from {{count, number}} repositories.",
+      "managedHint": "Each repository connected through the GitHub App under Agents → Connections is read automatically; switch one off there.",
+      "openConnections": "Open Agents → Connections",
+      "manual": "Configure manually (advanced)"
     }
   },
   "subtitle": "Configure the platform for everyone (administrators only).",
@@ -994,7 +1003,7 @@
     "title": "The deployment's data sources",
     "feeds": "These sources feed the deployment: the feedback they bring in is deployment-wide, outside every workspace, whichever workspace you are in now. The credentials, schedules and pauses on this page are the deployment's own.",
     "engineering": "It is the only feedback the engineering automations read (Bug fixer, Feature builder, Issue triage): their runs never take a workspace's feedback.",
-    "appSignIn": "Sign the GitHub Issues source in here with the deployment's GitHub App (its card's Sign in with), listing the repositories the agents work on.",
+    "appSignIn": "The GitHub Issues source configures itself when you connect GitHub under Agents → Connections: each connected repository's issues are read with the deployment's GitHub App. Its card here is the advanced view.",
     "inWorkspace": "You are in {{name}}, but nothing on this page changes it: that workspace's own sources are on the Sources tab."
   }
 }

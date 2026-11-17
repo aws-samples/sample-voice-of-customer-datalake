@@ -93,6 +93,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
   'engineering-github-apps': 'config', // Agents → Connections → Connect GitHub: the deployment's GitHub Apps (change only when an administrator changes them)
+  'engineering-issues-source': 'config', // Agents → Connections: the deployment's GitHub Issues source as its connections configure it (changes only on an administrator's switch, install, check or removal)
   'engineering-connections': 'config', // Agents → Connections: the repository connections (change only when an administrator changes them)
   'engineering-readiness': 'live', // an engineering automation's readiness checks before Enable (each set-up step moves them)
   'engineering-runs': 'live', // an engineering run's monitor: overview, board, conversation (polled while it runs)

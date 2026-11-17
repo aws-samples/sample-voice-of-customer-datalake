@@ -424,6 +424,9 @@ export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   // The GitHub Apps' token function (7.45.00, lib/stacks/engineering-app-tokens.ts): one RS256 signature and a few
   // GitHub requests per call, I/O-bound, not measured yet.
   'voc-engineering-app-tokens': 256,
+  // The GitHub Issues settings function (7.50.02, lib/stacks/engineering-issues-config.ts): a few Secrets Manager calls
+  // and one EventBridge call per request, I/O-bound, not measured yet.
+  'voc-engineering-issues-config': 256,
   // The engineering bus (lib/stacks/engineering-bus.ts): the inbox router and the board API, not measured yet.
   'voc-engineering-router': 256,
   'voc-engineering-board': 256,

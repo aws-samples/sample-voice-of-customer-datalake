@@ -1,6 +1,7 @@
 /**
- * @fileoverview Which Administration tab, section and board editor is open: the path is the source of truth
- * (`/admin/<tab>/<section>[/<boardId>]`, adminPaths.ts; {@link resolveAdminLocation}).
+ * @fileoverview Which Administration tab, section and board editor is open, and on the deployment's Data sources which
+ * source's card: the path is the source of truth (`/admin/<tab>/<section>[/<boardId>]`, `/admin/data-sources/<source>`,
+ * adminPaths.ts; {@link resolveAdminLocation}).
  *
  * - A tab or section switch, and opening or closing a board's editor, PUSHES its path, so Back returns to the
  *   previous place and a copied link opens where the user was.
@@ -14,7 +15,8 @@
 import { useLocation } from 'react-router-dom'
 import type { Location } from 'react-router-dom'
 import { usePlaceNavigate, useReplaceAddress } from '../../utils/pathPlace'
-import { ADMIN_PATH, adminBoardOf, adminPath, readAdminAddress } from './adminPaths'
+import { getEnabledPlugins } from '../../plugins'
+import { ADMIN_PATH, adminBoardOf, adminPath, adminSourceOf, readAdminAddress } from './adminPaths'
 import { visibleSections } from './adminTabs'
 import type { AdminLocation, AdminSectionId, AdminTabId } from './adminTabs'
 
@@ -26,7 +28,8 @@ export const isLeavingAdmin = (_current: Location, next: Location): boolean =>
 
 export function useAdminLocation(isAdmin: boolean, isPlatformAdmin: boolean) {
   const address = useLocation()
-  const read = readAdminAddress(address, isAdmin, isPlatformAdmin)
+  // (a card opened from the path is one the Data sources page shows: its plugins, SettingsSections.tsx)
+  const read = readAdminAddress(address, isAdmin, isPlatformAdmin, getEnabledPlugins().map((plugin) => plugin.id))
   useReplaceAddress(read?.replaceWith ?? null)
   const move = usePlaceNavigate()
   const search = read?.replaceWith?.search ?? address.search
@@ -43,4 +46,13 @@ export function useBoardInPath(): readonly [string | null, (boardId: string | nu
   const move = usePlaceNavigate()
   const open = (boardId: string | null) => { move({ pathname: adminPath(BOARDS, boardId), search: address.search }) }
   return [adminBoardOf(address.pathname), open]
+}
+
+/**
+ * The source whose card the deployment's Data sources opens (`/admin/data-sources/<source>`, 7.50.02: the readiness
+ * fix and the setup guide open the GitHub Issues card), or null. The page's address is already its canonical form
+ * ({@link useAdminLocation}: a source the page does not show is replaced), so the segment is read as it is.
+ */
+export function useSourceInPath(): string | null {
+  return adminSourceOf(useLocation().pathname)
 }

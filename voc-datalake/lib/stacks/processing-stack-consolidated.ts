@@ -94,6 +94,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   webSearchGatewayUrl?: string;
   webSearchGatewayArn?: string;
   webSearchToolName?: string;
+  /** The shared API-credentials secret (VocIngestionStack): the GitHub Issues settings function's (7.50.02). */
+  apiSecretsArn?: string;
   config: {
     brandName: string;
     primaryLanguage: string;
@@ -409,9 +411,9 @@ export class VocProcessingStack extends VocStack {
     createCostRollupWorker(this, 'CostRollupWorker', { uniqueName, layer: processingLayer, kmsKey, aggregatesTable,
       workspacesTable: props.workspacesTable, lambdaLogGroupPattern: this.uniqueNamePattern('/aws/lambda/voc-*') });
     // The engineering agents (docs/autonomous-engineering.md): only with -c engineeringAgents=true (processing-engineering.ts).
-    addProcessingEngineering(this, { uniqueName, layer: processingLayer, kmsKey, deploymentPrefix: this.deploymentPrefix,
-      aggregatesTable, agentsTable: props.agentsTable, rawDataBucket, engineeringTable: props.engineeringTable,
-      engineeringWorkspaceBucket: props.engineeringWorkspaceBucket, roleNamePattern: this.uniqueNamePattern(ROLE_NAMES) });
+    // (its tables, its bucket and the GitHub Issues settings function's secret are the stack's props: `...props`)
+    addProcessingEngineering(this, { ...props, uniqueName, layer: processingLayer, kmsKey, aggregatesTable, rawDataBucket,
+      deploymentPrefix: this.deploymentPrefix, roleNamePattern: this.uniqueNamePattern(ROLE_NAMES), enabledSources: props.config.enabledSources });
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)

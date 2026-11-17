@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SETUP_STEP_IDS, parseIssuesSource, parseSetupProgress } from './engineeringSetupApi'
+import { SETUP_STEP_IDS, parseSetupProgress } from './engineeringSetupApi'
 
 const ROUTES = readFileSync(join(__dirname, '../../../lambda/shared/agents_engineering_setup_routes.py'), 'utf8')
 
@@ -44,17 +44,5 @@ describe('the setup progress', () => {
     ['not an object', 'nothing'],
   ])('refuses an answer with %s', (_name, raw) => {
     expect(() => parseSetupProgress(raw)).toThrow('The setup guide answer was unreadable')
-  })
-})
-
-describe('the deployment\'s GitHub Issues source', () => {
-  it('is configured or not as the integration status says, and unknown when it does not say', () => {
-    expect([
-      parseIssuesSource({ github_issues: { configured: true, credentials_set: ['repos'] } }),
-      parseIssuesSource({ github_issues: { configured: false, credentials_set: [] }, webscraper: { configured: true } }),
-      parseIssuesSource({ webscraper: { configured: true } }),
-      parseIssuesSource({ github_issues: { configured: 'yes' } }),
-      parseIssuesSource(null),
-    ]).toStrictEqual([true, false, null, null, null])
   })
 })

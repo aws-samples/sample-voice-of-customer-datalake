@@ -2,8 +2,9 @@
  * @fileoverview "Build from this PRD" (7.47.00): on a project's PRD, an administrator hands it to an enabled feature
  * engineering agent (Agents: `engineering.feedback_type` `feature_request`, such as the seeded Feature builder), which
  * starts an engineering run of its flow with the PRD as its input (`POST /agents/{id}/run` `{prd: {project_id,
- * document_id}}`; the run's goal names the PRD by its ids) and stops at a draft pull request. This is how the
- * Autonomous Product agent's PRD reaches the builder. Shown only where the engineering module is on, to an
+ * document_id}}`; the run's goal names the PRD by its ids) and opens a pull request for review (since 7.50, a draft
+ * only when its flow says `pr: draft`; merging stays with a person). This is how the Autonomous Product agent's PRD
+ * reaches the builder. Shown only where the engineering module is on, to an
  * administrator, while such an agent is enabled; the run is followed on its run monitor.
  *
  * @module pages/ProjectDetail/BuildFromPrd

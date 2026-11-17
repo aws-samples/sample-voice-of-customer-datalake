@@ -21,7 +21,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors.hosts import Unavailable
-from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, ai_mode_key
+from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES, ai_mode_key
 
 #: A person's subject (a Cognito ``sub``): letters, digits and ``-``; never ``agent:``, ``mcp:`` or ``plan:``.
 _PERSON: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]{0,127}')
@@ -29,6 +29,8 @@ _PERSON: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]{0,127}')
 PUSHING_MODES: Final = frozenset({MODE_AI_ASSISTED, MODE_AI_DRIVEN})
 #: The one attribute of the way-of-working row the broker reads.
 MODE_ATTRIBUTE: Final = 'mode'
+#: What ``stored`` answers for a person with no mode saved (7.50.02: readiness tells it apart from Human-driven).
+NOT_SET: Final = ''
 
 
 @dataclass(frozen=True)
@@ -38,8 +40,14 @@ class WaysOfWorking:
     table: Any
 
     def mode(self, person: str) -> str:
+        mode = self.stored(person)
+        return mode if mode in PUSHING_MODES else MODE_HUMAN_DRIVEN
+
+    def stored(self, person: str) -> str:
+        """The person's stored mode (one of ``MODES``), or ``NOT_SET`` for none saved (no row, a mode outside
+        ``MODES``, not a person's subject). ``mode`` reads both as Human-driven; readiness says which it is."""
         if not _PERSON.fullmatch(person):
-            return MODE_HUMAN_DRIVEN
+            return NOT_SET
         try:
             item = self.table.get_item(Key=ai_mode_key(person), ConsistentRead=True, ProjectionExpression='#mode',
                                        ExpressionAttributeNames={'#mode': MODE_ATTRIBUTE}).get('Item') or {}
@@ -47,4 +55,4 @@ class WaysOfWorking:
             raise Unavailable('The way of working of the person who started the run could not be read; retry.') \
                 from exc
         mode = item.get(MODE_ATTRIBUTE)
-        return mode if mode in PUSHING_MODES else MODE_HUMAN_DRIVEN
+        return mode if mode in MODES else NOT_SET

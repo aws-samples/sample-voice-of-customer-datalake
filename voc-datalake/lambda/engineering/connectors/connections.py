@@ -83,6 +83,9 @@ ROW_PREFIX: Final = 'CONNECTION#'
 LOG_PREFIX: Final = 'LOG#'
 #: The most connections a deployment keeps (removed ones do not count).
 MAX_CONNECTIONS: Final = 20
+#: The label each repository connected through the deployment's App gets (7.50.02: issues_sync.py, the token function's
+#: ``ensure_label``), the engineering agents' issue trigger's (shared/agents_store.py DEFAULT_ISSUE_LABEL).
+ISSUE_LABEL: Final = 'voc-agent'
 #: A standard parameter's largest value (a larger one is an advanced parameter, which has a monthly charge).
 MAX_PARAMETER_BYTES: Final = 4096
 HOSTS: Final = ('github', 'gitlab')
@@ -473,9 +476,7 @@ class ConnectionStore:
     # --- reads ------------------------------------------------------------------------------------------------
 
     def _rows(self) -> list[dict[str, Any]]:
-        return query_all(self._table, {
-            'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :row)', 'ConsistentRead': True,
-            'ExpressionAttributeValues': {':pk': PARTITION, ':row': ROW_PREFIX}})
+        return partition_rows(self._table, ROW_PREFIX)
 
     def list(self) -> list[dict[str, Any]]:
         """The stored connections (not the removed ones), by id, each with its CI attestation's newest version (one
@@ -780,6 +781,14 @@ class ConnectionStore:
                 raise ConnectionRefused('conflict', 'the connection changed meanwhile: reload it and save again') \
                     from None
             raise ConnectionRefused('unavailable', 'the connection could not be saved: save again') from None
+
+
+def partition_rows(table: Any, prefix: str) -> list[dict[str, Any]]:
+    """Every row of the connections' partition whose sort key starts with ``prefix`` (``CONNECTION#``, an App's
+    ``GITHUB_APP#``, a connection's ``ISSUES#``), read consistently, every page; an AWS error raises as boto3 raised it."""
+    return query_all(table, {
+        'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :prefix)', 'ConsistentRead': True,
+        'ExpressionAttributeValues': {':pk': PARTITION, ':prefix': prefix}})
 
 
 def delete_parameter(ssm: Any, name: str, *, logged: str, about: Mapping[str, str], refusal: str) -> None:

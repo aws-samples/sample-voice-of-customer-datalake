@@ -84,14 +84,70 @@ The design-system GitHub token (`voc/design-integrations`, [company-context.md](
 lives in a different secret with different readers, and a separate, issues-only token keeps both
 blast radiuses small.
 
+### Configured by your GitHub connection (7.50.02)
+
+Where the engineering agents are deployed, the deployment's source configures itself: connecting a repository under
+**Agents → Connections → Connect GitHub** (the two-click GitHub App) is what makes its issues read. There is no Data
+sources step, no token to paste and no repository webhook to add. When an installation saves its connections, and on
+**Check installation**, the Agents API (`lambda/engineering/connectors/issues_sync.py`):
+
+- adds each connection's repository to the source's **Repositories** (`github_issues_repos`, up to 20) and records it in
+  `github_issues_repos_managed`, the repositories it added; a repository already listed (an administrator's entry, a
+  URL included) is left as it was and never claimed;
+- signs the source in with that App (`github_app_id`) when it had no sign-in yet;
+- turns the source's schedule on (the card's **Enabled** switch) when it added a repository and the schedule was off;
+- creates the `voc-agent` label on each connected repository when it is missing (name `voc-agent`, color `#5319e7`,
+  "Picked up by the VoC agents"), through the token function's `ensure_label` action: an installation token of exactly
+  `{issues: write}` for that one repository, revoked at once. It creates no other label and never answers the token.
+
+Each step is an audit row of the connections' partition (`issues_source_added`, `issues_source_removed`,
+`issues_schedule_enabled`, `issues_read_on` / `issues_read_off`, `issues_label_created`). The rules merge, they never
+overwrite:
+
+- an administrator's own repositories are never removed;
+- a source an administrator set to a **token** stays on the token: nothing is added, and the connection says so ("The
+  GitHub Issues source signs in with a token: add this repository under Administration → Data sources");
+- a source signed in with another of the deployment's Apps keeps it;
+- removing a connection, or turning off its **Read this repository's issues** switch (on each connection, on by
+  default), takes its repository out only when `github_issues_repos_managed` says the automation added it.
+
+The App's deliveries already arrive on `/webhooks/github_issues`, checked with the App's own webhook secret (7.45.00):
+an issue opened or labelled on a connected repository is ingested in real time, and the schedule picks up the rest.
+The setup guide's first step shows both as automatic ticks ("Issues: read automatically from N repositories", "Label
+voc-agent: created"), and readiness's `issues_source` and `issue_label` checks pass from that state, before the first
+poll. A connection made before 7.50.02 shows **Not read yet** until **Check installation** (or **Read its issues now**
+on it) runs once.
+
+**The card is the advanced view.** Administration → Data sources → GitHub Issues (`/admin/data-sources/github_issues`
+opens it, expanded) then says "Managed by your GitHub connection: issues from N repositories", with a link to Agents →
+Connections; the fields are under **Configure manually (advanced)**. That manual path signs in App-first: with an App,
+the App is chosen (the only one preselected, a select for several) and the token field sits behind **Use a
+fine-grained token instead**; a source saved with a token stays on the token; with no App, **Connect GitHub** links to
+Agents → Connections.
+
+**Who writes the settings.** One function, `voc-engineering-issues-config` (VocProcessingStack,
+`lib/stacks/engineering-issues-config.ts`, `lambda/engineering/connectors/issues_config.py`; only where the engineering
+agents and github_issues are both deployed), reads and writes them; the Agents API holds no grant on the secret or the
+schedule rule and only invokes it by name. Its own role holds exactly `secretsmanager:GetSecretValue` and
+`PutSecretValue` on the shared API-credentials secret's ARN and `events:DescribeRule` and `EnableRule` on the
+github_issues schedule rule (no function URL, no resource policy, no table, no bucket). It takes `follow {connection_id,
+repository, app_id}`, `unfollow {connection_id, repositories}` and `status {}` and refuses anything else, and any
+other key, before it reads anything; it writes only `github_issues_repos`, `github_issues_repos_managed` and
+`github_issues_github_app_id`, every other key written back as read; and it answers only `{repos, repos_managed,
+github_app_id, sign_in, token_set, schedule_enabled}`, never the token or another plugin's key. A save of the
+Integrations API at the same moment is not lost: the version read is checked again just before the write, and when
+another save landed in between, the change is applied again on top of it. The label is the token function's, which
+the Agents API already invokes.
+
 ### Signing in with a GitHub App (7.45.00)
 
 Where the engineering agents are deployed (`-c engineeringAgents=true`), a deployment-wide source can sign in with one
 of the deployment's GitHub Apps instead of a token: the Apps an administrator makes under Agents → Connections
 ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the deployment's card
 (Administration → Data sources, `/admin/data-sources`, for platform admins from any address since 7.50.00; or the
-Source settings card outside a workspace), **Sign in with** → GitHub App, then the App (its id is saved as `github_app_id`; choosing the token again saves
-`none`, which is no App). A new App is named `VoC Autonomous Agent <4 hex>` (7.49.00); renaming one is done on GitHub
+Source settings card outside a workspace), the App is the default once one exists (7.50.02: the only one preselected,
+a select for several; its id is saved as `github_app_id`), and **Use a fine-grained token instead** saves `none`,
+which is no App. Since 7.50.02 connecting a repository does all of this for you (above). A new App is named `VoC Autonomous Agent <4 hex>` (7.49.00); renaming one is done on GitHub
 (Settings → Developer settings → GitHub Apps → the App → **Edit**), and **Check installation** on Agents →
 Connections then records its new slug ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). Each run then asks the GitHub Apps' token function (`voc-engineering-app-tokens`) for
 `issues_token` with its repositories: for each one the installation that covers it, and one installation token per

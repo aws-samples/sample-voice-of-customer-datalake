@@ -480,14 +480,34 @@
     },
     "aiMode": {
       "title": "Arbeitsweisen mit KI",
-      "description": "Wie stark die KI jeder Person beim Schreiben von PR/FAQs und PRDs hilft. Jeder Modus erweitert den vorherigen; KI-geführt ist der Standard. Andere Dokumente sind nicht betroffen.",
+      "description": "Legt pro Person fest, wie viel die KI an ihren PR/FAQs und PRDs schreibt und ob die Engineering-Automationen, die sie aktiviert, pushen und Pull Requests öffnen dürfen.",
+      "notSet": "Nicht festgelegt",
+      "notSetEffect": "Dokumente nutzen KI-geführt · Automationen pushen nicht, bis Sie wählen",
+      "compareTitle": "So unterscheiden sich die Modi",
+      "compare": {
+        "mode": "Modus",
+        "documents": "Ihre PR/FAQs und PRDs",
+        "automations": "Automationen, die Sie aktivieren",
+        "humanDriven": {
+          "documents": "Die KI beantwortet Fragen, erklärt und gibt Feedback; sie schreibt sie nie für Sie (außer eine Administratorin oder ein Administrator gibt einen Typ frei).",
+          "automations": "Pushen nichts."
+        },
+        "aiAssisted": {
+          "documents": "Die KI entwirft, schlägt vor und formuliert sie gemeinsam mit Ihnen um.",
+          "automations": "Dürfen pushen und Pull Requests öffnen; jeder Push wartet auf das Go einer Person."
+        },
+        "aiDriven": {
+          "documents": "KI-unterstützt, und zusätzlich dürfen Agenten und Pläne sie für Sie schreiben.",
+          "automations": "Dürfen pushen und Pull Requests öffnen, die eine Person prüft."
+        }
+      },
       "saveFailed": "Die Arbeitsweise konnte nicht geändert werden. Bitte erneut versuchen.",
       "humanDriven": "Menschgeführt",
       "aiAssisted": "KI-unterstützt",
       "aiDriven": "KI-geführt",
       "humanDrivenTooltip": "Die KI beantwortet Fragen, erklärt die Methode und gibt Feedback; sie schreibt das Dokument nie für Sie.",
       "aiAssistedTooltip": "Die KI entwirft, schlägt vor und formuliert gemeinsam mit Ihnen im Editor und im Chat um.",
-      "aiDrivenTooltip": "KI-unterstützt, und zusätzlich dürfen autonome Agenten und Pläne Dokumente für Sie schreiben.",
+      "aiDrivenTooltip": "KI-unterstützt, und zusätzlich dürfen Agenten Dokumente für Sie schreiben und für die Automationen, die Sie aktivieren, Code pushen.",
       "unlockPrfaq": "PR/FAQ mit KI",
       "unlockPrd": "PRD mit KI",
       "unlockPrfaqFor": "PR/FAQ mit KI: {{user}}",

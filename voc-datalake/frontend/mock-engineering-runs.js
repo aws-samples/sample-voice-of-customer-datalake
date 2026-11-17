@@ -24,6 +24,8 @@
 //   POST|DELETE /agents/engineering/connections/<id>/ci-attestation   attest its CI (every point), or withdraw it
 //   …/agents/engineering/github-apps…   the deployment's GitHub Apps (7.45.00): mock-github-apps.js, over the
 //                     connections here ('billing-api' goes through the sample App, a reference to its key)
+//   GET  /agents/engineering/issues-source, PUT …/connections/<id>/issues   the GitHub Issues source as the
+//                     connections drive it (7.50.02): mock-issues-source.js, over the connections here
 //                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
 //                     one (404 for an unknown id)
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
@@ -34,6 +36,7 @@
 // agent id).
 
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
+import { handleIssuesSourceRoutes } from './mock-issues-source.js';
 
 export const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
 export const SAMPLE_FLOW_ID = 'wf_7c2d9e41a0b3';
@@ -798,6 +801,7 @@ const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRo
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
   if (handleGitHubAppRoutes(req, res, url, send, shared, { connections, connectionLimit: CONNECTION_LIMIT, isAdmin })) return true;
+  if (handleIssuesSourceRoutes(req, res, url, send, shared, { connections, isAdmin })) return true;
   const connection = CONNECTION_PATH.exec(url.pathname);
   if (connection) {
     connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]),

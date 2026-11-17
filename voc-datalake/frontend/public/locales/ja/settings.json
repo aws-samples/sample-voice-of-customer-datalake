@@ -375,12 +375,21 @@
     "runsOnUpload": "アップロード時に実行",
     "runsOnDemand": "必要時に実行 — スケジュールなし",
     "githubSignIn": {
-      "label": "サインイン方法",
-      "token": "Fine-grained トークン",
-      "app": "このデプロイの GitHub App",
+      "appIntro": "GitHub App でサインインします。貼り付けるトークンはありません。Issue とコメントは、短期間の読み取り専用トークンで読み取ります。",
       "appLabel": "GitHub App",
-      "appHint": "各実行は、これらのリポジトリだけを対象にした短期間のトークン（Issues と Metadata、読み取りのみ）を App から受け取り、終了時に返します。先に App をリポジトリにインストールしてください（エージェント → 接続）。",
-      "tokenHint": "これらのリポジトリの Issues と Metadata を読み取りのみで許可した Fine-grained 個人アクセストークン。"
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "App を選択",
+      "appHint": "App はインストールされているリポジトリだけを読み取ります。ほかのリポジトリには エージェント → 接続 でインストールしてください。",
+      "useToken": "代わりに Fine-grained トークンを使う",
+      "tokenHint": "これらのリポジトリの Issues と Metadata を読み取りのみで許可した Fine-grained 個人アクセストークン。",
+      "useApp": "代わりに GitHub App でサインインする",
+      "connectHint": "または エージェント → 接続 で GitHub を接続してください。デプロイの GitHub App が 2 クリックで作成され、このソースは接続したリポジトリの Issue を自動で読み取ります。",
+      "connect": "GitHub を接続",
+      "managed_one": "GitHub 接続で管理されています: {{count, number}} 件のリポジトリの Issue。",
+      "managed_other": "GitHub 接続で管理されています: {{count, number}} 件のリポジトリの Issue。",
+      "managedHint": "エージェント → 接続 で GitHub App を通じて接続した各リポジトリは自動で読み取られます。オフにするのもそこからです。",
+      "openConnections": "エージェント → 接続 を開く",
+      "manual": "手動で設定（詳細）"
     }
   },
   "subtitle": "VoCプラットフォームを設定",
@@ -994,7 +1003,7 @@
     "title": "デプロイのデータソース",
     "feeds": "これらのソースはデプロイ全体にフィードバックを取り込みます。今どのワークスペースにいても、取り込まれるフィードバックはどのワークスペースにも属さないデプロイ全体のものです。このページの認証情報、スケジュール、一時停止はデプロイ自身のものです。",
     "engineering": "エンジニアリングの自動化（Bug fixer、Feature builder、Issue triage）が読むのはこのフィードバックだけです。その実行がワークスペースのフィードバックを使うことはありません。",
-    "appSignIn": "GitHub Issues ソースには、ここでデプロイの GitHub App でサインインしてください（カードの「サインイン方法」）。エージェントが作業するリポジトリを記載します。",
+    "appSignIn": "エージェント → 接続 で GitHub を接続すると、GitHub Issues ソースは自動で設定されます。接続した各リポジトリの Issue はデプロイの GitHub App で読み取られます。ここにあるカードは詳細ビューです。",
     "inWorkspace": "現在 {{name}} にいますが、このページの操作はそのワークスペースを変更しません。そのワークスペース独自のソースは「ソース」タブにあります。"
   }
 }

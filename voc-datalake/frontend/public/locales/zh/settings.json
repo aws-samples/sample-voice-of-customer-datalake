@@ -375,12 +375,21 @@
     "runsOnUpload": "上传时运行",
     "runsOnDemand": "按需运行 — 无计划",
     "githubSignIn": {
-      "label": "登录方式",
-      "token": "细粒度令牌",
-      "app": "本部署的某个 GitHub App",
+      "appIntro": "使用你的 GitHub App 登录：无需粘贴令牌。Issue 和评论通过短期只读令牌读取。",
       "appLabel": "GitHub App",
-      "appHint": "每次运行都会从 App 获取一个仅用于这些仓库的短期令牌（Issues 和 Metadata，只读），并在结束时交还。请先将 App 安装到这些仓库（智能体 → 连接）。",
-      "tokenHint": "一个对这些仓库的 Issues 和 Metadata 只有只读权限的细粒度个人访问令牌。"
+      "oneApp": "GitHub App：{{app}}",
+      "chooseApp": "选择一个 App",
+      "appHint": "App 只读取安装了它的仓库：可在 智能体 → 连接 中把它安装到更多仓库。",
+      "useToken": "改用细粒度令牌",
+      "tokenHint": "一个对这些仓库的 Issues 和 Metadata 只有只读权限的细粒度个人访问令牌。",
+      "useApp": "改用你的 GitHub App 登录",
+      "connectHint": "也可以在 智能体 → 连接 中连接 GitHub：两次点击即可创建部署的 GitHub App，此来源随后会自动读取已连接仓库的 Issue。",
+      "connect": "连接 GitHub",
+      "managed_one": "由你的 GitHub 连接管理：读取 {{count, number}} 个仓库的 Issue。",
+      "managed_other": "由你的 GitHub 连接管理：读取 {{count, number}} 个仓库的 Issue。",
+      "managedHint": "通过 GitHub App 在 智能体 → 连接 中连接的每个仓库都会被自动读取；可在那里关闭。",
+      "openConnections": "打开 智能体 → 连接",
+      "manual": "手动配置（高级）"
     }
   },
   "subtitle": "配置您的VoC平台",
@@ -994,7 +1003,7 @@
     "title": "部署的数据来源",
     "feeds": "这些来源为整个部署提供反馈：无论你当前在哪个工作区，它们导入的反馈都属于整个部署，不属于任何工作区。此页面上的凭据、计划和暂停都是部署自己的。",
     "engineering": "工程自动化（Bug fixer、Feature builder、Issue triage）只读取这些反馈：它们的运行从不使用工作区的反馈。",
-    "appSignIn": "请在此处用部署的 GitHub App 为 GitHub Issues 来源登录（在其卡片的“登录方式”中），并列出智能体处理的仓库。",
+    "appSignIn": "在 智能体 → 连接 中连接 GitHub 后，GitHub Issues 来源会自动配置：每个已连接仓库的 Issue 都通过部署的 GitHub App 读取。这里的卡片是高级视图。",
     "inWorkspace": "你当前在 {{name}} 中，但此页面上的任何操作都不会改变它：该工作区自己的来源位于“来源”选项卡。"
   }
 }

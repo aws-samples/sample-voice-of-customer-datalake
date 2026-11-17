@@ -60,6 +60,13 @@ export const ENGINEERING_START_FUNCTION_BASE_NAME = 'voc-engineering-start';
  * VocIngestionStack, which deploys first, for a deployment-wide run's read-only Issues tokens.
  */
 export const ENGINEERING_APP_TOKENS_FUNCTION_BASE_NAME = 'voc-engineering-app-tokens';
+/**
+ * The GitHub Issues settings function (VocProcessingStack, lib/stacks/engineering-issues-config.ts; with
+ * `-c engineeringAgents=true` and the github_issues plugin; 7.50.02): its own role alone reads and writes the source's
+ * settings in the shared API-credentials secret and turns its schedule on. The Agents API in VocApiStack invokes it
+ * for the connections' follow (ENGINEERING_ISSUES_CONFIG_FUNCTION).
+ */
+export const ENGINEERING_ISSUES_CONFIG_FUNCTION_BASE_NAME = 'voc-engineering-issues-config';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

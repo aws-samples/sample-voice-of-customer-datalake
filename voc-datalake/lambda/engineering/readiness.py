@@ -45,6 +45,13 @@ REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_m
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
 #: shared/ai_mode.py's ``MODES``, and the roles whose work leaves as code shared/workflow_engineering.py's).
 PUSHING_MODES: Final = frozenset({MODE_AI_ASSISTED, MODE_AI_DRIVEN})
+#: Where an administrator sets a person's way of working (Administration → Privacy & access → Users).
+USERS_PATH: Final = '/admin/access/users'
+#: The deployment's GitHub Issues card (Administration → Data sources, opened at it: frontend adminPaths.ts).
+ISSUES_CARD_PATH: Final = '/admin/data-sources/github_issues'
+#: The label the connections create on each repository (connectors/connections.py ISSUE_LABEL): the only one whose
+#: presence readiness knows.
+CREATED_LABEL: Final = 'voc-agent'
 #: Each way of working by the name Administration → Privacy & access → Users shows it under.
 MODE_NAMES: Final = {MODE_HUMAN_DRIVEN: 'Human-driven', MODE_AI_ASSISTED: 'AI-assisted', MODE_AI_DRIVEN: 'AI-driven'}
 #: Learn's model, as ``flow_models`` names its caller (the run-end step, plan §5; the coach's card has no model).
@@ -166,8 +173,20 @@ class ReadinessPorts(Protocol):
         """Whether the deployment-wide GitHub Issues source has read ``repository`` (its watermark exists)."""
         ...
 
+    def issues_source_lists(self, repository: str) -> bool | None:
+        """Whether the deployment-wide GitHub Issues source's settings name ``repository`` with a way to sign in (an
+        App or a token: connectors/issues_sync.py, 7.50.02, which its connection's switch adds it with); None where
+        the source is not deployed here."""
+        ...
+
+    def label_state(self, connection_id: str) -> str:
+        """The ``voc-agent`` label's state on the connection's repository as its connection last recorded it
+        (issues_sync.py: ``created`` | ``present`` | ``failed``; '' for none recorded)."""
+        ...
+
     def mode(self, person: str) -> str:
-        """The person's STORED way of working (``connectors/dial.py``: Human-driven for no row)."""
+        """The person's STORED way of working: one of ``MODES``, or ``NOT_SET`` ('') when none is saved
+        (``connectors/dial.py`` ``stored``: a run pushes nothing either way until AI-assisted or AI-driven is saved)."""
         ...
 
     def hard_cap_on(self) -> bool:
@@ -463,18 +482,23 @@ def _starts_from_issues(ctx: _Context) -> bool:
 def _issues_source(ctx: _Context) -> Check:
     if not _starts_from_issues(ctx):
         return _not_needed('issues_source', 'nothing here starts a run from a GitHub issue')
-    fix = ('Administration → Data sources → GitHub Issues: add the repository, signed in with this '
-           'deployment\'s GitHub App or a read-only token.')
+    fix = (f'Agents → Connections: turn on "Read this repository\'s issues" on its connection (7.50.02: connecting it '
+           f'through the deployment\'s GitHub App does it), or add it under Administration → Data sources → GitHub '
+           f'Issues ({ISSUES_CARD_PATH}).')
     if ctx.row is None:
         return Check('issues_source', 'unknown', 'No stored connection to look the repository up for.', fix)
     try:
-        reads = ctx.ports.issues_source_reads(_repository(ctx))
+        lists = ctx.ports.issues_source_lists(_repository(ctx))
+        reads = lists is not True and ctx.ports.issues_source_reads(_repository(ctx))
     except ReadFailed as error:
         return _unknown('issues_source', 'The Issues source', error, fix)
+    if lists:
+        return Check('issues_source', 'pass', f'Issues: read automatically from {_repository(ctx)} by the '
+                     'deployment\'s GitHub Issues source.')
     if reads:
         return Check('issues_source', 'pass', f'The deployment\'s GitHub Issues source reads {_repository(ctx)}.')
-    return Check('issues_source', 'fail', f'The deployment\'s GitHub Issues source has not read {_repository(ctx)} '
-                 'yet (its first read follows its next schedule, every 30 minutes).', fix)
+    return Check('issues_source', 'fail', f'The deployment\'s GitHub Issues source does not read {_repository(ctx)} '
+                 'yet.', fix)
 
 
 def _issue_label(ctx: _Context) -> Check:
@@ -489,9 +513,20 @@ def _issue_label(ctx: _Context) -> Check:
                          'Set the trigger\'s label (voc-agent) to choose which issues start one.')
         return Check('issue_label', 'fail', 'A public repository\'s issue starts a run only with the trigger\'s label, '
                      'and the trigger names none.', 'Set the trigger\'s label (voc-agent).')
+    fix = f'Create the {label} label on the repository, and let only its maintainers put it on an issue.'
+    if label == CREATED_LABEL and ctx.row is not None:
+        try:
+            state = ctx.ports.label_state(ctx.subject.connection)
+        except ReadFailed as error:
+            return _unknown('issue_label', 'The label', error, fix)
+        if state in ('created', 'present'):
+            done = 'created' if state == 'created' else 'on the repository'
+            return Check('issue_label', 'pass', f'Label {label}: {done} (issues labelled {label} start a run).')
+        if state == 'failed':
+            return Check('issue_label', 'unknown', f'The {label} label could not be created on the repository: Agents → '
+                         'Connections → Check installation tries again.', fix)
     return Check('issue_label', 'unknown', f'Issues labelled {label} start a run; whether the label exists on the '
-                 'repository is not read from here.', f'Create the {label} label on the repository, and let only its '
-                 'maintainers put it on an issue.')
+                 'repository is not read from here.', fix)
 
 
 def mode_names(modes: Collection[str]) -> str:
@@ -504,8 +539,8 @@ def _dial(ctx: _Context) -> Check:
     allowed = allowed_modes(ctx.subject)
     who = ctx.subject.person_name or 'the administrator who enables the agent'
     fix = (f'An administrator sets the way of working of {who} to {mode_names(allowed)} in Administration → Privacy & '
-           'access → Users' + ('; with AI-assisted, each push waits for a person\'s go on the run.'
-                               if MODE_AI_ASSISTED in allowed else '.'))
+           f'access → Users ({USERS_PATH})' + ('; with AI-assisted, each push waits for a person\'s go on the run.'
+                                               if MODE_AI_ASSISTED in allowed else '.'))
     if not ctx.subject.person:
         return Check('dial', 'fail', 'No person to run as: the agent runs as the administrator who enables it.', fix,
                      TRUST_DOCS)
@@ -513,7 +548,13 @@ def _dial(ctx: _Context) -> Check:
         mode = ctx.ports.mode(ctx.subject.person)
     except ReadFailed as error:
         return _unknown('dial', 'The way of working', error, docs=TRUST_DOCS)
-    # (no stored row reads Human-driven: connectors/dial.py)
+    if mode not in MODES:
+        # (nothing saved: documents default to AI-driven, a run pushes nothing: connectors/dial.py, 7.50.02)
+        if MODE_HUMAN_DRIVEN in allowed:
+            return Check('dial', 'pass', f'The runs follow {who}, whose way of working is not set yet (a run pushes '
+                         'nothing), which this flow runs in.', '', TRUST_DOCS)
+        return Check('dial', 'fail', f'Not set yet: choose {mode_names(allowed)} for {who}. With nothing saved, a run '
+                     'pushes nothing (documents default to AI-driven).', fix, TRUST_DOCS)
     found = f'The runs follow {who}, whose way of working is {MODE_NAMES.get(mode, mode)}'
     if mode in allowed:
         return Check('dial', 'pass', f'{found}, which this flow runs in.', '', TRUST_DOCS)

@@ -478,9 +478,10 @@ def test_the_check_marks_the_connections_whose_repository_left_the_installation(
     env.tokens.repositories = [listed('example-org/refund-service'), listed('example-org/web')]
     installed(env, created(env))
     env.tokens.repositories = [listed('example-org/web')]
-    assert env.apps().check(APP_ID) == {'repositories': ['example-org/web'], 'missing': ['refund-service']}
+    assert env.apps().check(APP_ID) == {'repositories': ['example-org/web'], 'missing': ['refund-service'],
+                                        'issues': None}
     env.tokens.error = ConnectionRefused('conflict', 'gone')
-    assert env.apps().check(APP_ID) == {'repositories': [], 'missing': ['refund-service', 'web']}
+    assert env.apps().check(APP_ID) == {'repositories': [], 'missing': ['refund-service', 'web'], 'issues': None}
 
 
 def test_a_check_records_the_slug_of_an_app_renamed_on_github_so_its_install_links_keep_working(env: Env) -> None:

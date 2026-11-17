@@ -9,7 +9,8 @@
  * Each of the deployment's Apps is listed with its account, whether it delivers issue events, and how many
  * connections use it ("Not installed" for none), with **Install** / **Install more** (a new install link, opened in
  * this tab), **Check installation** (which connections the installation no longer covers) and **Remove** (its key
- * and webhook secret deleted here; refused while connections use it; the App itself stays on GitHub).
+ * and webhook secret deleted here; refused while connections use it; the App itself stays on GitHub). Since 7.50.02 a
+ * check says what followed for the deployment's GitHub Issues source too (ConnectionIssues.tsx `IssuesFollowLines`).
  *
  * @module pages/Agents/GitHubAppPanel
  */
@@ -19,13 +20,15 @@ import { useTranslation } from 'react-i18next'
 import { ExternalLink, Loader2, Webhook } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { ORGANIZATION_LOGIN, githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
+import { issuesSourceKeys } from '../../api/issuesSourceApi'
 import { formatDateTime } from '../../utils/dateUtils'
 import { ConnectionChangeConfirm } from './ConnectionModals'
+import { IssuesFollowLines } from './ConnectionIssues'
 import { useConnectionError } from './connectionText'
 import { leavingForGitHub } from './githubReturn'
 import { PAGE_WORKSPACE } from '../../workspace/workspacePath'
 import type { UseQueryResult } from '@tanstack/react-query'
-import type { GitHubApp, GitHubAppList, ManifestForm, ManifestRequest } from '../../api/githubAppsApi'
+import type { GitHubApp, GitHubAppList, InstallationCheck, ManifestForm, ManifestRequest } from '../../api/githubAppsApi'
 
 type Account = ManifestRequest['account']
 
@@ -98,15 +101,24 @@ function CreateApp({ full }: Readonly<{ full: boolean }>) {
   )
 }
 
-function CheckResult({ app, repositories, missing }: Readonly<{ app: GitHubApp; repositories: number; missing: string[] }>) {
+function CheckResult({ app, check }: Readonly<{ app: GitHubApp; check: InstallationCheck }>) {
   const { t } = useTranslation('agents')
-  if (missing.length === 0) {
-    return <p role="status" className="text-[12px] text-ok">{t('connections.githubApp.checkCovered', { slug: app.slug, repositories })}</p>
-  }
+  const { repositories, missing } = check
   return (
-    <p role="status" className="text-[12px] text-warn">
-      {t('connections.githubApp.checkMissing', { connections: missing.join(', ') })}
-    </p>
+    <>
+      {missing.length === 0
+        ? (
+            <p role="status" className="text-[12px] text-ok">
+              {t('connections.githubApp.checkCovered', { slug: app.slug, repositories: repositories.length })}
+            </p>
+          )
+        : (
+            <p role="status" className="text-[12px] text-warn">
+              {t('connections.githubApp.checkMissing', { connections: missing.join(', ') })}
+            </p>
+          )}
+      <IssuesFollowLines follow={check.issues} />
+    </>
   )
 }
 
@@ -152,10 +164,14 @@ function AppRow({ app, onNotice }: Readonly<{ app: GitHubApp; onNotice: (text: s
     mutationFn: () => githubAppsApi.install(app.app_id),
     onSuccess: ({ installUrl }) => { leavingForGitHub(); window.location.assign(installUrl) },
   })
-  // A check records the slug GitHub reports (a rename on GitHub, github_apps.py `check`): the row reads it again.
+  // A check records the slug GitHub reports (a rename on GitHub, github_apps.py `check`): the row reads it again; and
+  // it brings the App's repositories into the GitHub Issues source (7.50.02): its view is read again too.
   const check = useMutation({
     mutationFn: () => githubAppsApi.check(app.app_id),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: githubAppsKeys.list() }) },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: githubAppsKeys.list() })
+      void queryClient.invalidateQueries({ queryKey: issuesSourceKeys.view() })
+    },
   })
   const installed = app.connections.length > 0
   const failed = install.isError ? install.error : check.error
@@ -180,7 +196,7 @@ function AppRow({ app, onNotice }: Readonly<{ app: GitHubApp; onNotice: (text: s
             aria-label={t('connections.githubApp.removeLabel', { slug: app.slug })}>{t('connections.githubApp.remove')}</button>
         </div>
       </div>
-      {check.data !== undefined && <CheckResult app={app} repositories={check.data.repositories.length} missing={check.data.missing} />}
+      {check.data !== undefined && <CheckResult app={app} check={check.data} />}
       {failed !== null && <p role="alert" className="text-[12px] text-danger">{errorText(failed)}</p>}
       {removing && (
         <ConnectionChangeConfirm variant="danger" title={t('connections.githubApp.removeTitle', { slug: app.slug })}

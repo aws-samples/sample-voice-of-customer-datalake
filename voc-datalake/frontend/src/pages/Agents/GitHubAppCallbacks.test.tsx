@@ -109,6 +109,34 @@ describe('the installation\'s return', () => {
       .toStrictEqual({ installation_id: 31415926, setup_action: 'install', state: 's2' })
   })
 
+  it('says the repositories now read automatically and their labels (7.50.02)', async () => {
+    renderAt(`${INSTALLED}?installation_id=31415926&setup_action=install&state=s2`, { [INSTALLATIONS]: () => ({
+      ...answer(), issues: { signs_in: 'app', added: ['example-org/payments', 'example-org/billing'],
+        reading: ['example-org/payments', 'example-org/billing'], skipped: [],
+        labels: [{ repository: 'example-org/payments', state: 'created' }, { repository: 'example-org/billing', state: 'present' }],
+        schedule: 'on', error: null },
+    }) })
+    expect(await screen.findByText('Issues: read automatically from 2 repositories.')).toBeInTheDocument()
+    expect(screen.getByText('Label voc-agent: on example-org/payments, example-org/billing.')).toBeInTheDocument()
+  })
+
+  it('says a source on a token is left as it is, with its Data sources card, and what could not be done', async () => {
+    renderAt(`${INSTALLED}?installation_id=31415926&setup_action=install&state=s2`, { [INSTALLATIONS]: () => ({
+      ...answer(), issues: { signs_in: 'token', added: [], reading: [], skipped: [], labels: [], schedule: 'off',
+        error: 'the source could not be read: try Check installation' },
+    }) })
+    expect(await screen.findByText(/signs in with a token: add these repositories under Administration → Data sources/))
+      .toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources/github_issues')
+    expect([screen.getByText(/schedule is off/), screen.getByText(/the source could not be read: try Check installation/)]).toHaveLength(2)
+  })
+
+  it('says nothing of the issues when no source is deployed', async () => {
+    renderAt(`${INSTALLED}?installation_id=31415926&setup_action=install&state=s2`, { [INSTALLATIONS]: () => ({ ...answer(), issues: null }) })
+    await screen.findByText('Connected 2 repositories through voc-agents-3f9a2c.')
+    expect(screen.queryByTestId('issues-follow')).toBeNull()
+  })
+
   it('sends it once only, whatever StrictMode runs twice', async () => {
     renderAt(`${INSTALLED}?installation_id=31415926&setup_action=update&state=s2`, { [INSTALLATIONS]: answer })
     await screen.findByText('Connected 2 repositories through voc-agents-3f9a2c.')

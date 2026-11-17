@@ -29,6 +29,7 @@ import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
+import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
 import { engineeringRunCaps } from './engineering-start';
 import { SKILL_PARTITIONS } from './engineering-runtime';
 import { denyIssueTriageWrites } from './engineering-runtime-grants';
@@ -154,8 +155,12 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
   // The readiness checks' own reads and the workspace bucket's probe (7.50.00, api-engineering-readiness.ts).
   const readiness = grantEngineeringReadiness(ctx, role);
+  // The GitHub Issues source configured from the connections (7.50.02, api-engineering-issues-sync.ts): its settings in
+  // the shared secret and its schedule rule turned on, where the github_issues plugin is deployed.
+  const issues = grantIssuesSourceFollow(ctx, role);
   return {
     ...readiness,
+    ...issues,
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,

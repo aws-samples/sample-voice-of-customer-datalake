@@ -1,6 +1,7 @@
-"""voc-engineering-app-tokens (app_tokens.py): two actions and nothing else, refused before anything is read; the
+"""voc-engineering-app-tokens (app_tokens.py): three actions and nothing else, refused before anything is read; the
 Issues source's tokens exactly ``{issues: read, metadata: read}`` and narrowed to the run's repositories; an
-inspection answering no token and revoking the one it used; the App's key read once, checked, never answered or
+inspection answering no token and revoking the one it used; the ``voc-agent`` label alone, created only when missing
+with an ``{issues: write}`` token of its one repository (7.50.02); the App's key read once, checked, never answered or
 logged."""
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ from engineering.connectors import app_tokens
 from engineering.connectors.app_tokens import (
     INSPECT_PERMISSIONS,
     ISSUES_PERMISSIONS,
+    LABEL,
+    LABEL_PERMISSIONS,
     AppKeyUnavailable,
     AppTokens,
     AppTokensRefused,
@@ -111,8 +114,18 @@ def claims(authorization: str) -> dict[str, Any]:
     {'action': 'issues_token', 'app_id': '0123', 'repositories': ['o/r']},
     {'action': 'inspect_installation', 'app_id': APP_ID},
     {'action': 'inspect_installation', 'app_id': APP_ID, 'installation_id': True},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r', 'label': 'bug'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r', 'label': 'VOC-AGENT'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r', 'label': 'voc-agent '},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': '../x', 'label': 'voc-agent'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': ['o/r'], 'label': 'voc-agent'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r', 'label': 'voc-agent',
+     'color': 'ff0000'},
+    {'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r', 'label': 'voc-agent',
+     'workspace_id': 'ws-1'},
 ])
-def test_anything_but_its_two_actions_on_their_shapes_is_refused_before_anything_is_read(event: Any) -> None:
+def test_anything_but_its_three_actions_on_their_shapes_is_refused_before_anything_is_read(event: Any) -> None:
     with patch.object(app_tokens, 'app_tokens', side_effect=AssertionError('read')) as built, \
             pytest.raises(AppTokensRefused):
         app_tokens.lambda_handler(event, None)
@@ -124,9 +137,12 @@ def test_a_workspaces_request_is_refused_saying_why() -> None:
         parse_request({'action': 'issues_token', 'app_id': APP_ID, 'repositories': ['o/r'], 'workspace': 'w'})
 
 
-def test_the_two_actions_parse_to_their_arguments() -> None:
+def test_the_three_actions_parse_to_their_arguments() -> None:
     assert parse_request({'action': 'inspect_installation', 'app_id': 4242, 'installation_id': '77'}) == (
         'inspect_installation', {'app_id': APP_ID, 'installation_id': 77})
+    assert parse_request({'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r',
+                          'label': 'voc-agent'}) == (
+        'ensure_label', {'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r'})
     assert parse_request({'action': 'issues_token', 'app_id': APP_ID, 'repositories': ['o/r', 'O/R', 'o/s']}) == (
         'issues_token', {'app_id': APP_ID, 'repositories': ('o/r', 'o/s')})
 
@@ -278,3 +294,80 @@ def test_an_inspection_answers_the_apps_slug_as_github_reports_it_now_and_none_o
 
     assert inspected(app_slug='renamed-agent')['app_slug'] == 'renamed-agent'
     assert inspected(app_slug=None)['app_slug'] == ''
+
+
+# --- the voc-agent label (7.50.02) --------------------------------------------------------------------------------------
+
+
+def labelled(present: bool) -> FakeGitHub:
+    label = answer(200, {'name': LABEL}) if present else answer(404, {'message': 'Not Found'})
+    return FakeGitHub(routes={
+        ('GET', '/repos/example-org/web/installation'): answer(200, installation(77)),
+        ('GET', '/repos/example-org/web/labels/voc-agent'): label,
+        ('POST', '/repos/example-org/web/labels'): answer(201, {'name': LABEL})})
+
+
+def test_the_action_allows_exactly_the_voc_agent_label() -> None:
+    from shared.agents_store import DEFAULT_ISSUE_LABEL
+    assert LABEL == DEFAULT_ISSUE_LABEL == 'voc-agent'
+    for other in ('bug', 'voc-agent/x', 'Voc-Agent', '', None):
+        with pytest.raises(AppTokensRefused, match="'voc-agent'"):
+            parse_request({'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77, 'repository': 'o/r',
+                           'label': other})
+
+
+def test_a_missing_label_is_created_with_an_issues_write_token_of_that_one_repository_then_revoked(ssm: Any) -> None:
+    github = labelled(present=False)
+    found = tokens(ssm, github).ensure_label(APP_ID, 77, 'example-org/web')
+    assert found == {'repository': 'example-org/web', 'label': 'voc-agent', 'created': True}
+    [mint] = [sent for sent in github.sent if sent.path.endswith('/access_tokens')]
+    assert mint.path == '/app/installations/77/access_tokens'
+    assert mint.body == {'permissions': LABEL_PERMISSIONS, 'repositories': ['web']}
+    assert LABEL_PERMISSIONS == {'issues': 'write'}
+    [create] = [sent for sent in github.sent if sent.method == 'POST' and sent.path.endswith('/labels')]
+    assert create.body == {'name': 'voc-agent', 'color': app_tokens.LABEL_COLOR,
+                           'description': 'Picked up by the VoC agents'}
+    assert create.authorization == 'Bearer ghs_minted_1'
+    assert (github.sent[-1].method, github.sent[-1].path) == ('DELETE', '/installation/token')
+    assert 'ghs_' not in json.dumps(found)
+
+
+def test_a_label_already_there_is_left_as_it_is(ssm: Any) -> None:
+    github = labelled(present=True)
+    assert tokens(ssm, github).ensure_label(APP_ID, 77, 'example-org/web')['created'] is False
+    assert not [sent for sent in github.sent if sent.method == 'POST' and sent.path.endswith('/labels')]
+    assert github.sent[-1].method == 'DELETE'
+
+
+def test_a_label_another_writer_made_meanwhile_is_not_an_error(ssm: Any) -> None:
+    github = labelled(present=False)
+    github.routes[('POST', '/repos/example-org/web/labels')] = answer(422, {'errors': [{'code': 'already_exists'}]})
+    assert tokens(ssm, github).ensure_label(APP_ID, 77, 'example-org/web')['created'] is False
+
+
+@pytest.mark.parametrize('answered', [answer(404, {'message': 'Not Found'}), answer(200, installation(78)),
+                                      answer(200, installation(77, app_id=1)),
+                                      answer(200, installation(77, suspended_at='2026-11-01T00:00:00Z'))])
+def test_a_repository_another_installation_covers_or_none_is_refused_before_any_token(ssm: Any,
+                                                                                    answered: Response) -> None:
+    github = labelled(present=False)
+    github.routes[('GET', '/repos/example-org/web/installation')] = answered
+    with pytest.raises(InstallationRefused):
+        tokens(ssm, github).ensure_label(APP_ID, 77, 'example-org/web')
+    assert github.minted == 0
+
+
+def test_a_failed_label_create_still_revokes_the_token(ssm: Any) -> None:
+    github = labelled(present=False)
+    github.routes[('POST', '/repos/example-org/web/labels')] = answer(403, {'message': 'Resource not accessible'})
+    with pytest.raises(HostError):
+        tokens(ssm, github).ensure_label(APP_ID, 77, 'example-org/web')
+    assert (github.sent[-1].method, github.sent[-1].authorization) == ('DELETE', 'Bearer ghs_minted_1')
+
+
+def test_the_handler_routes_ensure_label(ssm: Any) -> None:
+    github = labelled(present=False)
+    with patch.object(app_tokens, 'app_tokens', return_value=tokens(ssm, github)):
+        found = app_tokens.lambda_handler({'action': 'ensure_label', 'app_id': APP_ID, 'installation_id': 77,
+                                           'repository': 'example-org/web', 'label': 'voc-agent'}, None)
+    assert found == {'repository': 'example-org/web', 'label': 'voc-agent', 'created': True}

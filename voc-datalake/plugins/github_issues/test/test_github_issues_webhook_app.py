@@ -55,6 +55,19 @@ def test_the_apps_delivery_signed_with_its_own_secret_is_accepted(ssm):
     assert ssm.read == [f"{PREFIX}{APP_ID}/webhook"]
 
 
+def test_a_delivery_for_a_repository_its_connection_configured_is_ingested(ssm):
+    """7.50.02 (lambda/engineering/connectors/issues_sync.py): connecting a repository writes it after the
+    administrator's own entries, signs the source in with the App and records it as managed; the App's delivery for it
+    is then ingested in real time with no repository webhook, no token and no Data sources step."""
+    configured = {"repos": f"kirodotdev/Kiro\n{REPO}", "repos_managed": REPO, "github_app_id": APP_ID,
+                  "webhook_secret": "", "token": ""}
+    with github_webhook(**configured) as (webhook, sqs, _, _audit):
+        status, body = call(webhook, app_delivery())
+    assert (status, body["items_processed"]) == (200, 1)
+    assert enqueued(sqs)[0]["id"] == f"{REPO}#7"
+    assert ssm.read == [f"{PREFIX}{APP_ID}/webhook"]
+
+
 @pytest.mark.usefixtures("ssm")
 def test_a_forged_app_header_with_the_repository_secrets_signature_is_401():
     with github_webhook(github_app_id=APP_ID) as (webhook, sqs, _, audit):

@@ -3311,6 +3311,7 @@ function routeContextAndFlags(req, url, body) {
     return [200, { ...listed, users: listed.users.map((u) => ({ ...u, flags: userFlagsOf(u.username), ai_mode: aiModeOf(u.username) })) }];
   }
   if (key === 'GET /users/me/ai-mode') return [200, { success: true, ai_mode: aiModeOf(MOCK_MEMORY_CALLER) }];
+  if (key === 'PUT /users/me/ai-mode') return setMyMockAiMode(body);
   const flagsMatch = url.pathname.match(/^\/users\/([^/]+)\/flags$/);
   if (flagsMatch && req.method === 'PUT') return setMockUserFlags(decodeURIComponent(flagsMatch[1]), body);
   if (url.pathname.startsWith('/settings/design-system')) return routeDesignSystem(req, url, body);
@@ -3335,6 +3336,14 @@ function setMockAiMode(username, body) {
   };
   mockAiModes.set(username, next);
   return [null, next];
+}
+
+/** PUT /users/me/ai-mode (7.50.02): `{ai_mode}`, the caller's own way of working, never another person's. */
+function setMyMockAiMode(body) {
+  if (!body || Object.keys(body).join() !== 'ai_mode') return [400, { success: false, error: 'the body is {ai_mode}' }];
+  const [modeError, aiMode] = setMockAiMode(MOCK_MEMORY_CALLER, body);
+  if (modeError) return modeError;
+  return [200, { success: true, ai_mode: { ...aiMode, saved: true } }];
 }
 
 function setMockUserFlags(username, body) {

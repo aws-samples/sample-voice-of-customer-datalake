@@ -480,14 +480,34 @@
     },
     "aiMode": {
       "title": "AI와 일하는 방식",
-      "description": "각 사용자가 PR/FAQ와 PRD를 작성할 때 AI가 얼마나 도울지 정합니다. 각 모드는 이전 모드에 기능을 더하며, 기본값은 AI 주도입니다. 다른 문서에는 영향이 없습니다.",
+      "description": "사용자별로 그 사람의 PR/FAQ와 PRD를 AI가 얼마나 작성할지, 그리고 그 사람이 활성화한 엔지니어링 자동화가 푸시하고 풀 리퀘스트를 열 수 있는지를 정합니다.",
+      "notSet": "설정 안 됨",
+      "notSetEffect": "문서는 AI 주도 사용 · 선택할 때까지 자동화는 푸시하지 않음",
+      "compareTitle": "모드별 차이",
+      "compare": {
+        "mode": "모드",
+        "documents": "내 PR/FAQ와 PRD",
+        "automations": "내가 활성화한 자동화",
+        "humanDriven": {
+          "documents": "AI는 답하고 설명하며 검토합니다. 대신 작성하지 않습니다(관리자가 유형을 허용한 경우 제외).",
+          "automations": "아무것도 푸시하지 않습니다."
+        },
+        "aiAssisted": {
+          "documents": "AI가 함께 초안을 쓰고, 제안하고, 다시 씁니다.",
+          "automations": "푸시하고 풀 리퀘스트를 열 수 있으며, 각 푸시는 사람의 승인을 기다립니다."
+        },
+        "aiDriven": {
+          "documents": "AI 지원에 더해 에이전트와 계획이 대신 작성할 수 있습니다.",
+          "automations": "푸시하고 사람이 검토할 풀 리퀘스트를 열 수 있습니다."
+        }
+      },
       "saveFailed": "일하는 방식을 변경하지 못했습니다. 다시 시도하세요.",
       "humanDriven": "사람 주도",
       "aiAssisted": "AI 지원",
       "aiDriven": "AI 주도",
       "humanDrivenTooltip": "AI는 질문에 답하고 방법을 설명하며 검토합니다. 문서를 대신 작성하지 않습니다.",
       "aiAssistedTooltip": "AI가 편집기와 채팅에서 함께 초안을 쓰고, 제안하고, 다시 씁니다.",
-      "aiDrivenTooltip": "AI 지원에 더해 자율 에이전트와 계획이 문서를 대신 작성할 수 있습니다.",
+      "aiDrivenTooltip": "AI 지원에 더해 에이전트가 문서를 대신 작성하고, 내가 활성화한 자동화를 위해 코드를 푸시할 수 있습니다.",
       "unlockPrfaq": "AI로 PR/FAQ",
       "unlockPrd": "AI로 PRD",
       "unlockPrfaqFor": "AI로 PR/FAQ: {{user}}",

@@ -23,7 +23,9 @@ or reads a credential back.
    there back into the workspace the flow started in (frontend workspace/returnWorkspace.ts). Every repository it lists is
    saved as a connection (``ConnectionStore.save``, its parameter a reference to the App's key:
    ``connections.AppReference``), up to the deployment's ``MAX_CONNECTIONS``; one already connected, an archived one
-   and those past the limit are reported, never saved.
+   and those past the limit are reported, never saved. Then (7.50.02, ``issues_sync.py``) the deployment's GitHub
+   Issues source follows: every connection of the App whose switch is on is read by it, and each repository gets the
+   ``voc-agent`` label (the answer's ``issues`` block; **Check installation** does the same).
 
 State: each step's state is ``secrets.token_urlsafe(32)``, handed to the browser and never stored; its row,
 ``CONNECTIONS#default#SETUP`` / ``STATE#<sha256 of it>``, names its purpose (``create`` or ``install``), the
@@ -79,6 +81,7 @@ from engineering.connectors.connections import (
     display_name,
     is_branch_name,
     parse_reason,
+    partition_rows,
 )
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.transport import DEFAULT_RETRY_SECONDS, HttpsTransport, Transport, asked_wait, dig, json_of
@@ -376,11 +379,13 @@ def connection_id_for(repository: str, taken: set[str]) -> str:
 class GitHubApps:
     """The Apps over voc-agents (``table``), SSM (``ssm``, under ``prefix`` with ``key_id``), the connections
     (``connections``) and the token function (``tokens``: its request in, its answer out, a ``ConnectionRefused`` for
-    its failures). ``transport``: GitHub's conversion (tests inject a fake)."""
+    its failures). ``transport``: GitHub's conversion (tests inject a fake). ``issues``: the GitHub Issues source's
+    follow of the connections (issues_sync.py ``IssuesFollow``; None: no ``issues`` block)."""
 
     def __init__(self, table: Any, ssm: Callable[[], Any], prefix: str, key_id: str, connections: ConnectionStore,
                  tokens: Callable[[dict[str, Any]], dict[str, Any]], *, frontend_url: str, webhook_url: str = '',
-                 clock: Callable[[], datetime] = lambda: datetime.now(UTC), transport: Transport | None = None) -> None:
+                 clock: Callable[[], datetime] = lambda: datetime.now(UTC), transport: Transport | None = None,
+                 issues: Any = None) -> None:
         self._table = table
         self._ssm = ssm
         self._prefix = prefix
@@ -391,17 +396,14 @@ class GitHubApps:
         self._webhook_url = webhook_url
         self._clock = clock
         self._transport = transport or HttpsTransport(host=API_HOST)
+        self._issues = issues
         self.states = SetupStates(table, clock)
 
     # --- reads ------------------------------------------------------------------------------------------------
 
     def _apps(self) -> list[dict[str, Any]]:
-        from shared.dynamo_paging import query_all
-
         try:
-            rows = query_all(self._table, {
-                'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :app)', 'ConsistentRead': True,
-                'ExpressionAttributeValues': {':pk': PARTITION, ':app': APP_ROW_PREFIX}})
+            rows = partition_rows(self._table, APP_ROW_PREFIX)
         except (ClientError, BotoCoreError) as exc:
             raise ConnectionRefused('unavailable', 'the GitHub Apps could not be read: retry') from exc
         return [row for row in rows if row.get('removed') is not True]
@@ -597,7 +599,7 @@ class GitHubApps:
         connections, skipped = self._save_all(app_id, installation_id, inspected, actor)
         account = dig(inspected, 'account')
         outcome = {'account': {'login': str(dig(account, 'login') or ''), 'type': str(dig(account, 'type') or '')},
-                   'connections': connections, 'skipped': skipped}
+                   'connections': connections, 'skipped': skipped, 'issues': self._follow(app_id, actor)}
         self.states.settle(state, outcome)
         logger.info('engineering GitHub App installed', extra={
             'app_id': app_id, 'installation_id': installation_id, 'connections': len(connections),
@@ -638,10 +640,23 @@ class GitHubApps:
             saved.append({'connection': connection, 'created': created})
         return saved, skipped
 
+    def _follow(self, app_id: str, actor: Actor) -> dict[str, Any] | None:
+        """The GitHub Issues source's follow of the App's stored connections (issues_sync.py ``follow_app``: never
+        raises; None where the source is not deployed or no follow is wired)."""
+        if self._issues is None:
+            return None
+        try:
+            stored = self._connections.list()
+        except ConnectionRefused as refused:
+            return {'signs_in': 'none', 'added': [], 'reading': [], 'skipped': [], 'labels': [], 'schedule': 'unknown',
+                    'error': str(refused)}
+        return self._issues.follow_app(app_id, stored, actor)
+
     def check(self, app_id: str, actor: Actor | None = None) -> dict[str, Any]:
         """The repositories each installation the App's connections name now covers, and the connections whose
         repository it no longer does (``missing``: the broker refuses them, failing closed). An App renamed on GitHub
-        has a new slug: the one its installation reports is recorded (``_renamed``), so its install links keep working."""
+        has a new slug: the one its installation reports is recorded (``_renamed``), so its install links keep working.
+        With ``actor``, the GitHub Issues source follows the App's connections again (``issues``)."""
         item = self._app(app_id)
         users = self._users().get(app_id, [])
         installations: dict[str, list[dict[str, Any]]] = {}
@@ -658,7 +673,8 @@ class GitHubApps:
                         if not truncated and str(c['repository']).lower() not in {r.lower() for r in covered}]
         if len(slugs) == 1 and actor is not None:
             self._renamed(item, slugs.pop(), actor)
-        return {'repositories': sorted(repositories), 'missing': sorted(missing)}
+        issues = self._follow(app_id, actor) if actor is not None else None
+        return {'repositories': sorted(repositories), 'missing': sorted(missing), 'issues': issues}
 
     def _renamed(self, item: Mapping[str, Any], slug: str, actor: Actor) -> None:
         """Record ``slug``, the one GitHub reports now, when the App's row names another (the App was renamed on

@@ -274,8 +274,8 @@
       "decision": "Decision",
       "artifact": "Artifact"
     },
-    "engineeringConfirmBug": "The agent starts an engineering run on its repository: it works on a branch of its own and stops at a draft pull request. Give an issue number to fix that issue (even one it ran on before), or leave it empty to hunt for bugs.",
-    "engineeringConfirmFeature": "The agent starts an engineering run on its repository from an issue: it builds the feature on a branch of its own and stops at a draft pull request. To build from a PRD, open the PRD and choose Build from this PRD.",
+    "engineeringConfirmBug": "The agent starts an engineering run on its repository: it works on a branch of its own and opens a pull request for review (a draft when its flow says so); merging stays with a person. Give an issue number to fix that issue (even one it ran on before), or leave it empty to hunt for bugs.",
+    "engineeringConfirmFeature": "The agent starts an engineering run on its repository from an issue: it builds the feature on a branch of its own and opens a pull request for review (a draft when its flow says so); merging stays with a person. To build from a PRD, open the PRD and choose Build from this PRD.",
     "issueOptional": "Issue number (optional)",
     "issueRequired": "Issue number",
     "issueInvalid": "The issue's number: a whole number from 1.",
@@ -768,6 +768,41 @@
       "removed": "{{slug}} is removed from this deployment. Delete it in GitHub's settings too.",
       "via": "via {{slug}}"
     },
+    "issues": {
+      "switch": "Read this repository's issues",
+      "reading": "Issues are read automatically.",
+      "reasons": {
+        "off": "Its issues are not read: the switch is off.",
+        "token": "The GitHub Issues source signs in with a token: add this repository under Administration → Data sources.",
+        "other_app": "The GitHub Issues source signs in with another GitHub App: this repository's issues are not read through it.",
+        "limit": "The GitHub Issues source reads at most {{limit, number}} repositories: remove one under Administration → Data sources to read this one.",
+        "not_app": "Only a connection made through the deployment's GitHub App has its issues read automatically.",
+        "not_deployed": "The GitHub Issues source is not deployed here, so no issues are read.",
+        "pending": "Not read yet: it is not in the GitHub Issues source's list.",
+        "unknown": "Its issues are not read."
+      },
+      "openSources": "Open Administration → Data sources",
+      "readNow": "Read its issues now",
+      "label": {
+        "created": "Label {{label}}: created.",
+        "present": "Label {{label}}: on the repository.",
+        "failed": "The {{label}} label could not be created: Check installation tries again."
+      },
+      "follow": {
+        "reading_one": "Issues: read automatically from {{count, number}} repository.",
+        "reading_other": "Issues: read automatically from {{count, number}} repositories.",
+        "token": "The GitHub Issues source signs in with a token: add these repositories under Administration → Data sources.",
+        "labelsCreated": "Label {{label}}: on {{list}}.",
+        "labelsFailed": "The {{label}} label could not be created on {{list}}: Check installation tries again.",
+        "skipped": {
+          "off": "Not read (switched off): {{list}}.",
+          "other_app": "Not read (the source signs in with another GitHub App): {{list}}.",
+          "limit": "Not read (the source already reads {{limit, number}} repositories): {{list}}."
+        },
+        "scheduleOff": "The GitHub Issues source's schedule is off: turn it on under Administration → Data sources.",
+        "error": "The GitHub Issues source could not be set up automatically: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "Back to Agents → Connections",
       "createdTitle": "GitHub App created",
@@ -925,7 +960,7 @@
     "ci": {
       "attested": "CI attested",
       "notAttested": "CI not attested",
-      "attestedBy": "Attested by {{who}}, {{when}}: the agents may push to voc-agent/* branches and open draft pull requests.",
+      "attestedBy": "Attested by {{who}}, {{when}}: the agents may push to voc-agent/* branches and open pull requests for review; merging stays with a person.",
       "none": "The agents push nothing to this repository until an administrator attests that its CI keeps agent branches harmless.",
       "withdrawnBy": "Withdrawn by {{who}}, {{when}}: the agents push nothing until it is attested again.",
       "voidedRepository": "Voided when the connection’s repository changed: attest this repository’s CI.",
@@ -1405,7 +1440,7 @@
     "button": "Build from this PRD",
     "started": "Open the run monitor",
     "title": "Build from this PRD?",
-    "message": "{{name}} starts an engineering run that builds the feature this PRD describes, on a branch of its own, and stops at a draft pull request.",
+    "message": "{{name}} starts an engineering run that builds the feature this PRD describes, on a branch of its own, and opens a pull request for review (a draft when its flow says so); merging stays with a person.",
     "confirm": "Start the build",
     "agent": "Agent",
     "inputHint": "The run gets this PRD as its input, by its id."
@@ -1422,6 +1457,11 @@
     "docs": "Docs",
     "opensNewTab": "(opens in a new tab)",
     "setWayOfWorking": "Set your way of working in Users",
+    "setDialMine": "Set mine to AI-driven",
+    "dialConfirm": "This lets the automations you enable push to voc-agent/* branches and open pull requests, and lets AI write your PR/FAQs and PRDs.",
+    "dialConfirmAction": "Set to AI-driven",
+    "dialSaved": "Saved: AI-driven.",
+    "dialFailed": "Your way of working could not be saved: try again.",
     "enableWaits": "Enable waits until every check a run needs passes.",
     "enableRefused": "Not enabled: these checks a run needs fail.",
     "passedFolded": "Checks that passed ({{count, number}})",
@@ -1520,7 +1560,6 @@
       "label": "Prerequisites",
       "github": "Connect GitHub with the deployment's GitHub App: make the App, then install it on the repository (two clicks).",
       "ci": "Attest the repository's CI on its connection: protected secrets, a read-only token, OIDC pinned, no self-hosted runner, no privileged pull request workflow.",
-      "issues": "Ingest its issues: the GitHub Issues source for the whole deployment, listing the repository and signed in with that App, and the voc-agent label on each issue the agents may take.",
       "met": "Done",
       "notMet": "To do",
       "unknown": "Not known yet",
@@ -1531,8 +1570,16 @@
       "deploymentTitle": "This deployment",
       "connectedAs": "Connected through an App: {{list}}.",
       "ciFor": "CI attested for {{list}}.",
-      "notConfigured": "Not configured",
-      "noReadiness": "The source and its label are checked by an automation's readiness: no automation is found yet."
+      "noReadiness": "The source and its label are checked by an automation's readiness: no automation is found yet.",
+      "automatic": "Automatic",
+      "issuesRead_one": "Issues: read automatically from {{count, number}} repository.",
+      "issuesRead_other": "Issues: read automatically from {{count, number}} repositories.",
+      "issuesNone": "Issues: read automatically once a repository is connected through the App.",
+      "issuesUnknown": "Issues: read automatically from each repository connected through the App.",
+      "issuesNotDeployed": "Issues: the GitHub Issues source is not deployed here.",
+      "issuesToken": "Issues: the GitHub Issues source signs in with a token, so its repositories are listed by hand.",
+      "labelCreated": "Label {{label}}: created.",
+      "labelPending": "Label {{label}}: created automatically on each repository whose issues are read."
     },
     "automation": {
       "open": "Open {{name}}",

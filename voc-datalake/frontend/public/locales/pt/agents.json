@@ -275,8 +275,8 @@
       "decision": "Decisão",
       "artifact": "Artefato"
     },
-    "engineeringConfirmBug": "O agente inicia uma execução de engenharia no seu repositório: trabalha em um branch próprio e para em um pull request em rascunho. Informe o número de uma issue para corrigi-la (mesmo uma que já foi executada) ou deixe em branco para procurar bugs.",
-    "engineeringConfirmFeature": "O agente inicia uma execução de engenharia no seu repositório a partir de uma issue: constrói a funcionalidade em um branch próprio e para em um pull request em rascunho. Para construir a partir de um PRD, abra o PRD e escolha \"Construir a partir deste PRD\".",
+    "engineeringConfirmBug": "O agente inicia uma execução de engenharia no seu repositório: trabalha em um branch próprio e abre um pull request para revisão (um rascunho quando seu fluxo assim indica); o merge continua com uma pessoa. Informe o número de uma issue para corrigi-la (mesmo uma que já foi executada) ou deixe em branco para procurar bugs.",
+    "engineeringConfirmFeature": "O agente inicia uma execução de engenharia no seu repositório a partir de uma issue: constrói a funcionalidade em um branch próprio e abre um pull request para revisão (um rascunho quando seu fluxo assim indica); o merge continua com uma pessoa. Para construir a partir de um PRD, abra o PRD e escolha \"Construir a partir deste PRD\".",
     "issueOptional": "Número da issue (opcional)",
     "issueRequired": "Número da issue",
     "issueInvalid": "O número da issue: um número inteiro a partir de 1.",
@@ -828,6 +828,41 @@
       "removed": "{{slug}} foi removida desta implantação. Exclua-a também nas configurações do GitHub.",
       "via": "via {{slug}}"
     },
+    "issues": {
+      "switch": "Ler as issues deste repositório",
+      "reading": "As issues são lidas automaticamente.",
+      "reasons": {
+        "off": "Suas issues não são lidas: o interruptor está desligado.",
+        "token": "A fonte GitHub Issues entra com um token: adicione este repositório em Administração → Fontes de dados.",
+        "other_app": "A fonte GitHub Issues entra com outro GitHub App: as issues deste repositório não são lidas por ele.",
+        "limit": "A fonte GitHub Issues lê no máximo {{limit, number}} repositórios: remova um em Administração → Fontes de dados para ler este.",
+        "not_app": "Só uma conexão feita pelo GitHub App da implantação tem suas issues lidas automaticamente.",
+        "not_deployed": "A fonte GitHub Issues não está implantada aqui, então nenhuma issue é lida.",
+        "pending": "Ainda não lido: não está na lista da fonte GitHub Issues.",
+        "unknown": "Suas issues não são lidas."
+      },
+      "openSources": "Abrir Administração → Fontes de dados",
+      "readNow": "Ler suas issues agora",
+      "label": {
+        "created": "Rótulo {{label}}: criado.",
+        "present": "Rótulo {{label}}: no repositório.",
+        "failed": "Não foi possível criar o rótulo {{label}}: Verificar instalação tenta de novo."
+      },
+      "follow": {
+        "reading_one": "Issues: lidas automaticamente de {{count, number}} repositório.",
+        "reading_other": "Issues: lidas automaticamente de {{count, number}} repositórios.",
+        "token": "A fonte GitHub Issues entra com um token: adicione estes repositórios em Administração → Fontes de dados.",
+        "labelsCreated": "Rótulo {{label}}: em {{list}}.",
+        "labelsFailed": "Não foi possível criar o rótulo {{label}} em {{list}}: Verificar instalação tenta de novo.",
+        "skipped": {
+          "off": "Não lidos (desligado): {{list}}.",
+          "other_app": "Não lidos (a fonte entra com outro GitHub App): {{list}}.",
+          "limit": "Não lidos (a fonte já lê {{limit, number}} repositórios): {{list}}."
+        },
+        "scheduleOff": "O agendamento da fonte GitHub Issues está desligado: ligue-o em Administração → Fontes de dados.",
+        "error": "Não foi possível configurar a fonte GitHub Issues automaticamente: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "Voltar para Agentes → Conexões",
       "createdTitle": "GitHub App criada",
@@ -985,7 +1020,7 @@
     "ci": {
       "attested": "CI atestada",
       "notAttested": "CI não atestada",
-      "attestedBy": "Atestada por {{who}}, {{when}}: os agentes podem fazer push para branches voc-agent/* e abrir rascunhos de pull request.",
+      "attestedBy": "Atestado por {{who}}, {{when}}: os agentes podem fazer push para branches voc-agent/* e abrir pull requests para revisão; o merge continua com uma pessoa.",
       "none": "Os agentes não fazem push neste repositório até que um administrador ateste que a CI dele não entrega nada de valor aos branches dos agentes.",
       "withdrawnBy": "Retirada por {{who}}, {{when}}: os agentes não fazem push até que seja atestada de novo.",
       "voidedRepository": "Anulada quando o repositório da conexão mudou: ateste a CI deste repositório.",
@@ -1466,7 +1501,7 @@
     "button": "Construir a partir deste PRD",
     "started": "Abrir o monitor de execução",
     "title": "Construir a partir deste PRD?",
-    "message": "{{name}} inicia uma execução de engenharia que constrói a funcionalidade descrita neste PRD, em um branch próprio, e para em um pull request em rascunho.",
+    "message": "{{name}} inicia uma execução de engenharia que constrói a funcionalidade descrita neste PRD, em um branch próprio, e abre um pull request para revisão (um rascunho quando seu fluxo assim indica); o merge continua com uma pessoa.",
     "confirm": "Iniciar a construção",
     "agent": "Agente",
     "inputHint": "A execução recebe este PRD como entrada, pelo seu id."
@@ -1483,6 +1518,11 @@
     "docs": "Documentação",
     "opensNewTab": "(abre em uma nova aba)",
     "setWayOfWorking": "Defina sua forma de trabalho em Usuários",
+    "setDialMine": "Definir o meu como Conduzido por IA",
+    "dialConfirm": "Isso permite que as automações que você ativar façam push para branches voc-agent/* e abram pull requests, e que a IA escreva seus PR/FAQs e PRDs.",
+    "dialConfirmAction": "Definir como Conduzido por IA",
+    "dialSaved": "Salvo: Conduzido por IA.",
+    "dialFailed": "Não foi possível salvar seu modo de trabalho: tente de novo.",
     "enableWaits": "Ativar aguarda até que cada verificação de que uma execução precisa seja aprovada.",
     "enableRefused": "Não ativado: estas verificações de que uma execução precisa falham.",
     "passedFolded": "Verificações aprovadas ({{count, number}})",
@@ -1581,7 +1621,6 @@
       "label": "Pré-requisitos",
       "github": "Conecte o GitHub com o GitHub App da implantação: crie o App e depois instale-o no repositório (dois cliques).",
       "ci": "Ateste a CI do repositório na conexão dele: segredos protegidos, um token somente leitura, OIDC fixado, nenhum runner auto-hospedado, nenhum workflow de pull request privilegiado.",
-      "issues": "Ingira as issues: a fonte GitHub Issues para toda a implantação, com o repositório e conectada com esse App, e o rótulo voc-agent em cada issue que os agentes podem assumir.",
       "met": "Concluído",
       "notMet": "A fazer",
       "unknown": "Ainda não se sabe",
@@ -1592,8 +1631,16 @@
       "deploymentTitle": "Esta implantação",
       "connectedAs": "Conectado por um App: {{list}}.",
       "ciFor": "CI atestada para {{list}}.",
-      "notConfigured": "Não configurado",
-      "noReadiness": "A fonte e o rótulo são verificados pela prontidão de uma automação: nenhuma automação foi encontrada ainda."
+      "noReadiness": "A fonte e o rótulo são verificados pela prontidão de uma automação: nenhuma automação foi encontrada ainda.",
+      "automatic": "Automático",
+      "issuesRead_one": "Issues: lidas automaticamente de {{count, number}} repositório.",
+      "issuesRead_other": "Issues: lidas automaticamente de {{count, number}} repositórios.",
+      "issuesNone": "Issues: lidas automaticamente assim que um repositório é conectado pelo App.",
+      "issuesUnknown": "Issues: lidas automaticamente de cada repositório conectado pelo App.",
+      "issuesNotDeployed": "Issues: a fonte GitHub Issues não está implantada aqui.",
+      "issuesToken": "Issues: a fonte GitHub Issues entra com um token, então seus repositórios são listados à mão.",
+      "labelCreated": "Rótulo {{label}}: criado.",
+      "labelPending": "Rótulo {{label}}: criado automaticamente em cada repositório cujas issues são lidas."
     },
     "automation": {
       "open": "Abrir {{name}}",

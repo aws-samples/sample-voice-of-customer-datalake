@@ -274,8 +274,8 @@
       "decision": "결정",
       "artifact": "산출물"
     },
-    "engineeringConfirmBug": "에이전트가 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 작업하고 초안 풀 리퀘스트에서 멈춥니다. 이슈 번호를 입력하면 그 이슈를 수정하고(이전에 실행한 이슈도 다시 실행), 비워 두면 버그를 찾습니다.",
-    "engineeringConfirmFeature": "에이전트가 이슈를 바탕으로 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 기능을 만들고 초안 풀 리퀘스트에서 멈춥니다. PRD로 만들려면 PRD를 열고 '이 PRD로 빌드'를 선택하세요.",
+    "engineeringConfirmBug": "에이전트가 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 작업하고 검토용 풀 리퀘스트를 엽니다(플로가 지정하면 초안). 병합은 사람이 합니다. 이슈 번호를 입력하면 그 이슈를 수정하고(이전에 실행한 이슈도 다시 실행), 비워 두면 버그를 찾습니다.",
+    "engineeringConfirmFeature": "에이전트가 이슈를 바탕으로 저장소에서 엔지니어링 실행을 시작합니다. 자체 브랜치에서 기능을 만들고 검토용 풀 리퀘스트를 엽니다(플로가 지정하면 초안). 병합은 사람이 합니다. PRD로 만들려면 PRD를 열고 '이 PRD로 빌드'를 선택하세요.",
     "issueOptional": "이슈 번호(선택)",
     "issueRequired": "이슈 번호",
     "issueInvalid": "이슈 번호: 1 이상의 정수.",
@@ -822,6 +822,41 @@
       "removed": "{{slug}}을(를) 이 배포에서 제거했습니다. GitHub 설정에서도 삭제하세요.",
       "via": "{{slug}} 경유"
     },
+    "issues": {
+      "switch": "이 저장소의 이슈 읽기",
+      "reading": "이슈를 자동으로 읽습니다.",
+      "reasons": {
+        "off": "이슈를 읽지 않습니다: 스위치가 꺼져 있습니다.",
+        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 데이터 소스에서 이 저장소를 추가하세요.",
+        "other_app": "GitHub Issues 소스가 다른 GitHub App으로 로그인합니다: 이 저장소의 이슈는 그 앱으로 읽지 않습니다.",
+        "limit": "GitHub Issues 소스는 저장소를 최대 {{limit, number}}개까지 읽습니다: 이 저장소를 읽으려면 관리 → 데이터 소스에서 하나를 빼세요.",
+        "not_app": "배포의 GitHub App으로 만든 연결만 이슈를 자동으로 읽습니다.",
+        "not_deployed": "이곳에는 GitHub Issues 소스가 배포되지 않아 이슈를 읽지 않습니다.",
+        "pending": "아직 읽지 않음: GitHub Issues 소스 목록에 없습니다.",
+        "unknown": "이슈를 읽지 않습니다."
+      },
+      "openSources": "관리 → 데이터 소스 열기",
+      "readNow": "지금 이슈 읽기",
+      "label": {
+        "created": "{{label}} 레이블: 만들었습니다.",
+        "present": "{{label}} 레이블: 저장소에 있습니다.",
+        "failed": "{{label}} 레이블을 만들지 못했습니다: 설치 확인이 다시 시도합니다."
+      },
+      "follow": {
+        "reading_one": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
+        "reading_other": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
+        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 데이터 소스에서 이 저장소들을 추가하세요.",
+        "labelsCreated": "{{label}} 레이블: {{list}}에 있습니다.",
+        "labelsFailed": "{{list}}에 {{label}} 레이블을 만들지 못했습니다: 설치 확인이 다시 시도합니다.",
+        "skipped": {
+          "off": "읽지 않음(꺼짐): {{list}}.",
+          "other_app": "읽지 않음(소스가 다른 GitHub App으로 로그인): {{list}}.",
+          "limit": "읽지 않음(소스가 이미 저장소 {{limit, number}}개를 읽음): {{list}}."
+        },
+        "scheduleOff": "GitHub Issues 소스의 일정이 꺼져 있습니다: 관리 → 데이터 소스에서 켜세요.",
+        "error": "GitHub Issues 소스를 자동으로 설정하지 못했습니다: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "에이전트 → 연결로 돌아가기",
       "createdTitle": "GitHub App을 만들었습니다",
@@ -979,7 +1014,7 @@
     "ci": {
       "attested": "CI 확인됨",
       "notAttested": "CI 확인 안 됨",
-      "attestedBy": "{{who}} 님이 확인함, {{when}}: 에이전트가 voc-agent/* 브랜치에 푸시하고 초안 풀 리퀘스트를 열 수 있습니다.",
+      "attestedBy": "{{who}}님이 {{when}}에 증명: 에이전트는 voc-agent/* 브랜치에 푸시하고 검토용 풀 리퀘스트를 열 수 있습니다. 병합은 사람이 합니다.",
       "none": "관리자가 이 리포지토리의 CI가 에이전트 브랜치에 가치 있는 것을 주지 않음을 확인할 때까지 에이전트는 아무것도 푸시하지 않습니다.",
       "withdrawnBy": "{{who}} 님이 철회함, {{when}}: 다시 확인될 때까지 에이전트는 아무것도 푸시하지 않습니다.",
       "voidedRepository": "연결의 리포지토리가 바뀌어 무효가 되었습니다. 이 리포지토리의 CI를 확인하세요.",
@@ -1459,7 +1494,7 @@
     "button": "이 PRD로 빌드",
     "started": "실행 모니터 열기",
     "title": "이 PRD로 빌드할까요?",
-    "message": "{{name}}이(가) 엔지니어링 실행을 시작해 이 PRD에 설명된 기능을 자체 브랜치에서 만들고 초안 풀 리퀘스트에서 멈춥니다.",
+    "message": "{{name}}이(가) 엔지니어링 실행을 시작해 이 PRD에 설명된 기능을 자체 브랜치에서 만들고 검토용 풀 리퀘스트를 엽니다(플로가 지정하면 초안). 병합은 사람이 합니다.",
     "confirm": "빌드 시작",
     "agent": "에이전트",
     "inputHint": "실행은 이 PRD를 ID로 입력받습니다."
@@ -1476,6 +1511,11 @@
     "docs": "문서",
     "opensNewTab": "(새 탭에서 열림)",
     "setWayOfWorking": "사용자에서 작업 방식 지정",
+    "setDialMine": "내 방식을 AI 주도로 설정",
+    "dialConfirm": "내가 활성화한 자동화가 voc-agent/* 브랜치에 푸시하고 풀 리퀘스트를 열 수 있게 되며, AI가 내 PR/FAQ와 PRD를 쓸 수 있게 됩니다.",
+    "dialConfirmAction": "AI 주도로 설정",
+    "dialSaved": "저장됨: AI 주도.",
+    "dialFailed": "작업 방식을 저장하지 못했습니다. 다시 시도하세요.",
     "enableWaits": "실행에 필요한 검사가 모두 통과할 때까지 활성화를 기다립니다.",
     "enableRefused": "활성화되지 않음: 실행에 필요한 다음 검사가 실패했습니다.",
     "passedFolded": "통과한 검사 ({{count, number}})",
@@ -1574,7 +1614,6 @@
       "label": "사전 요구 사항",
       "github": "배포의 GitHub App으로 GitHub를 연결하세요: App을 만든 다음 저장소에 설치합니다(두 번 클릭).",
       "ci": "연결에서 저장소의 CI를 증명하세요: 보호된 시크릿, 읽기 전용 토큰, 고정된 OIDC, 셀프 호스팅 러너 없음, 권한 있는 풀 리퀘스트 워크플로 없음.",
-      "issues": "이슈를 수집하세요: 배포 전체의 GitHub Issues 소스에 저장소를 넣고 그 App으로 로그인하며, 에이전트가 맡아도 되는 각 이슈에 voc-agent 레이블을 답니다.",
       "met": "완료",
       "notMet": "할 일",
       "unknown": "아직 알 수 없음",
@@ -1585,8 +1624,16 @@
       "deploymentTitle": "이 배포",
       "connectedAs": "App으로 연결됨: {{list}}.",
       "ciFor": "CI 증명됨: {{list}}.",
-      "notConfigured": "구성되지 않음",
-      "noReadiness": "소스와 레이블은 자동화의 준비 상태로 검사합니다. 아직 찾은 자동화가 없습니다."
+      "noReadiness": "소스와 레이블은 자동화의 준비 상태로 검사합니다. 아직 찾은 자동화가 없습니다.",
+      "automatic": "자동",
+      "issuesRead_one": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
+      "issuesRead_other": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
+      "issuesNone": "이슈: App으로 저장소를 연결하면 자동으로 읽습니다.",
+      "issuesUnknown": "이슈: App으로 연결한 각 저장소에서 자동으로 읽습니다.",
+      "issuesNotDeployed": "이슈: 이곳에는 GitHub Issues 소스가 배포되지 않았습니다.",
+      "issuesToken": "이슈: GitHub Issues 소스가 토큰으로 로그인하므로 저장소를 직접 나열합니다.",
+      "labelCreated": "{{label}} 레이블: 만들었습니다.",
+      "labelPending": "{{label}} 레이블: 이슈를 읽는 각 저장소에 자동으로 만들어집니다."
     },
     "automation": {
       "open": "{{name}} 열기",

@@ -11,7 +11,9 @@
  *
  * Beside them: the list (`GET …/github-apps`), a new install link (`POST …/<app_id>/install`), a check of the
  * installation against the App's connections (`POST …/<app_id>/check`) and the App's removal (`DELETE …/<app_id>`,
- * refused while connections use it). No answer carries a key, a secret or a token. The addresses the page sends the
+ * refused while connections use it). Since 7.50.02 the installation's and the check's answers say what followed for the
+ * deployment's GitHub Issues source (`issues`: api/issuesSourceApi.ts): their repositories read automatically, each
+ * one's `voc-agent` label. No answer carries a key, a secret or a token. The addresses the page sends the
  * browser to are taken only on github.com: an answer naming another host is unreadable, never followed.
  *
  * @module api/githubAppsApi
@@ -21,9 +23,11 @@ import { fetchApi } from './client'
 import { del, post } from './requestKit'
 import { parseEach } from './lenientFields'
 import { optionalServerText, parseConnection, parseLimitedList } from './engineeringConnectionsApi'
+import { parseIssuesFollow } from './issuesSourceApi'
 import { isRecord } from '../lib/typeGuards'
 import type { RequestScope } from './baseUrl'
 import type { SavedConnection } from './engineeringConnectionsApi'
+import type { IssuesFollow } from './issuesSourceApi'
 
 /** The most Apps a deployment keeps (the answer's `limit` wins when it gives one). */
 const DEFAULT_APP_LIMIT = 5
@@ -95,6 +99,8 @@ export interface Installation {
   account: { login: string }
   connections: SavedConnection[]
   skipped: SkippedRepository[]
+  /** What followed for the deployment's GitHub Issues source (7.50.02), or null when none is deployed here. */
+  issues: IssuesFollow | null
 }
 
 export interface InstallationReturn {
@@ -108,6 +114,8 @@ export interface InstallationCheck {
   repositories: string[]
   /** The connections whose repository they no longer cover. */
   missing: string[]
+  /** What followed for the deployment's GitHub Issues source (7.50.02), or null when none is deployed here. */
+  issues: IssuesFollow | null
 }
 
 const SkippedSchema = z.object({ repository: z.string().min(1), reason: z.enum(SKIP_REASONS).catch('not_saved') })
@@ -167,6 +175,7 @@ function parseInstallation(raw: unknown): Installation {
     account: { login: text(raw.account, 'login') },
     connections: parseSaved(raw.connections),
     skipped: parseEach(SkippedSchema, raw.skipped),
+    issues: parseIssuesFollow(raw.issues),
   }
 }
 
@@ -176,7 +185,7 @@ const strings = (value: unknown): string[] => (Array.isArray(value)
 
 function parseCheck(raw: unknown): InstallationCheck {
   if (!isRecord(raw) || !Array.isArray(raw.repositories) || !Array.isArray(raw.missing)) throw unreadable('installation check')
-  return { repositories: strings(raw.repositories), missing: strings(raw.missing) }
+  return { repositories: strings(raw.repositories), missing: strings(raw.missing), issues: parseIssuesFollow(raw.issues) }
 }
 
 const APPS_PATH = '/agents/engineering/github-apps'

@@ -391,12 +391,22 @@
     "runsOnUpload": "Se ejecuta al subir archivos",
     "runsOnDemand": "Se ejecuta bajo demanda: sin programación",
     "githubSignIn": {
-      "label": "Iniciar sesión con",
-      "token": "Un token de acceso detallado",
-      "app": "Una de las GitHub Apps de este despliegue",
+      "appIntro": "Inicia sesión con tu GitHub App: sin token que pegar. Los issues y los comentarios se leen con tokens de corta duración y solo lectura.",
       "appLabel": "GitHub App",
-      "appHint": "Cada ejecución obtiene de la App un token de corta duración solo para estos repositorios (Issues y Metadata, solo lectura) y lo devuelve al terminar. Instala antes la App en los repositorios (Agentes → Conexiones).",
-      "tokenHint": "Un token de acceso personal detallado con Issues y Metadata de solo lectura en estos repositorios."
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "Elige una App",
+      "appHint": "La App solo lee los repositorios en los que está instalada: instálala en más en Agentes → Conexiones.",
+      "useToken": "Usar un token de acceso detallado en su lugar",
+      "tokenHint": "Un token de acceso personal detallado con Issues y Metadata de solo lectura en estos repositorios.",
+      "useApp": "Iniciar sesión con tu GitHub App en su lugar",
+      "connectHint": "O conecta GitHub en Agentes → Conexiones: la GitHub App del despliegue se crea en dos clics y esta fuente lee entonces por sí sola los issues de los repositorios conectados.",
+      "connect": "Conectar GitHub",
+      "managed_one": "Gestionada por tu conexión de GitHub: issues de {{count, number}} repositorio.",
+      "managed_many": "Gestionada por tu conexión de GitHub: issues de {{count, number}} repositorios.",
+      "managed_other": "Gestionada por tu conexión de GitHub: issues de {{count, number}} repositorios.",
+      "managedHint": "Cada repositorio conectado con la GitHub App en Agentes → Conexiones se lee automáticamente; desactívalo allí.",
+      "openConnections": "Abrir Agentes → Conexiones",
+      "manual": "Configurar manualmente (avanzado)"
     }
   },
   "subtitle": "Configure su plataforma VoC",
@@ -1022,7 +1032,7 @@
     "title": "Las fuentes de datos del despliegue",
     "feeds": "Estas fuentes alimentan el despliegue: los comentarios que traen son de todo el despliegue, fuera de cualquier espacio de trabajo, sea cual sea el espacio de trabajo en el que estés ahora. Las credenciales, programaciones y pausas de esta página son las del propio despliegue.",
     "engineering": "Son los únicos comentarios que leen las automatizaciones de ingeniería (Bug fixer, Feature builder, Issue triage): sus ejecuciones nunca toman los comentarios de un espacio de trabajo.",
-    "appSignIn": "Inicia sesión aquí en la fuente GitHub Issues con la GitHub App del despliegue (en su tarjeta, «Iniciar sesión con») e indica los repositorios en los que trabajan los agentes.",
+    "appSignIn": "La fuente GitHub Issues se configura sola cuando conectas GitHub en Agentes → Conexiones: los issues de cada repositorio conectado se leen con la GitHub App del despliegue. Su tarjeta aquí es la vista avanzada.",
     "inWorkspace": "Estás en {{name}}, pero nada de esta página lo cambia: las fuentes propias de ese espacio de trabajo están en la pestaña Fuentes."
   }
 }

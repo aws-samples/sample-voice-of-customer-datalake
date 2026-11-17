@@ -133,7 +133,8 @@ _READS: Final[Mapping[ReadKind, Permissions]] = {
 _COMMENTS: Final[Mapping[CommentTarget, Permissions]] = {
     'issue': {'issues': 'write'}, 'pull_request': {'pull_requests': 'write'}}
 #: An issue's labels (7.50.00): issues write, nothing else.
-_LABELS: Final[Permissions] = {'issues': 'write'}
+#: An issue's labels written (``label_issue``), and the token function's ``ensure_label`` (app_tokens.py).
+ISSUES_WRITE: Final[Permissions] = {'issues': 'write'}
 _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
 #: The checkout cache's fetch of one commit (``fetch_token``): read, nothing else.
@@ -553,7 +554,7 @@ class GitHubHost:
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (GitHub creates a label the repository does not have yet)."""
-        self._api(connection_id, _LABELS, 'POST', f'/issues/{int(number)}/labels', 'the labels',
+        self._api(connection_id, ISSUES_WRITE, 'POST', f'/issues/{int(number)}/labels', 'the labels',
                   body={'labels': list(labels)}, ok=(200,))
         return labels
 

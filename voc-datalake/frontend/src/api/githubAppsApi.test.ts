@@ -108,7 +108,28 @@ describe('the creation and the installation', () => {
 describe('the check and the removal', () => {
   it('answers the installed repositories and the connections no longer covered', async () => {
     routeFetchApi({ 'POST /agents/engineering/github-apps/271828/check': () => ({ repositories: ['example-org/payments', 3], missing: ['billing-api'] }) })
-    await expect(githubAppsApi.check('271828')).resolves.toStrictEqual({ repositories: ['example-org/payments'], missing: ['billing-api'] })
+    await expect(githubAppsApi.check('271828')).resolves.toStrictEqual({
+      repositories: ['example-org/payments'], missing: ['billing-api'], issues: null,
+    })
+  })
+
+  it('reads what followed for the GitHub Issues source, and an odd block as none (7.50.02)', async () => {
+    const issues = {
+      signs_in: 'app', added: ['example-org/payments'], reading: ['example-org/payments', 'example-org/billing-api'],
+      skipped: [{ repository: 'example-org/x', reason: 'off' }, { repository: 'example-org/y', reason: 'new' }],
+      labels: [{ repository: 'example-org/payments', state: 'created' }, { repository: 'example-org/z', state: 'made' }],
+      schedule: 'on', error: null,
+    }
+    routeFetchApi({
+      'POST /agents/engineering/github-apps/271828/check': () => ({ repositories: [], missing: [], issues }),
+      'POST /agents/engineering/github-apps/314159/check': () => ({ repositories: [], missing: [], issues: 'yes' }),
+    })
+    expect((await githubAppsApi.check('271828')).issues).toStrictEqual({
+      signs_in: 'app', added: ['example-org/payments'], reading: ['example-org/payments', 'example-org/billing-api'],
+      skipped: [{ repository: 'example-org/x', reason: 'off' }],
+      labels: [{ repository: 'example-org/payments', state: 'created' }], schedule: 'on', error: null,
+    })
+    expect((await githubAppsApi.check('314159')).issues).toBeNull()
   })
 
   it('removes the App with the reason only when one is given', async () => {

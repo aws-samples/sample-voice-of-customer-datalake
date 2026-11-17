@@ -92,6 +92,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # A connection's CI attestation (engineering/connectors/attestations.py): the same gate.
         'POST /agents/engineering/connections/<connection_id>/ci-attestation',
         'DELETE /agents/engineering/connections/<connection_id>/ci-attestation',
+        # A connection's "Read this repository's issues" switch (7.50.02, engineering/connectors/issues_sync.py): the
+        # same gate; it writes the deployment's GitHub Issues source.
+        'PUT /agents/engineering/connections/<connection_id>/issues',
         # The deployment's GitHub Apps made in two clicks (7.45.00, engineering/connectors/github_apps.py): the same
         # gate (the connections' store, ``_github_apps``), every step of the flow and the App's removal.
         'POST /agents/engineering/github-apps/manifest', 'POST /agents/engineering/github-apps/conversions',
@@ -194,6 +197,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /users/<username>/reset-password', 'PUT /users/<username>/enable',
         'PUT /users/<username>/disable', 'DELETE /users/<username>',
         'PUT /users/<username>/category-access', 'PUT /users/<username>/flags',
+        # An administrator's own way of working (7.50.02, the caller's subject only).
+        'PUT /users/me/ai-mode',
         # Platform-admin membership: an admin gate, then the platform-admin one (PLATFORM_ADMIN_ONLY below).
         'PUT /users/<username>/platform-admin',
     }),

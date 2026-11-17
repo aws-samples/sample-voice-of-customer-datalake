@@ -391,12 +391,22 @@
     "runsOnUpload": "Executa ao enviar arquivos",
     "runsOnDemand": "Executa sob demanda — sem agendamento",
     "githubSignIn": {
-      "label": "Entrar com",
-      "token": "Um token de acesso refinado",
-      "app": "Uma das GitHub Apps desta implantação",
+      "appIntro": "Entra com a sua GitHub App: nenhum token para colar. Issues e comentários são lidos com tokens de curta duração e somente leitura.",
       "appLabel": "GitHub App",
-      "appHint": "Cada execução recebe da App um token de curta duração só para estes repositórios (Issues e Metadata, somente leitura) e o devolve no fim. Instale antes a App nos repositórios (Agentes → Conexões).",
-      "tokenHint": "Um token de acesso pessoal refinado com Issues e Metadata somente leitura nestes repositórios."
+      "oneApp": "GitHub App: {{app}}",
+      "chooseApp": "Escolha uma App",
+      "appHint": "A App lê apenas os repositórios em que está instalada: instale-a em mais em Agentes → Conexões.",
+      "useToken": "Usar um token de acesso refinado em vez disso",
+      "tokenHint": "Um token de acesso pessoal refinado com Issues e Metadata somente leitura nestes repositórios.",
+      "useApp": "Entrar com a sua GitHub App em vez disso",
+      "connectHint": "Ou conecte o GitHub em Agentes → Conexões: a GitHub App da implantação é criada em dois cliques, e esta fonte passa a ler sozinha os issues dos repositórios conectados.",
+      "connect": "Conectar GitHub",
+      "managed_one": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositório.",
+      "managed_many": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositórios.",
+      "managed_other": "Gerenciada pela sua conexão do GitHub: issues de {{count, number}} repositórios.",
+      "managedHint": "Cada repositório conectado pela GitHub App em Agentes → Conexões é lido automaticamente; desative-o lá.",
+      "openConnections": "Abrir Agentes → Conexões",
+      "manual": "Configurar manualmente (avançado)"
     }
   },
   "subtitle": "Configure sua plataforma VoC",
@@ -1022,7 +1032,7 @@
     "title": "As fontes de dados da implantação",
     "feeds": "Estas fontes alimentam a implantação: os feedbacks que trazem são de toda a implantação, fora de qualquer espaço de trabalho, seja qual for o espaço de trabalho em que você está agora. As credenciais, os agendamentos e as pausas desta página são os da própria implantação.",
     "engineering": "São os únicos feedbacks que as automações de engenharia leem (Bug fixer, Feature builder, Issue triage): as execuções delas nunca usam os feedbacks de um espaço de trabalho.",
-    "appSignIn": "Conecte aqui a fonte GitHub Issues com a GitHub App da implantação (no cartão dela, \"Entrar com\"), listando os repositórios em que os agentes trabalham.",
+    "appSignIn": "A fonte GitHub Issues se configura sozinha quando você conecta o GitHub em Agentes → Conexões: os issues de cada repositório conectado são lidos com a GitHub App da implantação. O cartão dela aqui é a visão avançada.",
     "inWorkspace": "Você está em {{name}}, mas nada nesta página o altera: as fontes próprias desse espaço de trabalho ficam na aba Fontes."
   }
 }

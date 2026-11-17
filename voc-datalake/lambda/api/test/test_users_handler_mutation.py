@@ -226,7 +226,7 @@ class TestListUsers:
 
         assert status == 200
         no_flags = {'fallback_owner': False, 'memory_reviewer': False}
-        default_mode = {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
+        default_mode = {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False, 'saved': False}
         assert body == {'success': True, 'users': [
             {'username': 'full', 'sub': 'v-sub', 'email': 'v-email', 'name': 'v-name',
              'given_name': 'v-given_name', 'family_name': 'v-family_name', 'status': 'CONFIRMED',
@@ -300,7 +300,8 @@ class TestListUsers:
             status, body = _call(api_gateway_event, lambda_context, 'GET', '/users')
 
         assert status == 200
-        assert body['users'][0]['ai_mode'] == {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
+        assert body['users'][0]['ai_mode'] == {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False,
+                                                'saved': False}
         log.warning.assert_called_once_with('Ways of working unavailable; listing users with the default')
 
     @pytest.mark.usefixtures('no_table')

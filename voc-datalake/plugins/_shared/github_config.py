@@ -24,14 +24,10 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-from shared.github_rest import GITHUB_NUMBER
+from shared.github_rest import GITHUB_NUMBER, parse_repo
 
 __all__ = ["GitHubSourceConfig"]
 
-_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}\Z")
-#: ``https://github.com/…``, ``github.com/…`` or ``www.github.com/…``, query and fragment cut.
-#: Any other host falls through to the bare ``owner/name`` check and fails it.
-_GITHUB_URL = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/(?P<path>[^?#]*)", re.IGNORECASE)
 MAX_REPOS = 20
 #: GitHub's ``author_association`` values (REST ``issue`` / ``issue-comment`` schemas).
 AUTHOR_ASSOCIATIONS = frozenset({
@@ -44,26 +40,6 @@ def _split(value: object) -> list[str]:
     if not isinstance(value, str):
         return []
     return [part.strip() for part in re.split(r"[\n,]", value) if part.strip()]
-
-
-def parse_repo(candidate: str) -> str | None:
-    """``owner/name`` from what a user pasted, or None when it names no GitHub repository.
-
-    A GitHub URL keeps only its first two path segments, so a link to the
-    repository's issues, pull requests, a file or a single issue all name the
-    repository itself. A bare value must be exactly ``owner/name``: ``a/b/c``
-    without a host is a typo, not a deep link.
-    """
-    match = _GITHUB_URL.match(candidate)
-    if match:
-        segments = [segment for segment in match.group("path").split("/") if segment]
-        if len(segments) < 2:
-            return None
-        repo = f"{segments[0]}/{segments[1]}"
-    else:
-        repo = candidate.strip("/")
-    repo = repo.removesuffix(".git")
-    return repo if _REPO.fullmatch(repo) else None
 
 
 def _app_id(value: object) -> str | None:

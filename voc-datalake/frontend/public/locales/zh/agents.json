@@ -274,8 +274,8 @@
       "decision": "决策",
       "artifact": "产出物"
     },
-    "engineeringConfirmBug": "智能体会在其代码仓库中启动一次工程运行：在自己的分支上工作，并停在一个草稿拉取请求。填写 Issue 编号以修复该 Issue（即使之前运行过），留空则查找缺陷。",
-    "engineeringConfirmFeature": "智能体会根据一个 Issue 在其代码仓库中启动一次工程运行：在自己的分支上构建该功能，并停在一个草稿拉取请求。要基于 PRD 构建，请打开该 PRD 并选择“基于此 PRD 构建”。",
+    "engineeringConfirmBug": "智能体会在其代码仓库中启动一次工程运行：在自己的分支上工作，并开启一个待审核的拉取请求（流程指定时为草稿）；合并仍由人完成。填写 Issue 编号以修复该 Issue（即使之前运行过），留空则查找缺陷。",
+    "engineeringConfirmFeature": "智能体会根据一个 Issue 在其代码仓库中启动一次工程运行：在自己的分支上构建该功能，并开启一个待审核的拉取请求（流程指定时为草稿）；合并仍由人完成。要基于 PRD 构建，请打开该 PRD 并选择“基于此 PRD 构建”。",
     "issueOptional": "Issue 编号（可选）",
     "issueRequired": "Issue 编号",
     "issueInvalid": "Issue 的编号：从 1 开始的整数。",
@@ -822,6 +822,41 @@
       "removed": "已从本部署中删除 {{slug}}。请同时在 GitHub 设置中删除它。",
       "via": "通过 {{slug}}"
     },
+    "issues": {
+      "switch": "读取此仓库的 Issue",
+      "reading": "Issue 会自动读取。",
+      "reasons": {
+        "off": "未读取其 Issue：开关已关闭。",
+        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 数据来源”中添加此仓库。",
+        "other_app": "GitHub Issues 数据源使用另一个 GitHub App 登录：此仓库的 Issue 不通过它读取。",
+        "limit": "GitHub Issues 数据源最多读取 {{limit, number}} 个仓库：要读取此仓库，请在“管理 → 数据来源”中移除一个。",
+        "not_app": "只有通过部署的 GitHub App 建立的连接才会自动读取 Issue。",
+        "not_deployed": "此处未部署 GitHub Issues 数据源，因此不读取任何 Issue。",
+        "pending": "尚未读取：它不在 GitHub Issues 数据源的列表中。",
+        "unknown": "未读取其 Issue。"
+      },
+      "openSources": "打开“管理 → 数据来源”",
+      "readNow": "立即读取其 Issue",
+      "label": {
+        "created": "标签 {{label}}：已创建。",
+        "present": "标签 {{label}}：仓库中已有。",
+        "failed": "无法创建标签 {{label}}：“检查安装”会重试。"
+      },
+      "follow": {
+        "reading_one": "Issue：自动从 {{count, number}} 个仓库读取。",
+        "reading_other": "Issue：自动从 {{count, number}} 个仓库读取。",
+        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 数据来源”中添加这些仓库。",
+        "labelsCreated": "标签 {{label}}：已在 {{list}}。",
+        "labelsFailed": "无法在 {{list}} 上创建标签 {{label}}：“检查安装”会重试。",
+        "skipped": {
+          "off": "未读取（已关闭）：{{list}}。",
+          "other_app": "未读取（数据源使用另一个 GitHub App 登录）：{{list}}。",
+          "limit": "未读取（数据源已读取 {{limit, number}} 个仓库）：{{list}}。"
+        },
+        "scheduleOff": "GitHub Issues 数据源的计划已关闭：请在“管理 → 数据来源”中开启。",
+        "error": "无法自动设置 GitHub Issues 数据源：{{error}}"
+      }
+    },
     "githubReturn": {
       "back": "返回 智能体 → 连接",
       "createdTitle": "GitHub App 已创建",
@@ -979,7 +1014,7 @@
     "ci": {
       "attested": "CI 已确认",
       "notAttested": "CI 未确认",
-      "attestedBy": "由 {{who}} 于 {{when}} 确认：智能体可以推送到 voc-agent/* 分支并创建拉取请求草稿。",
+      "attestedBy": "由 {{who}} 于 {{when}} 证明：代理可以推送到 voc-agent/* 分支并开启待审核的拉取请求；合并仍由人完成。",
       "none": "在管理员确认此仓库的 CI 不会向智能体分支提供任何有价值的东西之前，智能体不会向此仓库推送任何内容。",
       "withdrawnBy": "由 {{who}} 于 {{when}} 撤回：在再次确认之前，智能体不会推送任何内容。",
       "voidedRepository": "连接的仓库已更改，确认已失效：请确认此仓库的 CI。",
@@ -1459,7 +1494,7 @@
     "button": "基于此 PRD 构建",
     "started": "打开运行监视器",
     "title": "基于此 PRD 构建？",
-    "message": "{{name}} 将启动一次工程运行，在自己的分支上构建此 PRD 描述的功能，并停在一个草稿拉取请求。",
+    "message": "{{name}} 将启动一次工程运行，在自己的分支上构建此 PRD 描述的功能，并开启一个待审核的拉取请求（流程指定时为草稿）；合并仍由人完成。",
     "confirm": "开始构建",
     "agent": "智能体",
     "inputHint": "运行会以 ID 的形式获得此 PRD 作为输入。"
@@ -1476,6 +1511,11 @@
     "docs": "文档",
     "opensNewTab": "（在新标签页中打开）",
     "setWayOfWorking": "在“用户”中设定你的工作方式",
+    "setDialMine": "将我的设为 AI 主导",
+    "dialConfirm": "这会让你启用的自动化推送到 voc-agent/* 分支并开启拉取请求，并让 AI 撰写你的 PR/FAQ 和 PRD。",
+    "dialConfirmAction": "设为 AI 主导",
+    "dialSaved": "已保存：AI 主导。",
+    "dialFailed": "无法保存你的工作方式：请重试。",
     "enableWaits": "在运行所需的每项检查都通过之前，启用会一直等待。",
     "enableRefused": "未启用：运行所需的以下检查未通过。",
     "passedFolded": "已通过的检查（{{count, number}}）",
@@ -1574,7 +1614,6 @@
       "label": "前提条件",
       "github": "用部署的 GitHub App 连接 GitHub：创建 App，然后将其安装到仓库（两次点击）。",
       "ci": "在仓库的连接上证明其 CI：受保护的密钥、只读令牌、固定的 OIDC、没有自托管运行器、没有特权拉取请求工作流。",
-      "issues": "导入其 issue：面向整个部署的 GitHub Issues 来源，列出该仓库并用该 App 登录，并在智能体可以接手的每个 issue 上加 voc-agent 标签。",
       "met": "已完成",
       "notMet": "待完成",
       "unknown": "尚不清楚",
@@ -1585,8 +1624,16 @@
       "deploymentTitle": "此部署",
       "connectedAs": "已通过 App 连接：{{list}}。",
       "ciFor": "CI 已证明：{{list}}。",
-      "notConfigured": "未配置",
-      "noReadiness": "来源及其标签由自动化的就绪情况检查：尚未找到任何自动化。"
+      "noReadiness": "来源及其标签由自动化的就绪情况检查：尚未找到任何自动化。",
+      "automatic": "自动",
+      "issuesRead_one": "Issue：自动从 {{count, number}} 个仓库读取。",
+      "issuesRead_other": "Issue：自动从 {{count, number}} 个仓库读取。",
+      "issuesNone": "Issue：通过 App 连接仓库后即自动读取。",
+      "issuesUnknown": "Issue：自动从通过 App 连接的每个仓库读取。",
+      "issuesNotDeployed": "Issue：此处未部署 GitHub Issues 数据源。",
+      "issuesToken": "Issue：GitHub Issues 数据源使用令牌登录，因此其仓库需手动列出。",
+      "labelCreated": "标签 {{label}}：已创建。",
+      "labelPending": "标签 {{label}}：会在每个读取 Issue 的仓库上自动创建。"
     },
     "automation": {
       "open": "打开 {{name}}",

@@ -303,9 +303,11 @@ export function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
   readonly isAdmin: boolean
+  /** The source whose card the address opens (the deployment's `/admin/data-sources/<source>`), or none. */
+  readonly openSource?: string | null
 }
 
-export function DataSourcesSection({ apiEndpoint, isAdmin }: DataSourcesSectionProps) {
+export function DataSourcesSection({ apiEndpoint, isAdmin, openSource = null }: DataSourcesSectionProps) {
   const { t } = useTranslation('settings')
   const pluginManifests = getEnabledPlugins()
 
@@ -334,7 +336,8 @@ export function DataSourcesSection({ apiEndpoint, isAdmin }: DataSourcesSectionP
           </div>
         ) : (
           pluginManifests.map((manifest) => (
-            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin}
+              initiallyOpen={manifest.id === openSource} />
           ))
         )}
       </div>

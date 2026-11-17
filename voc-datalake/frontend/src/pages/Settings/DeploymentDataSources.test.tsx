@@ -3,13 +3,16 @@
  * The real API client runs against a stubbed `fetch`, so these specs read the request headers themselves. Inside a
  * workspace no request of the page carries `X-Workspace-Id` (the credentials' status, read and save, the schedules and
  * their pauses, a reset, the GitHub Issues card's App sign-in and the Apps it lists), and the page says what these
- * sources feed and who reads it; the workspace's own Data sources page (Sources → Source settings) still names the
- * workspace on every request but the deployment-only schedule switch, and offers no App sign-in.
+ * sources feed and who reads it; `/admin/data-sources/github_issues` opens the GitHub Issues card, scrolled into view
+ * (7.50.02); the workspace's own Data sources page (Sources → Source settings) still names the workspace on every
+ * request but the deployment-only schedule switch, and offers no App sign-in.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
+import { TestRouter } from '@test/TestRouter'
+import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { ACME } from '@test/workspaceFixtures'
 import { fetchMock, installFetchMock, requestHeaders, requestUrl } from '@test/fetch-mock'
 import type { PluginManifest } from '../../plugins/types'
@@ -81,14 +84,17 @@ beforeEach(() => {
 })
 afterEach(() => { setCurrentWorkspace(null) })
 
+/** The deployment's Data sources at `path` (Administration's own route renders it under the router). */
+const renderDeployment = (path = '/admin/data-sources') => renderWithQueryClient(
+  <TestRouter initialEntries={[path]}><DeploymentDataSources apiEndpoint={`${API}/`} isAdmin /></TestRouter>)
+
 /** Reset the card's pause, open it and save its credentials (on the deployment's card, choosing the token back). */
 async function useTheCard(withAppSignIn: boolean) {
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'Reset' }))
   await user.click(screen.getByRole('button', { name: /GitHub Issues/ }))
   if (withAppSignIn) {
-    await waitFor(() => { expect(screen.getByLabelText('Sign in with')).toHaveValue('app') })
-    await user.selectOptions(screen.getByLabelText('Sign in with'), 'token')
+    await user.click(await screen.findByRole('button', { name: 'Use a fine-grained token instead' }))
   } else {
     await user.type(screen.getByPlaceholderText('Enter repositories'), 'example-org/shop')
   }
@@ -98,7 +104,7 @@ async function useTheCard(withAppSignIn: boolean) {
 
 describe("the deployment's Data sources", () => {
   it('sends no X-Workspace-Id on any request inside a workspace, the App sign-in included', async () => {
-    renderWithQueryClient(<DeploymentDataSources apiEndpoint={`${API}/`} isAdmin />)
+    renderDeployment()
     await useTheCard(true)
 
     expect(new Set(sent().map((s) => s.request))).toStrictEqual(new Set([
@@ -109,13 +115,13 @@ describe("the deployment's Data sources", () => {
   })
 
   it('says what its sources feed and who reads it, and that the workspace the app is in is not changed', async () => {
-    renderWithQueryClient(<DeploymentDataSources apiEndpoint={`${API}/`} isAdmin />)
+    renderDeployment()
     const notice = screen.getByTestId('deployment-sources-notice')
     const text = notice.textContent
     expect([
       text.includes('the feedback they bring in is deployment-wide, outside every workspace'),
       /only feedback the engineering automations read \(Bug fixer, Feature builder, Issue triage\)/.test(text),
-      text.includes("with the deployment's GitHub App"),
+      text.includes('configures itself when you connect GitHub under Agents → Connections'),
     ]).toStrictEqual([true, true, true])
     expect(within(notice).getByRole('note')).toHaveTextContent(`You are in ${ACME.name}, but nothing on this page changes it`)
     expect(await screen.findByRole('button', { name: /GitHub Issues/ })).toBeInTheDocument()
@@ -123,8 +129,25 @@ describe("the deployment's Data sources", () => {
 
   it('leaves the workspace line out outside a workspace', () => {
     act(() => setCurrentWorkspace(null))
-    renderWithQueryClient(<DeploymentDataSources apiEndpoint={`${API}/`} isAdmin />)
+    renderDeployment()
     expect(within(screen.getByTestId('deployment-sources-notice')).queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  it('opens the GitHub Issues card from /admin/data-sources/github_issues, scrolled into view', async () => {
+    const restore = stubElementScrollIntoView()
+    try {
+      renderDeployment(`/admin/data-sources/${ISSUES}`)
+      expect(screen.getByRole('button', { name: /GitHub Issues/ })).toHaveAttribute('aria-expanded', 'true')
+      expect(await screen.findByText(/Signs in with your GitHub App/)).toBeInTheDocument()
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('keeps the card closed on the page\'s own address', () => {
+    renderDeployment()
+    expect(screen.getByRole('button', { name: /GitHub Issues/ })).toHaveAttribute('aria-expanded', 'false')
   })
 })
 
@@ -133,7 +156,7 @@ describe("a workspace's own Data sources, beside it", () => {
     renderWithQueryClient(<DataSourcesSection apiEndpoint={`${API}/`} isAdmin />)
     await useTheCard(false)
 
-    expect(screen.queryByLabelText('Sign in with')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('github-sign-in')).not.toBeInTheDocument()
     const requests = sent().filter((s) => !DEPLOYMENT_ONLY.has(s.request))
     expect(requests.map((s) => s.request)).not.toContain('GET /agents/engineering/github-apps')
     expect(requests.length).toBeGreaterThan(2)

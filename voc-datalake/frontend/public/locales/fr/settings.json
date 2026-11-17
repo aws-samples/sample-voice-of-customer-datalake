@@ -391,12 +391,22 @@
     "runsOnUpload": "S’exécute au dépôt d’un fichier",
     "runsOnDemand": "S’exécute à la demande — sans planification",
     "githubSignIn": {
-      "label": "Se connecter avec",
-      "token": "Un jeton à granularité fine",
-      "app": "L’une des GitHub Apps de ce déploiement",
+      "appIntro": "Se connecte avec votre GitHub App : aucun jeton à coller. Les issues et les commentaires sont lus avec des jetons de courte durée en lecture seule.",
       "appLabel": "GitHub App",
-      "appHint": "Chaque exécution obtient de l’App un jeton de courte durée pour ces seuls dépôts (Issues et Metadata, lecture seule) et le rend à la fin. Installez d’abord l’App sur les dépôts (Agents → Connexions).",
-      "tokenHint": "Un jeton d’accès personnel à granularité fine avec Issues et Metadata en lecture seule sur ces dépôts."
+      "oneApp": "GitHub App : {{app}}",
+      "chooseApp": "Choisir une App",
+      "appHint": "L’App ne lit que les dépôts sur lesquels elle est installée : installez-la sur d’autres dans Agents → Connexions.",
+      "useToken": "Utiliser plutôt un jeton à granularité fine",
+      "tokenHint": "Un jeton d’accès personnel à granularité fine avec Issues et Metadata en lecture seule sur ces dépôts.",
+      "useApp": "Se connecter plutôt avec votre GitHub App",
+      "connectHint": "Ou connectez GitHub dans Agents → Connexions : la GitHub App du déploiement se crée en deux clics, et cette source lit alors d’elle-même les issues des dépôts connectés.",
+      "connect": "Connecter GitHub",
+      "managed_one": "Gérée par votre connexion GitHub : issues de {{count, number}} dépôt.",
+      "managed_many": "Gérée par votre connexion GitHub : issues de {{count, number}} dépôts.",
+      "managed_other": "Gérée par votre connexion GitHub : issues de {{count, number}} dépôts.",
+      "managedHint": "Chaque dépôt connecté par la GitHub App dans Agents → Connexions est lu automatiquement ; désactivez-le là-bas.",
+      "openConnections": "Ouvrir Agents → Connexions",
+      "manual": "Configurer manuellement (avancé)"
     }
   },
   "subtitle": "Configurez votre plateforme VoC",
@@ -1022,7 +1032,7 @@
     "title": "Les sources de données du déploiement",
     "feeds": "Ces sources alimentent le déploiement : les retours qu’elles apportent concernent tout le déploiement, hors de tout espace de travail, quel que soit l’espace de travail où vous êtes. Les identifiants, planifications et pauses de cette page sont ceux du déploiement.",
     "engineering": "Ce sont les seuls retours que lisent les automatisations d’ingénierie (Bug fixer, Feature builder, Issue triage) : leurs exécutions ne prennent jamais les retours d’un espace de travail.",
-    "appSignIn": "Connectez ici la source GitHub Issues avec la GitHub App du déploiement (sur sa carte, « Se connecter avec ») en listant les dépôts sur lesquels travaillent les agents.",
+    "appSignIn": "La source GitHub Issues se configure d’elle-même quand vous connectez GitHub dans Agents → Connexions : les issues de chaque dépôt connecté sont lues avec la GitHub App du déploiement. Sa carte ici est la vue avancée.",
     "inWorkspace": "Vous êtes dans {{name}}, mais rien sur cette page ne le modifie : les sources propres à cet espace de travail sont dans l’onglet Sources."
   }
 }

@@ -4,8 +4,9 @@
  * step still open) with what skipping costs, Understand and Tenets arriving in 7.52, an automation's step with its
  * control and readiness, Ready to go, and the Agents list's first-visit offer. Administrators only, where the
  * engineering agents are on. 7.50.01: the deployment's own facts apart from each automation's readiness ("once set
- * up"), asked of the deployment's only connection while the automation names none, and the GitHub Issues source "Not
- * configured" from the deployment's integration status.
+ * up"), asked of the deployment's only connection while the automation names none. 7.50.02: step 0 is Connect GitHub
+ * and Confirm CI, and the GitHub Issues source and its label are automatic ticks read from the source as the
+ * connections drive it (`GET /agents/engineering/issues-source`, no workspace header).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -55,6 +56,15 @@ const CONNECTION = {
 }
 const APP = { app_id: '1', slug: 'voc-autonomous-agent', owner: 'example-org', owner_type: 'Organization',
   html_url: 'https://github.com/apps/voc-autonomous-agent', webhook: true, connections: ['storefront'], version: 1 }
+/** The GitHub Issues source as the connections drive it (7.50.02): storefront read, its label created. */
+const issuesView = (entry: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+  deployed: true, signs_in: 'app', app_id: '1', repositories: ['example-org/storefront'], managed: ['example-org/storefront'],
+  schedule: 'on', label: 'voc-agent',
+  connections: [{ connection_id: 'storefront', repository: 'example-org/storefront', read: true, reading: true, reason: null,
+    label: 'created', ...entry }],
+  ...extra,
+})
+const ISSUES_SOURCE = 'GET /agents/engineering/issues-source'
 
 /** What a run truly needs (the server's required checks, item B of 7.50.00): the other checks are advice. */
 const REQUIRED = new Set(['connection', 'ci_attestation', 'image', 'bedrock_models', 'budget', 'dial'])
@@ -70,6 +80,7 @@ function routes(extra: Record<string, RouteHandler> = {}, agents: unknown[] = [T
     'GET /agents/engineering/connections': () => ({ connections: [CONNECTION], limit: 20 }),
     'GET /agents/engineering/github-apps': () => ({ apps: [APP], limit: 5 }),
     'GET /agents/engineering/setup': () => progress(),
+    [ISSUES_SOURCE]: () => issuesView(),
     'GET /workflows/wf_1': () => workflowView(1, { ...template.definition, budget: { monthly_usd: 50 } },
       { kind: 'engineering', monthly_budget_usd: 50 }),
     'GET /agents/engineering/readiness?automation=ag_17a9e5c3b2d0': () => ({
@@ -129,26 +140,65 @@ describe('the guide', () => {
     return step
   }
 
-  /** The badges of the deployment's facts: GitHub connected, the CI attested, the issues ingested. */
+  /** The badges of the deployment's facts: GitHub connected, the CI attested, the issues read and the label (automatic). */
   const badges = (step: HTMLElement) => within(within(step).getByRole('list', { name: 'Prerequisites' })).getAllByRole('listitem')
     .map((item) => item.querySelector('.badge')?.textContent)
 
   it('shows where each prerequisite stands, with the page that sets it', async () => {
     const step = await prerequisites()
-    expect(badges(step)).toStrictEqual(['Done', 'To do', 'Done'])
+    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'Done', 'Done']) })
     // (the deployment's own facts, under their own heading)
     expect([within(step).getByRole('heading', { name: 'This deployment' }), within(step).getByText('Connected through an App: storefront.')])
       .toHaveLength(2)
     expect(within(step).getAllByRole('link', { name: 'Open Connections' })[0]).toHaveAttribute('href', '/agents/connections')
-    // (not a platform admin: the deployment's sources, outside any workspace)
-    expect(within(step).getByRole('link', { name: 'Open Administration → Sources → Source settings' }))
+  })
+
+  it('ticks the issues and the label automatically from the connections, read without a workspace header (7.50.02)', async () => {
+    const step = await prerequisites()
+    const list = within(step).getByRole('list', { name: 'Prerequisites' })
+    expect(await within(list).findByText('Issues: read automatically from 1 repository.')).toBeInTheDocument()
+    expect(within(list).getByText('Label voc-agent: created.')).toBeInTheDocument()
+    const automatic = within(list).getAllByRole('listitem').filter((item) => item.dataset.automatic === 'true')
+    // (each says it is automatic; nothing to do: no link under a tick that is done)
+    expect(automatic.map((item) => [item.textContent.includes('Automatic'), item.querySelectorAll('a').length]))
+      .toStrictEqual([[true, 0], [true, 0]])
+    expect([new Set(fetchApi.mock.calls.filter(([path]) => path === '/agents/engineering/issues-source').map((call) => call[2])),
+      fetchApi.mock.calls.some(([path]) => path === '/integrations/status')]).toStrictEqual([new Set(['deployment']), false])
+  })
+
+  it('leaves both ticks to do while no repository is read, pointing to Connections', async () => {
+    const step = await prerequisites({ [ISSUES_SOURCE]: () => issuesView({ read: false, reading: false, reason: 'off', label: null }) })
+    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'To do', 'To do']) })
+    const list = within(step).getByRole('list', { name: 'Prerequisites' })
+    expect(within(list).getByText('Issues: read automatically once a repository is connected through the App.')).toBeInTheDocument()
+    expect(within(list).getAllByRole('link', { name: 'Open Connections' })).toHaveLength(4)
+  })
+
+  it('leaves the label to do while it could not be created', async () => {
+    const step = await prerequisites({ [ISSUES_SOURCE]: () => issuesView({ label: 'failed' }) })
+    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'Done', 'To do']) })
+  })
+
+  it('sends a platform admin to the GitHub Issues card when the source signs in with a token', async () => {
+    platform.admin = true
+    const step = await prerequisites({ [ISSUES_SOURCE]: () => issuesView({ reading: false, reason: 'token', label: null },
+      { signs_in: 'token', app_id: null }) })
+    const list = within(step).getByRole('list', { name: 'Prerequisites' })
+    expect(await within(list).findByText(/the GitHub Issues source signs in with a token/)).toBeInTheDocument()
+    expect(within(list).getByRole('link', { name: 'Open Administration → Data sources' }))
+      .toHaveAttribute('href', '/admin/data-sources/github_issues')
+  })
+
+  it('sends anyone else to the sources outside any workspace when the source signs in with a token', async () => {
+    const step = await prerequisites({ [ISSUES_SOURCE]: () => issuesView({ reading: false, reason: 'token', label: null },
+      { signs_in: 'token', app_id: null }) })
+    expect(await within(step).findByRole('link', { name: 'Open Administration → Sources → Source settings' }))
       .toHaveAttribute('href', '/admin/sources/plugins')
   })
 
-  it('sends a platform admin to the deployment\'s Data sources, from any address', async () => {
-    platform.admin = true
-    const step = await prerequisites()
-    expect(within(step).getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources')
+  it('says the ticks are not known yet when the source cannot be read', async () => {
+    const step = await prerequisites({ [ISSUES_SOURCE]: () => { throw new ApiError(500, 'unavailable') } })
+    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'Not known yet', 'Not known yet']) })
   })
 
   it('shows each automation\'s prerequisite checks apart, "once set up", with each fix', async () => {
@@ -160,17 +210,6 @@ describe('the guide', () => {
     // (each its own: the Bug fixer's label warning is not the triage's; the way of working is no prerequisite)
     expect(statuses(triage)).toStrictEqual([['readiness-ci_attestation', 'fail'], ['readiness-issues_source', 'pass']])
     expect(statuses(bugFixer)).toStrictEqual([['readiness-ci_attestation', 'fail'], ['readiness-issue_label', 'warn']])
-  })
-
-  it('says the GitHub Issues source is not configured when the deployment\'s integration status says so', async () => {
-    platform.admin = true
-    const step = await prerequisites({
-      'GET /integrations/status': () => ({ github_issues: { configured: false, credentials_set: [] } }),
-    })
-    await waitFor(() => { expect(badges(step)).toStrictEqual(['Done', 'To do', 'Not configured']) })
-    expect(within(step).getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources')
-    // (the deployment's status: no workspace header)
-    expect(fetchApi).toHaveBeenCalledWith('/integrations/status', { method: 'GET' }, 'deployment')
   })
 
   it('asks an automation\'s readiness of the deployment\'s only connection while it names none', async () => {

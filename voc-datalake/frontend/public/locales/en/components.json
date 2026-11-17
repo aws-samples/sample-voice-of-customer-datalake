@@ -480,14 +480,34 @@
     },
     "aiMode": {
       "title": "Ways of working with AI",
-      "description": "How much AI helps each person write PR/FAQs and PRDs. Each mode adds to the one before it; AI-driven is the default. Other documents are not affected.",
+      "description": "Sets, per person, how much AI writes their PR/FAQs and PRDs, and whether the engineering automations they enable may push and open pull requests.",
+      "notSet": "Not set",
+      "notSetEffect": "Documents use AI-driven · automations won't push until you choose",
+      "compareTitle": "How the modes differ",
+      "compare": {
+        "mode": "Mode",
+        "documents": "Your PR/FAQs and PRDs",
+        "automations": "Automations you enable",
+        "humanDriven": {
+          "documents": "AI answers, explains and reviews; it never writes them for you (unless an admin unlocks a type).",
+          "automations": "Push nothing."
+        },
+        "aiAssisted": {
+          "documents": "AI drafts, suggests and rewrites them with you.",
+          "automations": "May push and open pull requests; each push waits for a person's go."
+        },
+        "aiDriven": {
+          "documents": "AI-assisted, plus agents and plans may write them for you.",
+          "automations": "May push and open pull requests for a person to review."
+        }
+      },
       "saveFailed": "Could not update the way of working. Try again.",
       "humanDriven": "Human-driven",
       "aiAssisted": "AI-assisted",
       "aiDriven": "AI-driven",
       "humanDrivenTooltip": "AI answers questions, explains the method and reviews; it never writes the document for you.",
       "aiAssistedTooltip": "AI drafts, suggests and rewrites with you in the editor and chat.",
-      "aiDrivenTooltip": "AI-assisted, plus autonomous agents and plans may write documents for you.",
+      "aiDrivenTooltip": "AI-assisted, plus agents may write documents for you and push code for the automations you enable.",
       "unlockPrfaq": "PR/FAQ with AI",
       "unlockPrd": "PRD with AI",
       "unlockPrfaqFor": "PR/FAQ with AI: {{user}}",

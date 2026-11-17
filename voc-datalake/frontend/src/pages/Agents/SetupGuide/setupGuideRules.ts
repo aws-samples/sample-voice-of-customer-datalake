@@ -1,7 +1,8 @@
 /**
  * @fileoverview The setup guide's rules (7.50.00, docs/autonomous-agents.md "Setup guide"): what the deployment has set
  * up, read from the answers of the routes that already serve it (the agents, the repository connections, the GitHub
- * Apps, each automation's readiness, the deployment's GitHub Issues source), and what a person chose (api/engineeringSetupApi.ts: a step skipped for now, the
+ * Apps, each automation's readiness, the deployment's GitHub Issues source as its connections drive it: 7.50.02,
+ * api/issuesSourceApi.ts), and what a person chose (api/engineeringSetupApi.ts: a step skipped for now, the
  * guide finished, the first visit's choice). Pure, so every rule is tested on its own (setupGuideRules.test.ts).
  *
  * The order is the owner's recommendation (understand → tenets → triage → bug → feature, after the prerequisites):
@@ -17,6 +18,7 @@ import { SETUP_STEP_IDS } from '../../../api/engineeringSetupApi'
 import { usableConnections } from '../engineeringAgentRules'
 import type { Agent } from '../../../api/agentsApi'
 import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
+import type { ConnectionIssues, IssuesSourceView } from '../../../api/issuesSourceApi'
 import type { ReadinessCheck, ReadinessSubject } from '../../../api/engineeringReadinessApi'
 import type { SetupProgress, SetupStepId } from '../../../api/engineeringSetupApi'
 
@@ -59,10 +61,10 @@ export interface GuideFacts {
   /** How many GitHub Apps the deployment has made (Agents → Connections → Connect GitHub). */
   readonly apps: number
   /**
-   * Whether the deployment's GitHub Issues source is configured (its integration status, 7.50.01); null while it is
-   * not known (not read yet, refused, or not said).
+   * The deployment's GitHub Issues source as its connections drive it (7.50.02: its issues and labels follow a
+   * connection, read automatically); null while it is not known (not read yet, refused, or unreadable).
    */
-  readonly issuesSource: boolean | null
+  readonly issues: IssuesSourceView | null
   /** Each automation's readiness checks, once read (an automation not found, or not read yet, has none). */
   readonly readiness: Readonly<Partial<Record<AutomationStep, readonly ReadinessCheck[]>>>
 }
@@ -125,16 +127,43 @@ export function prerequisiteChecks(facts: Pick<GuideFacts, 'readiness'>): Readin
 export const attestedConnections = (facts: Pick<GuideFacts, 'connections'>): EngineeringConnection[] =>
   facts.connections.filter((connection) => throughApp(connection) && isCiAttested(connection))
 
+/** Where an automatic tick stands: done, not yet, or not known (its read did not answer). */
+export type AutoTick = 'met' | 'notMet' | 'unknown'
+
+/** The connections whose issues the deployment's GitHub Issues source reads now. */
+export const readingConnections = (issues: IssuesSourceView): ConnectionIssues[] =>
+  issues.connections.filter((connection) => connection.reading)
+
+/** "Issues: read automatically from N repositories": done once the source reads a connected repository. */
+export function issuesTick(issues: IssuesSourceView | null): AutoTick {
+  if (issues === null) return 'unknown'
+  return readingConnections(issues).length > 0 ? 'met' : 'notMet'
+}
+
+/**
+ * "Label voc-agent: created": done once every repository the source reads has the label (created by the automation,
+ * or already there); not yet while one could not be made, or nothing is read; not known while a label is not said.
+ */
+export function labelTick(issues: IssuesSourceView | null): AutoTick {
+  if (issues === null) return 'unknown'
+  const reading = readingConnections(issues)
+  if (reading.length === 0 || reading.some((connection) => connection.label === 'failed')) return 'notMet'
+  return reading.every((connection) => connection.label === 'created' || connection.label === 'present') ? 'met' : 'unknown'
+}
+
+/** Whether the source is known to read nothing of the deployment's (deployed here, and no connection read). */
+const knownUnread = (issues: IssuesSourceView | null): boolean => issues !== null && issues.deployed && issuesTick(issues) === 'notMet'
+
 /**
  * The prerequisites are met once GitHub is connected through an App, a connection's CI is attested, the deployment's
- * GitHub Issues source is not known to be unconfigured, and no prerequisite check of a readiness read fails (the
- * source's reads and its label are known only from those; a check the server cannot make here, `unknown`, such as the
- * host's branch rules, does not hold them).
+ * GitHub Issues source is not known to read none of the connected repositories, and no prerequisite check of a
+ * readiness read fails (a check the server cannot make here, `unknown`, such as the host's branch rules, does not hold
+ * them).
  */
 export function prerequisitesMet(facts: GuideFacts): boolean {
   const connected = facts.apps > 0 && facts.connections.some(throughApp)
   const attested = attestedConnections(facts).length > 0
-  return connected && attested && facts.issuesSource !== false
+  return connected && attested && !knownUnread(facts.issues)
     && prerequisiteChecks(facts).every((check) => check.status !== 'fail')
 }
 

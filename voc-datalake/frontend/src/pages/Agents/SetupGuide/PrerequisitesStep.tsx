@@ -6,11 +6,11 @@
  *   naming the connections made so;
  * - the repository's CI points attested on its connection (the broker serves no push or pull request until then),
  *   naming the connections attested;
- * - its issues ingested by the GitHub Issues source, deployment-wide (Administration → Data sources, the deployment's:
- *   the engineering automations read deployment-wide feedback only), signed in with that App, and the `voc-agent`
- *   label on the issues the agents may take: "Not configured" while the deployment's integration status says the
- *   source is not (`GET /integrations/status`, no workspace header), else what the readiness says of the source and
- *   the label.
+ * - since 7.50.02, two automatic ticks that follow the connection (`GET /agents/engineering/issues-source`, no
+ *   workspace header): "Issues: read automatically from N repositories" (the deployment's GitHub Issues source reads a
+ *   connected repository's issues, signed in with that App: the engineering automations read deployment-wide feedback
+ *   only), and "Label voc-agent: created" on each repository it reads. Nothing to do for either but connect GitHub;
+ *   a source an administrator set to a token says so, with its card (`/admin/data-sources/github_issues`).
  *
  * Under them, each found automation's prerequisite checks, "for <automation>, once set up", with each fix and its doc
  * link: asked of the deployment's only connection while the automation names none (setupGuideRules.ts
@@ -22,32 +22,37 @@ import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useIsPlatformAdmin } from '../../../store/authStore'
-import { adminPath } from '../../Settings/adminPaths'
+import { adminPath, deploymentSourcePath } from '../../Settings/adminPaths'
 import { agentsPath } from '../agentsPaths'
 import { ReadinessList } from '../ReadinessChecks'
 import {
-  AUTOMATION_STEPS, attestedConnections, findAutomations, prerequisiteChecks, prerequisiteChecksOf, throughApp,
+  AUTOMATION_STEPS, attestedConnections, findAutomations, issuesTick, labelTick, prerequisiteChecksOf, readingConnections,
+  throughApp,
 } from './setupGuideRules'
 import type { ReactNode } from 'react'
-import type { ReadinessCheck } from '../../../api/engineeringReadinessApi'
-import type { GuideFacts } from './setupGuideRules'
+import type { TFunction } from 'i18next'
+import type { IssuesSourceView } from '../../../api/issuesSourceApi'
+import type { AutoTick, GuideFacts } from './setupGuideRules'
 
-/** The deployment's Data sources (platform administrators; docs/multi-workspace.md "The deployment's Data sources"). */
-const DEPLOYMENT_SOURCES_PATH = adminPath({ tab: 'data-sources', section: null })
+/** The deployment's GitHub Issues card (platform administrators; docs/multi-workspace.md "The deployment's Data sources"). */
+const DEPLOYMENT_SOURCES_PATH = deploymentSourcePath('github_issues')
 
-type ItemState = 'met' | 'notMet' | 'unknown' | 'notConfigured'
+type ItemState = AutoTick
 
 const BADGES: Readonly<Record<ItemState, string>> = {
-  met: 'badge badge-ok', notMet: 'badge badge-muted', unknown: 'badge badge-muted', notConfigured: 'badge badge-muted',
+  met: 'badge badge-ok', notMet: 'badge badge-muted', unknown: 'badge badge-muted',
 }
 
-function Item({ state, text, detail, children }: Readonly<{ state: ItemState; text: string; detail?: string; children: ReactNode }>) {
+function Item({ state, text, detail, automatic = false, children }: Readonly<{
+  state: ItemState; text: string; detail?: string; automatic?: boolean; children: ReactNode
+}>) {
   const { t } = useTranslation('agents')
   return (
-    <li className="space-y-1 py-2">
+    <li className="space-y-1 py-2" data-automatic={automatic ? 'true' : undefined}>
       <p className="flex flex-wrap items-start gap-2 text-sm text-text">
         <span className={BADGES[state]}>{t(`setupGuide.prerequisites.${state}`)}</span>
         <span className="min-w-0 flex-1">{text}</span>
+        {automatic && <span className="text-[12px] text-muted">{t('setupGuide.prerequisites.automatic')}</span>}
       </p>
       {detail !== undefined && <p className="text-[12px] text-muted break-words [overflow-wrap:anywhere]">{detail}</p>}
       <div className="flex flex-wrap gap-3 text-[12px]">{children}</div>
@@ -68,17 +73,34 @@ function SourcesLink() {
   )
 }
 
-/**
- * The issues' state: not configured while the deployment's integration status says so, else what the readiness
- * checks of the GitHub Issues source and its label say.
- */
-function issuesState(configured: boolean | null, checks: readonly ReadinessCheck[]): ItemState {
-  if (configured === false) return 'notConfigured'
-  const issues = checks.filter((check) => check.id === 'issues_source' || check.id === 'issue_label')
-  if (issues.length === 0) return 'unknown'
-  if (issues.some((check) => check.status === 'fail')) return 'notMet'
-  // (the label's presence on the repository is a read the server cannot make: `unknown` says so, never "done")
-  return issues.some((check) => check.status === 'unknown') ? 'unknown' : 'met'
+/** What the issues tick says: how many repositories are read, else why none (a token, no source, nothing yet). */
+function issuesText(issues: IssuesSourceView | null, t: TFunction<'agents'>): string {
+  if (issues === null) return t('setupGuide.prerequisites.issuesUnknown')
+  const reading = readingConnections(issues).length
+  if (reading > 0) return t('setupGuide.prerequisites.issuesRead', { count: reading })
+  if (!issues.deployed) return t('setupGuide.prerequisites.issuesNotDeployed')
+  return issues.signs_in === 'token' ? t('setupGuide.prerequisites.issuesToken') : t('setupGuide.prerequisites.issuesNone')
+}
+
+/** The two automatic ticks: the issues read and the label created, each following the connection. */
+function AutomaticTicks({ issues, connections }: Readonly<{ issues: IssuesSourceView | null; connections: ReactNode }>) {
+  const { t } = useTranslation('agents')
+  const label = issues?.label ?? 'voc-agent'
+  const read = issuesTick(issues)
+  const labels = labelTick(issues)
+  const token = issues !== null && issues.signs_in === 'token' && read !== 'met'
+  const labelText = labels === 'met' ? t('setupGuide.prerequisites.labelCreated', { label })
+    : t('setupGuide.prerequisites.labelPending', { label })
+  return (
+    <>
+      <Item state={read} text={issuesText(issues, t)} automatic>
+        {token ? <SourcesLink /> : read !== 'met' && connections}
+      </Item>
+      <Item state={labels} text={labelText} automatic>
+        {labels === 'notMet' && connections}
+      </Item>
+    </>
+  )
 }
 
 /** The deployment's own facts: what holds whichever automation runs. */
@@ -101,9 +123,7 @@ function DeploymentFacts({ facts }: Readonly<{ facts: GuideFacts }>) {
           detail={attested.length > 0 ? t('setupGuide.prerequisites.ciFor', { list: list(attested) }) : undefined}>
           {connections}
         </Item>
-        <Item state={issuesState(facts.issuesSource, prerequisiteChecks(facts))} text={t('setupGuide.prerequisites.issues')}>
-          <SourcesLink />
-        </Item>
+        <AutomaticTicks issues={facts.issues} connections={connections} />
       </ul>
     </section>
   )

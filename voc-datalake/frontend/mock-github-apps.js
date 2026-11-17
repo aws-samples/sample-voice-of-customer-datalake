@@ -14,10 +14,14 @@
 //   POST   …/github-apps/<app_id>/check      {}: the repositories its installation covers, and its connections it no
 //                                        longer covers (none here)
 //   DELETE …/github-apps/<app_id>        {reason?}: {removed: true}; 409 while connections use it; 404
+// The installation's and the check's answers carry `issues` (7.50.02): what followed for the deployment's GitHub Issues
+// source (mock-issues-source.js).
 // No real GitHub is reached: to see the return pages by hand, open
 // `/agents/connections/github/created?code=demo-code&state=demo-create-state` and
 // `/agents/connections/github/installed?installation_id=31415926&setup_action=install&state=demo-install-state`
 // (each demo state is good once per mock run, like a real one).
+
+import { issuesFollow } from './mock-issues-source.js';
 
 const APPS_PATH = /^\/agents\/engineering\/github-apps(?:\/([^/]+))?(?:\/(install|check))?$/;
 const APP_LIMIT = 5;
@@ -145,7 +149,8 @@ function installation(body, connections, limit) {
       saved.push({ connection, created: true });
     }
   }
-  return [200, { app: appView(app, connections), account: { login: 'example-org', type: 'Organization' }, connections: saved, skipped }];
+  return [200, { app: appView(app, connections), account: { login: 'example-org', type: 'Organization' }, connections: saved, skipped,
+    issues: issuesFollow(connections, app.app_id) }];
 }
 
 function appRoute(req, send, shared, res, appId, action, connections) {
@@ -155,7 +160,8 @@ function appRoute(req, send, shared, res, appId, action, connections) {
   if (action === 'check' && req.method === 'POST') {
     const using = [...connections.values()].filter((c) => c.credential.app_id === appId && c.credential.kind === 'app_reference');
     return send(200, { repositories: [...INSTALLED_REPOSITORIES.map((r) => r.repository)], missing: using
-      .filter((c) => !INSTALLED_REPOSITORIES.some((r) => r.repository === c.repository)).map((c) => c.connection_id) });
+      .filter((c) => !INSTALLED_REPOSITORIES.some((r) => r.repository === c.repository)).map((c) => c.connection_id),
+      issues: issuesFollow(connections, appId) });
   }
   if (action !== undefined || req.method !== 'DELETE') return send(405, { message: 'Method not allowed' });
   return shared.collectJson(req, res, () => {

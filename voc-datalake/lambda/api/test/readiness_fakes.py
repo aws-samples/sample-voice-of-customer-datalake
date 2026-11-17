@@ -51,6 +51,14 @@ class ReadyPorts:
         del repository
         return True
 
+    def issues_source_lists(self, repository: str) -> bool | None:
+        del repository
+        return True
+
+    def label_state(self, connection_id: str) -> str:
+        del connection_id
+        return 'created'
+
     def mode(self, person: str) -> str:
         return self.modes.get(person, self.default_mode)
 

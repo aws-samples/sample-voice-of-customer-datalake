@@ -25,7 +25,7 @@ REAL_GET_AI_MODE = ai_mode.get_ai_mode
 ADMIN = {'sub': 'admin-sub', 'cognito:groups': 'admins'}
 ADA = {'sub': 'sub-ada', 'cognito:groups': 'users'}
 SUBS = {'ada': 'sub-ada', 'bob': 'sub-bob'}
-DEFAULT_ANSWER = {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
+DEFAULT_ANSWER = {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False, 'saved': False}
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +83,7 @@ class TestMyOwnMode:
         response, body = _get_mine(api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 200
-        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': True, 'ai_writing_prd': False}
+        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': True, 'ai_writing_prd': False, 'saved': True}
 
     def test_the_caller_reads_only_their_own_row(self, table, api_gateway_event, lambda_context):
         table.put_item(Item={'pk': 'USERFLAGS#sub-bob', 'sk': 'ai_mode', 'mode': 'human_driven'})
@@ -127,7 +127,7 @@ class TestAnAdminSetsTheMode:
 
         assert response['statusCode'] == 200
         assert body == {'success': True, 'username': 'ada', 'ai_mode': {
-            'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}}
+            'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False, 'saved': True}}
         assert _mode_row(table, 'sub-ada')['updated_by'] == 'admin-sub'
         assert _flags_row(table, 'sub-ada') == {}
 
@@ -137,7 +137,7 @@ class TestAnAdminSetsTheMode:
 
         _, body = _put_flags(api_gateway_event, lambda_context, {'ai_writing_prd': True})
 
-        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True}
+        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True, 'saved': True}
         assert 'flags' not in body
 
     def test_a_mixed_body_saves_both_rows_and_answers_both(self, table, api_gateway_event, lambda_context):
@@ -146,7 +146,7 @@ class TestAnAdminSetsTheMode:
 
         assert response['statusCode'] == 200
         assert body['flags'] == {'fallback_owner': False, 'memory_reviewer': True}
-        assert body['ai_mode'] == {'mode': 'ai_assisted', 'ai_writing_prfaq': True, 'ai_writing_prd': False}
+        assert body['ai_mode'] == {'mode': 'ai_assisted', 'ai_writing_prfaq': True, 'ai_writing_prd': False, 'saved': True}
         assert _mode_row(table, 'sub-ada')['mode'] == 'ai_assisted'
         assert _flags_row(table, 'sub-ada') != {}
 
@@ -163,7 +163,7 @@ class TestAnAdminSetsTheMode:
 
         _, mine = _get_mine(api_gateway_event, lambda_context)
 
-        assert mine['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': True, 'ai_writing_prd': False}
+        assert mine['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': True, 'ai_writing_prd': False, 'saved': True}
 
     @pytest.mark.usefixtures('table')
     def test_the_unlocks_survive_a_trip_to_ai_assisted_and_back(self, api_gateway_event, lambda_context):
@@ -172,7 +172,7 @@ class TestAnAdminSetsTheMode:
 
         _, body = _put_flags(api_gateway_event, lambda_context, {'ai_mode': 'human_driven'})
 
-        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True}
+        assert body['ai_mode'] == {'mode': 'human_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': True, 'saved': True}
 
     def test_one_persons_mode_does_not_change_anothers(self, table, api_gateway_event, lambda_context):
         _put_flags(api_gateway_event, lambda_context, {'ai_mode': 'human_driven'}, username='bob')
@@ -212,3 +212,50 @@ class TestAnAdminSetsTheMode:
 
         assert (response['statusCode'], body['error']) == (500, 'Failed to save the way of working')
         assert 'arn:' not in response['body']
+
+
+def _put_mine(api_gateway_event, lambda_context, body: dict, claims: dict = ADMIN) -> tuple[dict, Any]:
+    return call_route(lambda_handler, api_gateway_event, lambda_context, method='PUT',
+                      path='/users/me/ai-mode', body=body, claims=claims)
+
+
+MCP_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_subject': 'admin-sub',
+             'cognito:groups': 'admins'}
+
+
+class TestAnAdminSetsTheirOwnMode:
+    """7.50.02: the engineering Set up dialog's "Set mine to AI-driven" (``PUT /users/me/ai-mode``)."""
+
+    def test_an_admin_saves_their_own_mode_and_no_one_elses(self, table, api_gateway_event, lambda_context):
+        response, body = _put_mine(api_gateway_event, lambda_context, {'ai_mode': 'ai_driven'})
+
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'ai_mode': {'mode': 'ai_driven', 'ai_writing_prfaq': False,
+                                                     'ai_writing_prd': False, 'saved': True}}
+        assert _mode_row(table, 'admin-sub')['updated_by'] == 'admin-sub'
+        assert _mode_row(table, 'sub-ada') == {}
+
+    def test_a_saved_mode_reads_saved_where_nothing_saved_reads_the_default_unsaved(
+            self, table, api_gateway_event, lambda_context):
+        _, before = _get_mine(api_gateway_event, lambda_context, claims=ADMIN)
+        _put_mine(api_gateway_event, lambda_context, {'ai_mode': 'ai_driven'})
+        _, after = _get_mine(api_gateway_event, lambda_context, claims=ADMIN)
+
+        assert (before['ai_mode']['mode'], before['ai_mode']['saved']) == ('ai_driven', False)
+        assert (after['ai_mode']['mode'], after['ai_mode']['saved']) == ('ai_driven', True)
+        assert _mode_row(table, 'admin-sub')['mode'] == 'ai_driven'
+
+    @pytest.mark.usefixtures('table')
+    @pytest.mark.parametrize('claims', [ADA, MCP_ADMIN], ids=['plain user', 'MCP credential of an admin'])
+    def test_only_an_admin_acting_for_themselves(self, claims, api_gateway_event, lambda_context):
+        response, _ = _put_mine(api_gateway_event, lambda_context, {'ai_mode': 'ai_driven'}, claims=claims)
+
+        assert response['statusCode'] == 403
+
+    @pytest.mark.parametrize('body', [{}, {'ai_mode': 'ai_first'}, {'ai_mode': 'ai_driven', 'ai_writing_prd': True}])
+    def test_a_body_off_its_shape_is_refused_and_nothing_is_stored(self, body, table, api_gateway_event,
+                                                                    lambda_context):
+        response, _ = _put_mine(api_gateway_event, lambda_context, body)
+
+        assert response['statusCode'] == 400
+        assert _mode_row(table, 'admin-sub') == {}

@@ -299,8 +299,8 @@
     "graphLabel": "Wykres postępu uruchomienia",
     "showAll": "Pokaż wszystkie zdarzenia (filtr: {{step}})",
     "rounds": "Runda {{n}}",
-    "engineeringConfirmBug": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium: pracuje na własnej gałęzi i kończy na szkicu pull requesta. Podaj numer zgłoszenia, aby je naprawić (nawet jeśli było już przetwarzane), albo zostaw puste, aby szukać błędów.",
-    "engineeringConfirmFeature": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium ze zgłoszenia: buduje funkcję na własnej gałęzi i kończy na szkicu pull requesta. Aby budować z PRD, otwórz PRD i wybierz „Zbuduj z tego PRD”.",
+    "engineeringConfirmBug": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium: pracuje na własnej gałęzi i otwiera pull request do przeglądu (szkic, jeśli tak mówi jego przepływ); scalanie pozostaje w rękach człowieka. Podaj numer zgłoszenia, aby je naprawić (nawet jeśli było już przetwarzane), albo zostaw puste, aby szukać błędów.",
+    "engineeringConfirmFeature": "Agent rozpoczyna przebieg inżynieryjny w swoim repozytorium ze zgłoszenia: buduje funkcję na własnej gałęzi i otwiera pull request do przeglądu (szkic, jeśli tak mówi jego przepływ); scalanie pozostaje w rękach człowieka. Aby budować z PRD, otwórz PRD i wybierz „Zbuduj z tego PRD”.",
     "issueOptional": "Numer zgłoszenia (opcjonalnie)",
     "issueRequired": "Numer zgłoszenia",
     "issueInvalid": "Numer zgłoszenia: liczba całkowita od 1.",
@@ -859,6 +859,43 @@
       "removed": "{{slug}} została usunięta z tego wdrożenia. Usuń ją też w ustawieniach GitHuba.",
       "via": "przez {{slug}}"
     },
+    "issues": {
+      "switch": "Odczytuj zgłoszenia tego repozytorium",
+      "reading": "Zgłoszenia są odczytywane automatycznie.",
+      "reasons": {
+        "off": "Jego zgłoszenia nie są odczytywane: przełącznik jest wyłączony.",
+        "token": "Źródło GitHub Issues loguje się tokenem: dodaj to repozytorium w Administracja → Źródła danych.",
+        "other_app": "Źródło GitHub Issues loguje się inną aplikacją GitHub App: zgłoszenia tego repozytorium nie są przez nią odczytywane.",
+        "limit": "Źródło GitHub Issues odczytuje najwyżej {{limit, number}} repozytoriów: usuń jedno w Administracja → Źródła danych, aby odczytywać to.",
+        "not_app": "Tylko połączenie utworzone przez aplikację GitHub App wdrożenia ma automatycznie odczytywane zgłoszenia.",
+        "not_deployed": "Źródło GitHub Issues nie jest tu wdrożone, więc żadne zgłoszenia nie są odczytywane.",
+        "pending": "Jeszcze nieodczytywane: nie ma go na liście źródła GitHub Issues.",
+        "unknown": "Jego zgłoszenia nie są odczytywane."
+      },
+      "openSources": "Otwórz Administracja → Źródła danych",
+      "readNow": "Odczytaj teraz jego zgłoszenia",
+      "label": {
+        "created": "Etykieta {{label}}: utworzona.",
+        "present": "Etykieta {{label}}: jest w repozytorium.",
+        "failed": "Nie udało się utworzyć etykiety {{label}}: Sprawdź instalację spróbuje ponownie."
+      },
+      "follow": {
+        "reading_one": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytorium.",
+        "reading_few": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
+        "reading_many": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
+        "reading_other": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytorium.",
+        "token": "Źródło GitHub Issues loguje się tokenem: dodaj te repozytoria w Administracja → Źródła danych.",
+        "labelsCreated": "Etykieta {{label}}: w {{list}}.",
+        "labelsFailed": "Nie udało się utworzyć etykiety {{label}} w {{list}}: Sprawdź instalację spróbuje ponownie.",
+        "skipped": {
+          "off": "Nieodczytywane (wyłączone): {{list}}.",
+          "other_app": "Nieodczytywane (źródło loguje się inną aplikacją GitHub App): {{list}}.",
+          "limit": "Nieodczytywane (źródło odczytuje już {{limit, number}} repozytoriów): {{list}}."
+        },
+        "scheduleOff": "Harmonogram źródła GitHub Issues jest wyłączony: włącz go w Administracja → Źródła danych.",
+        "error": "Nie udało się automatycznie skonfigurować źródła GitHub Issues: {{error}}"
+      }
+    },
     "githubReturn": {
       "back": "Wróć do Agenci → Połączenia",
       "createdTitle": "GitHub App utworzona",
@@ -1018,7 +1055,7 @@
     "ci": {
       "attested": "CI potwierdzone",
       "notAttested": "CI niepotwierdzone",
-      "attestedBy": "Potwierdzone przez: {{who}}, {{when}}. Agenci mogą wypychać zmiany do gałęzi voc-agent/* i otwierać wersje robocze pull requestów.",
+      "attestedBy": "Poświadczone przez {{who}}, {{when}}: agenci mogą wypychać do gałęzi voc-agent/* i otwierać pull requesty do przeglądu; scalanie pozostaje w rękach człowieka.",
       "none": "Agenci niczego nie wypychają do tego repozytorium, dopóki administrator nie potwierdzi, że jego CI nie daje gałęziom agentów niczego cennego.",
       "withdrawnBy": "Wycofane przez: {{who}}, {{when}}. Agenci niczego nie wypychają, dopóki CI nie zostanie potwierdzone ponownie.",
       "voidedRepository": "Unieważnione po zmianie repozytorium połączenia: potwierdź CI tego repozytorium.",
@@ -1500,7 +1537,7 @@
     "button": "Zbuduj z tego PRD",
     "started": "Otwórz monitor przebiegu",
     "title": "Zbudować z tego PRD?",
-    "message": "{{name}} rozpoczyna przebieg inżynieryjny, który buduje funkcję opisaną w tym PRD na własnej gałęzi i kończy na szkicu pull requesta.",
+    "message": "{{name}} rozpoczyna przebieg inżynieryjny, który buduje funkcję opisaną w tym PRD na własnej gałęzi i otwiera pull request do przeglądu (szkic, jeśli tak mówi jego przepływ); scalanie pozostaje w rękach człowieka.",
     "confirm": "Rozpocznij budowę",
     "agent": "Agent",
     "inputHint": "Przebieg otrzymuje ten PRD jako dane wejściowe, przez jego identyfikator."
@@ -1517,6 +1554,11 @@
     "docs": "Dokumentacja",
     "opensNewTab": "(otwiera się w nowej karcie)",
     "setWayOfWorking": "Ustaw swój sposób pracy w sekcji Użytkownicy",
+    "setDialMine": "Ustaw mój na Prowadzone przez AI",
+    "dialConfirm": "Dzięki temu automatyzacje, które włączysz, mogą wypychać do gałęzi voc-agent/* i otwierać pull requesty, a AI może pisać Twoje PR/FAQ i PRD.",
+    "dialConfirmAction": "Ustaw na Prowadzone przez AI",
+    "dialSaved": "Zapisano: Prowadzone przez AI.",
+    "dialFailed": "Nie udało się zapisać Twojego sposobu pracy: spróbuj ponownie.",
     "enableWaits": "Włączenie czeka, aż przejdzie każda kontrola, której potrzebuje uruchomienie.",
     "enableRefused": "Nie włączono: te kontrole, których potrzebuje uruchomienie, nie przechodzą.",
     "passedFolded": "Zaliczone kontrole ({{count, number}})",
@@ -1615,7 +1657,6 @@
       "label": "Wymagania wstępne",
       "github": "Połącz GitHub przez GitHub App wdrożenia: utwórz App, a potem zainstaluj ją w repozytorium (dwa kliknięcia).",
       "ci": "Poświadcz CI repozytorium na jego połączeniu: chronione sekrety, token tylko do odczytu, przypięte OIDC, brak runnera hostowanego samodzielnie, brak uprzywilejowanego workflow pull requestów.",
-      "issues": "Pobierz jego zgłoszenia: źródło GitHub Issues dla całego wdrożenia, z tym repozytorium i zalogowane tą App, oraz etykieta voc-agent na każdym zgłoszeniu, które agenci mogą przejąć.",
       "met": "Gotowe",
       "notMet": "Do zrobienia",
       "unknown": "Jeszcze nieznane",
@@ -1626,8 +1667,18 @@
       "deploymentTitle": "To wdrożenie",
       "connectedAs": "Połączono przez aplikację: {{list}}.",
       "ciFor": "CI poświadczone dla: {{list}}.",
-      "notConfigured": "Nieskonfigurowane",
-      "noReadiness": "Źródło i jego etykietę sprawdza gotowość automatyzacji: nie znaleziono jeszcze żadnej automatyzacji."
+      "noReadiness": "Źródło i jego etykietę sprawdza gotowość automatyzacji: nie znaleziono jeszcze żadnej automatyzacji.",
+      "automatic": "Automatycznie",
+      "issuesRead_one": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytorium.",
+      "issuesRead_few": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
+      "issuesRead_many": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
+      "issuesRead_other": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytorium.",
+      "issuesNone": "Zgłoszenia: odczytywane automatycznie, gdy tylko repozytorium zostanie połączone przez aplikację.",
+      "issuesUnknown": "Zgłoszenia: odczytywane automatycznie z każdego repozytorium połączonego przez aplikację.",
+      "issuesNotDeployed": "Zgłoszenia: źródło GitHub Issues nie jest tu wdrożone.",
+      "issuesToken": "Zgłoszenia: źródło GitHub Issues loguje się tokenem, więc jego repozytoria wpisuje się ręcznie.",
+      "labelCreated": "Etykieta {{label}}: utworzona.",
+      "labelPending": "Etykieta {{label}}: tworzona automatycznie w każdym repozytorium, którego zgłoszenia są odczytywane."
     },
     "automation": {
       "open": "Otwórz {{name}}",

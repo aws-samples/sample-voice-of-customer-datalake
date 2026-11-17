@@ -480,14 +480,34 @@
     },
     "aiMode": {
       "title": "AI との働き方",
-      "description": "各ユーザーが PR/FAQ と PRD を書くときに AI がどこまで手伝うか。各モードは前のモードに機能を加えたもので、既定は AI 主導です。その他のドキュメントには影響しません。",
+      "description": "ユーザーごとに、その人の PR/FAQ と PRD を AI がどこまで書くか、およびその人が有効にするエンジニアリングオートメーションがプッシュしてプルリクエストを開けるかを設定します。",
+      "notSet": "未設定",
+      "notSetEffect": "ドキュメントは AI 主導 · 選択するまでオートメーションはプッシュしません",
+      "compareTitle": "モードの違い",
+      "compare": {
+        "mode": "モード",
+        "documents": "あなたの PR/FAQ と PRD",
+        "automations": "あなたが有効にするオートメーション",
+        "humanDriven": {
+          "documents": "AI は質問に答え、説明し、レビューします。代わりに書くことはありません（管理者が種類ごとに許可した場合を除く）。",
+          "automations": "何もプッシュしません。"
+        },
+        "aiAssisted": {
+          "documents": "AI があなたと一緒に下書き、提案、書き直しを行います。",
+          "automations": "プッシュしてプルリクエストを開けます。各プッシュは人の承認を待ちます。"
+        },
+        "aiDriven": {
+          "documents": "AI アシストに加えて、エージェントやプランが代わりに書けます。",
+          "automations": "プッシュして、人がレビューするプルリクエストを開けます。"
+        }
+      },
       "saveFailed": "働き方を更新できませんでした。もう一度お試しください。",
       "humanDriven": "人が主導",
       "aiAssisted": "AI がアシスト",
       "aiDriven": "AI 主導",
       "humanDrivenTooltip": "AI は質問に答え、手法を説明し、レビューします。ドキュメントを代わりに書くことはありません。",
       "aiAssistedTooltip": "AI がエディターとチャットで一緒に下書き、提案、書き直しを行います。",
-      "aiDrivenTooltip": "AI アシストに加えて、自律エージェントやプランがドキュメントを代わりに書けます。",
+      "aiDrivenTooltip": "AI アシストに加えて、エージェントがドキュメントを代わりに書き、あなたが有効にするオートメーションのためにコードをプッシュできます。",
       "unlockPrfaq": "AI で PR/FAQ",
       "unlockPrd": "AI で PRD",
       "unlockPrfaqFor": "AI で PR/FAQ: {{user}}",

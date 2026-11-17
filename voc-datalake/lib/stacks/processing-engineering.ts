@@ -11,6 +11,7 @@ import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
 import { createEngineeringAppTokens } from './engineering-app-tokens';
+import { createEngineeringIssuesConfig, issuesConfigDeployed } from './engineering-issues-config';
 import { EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { EngineeringBus } from './engineering-bus';
 import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
@@ -26,8 +27,12 @@ export interface ProcessingEngineeringProps {
   agentsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
   /** voc-engineering and voc-eng-workspace (VocCoreStack, made only with the flag). */
-  engineeringTable: dynamodb.ITable | undefined;
-  engineeringWorkspaceBucket: s3.IBucket | undefined;
+  engineeringTable?: dynamodb.ITable;
+  engineeringWorkspaceBucket?: s3.IBucket;
+  /** The deployment's plugins (pluginStatus): the GitHub Issues settings function exists only with github_issues. */
+  enabledSources: readonly string[];
+  /** The shared API-credentials secret (VocIngestionStack), for the GitHub Issues settings function. */
+  apiSecretsArn?: string;
 }
 
 /**
@@ -50,6 +55,11 @@ export function addProcessingEngineering(scope: Construct, props: ProcessingEngi
     createEngineeringAppTokens(scope, {
       uniqueName, layer, signingLayer: broker.signingLayer, kmsKey, deploymentPrefix: props.deploymentPrefix,
     });
+    // The GitHub Issues source's settings for the connections (7.50.02, engineering-issues-config.ts), with that plugin.
+    if (issuesConfigDeployed(scope, props.enabledSources)) {
+      if (!props.apiSecretsArn) throw new Error('the GitHub Issues settings function needs VocIngestionStack\'s secretsArn');
+      createEngineeringIssuesConfig(scope, { uniqueName, layer, secretsArn: props.apiSecretsArn });
+    }
     const bus = new EngineeringBus(scope, 'EngineeringBus', {
       uniqueName, layer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
       workspaceBucket: props.engineeringWorkspaceBucket,

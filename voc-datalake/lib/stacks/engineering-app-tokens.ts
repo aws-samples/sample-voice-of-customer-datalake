@@ -3,8 +3,10 @@
  * "A GitHub App in two clicks"): the one function besides the broker that signs with a GitHub App's key. The broker's code
  * (lambda/engineering/connectors/app_tokens.py), entered at `connectors/app_tokens.lambda_handler`, which takes
  * `inspect_installation` (the Agents API's: an installation's account and repositories, read with a token it revokes,
- * never answered) and `issues_token` (the github_issues ingestor's: `{issues: read, metadata: read}` tokens narrowed to a
- * run's repositories) and refuses every other request before anything is read.
+ * never answered), `issues_token` (the github_issues ingestor's: `{issues: read, metadata: read}` tokens narrowed to a
+ * run's repositories) and, since 7.50.02, `ensure_label` (the Agents API's: the `voc-agent` label alone on one connected
+ * repository, created only when missing with an `{issues: write}` token of that repository, revoked, never answered),
+ * and refuses every other request before anything is read. No new grant for it: GitHub is its only reach.
  *
  * Its own role holds exactly `ssm:GetParameter` on the deployment's GitHub Apps' keys (`/[<prefix>-]voc/engineering/
  * _github-app/<app id>/key`) and `kms:Decrypt` on the stack's key through SSM for those parameters alone (the
@@ -95,18 +97,35 @@ function appTokensRole(scope: Construct, props: AppTokensProps): iam.Role {
   return role;
 }
 
+/** What a function of the engineering connectors' code needs besides its entry module (`connectorFunction`). */
+export interface ConnectorFunctionSpec {
+  functionName: string;
+  role: iam.IRole;
+  layer: lambda.ILayerVersion;
+  timeout: cdk.Duration;
+  environment: Record<string, string>;
+}
+
+/**
+ * A function of the engineering connectors' code (`engineering/connectors/<module>.lambda_handler`, 256 MB, its
+ * Powertools service its base name `serviceName`), with a role of its own: the token function and, since 7.50.02, the
+ * GitHub Issues settings function (engineering-issues-config.ts).
+ */
+export function connectorFunction(scope: Construct, id: string, module: string, serviceName: string,
+  spec: ConnectorFunctionSpec): lambda.Function {
+  return createWorkerFunction(scope, id, {
+    ...spec, tree: 'engineering', handler: `engineering/connectors/${module}.lambda_handler`, memorySize: 256, serviceName,
+  });
+}
+
 export function createEngineeringAppTokens(scope: Construct, props: AppTokensProps): lambda.Function {
-  const fn = createWorkerFunction(scope, 'EngineeringAppTokens', {
-    tree: 'engineering',
+  const fn = connectorFunction(scope, 'EngineeringAppTokens', 'app_tokens', 'voc-engineering-app-tokens', {
     functionName: appTokensFunctionName(props.uniqueName),
-    handler: 'engineering/connectors/app_tokens.lambda_handler',
     role: appTokensRole(scope, props),
     layer: props.layer,
     // Under the Agents API's 25 s wait (agents_handler.py START_READ_TIMEOUT_SECONDS): each GitHub request has 5 s, an
     // inspection reads at most ten pages of repositories.
     timeout: cdk.Duration.seconds(20),
-    memorySize: 256,
-    serviceName: 'voc-engineering-app-tokens',
     environment: { ENGINEERING_PARAMETER_PREFIX: engineeringParameterPrefix(props.deploymentPrefix) },
   });
   fn.addLayers(props.signingLayer);

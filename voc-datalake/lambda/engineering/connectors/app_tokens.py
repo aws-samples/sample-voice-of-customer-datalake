@@ -2,7 +2,7 @@
 clicks"): the one function that signs with a deployment's GitHub App key outside the broker.
 
 It runs the broker's code (``credentials.parse_app_key``, ``github.sign_app_jwt``) under a role of its own, with the
-signing layer, and takes two actions, each a direct invoke (the stack: lib/stacks/engineering-app-tokens.ts), and
+signing layer, and takes three actions, each a direct invoke (the stack: lib/stacks/engineering-app-tokens.ts), and
 refuses every other, and any request off its shape, before anything is read (``AppTokensRefused``):
 
 * ``inspect_installation`` ``{app_id, installation_id}``, the Agents API's (``github_apps.py``): the installation as
@@ -18,7 +18,15 @@ refuses every other, and any request off its shape, before anything is read (``A
   ``{issues: read, metadata: read}`` and ``repositories`` narrowed to the run's ones it covers. The answer,
   ``{tokens: [{repositories, token, expires_at}], uncovered}``, is the ingestor's, which revokes each token at the
   end of its run. A request naming a workspace is refused: a workspace's run signs in with its own token, the
-  deployment's Apps are the deployment's (D8, until 3g3).
+  deployment's Apps are the deployment's (D8, until 3g3);
+* ``ensure_label`` ``{app_id, installation_id, repository, label}`` (7.50.02), the Agents API's: the ``voc-agent``
+  label on one connected repository, created only when it is missing. ``label`` must be exactly ``LABEL`` (any
+  other name is refused before anything is read), the installation must be the one GitHub says covers the
+  repository (``/repos/<owner>/<name>/installation`` read with the JWT: another App's, another installation or a
+  suspended one is ``InstallationRefused``), and the token is minted with exactly ``{issues: write}`` and
+  ``repositories`` narrowed to that one repository, used for a read of the label and, when GitHub answers 404, its
+  create (``LABEL_COLOR``, ``LABEL_DESCRIPTION``), then revoked. The answer, ``{repository, label, created}``, never
+  carries the token; the Agents API writes the audit row (this function holds no table).
 
 The App's key is read from ``{prefix}_github-app/<app_id>/key`` (its App id checked) and kept ``CACHE_SECONDS``; a key
 that cannot be read is ``AppKeyUnavailable``. The key, the JWT and any token are never logged or put in an error; a
@@ -32,14 +40,14 @@ import time
 from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any, Final
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import boto3
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from engineering.connectors.connections import PARAMETER_PREFIX_ENV, REPOSITORY, github_number
+from engineering.connectors.connections import ISSUE_LABEL, PARAMETER_PREFIX_ENV, REPOSITORY, github_number
 from engineering.connectors.credentials import AppKeys, CredentialUnusable
-from engineering.connectors.github import API_HOST, METADATA_READ, TOKEN_PATH, send_request, sign_app_jwt
+from engineering.connectors.github import API_HOST, ISSUES_WRITE, METADATA_READ, TOKEN_PATH, send_request, sign_app_jwt
 from engineering.connectors.hosts import HostError, NoConnection
 from engineering.connectors.transport import HttpsTransport, Response, Transport, dig, json_of, text_of
 from shared.invocation_cost import measure_invocation_cost
@@ -47,9 +55,18 @@ from shared.logging import logger
 
 INSPECT: Final = 'inspect_installation'
 ISSUES_ACTION: Final = 'issues_token'
-ACTIONS: Final = frozenset({INSPECT, ISSUES_ACTION})
+LABEL_ACTION: Final = 'ensure_label'
+ACTIONS: Final = frozenset({INSPECT, ISSUES_ACTION, LABEL_ACTION})
 #: Exactly what the Issues source's token may do (the plan's, pinned by test_app_tokens.py).
 ISSUES_PERMISSIONS: Final = {'issues': 'read', 'metadata': 'read'}
+#: Exactly what the label's token may do: create a label on its one repository (the broker's labels write, github.py;
+#: pinned by test_app_tokens.py).
+LABEL_PERMISSIONS: Final = ISSUES_WRITE
+#: The one label ``ensure_label`` creates (connections.py ISSUE_LABEL: the engineering agents' issue trigger's), with a
+#: fixed color and description. Any other name is refused.
+LABEL: Final = ISSUE_LABEL
+LABEL_COLOR: Final = '5319e7'
+LABEL_DESCRIPTION: Final = 'Picked up by the VoC agents'
 #: What an inspection's token may do: list the installation's repositories, nothing else (the broker's metadata read).
 INSPECT_PERMISSIONS: Final = METADATA_READ
 #: The most repositories an Issues source names (plugins/_shared/github_config.py MAX_REPOS).
@@ -62,6 +79,7 @@ REQUEST_TIMEOUT_SECONDS: Final = 5.0
 #: The keys a request may carry besides ``action``; a workspace's is named so its refusal says why.
 _INSPECT_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id'})
 _ISSUES_FIELDS: Final = frozenset({'action', 'app_id', 'repositories'})
+_LABEL_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id', 'repository', 'label'})
 _WORKSPACE_FIELDS: Final = frozenset({'workspace', 'workspace_id', 'ws'})
 #: The installation answers' refusal (another App's, gone, suspended): one sentence for each, never the id read.
 OTHER_APP: Final = ('this installation belongs to another GitHub App, or is gone: install this App from Agents → '
@@ -106,9 +124,17 @@ def parse_request(event: object) -> tuple[str, dict[str, Any]]:
     """The action and its checked arguments, or ``AppTokensRefused`` (nothing read yet)."""
     action = event.get('action') if isinstance(event, Mapping) else None
     if action not in ACTIONS or not isinstance(event, Mapping):
-        raise AppTokensRefused(f'this function takes {INSPECT!r} or {ISSUES_ACTION!r} only')
+        raise AppTokensRefused(f'this function takes {INSPECT!r}, {ISSUES_ACTION!r} or {LABEL_ACTION!r} only')
     if _WORKSPACE_FIELDS & set(event):
         raise AppTokensRefused('a workspace\'s run signs in with its own token: the GitHub Apps are the deployment\'s')
+    if action == LABEL_ACTION:
+        if set(event) != _LABEL_FIELDS:
+            raise AppTokensRefused('the request is {action, app_id, installation_id, repository, label}')
+        if event['label'] != LABEL:
+            raise AppTokensRefused(f'the only label this function creates is {LABEL!r}')
+        return action, {'app_id': _number(event['app_id'], 'app_id'),
+                        'installation_id': int(_number(event['installation_id'], 'installation_id')),
+                        'repository': _repositories([event['repository']])[0]}
     if action == INSPECT:
         if set(event) != _INSPECT_FIELDS:
             raise AppTokensRefused('the request is {action, app_id, installation_id}')
@@ -125,7 +151,7 @@ def _ssm() -> Any:
 
 
 class AppTokens:
-    """The two actions over the App keys under ``prefix`` (SSM through ``client``) and GitHub (``transport``)."""
+    """The three actions over the App keys under ``prefix`` (SSM through ``client``) and GitHub (``transport``)."""
 
     def __init__(self, prefix: str, client: Callable[[], Any] = _ssm, transport: Transport | None = None,
                  clock: Callable[[], float] = time.time, monotonic: Callable[[], float] = time.monotonic) -> None:
@@ -252,6 +278,37 @@ class AppTokens:
         return {'tokens': tokens, 'uncovered': uncovered}
 
 
+    def ensure_label(self, app_id: str, installation_id: int, repository: str) -> dict[str, Any]:
+        """``LABEL`` on ``repository``, created only when GitHub answers 404 to its read, with a token of exactly
+        ``LABEL_PERMISSIONS`` for that one repository of ``installation_id`` (the installation GitHub says covers it),
+        revoked before the answer: ``{repository, label, created}``, never the token."""
+        jwt = self._jwt(app_id)
+        found = self._send('GET', f'/repos/{repository}/installation', jwt, 'the installation lookup', ok=(200, 404))
+        data = None if found.status == 404 else json_of(found)
+        if (data is None or dig(data, 'id') != installation_id or str(dig(data, 'app_id')) != app_id
+                or dig(data, 'suspended_at') is not None):
+            raise InstallationRefused(OTHER_APP)
+        token, _ = self._mint(jwt, installation_id, LABEL_PERMISSIONS, [repository.split('/', 1)[1]])
+        try:
+            created = self._create_label(token, repository)
+        finally:
+            self._revoke(token)
+        logger.info('engineering GitHub App label ensured',
+                    extra={'app_id': app_id, 'installation_id': installation_id, 'label_created': created})
+        return {'repository': repository, 'label': LABEL, 'created': created}
+
+    def _create_label(self, token: str, repository: str) -> bool:
+        """Whether ``LABEL`` was created now (False: it was there, or another writer made it meanwhile: 422)."""
+        authorization = f'Bearer {token}'
+        label = quote(LABEL, safe='')
+        read = self._send('GET', f'/repos/{repository}/labels/{label}', authorization, 'the label read', ok=(200, 404))
+        if read.status == 200:
+            return False
+        made = self._send('POST', f'/repos/{repository}/labels', authorization, 'the label create', ok=(201, 422),
+                          body={'name': LABEL, 'color': LABEL_COLOR, 'description': LABEL_DESCRIPTION})
+        return made.status == 201
+
+
 @lru_cache(maxsize=1)
 def app_tokens(prefix: str) -> AppTokens:
     """The container's (one, so a read key stays warm ``CACHE_SECONDS``)."""
@@ -260,8 +317,8 @@ def app_tokens(prefix: str) -> AppTokens:
 
 @measure_invocation_cost
 def lambda_handler(event: object, context: object) -> dict[str, Any]:
-    """voc-engineering-app-tokens' entry: ``inspect_installation`` or ``issues_token``; anything else, and a request
-    off its shape, is refused (``AppTokensRefused``) before the key or GitHub is read."""
+    """voc-engineering-app-tokens' entry: ``inspect_installation``, ``issues_token`` or ``ensure_label``; anything
+    else, and a request off its shape, is refused (``AppTokensRefused``) before the key or GitHub is read."""
     try:
         action, request = parse_request(event)
     except AppTokensRefused:
@@ -271,4 +328,6 @@ def lambda_handler(event: object, context: object) -> dict[str, Any]:
     tokens = app_tokens(os.environ.get(PARAMETER_PREFIX_ENV, ''))
     if action == INSPECT:
         return tokens.inspect(request['app_id'], request['installation_id'])
+    if action == LABEL_ACTION:
+        return tokens.ensure_label(request['app_id'], request['installation_id'], request['repository'])
     return tokens.issues(request['app_id'], request['repositories'])

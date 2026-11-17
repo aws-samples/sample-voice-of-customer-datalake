@@ -23,7 +23,11 @@ import { fixtureBucket, fixtureQueue, fixtureRealtime } from './fixture-resource
 import { itemAt, valueAt } from './guards';
 
 export function synthProcessingTemplate(
-  options: { withIndexes?: boolean; context?: Record<string, unknown>; deploymentPrefix?: string } = {},
+  options: {
+    withIndexes?: boolean; context?: Record<string, unknown>; deploymentPrefix?: string;
+    /** The deployment's plugins (pluginStatus); none by default. */
+    enabledSources?: string[];
+  } = {},
 ): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...options.context } });
@@ -66,10 +70,11 @@ export function synthProcessingTemplate(
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
     engineeringWorkspaceBucket: fixtureBucket(deps, 'EngineeringWorkspace'),
+    apiSecretsArn: 'arn:aws:secretsmanager:us-east-1:111111111111:secret:voc',
     config: {
       brandName: 'TestBrand',
       primaryLanguage: 'en',
-      enabledSources: [],
+      enabledSources: options.enabledSources ?? [],
     },
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.

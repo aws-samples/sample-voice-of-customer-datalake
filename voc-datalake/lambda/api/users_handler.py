@@ -9,7 +9,8 @@ Provides Cognito user management for admins:
 - Enable/disable users
 - Grant and revoke the ``platform-admins`` group (``PUT /users/{username}/platform-admin``)
 
-Only accessible by users in the 'admins' group, except ``GET /users/me/ai-mode``
+Only accessible by users in the 'admins' group (``PUT /users/me/ai-mode`` too: an administrator's own way of working,
+7.50.02), except ``GET /users/me/ai-mode``
 (the caller's own way of working with AI, docs/ways-of-working.md). A member of
 ``platform-admins`` is managed by platform admins only (docs/multi-workspace.md →
 Control plane; the rules in shared/user_admin_guard.py): the platform-admin route,
@@ -59,6 +60,7 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.platform_admin import PLATFORM_ADMIN_GROUP, is_live_platform_admin, require_platform_admin
 from shared.project_access import ADMIN_GROUP
+from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_body_value, json_object_body
 from shared.source_profiles import load_source_profiles
 from shared.timestamps import now_iso
@@ -909,6 +911,23 @@ def get_my_ai_mode():
         logger.exception('Error reading the way of working')
         raise ServiceError('Failed to read your way of working') from exc
     return {'success': True, 'ai_mode': mode.to_dict()}
+
+
+@app.put('/users/me/ai-mode')
+@tracer.capture_method
+def put_my_ai_mode():
+    """``{ai_mode}`` → ``{success, ai_mode}``: an administrator saves their OWN way of working (7.50.02: the engineering
+    agent's Set up dialog, "Set mine to AI-driven"), for the caller's subject from the token, never another person's.
+    The same row and rule as ``PUT /users/{username}/flags`` (admin only: a person's way of working stays an
+    administrator's to set); the unlocks are not taken here and are kept as stored."""
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_admin_caller(caller_from_event(event))   # (a delegated credential never sets a person's way of working)
+    body = json_object_body(app)
+    if set(body) != {'ai_mode'}:
+        raise ValidationError('the body is {ai_mode}')
+    actor_sub = get_caller_subject(event)
+    return {'success': True, 'ai_mode': _save_ai_mode(actor_sub, _ai_mode_changes(body), actor_sub)}
 
 
 @api_handler

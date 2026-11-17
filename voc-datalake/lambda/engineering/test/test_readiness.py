@@ -59,6 +59,10 @@ class Ports:
     protection: Any = None
     pack: Any = 3
     issues: Any = True
+    #: Whether the Issues source's settings name the repository (7.50.02); None: not deployed here.
+    lists: Any = None
+    #: The connection's recorded label state (7.50.02: '' none).
+    label: Any = ''
     modes: dict[str, Any] = field(default_factory=lambda: {'admin-sub': 'ai_driven'})
     hard_cap: Any = True
     spent: Any = Decimal('12.5')
@@ -96,8 +100,16 @@ class Ports:
         self.asked.append(f'issues {repository}')
         return self._answer(self.issues)
 
+    def issues_source_lists(self, repository: str) -> bool | None:
+        self.asked.append(f'lists {repository}')
+        return self._answer(self.lists)
+
+    def label_state(self, connection_id: str) -> str:
+        self.asked.append(f'label {connection_id}')
+        return self._answer(self.label)
+
     def mode(self, person: str) -> str:
-        return self._answer(self.modes.get(person, 'human_driven'))
+        return self._answer(self.modes.get(person, ''))   # ('': nothing saved, connectors/dial.py NOT_SET)
 
     def hard_cap_on(self) -> bool:
         return self._answer(self.hard_cap)
@@ -248,48 +260,86 @@ def test_the_issues_source_and_label_for_an_issue_trigger() -> None:
     assert checks(asks, Ports(issues=False))['issues_source'].status == 'fail'
 
 
-def test_the_dial_reads_the_stored_mode_and_no_row_is_human_driven() -> None:
+def test_the_dial_reads_the_stored_mode_and_tells_nothing_saved_from_human_driven() -> None:
     found = checks(ports=Ports(modes={}))
     assert found['dial'].status == 'fail'
-    assert 'Human-driven' in found['dial'].detail
+    assert found['dial'].detail.startswith('Not set yet: choose AI-assisted or AI-driven for the administrator who '
+                                           'enables the agent.')
     assert found['dial'].blocking
+    human = checks(ports=Ports(modes={'admin-sub': 'human_driven'}))['dial']
+    assert (human.status, 'Human-driven' in human.detail, human.detail.startswith('Not set')) == ('fail', True, False)
     assert checks(ports=Ports(modes={'admin-sub': 'ai_assisted'}))['dial'].status == 'pass'
+    assert checks(ports=Ports(modes={'admin-sub': 'ai_driven'}))['dial'].status == 'pass'
     assert checks(replace(SUBJECT, person=''))['dial'].status == 'fail'
     assert checks(ports=Ports(modes={'admin-sub': ReadFailed('x')}))['dial'].status == 'unknown'
-    # A flow that runs Human-driven (triage pushes nothing) passes with no stored mode.
+    # A flow that runs Human-driven (triage pushes nothing) passes with no stored mode, and with Human-driven saved.
     triage = replace(SUBJECT, definition=TRIAGE_FLOW, requires=flow_requires(TRIAGE_FLOW))
     assert checks(triage, Ports(modes={}))['dial'].status == 'pass'
+    assert checks(triage, Ports(modes={'admin-sub': 'human_driven'}))['dial'].status == 'pass'
     declared = replace(SUBJECT, requires={'dial': ['ai_driven']})
     assert checks(declared, Ports(modes={'admin-sub': 'ai_assisted'}))['dial'].status == 'fail'
+    assert checks(declared, Ports(modes={}))['dial'].detail.startswith('Not set yet: choose AI-driven for ')
 
 
 def test_the_dial_says_who_the_runs_follow_and_each_way_of_working_by_its_name() -> None:
     named = replace(SUBJECT, person_name='alice')
-    found = checks(named, Ports(modes={}))['dial']
+    found = checks(named, Ports(modes={'admin-sub': 'human_driven'}))['dial']
     assert found.detail == ('The runs follow alice, whose way of working is Human-driven, so a run would push nothing. '
                             'This flow needs AI-assisted or AI-driven.')
     assert found.fix == ('An administrator sets the way of working of alice to AI-assisted or AI-driven in '
-                         'Administration → Privacy & access → Users; with AI-assisted, each push waits for a person\'s '
-                         'go on the run.')
+                         'Administration → Privacy & access → Users (/admin/access/users); with AI-assisted, each push '
+                         'waits for a person\'s go on the run.')
+    unset = checks(named, Ports(modes={}))['dial']
+    assert unset.detail == ('Not set yet: choose AI-assisted or AI-driven for alice. With nothing saved, a run pushes '
+                            'nothing (documents default to AI-driven).')
+    assert unset.fix == found.fix
     assert checks(named)['dial'].detail == ('The runs follow alice, whose way of working is AI-driven, which this flow '
                                             'runs in.')
     # A pushing way of working the flow does not run in pushes, so nothing is said of pushing nothing.
     declared = replace(named, requires={'dial': ['ai_driven']})
     found = checks(declared, Ports(modes={'admin-sub': 'ai_assisted'}))['dial']
     assert found.detail == 'The runs follow alice, whose way of working is AI-assisted. This flow needs AI-driven.'
-    assert found.fix.endswith('to AI-driven in Administration → Privacy & access → Users.')
+    assert found.fix.endswith('to AI-driven in Administration → Privacy & access → Users (/admin/access/users).')
     # No name known: who it would be, never an id.
-    assert checks(ports=Ports(modes={}))['dial'].detail.startswith(
+    assert checks(ports=Ports(modes={'admin-sub': 'human_driven'}))['dial'].detail.startswith(
         'The runs follow the administrator who enables the agent, whose way of working is Human-driven')
     for raw in ('human_driven', 'ai_assisted', 'ai_driven', 'ai-assisted, ai-driven'):
-        assert raw not in found.detail + found.fix
+        assert raw not in found.detail + found.fix + unset.detail
     assert mode_names(['ai_driven', 'human_driven', 'ai_assisted']) == 'Human-driven, AI-assisted or AI-driven'
 
 
-def test_the_issues_source_fix_names_the_page_the_app_has() -> None:
+def test_the_issues_source_fix_names_the_connection_switch_and_the_card() -> None:
     fix = checks(ports=Ports(issues=False))['issues_source'].fix
-    assert fix.startswith('Administration → Data sources → GitHub Issues: add the repository')
+    assert fix.startswith('Agents → Connections: turn on "Read this repository\'s issues" on its connection')
+    assert 'Administration → Data sources → GitHub Issues (/admin/data-sources/github_issues)' in fix
     assert 'Settings' not in fix
+
+
+def test_a_repository_its_connection_added_to_the_source_passes_before_its_first_read() -> None:
+    """7.50.02: the managed state passes without any manual step (no watermark yet: the first read follows)."""
+    ports = Ports(issues=False, lists=True)
+    found = checks(ports=ports)['issues_source']
+    assert found.status == 'pass'
+    assert found.detail == f'Issues: read automatically from {REPOSITORY} by the deployment\'s GitHub Issues source.'
+    assert f'issues {REPOSITORY}' not in ports.asked   # (no watermark read once listed)
+    assert checks(ports=Ports(issues=False, lists=False))['issues_source'].status == 'fail'
+    assert checks(ports=Ports(issues=True, lists=False))['issues_source'].status == 'pass'
+    assert checks(ports=Ports(lists=ReadFailed('x')))['issues_source'].status == 'unknown'
+
+
+def test_the_voc_agent_label_its_connection_created_passes() -> None:
+    created = checks(ports=Ports(label='created'))['issue_label']
+    assert created.status == 'pass'
+    assert created.detail == 'Label voc-agent: created (issues labelled voc-agent start a run).'
+    assert checks(ports=Ports(label='present'))['issue_label'].detail.startswith('Label voc-agent: on the repository')
+    failed = checks(ports=Ports(label='failed'))['issue_label']
+    assert (failed.status, 'Check installation' in failed.detail) == ('unknown', True)
+    assert checks(ports=Ports(label=ReadFailed('x')))['issue_label'].status == 'unknown'
+    # Another label's presence is not known from here.
+    other = replace(SUBJECT, trigger={'kind': 'github_issue', 'label': 'agent-go'})
+    ports = Ports(label='created')
+    assert checks(other, ports)['issue_label'].status == 'unknown'
+    assert 'label shop' not in ports.asked
 
 
 def test_a_preview_answers_as_if_set_up_with_the_selected_connection_and_language() -> None:

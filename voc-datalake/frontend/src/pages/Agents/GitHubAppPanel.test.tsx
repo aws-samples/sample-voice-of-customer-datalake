@@ -141,6 +141,26 @@ describe('an App\'s actions', () => {
     expect(await screen.findByText(/No longer covered by the installation: billing-api/)).toBeInTheDocument()
   })
 
+  it('says what followed for the GitHub Issues source, and reads its view again (7.50.02)', async () => {
+    const user = userEvent.setup()
+    renderPanel({ 'POST /agents/engineering/github-apps/271828/check': () => ({
+      repositories: ['example-org/billing-api'], missing: [],
+      issues: { signs_in: 'app', added: ['example-org/billing-api'], reading: ['example-org/billing-api'],
+        skipped: [{ repository: 'example-org/docs', reason: 'off' }],
+        labels: [{ repository: 'example-org/billing-api', state: 'created' }, { repository: 'example-org/web', state: 'failed' }],
+        schedule: 'on', error: null },
+    }) })
+    await user.click((await appRow('voc-agents-3f9a2c')).getByRole('button', { name: 'Check the installation of voc-agents-3f9a2c' }))
+    const follow = within(await screen.findByTestId('issues-follow'))
+    expect([follow.getByText('Issues: read automatically from 1 repository.'),
+      follow.getByText('Label voc-agent: on example-org/billing-api.'),
+      follow.getByText('The voc-agent label could not be created on example-org/web: Check installation tries again.'),
+      follow.getByText('Not read (switched off): example-org/docs.')]).toHaveLength(4)
+    await waitFor(() => {
+      expect(fetchApi.mock.calls.filter(([path]) => path === '/agents/engineering/issues-source').length).toBeGreaterThan(1)
+    })
+  })
+
   it('says the server\'s 409 when connections still use the App it removes', async () => {
     const user = userEvent.setup()
     renderPanel({ 'DELETE /agents/engineering/github-apps/271828': () => { throw new ApiError(409, '1 connection(s) use this App: remove them first') } })
