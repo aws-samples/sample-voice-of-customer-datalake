@@ -60,7 +60,8 @@ import { ENGINEERING_BOARD_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
-  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_GATE_RECORD_KEYS, ENGINEERING_SPEND_PARTITIONS,
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_CHECKPOINT_KEYS, ENGINEERING_FINDING_KEYS, ENGINEERING_GATE_RECORD_KEYS,
+  ENGINEERING_PATCH_KEYS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_TRANSCRIPT_KEYS, ENGINEERING_TRIAGE_KEYS,
   ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
@@ -311,10 +312,23 @@ export class EngineeringBus extends Construct {
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'ReadGateRecords', actions: ['s3:GetObject'], resources: [gateRecords],
     }));
+    // A done step's assertions (7.51.00, lambda/engineering/flow/assertion_record.py) read what its tasks recorded:
+    // their findings' and notes' lines, their submitted patches and a triage, by the keys the board recorded on them;
+    // never a transcript or a checkpoint (denied, whatever the patterns above match).
+    const outputs = [ENGINEERING_FINDING_KEYS, ENGINEERING_PATCH_KEYS, ENGINEERING_TRIAGE_KEYS]
+      .map((keys) => props.workspaceBucket.arnForObjects(keys));
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'ReadRecordedOutputs', actions: ['s3:GetObject'], resources: outputs,
+    }));
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'NoTranscriptsOrCheckpoints', effect: iam.Effect.DENY, actions: ['s3:GetObject'],
+      resources: [ENGINEERING_TRANSCRIPT_KEYS, ENGINEERING_CHECKPOINT_KEYS]
+        .map((keys) => props.workspaceBucket.arnForObjects(keys)),
+    }));
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
-      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), and the quality gate\'s record objects (the GO ledger reads only the key a run\'s final-go task recorded), read only',
-      findings: [resourceFinding(knowledge), resourceFinding(gateRecords)],
+      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), the quality gate\'s record objects (the GO ledger reads only the key a run\'s final-go task recorded) and the outputs a done step\'s tasks recorded (its assertions read their keys only; never a transcript or a checkpoint), read only',
+      findings: [resourceFinding(knowledge), resourceFinding(gateRecords), ...outputs.map(resourceFinding)],
     }]);
     // The key through DynamoDB for the table's reads and writes; through S3 only to decrypt (the board only reads
     // the knowledge packs' objects, it writes none).

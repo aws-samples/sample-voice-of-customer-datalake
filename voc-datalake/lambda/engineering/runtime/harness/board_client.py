@@ -20,7 +20,15 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
-from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, SkillAnswer, TaskBrief, TaskSummary
+from engineering.runtime.harness.ports import (
+    PAUSE,
+    SAVE,
+    Direction,
+    InboxMessage,
+    SkillAnswer,
+    TaskBrief,
+    TaskSummary,
+)
 from engineering.runtime.interface import FUNCTION_URL_RE
 
 #: The board API's own limit on a page of the inbox.
@@ -35,6 +43,8 @@ LAUNCH_TIMEOUT_SECONDS: Final = 125
 MAX_ANSWER_BYTES: Final = 1024 * 1024
 #: The platform rules' text the skill's answer carries at most (the bundle's ``platform_rules``).
 MAX_RULES: Final = 20_000
+#: The run's direction's text the harness takes at most (the board's own bound: board/directions.py).
+MAX_DIRECTION: Final = 2_000
 #: The inbox types the harness acts on itself; any other is shown to the model as data (its type is its kind).
 ACTED_ON: Final = {'signal.save': SAVE, 'signal.pause': PAUSE}
 #: The waits before each retry of a 503 or a lost connection (seconds).
@@ -183,10 +193,13 @@ class BoardHttp:
         instructions = spec.get('instructions') if isinstance(spec, dict) else None
         # The submitted patch the task is about (a gate's: the harness applies it before the session starts).
         patch = spec.get('patch') if isinstance(spec, dict) else None
+        # (a child run's task starts from its seed: harness/seed.py, checked again where it is read)
+        seeded = spec.get('seed_key') if isinstance(spec, dict) else None
         return TaskBrief(task_id=task_id, title=str(task.get('title', '')),
                          instructions=instructions if isinstance(instructions, str) else json.dumps(spec,
                                                                                                     sort_keys=True),
-                         patch=patch if isinstance(patch, str) else '')
+                         patch=patch if isinstance(patch, str) else '',
+                         seed_key=seeded if isinstance(seeded, str) else '')
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         del agent_id  # the board takes the agent from the caller's session
@@ -230,6 +243,16 @@ class BoardHttp:
             raise BoardRefused(502, 'the board answered no memories')
         return tuple(text for text in memories if text)
 
+    def direction(self, *, run_id: str) -> Direction:
+        """The run's direction (the board's ``direction``): its version (0: none) and its text."""
+        if run_id != self.run_id:
+            raise ValueError('the harness reaches its own run only')
+        answer = self.transport.post({'op': 'direction'})
+        version, text = answer.get('version'), answer.get('text')
+        if not isinstance(version, int) or isinstance(version, bool) or version < 0 or not isinstance(text, str):
+            raise BoardRefused(502, 'the board answered no direction')
+        return Direction(version=version, text=text[:MAX_DIRECTION])
+
 
 @dataclass
 class InboxHttp:
@@ -248,6 +271,11 @@ class InboxHttp:
     open: dict[str, int] = field(default_factory=dict)
     #: Done: event id -> its number.
     finished: dict[str, int] = field(default_factory=dict)
+    #: The run's direction version the last page named (7.51.00; 0 for none).
+    version: int = 0
+
+    def direction(self) -> int:
+        return self.version
 
     def done(self, event_ids: list[str]) -> None:
         for event_id in event_ids:
@@ -287,6 +315,9 @@ class InboxHttp:
             messages, after = page.get('messages'), page.get('next')
             if not isinstance(messages, list) or not isinstance(after, int) or after < 0:
                 raise BoardRefused(502, 'the inbox answered no page')
+            version = page.get('direction', 0)
+            if isinstance(version, int) and not isinstance(version, bool) and version > self.version:
+                self.version = version
             for notice in messages:
                 taken.extend(self._new(notice))
             moved, self.after = after != self.after, after
@@ -302,7 +333,10 @@ class InboxHttp:
         self.seen[event_id] = None
         self.open[event_id] = notice['seq']
         kind = str(notice.get('type', ''))
-        return [InboxMessage(kind=ACTED_ON.get(kind, kind), summary=str(notice.get('summary', '')), event_id=event_id)]
+        sender = notice.get('from')
+        said_by = str(sender.get('id', ''))[:128] if isinstance(sender, dict) else ''
+        return [InboxMessage(kind=ACTED_ON.get(kind, kind), summary=str(notice.get('summary', '')), event_id=event_id,
+                             sender=said_by)]
 
 
 @dataclass
@@ -374,6 +408,22 @@ class BoardPlanner:
         if not isinstance(answer.get('agent_id'), str):
             raise BoardRefused(502, 'the board answered no agent')
         return answer['agent_id']
+
+    def steer(self, *, run_id: str, to_kind: str, to_id: str, text: str) -> str:
+        """The board's ``steer`` (7.51.00): a person's steering relayed to an agent or a role; its event id."""
+        self._own(run_id)
+        answer = self.transport.post({'op': 'steer', 'to': {'kind': to_kind, 'id': to_id}, 'text': text})
+        if not isinstance(answer.get('event_id'), str):
+            raise BoardRefused(502, 'the board answered no relay')
+        return answer['event_id']
+
+    def set_direction(self, *, run_id: str, text: str) -> int:
+        """The board's ``set_direction`` (7.51.00): the run's direction's new version."""
+        self._own(run_id)
+        version = self.transport.post({'op': 'set_direction', 'text': text}).get('version')
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise BoardRefused(502, 'the board answered no direction')
+        return version
 
 
 @dataclass

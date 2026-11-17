@@ -26,8 +26,12 @@ after an ``end_run`` and after each tick).
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
-budget), Shut down (checkpoint, then stopped; stopped anyway when no checkpoint comes) and Stop now (ended at
-once).
+budget), Shut down (checkpoint, then stopped; stopped anyway when no checkpoint comes), Stop now (ended at
+once) and (7.51.00) Restart of one agent of a live run: ``from: checkpoint`` ends its session and continues it from its
+newest checkpoint at once; ``from: fresh`` re-posts its task at the next attempt (the stall path), its session ended
+as re-posted, and the coordinator launches a new agent for it. A Restart is refused like a Resume (a stopped run, past
+its 30 days, a spent budget: a stop always wins), for a whole run, and a fresh one for the coordinator (it plans the
+run: it restarts from its checkpoint).
 """
 from __future__ import annotations
 
@@ -67,7 +71,12 @@ from shared.logging import logger
 THIRTY_DAYS: Final = 30 * 24 * 60 * 60
 #: The decision point of a run whose continuation found no usable checkout (a Resume fills it, then continues).
 CHECKOUT_CACHE_POINT: Final = 'checkout_cache'
-SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now'})
+SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart'})
+#: Where a restarted agent starts again (7.51.00): its newest checkpoint, or afresh (its task re-posted at the next
+#: attempt, which the coordinator launches a new agent for).
+RESTART_FROM: Final = frozenset({'checkpoint', 'fresh'})
+#: The reason a fresh restart's re-post records (the task's history row).
+RESTARTED: Final = 'restarted'
 #: Where a held agent goes once it has paused (or crashed while a pause was asked of it).
 HELD_AS: Final[dict[After, Status]] = {'hold': 'paused', 'wait': 'waiting', 'shutdown': 'stopped'}
 #: How long one move may hold a session's claim: the function's own timeout (lib/stacks/engineering-runtime.ts).
@@ -831,7 +840,7 @@ class Supervisor:
         self._held.discard(run_id)
 
     def signal_detailed(self, run_id: str, agent_id: str | None, kind: str, now: int,
-                        attempt: int | None = None) -> dict[str, tuple[str, bool]]:
+                        attempt: int | None = None, restart_from: str = 'checkpoint') -> dict[str, tuple[str, bool]]:
         """``signal``, with whether the signal took effect on each agent: not when another move holds it
         (``busy``), when its move failed (a refused port, a session call), when there was nothing to do in the agent's
         state (its current status; a final one means nothing to send again), or, given the ``attempt`` of the task
@@ -839,7 +848,9 @@ class Supervisor:
         is never stale: a person's kill switch reaches whatever attempt the agent is on."""
         if kind not in SIGNALS:
             raise RuntimeRefused(f'unknown signal {kind!r}')
-        if kind == 'resume':
+        if kind == 'restart':
+            self._may_restart(run_id, agent_id, restart_from, now)
+        if kind in ('resume', 'restart'):
             self._may_resume(run_id, now)
         if attempt is not None and agent_id is None:
             raise RuntimeRefused('an attempt names one agent\'s task: send it with agent_id')
@@ -851,7 +862,8 @@ class Supervisor:
         done: set[str] = set()
 
         def signalled(session: AgentSession) -> AgentSession:
-            moved = self._signal_one(session, kind, now)
+            moved = (self._restart_one(session, restart_from, now) if kind == 'restart'
+                     else self._signal_one(session, kind, now))
             if moved is not session:
                 # Something moved: nothing to do in the agent's state is not "applied".
                 done.add(session.agent_id)
@@ -870,6 +882,33 @@ class Supervisor:
             # ``_guarded`` logs a failed move and keeps the session as it was: nothing took effect.
             answers[session.agent_id] = (status, session.agent_id in done)
         return answers
+
+    def _may_restart(self, run_id: str, agent_id: str | None, restart_from: str, now: int) -> None:
+        """A Restart names one agent and where it starts again; a fresh one is never the coordinator's."""
+        del now
+        if agent_id is None:
+            raise RuntimeRefused('a restart names one agent (agent_id): restart an ended run as a child run instead')
+        if restart_from not in RESTART_FROM:
+            raise RuntimeRefused(f'a restart is from one of {sorted(RESTART_FROM)}')
+        if restart_from == 'fresh' and agent_id.startswith('coordinator-'):
+            raise RuntimeRefused('the coordinator plans the run: it restarts from its checkpoint, never afresh')
+        if self.control.stop_requested(run_id):
+            raise RuntimeRefused(f'run {run_id} is stopped: its agents cannot be restarted')
+
+    def _restart_one(self, session: AgentSession, restart_from: str, now: int) -> AgentSession:
+        """One agent restarted (7.51.00): from its newest checkpoint (its session ended, then continued in a new one at
+        once), or afresh (its task re-posted at the next attempt and its session ended as re-posted, the stall path:
+        the coordinator launches a new agent for the task). An agent that has ended (done, failed, stopped, re-posted)
+        is left as it is: nothing applied."""
+        if session.status not in LIVE_STATUSES and session.status != 'paused':
+            return session
+        if restart_from == 'fresh':
+            self.board.repost(session.run_id, session.task_id, RESTARTED, attempt=session.task_attempt)
+            ended = self._end(session, 'reposted', now)
+            with contextlib.suppress(Exception):   # (said best effort: the re-post and the end are the record)
+                self._emit(session, 'run', 'continued', f'{session.agent_id} restarted afresh: its task is posted again.')
+            return ended
+        return self._continue(session, now, crashed=False)
 
     def wake(self, run_id: str, addressee: Callable[[AgentSession], bool], now: int) -> dict[str, str]:
         """A message for these agents of the run is in their inbox (``delivery.py``): each working or waiting one is

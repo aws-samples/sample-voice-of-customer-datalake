@@ -163,6 +163,20 @@ export const ENGINEERING_WORKSPACE_READINESS_KEYS = `ws/${ENGINEERING_WORKSPACE}
  */
 export const ENGINEERING_GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json';
 /**
+ * 7.51.00, the run workspace: the agents' working trees as patches (their checkpoints' and their submitted ones),
+ * a child run's seeds (lambda/engineering/runtime/harness/seed.py: under the child's own `_seed/`, beside its agents'
+ * keys), the agents' findings and notes (one `.jsonl` per shard and attempt, workspace/layout.py), an understander's
+ * triage, and the transcripts and checkpoints no reader of outputs is let near.
+ */
+export const ENGINEERING_PATCH_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_patches/*`;
+export const ENGINEERING_SEED_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_seed/*`;
+export const ENGINEERING_FINDING_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/*/attempt-*/*.jsonl`;
+export const ENGINEERING_TRIAGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_triage/*`;
+export const ENGINEERING_TRANSCRIPT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_transcripts/*`;
+export const ENGINEERING_CHECKPOINT_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*/_checkpoints/*`;
+/** The runs list's month partitions (7.51.00, lambda/engineering/runtime/runs.py runlist_key). */
+export const ENGINEERING_RUNLIST_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#RUNLIST#20??-??`;
+/**
  * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
  * pattern: the metering writers ADD to them in the same transaction as each priced session write.
  */

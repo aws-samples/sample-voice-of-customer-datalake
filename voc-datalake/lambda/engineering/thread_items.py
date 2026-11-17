@@ -1,12 +1,13 @@
 """A thread item (7.51.00): one line of an agent's (or the orchestrator's) thread in the run workspace.
 
-The run workspace's thread (``engineering/views_thread.py``, ``GET /agents/engineering/<run>/agents/<agent>/thread``)
-merges, in time order, the agent's transcript events (runtime/harness/transcript.py) and the run's conversation
-messages about it (conversation/store.py). Each becomes one item of this shape::
+The run workspace's thread (the Agents API's ``GET /agents/engineering/<run>/agents/<agent>/thread``) merges, in time
+order, the agent's transcript events (runtime/harness/transcript.py) and the run's conversation messages about it
+(conversation/store.py). Each becomes one item of this shape::
 
     {ref, at, kind, from: {kind, id}, text, cut, tool?: {name, ok, input, kind, status}, update}
 
-- ``ref``: where the full event is, ``<attempt>.<chunk>.<line>`` for a transcript event, ``c<seq>`` for a conversation
+- ``ref``: where the full event is, ``<attempt>.<chunk>.<byte offset>`` (``.1`` after it for a tool call's result
+  half) for a transcript event, so a reader reads it back with one exact range read, and ``c<seq>`` for a conversation
   message (``GET …/thread/<ref>`` answers it whole).
 - ``at``: its time (ISO 8601, UTC).
 - ``kind``: one of ``KINDS``.
@@ -26,12 +27,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
+from engineering.bus.schema import FROM_KINDS
 from engineering.quality_gate.text import redact
 from engineering.runtime.harness.transcript import TOOL_STATUSES, tool_kind
 
 KINDS: Final = ('said', 'thought', 'tool', 'gate', 'finding', 'steer', 'signal', 'checkpoint', 'crash', 'end',
                 'message')
-FROM_KINDS: Final = frozenset({'agent', 'human', 'conductor', 'supervisor', 'coach', 'system'})
 MAX_TEXT: Final = 4 * 1024
 MAX_TOOL_INPUT: Final = 300
 #: Each kind's ACP ``session/update`` kind ('' for none). A tool item is ``tool_call`` until its result, then
@@ -57,7 +58,7 @@ def one_line(value: object, limit: int = MAX_TOOL_INPUT) -> str:
     return flat if len(flat) <= limit else f'{flat[:limit - 1]}…'
 
 
-def thread_item(*, ref: str, at: str, kind: str, sender: Mapping[str, str], text: str = '',
+def run_thread_item(*, ref: str, at: str, kind: str, sender: Mapping[str, str], text: str = '',
                 tool: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """One thread item, its text bounded and its tool's input cut to one line (``ValueError`` for a kind or a sender
     off the shape). ``tool``: ``{name, ok?, input?, status?}``; its ACP kind is the tool's, its status ``completed``
@@ -79,6 +80,11 @@ def thread_item(*, ref: str, at: str, kind: str, sender: Mapping[str, str], text
                         'input': one_line(tool.get('input', '')), 'kind': tool_kind(name), 'status': status}
         item['update'] = 'tool_call' if ok is None else ACP_TOOL_RESULT
     return item
+
+
+#: The name work item B's thread view imports (``run_thread_item``; a comment thread's builder is named
+#: ``thread_item`` too, which the comment series guard reads by name).
+thread_item = run_thread_item
 
 
 def is_thread_item(item: object) -> bool:

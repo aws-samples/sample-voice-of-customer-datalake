@@ -1,4 +1,6 @@
-"""The run coordinator's own tools: read the board, post a task, launch its agent, read the knowledge pack.
+"""The run coordinator's own tools: read the board, post a task, launch its agent, read the knowledge pack, and (7.51.00)
+relay a person's steering to an agent or a role (``relay_steering``) or make it the run's direction
+(``set_direction``: a new create-only version every agent reads at its next turn).
 
 The coordinator plans; it changes no code. What it posts and launches goes through the board (``ports.Planner``),
 which checks the caller's identity and role as for every agent, and runs on the caller's run's connection and
@@ -8,6 +10,7 @@ as data (``tools.as_data``): a task's title or a pack's text is never an instruc
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
@@ -15,7 +18,7 @@ from engineering.connectors.identity import AGENT_ROLES
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.harness.board_client import BoardRefused
 from engineering.runtime.interface import MAX_TASK_PATHS, check_id
-from engineering.runtime.outputs import is_submitted_patch
+from engineering.runtime.outputs import PATCH_ROLES, is_submitted_patch
 
 #: What tools.py hands in (its ToolSpec and ToolResult classes, its AgentContext): taken as arguments, never
 #: imported, so this module and tools.py, which imports it, do not import each other.
@@ -23,8 +26,6 @@ Built = Any
 
 #: The roles a task may be for: every agent role but the planners themselves.
 TASK_ROLES: Final = frozenset(AGENT_ROLES - {'coordinator', 'coach'})
-#: The roles whose task names a submitted patch: the gate's (which judge it) and the committer (which pushes it).
-PATCH_ROLES: Final = frozenset({'gate-runner', 'final-go', 'committer'})
 MAX_TITLE: Final = 200
 MAX_INSTRUCTIONS: Final = 8_000
 #: The image languages (lambda/engineering/runtime/egress.py REGISTRY_HOSTS; the launch checks it again).
@@ -35,6 +36,11 @@ LANGUAGES: Final = frozenset({'java', 'node', 'python', 'rust'})
 MAX_STEP: Final = 64
 #: The most shards a map lists (shared/workflow_engineering.py MAX_SHARD_CAP; the board holds the map's own cap).
 MAX_SHARDS: Final = 200
+#: A relayed instruction at most (a bus summary's bytes, bus/schema.py), and the run's direction (board/directions.py).
+MAX_STEER_BYTES: Final = 1024
+MAX_DIRECTION: Final = 2_000
+#: An agent of the run, as the board numbers it (``<role>-<n>``).
+_AGENT: Final = re.compile(r'(?P<role>[a-z][a-z-]*[a-z])-(?P<n>[1-9][0-9]{0,2})\Z')
 
 
 def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
@@ -65,6 +71,17 @@ def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
                   ('step', 'shards')),
         tool_spec('read_knowledge', 'The repository\'s knowledge pack (its root\'s): conventions, build and test '
                   'commands, the parts that matter.', {}),
+        tool_spec('relay_steering', 'Relay a person\'s instruction (a STEERING block you were given) to the agent it '
+                  'concerns, or to every agent of a role, in their own words where they need it. It reaches them at '
+                  'their next turn, below the platform rules.',
+                  {'to': {'type': 'string', 'description': 'An agent of the run (read_board: launched agents, as '
+                          '<role>-<n>) or a role.'},
+                   'text': {'type': 'string', 'description': f'The instruction, at most {MAX_STEER_BYTES} bytes.'}},
+                  ('to', 'text')),
+        tool_spec('set_direction', 'Set the run\'s direction from a person\'s instructions: one short text every '
+                  'agent of the run reads at its next turn and each new session, replacing the one before.',
+                  {'text': {'type': 'string', 'description': f'The direction, at most {MAX_DIRECTION} characters.'}},
+                  ('text',)),
     )
 
 
@@ -148,6 +165,38 @@ def _flow_tools(context: Built, result: Callable[..., Built], as_data: Callable[
     return {'read_flow': read_flow, 'complete_step': complete_step, 'fan_out': fan_out}
 
 
+def steered(raw: object) -> tuple[str, str]:
+    """Whom ``relay_steering`` names: ``('role', <role>)`` for a role a task may be for, ``('agent', <id>)`` for one
+    of its agents (``<role>-<n>``); ``ValueError`` for anyone else (the coordinator itself, a person, the run)."""
+    to = str(raw or '').strip()
+    if to in TASK_ROLES:
+        return 'role', to
+    match = _AGENT.fullmatch(to)
+    if match is None or match['role'] not in TASK_ROLES:
+        raise ValueError(f'to is an agent of the run (<role>-<n>) or one of the roles {sorted(TASK_ROLES)}')
+    return 'agent', to
+
+
+def _steering_tools(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
+    """The coordinator's steering (7.51.00): a person's instruction relayed, or made the run's direction."""
+
+    def relay_steering(arguments: Mapping[str, Any]) -> Built:
+        kind, to = steered(arguments.get('to'))
+        text = bounded(arguments, 'text', MAX_STEER_BYTES)
+        if len(text.encode('utf-8')) > MAX_STEER_BYTES:
+            raise ValueError(f'text is at most {MAX_STEER_BYTES} bytes')
+        event = context.planner.steer(run_id=context.run_id, to_kind=kind, to_id=to, text=text)
+        context.progress(f'relayed steering to {to}')
+        return result(json.dumps({'to': {'kind': kind, 'id': to}, 'event_id': event}))
+
+    def set_direction(arguments: Mapping[str, Any]) -> Built:
+        version = context.planner.set_direction(run_id=context.run_id, text=bounded(arguments, 'text', MAX_DIRECTION))
+        context.progress(f'set the run\'s direction (v{version})')
+        return result(json.dumps({'direction': version}))
+
+    return {'relay_steering': relay_steering, 'set_direction': set_direction}
+
+
 def handlers(context: Built, result: Callable[..., Built],
              as_data: Callable[[str, str], str]) -> dict[str, Callable[[Mapping[str, Any]], Built]]:
     """The coordinator's tools, on ``context``'s planner and knowledge reader."""
@@ -183,7 +232,8 @@ def handlers(context: Built, result: Callable[..., Built],
         return result('\n'.join(as_data(f'knowledge:{n}', part) for n, part in enumerate(parts, 1)))
 
     tools = {'read_board': read_board, 'post_task': post_task, 'launch_agent': launch_agent,
-             'read_knowledge': read_knowledge, **_flow_tools(context, result, as_data)}
+             'read_knowledge': read_knowledge, **_flow_tools(context, result, as_data),
+             **_steering_tools(context, result)}
     return {name: answered(tool, result) for name, tool in tools.items()}
 
 

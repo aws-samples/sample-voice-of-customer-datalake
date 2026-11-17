@@ -18,6 +18,11 @@ the same transaction as META's change, so the run's history is never only its la
 already waits at, for the same reason, changes nothing and writes no row (the supervisor asks for it on every tick
 while a budget stays spent). A change that loses a race with another write of META is tried again.
 
+``WS#<ws>#RUNLIST#<yyyy-mm>`` (7.51.00) holds one row per run started that month, ``RUN#<started_at>#<run>``
+(``{run_id, flow, goal, status, started_at, ended_at?, parent?}``), written in the start's own transaction and kept
+current at each change of the run's status (best effort, after it: a row that cannot be updated is logged, and META
+stays the record), so the run workspace lists a month's runs with one query (the table has no index).
+
 ``WS#<ws>#RUNS`` holds one row per run the supervisor still watches (``RUN#<run>``), written in the same
 transaction as the run's ``META`` (the table has no index, so this is how the supervisor lists them). A run's end
 does not remove it: the run stays listed until none of its agents is live (``release``), so the supervisor ends
@@ -114,6 +119,18 @@ def meta_key(run_id: str) -> dict[str, str]:
 def _registry_key(run_id: str) -> dict[str, str]:
     return {'pk': f'WS#{WORKSPACE}#RUNS', 'sk': f'RUN#{check_run_id(run_id)}'}
 
+
+#: The runs list's partitions (7.51.00): one per month a run started in.
+RUNLIST_PREFIX: Final = f'WS#{WORKSPACE}#RUNLIST#'
+#: A run's goal as its list row keeps it at most.
+MAX_LIST_GOAL: Final = 200
+
+
+def runlist_key(run_id: str, started_epoch: int) -> dict[str, str]:
+    """The run's row in its month's runs list: ``WS#<ws>#RUNLIST#<yyyy-mm>`` / ``RUN#<started_at>#<run>``."""
+    started = utc(started_epoch)
+    return {'pk': f'{RUNLIST_PREFIX}{started.strftime("%Y-%m")}',
+            'sk': f'RUN#{started.strftime("%Y-%m-%dT%H:%M:%SZ")}#{check_run_id(run_id)}'}
 
 @dataclass(frozen=True)
 class RunCaps:
@@ -395,7 +412,8 @@ class RunStore:
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
               budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
               default_branch: str = '', issue: int = 0, host: str = '', issue_verified: bool = False,
-              origin: RunOrigin | None = None) -> None:
+              origin: RunOrigin | None = None, parent: Mapping[str, Any] | None = None,
+              extra: tuple[Mapping[str, Any], ...] = (), coordinator_seed: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -409,7 +427,10 @@ class RunStore:
         connection's kind), goes into META's ``issue`` with its address, once, as given: not read from the host
         (``engineering/run_links.py``), unless the start read it through the broker (``issue_verified``: an
         engineering agent's run, 7.47.00). ``origin``: an engineering agent's run, its ``via`` on the first
-        ``RUNLOG#`` row (D4) and its ``feedback`` and ``prd`` on META."""
+        ``RUNLOG#`` row (D4) and its ``feedback`` and ``prd`` on META. A child run (7.51.00, ``runtime/restart.py``):
+        ``parent`` (``{run_id, mode, by, at}``) on META and its list row, ``extra`` (the parent's ``CHILD#`` row, the
+        inherited steps' rows) create-only in the same transaction, and ``coordinator_seed`` the seed its coordinate
+        task names. Every start writes its runs list row (``runlist_key``) in the transaction too."""
         if connection:
             check_id('connection', connection)
         issue_item = _issue_item(issue, host, repo, issue_verified)
@@ -438,17 +459,21 @@ class RunStore:
         optional = {'max_tokens': caps.max_tokens,
                     'max_cost_usd': None if caps.max_cost_usd is None else str(caps.max_cost_usd),
                     'budget_usd': None if budget_usd is None else str(budget_usd), 'issue': issue_item,
-                    'feedback': origin.feedback, 'prd': origin.prd}
+                    'feedback': origin.feedback, 'prd': origin.prd, 'parent': dict(parent) if parent else None}
         meta.update({key: value for key, value in optional.items() if value is not None})
+        listed: dict[str, Any] = {**runlist_key(run_id, now), 'kind': 'run_list', 'run_id': run_id, 'flow': _text(flow),
+                                  'goal': _text(goal)[:MAX_LIST_GOAL], 'status': 'active', 'started_at': _iso(now)}
+        if parent:
+            listed['parent'] = dict(parent)
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
-        coordinate = BoardStore.coordinate_items(WORKSPACE, run_id, at=_iso(now))
+        coordinate = BoardStore.coordinate_items(WORKSPACE, run_id, at=_iso(now), seed_key=coordinator_seed)
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'Put': {'TableName': name, 'Item': meta, 'ConditionExpression': 'attribute_not_exists(pk)'}},
                 {'Put': {'TableName': name, 'Item': {**_registry_key(run_id), 'run_id': run_id}}},
                 *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
-                  for item in (*coordinate, *copy)),
+                  for item in (*coordinate, *copy, listed, *extra)),
                 {'Put': {'TableName': name, 'Item': _history(run_id, status='active', actor=actor, now=now,
                                                              via=origin.via),
                          'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
@@ -495,6 +520,32 @@ class RunStore:
         self._update_status(run_id, _history(run_id, status=status, actor=actor, now=now, reason=_text(reason)),
                             'SET #status = :status, ended_at = :ended', '#status IN (:active, :human)',
                             {':status': status, ':ended': _iso(now), ':active': 'active'})
+        self._listed(run_id, status, ended_at=_iso(now))
+
+    def _listed(self, run_id: str, status: str, *, ended_at: str = '') -> None:
+        """The run's list row kept current (7.51.00): its status, and at its end its time and cost (``cost_usd``, its
+        agents' and Learn's, and ``learn_cost_usd``, Learn's alone). Best effort after the change itself (META is the
+        record): a run started before the list existed has no row, and one that cannot be updated now is logged."""
+        run = self.get(run_id)
+        if run is None:
+            return
+        expression, values = 'SET #status = :status', {':status': status}
+        if ended_at:
+            learn = self._table.get_item(Key={'pk': run_pk(run_id), 'sk': LEARN_SPEND_SK},
+                                         ConsistentRead=True).get('Item') or {}
+            expression += ', ended_at = :ended, cost_usd = :cost, learn_cost_usd = :learn'
+            values |= {':ended': ended_at, ':cost': Decimal(str(round(self.spend(run_id)[1], 6))),
+                       ':learn': Decimal(str(learn.get('cost_usd', 0)))}
+        try:
+            self._table.update_item(Key=runlist_key(run_id, run.started_at), UpdateExpression=expression,
+                                    ConditionExpression='attribute_exists(pk)',
+                                    ExpressionAttributeNames={'#status': 'status'}, ExpressionAttributeValues=values)
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                logger.warning('engineering runs: a run\'s list row was not updated',
+                               extra={'run_id': run_id, 'status': status})
+        except BotoCoreError:
+            logger.warning('engineering runs: a run\'s list row was not updated', extra={'run_id': run_id})
 
     def request_stop(self, run_id: str, *, mode: str, now: int, actor: str) -> None:
         """A person's Stop of the whole run (7.50.03), recorded on META before anything else moves: when it was first
@@ -530,6 +581,7 @@ class RunStore:
                                 '#status = :active OR (#status = :human AND needs_human <> :reason '
                                 'AND needs_human <> :thirty)',
                                 {':reason': reason, ':active': 'active', ':thirty': 'thirty_days', ':at': now})
+            self._listed(run_id, 'needs_human')
         except RunNotActive:
             run = consistent_item(self._table, meta_key(run_id))
             if run is not None and run.get('status') == 'needs_human':
@@ -563,6 +615,7 @@ class RunStore:
         # Never off the 30-day decision point, which offers only "stop".
         self._update_status(run_id, _history(run_id, status='active', actor=actor, now=now, reason='resumed'),
                             'SET #status = :active, resumed_epoch = :now REMOVE needs_human', condition, values, also)
+        self._listed(run_id, 'active')
 
     def release(self, run_id: str) -> None:
         """No agent of the ended run is live: the supervisor stops watching it (idempotent)."""

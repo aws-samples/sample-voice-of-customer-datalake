@@ -312,7 +312,7 @@ def test_an_answer_the_cli_read_reached_the_model_and_is_done_once_it_saves(tmp_
     assert _cli(tmp_path, popen=popen, sleep=lambda _s: None).run(w.session) == 'paused'
     # It reached the model (seen), but the model never saved its notes after: only the pause is done.
     assert (seen, w.session.seen_since_save, w.inbox.finished) == (
-        [{'kind': 'msg.answer', 'summary': 'Yes.'}], ['E1'], ['E2'])
+        [{'kind': 'msg.answer', 'summary': 'Yes.', 'sender': ''}], ['E1'], ['E2'])
 
 
 def test_a_cli_that_fails_before_finishing_is_a_crash_with_its_work_saved_first(tmp_path):

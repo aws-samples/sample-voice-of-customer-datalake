@@ -141,8 +141,9 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
         Sid: 'StopRunReads', Action: 'dynamodb:Query',
         Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } } })]) },
     });
-    // Its writes stay in the runs' partitions and the registry; its other reads are a flow's month and the hard cap.
-    expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS"/);
+    // Its writes stay in the runs' partitions, the registry and the runs list (7.51.00); its other reads are a flow's
+    // month and the hard cap.
+    expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS","WS#default#RUNLIST#20\?\?-\?\?"/);
     // The agent roles trust only the two launchers, never the start function.
     expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
   });
@@ -420,10 +421,50 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('lets the run\'s end write only its manifest and index entry: never a transcript, never an agent\'s keys', () => {
     const puts = supervisorStatements().filter((statement) => JSON.stringify(statement).includes('"s3:PutObject"'));
-    expect(puts.map((statement) => statement.Sid)).toStrictEqual(['WriteRunManifests']);
-    const written = JSON.stringify(puts[0]?.Resource);
+    expect(puts.map((statement) => statement.Sid ?? '').sort((a, b) => a.localeCompare(b, 'en')))
+      .toStrictEqual(['WriteRestartSeeds', 'WriteRunManifests']);
+    const written = JSON.stringify(puts.find((statement) => statement.Sid === 'WriteRunManifests')?.Resource);
     expect([written.includes('/ws/default/runs/*/_manifest/*'), written.includes('/ws/default/transcripts-index/*'),
       written.includes('_transcripts')]).toStrictEqual([true, true, false]);
+  });
+
+  describe('a child run (7.51.00: a Resume or Restart of an ended run)', () => {
+    const bySid = (sid: string) => supervisorStatements().find((statement) => statement.Sid === sid);
+
+    it('lets the runtime copy a parent\'s patches into the child\'s own seeds, create-only, and nothing else', () => {
+      expect(JSON.stringify(bySid('RestartReadsPatches')?.Resource))
+        .toContain('/ws/default/runs/*/*/commits/*/_patches/*');
+      expect(JSON.stringify(bySid('WriteRestartSeeds')?.Resource)).toContain('/ws/default/runs/*/_seed/*');
+      // (the seeds' puts are the bucket's create-only puts: no delete, no other key)
+      expect(JSON.stringify(bySid('WriteRestartSeeds'))).not.toMatch(/DeleteObject|_checkpoints|_transcripts/);
+    });
+
+    it('keeps the runs list current from the runtime, its month partitions only', () => {
+      expect(bySid('RunsListRows')).toMatchObject({
+        Action: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#RUNLIST#20??-??'] } },
+      });
+    });
+
+    it('lets the start function read the parent\'s partition for its plan (a Query of the runs\' partitions only)', () => {
+      expect(policiesWithStatement(template, 'EngineeringStartRole', {
+        Sid: 'RestartReadsTheParent', Action: 'dynamodb:Query',
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+      })).toHaveLength(1);
+    });
+
+    it('lets no agent role write a seed, its own run\'s or another\'s, nor read another run\'s', () => {
+      const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+        .filter((id) => /EngineeringAgent\w+Role/.test(id));
+      expect(roles.length).toBeGreaterThan(10);
+      for (const role of roles) {
+        const text = policyText(template, role);
+        expect(text).not.toMatch(/_seed|_patches/);
+        // Its reads are its run's keys, by its session's tags; its writes its own keys (the test above).
+        expect(text).toContain('/ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/*');
+        expect(text).not.toMatch(/"s3:PutObject"[^\]]*runs\/\*\//);
+      }
+    });
   });
 
   it('lets the launch read the skills\' rows (the coach\'s statement), never delete one (7.50.00)', () => {
@@ -549,13 +590,12 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     /** voc-agents in the stack fixture (its logical id). */
     const AGENTS_TABLE = /"Agents[0-9A-F]{8}"/;
 
-    /** The supervisor role's statements. */
+    /** The supervisor role's statements (its inline policies' and the managed ones CDK moves a long one's into). */
     function supervisorStatements(): Record<string, unknown>[] {
-      const policies = template.findResources('AWS::IAM::Policy', {
-        Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) },
-      });
-      return Object.values(policies)
-        .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
+      const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
+      const policies = [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
+        ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))];
+      return policies.flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
     }
 
     /** The supervisor role's statement with `sid`. */

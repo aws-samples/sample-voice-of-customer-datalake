@@ -5,7 +5,8 @@ step the conductor says is live, for a role that step takes, from a poster it al
 live step, another agent only on a board step that names it a poster, within the board's own rule of who posts for
 whom), with the map's shard for a step after a map, and at most one task under way for an agent step (or a shard): a
 ``SLOT#`` marker in the post's own transaction holds that against a racing post. It launches an agent only for a
-task of a live step (a person's own task, posted with no step, too). The run coordinator reads the plan (``flow``)
+task of a live step (a person's own task, posted with no step, too), and (7.51.00) never past the step's
+``max_parallel`` agents at work at once. The run coordinator reads the plan (``flow``)
 and records the steps it does itself (``step``: an agent step of its own role, a board it closes, a map's shards).
 So the model cannot skip a step or take them out of order: what it may do next is the conductor's, from the record.
 
@@ -18,9 +19,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from engineering.board.model import FINAL, PERSON_PREFIX, Task
+from engineering.board.model import FINAL, OPEN, PERSON_PREFIX, Task
 from engineering.board.store import COORDINATOR, BoardError, BoardStore, slot_sk, spec_hash
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.assertion_record import Read, record_assertions
 from engineering.flow.conductor import Flow, FlowError, Plan
 from engineering.flow.ledger import FINAL_GO_ROLE, GATE_RUNNER_ROLE, ReadRecord, checked_go, newest_record
 from engineering.flow.record import DONE, FAN_OUT, FlowRecord, step_sk
@@ -85,11 +87,14 @@ def _path(path: str) -> str:
 
 
 class FlowGuard:
-    def __init__(self, store: BoardStore, read: ReadRecord | None = None) -> None:
+    def __init__(self, store: BoardStore, read: ReadRecord | None = None, outputs: Read | None = None) -> None:
         """``read``: a gate record by its key (``ledger.read_gate_record`` on the workspace), so a quality gate's
-        verdict is the GO ledger's; without it, a gate whose final go ended is never taken for a GO."""
+        verdict is the GO ledger's; without it, a gate whose final go ended is never taken for a GO. ``outputs``: a
+        task's recorded output by its key (7.51.00), which a done step's assertions read (``assertion_record.py``);
+        without it, none are recorded."""
         self.store = store
         self.read = read
+        self.outputs = outputs
         self.record = FlowRecord(store.client, store.table)
 
     def _flow(self, run_id: str) -> Flow | None:
@@ -162,7 +167,22 @@ class FlowGuard:
         refusal = plan.launch_refusal(task.flow_step)
         if refusal is not None:
             raise BoardError('conflict', refusal)
+        self._within_parallel(run_id, plan, task)
         return (step_sk(task.flow_step, DONE),)
+
+    def _within_parallel(self, run_id: str, plan: Plan, task: Task) -> None:
+        """A step's ``max_parallel`` (7.51.00, optional): no launch while that many of its agents are at work (a task
+        of the step launched or claimed at its attempt and not ended, this one aside)."""
+        most = plan.flow.steps[task.flow_step].params.get('max_parallel')
+        if type(most) is not int:
+            return
+        at_work = sum(1 for other in self.store.tasks(WORKSPACE, run_id)
+                      if other.flow_step == task.flow_step and other.task_id != task.task_id and other.state not in FINAL
+                      and (other.state != OPEN or (bool(other.launched_agent)
+                                                    and other.launched_attempt == other.attempt)))
+        if at_work >= most:
+            raise BoardError('conflict', f'step {task.flow_step} runs at most {most} agents at once '
+                                         f'(max_parallel): launch this one once one of them has ended')
 
     def view(self, run_id: str, actor: str) -> dict[str, Any]:
         """The ``flow`` op: the plan as data for the run coordinator; each step it passed as not yet run is recorded
@@ -175,6 +195,11 @@ class FlowGuard:
         if self.read is not None:   # (the verdicts read from their records, kept for the readers without them)
             self.record.record_verdicts(WORKSPACE, run_id, plan, self.store.tasks(WORKSPACE, run_id), actor=actor,
                                         at=at)
+        if self.outputs is not None:   # (7.51.00: each done step's assertions, recorded once at its attempt)
+            record_assertions(self.store.client, self.store.table, WORKSPACE, run_id, plan,
+                              self.store.tasks(WORKSPACE, run_id), self.record.rows(WORKSPACE, run_id),
+                              self.store.meta(WORKSPACE, run_id), self.record.definition(WORKSPACE, run_id),
+                              self.outputs, actor=actor, at=at)
         return {'flow': plan.view()}
 
     def step(self, run_id: str, body: Mapping[str, Any], actor: str) -> dict[str, Any]:

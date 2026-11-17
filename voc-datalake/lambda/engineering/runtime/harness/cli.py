@@ -166,7 +166,8 @@ class ClaudeCli:
                 session.checkpoint(turn=turn)
                 return 'paused'
             if others:
-                name = files.post([{'kind': message.kind, 'summary': message.summary} for message in others])
+                name = files.post([{'kind': message.kind, 'summary': message.summary, 'sender': message.sender}
+                                   for message in others])
                 posted[name] = [message.event_id for message in others]
             turn += 1
             self._sleep(INBOX_POLL_SECONDS)

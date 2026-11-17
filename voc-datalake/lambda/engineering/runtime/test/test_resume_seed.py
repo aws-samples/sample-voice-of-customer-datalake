@@ -65,8 +65,8 @@ def test_a_valid_seed_round_trips_bounded():
     {'base': 'tip'},
 ])
 def test_a_seed_off_its_shape_is_refused(changes):
-    assert not seed.is_valid(json.dumps(record(**changes)).encode(), CHILD)
+    assert seed.parse(json.dumps(record(**changes)).encode(), CHILD) is None
 
 
 def test_a_seed_over_its_bound_is_refused():
-    assert not seed.is_valid(b' ' * (seed.MAX_SEED_BYTES + 1), CHILD)
+    assert seed.parse(b' ' * (seed.MAX_SEED_BYTES + 1), CHILD) is None

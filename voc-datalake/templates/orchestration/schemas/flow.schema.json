@@ -83,6 +83,7 @@
         "agent": {"$ref": "#/$defs/skill_ref"},
         "model": {"type": "string", "minLength": 1, "maxLength": 128},
         "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "max_parallel": {"type": "integer", "minimum": 1, "maximum": 50},
         "board": {
           "type": "object", "additionalProperties": false, "required": ["posters", "claimers"],
           "properties": {

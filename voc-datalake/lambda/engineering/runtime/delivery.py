@@ -11,7 +11,8 @@ of order by a moment, and a number can go unused (a redelivery's race, a crash b
 takes the numbers as a near order, not a log: it re-reads a window behind its cursor on every page (the board's
 ``inbox`` op: 20 numbers) and keeps each message once by its event id. A marker, ``INBOXEVT#<event_id>``, written in
 the same transaction as the row, makes it once: a redelivery (the bus is at-least-once) writes nothing. The addressee is
-``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task (every agent of that role in the run reads it).
+``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task or relayed steering (7.51.00; every agent of
+that role in the run reads it, and steering wakes the live ones).
 Nothing deletes an inbox row or marks it read: the board API's ``inbox`` op reads them for the caller's own run
 only, after an ``inbox_seq`` cursor, and the harness keeps each message once by its event id.
 
@@ -56,7 +57,7 @@ def addressee(message: Message) -> str:
         return f'agent:{message.to.id}'
     if kind == 'conductor':
         return 'conductor'
-    if kind == 'role' and message.type == 'task.posted':
+    if kind == 'role':   # (a posted task, or steering relayed to a role: bus/schema.py ROLE_TYPES)
         return f'role:{message.to.id}'
     raise RuntimeRefused(f'a message to {kind} has no inbox')
 
@@ -122,6 +123,9 @@ def is_addressee(message: Message) -> Callable[[AgentSession], bool]:
         return lambda session: session.agent_id == message.to.id
     if message.to.kind == 'conductor':
         return lambda session: session.role == 'coordinator'
+    if message.type == 'msg.steer' and message.to.kind == 'role':
+        # Steering relayed to a role (7.51.00): its live agents are woken to read it at their next turn.
+        return lambda session: session.role == message.to.id
     return lambda _session: False
 
 

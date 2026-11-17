@@ -9,7 +9,8 @@
   board it closed), ``not_yet_run`` (a step the runtime cannot do yet that the flow went on without, recorded by the
   board when the conductor first says so), ``decision`` (a person's Resume at the step's decision point,
   ``runs.RunStore.resume``) and ``verdict`` (``#<task>``: a quality gate's verdict as the board read it in the deciding
-  final-go task's gate record, for the readers that read no gate record).
+  final-go task's gate record, for the readers that read no gate record) and ``inherited`` (7.51.00: a child run's
+  step its parent had done, written by the child's start, ``runtime/restart.py``: done without a task here).
 
 The tasks the board holds for each step (their ``step`` and ``shard``) and these rows are all the conductor reads
 (``conductor.conduct``).
@@ -36,7 +37,8 @@ from shared.logging import logger
 FLOW_SK: Final = 'FLOW'
 STEP_PREFIX: Final = 'STEP#'
 FAN_OUT, DONE, NOT_YET_RUN, DECISION, VERDICT = 'fan_out', 'done', 'not_yet_run', 'decision', 'verdict'
-KINDS: Final = frozenset({FAN_OUT, DONE, NOT_YET_RUN, DECISION, VERDICT})
+INHERITED: Final = 'inherited'
+KINDS: Final = frozenset({FAN_OUT, DONE, NOT_YET_RUN, DECISION, VERDICT, INHERITED})
 #: The flows kept per warm container (a run's copy never changes once written, so a found one is kept).
 CACHED_FLOWS: Final = 64
 
@@ -102,6 +104,7 @@ def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap
     """The conductor's view of a run: its tasks (each with its step), its step rows and its gates' verdicts."""
     fanned: dict[str, tuple[str, ...]] = {}
     done: set[str] = set()
+    inherited: set[str] = set()
     decisions: Counter[str] = Counter()
     for row in rows:
         step, kind = string_attr(row, 'step'), string_attr(row, 'record')
@@ -111,9 +114,11 @@ def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap
             done.add(step)
         elif kind == DECISION:
             decisions[step] += 1
+        elif kind == INHERITED:
+            inherited.add(step)
     return BoardState(tasks=tuple(step_task(task) for task in tasks if task.flow_step), fanned_out=fanned,
                       completed=frozenset(done), decisions=dict(decisions), cap_reached=cap_reached,
-                      verdicts=dict(verdicts or {}))
+                      verdicts=dict(verdicts or {}), inherited=frozenset(inherited))
 
 
 def cap_reached(meta: Mapping[str, Any] | None) -> bool:

@@ -1803,7 +1803,7 @@
   },
   "errors": [
    {
-    "message": "a quality gate's settings are assert, final_go_model, max_rounds, packs, reviewers",
+    "message": "a quality gate's settings are assert, final_go_model, max_parallel, max_rounds, packs, reviewers",
     "node_id": "step"
    }
   ]

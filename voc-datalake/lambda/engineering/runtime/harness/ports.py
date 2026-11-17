@@ -34,6 +34,8 @@ class TaskBrief:
     #: The submitted patch the task is about (its spec's ``patch``: a fixer's or builder's ``_patches/`` key), which
     #: the harness applies before a gate's session starts (``role_tools.judge_submitted_patch``); '' for none.
     patch: str = ''
+    #: The child run's seed the task starts from (7.51.00, its spec's ``seed_key``: ``harness/seed.py``); '' for none.
+    seed_key: str = ''
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,16 @@ class InboxMessage:
     summary: str = ''
     #: The notice's event id: what ``Inbox.done`` names.
     event_id: str = ''
+    #: Who sent it (its ``from.id``: a steering relay's coordinator, a person), '' when not said.
+    sender: str = ''
+
+
+@dataclass(frozen=True)
+class Direction:
+    """The run's direction (7.51.00): the coordinator's latest ``set_direction``, its version (0: none) and text."""
+
+    version: int = 0
+    text: str = ''
 
 
 class Board(Protocol):
@@ -67,6 +79,11 @@ class Board(Protocol):
     def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
         """The approved lessons the agent's task takes from memory (7.50.00): its connection's repository memories
         and its role's lessons there, as data (``AgentMemoryStore.recall_for_task``); none when nothing applies."""
+        ...
+
+    def direction(self, *, run_id: str) -> Direction:
+        """The run's direction (7.51.00, the board's ``direction``): read when an inbox page names a newer version
+        than the session holds, and at each session's start."""
         ...
 
 
@@ -113,6 +130,15 @@ class Planner(Protocol):
 
     def record_step(self, *, run_id: str, step: str, action: str, shards: tuple[str, ...] = ()) -> dict[str, Any]: ...
 
+    def steer(self, *, run_id: str, to_kind: str, to_id: str, text: str) -> str:
+        """Relay a person's steering to one agent (``agent``) or every agent of a role (``role``) of the run (7.51.00,
+        the board's ``steer``): its event id."""
+        ...
+
+    def set_direction(self, *, run_id: str, text: str) -> int:
+        """Set the run's direction (7.51.00, the board's ``set_direction``: a new create-only version): its version."""
+        ...
+
 
 class KnowledgeReader(Protocol):
     """The knowledge pack's agent reader: the caller's run's connection's latest approved pack of ``package`` (one of
@@ -125,9 +151,13 @@ class KnowledgeReader(Protocol):
 class Inbox(Protocol):
     """``take``: the messages waiting for the agent, each taken once in a session. ``done``: these reached the model,
     or were acted on. ``cursor``: what a checkpoint saves, up to the oldest message taken and not yet done;
-    ``resume``: start there (a continuation takes again only what never reached the model)."""
+    ``resume``: start there (a continuation takes again only what never reached the model). ``direction``: the run's
+    direction version the last page named (7.51.00; 0 for none), so the session re-reads the direction only when it
+    moved, never once per turn."""
 
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]: ...
+
+    def direction(self) -> int: ...
 
     def done(self, event_ids: list[str]) -> None: ...
 
@@ -255,6 +285,12 @@ class PendingHarnessPorts:
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
         raise self._refuse(f'launch({run_id}, {task_id}, {role}, {language}, {len(paths)} paths)')
 
+    def steer(self, *, run_id: str, to_kind: str, to_id: str, text: str) -> str:
+        raise self._refuse(f'board.steer({run_id}, {to_kind} {to_id}, {len(text)} characters)')
+
+    def set_direction(self, *, run_id: str, text: str) -> int:
+        raise self._refuse(f'board.set_direction({run_id}, {len(text)} characters)')
+
     def read(self, **arguments: Any) -> Any:
         """The knowledge reader's ``read`` (``run_id``, ``task_id``, ``package``) and the broker's (``kind``,
         ``target``, ``cursor``): both refused."""
@@ -287,6 +323,12 @@ class PendingHarnessPorts:
 
     def skill(self, *, run_id: str, role: str) -> SkillAnswer:
         raise self._refuse(f'board.skill({run_id}, {role})')
+
+    def direction(self, **arguments: Any) -> Any:
+        """The board's ``direction`` (``run_id``) and the inbox's (none, its last page's version: 0)."""
+        if 'run_id' in arguments:
+            raise self._refuse(f'board.direction({arguments["run_id"]})')
+        return 0
 
     def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
         raise self._refuse(f'board.memory({run_id}, {task_id})')

@@ -32,7 +32,7 @@ from engineering.benchmark.runner import Attempt, CandidateError, CaseView, Repo
 from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.converse_loop import MAX_TURNS, ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
-from engineering.runtime.harness.ports import InboxMessage, TaskBrief
+from engineering.runtime.harness.ports import Direction, InboxMessage, TaskBrief
 from engineering.runtime.harness.skills import Skill, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tools import AgentContext, ToolBox
@@ -85,6 +85,10 @@ class _Ports:
 
     def resume(self, cursor: object) -> None:
         self.said.append(f'resumed at {cursor!r:.40}')
+
+    def direction(self, **arguments: Any) -> Any:
+        """No run's direction for a candidate: the board's (``run_id``: none set) and the inbox's (version 0)."""
+        return Direction() if 'run_id' in arguments else 0
 
     def submit(self, run_id: str, agent_id: str, task_id: str, patch_key: str, summary: str) -> str:
         del run_id, agent_id, task_id, patch_key, summary

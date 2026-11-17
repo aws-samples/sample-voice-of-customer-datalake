@@ -14,6 +14,12 @@ inbox, the run coordinator's planner and the knowledge reader are reached throug
 (``board_client.py``), the repository host's reads and writes through the broker (``broker_client.py``), each
 signed with that session; a port whose URL the session was not handed refuses (``ports.PendingHarnessPorts``), so a
 session stops at its first call to it rather than guess.
+
+7.51.00: a fresh start whose task names a child run's seed (its spec's ``seed_key``, ``harness/seed.py``) takes its
+notes, plan and working tree (``git apply`` on the parent's own commit, ``git apply --3way`` on a moved base; what does
+not apply reaches the model as data, never a crash); every session reads the run's direction at its start
+(``AgentSession.read_direction``); and the transcript's clock flushes its events every ``transcript.FLUSH_SECONDS``
+beside the heartbeat.
 """
 from __future__ import annotations
 
@@ -55,11 +61,13 @@ from engineering.runtime.harness.ports import (
 )
 from engineering.runtime.harness.role_tools import GATE_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
+from engineering.runtime.harness.seed import MAX_SEED_BYTES, SeedError, check_seed_key
+from engineering.runtime.harness.seed import parse as parse_seed
 from engineering.runtime.harness.skills import Skill
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tool_server import SessionFiles, serve
 from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
-from engineering.runtime.harness.transcript import Transcript
+from engineering.runtime.harness.transcript import FLUSH_SECONDS, Transcript
 from engineering.runtime.harness.workspace import Workspace
 from engineering.runtime.interface import check_id
 
@@ -152,7 +160,76 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         context.gate_tree = judge_submitted_patch(context, store) if restore else tree if SHA.fullmatch(tree) else ''
     if restored is not None:
         _restore(session, store, *restored)
+    elif restore and context.brief.seed_key:
+        # (a child run's task, 7.51.00: its seed's notes, plan and working tree; a continuation has its own checkpoint)
+        _seeded(session, store, context.brief.seed_key)
+    if restore:
+        # The run's direction, read at each session's start (a continuation's too), then only when an inbox page
+        # names a newer version (``AgentSession.read_direction``).
+        session.read_direction()
     return session
+
+
+#: The tail of git's words a seed's conflict hands the model at most.
+MAX_SEED_CONFLICT: Final = 4_000
+
+
+def _seeded(session: AgentSession, store: S3Store, key: str) -> None:
+    """Start from the child run's seed (``harness/seed.py``): its key only under the session's own run's ``_seed/``,
+    its record checked, its checkpoint's notes and plan taken, and, for an agent that runs code, its working tree put on
+    the checkout: ``git apply`` on the parent's own commit, ``git apply --3way`` on another (the child's base moved to
+    the default branch's head). A tree that does not apply cleanly reaches the model as data (``seed_conflict``), never
+    a crash; a seed that cannot be read or is off its shape is said on the status and the task starts afresh."""
+    context = session.context
+    try:
+        record = parse_seed(store.get(check_seed_key(key, context.run_id), MAX_SEED_BYTES), context.run_id)
+    except SeedError as refused:
+        session.seed_refused = str(refused)[:200]
+    except Exception as error:  # noqa: BLE001 - a seed that cannot be read starts the task afresh, said
+        session.seed_refused = f'the seed could not be read ({type(error).__name__})'
+    else:
+        if record is None:
+            session.seed_refused = 'the seed is not a voc-resume-seed/1 record of this run'
+        else:
+            session.seed = record
+    if session.seed is None:
+        context.status.at(f'started afresh: {session.seed_refused}')
+        return
+    checkpoint = session.seed.get('checkpoint')
+    if checkpoint is not None:
+        session.notes, session.plan = checkpoint['notes'], list(checkpoint['plan'])
+    patch_key = session.seed.get('patch_key')
+    if patch_key and context.runs_code:
+        same = session.seed['parent']['commit'] == context.commit
+        session.seed_conflict = _apply_seed(context, store, patch_key, three_way=not same)
+    context.status.at('started from the earlier run\'s seed' + (' (its working tree with conflicts)'
+                                                                  if session.seed_conflict else ''))
+
+
+def _apply_seed(context: AgentContext, store: S3Store, patch_key: str, *, three_way: bool) -> str:
+    """Put the seed's working tree on the checkout; '' when it applied cleanly, else what git said (and the files the
+    patch touches)."""
+    patch = store.get(patch_key, MAX_PATCH_BYTES)
+    if len(patch) > MAX_PATCH_BYTES:
+        return f'the earlier run\'s working tree {patch_key} is over the patch limit: it was not applied'
+    os.makedirs(context.patch_dir, mode=0o700, exist_ok=True)
+    local = os.path.join(context.patch_dir, 'seed.diff')
+    with open(local, 'wb') as stream:
+        stream.write(patch)
+    apply = ('apply', '--binary', *(('--3way',) if three_way else ()), local)
+    result = context.runner.run(repo_git(*apply), timeout_seconds=600, repository_code=False, in_checkout=False)
+    said = ''
+    if result.get('exit_code') != 0:
+        touched = context.runner.run(repo_git('apply', '--numstat', local), timeout_seconds=300,
+                                     repository_code=False, in_checkout=False)
+        files = [line.split('\t')[-1] for line in str(touched.get('stdout_tail', '')).splitlines() if '\t' in line]
+        said = (f'git apply {"--3way " if three_way else ""}exited {result.get("exit_code")}: '
+                f'{str(result.get("stderr_tail", ""))[-MAX_SEED_CONFLICT:]}\nthe patch touches: '
+                f'{", ".join(files[:50]) or "(unknown)"}')
+    opened = context.runner.run(share_working_tree(), timeout_seconds=300, repository_code=False, in_checkout=False)
+    if opened.get('exit_code') != 0:
+        raise RuntimeError('the seeded working tree could not be opened to repository code')
+    return said
 
 
 def _recalled(board: Board, context: AgentContext) -> tuple[str, ...]:
@@ -269,6 +346,22 @@ def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event) -> N
         _renew(board, ids)
 
 
+#: How often the transcript's clock looks for events held ``FLUSH_SECONDS`` (so a live thread lags by at most both).
+FLUSH_POLL_SECONDS: Final = FLUSH_SECONDS / 3
+
+
+def _start_flusher(session: AgentSession, stop: threading.Event) -> None:
+    """The transcript's clock, beside the heartbeat, for the session's life (none without a transcript)."""
+    if session.context.transcript is not None:
+        threading.Thread(target=_flusher, args=(session.context.transcript, stop), daemon=True).start()
+
+
+def _flusher(transcript: Transcript, stop: threading.Event) -> None:
+    """Flush the transcript's events once the oldest is ``FLUSH_SECONDS`` old (7.51.00), until ``stop``."""
+    while not stop.wait(FLUSH_POLL_SECONDS):
+        transcript.flush_due()
+
+
 def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
     """The board, the inbox, the planner and the knowledge reader on the board's function URL (``VOC_BOARD_URL``), the
     broker on the broker's (``VOC_BROKER_URL``), each signed with the agent's own session (the board refuses the
@@ -359,6 +452,7 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
     ending: str = 'crashed'
     try:
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient())
+        _start_flusher(session, stop)
         _started(session, args)
         if session.restored is None:
             # A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to

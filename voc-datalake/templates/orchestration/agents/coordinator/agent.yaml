@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: coordinator
-version: 4
+version: 5
 purpose: Follows the run's flow, posts each step's tasks for the roles it takes and launches their agents; changes no code.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -14,7 +14,7 @@ outputs:
   - {name: tasks, kind: board_task, recorded_on: task}
   - {name: finish, kind: summary, recorded_on: task}
 tools: [read_flow, read_board, post_task, launch_agent, complete_step, fan_out, read_knowledge, read_file, list_files,
-        read_issue, report_progress, save_checkpoint, finish]
+        read_issue, relay_steering, set_direction, report_progress, save_checkpoint, finish]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, knowledge, board, memory], fence: nonce}

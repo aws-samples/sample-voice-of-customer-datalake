@@ -291,7 +291,10 @@ describe('cdk-nag acknowledgements', () => {
       // runtime's read of the understanders' triage records (`…/_triage/*`), Learn's read of the agents' transcripts
       // (`…/_transcripts/*`), the run's end's create-only writes of its manifest (`ws/default/runs/*/_manifest/*`) and
       // of the transcripts' index (`ws/default/transcripts-index/*`), and the readiness checks' reads.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 122, used: 122 });
+      // 122 -> 127 (7.51.00): the board's read of a done step's recorded outputs for its assertions (the agents'
+      // findings and notes, their submitted patches, a triage: three findings of its one acknowledgement), and the
+      // runtime's read of a parent run's patches and create-only writes of a child run's seeds (two findings).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 127, used: 127 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

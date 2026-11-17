@@ -16,6 +16,7 @@ import time
 from collections.abc import Mapping
 from typing import IO, Any, Final
 
+from engineering.runtime.harness.ports import InboxMessage
 from engineering.runtime.harness.tools import AgentContext, ToolBox, ToolResult
 
 PROTOCOL_VERSION: Final = '2025-06-18'
@@ -91,7 +92,8 @@ class SessionFiles:
 def _messages(files: SessionFiles, context: AgentContext) -> str:
     """The inbox's messages the harness left for the agent, fenced as data with the session's fence (empty when
     there are none)."""
-    fenced = [context.data('message:' + str(item.get('kind', '')), str(item.get('summary', '')))
+    fenced = [context.note(InboxMessage(kind=str(item.get('kind', '')), summary=str(item.get('summary', '')),
+                                        sender=str(item.get('sender', ''))[:128]))
               for item in files.take_messages()]
     return ''.join('\n' + text for text in fenced)
 

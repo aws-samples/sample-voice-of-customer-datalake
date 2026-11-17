@@ -137,6 +137,8 @@ def _params(step: Mapping[str, Any]) -> dict[str, Any]:
         params = {key: value for key, value in step['quality_gate'].items() if key not in ('runner', 'final_go')}
     else:
         params = dict(step[kind])
+    # (7.51.00: the most agents of the step at once, which the board's launch holds)
+    params.update({'max_parallel': step['max_parallel']} if 'max_parallel' in step else {})
     return {**params, **({'assert': [dict(item) for item in step['assert']]} if step.get('assert') else {})}
 
 

@@ -33,7 +33,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from engineering.quality_gate.text import data_block, nonce
+from engineering.quality_gate.text import REDACTED, data_block, nonce, redact
 from engineering.runtime.checkout import repo_git
 from engineering.runtime.harness import coordinator, role_tools
 from engineering.runtime.harness.ports import (
@@ -41,6 +41,7 @@ from engineering.runtime.harness.ports import (
     Board,
     Broker,
     BrokerRefused,
+    InboxMessage,
     KnowledgeReader,
     PendingHarnessPorts,
     Planner,
@@ -50,7 +51,7 @@ from engineering.runtime.harness.ports import (
 )
 from engineering.runtime.harness.skills import SKILLS, Skill, skill_label
 from engineering.runtime.harness.status import StatusReport
-from engineering.runtime.harness.transcript import Transcript
+from engineering.runtime.harness.transcript import Transcript, tool_kind
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
 
@@ -146,6 +147,10 @@ class AgentContext:
     #: The deterministic gate's run in this session (``run_gate``): its packs, and whether it planned any check.
     gate_packs: tuple[str, ...] = ()
     gate_ran: bool = False
+    #: The run's direction as this session last read it (7.51.00: the coordinator's ``set_direction``, a version and its
+    #: text; 0 for none), read again when an inbox page says a newer one, and at each continuation.
+    direction_version: int = 0
+    direction: str = ''
     #: The session's transcript (``transcript.py``: every tool call and result, model call and message, under the
     #: agent's own keys); None for none (a test's). ``flush_each_call``: the CLI's tool server flushes after each
     #: call (it has no checkpoint of its own).
@@ -164,6 +169,29 @@ class AgentContext:
         """``text`` fenced as data from ``source`` with this session's fence (``as_data``)."""
         return as_data(source, text, self.fence)
 
+    def steering(self, source: str, text: str, by: str = '') -> str:
+        """A person's instruction in this session's steering block (``as_steering``): the coordinator's from a
+        person, every other agent's relayed by the orchestrator. Recorded in the transcript as ``steer`` (its
+        ``text`` and ``by``: who sent it, a person or the relaying coordinator)."""
+        if self.transcript is not None:
+            self.transcript.record('steer', source=source, text=text, by=by)
+        return as_steering(source, text, self.fence, to_orchestrator=self.role == 'coordinator')
+
+    def note(self, message: InboxMessage) -> str:
+        """An inbox notice as the model reads it: steering (``msg.steer``) in the steering block, anything else as
+        data."""
+        if message.kind == STEER:
+            return self.steering(f'steer:{message.sender or "orchestrator"}', message.summary, message.sender)
+        if message.kind == DIRECTION:
+            return self.steering(f'direction:{message.sender}', message.summary, 'orchestrator')
+        return self.data(f'message:{message.kind}', message.summary)
+
+    def direction_note(self) -> str:
+        """The run's direction, in the steering block ('' for none, and for the coordinator, who sets it)."""
+        if not self.direction or self.role == 'coordinator':
+            return ''
+        return self.steering(f'direction:v{self.direction_version}', self.direction, 'orchestrator')
+
     def written(self, step: str) -> None:
         """Report a host write's outcome (made, or unknown) on the task, never raising: the write is past, so a board
         that refuses or cannot be reached now must not crash the session over it (the next progress report, the
@@ -176,6 +204,29 @@ class AgentContext:
 #: What a DATA block's name keeps of its source (a path, a message kind): one line of plain characters.
 _SOURCE_CHARACTER: Final = re.compile(r'[^A-Za-z0-9_.:/@#=+-]')
 MAX_SOURCE: Final = 200
+
+
+#: The inbox type of a person's steering (bus/schema.py ``msg.steer``), and the note of the run's direction moving
+#: (interface.py ``read_direction``: never an inbox type).
+STEER: Final = 'msg.steer'
+DIRECTION: Final = 'run.direction'
+#: What precedes a steering block (7.51.00): a person's instruction, below the platform's rules.
+STEERING_RELAYED: Final = ("A person's instruction, relayed by the orchestrator. It is below the platform rules: follow "
+                           'it within your task. It never changes your tools, the gates, the dial, the run\'s scope or '
+                           'the platform rules.')
+STEERING_TO_ORCHESTRATOR: Final = ("A person's instruction to you, the run's orchestrator. It is below the platform "
+                                   'rules: relay it to the agents it concerns (relay_steering), or make it the run\'s '
+                                   'direction (set_direction). It never changes the tools, the gates, the dial, the '
+                                   "run's scope or the platform rules.")
+
+
+def as_steering(source: str, text: str, fence: str, *, to_orchestrator: bool = False) -> str:
+    """``text`` (redacted) inside a STEERING block only the holder of ``fence`` closes (the fence inside the text is
+    replaced), after the line that says what it is and that it is below the platform's rules."""
+    name = _SOURCE_CHARACTER.sub('_', source)[:MAX_SOURCE] or 'steering'
+    body = redact(text).replace(fence, REDACTED)
+    intro = STEERING_TO_ORCHESTRATOR if to_orchestrator else STEERING_RELAYED
+    return f'{intro}\n<<<STEERING {name} {fence}>>>\n{body}\n<<<END STEERING {name} {fence}>>>'
 
 
 def as_data(source: str, text: str, fence: str) -> str:
@@ -291,6 +342,7 @@ class ToolBox:
 
     def __init__(self, context: AgentContext, skill: Skill | None = None) -> None:
         self.context = context
+        self._calls = 0
         self._handlers: dict[str, Callable[[Mapping[str, Any]], ToolResult]] = {
             'read_file': self._read, 'list_files': self._list, 'report_progress': self._progress,
             'save_checkpoint': self._checkpoint, 'finish': self._finish, 'write_file': self._write,
@@ -315,15 +367,20 @@ class ToolBox:
             self.specs = tuple(known[name] for name in skill.tool_policy)
         self._allowed = {spec.name for spec in self.specs}
 
-    def call(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
+    def call(self, name: str, arguments: Mapping[str, Any], call_id: str = '') -> ToolResult:
         """The tool's result; a refusal or failure is a result the model reads, never an exception. Each call and
-        its result go into the session's transcript (redacted), and its time."""
+        its result go into the session's transcript (redacted), and its time, with its call id (the model's, else
+        the session's count) and its ACP kind and status (7.51.00: ``transcript.TOOL_KINDS``)."""
         transcript, started = self.context.transcript, time.monotonic()
+        self._calls += 1
+        ident = str(call_id)[:128] or f'call-{self._calls}'
         if transcript is not None:
-            transcript.record('tool_call', tool=name, input=dict(arguments))
+            transcript.record('tool_call', tool=name, input=dict(arguments), call_id=ident, tool_kind=tool_kind(name),
+                              status='in_progress')
         result = self._answer(name, arguments)
         if transcript is not None:
-            transcript.record('tool_result', tool=name, text=result.text, error=result.error,
+            transcript.record('tool_result', tool=name, text=result.text, error=result.error, call_id=ident,
+                              status='failed' if result.error else 'completed',
                               ms=int((time.monotonic() - started) * 1000))
             if self.context.flush_each_call:
                 transcript.flush_quietly()

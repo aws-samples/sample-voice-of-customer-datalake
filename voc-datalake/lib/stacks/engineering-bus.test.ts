@@ -347,10 +347,32 @@ describe('the engineering bus', () => {
     expect(JSON.stringify(invoke?.Resource)).toContain(':function:voc-engineering-runtime-');
     const reads = statementsOf(on, board).filter((statement) => statement.Action === 's3:GetObject')
       .map((statement) => [statement.Sid, JSON.stringify(statement.Resource)]);
-    expect(reads.map(([sid]) => sid)).toStrictEqual(['ReadKnowledgePacks', 'ReadGateRecords']);
+    expect(reads.map(([sid]) => sid)).toStrictEqual(['ReadKnowledgePacks', 'ReadGateRecords', 'ReadRecordedOutputs',
+      'NoTranscriptsOrCheckpoints']);   // (7.51.00: a done step's assertions, the test below)
     expect(reads[0]?.[1]).toContain('/ws/default/knowledge/*');
     // (the GO ledger's read of a flow's quality gate: the records only, lambda/engineering/flow/ledger.py)
     expect(reads[1]?.[1]).toContain('/ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json');
+  });
+
+  it('lets the board read a done step\'s recorded outputs for its assertions, never a transcript or checkpoint (7.51.00)', () => {
+    const on = template('on');
+    const statements = statementsOf(on, functionId(on, 'voc-engineering-board'));
+    const outputs = JSON.stringify(statements.find((statement) => statement.Sid === 'ReadRecordedOutputs')?.Resource);
+    expect(['/_patches/*', '/_triage/*', '/attempt-*/*.jsonl'].map((keys) => outputs.includes(keys)))
+      .toStrictEqual([true, true, true]);
+    const denied = statements.find((statement) => statement.Sid === 'NoTranscriptsOrCheckpoints');
+    expect([denied?.Effect, JSON.stringify(denied?.Resource).includes('/_transcripts/*'),
+      JSON.stringify(denied?.Resource).includes('/_checkpoints/*')]).toStrictEqual(['Deny', true, true]);
+  });
+
+  it('lets the board write a run\'s direction and assertion rows in its partition, and no cost or learning row (7.51.00)', () => {
+    const on = template('on');
+    const board = functionId(on, 'voc-engineering-board');
+    const text = JSON.stringify(statementsOf(on, board));
+    // (DIRECTION#v<n>, ASSERT#<step>#<attempt>: rows of the run's own partition, on the board's table grant)
+    expect(text).toContain('dynamodb:PutItem');
+    expect(text).not.toMatch(/DIRECTION|ASSERT#/);
+    expect(text).not.toMatch(/s3:PutObject|bedrock-agentcore/);
   });
 
   it('names the runtime, the workspace bucket and the image languages to the board', () => {

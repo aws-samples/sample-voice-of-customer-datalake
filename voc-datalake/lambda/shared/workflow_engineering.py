@@ -77,7 +77,11 @@ MAX_SHARD_CAP: Final = 200
 MAX_GATE_ROUNDS: Final = 5
 #: What a quality gate step may set (engineering.quality_gate.gate PARAMS but the ids the runtime fills in), and each
 #: reviewer's settings and the default reviewers (its REVIEWER_KEYS and DEFAULT_REVIEWERS; a lockstep test holds them).
-GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert'})
+GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel'})
+#: ``max_parallel`` (7.51.00, optional): the most agents of the step at work at once, which the board's ``launch`` holds
+#: (board/flow_guard.py); on the steps that take several tasks at once.
+MAX_PARALLEL: Final = 50
+PARALLEL_TYPES: Final = frozenset({'agent', 'board', 'quality_gate'})
 REVIEWER_SETTINGS: Final = frozenset({'name', 'focus', 'model_id', 'advisory'})
 #: The default reviewers, each with whether it is advisory (a reviewer that leaves ``advisory`` out takes its own).
 DEFAULT_REVIEWERS: Final = {'security': False, 'quality': False, 'first-principles': True}
@@ -312,7 +316,11 @@ def params_issues(node_type: str, params: Mapping[str, Any]) -> list[str]:
     """What is wrong with an engineering step's settings (empty when nothing is): its own, and its assertions."""
     check = _PARAMS.get(node_type)
     asserted = _assertion_issues(params['assert']) if 'assert' in params and node_type in ENGINEERING_NODE_TYPES else []
-    return (check(params) if check else []) + asserted
+    wrong = 'max_parallel' in params and (node_type not in PARALLEL_TYPES
+                                          or not _whole(params, 'max_parallel', 1, MAX_PARALLEL))
+    parallel = [(f"a step's params.max_parallel is a whole number from 1 to {MAX_PARALLEL}, on an agent, a board or "
+                 'a quality gate')] if wrong else []
+    return (check(params) if check else []) + asserted + parallel
 
 
 # ── graph rules ──────────────────────────────────────────────────────────────

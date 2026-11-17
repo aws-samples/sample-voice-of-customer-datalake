@@ -52,8 +52,10 @@ GATE_LOOP_INDEX = 0
 FINAL_GO_AGENT = 'final-go'
 NO_PATHS: tuple[str, ...] = ()
 NO_AUTHORS: frozenset[str] = frozenset()
-#: ``assert``: the step's assertions (7.50.00), the board's to evaluate on what the gate recorded; the gate reads none.
-PARAMS = frozenset({'max_rounds', 'reviewers', 'final_go_model', 'node_id', 'node_title', 'packs', 'assert'})
+#: ``assert``: the step's assertions (7.50.00), the board's to evaluate on what the gate recorded; ``max_parallel``
+#: (7.51.00): the board's launch holds it. The gate reads neither.
+PARAMS = frozenset({'max_rounds', 'reviewers', 'final_go_model', 'node_id', 'node_title', 'packs', 'assert',
+                    'max_parallel'})
 REVIEWER_KEYS = frozenset({'name', 'focus', 'model_id', 'advisory'})
 _NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
 

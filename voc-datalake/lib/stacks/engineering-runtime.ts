@@ -517,8 +517,9 @@ class EngineeringRuntime extends Construct {
     }));
     const functionName = uniqueName(RUNTIME_FUNCTION);
     this.grantLearning(props, role, functionName);
-    // (7.50.00: a run's end: its issue's triage row, its manifest and index entry, Learn's read of its transcripts)
-    grantRunEnd(role, workspaceBucket, props.agentsTable);
+    // (7.50.00: a run's end: its issue's triage row, its manifest and index entry, Learn's read of its transcripts;
+    // 7.51.00: its runs list row, and a child run's seeds)
+    grantRunEnd(role, workspaceBucket, props.agentsTable, engineeringTable);
     return createWorkerFunction(this, 'EngineeringSupervisor', {
       tree: 'engineering',
       functionName,

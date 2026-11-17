@@ -8,7 +8,7 @@ from typing import Any
 
 from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.interface import AgentSession
-from engineering.runtime.harness.ports import InboxMessage, SkillAnswer, TaskBrief
+from engineering.runtime.harness.ports import Direction, InboxMessage, SkillAnswer, TaskBrief
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tools import AgentContext, ToolBox
 from engineering.runtime.harness.workspace import Workspace
@@ -97,6 +97,15 @@ class FakeBoard:
         del run_id, task_id
         return self.memories
 
+    #: The run's direction (7.51.00) ``direction`` answers, and how often it was read.
+    run_direction: Direction = field(default_factory=Direction)
+    directions_read: int = 0
+
+    def direction(self, *, run_id: str) -> Direction:
+        del run_id
+        self.directions_read += 1
+        return self.run_direction
+
 
 @dataclass
 class FakeInbox:
@@ -121,6 +130,12 @@ class FakeInbox:
 
     def resume(self, cursor: object) -> None:
         self.resumed = cursor
+
+    #: The direction version each page names (7.51.00).
+    version: int = 0
+
+    def direction(self) -> int:
+        return self.version
 
 
 @dataclass

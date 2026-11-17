@@ -22,11 +22,13 @@ Shipped in the agents' images with the harness (standard library only, Python 3.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from typing import Any, Final
 
 from engineering.connectors.identity import WORKSPACE
+from engineering.runtime.checkpoints import SHA, assert_storable
+from engineering.runtime.interface import RuntimeRefused, check_id
+from engineering.runtime.tokens import TokenNotStorable
 
 SCHEMA: Final = 'voc-resume-seed/1'
 MAX_SEED_BYTES: Final = 256 * 1024
@@ -47,31 +49,37 @@ MAX_NOTES: Final = 16_000
 MAX_PLAN: Final = 50
 #: How the child's base was chosen: the parent's commit, or the default branch's head when the child started.
 BASES: Final = frozenset({'same', 'head'})
-_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
-_SHA: Final = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
-#: Checkpoint keys that hold a secret are never in a seed (checkpoints.py ``SECRET_KEY_PARTS``).
-_SECRET_PARTS: Final = ('token', 'secret', 'password', 'credential', 'authorization', 'private_key')
+#: A memory's id as a seed lists it, at most.
+MAX_MEMORY_ID: Final = 128
 
 
 class SeedError(ValueError):
     """A record that is not a seed this harness takes (the session then starts afresh, said on its status)."""
 
 
+def _is_id(value: object) -> bool:
+    """A run, agent or task id as the runtime takes one (``interface.check_id``)."""
+    try:
+        return isinstance(value, str) and bool(check_id('id', value))
+    except RuntimeRefused:
+        return False
+
+
 def seed_prefix(run_id: str) -> str:
     """The run's seeds: ``ws/<ws>/runs/<run>/_seed/`` (``_`` never begins an agent id, so no agent's own keys)."""
-    if not _ID.fullmatch(run_id):
+    if not _is_id(run_id):
         raise SeedError('a run id is an id')
     return f'ws/{WORKSPACE}/runs/{run_id}/_seed/'
 
 
 def seed_key(run_id: str, parent_task: str) -> str:
-    if not _ID.fullmatch(parent_task):
+    if not _is_id(parent_task):
         raise SeedError('a task id is an id')
     return f'{seed_prefix(run_id)}{parent_task}/{SEED_FILE}'
 
 
 def patch_key(run_id: str, parent_task: str) -> str:
-    if not _ID.fullmatch(parent_task):
+    if not _is_id(parent_task):
         raise SeedError('a task id is an id')
     return f'{seed_prefix(run_id)}{parent_task}/{PATCH_FILE}'
 
@@ -83,7 +91,7 @@ def check_seed_key(key: object, run_id: str) -> str:
     if not isinstance(key, str) or not key.startswith(prefix) or '..' in key.split('/'):
         raise SeedError('a seed key is under the run\'s own _seed/')
     task, _, name = key.removeprefix(prefix).partition('/')
-    if not _ID.fullmatch(task) or name != SEED_FILE:
+    if not _is_id(task) or name != SEED_FILE:
         raise SeedError('a seed key names one task\'s seed.json')
     return key
 
@@ -93,11 +101,11 @@ def _text(value: object, limit: int) -> str:
 
 
 def _no_secret(value: object) -> bool:
-    if isinstance(value, Mapping):
-        return all(not any(part in str(key).lower() for part in _SECRET_PARTS) and _no_secret(item)
-                   for key, item in value.items())
-    if isinstance(value, list):
-        return all(_no_secret(item) for item in value)
+    """No key in ``value`` names a secret (checkpoints.py's rule)."""
+    try:
+        assert_storable(value)
+    except TokenNotStorable:
+        return False
     return True
 
 
@@ -107,10 +115,9 @@ def _parent(raw: object) -> dict[str, Any]:
     attempt = raw.get('attempt')
     ids = [raw.get(name) for name in ('run_id', 'task_id')]
     agent = raw.get('agent_id')
-    if not all(isinstance(value, str) and _ID.fullmatch(value) for value in ids) or not (
-            agent == '' or (isinstance(agent, str) and _ID.fullmatch(agent))) or not (
+    if not all(_is_id(value) for value in ids) or not (agent == '' or _is_id(agent)) or not (
             isinstance(attempt, int) and not isinstance(attempt, bool) and attempt >= 0) or not (
-            isinstance(raw.get('commit'), str) and _SHA.fullmatch(raw['commit'])):
+            isinstance(raw.get('commit'), str) and SHA.fullmatch(raw['commit'])):
         raise SeedError('parent is {run_id, agent_id, task_id, attempt, commit}')
     return {'run_id': raw['run_id'], 'agent_id': agent, 'task_id': raw['task_id'], 'attempt': attempt,
             'commit': raw['commit']}
@@ -176,7 +183,8 @@ def checked(record: object, run_id: str) -> dict[str, Any]:
     if base not in BASES:
         raise SeedError(f'base is one of {sorted(BASES)}')
     memory = record.get('memory_ids', [])
-    if not isinstance(memory, list) or not all(isinstance(item, str) and _ID.fullmatch(item) for item in memory):
+    if not isinstance(memory, list) or not all(isinstance(item, str) and 0 < len(item) <= MAX_MEMORY_ID
+                                               for item in memory):
         raise SeedError('memory_ids are ids')
     return {'schema': SCHEMA, 'parent': _parent(record.get('parent')), 'task': _task(record.get('task')),
             'checkpoint': _checkpoint(record.get('checkpoint')), 'patch_key': patch, 'base': base,
@@ -191,11 +199,6 @@ def encode(record: Mapping[str, Any], run_id: str) -> bytes:
     if len(body) > MAX_SEED_BYTES:
         raise SeedError(f'a seed is at most {MAX_SEED_BYTES} bytes')
     return body
-
-
-def is_valid(body: bytes, run_id: str) -> bool:
-    """A seed the harness of run ``run_id`` takes."""
-    return parse(body, run_id) is not None
 
 
 def parse(body: bytes, run_id: str) -> dict[str, Any] | None:

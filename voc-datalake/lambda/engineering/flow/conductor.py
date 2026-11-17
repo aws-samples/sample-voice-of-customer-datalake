@@ -40,6 +40,9 @@ What each step type means here:
 - ``stop_at_pr``: the flow ends at the draft pull request (the broker's dial still decides whether one is opened);
   ``end``: the flow ends, at a person when its status is ``needs_human``.
 
+A child run (7.51.00: a person's Resume of an ended run) takes the steps its parent had done as done
+(``BoardState.inherited``), never a quality gate's: a gate judges again in the run whose patch it judges.
+
 A person's decision on a step (a Resume of the run at that step's decision point, ``runs.RunStore.resume``) passes a
 human decision point or a stopped step, and gives a blocked step one more try (each decision one more failed task;
 on a step after a map, one more on each shard, so one decision retries every shard that failed once).
@@ -238,6 +241,8 @@ class BoardState:
     #: Each quality gate step's verdict, as the GO ledger reads it (``go``, ``no_go``; ``unread`` where the reader
     #: cannot read the gate records: never a GO).
     verdicts: Mapping[str, str] = field(default_factory=dict)
+    #: A child run's steps its parent had done (7.51.00, ``record.py`` ``inherited``): done here without a task.
+    inherited: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -438,6 +443,8 @@ class _Conductor:
     def _evaluate(self, step: Step) -> StepState:
         if step.type == 'start':
             return self._state(step, DONE)
+        if step.id in self.board.inherited:
+            return self._state(step, DONE, reason='done in the run this one resumes')
         pending, taken = self._ways_in(step)
         if pending:
             if step.type == 'board' and self._collecting(step, pending):

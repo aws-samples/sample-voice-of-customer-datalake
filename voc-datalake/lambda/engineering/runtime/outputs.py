@@ -34,6 +34,9 @@ STOP_REASON: Final = re.compile(r'[a-z_]{0,40}\Z')
 SUBMITTED_PATCH: Final = re.compile(r'ws/default/runs/(?P<run>[A-Za-z0-9_-]{1,64})/(?:fixer|builder)-[0-9]{1,3}/'
                                     r'commits/(?P<commit>[0-9a-f]{40}|[0-9a-f]{64})/_patches/attempt-[1-9][0-9]{0,3}/'
                                     r'(?P<name>[A-Za-z0-9][A-Za-z0-9_.-]{0,122}\.diff)\Z')
+#: The roles whose task names a submitted patch: the gate's (which judge it) and the committer (which pushes it); a
+#: child run never seeds one of their tasks (runtime/restart.py: they are posted again on the child's own patch).
+PATCH_ROLES: Final = frozenset({'gate-runner', 'final-go', 'committer'})
 #: The largest submitted patch the broker reads, and so the largest the gate judges.
 MAX_SUBMITTED_PATCH_BYTES: Final = 6 * 1024 * 1024
 _PLAIN: Final = re.compile(rb'[A-Za-z0-9_-]')

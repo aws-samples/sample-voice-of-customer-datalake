@@ -53,6 +53,10 @@ def opening(session: AgentSession) -> str:
             parts += [('Your last checkpoint could not save your working tree, so the checkout holds an older one '
                        '(check what is there before you go on). Why:'),
                       data('patch_refused', session.patch_refused)]
+    parts += session.seed_parts()
+    direction = session.context.direction_note()
+    if direction:
+        parts += ['', "The run's direction, as the orchestrator set it:", direction]
     return '\n'.join(parts)
 
 
@@ -87,8 +91,8 @@ class ConverseAdapter:
                 session.checkpoint(turn=turn)
                 return 'paused'
             if notes:
-                messages[-1]['content'].append({'text': '\n'.join(
-                    session.context.data(f'message:{note.kind}', note.summary) for note in notes)})
+                # (steering in its own block below the platform rules, any other notice as data: AgentContext.note)
+                messages[-1]['content'].append({'text': '\n'.join(session.context.note(note) for note in notes)})
                 _said(session, 'user', [messages[-1]['content'][-1]])
             usage, message = self._converse(session, messages, tools, turn)
             messages.append(message)
@@ -103,7 +107,7 @@ class ConverseAdapter:
             nudged = False
             results, finished = [], False
             for call in calls:
-                result = session.tools.call(str(call['name']), call.get('input') or {})
+                result = session.tools.call(str(call['name']), call.get('input') or {}, str(call.get('toolUseId', '')))
                 if result.checkpoint is not None:
                     session.remember(result.checkpoint)
                     session.checkpoint(turn=turn)

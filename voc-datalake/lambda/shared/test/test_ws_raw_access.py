@@ -430,6 +430,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # agents move per workspace (phase 3). The Agents API's three Table calls are the engineering views' handles.
     'lambda/engineering/agent_memory/store.py': (3, {'transact': 1}),
     'lambda/engineering/board/store.py': (3, {'transact': 2}),
+    # 7.51.00: a run's direction, a create-only DIRECTION#v<n> row with META's version, one transaction.
+    'lambda/engineering/board/directions.py': (3, {'transact': 1}),
     'lambda/engineering/connectors/cache.py': (3, {'put_object': 2}),
     'lambda/engineering/connectors/connections.py': (3, {'meta.client': 3, 'transact': 3}),
     # The deployment's GitHub Apps (7.45.00): an App's row with its audit row, in the connections' partition.
@@ -447,8 +449,11 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
     # The readiness probe's create-only put of its one object (7.50.00, ws/default/_readiness/probe.json).
     'lambda/engineering/readiness_aws.py': (3, {'put_object': 2}),
-    'lambda/engineering/runtime/handler.py': (3, {'Table': 4}),
+    # (7.51.00: the fifth, a child run's Learn budget on voc-engineering)
+    'lambda/engineering/runtime/handler.py': (3, {'Table': 5}),
     'lambda/engineering/runtime/harness/main.py': (3, {'put_object': 1}),
+    # 7.51.00: a child run's seeds, create-only, under the child's own ws/default/runs/<child>/_seed/.
+    'lambda/engineering/runtime/restart.py': (3, {'put_object': 1}),
     'lambda/engineering/runtime/runs.py': (3, {'meta.client': 2, 'transact': 2}),
     'lambda/engineering/runtime/sessions.py': (3, {'meta.client': 2, 'transact': 2}),
     'lambda/engineering/settings.py': (3, {'meta.client': 1, 'transact': 1}),

@@ -12,7 +12,12 @@ is approved; the paths are the task spec's, the ones its agent was launched on, 
 skill the caller's session runs, ``{label, record}``, by the label its launch recorded on its session row, never one
 the caller names: skills/resolve.py) and ``memory`` (7.50.00, ``{task_id}``: the approved lessons of the caller's task,
 its connection's repository memories and its role's there, fenced as data, as its run's flow sets the recall; the
-caller holds the task's live lease, as for ``knowledge``). The run's coordinator
+caller holds the task's live lease, as for ``knowledge``) and ``direction`` (7.51.00: the run's direction, ``{version,
+text}``, for any agent of the run; every ``inbox`` page names its version, ``direction``, so a harness reads it again
+only when it moved). The run's coordinator also has ``set_direction`` (``{text}``: a new create-only version,
+board/directions.py) and ``steer`` (``{to: {kind: agent | role, id}, text}``: a person's steering relayed to one agent
+of the run or every agent of a role, published as ``msg.steer`` from the board's source as the conductor, the one
+message the board sends as another kind than ``system``: bus/senders.py). The run's coordinator
 also has ``tasks`` (its run's tasks) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
 through ``voc-engineering-runtime``'s ``launch`` action only, with the run's commit and connection from its META;
 recorded on the task with its attempt and paths, so a retried launch launches the same agent and a repost's new
@@ -57,12 +62,13 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.agent_memory.model import AgentMemoryError, RunContext
+from engineering.board import directions
 from engineering.board.flow_guard import FlowGuard
 from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
-from engineering.bus.schema import ID, ROLES, ULID, Message, MessageError, Party, Refs, fit_summary
+from engineering.bus.schema import ID, ROLES, ULID, Message, MessageError, Party, Refs, fit_summary, summary_text
 from engineering.connectors.identity import (
     WORKSPACE,
     Caller,
@@ -371,7 +377,8 @@ class BoardApi:
                  skill: Callable[[str], object | None] | None = None,
                  images: frozenset[str] = frozenset(REGISTRY_HOSTS),
                  gate_records: ReadRecord | None = None, skills: SkillVersions | None = None,
-                 templates: Templates | None = None, memory: MemoryRecall | None = None) -> None:
+                 templates: Templates | None = None, memory: MemoryRecall | None = None,
+                 outputs: Callable[[str, int], bytes | None] | None = None) -> None:
         """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused);
         ``skill``: whether a role has a skill to launch it on (its bundled template: skills/templates.py; every
         version the skills store holds is a version of a role that has one); ``images``: the languages this
@@ -379,7 +386,8 @@ class BoardApi:
         key, the GO ledger's read of a quality gate step's verdict (None: no gate is taken for a GO); ``skills`` and
         ``templates``: the skills store and the bundled templates the ``skill`` op serves a session's recorded label
         from (no store: only a template's label is served); ``memory``: the agent memory the ``memory`` op recalls
-        from (None: refused)."""
+        from (None: refused); ``outputs``: a task's recorded output by its key, which a done step's assertions read
+        (7.51.00: flow/assertion_record.py; None: no assertion is recorded)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
@@ -388,7 +396,7 @@ class BoardApi:
         self.templates = templates or bundled()
         self.skill = skill or self.templates.skill
         self.images = images
-        self.flows = FlowGuard(store, gate_records)
+        self.flows = FlowGuard(store, gate_records, outputs)
         self.skills = skills
         self.memories = memory
 
@@ -577,11 +585,64 @@ class BoardApi:
             raise BoardError('invalid', str(exc)[:MAX_TITLE]) from exc
         return {'memories': [recalled.text] if recalled.text else []}
 
+    def _direction(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``direction`` (7.51.00): the run's current direction, for any agent of the run (``{version, text}``;
+        version 0 for none). Its harness reads it when an inbox page names a newer version, and at each start."""
+        del body
+        found = directions.read(self.store.client, self.store.table, WORKSPACE, caller.run_id)
+        return {'version': found.version, 'text': found.text}
+
+    def _set_direction(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``set_direction`` (``{text}``, 7.51.00): the run coordinator's new version of the run's direction
+        (``board/directions.py``: a create-only ``DIRECTION#v<n>`` row, META's version moved in the same write)."""
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator sets its direction')
+        self._meta(caller.run_id)
+        found = directions.write(self.store.client, self.store.table, WORKSPACE, caller.run_id, _text(body, 'text'),
+                                 by=agent_id(caller), at=self.store.now().isoformat())
+        return {'version': found.version}
+
+    def _steer(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``steer`` (``{to: {kind: agent | role, id}, text}``, 7.51.00): the run coordinator relays a person's steering
+        to one agent of the run or every agent of a role, published as ``msg.steer`` from the board's source as the
+        conductor (bus/senders.py ``RELAYED``: the board has checked the caller is the run's coordinator now). The
+        router records it in the conversation (D4) and the delivery function wakes its addressees. ``{event_id}``."""
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator relays steering')
+        to = body.get('to')
+        kind, target = (to.get('kind'), to.get('id')) if isinstance(to, Mapping) else (None, None)
+        if kind == 'role':
+            if target not in ROLES:
+                raise BoardError('invalid', '"to" names a role that claims tasks')
+        elif kind == 'agent':
+            if not isinstance(target, str) or not ID.fullmatch(target) or target.startswith(f'{COORDINATOR}-') \
+                    or self.store.agent_row(WORKSPACE, caller.run_id, target) is None:
+                raise BoardError('invalid', '"to" names an agent of this run (not its coordinator)')
+        else:
+            raise BoardError('invalid', '"to" is {kind: agent | role, id}')
+        try:
+            text = summary_text(_text(body, 'text'))
+        except MessageError as exc:
+            raise BoardError('invalid', f'"text" is the instruction, at most 1 KB, nothing secret in it: {exc}') from exc
+        at = self.store.now().astimezone(UTC)
+        message = Message(event_id=new_event_id(), ws=WORKSPACE, run_id=caller.run_id, thread_id='steering',
+                          attempt=0, sender=Party('conductor', agent_id(caller)), to=Party(str(kind), str(target)),
+                          type='msg.steer', summary=text, at=at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+        try:
+            self.publisher.publish(message)
+        except MessageError as exc:
+            raise BoardError('invalid', 'the steering could not be relayed: shorten the text') from exc
+        except PublishError as exc:
+            raise BoardError('unavailable', 'the steering was not relayed: retry') from exc
+        return {'event_id': message.event_id, 'to': {'kind': kind, 'id': target}}
+
     def _direct(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any] | None:
         """The ops answered directly, with no board event (None: not one of them): the reads, and the launch, whose
-        record is the task's history row and whose agent speaks for itself once it runs."""
+        record is the task's history row and whose agent speaks for itself once it runs; the steering relay, which
+        publishes its own message, and the run's direction."""
         readers = {'inbox': self._inbox, 'knowledge': self._knowledge, 'launch': self._launch, 'flow': self._flow,
-                   'step': self._step, 'skill': self._skill, 'memory': self._memory}
+                   'step': self._step, 'skill': self._skill, 'memory': self._memory, 'direction': self._direction,
+                   'set_direction': self._set_direction, 'steer': self._steer}
         op = body.get('op')
         if op == 'tasks':
             return self._tasks(caller)
@@ -591,8 +652,10 @@ class BoardApi:
         after, limit = _int(body, 'after', 0), _int(body, 'limit', MAX_LIMIT)
         if after < 0 or not 1 <= limit <= MAX_LIMIT:
             raise BoardError('invalid', f'"after" is a seq (0 or more) and "limit" 1 to {MAX_LIMIT}')
-        return self.inbox.read(WORKSPACE, caller.run_id, role=caller.role, agent=agent_id(caller), after=after,
+        page = self.inbox.read(WORKSPACE, caller.run_id, role=caller.role, agent=agent_id(caller), after=after,
                                limit=limit)
+        # (the run's direction version, 7.51.00: the harness reads the direction again only when it moved)
+        return {**page, 'direction': directions.current_version(self.store.meta(WORKSPACE, caller.run_id))}
 
     def _post(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
         role = _post_role(body)
@@ -633,7 +696,7 @@ class BoardApi:
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
         raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, skill, memory, tasks, '
-                                    'launch, flow or step')
+                                    'launch, flow, step, direction, set_direction or steer')
 
     def _current_coordinator(self, caller: Caller) -> None:
         """A coordinator acts only while it is the run's: the coordinate task's recorded coordinator at the task's
@@ -788,7 +851,9 @@ def _from_environment() -> BoardApi:
                     # only: its role's statements deny it any write of their partitions, engineering-bus.ts).
                     skills=SkillStore(client, table),
                     # (a role's lessons and the repository's only: no person is looked up here)
-                    memory=AgentMemoryStore(client, table, is_user=lambda _user: False))
+                    memory=AgentMemoryStore(client, table, is_user=lambda _user: False),
+                    # (a done step's recorded outputs, for its assertions: never a transcript or a checkpoint)
+                    outputs=workspace.read_bytes if workspace is not None else None)
 
 
 class _Kept:

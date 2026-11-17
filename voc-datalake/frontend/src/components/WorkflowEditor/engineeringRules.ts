@@ -29,7 +29,8 @@ export const MAX_SHARD_CAP = 200
 export const MAX_GATE_ROUNDS = 5
 export const MAX_MEMORY_LIMIT = 50
 const MAX_MODEL_CHARS = 128
-const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert'])
+// (max_parallel, 7.51.00: the most agents of the step at once, which the board's launch holds)
+const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel'])
 const REVIEWER_SETTINGS = new Set(['name', 'focus', 'model_id', 'advisory'])
 /** The default reviewers, each with whether it is advisory. */
 const DEFAULT_REVIEWERS: Readonly<Record<string, boolean>> = { security: false, quality: false, 'first-principles': true }

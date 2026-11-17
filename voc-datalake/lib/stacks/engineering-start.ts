@@ -1,7 +1,9 @@
 /**
  * voc-engineering-start (engineering-runtime.ts, with `-c engineeringAgents=true`): the name the Agents API invokes for
  * `POST /agents/engineering/runs` (api-assistant-lambdas.ts, ENGINEERING_START_FUNCTION). The runtime's code, with a
- * role of its own holding only what a start needs (`startRole`), entered at `start_handler`, which takes `start_run` and refuses every other action before anything is read; it writes
+ * role of its own holding only what a start needs (`startRole`), entered at `start_handler`, which takes `start_run`,
+ * `restart_run` (7.51.00: a person's Resume or Restart of an ended run, as a child run, its seeds handed on to the
+ * runtime's `seed_restart`) and `ask_reactions`, and refuses every other action before anything is read; it writes
  * the run and hands the coordinator's launch on to voc-engineering-runtime (`launch_coordinator`). The API's
  * role may invoke this function and never voc-engineering-runtime, so it can start a run and never tick, launch,
  * signal an agent or end a run otherwise. Since 7.50.03 it also takes `stop_run`, the run monitor's Stop of a whole
@@ -20,7 +22,7 @@ import type { Construct } from 'constructs';
 
 import { ENGINEERING_START_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
-import { ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
+import { ENGINEERING_RUNLIST_PARTITIONS, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
 import { HARD_CAP_PARTITION, viaServices } from './engineering-runtime-grants';
 
 /** `-c engineeringRunCapUsd` and `-c engineeringRunTokenCap`: every run's cost and token caps (TENETS.md tenet 7). */
@@ -66,14 +68,21 @@ interface StartProps {
   admitStart: (role: iam.IRole, functionName: string) => void;
 }
 
-/** What a start writes (lambda/engineering/runtime/runs.py RunStore.start, needs_human): its run's partition, the registry. */
-const START_PARTITIONS = ['WS#*#RUN#*', 'WS#*#RUNS'];
-/** What a Stop reads (7.50.03: runtime/stop.py): the run's own partition (its tasks, its agents), never the registry. */
-const STOP_READ_PARTITIONS = ['WS#*#RUN#*'];
+/**
+ * What a start writes (lambda/engineering/runtime/runs.py RunStore.start, needs_human): its run's partition, the registry
+ * and (7.51.00) its month's runs list.
+ */
+const START_PARTITIONS = ['WS#*#RUN#*', 'WS#*#RUNS', ENGINEERING_RUNLIST_PARTITIONS];
+/**
+ * The runs' partitions alone, never the registry: a Stop reads its run's tasks and agents there (7.50.03:
+ * runtime/stop.py), a restart its parent's flow plan (its tasks and step rows, 7.51.00).
+ */
+const RUN_PARTITIONS = 'WS#*#RUN#*';
 
 /**
  * voc-engineering-start's own role (TENETS.md tenet 6: a role per Lambda), with only what `start_run` without its launch
- * uses: the run's rows and its registry row (GetItem, PutItem, UpdateItem: the start's transaction, a decision point),
+ * (and `restart_run`, 7.51.00: a child run, its parent's partition read) uses: the run's rows, its registry row and its
+ * runs list row (GetItem, PutItem, UpdateItem: the start's transaction, a decision point),
  * a flow's month total and the hard cap's row (GetItem, at a budgeted start), the stack's key through DynamoDB, its
  * rule switched on (never off), and the runtime invoked by name for the launch. Since 7.50.03 a Stop: Query of the run's
  * own partition (its tasks and agent rows, `StopRunReads`), its writes those of the run's rows above. No agent session,
@@ -88,9 +97,15 @@ function startRole(scope: Construct, props: StartProps): iam.Role {
     resources: [props.engineeringTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': START_PARTITIONS } },
   }));
+  // A Resume or Restart of an ended run (7.51.00, restart_run): its parent's partition read (the flow's plan: its tasks
+  // and step rows), so the child inherits the steps the parent had done. Reads only, the runs' partitions only.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'RestartReadsTheParent', actions: ['dynamodb:Query'], resources: [props.engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
+  }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'StopRunReads', actions: ['dynamodb:Query'], resources: [props.engineeringTable.tableArn],
-    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': STOP_READ_PARTITIONS } },
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'StartFlowMonthTotal', actions: ['dynamodb:GetItem'], resources: [props.engineeringTable.tableArn],

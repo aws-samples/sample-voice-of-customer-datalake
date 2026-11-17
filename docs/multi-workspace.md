@@ -523,7 +523,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `model_default` | deployment | the model pinned at deploy (`-c defaultModelId`, `lambda/custom_resources/model_pin.py`), below every pick: split from `model` (7.01.00) so the picks can move into each workspace; a deployment from before the split keeps its pin in `model`'s `model_id`, which still outranks it |
 | `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
 | `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
-| `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)); so are, since 7.50.00, their runs' transcripts, run manifests and the transcripts' index in voc-eng-workspace (`ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/`, `ws/default/runs/<run>/_manifest/`, `ws/default/transcripts-index/<flow>/<day>/<run>.json`), kept forever and in no workspace's export or delete until 3g3 |
+| `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)); so are, since 7.50.00, their runs' transcripts, run manifests and the transcripts' index in voc-eng-workspace (`ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/`, `ws/default/runs/<run>/_manifest/`, `ws/default/transcripts-index/<flow>/<day>/<run>.json`), kept forever and in no workspace's export or delete until 3g3; and, since 7.51.00, a run's direction (`WS#default#RUN#<run>` / `DIRECTION#v<nnnnnn>`), its steps' assertion records (`ASSERT#<step>#<attempt>`), a parent's child runs (`CHILD#<child>`), the runs list (`WS#default#RUNLIST#<yyyy-mm>` / `RUN#<started_at>#<run>`) and a child run's seeds (`ws/default/runs/<run>/_seed/<task>/`) |
 | `engineering_setup` (voc-agents, `SETTINGS#engineering_setup`) | deployment | the engineering setup guide's progress (7.50.00, `lambda/shared/agents_engineering_setup_routes.py`, only with `-c engineeringAgents=true`): what the deployment's administrators chose for each step of the guide, which sets up the deployment's engineering agents; it moves with them ([3g3](#the-project-plan-phase-3)) |
 
 ### The configuration cut-over (7.08.00)
@@ -916,7 +916,10 @@ The rest, in order, each slice plumbing with no change in behaviour until the sw
   voc-engineering's rows (runs, spend and budget alerts, conversations, the board, skills and scorecards, the agents'
   memory); the voc-eng-workspace bucket's objects (since 7.50.00 also every agent session's transcript,
   `ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/attempt-<n>/<chunk>.jsonl`, each run's manifests
-  `ws/default/runs/<run>/_manifest/v<nnnn>.json` and the transcripts' index `ws/default/transcripts-index/<flow>/<day>/<run>.json`:
+  `ws/default/runs/<run>/_manifest/v<nnnn>.json` and the transcripts' index `ws/default/transcripts-index/<flow>/<day>/<run>.json`,
+  and since 7.51.00 a child run's seeds `ws/default/runs/<run>/_seed/<task>/seed.json` and `patch.diff`, with the
+  run's `DIRECTION#v<n>`, `ASSERT#<step>#<attempt>` and `CHILD#<child>` rows and the runs list's
+  `WS#default#RUNLIST#<yyyy-mm>` rows in voc-engineering:
   kept forever by the owner's decision, no expiry, so the only removals are this slice's hard-delete sweep and an
   erasure of a person's data where it requires one, D5; a transcript holds repository, issue and model text, redacted
   when written, and may hold a handle a person wrote on an issue); in voc-agents, the hard cap `SETTINGS#engineering` (a deployment

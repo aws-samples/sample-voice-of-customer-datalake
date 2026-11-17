@@ -13,7 +13,10 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
 
-import { ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE } from './core-buckets';
+import {
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_PATCH_KEYS, ENGINEERING_RUNLIST_PARTITIONS, ENGINEERING_SEED_KEYS,
+  ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
+} from './core-buckets';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
@@ -163,6 +166,33 @@ function grantIssueTriage(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTa
   denyHardCapWrites(role, agentsTable);
 }
 
+/**
+ * 7.51.00, on the runtime's role: a run's row in its month's runs list kept current at its end (runtime/runs.py
+ * RunStore._listed: GetItem and UpdateItem of those partitions only), and a child run's seeds (`seed_restart`:
+ * lambda/engineering/runtime/restart.py): the parent's working trees read (its agents' checkpoint and submitted
+ * patches; its checkpoints and transcripts are read with the grants it has), and each seed and its patch written
+ * under the child's own `_seed/` (create-only: the bucket refuses a put without If-None-Match). Learn's model and its
+ * spend are the grants it already has. No agent role is granted anything: an agent reads its own run's `_seed/` with
+ * its run's keys, and writes none.
+ */
+function grantChildRuns(role: iam.IRole, table: dynamodb.ITable, workspaceBucket: s3.IBucket): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'RunsListRows', actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'], resources: [table.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_RUNLIST_PARTITIONS] } },
+  }));
+  const granted = ([['RestartReadsPatches', 's3:GetObject', ENGINEERING_PATCH_KEYS],
+    ['WriteRestartSeeds', 's3:PutObject', ENGINEERING_SEED_KEYS]] as const).map(([sid, action, keys]) => {
+    const objects = workspaceBucket.arnForObjects(keys);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({ sid, actions: [action], resources: [objects] }));
+    return objects;
+  });
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'The agents\' patch objects of every run (read only: a child run\'s seed copies its parent\'s) and the runs\' seeds (create-only, each under its child run\'s own _seed/): known only at run time',
+    findings: granted.map(resourceFinding),
+  }]);
+}
+
 /** `actions` on `key`, only when one of `services` (in this region) calls KMS for the role. */
 export function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.PolicyStatement {
   const region = cdk.Stack.of(key).region;
@@ -185,15 +215,18 @@ const TRANSCRIPT_INDEX_KEYS = `ws/${ENGINEERING_WORKSPACE}/transcripts-index/*`;
 
 /**
  * The runtime's role at a run's end (7.50.00): the issue's trusted triage row (``grantIssueTriage``), and Learn's read
- * of the agents' transcripts and the run's manifest and index entry (``grantTranscripts``).
+ * of the agents' transcripts and the run's manifest and index entry (``grantTranscripts``); 7.51.00: the runs list and
+ * a child run's seeds (``grantChildRuns``).
  *
  * The runtime's role (Learn, the run's end): read the agents' transcripts (GetObject, and a listing under their
  * prefix only), and write each run's manifest and its index entry, create-only (the workspace bucket refuses a put
  * without If-None-Match). No other run object is written, and no transcript.
  */
-export function grantRunEnd(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable): void {
+export function grantRunEnd(role: iam.IRole, workspaceBucket: s3.IBucket, agentsTable: dynamodb.ITable,
+  engineeringTable: dynamodb.ITable): void {
   grantIssueTriage(role, workspaceBucket, agentsTable);
   grantTranscripts(role, workspaceBucket);
+  grantChildRuns(role, engineeringTable, workspaceBucket);
 }
 
 function grantTranscripts(role: iam.IRole, workspaceBucket: s3.IBucket): void {

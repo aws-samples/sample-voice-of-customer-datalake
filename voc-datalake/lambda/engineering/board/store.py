@@ -439,7 +439,7 @@ class BoardStore:
             Move(task_id, CLAIMED, agent, at, current.attempt, 'claim').item(ws, run_id))
 
     @staticmethod
-    def coordinate_items(ws: str, run_id: str, *, at: str) -> list[dict[str, Any]]:
+    def coordinate_items(ws: str, run_id: str, *, at: str, seed_key: str = '') -> list[dict[str, Any]]:
         """The run's coordinate task and its history row, as plain Python items (numbers as ``Decimal``) for the run's
         start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
         table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the
@@ -447,11 +447,13 @@ class BoardStore:
         runtime's run start launches it and writes META's ``agent_count`` 1 in the same transaction
         (``runs.RunStore.start``). A coordinator that dies before its claim is not re-posted like any agent: the
         supervisor continues it as a crash, then sends the run to a person, whose Resume replaces it
-        (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
+        (``runtime/board_bus.BoardLeases.coordinator_to_start``). ``seed_key``: a child run's (7.51.00), the seed its
+        coordinator starts from (``runtime/harness/seed.py``)."""
+        spec: dict[str, Any] = {'coordinate': True, **({'seed_key': seed_key} if seed_key else {})}
         task: dict[str, Any] = {**task_key(ws, run_id, COORDINATE_TASK), 'task_id': {'S': COORDINATE_TASK},
                 'role': {'S': COORDINATOR}, 'state': {'S': OPEN}, 'title': {'S': 'Coordinate the run'},
-                'spec': {'S': json.dumps({'coordinate': True}, sort_keys=True)},
-                'spec_hash': {'S': spec_hash(COORDINATOR, '', {'coordinate': True})}, 'depth': {'N': '0'},
+                'spec': {'S': json.dumps(spec, sort_keys=True)},
+                'spec_hash': {'S': spec_hash(COORDINATOR, '', spec)}, 'depth': {'N': '0'},
                 'priority': {'N': '0'}, 'attempt': {'N': '1'}, 'posted_by': {'S': 'run-start'},
                 'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at},
                 'launched_agent': {'S': f'{COORDINATOR}-1'}, 'launched_attempt': {'N': '1'}, 'launched_paths': {'L': []},

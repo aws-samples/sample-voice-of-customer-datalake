@@ -46,8 +46,9 @@
   role session). Refused (``RuntimeRefused``) while the run's commit has no ``READY`` entry in the checkout cache
   (``checkout_cache.py``); ``launch_coordinator`` fills that entry first, invoking voc-engineering-cache
   (``ENGINEERING_CACHE_FUNCTION``) and waiting for it, then launches in an invocation of its own.
-- ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "actor"?}``: the run monitor's Save, Pause, Resume,
-  Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
+- ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "restart_from"?, "actor"?}``: the run monitor's
+  Save, Pause, Resume, Shut down, Stop now and (7.51.00) Restart of one agent, ``restart_from`` ``checkpoint`` (the
+  default) or ``fresh`` (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given). A
   Resume of the whole run also makes sure the run has a coordinator, as its start does (``_ensure_coordinator``: a
   new one in place of one whose session failed); it is refused while a person's Stop of the run is under way. A
@@ -58,9 +59,15 @@
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
 recorded in the run's inbox and its addressees woken (``delivery.py``).
 
+- ``{"action": "seed_restart", "run_id", "actor"?}`` (7.51.00): a child run's seeds (``runtime/restart.py``): its
+  parent ended first when it was not, then a ``voc-resume-seed/1`` record and working tree per task the child takes
+  over under the child's ``_seed/``, those tasks posted with their ``seed_key``, and the child's coordinator launched.
+  Handed on by voc-engineering-start's ``restart_run``; never raises (a failure sends the child to a person).
+
 ``start_handler`` is voc-engineering-start's entry point, the same code with a role of its own that holds only what
 a start needs (engineering-start.ts): the Agents API's ``POST /agents/engineering/runs``, whose role may invoke that
-function and never this one. It takes ``start_run``, since 7.10.00 ``ask_reactions`` (an administrator's hand
+function and never this one. It takes ``start_run``, ``restart_run`` (7.51.00: a person's Resume or Restart of an
+ended run, as a child run: ``runtime/restart.py``), since 7.10.00 ``ask_reactions`` (an administrator's hand
 trigger of an ended run's reactions read, ``POST /agents/engineering/<run_id>/reactions``: once per run and hour, then
 handed on to this function's ``reactions``) and since 7.50.03 ``stop_run`` (the run monitor's Stop, ``POST
 /agents/engineering/<run_id>/stop``: the run ended at once when nothing is to be saved, its end's rest handed on to
@@ -130,6 +137,7 @@ from engineering.runtime.runs import (
     StartReadFailed,
     TableRunControl,
     hard_capped,
+    meta_key,
     run_pk,
 )
 from engineering.runtime.sessions import (
@@ -352,7 +360,7 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
                         extra={'run_id': run_id})
             return {'agents': {}, 'applied': {}}
     answers = _supervisor().signal_detailed(run_id, None if agent_id is None else str(agent_id), kind, int(clock()),
-                                            attempt)
+                                            attempt, restart_from=str(event.get('restart_from') or 'checkpoint'))
     if kind == 'resume' and agent_id is None:
         # The supervisor accepted it (the run is not ended, its budget not spent): the run may launch agents again.
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
@@ -1583,6 +1591,203 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
 
 #: The one action voc-engineering-start takes (``start_handler``).
 START_ACTION: Final = 'start_run'
+#: ... its Resume or Restart of an ended run, as a child run (7.51.00).
+RESTART_ACTION: Final = 'restart_run'
+
+
+def _head_commit(connection: str, repository: str, branch: str) -> str:
+    """The connection's default branch's head, through the broker's ``head`` as this function's own role."""
+    from engineering.learning.reactions_broker import BrokerAnswered, BrokerUnavailable
+    from engineering.runtime.broker_head import BrokerHead
+    try:
+        return BrokerHead(url=os.environ['ENGINEERING_BROKER_URL'], region=os.environ.get('AWS_REGION', 'us-east-1'),
+                          credentials=_own_credentials())(connection, repository, branch, None).commit
+    except BrokerAnswered as refused:
+        if 400 <= refused.status < 500:
+            raise RuntimeRefused(f'the repository refused the restart: {refused.reason or refused}') from refused
+        raise StartReadFailed('the repository\'s head could not be read: restart the run again') from refused
+    except (BrokerUnavailable, KeyError) as error:
+        raise StartReadFailed('the repository\'s head could not be read: restart the run again') from error
+
+
+def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-start's ``restart_run`` (7.51.00, ``{"run_id": <parent>, "child_run_id"?, "mode": resume |
+    restart, "base": same | head, "agents"?: [<agent>], "actor"}``): the child run written (``restart.py`` 1), its
+    rule switched on and ``seed_restart`` handed on to voc-engineering-runtime. A retry with the same child id answers
+    the child already there. Refused, before anything is written, for a parent that is live (its signals resume and
+    restart its agents), unknown, or one this deployment cannot launch a coordinator for. Answers ``{run_id: <child>,
+    parent_run_id, status}``."""
+    from engineering.bus.publish import new_event_id
+    from engineering.runtime import restart
+    parent_id, actor = check_run_id(str(event.get('run_id', ''))), str(event.get('actor') or '')[:200]
+    child_id = check_run_id(str(event.get('child_run_id') or new_event_id()))
+    mode, base = str(event.get('mode', 'resume')), str(event.get('base', 'same'))
+    agents = event.get('agents') or []
+    if mode not in restart.MODES or base not in seed_bases() or not actor or not _strings(agents) or len(agents) > 50:
+        raise RuntimeRefused('a restart is {run_id, mode: resume | restart, base: same | head, agents?, actor}')
+    runs = _runs()
+    existing = runs.get(child_id)
+    if existing is not None:
+        meta = runs.table.get_item(Key=meta_key(child_id), ConsistentRead=True).get('Item') or {}
+        if (meta.get('parent') or {}).get('run_id') != parent_id:
+            raise RunExists(f'run {child_id} exists and is not a child of {parent_id}')
+        return {'run_id': child_id, 'parent_run_id': parent_id, 'status': existing.status}
+    parent = runs.get(parent_id)
+    if parent is None:
+        raise RuntimeRefused('no such run')
+    now = int(clock())
+    restart.may_restart(parent.status, parent.waiting_at, parent.started_at, now)
+    if parent.language:
+        _coordinator_launchable(parent.language)
+    meta = runs.table.get_item(Key=meta_key(parent_id), ConsistentRead=True).get('Item') or {}
+    copy = runs.table.get_item(Key={'pk': run_pk(parent_id), 'sk': 'FLOW'}, ConsistentRead=True).get('Item') or {}
+    commit = parent.commit
+    if base == 'head' and parent.connection:
+        commit = _head_commit(parent.connection, parent.repo, str(meta.get('default_branch', '')))
+    plan = runs.flow_plan(parent_id) if copy and mode == 'resume' else None
+    inherited = restart.inherited_steps(plan)
+    fanned = {step: shards for step, shards in _fanned(runs, parent_id).items() if step in inherited} if inherited \
+        else {}
+    at = _iso_now(now)
+    issue = meta.get('issue') if isinstance(meta.get('issue'), Mapping) else {}
+    origin = {'run_id': parent_id, 'mode': mode, 'by': actor, 'at': at, 'base': base, **({'agents': list(agents)}
+                                                                                       if agents else {})}
+    runs.start(child_id, caps=parent.caps, now=now, goal=str(meta.get('goal', '')), repo=parent.repo, flow=parent.flow,
+               connection=parent.connection, commit=commit, language=parent.language, actor=actor,
+               budget_usd=parent.budget_usd, flow_definition=str(copy.get('definition', '')),
+               flow_revision=int(copy.get('revision', 0)) if copy else 0,
+               default_branch=str(meta.get('default_branch', '')), issue=int(issue.get('number', 0) or 0),
+               host=str(issue.get('host', '')), issue_verified=bool(issue.get('verified')), parent=origin,
+               extra=restart.child_rows(parent_id, child_id, mode=mode, actor=actor, at=at, inherited=inherited,
+                                        fanned=fanned),
+               coordinator_seed=seed_key_of(child_id))
+    try:
+        _switch(True)
+        from shared.aws import invoke_lambda_async
+        invoke_lambda_async(os.environ['ENGINEERING_RUNTIME_FUNCTION'],
+                            {'action': 'seed_restart', 'run_id': child_id, 'actor': actor})
+    except Exception as error:
+        _to_person(child_id, actor)
+        raise StartFailed(f'run {child_id} was started, but its seeds were not handed on: open it and resume it') \
+            from error
+    logger.info('engineering run restarted', extra={'run_id': child_id, 'parent_run_id': parent_id, 'mode': mode})
+    return {'run_id': child_id, 'parent_run_id': parent_id, 'status': 'active'}
+
+
+def seed_bases() -> frozenset[str]:
+    from engineering.runtime.harness.seed import BASES
+    return BASES
+
+
+def seed_key_of(child_id: str) -> str:
+    """The seed the child's coordinator starts from (its coordinate task names it)."""
+    from engineering.runtime.harness.seed import seed_key
+    return seed_key(child_id, COORDINATE_TASK)
+
+
+def _iso_now(now: int) -> str:
+    from engineering.runtime.runs import utc
+    return utc(now).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _fanned(runs: RunStore, run_id: str) -> dict[str, tuple[str, ...]]:
+    """A run's maps' shards, as its coordinator listed them."""
+    from engineering.flow.record import FAN_OUT, STEP_PREFIX
+    return {str(row['step']['S']): tuple(item.get('S', '') for item in row.get('shards', {}).get('L', ()))
+            for row in runs._typed_rows(run_id, STEP_PREFIX)
+            if row.get('record', {}).get('S') == FAN_OUT}
+
+
+def seed_restart_action(event: Mapping[str, Any]) -> dict[str, Any]:
+    """voc-engineering-runtime's ``seed_restart`` (7.51.00, ``restart.py`` 2; named apart from the action, whose name
+    the start function hands on as a string, which a reachability sweep matches by name): the child's parent ended first when it
+    was not, its seeds written and its tasks posted, then its coordinator launched. Never raises: a failure sends the
+    child to a person (whose Resume launches its coordinator, which then plans from the flow)."""
+    from engineering.runtime import restart
+    child_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
+    try:
+        runs = _runs()
+        origin, parent = _child_and_parent(runs, child_id)
+        parent_id = parent.run_id
+        if parent.status not in ENDED:
+            end_run({'run_id': parent_id, 'status': 'stopped', 'actor': actor or RESTARTED_BY})
+        outcome = _seeder(child_id).seed(
+            child_id, parent_id, mode=str(origin.get('mode', 'resume')), base=str(origin.get('base', 'same')),
+            parent_commit=parent.commit, agents=[str(agent) for agent in origin.get('agents', [])],
+            inherited=_inherited(runs, child_id), steering=restart.steering_history(_conversation(parent_id)),
+            flows=_flow_guard())
+        logger.info('engineering restart seeded', extra={'run_id': child_id, 'seeded': len(outcome['seeded']),
+                                                         'posted': len(outcome['posted'])})
+    except Exception:
+        logger.exception('engineering restart: the child run was not seeded', extra={'run_id': child_id})
+        _to_person(child_id, actor)
+        return {'run_id': child_id, 'status': 'needs_human'}
+    launched = launch_coordinator({'run_id': child_id, 'actor': actor})
+    return {'run_id': child_id, 'status': launched.get('status', ''), **outcome}
+
+
+#: Who ends a parent when nobody is named (D4).
+RESTARTED_BY: Final = 'restart'
+
+
+def _child_and_parent(runs: RunStore, child_id: str) -> tuple[Mapping[str, Any], Run]:
+    """A child run's ``parent`` record (its META's) and its parent; ``RuntimeRefused`` for a run that is not a
+    child, or whose parent is gone."""
+    meta = runs.table.get_item(Key=meta_key(check_run_id(child_id)), ConsistentRead=True).get('Item') or {}
+    origin = meta.get('parent') if isinstance(meta.get('parent'), Mapping) else None
+    parent = runs.get(str(origin.get('run_id', ''))) if origin is not None else None
+    if origin is None or parent is None:
+        raise RuntimeRefused(f'run {child_id} is not a child run of a run that is there')
+    return origin, parent
+
+
+def _inherited(runs: RunStore, run_id: str) -> list[str]:
+    from engineering.flow.record import INHERITED, STEP_PREFIX
+    return [str(row['step']['S']) for row in runs._typed_rows(run_id, STEP_PREFIX)
+            if row.get('record', {}).get('S') == INHERITED]
+
+
+def _conversation(run_id: str) -> list[dict[str, Any]]:
+    """The run's conversation, its first pages (the steering people gave it is in it)."""
+    from engineering.conversation.store import ConversationStore
+    from shared.aws import get_dynamodb_client
+    store, found, after = ConversationStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE']), [], 0
+    for _ in range(20):
+        page = store.page(WORKSPACE, run_id, after=after, limit=200)
+        found += page
+        if len(page) < 200:
+            break
+        after = page[-1]['seq']
+    return found
+
+
+def _flow_guard() -> Any:
+    from engineering.board.flow_guard import FlowGuard
+    from engineering.board.store import BoardStore
+    from engineering.bus.publish import new_event_id
+    from shared.aws import get_dynamodb_client
+    return FlowGuard(BoardStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], new_id=new_event_id),
+                     _gate_record)
+
+
+def _seeder(child_id: str) -> Any:
+    """The runtime's seeder: the workspace bucket, the board's store, the checkpoints, Learn's model and its budget
+    (the summary is charged to the child)."""
+    from engineering.board.store import BoardStore
+    from engineering.bus.publish import new_event_id
+    from engineering.coach.model import COACH_MODEL, BedrockCoachModel
+    from engineering.learning.budget import LearnBudget
+    from engineering.runtime.restart import Seeder
+    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_s3_client
+    from shared.model_config import ALLOWED_MODEL_IDS
+    settings = _learn_settings(child_id)
+    model = settings.model if settings.model in ALLOWED_MODEL_IDS else COACH_MODEL
+    table = os.environ['ENGINEERING_TABLE']
+    budget = LearnBudget(get_dynamodb_resource().Table(table), _runs(), _token_price)
+    return Seeder(s3=get_s3_client(), bucket=os.environ['ENGINEERING_WORKSPACE_BUCKET'],
+                  board=BoardStore(get_dynamodb_client(), table, new_id=new_event_id),
+                  checkpoints=CheckpointReader(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET']),
+                  summarize=BedrockCoachModel(model), charge=budget.record)
 #: ... and its other one (7.10.00): an administrator's hand trigger of an ended run's reactions read.
 ASK_REACTIONS_ACTION: Final = 'ask_reactions'
 #: ... and (7.50.03) the run monitor's Stop of a whole run: an administrator's, through the Agents API.
@@ -1675,11 +1880,12 @@ def _hand_on_launch(run_id: str, actor: str) -> None:
 @measure_invocation_cost
 def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
     """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``), since 7.10.00 its
-    hand trigger of an ended run's reactions read (``ask_reactions``) and since 7.50.03 a person's Stop of a whole run
-    (``stop_run``: ``stop_from_api``). Every other action, and an event naming none, is refused before anything is
+    hand trigger of an ended run's reactions read (``ask_reactions``), since 7.50.03 a person's Stop of a whole run
+    (``stop_run``: ``stop_from_api``) and since 7.51.00 a person's Resume or Restart of an ended run as a child run
+    (``restart_run``). Every other action, and an event naming none, is refused before anything is
     read: the API's role may invoke this function only (engineering-start.ts, pinned by its test), so it can start a
-    run, ask for an ended run's reactions and stop a run, and never tick, launch, signal an agent or end a run
-    otherwise.
+    run, restart an ended one, ask for an ended run's reactions and stop a run, and never tick, launch, signal an
+    agent or end a run otherwise.
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
@@ -1690,11 +1896,14 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
         return ask_reactions(event)
     if event.get('action') == STOP_ACTION:
         return stop_from_api(event)
+    if event.get('action') == RESTART_ACTION:
+        return restart_run(event)
     if event.get('action') != START_ACTION:
         logger.warning('engineering start: an action other than start_run refused',
                        extra={'action': str(event.get('action'))[:40]})
-        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}), asks for an ended '
-                             f"run's reactions ({ASK_REACTIONS_ACTION!r}) or stops a run ({STOP_ACTION!r})")
+        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r}), restarts an ended one as a '
+                             f"child run ({RESTART_ACTION!r}), asks for an ended run's reactions "
+                             f'({ASK_REACTIONS_ACTION!r}) or stops a run ({STOP_ACTION!r})')
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
     try:
         answer = start_run(event, launch=False)
@@ -1722,7 +1931,7 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
     'retrospective': retrospective, 'launch_coordinator': launch_coordinator, 'reactions': reactions_action,
-    'stop_run': stop_run_action, 'finish_stop': finish_stop_action,
+    'stop_run': stop_run_action, 'finish_stop': finish_stop_action, 'seed_restart': seed_restart_action,
 }
 
 

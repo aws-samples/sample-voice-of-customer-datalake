@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Protocol
 
 from engineering.runtime.checkpoints import assert_storable, is_valid
-from engineering.runtime.harness.ports import PAUSE, SAVE, Inbox, InboxMessage, Store
-from engineering.runtime.harness.tools import AgentContext, ToolBox, snapshot
+from engineering.runtime.harness.board_client import BoardRefused
+from engineering.runtime.harness.ports import PAUSE, SAVE, HarnessPortNotWired, Inbox, InboxMessage, Store
+from engineering.runtime.harness.tools import DIRECTION, AgentContext, ToolBox, snapshot
 from engineering.runtime.harness.workspace import OutsideCheckout
 
 DONE_EXIT_CODE: Final = 0
@@ -64,6 +65,39 @@ class AgentSession:
     #: The ids of messages the model has had since it last saved its notes: done once it saves them (a
     #: continuation starts from those notes, so until then they are read again).
     seen_since_save: list[str] = field(default_factory=list)
+    #: The child run's seed this session started from (7.51.00, ``harness/seed.py``: checked), if any; why its working
+    #: tree did not apply cleanly (git's words: told to the model as data, never a crash); why it was not taken.
+    seed: dict[str, Any] | None = None
+    seed_conflict: str = ''
+    seed_refused: str = ''
+
+    def seed_parts(self) -> list[str]:
+        """What the opening says of the seed: the earlier run's notes, plan and history as data, its steering in the
+        steering block, and how its working tree went on (empty without one)."""
+        context, seeded = self.context, self.seed
+        if seeded is None:
+            refused = (f'This task was to start from an earlier run\'s work, which could not be read '
+                       f'({self.seed_refused}): start it afresh.')
+            return [refused] if self.seed_refused else []
+        parent = seeded['parent']
+        parts = ['', (f'A person resumed an earlier run ({parent["run_id"]}): you take this task over from its '
+                      f'{parent["agent_id"] or "agent"} (attempt {parent["attempt"]}). What it left:')]
+        checkpoint = seeded.get('checkpoint')
+        if checkpoint is not None:
+            parts.append(context.data('seed:notes', f'{checkpoint["notes"]}\nplan: {checkpoint["plan"]}'))
+        history = seeded['history']
+        parts.append(context.data(f'seed:history:{history["kind"]}', '\n'.join(history['lines'])
+                                  if history['kind'] == 'excerpts' else history['text']))
+        if seeded.get('patch_key') and context.runs_code:
+            parts.append('Its working tree is in your checkout: check it before you go on.' if not self.seed_conflict
+                         else ('Its working tree did not apply cleanly on this run\'s commit: the files git could '
+                               'merge are in your checkout, those with conflicts carry conflict markers, and what git '
+                               'said is below. Resolve them before you go on.'))
+            if self.seed_conflict:
+                parts.append(context.data('seed:conflict', self.seed_conflict))
+        parts.extend(context.steering(f'earlier:{given["by"]}', given['text'], given['by'])
+                     for given in seeded.get('steering', []))
+        return parts
 
     def shown(self) -> None:
         """The messages last handed out reached the model."""
@@ -82,6 +116,9 @@ class AgentSession:
             self.shown()
         taken = self.inbox.take(run_id=self.context.run_id, agent_id=self.context.agent_id)
         others = [message for message in taken if message.kind not in (SAVE, PAUSE)]
+        moved = self.read_direction(self.inbox.direction())
+        if moved is not None:
+            others.append(moved)
         self.handed = others
         saves = [message.event_id for message in taken if message.kind == SAVE]
         pauses = [message.event_id for message in taken if message.kind == PAUSE]
@@ -90,6 +127,26 @@ class AgentSession:
             self.inbox.done(saves)
             self.checkpoint(turn=-1)
         return others, bool(pauses)
+
+    def read_direction(self, named: int | None = None) -> InboxMessage | None:
+        """The run's direction read again (7.51.00) when ``named`` (an inbox page's version) is newer than the one the
+        session holds, or always when ``named`` is None (a session's start): the new one as a note for the model
+        (``DIRECTION``), None when it did not move (or is the coordinator's own). Advisory: a board that refuses or
+        cannot be reached is said on the status, and the next page tries again."""
+        context = self.context
+        if named is not None and named <= context.direction_version:
+            return None
+        try:
+            found = context.board.direction(run_id=context.run_id)
+        except (BoardRefused, HarnessPortNotWired) as refused:
+            context.status.at(f'the run\'s direction was not read ({str(refused)[:120]})')
+            return None
+        if found.version <= context.direction_version:
+            return None
+        context.direction_version, context.direction = found.version, found.text
+        if context.role == 'coordinator' or not found.text:
+            return None
+        return InboxMessage(kind=DIRECTION, summary=found.text, sender=f'v{found.version}')
 
     def checkpoint(self, *, turn: int, clean: bool = False) -> str:
         """Save a new checkpoint object under the agent's own keys (its working tree too, unless ``clean``: a fresh

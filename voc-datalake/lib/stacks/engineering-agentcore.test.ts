@@ -125,6 +125,19 @@ describe('the agents\' sessions on AgentCore Runtime (-c engineeringAgents=true)
     expect(policyText(wired, 'EngineeringStartRole')).not.toMatch(/bedrock-agentcore/);
   });
 
+  it('lets no role but the supervisor\'s and the delivery\'s invoke a session (7.51.00: steering adds none)', () => {
+    const holders = new Set<string>();
+    for (const type of ['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']) {
+      for (const policy of Object.values(wired.findResources(type))) {
+        const text = JSON.stringify(policy);
+        if (!text.includes('bedrock-agentcore:InvokeAgentRuntime')) continue;
+        for (const role of text.match(/"Ref":"(\w+?Role)[0-9A-F]{8}"/g) ?? []) holders.add(role.replace(/[0-9A-F]{8}"$/, '"'));
+      }
+    }
+    expect([...holders].map((role) => role.replace(/^"Ref":"EngineeringRuntime/, '')).sort(byName))
+      .toStrictEqual(['EngineeringDeliveryRole"', 'EngineeringSupervisorRole"']);
+  });
+
   it('hands the runtime its runtimes, sizes, rates and session ceiling; the board the languages it may launch', () => {
     const env = supervisorEnv(wired);
     // One standard runtime per language, no build one (the default).
