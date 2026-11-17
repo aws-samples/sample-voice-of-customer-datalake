@@ -13,6 +13,7 @@ import { ItemSelectionStep } from './ItemSelectionStep'
 import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
 import ModalShell from '../ModalShell/ModalShell'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 interface DataSourceWizardProps {
   readonly title: string
@@ -226,16 +227,17 @@ function WizardFooter({
   const { t } = useTranslation('components')
   return (
     <div className="dialog-footer justify-between">
-      <button
-        onClick={onBack}
-        disabled={step === 1}
-        className="btn btn-ghost"
-        aria-label={t('dataSourceWizard.back')}
-        title={t('dataSourceWizard.back')}
-      >
-        <ChevronLeft size={16} className="flex-shrink-0" />
-        <span className="hidden sm:inline">{t('components:dataSourceWizard.back')}</span>
-      </button>
+      <Tooltip kind="label" content={t('dataSourceWizard.back')}>
+        <button
+          onClick={onBack}
+          disabled={step === 1}
+          className="btn btn-ghost"
+          aria-label={t('dataSourceWizard.back')}
+        >
+          <ChevronLeft size={16} className="flex-shrink-0" />
+          <span className="hidden sm:inline">{t('components:dataSourceWizard.back')}</span>
+        </button>
+      </Tooltip>
       
       {step < totalSteps ? (
         <button

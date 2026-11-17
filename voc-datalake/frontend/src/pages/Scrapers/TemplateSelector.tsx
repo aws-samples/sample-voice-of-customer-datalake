@@ -12,7 +12,7 @@ import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import { useId, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import type { ScraperTemplate } from '../../api/types'
@@ -20,6 +20,7 @@ import type { PluginManifest } from '../../plugins/types'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader, { ToneTile } from './SourceDialogHeader'
 import { buildSourceMenu, type SourceEntry, type SourceGroup, type SourceGroupId } from './sourceMenu'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface TemplateSelectorProps {
   /** Creating a web scraper (`POST /scrapers`) is admin-only (it writes the shared
@@ -115,26 +116,28 @@ function SourceTile({ icon, title, description, onClick, disabledReason }: Reado
   title: string
   description?: string
   onClick: () => void
-  /** When set, the tile is disabled and this is its `title` (why). */
+  /** When set, the tile is off but focusable (`aria-disabled`) and this says why, in its tooltip and description. */
   disabledReason?: string
 }>) {
+  const off = disabledReason != null
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabledReason != null}
-      title={disabledReason}
-      className="group flex items-start gap-3 p-3 sm:p-4 rounded-lg border border-border bg-card text-left transition-colors hover:border-border-strong hover:bg-bg-hover focus-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card disabled:hover:border-border"
-    >
-      <ToneTile icon={icon} />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-text-strong">{title}</span>
+    <Tooltip kind="description" content={disabledReason}>
+      <button
+        type="button"
+        onClick={off ? undefined : onClick}
+        aria-disabled={off ? true : undefined}
+        className="group flex items-start gap-3 p-3 sm:p-4 rounded-lg border border-border bg-card text-left transition-colors hover:border-border-strong hover:bg-bg-hover focus-ring aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-card aria-disabled:hover:border-border"
+      >
+        <ToneTile icon={icon} />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-medium text-text-strong">{title}</span>
+          </span>
+          {description != null && description !== '' ? <span className="block text-xs text-muted mt-1">{description}</span> : null}
         </span>
-        {description != null && description !== '' ? <span className="block text-xs text-muted mt-1">{description}</span> : null}
-      </span>
-      <Plus size={16} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" aria-hidden="true" />
-    </button>
+        <Plus size={16} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" aria-hidden="true" />
+      </button>
+    </Tooltip>
   )
 }
 
@@ -194,13 +197,14 @@ function groupNote(group: SourceGroup, isAdmin: boolean, t: (key: string) => str
 
 function EntryTile({ entry, isAdmin, onChoose }: Readonly<{ entry: SourceEntry; isAdmin: boolean; onChoose: (entry: SourceEntry) => void }>) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   return (
     <SourceTile
       icon={entryIcon(entry)}
       title={entry.keys === undefined ? entry.fallbackTitle : t(entry.keys.title)}
       description={entry.keys === undefined ? entry.fallbackDescription : t(entry.keys.description)}
       onClick={() => onChoose(entry)}
-      disabledReason={entry.adminOnly && !isAdmin ? ADMIN_ONLY_TITLE : undefined}
+      disabledReason={entry.adminOnly ? adminOnly : undefined}
     />
   )
 }

@@ -140,13 +140,13 @@ describe('ScraperEditor is read-only for a non-admin', () => {
     expect(NOTICE).not.toContain('editor.adminOnlyNotice')
   })
 
-  it('disables Save for a non-admin, explains why, and saves nothing', async () => {
+  it('disables Save for a non-admin, explains why in the read-only notice (no hover hint), and saves nothing', async () => {
     const user = userEvent.setup()
     const { onSave } = renderWith(false)
 
     const save = saveButton()
     expect(save).toBeDisabled()
-    expect(save).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(save).not.toHaveAttribute('title')
     expect(screen.getByRole('note')).toHaveTextContent(NOTICE)
     await user.click(save)
     expect(onSave).not.toHaveBeenCalled()
@@ -158,7 +158,7 @@ describe('ScraperEditor is read-only for a non-admin', () => {
 
     const detect = autoDetectButton()
     expect(detect).toBeDisabled()
-    expect(detect).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(screen.getByRole('note')).toHaveTextContent(NOTICE)
     await user.click(detect)
     expect(scrapersApi.analyzeUrlForSelectors).not.toHaveBeenCalled()
   })

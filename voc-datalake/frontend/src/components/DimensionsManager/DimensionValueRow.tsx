@@ -6,6 +6,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { DraftDimension, DraftValue } from './dimensionDraft'
 
 interface DimensionValueRowProps {
@@ -49,9 +50,11 @@ export default function DimensionValueRow({ value, parent, onChange, onRemove }:
           ))}
         </select>
       )}
-      <button type="button" onClick={onRemove} className="icon-btn justify-self-end" aria-label={t('removeValue', { name })} title={t('removeValue', { name })}>
-        <Trash2 size={16} />
-      </button>
+      <Tooltip kind="label" content={t('removeValue', { name })}>
+        <button type="button" onClick={onRemove} className="icon-btn justify-self-end" aria-label={t('removeValue', { name })}>
+          <Trash2 size={16} />
+        </button>
+      </Tooltip>
     </li>
   )
 }

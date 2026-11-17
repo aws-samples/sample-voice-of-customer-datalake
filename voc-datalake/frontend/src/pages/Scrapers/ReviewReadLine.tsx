@@ -8,6 +8,7 @@
 import { useTranslation } from 'react-i18next'
 import { formatDate } from '../../utils/dateUtils'
 import { STEP_KEYS, readChain, readsExcerpts } from './reviewReads'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ReadStep, StepOutcome, StepRead, TargetRead } from './reviewReads'
 
 const ARROW = ' → '
@@ -108,7 +109,11 @@ function runSentence(read: TargetRead, words: Words): string {
 /** The "Excerpts" badge: the reviews are cut passages of search results, each with its source link. */
 function ExcerptsBadge() {
   const { t } = useTranslation('scrapers')
-  return <span className="badge badge-muted" title={t('appCard.read.excerptsTitle')}>{t('appCard.read.excerpts')}</span>
+  return (
+    <Tooltip kind="description" content={t('appCard.read.excerptsTitle')}>
+      <span className="badge badge-muted">{t('appCard.read.excerpts')}</span>
+    </Tooltip>
+  )
 }
 
 /** How the card's page was read in its last run (nothing when the run row says nothing about it). */

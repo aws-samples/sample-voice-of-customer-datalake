@@ -23,6 +23,7 @@ import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { documentTypeLabel } from '../../components/DocumentTypeBadge/documentTypes'
 import { IconGlyph } from '../../components/SourceIcon/SourceIcon'
 import { isWebSearchAvailable } from '../../runtimeConfig'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { PersonaToolConfig, ResearchToolConfig, MergeToolConfig } from './types'
 import type { ProjectDocument } from '../../api/types'
 import type { ProjectPersona } from '../../api/projectTypes'
@@ -269,18 +270,20 @@ export function ResearchWizard({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-medium">Research Question</h3>
-              <button
-                type="button"
-                onClick={onSuggest}
-                disabled={suggesting}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-accent-text bg-accent-subtle hover:bg-accent/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                title={t('wizards.researchSuggestTitle', { defaultValue: 'Let AI suggest research questions from this project’s feedback' })}
-              >
-                {suggesting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                {suggesting
-                  ? t('wizards.researchSuggesting', { defaultValue: 'Suggesting…' })
-                  : t('wizards.researchSuggest', { defaultValue: 'AI suggest' })}
-              </button>
+              <Tooltip kind="description"
+                content={t('wizards.researchSuggestTitle', { defaultValue: 'Let AI suggest research questions from this project’s feedback' })}>
+                <button
+                  type="button"
+                  onClick={onSuggest}
+                  disabled={suggesting}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-accent-text bg-accent-subtle hover:bg-accent/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {suggesting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                  {suggesting
+                    ? t('wizards.researchSuggesting', { defaultValue: 'Suggesting…' })
+                    : t('wizards.researchSuggest', { defaultValue: 'AI suggest' })}
+                </button>
+              </Tooltip>
             </div>
             <textarea value={researchConfig.question} onChange={(e) => onResearchConfigChange({
               ...researchConfig,

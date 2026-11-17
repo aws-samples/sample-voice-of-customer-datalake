@@ -39,6 +39,7 @@ import { SetupGuideButton, SetupIntro } from './SetupGuide/SetupGuideEntry'
 import { prefetch } from '../../lib/prefetch'
 import { usePlaceNavigate, useReplaceAddress } from '../../utils/pathPlace'
 import { AGENTS_VIEWS, agentPath, agentsPath, readAgentsAddress } from './agentsPaths'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { AgentsView } from './agentsPaths'
 import type { LucideIcon } from 'lucide-react'
 import type { Agent } from '../../api/agentsApi'
@@ -78,14 +79,16 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-text-strong break-words [overflow-wrap:anywhere]">{agent.name}</p>
-          <p className="text-[12px] text-muted line-clamp-3 break-words [overflow-wrap:anywhere]" title={agent.description === '' ? undefined : agent.description}>{agent.description === '' ? <ScopeSummary scope={agent.scope} /> : agent.description}</p>
+          {agent.description === ''
+            ? <p className="text-[12px] text-muted line-clamp-3 break-words [overflow-wrap:anywhere]"><ScopeSummary scope={agent.scope} /></p>
+            : <TruncatedText as="p" className="text-[12px] text-muted line-clamp-3 break-words [overflow-wrap:anywhere]" text={agent.description} />}
         </div>
         {needsDecision && <span className="badge badge-warn">{t('list.needsDecision')}</span>}
         <span className={agent.enabled ? 'badge badge-ok' : 'badge badge-muted'}>
           {agent.enabled ? t('status.enabled') : t('status.disabled')}
         </span>
         {stats.last_run_status !== null && <RunStatusBadge status={stats.last_run_status} />}
-        <span className="text-[12px] text-muted font-mono" title={t('list.spendHint')}>
+        <span className="text-[12px] text-muted font-mono">
           {t('list.spend', { runs: stats.scheduled_runs_today, calls: stats.model_calls_this_month })}
         </span>
       </Link>

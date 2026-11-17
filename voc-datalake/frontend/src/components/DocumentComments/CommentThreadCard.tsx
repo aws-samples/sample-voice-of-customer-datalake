@@ -15,6 +15,8 @@ import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentAuthor, CommentThread } from '../../api/documentReviewSchema'
 import type { LucideIcon } from 'lucide-react'
 import { ignoreRejection } from '../../lib/rejections'
+import { Tooltip } from '../Tooltip/Tooltip'
+import { InfoTip } from '../Tooltip/InfoTip'
 
 const AUTHOR_ICONS: Readonly<Record<CommentAuthor['kind'], LucideIcon>> = {
   user: User,
@@ -65,14 +67,20 @@ function ThreadBadges({ thread, viewed }: Readonly<{ thread: CommentThread; view
       {otherVersion ? <span className="badge badge-muted">{t('documentComments.onVersion', { version: thread.version })}</span> : null}
       {thread.status === 'resolved' ? <span className="badge badge-ok">{t('documentComments.resolved')}</span> : null}
       {thread.addressed === null ? null : (
-        <span className="badge badge-info" title={thread.addressed.by_kind === 'ai' ? t('projectDetail:canvas.revise.addressedBy.ai') : t('projectDetail:canvas.revise.addressedBy.user')}>
-          <CheckCheck size={10} aria-hidden />{t('projectDetail:canvas.revise.addressedIn', { version: thread.addressed.version })}
-        </span>
+        <Tooltip kind="description"
+          content={thread.addressed.by_kind === 'ai' ? t('projectDetail:canvas.revise.addressedBy.ai') : t('projectDetail:canvas.revise.addressedBy.user')}>
+          <span className="badge badge-info">
+            <CheckCheck size={10} aria-hidden />{t('projectDetail:canvas.revise.addressedIn', { version: thread.addressed.version })}
+          </span>
+        </Tooltip>
       )}
       {thread.flagged ? (
-        <span className="badge badge-warn" title={t('documentComments.flaggedHint')}>
-          <ShieldAlert size={10} aria-hidden />{t('documentComments.flagged')}
-        </span>
+        <>
+          <span className="badge badge-warn">
+            <ShieldAlert size={10} aria-hidden />{t('documentComments.flagged')}
+          </span>
+          <InfoTip text={t('documentComments.flaggedHint')} />
+        </>
       ) : null}
     </div>
   )
@@ -93,17 +101,20 @@ function ThreadActions({ thread, actions }: Readonly<{ thread: CommentThread; ac
   return (
     <div className="flex gap-1">
       {toggle === undefined ? null : (
-        <button type="button" className="icon-btn p-1" disabled={busy} onClick={() => run(toggle)}
-          title={resolved ? t('documentComments.reopen') : t('documentComments.resolve')}
-          aria-label={resolved ? t('documentComments.reopen') : t('documentComments.resolve')}>
-          {resolved ? <RotateCcw size={14} aria-hidden /> : <CheckCircle2 size={14} aria-hidden />}
-        </button>
+        <Tooltip kind="label" content={resolved ? t('documentComments.reopen') : t('documentComments.resolve')}>
+          <button type="button" className="icon-btn p-1" disabled={busy} onClick={() => run(toggle)}
+            aria-label={resolved ? t('documentComments.reopen') : t('documentComments.resolve')}>
+            {resolved ? <RotateCcw size={14} aria-hidden /> : <CheckCircle2 size={14} aria-hidden />}
+          </button>
+        </Tooltip>
       )}
       {canRemove ? (
-        <button type="button" className="icon-btn p-1 hover:text-danger" disabled={busy} onClick={() => run(actions.remove)}
-          title={t('documentComments.delete')} aria-label={t('documentComments.delete')}>
-          <Trash2 size={14} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('documentComments.delete')}>
+          <button type="button" className="icon-btn p-1 hover:text-danger" disabled={busy} onClick={() => run(actions.remove)}
+            aria-label={t('documentComments.delete')}>
+            <Trash2 size={14} aria-hidden />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   )

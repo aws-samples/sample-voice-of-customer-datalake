@@ -24,6 +24,7 @@ import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useConfigStore } from '../../store/configStore'
 import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
 import { EngineeringHardCap } from './EngineeringHardCap'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { LucideIcon } from 'lucide-react'
 import type { MonthSpend, SpendGroup, SpendGrouping, SpendQuery, SpendUsage } from '../../api/engineeringSpendApi'
 
@@ -223,10 +224,12 @@ function Controls({ query, names, onChange }: Readonly<{
       {query.workflow !== '' && (
         <p className="flex items-center gap-1 rounded-full border border-border px-3 py-1 text-sm">
           <span className="break-all">{t('spend.onlyWorkflow', { name: names.get(query.workflow) ?? query.workflow })}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ workflow: '' })}
-            aria-label={t('spend.allWorkflows')} title={t('spend.allWorkflows')}>
-            <X size={14} aria-hidden="true" />
-          </button>
+          <Tooltip kind="label" content={t('spend.allWorkflows')}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ workflow: '' })}
+              aria-label={t('spend.allWorkflows')}>
+              <X size={14} aria-hidden="true" />
+            </button>
+          </Tooltip>
         </p>
       )}
     </div>

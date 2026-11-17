@@ -26,6 +26,7 @@ import { humanizeId } from '../../utils/displayLabels'
 import type { ProjectJob } from '../../api/projectTypes'
 import DuplicateNamesNotice from './DuplicateNamesNotice'
 import { parseJobGrounding, hasUsableCounts } from '../../api/jobGroundingSchema'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 type JobStatus = 'running' | 'pending' | 'completed' | 'failed'
 
@@ -238,15 +239,18 @@ function JobItemActions({
       <span className="text-xs text-muted">
         {formatJobTime(job.created_at, i18n.language)}
       </span>
-      {showDismiss ? <button
-        type="button"
-        onClick={() => onDismiss(job.job_id)}
-        className="p-1 hover:bg-bg-hover rounded-sm text-muted hover:text-text"
-        title={t('jobs.dismiss')}
-        aria-label={t('jobs.dismiss')}
-      >
-        <X size={14} />
-      </button> : null}
+      {showDismiss ? (
+        <Tooltip kind="label" content={t('jobs.dismiss')}>
+          <button
+            type="button"
+            onClick={() => onDismiss(job.job_id)}
+            className="p-1 hover:bg-bg-hover rounded-sm text-muted hover:text-text"
+            aria-label={t('jobs.dismiss')}
+          >
+            <X size={14} />
+          </button>
+        </Tooltip>
+      ) : null}
     </div>
   )
 }

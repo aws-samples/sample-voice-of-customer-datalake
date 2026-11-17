@@ -14,6 +14,8 @@ import {
   ALL_TYPES, FEEDBACK_TYPES, PROBLEM_TYPES, UNTYPED_COUNT_KEY,
   feedbackTypeLabelKey, isAllTypes, isProblemsOnly, pressedTypes, toggleType,
 } from './reviewTypeSelection'
+import { Tooltip } from '../Tooltip/Tooltip'
+import { InfoTip } from '../Tooltip/InfoTip'
 import type { TypeSelection } from './reviewTypeSelection'
 
 interface ReviewTypeChipsProps {
@@ -23,22 +25,23 @@ interface ReviewTypeChipsProps {
   readonly counts: Readonly<Record<string, number>>
 }
 
-function Chip({ pressed, onClick, title, children }: Readonly<{
-  pressed: boolean; onClick: () => void; title?: string; children: ReactNode
+function Chip({ pressed, onClick, hint, children }: Readonly<{
+  pressed: boolean; onClick: () => void; hint?: string; children: ReactNode
 }>) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={pressed}
-      title={title}
-      className={clsx(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs transition-colors active:scale-95 focus-ring',
-        pressed ? 'bg-accent-subtle text-accent-text ring-1 ring-inset ring-accent/40' : 'bg-bg-hover text-text hover:bg-border',
-      )}
-    >
-      {children}
-    </button>
+    <Tooltip kind="description" content={hint}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={pressed}
+        className={clsx(
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs transition-colors active:scale-95 focus-ring',
+          pressed ? 'bg-accent-subtle text-accent-text ring-1 ring-inset ring-accent/40' : 'bg-bg-hover text-text hover:bg-border',
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -51,7 +54,7 @@ export function ReviewTypeChips({ value, onChange, counts }: ReviewTypeChipsProp
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('reviewTypeFilter.label')}>
         <Tags size={16} className="hidden sm:block text-muted flex-shrink-0 mr-1" aria-hidden="true" />
-        <Chip pressed={isProblemsOnly(pressed)} onClick={() => onChange(PROBLEM_TYPES)} title={t('reviewTypeFilter.problemsOnlyHint')}>
+        <Chip pressed={isProblemsOnly(pressed)} onClick={() => onChange(PROBLEM_TYPES)} hint={t('reviewTypeFilter.problemsOnlyHint')}>
           {t('reviewTypeFilter.problemsOnly')}
         </Chip>
         <Chip pressed={isAllTypes(pressed)} onClick={() => onChange(ALL_TYPES)}>{t('reviewTypeFilter.allTypes')}</Chip>
@@ -67,7 +70,10 @@ export function ReviewTypeChips({ value, onChange, counts }: ReviewTypeChipsProp
         })}
       </div>
       {untyped > 0 && (
-        <p className="text-xs text-muted" title={t('reviewTypeFilter.untypedHint')}>{t('reviewTypeFilter.untyped', { n: untyped })}</p>
+        <p className="flex items-center gap-1 text-xs text-muted">
+          {t('reviewTypeFilter.untyped', { n: untyped })}
+          <InfoTip text={t('reviewTypeFilter.untypedHint')} />
+        </p>
       )}
     </div>
   )

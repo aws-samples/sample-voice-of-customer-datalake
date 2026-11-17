@@ -9,6 +9,7 @@ import { Loader2, Lock, LockOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PersonaProtection } from './usePersonaProtection'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface PersonaProtectToggleProps {
   readonly personaId: string
@@ -22,17 +23,18 @@ export function PersonaProtectToggle({ personaId, isProtected, protection }: Per
   const label = isProtected ? t('personas.unprotect') : t('personas.protect')
   const Icon = isProtected ? Lock : LockOpen
   return (
-    <button
-      type="button"
-      onClick={() => protection.setProtected(personaId, !isProtected)}
-      disabled={pending}
-      aria-pressed={isProtected}
-      className="icon-btn p-2"
-      title={label}
-      aria-label={label}
-    >
-      {pending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Icon size={16} aria-hidden />}
-    </button>
+    <Tooltip kind="label" content={label}>
+      <button
+        type="button"
+        onClick={() => protection.setProtected(personaId, !isProtected)}
+        disabled={pending}
+        aria-pressed={isProtected}
+        className="icon-btn p-2"
+        aria-label={label}
+      >
+        {pending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Icon size={16} aria-hidden />}
+      </button>
+    </Tooltip>
   )
 }
 

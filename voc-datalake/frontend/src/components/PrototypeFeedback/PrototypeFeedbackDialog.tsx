@@ -18,6 +18,7 @@ import { projectJobsKey } from '../../api/projectQueryKeys'
 import { refusalReason } from '../../lib/errors'
 import ModalShell from '../ModalShell/ModalShell'
 import PrototypeFeedbackView from './PrototypeFeedbackView'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 interface PrototypeFeedbackDialogProps {
   readonly projectId: string
@@ -54,10 +55,12 @@ export default function PrototypeFeedbackDialog({ projectId, documentId }: Proto
               <h2 id={headingId} className="dialog-title">{t('prototypeFeedback.heading')}</h2>
               <p className="dialog-description">{t('prototypeFeedback.hint')}</p>
             </div>
-            <button type="button" className="dialog-close focus-ring flex-shrink-0" aria-label={t('prototypeFeedback.close')}
-              title={t('prototypeFeedback.close')} onClick={close} disabled={incorporate.isPending}>
-              <X size={16} aria-hidden />
-            </button>
+            <Tooltip kind="label" content={t('prototypeFeedback.close')}>
+              <button type="button" className="dialog-close focus-ring flex-shrink-0" aria-label={t('prototypeFeedback.close')}
+                onClick={close} disabled={incorporate.isPending}>
+                <X size={16} aria-hidden />
+              </button>
+            </Tooltip>
           </div>
           {incorporate.isError ? (
             // A refusal the server explains (a pin of another series, every pin withheld) in its words; else try again.

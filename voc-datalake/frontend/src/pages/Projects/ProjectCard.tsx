@@ -14,6 +14,8 @@ import { useTranslation } from 'react-i18next'
 import { personLabel } from '../../components/ProjectSharingModal/sharingHelpers'
 import ProjectVisibilityBadge from '../../components/ProjectVisibilityBadge/ProjectVisibilityBadge'
 import { formatDate } from '../../utils/dateUtils'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { Project } from '../../api/projectTypes'
 
 interface ProjectCardProps {
@@ -33,11 +35,13 @@ function CardMenu({ project, onEdit, onDelete }: Readonly<Pick<ProjectCardProps,
   const pick = (run: () => void) => () => { close(); run() }
   return (
     <div className="relative flex-shrink-0" ref={wrapper}>
-      <button ref={trigger} type="button" className="icon-btn" onClick={toggle}
-        aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
-        aria-label={t('card.actions', { name: project.name })} title={t('card.actions', { name: project.name })}>
-        <MoreHorizontal size={16} aria-hidden />
-      </button>
+      <Tooltip kind="label" content={t('card.actions', { name: project.name })}>
+        <button ref={trigger} type="button" className="icon-btn" onClick={toggle}
+          aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+          aria-label={t('card.actions', { name: project.name })}>
+          <MoreHorizontal size={16} aria-hidden />
+        </button>
+      </Tooltip>
       {open && (
         <div id={menuId} role="menu" className="menu absolute right-0 top-full mt-1 z-20 w-48">
           {canEdit && (
@@ -82,7 +86,7 @@ export function ProjectCard({ project, onDelete, onEdit, onOpen }: ProjectCardPr
 
       {ownerName === '' ? null : <p className="text-xs text-muted mb-2 truncate">{t('card.owner', { name: ownerName })}</p>}
 
-      {project.description === '' ? null : <p className="text-sm text-text mb-4 line-clamp-2" title={project.description}>{project.description}</p>}
+      {project.description === '' ? null : <TruncatedText as="p" className="text-sm text-text mb-4 line-clamp-2" text={project.description} />}
 
       <div className="flex items-center gap-4 text-xs text-muted mb-4 mt-auto">
         <span className="flex items-center gap-1.5">

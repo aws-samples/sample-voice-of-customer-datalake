@@ -35,6 +35,7 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { DisplayLabels } from '../../hooks/useDisplayLabels'
 import { ignoreRejection } from '../../lib/rejections'
 import { httpHref } from '../../utils/httpHref'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 interface FeedbackCardProps {
   feedback: FeedbackItem
@@ -72,12 +73,11 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
             )}
             <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
             <UsefulnessBadge band={feedback.usefulness} />
-            <span
-              className="text-xs text-muted"
-              title={t('feedbackCard.reviewDateHint')}
-            >
-              {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
-            </span>
+            <Tooltip kind="description" content={t('feedbackCard.reviewDateHint')}>
+              <span className="text-xs text-muted">
+                {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
+              </span>
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -190,16 +190,17 @@ function CopyTextButton({ text, onCopy }: Readonly<{ text: string; onCopy: (text
   const { t } = useTranslation('components')
   const [copied, markCopied] = useCopiedFlag()
   return (
-    <button
-      type="button"
-      onClick={() => { onCopy(text); markCopied() }}
-      className={clsx('icon-btn gap-1', copied && 'text-ok')}
-      aria-label={t('feedbackCard.copyText')}
-      title={t('feedbackCard.copyText')}
-    >
-      {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-      <span role="status" className={copied ? 'text-xs' : 'sr-only'}>{copied ? t('feedbackCard.copied') : ''}</span>
-    </button>
+    <Tooltip kind="label" content={t('feedbackCard.copyText')}>
+      <button
+        type="button"
+        onClick={() => { onCopy(text); markCopied() }}
+        className={clsx('icon-btn gap-1', copied && 'text-ok')}
+        aria-label={t('feedbackCard.copyText')}
+      >
+        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+        <span role="status" className={copied ? 'text-xs' : 'sr-only'}>{copied ? t('feedbackCard.copied') : ''}</span>
+      </button>
+    </Tooltip>
   )
 }
 
@@ -213,13 +214,12 @@ function CardFooter({ feedback, onCopy }: Readonly<CardFooterProps>) {
   const sourceHref = httpHref(feedback.source_url)
   return (
     <div className="flex flex-wrap items-center justify-between pt-3 border-t border-border gap-2">
-      <span
-        className="text-xs font-mono text-muted min-w-0 break-words"
-        title={t('feedbackCard.reviewDateHint')}
-      >
-        {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
-        <span className="hidden sm:inline"> {formatTime(feedback.source_created_at, i18n.language, 'N/A')}</span>
-      </span>
+      <Tooltip kind="description" content={t('feedbackCard.reviewDateHint')}>
+        <span className="text-xs font-mono text-muted min-w-0 break-words">
+          {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
+          <span className="hidden sm:inline"> {formatTime(feedback.source_created_at, i18n.language, 'N/A')}</span>
+        </span>
+      </Tooltip>
 
       {/* Wraps (and may shrink) so "Details" + the two icon buttons never push
           the card past its column at 390 px / 200 % text. */}
@@ -232,16 +232,17 @@ function CardFooter({ feedback, onCopy }: Readonly<CardFooterProps>) {
           {t('feedbackCard.details')}
         </ReviewLink>
         {sourceHref && (
-          <a
-            href={sourceHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="icon-btn"
-            aria-label={t('feedbackCard.openOriginal')}
-            title={t('feedbackCard.openOriginal')}
-          >
-            <ExternalLink size={14} aria-hidden="true" />
-          </a>
+          <Tooltip kind="label" content={t('feedbackCard.openOriginal')}>
+            <a
+              href={sourceHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="icon-btn"
+              aria-label={t('feedbackCard.openOriginal')}
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          </Tooltip>
         )}
         <CopyTextButton text={cleanReviewText(feedback.original_text)} onCopy={onCopy} />
       </div>

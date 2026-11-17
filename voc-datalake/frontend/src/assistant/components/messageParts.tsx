@@ -15,6 +15,7 @@ import ReviewLink from '../../components/ReviewLink/ReviewLink'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useReviewModal } from '../../hooks/useReviewModal'
 import { useRouteNavigate } from '../../hooks/useRouteNavigate'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { PersonaResponse } from './messageHelpers'
 import type { ToolCall } from '@ag-ui/core'
 import type { Tone } from '../../theme/tones'
@@ -135,7 +136,7 @@ export function SourcesBlock({ sources }: Readonly<{ sources: MessageSources }>)
                   className="card block p-2.5 text-[12px] hover:border-border-strong hover:bg-bg-hover"
                 >
                   {/* Two lines here; the full review is one click away (the review modal) and in the tooltip. */}
-                  <span className="line-clamp-2 text-text" title={item.text}>{item.text ?? item.feedback_id}</span>
+                  <TruncatedText className="line-clamp-2 text-text" text={item.text ?? item.feedback_id} />
                   <span className="mt-0.5 block text-muted">
                     {[labels.source(item.source_platform ?? ''), item.sentiment_label].filter(Boolean).join(' · ')}
                   </span>
@@ -155,7 +156,7 @@ export function SourcesBlock({ sources }: Readonly<{ sources: MessageSources }>)
             {sources.web.map((source) => (
               // Titles wrap and a long bare URL breaks anywhere: nothing is cut off (wave 4).
               <li key={source.url} className="break-words text-[12px] [overflow-wrap:anywhere]">
-                <a href={source.url} target="_blank" rel="noopener noreferrer" className="link" title={source.url}>
+                <a href={source.url} target="_blank" rel="noopener noreferrer" className="link">
                   {source.title === '' ? source.url : source.title}
                 </a>
               </li>

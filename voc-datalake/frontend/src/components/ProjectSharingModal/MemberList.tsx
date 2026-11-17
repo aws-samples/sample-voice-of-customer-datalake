@@ -13,6 +13,8 @@ import type { ProjectMember, ProjectMemberRole, ProjectOwner } from '../../api/p
 import {
   MEMBER_ROLES, isMemberRole, personLabel, publicPersonLabel, roleLabelKey,
 } from './sharingHelpers'
+import { Tooltip } from '../Tooltip/Tooltip'
+import { TruncatedText } from '../Tooltip/TruncatedText'
 
 interface PersonTextProps {
   readonly person: { username: string; email: string; sub: string }
@@ -26,12 +28,12 @@ function PersonText({ person, isSelf, revealEmail }: PersonTextProps) {
   const label = revealEmail ? personLabel(person) : publicPersonLabel(person)
   return (
     <div className="min-w-0 flex-1">
-      <p className="text-[13px] font-medium text-text-strong truncate" title={label}>
+      <TruncatedText as="p" className="text-[13px] font-medium text-text-strong truncate" text={label}>
         {label}
         {isSelf ? <span className="ml-1 text-muted font-normal">{t('sharing.you')}</span> : null}
-      </p>
+      </TruncatedText>
       {revealEmail && person.email !== '' && person.email !== label
-        ? <p className="text-xs text-muted truncate" title={person.email}>{person.email}</p>
+        ? <TruncatedText as="p" className="text-xs text-muted truncate" text={person.email} />
         : null}
     </div>
   )
@@ -95,26 +97,28 @@ export function MemberRow({
           >
             {MEMBER_ROLES.map((role) => <option key={role} value={role}>{t(roleLabelKey(role))}</option>)}
           </select>
-          <button
-            type="button"
-            onClick={() => onMakeOwner(member)}
-            disabled={disabled}
-            aria-label={makeOwnerLabel}
-            title={makeOwnerLabel}
-            className="icon-btn hover:text-warn"
-          >
-            <Crown size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(member)}
-            disabled={disabled}
-            aria-label={removeLabel}
-            title={removeLabel}
-            className="icon-btn hover:text-danger"
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+          <Tooltip kind="label" content={makeOwnerLabel}>
+            <button
+              type="button"
+              onClick={() => onMakeOwner(member)}
+              disabled={disabled}
+              aria-label={makeOwnerLabel}
+              className="icon-btn hover:text-warn"
+            >
+              <Crown size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip kind="label" content={removeLabel}>
+            <button
+              type="button"
+              onClick={() => onRemove(member)}
+              disabled={disabled}
+              aria-label={removeLabel}
+              className="icon-btn hover:text-danger"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
         </>
       ) : <span className="text-xs font-medium text-muted">{t(roleLabelKey(member.role))}</span>}
       {isSelf && !canManage ? (

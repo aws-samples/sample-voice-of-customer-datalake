@@ -102,8 +102,8 @@ describe('the preview of a read reference', () => {
     const typography = [{ role: 'heading', family: stack }, { role: 'mono', family: "'JetBrains Mono', monospace" }]
     renderSection({ 'GET /settings/design-system': () => ({ ...DESIGN, references: [{ ...SITE, extracted_design: { ...SITE.extracted_design, typography } }] }) })
     const preview = await screen.findByTestId('reference-design-preview')
-    expect(within(preview).getByText('Space Grotesk')).toHaveAttribute('title', stack)
-    expect(within(preview).getByText('JetBrains Mono')).toHaveAttribute('title', "'JetBrains Mono', monospace")
+    expect(within(preview).getByText('Space Grotesk')).toHaveAccessibleDescription(stack)
+    expect(within(preview).getByText('JetBrains Mono')).toHaveAccessibleDescription("'JetBrains Mono', monospace")
   })
 
   it('shows the logo from the server copy (preview_url), never the remote original', async () => {

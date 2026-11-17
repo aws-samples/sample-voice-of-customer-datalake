@@ -14,6 +14,7 @@ import type { ComponentVariant, DesignComponent } from '../../api/designComponen
 import type { NamedValue } from '../../api/designSystemApi'
 import ComponentStyleForm from './ComponentStyleForm'
 import { VariantPreview } from './ComponentPreview'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface VariantProps {
   readonly component: DesignComponent
@@ -51,15 +52,16 @@ export function VariantEditor({ component, variant, colors, duplicate, canRemove
           />
         </div>
         {canRemove ? (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="icon-btn"
-            aria-label={removeLabel}
-            title={removeLabel}
-          >
-            <X size={16} />
-          </button>
+          <Tooltip kind="label" content={removeLabel}>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="icon-btn"
+              aria-label={removeLabel}
+            >
+              <X size={16} />
+            </button>
+          </Tooltip>
         ) : null}
       </div>
       {error ? <p id={`${id}-error`} className="text-xs text-danger">{error}</p> : null}

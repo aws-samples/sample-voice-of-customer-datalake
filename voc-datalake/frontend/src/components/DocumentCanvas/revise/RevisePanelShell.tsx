@@ -8,6 +8,7 @@
 import { Sparkles, X } from 'lucide-react'
 import { useEffect, useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../Tooltip/Tooltip'
 import type { ReactNode } from 'react'
 
 interface RevisePanelShellProps {
@@ -41,9 +42,11 @@ export default function RevisePanelShell({ title, status, actions, onClose, chil
           </div>
           {actions}
         </div>
-        <button type="button" className="icon-btn p-1 shrink-0" onClick={onClose} aria-label={t('canvas.revise.close')} title={t('canvas.revise.close')}>
-          <X size={14} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('canvas.revise.close')}>
+          <button type="button" className="icon-btn p-1 shrink-0" onClick={onClose} aria-label={t('canvas.revise.close')}>
+            <X size={14} aria-hidden />
+          </button>
+        </Tooltip>
       </div>
       <p role="status" className="text-[13px] text-text">{status}</p>
       {children}

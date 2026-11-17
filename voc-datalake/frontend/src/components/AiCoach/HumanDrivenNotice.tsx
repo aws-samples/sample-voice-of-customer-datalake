@@ -20,6 +20,7 @@ import { openAssistant } from '../../assistant/store/openAssistant'
 import { aiMayWrite, isGatedDocType } from '../../api/aiModeApi'
 import type { GatedDocType } from '../../api/aiModeApi'
 import { useMyAiMode } from '../../hooks/useMyAiMode'
+import { InfoTip } from '../Tooltip/InfoTip'
 
 interface HumanDrivenNoticeProps {
   readonly docType: GatedDocType
@@ -39,7 +40,7 @@ export default function HumanDrivenNotice({ docType, title = '', canReview = fal
   return (
     <div role="note" className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg-accent px-3 py-2 text-[13px] text-text">
       <GraduationCap size={16} className="flex-shrink-0 text-accent" aria-hidden="true" />
-      <span className="mr-auto" title={t('aiCoach.tooltip')}>{t('aiCoach.banner')}</span>
+      <span className="mr-auto inline-flex items-center gap-1">{t('aiCoach.banner')}<InfoTip text={t('aiCoach.tooltip')} /></span>
       <button
         type="button"
         className="btn btn-secondary btn-sm"

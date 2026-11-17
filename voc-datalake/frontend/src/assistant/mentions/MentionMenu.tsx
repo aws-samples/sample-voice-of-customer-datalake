@@ -13,6 +13,7 @@ import { Loader2 } from 'lucide-react'
 import { MENTION_LIMITS } from '@stream/assistant/contract'
 import { optionId, sectionStartingAt, tokenOf } from './mentionModel'
 import MentionIcon from './MentionIcon'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { MentionMenuState } from './useMentions'
 import type { MentionOption } from './mentionModel'
 import type { DocumentSectionId } from '../../api/documentSections'
@@ -57,9 +58,9 @@ function OptionRow({ listId, option, index, selected, onChoose }: Readonly<{
       )}
     >
       <MentionIcon kind={option.kind} size={14} />
-      <span className="min-w-0 truncate" title={option.label}>
+      <TruncatedText className="min-w-0 truncate" text={option.label}>
         {option.kind === 'all' ? tokenOf(option) : option.label}
-      </span>
+      </TruncatedText>
       {option.kind === 'all' && <span className="ml-auto text-[12px] text-muted">{t('mentions.allHint')}</span>}
     </li>
   )

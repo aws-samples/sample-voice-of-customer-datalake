@@ -21,6 +21,7 @@ import { useChannelLabel } from '../../hooks/useChannelLabel'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { humanizeId } from '../../utils/displayLabels'
 import { httpHref } from '../../utils/httpHref'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /** Section label inside the main card — an h2 under the page h1 (h3 under the modal's h2). */
 export const SECTION_LABEL = 'text-sm font-medium text-muted mb-2 sm:mb-3'
@@ -208,9 +209,11 @@ function ReviewDates({ feedback, writtenDay }: Readonly<{ feedback: FeedbackItem
     <>
       <div className="flex items-center gap-1 min-w-0">
         <Clock size={14} className="flex-shrink-0" aria-hidden="true" />
-        <span className="break-words" title={t('reviewDateHint')}>
-          {t('reviewDate', { date: day ?? formatDateTime(feedback.source_created_at, i18n.language, unknown) })}
-        </span>
+        <Tooltip kind="description" content={t('reviewDateHint')}>
+          <span className="break-words">
+            {t('reviewDate', { date: day ?? formatDateTime(feedback.source_created_at, i18n.language, unknown) })}
+          </span>
+        </Tooltip>
       </div>
       {sourceDiffers ? (
         <div className="flex items-center gap-1 min-w-0">
@@ -242,9 +245,11 @@ export function MetadataSection({ feedback, showImported = true, writtenDay, rad
       {showImported ? (
         <div className="flex items-center gap-1 min-w-0">
           <Clock size={14} className="flex-shrink-0" aria-hidden="true" />
-          <span className="break-words" title={t('importedHint')}>
-            {t('imported', { date: formatDateTime(feedback.processed_at, i18n.language, unknown) })}
-          </span>
+          <Tooltip kind="description" content={t('importedHint')}>
+            <span className="break-words">
+              {t('imported', { date: formatDateTime(feedback.processed_at, i18n.language, unknown) })}
+            </span>
+          </Tooltip>
         </div>
       ) : null}
       <div className="flex items-center gap-1">

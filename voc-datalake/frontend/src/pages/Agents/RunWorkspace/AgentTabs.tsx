@@ -12,6 +12,7 @@ import { Bot, Loader2, Workflow, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../../components/IconTabs/IconTabs'
 import { useSessionName } from './useSessionLayout'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 import type { LucideIcon } from 'lucide-react'
 import type { EngineeringAgent } from '../../../api/engineeringRunsApi'
 
@@ -43,10 +44,12 @@ export function AgentTabs({ tabs, current, agents, orchestrator, onOpen, onClose
           )} />
       </div>
       {current !== null && tabs.includes(current) && (
-        <button type="button" className="icon-btn" onClick={() => onClose(current)}
-          aria-label={t('runWorkspace.sessions.close', { name: nameOf(current) })} title={t('runWorkspace.sessions.close', { name: nameOf(current) })}>
-          <X size={16} aria-hidden="true" />
-        </button>
+        <Tooltip kind="label" content={t('runWorkspace.sessions.close', { name: nameOf(current) })}>
+          <button type="button" className="icon-btn" onClick={() => onClose(current)}
+            aria-label={t('runWorkspace.sessions.close', { name: nameOf(current) })}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
       )}
       {others.length > 0 && (
         <span className="inline-flex items-center gap-1 text-[12px]">

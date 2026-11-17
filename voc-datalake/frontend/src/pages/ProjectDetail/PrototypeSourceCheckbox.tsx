@@ -5,6 +5,7 @@
  */
 
 import clsx from 'clsx'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 
 /** One tick-box with a real label, so the whole row is a hit target and the
     accessible name comes from the label rather than from an aria-label. */
@@ -34,13 +35,13 @@ export function SourceCheckbox({
         onChange={(e) => onChange(e.target.checked)}
         className="rounded-sm"
       />
-      {/* `title` because of `truncate`, not for the accessible name — that already
+      {/* A tooltip because of `truncate`, not for the accessible name — that already
           comes from the label. Report titles are user-supplied and this column is
           narrow, so two reports named "Churn interviews Q1" and "Churn interviews
           Q2" render as the same visible string; the tooltip is the only way to tell
           which box is which. Sighted mouse users are exactly who needs it: a screen
           reader reads the full label regardless of the CSS clip. */}
-      <span className="truncate" title={label}>{label}</span>
+      <TruncatedText className="truncate" text={label} />
     </label>
   )
 }

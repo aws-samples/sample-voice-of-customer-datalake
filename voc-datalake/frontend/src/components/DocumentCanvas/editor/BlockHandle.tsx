@@ -10,6 +10,7 @@ import { DragHandle } from '@tiptap/extension-drag-handle-react'
 import { GripVertical } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../Tooltip/Tooltip'
 import type { Pointer } from './controller'
 
 interface BlockHandleProps {
@@ -37,19 +38,20 @@ export default function BlockHandle({ editor, onOpenMenu, lastPointer }: BlockHa
         hovered.current = node ? pos : null
       }}
     >
-      <div
-        role="button"
-        aria-label={t('canvas.editor.handle.label')}
-        aria-haspopup="menu"
-        aria-keyshortcuts="Alt+Shift+M"
-        title={t('canvas.editor.handle.label')}
-        className="canvas-handle__grip"
-        onClick={() => {
-          if (hovered.current !== null) onOpenMenu(hovered.current)
-        }}
-      >
-        <GripVertical aria-hidden="true" className="canvas-handle__icon" />
-      </div>
+      <Tooltip kind="label" content={t('canvas.editor.handle.label')}>
+        <div
+          role="button"
+          aria-label={t('canvas.editor.handle.label')}
+          aria-haspopup="menu"
+          aria-keyshortcuts="Alt+Shift+M"
+          className="canvas-handle__grip"
+          onClick={() => {
+            if (hovered.current !== null) onOpenMenu(hovered.current)
+          }}
+        >
+          <GripVertical aria-hidden="true" className="canvas-handle__icon" />
+        </div>
+      </Tooltip>
     </DragHandle>
   )
 }

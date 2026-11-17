@@ -17,6 +17,7 @@ import { fieldValues } from '../../api/feedbackCatalogueSchema'
 import type { CatalogueField, CatalogueStep, FeedbackCatalogue } from '../../api/feedbackCatalogueSchema'
 import { useConfigStore } from '../../store/configStore'
 import { failedReads } from '../../utils/failedReads'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 type DataExplorerT = TFunction<'dataExplorer'>
 
@@ -53,7 +54,9 @@ function FieldRow({ field, steps, t }: Readonly<{ field: CatalogueField; steps: 
       <td className="py-1.5 pr-3 font-mono text-[12px] text-muted">{field.type}</td>
       <td className="py-1.5 pr-3 text-[12px] text-text min-w-[16rem]">{field.meaning}</td>
       <td className="py-1.5 pr-3 text-[12px] text-muted">
-        {field.set_by.map((step) => <span key={step} title={steps.get(step)} className="block">{step}</span>)}
+        {field.set_by.map((step) => (
+          <Tooltip key={step} kind="description" content={steps.get(step)}><span className="block">{step}</span></Tooltip>
+        ))}
       </td>
       <td className="py-1.5 pr-3 text-[12px] text-muted">{piiLabel(t, field.pii)}</td>
       <td className="py-1.5 pr-3 text-[12px] text-muted whitespace-nowrap">

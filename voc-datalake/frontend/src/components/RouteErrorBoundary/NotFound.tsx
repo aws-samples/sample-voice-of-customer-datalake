@@ -14,6 +14,7 @@ import { ArrowLeft, Compass } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import GoHomeLink from './GoHomeLink'
+import { TruncatedText } from '../Tooltip/TruncatedText'
 
 /**
  * Whether there is an in-app entry to go back to. A deep link opened in a fresh
@@ -39,12 +40,8 @@ export default function NotFound() {
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('errorBoundary.notFoundTitle')}</h1>
         <p className="text-sm text-muted mt-1">{t('errorBoundary.notFoundDescription')}</p>
-        <p
-          className="text-sm font-mono text-muted bg-bg-accent border border-border rounded-lg px-3 py-2 mt-4 mb-6 truncate"
-          title={pathname}
-        >
-          {pathname}
-        </p>
+        <TruncatedText as="p" text={pathname}
+          className="text-sm font-mono text-muted bg-bg-accent border border-border rounded-lg px-3 py-2 mt-4 mb-6 truncate" />
         <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-center gap-3">
           {canGoBack && (
             <button type="button" onClick={() => navigate(-1)} className="btn btn-secondary gap-2">

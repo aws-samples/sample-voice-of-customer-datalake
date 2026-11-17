@@ -369,7 +369,7 @@ describe('Scrapers', () => {
     it('opens editor when edit button clicked', async () => {
       const user = await renderLoaded()
 
-      const editButtons = screen.getAllByTitle('Edit')
+      const editButtons = screen.getAllByRole('button', { name: 'Edit' })
       await user.click(at(editButtons, 0))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
@@ -378,7 +378,7 @@ describe('Scrapers', () => {
     it('shows delete confirmation when delete clicked', async () => {
       const user = await renderLoaded()
 
-      const deleteButtons = screen.getAllByTitle('Delete')
+      const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
       await user.click(at(deleteButtons, 0))
 
       expect(screen.getByText('Delete Scraper')).toBeInTheDocument()
@@ -388,7 +388,7 @@ describe('Scrapers', () => {
     it('calls deleteScraper when delete confirmed', async () => {
       const user = await renderLoaded()
 
-      const deleteButtons = screen.getAllByTitle('Delete')
+      const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
       await user.click(at(deleteButtons, 0))
 
       // Find the confirm button in the modal (last Delete button is the modal's)
@@ -464,7 +464,7 @@ describe('Scrapers', () => {
       const user = await saveFromNewSource()
       await screen.findByRole('alert')
       await user.click(screen.getByRole('button', { name: 'Close' }))
-      await user.click(at(screen.getAllByTitle('Edit'), 0))
+      await user.click(at(screen.getAllByRole('button', { name: 'Edit' }), 0))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -550,27 +550,27 @@ describe('Scrapers', () => {
     it.each([true, false])('opens the editor from Edit, read-only unless admin (isAdmin=%s)', async (isAdmin) => {
       role.isAdmin = isAdmin
       const user = await renderLoaded()
-      await user.click(at(screen.getAllByTitle('Edit'), 0))
+      await user.click(at(screen.getAllByRole('button', { name: 'Edit' }), 0))
 
       expect(screen.getByTestId('scraper-editor')).toHaveAttribute('data-admin', String(isAdmin))
     })
 
-    it('disables Run and Delete for a non-admin', async () => {
+    it('turns off Run and Delete for a non-admin, focusable and saying why', async () => {
       role.isAdmin = false
       await renderLoaded()
 
-      const gated = screen.getAllByTitle(ADMIN_ONLY_TITLE)
+      const gated = screen.getAllByRole('button', { description: ADMIN_ONLY_TITLE })
       // Two scrapers × (Run, Delete); scraper-1 and scraper-2 both have a URL.
-      expect(gated.map((button) => button.hasAttribute('disabled'))).toStrictEqual([true, true, true, true])
-      expect(screen.queryAllByTitle('Run now')).toHaveLength(0)
-      expect(screen.queryAllByTitle('Delete')).toHaveLength(0)
+      expect(gated.map((button) => button.getAttribute('aria-disabled'))).toStrictEqual(['true', 'true', 'true', 'true'])
+      expect(gated.map((button) => button.textContent === 'Run now' || button.getAttribute('aria-label') === 'Delete'))
+        .toStrictEqual([true, true, true, true])
     })
 
     it('issues neither request when a non-admin clicks the gated Run and Delete', async () => {
       role.isAdmin = false
       const user = await renderLoaded()
 
-      for (const button of screen.getAllByTitle(ADMIN_ONLY_TITLE)) {
+      for (const button of screen.getAllByRole('button', { description: ADMIN_ONLY_TITLE })) {
         await user.click(button)
       }
       expect(mockRunScraper).not.toHaveBeenCalled()
@@ -580,9 +580,10 @@ describe('Scrapers', () => {
     it('the control: an admin gets enabled Run and Delete', async () => {
       await renderLoaded()
 
-      expect(screen.queryAllByTitle(ADMIN_ONLY_TITLE)).toHaveLength(0)
-      for (const button of [...screen.getAllByTitle('Run now'), ...screen.getAllByTitle('Delete')]) {
+      expect(screen.queryAllByRole('button', { description: ADMIN_ONLY_TITLE })).toHaveLength(0)
+      for (const button of [...screen.getAllByRole('button', { name: 'Run now' }), ...screen.getAllByRole('button', { name: 'Delete' })]) {
         expect(button).toBeEnabled()
+        expect(button).not.toHaveAttribute('aria-disabled')
       }
     })
   })

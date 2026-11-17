@@ -13,6 +13,7 @@ import { API_AGENT_LIMITS } from '../../api/agentsApi'
 import { projectKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { SectionProps } from './AgentSections'
 
 export function PersonasSection({ draft, readOnly, onChange }: Readonly<SectionProps>) {
@@ -50,10 +51,12 @@ export function PersonasSection({ draft, readOnly, onChange }: Readonly<SectionP
               <span className="text-text truncate">{projectName(ref.project_id)}</span>
               <span className="font-mono text-[12px] text-muted truncate mr-auto">{ref.persona_id}</span>
               {!readOnly && (
-                <button type="button" className="icon-btn" aria-label={t('personas.remove')} title={t('personas.remove')}
-                  onClick={() => onChange({ ...draft, personas: { ...draft.personas, fixed: fixed.filter((f) => f !== ref) } })}>
-                  <Trash2 size={16} />
-                </button>
+                <Tooltip kind="label" content={t('personas.remove')}>
+                  <button type="button" className="icon-btn" aria-label={t('personas.remove')}
+                    onClick={() => onChange({ ...draft, personas: { ...draft.personas, fixed: fixed.filter((f) => f !== ref) } })}>
+                    <Trash2 size={16} />
+                  </button>
+                </Tooltip>
               )}
             </li>
           ))}

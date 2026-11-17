@@ -33,6 +33,8 @@ import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
 import type { PersonaScope } from './personaScope'
 import { PersonaProtectStatus, PersonaProtectToggle } from './PersonaProtectToggle'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { PersonaProtection } from './usePersonaProtection'
 import type { NoteItem } from './types'
 import type { ProjectPersona } from '../../api/projectTypes'
@@ -64,7 +66,7 @@ function PersonaHeaderIdentity({ persona, shown, protection }: {
     <div className="flex items-center gap-3 sm:gap-4">
       <PersonaAvatar persona={shown} size="lg" />
       <div className="min-w-0">
-        <h2 className="text-lg sm:text-xl font-bold tracking-tight text-text-strong truncate" title={persona.name}>{persona.name}</h2>
+        <TruncatedText as="h2" className="text-lg sm:text-xl font-bold tracking-tight text-text-strong truncate" text={persona.name} />
         <p className="text-text text-sm line-clamp-2">{persona.tagline}</p>
         {persona.confidence == null ? null : <span className={clsx('badge mt-1.5', getConfidenceClass(persona.confidence))}>
           {t('personas.confidence', { level: persona.confidence })}
@@ -115,25 +117,27 @@ export default function PersonaDetailView({
                   <PersonaProtectToggle personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
                 ) : null}
                 <RegenerateAvatarButton avatar={avatar} />
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  className="icon-btn p-2"
-                  title={t('personas.editPersona')}
-                  aria-label={t('personas.editPersona')}
-                >
-                  <Pencil size={16} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={onDelete}
-                  disabled={isDeleting}
-                  className="icon-btn p-2 hover:text-danger"
-                  title={t('personas.deletePersona')}
-                  aria-label={t('personas.deletePersona')}
-                >
-                  {isDeleting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Trash2 size={16} aria-hidden />}
-                </button>
+                <Tooltip kind="label" content={t('personas.editPersona')}>
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    className="icon-btn p-2"
+                    aria-label={t('personas.editPersona')}
+                  >
+                    <Pencil size={16} aria-hidden />
+                  </button>
+                </Tooltip>
+                <Tooltip kind="label" content={t('personas.deletePersona')}>
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    disabled={isDeleting}
+                    className="icon-btn p-2 hover:text-danger"
+                    aria-label={t('personas.deletePersona')}
+                  >
+                    {isDeleting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Trash2 size={16} aria-hidden />}
+                  </button>
+                </Tooltip>
               </>
             ) : null}
           </div>
@@ -171,16 +175,17 @@ function RegenerateAvatarButton({ avatar }: Readonly<{ avatar: Pick<ReturnType<t
   const [confirming, setConfirming] = useState(false)
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        disabled={avatar.isPending}
-        className="icon-btn p-2"
-        title={t('personas.regenerateAvatar')}
-        aria-label={t('personas.regenerateAvatar')}
-      >
-        {avatar.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <RefreshCw size={16} aria-hidden />}
-      </button>
+      <Tooltip kind="label" content={t('personas.regenerateAvatar')}>
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          disabled={avatar.isPending}
+          className="icon-btn p-2"
+          aria-label={t('personas.regenerateAvatar')}
+        >
+          {avatar.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <RefreshCw size={16} aria-hidden />}
+        </button>
+      </Tooltip>
       <ConfirmModal
         isOpen={confirming}
         variant="info"

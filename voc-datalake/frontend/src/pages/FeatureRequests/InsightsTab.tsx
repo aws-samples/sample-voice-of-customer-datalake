@@ -23,6 +23,7 @@ import InsightBars from './InsightBars'
 import { requestLookupPath } from './boardPaths'
 import { insightStatusLabel } from './insightLabels'
 import { useEnrichRequests, useInsights, useInsightsView } from './useInsights'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { InsightBarRow } from './InsightBars'
 import type { InsightsView } from './useInsights'
 import type { FeatureBoard } from '../../api/featureBoardsSchema'
@@ -105,9 +106,11 @@ function TopRequests({ top, categoryLabel }: Readonly<{ top: readonly InsightTop
               <Link to={requestLink(row.request_id)} className="link break-words min-w-0">{row.title === '' ? row.request_id : row.title}</Link>
               <span className="flex items-center gap-2 text-xs text-muted">
                 {row.category === null ? null : <span className="badge badge-muted">{categoryLabel(row.category)}</span>}
-                <span className="inline-flex items-center gap-1 font-mono" title={t('insights.totalSupporters')}>
-                  <Users size={12} aria-hidden="true" />{formatCount(row.supporters, i18n.language)}
-                </span>
+                <Tooltip kind="description" content={t('insights.totalSupporters')}>
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    <Users size={12} aria-hidden="true" />{formatCount(row.supporters, i18n.language)}
+                  </span>
+                </Tooltip>
               </span>
             </li>
           ))}

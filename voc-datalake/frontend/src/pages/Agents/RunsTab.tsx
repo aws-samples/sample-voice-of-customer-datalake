@@ -12,7 +12,7 @@
  *
  * @module pages/Agents/RunsTab
  */
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, Play, Square } from 'lucide-react'
@@ -311,6 +311,7 @@ function RunNowBar({ agent, isAdmin, hasActive, onStarted }: Readonly<{
   const { t } = useTranslation('agents')
   const { runNow } = useAgentMutations(agent.agent_id)
   const [confirming, setConfirming] = useState(false)
+  const busyId = useId()
   const startRun = (body?: RunNowBody) => runNow.mutate(body, {
     onSuccess: (run) => onStarted(run.run_id),
     onSettled: () => setConfirming(false),
@@ -319,9 +320,16 @@ function RunNowBar({ agent, isAdmin, hasActive, onStarted }: Readonly<{
     <>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[12px] text-muted mr-auto">{t('run.hint')}</p>
+        {/* While a run is under way, Run now stays focusable (aria-disabled) and says why beside it. */}
+        {isAdmin && hasActive && <p id={busyId} className="text-[12px] text-muted">{t('run.alreadyRunning')}</p>}
         {isAdmin && (
-          <button type="button" className="btn btn-primary btn-sm" disabled={runNow.isPending || hasActive}
-            onClick={() => { runNow.reset(); setConfirming(true) }} title={hasActive ? t('run.alreadyRunning') : undefined}>
+          <button type="button" className="btn btn-primary btn-sm"
+            disabled={runNow.isPending} aria-disabled={hasActive ? true : undefined} aria-describedby={hasActive ? busyId : undefined}
+            onClick={() => {
+              if (hasActive) return
+              runNow.reset()
+              setConfirming(true)
+            }}>
             {runNow.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
             {t('run.runNow')}
           </button>

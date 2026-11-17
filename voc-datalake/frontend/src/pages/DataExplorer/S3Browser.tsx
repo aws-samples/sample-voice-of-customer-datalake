@@ -13,6 +13,8 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { folderLabel } from './folderLabels'
 import type { S3ObjectSummary } from './dataExplorerSchema'
 import { RowAction } from './RowAction'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface S3Object {
   key: string
@@ -173,7 +175,13 @@ function RowText({ obj, folderLabel }: Readonly<{ obj: S3Object; folderLabel: (k
   const date = obj.summary?.date ?? obj.lastModified
   return (
     <span className="min-w-0">
-      <span className="block font-medium text-sm text-text-strong truncate" title={obj.key}>{title}</span>
+      {title === obj.key ? (
+        <TruncatedText className="block font-medium text-sm text-text-strong truncate" text={title} />
+      ) : (
+        <Tooltip kind="description" content={obj.key}>
+          <span className="block font-medium text-sm text-text-strong truncate">{title}</span>
+        </Tooltip>
+      )}
       {!obj.isFolder && (
         <span className="block text-xs text-muted truncate">
           {obj.summary?.title === undefined ? null : <span className="font-mono">{obj.key} • </span>}

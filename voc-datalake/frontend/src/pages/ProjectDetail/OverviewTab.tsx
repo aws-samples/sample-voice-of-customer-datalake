@@ -331,7 +331,7 @@ function prototypeStatusText(build: PrototypeBuildControl, t: TFunction): ReactN
   // removing BOTH for an error to be masked by an acknowledgement.
   if (build.error != null) {
     return (
-      <span className="inline-flex items-center gap-1 text-danger" title={build.error}>
+      <span className="inline-flex items-center gap-1 text-danger">
         <AlertCircle size={12} /> {build.error}
       </span>
     )

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import DialogClose from './DialogClose'
+import { openTooltip } from '@test/tooltip'
 
 describe('DialogClose', () => {
   it('has an accessible name that does not collide with footer Close/Cancel buttons', () => {
@@ -25,10 +26,10 @@ describe('DialogClose', () => {
     expect(onClick).not.toHaveBeenCalled()
   })
 
-  it('takes a custom accessible name for surfaces that already have a Dismiss control', () => {
+  it('takes a custom accessible name for surfaces that already have a Dismiss control', async () => {
     render(<DialogClose onClick={vi.fn()} label="Close assistant" />)
     const button = screen.getByRole('button', { name: 'Close assistant' })
-    expect(button).toHaveAttribute('title', 'Close assistant')
+    expect(await openTooltip(button)).toHaveTextContent('Close assistant')
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
   })
 

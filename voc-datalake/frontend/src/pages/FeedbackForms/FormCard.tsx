@@ -19,6 +19,7 @@ import Notice from '../../components/Notice/Notice'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import SubmissionsModal from './SubmissionsModal'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /** What a card is told besides its form; FormsList passes it through to every card. */
 export interface FormCardHandlers {
@@ -71,18 +72,18 @@ function FormStatsRow({ stats, busy, onViewSubmissions }: FormStatsProps) {
         labels={{ submissions: t('card.submissions', { count: stats?.total_submissions ?? 0 }), avgRating: t('card.avgRating') }}
       />
       <div className="col-span-2 sm:col-span-2 flex items-center justify-end">
-        {/* A disabled button fires no hover events, so the reason sits on its wrapper. */}
-        <span className="w-full sm:w-auto" title={noSubmissions ? t('card.noSubmissionsYet') : undefined}>
+        {/* Off but focusable (aria-disabled): its tooltip, and its description, say why. */}
+        <Tooltip kind="description" content={noSubmissions ? t('card.noSubmissionsYet') : undefined}>
           <button
-            onClick={onViewSubmissions}
+            type="button"
+            onClick={noSubmissions ? undefined : onViewSubmissions}
             className="btn btn-secondary btn-sm w-full sm:w-auto"
-            disabled={noSubmissions}
+            aria-disabled={noSubmissions ? true : undefined}
           >
             <BarChart3 size={14} aria-hidden="true" />
             {t('card.viewSubmissions')}
           </button>
-          {noSubmissions ? <span className="sr-only">{t('card.noSubmissionsYet')}</span> : null}
-        </span>
+        </Tooltip>
       </div>
     </div>
   )
@@ -228,22 +229,24 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
             </span>
             {/* aria-label as well as title: title is hover-only, so on its own it
                 leaves these icon-only controls poorly described for AT users. */}
-            <button
-              onClick={() => onEdit(form)}
-              className="icon-btn p-2 focus-ring"
-              aria-label={t('card.editForm')}
-              title={t('card.editForm')}
-            >
-              <Edit2 size={16} aria-hidden="true" />
-            </button>
-            <button
-              onClick={() => onDelete(form.form_id)}
-              className="icon-btn p-2 hover:bg-danger-subtle focus-ring"
-              aria-label={t('card.deleteForm')}
-              title={t('card.deleteForm')}
-            >
-              <Trash2 size={16} className="text-danger" aria-hidden="true" />
-            </button>
+            <Tooltip kind="label" content={t('card.editForm')}>
+              <button
+                onClick={() => onEdit(form)}
+                className="icon-btn p-2 focus-ring"
+                aria-label={t('card.editForm')}
+              >
+                <Edit2 size={16} aria-hidden="true" />
+              </button>
+            </Tooltip>
+            <Tooltip kind="label" content={t('card.deleteForm')}>
+              <button
+                onClick={() => onDelete(form.form_id)}
+                className="icon-btn p-2 hover:bg-danger-subtle focus-ring"
+                aria-label={t('card.deleteForm')}
+              >
+                <Trash2 size={16} className="text-danger" aria-hidden="true" />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -264,8 +267,10 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
             <p className="text-xs text-muted">{t('card.themeLabel')}</p>
             {/* The colour itself plus a word for it (the tile used to read as an empty value). */}
             <div className="flex items-center gap-1.5">
-              <div role="img" aria-label={t('card.themeSwatch')} title={t('card.themeSwatch')}
-                className="w-6 h-4 rounded-sm flex-shrink-0 border border-border" style={{ backgroundColor: theme.primary_color }} />
+              <Tooltip kind="label" content={t('card.themeSwatch')}>
+                <div role="img" aria-label={t('card.themeSwatch')}
+                  className="w-6 h-4 rounded-sm flex-shrink-0 border border-border" style={{ backgroundColor: theme.primary_color }} />
+              </Tooltip>
               <span className="font-medium text-sm text-text-strong">
                 {theme.primary_color === defaultFormConfig.theme.primary_color ? t('card.themeDefault') : t('card.themeCustom')}
               </span>

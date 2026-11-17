@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, ChevronDown, ChevronRight, GripVertical, Package } from 'lucide-react'
 import CategoryDetailsEditor from './CategoryDetailsEditor'
 import { displayName, subcategoriesOf, toSlug } from './categoryEntries'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { Category, Subcategory } from './CategoriesManager'
 
 interface SubcategoryRowProps {
@@ -35,24 +36,26 @@ function SubcategoryRow({ sub, isEditing, onStartEdit, onRename, onDelete }: Sub
           autoFocus
         />
       ) : (
+        <Tooltip kind="description" content={t('renameHint')}>
+          <button
+            type="button"
+            className="flex-1 min-w-0 text-left text-text hover:text-accent-text break-words [overflow-wrap:anywhere] rounded-sm focus-ring"
+            onClick={onStartEdit}
+          >
+            {name}
+          </button>
+        </Tooltip>
+      )}
+      <Tooltip kind="label" content={t('deleteSubcategoryLabel', { name })}>
         <button
           type="button"
-          className="flex-1 min-w-0 text-left text-text hover:text-accent-text break-words [overflow-wrap:anywhere] rounded-sm focus-ring"
-          onClick={onStartEdit}
-          title={t('renameHint')}
+          onClick={onDelete}
+          aria-label={t('deleteSubcategoryLabel', { name })}
+          className="icon-btn hover:text-danger hover:bg-danger-subtle flex-shrink-0"
         >
-          {name}
+          <Trash2 size={14} />
         </button>
-      )}
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label={t('deleteSubcategoryLabel', { name })}
-        title={t('deleteSubcategoryLabel', { name })}
-        className="icon-btn hover:text-danger hover:bg-danger-subtle flex-shrink-0"
-      >
-        <Trash2 size={14} />
-      </button>
+      </Tooltip>
     </div>
   )
 }
@@ -69,14 +72,15 @@ function CategoryName({ name, isEditing, onStartEdit, onRename, onCancelEdit }: 
   const { t } = useTranslation('components', { keyPrefix: 'categoriesManager' })
   if (!isEditing) {
     return (
-      <button
-        type="button"
-        className="flex-1 min-w-0 text-left font-medium text-text-strong hover:text-accent-text break-words [overflow-wrap:anywhere] rounded-sm focus-ring"
-        onClick={onStartEdit}
-        title={t('renameHint')}
-      >
-        {name}
-      </button>
+      <Tooltip kind="description" content={t('renameHint')}>
+        <button
+          type="button"
+          className="flex-1 min-w-0 text-left font-medium text-text-strong hover:text-accent-text break-words [overflow-wrap:anywhere] rounded-sm focus-ring"
+          onClick={onStartEdit}
+        >
+          {name}
+        </button>
+      </Tooltip>
     )
   }
   return (
@@ -116,16 +120,17 @@ function AddSubcategory({ value, onChange, onAdd }: AddSubcategoryProps) {
           if (e.key === 'Enter') onAdd()
         }}
       />
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={!value.trim()}
-        aria-label={t('addSubcategoryLabel')}
-        title={t('addSubcategoryLabel')}
-        className="icon-btn text-accent-text hover:bg-accent-subtle disabled:opacity-40 flex-shrink-0"
-      >
-        <Plus size={16} />
-      </button>
+      <Tooltip kind="label" content={t('addSubcategoryLabel')}>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!value.trim()}
+          aria-label={t('addSubcategoryLabel')}
+          className="icon-btn text-accent-text hover:bg-accent-subtle disabled:opacity-40 flex-shrink-0"
+        >
+          <Plus size={16} />
+        </button>
+      </Tooltip>
     </div>
   )
 }
@@ -159,16 +164,17 @@ export default function CategoryRow(props: CategoryRowProps) {
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bg-accent hover:bg-bg-hover">
         <GripVertical size={16} aria-hidden="true" className="text-muted cursor-grab hidden sm:block" />
-        <button
-          type="button"
-          onClick={props.onToggle}
-          aria-expanded={isOpen}
-          aria-label={toggleLabel}
-          title={toggleLabel}
-          className="icon-btn flex-shrink-0"
-        >
-          {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </button>
+        <Tooltip kind="label" content={toggleLabel}>
+          <button
+            type="button"
+            onClick={props.onToggle}
+            aria-expanded={isOpen}
+            aria-label={toggleLabel}
+            className="icon-btn flex-shrink-0"
+          >
+            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+        </Tooltip>
 
         <CategoryName
           name={name}
@@ -181,23 +187,26 @@ export default function CategoryRow(props: CategoryRowProps) {
         {category.product === undefined ? (
           <span className="badge badge-warn flex-shrink-0">{t('noProduct')}</span>
         ) : (
-          <span className="badge badge-muted flex-shrink-0" title={t('details.productLabel')}>
-            <Package size={12} aria-hidden="true" />
-            {category.product}
-          </span>
+          <Tooltip kind="description" content={t('details.productLabel')}>
+            <span className="badge badge-muted flex-shrink-0">
+              <Package size={12} aria-hidden="true" />
+              {category.product}
+            </span>
+          </Tooltip>
         )}
         <span className="text-xs text-muted flex-shrink-0">
           {t('subCount', { count: subcategories.length })}
         </span>
-        <button
-          type="button"
-          onClick={props.onDelete}
-          aria-label={t('deleteCategoryLabel', { name })}
-          title={t('deleteCategoryLabel', { name })}
-          className="icon-btn hover:text-danger hover:bg-danger-subtle flex-shrink-0"
-        >
-          <Trash2 size={14} />
-        </button>
+        <Tooltip kind="label" content={t('deleteCategoryLabel', { name })}>
+          <button
+            type="button"
+            onClick={props.onDelete}
+            aria-label={t('deleteCategoryLabel', { name })}
+            className="icon-btn hover:text-danger hover:bg-danger-subtle flex-shrink-0"
+          >
+            <Trash2 size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       {isOpen && (

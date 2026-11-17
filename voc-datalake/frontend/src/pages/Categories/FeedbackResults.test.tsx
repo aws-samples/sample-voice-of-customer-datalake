@@ -186,12 +186,13 @@ describe('FeedbackResults', () => {
     it('has an accessible name even when the text label is hidden (icon-only on small screens)', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} />)
       const button = screen.getByRole('button', { name: 'Export as CSV' })
-      expect(button).toHaveAttribute('title', 'Export as CSV')
+      // Its label shows as a tooltip on hover and focus (kind="label").
+      expect(button).toHaveAttribute('data-tooltip', 'label')
     })
 
     it('does not render a second PDF button (single PDF export lives in the filter bar)', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} />)
-      expect(screen.queryByTitle('Export as PDF')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Export as PDF' })).not.toBeInTheDocument()
     })
 
     it('calls onExport when the CSV button is clicked', async () => {

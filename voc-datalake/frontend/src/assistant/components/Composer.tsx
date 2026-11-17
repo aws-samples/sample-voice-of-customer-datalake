@@ -26,6 +26,7 @@ import { draftOf, useComposerDrafts } from '../store/composerDrafts'
 import {
   ATTACHMENT_ACCEPT, MAX_ATTACHMENT_MB, attachmentRejection, buildUserContent, readFileAsBase64, resolveAttachmentMime,
 } from './attachments'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ContentPart } from '@ag-ui/core'
 import type { AttachmentError, PendingAttachment } from './attachments'
 
@@ -87,16 +88,17 @@ function WebSearchToggle() {
   const on = useAssistantUiStore((s) => s.useWebSearch)
   const setOn = useAssistantUiStore((s) => s.setUseWebSearch)
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={() => setOn(!on)}
-      title={t('composer.webSearch')}
-      className={clsx('icon-btn', on && 'bg-accent-subtle text-accent-text hover:bg-accent-subtle hover:text-accent-text')}
-    >
-      <Globe size={16} aria-hidden />
-      <span className="sr-only">{t('composer.webSearch')}</span>
-    </button>
+    <Tooltip kind="label" content={t('composer.webSearch')}>
+      <button
+        type="button"
+        aria-pressed={on}
+        onClick={() => setOn(!on)}
+        className={clsx('icon-btn', on && 'bg-accent-subtle text-accent-text hover:bg-accent-subtle hover:text-accent-text')}
+      >
+        <Globe size={16} aria-hidden />
+        <span className="sr-only">{t('composer.webSearch')}</span>
+      </button>
+    </Tooltip>
   )
 }
 
@@ -116,14 +118,18 @@ function MentionButtons({ mentions }: Readonly<{ mentions: MentionsController }>
   if (!mentions.enabled) return null
   return (
     <>
-      <button type="button" onClick={() => mentions.insertTrigger('@')} className="icon-btn" title={t('mentions.insertPersona')}>
-        <AtSign size={16} aria-hidden />
-        <span className="sr-only">{t('mentions.insertPersona')}</span>
-      </button>
-      <button type="button" onClick={() => mentions.insertTrigger('#')} className="icon-btn" title={t('mentions.insertDocument')}>
-        <Hash size={16} aria-hidden />
-        <span className="sr-only">{t('mentions.insertDocument')}</span>
-      </button>
+      <Tooltip kind="label" content={t('mentions.insertPersona')}>
+        <button type="button" onClick={() => mentions.insertTrigger('@')} className="icon-btn">
+          <AtSign size={16} aria-hidden />
+          <span className="sr-only">{t('mentions.insertPersona')}</span>
+        </button>
+      </Tooltip>
+      <Tooltip kind="label" content={t('mentions.insertDocument')}>
+        <button type="button" onClick={() => mentions.insertTrigger('#')} className="icon-btn">
+          <Hash size={16} aria-hidden />
+          <span className="sr-only">{t('mentions.insertDocument')}</span>
+        </button>
+      </Tooltip>
     </>
   )
 }
@@ -253,10 +259,12 @@ export default function Composer({
               void attachments.add(files)
             }}
           />
-          <button type="button" onClick={() => fileRef.current?.click()} className="icon-btn" title={t('composer.attach')}>
-            <Paperclip size={16} aria-hidden />
-            <span className="sr-only">{t('composer.attach')}</span>
-          </button>
+          <Tooltip kind="label" content={t('composer.attach')}>
+            <button type="button" onClick={() => fileRef.current?.click()} className="icon-btn">
+              <Paperclip size={16} aria-hidden />
+              <span className="sr-only">{t('composer.attach')}</span>
+            </button>
+          </Tooltip>
           <MentionButtons mentions={mentions} />
           {webSearchAvailable && <WebSearchToggle />}
           <span id={`${inputId}-count`} className={clsx('ml-auto font-mono text-[12px]', tooLong ? 'text-danger' : 'text-muted')}>

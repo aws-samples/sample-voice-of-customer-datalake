@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MessageSquare } from 'lucide-react'
 import MetricCard from './MetricCard'
+import { openTooltip } from '@test/tooltip'
 import { useLocale } from '../../test/i18n-locale'
 import componentsDe from '../../../public/locales/de/components.json'
 
@@ -128,11 +129,11 @@ describe('MetricCard', () => {
   })
 
   describe('partial-data hint', () => {
-    it('exposes the hint as tooltip and accessible label on the value', () => {
+    it('exposes the hint as tooltip and accessible label on the value', async () => {
       render(<MetricCard icon={ICON} title="Total Feedback" value="~1,234" hint="Approximate: counts are a lower bound" />)
 
       const value = screen.getByText('~1,234')
-      expect(value).toHaveAttribute('title', 'Approximate: counts are a lower bound')
+      expect(await openTooltip(value)).toHaveTextContent('Approximate: counts are a lower bound')
       expect(value).toHaveAttribute('aria-label', '~1,234 — Approximate: counts are a lower bound')
     })
 

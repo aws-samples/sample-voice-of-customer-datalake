@@ -20,6 +20,7 @@ import { formatTime } from '../../../utils/dateUtils'
 import { RUN_LINK_HOSTS, runLinkHref } from '../runLinks'
 import { FileDiff } from './FileDiff'
 import { useAgentChanges, useChangeFile } from './useRunWorkspace'
+import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import type { AgentChanges, ChangedFile } from '../../../api/engineeringRunWorkspaceApi'
 
 /** Past this many files or changed lines, the tab says the host shows the change better. */
@@ -92,9 +93,8 @@ function FileRow({ runId, agent, patchKey, file, split }: Readonly<{
       <button type="button" aria-expanded={open} aria-controls={regionId} onClick={() => setOpen(!open)}
         className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left text-[12px] hover:bg-bg-hover">
         <ChevronRight size={12} aria-hidden="true" className={clsx('shrink-0 text-muted transition-transform', open && 'rotate-90')} />
-        <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>
-          {file.old_path === undefined ? file.path : t('runWorkspace.changes.renamed', { from: file.old_path, to: file.path })}
-        </span>
+        <TruncatedText className="min-w-0 flex-1 truncate font-mono"
+          text={file.old_path === undefined ? file.path : t('runWorkspace.changes.renamed', { from: file.old_path, to: file.path })} />
         <span className="shrink-0 text-[12px] text-muted">{t(`runWorkspace.changes.status.${file.status}`, { defaultValue: file.status })}</span>
         <FileCounts file={file} />
       </button>

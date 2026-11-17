@@ -19,6 +19,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { WorkflowEditor } from '../../components/WorkflowEditor/WorkflowEditor'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useAgentMutations } from './useAgents'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { Agent } from '../../api/agentsApi'
 import type { WorkflowSummary, WorkflowView } from '../../api/workflowsApi'
 
@@ -50,15 +51,16 @@ function WorkflowSwitcher({ currentId, isAdmin, dirty, name, onSwitch }: Readonl
     <div className="flex min-w-0 items-center gap-1.5">
       {isAdmin ? (
         <>
-          <label htmlFor={selectId} className="sr-only">{t('editor.switchLabel')}</label>
+          {/* A visible label, not a hover hint: the list names every workflow in full. */}
+          <label htmlFor={selectId} className="shrink-0 text-[12px] text-muted">{t('editor.switchLabel')}</label>
           <select id={selectId} className="select select-sm w-auto min-w-0 max-w-[18rem] truncate font-semibold text-text-strong"
-            title={name} value={currentId} onChange={(e) => pick(e.target.value)}>
+            value={currentId} onChange={(e) => pick(e.target.value)}>
             {!listed && <option value={currentId}>{name}</option>}
             {workflows.map((w) => <option key={w.workflow_id} value={w.workflow_id}>{w.name}</option>)}
           </select>
         </>
       ) : (
-        <p className="truncate text-sm font-semibold text-text-strong" title={name}>{name}</p>
+        <TruncatedText as="p" className="truncate text-sm font-semibold text-text-strong" text={name} />
       )}
       <ConfirmModal
         isOpen={pending !== null}

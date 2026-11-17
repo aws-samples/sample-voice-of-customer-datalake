@@ -14,6 +14,7 @@ import { Plus, Trash2, X } from 'lucide-react'
 import clsx from 'clsx'
 import type { Kpi, PersonalObjective } from '../../api/companyContextApi'
 import { kpiFieldKey, objectiveFieldKey } from './myContextValidation'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { FieldErrors, FieldProblem, KpiField } from './myContextValidation'
 
 const MAX_KPIS = 10
@@ -85,9 +86,11 @@ export function PersonalObjectiveRow({ index, objective, errors, onChange, onRem
           onChange={(e) => patch({ due: e.target.value === '' ? undefined : e.target.value })}
           className="input sm:w-44"
         />
-        <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeObjective')} title={t('myContext.removeObjective')}>
-          <Trash2 size={16} />
-        </button>
+        <Tooltip kind="label" content={t('myContext.removeObjective')}>
+          <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeObjective')}>
+            <Trash2 size={16} />
+          </button>
+        </Tooltip>
       </div>
       <Field label={t('myContext.objectiveDescription')} value={objective.description} multiline
         problem={errors.get(objectiveFieldKey(objective.id, 'description'))} onChange={(description) => patch({ description })} />
@@ -120,9 +123,11 @@ function KpiRow({ kpi, problemOf, onChange, onRemove }: Readonly<{
         onChange={(target) => onChange({ target })} />
       <Field label={t('myContext.kpiUnit')} value={kpi.unit ?? ''} className="sm:w-28" problem={problemOf('unit')}
         onChange={(unit) => onChange({ unit: unit === '' ? undefined : unit })} />
-      <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeKpi')} title={t('myContext.removeKpi')}>
-        <X size={16} />
-      </button>
+      <Tooltip kind="label" content={t('myContext.removeKpi')}>
+        <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeKpi')}>
+          <X size={16} />
+        </button>
+      </Tooltip>
     </div>
   )
 }

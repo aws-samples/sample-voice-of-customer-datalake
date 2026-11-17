@@ -12,6 +12,7 @@ import type {
   ResearchNotesProps, NoteItem,
 } from './types'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 function getNoteText(note: NoteItem): string {
   return typeof note === 'string' ? note : note.text
@@ -90,16 +91,17 @@ export default function ResearchNotes({
             </div>
             <span className="flex-1 leading-relaxed">{getNoteText(note)}</span>
             {canEdit ? (
-              <button
-                type="button"
-                onClick={() => removeNote(i)}
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted hover:text-danger p-1 transition-opacity"
-                disabled={isSaving}
-                title={t('personas.removeNote')}
-                aria-label={t('personas.removeNote')}
-              >
-                <X size={16} aria-hidden />
-              </button>
+              <Tooltip kind="label" content={t('personas.removeNote')}>
+                <button
+                  type="button"
+                  onClick={() => removeNote(i)}
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted hover:text-danger p-1 transition-opacity"
+                  disabled={isSaving}
+                  aria-label={t('personas.removeNote')}
+                >
+                  <X size={16} aria-hidden />
+                </button>
+              </Tooltip>
             ) : null}
           </li>
         ))}

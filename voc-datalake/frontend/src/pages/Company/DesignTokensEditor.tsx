@@ -16,6 +16,7 @@ import clsx from 'clsx'
 import { isPaintableColor } from '../../api/designSystemApi'
 import type { DesignTokens, NamedValue, TypographyToken } from '../../api/designSystemApi'
 import { GroupLabel } from './ContextParts'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 const MAX_ROWS = 40
 
@@ -45,13 +46,14 @@ function Swatch({ value }: Readonly<{ value: string }>) {
   const { t } = useTranslation('settings')
   const paintable = isPaintableColor(value)
   return (
-    <span
-      role="img"
-      aria-label={paintable ? t('designSystem.swatch', { value }) : t('designSystem.invalidColor')}
-      title={paintable ? value : t('designSystem.invalidColor')}
-      className={clsx('w-8 h-8 rounded-md border border-border-strong flex-shrink-0', !paintable && 'bg-bg-hover bg-[repeating-linear-gradient(45deg,transparent_0_4px,var(--border)_4px_6px)]')}
-      style={paintable ? { backgroundColor: value.trim() } : undefined}
-    />
+    <Tooltip kind="label" content={paintable ? value : t('designSystem.invalidColor')}>
+      <span
+        role="img"
+        aria-label={paintable ? t('designSystem.swatch', { value }) : t('designSystem.invalidColor')}
+        className={clsx('w-8 h-8 rounded-md border border-border-strong flex-shrink-0', !paintable && 'bg-bg-hover bg-[repeating-linear-gradient(45deg,transparent_0_4px,var(--border)_4px_6px)]')}
+        style={paintable ? { backgroundColor: value.trim() } : undefined}
+      />
+    </Tooltip>
   )
 }
 
@@ -150,7 +152,9 @@ function TokenInput({ label, placeholder = label, value, onValue, className }: R
 function RemoveTokenButton({ onRemove, className }: Readonly<{ onRemove: () => void; className?: string }>) {
   const { t } = useTranslation('settings')
   return (
-    <button type="button" onClick={onRemove} className={clsx('icon-btn', className)} aria-label={t('designSystem.removeToken')} title={t('designSystem.removeToken')}><X size={16} /></button>
+    <Tooltip kind="label" content={t('designSystem.removeToken')}>
+      <button type="button" onClick={onRemove} className={clsx('icon-btn', className)} aria-label={t('designSystem.removeToken')}><X size={16} /></button>
+    </Tooltip>
   )
 }
 

@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import { Save, RotateCcw } from 'lucide-react'
 import type { ReactNode, RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 export function PrioritizationHeader({
   hasChanges, isPending, saveBlocked, rowCount, headingRef, scoringAction, onReset, onSave,
@@ -129,9 +130,13 @@ export function PrioritizationHeader({
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
         {scoringAction}
-        {hasChanges ? <button onClick={onReset} className="btn btn-ghost" aria-label={t('actions.reset')} title={t('actions.reset')}>
-          <RotateCcw size={16} aria-hidden="true" /><span className="hidden sm:inline">{t('actions.reset')}</span>
-        </button> : null}
+        {hasChanges ? (
+          <Tooltip kind="label" content={t('actions.reset')}>
+            <button onClick={onReset} className="btn btn-ghost" aria-label={t('actions.reset')}>
+              <RotateCcw size={16} aria-hidden="true" /><span className="hidden sm:inline">{t('actions.reset')}</span>
+            </button>
+          </Tooltip>
+        ) : null}
         <button onClick={onSave} disabled={!canSave} className={clsx('btn', canSave ? 'btn-primary' : 'btn-secondary')}>
           <Save size={16} />
           <span className="hidden sm:inline">{isPending ? t('actions.saving') : t('actions.save')}</span>

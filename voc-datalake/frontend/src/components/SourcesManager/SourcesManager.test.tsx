@@ -127,7 +127,7 @@ describe('SourcesManager', () => {
     await user.type(await screen.findByLabelText('Add a source profile'), 'radar_example_air{Enter}')
 
     const region = screen.getByRole('region', { name: 'Radar · Example air' })
-    expect(within(region).getByTitle('radar_example_air')).toHaveTextContent('Radar · Example air')
+    expect(within(region).getByText('Radar · Example air')).toHaveAccessibleDescription('radar_example_air')
     expect(within(region).queryByText('radar_example_air')).not.toBeInTheDocument()
   })
 })

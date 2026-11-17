@@ -22,6 +22,7 @@ import type { WalkthroughHost } from '../PrototypePins/useWalkthroughHost'
 import WalkthroughStepCard from './WalkthroughStepCard'
 import { draftedSteps, firstProblem, moveStep, trimmedSteps, withPickedStep } from './walkthroughSteps'
 import { useSavedWalkthrough } from './useSavedWalkthrough'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { EditorStep } from './walkthroughSteps'
 
 interface WalkthroughEditorProps {
@@ -123,9 +124,11 @@ function EditorHeader({ headingId, runtime, onClose }: Readonly<{ headingId: str
     <>
       <div className="flex items-center justify-between gap-2">
         <h3 id={headingId} className="text-sm font-semibold text-text-strong">{t('prototypeWalkthrough.heading')}</h3>
-        <button type="button" className="icon-btn p-1" onClick={onClose} aria-label={t('prototypeWalkthrough.close')} title={t('prototypeWalkthrough.close')}>
-          <X size={14} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('prototypeWalkthrough.close')}>
+          <button type="button" className="icon-btn p-1" onClick={onClose} aria-label={t('prototypeWalkthrough.close')}>
+            <X size={14} aria-hidden />
+          </button>
+        </Tooltip>
       </div>
       {runtime ? null : <p className="text-xs text-warn">{t('prototypeWalkthrough.noRuntime')}</p>}
     </>

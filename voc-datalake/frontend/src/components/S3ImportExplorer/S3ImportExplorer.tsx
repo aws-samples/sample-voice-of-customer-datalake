@@ -27,6 +27,7 @@ import { formatFileSize } from '../../utils/file'
 import { formatDateTime } from '../../utils/dateUtils'
 import S3ImportReprocess, { ReprocessFileButton } from './S3ImportReprocess'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 const SUPPORTED_FILE_REGEX = /\.(csv|json|jsonl)$/i
 const FALLBACK_CONTENT_TYPE = 'application/octet-stream'
@@ -132,15 +133,16 @@ function FileListContent({ loadingFiles, files, onDelete, onReprocess }: Readonl
               {file.status === 'processed' ? t('s3Import.processed') : t('s3Import.pending')}
             </span>
             <ReprocessFileButton onClick={() => onReprocess(file.key)} />
-            <button
-              type="button"
-              onClick={() => onDelete(file.key)}
-              className="p-2 sm:p-1.5 text-muted hover:text-danger hover:bg-danger-subtle rounded-sm"
-              title={t('s3Import.deleteFile')}
-              aria-label={t('s3Import.deleteFile')}
-            >
-              <Trash2 size={16} aria-hidden />
-            </button>
+            <Tooltip kind="label" content={t('s3Import.deleteFile')}>
+              <button
+                type="button"
+                onClick={() => onDelete(file.key)}
+                className="p-2 sm:p-1.5 text-muted hover:text-danger hover:bg-danger-subtle rounded-sm"
+                aria-label={t('s3Import.deleteFile')}
+              >
+                <Trash2 size={16} aria-hidden />
+              </button>
+            </Tooltip>
           </div>
         </div>
       ))}

@@ -8,6 +8,7 @@
 import { useTranslation } from 'react-i18next'
 import { AlertCircle } from 'lucide-react'
 import { dimensionKeyOf, isCsvColumnTarget, mappingProblem, targetOptions } from './csvColumns'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { Dimension } from '../../api/dimensionsSchema'
 import type { CsvColumnTarget } from '../../api/types'
 
@@ -50,7 +51,7 @@ export default function CsvColumnMapping({ mapping, dimensions, onChange }: Read
       <ul className="divide-y divide-border rounded-lg border border-border">
         {Object.entries(mapping).map(([header, target]) => (
           <li key={header} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center px-3 py-2">
-            <span className="font-mono text-sm text-text-strong truncate" title={header}>{header}</span>
+            <TruncatedText className="font-mono text-sm text-text-strong truncate" text={header} />
             <select
               value={target}
               aria-label={t('columnLabel', { header })}

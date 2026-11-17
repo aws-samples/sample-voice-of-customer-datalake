@@ -96,28 +96,31 @@ export function buttonWithIcon(iconClass: string): HTMLElement {
 }
 
 /**
- * The gated control is disabled, carries the admin-only tooltip, and clicking it
- * does NOT invoke `callback` — the request not being issued is the observable;
- * `disabled` on a styled button is easy to render and easy to bypass.
+ * The gated control is off but focusable (`aria-disabled`), is described by the
+ * admin-only reason (its tooltip), and clicking it does NOT invoke `callback` — the
+ * request not being issued is the observable; an off look is easy to render and
+ * easy to bypass.
  */
 export async function expectAdminGatedButton(iconClass: string, callback: Mock) {
   const user = userEvent.setup()
   const button = buttonWithIcon(iconClass)
-  expect(button).toBeDisabled()
-  expect(button).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+  expect(button).toHaveAttribute('aria-disabled', 'true')
+  expect(button).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
   await user.click(button)
   expect(callback).not.toHaveBeenCalled()
 }
 
 /**
- * Positive control for `expectAdminGatedButton`: the control is enabled (and, when
- * `title` is given, carries that tooltip) and one click invokes `callback` once.
+ * Positive control for `expectAdminGatedButton`: the control is enabled, not off, not
+ * described by the admin-only reason (and, when `name` is given, named so), and one
+ * click invokes `callback` once.
  */
-export async function expectEnabledButtonFires(iconClass: string, callback: Mock, title?: string) {
+export async function expectEnabledButtonFires(iconClass: string, callback: Mock, name?: string) {
   const user = userEvent.setup()
   const button = buttonWithIcon(iconClass)
   expect(button).toBeEnabled()
-  if (title !== undefined) expect(button).toHaveAttribute('title', title)
+  expect(button).not.toHaveAttribute('aria-disabled')
+  if (name !== undefined) expect(button).toHaveAccessibleName(name)
   await user.click(button)
   expect(callback).toHaveBeenCalledTimes(1)
 }
@@ -148,12 +151,13 @@ export const sourceScheduleMocks = {
 }
 
 /**
- * The schedule toggle is disabled and clicking it issues neither request — the
- * request not being sent (no 403 provoked) is the observable, not `disabled`.
+ * The schedule toggle is off (`disabled`, or `aria-disabled` where its tooltip says
+ * why) and clicking it issues neither request — the request not being sent (no 403
+ * provoked) is the observable, not the attribute.
  */
 export async function expectScheduleToggleLocked(user: UserEvent) {
   const toggle = screen.getByRole('checkbox')
-  expect(toggle).toBeDisabled()
+  expect(toggle.matches(':disabled, [aria-disabled="true"]')).toBe(true)
   await user.click(toggle)
   expect(sourceScheduleMocks.enableSource).not.toHaveBeenCalled()
   expect(sourceScheduleMocks.disableSource).not.toHaveBeenCalled()

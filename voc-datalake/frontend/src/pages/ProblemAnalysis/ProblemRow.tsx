@@ -5,6 +5,7 @@ import { describeSentiment, sentimentTone } from '../../components/SentimentWord
 import { UrgentBadge } from './UrgentBadge'
 import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
 import { ProblemExamples } from './ProblemExamples'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ProblemGroup } from '../../api/problemsApi'
 
 /** A problem's sentiment in words with its share ("Mostly negative · 78 % negative"); the average stays as the number. */
@@ -44,9 +45,11 @@ function ProblemTitle({ problemGroup, resolved }: Readonly<{ problemGroup: Probl
       )}
       {problemGroup.similarCount > 0 && (
         // A count is a descriptive label, not a state: neutral (labels vs status).
-        <span className="badge badge-muted" title={problemGroup.similarProblems.join(', ')}>
-          {t('problemAnalysis:tree.similarCount', { count: problemGroup.similarCount })}
-        </span>
+        <Tooltip kind="description" content={problemGroup.similarProblems.join(', ')}>
+          <span className="badge badge-muted">
+            {t('problemAnalysis:tree.similarCount', { count: problemGroup.similarCount })}
+          </span>
+        </Tooltip>
       )}
     </div>
   )

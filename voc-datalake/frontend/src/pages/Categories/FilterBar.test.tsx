@@ -106,14 +106,14 @@ describe('FilterBar', () => {
     const onRatingFilterChange = vi.fn()
     render(<FilterBar {...defaultProps} onRatingFilterChange={onRatingFilterChange} />)
 
-    await user.click(screen.getByTitle('4+ stars'))
+    await user.click(screen.getByRole('button', { name: '4+ stars' }))
     expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 4, direction: 'up' })
   })
 
   it('resets the rating threshold via the Any button', async () => {
     const { user, onRatingFilterChange } = renderWithThresholdThree()
 
-    await user.click(screen.getByTitle('Any rating'))
+    await user.click(screen.getByRole('button', { name: 'Any rating' }))
     expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 0, direction: 'up' })
   })
 
@@ -129,7 +129,7 @@ describe('FilterBar', () => {
 
     expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByTitle('3 stars or fewer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3 stars or fewer' })).toBeInTheDocument()
   })
 
   it('moves the selection with arrow keys and keeps only the checked option tabbable', async () => {

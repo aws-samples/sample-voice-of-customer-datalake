@@ -32,6 +32,7 @@ import { formatFileSize } from '../../utils/file'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/projectTypes'
 import { noCleanup } from '../../hooks/noCleanup'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /**
  * Exactly the content types the upload boundary accepts — see
@@ -409,7 +410,11 @@ function DocStatusBadge({ status, error }: { readonly status: ProductDoc['status
     return <span className="inline-flex items-center gap-1 text-xs text-ok"><CheckCircle2 size={12} /> {t('product.upload.statusReady')}</span>
   }
   if (status === 'failed') {
-    return <span className="inline-flex items-center gap-1 text-xs text-danger" title={error ?? ''}><AlertCircle size={12} /> {t('product.upload.statusFailed')}</span>
+    return (
+      <Tooltip kind="description" content={error ?? undefined}>
+        <span className="inline-flex items-center gap-1 text-xs text-danger"><AlertCircle size={12} /> {t('product.upload.statusFailed')}</span>
+      </Tooltip>
+    )
   }
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted">

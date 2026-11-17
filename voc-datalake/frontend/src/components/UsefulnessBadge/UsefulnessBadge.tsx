@@ -11,6 +11,7 @@
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { isUsefulnessBand } from '../../api/feedbackFacets'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { UsefulnessBand } from '../../api/feedbackFacets'
 
 const TONE: Readonly<Record<UsefulnessBand, string>> = {
@@ -24,9 +25,11 @@ export default function UsefulnessBadge({ band }: Readonly<{ band: unknown }>) {
   if (!isUsefulnessBand(band)) return null
   const label = t('facetFilters.usefulnessBadge', { band: t(`facetFilters.usefulnessShort.${band}`) })
   return (
-    <span className={clsx('badge', TONE[band])} title={label} data-testid="usefulness-badge">
-      <span aria-hidden="true">{t(`facetFilters.usefulnessShort.${band}`)}</span>
-      <span className="sr-only">{label}</span>
-    </span>
+    <Tooltip kind="label" content={label}>
+      <span className={clsx('badge', TONE[band])} data-testid="usefulness-badge">
+        <span aria-hidden="true">{t(`facetFilters.usefulnessShort.${band}`)}</span>
+        <span className="sr-only">{label}</span>
+      </span>
+    </Tooltip>
   )
 }

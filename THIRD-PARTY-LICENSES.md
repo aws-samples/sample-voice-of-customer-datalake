@@ -120,10 +120,12 @@ Frontend document canvas, its Markdown reader and writer (voc-datalake/frontend,
 [mdast-util-gfm@3.1.0](https://github.com/syntax-tree/mdast-util-gfm) - MIT
 [micromark-extension-gfm@3.0.0](https://github.com/micromark/micromark-extension-gfm) - MIT
 
-Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's lazy chunks: `vendor-editor`, and `vendor-editor-menus` for @floating-ui/*, @tiptap/extension-bubble-menu, -floating-menu, -drag-handle, -drag-handle-react, -node-range and @tiptap/react's menus, loaded after the text; vendorChunks.json):
+Frontend tooltips (voc-datalake/frontend, components/Tooltip/positionFloating.ts, 7.51.01; a direct dependency, `@floating-ui/dom` pinned at 1.8.0, in the shell's `vendor-floating` chunk, which the editor's menus below use too; vendorChunks.json):
 [@floating-ui/core@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
 [@floating-ui/dom@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
 [@floating-ui/utils@0.2.12](https://github.com/floating-ui/floating-ui) - MIT
+
+Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's lazy chunks: `vendor-editor`, and `vendor-editor-menus` for @tiptap/extension-bubble-menu, -floating-menu, -drag-handle, -drag-handle-react, -node-range and @tiptap/react's menus, loaded after the text; vendorChunks.json):
 [@tiptap/core@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
 [@tiptap/extension-blockquote@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
 [@tiptap/extension-bold@3.33.1](https://github.com/ueberdosis/tiptap) - MIT

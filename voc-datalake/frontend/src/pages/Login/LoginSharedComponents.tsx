@@ -10,6 +10,7 @@ import {
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TextInputField } from '../../components/TextInputField/TextInputField'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 // Error Alert Component
 interface ErrorAlertProps { readonly message: string }
@@ -128,16 +129,17 @@ export function PasswordInput({
           autoComplete={autoComplete}
           required
         />
-        <button
-          type="button"
-          onClick={onToggleShow}
-          aria-label={toggleLabel}
-          aria-pressed={showPassword}
-          title={toggleLabel}
-          className="icon-btn absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 flex items-center justify-center"
-        >
-          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
+        <Tooltip kind="label" content={toggleLabel}>
+          <button
+            type="button"
+            onClick={onToggleShow}
+            aria-label={toggleLabel}
+            aria-pressed={showPassword}
+            className="icon-btn absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 flex items-center justify-center"
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

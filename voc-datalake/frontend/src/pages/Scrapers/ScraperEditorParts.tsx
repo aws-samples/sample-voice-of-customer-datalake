@@ -5,10 +5,9 @@
  */
 
 import clsx from 'clsx'
-import { Save, AlertCircle, AlertTriangle, CheckCircle, Loader2, Code, FileJson, Info, Lock } from 'lucide-react'
+import { Save, AlertCircle, AlertTriangle, CheckCircle, Loader2, Code, FileJson, Lock } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { ScraperConfig } from '../../api/types'
 
 export interface AnalyzeResult {
@@ -90,7 +89,7 @@ export function EditorFooter({ saveError, isSaving, isAdmin, onSave, onCancel }:
       )}
       <div className="dialog-footer flex-col-reverse sm:flex-row">
         <button onClick={onCancel} className="btn btn-secondary">{t('editor.cancel')}</button>
-        <button onClick={onSave} className="btn btn-primary" disabled={isSaving || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE}>
+        <button onClick={onSave} className="btn btn-primary" disabled={isSaving || !isAdmin}>
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {t('editor.save')}
         </button>
       </div>
@@ -179,22 +178,5 @@ export function CssSelectors({
         </div>
       </div>
     </div>
-  )
-}
-
-/**
- * Info tip that opens on hover AND keyboard focus. It was a hover-only icon, so
- * the hint was unreachable without a mouse and on touch screens.
- */
-export function HintTip({ text }: { readonly text: string }) {
-  return (
-    <span className="group relative inline-flex">
-      <button type="button" className="icon-btn p-0.5 cursor-help" aria-label={text} title={text}>
-        <Info size={14} />
-      </button>
-      <span role="tooltip" className="menu absolute left-0 bottom-full mb-2 hidden group-hover:block group-focus-within:block w-64 sm:w-72 p-2 text-xs text-muted z-10">
-        {text}
-      </span>
-    </span>
   )
 }

@@ -7,7 +7,6 @@ import { Loader2, Wand2, Globe } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   FREQUENCY_OPTIONS, DEFAULT_SCRAPER,
 } from './constants'
@@ -20,8 +19,9 @@ import { saveIgnoringFailure, useSnapshotGuard } from '../../components/UnsavedC
 import SourceDialogHeader from './SourceDialogHeader'
 import DimensionDefaultsSection from '../../components/DimensionFields/DimensionDefaultsSection'
 import RadarSourcePicker from './RadarSourcePicker'
+import { InfoTip } from '../../components/Tooltip/InfoTip'
 import {
-  AnalyzeResultDisplay, CssSelectorToggle, CssSelectors, EditorFooter, HintTip, JsonLdIndicator, ReadOnlyNotice,
+  AnalyzeResultDisplay, CssSelectorToggle, CssSelectors, EditorFooter, JsonLdIndicator, ReadOnlyNotice,
   type AnalyzeResult, type SectionProps,
 } from './ScraperEditorParts'
 
@@ -244,7 +244,7 @@ function UrlInput({
           base_url: e.target.value,
         })} className="input flex-1" placeholder={t('editor.websiteUrlPlaceholder')} />
         {showAutoDetect && (
-          <button onClick={onAutoDetect} disabled={isAnalyzing || config.base_url === '' || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary whitespace-nowrap">
+          <button onClick={onAutoDetect} disabled={isAnalyzing || config.base_url === '' || !isAdmin} className="btn btn-secondary whitespace-nowrap">
             {isAnalyzing ? <><Loader2 size={16} className="animate-spin" /> {t('editor.analyzing')}</> : <><Wand2 size={16} /> {t('editor.autoDetect')}</>}
           </button>
         )}
@@ -266,7 +266,7 @@ function AdditionalUrls({
     <div>
       <div className="flex items-center gap-2 mb-1">
         <label htmlFor={`${id}-0`} className="block text-sm font-medium">{t('editor.additionalUrls')}</label>
-<HintTip text={t('editor.additionalUrlsHint')} />
+        <InfoTip text={t('editor.additionalUrlsHint')} />
       </div>
       <textarea id={`${id}-0`} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="input min-h-[80px] font-mono text-sm" placeholder={t('editor.additionalUrlsPlaceholder')} />
       <p className="text-xs text-muted mt-1">{t('editor.additionalUrlsNote')}</p>
@@ -290,7 +290,7 @@ function PaginationSettings({ config, setConfig }: SectionProps) {
           })} className="rounded-sm accent-accent" />
           <span className="font-medium text-sm">{t('editor.enablePagination')}</span>
         </label>
-<HintTip text={t('editor.paginationHint')} />
+        <InfoTip text={t('editor.paginationHint')} />
       </div>
       {config.pagination.enabled ? <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div>

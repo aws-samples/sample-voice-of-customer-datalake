@@ -3,7 +3,9 @@
  * audit found `truncate` cutting agent names and descriptions, member e-mails,
  * source schedule values, PR/FAQ and form titles and the workflow name with
  * no tooltip, so the rest of the text was unreadable at 390px. Each of these
- * one-line truncations now carries `title` with the same value.
+ * truncations is a `TruncatedText` (7.51.01: its tooltip shows the whole text
+ * while it is cut), or, where the native title still waits for its release
+ * (native_title.json: the flow canvas), carries `title` with the same value.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -21,8 +23,8 @@ function lineOf(file: string, child: string): string {
 /** [file, the JSX expression the truncated element renders] */
 const SITES: ReadonlyArray<readonly [string, string]> = [
   ['pages/Agents/Agents.tsx', '{agent.name}</p>'],
-  ['pages/Agents/Agents.tsx', ': agent.description}</p>'],
-  ['components/ProjectSharingModal/MemberList.tsx', '{person.email}</p>'],
+  ['pages/Agents/Agents.tsx', 'text={agent.description} />'],
+  ['components/ProjectSharingModal/MemberList.tsx', 'text={person.email} />'],
   ['pages/Scrapers/SourceCardParts.tsx', '{value}</dd>'],
   // The Prioritization row, document and form titles now WRAP (wave 4), so nothing is cut:
   // pinned by pages/analyticsTextWraps.test.ts instead.
@@ -31,11 +33,11 @@ const SITES: ReadonlyArray<readonly [string, string]> = [
 
 describe.each(SITES)('%s %s', (file, child) => {
   // Wave 4 (WCAG 1.4.4 / 1.4.10): a name may now WRAP instead (no cut at all, cardTextWraps.test.ts);
-  // a one-line or clamped cut must still carry its full text in `title`.
-  it('wraps, or truncates with the full text in `title`', () => {
+  // a one-line or clamped cut must still carry its full text: a TruncatedText, or a `title` still waiting.
+  it('wraps, or truncates with the full text in a TruncatedText (or a waiting `title`)', () => {
     const line = lineOf(file, child)
     const cut = /\btruncate\b|\bline-clamp-\d\b/.test(line)
-    expect(cut ? line.includes('title=') : line.includes('break-words')).toBe(true)
+    expect(cut ? /<TruncatedText\b|\btitle=/.test(line) : line.includes('break-words')).toBe(true)
   })
 })
 

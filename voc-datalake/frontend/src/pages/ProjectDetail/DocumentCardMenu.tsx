@@ -24,6 +24,7 @@ import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import { placeFixedMenu, tabTargetFrom } from '../../utils/fixedMenu'
 import { MENU_KEYS, rovingIndex } from '../../utils/rovingIndex'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { TFunction } from 'i18next'
 import type { CardContextMenu } from './useCardContextMenu'
@@ -141,12 +142,14 @@ export function DocumentCardMoreButton({ buttonRef, open, menuId, selected, desc
 }>) {
   const { t } = useTranslation('projectDetail')
   return (
-    <button ref={buttonRef} type="button" aria-haspopup="menu" aria-expanded={open}
-      aria-controls={open ? menuId : undefined} aria-label={t('documents.card.more')} aria-describedby={describedBy}
-      title={t('documents.card.more')} onClick={onClick} onKeyDown={onKeyDown}
-      className={clsx('icon-btn absolute right-1.5 top-1.5 p-1 focus-ring transition-opacity motion-reduce:transition-none',
-        selected || open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100')}>
-      <MoreHorizontal size={16} aria-hidden />
-    </button>
+    <Tooltip kind="label" content={t('documents.card.more')}>
+      <button ref={buttonRef} type="button" aria-haspopup="menu" aria-expanded={open}
+        aria-controls={open ? menuId : undefined} aria-label={t('documents.card.more')} aria-describedby={describedBy}
+        onClick={onClick} onKeyDown={onKeyDown}
+        className={clsx('icon-btn absolute right-1.5 top-1.5 p-1 focus-ring transition-opacity motion-reduce:transition-none',
+          selected || open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100')}>
+        <MoreHorizontal size={16} aria-hidden />
+      </button>
+    </Tooltip>
   )
 }

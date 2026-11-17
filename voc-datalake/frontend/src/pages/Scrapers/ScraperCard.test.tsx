@@ -90,14 +90,14 @@ describe('ScraperCard base_url resilience (issue #167)', () => {
     renderCard(makeScraper({ base_url: '' }))
 
     expect(screen.getByText(NOT_CONFIGURED)).toBeInTheDocument()
-    expect(screen.getByTitle(i18n.t('card.runNow', { ns: 'scrapers' }))).toBeDisabled()
+    expect(screen.getByRole('button', { name: i18n.t('card.runNow', { ns: 'scrapers' }) })).toBeDisabled()
   })
 
   it('renders normally for a valid base_url', () => {
     renderCard(makeScraper({ base_url: 'https://shop.example.com/reviews' }))
 
     expect(screen.getByText('shop.example.com')).toBeInTheDocument()
-    expect(screen.getByTitle(i18n.t('card.runNow', { ns: 'scrapers' }))).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: i18n.t('card.runNow', { ns: 'scrapers' }) })).not.toBeDisabled()
   })
 })
 

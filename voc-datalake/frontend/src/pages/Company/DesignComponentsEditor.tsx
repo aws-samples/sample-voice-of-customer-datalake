@@ -20,6 +20,7 @@ import { GroupLabel } from './ContextParts'
 import { ExampleFrame, MiniPreview } from './ComponentPreview'
 import { VariantEditor, VariantView } from './ComponentVariantEditor'
 import { emptyComponent, emptyVariant, nextVariantName, removeAt, updateAt } from './componentDraft'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 type ListChange = (change: (components: DesignComponent[]) => DesignComponent[]) => void
 
@@ -123,9 +124,11 @@ function ComponentRow({ component, colors, readOnly, duplicate, expanded, onTogg
         </button>
         {first ? <span className="hidden sm:inline-flex"><MiniPreview component={component} variant={first} colors={colors} /></span> : null}
         {readOnly ? null : (
-          <button type="button" onClick={onRemove} className="icon-btn" aria-label={removeLabel} title={removeLabel}>
-            <Trash2 size={16} />
-          </button>
+          <Tooltip kind="label" content={removeLabel}>
+            <button type="button" onClick={onRemove} className="icon-btn" aria-label={removeLabel}>
+              <Trash2 size={16} />
+            </button>
+          </Tooltip>
         )}
       </div>
       {expanded ? (

@@ -17,6 +17,7 @@ import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
 import { ClampedNumberField } from './ClampedNumberField'
 import { addableKinds, scopesSources } from './agentDraft'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { AgentTrigger } from '../../api/agentsApi'
 import type { SectionProps } from './AgentSections'
 
@@ -132,10 +133,12 @@ export function TriggersSection({ draft, readOnly, onChange, engineering = false
               <span className="badge badge-accent">{t(`triggers.kinds.${trigger.kind}`)}</span>
               <span className="text-[12px] text-muted mr-auto">{t(`triggers.kindHints.${trigger.kind}`)}</span>
               {!readOnly && (
-                <button type="button" className="icon-btn" aria-label={t('triggers.remove')} title={t('triggers.remove')}
-                  onClick={() => set(draft.triggers.filter((_x, i) => i !== index))}>
-                  <Trash2 size={16} />
-                </button>
+                <Tooltip kind="label" content={t('triggers.remove')}>
+                  <button type="button" className="icon-btn" aria-label={t('triggers.remove')}
+                    onClick={() => set(draft.triggers.filter((_x, i) => i !== index))}>
+                    <Trash2 size={16} />
+                  </button>
+                </Tooltip>
               )}
             </div>
             <TriggerFields trigger={trigger} readOnly={readOnly}

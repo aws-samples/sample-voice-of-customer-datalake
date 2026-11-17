@@ -5,8 +5,7 @@ import { createQueryWrapper } from '../Categories/categories-fixtures'
 import { expectScheduleToggleLocked, sourceScheduleMocks } from './scrapers-fixtures'
 import PluginConfigModal from './PluginConfigModal'
 // Imported rather than restated: the subject of these assertions is the GATE, not
-// the wording, so a later decision to translate the tooltip must not fail a test
-// about admin access. See the constant's own docstring for why it is still English.
+// the wording (the English catalogue's common:adminOnly is the same text).
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { ApiError } from '../../lib/errors'
 import { PLUGIN_NOT_ENABLED } from '../../workspace/workspaceRefusals'
@@ -138,7 +137,7 @@ describe('PluginConfigModal', () => {
     const user = userEvent.setup()
     render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Example Shop')).toBeInTheDocument() })
-    const deleteButtons = screen.getAllByTitle('Delete')
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
     await user.click(at(deleteButtons, 0))
     expect(screen.getByText('Delete App')).toBeInTheDocument()
   })
@@ -265,8 +264,8 @@ describe('PluginConfigModal', () => {
       const user = await renderLoaded(false)
 
       const run = screen.getByRole('button', { name: /run now/i })
-      expect(run).toBeDisabled()
-      expect(run).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(run).toHaveAttribute('aria-disabled', 'true')
+      expect(run).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
       await user.click(run)
       expect(mockRunSource).not.toHaveBeenCalled()
     })
@@ -281,7 +280,7 @@ describe('PluginConfigModal', () => {
       const user = await renderLoaded(false)
 
       const add = screen.getByRole('button', { name: /add app/i })
-      expect(add).toBeDisabled()
+      expect(add).toHaveAttribute('aria-disabled', 'true')
       await user.click(add)
       expect(screen.queryByText('Add New App')).not.toBeInTheDocument()
       expect(mockSaveAppConfig).not.toHaveBeenCalled()
@@ -299,8 +298,8 @@ describe('PluginConfigModal', () => {
       expect(screen.getByDisplayValue('Example Shop')).toBeInTheDocument()
 
       const save = screen.getByRole('button', { name: 'Save' })
-      expect(save).toBeDisabled()
-      expect(save).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(save).toHaveAttribute('aria-disabled', 'true')
+      expect(save).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
       await user.click(save)
       expect(mockSaveAppConfig).not.toHaveBeenCalled()
     })
@@ -308,14 +307,13 @@ describe('PluginConfigModal', () => {
     it('does not delete an app config', async () => {
       const user = await renderLoaded(false)
 
-      // Located by its position in the per-app row rather than by title: `title` is
-      // what the assertion is ABOUT, so selecting on it would find the Run button
-      // (which carries the same title) and pass with the delete gate removed. There
-      // is one delete button per app; the two apps are the loaded fixture.
-      const perApp = screen.getAllByRole('button')
-        .filter((el) => el.getAttribute('title') === ADMIN_ONLY_TITLE
-          && el.querySelector('svg.lucide-trash-2') !== null)
-      expect(perApp).toHaveLength(2)
+      // Located by its icon in the per-app row, then held to the gate: off (aria-disabled)
+      // and described by the admin-only reason. There is one delete button per app; the
+      // two apps are the loaded fixture.
+      const perApp = screen.getAllByRole('button').filter((el) => el.querySelector('svg.lucide-trash-2') !== null)
+      expect(perApp.map((el) => [el.getAttribute('aria-disabled'), el.getAttribute('aria-describedby') === null]))
+        .toStrictEqual([['true', false], ['true', false]])
+      expect(at(perApp, 0)).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
 
       await user.click(at(perApp, 0))
       // No confirmation dialog, so the mutation is unreachable rather than merely

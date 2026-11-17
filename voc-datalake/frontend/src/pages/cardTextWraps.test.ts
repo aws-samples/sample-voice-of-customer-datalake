@@ -30,7 +30,7 @@ describe.each([
   ['pages/Projects/ProjectCard.tsx', '>{project.name}</h2>'],
   ['pages/ProjectDetail/ProjectHeader.tsx', '>{name}</h1>'],
   ['pages/Agents/Agents.tsx', '>{agent.name}</p>'],
-  ['pages/Agents/Agents.tsx', 'agent.description === \'\' ? undefined'],
+  ['pages/Agents/Agents.tsx', 'text={agent.description} />'],
   ['pages/Agents/WorkflowLibrary.tsx', '>{workflow.name}</p>'],
   ['pages/Agents/RunsTab.tsx', 't(`run.triggers.${run.trigger}`)'],
   ['pages/Company/DesignReferences.tsx', 'reference.title ||'],

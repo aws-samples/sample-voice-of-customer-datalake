@@ -21,6 +21,7 @@ import { GroupLabel, MarkdownField, MarkdownView, SectionHeader, ViewOnlyBadge }
 import { DraftSaveRow, LoadedSection } from './SectionParts'
 import { useDraft, useDraftGuard } from './useDraft'
 import { formatDateTime } from '../../utils/dateUtils'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 const EMPTY: CompanyContext = { vision: '', objectives: [] }
 
@@ -231,9 +232,11 @@ function ObjectiveRow({ index, objective, onChange, onRemove }: Readonly<{
             className="input sm:w-44"
           />
         ) : null}
-        <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('companyContext.removeObjective')} title={t('companyContext.removeObjective')}>
-          <Trash2 size={16} />
-        </button>
+        <Tooltip kind="label" content={t('companyContext.removeObjective')}>
+          <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('companyContext.removeObjective')}>
+            <Trash2 size={16} />
+          </button>
+        </Tooltip>
       </div>
       <textarea
         aria-label={t('companyContext.objectiveDescription')}

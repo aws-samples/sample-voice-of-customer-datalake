@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { tabTimes } from '@test/keyboard'
+import { openTooltip } from '@test/tooltip'
 import { Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/TestRouter'
@@ -388,9 +389,8 @@ describe('Layout', () => {
     it('displays collapse button', async () => {
       render(<Layout />, { wrapper: createWrapper() })
       
-      await waitFor(() => {
-        expect(screen.getByTitle(/collapse sidebar|expand sidebar/i)).toBeInTheDocument()
-      })
+      const toggle = await screen.findByRole('button', { name: /collapse sidebar|expand sidebar/i })
+      expect(await openTooltip(toggle)).toHaveTextContent(/collapse sidebar|expand sidebar/i)
     })
   })
 

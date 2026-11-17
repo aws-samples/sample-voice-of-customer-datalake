@@ -158,7 +158,7 @@ test.describe('modals', () => {
 
 // ------------------------------------------------ template selector: admin-only tiles ----
 
-/** TemplateSelector.tsx: a non-admin's admin-only tile is disabled and titled with this (constants/admin.ts). */
+/** TemplateSelector.tsx: a non-admin's admin-only tile is off (aria-disabled) and described with this (common:adminOnly). */
 const ADMIN_ONLY_TITLE = 'Admin access required'
 /** Plugin tiles only an admin may open (sourceMenu.ts ADMIN_ONLY_PLUGIN_IDS). */
 const ADMIN_ONLY_PLUGIN_IDS: ReadonlySet<string> = new Set(['s3_import'])
@@ -166,8 +166,8 @@ const ADMIN_ONLY_PLUGIN_IDS: ReadonlySet<string> = new Set(['s3_import'])
 const ADMIN_ONLY_TILES = ['Scraper with CSS selectors', 'Paste reviews', 'JSON file', 'Spreadsheet (CSV)'] as const
 
 async function expectAdminOnly(tile: Locator, label: string): Promise<void> {
-  await expect(tile, `${label}: disabled for a non-admin`).toBeDisabled()
-  await expect(tile, `${label}: says why`).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+  await expect(tile, `${label}: off for a non-admin`).toHaveAttribute('aria-disabled', 'true')
+  await expect(tile, `${label}: says why`).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
 }
 
 test.describe('modals: a non-admin cannot open the admin-only sources', () => {

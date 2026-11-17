@@ -27,6 +27,7 @@ import { formatDate } from '../../utils/dateUtils'
 import { cleanReviewText } from '../../utils/cleanReviewText'
 import { metricsKeys } from '../../api/queryKeys'
 import { httpHref } from '../../utils/httpHref'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 const SOURCE_COLORS: Record<string, string> = {
   webscraper: 'border-l-chart-2', web_scrape: 'border-l-chart-2',
@@ -72,15 +73,16 @@ function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
                 {t('feedbackCard.details')}
               </ReviewLink>
               {sourceHref && (
-                <a
-                  href={sourceHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 link focus-ring rounded-sm"
-                  title={t('feedbackCard.openOriginal')}
-                >
-                  {t('socialFeed.view')} <ExternalLink size={12} aria-hidden="true" />
-                </a>
+                <Tooltip kind="description" content={t('feedbackCard.openOriginal')}>
+                  <a
+                    href={sourceHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 link focus-ring rounded-sm"
+                  >
+                    {t('socialFeed.view')} <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                </Tooltip>
               )}
             </span>
           </div>

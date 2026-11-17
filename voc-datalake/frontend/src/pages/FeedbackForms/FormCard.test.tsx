@@ -111,14 +111,16 @@ describe('FormCard (issue #171)', () => {
     expect(screen.getByText('Submissions').closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true')
   })
 
-  it('explains why View submissions is disabled when there are none', async () => {
+  it('explains why View submissions is off when there are none, and keeps it focusable', async () => {
     mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
     renderCard(buildForm())
 
     const hint = 'No submissions yet — share the form to collect some.'
-    expect(await screen.findByText(hint)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'View Submissions' })).toBeDisabled()
-    expect(screen.getByTitle(hint)).toBeInTheDocument()
+    const view = await screen.findByRole('button', { name: 'View Submissions', description: hint })
+    expect(view).toHaveAttribute('aria-disabled', 'true')
+    expect(view).toBeEnabled()
+    await userEvent.setup().click(view)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   // U12: these icon-only controls carried hardcoded English titles, so they read

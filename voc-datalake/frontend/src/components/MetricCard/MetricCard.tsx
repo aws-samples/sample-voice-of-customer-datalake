@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import clsx from 'clsx'
 import { formatCount, formatPercent } from '../../utils/numberFormat'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { Tone } from '../../theme/tones'
 import type { TFunction } from 'i18next'
 
@@ -110,13 +111,14 @@ export default function MetricCard({ title, value: raw, change, icon, trend, col
       <div className="flex items-start justify-between gap-2 @[12rem]:gap-3 p-3 @[12rem]:p-4 @[16rem]:p-6">
         <div className="min-w-0 flex-1">
           <p className="text-xs sm:text-sm text-muted mb-0.5 sm:mb-1 break-words hyphens-auto">{title}</p>
-          <p
-            className="text-lg @[9rem]:text-xl @[13rem]:text-2xl font-bold font-mono tracking-tight text-text-strong break-words hyphens-auto"
-            title={hint}
-            aria-label={hint ? `${value} — ${hint}` : undefined}
-          >
-            {value}
-          </p>
+          <Tooltip kind="label" content={hint}>
+            <p
+              className="text-lg @[9rem]:text-xl @[13rem]:text-2xl font-bold font-mono tracking-tight text-text-strong break-words hyphens-auto"
+              aria-label={hint ? `${value} — ${hint}` : undefined}
+            >
+              {value}
+            </p>
+          </Tooltip>
           {detail === undefined ? null : <p className="text-xs text-muted mt-0.5 break-words">{detail}</p>}
           {change !== undefined && (
             <TrendIndicator trend={trend} change={change} />

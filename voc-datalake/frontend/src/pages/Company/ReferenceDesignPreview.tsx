@@ -21,6 +21,7 @@ import { MiniPreview } from './ComponentPreview'
 import { designCounts, fontFamilies, urlHost } from './designDraftSummary'
 import type { DesignCounts } from './designDraftSummary'
 import { IconStrip, StoredImageThumbnail, SvgDownloadLink } from './ReferenceAssets'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 const MAX_SWATCHES = 12
 const MAX_COMPONENT_PREVIEWS = 6
@@ -66,13 +67,14 @@ export default function ReferenceDesignPreview({ design, actions }: Readonly<{
             <ul className="flex flex-wrap gap-1.5" aria-label={t('designSystem.preview.colors')}>
               {swatches.map((color) => (
                 <li key={`${color.name}-${color.value}`}>
-                  <span
-                    role="img"
-                    aria-label={t('designSystem.preview.swatch', { name: color.name, value: color.value })}
-                    title={`${color.name} · ${color.value}`}
-                    className="block w-6 h-6 rounded-sm border border-border-strong"
-                    style={{ backgroundColor: color.value.trim() }}
-                  />
+                  <Tooltip kind="label" content={`${color.name} · ${color.value}`}>
+                    <span
+                      role="img"
+                      aria-label={t('designSystem.preview.swatch', { name: color.name, value: color.value })}
+                      className="block w-6 h-6 rounded-sm border border-border-strong"
+                      style={{ backgroundColor: color.value.trim() }}
+                    />
+                  </Tooltip>
                 </li>
               ))}
             </ul>
@@ -83,7 +85,7 @@ export default function ReferenceDesignPreview({ design, actions }: Readonly<{
               {fonts.map((font, i) => (
                 <span key={font.name}>
                   {i > 0 ? ' · ' : null}
-                  <span title={font.stack}>{font.name}</span>
+                  <Tooltip kind="description" content={font.stack}><span>{font.name}</span></Tooltip>
                 </span>
               ))}
             </p>
@@ -91,10 +93,12 @@ export default function ReferenceDesignPreview({ design, actions }: Readonly<{
           {samples.length > 0 ? (
             <ul className="flex flex-wrap items-center gap-2" aria-label={t('designSystem.preview.components')} data-testid="reference-component-previews">
               {samples.map(({ component, variant }, i) => (
-                <li key={i} title={`${component.name} · ${variant.name}`}>
-                  <span className="sr-only">{`${component.name} · ${variant.name}`}</span>
-                  <MiniPreview component={component} variant={variant} colors={design.colors} />
-                </li>
+                <Tooltip key={i} kind="label" content={`${component.name} · ${variant.name}`}>
+                  <li>
+                    <span className="sr-only">{`${component.name} · ${variant.name}`}</span>
+                    <MiniPreview component={component} variant={variant} colors={design.colors} />
+                  </li>
+                </Tooltip>
               ))}
             </ul>
           ) : null}

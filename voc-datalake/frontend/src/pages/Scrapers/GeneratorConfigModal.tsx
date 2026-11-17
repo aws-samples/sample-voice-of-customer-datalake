@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next'
 import { usePluginCopy } from '../../plugins/pluginCopy'
 import { api } from '../../api/client'
 import { ignoreRejection } from '../../lib/rejections'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import {
   PluginFieldGrid, SetupInstructions, ResultMessage,
 } from './PluginConfigParts'
@@ -27,6 +27,7 @@ import type { PluginManifest } from '../../plugins/types'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader from './SourceDialogHeader'
 import { noCleanup } from '../../hooks/noCleanup'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface GeneratorConfigModalProps {
   readonly plugin: PluginManifest
@@ -68,6 +69,7 @@ export default function GeneratorConfigModal({
   plugin, onClose, isAdmin,
 }: GeneratorConfigModalProps) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   const copy = usePluginCopy()(plugin)
   const titleId = useId()
   const fieldKeys = plugin.config.map((f) => f.key)
@@ -157,16 +159,18 @@ export default function GeneratorConfigModal({
         {/* Secondary first, primary last (right) — the order every other dialog uses. */}
         <div className="dialog-footer">
           <button type="button" onClick={onClose} className="btn btn-secondary">{t('pluginConfig.close')}</button>
-          <button
-            type="button"
-            onClick={() => generateMutation.mutate()}
-            disabled={isBusy || !hasRequired || !isAdmin}
-            title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
-            className="btn btn-primary"
-          >
-            {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            {isBusy ? t('generator.generating') : t('generator.generate')}
-          </button>
+          <Tooltip kind="description" content={adminOnly}>
+            <button
+              type="button"
+              onClick={isAdmin ? () => generateMutation.mutate() : undefined}
+              disabled={isAdmin && (isBusy || !hasRequired)}
+              aria-disabled={isAdmin ? undefined : true}
+              className="btn btn-primary"
+            >
+              {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              {isBusy ? t('generator.generating') : t('generator.generate')}
+            </button>
+          </Tooltip>
         </div>
     </ModalShell>
   )

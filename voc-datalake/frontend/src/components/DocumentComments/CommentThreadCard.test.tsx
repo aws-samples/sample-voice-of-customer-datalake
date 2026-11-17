@@ -47,7 +47,7 @@ describe('CommentThreadCard', () => {
     const card = renderCard({ ...THREAD, addressed: { version: 4, at: '2026-11-11T10:00:00Z', by_kind: 'ai' } })
 
     const badge = within(card).getByText('Addressed in v4')
-    expect(badge).toHaveAttribute('title', 'Answered by a version the AI revised')
+    expect(badge).toHaveAccessibleDescription('Answered by a version the AI revised')
   })
 
   it('shows no addressed badge on a thread no version answered yet', () => {

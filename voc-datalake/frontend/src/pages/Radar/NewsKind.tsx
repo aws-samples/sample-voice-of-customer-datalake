@@ -11,6 +11,7 @@ import PressedChoices from '../../components/PressedChoices/PressedChoices'
 import { RADAR_NEWS_KINDS } from '../../api/radarNewsFields'
 import type { LucideIcon } from 'lucide-react'
 import { useNewsKindLabel } from './newsKindLabel'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { RadarFoundVia, RadarNewsKind } from '../../api/radarNewsFields'
 
 /** The filter's choice: every kind, or one. */
@@ -41,9 +42,11 @@ export function NewsKindIcon({ kind }: Readonly<{ kind: RadarNewsKind }>) {
   const label = useNewsKindLabel()
   const Icon = KIND_ICONS[kind]
   return (
-    <span className="inline-flex text-muted shrink-0" title={label(kind)} data-testid="news-kind">
-      <Icon size={14} aria-hidden="true" /><span className="sr-only">{label(kind)}</span>
-    </span>
+    <Tooltip kind="label" content={label(kind)}>
+      <span className="inline-flex text-muted shrink-0" data-testid="news-kind">
+        <Icon size={14} aria-hidden="true" /><span className="sr-only">{label(kind)}</span>
+      </span>
+    </Tooltip>
   )
 }
 

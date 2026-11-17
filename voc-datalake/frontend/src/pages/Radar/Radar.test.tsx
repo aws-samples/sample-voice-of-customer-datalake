@@ -4,7 +4,7 @@
  * cited releases and the trend. Admins get one "Last scan · Scan now" line in the header.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -60,7 +60,8 @@ describe('Radar page', () => {
     renderPage()
     const scan = await screen.findByRole('button', { name: 'Scan now' })
     expect(scan).toHaveAccessibleDescription(/each brand's own domains for its releases and news/)
-    expect(scan).toHaveAttribute('title', expect.stringMatching(/without waiting for the schedule/))
+    fireEvent.pointerOver(scan, { pointerType: 'mouse' })
+    expect(await screen.findByText(/without waiting for the schedule/, { selector: '[role="tooltip"][aria-hidden="true"]' })).toBeInTheDocument()
     expect(screen.getByTestId('radar-last-scan')).toHaveTextContent('No scan yet')
   })
 
@@ -92,7 +93,7 @@ describe('Radar page', () => {
     renderPage()
     const last = await screen.findByTestId('radar-last-scan')
     expect(last).toHaveTextContent('Last scan Oct 30')
-    expect(last).toHaveAttribute('title', expect.stringMatching(/^Last scan: completed, .*\(1 brand, 15 searches, 0 new releases, 0 merged\)$/))
+    expect(last).toHaveAccessibleDescription(/^Last scan: completed, .*\(1 brand, 15 searches, 0 new releases, 0 merged\)$/)
   })
 
   it('offers no scan to a non-admin', async () => {

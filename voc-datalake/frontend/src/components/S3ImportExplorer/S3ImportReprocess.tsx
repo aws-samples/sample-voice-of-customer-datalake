@@ -20,21 +20,23 @@ import {
 } from '../../api/s3ImportReprocessApi'
 import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import { describeImportKey } from './importKey'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 const POLL_INTERVAL_MS = 2_000
 
 export function ReprocessFileButton({ onClick }: Readonly<{ onClick: () => void }>) {
   const { t } = useTranslation('components')
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="p-2 sm:p-1.5 text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm"
-      title={t('s3Import.reprocess.action')}
-      aria-label={t('s3Import.reprocess.action')}
-    >
-      <RotateCw size={16} aria-hidden />
-    </button>
+    <Tooltip kind="label" content={t('s3Import.reprocess.action')}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="p-2 sm:p-1.5 text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm"
+        aria-label={t('s3Import.reprocess.action')}
+      >
+        <RotateCw size={16} aria-hidden />
+      </button>
+    </Tooltip>
   )
 }
 
@@ -88,10 +90,12 @@ function RunStatus({ started, onDismiss }: Readonly<{ started: S3ImportRun; onDi
     <div role="status" className="flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 text-sm">
       <RunStatusLine run={data} filename={describeImportKey(started.key).filename} pollFailed={pollFailed} />
       {(pollFailed || isRunSettled(data)) && (
-        <button type="button" onClick={onDismiss} className="p-1 text-muted hover:text-text rounded-sm"
-          aria-label={t('s3Import.reprocess.dismiss')} title={t('s3Import.reprocess.dismiss')}>
-          <X size={14} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('s3Import.reprocess.dismiss')}>
+          <button type="button" onClick={onDismiss} className="p-1 text-muted hover:text-text rounded-sm"
+            aria-label={t('s3Import.reprocess.dismiss')}>
+            <X size={14} aria-hidden />
+          </button>
+        </Tooltip>
       )}
     </div>
   )

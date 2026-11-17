@@ -23,6 +23,7 @@ import { formatDate } from '../../utils/dateUtils'
 import { DocumentCardMenuPopup, DocumentCardMoreButton } from './DocumentCardMenu'
 import { DocumentOrdinalLabel } from './DocumentLabels'
 import { useCardContextMenu } from './useCardContextMenu'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import type { DocumentOrdinal } from '../../api/documentLineage'
 import type { ProjectDocument } from '../../api/types'
@@ -132,11 +133,13 @@ function CardTitleField({ title, onSave, onEnd }: Readonly<{
   }
   return (
     <>
-      <input ref={inputRef} type="text" value={typed} aria-label={t('canvas.page.titleLabel')} autoComplete="off" spellCheck
-        title={t('canvas.page.titleHint')} aria-invalid={refused ? true : undefined} aria-describedby={refused ? errorId : undefined}
-        onChange={(event) => { setTyped(event.target.value); setRefused(false) }}
-        onKeyDown={onKeyDown} onBlur={() => { if (!ended.current) end(true, false) }}
-        className="input w-full px-2 py-1 text-sm font-medium" />
+      <Tooltip kind="description" content={t('canvas.page.titleHint')}>
+        <input ref={inputRef} type="text" value={typed} aria-label={t('canvas.page.titleLabel')} autoComplete="off" spellCheck
+          aria-invalid={refused ? true : undefined} aria-describedby={refused ? errorId : undefined}
+          onChange={(event) => { setTyped(event.target.value); setRefused(false) }}
+          onKeyDown={onKeyDown} onBlur={() => { if (!ended.current) end(true, false) }}
+          className="input w-full px-2 py-1 text-sm font-medium" />
+      </Tooltip>
       {/* Inserted when the name is refused: an alert that appears is read out. */}
       {refused ? <p id={errorId} role="alert" className="mt-1 text-xs text-danger">{t('canvas.page.titleRequired')}</p> : null}
     </>

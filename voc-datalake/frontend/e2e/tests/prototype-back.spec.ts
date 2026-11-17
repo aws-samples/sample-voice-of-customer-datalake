@@ -62,7 +62,7 @@ test.describe('prototype Back to vN', () => {
     await openDocument(page, `${base} (v2)`)
 
     const back = page.getByRole('button', { name: 'Back to v1' })
-    await expect(back).toHaveAttribute('title', 'Saves v1 again as the newest version. Nothing is deleted.')
+    await expect(back).toHaveAccessibleDescription('Saves v1 again as the newest version. Nothing is deleted.')
     await back.focus()
     await page.keyboard.press('Enter')
 

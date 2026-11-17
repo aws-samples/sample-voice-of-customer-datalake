@@ -131,7 +131,8 @@ describe('AgentDetail — Workflow tab switcher', () => {
     adminFlag.isAdmin = false
     routes()
     renderDetail('/agents/ag_1/workflow')
-    expect(await screen.findByTitle('Flow')).toHaveTextContent('Flow')
+    // The name in the header (a TruncatedText: the whole name shows when it is cut).
+    expect(await screen.findByText('Flow', { selector: 'p[data-tooltip="truncated"]' })).toHaveTextContent('Flow')
     expect(screen.queryByRole('combobox', { name: 'Workflow' })).not.toBeInTheDocument()
   })
 })

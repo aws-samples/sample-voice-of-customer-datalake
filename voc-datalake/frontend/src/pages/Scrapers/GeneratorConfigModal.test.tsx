@@ -109,10 +109,10 @@ describe('GeneratorConfigModal', () => {
   it('disables Generate button and does not issue credentials query when isAdmin is false', async () => {
     render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
 
-    // The Generate button must be disabled for non-admins regardless of field state.
+    // The Generate button is off for non-admins regardless of field state (aria-disabled: it says why).
     const generateButton = screen.getByRole('button', { name: /generat/i })
-    expect(generateButton).toBeDisabled()
-    expect(generateButton).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    expect(generateButton).toHaveAttribute('aria-disabled', 'true')
+    expect(generateButton).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
 
     // Give queries time to fire if they were going to.
     await new Promise((resolve) => setTimeout(resolve, 50))

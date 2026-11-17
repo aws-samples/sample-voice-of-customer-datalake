@@ -353,7 +353,8 @@
     @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md border text-[0.8125rem] font-medium
       max-w-full text-center break-words hyphens-auto
       transition-all active:scale-[0.97] active:duration-75
-      disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+      disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100
+      aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:active:scale-100;
     border-color: var(--border);
     color: var(--text);
     background: transparent;
@@ -392,7 +393,7 @@
   .icon-btn {
     @apply inline-flex items-center justify-center p-1.5 rounded-md text-muted transition-all
       hover:text-text hover:bg-bg-hover active:scale-[0.97]
-      disabled:opacity-40 disabled:cursor-not-allowed;
+      disabled:opacity-40 disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:cursor-not-allowed;
   }
 
   /* App header controls (owner request, wave 6): the mobile menu button, the
@@ -582,6 +583,28 @@
   .menu-item:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; background: var(--bg-hover); }
   .menu-label { @apply px-3 py-1.5 text-[0.75rem] font-semibold text-muted; }
   .menu-separator { @apply mx-1 my-1 h-px bg-border; }
+
+  /* --- Tooltip (components/Tooltip): inverted in both modes, like the document toolbar's tips.
+   * A `popover="manual"` in the top layer, placed in viewport pixels by positionFloating.ts: the
+   * popover defaults (centred, canvas fill, border, padding) give way here. No `display`, so the
+   * closed popover (or `[hidden]`) stays hidden. The z-index matters only without the Popover API,
+   * where the bubble must still paint over a ModalShell (z-[70]). */
+  .tooltip {
+    @apply rounded-md bg-text-strong text-card px-2 py-1 text-[0.75rem] leading-snug shadow-md max-w-64 animate-fade-in;
+    position: fixed;
+    inset: auto;
+    left: 0;
+    top: 0;
+    z-index: 80;
+    margin: 0;
+    border: 0;
+    overflow: visible;
+    width: max-content;
+    font-weight: 400;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
 
   /* --- Switch: KiroCrew Toggle (ui.tsx) -------------------------------- */
   .switch {

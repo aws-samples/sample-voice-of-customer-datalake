@@ -20,6 +20,7 @@ import SourceDialogHeader from './SourceDialogHeader'
 import JsonSkippedItems from './JsonSkippedItems'
 import RadarSourcePicker from './RadarSourcePicker'
 import { useRadarBrandLabel } from './useRadarBrands'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 // ============================================
 // Sub-components
@@ -144,10 +145,12 @@ function DropZone({
     </button>
     {/* A sibling, not a child: a button inside a button is invalid HTML. */}
     {hasFile ? (
-      <button type="button" onClick={onReset} aria-label={t('jsonUpload.removeFile')} title={t('jsonUpload.removeFile')}
-        className="icon-btn absolute right-3 top-1/2 -translate-y-1/2">
-        <Trash2 size={14} className="text-muted" aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={t('jsonUpload.removeFile')}>
+        <button type="button" onClick={onReset} aria-label={t('jsonUpload.removeFile')}
+          className="icon-btn absolute right-3 top-1/2 -translate-y-1/2">
+          <Trash2 size={14} className="text-muted" aria-hidden="true" />
+        </button>
+      </Tooltip>
     ) : null}
     </div>
   )

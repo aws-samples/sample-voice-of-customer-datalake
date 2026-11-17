@@ -24,6 +24,7 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { formatCount, formatPercent } from '../../utils/numberFormat'
 import { OTHER_CATEGORY } from '../../utils/displayLabels'
 import { NEUTRAL_CHART_STEP, categoryChartSteps, chartStepVar } from './types'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { CategoryData } from './types'
 
 /** Rows shown while collapsed. */
@@ -102,20 +103,20 @@ export function CategoryDistribution({
           const isSelected = selectedCategories.includes(category.name)
           const colour = chartStepVar(steps.get(category.name) ?? NEUTRAL_CHART_STEP)
           return (
-            <button
-              key={category.name}
-              onClick={() => onToggleCategory(category.name)}
-              aria-pressed={isSelected}
-              title={category.name === OTHER_CATEGORY ? t('uncategorisedHint') : undefined}
-              className={clsx(
-                'block w-full text-left py-1.5 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99] focus-ring',
-                isSelected ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
-              )}
-            >
-              <BarLine colour={colour} percentage={percentage} value={category.value} nameClass={isSelected ? 'text-accent-text' : 'text-text-strong'}>
-                {labels.category(category.name)}
-              </BarLine>
-            </button>
+            <Tooltip key={category.name} kind="description" content={category.name === OTHER_CATEGORY ? t('uncategorisedHint') : undefined}>
+              <button
+                onClick={() => onToggleCategory(category.name)}
+                aria-pressed={isSelected}
+                className={clsx(
+                  'block w-full text-left py-1.5 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99] focus-ring',
+                  isSelected ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
+                )}
+              >
+                <BarLine colour={colour} percentage={percentage} value={category.value} nameClass={isSelected ? 'text-accent-text' : 'text-text-strong'}>
+                  {labels.category(category.name)}
+                </BarLine>
+              </button>
+            </Tooltip>
           )
         })}
         {uncategorised > 0 && <UncategorisedRow count={uncategorised} totalIssues={totalIssues} />}
@@ -150,9 +151,11 @@ function UncategorisedRow({ count, totalIssues }: Readonly<{ count: number; tota
   const percentage = totalIssues > 0 ? (count / totalIssues) * 100 : 0
   const colour = chartStepVar(NEUTRAL_CHART_STEP)
   return (
-    <div data-testid="uncategorised-row" className="py-1.5 px-2 -mx-2" title={t('uncategorisedHint')}>
-      <BarLine colour={colour} percentage={percentage} value={count} nameClass="text-muted">{t('uncategorised')}</BarLine>
-    </div>
+    <Tooltip kind="description" content={t('uncategorisedHint')}>
+      <div data-testid="uncategorised-row" className="py-1.5 px-2 -mx-2">
+        <BarLine colour={colour} percentage={percentage} value={count} nameClass="text-muted">{t('uncategorised')}</BarLine>
+      </div>
+    </Tooltip>
   )
 }
 

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
+import { openTooltip } from '@test/tooltip'
 import { dimensionsWire } from '@test/dimensionFixtures'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -68,12 +69,12 @@ describe('FeedbackDimensionChips', () => {
 
   // Labels vs status (design system rule 15): dimensions and tags are
   // descriptive labels, so they are neutral; a hand-set value is told apart by
-  // its icon and title, not by a colour.
-  it('paints every dimension chip and tag neutral, the hand-set one with a title', async () => {
+  // its icon and tooltip, not by a colour.
+  it('paints every dimension chip and tag neutral, the hand-set one with a tooltip', async () => {
     renderWithQueryClient(<FeedbackDimensionChips feedback={feedback} />)
     const manualChip = (await screen.findByText('Login')).closest('.badge')
     expect(manualChip).toHaveClass('badge-muted')
-    expect(manualChip).toHaveAttribute('title', 'Set by hand')
+    expect(await openTooltip(manualChip)).toHaveTextContent('Set by hand')
     expect(screen.getByText('vip').closest('.badge')).toHaveClass('badge-muted')
     expect(document.querySelectorAll('.badge-info, .badge-aim, .badge-accent')).toHaveLength(0)
   })

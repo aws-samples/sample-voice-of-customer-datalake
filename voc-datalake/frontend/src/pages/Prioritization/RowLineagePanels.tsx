@@ -16,7 +16,7 @@
  *
  * THE STATE IS NEVER CARRIED BY COLOUR ALONE. Each badge renders a text label,
  * and the reason behind it is announced (visually-hidden text) as well as
- * hovered (`title`) — because a `title` alone never appears on a touch device and
+ * hovered (a `Tooltip`) — because a hover hint alone never appears on a touch device, and a `title`
  * is announced inconsistently, which is the trap `SortControls` records for its
  * own hint. So the tint is reinforcement for a reader who can see it, never the
  * distinction itself.
@@ -28,6 +28,7 @@ import clsx from 'clsx'
 import { BadgeCheck, GitBranch, History } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { LINEAGE_REASON_KEY, LINEAGE_STYLE } from './rowLineage'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { RowLineage } from './rowLineage'
 import type { ReactElement } from 'react'
 import type { TFunction } from 'i18next'
@@ -93,17 +94,19 @@ export function RowLineageBadge({ lineage }: { readonly lineage: RowLineage }): 
   const acknowledged = lineage.acknowledged === true
   const Icon = acknowledged ? BadgeCheck : GitBranch
   return (
-    <span
-      data-testid="row-lineage"
-      data-lineage={acknowledged ? 'acknowledged' : lineage.state}
-      title={reason}
-      className={clsx('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap', color)}
-    >
-      <Icon size={12} aria-hidden="true" />
-      {label}
-      {/* Announced, not only hovered — see the module docstring. */}
-      <span className="sr-only"> {reason}</span>
-    </span>
+    // The bubble repeats the reason the badge already announces (sr-only): a label tip.
+    <Tooltip kind="label" content={reason}>
+      <span
+        data-testid="row-lineage"
+        data-lineage={acknowledged ? 'acknowledged' : lineage.state}
+        className={clsx('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap', color)}
+      >
+        <Icon size={12} aria-hidden="true" />
+        {label}
+        {/* Announced, not only hovered — see the module docstring. */}
+        <span className="sr-only"> {reason}</span>
+      </span>
+    </Tooltip>
   )
 }
 
@@ -137,15 +140,16 @@ export function RowStaleBadge({ lineage }: { readonly lineage: RowLineage }): Re
   const { t } = useTranslation('prioritization')
   if (!lineage.stale) return null
   return (
-    <span
-      data-testid="row-stale"
-      title={t('lineage.staleReason')}
-      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap bg-danger-subtle text-danger"
-    >
-      <History size={12} aria-hidden="true" />
-      {t('lineage.stale')}
-      <span className="sr-only"> {t('lineage.staleReason')}</span>
-    </span>
+    <Tooltip kind="label" content={t('lineage.staleReason')}>
+      <span
+        data-testid="row-stale"
+        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap bg-danger-subtle text-danger"
+      >
+        <History size={12} aria-hidden="true" />
+        {t('lineage.stale')}
+        <span className="sr-only"> {t('lineage.staleReason')}</span>
+      </span>
+    </Tooltip>
   )
 }
 
@@ -179,10 +183,12 @@ export function RowLineageNote({ lineage }: { readonly lineage: RowLineage }): R
   // the list, instead of a paragraph inside every expanded row.
   return (
     <div data-testid="row-lineage-note" className="mt-1 space-y-1">
-      <p className="flex items-start gap-1.5 text-xs text-text" title={reason}>
-        <GitBranch size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden="true" />
-        {t('explainer.rowNote', { label })}
-      </p>
+      <Tooltip kind="description" content={reason}>
+        <p className="flex items-start gap-1.5 text-xs text-text">
+          <GitBranch size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden="true" />
+          {t('explainer.rowNote', { label })}
+        </p>
+      </Tooltip>
       {/* The stale sentence NAMES "Add row" — the button below it — rather than
           leaving a reader to infer that a locked row with superseded documents has
           anything they can do about it. The row itself is untouched, ballots

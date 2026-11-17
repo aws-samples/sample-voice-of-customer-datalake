@@ -37,6 +37,7 @@ import { useDisclosurePopover } from '../../hooks/useDismissOnOutside'
 import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import { placeFixedMenu, tabTargetFrom } from '../../utils/fixedMenu'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 
 export interface MoreMenuItem {
@@ -154,25 +155,26 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
 
   return (
     <div ref={wrapper} className={clsx('relative flex-shrink-0', className)}>
-      <button
-        ref={setTrigger}
-        type="button"
-        onClick={(event) => openFrom(event.currentTarget)}
-        onKeyDown={(event) => {
-          if (open || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')) return
-          event.preventDefault()
-          focusLast.current = event.key === 'ArrowUp'
-          openFrom(event.currentTarget)
-        }}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        aria-label={label}
-        title={label}
-        className="icon-btn"
-      >
-        <MoreHorizontal size={iconSize} aria-hidden />
-      </button>
+      <Tooltip kind="label" content={label}>
+        <button
+          ref={setTrigger}
+          type="button"
+          onClick={(event) => openFrom(event.currentTarget)}
+          onKeyDown={(event) => {
+            if (open || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')) return
+            event.preventDefault()
+            focusLast.current = event.key === 'ArrowUp'
+            openFrom(event.currentTarget)
+          }}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          aria-label={label}
+          className="icon-btn"
+        >
+          <MoreHorizontal size={iconSize} aria-hidden />
+        </button>
+      </Tooltip>
       {open && host !== null && createPortal(
         <div
           ref={menuRef}

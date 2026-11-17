@@ -24,6 +24,7 @@ import { PII_COPY, isPiiPolicy } from './piiPolicy'
 import { sourceLabel } from '../../utils/displayLabels'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { useConfigScope } from '../../workspace/configScope'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 interface SourceProfileEditorProps {
   profile: SourceProfile
@@ -107,7 +108,9 @@ export default function SourceProfileEditor({
         <h4 className="text-sm font-semibold tracking-tight text-text-strong flex items-center gap-2">
           {profile.restricted && <Lock size={14} className="text-warn" aria-hidden="true" />}
           {/* The label a person reads; the stored id stays a tooltip (live finding: `radar_example_air radar_example_air`). */}
-          <span title={profile.id}>{sourceLabel(profile.id, [profile])}</span>
+          <Tooltip kind="description" content={profile.id}>
+            <span>{sourceLabel(profile.id, [profile])}</span>
+          </Tooltip>
         </h4>
         <RemoveRowButton label={t('removeProfile', { name: sourceLabel(profile.id, [profile]) })} onRemove={onRemove} />
       </div>

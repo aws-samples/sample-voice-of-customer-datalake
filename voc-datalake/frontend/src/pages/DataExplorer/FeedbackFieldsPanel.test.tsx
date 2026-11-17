@@ -80,7 +80,7 @@ describe('FeedbackFieldsPanel', () => {
 
   it('lists the steps that set a field, each with the server\u2019s meaning', async () => {
     const author = rowOf(await openTable(), 'author')
-    expect(within(author).getByText('producer')).toHaveAttribute('title', 'Copied from the queue message')
+    expect(within(author).getByText('producer')).toHaveAccessibleDescription('Copied from the queue message')
   })
 
   it('marks key fields and lists enum and built-in dimension values', async () => {

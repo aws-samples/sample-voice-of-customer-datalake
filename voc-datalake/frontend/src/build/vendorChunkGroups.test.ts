@@ -63,10 +63,13 @@ describe('the editor chunks (vendorChunks.json)', () => {
     ['/app/node_modules/@tiptap/core/dist/index.js', 'vendor-editor'],
     ['/app/node_modules/@tiptap/react/dist/index.js', 'vendor-editor'],
     ['/app/node_modules/@tiptap/extension-table/dist/index.js', 'vendor-editor'],
-    // What loads after it (editor/CanvasChrome.tsx): the format bar's menus, the block handle, their positioning.
+    // What loads after it (editor/CanvasChrome.tsx): the format bar's menus and the block handle.
     ['/app/node_modules/@tiptap/react/dist/menus/index.js', 'vendor-editor-menus'],
     ['/app/node_modules/@tiptap/extension-bubble-menu/dist/index.js', 'vendor-editor-menus'],
-    ['/app/node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs', 'vendor-editor-menus'],
+    // Their positioning library is also the app's Tooltip's (components/Tooltip/positionFloating.ts): the shell
+    // loads it, in a chunk of its own, never with the menus.
+    ['/app/node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs', 'vendor-floating'],
+    ['/app/node_modules/@floating-ui/core/dist/floating-ui.core.mjs', 'vendor-floating'],
     ['/app/node_modules/@tiptap/extension-drag-handle/dist/index.js', 'vendor-editor-menus'],
     ['/app/node_modules/@tiptap/extension-drag-handle-react/dist/index.js', 'vendor-editor-menus'],
   ])('puts %s in %s', (moduleId, chunk) => {

@@ -194,6 +194,6 @@ describe('Editing and confirming your own memory', () => {
     route({ 'GET /memory': () => ({ items: [mine] }) })
     renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
     const button = await screen.findByRole('button', { name: 'Still true: I like short answers' })
-    expect(button).toHaveAttribute('title', 'Confirm this is still true, so it is not archived after 90 unused days')
+    expect(button).toHaveAccessibleDescription('Confirm this is still true, so it is not archived after 90 unused days')
   })
 })

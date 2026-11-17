@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import ThemeMark from '../ThemeMark/ThemeMark'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -77,15 +78,16 @@ function SidebarHeader({
       >
         <X size={18} />
       </button>
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        className="icon-btn hidden lg:inline-flex"
-        aria-label={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
-        title={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
-      >
-        {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
-      </button>
+      <Tooltip kind="label" content={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="icon-btn hidden lg:inline-flex"
+          aria-label={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
+        >
+          {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+        </button>
+      </Tooltip>
     </div>
   )
 }
@@ -124,28 +126,31 @@ function NavItemLink({
   const label = t(item.labelKey)
 
   return (
-    <NavLink
-      to={item.to}
-      title={sidebarCollapsed && !mobileMenuOpen ? label : undefined}
-      className={({ isActive }) =>
-        clsx(
-          'flex items-center gap-2.5 py-2 rounded-md mb-0.5 text-sm font-medium border border-transparent transition-colors duration-200',
-          sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-3' : 'px-3',
-          isActive ? 'nav-active' : 'text-muted hover:text-text hover:bg-bg-hover',
-        )
-      }
-    >
-      <Icon size={16} className="flex-shrink-0" />
-      {showLabel ? <>
-        {/* Wraps instead of truncating (WCAG 1.4.4): "Autonomous agents" beside its
-            count, and every label in de/fr/pt or at 200 % text size, were cut. */}
-        <span className="min-w-0 flex-1 break-words">{label}</span>
-        {item.to === '/categories' && <NavCount count={urgentCount} tone="danger" />}
-        {item.to === '/agents' && (
-          <NavCount count={decisionCount} tone="warn" label={t('agents:nav.needsDecision', { count: decisionCount })} />
-        )}
-      </> : null}
-    </NavLink>
+    // Collapsed, the row is an icon: the label is its name and shows beside it.
+    <Tooltip kind="label" placement="end" content={showLabel ? undefined : label}>
+      <NavLink
+        to={item.to}
+        aria-label={showLabel ? undefined : label}
+        className={({ isActive }) =>
+          clsx(
+            'flex items-center gap-2.5 py-2 rounded-md mb-0.5 text-sm font-medium border border-transparent transition-colors duration-200',
+            sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-3' : 'px-3',
+            isActive ? 'nav-active' : 'text-muted hover:text-text hover:bg-bg-hover',
+          )
+        }
+      >
+        <Icon size={16} className="flex-shrink-0" />
+        {showLabel ? <>
+          {/* Wraps instead of truncating (WCAG 1.4.4): "Autonomous agents" beside its
+              count, and every label in de/fr/pt or at 200 % text size, were cut. */}
+          <span className="min-w-0 flex-1 break-words">{label}</span>
+          {item.to === '/categories' && <NavCount count={urgentCount} tone="danger" />}
+          {item.to === '/agents' && (
+            <NavCount count={decisionCount} tone="warn" label={t('agents:nav.needsDecision', { count: decisionCount })} />
+          )}
+        </> : null}
+      </NavLink>
+    </Tooltip>
   )
 }
 
@@ -155,10 +160,12 @@ const NAV_COUNT_TONE = { danger: 'bg-danger text-danger-fg', warn: 'bg-warn text
 function NavCount({ count, tone, label }: Readonly<{ count: number; tone: keyof typeof NAV_COUNT_TONE; label?: string }>) {
   if (count <= 0) return null
   return (
-    <span className={clsx('ml-auto flex-shrink-0 font-mono text-[0.6875rem] font-semibold px-1.5 py-px rounded-full', NAV_COUNT_TONE[tone])} title={label}>
-      {count}
-      {label !== undefined && <span className="sr-only"> {label}</span>}
-    </span>
+    <Tooltip kind="label" content={label}>
+      <span className={clsx('ml-auto flex-shrink-0 font-mono text-[0.6875rem] font-semibold px-1.5 py-px rounded-full', NAV_COUNT_TONE[tone])}>
+        {count}
+        {label !== undefined && <span className="sr-only"> {label}</span>}
+      </span>
+    </Tooltip>
   )
 }
 

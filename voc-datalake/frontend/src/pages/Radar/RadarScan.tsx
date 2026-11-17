@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { formatDate, formatDateTime } from '../../utils/dateUtils'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { RadarScan } from '../../api/radarSchema'
 
 /** "2 brands, 12 searches, 3 new releases, 1 merged", each count pluralized on its own. */
@@ -64,14 +65,17 @@ export function ScanNow() {
   )
 }
 
-function ScanButton({ scan, hintId, title }: Readonly<{ scan: ScanMutation; hintId: string; title?: string }>) {
+function ScanButton({ scan, hintId, hint }: Readonly<{ scan: ScanMutation; hintId: string; hint?: string }>) {
   const { t } = useTranslation('radar')
   return (
-    <button type="button" className="btn btn-secondary btn-sm" disabled={scan.isPending} aria-describedby={hintId}
-      title={title} onClick={() => scan.mutate()}>
-      <RefreshCw size={14} aria-hidden="true" className={scan.isPending ? 'animate-spin' : undefined} />
-      {t('settings.scanNow')}
-    </button>
+    // The hint is the button's description already (hintId): the bubble only shows it.
+    <Tooltip kind="label" content={hint}>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={scan.isPending} aria-describedby={hintId}
+        onClick={() => scan.mutate()}>
+        <RefreshCw size={14} aria-hidden="true" className={scan.isPending ? 'animate-spin' : undefined} />
+        {t('settings.scanNow')}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -104,9 +108,11 @@ export function ScanStatusLine({ scan: last }: Readonly<{ scan: RadarScan | null
   const when = scanWhen(last, t, i18n.language)
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text min-w-0">
-      <span title={when.detail} data-testid="radar-last-scan">{when.text}</span>
+      <Tooltip kind="description" content={when.detail}>
+        <span data-testid="radar-last-scan">{when.text}</span>
+      </Tooltip>
       <span aria-hidden="true" className="text-muted">·</span>
-      <ScanButton scan={scan} hintId={hintId} title={t('settings.scanNowHint')} />
+      <ScanButton scan={scan} hintId={hintId} hint={t('settings.scanNowHint')} />
       <span id={hintId} className="sr-only">{t('settings.scanNowHint')}</span>
       <ScanOutcome scan={scan} />
     </div>

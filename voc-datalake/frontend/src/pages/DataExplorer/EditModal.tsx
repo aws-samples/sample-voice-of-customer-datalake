@@ -10,6 +10,7 @@ import { FileJson, Database, Loader2, Save, Link2, AlertTriangle } from 'lucide-
 import clsx from 'clsx'
 import DialogClose from '../../components/DialogClose/DialogClose'
 import ModalShell from '../../components/ModalShell/ModalShell'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 
 export interface EditModalState {
   readonly isOpen: boolean
@@ -221,7 +222,7 @@ const present = (v: string | undefined): v is string => v != null && v !== ''
 function MetaItem({ label, value, icon }: Readonly<{ label: string; value: string; icon?: React.ReactNode }>) {
   return (
     <span className="flex items-center gap-1.5 min-w-0">
-      {icon}{label} <code className={metaCode} title={value}>{value}</code>
+      {icon}{label} <TruncatedText as="code" className={metaCode} text={value} />
     </span>
   )
 }

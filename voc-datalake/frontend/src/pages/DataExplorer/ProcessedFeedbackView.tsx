@@ -15,6 +15,7 @@ import FeedbackRecordDetails from './FeedbackRecordDetails'
 import { cleanReviewText } from '../../utils/cleanReviewText'
 import { RowAction } from './RowAction'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface ProcessedFeedbackViewProps {
   /** Already filtered server-side (source, window and search): rendered as given. */
@@ -117,13 +118,17 @@ function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit }: Feedb
             the keyboard-reachable control for it, so this stays a plain region. */}
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onToggleExpand}>
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="badge badge-muted" title={item.source_platform}>{labels.source(item.source_platform)}</span>
+            <Tooltip kind="description" content={item.source_platform}>
+              <span className="badge badge-muted">{labels.source(item.source_platform)}</span>
+            </Tooltip>
             <span className="text-xs text-muted">{formatDateTime(item.source_created_at, i18n.language)}</span>
             <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
           </div>
           <p className="text-sm text-text-strong line-clamp-2">{cleanReviewText(item.original_text)}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="text-xs text-muted" title={item.category}>{t('feedback.category', { category: labels.category(item.category) })}</span>
+            <Tooltip kind="description" content={item.category}>
+              <span className="text-xs text-muted">{t('feedback.category', { category: labels.category(item.category) })}</span>
+            </Tooltip>
             {item.urgency === 'high' && (
               <IconBadge toneClass="badge-danger" icon={AlertTriangle}>{t('feedback.urgent')}</IconBadge>
             )}

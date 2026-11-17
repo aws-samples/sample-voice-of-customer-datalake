@@ -616,8 +616,14 @@ describe('two similarly-named reports are distinguishable', () => {
 
     await user.click(researchBox())
 
-    expect(screen.getByTitle('Churn interviews')).toBeInTheDocument()
-    expect(screen.getByTitle('Pricing survey')).toBeInTheDocument()
+    const churn = screen.getByText('Churn interviews')
+    expect(churn).toHaveAttribute('data-tooltip', 'truncated')
+    expect(screen.getByText('Pricing survey')).toHaveAttribute('data-tooltip', 'truncated')
+    // Cut in the narrow column: the tooltip carries the full string.
+    Object.defineProperty(churn, 'clientWidth', { configurable: true, value: 60 })
+    Object.defineProperty(churn, 'scrollWidth', { configurable: true, value: 140 })
+    fireEvent.pointerOver(churn, { pointerType: 'mouse' })
+    expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent('Churn interviews')
   })
 })
 

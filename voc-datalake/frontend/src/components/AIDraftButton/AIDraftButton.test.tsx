@@ -22,7 +22,7 @@ describe('AIDraftButton', () => {
     const { onClick, button } = renderButton()
 
     expect(button).toHaveAccessibleName('Draft with AI — title and description')
-    expect(button).toHaveAttribute('title', 'Uses feedback')
+    expect(button).toHaveAccessibleDescription('Uses feedback')
     await userEvent.setup().click(button)
     expect(onClick).toHaveBeenCalledExactlyOnceWith()
   })
@@ -60,7 +60,8 @@ describe('AIDraftButton', () => {
     const { button } = renderButton({ error: 'The draft failed.' })
 
     expect(screen.getByRole('alert')).toHaveTextContent('The draft failed.')
-    expect(button).toHaveAccessibleDescription('The draft failed.')
+    // The error first, then the hint the button keeps (its tooltip).
+    expect(button).toHaveAccessibleDescription('The draft failed. Uses feedback')
     expect(button).toBeEnabled()
   })
 })

@@ -5,6 +5,7 @@
  * @module assistant/components/RemovableChips
  */
 import { X } from 'lucide-react'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ReactNode } from 'react'
 
 export interface ChipItem {
@@ -29,13 +30,17 @@ export default function RemovableChips({ items, tone, label, className, onRemove
       {items.map((item) => (
         <li key={item.key} className={`badge badge-${tone}`}>
           {item.icon}
-          <span className="max-w-[10rem] truncate" title={item.tooltip}>{item.label}</span>
-          <button
-            type="button" onClick={() => onRemove(item.key)} className="rounded-full transition-colors hover:text-text"
-            aria-label={item.removeLabel} title={item.removeLabel}
-          >
-            <X size={12} aria-hidden />
-          </button>
+          <Tooltip kind="description" content={item.tooltip}>
+            <span className="max-w-[10rem] truncate">{item.label}</span>
+          </Tooltip>
+          <Tooltip kind="label" content={item.removeLabel}>
+            <button
+              type="button" onClick={() => onRemove(item.key)} className="rounded-full transition-colors hover:text-text"
+              aria-label={item.removeLabel}
+            >
+              <X size={12} aria-hidden />
+            </button>
+          </Tooltip>
         </li>
       ))}
     </ul>

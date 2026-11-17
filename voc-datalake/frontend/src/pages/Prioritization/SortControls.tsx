@@ -73,7 +73,7 @@ export function SortControls({
           {options.map(({
             field, label, fullLabel, hint,
           }) => (
-            <button key={field} type="button" aria-pressed={sortField === field} title={hint} aria-describedby={hint === undefined ? undefined : hintId} onClick={() => onToggleSort(field)} className={clsx('tab', sortField === field && 'tab-active')}>
+            <button key={field} type="button" aria-pressed={sortField === field} aria-describedby={hint === undefined ? undefined : hintId} onClick={() => onToggleSort(field)} className={clsx('tab', sortField === field && 'tab-active')}>
               <span className="sm:hidden">{label}</span>
               <span className="hidden sm:inline">{fullLabel}</span>
               {/* A directional arrow, not the symmetric ArrowUpDown, which looked the

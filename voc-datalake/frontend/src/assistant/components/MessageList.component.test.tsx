@@ -20,7 +20,7 @@ describe('MessageList markdown links', () => {
   // jsdom has no scrollIntoView; the returned teardown removes the stub again.
   beforeEach(() => stubElementScrollIntoView())
 
-  it('opens external https links in a new tab without opener, referrer or follow; the host is in the tooltip, not after the text', () => {
+  it('opens external https links in a new tab without opener, referrer or follow; the host is in the name, not after the text', () => {
     renderAnswer('See [the report](https://example.com/report?x=1).')
     const link = screen.getByRole('link', { name: /the report/ })
     expect({
@@ -28,16 +28,18 @@ describe('MessageList markdown links', () => {
       target: link.getAttribute('target'),
       rel: link.getAttribute('rel'),
       title: link.getAttribute('title'),
-    }).toStrictEqual({ href: 'https://example.com/report?x=1', target: '_blank', rel: 'noopener noreferrer nofollow', title: 'https://example.com/report?x=1' })
+    // No native title (rule 16): the browser shows the address on hover and focus itself.
+    }).toStrictEqual({ href: 'https://example.com/report?x=1', target: '_blank', rel: 'noopener noreferrer nofollow', title: null })
     // Wave 4: no visible "(example.com)" suffix; screen readers still hear where it goes.
     expect(link).not.toHaveTextContent('(example.com)')
     expect(link).toHaveAccessibleName('the report example.com, opens in a new tab')
   })
 
-  it('shows a bare URL as a short host/path, with the full address in the tooltip', () => {
+  it('shows a bare URL as a short host/path, the full address its href (the browser shows it), no native title', () => {
     renderAnswer('Source: https://www.example-air.example/changelog/2026-06-18-agent-assisted-project-updates-and-more')
     const link = screen.getByRole('link', { name: /example-air\.example/ })
-    expect([link.firstChild?.textContent, link.getAttribute('title')]).toStrictEqual([
+    expect(link).not.toHaveAttribute('title')
+    expect([link.firstChild?.textContent, link.getAttribute('href')]).toStrictEqual([
       'example-air.example/changelog/2026-06-18-agent-…',
       'https://www.example-air.example/changelog/2026-06-18-agent-assisted-project-updates-and-more',
     ])

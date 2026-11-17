@@ -6,6 +6,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { nextPreference, useThemeStore } from '../../theme/themeStore'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { ThemePreference } from '../../theme/themeStore'
 import type { LucideIcon } from 'lucide-react'
 
@@ -29,15 +30,16 @@ export default function ThemeToggle() {
   const label = t('theme.toggle', { current: labels[preference], next: labels[nextPreference(preference)] })
 
   return (
-    <button
-      type="button"
-      onClick={cyclePreference}
-      className="header-icon-btn focus-ring bg-bg-elevated text-muted hover:text-text"
-      aria-label={label}
-      title={label}
-      data-theme-pref={preference}
-    >
-      <Icon size={16} aria-hidden />
-    </button>
+    <Tooltip kind="label" content={label}>
+      <button
+        type="button"
+        onClick={cyclePreference}
+        className="header-icon-btn focus-ring bg-bg-elevated text-muted hover:text-text"
+        aria-label={label}
+        data-theme-pref={preference}
+      >
+        <Icon size={16} aria-hidden />
+      </button>
+    </Tooltip>
   )
 }

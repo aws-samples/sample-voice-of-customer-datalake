@@ -25,6 +25,7 @@ import { useLauncherPosition } from '../bubble/useLauncherPosition'
 import { isChatRoute } from '../page/chatRoute'
 import { useRestoreLastSession } from '../runtime/restoreSession'
 import { useRunEnvironment } from '../runtime/useAssistant'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /**
  * Loaded when the panel first opens, not with the app shell: the panel (~144 KB) and the
@@ -69,37 +70,38 @@ export default function AssistantRoot({ launcherHidden = false }: Readonly<Assis
           <AssistantPanel variant="floating" anchor={panelAnchor} onResetPosition={moved ? reset : undefined} />
         </Suspense>
       )}
-      <button
-        ref={launcherRef}
-        type="button"
-        data-testid="assistant-launcher"
-        onClick={(e) => {
-          if (!handlers.consumeClick(e)) setOpen(!open)
-        }}
-        onPointerDown={handlers.onPointerDown}
-        onPointerMove={handlers.onPointerMove}
-        onPointerUp={handlers.onPointerUp}
-        onPointerCancel={handlers.onPointerCancel}
-        onKeyDown={handlers.onKeyDown}
-        aria-expanded={open}
-        aria-label={open ? t('launcher.close') : t('launcher.open')}
-        aria-describedby={hintId}
-        title={open ? t('launcher.close') : t('launcher.open')}
-        style={{ right: position.right, bottom: position.bottom }}
-        className={clsx(
-          // Below `sm` the open panel is a full-screen sheet with its own close button.
-          open && 'max-sm:hidden',
-          launcherHidden && 'hidden',
-          'fixed z-50 flex h-12 w-12 touch-none select-none items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg shadow-accent/30 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)]',
-          // No transition while dragging: the pressed state's duration would make
-          // right/bottom ease behind the pointer on every move.
-          dragging
-            ? 'cursor-grabbing transition-none'
-            : 'cursor-grab active:scale-[0.97] active:duration-75 motion-safe:transition-[right,bottom,background-color,box-shadow,transform]',
-        )}
-      >
-        {open ? <X size={22} aria-hidden /> : <ThemeMark className="h-6 w-6" onFill />}
-      </button>
+      <Tooltip kind="label" content={open ? t('launcher.close') : t('launcher.open')}>
+        <button
+          ref={launcherRef}
+          type="button"
+          data-testid="assistant-launcher"
+          onClick={(e) => {
+            if (!handlers.consumeClick(e)) setOpen(!open)
+          }}
+          onPointerDown={handlers.onPointerDown}
+          onPointerMove={handlers.onPointerMove}
+          onPointerUp={handlers.onPointerUp}
+          onPointerCancel={handlers.onPointerCancel}
+          onKeyDown={handlers.onKeyDown}
+          aria-expanded={open}
+          aria-label={open ? t('launcher.close') : t('launcher.open')}
+          aria-describedby={hintId}
+          style={{ right: position.right, bottom: position.bottom }}
+          className={clsx(
+            // Below `sm` the open panel is a full-screen sheet with its own close button.
+            open && 'max-sm:hidden',
+            launcherHidden && 'hidden',
+            'fixed z-50 flex h-12 w-12 touch-none select-none items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg shadow-accent/30 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)]',
+            // No transition while dragging: the pressed state's duration would make
+            // right/bottom ease behind the pointer on every move.
+            dragging
+              ? 'cursor-grabbing transition-none'
+              : 'cursor-grab active:scale-[0.97] active:duration-75 motion-safe:transition-[right,bottom,background-color,box-shadow,transform]',
+          )}
+        >
+          {open ? <X size={22} aria-hidden /> : <ThemeMark className="h-6 w-6" onFill />}
+        </button>
+      </Tooltip>
       <span id={hintId} className="sr-only">{t('launcher.moveHint')}</span>
     </>
   )

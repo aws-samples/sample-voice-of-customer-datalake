@@ -7,6 +7,7 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { NO_FAILED_READS, type FailedReads } from '../../utils/failedReads'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { ratingFilterLabel } from './types'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ViewMode, RatingFilter } from './types'
 
 interface FeedbackResultsProps {
@@ -77,9 +78,11 @@ function SubcategoryChip({ subcategory, parent, onClear }: Readonly<{ subcategor
   return (
     <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs bg-accent-subtle text-accent-text">
       {t('results.subcategoryChip', { name })}
-      <button type="button" onClick={onClear} aria-label={t('results.removeSubcategory', { name })} title={t('results.removeSubcategory', { name })} className="rounded-full focus-ring hover:text-text-strong">
-        <X size={12} aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={t('results.removeSubcategory', { name })}>
+        <button type="button" onClick={onClear} aria-label={t('results.removeSubcategory', { name })} className="rounded-full focus-ring hover:text-text-strong">
+          <X size={12} aria-hidden="true" />
+        </button>
+      </Tooltip>
     </span>
   )
 }
@@ -146,36 +149,39 @@ export function FeedbackResults({
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="tabs-track" role="group" aria-label={t('categories:viewMode')}>
-            <button
-              type="button"
-              onClick={() => onViewModeChange('grid')}
-              className={clsx('tab', viewMode === 'grid' && 'tab-active')}
-              aria-label={t('categories:gridView')}
-              title={t('categories:gridView')}
-              aria-pressed={viewMode === 'grid'}
-            >
-              <LayoutGrid size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange('list')}
-              className={clsx('tab', viewMode === 'list' && 'tab-active')}
-              aria-label={t('categories:listView')}
-              title={t('categories:listView')}
-              aria-pressed={viewMode === 'list'}
-            >
-              <List size={14} />
-            </button>
+            <Tooltip kind="label" content={t('categories:gridView')}>
+              <button
+                type="button"
+                onClick={() => onViewModeChange('grid')}
+                className={clsx('tab', viewMode === 'grid' && 'tab-active')}
+                aria-label={t('categories:gridView')}
+                aria-pressed={viewMode === 'grid'}
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip kind="label" content={t('categories:listView')}>
+              <button
+                type="button"
+                onClick={() => onViewModeChange('list')}
+                className={clsx('tab', viewMode === 'list' && 'tab-active')}
+                aria-label={t('categories:listView')}
+                aria-pressed={viewMode === 'list'}
+              >
+                <List size={14} />
+              </button>
+            </Tooltip>
           </div>
-          <button
-            onClick={onExport}
-            title={t('exportCsvTooltip')}
-            aria-label={t('exportCsvTooltip')}
-            className="btn btn-secondary btn-sm"
-          >
-            <Download size={14} aria-hidden="true" />
-            <span className="hidden sm:inline">{t('exportCsvShort')}</span>
-          </button>
+          <Tooltip kind="label" content={t('exportCsvTooltip')}>
+            <button
+              onClick={onExport}
+              aria-label={t('exportCsvTooltip')}
+              className="btn btn-secondary btn-sm"
+            >
+              <Download size={14} aria-hidden="true" />
+              <span className="hidden sm:inline">{t('exportCsvShort')}</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
       <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} failure={failure} />

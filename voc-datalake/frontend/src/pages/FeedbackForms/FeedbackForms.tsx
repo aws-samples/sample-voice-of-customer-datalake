@@ -32,6 +32,7 @@ import FormsListContent from './FormsList'
 import FormEditor from './FormEditor'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import { stripTrailingSlashes } from '../../api/baseUrl'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /**
  * The part of a create response the notice reads, validated rather than
@@ -81,9 +82,11 @@ function CreatedDisabledNotice({ form, onEnable, onDismiss, isEnabling }: Readon
           <Power size={14} aria-hidden="true" />
           {t('createdDisabled.enable')}
         </button>
-        <button type="button" onClick={onDismiss} className="icon-btn p-2 focus-ring" aria-label={t('createdDisabled.dismiss')} title={t('createdDisabled.dismiss')}>
-          <X size={16} aria-hidden="true" />
-        </button>
+        <Tooltip kind="label" content={t('createdDisabled.dismiss')}>
+          <button type="button" onClick={onDismiss} className="icon-btn p-2 focus-ring" aria-label={t('createdDisabled.dismiss')}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

@@ -7,6 +7,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 
 interface Props {
   /** The card's title, for the accessible name ("Close: <title>"). */
@@ -18,9 +19,11 @@ export default function CloseCardButton({ cardTitle, onClose }: Readonly<Props>)
   const { t } = useTranslation('briefing')
   const label = t('closeCard', { title: cardTitle })
   return (
-    <button type="button" className="icon-btn focus-ring absolute right-2 top-2 touch-manipulation"
-      aria-label={label} title={label} onClick={() => { onClose() }}>
-      <X size={16} aria-hidden="true" />
-    </button>
+    <Tooltip kind="label" content={label}>
+      <button type="button" className="icon-btn focus-ring absolute right-2 top-2 touch-manipulation"
+        aria-label={label} onClick={() => { onClose() }}>
+        <X size={16} aria-hidden="true" />
+      </button>
+    </Tooltip>
   )
 }

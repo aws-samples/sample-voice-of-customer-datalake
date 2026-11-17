@@ -717,5 +717,9 @@
     "allTypes": "Todos los tipos",
     "untyped": "Reseñas aún sin tipo: {{n, number}} (se siguen mostrando)",
     "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Taxonomía. Siguen visibles con cualquier filtro de tipo."
-  }
+  },
+  "infoTip": {
+    "label": "Más información"
+  },
+  "adminOnly": "Se requiere acceso de administrador"
 }

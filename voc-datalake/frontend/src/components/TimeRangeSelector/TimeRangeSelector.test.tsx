@@ -278,7 +278,7 @@ describe('TimeRangeSelector', () => {
       render(<TimeRangeSelector />)
 
       const trigger = screen.getByRole('button', { name: /filter dates by: imported date/i })
-      expect(trigger.getAttribute('title')).toMatch(/when data was collected/i)
+      expect(trigger).toHaveAccessibleDescription(/when data was collected/i)
     })
   })
 

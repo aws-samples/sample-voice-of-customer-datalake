@@ -10,6 +10,7 @@
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 export default function DialogClose({
   onClick,
@@ -26,15 +27,16 @@ export default function DialogClose({
   const { t } = useTranslation('common')
   const name = label ?? t('dismiss')
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={clsx('dialog-close focus-ring', className)}
-      aria-label={name}
-      title={name}
-    >
-      <X size={16} aria-hidden />
-    </button>
+    <Tooltip kind="label" content={name}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={clsx('dialog-close focus-ring', className)}
+        aria-label={name}
+      >
+        <X size={16} aria-hidden />
+      </button>
+    </Tooltip>
   )
 }

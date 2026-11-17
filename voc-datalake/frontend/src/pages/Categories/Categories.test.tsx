@@ -296,8 +296,8 @@ describe('Categories', () => {
       const user = await renderUntilTextWithUser('Trending Keywords')
 
       // 'delivery' appears both as a distribution row and a keyword — pick the
-      // keyword button inside the word cloud via its tooltip title.
-      const keywordButton = at(screen.getAllByTitle(/mentions - click to search/), 0)
+      // keyword button inside the word cloud by its tooltip (its description).
+      const keywordButton = at(screen.getAllByRole('button', { description: /mentions - click to search/ }), 0)
       const keyword = keywordButton.textContent
       await user.click(keywordButton)
 

@@ -202,11 +202,15 @@ describe('RunsTab — controls', () => {
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(undefined))
   })
 
-  it('disables Run now while a run is active', async () => {
+  it('turns Run now off while a run is active, focusable, with the reason beside it', async () => {
     route(activeRoutes())
     renderTab()
     await screen.findByRole('button', { name: 'Cancel run' })
-    expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled()
+    const runNow = screen.getByRole('button', { name: 'Run now' })
+    expect(runNow).toHaveAttribute('aria-disabled', 'true')
+    expect(runNow).toHaveAccessibleDescription('A run is already in progress.')
+    await userEvent.click(runNow)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('starts a run (admin) and opens it', async () => {

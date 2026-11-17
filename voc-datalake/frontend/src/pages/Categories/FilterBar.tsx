@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { UsefulnessFacet } from '../../api/feedbackFacets'
 import { SourceFacetSelect, UsefulnessFacetSelect } from '../../components/FacetMultiSelect/FacetSelects'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { RatingDirection, RatingFilter } from './types'
 
 interface FilterBarProps {
@@ -116,28 +117,28 @@ function RatingPicker({
     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
       <div className="flex flex-wrap items-center gap-0.5 sm:gap-1" role="group" aria-label={t('starRating')}>
         {[0, 1, 2, 3, 4, 5].map(rating => (
-          <button
-            key={rating}
-            onClick={() => onRatingFilterChange({ ...ratingFilter, value: rating })}
-            title={starTitle(t, rating, ratingFilter.direction)}
-            aria-label={starTitle(t, rating, ratingFilter.direction)}
-            aria-pressed={ratingFilter.value === rating}
-            className={clsx(
-              'min-h-9 min-w-9 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1 sm:p-1.5 rounded-md transition-colors active:scale-95 focus-ring',
-              ratingFilter.value === rating ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
-            )}
-          >
-            {rating === 0 ? (
-              <span className={clsx('text-xs px-1', ratingFilter.value === 0 ? 'text-accent-text font-medium' : 'text-muted')}>{t('any')}</span>
-            ) : (
-              <Star
-                size={16}
-                aria-hidden="true"
-                fill={ratingFilter.value >= rating ? 'var(--warn)' : 'none'}
-                color={ratingFilter.value >= rating ? 'var(--warn)' : 'var(--border-strong)'}
-              />
-            )}
-          </button>
+          <Tooltip key={rating} kind="label" content={starTitle(t, rating, ratingFilter.direction)}>
+            <button
+              onClick={() => onRatingFilterChange({ ...ratingFilter, value: rating })}
+              aria-label={starTitle(t, rating, ratingFilter.direction)}
+              aria-pressed={ratingFilter.value === rating}
+              className={clsx(
+                'min-h-9 min-w-9 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1 sm:p-1.5 rounded-md transition-colors active:scale-95 focus-ring',
+                ratingFilter.value === rating ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
+              )}
+            >
+              {rating === 0 ? (
+                <span className={clsx('text-xs px-1', ratingFilter.value === 0 ? 'text-accent-text font-medium' : 'text-muted')}>{t('any')}</span>
+              ) : (
+                <Star
+                  size={16}
+                  aria-hidden="true"
+                  fill={ratingFilter.value >= rating ? 'var(--warn)' : 'none'}
+                  color={ratingFilter.value >= rating ? 'var(--warn)' : 'var(--border-strong)'}
+                />
+              )}
+            </button>
+          </Tooltip>
         ))}
       </div>
       <RatingDirectionToggle ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
@@ -176,13 +177,13 @@ function RatingDirectionToggle({
     >
       <DirectionOption
         label={t('ratingUp')}
-        title={t('ratingUpTitle')}
+        hint={t('ratingUpTitle')}
         checked={ratingFilter.direction === 'up'}
         onSelect={() => select('up')}
       />
       <DirectionOption
         label={t('ratingBelow')}
-        title={t('ratingBelowTitle')}
+        hint={t('ratingBelowTitle')}
         checked={ratingFilter.direction === 'below'}
         onSelect={() => select('below')}
       />
@@ -192,20 +193,21 @@ function RatingDirectionToggle({
 
 function DirectionOption({
   label,
-  title,
+  hint,
   checked,
   onSelect,
-}: Readonly<{ label: string; title: string; checked: boolean; onSelect: () => void }>) {
+}: Readonly<{ label: string; hint: string; checked: boolean; onSelect: () => void }>) {
   return (
-    <button
-      onClick={onSelect}
-      title={title}
-      role="radio"
-      aria-checked={checked}
-      tabIndex={checked ? 0 : -1}
-      className={clsx('tab', checked && 'tab-active')}
-    >
-      {label}
-    </button>
+    <Tooltip kind="description" content={hint}>
+      <button
+        onClick={onSelect}
+        role="radio"
+        aria-checked={checked}
+        tabIndex={checked ? 0 : -1}
+        className={clsx('tab', checked && 'tab-active')}
+      >
+        {label}
+      </button>
+    </Tooltip>
   )
 }

@@ -20,6 +20,7 @@ import ThemeMark from '../../components/ThemeMark/ThemeMark'
 import { useNotifySetting } from '../notifications/useNotifySetting'
 import MoreMenu from './MoreMenu'
 import { pageLabelKey } from '../page/pageContext'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ReactNode } from 'react'
 import type { MoreMenuItem } from './MoreMenu'
 import type { PageContext } from '@stream/assistant/contract'
@@ -55,15 +56,16 @@ function IconButton({ label, onClick, children, className }: Readonly<{
   className?: string
 }>) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={clsx('icon-btn', className)}
-    >
-      {children}
-    </button>
+    <Tooltip kind="label" content={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={clsx('icon-btn', className)}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -78,7 +80,7 @@ function ContextChip({ page }: Readonly<{ page: PageContext }>) {
     : t('panel.using', { context: label })
   return (
     // Wraps rather than truncating (200 % zoom, long project names); the badge's pill radius softens when it wraps.
-    <span className="badge badge-accent inline-block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]" title={text}>
+    <span className="badge badge-accent inline-block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]">
       {text}
     </span>
   )

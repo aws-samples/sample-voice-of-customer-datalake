@@ -23,6 +23,7 @@ import type { DateBasis } from '../../api/types'
 import { Calendar, X, ChevronDown, Check } from 'lucide-react'
 import clsx from 'clsx'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 /** ArrowUp/ArrowDown/Home/End move focus between a listbox's options (APG listbox). */
 function moveOptionFocus(event: ReactKeyboardEvent<HTMLElement>): void {
@@ -253,23 +254,20 @@ export default function TimeRangeSelector() {
     <div className="relative flex flex-wrap items-center gap-2 max-w-full min-w-0" data-testid="time-range-selector">
       {/* Desktop: date-basis picker (imported date vs review date) */}
       <div className="hidden sm:block relative" ref={basisRef}>
-        <button
-          type="button"
-          onClick={() => setShowBasisPicker(!showBasisPicker)}
-          className="header-control flex items-center gap-1.5 px-2 text-xs font-medium text-muted hover:text-text rounded-lg bg-bg-elevated hover:bg-bg-hover transition-colors focus-ring"
-          title={basisTooltip}
-          aria-expanded={showBasisPicker}
-          aria-haspopup="listbox"
-          aria-label={t('common:timeRange.filterByCurrent', { basis: currentBasisLabel })}
-        >
-          <Calendar size={16} aria-hidden="true" />
-          <span className="whitespace-nowrap">{currentBasisLabel}</span>
-          <ChevronDown
-            size={14}
-            className={clsx('transition-transform', showBasisPicker && 'rotate-180')}
-            aria-hidden="true"
-          />
-        </button>
+        <Tooltip kind="description" content={showBasisPicker ? undefined : basisTooltip}>
+          <button
+            type="button"
+            onClick={() => setShowBasisPicker(!showBasisPicker)}
+            className="header-control flex items-center gap-1.5 px-2 text-xs font-medium text-muted hover:text-text rounded-lg bg-bg-elevated hover:bg-bg-hover transition-colors focus-ring"
+            aria-expanded={showBasisPicker}
+            aria-haspopup="listbox"
+            aria-label={t('common:timeRange.filterByCurrent', { basis: currentBasisLabel })}
+          >
+            <Calendar size={16} aria-hidden="true" />
+            <span className="whitespace-nowrap">{currentBasisLabel}</span>
+            <ChevronDown size={14} className={clsx('transition-transform', showBasisPicker && 'rotate-180')} aria-hidden="true" />
+          </button>
+        </Tooltip>
 
         {showBasisPicker && (
           <div
@@ -322,21 +320,22 @@ export default function TimeRangeSelector() {
       </div>
       {/* Mobile: Dropdown selector */}
       <div className="sm:hidden relative" ref={dropdownRef}>
-        <button
-          type="button"
-          onClick={() => setShowDropdown(!showDropdown)}
-          className="header-control flex items-center gap-2 px-3 py-1 bg-bg-elevated rounded-lg text-sm text-text text-left active:bg-bg-hover touch-manipulation max-w-full focus-ring"
-          aria-expanded={showDropdown}
-          aria-haspopup="true"
-          aria-label={`${t('common:timeRange.label')}: ${getCurrentFullLabel()}`}
-          title={basisTooltip}
-        >
-          <Calendar size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
-          {/* Grows and wraps ("Gesamter Zeitraum" in de was cut at 100 px); the header
-              row already drops the picker under the title when space runs out. */}
-          <span className="min-w-0 break-words hyphens-auto" data-testid="time-range-trigger-label">{getDisplayLabel()}</span>
-          <ChevronDown size={16} className={clsx('transition-transform flex-shrink-0', showDropdown && 'rotate-180')} aria-hidden="true" />
-        </button>
+        <Tooltip kind="description" content={showDropdown ? undefined : basisTooltip}>
+          <button
+            type="button"
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="header-control flex items-center gap-2 px-3 py-1 bg-bg-elevated rounded-lg text-sm text-text text-left active:bg-bg-hover touch-manipulation max-w-full focus-ring"
+            aria-expanded={showDropdown}
+            aria-haspopup="true"
+            aria-label={`${t('common:timeRange.label')}: ${getCurrentFullLabel()}`}
+          >
+            <Calendar size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
+            {/* Grows and wraps ("Gesamter Zeitraum" in de was cut at 100 px); the header
+                row already drops the picker under the title when space runs out. */}
+            <span className="min-w-0 break-words hyphens-auto" data-testid="time-range-trigger-label">{getDisplayLabel()}</span>
+            <ChevronDown size={16} className={clsx('transition-transform flex-shrink-0', showDropdown && 'rotate-180')} aria-hidden="true" />
+          </button>
+        </Tooltip>
 
         {showDropdown && (
           // Plain toggle-button groups rather than a listbox: the panel mixes two
@@ -429,15 +428,16 @@ export default function TimeRangeSelector() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold tracking-tight text-text-strong">{t('common:timeRange.customRange')}</h3>
-            <button
-              type="button"
-              onClick={() => setShowPicker(false)}
-              className="icon-btn focus-ring -m-1.5 touch-manipulation"
-              aria-label={t('common:timeRange.closeCustom')}
-              title={t('common:timeRange.closeCustom')}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
+            <Tooltip kind="label" content={t('common:timeRange.closeCustom')}>
+              <button
+                type="button"
+                onClick={() => setShowPicker(false)}
+                className="icon-btn focus-ring -m-1.5 touch-manipulation"
+                aria-label={t('common:timeRange.closeCustom')}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </Tooltip>
           </div>
 
           <CustomDaysField value={daysInput} onChange={setDaysInput} onEnter={handleApplyCustom} />

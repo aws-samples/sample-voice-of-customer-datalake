@@ -7,6 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import { reactRefresh } from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import noReExports from '../../eslint-rules/no-re-exports.mjs'
+import NATIVE_TITLE from '../../scripts/audit/allowlists/native_title.json' with { type: 'json' }
 import {
   SOURCE_RULES,
   SPEC_FILES,
@@ -24,6 +25,33 @@ import {
 const PENDING_SOURCE = {}
 const PENDING_SPEC = {}
 const PENDING_SUPPRESSION = {}
+
+// Every `no-restricted-syntax` entry of the app's TypeScript (ESLint keeps only the last setting of a rule,
+// so the block below that adds the native-title ban repeats these).
+const RESTRICTED_SYNTAX = [
+  {
+    selector: 'VariableDeclaration[kind="let"]',
+    message: 'Use const. Avoid mutation.',
+  },
+  ...SWALLOWED_REJECTION_SELECTORS,
+]
+
+// Rule 16 (docs/kiro-design-system.md › Tooltips): no native `title` on a DOM element (an iframe's title is
+// its accessible name and stays) nor on Link / NavLink, which pass it to their <a>. The files still listed in
+// the ratchet (scripts/audit/allowlists/native_title.json, pinned by src/theme/tooltipUsage.test.ts) wait for
+// the releases that rewrite them; a file leaves the list, and comes under this rule, when its count is zero.
+const NATIVE_TITLE_MESSAGE = 'Use <Tooltip> (docs/kiro-design-system.md › Tooltips): a native title waits 1–2 s and never shows on focus.'
+const NATIVE_TITLE_SELECTORS = [
+  {
+    selector: "JSXOpeningElement[name.name=/^(?!iframe$)[a-z]/] > JSXAttribute[name.name='title']",
+    message: NATIVE_TITLE_MESSAGE,
+  },
+  {
+    selector: "JSXOpeningElement[name.name=/^(Link|NavLink)$/] > JSXAttribute[name.name='title']",
+    message: NATIVE_TITLE_MESSAGE,
+  },
+]
+const NATIVE_TITLE_PENDING = NATIVE_TITLE.entries.map((entry) => entry.key.replace(/^voc-datalake\/frontend\//u, ''))
 
 export default tseslint.config(
   {
@@ -71,14 +99,7 @@ export default tseslint.config(
       'no-inline-comments': 'off',
       'spaced-comment': 'off',
       // Ban let - use const only
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: 'VariableDeclaration[kind="let"]',
-          message: 'Use const. Avoid mutation.',
-        },
-        ...SWALLOWED_REJECTION_SELECTORS,
-      ],
+      'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX],
       // No any types
       // A leading underscore marks a binding kept on purpose (a mock's positional parameter, a
       // loop counter, a destructured field dropped from a rest copy), as in ruff's dummy regex.
@@ -151,5 +172,11 @@ export default tseslint.config(
       },
     },
     rules: { ...withPending(SPEC_RULES, PENDING_SPEC), ...TYPE_SAFETY_SPEC_RULES },
+  },
+  {
+    // The app's UI, not its specs (a spec may render a titled element to test what reads it).
+    files: ['src/**/*.tsx'],
+    ignores: [...SPEC_FILES, 'src/test/**', ...NATIVE_TITLE_PENDING],
+    rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX, ...NATIVE_TITLE_SELECTORS] },
   },
 )

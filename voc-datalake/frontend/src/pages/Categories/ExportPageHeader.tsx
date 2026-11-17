@@ -6,6 +6,7 @@
 
 import { FileDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 export function CenteredSpinner() {
   return (
@@ -30,16 +31,17 @@ export function ExportPageHeader({
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-strong">{title}</h1>
         <p className="text-sm text-muted mt-1">{subtitle}</p>
       </div>
-      <button
-        type="button"
-        onClick={onExport}
-        disabled={exportDisabled}
-        className="btn btn-secondary btn-sm self-start sm:self-auto whitespace-nowrap"
-        title={t('exportPdfTooltip')}
-      >
-        <FileDown size={14} aria-hidden="true" />
-        {t('exportPdf')}
-      </button>
+      <Tooltip kind="description" content={t('exportPdfTooltip')}>
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={exportDisabled}
+          className="btn btn-secondary btn-sm self-start sm:self-auto whitespace-nowrap"
+        >
+          <FileDown size={14} aria-hidden="true" />
+          {t('exportPdf')}
+        </button>
+      </Tooltip>
     </div>
   )
 }

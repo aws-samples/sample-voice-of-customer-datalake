@@ -22,7 +22,7 @@ import { usePluginCopy } from '../../plugins/pluginCopy'
 import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { SetupInstructions, ResultMessage } from './PluginConfigParts'
 import AppEditorForm from './AppEditorForm'
 import { appSaveMessage, saveAppFromForm } from './appSave'
@@ -38,6 +38,7 @@ import { useRadarBrandLabel } from './useRadarBrands'
 import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
 import { isPluginNotEnabled } from '../../workspace/workspaceRefusals'
 import { adminPath } from '../Settings/adminPaths'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -68,6 +69,7 @@ function ScheduleToggle({
   readonly onToggle: (enabled: boolean) => void
 }) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   return (
     <div className="flex items-center justify-between p-3 bg-bg-accent rounded-lg">
       <div>
@@ -75,8 +77,12 @@ function ScheduleToggle({
         <p className="text-xs text-muted">{t('pluginConfig.scheduleDescription')}</p>
       </div>
       {scheduleLoading ? <Loader2 size={16} className="animate-spin text-accent" /> : (
-        <label className={clsx('flex items-center gap-2', isAdmin ? 'cursor-pointer' : 'cursor-not-allowed')} title={isAdmin ? undefined : ADMIN_ONLY_TITLE}>
-          <input type="checkbox" checked={scheduleEnabled} disabled={!isAdmin} onChange={(e) => onToggle(e.target.checked)} className="rounded-sm accent-accent focus-ring disabled:opacity-50" />
+        <label className={clsx('flex items-center gap-2', isAdmin ? 'cursor-pointer' : 'cursor-not-allowed')}>
+          <Tooltip kind="description" content={adminOnly}>
+            <input type="checkbox" checked={scheduleEnabled} aria-disabled={isAdmin ? undefined : true}
+              onChange={(e) => { if (isAdmin) onToggle(e.target.checked) }}
+              className="rounded-sm accent-accent focus-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50" />
+          </Tooltip>
           <span className="text-sm text-text">{scheduleEnabled ? t('pluginConfig.enabled') : t('pluginConfig.disabled')}</span>
         </label>
       )}
@@ -136,6 +142,7 @@ function AppCard({
   readonly onDelete: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   const copy = appCopy(pluginId)
   const Icon = copy.icon
   const radarBrandLabel = useRadarBrandLabel(appField(app, 'radar_brand'))
@@ -155,8 +162,15 @@ function AppCard({
         {/* Edit stays enabled for everyone: it only opens the form. The SAVE inside
             it is what writes, and that is disabled below — so a non-admin can read
             an app's settings without being handed a button that 403s. */}
-        <button type="button" onClick={onEdit} className="icon-btn p-2" aria-label={t('card.edit')} title={t('card.edit')}><Pencil size={16} /></button>
-        <button type="button" onClick={onDelete} disabled={!isAdmin} aria-label={t('card.delete')} title={isAdmin ? t('card.delete') : ADMIN_ONLY_TITLE} className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={16} /></button>
+        <Tooltip kind="label" content={t('card.edit')}>
+          <button type="button" onClick={onEdit} className="icon-btn p-2" aria-label={t('card.edit')}><Pencil size={16} /></button>
+        </Tooltip>
+        <Tooltip kind={isAdmin ? 'label' : 'description'} content={adminOnly ?? t('card.delete')}>
+          <button type="button" onClick={isAdmin ? onDelete : undefined} aria-disabled={isAdmin ? undefined : true}
+            aria-label={t('card.delete')} className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle">
+            <Trash2 size={16} />
+          </button>
+        </Tooltip>
       </div>
     </div>
   )
@@ -180,13 +194,20 @@ function AppListSection({
   readonly onCancelEditor: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   const copy = appCopy(plugin.id)
   const EmptyIcon = copy.icon
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text-strong">{t(copy.list)}</h3>
-        {!showEditor && <button type="button" onClick={onStartAdd} disabled={!isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary btn-sm"><Plus size={14} /> {t(copy.add)}</button>}
+        {!showEditor && (
+          <Tooltip kind="description" content={adminOnly}>
+            <button type="button" onClick={isAdmin ? onStartAdd : undefined} aria-disabled={isAdmin ? undefined : true} className="btn btn-secondary btn-sm">
+              <Plus size={14} /> {t(copy.add)}
+            </button>
+          </Tooltip>
+        )}
       </div>
       {appsLoading ? <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-accent" /></div> : null}
       {!appsLoading && apps.length === 0 && !showEditor && (
@@ -242,16 +263,19 @@ function RunNowRow({
   readonly onRun: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const adminOnly = useAdminOnlyReason(isAdmin)
   const { t: tCommon } = useTranslation('common')
   // Inside a workspace, Run now runs only a plugin the workspace enabled (PLUGIN_NOT_ENABLED, workspaceRefusals.ts):
   // the reason points to Workspace settings, and the button stays for the run once it is enabled there.
   const notEnabled = isPluginNotEnabled(error)
   return (
     <div className="flex items-center gap-2">
-      <button onClick={onRun} disabled={isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary">
-        {isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-        {t('pluginConfig.runNow')}
-      </button>
+      <Tooltip kind="description" content={adminOnly}>
+        <button onClick={isAdmin ? onRun : undefined} disabled={isPending} aria-disabled={isAdmin ? undefined : true} className="btn btn-secondary">
+          {isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {t('pluginConfig.runNow')}
+        </button>
+      </Tooltip>
       {notEnabled ? <ResultMessage success={false} message={tCommon('workspaces.errors.pluginNotEnabled')} /> : null}
       {result == null ? null : <ResultMessage success={result.success} message={result.message === '' ? t('pluginConfig.runTriggered') : result.message} />}
     </div>

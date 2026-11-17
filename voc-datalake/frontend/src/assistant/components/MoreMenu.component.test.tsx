@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '@test/test-utils'
+import { openTooltip } from '@test/tooltip'
 import MoreMenu from './MoreMenu'
 import type { MoreMenuItem } from './MoreMenu'
 
@@ -33,7 +34,7 @@ const exportOnly = (): MoreMenuItem[] => [{ key: 'export', label: 'Export', icon
 describe('MoreMenu', () => {
   it('is a labelled menu button whose items carry visible labels', async () => {
     const { user, trigger } = setup()
-    expect([trigger.getAttribute('aria-haspopup'), trigger.getAttribute('aria-expanded'), trigger.getAttribute('title')])
+    expect([trigger.getAttribute('aria-haspopup'), trigger.getAttribute('aria-expanded'), (await openTooltip(trigger)).textContent])
       .toStrictEqual(['menu', 'false', 'More actions'])
     await user.click(trigger)
     expect([...screen.getByRole('menu').querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent)).toStrictEqual([

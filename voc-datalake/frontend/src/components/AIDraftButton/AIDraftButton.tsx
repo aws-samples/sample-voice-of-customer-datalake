@@ -12,6 +12,7 @@
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 interface AIDraftButtonProps {
   /** What it writes ("title and description"): read after the label by screen readers, so two
@@ -60,17 +61,19 @@ export default function AIDraftButton({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={() => onClick()}
-        disabled={busy || disabledReason !== null}
-        aria-busy={busy}
-        aria-describedby={describedBy([[reasonId, disabledReason], [errorId, error]])}
-        title={disabledReason ?? hint}
-        className="btn btn-secondary btn-sm"
-      >
-        <ButtonContent busy={busy} hasText={hasText} subject={subject} />
-      </button>
+      {/* Why it is off is the visible note below; the hint says what it does. */}
+      <Tooltip kind="description" content={disabledReason === null ? hint : undefined}>
+        <button
+          type="button"
+          onClick={() => onClick()}
+          disabled={busy || disabledReason !== null}
+          aria-busy={busy}
+          aria-describedby={describedBy([[reasonId, disabledReason], [errorId, error]])}
+          className="btn btn-secondary btn-sm"
+        >
+          <ButtonContent busy={busy} hasText={hasText} subject={subject} />
+        </button>
+      </Tooltip>
       {disabledReason === null ? null : (
         <p id={reasonId} className="text-xs text-muted text-right">{disabledReason}</p>
       )}

@@ -315,7 +315,8 @@ export async function deepAudit(page: Page): Promise<DeepAudit> {
           const clipsX = (s.textOverflow === 'ellipsis' || s.overflow === 'hidden') && el.scrollWidth > el.clientWidth + 1
           const clamped = s.webkitLineClamp !== 'none' && s.webkitLineClamp !== '' && el.scrollHeight > el.clientHeight + 1
           if (clipsX || clamped) {
-            const tip = el.closest('[title]') ?? el.querySelector('[title]')
+            // A native title (still in native_title.json) or the app's Tooltip / TruncatedText (data-tooltip).
+            const tip = el.closest('[title], [data-tooltip]') ?? el.querySelector('[title], [data-tooltip]')
             const named = el.closest('[aria-label]')
             if (tip === null && named === null) truncated.push({ selector: sel(), text })
           }

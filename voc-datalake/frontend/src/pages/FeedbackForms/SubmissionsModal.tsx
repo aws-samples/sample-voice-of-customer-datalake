@@ -12,6 +12,7 @@ import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import FormStatsFigures from '../../components/FormStatsFigures/FormStatsFigures'
 import { formatDateTime } from '../../utils/dateUtils'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 
 interface SubmissionsModalProps {
   readonly formId: string
@@ -57,7 +58,7 @@ export default function SubmissionsModal({ formId, formName, onClose }: Submissi
         {/* Header */}
         <div className="dialog-header justify-between">
           <div className="min-w-0">
-            <h2 id={titleId} className="dialog-title truncate" title={formName}>{formName}</h2>
+            <TruncatedText as="h2" id={titleId} className="dialog-title truncate" text={formName} />
             <p className="dialog-description">{t('submissions.title')}</p>
           </div>
           <DialogClose onClick={onClose} className="flex-shrink-0" />

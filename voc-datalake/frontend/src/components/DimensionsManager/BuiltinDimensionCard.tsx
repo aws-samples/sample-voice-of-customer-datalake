@@ -9,6 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { Lock } from 'lucide-react'
 import FeedbackTypeBackfill from './FeedbackTypeBackfill'
+import { InfoTip } from '../Tooltip/InfoTip'
 import type { Dimension } from '../../api/dimensionsSchema'
 
 export default function BuiltinDimensionCard({ dimension }: Readonly<{ dimension: Dimension }>) {
@@ -18,10 +19,11 @@ export default function BuiltinDimensionCard({ dimension }: Readonly<{ dimension
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold tracking-tight text-text-strong">{dimension.label}</h3>
         <code className="text-xs text-muted font-mono">{dimension.key}</code>
-        <span className="badge badge-muted" title={t('badgeHint')}>
+        <span className="badge badge-muted">
           <Lock size={12} aria-hidden="true" />
           {t('badge')}
         </span>
+        <InfoTip text={t('badgeHint')} />
       </div>
       <p className="text-sm text-muted">{t('description')}</p>
       <ul className="grid gap-1.5 sm:grid-cols-2">

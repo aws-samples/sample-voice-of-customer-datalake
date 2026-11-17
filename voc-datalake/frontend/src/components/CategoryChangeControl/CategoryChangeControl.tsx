@@ -25,6 +25,7 @@ import type { FeedbackItem } from '../../api/types'
 import type { Category } from '../CategoriesManager/CategoriesManager'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import InlineEditor from '../InlineEditor/InlineEditor'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 /** `category_source` of a hand-set category. */
 const MANUAL_SOURCE = 'manual'
@@ -56,10 +57,12 @@ export function ManualCategoryBadge({ feedback }: Readonly<{ feedback: Pick<Feed
     when,
   ].filter((part): part is string => part !== null).join(' · ')
   return (
-    <span className="badge badge-info" title={details === '' ? undefined : details}>
-      <UserPen size={12} aria-hidden="true" />
-      {by === undefined || by === '' ? t('categoryChange.manual') : t('categoryChange.manualBy', { user: by })}
-    </span>
+    <Tooltip kind="description" content={details === '' ? undefined : details}>
+      <span className="badge badge-info">
+        <UserPen size={12} aria-hidden="true" />
+        {by === undefined || by === '' ? t('categoryChange.manual') : t('categoryChange.manualBy', { user: by })}
+      </span>
+    </Tooltip>
   )
 }
 

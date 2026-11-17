@@ -16,6 +16,7 @@ import PrototypePinsReview from '../../components/PrototypePins/PrototypePinsRev
 import PrototypeFeedbackDialog from '../../components/PrototypeFeedback/PrototypeFeedbackDialog'
 import EditWithAssistantButton from './EditWithAssistantButton'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { InheritedExtraSources } from './documentLineage'
 import type { ProjectDocument } from '../../api/types'
 
@@ -119,13 +120,14 @@ function PrototypeFeedbackButton({
   if (!open) {
     return (
       <span className="inline-flex items-center gap-2">
-        <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1 text-warn underline underline-offset-2"
-          title={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}
-        >
-          <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
-        </button>
+        <Tooltip kind="description" content={t('documents.prototype.feedbackTitle', { defaultValue: 'Give feedback to regenerate this prototype' })}>
+          <button
+            onClick={() => setOpen(true)}
+            className="inline-flex items-center gap-1 text-warn underline underline-offset-2"
+          >
+            <Wand2 size={12} /> {t('documents.prototype.feedbackButton', { defaultValue: 'Revise with feedback' })}
+          </button>
+        </Tooltip>
         {/* The panel is the real progress report, but it is a refetch away and
             renders nothing until the job appears — so say something here too. */}
         {started.isSet ? <span className="text-ok">{t('documents.prototype.started')}</span> : null}

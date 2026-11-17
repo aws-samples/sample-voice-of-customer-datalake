@@ -9,6 +9,7 @@ import { Archive, ArrowDown, ArrowUp } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DRAFT_LIMITS } from './scoringDraft'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { DraftAxis, DraftEdit } from './scoringDraft'
 import type { AxisDirection } from '../../api/prioritizationAxes'
 import type { ReactElement } from 'react'
@@ -116,15 +117,21 @@ export function ScoringMetricEditor({ axis, index, count, share, actions, defaul
           <span className="font-mono text-muted mr-2">{index + 1}.</span>{name}
         </h3>
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button type="button" className="icon-btn" disabled={index === 0} onClick={() => actions.onMove(axis.key, -1)} aria-label={t('setup.moveUp', { name })} title={t('setup.moveUp', { name })}>
-            <ArrowUp size={16} aria-hidden="true" />
-          </button>
-          <button type="button" className="icon-btn" disabled={index === count - 1} onClick={() => actions.onMove(axis.key, 1)} aria-label={t('setup.moveDown', { name })} title={t('setup.moveDown', { name })}>
-            <ArrowDown size={16} aria-hidden="true" />
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => actions.onArchive(axis.key)} aria-label={t('setup.archiveMetric', { name })} title={t('setup.archiveHint')}>
-            <Archive size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('setup.archive')}</span>
-          </button>
+          <Tooltip kind="label" content={t('setup.moveUp', { name })}>
+            <button type="button" className="icon-btn" disabled={index === 0} onClick={() => actions.onMove(axis.key, -1)} aria-label={t('setup.moveUp', { name })}>
+              <ArrowUp size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip kind="label" content={t('setup.moveDown', { name })}>
+            <button type="button" className="icon-btn" disabled={index === count - 1} onClick={() => actions.onMove(axis.key, 1)} aria-label={t('setup.moveDown', { name })}>
+              <ArrowDown size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip kind="description" content={t('setup.archiveHint')}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => actions.onArchive(axis.key)} aria-label={t('setup.archiveMetric', { name })}>
+              <Archive size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('setup.archive')}</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -15,6 +15,7 @@ import { TURN_INTO_BLOCKS, turnInto } from './blocks'
 import type { CanvasController } from './controller'
 import MenuList from './MenuList'
 import { toggleMark } from './commands'
+import { Tooltip } from '../../Tooltip/Tooltip'
 
 interface FormatBarProps {
   readonly editor: Editor
@@ -83,9 +84,11 @@ export default function FormatBar({ editor, controller, onComment }: FormatBarPr
   }
 
   const button = (key: string, label: string, Icon: LucideIcon, onClick: () => void, pressed?: boolean) => (
-    <button key={key} type="button" className="canvas-bar__button" aria-label={label} title={label} aria-pressed={pressed} tabIndex={-1} onClick={onClick}>
-      <Icon aria-hidden="true" className="canvas-bar__icon" />
-    </button>
+    <Tooltip key={key} kind="label" content={label}>
+      <button type="button" className="canvas-bar__button" aria-label={label} aria-pressed={pressed} tabIndex={-1} onClick={onClick}>
+        <Icon aria-hidden="true" className="canvas-bar__icon" />
+      </button>
+    </Tooltip>
   )
 
   return (

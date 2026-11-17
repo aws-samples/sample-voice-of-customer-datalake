@@ -25,6 +25,7 @@ import type { MetricActions } from './ScoringMetricEditor'
 import { SCORING_TEMPLATE_IDS, TEMPLATE_TEXT, applyTemplate } from './scoringTemplates'
 import type { ScoringTemplateId, TemplateChange } from './scoringTemplates'
 import { SetupSavedBy } from './ScoringSetupView'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ReactElement } from 'react'
 
 const PROBLEM_TEXT: Record<DraftProblem, { readonly messageKey: `prioritization:${string}` }> = {
@@ -123,9 +124,13 @@ function MetricList({ draft, actions, onAdd }: {
         <h3 id="scoring-metrics-title" className="text-sm font-semibold text-text-strong">
           {t('setup.metricsTitle', { active: active.length, max: MAX_ACTIVE_AXES })}
         </h3>
-        <button type="button" className="btn btn-secondary btn-sm" disabled={!addable} onClick={onAdd} title={addable ? undefined : t('setup.problems.tooManyActive', { max: MAX_ACTIVE_AXES })}>
-          <Plus size={14} aria-hidden="true" />{t('setup.addMetric')}
-        </button>
+        {/* Off but focusable (aria-disabled) at the limit: its tooltip, and its description, say why. */}
+        <Tooltip kind="description" content={addable ? undefined : t('setup.problems.tooManyActive', { max: MAX_ACTIVE_AXES })}>
+          <button type="button" className="btn btn-secondary btn-sm"
+            aria-disabled={addable ? undefined : true} onClick={addable ? onAdd : undefined}>
+            <Plus size={14} aria-hidden="true" />{t('setup.addMetric')}
+          </button>
+        </Tooltip>
       </div>
       <ol className="space-y-3">
         {active.map((axis, index) => (

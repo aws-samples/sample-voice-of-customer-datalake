@@ -24,6 +24,7 @@ import { createThreadState } from '../thread/reducer'
 import type { SessionSummary } from '../sessions/schema'
 import type { ThreadState } from '../thread/types'
 import { rowAction, rowMenuButton, rowMenuItems } from '@test/assistantRowMenu'
+import { openTooltip } from '@test/tooltip'
 
 const STATUS_LABELS = /^(Running|Waiting for your approval|Failed|New reply)$/
 
@@ -165,7 +166,7 @@ describe('SessionList open conversations', () => {
   it('an idle conversation offers rename, delete and a plain close in one labelled menu', async () => {
     openThread('thread-a', 'Alpha')
     renderList()
-    expect(await rowMenuButton('Alpha')).toHaveAttribute('title', 'More actions for “Alpha”')
+    expect(await openTooltip(await rowMenuButton('Alpha'))).toHaveTextContent('More actions for “Alpha”')
     expect(await rowMenuItems(userEvent, 'Alpha')).toStrictEqual(['Rename', 'Delete', 'Close'])
   })
 
@@ -173,8 +174,9 @@ describe('SessionList open conversations', () => {
     openThread('thread-a', 'A long conversation title once cut at eighteen characters')
     renderList()
     const title = screen.getByText(/A long conversation title/)
-    expect([title.className.includes('line-clamp-2'), title.className.includes('truncate'), title.getAttribute('title')])
-      .toStrictEqual([true, false, 'A long conversation title once cut at eighteen characters'])
+    // A TruncatedText: the whole title in a tooltip while the two lines cut it.
+    expect([title.className.includes('line-clamp-2'), title.className.includes('truncate'), title.getAttribute('data-tooltip')])
+      .toStrictEqual([true, false, 'truncated'])
   })
 
   it('a running conversation shows Running and offers only stop-and-close', async () => {

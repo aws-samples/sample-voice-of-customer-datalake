@@ -6,6 +6,7 @@ import i18n from 'i18next'
 import { screen } from '@testing-library/react'
 import { render } from '../../test/test-utils'
 import FeedbackCard from './FeedbackCard'
+import { openTooltip } from '@test/tooltip'
 import type { FeedbackItem } from '../../api/types'
 
 // Router + QueryClient (the card reads the configured category / source names).
@@ -196,9 +197,10 @@ describe('FeedbackCard', () => {
       },
     )
 
-    it('renders copy button', () => {
+    it('renders copy button', async () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
-      expect(screen.getByTitle('Copy text')).toBeInTheDocument()
+      const copy = screen.getByRole('button', { name: 'Copy text' })
+      expect(await openTooltip(copy)).toHaveTextContent('Copy text')
     })
   })
 

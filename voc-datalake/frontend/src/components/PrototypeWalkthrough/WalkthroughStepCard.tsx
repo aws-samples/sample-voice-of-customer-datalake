@@ -8,6 +8,7 @@ import type { DragEvent, KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, Crosshair, GripVertical, Play, Trash2 } from 'lucide-react'
 import { WALKTHROUGH_LIMITS } from '../../api/prototypeWalkthroughSchema'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { WalkthroughStep } from '../../api/prototypeWalkthroughSchema'
 import type { EditorStep } from './walkthroughSteps'
 
@@ -54,22 +55,30 @@ export default function WalkthroughStepCard({
           <GripVertical size={14} aria-hidden /> {t('prototypeWalkthrough.stepCount', { n: number, total })}
         </span>
         <div className="flex items-center gap-1">
-          <button type="button" className="icon-btn p-1" disabled={index === 0} onClick={() => onMove(index - 1)}
-            aria-label={t('prototypeWalkthrough.moveUp', { n: number })} title={t('prototypeWalkthrough.moveUp', { n: number })}>
-            <ArrowUp size={14} aria-hidden />
-          </button>
-          <button type="button" className="icon-btn p-1" disabled={index === total - 1} onClick={() => onMove(index + 1)}
-            aria-label={t('prototypeWalkthrough.moveDown', { n: number })} title={t('prototypeWalkthrough.moveDown', { n: number })}>
-            <ArrowDown size={14} aria-hidden />
-          </button>
-          <button type="button" className="icon-btn p-1" onClick={onPreview}
-            aria-label={t('prototypeWalkthrough.previewFrom', { n: number })} title={t('prototypeWalkthrough.previewFrom', { n: number })}>
-            <Play size={14} aria-hidden />
-          </button>
-          <button type="button" className="icon-btn p-1 hover:text-danger" onClick={onRemove}
-            aria-label={t('prototypeWalkthrough.removeStep', { n: number })} title={t('prototypeWalkthrough.removeStep', { n: number })}>
-            <Trash2 size={14} aria-hidden />
-          </button>
+          <Tooltip kind="label" content={t('prototypeWalkthrough.moveUp', { n: number })}>
+            <button type="button" className="icon-btn p-1" disabled={index === 0} onClick={() => onMove(index - 1)}
+              aria-label={t('prototypeWalkthrough.moveUp', { n: number })}>
+              <ArrowUp size={14} aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip kind="label" content={t('prototypeWalkthrough.moveDown', { n: number })}>
+            <button type="button" className="icon-btn p-1" disabled={index === total - 1} onClick={() => onMove(index + 1)}
+              aria-label={t('prototypeWalkthrough.moveDown', { n: number })}>
+              <ArrowDown size={14} aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip kind="label" content={t('prototypeWalkthrough.previewFrom', { n: number })}>
+            <button type="button" className="icon-btn p-1" onClick={onPreview}
+              aria-label={t('prototypeWalkthrough.previewFrom', { n: number })}>
+              <Play size={14} aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip kind="label" content={t('prototypeWalkthrough.removeStep', { n: number })}>
+            <button type="button" className="icon-btn p-1 hover:text-danger" onClick={onRemove}
+              aria-label={t('prototypeWalkthrough.removeStep', { n: number })}>
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </Tooltip>
         </div>
       </div>
       <label htmlFor={titleId} className="block text-xs font-medium">{t('prototypeWalkthrough.title')}</label>

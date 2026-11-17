@@ -30,6 +30,7 @@ import { editableTitle } from '../sessions/serialize'
 import { TitleEditor } from './SessionRename'
 import { useRowRename } from './useSessionRename'
 import MoreMenu from './MoreMenu'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { MoreMenuItem } from './MoreMenu'
 import type { TFunction } from 'i18next'
 
@@ -172,7 +173,7 @@ export function OpenRow({ slot, active, title, editTitle, actions }: Readonly<{
                 non-inline child with a space ("Running First question"), and jsdom
                 applies no Tailwind CSS, so without it the test DOM reads "RunningFirst". */}
             <span className="mt-0.5 flex flex-shrink-0" style={STATUS_WRAPPER_STYLE}><StatusIcon state={state} /></span>
-            <span className={clsx(TITLE_CLASS, state === 'unread' && 'font-semibold')} title={title}>{title}</span>
+            <TruncatedText className={clsx(TITLE_CLASS, state === 'unread' && 'font-semibold')} text={title} />
           </button>
         )}
       {/* Stays mounted while renaming: the editor sends focus back to its button. */}
@@ -210,7 +211,7 @@ export function HistoryRow({ session, nowMs, actions }: Readonly<{
           <button type="button" onClick={() => onPick(session.id)} className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1.5 text-left">
             <MessageSquare size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden />
             <span className="min-w-0">
-              <span className={TITLE_CLASS} title={title}>{title}</span>
+              <TruncatedText className={TITLE_CLASS} text={title} />
               <time dateTime={session.updatedAt} className="block text-[12px] text-muted">
                 {formatRelativeDate(session.updatedAt, i18n.language, nowMs)}
               </time>

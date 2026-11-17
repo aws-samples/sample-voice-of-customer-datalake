@@ -83,8 +83,8 @@ describe('TemplateSelector scraper templates are admin-only', () => {
     const { onSelect } = renderSelector(false)
 
     for (const tile of scraperTemplateTiles()) {
-      expect(tile).toBeDisabled()
-      expect(tile).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(tile).toHaveAttribute('aria-disabled', 'true')
+      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
       await user.click(tile)
     }
     expect(onSelect).not.toHaveBeenCalled()
@@ -122,8 +122,8 @@ describe('TemplateSelector imports are admin-only', () => {
     const calls = renderSelector(false)
 
     for (const tile of importTiles()) {
-      expect(tile).toBeDisabled()
-      expect(tile).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      expect(tile).toHaveAttribute('aria-disabled', 'true')
+      expect(tile).toHaveAccessibleDescription(ADMIN_ONLY_TITLE)
       await user.click(tile)
     }
     expect(callCounts(calls)).toStrictEqual({ manual: 0, json: 0, csv: 0, plugin: 0 })

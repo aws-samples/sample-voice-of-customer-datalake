@@ -21,9 +21,9 @@ function renderRecord(category: string) {
 }
 
 describe('ProcessedFeedbackView category label', () => {
-  it('shows a configured category by its configured name, keeping the id as the title', () => {
+  it('shows a configured category by its configured name, keeping the id as its tooltip', () => {
     renderRecord('pricing_licensing')
-    expect(screen.getByText('Category: Pricing & Licensing')).toHaveAttribute('title', 'pricing_licensing')
+    expect(screen.getByText('Category: Pricing & Licensing')).toHaveAccessibleDescription('pricing_licensing')
   })
 
   it('humanises a category id with no configured name', () => {

@@ -10,6 +10,7 @@ import { screen, within } from '@testing-library/react'
 import { textRunEvents as textRun } from '@test/assistantDoubles'
 import { openPanel, renderChatPage, typeAndSend } from '@test/assistantPanelHarness'
 import { stubElementScrollIntoView } from '@test/stubScrollTo'
+import { openTooltip } from '@test/tooltip'
 import { useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 
 // The scripted agent replaces the transport and the sessions API (both hoisted above the imports).
@@ -48,11 +49,11 @@ describe('SessionsSidebar', () => {
   })
 
   describe('collapse and expand', () => {
-    it('starts expanded with the full list and a collapse button', () => {
+    it('starts expanded with the full list and a collapse button', async () => {
       renderChatPage()
       expect(sidebar()).toHaveAttribute('data-collapsed', 'false')
       expect(within(sidebar()).getByRole('heading', { level: 3, name: 'History' })).toBeInTheDocument()
-      expect(sidebarButton(COLLAPSE)).toHaveAttribute('title', COLLAPSE)
+      expect(await openTooltip(sidebarButton(COLLAPSE))).toHaveTextContent(COLLAPSE)
     })
 
     it('collapses to a narrow rail with only New conversation and expand', async () => {

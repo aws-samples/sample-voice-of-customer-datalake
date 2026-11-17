@@ -21,6 +21,7 @@ import PlanProgress from '../../assistant/planProgress/PlanProgress'
 import { PlanStatusBadge } from '../../assistant/planProgress/PlanBadges'
 import type { PlanSummary } from '../../api/plansApi'
 import { formatDateTime } from '../../utils/dateUtils'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /** The list refreshes this often while one of its plans is still running. */
 const LIST_POLL_MS = 15_000
@@ -54,10 +55,12 @@ const PlanRow = memo(function PlanRow({ plan, open, onToggle, removing, onRemove
         </button>
         {/* Beside the toggle, not inside it: a button cannot hold a button. Only a finished plan can go. */}
         {isTerminalPlan(plan.status) && (
-          <button type="button" className="icon-btn self-center hover:text-danger" disabled={removing} onClick={() => onRemove(plan)}
-            aria-label={t('plans.removeNamed', { goal: plan.goal })} title={t('plans.remove')}>
-            {removing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-          </button>
+          <Tooltip kind="label" content={t('plans.remove')}>
+            <button type="button" className="icon-btn self-center hover:text-danger" disabled={removing} onClick={() => onRemove(plan)}
+              aria-label={t('plans.removeNamed', { goal: plan.goal })}>
+              {removing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+            </button>
+          </Tooltip>
         )}
       </div>
       {open && <PlanProgress planId={plan.plan_id} onOpen={ignoreOpen} />}

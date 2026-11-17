@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import { openTooltip } from '@test/tooltip'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import RevisePanel from './RevisePanel'
@@ -75,12 +76,14 @@ describe('recommendations', () => {
     expect(onShowThread).toHaveBeenCalledWith('t1')
   })
 
-  it('wraps a thread link\'s quote (two lines at most) instead of cutting it to one; its tooltip is its name (read once)', () => {
+  it('wraps a thread link\'s quote (two lines at most) instead of cutting it to one; its tooltip is its name (read once)', async () => {
     renderPanel({ kind: 'recommendations', result: result('recommendations', { changes: [] }) })
     const link = screen.getByRole('button', { name: 'Show the comment: Quiet hours are 21:00 to 08:00' })
     const label = within(link).getByTestId('thread-link-label')
-    expect({ title: link.getAttribute('title'), clamp: label.classList.contains('line-clamp-2'), cut: label.classList.contains('truncate') })
-      .toStrictEqual({ title: 'Show the comment: Quiet hours are 21:00 to 08:00', clamp: true, cut: false })
+    // A label tooltip: it repeats the name and is hidden from assistive technology (read once).
+    const tip = await openTooltip(link)
+    expect({ tip: tip.textContent, hidden: tip.getAttribute('aria-hidden'), clamp: label.classList.contains('line-clamp-2'), cut: label.classList.contains('truncate') })
+      .toStrictEqual({ tip: 'Show the comment: Quiet hours are 21:00 to 08:00', hidden: 'true', clamp: true, cut: false })
   })
 
   it('shows nothing while idle, running or failed (the button says those)', () => {

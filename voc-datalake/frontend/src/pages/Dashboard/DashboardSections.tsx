@@ -24,6 +24,7 @@ import DashboardCard from './DashboardCard'
 import { partialHintText } from './dashboardData'
 import { CHART_CONTAINER_PROPS, TOOLTIP_PROPS } from './chartTheme'
 import { tooltipFormatter } from './chartTooltip'
+import { Tooltip as HintTooltip } from '../../components/Tooltip/Tooltip'
 
 /**
  * How many urgent items the dashboard previews. The list is a preview, not the
@@ -124,15 +125,17 @@ export function SentimentChart({ sentiment }: Readonly<{ sentiment: SentimentBre
       <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
         {pieData.map((d) => (
           <li key={d.key}>
-            <Link
-              to={`/categories?sentiment=${d.key}`}
-              title={t('openInCategories', { name: d.name })}
-              className="inline-flex items-center gap-1.5 rounded-full bg-bg-hover px-2.5 py-1 text-xs text-text hover:bg-border focus-ring"
-            >
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.fill }} aria-hidden="true" />
-              {d.name}
-              <span className="font-mono text-muted">{formatPercent(total > 0 ? (d.value / total) * 100 : 0, i18n.language)}</span>
-            </Link>
+            {/* The app's Tooltip, beside the chart's own (recharts' Tooltip above). */}
+            <HintTooltip kind="description" content={t('openInCategories', { name: d.name })}>
+              <Link
+                to={`/categories?sentiment=${d.key}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-bg-hover px-2.5 py-1 text-xs text-text hover:bg-border focus-ring"
+              >
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.fill }} aria-hidden="true" />
+                {d.name}
+                <span className="font-mono text-muted">{formatPercent(total > 0 ? (d.value / total) * 100 : 0, i18n.language)}</span>
+              </Link>
+            </HintTooltip>
           </li>
         ))}
       </ul>

@@ -32,7 +32,7 @@ describe('CompanyContextStrip', () => {
     renderWithQueryClient(<TestRouter><CompanyContextStrip /></TestRouter>)
     expect(await screen.findByText('Be the most trusted brand')).toBeInTheDocument()
     expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toStrictEqual(['Objective 1', 'Objective 2', 'Objective 3', '+2 more'])
-    expect(await screen.findByTitle('primary #8e48ff')).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: 'primary #8e48ff' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Knowledge → Company/ })).toHaveAttribute('href', '/company')
   })
 

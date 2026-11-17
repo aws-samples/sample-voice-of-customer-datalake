@@ -17,6 +17,7 @@ import { api } from '../../api/client'
 import { normalizeOwnerCandidates } from './categoriesSchema'
 import type { Category, CategoryOwner } from './CategoriesManager'
 import { usersKey } from '../../api/queryKeys'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 /** Server-side limits (contract C), mirrored so the editor refuses before the route does. */
 const MAX_PRODUCT_LENGTH = 120
@@ -88,19 +89,22 @@ function OwnerChips({ owners, disabled, onRemove }: Readonly<{
       {owners.map((owner) => {
         const label = t('removeOwner', { name: ownerLabel(owner) })
         return (
-          <li key={owner.sub} className="badge badge-accent gap-1" title={owner.email}>
-            {ownerLabel(owner)}
-            <button
-              type="button"
-              onClick={() => onRemove(owner.sub)}
-              disabled={disabled}
-              aria-label={label}
-              title={label}
-              className="rounded-full hover:text-danger focus-ring"
-            >
-              <X size={12} aria-hidden="true" />
-            </button>
-          </li>
+          <Tooltip key={owner.sub} kind="description" content={owner.email}>
+            <li className="badge badge-accent gap-1">
+              {ownerLabel(owner)}
+              <Tooltip kind="label" content={label}>
+                <button
+                  type="button"
+                  onClick={() => onRemove(owner.sub)}
+                  disabled={disabled}
+                  aria-label={label}
+                  className="rounded-full hover:text-danger focus-ring"
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </Tooltip>
+            </li>
+          </Tooltip>
         )
       })}
     </ul>

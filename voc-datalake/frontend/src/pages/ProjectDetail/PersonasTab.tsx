@@ -11,6 +11,7 @@ import PersonaAvatar from './PersonaAvatar'
 import PersonasEmptyCard from './PersonasEmptyCard'
 import PersonaDetailView from './PersonaDetailView'
 import { usePersonaProtection } from './usePersonaProtection'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { NoteItem } from './types'
 import type { PersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
@@ -127,7 +128,8 @@ export default function PersonasTab({
                           ? <Lock size={12} className="inline ml-1 text-muted" aria-label={t('personas.protected')} />
                           : null}
                       </p>
-                      <p id={`persona-tagline-${p.persona_id}`} className={clsx('text-xs line-clamp-2 break-words', selected ? 'text-text' : 'text-muted')} title={p.tagline}>{p.tagline}</p>
+                      <TruncatedText as="p" id={`persona-tagline-${p.persona_id}`} text={p.tagline}
+                        className={clsx('text-xs line-clamp-2 break-words', selected ? 'text-text' : 'text-muted')} />
                     </div>
                   </div>
                 </button>

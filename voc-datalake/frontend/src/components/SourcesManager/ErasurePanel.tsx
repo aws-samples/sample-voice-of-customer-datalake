@@ -24,6 +24,7 @@ import {
 } from './erasureParts'
 import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
   author: { labelKey: 'components:erasure.fields.author' },
@@ -48,7 +49,9 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
       <ErasureStatusBadge status={job.status} />
       <span className="text-text">{tAll(FIELD_COPY[job.field].labelKey)}</span>
       {job.source !== undefined && <span className="font-mono text-muted">{job.source}</span>}
-      <span className="font-mono text-muted" title={job.value_hash}>{job.value_hash.slice(0, 12)}</span>
+      <Tooltip kind="description" content={job.value_hash}>
+        <span className="font-mono text-muted">{job.value_hash.slice(0, 12)}</span>
+      </Tooltip>
       <span className="text-text">{t('counts', { items: job.deleted_items, objects: job.deleted_objects })}</span>
       <ErasureWorkspaceItems job={job} />
       <span className="text-muted">{job.started_by} · {job.created_at}</span>

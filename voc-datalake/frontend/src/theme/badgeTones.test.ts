@@ -80,9 +80,9 @@ describe('labels vs status on the feedback surfaces', () => {
     expect(card).toMatch(/<LabelBadge>\{labels\.plain\(feedback\.journey_stage\)\}/)
   })
 
-  it('keeps dimension chips and tags neutral, a hand-set value marked by icon and title', () => {
+  it('keeps dimension chips and tags neutral, a hand-set value marked by icon and tooltip', () => {
     const chips = read('components/FeedbackDimensions/FeedbackDimensionChips.tsx')
-    expect(chips).toMatch(/className="badge badge-muted" title=\{manual \? t\('setByHand'\) : undefined\}/)
+    expect(chips).toMatch(/<Tooltip key=\{chip\.key\} kind="label" content=\{manual \? t\('setByHand'\) : undefined\}>\s*<span className="badge badge-muted">/)
     expect(chips).toMatch(/\{manual && <UserPen size=\{12\} aria-label=\{t\('setByHand'\)\} \/>\}/)
     expect(chips).toMatch(/<span key=\{tag\} className="badge badge-muted">/)
     expect(chips).not.toMatch(/badge-(?:info|aim|accent)/)
@@ -92,12 +92,12 @@ describe('labels vs status on the feedback surfaces', () => {
     const card = read('components/FeedbackCard/FeedbackCard.tsx')
     const chips = read('components/FeedbackDimensions/FeedbackDimensionChips.tsx')
     expect(card.match(/badge badge-warn">\s*<AlertTriangle/g)).toHaveLength(2)
-    expect(chips.match(/badge badge-warn" title=/g)).toHaveLength(2)
+    expect(chips.match(/<Tooltip kind="description" content=\{t\('(?:redacted|summaryOnly)Hint'\)\}>\s*<span className="badge badge-warn">/g)).toHaveLength(2)
   })
 
   it('marks a hand-set category as informational state: info tone, icon and text', () => {
     const badge = /export function ManualCategoryBadge[\s\S]*?\n}\n/.exec(read('components/CategoryChangeControl/CategoryChangeControl.tsx'))?.[0] ?? ''
-    expect(badge).toMatch(/className="badge badge-info" title=/)
+    expect(badge).toMatch(/<Tooltip kind="description" content=\{details === '' \? undefined : details\}>\s*<span className="badge badge-info">/)
     expect(badge).toMatch(/<UserPen size=\{12\} aria-hidden="true" \/>/)
     expect(badge).toMatch(/t\('categoryChange\.manual'\)/)
   })

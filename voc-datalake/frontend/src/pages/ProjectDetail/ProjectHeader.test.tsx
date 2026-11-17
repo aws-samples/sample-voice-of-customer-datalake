@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import ProjectHeader from './ProjectHeader'
@@ -31,10 +31,12 @@ describe('ProjectHeader', () => {
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
-  it('names the icon-only back button and renders the title as the page h1', () => {
+  it('names the icon-only back button, shows the name in its tooltip, and renders the title as the page h1', async () => {
     render(<ProjectHeader name="Test" onBack={vi.fn()} />)
     const back = screen.getByRole('button', { name: 'Back to projects' })
-    expect(back).toHaveAttribute('title', 'Back to projects')
+    fireEvent.pointerOver(back, { pointerType: 'mouse' })
+    // A label tooltip repeats the name, hidden from assistive technology.
+    expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent('Back to projects')
     expect(screen.getByRole('heading', { level: 1, name: 'Test' })).toBeInTheDocument()
   })
 
@@ -74,11 +76,15 @@ describe('ProjectHeader', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveClass('min-w-0', '[overflow-wrap:anywhere]')
   })
 
-  it('gives the clamped description its full text as a tooltip', () => {
+  it('gives the clamped description its full text as a tooltip while it is cut', async () => {
     render(<ProjectHeader name="Test" description="A long description that may be clamped" onBack={vi.fn()} />)
     const description = screen.getByText('A long description that may be clamped')
     expect(description).toHaveClass('line-clamp-2')
-    expect(description).toHaveAttribute('title', 'A long description that may be clamped')
+    // jsdom lays nothing out: two lines of room, four of text.
+    Object.defineProperty(description, 'clientHeight', { configurable: true, value: 40 })
+    Object.defineProperty(description, 'scrollHeight', { configurable: true, value: 80 })
+    fireEvent.pointerOver(description, { pointerType: 'mouse' })
+    expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent('A long description that may be clamped')
   })
 
   it('links to the global Connect page pinned to the project, only when given a projectId', () => {
@@ -89,6 +95,6 @@ describe('ProjectHeader', () => {
     render(<MemoryRouter><ProjectHeader name="Test" onBack={vi.fn()} projectId="proj 1" /></MemoryRouter>)
     const link = screen.getByRole('link', { name: /Connect via MCP/ })
     expect(link).toHaveAttribute('href', '/connect?project=proj%201')
-    expect(link).toHaveAttribute('title', 'Connect an external assistant to this project')
+    expect(link).toHaveAccessibleDescription('Connect an external assistant to this project')
   })
 })

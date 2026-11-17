@@ -47,6 +47,7 @@ import { readinessOf, usableConnections } from './engineeringAgentRules'
 import { FailingChecks, ReadinessSection } from './ReadinessChecks'
 import { DialFix } from './DialFix'
 import { useReadiness } from './useReadiness'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { Readiness } from './engineeringAgentRules'
 import type { Agent } from '../../api/agentsApi'
 import type { ReadinessCheck, ReadinessSubject } from '../../api/engineeringReadinessApi'
@@ -250,10 +251,12 @@ function EnabledSwitch({ agent, isAdmin, onSetUp, withReadiness }: Readonly<{
         {agent.enabled ? t('status.enabled') : t('status.disabled')}
       </label>
       {isAdmin && (
-        <button type="button" className="icon-btn" aria-label={t('engineeringAgent.changeSetup')}
-          title={t('engineeringAgent.changeSetup')} onClick={onSetUp}>
-          <Settings2 size={16} aria-hidden="true" />
-        </button>
+        <Tooltip kind="label" content={t('engineeringAgent.changeSetup')}>
+          <button type="button" className="icon-btn" aria-label={t('engineeringAgent.changeSetup')}
+            onClick={onSetUp}>
+            <Settings2 size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
       )}
     </div>
     <EnableNotes agent={agent} isAdmin={isAdmin} held={held} withReadiness={withReadiness} error={setEnabled.error} />

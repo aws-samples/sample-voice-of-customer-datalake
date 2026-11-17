@@ -15,6 +15,7 @@ import type { ProjectDocument } from '../../../api/types'
 import { projectDocumentPath } from '../projectPaths'
 import { decisionDeepLink } from './decisionDraft'
 import VerdictBadge from './VerdictBadge'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 import type { SeededJob } from './useSeededPrfaqs'
 
 interface DecisionCardProps {
@@ -61,10 +62,12 @@ function PursueButton({ decision, isPursuing, onPursue }: Readonly<Pick<Decision
   const { t } = useTranslation('decisions')
   if (decision.verdict !== 'pursue') return null
   return (
-    <button type="button" className="btn btn-primary btn-sm" onClick={onPursue} disabled={isPursuing} title={t('actions.pursueHint')}>
-      {isPursuing ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Newspaper size={14} aria-hidden />}
-      {decision.seededPrfaqJobId === null ? t('actions.pursue') : t('actions.pursueAgain')}
-    </button>
+    <Tooltip kind="description" content={t('actions.pursueHint')}>
+      <button type="button" className="btn btn-primary btn-sm" onClick={onPursue} disabled={isPursuing}>
+        {isPursuing ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Newspaper size={14} aria-hidden />}
+        {decision.seededPrfaqJobId === null ? t('actions.pursue') : t('actions.pursueAgain')}
+      </button>
+    </Tooltip>
   )
 }
 

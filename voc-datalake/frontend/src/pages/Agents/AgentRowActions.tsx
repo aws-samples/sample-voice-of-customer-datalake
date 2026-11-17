@@ -17,6 +17,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { API_AGENT_LIMITS } from '../../api/agentsApi'
 import { useAgentMutations } from './useAgents'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { Agent } from '../../api/agentsApi'
 
 export function AgentRowActions({ agent }: Readonly<{ agent: Agent }>) {
@@ -27,14 +28,18 @@ export function AgentRowActions({ agent }: Readonly<{ agent: Agent }>) {
   return (
     <div className="flex flex-col items-end justify-center gap-1">
       <div className="flex items-center gap-1">
-      <button type="button" className="icon-btn" title={t('list.rename')} aria-label={t('list.renameNamed', { name: agent.name })}
-        onClick={() => { update.reset(); setRenaming(true) }}>
-        <Pencil size={16} aria-hidden="true" />
-      </button>
-      <button type="button" className="icon-btn hover:text-danger" title={t('list.delete')} disabled={archive.isPending}
-        aria-label={t('list.deleteNamed', { name: agent.name })} onClick={() => { archive.reset(); setDeleting(true) }}>
-        {archive.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-      </button>
+        <Tooltip kind="label" content={t('list.rename')}>
+          <button type="button" className="icon-btn" aria-label={t('list.renameNamed', { name: agent.name })}
+            onClick={() => { update.reset(); setRenaming(true) }}>
+            <Pencil size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
+        <Tooltip kind="label" content={t('list.delete')}>
+          <button type="button" className="icon-btn hover:text-danger" disabled={archive.isPending}
+            aria-label={t('list.deleteNamed', { name: agent.name })} onClick={() => { archive.reset(); setDeleting(true) }}>
+            {archive.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+          </button>
+        </Tooltip>
       </div>
       {archive.isError && <p role="alert" className="text-[12px] text-danger">{t('list.deleteFailed')}</p>}
       {renaming && (

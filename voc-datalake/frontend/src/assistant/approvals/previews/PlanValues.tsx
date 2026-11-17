@@ -1,13 +1,14 @@
 /**
  * @fileoverview How one plan argument value reads on a card: a literal (capped,
- * full text in the title) or a placeholder (a reference or `{{free}}`), marked
+ * full text in its tooltip) or a placeholder (a reference or `{{free}}`), marked
  * with an icon in the AI tone because the value is filled at run time.
  *
  * @module assistant/approvals/previews/PlanValues
  */
 import { CornerDownLeft, PenLine } from 'lucide-react'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 
-/** A string value is at most this long on the card (the full value is in the `title`). */
+/** A string value is at most this long on the card (the full value is in its tooltip). */
 const MAX_VALUE_CHARS = 400
 
 export function PlaceholderValue({ icon, text }: Readonly<{ icon: 'ref' | 'free'; text: string }>) {
@@ -22,5 +23,9 @@ export function PlaceholderValue({ icon, text }: Readonly<{ icon: 'ref' | 'free'
 
 export function LiteralValue({ text }: Readonly<{ text: string }>) {
   const shown = text.length > MAX_VALUE_CHARS ? `${text.slice(0, MAX_VALUE_CHARS)}…` : text
-  return <span title={shown === text ? undefined : text} className="whitespace-pre-wrap">{shown}</span>
+  return (
+    <Tooltip kind="description" content={shown === text ? undefined : text}>
+      <span className="whitespace-pre-wrap">{shown}</span>
+    </Tooltip>
+  )
 }

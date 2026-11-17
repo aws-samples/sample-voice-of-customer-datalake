@@ -68,12 +68,12 @@ describe('JobsSection', () => {
     const user = userEvent.setup()
     render(<JobsSection jobs={[createJob({ status: 'completed' })]} onDismiss={vi.fn()} />)
     await expandCompleted(user)
-    expect(screen.getByTitle('Dismiss')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
   })
 
   it('shows dismiss button for failed jobs', () => {
     render(<JobsSection jobs={[createJob({ status: 'failed' })]} onDismiss={vi.fn()} />)
-    expect(screen.getByTitle('Dismiss')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
   })
 
   // Dismissing is a DELETE the project gate refuses for a viewer, so the page
@@ -84,7 +84,7 @@ describe('JobsSection', () => {
     render(<JobsSection jobs={[createJob({ status: 'failed', error: 'Something went wrong' }), createJob({ job_id: 'job-2', status: 'completed' })]} />)
     await expandCompleted(user)
     expect(screen.getByText('Something went wrong')).toBeInTheDocument()
-    expect(screen.queryByTitle('Dismiss')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
   })
 
   it('calls onDismiss when dismiss button is clicked', async () => {
@@ -93,7 +93,7 @@ describe('JobsSection', () => {
     render(<JobsSection jobs={[createJob({ status: 'completed', job_id: 'test-job' })]} onDismiss={onDismiss} />)
 
     await expandCompleted(user)
-    await user.click(screen.getByTitle('Dismiss'))
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(onDismiss).toHaveBeenCalledWith('test-job')
   })
 
@@ -106,7 +106,7 @@ describe('JobsSection', () => {
 
     // The summary line says 7, so the expansion has to show 7. The old
     // slice(0, 5) would have made the count a lie.
-    expect(screen.getAllByTitle('Dismiss')).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: 'Dismiss' })).toHaveLength(7)
   })
 })
 
@@ -124,7 +124,7 @@ describe('JobsSection resting state', () => {
 
     expect(screen.getByText('4 completed')).toBeInTheDocument()
     // Collapsed means no per-job rows at all: no job labels, no dismiss controls.
-    expect(screen.queryByTitle('Dismiss')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
     expect(screen.queryByText('Research')).not.toBeInTheDocument()
   })
 

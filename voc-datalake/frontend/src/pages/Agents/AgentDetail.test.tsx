@@ -425,7 +425,7 @@ describe('AgentDetail — Save as on the Workflow tab', () => {
   it('shows the copy, clean, and says the agent now runs it', async () => {
     await editThenSaveAs()
     expect(await screen.findByText('Saved as “Flow (copy)”. This agent now runs it.')).toBeInTheDocument()
-    expect(screen.getByTitle('Flow (copy)')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveDisplayValue('Flow (copy)')
     expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
@@ -440,6 +440,6 @@ describe('AgentDetail — Save as on the Workflow tab', () => {
   it('goes back to the agent workflow and says so when the agent cannot be re-pointed', async () => {
     await editThenSaveAs({ 'PUT /agents/ag_1': () => { throw new Error('API Error: 500') } })
     expect(await screen.findByRole('alert')).toHaveTextContent("this agent couldn't be switched to it")
-    expect(screen.getByTitle('Flow')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveDisplayValue('Flow')
   })
 })

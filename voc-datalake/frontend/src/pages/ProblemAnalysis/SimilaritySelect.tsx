@@ -11,8 +11,8 @@
  * @module pages/ProblemAnalysis/SimilaritySelect
  */
 import { useId } from 'react'
-import { Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { InfoTip } from '../../components/Tooltip/InfoTip'
 import type { ReactElement } from 'react'
 import type { SimilarityLevel } from './useProblemFilters'
 
@@ -50,10 +50,8 @@ export function SimilaritySelect({ value, onChange }: {
           <option key={level} value={level}>{t(OPTION_KEY[level])}</option>
         ))}
       </select>
-      <span className="text-muted inline-flex" title={hint} data-testid="similarity-hint">
-        <Info size={14} aria-hidden="true" />
-        <span id={hintId} className="sr-only">{hint}</span>
-      </span>
+      <span id={hintId} className="sr-only">{hint}</span>
+      <InfoTip text={hint} />
     </div>
   )
 }

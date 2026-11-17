@@ -16,6 +16,8 @@ import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import ProjectVisibilityBadge from '../../components/ProjectVisibilityBadge/ProjectVisibilityBadge'
 import { useAssistantUiStore } from '../../assistant/store/assistantStore'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { ProjectVisibility } from '../../api/projectTypes'
 
 interface ProjectHeaderProps {
@@ -57,15 +59,16 @@ export default function ProjectHeader({
     // `lg:` stayed side by side at 1440 px with 200 % text.
     <div className="@container">
       <div className="flex flex-wrap items-start gap-2 @[52rem]:flex-nowrap @[52rem]:gap-3" data-testid="project-header">
-        <button
-          type="button"
-          onClick={onBack}
-          className="icon-btn mt-0.5 -ml-1.5 p-2"
-          aria-label={backLabel}
-          title={backLabel}
-        >
-          <ArrowLeft size={16} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={backLabel}>
+          <button
+            type="button"
+            onClick={onBack}
+            className="icon-btn mt-0.5 -ml-1.5 p-2"
+            aria-label={backLabel}
+          >
+            <ArrowLeft size={16} aria-hidden />
+          </button>
+        </Tooltip>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             {/* min-w-0: as a flex item the h1 could not shrink below its longest word
@@ -73,7 +76,9 @@ export default function ProjectHeader({
             <h1 className="min-w-0 max-w-full text-2xl font-bold tracking-tight text-text-strong [overflow-wrap:anywhere]">{name}</h1>
             {visibility === undefined ? null : <ProjectVisibilityBadge visibility={visibility} />}
           </div>
-          {description != null && description !== '' ? <p className="text-sm text-muted mt-1 line-clamp-2 break-words" title={description}>{description}</p> : null}
+          {description != null && description !== ''
+            ? <TruncatedText as="p" className="text-sm text-muted mt-1 line-clamp-2 break-words" text={description} />
+            : null}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 @[52rem]:w-auto @[52rem]:flex-shrink-0 @[52rem]:flex-nowrap" data-testid="project-header-actions">
           {status}
@@ -90,14 +95,15 @@ export default function ProjectHeader({
             </button>
           )}
           {projectId === undefined ? null : (
-            <Link
-              to={`/connect?project=${encodeURIComponent(projectId)}`}
-              title={t('common:connect.shortcutTitle')}
-              className="btn btn-secondary flex-shrink-0"
-            >
-              <Plug size={16} aria-hidden="true" />
-              {t('header.connectMcp')}
-            </Link>
+            <Tooltip kind="description" content={t('common:connect.shortcutTitle')}>
+              <Link
+                to={`/connect?project=${encodeURIComponent(projectId)}`}
+                className="btn btn-secondary flex-shrink-0"
+              >
+                <Plug size={16} aria-hidden="true" />
+                {t('header.connectMcp')}
+              </Link>
+            </Tooltip>
           )}
         </div>
       </div>

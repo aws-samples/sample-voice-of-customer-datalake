@@ -166,7 +166,7 @@ describe('DocumentsTab', () => {
       downloadMenu: shown(screen.queryByRole('button', { name: /download options/i })),
       openInNewTab: shown(screen.queryByRole('button', { name: /open in new tab/i })),
       downloadHtml: shown(screen.queryByRole('button', { name: /download \.html/i })),
-      delete: shown(screen.queryByTitle('Delete document')),
+      delete: shown(screen.queryByRole('button', { name: 'Delete document' })),
     }).toStrictEqual({
       heading: true, listEntry: true, edit: false, downloadMenu: false,
       // No "Open in new tab" for inline HTML: a blob: URL runs at the app's own origin (FE-3).

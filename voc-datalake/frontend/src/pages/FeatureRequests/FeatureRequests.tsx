@@ -19,6 +19,7 @@ import { INSIGHTS_SEGMENT, REQUEST_LOOKUP_SEGMENT } from './boardPaths'
 import { searchWithout, segmentsUnder, usePlaceNavigate } from '../../utils/pathPlace'
 import { useBoardList } from './useBoardQueries'
 import { INSIGHTS_VIEW_PARAMS } from './useInsights'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 type PageTab = 'boards' | 'insights'
 const BOARDS_PATH = APP_BOARD_HOST.basePath
@@ -63,9 +64,11 @@ function Boards() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageTitle title={t('page.title')} subtitle={t('page.subtitle')} />
         {isAdmin ? (
-          <Link className="btn btn-ghost btn-sm" to={BOARDS_ADMIN_PATH} aria-label={t('boards.configure')} title={t('boards.configure')}>
-            <Settings size={16} aria-hidden="true" />
-          </Link>
+          <Tooltip kind="label" content={t('boards.configure')}>
+            <Link className="btn btn-ghost btn-sm" to={BOARDS_ADMIN_PATH} aria-label={t('boards.configure')}>
+              <Settings size={16} aria-hidden="true" />
+            </Link>
+          </Tooltip>
         ) : null}
       </div>
       <PageTabs active={tab} onChange={setTab} />

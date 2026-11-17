@@ -11,6 +11,7 @@ import { WORKSPACE_ROLES } from '../../api/workspacesApi'
 import type { WorkspaceRole } from '../../api/workspacesApi'
 import type { WorkspaceMember } from '../../api/workspaceMembersApi'
 import { memberLabel } from './memberLabel'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 function isRole(value: string): value is WorkspaceRole {
   return WORKSPACE_ROLES.some((role) => role === value)
@@ -56,16 +57,17 @@ export default function MemberRow({ member, isSelf, canManage, busy, onRoleChang
           <span className="badge badge-muted">{t(`workspaces.role.${member.role}`)}</span>
         )}
         {canManage && !isSelf ? (
-          <button
-            type="button"
-            className="icon-btn focus-ring text-muted hover:text-danger"
-            disabled={busy}
-            onClick={() => onRemove(member)}
-            aria-label={t('workspaces.members.removeWho', { who })}
-            title={t('workspaces.members.removeWho', { who })}
-          >
-            <UserMinus size={16} aria-hidden="true" />
-          </button>
+          <Tooltip kind="label" content={t('workspaces.members.removeWho', { who })}>
+            <button
+              type="button"
+              className="icon-btn focus-ring text-muted hover:text-danger"
+              disabled={busy}
+              onClick={() => onRemove(member)}
+              aria-label={t('workspaces.members.removeWho', { who })}
+            >
+              <UserMinus size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
         ) : null}
       </div>
     </li>

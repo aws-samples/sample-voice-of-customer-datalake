@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Compass } from 'lucide-react'
 import { companyContextApi, companyContextKey } from '../../api/companyContextApi'
 import { designSystemApi, designSystemKey, isPaintableColor } from '../../api/designSystemApi'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 const MAX_OBJECTIVES_SHOWN = 3
 const MAX_SWATCHES = 6
@@ -55,7 +56,10 @@ export default function CompanyContextStrip() {
           <p className="flex items-center gap-1.5 text-[12px] text-muted">
             {t('companyStrip.designSystem')}
             {colors.slice(0, MAX_SWATCHES).map((c) => (
-              <span key={c.name} title={`${c.name} ${c.value}`} className="inline-block h-3.5 w-3.5 rounded-sm ring-1 ring-border" style={{ background: c.value }} />
+              <Tooltip key={c.name} kind="label" content={`${c.name} ${c.value}`}>
+                <span role="img" aria-label={`${c.name} ${c.value}`} className="inline-block h-3.5 w-3.5 rounded-sm ring-1 ring-border"
+                  style={{ background: c.value }} />
+              </Tooltip>
             ))}
           </p>
         )}

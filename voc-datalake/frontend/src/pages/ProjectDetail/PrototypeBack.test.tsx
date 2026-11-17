@@ -92,8 +92,8 @@ describe('PrototypeBackButton', () => {
   it('says that nothing is deleted', () => {
     renderButton(v3)
 
-    expect(screen.getByRole('button', { name: 'Back to v2' })).toHaveAttribute(
-      'title', 'Saves v2 again as the newest version. Nothing is deleted.')
+    expect(screen.getByRole('button', { name: 'Back to v2' })).toHaveAccessibleDescription(
+      'Saves v2 again as the newest version. Nothing is deleted.')
   })
 
   it('says so when the restore fails, and selects nothing', async () => {

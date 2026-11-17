@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { COMPANY_PERSONAS_PATH, usePromotePersona } from './usePromotePersona'
 import { serverReason } from '../../lib/errors'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 type PromoteMutation = ReturnType<typeof usePromotePersona>
 
@@ -17,16 +18,17 @@ type PromoteMutation = ReturnType<typeof usePromotePersona>
 export function PromotePersonaButton({ promote }: Readonly<{ promote: PromoteMutation }>) {
   const { t } = useTranslation('projectDetail')
   return (
-    <button
-      type="button"
-      onClick={() => promote.mutate()}
-      disabled={promote.isPending}
-      className="icon-btn p-2"
-      title={t('personas.promote.button')}
-      aria-label={t('personas.promote.button')}
-    >
-      {promote.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Building2 size={16} aria-hidden />}
-    </button>
+    <Tooltip kind="label" content={t('personas.promote.button')}>
+      <button
+        type="button"
+        onClick={() => promote.mutate()}
+        disabled={promote.isPending}
+        className="icon-btn p-2"
+        aria-label={t('personas.promote.button')}
+      >
+        {promote.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Building2 size={16} aria-hidden />}
+      </button>
+    </Tooltip>
   )
 }
 

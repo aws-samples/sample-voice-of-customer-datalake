@@ -51,12 +51,12 @@ function makeProps(researchConfig: Partial<ResearchToolConfig> = {}) {
 /** Click Next until the final (research question) step is visible.
  * Bounded so a broken wizard fails with an assertion, not a test timeout. */
 async function goToFinalStep(user: ReturnType<typeof userEvent.setup>, clicksLeft = 5): Promise<void> {
-  if (clicksLeft > 0 && !screen.queryByText(/research question/i)) {
+  if (clicksLeft > 0 && !screen.queryByRole('heading', { name: /research question/i })) {
     await user.click(screen.getByRole('button', { name: /next/i }))
     await goToFinalStep(user, clicksLeft - 1)
     return
   }
-  expect(screen.getByText(/research question/i)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /research question/i })).toBeInTheDocument()
 }
 
 describe('ResearchWizard web-search data source (#207)', () => {

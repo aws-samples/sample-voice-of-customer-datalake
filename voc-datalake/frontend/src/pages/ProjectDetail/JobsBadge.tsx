@@ -13,6 +13,7 @@ import { CheckCircle, Loader2, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useDisclosurePopover } from '../../hooks/useDismissOnOutside'
 import JobsSection from './JobsSection'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ProjectJob } from '../../api/projectTypes'
 
 interface JobCounts {
@@ -46,12 +47,14 @@ export default function JobsBadge({ jobs, onDismiss }: Readonly<{
   const tone = counts.running === 0 && counts.failed > 0 ? 'text-danger border-danger/40' : 'text-text'
   return (
     <div className="relative flex-shrink-0" ref={wrapper}>
-      <button ref={trigger} type="button" onClick={toggle} aria-expanded={open}
-        aria-controls={open ? panelId : undefined} title={t('jobs.backgroundJobs')}
-        className={clsx('btn btn-secondary', tone)}>
-        <BadgeLabel counts={counts} />
-        <span className="sr-only"> — {t('jobs.backgroundJobs')}</span>
-      </button>
+      <Tooltip kind="label" content={open ? undefined : t('jobs.backgroundJobs')}>
+        <button ref={trigger} type="button" onClick={toggle} aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          className={clsx('btn btn-secondary', tone)}>
+          <BadgeLabel counts={counts} />
+          <span className="sr-only"> — {t('jobs.backgroundJobs')}</span>
+        </button>
+      </Tooltip>
       {open && (
         <div id={panelId} role="region" aria-label={t('jobs.backgroundJobs')}
           className="absolute right-0 top-full mt-2 z-30 w-[min(32rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto shadow-lg rounded-xl">

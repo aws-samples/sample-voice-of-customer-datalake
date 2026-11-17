@@ -13,6 +13,7 @@ import type { Incorporation, PinOutcome, PrototypeDraft } from '../../api/protot
 import { usePinPlaces } from '../../components/PrototypeFeedback/pinPlaces'
 import type { PinPlace } from '../../components/PrototypeFeedback/pinPlaces'
 import { outcomeNumber, outcomeRows } from './draftOutcomes'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /** How much of a tester's words names an item in a row. */
 const PLACE_TEXT_CHARS = 60
@@ -103,10 +104,12 @@ export function IncorporationResult({ projectId, documentId, version, incorporat
           </ul>
         ) : null}
       </div>
-      <button type="button" className="icon-btn p-1 flex-shrink-0" aria-label={t('documents.prototype.draft.dismissResult')}
-        title={t('documents.prototype.draft.dismissResult')} onClick={onDismiss}>
-        <X size={14} aria-hidden />
-      </button>
+      <Tooltip kind="label" content={t('documents.prototype.draft.dismissResult')}>
+        <button type="button" className="icon-btn p-1 flex-shrink-0" aria-label={t('documents.prototype.draft.dismissResult')}
+          onClick={onDismiss}>
+          <X size={14} aria-hidden />
+        </button>
+      </Tooltip>
     </div>
   )
 }

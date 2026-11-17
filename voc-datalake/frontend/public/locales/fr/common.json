@@ -717,5 +717,9 @@
     "allTypes": "Tous les types",
     "untyped": "Avis pas encore typés : {{n, number}} (toujours affichés)",
     "untypedHint": "Les avis enregistrés avant l’existence des types n’ont pas de type tant qu’un administrateur ne les a pas classés dans Administration → Taxonomie. Ils restent visibles avec tous les filtres de type."
-  }
+  },
+  "infoTip": {
+    "label": "Plus d’informations"
+  },
+  "adminOnly": "Accès administrateur requis"
 }

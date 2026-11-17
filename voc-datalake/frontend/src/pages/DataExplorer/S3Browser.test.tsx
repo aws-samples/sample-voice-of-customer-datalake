@@ -53,9 +53,9 @@ describe('S3Browser', () => {
     it('renders folders', () => {
       render(<S3Browser {...defaultProps} />)
 
-      expect(screen.getByText('Web scraper')).toHaveAttribute('title', 'webscraper')
+      expect(screen.getByText('Web scraper')).toHaveAccessibleDescription('webscraper')
       // Live finding: a connector folder read `Acme Android_android`.
-      expect(screen.getByText('Acme (Android)')).toHaveAttribute('title', 'Acme Android_android')
+      expect(screen.getByText('Acme (Android)')).toHaveAccessibleDescription('Acme Android_android')
     })
 
     it('names a persona avatar folder by the persona and when it was made, never its raw id', () => {
@@ -64,8 +64,8 @@ describe('S3Browser', () => {
       ] }
       render(<S3Browser {...defaultProps} path={['avatars']} data={avatars} />)
 
-      const row = screen.getByTitle('persona_20261024123456_00000000_1')
-      expect(row.textContent).toMatch(/^Persona 2 · Oct 24, 2026/)
+      const row = screen.getByText(/^Persona 2 · Oct 24, 2026/)
+      expect(row).toHaveAccessibleDescription('persona_20261024123456_00000000_1')
     })
 
     // 5.35.02 e2e: an imported persona's folder (`persona_<stamp>_<hex>`, no batch index) showed its raw id.
@@ -78,7 +78,7 @@ describe('S3Browser', () => {
       ] }
       render(<S3Browser {...defaultProps} path={['avatars']} data={avatars} />)
 
-      expect(screen.getByTitle(id).textContent).toMatch(/^Persona · Oct 24, 2026/)
+      expect(screen.getByText(/^Persona · Oct 24, 2026/)).toHaveAccessibleDescription(id)
     })
 
     it('renders files with size', () => {
@@ -183,7 +183,7 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} onView={onView} />)
 
-      const viewButtons = screen.getAllByTitle('View')
+      const viewButtons = screen.getAllByRole('button', { name: 'View' })
       await user.click(at(viewButtons, 0))
       expect(onView).toHaveBeenCalledWith('raw/feedback-001.json')
     })
@@ -194,7 +194,7 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} data={editableData} onEdit={onEdit} />)
 
-      const editButtons = screen.getAllByTitle('Edit')
+      const editButtons = screen.getAllByRole('button', { name: 'Edit' })
       await user.click(at(editButtons, 0))
       expect(onEdit).toHaveBeenCalledWith('exports/report.json')
     })
@@ -202,13 +202,13 @@ describe('S3Browser', () => {
     it('never offers to edit an existing raw object (raw data is immutable)', () => {
       render(<S3Browser {...defaultProps} />)
 
-      expect(screen.queryByTitle('Edit')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     })
 
     it('offers no delete action (customer data is never deleted)', () => {
       render(<S3Browser {...defaultProps} data={editableData} />)
 
-      expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Delete')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
@@ -218,7 +218,7 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} onDownload={onDownload} />)
 
-      const downloadButtons = screen.getAllByTitle('Download')
+      const downloadButtons = screen.getAllByRole('button', { name: 'Download' })
       await user.click(at(downloadButtons, 0))
       expect(onDownload).toHaveBeenCalledWith('raw/feedback-001.json', 'feedback-001.json')
     })
@@ -227,7 +227,7 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} data={editableData} />)
 
       // There should be 1 edit button (for json file) not 2
-      const editButtons = screen.getAllByTitle('Edit')
+      const editButtons = screen.getAllByRole('button', { name: 'Edit' })
       expect(editButtons).toHaveLength(1)
     })
   })
@@ -267,8 +267,9 @@ describe('S3Browser', () => {
       }] }
       render(<S3Browser {...defaultProps} path={['raw', 'x', '2026']} data={data} />)
 
-      expect(screen.getByText('Battery drains overnight')).toHaveAttribute('title', 'a81f.json')
-      expect(screen.getByText(/a81f\.json/)).toBeInTheDocument()
+      expect(screen.getByText('Battery drains overnight')).toHaveAccessibleDescription('a81f.json')
+      // The file name stays on the second line (the tooltip's copy of it is hidden).
+      expect(screen.getByText(/a81f\.json •/)).toBeInTheDocument()
       expect(screen.getByText(/Jan 4, 2026/)).toBeInTheDocument()
     })
 

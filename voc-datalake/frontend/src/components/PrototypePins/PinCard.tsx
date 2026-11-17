@@ -10,6 +10,7 @@ import type { PrototypePin } from '../../api/prototypePinsApi'
 import { IconBadge } from '../IconBadge/IconBadge'
 import { STATUS_BADGE } from './pinStatusBadge'
 import ReplyAuthor from './ReplyAuthor'
+import { TruncatedText } from '../Tooltip/TruncatedText'
 
 /** Mirrors MAX_REPLY_CHARS in lambda/shared/prototype_pins.py. */
 const MAX_REPLY_CHARS = 2000
@@ -26,7 +27,7 @@ function PinAnchor({ pin }: { readonly pin: PrototypePin }) {
   const { t } = useTranslation('projectDetail')
   return (
     <div className="text-xs text-muted space-y-0.5">
-      {pin.anchor.selector ? <code className="block truncate" title={pin.anchor.selector}>{pin.anchor.selector}</code> : null}
+      {pin.anchor.selector ? <TruncatedText as="code" className="block truncate" text={pin.anchor.selector} /> : null}
       {pin.anchor.text_snippet ? <p className="truncate">“{pin.anchor.text_snippet}”</p> : null}
       {pin.console.length > 0 ? <p className="text-danger">{t('prototypePins.consoleErrors', { count: pin.console.length })}</p> : null}
       {pin.addressed_by ? <p>{t('prototypePins.addressedBy', { id: pin.addressed_by })}</p> : null}

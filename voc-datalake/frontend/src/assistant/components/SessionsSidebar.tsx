@@ -16,6 +16,7 @@ import clsx from 'clsx'
 import { PanelLeft, PanelLeftClose, Plus } from 'lucide-react'
 import { useAssistantUiStore } from '../store/assistantStore'
 import SessionList from './SessionList'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { RefObject } from 'react'
 
 interface SessionsSidebarProps {
@@ -51,18 +52,19 @@ function CollapseToggle({ collapsed, controls, onToggle, buttonRef }: Readonly<{
   const { t } = useTranslation('assistant')
   const label = collapsed ? t('sessions.expandSidebar') : t('sessions.collapseSidebar')
   return (
-    <button
-      ref={buttonRef}
-      type="button"
-      onClick={onToggle}
-      className="icon-btn flex-shrink-0"
-      aria-label={label}
-      title={label}
-      aria-expanded={!collapsed}
-      aria-controls={controls}
-    >
-      {collapsed ? <PanelLeft size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
-    </button>
+    <Tooltip kind="label" content={label}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onToggle}
+        className="icon-btn flex-shrink-0"
+        aria-label={label}
+        aria-expanded={!collapsed}
+        aria-controls={controls}
+      >
+        {collapsed ? <PanelLeft size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -99,9 +101,11 @@ export default function SessionsSidebar({ id, onNewChat, onPick }: Readonly<Sess
         ? (
           <div className="flex flex-col items-center gap-1 py-2">
             {toggle}
-            <button type="button" onClick={onNewChat} className="icon-btn" aria-label={t('sessions.newConversation')} title={t('sessions.newConversation')}>
-              <Plus size={16} aria-hidden />
-            </button>
+            <Tooltip kind="label" content={t('sessions.newConversation')}>
+              <button type="button" onClick={onNewChat} className="icon-btn" aria-label={t('sessions.newConversation')}>
+                <Plus size={16} aria-hidden />
+              </button>
+            </Tooltip>
           </div>
         )
         : (

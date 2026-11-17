@@ -19,6 +19,7 @@ import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
 import { formatDate } from '../../utils/dateUtils'
 import { wasRedacted } from './privacyPreview'
 import MemoryEditor from './MemoryEditor'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { MemoryEditing } from './MemoryEditor'
 
 /** AI-written memories wear the `aim` tone (AI / generated content). */
@@ -51,10 +52,12 @@ export function MemoryBadges({ memory }: Readonly<{ memory: MemoryItem }>) {
         {t(`source.${memory.source_kind}`)}
       </span>
       {memory.scope === 'company' ? (
-        <span className="badge badge-muted flex items-center gap-1" title={t('supportersHint')}>
-          <Users size={12} aria-hidden /> <span className="font-mono">{memory.supporters}</span>
-          <span className="sr-only">{t('supportersHint')}</span>
-        </span>
+        <Tooltip kind="label" content={t('supportersHint')}>
+          <span className="badge badge-muted flex items-center gap-1">
+            <Users size={12} aria-hidden /> <span className="font-mono">{memory.supporters}</span>
+            <span className="sr-only">{t('supportersHint')}</span>
+          </span>
+        </Tooltip>
       ) : null}
       {memory.categories.map((c) => <span key={c} className="badge badge-muted">{labels.category(c)}</span>)}
     </div>
@@ -69,7 +72,9 @@ function MemoryMeta({ memory }: Readonly<{ memory: MemoryItem }>) {
     <p className="text-xs text-muted">
       {t('since', { created: formatDate(memory.created_at, i18n.language, '—') })}
       {' · '}
-      <span title={hint} className="underline decoration-dotted underline-offset-2 cursor-help">{t(`retention.${memory.retention}`)}</span>
+      <Tooltip kind="label" content={hint}>
+        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t(`retention.${memory.retention}`)}</span>
+      </Tooltip>
       <span className="sr-only"> — {hint}</span>
       {memory.expires_at ? ` · ${t('expires', { date: formatDate(memory.expires_at, i18n.language, '—') })}` : ''}
     </p>
@@ -89,7 +94,7 @@ function ConfirmButton({ statement, actions }: Readonly<{ statement: string; act
     const done = personal ? t('confirmedPersonal') : t('alreadyBacked')
     return (
       <span className="flex flex-col items-end gap-0.5">
-        <button type="button" disabled className="btn btn-ghost btn-sm flex items-center gap-1" title={done}>
+        <button type="button" disabled className="btn btn-ghost btn-sm flex items-center gap-1">
           <ThumbsUp size={14} aria-hidden /> {label}
         </button>
         <span role="status" className="text-xs text-muted text-right max-w-[14rem]">{done}</span>
@@ -97,9 +102,11 @@ function ConfirmButton({ statement, actions }: Readonly<{ statement: string; act
     )
   }
   return (
-    <button type="button" onClick={actions.onConfirm} className="btn btn-ghost btn-sm flex items-center gap-1" title={hint} aria-label={name}>
-      <ThumbsUp size={14} aria-hidden /> {label}
-    </button>
+    <Tooltip kind="description" content={hint}>
+      <button type="button" onClick={actions.onConfirm} className="btn btn-ghost btn-sm flex items-center gap-1" aria-label={name}>
+        <ThumbsUp size={14} aria-hidden /> {label}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -109,15 +116,19 @@ function MemoryCardActions({ memory, archived, actions }: Readonly<{ memory: Mem
     <div className="flex items-start gap-1">
       {actions.onConfirm && !archived ? <ConfirmButton statement={memory.statement.slice(0, 60)} actions={actions} /> : null}
       {actions.onEdit && !archived ? (
-        <button type="button" onClick={actions.onEdit} className="icon-btn" title={t('edit')}
-          aria-label={t('editLabel', { statement: memory.statement.slice(0, 60) })}>
-          <Pencil size={16} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('edit')}>
+          <button type="button" onClick={actions.onEdit} className="icon-btn"
+            aria-label={t('editLabel', { statement: memory.statement.slice(0, 60) })}>
+            <Pencil size={16} aria-hidden />
+          </button>
+        </Tooltip>
       ) : null}
       {actions.onForget && !archived ? (
-        <button type="button" onClick={actions.onForget} className="icon-btn" aria-label={t('forget')} title={t('forget')}>
-          <Archive size={16} aria-hidden />
-        </button>
+        <Tooltip kind="label" content={t('forget')}>
+          <button type="button" onClick={actions.onForget} className="icon-btn" aria-label={t('forget')}>
+            <Archive size={16} aria-hidden />
+          </button>
+        </Tooltip>
       ) : null}
       {actions.onRestore && archived ? (
         <button type="button" onClick={actions.onRestore} className="btn btn-ghost btn-sm flex items-center gap-1">

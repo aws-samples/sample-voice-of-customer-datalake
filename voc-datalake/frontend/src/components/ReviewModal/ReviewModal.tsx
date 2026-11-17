@@ -25,6 +25,7 @@ import FeedbackDetailContent, {
 } from '../../pages/FeedbackDetail/FeedbackDetailContent'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { normalizeFeedbackItem } from '../../api/feedbackSchema'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { RadarReviewDetail } from '../../api/radarSchema'
 import type { FeedbackItem } from '../../api/types'
 
@@ -102,9 +103,11 @@ function ModalBar({ fullPage, onClose }: Readonly<{ fullPage: string | null; onC
           {t('openFullPage')}
         </Link>
       )}
-      <button type="button" className="icon-btn focus-ring" aria-label={t('closeReview')} title={t('closeReview')} onClick={onClose}>
-        <X size={16} aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={t('closeReview')}>
+        <button type="button" className="icon-btn focus-ring" aria-label={t('closeReview')} onClick={onClose}>
+          <X size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
     </div>
   )
 }

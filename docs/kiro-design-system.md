@@ -37,6 +37,7 @@ Ported from KiroCrew `main` at `5bb27bd` (2026-10-04). Colour tokens, status ton
 | `src/components/ThemeToggle/` | Header button: system → light → dark |
 | `src/components/KiroGhost/` | Brand mark (inherits `currentColor`) |
 | `src/components/DialogClose/` | Labelled icon-only dialog close button |
+| `src/components/Tooltip/` | `Tooltip`, `InfoTip`, `TruncatedText` and `positionFloating` ([Tooltips](#tooltips)) |
 | `public/kiro-ghost.svg` | Favicon |
 | `src/theme/*.test.ts(x)` | Pin the theme-init ↔ store contract, the layering fixes, the tone contrast and the [labels vs status](#labels-vs-status) rule (`badgeTones.test.ts`) |
 
@@ -50,7 +51,7 @@ These are KiroCrew's UI rules (`website/AGENTS.md`, `website/AUTOSDE.yaml`, `web
 | 2 | **MUST** pick colour by **meaning** — accent / ok / warn / danger / info / aim / muted — never by hue. Variant props take a `Tone` (`src/theme/tones.ts`), never `'blue'`/`'green'`. | Adopted |
 | 3 | **MUST** use the recipe classes below for buttons, inputs, selects, cards, badges, tabs, dialogs, menus and switches instead of hand-rolling them. | Adopted |
 | 4 | **MUST** use `lucide-react` for every icon. Never a hand-rolled inline `<svg viewBox>` (exception: `KiroGhost`). | Adopted |
-| 5 | **MUST** give every icon-only button an `aria-label` (and `title`). Dialog X buttons use `<DialogClose>`. | Adopted |
+| 5 | **MUST** give every icon-only button an `aria-label` and a `<Tooltip kind="label">` with the same text. Dialog X buttons use `<DialogClose>`. | Adopted (7.51.01) |
 | 6 | **MUST NOT** scale or translate on hover — hover only paints (colour, border, shadow). Press feedback is `active:scale-[0.97]`. | Adopted |
 | 7 | A hover state **MUST NOT** reuse the selected-state colour (hover `bg-bg-hover`; selected `nav-active` / `tab-active` / `bg-accent-subtle`). | Adopted |
 | 8 | **MUST** keep text ≥ 12px for content; 10–11px only for decorative meta (section labels, counts). KiroCrew additionally bans the `text-xs` class in favour of `text-[12px]`. | `text-xs` (also 12px) is still allowed in VoC |
@@ -61,6 +62,7 @@ These are KiroCrew's UI rules (`website/AGENTS.md`, `website/AUTOSDE.yaml`, `web
 | 13 | **MUST** keep user-facing strings in i18n catalogs (`public/locales/*`). | Existing VoC rule (`npm run i18n:check`) |
 | 14 | **MUST** respect `prefers-reduced-motion` (handled globally — don't override it). | Adopted |
 | 15 | **MUST** tone a badge or chip by **meaning**, never to tell labels apart: a descriptive label (category, subcategory, journey stage, persona, dimension value, tag, source, version, count) is `badge-muted`; at most ONE label per row — its primary classification — is `badge-accent`; `ok` / `warn` / `danger` / `info` / `aim` are for **state** only. See [Labels vs status](#labels-vs-status). | Adopted; `theme/badgeTones.test.ts` pins them |
+| 16 | **MUST NOT** put `title` on DOM elements (iframe excepted), nor on `Link` / `NavLink`; use `<Tooltip>` ([Tooltips](#tooltips)). A native title waits 1–2 s and never shows on keyboard focus or touch. | Adopted (7.51.01); ESLint `no-restricted-syntax` and `theme/tooltipUsage.test.ts` hold the files still listed in `scripts/audit/allowlists/native_title.json` |
 
 ## Themes
 
@@ -250,11 +252,11 @@ So, in VoC (rule 15):
 | Label | Without the rule | With the rule |
 |---|---|---|
 | category | `badge-accent` | `badge-accent` — the one emphasised label |
-| "Changed by …" (hand-set category) | `badge-info` | `badge-info` — provenance **state**, kept small as icon (`UserPen`) + text; the previous category and the date stay in its `title` |
+| "Changed by …" (hand-set category) | `badge-info` | `badge-info` — provenance **state**, kept small as icon (`UserPen`) + text; the previous category and the date stay in its Tooltip (`kind="description"`) |
 | subcategory | `badge-aim` | `badge-muted` |
 | journey stage | `badge-muted` | `badge-muted` |
 | persona | `badge-info` | `badge-muted` |
-| dimension (`Product: Mobile app`) | `badge-info` | `badge-muted`; the key stays muted and the value is `text-text`; a hand-set value keeps its `title` and the `UserPen` icon |
+| dimension (`Product: Mobile app`) | `badge-info` | `badge-muted`; the key stays muted and the value is `text-text`; a hand-set value keeps its Tooltip and the `UserPen` icon |
 | tag | `badge-muted` + `Hash` | unchanged |
 | sentiment · Urgent · Redacted / Summary only | status tones | unchanged |
 
@@ -397,7 +399,7 @@ Layering: page content has **no z-index**. The sidebar `<aside>` is `z-50` (it o
 
 - **Library:** `lucide-react`, default stroke (2). Colour comes from `currentColor`: put `text-muted` / `text-accent` on the icon or its parent.
 - **Sizes:** 16 nav, toolbars and icon buttons · 14 inline with text, tabs and menu items · 12–13 inside badges and meta · 18–20 empty states and feature tiles · 24 metric tiles.
-- **Icon-only buttons:** `.icon-btn` (muted → text on hover); always `aria-label` + `title`.
+- **Icon-only buttons:** `.icon-btn` (muted → text on hover); always `aria-label` + `<Tooltip kind="label">` (rule 5).
 - **Brand mark:** the active theme's mark, `components/ThemeMark` — `<ThemeMark className="w-7 h-7 text-accent-text" />` in the sidebar (28px), login (48px), the assistant's bubble and panel header; `ThemeMarkIdle` greets an empty conversation and `ThemeMarkThinking` is the assistant's busy indicator. They follow the theme live (`useActiveColorTheme()`):
 
   | Theme | Mark | Thinking pose |
@@ -508,6 +510,55 @@ The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md 
 
 `menu` (container: `rounded-lg border bg-bg-elevated p-1 shadow-lg`, scales in) · `menu-item` (`rounded-md px-3 py-1.5 text-[13px]`, hover `bg-bg-hover`) · `menu-label` · `menu-separator`. Position with utilities (`absolute right-0 top-full mt-1 w-52`).
 
+### Tooltips
+
+One hint for hover and keyboard focus, in place of the native `title` (rule 16), which waits for the browser's own
+delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/Tooltip/`:
+
+```tsx
+<Tooltip kind="label" content={t('delete')}>
+  <button type="button" className="icon-btn" aria-label={t('delete')} onClick={remove}><Trash2 size={16} /></button>
+</Tooltip>
+<Tooltip kind="description" content={t('changedBy', { user, date })}>
+  <span className="badge badge-info"><UserPen size={12} aria-hidden="true" />{t('manual')}</span>
+</Tooltip>
+```
+
+- **API:** `<Tooltip content kind="label|description" placement="top|bottom|start|end">` wraps exactly one element and
+  composes its handlers and ref. An empty `content` shows nothing (`content={off ? reason : undefined}`), without
+  remounting the trigger.
+  - `kind="label"`: the trigger's name, which it already carries (`aria-label`, or `sr-only` text); the bubble is
+    `aria-hidden`, so a screen reader does not hear it twice.
+  - `kind="description"`: extra information (a date, who changed it, the raw id behind a label); the trigger is
+    `aria-describedby` the bubble (`role="tooltip"`), which stays in the page while hidden.
+- **Timing** (`tooltipTiming.ts`): shows 80 ms after a mouse rests on the trigger (a pointer that only crosses it opens
+  nothing); at once while another tooltip is open or less than 300 ms after one closed (the delay group, moving along
+  a toolbar); at once on keyboard focus, the focus a person moves with Tab or an arrow key (`:focus-visible`), not the
+  focus a click brings nor the focus a dialog gives its first control as it opens (that tooltip would take the Escape
+  meant for the dialog). Hides 100 ms after the pointer leaves trigger and bubble (it is hoverable, WCAG 1.4.13), at
+  once on blur or a press. **Escape** closes it without moving focus and goes no further, so the dialog or menu under
+  it stays (in a text field the key still reaches the field: an inline rename cancels). One tooltip at a time. Touch never
+  opens one: a tap performs the action, and the accessible name is what a touch screen reader hears.
+- **Positioning:** the bubble is a `popover="manual"` in the **top layer**, so no ancestor's overflow clips it and no
+  z-index competes with it (the layering rule above is untouched); it is portalled to `document.body`, so it never
+  becomes a sibling that `space-x-*`, `divide-*` or `last:` count. `positionFloating.ts` places it with
+  `@floating-ui/dom` (`vendor-floating` chunk): on the side asked for, **flipped** when there is no room, **shifted** to
+  stay 8 px inside the viewport, `start` / `end` by reading direction. It traps no focus.
+- **Look:** `.tooltip` = `rounded-md bg-text-strong text-card px-2 py-1 text-[0.75rem] leading-snug shadow-md max-w-64` (12 px, in rem so it scales with the text size),
+  inverted in both modes, entering with `animate-fade-in` (reduced motion is handled globally). `theme/tooltip.test.ts`
+  pins the recipe and its contrast in every theme.
+- **Content rule:** a tooltip is **never the only place important information lives**. A consequence, a mode's meaning
+  or why something is off is visible text, or an **InfoTip**. A control that is off and says why in a tooltip uses
+  `aria-disabled`, not `disabled`, so it stays focusable (`.btn` and `.icon-btn` style both alike).
+- **InfoTip** (a port of KiroCrew's): `<InfoTip text={…} />`, the ⓘ glyph ("More information", described by its text)
+  for an explanation that would not fit as visible text. Hover and focus show it like a Tooltip; a click or a tap pins
+  it until another click or tap, a press outside, Escape or blur.
+- **TruncatedText:** `<TruncatedText as="p" className="truncate …" text={name} />` for text cut by `truncate` or
+  `line-clamp-*`: its tooltip shows **only while the text is actually cut**. It is not focusable, so the whole text
+  must also be on the item's detail view.
+- **Not tooltips** (they stay): an `iframe`'s `title` (its accessible name), SVG `<title>`, and a component's own
+  `title` prop (ConfirmModal's, a card's heading).
+
 ### Navigation
 
 `.nav-active` marks the selected nav item or list row. Breadcrumbs: muted links with a `ChevronRight` 14 separator, current page `text-text-strong`.
@@ -527,6 +578,9 @@ The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md 
 | Multiple independent booleans | Checkboxes |
 | Actions on an item | `menu` from an `icon-btn` |
 | Confirm a destructive action | `ConfirmModal` |
+| Name an icon button, or add a date or an id on hover and focus | `Tooltip` (`kind="label"` / `kind="description"`) |
+| Explain something that would not fit as visible text | `InfoTip` |
+| Text that may be cut | `TruncatedText` |
 | Status | `badge` + a status tone (`ok` / `warn` / `danger` / `info` / `aim`) |
 | Name, kind or value (a label) | `badge badge-muted`; the row's one primary classification `badge badge-accent` |
 
@@ -544,6 +598,7 @@ House easing: **`cubic-bezier(.16, 1, .3, 1)`** (fast out, soft settle). Duratio
 | Focus | Every control: `:focus-visible` 2px `--ring` outline, offset 2px (`.focus-ring`, `.link`, `.tab`, `.switch`, the `.range` thumb, React Flow nodes; `.menu-item` insets it, offset -2px). Text fields (`.input`/`.select`): `border-ring` + a 1px inset `--ring` outline (survives `border-*` utilities) + the `0 0 0 3px var(--accent-subtle)` glow. `--ring` clears 3:1 on every surface in both themes (`theme/focusRing.test.ts`); a tint alone is never a focus state |
 | Theme change | `body` cross-fades background and colour over .25s |
 | Dialog / menu entrance | `animate-scale-in` (.2s, scale .92 → 1); overlay `animate-fade-in` (.15s) |
+| Tooltip | 80 ms in (0 ms in a group), 100 ms out, instant on focus; `animate-fade-in` ([Tooltips](#tooltips)) |
 | Content entrance | `animate-rise` (.35s, 8px up) |
 | Loading | `skeleton` (pulse) · `animate-spin` spinners in `border-accent` |
 | Switch | Track `transition-colors`, knob `transition-transform` |
@@ -580,7 +635,8 @@ Rules:
 
 ## Accessibility
 
-- Icon-only buttons need `aria-label` (and `title`); dialog X buttons use `<DialogClose>` ("Dismiss", so it never collides with a footer "Close"/"Cancel").
+- Icon-only buttons need `aria-label` and a `<Tooltip kind="label">`; dialog X buttons use `<DialogClose>` ("Dismiss", so it never collides with a footer "Close"/"Cancel").
+- A tooltip is never the only place important information lives: a consequence, a mode's meaning or why a control is off is visible text or an `InfoTip`, and an explained control that is off is `aria-disabled` (focusable), not `disabled` ([Tooltips](#tooltips)).
 - Dialogs: focus trap and Escape via `ModalShell`.
 - Switches keep the real control: an sr-only checkbox or `role="switch" aria-checked`.
 - Colour is never the only signal: pair tones with text or an icon (e.g. "Urgent" badge + `AlertTriangle`).

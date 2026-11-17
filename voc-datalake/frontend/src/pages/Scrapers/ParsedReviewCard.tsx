@@ -2,6 +2,7 @@ import { CalendarClock, Trash2 } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import RatingStars from '../../components/RatingStars'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { ParsedReview } from '../../store/manualImportStore'
 
 interface ParsedReviewCardProps {
@@ -93,15 +94,16 @@ export default function ParsedReviewCard({
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => onDelete(index)}
-          className="p-1.5 text-danger hover:bg-danger-subtle rounded-sm transition-colors focus-ring"
-          aria-label={t('parsedReview.deleteLabel', row)}
-          title={t('parsedReview.deleteLabel', row)}
-        >
-          <Trash2 size={16} aria-hidden="true" />
-        </button>
+        <Tooltip kind="label" content={t('parsedReview.deleteLabel', row)}>
+          <button
+            type="button"
+            onClick={() => onDelete(index)}
+            className="p-1.5 text-danger hover:bg-danger-subtle rounded-sm transition-colors focus-ring"
+            aria-label={t('parsedReview.deleteLabel', row)}
+          >
+            <Trash2 size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
       </div>
 
       <input

@@ -7,13 +7,16 @@
  */
 import { Loader2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../Tooltip/Tooltip'
 
 export default function DeleteDocumentButton({ isDeleting, onDeleteDoc }: Readonly<{ isDeleting: boolean; onDeleteDoc: () => void }>) {
   const { t } = useTranslation('projectDetail')
   return (
-    <button type="button" onClick={onDeleteDoc} disabled={isDeleting} className="icon-btn p-2 hover:text-danger"
-      title={t('documents.deleteDocument')} aria-label={t('documents.deleteDocument')}>
-      {isDeleting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-    </button>
+    <Tooltip kind="label" content={t('documents.deleteDocument')}>
+      <button type="button" onClick={onDeleteDoc} disabled={isDeleting} className="icon-btn p-2 hover:text-danger"
+        aria-label={t('documents.deleteDocument')}>
+        {isDeleting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+      </button>
+    </Tooltip>
   )
 }

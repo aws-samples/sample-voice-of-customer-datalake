@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { renderWithQueryClient } from '../../test/query-client'
 import userEvent from '@testing-library/user-event'
 import PersonasTab from './PersonasTab'
@@ -91,13 +91,17 @@ describe('PersonasTab', () => {
     expect(screen.getByText('Test tagline')).toBeInTheDocument()
   })
 
-  it('wraps the persona name and clamps the tagline to two lines with a tooltip', () => {
+  it('wraps the persona name and clamps the tagline to two lines with a tooltip while it is cut', async () => {
     renderWithQueryClient(<PersonasTab {...defaultProps} personas={[mockPersona]} />)
     const name = screen.getByTestId('persona-list-name')
     expect(name).toHaveClass('break-words')
     const tagline = screen.getByText('Test tagline')
     expect(tagline).toHaveClass('line-clamp-2')
-    expect(tagline).toHaveAttribute('title', 'Test tagline')
+    // jsdom lays nothing out: two lines of room, three of text.
+    Object.defineProperty(tagline, 'clientHeight', { configurable: true, value: 32 })
+    Object.defineProperty(tagline, 'scrollHeight', { configurable: true, value: 48 })
+    fireEvent.pointerOver(tagline, { pointerType: 'mouse' })
+    expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent('Test tagline')
   })
 
   it('shows select message when no persona selected', () => {

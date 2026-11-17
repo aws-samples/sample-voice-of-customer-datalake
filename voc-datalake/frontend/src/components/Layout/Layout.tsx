@@ -59,6 +59,7 @@ import PasskeyPrompt from '../PasskeyPrompt/PasskeyPrompt'
 import WorkspaceMenu from '../../workspace/WorkspaceMenu'
 import { Sidebar, type NavItem } from './SidebarComponents'
 import { useFocusViewActive } from '../DocumentCanvas/page/focusView'
+import { Tooltip } from '../Tooltip/Tooltip'
 
 /**
  * Navigation items (decided 2026-10-04). Home and Dashboard
@@ -141,16 +142,17 @@ function MainHeader({ onOpenMenu, menuButtonRef, showTimeRange, account }: Reado
   return (
     <header className="chrome-glass relative z-10 border-b border-border px-4 sm:px-6 py-3 flex-shrink-0">
       <div className="@container flex flex-wrap items-start gap-2 mb-2 sm:mb-3" data-testid="header-row">
-        <button
-          ref={menuButtonRef}
-          type="button"
-          onClick={onOpenMenu}
-          className="icon-btn header-control w-9 -ml-2 lg:hidden flex-shrink-0"
-          aria-label={t('common:sidebar.openMenu')}
-          title={t('common:sidebar.openMenu')}
-        >
-          <Menu size={20} aria-hidden="true" />
-        </button>
+        <Tooltip kind="label" content={t('common:sidebar.openMenu')}>
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={onOpenMenu}
+            className="icon-btn header-control w-9 -ml-2 lg:hidden flex-shrink-0"
+            aria-label={t('common:sidebar.openMenu')}
+          >
+            <Menu size={20} aria-hidden="true" />
+          </button>
+        </Tooltip>
         {/* Narrow row (390 px at 200 % text): the title column next to three 2.25rem
             controls was ~110 px, so "Voice" and "Customer" broke mid-word. Below
             15em the title + time range move to their own full-width line under

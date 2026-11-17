@@ -1,6 +1,10 @@
 /**
- * The `title` on every control the UI disables because the route behind it is
- * admin-gated server-side.
+ * Why a control is off for a non-admin, because the route behind it is admin-gated
+ * server-side. Since 7.51.01 `pages/Scrapers` says it in a Tooltip, translated
+ * (`common:adminOnly`, `hooks/useAdminOnlyReason`), on a control that stays focusable
+ * (`aria-disabled`); this English literal is the `title` that `pages/Settings` keeps
+ * until the 7.54 settings redesign (native_title.json), and what the specs assert
+ * (the English catalogue says the same).
  *
  * Declared once, and HERE rather than under one page, because two pages now render
  * such a control: `pages/Scrapers` (`AppConfigComponents`' Run and Delete,
@@ -35,20 +39,11 @@
  * `SourceCard`'s and `LogsSection`'s disabled controls are reachable only from their unit tests.
  * They stay gated so the card is safe to reuse outside that route.
  *
- * NOT routed through i18n, and that is a decision rather than an oversight — but a
- * weak one, recorded so the next reader does not have to guess.
- * `GeneratorConfigModal` carried this exact literal before it was consolidated, so
- * the constant inherits the omission rather than introducing it, and consolidating
- * first means translating it later is a one-line change at a single definition
- * site. The surrounding pages ARE translated (`PluginConfigModal` alone has three
- * `useTranslation` calls), so the inconsistency is real: a non-English user gets
- * these tooltips in English.
- *
- * `frontend/scripts/i18n-check.mjs` cannot catch it either way, so nothing will
- * prompt the fix. Its heuristic reports a DIRECTORY in which no file calls
- * `useTranslation` at all — and both `Scrapers/` and `Settings/` are mixed, so
- * `AppConfigComponents.tsx` and `SourceCard.tsx` (zero calls each) are invisible
- * because their directories as a whole are exempt.
+ * The literal is NOT routed through i18n: `GeneratorConfigModal` carried it before it
+ * was consolidated here. Scrapers now reads the translated key instead; Settings'
+ * tooltips stay English until their redesign. `frontend/scripts/i18n-check.mjs`
+ * cannot catch the rest either way: it reports a DIRECTORY in which no file calls
+ * `useTranslation` at all, and `Settings/` is mixed.
  *
  * Every assertion on this string imports the constant instead of restating it, so
  * translating it is a change to this file alone and cannot fail a test whose

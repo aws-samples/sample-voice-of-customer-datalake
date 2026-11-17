@@ -37,6 +37,7 @@ import { hasActiveFacets } from '../../api/feedbackFacets'
 import { useFacetParams } from '../../hooks/useFacetParams'
 import { useDashboardData } from './useDashboardData'
 import { DashboardFilters, FilteredEmpty } from './DashboardFilters'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 function NotConfiguredState() {
   const { t } = useTranslation(['dashboard', 'common'])
@@ -184,15 +185,16 @@ export default function Dashboard() {
           <p className="text-sm text-muted mt-1">{t('dashboard:subtitle')}</p>
           <ScopeNotice className="mt-2" />
         </div>
-        <button
-          type="button"
-          onClick={exportPDF}
-          className="btn btn-secondary btn-sm self-start sm:self-auto"
-          title={t('common:exportPdfTooltip')}
-        >
-          <FileDown size={14} aria-hidden="true" />
-          {t('common:exportPdf')}
-        </button>
+        <Tooltip kind="description" content={t('common:exportPdfTooltip')}>
+          <button
+            type="button"
+            onClick={exportPDF}
+            className="btn btn-secondary btn-sm self-start sm:self-auto"
+          >
+            <FileDown size={14} aria-hidden="true" />
+            {t('common:exportPdf')}
+          </button>
+        </Tooltip>
       </div>
 
       <DashboardFilters params={facetParams} sourceOptions={data.sourceOptions} categoryOptions={data.categoryOptions} />

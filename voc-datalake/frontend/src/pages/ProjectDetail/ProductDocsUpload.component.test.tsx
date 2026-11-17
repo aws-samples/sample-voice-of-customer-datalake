@@ -220,7 +220,8 @@ describe('DocsUpload', () => {
     })
     render(<DocsUpload projectId="proj-1" canEdit />)
 
-    const reason = await screen.findByText('Extraction failed: image could not be decoded')
+    // The visible reason, not the Failed badge's tooltip (which carries the same text).
+    const reason = await screen.findByText('Extraction failed: image could not be decoded', { ignore: 'script, style, [role="tooltip"]' })
 
     // Asserted on the element that CARRIES the text, not an ancestor: the point
     // is that the reason overrides the inherited gray, so finding red anywhere up

@@ -14,14 +14,15 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 /** The muted "Radar: <brand>" badge of a source whose reviews go to Radar; nothing for an ordinary source. */
 export function RadarBadge({ brandLabel }: Readonly<{ brandLabel: string | undefined }>) {
   const { t } = useTranslation('scrapers')
   if (brandLabel === undefined) return null
-  return <span className="badge badge-muted break-words [overflow-wrap:anywhere]" title={brandLabel}>{t('card.radarBadge', { brand: brandLabel })}</span>
+  return <span className="badge badge-muted break-words [overflow-wrap:anywhere]">{t('card.radarBadge', { brand: brandLabel })}</span>
 }
 
 export function CardStat({ label, value, mono = false }: Readonly<{ label: string; value: ReactNode; mono?: boolean }>) {
@@ -59,32 +60,38 @@ export function CardActions({
   const { t } = useTranslation('scrapers')
   const [confirming, setConfirming] = useState(false)
   const labels = { run: t('card.runNow'), edit: t('card.edit'), delete: t('card.delete') }
+  const adminOnly = useAdminOnlyReason(isAdmin)
   return (
     <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        disabled={runDisabled || !isAdmin}
-        title={isAdmin ? labels.run : ADMIN_ONLY_TITLE}
-        className="btn btn-secondary btn-sm inline-flex items-center gap-1.5 disabled:cursor-not-allowed"
-      >
-        {isRunning ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
-        {isRunning ? t('status.running') : labels.run}
-      </button>
+      <Tooltip kind="description" content={adminOnly}>
+        <button
+          type="button"
+          onClick={isAdmin ? () => setConfirming(true) : undefined}
+          disabled={isAdmin && runDisabled}
+          aria-disabled={isAdmin ? undefined : true}
+          className="btn btn-secondary btn-sm inline-flex items-center gap-1.5 disabled:cursor-not-allowed"
+        >
+          {isRunning ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+          {isRunning ? t('status.running') : labels.run}
+        </button>
+      </Tooltip>
       <span className="flex-1" />
-      <button type="button" onClick={onEdit} aria-label={labels.edit} title={labels.edit} className="icon-btn p-2">
-        <Settings size={16} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={!isAdmin}
-        aria-label={labels.delete}
-        title={isAdmin ? labels.delete : ADMIN_ONLY_TITLE}
-        className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <Trash2 size={16} aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={labels.edit}>
+        <button type="button" onClick={onEdit} aria-label={labels.edit} className="icon-btn p-2">
+          <Settings size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <Tooltip kind={isAdmin ? 'label' : 'description'} content={adminOnly ?? labels.delete}>
+        <button
+          type="button"
+          onClick={isAdmin ? onDelete : undefined}
+          aria-disabled={isAdmin ? undefined : true}
+          aria-label={labels.delete}
+          className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle"
+        >
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
       <ConfirmModal
         isOpen={confirming}
         variant="info"

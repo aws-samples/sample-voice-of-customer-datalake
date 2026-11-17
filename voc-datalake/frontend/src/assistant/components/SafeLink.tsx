@@ -4,8 +4,8 @@
  * The model's text can carry links that came from feedback, web results or
  * project documents — none of which we wrote. Only two kinds of href are
  * rendered as links: absolute http(s) URLs (new tab, no opener/referrer, no
- * follow; an external-link icon marks them, and the tooltip and the accessible
- * name say where they go — wave 4 dropped the visible "(example-air.example)" suffix
+ * follow; an external-link icon marks them, the accessible name says where they go and
+ * the browser shows the address on hover and focus — wave 4 dropped the visible "(example-air.example)" suffix
  * that repeated the host after every citation) and in-app
  * paths starting with a single `/` (client-side navigation). Everything else —
  * `javascript:`, `data:`, protocol-relative `//host`, relative paths, mailto —
@@ -52,7 +52,7 @@ function ExternalAnchor({ href, host, children }: Readonly<{ href: string; host:
   const { t } = useTranslation('assistant')
   const bare = isBareUrl(children, href)
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer nofollow" title={href} className={LINK_CLASS}>
+    <a href={href} target="_blank" rel="noopener noreferrer nofollow" className={LINK_CLASS}>
       {bare ? shortUrlText(href) : children}
       <ExternalLink size={12} className="ml-0.5 inline-block align-baseline" aria-hidden />
       {/* `display: block` is what a browser computes anyway (`sr-only` is absolutely

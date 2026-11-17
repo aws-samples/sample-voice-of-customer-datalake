@@ -18,6 +18,7 @@
 import clsx from 'clsx'
 import type { LucideIcon } from 'lucide-react'
 import DialogClose from '../../components/DialogClose/DialogClose'
+import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { Tone } from '../../theme/tones'
 
 export type SourceTone = Extract<Tone, 'accent' | 'muted'>
@@ -61,7 +62,7 @@ export default function SourceDialogHeader({
       <div className="flex min-w-0 items-center gap-3">
         <ToneTile icon={icon} />
         <div className="min-w-0">
-          <h2 id={titleId} className="dialog-title truncate" title={title}>{title}</h2>
+          <TruncatedText as="h2" id={titleId} className="dialog-title truncate" text={title} />
           {description != null && description !== '' ? <p className="dialog-description line-clamp-2">{description}</p> : null}
         </div>
       </div>

@@ -247,7 +247,7 @@ describe('CategoryDistribution "Other" row', () => {
     const onToggleCategory = vi.fn<(category: string) => void>()
     render(<CategoryDistribution {...defaultProps} categoryData={withOther} totalIssues={100} onToggleCategory={onToggleCategory} />)
     const row = screen.getByRole('button', { name: /^Other\s*10 \(10%\)/ })
-    expect(row).toHaveAttribute('title', 'Reviews of this period that no category matched')
+    expect(row).toHaveAccessibleDescription('Reviews of this period that no category matched')
     await user.click(row)
     expect(onToggleCategory).toHaveBeenCalledWith('other')
   })

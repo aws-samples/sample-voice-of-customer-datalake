@@ -81,7 +81,7 @@ describe('excerpts', () => {
   it('carry a badge saying they are search-result excerpts', () => {
     renderRun({ ...CASCADE, method_used: 'agentcore_web_search', reviews: 3, excerpt: true,
       steps: [BLOCKED, BEDROCK_FAILED, { method: 'agentcore_web_search', outcome: 'readable', reviews: 3 }] })
-    expect(screen.getByText('Excerpts')).toHaveAttribute('title', expect.stringContaining('AgentCore web search result excerpts'))
+    expect(screen.getByText('Excerpts')).toHaveAccessibleDescription(/AgentCore web search result excerpts/)
   })
 
   it('the control: no badge for a page the browser or the Bedrock web index read', () => {

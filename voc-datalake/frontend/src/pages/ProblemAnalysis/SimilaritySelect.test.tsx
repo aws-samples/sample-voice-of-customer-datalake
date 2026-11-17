@@ -31,11 +31,11 @@ describe('SimilaritySelect', () => {
     expect(onChange).toHaveBeenCalledWith('high')
   })
 
-  it('explains Low / Medium / High / Off in a tooltip and as the description', () => {
+  it('explains Low / Medium / High / Off in an InfoTip and as the description', () => {
     render(<SimilaritySelect value="med" onChange={vi.fn()} />)
     const hint = i18n.t('problemAnalysis:filters.similarityLevelsHint')
 
-    expect(screen.getByTestId('similarity-hint')).toHaveAttribute('title', hint)
+    expect(screen.getByRole('button', { name: 'More information' })).toHaveAccessibleDescription(hint)
     expect(screen.getByRole('combobox', { name: label() })).toHaveAccessibleDescription(hint)
   })
 })

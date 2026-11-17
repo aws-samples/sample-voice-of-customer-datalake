@@ -717,5 +717,9 @@
     "allTypes": "Todos os tipos",
     "untyped": "Avaliações ainda sem tipo: {{n, number}} (continuam visíveis)",
     "untypedHint": "Avaliações guardadas antes de existirem os tipos não têm tipo até que um administrador as classifique em Administração → Taxonomia. Continuam visíveis com qualquer filtro de tipo."
-  }
+  },
+  "infoTip": {
+    "label": "Mais informações"
+  },
+  "adminOnly": "É necessário acesso de administrador"
 }

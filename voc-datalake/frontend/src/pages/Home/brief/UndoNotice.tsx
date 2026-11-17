@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Undo2, X } from 'lucide-react'
 import { noCleanup } from '../../../hooks/noCleanup'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 
 export const UNDO_TIMEOUT_MS = 8000
 
@@ -46,9 +47,11 @@ function UndoCard({ title, onUndo, onClose }: Readonly<{ title: string } & Notic
         aria-label={t('cards.undoLabel', { title })} onClick={onUndo}>
         <Undo2 size={14} aria-hidden /> {t('cards.undo')}
       </button>
-      <button type="button" className="icon-btn" aria-label={t('cards.closeNotice')} title={t('cards.closeNotice')} onClick={onClose}>
-        <X size={14} aria-hidden />
-      </button>
+      <Tooltip kind="label" content={t('cards.closeNotice')}>
+        <button type="button" className="icon-btn" aria-label={t('cards.closeNotice')} onClick={onClose}>
+          <X size={14} aria-hidden />
+        </button>
+      </Tooltip>
     </div>
   )
 }

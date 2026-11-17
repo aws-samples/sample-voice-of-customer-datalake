@@ -13,7 +13,7 @@
 import { Loader2, Save } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useAdminOnlyReason } from '../../hooks/useAdminOnlyReason'
 import { appCopy } from './appCopy'
 import { PluginFieldGrid } from './PluginConfigParts'
 import RadarSourcePicker from './RadarSourcePicker'
@@ -21,6 +21,7 @@ import ReviewMethodSelect from './ReviewMethodSelect'
 import { WEB_REVIEWS_PLUGIN_ID, appField } from './scraper-helpers'
 import { isWebPageName } from './webPageName'
 import { BEDROCK_WEB_SEARCH, METHOD_FIELD, appFormFields, offersReviewMethods, reviewMethod } from './webReviewMethod'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { FieldNote } from './PluginConfigParts'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
@@ -43,6 +44,22 @@ function nameNotes(pluginId: string, name: string, t: TFunction<'scrapers'>): { 
 function SaveError({ message }: Readonly<{ message: string | null | undefined }>) {
   if (message === null || message === undefined) return null
   return <p role="alert" className="text-sm text-danger break-words [overflow-wrap:anywhere]">{message}</p>
+}
+
+/** Save: a non-admin's stays focusable (aria-disabled) and says why in its tooltip. */
+function SaveAppButton({ isAdmin, enabled, isPending, label, onSave }: Readonly<{
+  isAdmin: boolean; enabled: boolean; isPending: boolean; label: string; onSave: () => void
+}>) {
+  const adminOnly = useAdminOnlyReason(isAdmin)
+  return (
+    <Tooltip kind="description" content={adminOnly}>
+      <button onClick={isAdmin ? onSave : undefined} disabled={isAdmin && (isPending || !enabled)}
+        aria-disabled={isAdmin ? undefined : true} className="btn btn-primary">
+        {isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+        {label}
+      </button>
+    </Tooltip>
+  )
 }
 
 export default function AppEditorForm({
@@ -92,10 +109,8 @@ export default function AppEditorForm({
         onChange={(radarBrand) => setValues((prev) => ({ ...prev, radar_brand: radarBrand }))} />
       <SaveError message={saveError} />
       <div className="flex items-center gap-2">
-        <button onClick={() => onSave({ ...values })} disabled={isPending || !canSave} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary">
-          {isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {isEditing ? t('pluginConfig.save') : t(copy.add)}
-        </button>
+        <SaveAppButton isAdmin={isAdmin} enabled={canSave} isPending={isPending}
+          label={isEditing ? t('pluginConfig.save') : t(copy.add)} onSave={() => onSave({ ...values })} />
         <button type="button" onClick={onCancel} className="btn btn-secondary">{t('editor.cancel')}</button>
       </div>
     </div>

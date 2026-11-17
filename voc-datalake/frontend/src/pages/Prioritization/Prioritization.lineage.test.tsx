@@ -52,7 +52,7 @@
 import {
   describe, it, expect, vi, beforeEach,
 } from 'vitest'
-import { cleanup, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import './prioritization-mock-fixtures'
@@ -281,12 +281,13 @@ describe('the resting row states what its documents say about each other', () =>
   })
 
   it('announces the reason rather than only hovering it', async () => {
-    // A `title` never appears on a touch device and screen-reader support for it is
-    // inconsistent — the trap `SortControls` records for its own hint — so the reason
-    // is in the accessible text as well.
+    // A hover hint never appears on a touch device and screen-reader support for a
+    // `title` is inconsistent — the trap `SortControls` records for its own hint — so
+    // the reason is in the accessible text as well as in the badge's tooltip.
     const badge = await lineageBadge()
 
-    expect(badge).toHaveAttribute('title', t('lineage.coherentReason'))
+    fireEvent.pointerOver(badge, { pointerType: 'mouse' })
+    expect(await screen.findByText(t('lineage.coherentReason'), { selector: '[role="tooltip"][aria-hidden="true"]' })).toBeInTheDocument()
     expect(badge).toHaveTextContent(t('lineage.coherentReason'))
   })
 
@@ -332,7 +333,8 @@ describe('a frozen row whose project has moved on', () => {
 
     expect(stale).toHaveTextContent(t('lineage.stale'))
     // Announced as well as hovered, like the lineage reason beside it.
-    expect(stale).toHaveAttribute('title', t('lineage.staleReason'))
+    fireEvent.pointerOver(stale, { pointerType: 'mouse' })
+    expect(await screen.findByText(t('lineage.staleReason'), { selector: '[role="tooltip"][aria-hidden="true"]' })).toBeInTheDocument()
     expect(stale).toHaveTextContent(t('lineage.staleReason'))
     // And it is still described as coherent: staleness is a second axis, so a
     // superseded row that is internally consistent is not relabelled as incoherent.

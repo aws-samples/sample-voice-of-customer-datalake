@@ -107,7 +107,7 @@ describe('ManualCategoryBadge', () => {
   it('names who changed the category and what it was', () => {
     render(<ManualCategoryBadge feedback={{ category_source: 'manual', category_override: { previous_category: 'delivery', by_username: 'ada', at: '2026-02-03T10:00:00Z' } }} />)
     const badge = screen.getByText('Changed by ada')
-    expect(badge).toHaveAttribute('title', expect.stringContaining('Was delivery'))
+    expect(badge).toHaveAccessibleDescription(/Was delivery/)
   })
 
   it('renders nothing for a model-assigned category', () => {

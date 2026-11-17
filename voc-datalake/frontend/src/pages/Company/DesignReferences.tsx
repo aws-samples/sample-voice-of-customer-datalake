@@ -27,6 +27,7 @@ import ReferenceDesignPreview from './ReferenceDesignPreview'
 import type { PreviewActions } from './ReferenceDesignPreview'
 import { httpHref } from '../../utils/httpHref'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 
 // lucide's brand marks (Figma, Github) are deprecated; neutral glyphs instead.
 const KIND_ICONS: Record<ReferenceKind, LucideIcon> = { website: Globe, screenshot: Image, html: FileCode, figma: Frame, github: GitBranch }
@@ -161,19 +162,25 @@ function RowActions({ reference, canEdit, refreshing, onRefresh, onArchive }: Re
   return (
     <>
       {linkHref ? (
-        <a href={linkHref} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label={t('designSystem.openLink')} title={t('designSystem.openLink')}>
-          <ExternalLink size={16} />
-        </a>
+        <Tooltip kind="label" content={t('designSystem.openLink')}>
+          <a href={linkHref} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label={t('designSystem.openLink')}>
+            <ExternalLink size={16} />
+          </a>
+        </Tooltip>
       ) : null}
       {canEdit && isLink ? (
-        <button type="button" onClick={onRefresh} disabled={refreshing || reference.status === 'pending'} className="icon-btn" aria-label={t('designSystem.refresh')} title={t('designSystem.refresh')}>
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : undefined} />
-        </button>
+        <Tooltip kind="label" content={t('designSystem.refresh')}>
+          <button type="button" onClick={onRefresh} disabled={refreshing || reference.status === 'pending'} className="icon-btn" aria-label={t('designSystem.refresh')}>
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : undefined} />
+          </button>
+        </Tooltip>
       ) : null}
       {canEdit ? (
-        <button type="button" onClick={onArchive} className="icon-btn" aria-label={t('designSystem.archive')} title={t('designSystem.archive')}>
-          <Archive size={16} />
-        </button>
+        <Tooltip kind="label" content={t('designSystem.archive')}>
+          <button type="button" onClick={onArchive} className="icon-btn" aria-label={t('designSystem.archive')}>
+            <Archive size={16} />
+          </button>
+        </Tooltip>
       ) : null}
     </>
   )

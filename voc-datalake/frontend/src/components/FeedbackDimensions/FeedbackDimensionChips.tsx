@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { EyeOff, Hash, ShieldCheck, UserPen } from 'lucide-react'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
 import { dimensionChips } from './feedbackDimensions'
+import { Tooltip } from '../Tooltip/Tooltip'
 import type { FeedbackItem } from '../../api/types'
 
 type ChipFeedback = Pick<FeedbackItem, 'dimensions' | 'dimension_sources' | 'tags' | 'pii_policy'>
@@ -39,10 +40,18 @@ export function PiiPolicyNote({ policy }: Readonly<{ policy: FeedbackItem['pii_p
 function PiiPolicyBadge({ policy }: Readonly<{ policy: FeedbackItem['pii_policy'] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'feedbackDimensions' })
   if (policy === 'redact') {
-    return <span className="badge badge-warn" title={t('redactedHint')}><ShieldCheck size={12} aria-hidden="true" />{t('redacted')}</span>
+    return (
+      <Tooltip kind="description" content={t('redactedHint')}>
+        <span className="badge badge-warn"><ShieldCheck size={12} aria-hidden="true" />{t('redacted')}</span>
+      </Tooltip>
+    )
   }
   if (policy === 'summary_only') {
-    return <span className="badge badge-warn" title={t('summaryOnlyHint')}><EyeOff size={12} aria-hidden="true" />{t('summaryOnly')}</span>
+    return (
+      <Tooltip kind="description" content={t('summaryOnlyHint')}>
+        <span className="badge badge-warn"><EyeOff size={12} aria-hidden="true" />{t('summaryOnly')}</span>
+      </Tooltip>
+    )
   }
   return null
 }
@@ -56,10 +65,12 @@ function DimensionChipList({ stored, sources }: Readonly<{ stored: Readonly<Reco
       {dimensionChips(data?.dimensions ?? [], stored).map((chip) => {
         const manual = sources?.[chip.key] === 'manual'
         return (
-          <span key={chip.key} className="badge badge-muted" title={manual ? t('setByHand') : undefined}>
-            {manual && <UserPen size={12} aria-label={t('setByHand')} />}
-            {chip.label}: <span className="text-text">{chip.value}</span>
-          </span>
+          <Tooltip key={chip.key} kind="label" content={manual ? t('setByHand') : undefined}>
+            <span className="badge badge-muted">
+              {manual && <UserPen size={12} aria-label={t('setByHand')} />}
+              {chip.label}: <span className="text-text">{chip.value}</span>
+            </span>
+          </Tooltip>
         )
       })}
     </>
