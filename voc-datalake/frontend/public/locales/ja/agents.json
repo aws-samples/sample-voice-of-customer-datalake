@@ -385,7 +385,6 @@
     "olderRevision": "この実行ではワークフローのリビジョン {{n}} が使用されました。",
     "graphLabel": "実行進捗グラフ",
     "showAll": "すべてのイベントを表示（{{step}} で絞り込み中）",
-    "rounds": "ラウンド {{n}}",
     "status": {
       "queued": "待機中",
       "running": "実行中",
@@ -435,10 +434,6 @@
       "fromNothing": "リポジトリのバグを探すために開始しました。",
       "followHint": "実行モニターで進行を確認するか、ここで停止できます。エンジニアリング実行が終わると、この実行も終わります。",
       "openMonitor": "実行モニターを開く"
-    },
-    "gate": {
-      "pass": "ゲート合格",
-      "fail": "ゲート不合格"
     },
     "here": "現在地",
     "laneStates": {
@@ -571,7 +566,6 @@
       "endStatus": "実行の終了ステータス"
     },
     "loopFrameLabel": "ループ {{n}}：{{until}}まで、最大 {{rounds, number}} ラウンド",
-    "loopFrameHint": "クリックしてこのループを設定",
     "arrowLabel": "{{source}} から {{target}} への矢印（{{condition}}）",
     "conditionHint": "ステップがこの結果を返したときに矢印が使われます。「常に」は既定の経路です。",
     "noConditions": "このステップは判定を返さないため、矢印は常に使われます。",
@@ -2319,8 +2313,8 @@
       "updateAvailable": "更新あり",
       "share": "{{percent}}%",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} エージェント",
-      "agents_other": "{{count}} エージェント",
+      "agents_one": "{{count, number}} エージェント",
+      "agents_other": "{{count, number}} エージェント",
       "more": "+{{n}}"
     },
     "team": {
@@ -2331,8 +2325,8 @@
       "noGo": "NO-GO",
       "autoDetect": "自動検出",
       "rounds": "≤ {{n}} ラウンド",
-      "reviewers_one": "レビュアー {{count}} 人",
-      "reviewers_other": "レビュアー {{count}} 人"
+      "reviewers_one": "レビュアー {{count, number}} 人",
+      "reviewers_other": "レビュアー {{count, number}} 人"
     },
     "handles": {
       "go": "GO",
@@ -2380,8 +2374,8 @@
       "handle": "接続ポイント"
     },
     "shared": {
-      "banner_one": "{{count}} 件の自動化が使用中: {{names}}。保存すると、次回の実行から変更が反映されます。",
-      "banner_other": "{{count}} 件の自動化が使用中: {{names}}。保存すると、それぞれ次回の実行から変更が反映されます。",
+      "banner_one": "{{count, number}} 件の自動化が使用中: {{names}}。保存すると、次回の実行から変更が反映されます。",
+      "banner_other": "{{count, number}} 件の自動化が使用中: {{names}}。保存すると、それぞれ次回の実行から変更が反映されます。",
       "confirmTitle": "共有フローを保存しますか？",
       "confirmMessage": "{{names}} がこのフローを実行しています。保存すると、それぞれ次回の実行から変更が反映されます。",
       "confirmAction": "すべてに保存",
@@ -2470,7 +2464,6 @@
       "or": " または ",
       "lookedAtNothing": "何も確認しなかった場合は失敗します。",
       "forAutomation": "{{automation}} 用: {{pack}}",
-      "brief": "オーナーのブリーフ（{{path}}）",
       "briefOpen": "オーナーのブリーフ（{{path}}）",
       "stepKinds": {
         "setup": "セットアップ",
@@ -2527,8 +2520,8 @@
       "inputRequired": "{{name}}（必須）",
       "inputUnset": "未指定",
       "steps": "含まれるステップ",
-      "childSteps_one": "{{count}} ステップ",
-      "childSteps_other": "{{count}} ステップ",
+      "childSteps_one": "{{count, number}} ステップ",
+      "childSteps_other": "{{count, number}} ステップ",
       "expands": "展開後",
       "inAll": "合計 {{total}} / {{max}} ステップ",
       "usedBy": "使用元",
@@ -2557,8 +2550,8 @@
       "learnEnabled": "各実行から学習する",
       "learnOn": "オン",
       "learnOff": "オフ",
-      "roles_one": "{{count}} ロール",
-      "roles_other": "{{count}} ロール",
+      "roles_one": "{{count, number}} ロール",
+      "roles_other": "{{count, number}} ロール",
       "after": "{{hours}} 時間後",
       "learnAssertions": "Learn のアサーション",
       "pr": "プルリクエスト",

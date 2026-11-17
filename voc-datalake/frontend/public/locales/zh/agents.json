@@ -385,7 +385,6 @@
     "olderRevision": "此次运行使用了工作流的第 {{n}} 版。",
     "graphLabel": "运行进度图",
     "showAll": "显示所有事件（当前筛选：{{step}}）",
-    "rounds": "第 {{n}} 轮",
     "status": {
       "queued": "排队中",
       "running": "运行中",
@@ -435,10 +434,6 @@
       "fromNothing": "为在其代码仓库中查找缺陷而启动。",
       "followHint": "请在运行监视器中跟踪它，或在此处停止它：工程运行结束时，此运行也随之结束。",
       "openMonitor": "打开运行监视器"
-    },
-    "gate": {
-      "pass": "门禁已通过",
-      "fail": "门禁未通过"
     },
     "here": "当前位置",
     "laneStates": {
@@ -571,7 +566,6 @@
       "endStatus": "运行结束状态"
     },
     "loopFrameLabel": "循环 {{n}}：直到{{until}}，最多 {{rounds, number}} 轮",
-    "loopFrameHint": "点击以配置此循环",
     "arrowLabel": "从 {{source}} 到 {{target}} 的箭头（{{condition}}）",
     "conditionHint": "当步骤报告此结果时走这条箭头；“始终”是默认路径。",
     "noConditions": "此步骤不给出结论，因此它的箭头始终会被执行。",
@@ -2319,8 +2313,8 @@
       "updateAvailable": "有更新",
       "share": "{{percent}}%",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} 个智能体",
-      "agents_other": "{{count}} 个智能体",
+      "agents_one": "{{count, number}} 个智能体",
+      "agents_other": "{{count, number}} 个智能体",
       "more": "+{{n}}"
     },
     "team": {
@@ -2331,8 +2325,8 @@
       "noGo": "NO-GO",
       "autoDetect": "自动检测",
       "rounds": "≤ {{n}} 轮",
-      "reviewers_one": "{{count}} 位评审者",
-      "reviewers_other": "{{count}} 位评审者"
+      "reviewers_one": "{{count, number}} 位评审者",
+      "reviewers_other": "{{count, number}} 位评审者"
     },
     "handles": {
       "go": "GO",
@@ -2380,8 +2374,8 @@
       "handle": "连接点"
     },
     "shared": {
-      "banner_one": "有 {{count}} 个自动化在使用：{{names}}。保存后，它将从下次运行起改变。",
-      "banner_other": "有 {{count}} 个自动化在使用：{{names}}。保存后，每个自动化都将从其下次运行起改变。",
+      "banner_one": "有 {{count, number}} 个自动化在使用：{{names}}。保存后，它将从下次运行起改变。",
+      "banner_other": "有 {{count, number}} 个自动化在使用：{{names}}。保存后，每个自动化都将从其下次运行起改变。",
       "confirmTitle": "保存共享流程？",
       "confirmMessage": "{{names}} 运行此流程。保存后，每个自动化都将从其下次运行起改变。",
       "confirmAction": "为全部保存",
@@ -2470,7 +2464,6 @@
       "or": " 或 ",
       "lookedAtNothing": "如果什么都没检查，则失败。",
       "forAutomation": "用于 {{automation}}：{{pack}}",
-      "brief": "所有者的任务简报（{{path}}）",
       "briefOpen": "所有者的任务简报（{{path}}）",
       "stepKinds": {
         "setup": "准备",
@@ -2527,8 +2520,8 @@
       "inputRequired": "{{name}}（必填）",
       "inputUnset": "未提供",
       "steps": "其步骤",
-      "childSteps_one": "{{count}} 个步骤",
-      "childSteps_other": "{{count}} 个步骤",
+      "childSteps_one": "{{count, number}} 个步骤",
+      "childSteps_other": "{{count, number}} 个步骤",
       "expands": "展开为",
       "inAll": "共 {{total}}/{{max}} 个步骤",
       "usedBy": "使用者",
@@ -2557,8 +2550,8 @@
       "learnEnabled": "从每次运行中学习",
       "learnOn": "开",
       "learnOff": "关",
-      "roles_one": "{{count}} 个角色",
-      "roles_other": "{{count}} 个角色",
+      "roles_one": "{{count, number}} 个角色",
+      "roles_other": "{{count, number}} 个角色",
       "after": "{{hours}} 小时后",
       "learnAssertions": "Learn 的断言",
       "pr": "拉取请求",

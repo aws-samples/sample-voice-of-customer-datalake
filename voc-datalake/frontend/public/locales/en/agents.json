@@ -385,7 +385,6 @@
     "olderRevision": "This run used revision {{n}} of the workflow.",
     "graphLabel": "Run progress graph",
     "showAll": "Show all events (filtered to {{step}})",
-    "rounds": "Round {{n}}",
     "status": {
       "queued": "Queued",
       "running": "Running",
@@ -436,10 +435,6 @@
       "followHint": "Follow it on its run monitor, or stop it here: this run ends when the engineering run does.",
       "openMonitor": "Open the run monitor"
     },
-    "gate": {
-      "pass": "Gate passed",
-      "fail": "Gate failed"
-    },
     "here": "You are here",
     "laneStates": {
       "ran_ok": "Done",
@@ -470,7 +465,6 @@
     "panel": "Step settings",
     "nothingSelected": "Select a step, an arrow or a loop — on the canvas or in the outline below — to configure it.",
     "loopFrameLabel": "Loop {{n}}: until {{until}}, at most {{rounds, number}} rounds",
-    "loopFrameHint": "Click to configure this loop",
     "arrowLabel": "Arrow from {{source}} to {{target}} ({{condition}})",
     "conditionHint": "The arrow runs when the step reports this result; \"Always\" is the default path.",
     "noConditions": "This step reports no verdict, so its arrows always run.",
@@ -2265,8 +2259,8 @@
       "updateAvailable": "Update available",
       "share": "{{percent}} %",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} agent",
-      "agents_other": "{{count}} agents",
+      "agents_one": "{{count, number}} agent",
+      "agents_other": "{{count, number}} agents",
       "more": "+{{n}}"
     },
     "team": {
@@ -2277,8 +2271,8 @@
       "noGo": "NO-GO",
       "autoDetect": "Auto-detect",
       "rounds": "≤ {{n}} rounds",
-      "reviewers_one": "{{count}} reviewer",
-      "reviewers_other": "{{count}} reviewers"
+      "reviewers_one": "{{count, number}} reviewer",
+      "reviewers_other": "{{count, number}} reviewers"
     },
     "handles": {
       "go": "GO",
@@ -2326,8 +2320,8 @@
       "handle": "Connection point"
     },
     "shared": {
-      "banner_one": "Used by {{count}} automation: {{names}}. Saving changes it from its next run.",
-      "banner_other": "Used by {{count}} automations: {{names}}. Saving changes each of them from its next run.",
+      "banner_one": "Used by {{count, number}} automation: {{names}}. Saving changes it from its next run.",
+      "banner_other": "Used by {{count, number}} automations: {{names}}. Saving changes each of them from its next run.",
       "confirmTitle": "Save a shared flow?",
       "confirmMessage": "{{names}} run this flow. Saving changes each of them from its next run.",
       "confirmAction": "Save for all of them",
@@ -2416,7 +2410,6 @@
       "or": " or ",
       "lookedAtNothing": "Fails if it looked at nothing.",
       "forAutomation": "For {{automation}}: {{pack}}",
-      "brief": "The owner's brief ({{path}})",
       "briefOpen": "The owner's brief ({{path}})",
       "stepKinds": {
         "setup": "setup",
@@ -2473,8 +2466,8 @@
       "inputRequired": "{{name}} (required)",
       "inputUnset": "not given",
       "steps": "Its steps",
-      "childSteps_one": "{{count}} step",
-      "childSteps_other": "{{count}} steps",
+      "childSteps_one": "{{count, number}} step",
+      "childSteps_other": "{{count, number}} steps",
       "expands": "Expands to",
       "inAll": "{{total}} of {{max}} steps in all",
       "usedBy": "Used by",
@@ -2503,8 +2496,8 @@
       "learnEnabled": "Learn from each run",
       "learnOn": "On",
       "learnOff": "Off",
-      "roles_one": "{{count}} role",
-      "roles_other": "{{count}} roles",
+      "roles_one": "{{count, number}} role",
+      "roles_other": "{{count, number}} roles",
       "after": "after {{hours}} h",
       "learnAssertions": "Learn's assertions",
       "pr": "Pull request",

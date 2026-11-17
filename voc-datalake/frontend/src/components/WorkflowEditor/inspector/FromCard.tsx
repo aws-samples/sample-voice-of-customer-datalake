@@ -10,7 +10,9 @@
  */
 import { ExternalLink, Lock } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
+import { formatDecimal } from '../../../utils/numberFormat'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import LoadFailed from '../../LoadFailed/LoadFailed'
 import { registryCardPath } from '../../../pages/Agents/Registry/registryPaths'
@@ -57,7 +59,7 @@ function usageRows(t: TFunction<'agents'>, card: RegistryCard): Row[] {
     score === null ? null : [t('inspector.agent.scorecard'), t('inspector.agent.scorecardLine', {
       runs: score.runs, rate: Math.round((score.pass_rate ?? 0) * 100),
     })],
-    card.spend === null ? null : [t('inspector.agent.thisMonth'), t('inspector.agent.usd', { amount: card.spend.usd.toFixed(2) })],
+    card.spend === null ? null : [t('inspector.agent.thisMonth'), t('inspector.agent.usd', { amount: formatDecimal(card.spend.usd, i18n.language, 2) })],
   ]
 }
 

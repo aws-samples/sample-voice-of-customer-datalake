@@ -385,7 +385,6 @@
     "olderRevision": "이 실행은 워크플로 리비전 {{n}}을(를) 사용했습니다.",
     "graphLabel": "실행 진행 그래프",
     "showAll": "모든 이벤트 보기({{step}}(으)로 필터링됨)",
-    "rounds": "{{n}}라운드",
     "status": {
       "queued": "대기 중",
       "running": "실행 중",
@@ -435,10 +434,6 @@
       "fromNothing": "저장소의 버그를 찾기 위해 시작되었습니다.",
       "followHint": "실행 모니터에서 진행을 확인하거나 여기서 중지하세요. 엔지니어링 실행이 끝나면 이 실행도 끝납니다.",
       "openMonitor": "실행 모니터 열기"
-    },
-    "gate": {
-      "pass": "게이트 통과",
-      "fail": "게이트 실패"
     },
     "here": "현재 위치",
     "laneStates": {
@@ -571,7 +566,6 @@
       "endStatus": "실행 종료 상태"
     },
     "loopFrameLabel": "루프 {{n}}: {{until}}까지, 최대 {{rounds, number}}회",
-    "loopFrameHint": "클릭하여 이 루프 구성",
     "arrowLabel": "{{source}}에서 {{target}}(으)로 가는 화살표({{condition}})",
     "conditionHint": "단계가 이 결과를 보고하면 화살표를 따릅니다. \"항상\"이 기본 경로입니다.",
     "noConditions": "이 단계는 판정을 보고하지 않으므로 화살표를 항상 따릅니다.",
@@ -2319,8 +2313,8 @@
       "updateAvailable": "업데이트 있음",
       "share": "{{percent}}%",
       "cost": "${{amount}}",
-      "agents_one": "에이전트 {{count}}개",
-      "agents_other": "에이전트 {{count}}개",
+      "agents_one": "에이전트 {{count, number}}개",
+      "agents_other": "에이전트 {{count, number}}개",
       "more": "+{{n}}"
     },
     "team": {
@@ -2331,8 +2325,8 @@
       "noGo": "NO-GO",
       "autoDetect": "자동 감지",
       "rounds": "≤ {{n}}라운드",
-      "reviewers_one": "검토자 {{count}}명",
-      "reviewers_other": "검토자 {{count}}명"
+      "reviewers_one": "검토자 {{count, number}}명",
+      "reviewers_other": "검토자 {{count, number}}명"
     },
     "handles": {
       "go": "GO",
@@ -2380,8 +2374,8 @@
       "handle": "연결 지점"
     },
     "shared": {
-      "banner_one": "자동화 {{count}}개에서 사용 중: {{names}}. 저장하면 다음 실행부터 바뀝니다.",
-      "banner_other": "자동화 {{count}}개에서 사용 중: {{names}}. 저장하면 각 자동화가 다음 실행부터 바뀝니다.",
+      "banner_one": "자동화 {{count, number}}개에서 사용 중: {{names}}. 저장하면 다음 실행부터 바뀝니다.",
+      "banner_other": "자동화 {{count, number}}개에서 사용 중: {{names}}. 저장하면 각 자동화가 다음 실행부터 바뀝니다.",
       "confirmTitle": "공유 흐름을 저장할까요?",
       "confirmMessage": "{{names}}에서 이 흐름을 실행합니다. 저장하면 각 자동화가 다음 실행부터 바뀝니다.",
       "confirmAction": "모두에 저장",
@@ -2470,7 +2464,6 @@
       "or": " 또는 ",
       "lookedAtNothing": "아무것도 확인하지 않으면 실패합니다.",
       "forAutomation": "{{automation}}용: {{pack}}",
-      "brief": "소유자의 브리프({{path}})",
       "briefOpen": "소유자의 브리프({{path}})",
       "stepKinds": {
         "setup": "설정",
@@ -2527,8 +2520,8 @@
       "inputRequired": "{{name}}(필수)",
       "inputUnset": "지정 안 됨",
       "steps": "포함된 단계",
-      "childSteps_one": "{{count}}개 단계",
-      "childSteps_other": "{{count}}개 단계",
+      "childSteps_one": "{{count, number}}개 단계",
+      "childSteps_other": "{{count, number}}개 단계",
       "expands": "펼친 결과",
       "inAll": "전체 {{max}}단계 중 {{total}}단계",
       "usedBy": "사용처",
@@ -2557,8 +2550,8 @@
       "learnEnabled": "각 실행에서 학습",
       "learnOn": "켜짐",
       "learnOff": "꺼짐",
-      "roles_one": "역할 {{count}}개",
-      "roles_other": "역할 {{count}}개",
+      "roles_one": "역할 {{count, number}}개",
+      "roles_other": "역할 {{count, number}}개",
       "after": "{{hours}}시간 후",
       "learnAssertions": "Learn의 어서션",
       "pr": "풀 리퀘스트",

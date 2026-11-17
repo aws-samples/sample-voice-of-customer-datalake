@@ -398,7 +398,6 @@
     "olderRevision": "Esta ejecución usó la revisión {{n}} del flujo de trabajo.",
     "graphLabel": "Gráfico de progreso de la ejecución",
     "showAll": "Mostrar todos los eventos (filtrado por {{step}})",
-    "rounds": "Ronda {{n}}",
     "status": {
       "queued": "En cola",
       "running": "En ejecución",
@@ -448,10 +447,6 @@
       "fromNothing": "Iniciada para buscar errores en su repositorio.",
       "followHint": "Síguela en su monitor de ejecución o detenla aquí: esta ejecución termina cuando termina la de ingeniería.",
       "openMonitor": "Abrir el monitor de ejecución"
-    },
-    "gate": {
-      "pass": "Control superado",
-      "fail": "Control no superado"
     },
     "here": "Estás aquí",
     "laneStates": {
@@ -587,7 +582,6 @@
       "endStatus": "La ejecución termina como"
     },
     "loopFrameLabel": "Bucle {{n}}: hasta que {{until}}, como máximo {{rounds, number}} rondas",
-    "loopFrameHint": "Haz clic para configurar este bucle",
     "arrowLabel": "Flecha de {{source}} a {{target}} ({{condition}})",
     "conditionHint": "La flecha se sigue cuando el paso informa este resultado; «Siempre» es el camino por defecto.",
     "noConditions": "Este paso no emite veredicto, así que sus flechas se siguen siempre.",
@@ -2338,8 +2332,8 @@
       "updateAvailable": "Actualización disponible",
       "share": "{{percent}} %",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} agente",
-      "agents_other": "{{count}} agentes",
+      "agents_one": "{{count, number}} agente",
+      "agents_other": "{{count, number}} agentes",
       "more": "+{{n}}"
     },
     "team": {
@@ -2350,8 +2344,8 @@
       "noGo": "NO-GO",
       "autoDetect": "Detección automática",
       "rounds": "≤ {{n}} rondas",
-      "reviewers_one": "{{count}} revisor",
-      "reviewers_other": "{{count}} revisores"
+      "reviewers_one": "{{count, number}} revisor",
+      "reviewers_other": "{{count, number}} revisores"
     },
     "handles": {
       "go": "GO",
@@ -2399,8 +2393,8 @@
       "handle": "Punto de conexión"
     },
     "shared": {
-      "banner_one": "Lo usa {{count}} automatización: {{names}}. Al guardar, cambia a partir de su próxima ejecución.",
-      "banner_other": "Lo usan {{count}} automatizaciones: {{names}}. Al guardar, cada una cambia a partir de su próxima ejecución.",
+      "banner_one": "Lo usa {{count, number}} automatización: {{names}}. Al guardar, cambia a partir de su próxima ejecución.",
+      "banner_other": "Lo usan {{count, number}} automatizaciones: {{names}}. Al guardar, cada una cambia a partir de su próxima ejecución.",
       "confirmTitle": "¿Guardar un flujo compartido?",
       "confirmMessage": "{{names}} ejecutan este flujo. Al guardar, cada una cambia a partir de su próxima ejecución.",
       "confirmAction": "Guardar para todas",
@@ -2489,7 +2483,6 @@
       "or": " o ",
       "lookedAtNothing": "Falla si no revisó nada.",
       "forAutomation": "Para {{automation}}: {{pack}}",
-      "brief": "Las instrucciones del propietario ({{path}})",
       "briefOpen": "Las instrucciones del propietario ({{path}})",
       "stepKinds": {
         "setup": "preparación",
@@ -2546,8 +2539,8 @@
       "inputRequired": "{{name}} (obligatoria)",
       "inputUnset": "sin indicar",
       "steps": "Sus pasos",
-      "childSteps_one": "{{count}} paso",
-      "childSteps_other": "{{count}} pasos",
+      "childSteps_one": "{{count, number}} paso",
+      "childSteps_other": "{{count, number}} pasos",
       "expands": "Se expande a",
       "inAll": "{{total}} de {{max}} pasos en total",
       "usedBy": "Lo usan",
@@ -2576,8 +2569,8 @@
       "learnEnabled": "Aprender de cada ejecución",
       "learnOn": "Activado",
       "learnOff": "Desactivado",
-      "roles_one": "{{count}} rol",
-      "roles_other": "{{count}} roles",
+      "roles_one": "{{count, number}} rol",
+      "roles_other": "{{count, number}} roles",
       "after": "pasadas {{hours}} h",
       "learnAssertions": "Aserciones de Learn",
       "pr": "Pull request",

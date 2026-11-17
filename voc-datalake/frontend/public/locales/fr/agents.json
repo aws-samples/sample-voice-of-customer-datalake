@@ -398,7 +398,6 @@
     "olderRevision": "Cette exécution a utilisé la révision {{n}} du workflow.",
     "graphLabel": "Graphe de progression de l'exécution",
     "showAll": "Afficher tous les événements (filtrés sur {{step}})",
-    "rounds": "Tour {{n}}",
     "status": {
       "queued": "En file d'attente",
       "running": "En cours",
@@ -448,10 +447,6 @@
       "fromNothing": "Lancée pour chercher des bugs dans son dépôt.",
       "followHint": "Suivez-la depuis son moniteur d'exécution ou arrêtez-la ici : cette exécution se termine avec l'exécution d'ingénierie.",
       "openMonitor": "Ouvrir le moniteur d'exécution"
-    },
-    "gate": {
-      "pass": "Contrôle réussi",
-      "fail": "Contrôle échoué"
     },
     "here": "Vous êtes ici",
     "laneStates": {
@@ -587,7 +582,6 @@
       "endStatus": "Statut de fin de l'exécution"
     },
     "loopFrameLabel": "Boucle {{n}} : jusqu’à ce que {{until}}, au plus {{rounds, number}} tours",
-    "loopFrameHint": "Cliquez pour configurer cette boucle",
     "arrowLabel": "Flèche de {{source}} vers {{target}} ({{condition}})",
     "conditionHint": "La flèche est suivie quand l’étape rend ce résultat ; « Toujours » est le chemin par défaut.",
     "noConditions": "Cette étape ne rend pas de verdict : ses flèches sont toujours suivies.",
@@ -2338,8 +2332,8 @@
       "updateAvailable": "Mise à jour disponible",
       "share": "{{percent}} %",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} agent",
-      "agents_other": "{{count}} agents",
+      "agents_one": "{{count, number}} agent",
+      "agents_other": "{{count, number}} agents",
       "more": "+{{n}}"
     },
     "team": {
@@ -2350,8 +2344,8 @@
       "noGo": "NO-GO",
       "autoDetect": "Détection automatique",
       "rounds": "≤ {{n}} tours",
-      "reviewers_one": "{{count}} relecteur",
-      "reviewers_other": "{{count}} relecteurs"
+      "reviewers_one": "{{count, number}} relecteur",
+      "reviewers_other": "{{count, number}} relecteurs"
     },
     "handles": {
       "go": "GO",
@@ -2399,8 +2393,8 @@
       "handle": "Point de connexion"
     },
     "shared": {
-      "banner_one": "Utilisé par {{count}} automatisation : {{names}}. L’enregistrer la modifie dès sa prochaine exécution.",
-      "banner_other": "Utilisé par {{count}} automatisations : {{names}}. L’enregistrer modifie chacune d’elles dès sa prochaine exécution.",
+      "banner_one": "Utilisé par {{count, number}} automatisation : {{names}}. L’enregistrer la modifie dès sa prochaine exécution.",
+      "banner_other": "Utilisé par {{count, number}} automatisations : {{names}}. L’enregistrer modifie chacune d’elles dès sa prochaine exécution.",
       "confirmTitle": "Enregistrer un flux partagé ?",
       "confirmMessage": "{{names}} exécutent ce flux. L’enregistrer modifie chacune d’elles dès sa prochaine exécution.",
       "confirmAction": "Enregistrer pour toutes",
@@ -2489,7 +2483,6 @@
       "or": " ou ",
       "lookedAtNothing": "Échoue s’il n’a rien examiné.",
       "forAutomation": "Pour {{automation}} : {{pack}}",
-      "brief": "Les consignes du propriétaire ({{path}})",
       "briefOpen": "Les consignes du propriétaire ({{path}})",
       "stepKinds": {
         "setup": "préparation",
@@ -2546,8 +2539,8 @@
       "inputRequired": "{{name}} (obligatoire)",
       "inputUnset": "non renseigné",
       "steps": "Ses étapes",
-      "childSteps_one": "{{count}} étape",
-      "childSteps_other": "{{count}} étapes",
+      "childSteps_one": "{{count, number}} étape",
+      "childSteps_other": "{{count, number}} étapes",
       "expands": "Se développe en",
       "inAll": "{{total}} étapes sur {{max}} au total",
       "usedBy": "Utilisé par",
@@ -2576,8 +2569,8 @@
       "learnEnabled": "Apprendre de chaque exécution",
       "learnOn": "Activé",
       "learnOff": "Désactivé",
-      "roles_one": "{{count}} rôle",
-      "roles_other": "{{count}} rôles",
+      "roles_one": "{{count, number}} rôle",
+      "roles_other": "{{count, number}} rôles",
       "after": "au bout de {{hours}} h",
       "learnAssertions": "Assertions de Learn",
       "pr": "Pull request",

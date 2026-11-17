@@ -8,7 +8,9 @@
  *
  * @module components/WorkflowEditor/nodes/AgentNode
  */
+import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
+import { formatDecimal } from '../../../utils/numberFormat'
 import { NodeChips, NodeFrame, NodeIssue, NodeLines, NodeTile } from './NodeParts'
 import { isQuiet, useStateWords } from './nodeState'
 import { roleGlyphName } from './nodeGlyphs'
@@ -39,7 +41,7 @@ function ranChips(t: TFunction<'agents'>, ran: NonNullable<StepState['ran']>): N
   const chips: NodeChip[] = []
   if (ran.model !== undefined) chips.push({ text: modelShortName(ran.model), tone: 'muted' })
   if (ran.skill !== undefined) chips.push({ text: ran.skill, tone: 'muted' })
-  if (ran.costUsd !== undefined) chips.push({ text: t('canvas.chips.cost', { amount: ran.costUsd.toFixed(2) }), tone: 'muted' })
+  if (ran.costUsd !== undefined) chips.push({ text: t('canvas.chips.cost', { amount: formatDecimal(ran.costUsd, i18n.language, 2) }), tone: 'muted' })
   if (ran.agents > 1) chips.push({ text: t('canvas.chips.agents', { count: ran.agents }), tone: 'muted' })
   return chips
 }

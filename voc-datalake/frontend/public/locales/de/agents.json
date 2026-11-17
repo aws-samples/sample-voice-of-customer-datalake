@@ -385,7 +385,6 @@
     "olderRevision": "Dieser Lauf verwendete Revision {{n}} des Workflows.",
     "graphLabel": "Fortschrittsgraph des Laufs",
     "showAll": "Alle Ereignisse anzeigen (gefiltert nach {{step}})",
-    "rounds": "Runde {{n}}",
     "status": {
       "queued": "In Warteschlange",
       "running": "Läuft",
@@ -435,10 +434,6 @@
       "fromNothing": "Gestartet, um in seinem Repository nach Fehlern zu suchen.",
       "followHint": "Verfolgen Sie ihn in seinem Lauf-Monitor oder stoppen Sie ihn hier: Dieser Lauf endet, wenn der Engineering-Lauf endet.",
       "openMonitor": "Lauf-Monitor öffnen"
-    },
-    "gate": {
-      "pass": "Prüfung bestanden",
-      "fail": "Prüfung nicht bestanden"
     },
     "here": "Sie sind hier",
     "laneStates": {
@@ -571,7 +566,6 @@
       "endStatus": "Lauf endet als"
     },
     "loopFrameLabel": "Schleife {{n}}: bis {{until}}, höchstens {{rounds, number}} Runden",
-    "loopFrameHint": "Klicken, um diese Schleife zu konfigurieren",
     "arrowLabel": "Pfeil von {{source}} nach {{target}} ({{condition}})",
     "conditionHint": "Der Pfeil wird genommen, wenn der Schritt dieses Ergebnis meldet; „Immer“ ist der Standardweg.",
     "noConditions": "Dieser Schritt meldet kein Urteil, daher werden seine Pfeile immer genommen.",
@@ -2319,8 +2313,8 @@
       "updateAvailable": "Update verfügbar",
       "share": "{{percent}} %",
       "cost": "${{amount}}",
-      "agents_one": "{{count}} Agent",
-      "agents_other": "{{count}} Agenten",
+      "agents_one": "{{count, number}} Agent",
+      "agents_other": "{{count, number}} Agenten",
       "more": "+{{n}}"
     },
     "team": {
@@ -2331,8 +2325,8 @@
       "noGo": "NO-GO",
       "autoDetect": "Automatisch erkennen",
       "rounds": "≤ {{n}} Runden",
-      "reviewers_one": "{{count}} Prüfer",
-      "reviewers_other": "{{count}} Prüfer"
+      "reviewers_one": "{{count, number}} Prüfer",
+      "reviewers_other": "{{count, number}} Prüfer"
     },
     "handles": {
       "go": "GO",
@@ -2380,8 +2374,8 @@
       "handle": "Verbindungspunkt"
     },
     "shared": {
-      "banner_one": "Wird von {{count}} Automatisierung verwendet: {{names}}. Speichern ändert sie ab ihrem nächsten Lauf.",
-      "banner_other": "Wird von {{count}} Automatisierungen verwendet: {{names}}. Speichern ändert jede davon ab ihrem nächsten Lauf.",
+      "banner_one": "Wird von {{count, number}} Automatisierung verwendet: {{names}}. Speichern ändert sie ab ihrem nächsten Lauf.",
+      "banner_other": "Wird von {{count, number}} Automatisierungen verwendet: {{names}}. Speichern ändert jede davon ab ihrem nächsten Lauf.",
       "confirmTitle": "Gemeinsam genutzten Ablauf speichern?",
       "confirmMessage": "{{names}} führen diesen Ablauf aus. Speichern ändert jede davon ab ihrem nächsten Lauf.",
       "confirmAction": "Für alle speichern",
@@ -2470,7 +2464,6 @@
       "or": " oder ",
       "lookedAtNothing": "Schlägt fehl, wenn sie nichts geprüft hat.",
       "forAutomation": "Für {{automation}}: {{pack}}",
-      "brief": "Briefing des Eigentümers ({{path}})",
       "briefOpen": "Briefing des Eigentümers ({{path}})",
       "stepKinds": {
         "setup": "setup",
@@ -2527,8 +2520,8 @@
       "inputRequired": "{{name}} (erforderlich)",
       "inputUnset": "nicht angegeben",
       "steps": "Seine Schritte",
-      "childSteps_one": "{{count}} Schritt",
-      "childSteps_other": "{{count}} Schritte",
+      "childSteps_one": "{{count, number}} Schritt",
+      "childSteps_other": "{{count, number}} Schritte",
       "expands": "Wird erweitert zu",
       "inAll": "{{total}} von {{max}} Schritten insgesamt",
       "usedBy": "Verwendet von",
@@ -2557,8 +2550,8 @@
       "learnEnabled": "Aus jedem Lauf lernen",
       "learnOn": "An",
       "learnOff": "Aus",
-      "roles_one": "{{count}} Rolle",
-      "roles_other": "{{count}} Rollen",
+      "roles_one": "{{count, number}} Rolle",
+      "roles_other": "{{count, number}} Rollen",
       "after": "nach {{hours}} h",
       "learnAssertions": "Zusicherungen von Learn",
       "pr": "Pull Request",
