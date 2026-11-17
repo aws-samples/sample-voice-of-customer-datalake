@@ -2404,7 +2404,7 @@
     "editInFlows": "在“流程”中编辑",
     "asRun": "本次运行所用的设置 · r{{n}}",
     "asRunUsed": "本次运行所用的设置",
-    "openSkill": "打开其技能历史",
+    "openCard": "在注册表中打开",
     "loop": "循环",
     "tab": {
       "agents": "智能体",

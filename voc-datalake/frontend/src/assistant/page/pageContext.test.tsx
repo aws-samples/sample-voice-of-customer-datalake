@@ -26,7 +26,7 @@ describe('pageContextFromLocation', () => {
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],
     ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows', tab: 'workflows' }],
     ['/agents/workflows/wf_1', '', { kind: 'agents', path: '/agents/workflows/wf_1' }],
-    ['/agents/skills/fixer/v/2', '', { kind: 'agents', path: '/agents/skills/fixer/v/2', tab: 'skills' }],
+    ['/agents/skills/fixer/versions/2', '', { kind: 'agents', path: '/agents/skills/fixer/versions/2', tab: 'skills' }],
     ['/agents/ag_1/runs', '', { kind: 'agent', path: '/agents/ag_1/runs', agentId: 'ag_1', tab: 'runs' }],
     ['/agents/ag_1', '?tab=runs', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
     ['/admin/platform/deployment-brand', '', { kind: 'settings', path: '/admin/platform/deployment-brand', tab: 'platform' }],

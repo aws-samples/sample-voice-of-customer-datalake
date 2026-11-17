@@ -2404,7 +2404,7 @@
     "editInFlows": "흐름에서 편집",
     "asRun": "이 실행에서 사용한 그대로 · r{{n}}",
     "asRunUsed": "이 실행에서 사용한 그대로",
-    "openSkill": "스킬 기록 열기",
+    "openCard": "레지스트리에서 열기",
     "loop": "루프",
     "tab": {
       "agents": "에이전트",

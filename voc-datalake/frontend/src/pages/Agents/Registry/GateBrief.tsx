@@ -32,8 +32,9 @@ function BriefMeta({ packs }: Readonly<{ packs: readonly string[] }>) {
   )
 }
 
-/** A brief's text on the surface, read once `open`: loading lines, its read failure, or none in this release. */
-function BriefSurface({ brief, variant, headingLevel, open }: Readonly<{
+/** A brief's text on the surface, read once `open`: loading lines, its read failure, or none in this release. The
+ * flow editor's gate inspector shows its briefs with it too (7.52.00 C2's GatePacks.tsx). */
+export function BriefSurface({ brief, variant, headingLevel, open }: Readonly<{
   brief: Pick<GateBrief, 'id' | 'path' | 'packs'>; variant: 'panel' | 'page'; headingLevel: 1 | 2 | 3; open: boolean
 }>) {
   const { t } = useTranslation('agents')

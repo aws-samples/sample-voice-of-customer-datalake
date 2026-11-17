@@ -118,7 +118,7 @@ describe('trailSegments: a page\'s places are paths, and the trail ends at the p
     ['/participants/people', ['participants']],
     ['/data-explorer/processed', ['data-explorer']],
     ['/agents/spend', ['agents']],
-    ['/agents/skills/fixer/v/2', ['agents']],
+    ['/agents/skills/fixer/versions/2', ['agents']],
     ['/agents/workflows', ['agents']],
     ['/agents/workflows/wf_1', ['agents', 'workflows', 'wf_1']],
     ['/agents/connections/github/created', ['agents', 'connections', 'github', 'created']],

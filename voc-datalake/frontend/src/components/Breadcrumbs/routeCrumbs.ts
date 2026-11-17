@@ -73,6 +73,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'spend': { labelKey: 'common:breadcrumbs.spend', path: '/agents' },
   'runs': { labelKey: 'common:breadcrumbs.runs', path: '/agents' },
   'skills': { labelKey: 'common:breadcrumbs.skills', path: '/agents' },
+  // `/agents/registry[/…]` (7.52.00 C3): a view of /agents too; its cards, gates and briefs are its page's own.
+  'registry': { labelKey: 'common:breadcrumbs.registry', path: '/agents' },
   // `/agents/setup/<step>` — the engineering setup guide; its steps are its own places (the trail ends at it).
   'setup': { labelKey: 'common:breadcrumbs.setupGuide' },
   // `/agents/engineering/:runId[/a/<agent>]` — a run's workspace: the crumb is the list of runs (Agents → Runs).

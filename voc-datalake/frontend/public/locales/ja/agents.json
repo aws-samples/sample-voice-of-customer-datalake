@@ -2404,7 +2404,7 @@
     "editInFlows": "フローで編集",
     "asRun": "この実行で使われた内容 · r{{n}}",
     "asRunUsed": "この実行で使われた内容",
-    "openSkill": "スキルの履歴を開く",
+    "openCard": "レジストリで開く",
     "loop": "ループ",
     "tab": {
       "agents": "エージェント",

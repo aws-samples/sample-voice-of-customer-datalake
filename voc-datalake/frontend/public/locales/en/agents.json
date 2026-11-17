@@ -2350,7 +2350,7 @@
     "editInFlows": "Edit in Flows",
     "asRun": "As this run used it · r{{n}}",
     "asRunUsed": "As this run used it",
-    "openSkill": "Open its skill history",
+    "openCard": "Open it in the Registry",
     "loop": "Loop",
     "tab": {
       "agents": "Agents",

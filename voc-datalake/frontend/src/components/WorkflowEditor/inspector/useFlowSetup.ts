@@ -1,7 +1,7 @@
 /**
  * @fileoverview The flow canvas's reads of the setup behind its steps (7.52.00 C2; docs/ux part 5 §5.6 "Hooks"): the
- * Registry's cards (`useRegistryCards`, `useRegistryCard`), the gate packs (`useGatePacks`) and a brief
- * (`useGateBrief`), the assertions' vocabulary (`useAssertionVocabulary`), a flow's users (`useFlowUsage`), a flow at
+ * Registry's cards (`useRegistryCards`, `useRegistryCard`), the gate packs (`useGatePacks`; a brief's text is the
+ * Registry's own read, pages/Agents/Registry/gateBriefAdapter.ts), the assertions' vocabulary (`useAssertionVocabulary`), a flow's users (`useFlowUsage`), a flow at
  * a revision (`useFlowRevision`) and its expansion (`useExpandedFlow`). Reads are cached for five minutes; each asks
  * only where it can be answered: an administrator, a deployment with the engineering agents.
  *
@@ -59,18 +59,6 @@ export function useGatePacks(connection: string | null, enabled = true) {
     queryFn: () => flowSetupApi.gates(connection),
     enabled: allowed && enabled,
     staleTime: SETUP_STALE_MS,
-    retry: retryOnceUnlessNotFound,
-  })
-}
-
-/** An owner's brief with its text, read when it is opened (45–156 KB each). */
-export function useGateBrief(id: string, open: boolean) {
-  const allowed = useCanReadSetup()
-  return useQuery({
-    queryKey: flowSetupKeys.brief(id),
-    queryFn: () => flowSetupApi.brief(id),
-    enabled: allowed && open && id !== '',
-    staleTime: Infinity,
     retry: retryOnceUnlessNotFound,
   })
 }

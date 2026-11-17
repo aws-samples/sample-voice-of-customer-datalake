@@ -1,8 +1,10 @@
 /**
  * @fileoverview What the flow canvas reads of the setup behind a step (7.52.00 C2; docs/ux part 5 §5.4, §5.5): the
  * Registry's cards (`GET /agents/engineering/registry[/<card>]?connection=`), the quality gates' packs with their
- * steps, tools and briefs (`GET …/gates?connection=`, a brief's text `GET …/gates/briefs/<id>`) and the assertions'
- * closed vocabulary (`GET …/assertions`), as `lambda/shared/agents_engineering_registry_routes.py` answers them.
+ * steps, tools and briefs (`GET …/gates?connection=`; a brief's text is the Registry's read, engineeringRegistryApi.ts)
+ * and the assertions' closed vocabulary (`GET …/assertions`), as `lambda/shared/agents_engineering_registry_routes.py`
+ * answers them. The Registry's pages (7.52.00 C3) read the same routes through engineeringRegistryApi.ts: one client
+ * for both is a follow-up (the two parse the same answers for different screens).
  *
  * Administrators only, and only where the engineering agents are on (404 elsewhere): the inspector and the palette
  * ask only then, and a canvas without them still draws every step from its definition. Every read is lenient: an
@@ -126,7 +128,7 @@ const GatePackSchema = z.object({
 })
 export type GatePack = z.output<typeof GatePackSchema>
 
-/** An owner's brief, without its text (read on its own: {@link flowSetupApi.brief}). */
+/** An owner's brief, without its text (read on its own: engineeringRegistryApi.brief). */
 const BriefSchema = z.object({ id: z.string().min(1), path: text, packs: strings, digest: text, bytes: z.number().catch(0) })
 export type GateBrief = z.output<typeof BriefSchema>
 
@@ -148,8 +150,6 @@ const GatesSchema = z.object({
 })
 export type GatesView = z.output<typeof GatesSchema>
 
-const BriefTextSchema = BriefSchema.extend({ text: text })
-export type GateBriefText = z.output<typeof BriefTextSchema>
 
 /** One argument of an assertion: `role` (a role id), `integer` (with its bounds) or text. */
 const AssertionArgSchema = z.object({ name: z.string().min(1), type: text, minimum: maybeNumber, maximum: maybeNumber })
@@ -194,7 +194,6 @@ export const flowSetupKeys = {
   registry: (connection: string | null) => ['flow-setup', 'registry', connection ?? ''] as const,
   card: (card: string, connection: string | null) => ['flow-setup', 'card', card, connection ?? ''] as const,
   gates: (connection: string | null) => ['flow-setup', 'gates', connection ?? ''] as const,
-  brief: (id: string) => ['flow-setup', 'brief', id] as const,
   assertions: () => ['flow-setup', 'assertions'] as const,
 }
 
@@ -210,8 +209,6 @@ export const flowSetupApi = {
   gates: async (connection: string | null): Promise<GatesView> =>
     parsed(GatesSchema, await fetchApi<unknown>(scoped(GATES, connection)), 'gates'),
 
-  brief: async (id: string): Promise<GateBriefText> =>
-    parsed(BriefTextSchema, await fetchApi<unknown>(`${GATES}/briefs/${encodeURIComponent(id)}`), 'brief'),
 
   assertions: async (): Promise<AssertionVocabulary> =>
     parsed(VocabularySchema, await fetchApi<unknown>('/agents/engineering/assertions'), 'assertions'),

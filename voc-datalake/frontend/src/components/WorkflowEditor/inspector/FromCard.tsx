@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import LoadFailed from '../../LoadFailed/LoadFailed'
-import { agentsPath } from '../../../pages/Agents/agentsPaths'
+import { registryCardPath } from '../../../pages/Agents/Registry/registryPaths'
 import { modelShortName } from '../nodes/nodeText'
 import { Facts, SectionHeading, SectionLoading } from './InspectorShell'
 import { useCanReadSetup, useRegistryCard } from './useFlowSetup'
@@ -83,8 +83,8 @@ function CardFacts({ card }: Readonly<{ card: RegistryCard }>) {
   return (
     <>
       <Facts rows={cardRows(t, card)} />
-      <Link to={agentsPath({ view: 'skills', role: card.base_role || card.id })} className="btn btn-ghost btn-sm">
-        {t('inspector.openSkill')} <ExternalLink size={12} aria-hidden="true" />
+      <Link to={registryCardPath(card.id)} className="btn btn-ghost btn-sm">
+        {t('inspector.openCard')} <ExternalLink size={12} aria-hidden="true" />
       </Link>
     </>
   )

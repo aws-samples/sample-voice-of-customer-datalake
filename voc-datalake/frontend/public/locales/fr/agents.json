@@ -2423,7 +2423,7 @@
     "editInFlows": "Modifier dans Flux",
     "asRun": "Tel que cette exécution l’a utilisé · r{{n}}",
     "asRunUsed": "Tel que cette exécution l’a utilisé",
-    "openSkill": "Ouvrir l’historique de sa compétence",
+    "openCard": "Ouvrir dans le registre",
     "loop": "Boucle",
     "tab": {
       "agents": "Agents",

@@ -5589,16 +5589,6 @@
   {
     "file": "api/flowSetupApi.ts",
     "method": "GET",
-    "call": "`${GATES}/briefs/${encodeURIComponent(id)}`",
-    "probes": [
-      {
-        "path": "/agents/engineering/gates/briefs/java"
-      }
-    ]
-  },
-  {
-    "file": "api/flowSetupApi.ts",
-    "method": "GET",
     "call": "'/agents/engineering/assertions'",
     "probes": [
       {

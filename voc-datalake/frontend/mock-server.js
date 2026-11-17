@@ -1510,7 +1510,7 @@ function handleDomainModules(req, res, url) {
     // the runs' routes too, which would read `registry`, `gates`, `knowledge` … as a run id)
     || handleEngineeringRegistryRoutes(req, res, url, send, shared)
     || handleEngineeringKnowledgeRoutes(req, res, url, send, shared)
-    // (7.52.00 C2: what the Registry's routes above leave, the assertions' vocabulary)
+    // (7.52.00 C2: the assertions' vocabulary)
     || handleFlowSetupRoutes(req, res, url, send)
     // (before the runs' routes, which would read `setup` and `readiness` as a run id)
     || handleEngineeringSetupRoutes(req, res, url, send, shared)
