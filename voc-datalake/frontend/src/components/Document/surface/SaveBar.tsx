@@ -8,6 +8,7 @@
 import clsx from 'clsx'
 import { Loader2, Save, Undo2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import StickyActionBar from '../../StickyActionBar/StickyActionBar'
 import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { ConflictBanner } from '../conflict/ConflictBanner'
 import MergeDialog from '../conflict/MergeDialog'
@@ -32,7 +33,8 @@ export default function SaveBar<S extends StoredDocument, H extends DraftEditor>
   const idle = !state.dirty || state.saving
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* (a registered action bar: the assistant's launcher keeps clear of Save) */}
+      <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-2">
         <p role="status" aria-live="polite" className={clsx('mr-auto min-w-0 text-[13px]', state.dirty ? 'text-warn' : 'text-muted')}>
           {statusOf(state, t)}
         </p>
@@ -46,7 +48,7 @@ export default function SaveBar<S extends StoredDocument, H extends DraftEditor>
           {state.saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
           {state.saving ? t('actions.status.saving') : t('actions.save')}
         </button>
-      </div>
+      </StickyActionBar>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
       {state.merge.proposal === null ? null : (
         <MergeDialog changes={state.merge.proposal.changes} onTake={state.merge.take} onClose={state.merge.close} />

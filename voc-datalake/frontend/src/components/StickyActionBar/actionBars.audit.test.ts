@@ -48,6 +48,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   BoardEditor: 'Administration → Feedback boards → board editor → Save board',
   DefaultThemeCard: 'Administration → Brand & appearance → Default theme → Save',
   BrandEditorCard: 'Administration → Brand & appearance → Brand → Save; Workspace settings → Brand → Save; Administration → Platform → Deployment brand → Save',
+  SaveBar: 'the document surface\'s own save row (components/Document/surface): Discard and Save',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */
@@ -68,6 +69,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   TimeRangeSelector: 'popover in the page header',
   UserAdmin: 'Create user is a page-header action',
   RunsTab: 'Run now heads the runs list',
+  RunRequests: 'Agents → Runs → run requests: Confirm and Decline are each request\'s own controls in the list, nothing left unsaved',
   Agents: 'New agent is a page-header action',
   GitHubAppPanel: 'Create the App on GitHub ends a two-field choice inside the Connect GitHub card (it posts to github.com at once, nothing left unsaved); the App rows\' actions act at once',
   DialFix: 'Set to AI-driven confirms one inline readiness fix inside the Set up dialog (it saves the caller\'s way of working at once, nothing left unsaved); the dialog\'s own save row is its footer',

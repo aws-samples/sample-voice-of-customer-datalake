@@ -394,7 +394,7 @@ describe('useCanvasDocument', () => {
     await waitFor(() => expect(api.updateDocument).toHaveBeenCalledTimes(1))
   })
 
-  it('runs the shared Cancel-keeps-the-draft contract (useCanvasDocument)', async () => {
+  it('runs the shared Cancel-keeps-the-draft contract (useCanvasDocument, whose guard is its useDocumentDraft\'s)', async () => {
     const landed: { refetch?: () => void } = {}
     function RefetchingHost() {
       const [held, setHeld] = useState(custom)

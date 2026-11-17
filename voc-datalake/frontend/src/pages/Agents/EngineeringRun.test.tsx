@@ -108,7 +108,8 @@ describe('the run monitor', () => {
     const gate = await screen.findByTestId('step-gate')
     expect(gate.className).toContain('border-danger')
     expect(screen.getByTestId('step-board').className).not.toContain('border-accent')
-    expect(screen.getByTestId('step-pr').className).toContain('opacity-60')
+    // (7.51.04: a way not taken reads dotted, never dimmed by opacity)
+    expect(screen.getByTestId('step-pr').className).toContain('border-dotted')
   })
 
   it('says in an agent\'s session why it looks stuck, and shows its session\'s facts in the Cost tab', async () => {

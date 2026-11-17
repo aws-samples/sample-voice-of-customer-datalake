@@ -87,8 +87,9 @@ describe('DocumentVersions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Compare v1 with the current version' }))
 
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('1 lines added, 1 lines removed')).toBeInTheDocument()
+    // (X1: the rendered block diff by default, on the document's side sheet; Source shows the lines)
+    const dialog = await screen.findByRole('dialog', { name: 'v1 compared with the current version' })
+    expect(within(dialog).getByText('Blocks added: 1 · removed: 1')).toBeInTheDocument()
   })
 
   it('restores an earlier version as a new one and selects it', async () => {

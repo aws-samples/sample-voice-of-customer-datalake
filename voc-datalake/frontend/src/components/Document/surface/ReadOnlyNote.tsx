@@ -24,7 +24,7 @@ const NOTE_CLASS = 'flex flex-wrap items-center gap-2 rounded-lg border border-i
 /** "Viewing v2 of 4 · Read only", Back to latest and (for an editor) Restore. */
 export function OlderVersionBanner({ note }: Readonly<{ note: OlderVersionNote }>) {
   const { t } = useTranslation('documents')
-  const version = t('versions.number', { n: note.number })
+  const version = t('versions.number', { number: note.number })
   const text = note.latest === null
     ? t('versions.viewingOne', { version })
     : t('versions.viewing', { version, latest: note.latest })

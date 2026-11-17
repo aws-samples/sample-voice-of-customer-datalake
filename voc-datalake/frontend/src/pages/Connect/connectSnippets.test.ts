@@ -15,7 +15,7 @@ import {
 
 const FRONTEND = path.join(__dirname, '../../..')
 const SKILL = fs.readFileSync(path.join(FRONTEND, 'public', 'voc-mcp-skill.md'), 'utf8')
-const TOOLS_SOURCE = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py']
+const TOOLS_SOURCE = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py', 'mcp_global_tools_engineering.py']
   .map((file) => fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', file), 'utf8'))
   .join('\n')
 
