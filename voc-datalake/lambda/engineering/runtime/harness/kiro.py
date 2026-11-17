@@ -122,8 +122,6 @@ CONTINUE_LIMIT: Final = 'Continue with your task where you stopped.'
 #: The environment kiro-cli gets from the harness's own (its proxy: the agent's, the session's one way out).
 PROXY_VARIABLES: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy')
 PATH: Final = '/usr/local/bin:/usr/bin:/bin'
-#: The tool server's environment beside the harness's ids: the agent's proxy, so its boto3 reaches S3 and the board.
-TOOL_PROXY_VARIABLES: Final = (*PROXY_VARIABLES, 'AWS_SDK_LOAD_CONFIG')
 
 
 class KiroNotOffered(RuntimeError):

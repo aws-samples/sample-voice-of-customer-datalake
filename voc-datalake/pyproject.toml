@@ -63,6 +63,11 @@ ignore_names = [
     # in scripts/vulture_whitelist.py, by their exact class and attribute, not here.
     # http.server.BaseHTTPRequestHandler callbacks, called by the server itself (engineering/runtime/unit_runner.py).
     "do_GET", "do_POST", "log_message",
+    # engineering/runtime/unit_runner.py Runner's agent API server, kept so the local runtime's teardown
+    # (runtime/test/local_runtime.py) can close it; the runner serves it until its process ends.
+    "_agent_api",
+    # botocore's signer reads a credential's secret_key (the web reviews reader's spec signs with fake credentials).
+    "secret_key",
     # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).
     "handle_starttag",
     "handle_endtag",

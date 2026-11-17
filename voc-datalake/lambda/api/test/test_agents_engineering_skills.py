@@ -196,8 +196,8 @@ def test_the_scorecards_compare_the_versions_asked_for_on_the_connections_own_ro
     status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN, 'versions': '3,2'})
     assert (status, body['versions'], [c['label'] for c in body['cards']]) == (200, [3, 2], ['fixer@3', 'fixer@2'])
     assert body['cards'][0] == {
-        # (fixer ships as version 2: a version 3 asked for by number never shipped, and its card says so)
-        'version': 3, 'source': 'not_shipped', 'label': 'fixer@3', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
+        # (fixer ships as version 3 since 7.53.00, the bundle's: a version asked for by number is labelled by that)
+        'version': 3, 'source': 'shipped', 'label': 'fixer@3', 'runs': 1, 'pass_rate': 0.75, 'tasks_done': 6, 'tasks_failed': 1,
         'needs_human': 1, 'reposts': 0, 'review_rounds': 2, 'attempts': 4, 'cost_usd': 0.75, 'seconds': 600,
         'more': False, 'since': '2026-11-13T08:00:00Z', 'until': '2026-11-13T09:00:00Z',
         'human_edits': {'runs': 0, 'changes_requested': 0, 'people_commits_after_merge': 0, 'reverts': 0, 'more': False}}
@@ -211,11 +211,12 @@ def test_by_default_the_scorecards_show_the_shipped_versions_only_never_the_stor
     _proposals(env, 6)   # (shared versions 1-7 in the store: their numbers are never offered as scorecards)
     env.score('fixer@2', '01JD0000000000000000000010', done=3)
     status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN})
-    # (fixer ships as version 2 since 7.50.00: the shipped one and the one before it)
-    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [2, 1], 'shipped', False)
-    assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [(2, 'shipped', 1), (1, 'shipped', 0)]
+    # (fixer ships as version 3 since 7.53.00, the compiled bundle's: the shipped one and the ones before it)
+    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [3, 2, 1], 'shipped', False)
+    assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [
+        (3, 'shipped', 0), (2, 'shipped', 1), (1, 'shipped', 0)]
     coordinator = _call(lambda_context, 'GET', '/agents/engineering/scorecards/coordinator', query={'connection': CONN})[1]
-    assert coordinator['versions'] == [3, 2, 1]   # (it ships as version 3: the shipped one and the ones before it)
+    assert coordinator['versions'] == [5, 4, 3, 2, 1]   # (it ships as version 5: the shipped one and the ones before it)
 
 
 @pytest.mark.usefixtures('env')
