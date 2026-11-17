@@ -6,6 +6,8 @@ host's token only for its fetch) keeps one entry per commit and 14-day generatio
 1, complete once its ``READY`` exists (the runtime launches no agent before, and records the generation it found on
 the agent's session). Each session's entry point mounts ``engineering/cache/<connection>/`` read-only at
 ``/mnt/voc-cache`` (Mountpoint for Amazon S3: no appends or random writes, so nothing is ever written through it),
+its files shown as the agent user's (7.51.03, ``unit_runner.Runner._mount``: the agent's git runs in a user namespace
+that maps only that user, and refuses a repository another uid owns as "dubious ownership"),
 and the agent's first commands clone ``/mnt/voc-cache/<commit>/g<N>/repo.git``: ``--filter=blob:none`` and a sparse
 checkout of only the task's paths, so a monorepo costs what the task touches (the writer sets git's
 uploadpack.allowFilter on the entry's repository; without it git ignores the filter and clones whole). The agent user runs every git command, with hooks, the file-system
@@ -40,7 +42,8 @@ _PATH_RE: Final = re.compile(r'^[A-Za-z0-9_.@+][A-Za-z0-9_./@+-]{0,511}\Z')
 #: Every git command: no system config, no terminal prompt, no hooks, no file-system monitor, no pager, no
 #: external diff, no credential helper, no protocol but file.
 #: Absolute paths: the agent's PATH may hold a directory the `code` user can write (a toolchain's bin directory).
-GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', '/usr/bin/git',
+GIT_PROGRAM: Final = '/usr/bin/git'
+GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', GIT_PROGRAM,
               '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.pager=cat',
               '-c', 'diff.external=', '-c', 'credential.helper=',
               '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=always',
@@ -63,6 +66,17 @@ def repo_git(*args: str) -> tuple[str, ...]:
     working tree is never read, and every path git writes (``apply`` included) is inside the working tree."""
     env, *rest = GIT
     return (env, '-C', CHECKOUT_DIR, *rest, f'--git-dir=../{GIT_DIR}', '--work-tree=.', *args)
+
+
+def step_name(argv: Sequence[str]) -> str:
+    """A checkout command's step in plain words (7.51.03, for a failure's reason): ``git`` and its subcommand
+    (``git clone``, ``git sparse-checkout``, ``git checkout``), else its program's name (``find``, ``chmod``)."""
+    if GIT_PROGRAM not in argv:
+        return argv[0].rsplit('/', 1)[-1] if argv else ''
+    after = list(argv[argv.index(GIT_PROGRAM) + 1:])
+    while after and after[0].startswith('-'):
+        after = after[2:] if after[0] == '-c' else after[1:]
+    return f'git {after[0]}' if after else 'git'
 
 
 def share_working_tree() -> tuple[str, ...]:

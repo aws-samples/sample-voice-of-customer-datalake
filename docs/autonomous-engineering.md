@@ -2013,7 +2013,10 @@ wait closes.
   namespace dies with it (and its forwarder with it).
 - **Sparse partial clones.** The checkout cache (below) holds each run's commit under its connection's prefix,
   `engineering/cache/<connection>/<commit>/g<N>/repo.git`. With its first session the runner mounts the connection's
-  prefix read-only at `/mnt/voc-cache` (Mountpoint for Amazon S3; nothing is written through it), and the agent clones
+  prefix read-only at `/mnt/voc-cache` (Mountpoint for Amazon S3; nothing is written through it), its files shown as
+  the agent user's (`--uid`/`--gid` of `unit`, 7.51.03: the agent's git runs in a user namespace that maps only that
+  user, and refuses a repository owned by any other uid as "dubious ownership", the clone and every later fetch of a
+  blob from the cache alike), and the agent clones
   `/mnt/voc-cache/<commit>/g<N>/repo.git` (the commit checked as a full object id, `N` the generation its launch found
   and recorded on its session, checked as a whole number) with `--depth=1 --filter=blob:none` (git
   hangs on a blob-less clone of a shallow repository without the depth) and a sparse checkout of only its task's paths
@@ -2413,7 +2416,13 @@ wait closes.
   than its session has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
   whose checkpoint does not come within 3 minutes is held as waiting, without its session, from its last checkpoint. A crash (an exit other than 0
   and 75, a lapsed lease, a running agent's new session that will not start) is continued twice in a row at most,
-  then the task is re-posted (the run coordinator: the run goes to a person). Any number of continuations
+  then the task is re-posted (the run coordinator: the run goes to a person). A checkout command that exits with a
+  failure code of its own (git's 128 and the like; never a timeout or a kill) is no crash (7.51.03): a new session
+  would only repeat it. The agent ends failed at once, and the run goes to a person at `checkout_failed`. The reason
+  (the step, the exit code, the redacted start of its stderr, e.g. "The repository checkout failed (git clone, exit
+  128): fatal: detected dubious ownership in repository at …") is in the run's thread, on the decision point's
+  `RUNLOG#` row and META's `needs_human_detail`, and in the agent's inspection data; a worker's task is re-posted
+  with it, and a Resume launches a new coordinator in place of a failed one. Any number of continuations
   otherwise; an agent held without a session whose new one will not start is tried again at its next wake, tick or
   Resume.
 - **Checkpoints.** An agent saves each checkpoint as a new object, in the workspace's layout under its task's commit

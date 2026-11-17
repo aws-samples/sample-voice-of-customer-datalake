@@ -80,6 +80,8 @@ class FakeControl:
     spend: Budget = field(default_factory=lambda: Budget(tokens=0, cost_usd=0.0, max_tokens=None, max_cost_usd=None))
     stops: set[str] = field(default_factory=set)
     humans: list[tuple[str, str]] = field(default_factory=list)
+    #: The plain-words detail the last decision point of each run was given with (7.51.03), when it had one.
+    details: dict[str, str] = field(default_factory=dict)
     started: int = 0
     #: The alert the next tick's check gives (None: no alert); ``sent``, each one the supervisor closed.
     alert: BudgetAlert | None = None
@@ -103,8 +105,10 @@ class FakeControl:
     def stop_requested(self, run_id: str) -> bool:
         return run_id in self.stops
 
-    def needs_human(self, run_id: str, reason: str) -> None:
+    def needs_human(self, run_id: str, reason: str, detail: str = '') -> None:
         self.humans.append((run_id, reason))
+        if detail:
+            self.details[run_id] = detail
 
     def is_active(self, run_id: str) -> bool:
         """Active until stopped or sent to a person (a Resume is the test's to model)."""

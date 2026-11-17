@@ -206,6 +206,25 @@ def test_the_supervisors_decision_point_is_recorded_at_its_clocks_time(aws: Any)
     assert _history(aws[1])[-1] == ('needs_human', 'supervisor', 'budget', '1970-01-01T00:01:30Z')
 
 
+def test_a_decision_point_keeps_what_sent_the_run_there_until_the_run_is_resumed(aws: Any):
+    """7.51.03: the supervisor's plain-words detail (a checkout that failed) is on the decision point's RUNLOG row and
+    on META while the run waits there; a later decision point without one, or a Resume, leaves none on META."""
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    why = 'The repository checkout failed (git clone, exit 128): fatal: detected dubious ownership in repository'
+    TableRunControl(runs, clock=lambda: 60.0).needs_human(RUN, 'checkout_failed', why)
+    rows = aws[1].query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                        ExpressionAttributeValues={':pk': META['pk'], ':log': 'RUNLOG#'})['Items']
+    assert [(row['reason'], row['detail']) for row in rows if row['status'] == 'needs_human'] == [
+        ('checkout_failed', why)]
+    assert aws[1].get_item(Key=META)['Item']['needs_human_detail'] == why
+    runs.needs_human(RUN, 'budget', now=120)
+    assert 'needs_human_detail' not in aws[1].get_item(Key=META)['Item']
+    runs.needs_human(RUN, 'checkout_failed', now=180, detail=why)
+    runs.resume(RUN, now=240)
+    assert {'needs_human', 'needs_human_detail'} & set(aws[1].get_item(Key=META)['Item']) == set()
+
+
 def test_a_status_change_that_lost_a_race_with_another_write_of_meta_is_tried_again(
         aws: Any, monkeypatch: pytest.MonkeyPatch):
     runs = RunStore(aws[1])

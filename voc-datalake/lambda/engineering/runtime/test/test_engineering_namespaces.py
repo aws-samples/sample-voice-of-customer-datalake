@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from engineering.runtime import unit_runner
+from engineering.runtime import checkout, unit_runner
 
 #: This file's runner, as the forwarder runs it in the image (``python3 -I /opt/voc/unit_runner.py forward``).
 FORWARDER = (sys.executable, '-I', unit_runner.__file__)
@@ -86,7 +86,31 @@ def unix_echo() -> Iterator[str]:
         shutil.rmtree(directory, ignore_errors=True)
 
 
-PROBE = '''
+#: The probe's interfaces, every one and those up (SIOCGIFFLAGS' IFF_UP; /sys shows the network namespace of
+#: whoever mounted it, never the probe's own).
+INTERFACES = '''
+import fcntl, socket, struct
+def interfaces():
+    def up(name):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            request = struct.pack('16sH22x', name.encode(), 0)
+            return bool(struct.unpack('16sH22x', fcntl.ioctl(probe, 0x8913, request))[1] & 1)
+    every = [name for _, name in socket.if_nameindex()]
+    return {'all': every, 'up': [name for name in every if up(name)]}
+'''
+#: The tunnels a kernel may make in every new network namespace (``net.core.fb_tunnels_only_for_init_net`` 0, as on
+#: Docker Desktop's, found when these tests first ran, 7.51.03): down and with no underlay, so no way out. walls.sh
+#: counts only the interfaces that are up.
+FALLBACK_TUNNELS = frozenset({'tunl0', 'gre0', 'gretap0', 'erspan0', 'ip_vti0', 'ip6_vti0', 'sit0', 'ip6tnl0',
+                              'ip6gre0'})
+
+
+def _only_loopback(seen: dict) -> bool:
+    """Only the loopback is up, and anything else is a kernel's fallback tunnel."""
+    return seen['up'] == ['lo'] and set(seen['all']) - {'lo'} <= FALLBACK_TUNNELS
+
+
+PROBE = INTERFACES + '''
 import json, os, socket, sys
 def reach(address, port):
     try:
@@ -95,7 +119,7 @@ def reach(address, port):
     except OSError:
         return False
 status = dict(line.split(':', 1) for line in open('/proc/self/status') if ':' in line)
-print(json.dumps({'interfaces': [name for _, name in socket.if_nameindex()],
+print(json.dumps({'interfaces': interfaces(),
                   'outside_loopback': reach('127.0.0.1', int(sys.argv[1]) if len(sys.argv) > 1 else PORT),
                   'metadata': reach('169.254.169.254', 80), 'anywhere': reach('52.94.1.1', 443),
                   'caps': status['CapEff'].strip(), 'bounding': status['CapBnd'].strip(),
@@ -106,7 +130,7 @@ print(json.dumps({'interfaces': [name for _, name in socket.if_nameindex()],
 def test_a_command_sees_only_its_own_loopback_and_reaches_nothing_outside(outside: int):
     seen = _inside(PROBE.replace('PORT', str(outside)))
     # Its own network namespace: only its loopback, nothing on the host's network, no link-local credential endpoint.
-    assert seen['interfaces'] == ['lo']
+    assert _only_loopback(seen['interfaces']), seen['interfaces']
     assert (seen['outside_loopback'], seen['metadata'], seen['anywhere']) == (False, False, False)
 
 
@@ -117,7 +141,7 @@ def test_a_command_runs_with_no_capability_and_no_new_privileges():
 
 
 def test_the_forwarder_bridges_its_port_to_its_socket_and_nothing_else(unix_echo: str, outside: int):
-    bridged = '''
+    bridged = INTERFACES + '''
 import json, socket
 with socket.create_connection(('127.0.0.1', 3128), timeout=5) as tunnel:
     tunnel.sendall(b'ping\\n')
@@ -127,19 +151,26 @@ try:
     other = True
 except OSError:
     other = False
-print(json.dumps({'answer': answer, 'other': other, 'interfaces': [n for _, n in socket.if_nameindex()]}))
+print(json.dumps({'answer': answer, 'other': other, 'interfaces': interfaces()}))
 '''.replace('PORT', str(outside))
     seen = _inside(bridged, [(3128, unix_echo)])
-    assert seen == {'answer': 'echo:ping\n', 'other': False, 'interfaces': ['lo']}
+    assert (seen['answer'], seen['other']) == ('echo:ping\n', False)
+    assert _only_loopback(seen['interfaces']), seen['interfaces']
 
 
 def test_a_socket_that_is_gone_or_another_users_is_a_refused_connection(tmp_path: Path):
     gone = str(tmp_path / 'closed.sock')
+    # The forwarder closes the connection at once. When the request reached it first, the close is a reset, which is
+    # refused all the same: nothing comes back either way.
     refused = '''
 import json, socket
-with socket.create_connection(('127.0.0.1', 3129), timeout=5) as tunnel:
-    tunnel.sendall(b'CONNECT pypi.org:443 HTTP/1.1\\r\\n\\r\\n')
-    print(json.dumps({'answer': tunnel.recv(64).decode()}))
+try:
+    with socket.create_connection(('127.0.0.1', 3129), timeout=5) as tunnel:
+        tunnel.sendall(b'CONNECT pypi.org:443 HTTP/1.1\\r\\n\\r\\n')
+        answer = tunnel.recv(64).decode()
+except (ConnectionResetError, BrokenPipeError):
+    answer = ''
+print(json.dumps({'answer': answer}))
 '''
     assert _inside(refused, [(3129, gone)]) == {'answer': ''}
 
@@ -150,3 +181,74 @@ def test_the_forwarder_ends_with_its_command():
         unit_runner.own_namespaces([sys.executable, '-c', 'print("done")'], [(3128, '/nonexistent.sock')], FORWARDER),
         capture_output=True, text=True, timeout=30, check=False)
     assert (answer.returncode, answer.stdout.strip()) == (0, 'done')
+
+
+#: Git as the agent's checkout runs it (checkout.GIT): the test's repositories are made with it too.
+GIT = '/usr/bin/git'
+#: A uid no namespace of these tests maps (``nobody``'s): a file it owns shows inside as the overflow uid.
+OTHER_UID = 65534
+
+
+def _git(*argv: str) -> str:
+    return subprocess.run((GIT, *argv), check=True, capture_output=True, text=True,  # noqa: S603 - git on the test's own repositories
+                          timeout=60).stdout.strip()
+
+
+def _cache_entry(tmp_path: Path) -> tuple[str, str]:
+    """A repository with a file in and a file out of the sparse paths, and the cache's entry of its commit as its
+    writer keeps one (bare, depth 1, filters allowed): the entry's path and the commit."""
+    if not os.access(GIT, os.X_OK):
+        pytest.skip(f'no {GIT} on this host')
+    origin = tmp_path / 'origin'
+    (origin / 'pkg').mkdir(parents=True)
+    (origin / 'docs').mkdir()
+    (origin / 'pkg' / 'divide.py').write_text('def divide(a, b):\n    return a // b\n')
+    (origin / 'docs' / 'notes.md').write_text('outside the sparse paths\n')
+    _git('-c', 'init.defaultBranch=main', 'init', '--quiet', str(origin))
+    _git('-C', str(origin), 'add', '.')
+    _git('-C', str(origin), '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', 'commit', '--quiet',
+         '-m', 'first')
+    commit = _git('-C', str(origin), 'rev-parse', 'HEAD')
+    entry = tmp_path / 'cache' / commit / 'g1' / 'repo.git'
+    _git('clone', '--quiet', '--bare', '--depth=1', f'file://{origin}', str(entry))
+    _git('-C', str(entry), 'config', 'uploadpack.allowFilter', 'true')
+    return str(entry), commit
+
+
+def _as_agent(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """``argv`` in its own namespaces, as the agent's commands run (no forwarder: nothing here calls out)."""
+    return subprocess.run(unit_runner.own_namespaces(list(argv), []), cwd=cwd, capture_output=True, text=True,  # noqa: S603 - the wrapper's argv around the checkout's own commands
+                          timeout=120, check=False)
+
+
+def test_the_agents_checkout_clones_and_reads_a_cache_its_own_user_owns(tmp_path: Path):
+    """7.51.03: the cache mount's files are ``unit``'s (``--uid``/``--gid``), the user the agent's namespace maps, so
+    inside it they are its root's and git takes the cache's repository as its own. The clone, the sparse checkout,
+    the checkout and a later fetch of a blob outside the sparse paths all succeed."""
+    entry, commit = _cache_entry(tmp_path)
+    work = tmp_path / 'work'
+    work.mkdir()
+    for command in checkout.checkout_commands(commit, ['pkg'], 1, source=f'file://{entry}'):
+        ran = _as_agent(command.argv, work)
+        assert ran.returncode == 0, ran.stderr
+    assert (work / 'repo' / 'pkg' / 'divide.py').is_file()
+    assert not (work / 'repo' / 'docs').exists()
+    lazy = _as_agent(checkout.repo_git('show', f'{commit}:docs/notes.md'), work)
+    assert (lazy.returncode, lazy.stdout) == (0, 'outside the sparse paths\n'), lazy.stderr
+
+
+def test_the_agents_checkout_refuses_a_cache_another_uid_owns_as_dubious(tmp_path: Path):
+    """The failure 7.51.03 fixes: a cache owned by a uid the namespace does not map (root's, as the mount showed it)
+    shows inside as the overflow uid, and git refuses it (exit 128), whatever its file modes allow."""
+    if os.geteuid() != 0:
+        pytest.skip('making a repository another uid owns needs root (chown)')
+    entry, commit = _cache_entry(tmp_path)
+    for root, directories, files in os.walk(tmp_path / 'cache'):
+        for name in (root, *(os.path.join(root, found) for found in (*directories, *files))):
+            os.lchown(name, OTHER_UID, OTHER_UID)
+    work = tmp_path / 'work'
+    work.mkdir()
+    clone = checkout.checkout_commands(commit, ['pkg'], 1, source=f'file://{entry}')[0]
+    ran = _as_agent(clone.argv, work)
+    assert ran.returncode == 128
+    assert 'detected dubious ownership' in ran.stderr

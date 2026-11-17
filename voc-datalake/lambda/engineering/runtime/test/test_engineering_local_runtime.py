@@ -488,6 +488,24 @@ def test_a_hold_longer_than_the_role_session_kills_nothing_and_its_lapse_counts_
     assert runner.end_if_lapsed(woken + SESSION_LAPSE_GRACE) is True
 
 
+def test_the_cache_is_mounted_read_only_with_its_files_shown_as_the_agent_users(
+        tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """7.51.03: root mounts the cache, and its files show as ``unit``'s (uid 10001, group ``work`` 10000), the one
+    user the agent's namespace maps. Shown as root's, they were the overflow uid inside it, and git refused the
+    cache as "dubious ownership" (exit 128) at the first checkout."""
+    monkeypatch.setattr(unit_runner, '_unit_ids', lambda: (10001, 10000))
+    monkeypatch.setattr(unit_runner.os, 'fchown', lambda *_: None)   # (the session file's owner: not this test's)
+    mounted: list[list[str]] = []
+    monkeypatch.setattr(unit_runner.subprocess, 'run', lambda argv, **_: mounted.append(argv))
+    runner = Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path))
+    for _ in range(2):   # (the first session mounts it; a renewal does not again)
+        runner.keep_session({'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake',
+                             'SessionToken': 'fake', 'Expiration': '2026-11-12T12:15:00+00:00',
+                             'mount': {'bucket': 'voc-raw-test', 'prefix': 'engineering/cache/repo-1/'}})
+    assert mounted == [['/usr/bin/mount-s3', '--read-only', '--allow-other', '--uid', '10001', '--gid', '10000',
+                        '--prefix', 'engineering/cache/repo-1/', 'voc-raw-test', '/mnt/voc-cache']]
+
+
 def test_every_command_ends_once_the_role_session_lapses_unrenewed(tmp_path):
     runner = _runner(tmp_path)
     assert runner.end_if_lapsed(10 ** 10) is False   # (no session yet: nothing to lapse)

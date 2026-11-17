@@ -257,14 +257,17 @@ def transaction_conflict(error: ClientError) -> bool:
 
 
 def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = '',
-             via: Mapping[str, str] | None = None) -> dict[str, Any]:
+             via: Mapping[str, str] | None = None, detail: str = '') -> dict[str, Any]:
     """The change's own row (D4): a random suffix keeps two changes in one second apart, so a history write never
-    fails the change it records. ``via``: an engineering agent's start, the agent, its run and its trigger."""
+    fails the change it records. ``via``: an engineering agent's start, the agent, its run and its trigger.
+    ``detail``: what happened, in plain words, beside a decision point's ``reason`` (7.51.03)."""
     at = _iso(now)
     item: dict[str, Any] = {'pk': run_pk(run_id), 'sk': f'RUNLOG#{at}#{status}#{secrets.token_hex(4)}',
                             'kind': 'run_status', 'status': status, 'actor': _actor(actor), 'at': at}
     if reason:
         item['reason'] = reason
+    if detail:
+        item['detail'] = detail
     if via:
         item['via'] = dict(via)
     return item
@@ -588,18 +591,27 @@ class RunStore:
         self._table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
         return str(item['sk'])
 
-    def needs_human(self, run_id: str, reason: str, *, now: int, actor: str = SUPERVISOR) -> None:
+    def needs_human(self, run_id: str, reason: str, *, now: int, actor: str = SUPERVISOR, detail: str = '') -> None:
         """The run waits at a human decision point (its agents are held, and none is launched, meanwhile). One it
         already waits at for the same reason changes nothing; the 30-day one is never replaced by another. ``actor``
-        is the history's: the supervisor's own, or the start's or Resume's whose coordinator did not launch."""
-        reason = _text(reason)
+        is the history's: the supervisor's own, or the start's or Resume's whose coordinator did not launch.
+        ``detail`` (7.51.03): what sent it there, in plain words (a checkout that failed: its step, exit code and
+        stderr), on its ``RUNLOG#`` row and on META (``needs_human_detail``, until the run is resumed)."""
+        reason, detail = _text(reason), _text(detail)
+        values: dict[str, Any] = {':reason': reason, ':active': 'active', ':thirty': 'thirty_days', ':at': now}
+        expression = 'SET #status = :human, needs_human = :reason, needs_human_at = :at'
+        if detail:
+            expression += ', needs_human_detail = :detail'
+            values[':detail'] = detail
+        else:
+            expression += ' REMOVE needs_human_detail'
         try:
             self._update_status(run_id, _history(run_id, status='needs_human', actor=actor, now=now,
-                                                 reason=reason),
-                                'SET #status = :human, needs_human = :reason, needs_human_at = :at',
+                                                 reason=reason, detail=detail),
+                                expression,
                                 '#status = :active OR (#status = :human AND needs_human <> :reason '
                                 'AND needs_human <> :thirty)',
-                                {':reason': reason, ':active': 'active', ':thirty': 'thirty_days', ':at': now})
+                                values)
             self._listed(run_id, 'needs_human')
         except RunNotActive:
             run = consistent_item(self._table, meta_key(run_id))
@@ -633,7 +645,8 @@ class RunStore:
                                   nonce=secrets.token_hex(4)),)
         # Never off the 30-day decision point, which offers only "stop".
         self._update_status(run_id, _history(run_id, status='active', actor=actor, now=now, reason='resumed'),
-                            'SET #status = :active, resumed_epoch = :now REMOVE needs_human', condition, values, also)
+                            'SET #status = :active, resumed_epoch = :now REMOVE needs_human, needs_human_detail',
+                            condition, values, also)
         self._listed(run_id, 'active')
 
     def release(self, run_id: str) -> None:
@@ -874,10 +887,11 @@ class TableRunControl:
         """The run ended (done, failed, or a person's stop): every session of it is ended, none gets a new session."""
         return self._run(run_id).status in ENDED
 
-    def needs_human(self, run_id: str, reason: str) -> None:
-        """The run at its decision point; at a flow step's, the gate verdicts the supervisor read are then kept for
-        the run monitor, best effort: a write that fails is logged and never delays or fails the decision point."""
-        self._runs.needs_human(run_id, reason, now=int(self._clock()))
+    def needs_human(self, run_id: str, reason: str, detail: str = '') -> None:
+        """The run at its decision point (``detail``: why, in plain words); at a flow step's, the gate verdicts the
+        supervisor read are then kept for the run monitor, best effort: a write that fails is logged and never delays
+        or fails the decision point."""
+        self._runs.needs_human(run_id, reason, now=int(self._clock()), detail=detail)
         if not flow_step(reason):
             return
         try:

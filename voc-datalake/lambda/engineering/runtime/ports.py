@@ -116,8 +116,9 @@ class RunControl(Protocol):
         """A person's "stop" or an agent's kill switch (the 30-day stop is the supervisor's own)."""
         ...
 
-    def needs_human(self, run_id: str, reason: str) -> None:
-        """Put the run at a human decision point (``budget``, ``coordinator``, ``thirty_days``: stop only)."""
+    def needs_human(self, run_id: str, reason: str, detail: str = '') -> None:
+        """Put the run at a human decision point (``budget``, ``coordinator``, ``checkout_failed``, ``thirty_days``:
+        stop only); ``detail``, what sent it there in plain words, is kept with it (7.51.03)."""
         ...
 
     def is_active(self, run_id: str) -> bool:

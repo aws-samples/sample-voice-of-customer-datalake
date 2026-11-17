@@ -712,10 +712,20 @@ class Runner:
         return True
 
     def _mount(self, bucket: str, prefix: str, config: str) -> None:
+        """The connection's cache, read-only at ``MOUNT_POINT``, its files shown as ``unit``'s (7.51.03).
+
+        Root makes the mount, but the files must look like ``unit``'s: the agent's git runs in a user namespace that
+        maps only ``unit`` (to its root). A root-owned file shows there as the overflow uid, and git then refuses the
+        cache's repository as "dubious ownership" (exit 128). That covers the clone and every later fetch of a blob
+        from it. The modes stay Mountpoint's defaults (0755 for directories, 0644 for files), and the mount stays
+        read-only, so owning the files gives ``unit`` no write.
+        """
         if not _BUCKET_RE.match(bucket) or not _PREFIX_RE.match(prefix):
             raise ValueError('the cache mount needs a bucket name and an engineering/cache/<connection>/ prefix')
+        uid, gid = _unit_ids()
         subprocess.run(
-            [MOUNT_S3, '--read-only', '--allow-other', '--prefix', prefix, bucket, MOUNT_POINT],
+            [MOUNT_S3, '--read-only', '--allow-other', '--uid', str(uid), '--gid', str(gid), '--prefix', prefix,
+             bucket, MOUNT_POINT],
             check=True, capture_output=True, env={'PATH': os.environ.get('PATH', ''), 'AWS_CONFIG_FILE': config})
         self._mounted = True
 

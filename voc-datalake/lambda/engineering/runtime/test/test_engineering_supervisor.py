@@ -12,6 +12,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from engineering.runtime.caps import SessionPricing, SessionRates, Timings
+from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import checkpoint_prefix
 from engineering.runtime.interface import AgentSpec, Command, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.launcher import Launcher, RunStopped
@@ -1016,6 +1017,60 @@ def test_one_failing_session_does_not_stop_the_others_and_a_gone_microvm_becomes
     continued = _until(world, 1000, lambda s: s.continuation == 1, agent_id='hunter-1')
     assert (continued.vm_id != 'gone', continued.crashes, continued.failures) == (True, 1, 0)
     assert continued.inspect['last_failure'] == 'the session stopped answering'
+
+
+#: A checkout whose clone git refuses (its source is no repository): exit 128, as the dubious-ownership one was.
+def _refused_checkout(commit: str, paths: Any, generation: int) -> list[Command]:
+    return checkout_commands(commit, paths, generation, source='file:///nonexistent/cache/repo.git')
+
+
+@pytest.mark.parametrize(('agent_id', 'role', 'task_id'), [('coordinator-0', 'coordinator', 'coordinate'),
+                                                         ('fixer-1', 'fixer', 'task-1')])
+def test_a_checkout_its_tool_refuses_ends_the_agent_failed_at_once_and_sends_the_run_to_a_person_saying_why(
+        world: World, agent_id: str, role: str, task_id: str):
+    """7.51.03: never continued (the first real run crashed its way through three sessions to "crashed 3 times").
+    The agent ends failed at its first refusal; the reason (the step, the exit code, the stderr) is in its
+    inspection data, the run's thread and the run's decision point; a worker's task is re-posted with it."""
+    world.supervisor.checkout = _refused_checkout
+    world.launch(agent_id=agent_id, role=role, task_id=task_id, code=SLEEP)
+    ended = _until(world, 1000, lambda s: s.status != 'booting', agent_id=agent_id)
+    reason = ended.inspect['last_failure']
+    assert (ended.status, ended.continuation, ended.crashes) == ('failed', 0, 0)
+    assert reason.startswith('The repository checkout failed (git clone, exit 128): fatal: ')
+    assert 'does not appear to be a git repository' in reason
+    assert ended.inspect['last_exit']['exit_code'] == 128
+    _assert_terminated(world, ended)
+    assert world.control.humans == [(RUN, 'checkout_failed')]
+    assert world.control.details[RUN] == reason
+    said = [event for event in world.bus.events if event['kind'] == 'failed']
+    assert [(event['to'], event['summary']) for event in said] == [('run', f'{agent_id} could not start. {reason}')]
+    assert 'continued' not in world.bus.kinds()
+    assert world.board.reposted == ([] if role == 'coordinator' else [(f'{RUN}/{task_id}', reason)])
+
+
+def test_a_checkout_failures_reason_is_redacted_and_cut_to_one_short_line(world: World):
+    token = 'ghp_' + 'a1B2' * 9
+    noisy = (f'import sys; sys.stderr.write("fatal: unable to access https://x-access-token:{token}@github.com/\\n"'
+             ' + "x" * 2000 + "\\n"); sys.exit(2)')
+    world.supervisor.checkout = lambda _commit, _paths, _generation: [
+        Command(argv=(sys.executable, '-c', noisy), timeout_seconds=60, repository_code=False)]
+    world.launch(code=SLEEP)
+    reason = _until(world, 1000, lambda s: s.status == 'failed').inspect['last_failure']
+    assert token not in reason
+    assert '[masked]' in reason
+    assert '\n' not in reason
+    assert len(reason) < 400
+
+
+def test_a_checkout_command_that_is_killed_is_a_crash_and_continued(world: World):
+    """A kill (a negative exit code: the session ending, a lapse) is no refusal of the tool's: continued as before."""
+    world.supervisor.checkout = lambda _commit, _paths, _generation: [
+        Command(argv=(sys.executable, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'),
+                timeout_seconds=60, repository_code=False)]
+    world.launch(code=SLEEP)
+    continued = _until(world, 1000, lambda s: s.continuation == 1)
+    assert continued.crashes == 1
+    assert world.control.humans == []
 
 
 def test_a_boot_that_takes_too_long_is_a_crash(world: World):

@@ -17,6 +17,44 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.51.03] - 2026-11-17
+
+The first real engineering run on AWS (`b-`, `01M7MKH4…`) failed at its first command, the coordinator's checkout. Git refused the checkout cache as "dubious ownership" (exit 128). The supervisor took that for a crash, continued the session twice, and the run went to a person with nothing more than "crashed 3 times". The cache's files now show as the agent user's, so the checkout works. A checkout that fails with an error of its own now ends the agent at once and says why.
+
+### Fixed
+
+- **The checkout cache is the agent user's** (`unit_runner.Runner._mount`):
+  - **The cause.** Since 7.50.03 every agent command runs in a user and network namespace of its own (`unshare --user --map-root-user --net`, as `unit`), which maps only `unit`, to uid 0 inside. Root makes the cache's Mountpoint mount, so its files were root's, and root is not mapped in the namespace: they showed there as the overflow uid. Git (2.39 on the Debian bookworm images, too old for a `safe.directory` wildcard) refused a repository its user does not own.
+  - **The fix.** `mount-s3 --read-only --allow-other --uid 10001 --gid 10000` (`unit`, group `work`; both flags are in Mountpoint 1.25.0's `--help`, checked in the built image). Inside the agent's namespace the cache is then its own (uid 0). It stays read-only. The modes stay Mountpoint's defaults (0755 and 0644), so nothing changes for `code`, and nothing of repository code's reads the cache.
+  - **Every fetch is covered.** This covers the clone and every later lazy fetch of a blob from the cache (a `git show` or `checkout` outside the sparse paths), which a `-c safe.directory=<path>` on the clone alone would not have.
+  - **Reproduced in the real image** (the python image built locally, run with `--network none`, no credentials and no ports). The image's own runner and checkout commands, against a cache laid out and owned as each mount shows it:
+    - root:root gives git exit 128, "detected dubious ownership in repository at '/mnt/voc-cache/<commit>/g1/repo.git'", as on AWS;
+    - unit:work: the clone, the sparse checkout, the checkout, both chmod steps and a lazy fetch of a blob outside the sparse paths all succeed.
+- **A checkout command that fails with an error of its own is no crash** (`supervisor.Supervisor._checkout_failed`). Such a failure is an exit code above 0 that is neither a timeout nor a kill, such as git's 128, and a new session would only repeat it. The agent ends `failed` at once, with no continuation. Its reason gives the step, the exit code and the start of its stderr, redacted (the runner's `scrub_text`), on one line of at most 300 characters. For example: "The repository checkout failed (git clone, exit 128): fatal: detected dubious ownership in repository at …". The reason is kept:
+  - in the agent's inspection data (`last_failure`, beside `last_exit`);
+  - in a supervisor message in the run's thread ("coordinator-1 could not start. The repository checkout failed …");
+  - on the run's new decision point, `checkout_failed`: its `RUNLOG#` row's `detail` and META's `needs_human_detail`, which a Resume removes (`RunControl.needs_human`'s new `detail`, `RunStore.needs_human`).
+  - A worker's task is re-posted with the reason. A person's Resume, once the cause is fixed, launches a new coordinator in place of a failed one, as after a crash. A timeout or a kill is still a crash, continued as before, and a Pause or Shut down asked before the failure is kept.
+- **The namespace tests had never run, and three failed when they first did** (`test_engineering_namespaces.py`, in the image under Docker). The code was right; the tests were wrong:
+  - The first two expected only `lo` in a new network namespace. Docker Desktop's kernel also makes its fallback tunnels there (`tunl0`, `gre0`, …), down and with no underlay, which `walls.sh` already allows for by counting only the interfaces that are up. The tests now check that only the loopback is up and that anything else is a fallback tunnel.
+  - The third read a gone socket's refused connection as an empty answer. When the request reaches the forwarder before it closes, the client gets a reset, which is refused all the same.
+- Proof: `test_engineering_local_runtime.py::test_the_cache_is_mounted_read_only_with_its_files_shown_as_the_agent_users` (fails without the fix: no `--uid`/`--gid`) and `test_engineering_supervisor.py::test_a_checkout_its_tool_refuses_ends_the_agent_failed_at_once_and_sends_the_run_to_a_person_saying_why` (fails without it: the agent is continued). The Linux-only `test_engineering_namespaces.py` also gains two tests, run in the image: a cache its user owns is cloned, checked out and lazily fetched from inside the namespace; one another uid owns is refused as dubious (exit 128).
+- Siblings: the other root-owned paths a namespaced command touches were checked:
+  - `/opt/voc` (the runner, the forwarder, the harness) and `/run/voc` (the session files, which are `unit`'s): read by Python, `cat` and botocore, none of which checks owners.
+  - `/work/repo` and `/work/repo.git`: `unit`'s, made in its namespace.
+  - **Found, not fixed.** Repository code (`code`, in its own namespace) that runs git on the checkout, such as a repository's own gate script with `git diff` or `git ls-files`, or setuptools-scm, is refused as dubious ownership: the working tree and the git directory are `unit`'s. The same was true under the 7.50.00 firewall wall (`code` ≠ `unit`). Opening the git directory to repository code is a design choice (checkout.py keeps it the agent's), not a certain fix.
+
+### Changed
+
+- Docs: docs/autonomous-engineering.md, Runtime: the mount's ownership and why; a checkout's own failure is no crash, and the `checkout_failed` decision point with its reason.
+
+### Upgrade notes
+
+- **Rebuild all four engineering images** (python, node, java, rust) for linux/arm64 with new tags, and deploy their digests with the stacks (docs/deployment.md, `engineeringImages`; the same Mountpoint and boto3 build arguments). The mount's flags live in the images' runner, so until the new digests are deployed every agent's checkout keeps failing.
+- Deploy VocProcessingStack for the supervisor's change (the runtime function's code). No table, index, IAM or route change.
+- A run waiting at `coordinator` after "crashed 3 times" from this failure, such as `01M7MKH4KGAMAM1TGR1SYH6CHK` on `b-`: after the images and the stacks are deployed, Resume it where its run monitor's Resume reaches the runtime (a Resume launches a new coordinator, whose checkout then works), or Stop it and rerun its issue.
+- **Rollback.** An earlier image mounts the cache as root's again, and its checkouts fail as before. An earlier runtime leaves META's `needs_human_detail` unread.
+
 ## [7.51.02] - 2026-11-17
 
 A person's run controls now reach the agents. Until now the run workspace's steering composer, an agent question's Reply, and Pause, Resume and Save a checkpoint worked on no deployment: the Agents API named neither the engineering bus nor the runtime's function, so these controls answered 503 and the workspace showed them off. Only Stop worked, through the start function (7.50.03). Each control now has its own path. Steering and replies are published on the bus by the Agents API, under a grant held to their two detail types. The signals go through the start function, as Stop does. The workspace shows each control from its own flag.

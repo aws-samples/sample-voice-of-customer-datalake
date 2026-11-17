@@ -7,8 +7,11 @@ task's lease and the session's age (``liveness.judge``): it asks a quiet agent f
 does not answer and re-posts its task, asks an agent to pause ahead of the 8-hour limit and continues it in
 a new session once it has checkpointed, continues a crashed one from its last checkpoint (twice in a row at
 most), and ends a finished one's session at once. A session whose calls fail three ticks in a row, or whose
-boot takes over 30 minutes, has crashed. It records the run monitor's inspection data and the live cost
-counters on the session row.
+boot takes over 30 minutes, has crashed. A checkout command that exits with a failure code of its own (git's 128
+and the like, never a timeout or a kill) has not crashed (7.51.03): a new session would only repeat it, so the agent
+ends failed at once with the reason (the step, the exit code, its redacted stderr), which the run's thread and the
+decision point the run then waits at (``checkout_failed``) both carry. It records the run monitor's inspection data
+and the live cost counters on the session row.
 
 Each agent's session is an AgentCore Runtime session (``agentcore.py``): each session is its own microVM.
 An agent on an open wait (its lease says so) keeps its task and is outside every clock: its session is
@@ -42,7 +45,7 @@ from dataclasses import dataclass, field, replace
 from typing import Final
 
 from engineering.runtime.caps import SESSION_LIFE_SECONDS, Timings
-from engineering.runtime.checkout import checkout_commands
+from engineering.runtime.checkout import checkout_commands, step_name
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.interface import (
     AgentRuntime,
@@ -66,11 +69,17 @@ from engineering.runtime.sessions import (
     StaleSession,
     Status,
 )
+from engineering.runtime.unit_runner import scrub_text
 from shared.logging import logger
 
 THIRTY_DAYS: Final = 30 * 24 * 60 * 60
 #: The decision point of a run whose continuation found no usable checkout (a Resume fills it, then continues).
 CHECKOUT_CACHE_POINT: Final = 'checkout_cache'
+#: The decision point of a run whose agent's checkout failed with an error of its own (7.51.03): a person fixes the
+#: cause, and their Resume launches a new coordinator in place of a failed one (a worker's task is re-posted).
+CHECKOUT_FAILED_POINT: Final = 'checkout_failed'
+#: How much of a failed checkout command's stderr its reason quotes, on one line.
+REASON_STDERR_CHARACTERS: Final = 300
 SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart'})
 #: Where a restarted agent starts again (7.51.00): its newest checkpoint, or afresh (its task re-posted at the next
 #: attempt, which the coordinator launches a new agent for).
@@ -95,6 +104,22 @@ COORDINATOR_FILL_LAUNCH_SECONDS: Final = COORDINATOR_FILL_LAUNCH_INVOCATIONS * C
 
 class SessionCallFailed(RuntimeError):
     """A call to an agent's session failed (only these count towards a crash; a port's failure does not)."""
+
+
+def refused_by_its_tool(result: ExecResult) -> bool:
+    """The command ended by itself with a failure code (git's 128 and the like): a new session would only repeat it.
+    Never a timeout, nor a kill (a negative code: the session ending, a lapse), which another session may not see."""
+    return result.exit_code > 0 and not result.timed_out
+
+
+def checkout_failure(command: Command, result: ExecResult) -> str:
+    """A failed checkout command, in plain words: its step, its exit code and the start of its stderr tail (redacted,
+    on one line)."""
+    said = ' '.join(scrub_text(result.stderr_tail).split())
+    if len(said) > REASON_STDERR_CHARACTERS:
+        said = f'{said[:REASON_STDERR_CHARACTERS - 1]}…'
+    failed = f'The repository checkout failed ({step_name(command.argv)}, exit {result.exit_code})'
+    return f'{failed}: {said}' if said else f'{failed}.'
 
 
 def landed_session(sessions: SessionStore, run_id: str, agent_id: str, vm: RuntimeSession) -> AgentSession | None:
@@ -556,6 +581,9 @@ class Supervisor:
             if result is None:
                 return session
             if not result.ok:
+                # (every command polled here is the checkout's: the boot's last, the harness, makes the agent working)
+                if refused_by_its_tool(result):
+                    return self._checkout_failed(session, commands[session.boot_index], result, now)
                 return self._crashed(self._with_exit(session, result), now)
             session = replace(session, boot_index=session.boot_index + 1, exec_id=None)
         command = commands[session.boot_index]
@@ -663,6 +691,27 @@ class Supervisor:
             return ended
         self.board.repost(session.run_id, session.task_id, 'crashed', attempt=session.task_attempt)
         return self._end(session, 'reposted', now)
+
+    def _checkout_failed(self, session: AgentSession, command: Command, result: ExecResult, now: int) -> AgentSession:
+        """A checkout command that failed with an error of its own (7.51.03): never continued (each new session would
+        repeat it, and crash its way to a person three sessions later with no word of why). The agent ends failed at
+        once. The reason is in its inspection data, in the run's thread and on the decision point the run then waits
+        at; a worker's task is re-posted, for the agent a Resume's coordinator launches once the cause is fixed. A
+        person's Pause or Shut down asked before it is kept, as for a crash."""
+        held = HELD_AS.get(session.after_pause)
+        if held is not None:
+            return self._end(self._with_exit(session, result), held, now)
+        reason = checkout_failure(command, result)
+        failed = self._with_exit(session, result)
+        failed = replace(failed, inspect={**failed.inspect, 'last_failure': reason})
+        self._emit(failed, 'run', 'failed', f'{session.agent_id} could not start. {reason}')
+        # Its session has failed before the run goes to a person (a Resume landing between the two replaces a failed
+        # coordinator), and the run waits there before a worker's task is open again (its launch is refused meanwhile).
+        ended = self._end(failed, 'failed', now)
+        self.control.needs_human(session.run_id, CHECKOUT_FAILED_POINT, reason)
+        if session.role != 'coordinator':
+            self.board.repost(session.run_id, session.task_id, reason, attempt=session.task_attempt)
+        return ended
 
     def _continue(self, session: AgentSession, now: int, *, crashed: bool) -> AgentSession:
         """End the session and go on as the same agent and task in a new one, from the last checkpoint; never for a

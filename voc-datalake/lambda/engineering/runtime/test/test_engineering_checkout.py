@@ -15,6 +15,7 @@ from engineering.runtime.checkout import (
     check_sparse_path,
     checkout_commands,
     repo_git,
+    step_name,
 )
 from engineering.runtime.interface import AgentSpec, Command, ExecResult, RuntimeRefused, RuntimeSession
 from engineering.runtime.test.local_runtime import LocalAgentRuntime
@@ -124,6 +125,12 @@ def test_the_default_source_is_the_commits_entry_of_its_generation_in_the_mount_
     assert cache_source(COMMIT, 1453) in commands[0].argv
     assert '--filter=blob:none' in commands[0].argv
     assert len(commands) == 4
+
+
+def test_each_checkout_command_has_a_step_name_a_failures_reason_can_say():
+    named = [step_name(command.argv) for command in checkout_commands(COMMIT, ['src'], 1)]
+    assert named == ['git clone', 'git sparse-checkout', 'git checkout', 'find', 'chmod']
+    assert step_name(repo_git('show', f'{COMMIT}:README.md')) == 'git show'
 
 
 @pytest.mark.parametrize('commit', ['main', 'b' * 39, COMMIT + '\n', '../' + 'b' * 37, 'B' * 40],
