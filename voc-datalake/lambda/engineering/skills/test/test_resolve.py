@@ -127,3 +127,24 @@ def test_a_steps_pin_is_read_from_its_agent_node_only() -> None:
     assert step_pin(definition, 'board', 'fixer') is None
     assert step_pin(None, 'hunt', 'hunter') is None
     assert step_pin(definition, '', 'hunter') is None
+
+
+def test_a_gates_runner_and_final_go_pin_their_roles_version_and_a_card_step_is_recorded() -> None:
+    """7.52.00: a quality gate's ``runner`` / ``final_go`` naming its role at a version pins it (a card of it, or
+    ``latest``, pins none here); an agent step from a Registry card names it on the session row (``step_card``)."""
+    from engineering.skills.resolve import step_card
+
+    definition = {'nodes': [
+        {'id': 'gate', 'type': 'quality_gate', 'data': {'params': {'runner': 'gate-runner@v4',
+                                                                    'final_go': 'final-go-strict@v2'}}},
+        {'id': 'fix', 'type': 'agent', 'data': {'params': {'role': 'fixer', 'skill_version': 'v3',
+                                                           'card': 'fixer-python@v2'}}},
+    ]}
+    assert step_pin(definition, 'gate', 'gate-runner') == 'v4'
+    assert step_pin(definition, 'gate', 'final-go') is None
+    assert step_pin(definition, 'gate', 'fixer') is None
+    assert step_pin({'nodes': [{'id': 'gate', 'type': 'quality_gate', 'data': {'params': {}}}]}, 'gate',
+                    'gate-runner') is None
+    assert step_card(definition, 'fix', 'fixer') == {'card': 'fixer-python', 'card_version': '2'}
+    assert step_card(definition, 'fix', 'hunter') == {}
+    assert step_card(definition, 'gate', 'gate-runner') == {}

@@ -633,6 +633,10 @@
       "label": "Memory",
       "description": "Read from or write to the repository's, a role's or a person's memory."
     },
+    "call_flow": {
+      "label": "Call a flow",
+      "description": "Runs another saved engineering flow, at the revision it names, in place of this step."
+    },
     "stop_at_pr": {
       "label": "Stop at PR",
       "description": "The flow ends on a pull request for people to review: nothing is ever merged."

@@ -10,7 +10,17 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from engineering.quality_gate.packs import GatePlan, PlannedCheck, Tool
+from engineering.quality_gate.packs import (
+    EMPTY_EXIT,
+    EMPTY_OUTPUT,
+    FAILED,
+    MISSING_TOOL,
+    SETUP_FAILED,
+    TIMED_OUT,
+    GatePlan,
+    PlannedCheck,
+    Tool,
+)
 from engineering.quality_gate.runner import CommandResult, CommandRunner
 from engineering.quality_gate.text import clip, redact
 
@@ -68,16 +78,16 @@ class GateRun:
 def judge(check: PlannedCheck, result: CommandResult) -> tuple[str, str]:
     """``(status, reason)`` of one command's result under its check's rules."""
     if result.missing:
-        return 'missing_tool', f'{check.argv[0]} is not installed'
+        return 'missing_tool', MISSING_TOOL.format(tool=check.argv[0])
     if result.timed_out:
-        return 'timeout', f'still running after {check.timeout_s} s'
+        return 'timeout', TIMED_OUT.format(timeout_s=check.timeout_s)
     if result.exit_code in check.empty_exit_codes:
-        return 'empty', f'exit {result.exit_code}: it found nothing to check'
+        return 'empty', EMPTY_EXIT.format(code=result.exit_code)
     if result.exit_code != 0:
-        return 'fail', f'exit {result.exit_code}'
+        return 'fail', FAILED.format(code=result.exit_code)
     # The runner watched the whole stream for the pattern; the kept tail is the fallback for one that does not.
     if check.expect_output and not result.expect_seen and not re.search(check.expect_output, result.output):
-        return 'empty', 'its output does not show that anything was checked'
+        return 'empty', EMPTY_OUTPUT
     return 'pass', 'ok'
 
 
@@ -88,7 +98,7 @@ def run_plan(plan: GatePlan, runner: CommandRunner) -> GateRun:
     for check in plan.checks:
         if setup_failed:
             results.append(CheckResult(key=check.key, name=check.name, kind=check.kind, root=check.root,
-                                       status='fail', reason=f'not run: setup step "{setup_failed}" failed'))
+                                       status='fail', reason=SETUP_FAILED.format(setup=setup_failed)))
             continue
         run = runner.run(check.argv, cwd=check.root, timeout_s=check.timeout_s, network=check.kind == 'setup',
                          expect=check.expect_output)

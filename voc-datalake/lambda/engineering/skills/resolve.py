@@ -28,6 +28,7 @@ from engineering.runtime.harness.skills import Skill as HarnessSkill
 from engineering.skills.model import SkillError
 from engineering.skills.store import ACCEPTED, SHARED, SkillConflict, SkillForbidden, SkillNotFound, SkillVersion
 from engineering.skills.templates import Templates, parse_template_label
+from shared.workflow_engineering import AGENT_REF, CARD_REF, GATE_AGENTS
 
 #: An agent step's pin (shared/workflow_engineering.py ``skill_version``): ``latest`` or ``v<n>``.
 LATEST: Final = 'latest'
@@ -127,16 +128,35 @@ def kind_of(error: SkillError) -> str:
     return kind if isinstance(kind, str) else 'invalid'
 
 
-def step_pin(definition: Mapping[str, Any] | None, step: str, role: str) -> object:
-    """The ``skill_version`` an agent step of ``role`` pins in a run's flow definition (``voc-workflow/2``), None for
-    another step, a board's claimer or a run without a flow."""
+def _step_params(definition: Mapping[str, Any] | None, step: str, kinds: tuple[str, ...]) -> Mapping[str, Any]:
+    """The params of the step ``step`` when it is one of ``kinds`` (``{}`` otherwise, or with no flow)."""
     if not definition or not step:
-        return None
+        return {}
     for node in definition.get('nodes') or ():
-        if not isinstance(node, Mapping) or node.get('id') != step or node.get('type') != 'agent':
+        if not isinstance(node, Mapping) or node.get('id') != step or node.get('type') not in kinds:
             continue
         data = node.get('data')
         params = data.get('params') if isinstance(data, Mapping) else None
-        if isinstance(params, Mapping) and params.get('role') == role:
-            return params.get('skill_version')
-    return None
+        return params if isinstance(params, Mapping) else {}
+    return {}
+
+
+def step_pin(definition: Mapping[str, Any] | None, step: str, role: str) -> object:
+    """The ``skill_version`` an agent step of ``role`` pins in a run's flow definition (``voc-workflow/2``), None for
+    another step, a board's claimer or a run without a flow. A quality gate's gate runner and final go (7.52.00): the
+    version its ``runner`` / ``final_go`` names of the role itself (``gate-runner@v3``); a card of it
+    (``gate-runner-strict@v2``) or ``latest`` pins none here (the role's current skill runs)."""
+    params = _step_params(definition, step, ('agent', 'quality_gate'))
+    if params.get('role') == role:
+        return params.get('skill_version')
+    key = next((key for key, of in GATE_AGENTS.items() if of == role), None)
+    match = AGENT_REF.fullmatch(str(params.get(key, ''))) if key is not None and 'role' not in params else None
+    return match['version'] if match is not None and match['id'] == role and match['version'] != LATEST else None
+
+
+def step_card(definition: Mapping[str, Any] | None, step: str, role: str) -> dict[str, str]:
+    """The Registry card an agent step of ``role`` was made from (7.52.00, ``params.card`` ``<card>@v<n>``), as its
+    session row records it: ``{card, card_version}``; empty for any other step."""
+    params = _step_params(definition, step, ('agent',))
+    match = CARD_REF.fullmatch(str(params.get('card', ''))) if params.get('role') == role else None
+    return {} if match is None else {'card': match['card'], 'card_version': match['version']}

@@ -1,7 +1,7 @@
 """Agent heartbeat: every 15 minutes, start the autonomous-agent runs that are due.
 
 EventBridge (``rate(15 minutes)``) invokes this Lambda with no payload. For each
-enabled, non-archived agent it:
+enabled, non-archived agent an administrator has not paused (7.52.00) it:
 
 1. heals the run lock — a lock pointing at a finished or missing run is cleared,
    and a run active for longer than ``STALE_RUN_HOURS`` is failed as stale;
@@ -481,13 +481,15 @@ def process_agent(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
 
 
 def _eligible(agent: Mapping[str, Any]) -> bool:
-    return agent.get('enabled') is True and agent.get('status') != store.AGENT_STATUS_ARCHIVED \
-        and store.is_agent_id(agent.get('agent_id'))
+    """An agent the tick wakes: enabled, not paused by an administrator (7.52.00: ``agents_store.set_paused``, no run
+    starts by itself until it is resumed) and not archived."""
+    return agent.get('enabled') is True and agent.get('paused') is not True \
+        and agent.get('status') != store.AGENT_STATUS_ARCHIVED and store.is_agent_id(agent.get('agent_id'))
 
 
 def _heal_disabled(table: Any, agent: Mapping[str, Any], now: datetime) -> None:
-    """A disabled or archived engineering agent's run still ends when its engineering run does (nothing else ends
-    it: the agents' interpreter never runs it). Best effort: logged, never stopping the others' wakes."""
+    """A disabled, paused or archived engineering agent's run still ends when its engineering run does (nothing else
+    ends it: the agents' interpreter never runs it). Best effort: logged, never stopping the others' wakes."""
     if not (store.is_engineering_agent(agent) and isinstance(agent.get('active_run_id'), str)
             and store.is_agent_id(agent.get('agent_id'))):
         return

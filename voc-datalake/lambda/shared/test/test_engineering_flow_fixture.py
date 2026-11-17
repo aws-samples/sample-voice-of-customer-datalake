@@ -24,6 +24,13 @@ def _bug_fix_with(**changes: Any) -> dict[str, Any]:
     return definition
 
 
+def _gate_with(**changes: Any) -> dict[str, Any]:
+    definition = bug_fix()
+    gate = next(item for item in definition['nodes'] if item['id'] == 'gate')['data']['params']
+    gate.update(changes)
+    return definition
+
+
 def _step(kind: str, **params: Any) -> dict[str, Any]:
     return flow([node('start', 'start'), node('step', kind, **params), node('end', 'end')],
                 [arrow('start', 'step'), arrow('step', 'end')])
@@ -101,6 +108,41 @@ def corpus() -> list[tuple[str, dict[str, Any]]]:
             [arrow('start', 'fix'), arrow('fix', 'end')], schema=SCHEMA)),
         ('a loop in an engineering flow', looped),
         ('a step role in an engineering flow', roled),
+        # (7.52.00: a call of another saved flow, and an agent from a Registry card)
+        ('a call of a saved flow at its revision', _step('call_flow', flow='wf_0123456789ab@3', budget_share=0.5,
+                                                         inputs={'issue': "the run's issue"})),
+        ('a call with no revision', _step('call_flow', flow='wf_0123456789ab')),
+        ('a call of no flow', _step('call_flow')),
+        ('a call with an unknown setting', _step('call_flow', flow='wf_0123456789ab@3', colour='red')),
+        ('a call with assertions', _step('call_flow', flow='wf_0123456789ab@3', **{'assert': []})),
+        ('a call with too many inputs', _step('call_flow', flow='wf_0123456789ab@3',
+                                              inputs={f'input_{n}': 'x' for n in range(11)})),
+        ('a call input that is not text', _step('call_flow', flow='wf_0123456789ab@3', inputs={'issue': 12})),
+        ('a call with a share of 0', _step('call_flow', flow='wf_0123456789ab@3', budget_share=0)),
+        ('a call and an agent over the budget', flow(
+            [node('start', 'start'), node('hunt', 'agent', role='hunter', budget_share=0.6),
+             node('call', 'call_flow', flow='wf_0123456789ab@3', budget_share=0.5), node('end', 'end')],
+            [arrow('start', 'hunt'), arrow('hunt', 'call'), arrow('call', 'end')])),
+        ('an agent from a Registry card', _step('agent', role='fixer', skill_version='v3', card='fixer-python@v2')),
+        ('an agent from a card at latest', _step('agent', role='fixer', card='fixer-python@v2')),
+        ('an agent with a bad card', _step('agent', role='fixer', skill_version='v3', card='fixer python')),
+        # (7.52.00: who runs a gate, an assertion's place, a flow's inputs)
+        ('a gate run by cards and its own assertions', _gate_with(
+            runner='gate-runner-strict@v2', final_go='final-go@v3',
+            **{'assert': [{'check': 'gate.passed', 'on_fail': 'fail_arrow'}, {'check': 'gate.pack_checks_ran'}]})),
+        ('a gate run by another role', _gate_with(runner='fixer@latest')),
+        ('a gate card at latest', _gate_with(final_go='final-go-strict@latest')),
+        ("a gate's assertion on an agent", _bug_fix_with(**{'assert': [{'check': 'gate.passed'}]})),
+        ('fail_arrow on an agent', _bug_fix_with(**{'assert': [
+            {'check': 'findings.cite_evidence', 'on_fail': 'fail_arrow'}]})),
+        ('an unknown assertion', _bug_fix_with(**{'assert': [{'check': 'tests.green'}]})),
+        ('an assertion without its arguments', _bug_fix_with(**{'assert': [{'check': 'tasks.posted'}]})),
+        ('an assertion with a bad on_fail', _bug_fix_with(**{'assert': [{'check': 'tasks.posted', 'on_fail': 'stop',
+                                                                          'args': {'role': 'fixer', 'min': 1}}]})),
+        ('too many assertions', _bug_fix_with(**{'assert': [{'check': 'findings.cite_evidence'}] * 11})),
+        ('an assertion on a map', _step('map', shard_by='packages', **{'assert': [{'check': 'notes.cite_sources'}]})),
+        ('a flow with its inputs', {**bug_fix(), 'inputs': {'issue': {'type': 'issue_ref', 'required': True},
+                                                            'feedback': {'type': 'feedback_ids', 'max': 50}}}),
     ]
 
 

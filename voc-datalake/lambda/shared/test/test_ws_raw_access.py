@@ -312,7 +312,11 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.52.00: the docs' publish reads the requesting administrator's way of working (USERFLAGS#{sub} in voc-aggregates,
     # a person's flag, the deployment's on this branch, as the broker's dial reads it).
     'lambda/shared/agents_engineering_knowledge_routes.py': (3, {'get_aggregates_table': 1}),
-    'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 3, 'transact': 3}),
+    # 7.52.00: the Registry's read of the month's spend ledger by role (voc-engineering, the engineering agents'
+    # fixed scope, as GET /agents/engineering/spend reads it): the deployment's, like the engineering agents (phase 3).
+    'lambda/shared/agents_engineering_registry_routes.py': (3, {'Table': 1}),
+    # (7.52.00: an agent's pause or resume with its history row, in one transaction)
+    'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 4, 'transact': 4}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),
     # BatchGetItem's one bounded helper (MCP tokens, projects); the layer's `batch_get_item` is the workspace's.
     'lambda/shared/batch_get.py': (0, {'batch': 1, 'meta.client': 1}),

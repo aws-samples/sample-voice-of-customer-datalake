@@ -647,19 +647,21 @@ def _skill_rows() -> Any:
     return SkillStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
 
 
-def _resolved_skill(event: Mapping[str, Any]) -> Resolved | None:
+def _resolved_skill(event: Mapping[str, Any]) -> tuple[Resolved | None, dict[str, str]]:
     """The skill the launch runs (``skills/resolve.py``): the flow step's pin, the store's current version for the
     run's connection, else the role's bundled template; None for a role with none. A pin or label the store refuses
     is ``RuntimeRefused`` (the board clears its launch record); a store that cannot be read raises as it is (the
-    board answers 503 and the coordinator asks again), never falling back to the template."""
+    board answers 503 and the coordinator asks again), never falling back to the template. With it, the Registry
+    card the step was made from (7.52.00, ``step_card``: ``{card, card_version}``, empty for none)."""
     from engineering.skills.model import SkillError
-    from engineering.skills.resolve import resolve_launch, step_pin
+    from engineering.skills.resolve import resolve_launch, step_card, step_pin
     role, run_id = str(event.get('role', '')), str(event.get('run_id', ''))
     step = str(event.get('step', '') or '')
     try:
         definition = _runs().flow_definition(run_id) if step else None
         return resolve_launch(role, connection=str(event.get('connection', '')),
-                              pin=step_pin(definition, step, role), rows=_skill_rows(), templates=bundled())
+                              pin=step_pin(definition, step, role), rows=_skill_rows(),
+                              templates=bundled()), step_card(definition, step, role)
     except (SkillError, FlowError) as error:
         raise RuntimeRefused(f'the {role} cannot be launched on its skill: {error}') from error
 
@@ -667,14 +669,15 @@ def _resolved_skill(event: Mapping[str, Any]) -> Resolved | None:
 def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]:
     """The agent's harness argv and what the reports name it by: its resolved skill's (a request that names another
     argv for it is refused), else the request's (a role with no skill yet). The session row records the skill's
-    label, which the session's harness fetches the record by (the board's ``skill``)."""
-    resolved = _resolved_skill(event)
+    label, which the session's harness fetches the record by (the board's ``skill``), and the Registry card its step
+    was made from (7.52.00: ``card``, ``card_version``)."""
+    resolved, card = _resolved_skill(event)
     given = event.get('harness')
     if resolved is not None:
         argv = harness_argv(resolved.skill)
         if given is not None and (not _strings(given) or tuple(given) != argv):
             raise RuntimeRefused(f'a {resolved.skill.name} runs its skill\'s harness ({resolved.label}), not another')
-        return argv, {'model': resolved.skill.model, 'skill_version': resolved.label}
+        return argv, {'model': resolved.skill.model, 'skill_version': resolved.label, **card}
     if not _strings(given) or not 0 < len(given) <= MAX_HARNESS_ARGS:
         raise RuntimeRefused(f'harness must be an argv of 1-{MAX_HARNESS_ARGS} strings (the role has no skill yet)')
     return tuple(given), {'model': str(event.get('model', ''))[:200],

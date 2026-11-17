@@ -58,6 +58,9 @@ export const CHAT_STREAM_TIMEOUT = cdk.Duration.minutes(15);
 const CONVERSATION_PARTITIONS = ['USER#*', `WS#${WORKSPACE_ID_PATTERN}#USER#*`];
 /** A workspace's list of conversation owners (record.ts `conversantKey`, shared/conversations.py `conversant_key`). */
 const CONVERSANTS_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#CONVERSANTS`;
+/** The Registry's cards made from a skill (7.52.00, lambda/engineering/registry/cards.py `_pk`): each card's partition
+ * and the listing's (`WS#<ws>#AGENTCARD#_list`). */
+const AGENT_CARD_PARTITIONS = 'WS#*#AGENTCARD#*';
 
 /**
  * What the Agents API's role may do with the stack's key through DynamoDB alone: what a customer-managed table key
@@ -123,14 +126,16 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // store): accept, reject, roll back, record a benchmark. Exactly what the store's writes use, on the skills'
   // partitions only: UpdateItem (a version's status, the HEAD's current version and its counter's ADD), PutItem (a
   // create-only version or log row) and ConditionCheckItem (the shared HEAD an acceptance checks); a transaction is
-  // authorised by its items' own actions. No delete. The key through DynamoDB is AgentsTablesKey's.
+  // authorised by its items' own actions. No delete. The key through DynamoDB is AgentsTablesKey's. Since 7.52.00
+  // also the Registry's cards made from a skill (lambda/engineering/registry/cards.py: a card's HEAD, its create-only
+  // version and log rows and its listing row, `WS#<ws>#AGENTCARD#<id>` and `…#AGENTCARD#_list`), the same actions.
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'SkillDecisions',
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:ConditionCheckItem'],
     resources: [engineeringTable.tableArn],
     // (Null false: a request that names no partition key never matches ForAllValues vacuously)
     conditions: {
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [SKILL_PARTITIONS] },
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [SKILL_PARTITIONS, AGENT_CARD_PARTITIONS] },
       Null: { 'dynamodb:LeadingKeys': 'false' },
     },
   }));

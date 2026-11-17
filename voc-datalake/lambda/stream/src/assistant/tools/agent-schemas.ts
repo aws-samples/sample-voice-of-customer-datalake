@@ -74,6 +74,8 @@ export const workflowDefinitionSchema = z.object({
   edges: z.array(edgeSchema).max(WORKFLOW_LIMITS.maxEdges),
   loops: z.array(loopSchema).max(WORKFLOW_LIMITS.maxLoops),
   budget: z.object({ monthly_usd: z.number().refine(isMonthlyBudgetUsd, MONTHLY_BUDGET_RULE) }).strict().optional(),
+  // An engineering flow's declared inputs (7.52.00, workflow_engineering.py inputs_of: the server checks each).
+  inputs: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 }).strict().refine(
   (definition) => jsonLength(definition) <= WORKFLOW_LIMITS.maxDefinitionJsonChars,
   'the definition is too large',
@@ -96,7 +98,8 @@ export const WORKFLOW_DEFINITION_PROPERTY: DocumentType = {
     + 'Its settings are in params, e.g. agent {role: hunter|fixer|builder|committer|pr-author|..., skill_version?, '
     + 'model?, budget_share?}, board {posters: [roles], claimers: [roles], until?: drained|caps}, map {shard_by: '
     + 'packages|history|pr_pages, shard_cap?}, quality_gate {max_rounds?, packs?, reviewers?} with a pass arrow and a '
-    + 'fail arrow to an end {status: needs_human}, memory {mode: read|write, scope: repo|role|person}. A flow with a '
+    + 'fail arrow to an end {status: needs_human}, memory {mode: read|write, scope: repo|role|person}, call_flow '
+    + '{flow: "<workflow_id>@<revision>", inputs?, budget_share?} (another saved engineering flow in its place). A flow with a '
     + 'committer or PR author ends at stop_at_pr (there is no merge step). It may carry budget: {monthly_usd} (what '
     + `its runs may spend in a calendar month, in dollars and cents from 0.01 to ${String(ENGINEERING_MAX_MONTHLY_BUDGET_USD)}; leave `
     + 'budget out for none, never null); change it only when the person asked, and say so in change_summary. '

@@ -645,6 +645,10 @@
       "label": "Mémoire",
       "description": "Lire ou écrire la mémoire du dépôt, d'un rôle ou d'une personne."
     },
+    "call_flow": {
+      "label": "Appeler un flux",
+      "description": "Exécute un autre flux d'ingénierie enregistré, à la révision qu'il nomme, à la place de cette étape."
+    },
     "stop_at_pr": {
       "label": "Arrêt à la PR",
       "description": "Le flux se termine par une pull request que des personnes relisent : rien n'est jamais fusionné."

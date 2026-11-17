@@ -87,8 +87,11 @@ def test_every_launchable_role_has_a_record_the_harness_reads_back_and_the_coach
         assert skill.to_record() == agent['skill']
         assert skill_label(skill.name, skill.version) == f'{role}@{agent["version"]}'
         assert agent['label'] == f'{role}@template-{agent["version"]}'
+        # (7.52.00: the tools the role may have are the role's, not the template's: outside its digest)
         assert agent['digest'] == digest({'card': {key: agent[key] for key in agent if key not in (
-            'id', 'version', 'label', 'digest', 'skill')}, 'skill': agent['skill']})
+            'id', 'version', 'label', 'digest', 'skill', 'allowed_tools')}, 'skill': agent['skill']})
+        assert agent['allowed_tools'] == sorted(spec.name for spec in role_specs(role))
+        assert set(agent['tools']) <= set(agent['allowed_tools'])
 
 
 def test_a_records_instructions_are_its_skill_above_its_examples_and_leave_the_platform_rules_out() -> None:
@@ -129,7 +132,9 @@ def test_the_bug_hunt_flow_chains_its_steps_lays_them_out_and_carries_its_settin
     settings = flow_settings(flow['definition'])
     assert (settings['pr'], settings['memory']['recall'], settings['learn']['enabled']) == ('ready', True, True)
     assert [item['check'] for item in step_assertions(nodes['gate'])] == ['gate.pack_checks_ran', 'gate.passed']
-    assert nodes['gate']['data']['params'] == {'packs': 'auto', 'max_rounds': 3, 'assert': step_assertions(nodes['gate'])}
+    # (7.52.00: who runs the gate stays on its step)
+    assert nodes['gate']['data']['params'] == {'packs': 'auto', 'max_rounds': 3, 'runner': 'gate-runner@latest',
+                                               'final_go': 'final-go@latest', 'assert': step_assertions(nodes['gate'])}
     assert nodes['board']['data']['params']['claimers'] == ['fixer', 'commit-reviewer']
     assert flow['skills'] == {'hunt': 'hunter@latest', 'board.fixer': 'fixer@latest',
                               'board.commit-reviewer': 'commit-reviewer@latest', 'gate.runner': 'gate-runner@latest',

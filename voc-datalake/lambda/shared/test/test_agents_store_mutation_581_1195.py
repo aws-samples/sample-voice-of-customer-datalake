@@ -264,7 +264,9 @@ class TestAgentShapes:
             'scope': None, 'instructions': None, 'personas': None, 'triggers': None, 'models': None,
             'output': None, 'workflow_id': None, 'budget': {'monthly_call_cap': 3}, 'engineering': None,
             'status': 'active', 'owner_username': None,
-            'created_by': 'c', 'created_at': 'ca', 'updated_at': 'ua', 'stats': EMPTY_STATS,
+            'created_by': 'c', 'created_at': 'ca', 'updated_at': 'ua',
+            # (7.52.00: an administrator's pause, exact: never inferred from the runs)
+            'paused': False, 'paused_at': None, 'paused_by': None, 'stats': EMPTY_STATS,
         }
 
     def test_the_view_keeps_a_stored_status_and_defaults_the_clock(self) -> None:
@@ -593,7 +595,7 @@ class TestRunRows:
             'started_at': None, 'finished_at': None, 'project_id': None, 'current_node_id': None,
             'model_calls': 4, 'error': None, 'workflow_id': None, 'workflow_revision': None,
             'kind': None, 'engineering_run_id': None, 'issue': None, 'prd': None, 'feedback_count': None,
-            'needs_human': None, 'decision': None, 'actions': [],
+            'expansion': None, 'needs_human': None, 'decision': None, 'actions': [],
         }
 
     def test_a_needs_human_run_view_carries_its_payload_and_actions(self) -> None:

@@ -13,6 +13,7 @@ Rows (``voc-agents``, ``pk``/``sk`` + ``gsi1`` on ``gsi1pk``/``gsi1sk``):
 - run        ``AGENT#{agent_id}`` / ``RUN#{run_id}``; ``gsi1pk=RUNS_ACTIVE`` while
              ``queued``/``running``
 - run event  ``RUN#{run_id}`` / ``EVT#{seq:08d}``
+- agent log  ``AGENT#{agent_id}`` / ``LOG#{at}#{n}``: a pause or a resume (7.52.00, ``set_paused``), create-only
 
 One active run per agent is enforced by a lock on the agent row
 (``active_run_id``), taken in the SAME transaction that writes the run, and the
@@ -785,8 +786,74 @@ def agent_view(item: Mapping[str, Any], now: datetime | None = None) -> dict[str
         'created_by': data.get('created_by'),
         'created_at': data.get('created_at'),
         'updated_at': data.get('updated_at'),
+        # An automation an administrator paused (7.52.00, ``set_paused``): on, and no run starts by itself until resumed.
+        'paused': data.get('paused') is True,
+        'paused_at': data.get('paused_at'),
+        'paused_by': data.get('paused_by'),
         'stats': agent_stats(item, now or utc_now()),
     }
+
+
+# --------------------------------------------------------------------------
+# Paused (7.52.00): an automation that is on, held by an administrator. The heartbeat starts no run of it (no
+# schedule, no new reviews, no threshold, no issue) until someone resumes it; Run now still runs it. Each change is
+# written with a create-only history row in the agent's partition, ``LOG#<at>#<n>`` (D1, D4: who, when, what), in the
+# same transaction. Only an automation that is on is paused, and turning it off ends its pause (logged as resumed,
+# ``via: disabled``), so a paused agent is always an enabled one.
+# --------------------------------------------------------------------------
+
+NOT_ON: Final = 'only an automation that is on is paused: this one is off'
+PAUSE_MOVED: Final = 'the automation changed since you read it: read it again'
+
+
+def agent_log_key(agent_id: str, at: datetime) -> dict[str, str]:
+    """A create-only history row of the agent (``LOG#<at, to the microsecond>#<n>``: in the order they were made, and
+    two changes at one instant never share a key)."""
+    return {'pk': f'AGENT#{agent_id}', 'sk': f'LOG#{at.astimezone(UTC).isoformat(timespec="microseconds")}#'
+                                             f'{secrets.token_hex(4)}'}
+
+
+def set_paused(table: Any, agent_id: str, paused: bool, *, by: str, username: str, now: datetime,
+               via: str = 'route') -> dict:
+    """Pause (``paused``) or resume the agent, with its history row, in one transaction; the agent as saved. A pause
+    needs the agent on and not paused, a resume a paused one (409 ``PAUSE_MOVED`` when that changed since it was read;
+    404 for an agent gone or archived). ``via``: what asked (the route, or turning the agent off)."""
+    stamp = iso(now)
+    values: dict[str, Any] = {':true': True, ':at': stamp, ':by': by}
+    if paused:
+        change: dict[str, Any] = {
+            'UpdateExpression': ('SET paused = :true, paused_at = :at, paused_by = :username, '
+                                 'updated_at = :at, updated_by = :by'),
+            'ConditionExpression': ('attribute_exists(pk) AND #status <> :archived AND enabled = :true '
+                                    'AND (attribute_not_exists(paused) OR paused <> :true)'),
+            'ExpressionAttributeNames': {'#status': 'status'},
+            'ExpressionAttributeValues': {**values, ':username': username, ':archived': AGENT_STATUS_ARCHIVED}}
+    else:
+        change = {
+            'UpdateExpression': ('SET paused = :false, updated_at = :at, updated_by = :by '
+                                 'REMOVE paused_at, paused_by'),
+            'ConditionExpression': 'attribute_exists(pk) AND paused = :true',
+            'ExpressionAttributeValues': {**values, ':false': False}}
+    log = {**agent_log_key(agent_id, now), 'event': 'paused' if paused else 'resumed', 'by': by,
+           'username': username, 'at': stamp, 'via': via}
+    try:
+        table.meta.client.transact_write_items(TransactItems=[
+            {'Update': {'TableName': table.name, 'Key': agent_key(agent_id), **change}},
+            {'Put': {'TableName': table.name, 'Item': log, 'ConditionExpression': 'attribute_not_exists(sk)'}},
+        ])
+    except ClientError as exc:
+        if not _is_cancelled_transaction(exc):
+            raise _service_error('pause or resume the agent', exc) from exc
+        found = get_agent(table, agent_id)
+        if found is None or found.get('status') == AGENT_STATUS_ARCHIVED:
+            raise NotFoundError('Agent not found') from exc
+        raise ConflictError(NOT_ON if paused and found.get('enabled') is not True else PAUSE_MOVED) from exc
+    except BotoCoreError as exc:
+        raise _service_error('pause or resume the agent', exc) from exc
+    found = get_agent(table, agent_id)
+    if found is None:
+        raise NotFoundError('Agent not found')
+    return found
 
 
 # --------------------------------------------------------------------------
@@ -1191,7 +1258,9 @@ def run_view(item: Mapping[str, Any]) -> dict[str, Any]:
     keys = ('run_id', 'agent_id', 'status', 'trigger', 'trigger_detail', 'started_at', 'finished_at',
             'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision',
             # An engineering agent's run (7.47.00): its engineering run (the run monitor's), what it started from.
-            'kind', 'engineering_run_id', 'issue', 'prd', 'feedback_count')
+            'kind', 'engineering_run_id', 'issue', 'prd', 'feedback_count',
+            # The calls its flow expanded (7.52.00, shared/flow_expand.py): [{step, flow, revision, inputs?}].
+            'expansion')
     view = {key: data.get(key) for key in keys}
     if view['status'] == RUN_COMPLETED:
         view['error'] = None

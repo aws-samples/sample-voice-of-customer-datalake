@@ -24,7 +24,8 @@ export const WORKFLOW_NODE_TYPES = [
  */
 export const WORKFLOW_SCHEMA_V2 = 'voc-workflow/2';
 export const ENGINEERING_NODE_TYPES = [
-  'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr',
+  'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'call_flow',
+  'stop_at_pr',
 ] as const;
 /** The largest monthly budget an engineering flow takes, in dollars (`MAX_MONTHLY_BUDGET_USD` in
  * workflow_engineering.py; the SPA's workflowsApi.lockstep.test.ts holds the two together). */

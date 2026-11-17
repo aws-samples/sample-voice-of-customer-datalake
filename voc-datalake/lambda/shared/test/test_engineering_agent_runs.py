@@ -279,3 +279,61 @@ def test_an_unreadable_connection_is_503() -> None:
 
     with pytest.raises(ServiceUnavailableError):
         eng_runs.connection_row(Broken(), 'shop')
+
+
+def _calling_flow(env: Any, called: str) -> dict:
+    """A budgeted flow whose one step calls ``called`` (``wf_…@<revision>``), saved: start → call → end."""
+    definition = {'schema': 'voc-workflow/2', 'name': 'Calls the bug fix', 'loops': [],
+                  'budget': {'monthly_usd': 80},
+                  'nodes': [{'id': 'start', 'type': 'start', 'position': {'x': 0, 'y': 0},
+                             'data': {'title': 'Start', 'params': {}}},
+                            {'id': 'fix', 'type': 'call_flow', 'position': {'x': 0, 'y': 120},
+                             'data': {'title': 'Fix', 'params': {'flow': called, 'budget_share': 0.5}}},
+                            {'id': 'end', 'type': 'end', 'position': {'x': 0, 'y': 240},
+                             'data': {'title': 'End', 'params': {}}}],
+                  'edges': [{'id': 'a', 'source': 'start', 'target': 'fix'},
+                            {'id': 'b', 'source': 'fix', 'target': 'end'}]}
+    return store.create_workflow(env.agents, definition, created_by='admin', username='alice', now=NOW)
+
+
+def test_a_run_starts_from_its_flow_with_the_calls_expanded_and_records_them() -> None:
+    """7.52.00: the start reads each called flow at the revision its call pins; the runtime gets a flat flow, and both
+    the run's copy (its start step) and the agent's run row record the calls."""
+    with agents_env() as env:
+        agent, row = _engineering_agent(env)
+        called = store.get_workflow(env.agents, agent['workflow_id'])
+        caller = _calling_flow(env, f'{called["workflow_id"]}@1')
+        agent = store.update_agent(env.agents, agent['agent_id'], {'workflow_id': caller['workflow_id']},
+                                   updated_by='admin-sub', now=NOW)
+        client = Lambda()
+        started = eng_runs.start_agent_run(env.agents, agent, caller, row, _start(), client=client, function='f',
+                                           now=NOW)
+        assert started.run is not None
+        sent = json.loads(json.loads(client.sent[0]['Payload'])['flow_definition'])
+        types = {node['id']: node['type'] for node in sent['nodes']}
+        assert 'call_flow' not in types.values()
+        assert types['fix.hunt'] == 'agent'
+        assert types['fix.pr'] == 'stop_at_pr'
+        recorded = [{'step': 'fix', 'flow': called['workflow_id'], 'revision': 1}]
+        assert sent['nodes'][0]['data']['params']['expansion'] == recorded
+        run = store.get_run(env.agents, agent['agent_id'], started.run['run_id'])
+        assert run is not None
+        assert store.run_view(run)['expansion'] == recorded
+
+
+def test_a_flow_whose_call_cannot_be_expanded_never_starts() -> None:
+    with agents_env() as env:
+        agent, row = _engineering_agent(env)
+        caller = _calling_flow(env, 'wf_0123456789ab@4')
+        client = Lambda()
+        with pytest.raises(ConflictError, match='not a saved revision'):
+            eng_runs.start_agent_run(env.agents, agent, caller, row, _start(), client=client, function='f', now=NOW)
+        assert client.sent == []
+        assert store.list_runs(env.agents, agent['agent_id'], limit=5)[0] == []
+        # (read without a reader, its calls stay in: such a flow is refused before the start is asked)
+        unexpanded = eng_runs.stored_flow(caller)
+        assert (unexpanded.calls, unexpanded.expansion) == (1, ())
+        plan = eng_runs.StartPlan(run_id='RUN', workflow_id=caller['workflow_id'], flow=unexpanded,
+                                  connection_id='shop', connection=ROW, language='python', goal='g', actor='a')
+        with pytest.raises(ConflictError, match='expanded'):
+            eng_runs.start_request(plan)

@@ -31,11 +31,15 @@ Rules (each failure is reported, none is silently repaired):
 
 An engineering flow is ``schema: 'voc-workflow/2'`` (plan v3 4.9): ``start``, ``end`` and the engineering steps
 (never an agents step, and no loops), a ``stop_at_pr`` being an end too; its steps' settings and its own rules are in
-``shared.workflow_engineering``. The agents' interpreter runs only ``voc-workflow/1``.
+``shared.workflow_engineering``. The agents' interpreter runs only ``voc-workflow/1``. Its ids may also hold a ``.``
+(7.52.00): a called flow's steps, once expanded into the run's copy, are ``<call>.<step>`` (shared/flow_expand.py),
+and the run's start checks that copy with these rules; a flow saved by a person keeps the plain ids (the save refuses
+a ``.``: it is the expansion's).
 
 Unknown top-level keys (``exported_from`` on an imported file, say) are dropped by
 normalisation; unknown keys inside nodes and edges are dropped too. An engineering flow's
-``budget`` (``workflow_engineering.budget_of``) is kept only when set.
+``budget`` (``workflow_engineering.budget_of``) and, since 7.52.00, its declared ``inputs``
+(``workflow_engineering.inputs_of``: what a run of it takes, and what a call of it may name) are kept only when set.
 
 A stored definition from before 3.00.00 may still carry ``pass``/``fail`` arrows
 out of a custom step. They are normalised ON READ (:func:`decode_definition`,
@@ -100,6 +104,8 @@ MAX_COORDINATE: Final = 1_000_000
 # for the item's other attributes.
 MAX_DEFINITION_BYTES: Final = 300_000
 _ID_RE: Final = re.compile(r'[A-Za-z0-9_-]{1,64}')
+#: An engineering flow's ids: a called flow's steps are ``<call>.<step>`` in a run's copy (shared/flow_expand.py).
+_V2_ID_RE: Final = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}')
 
 
 @dataclass(frozen=True)
@@ -154,10 +160,11 @@ def _text(value: object, label: str, max_chars: int, out: _Collector, *, require
     return text
 
 
-def _identifier(value: object, label: str, out: _Collector) -> str | None:
-    if isinstance(value, str) and _ID_RE.fullmatch(value):
+def _identifier(value: object, label: str, out: _Collector, schema: str = SCHEMA) -> str | None:
+    if isinstance(value, str) and (_V2_ID_RE if schema == SCHEMA_V2 else _ID_RE).fullmatch(value):
         return value
-    out.add(f'{label} must be 1-64 letters, digits, "_" or "-"')
+    dot = '".", ' if schema == SCHEMA_V2 else ''
+    out.add(f'{label} must be 1-64 letters, digits, {dot}"_" or "-"')
     return None
 
 
@@ -228,7 +235,7 @@ def _node(value: object, index: int, out: _Collector, schema: str) -> dict[str, 
     if not isinstance(value, Mapping):
         out.add(f'node {index + 1} must be an object')
         return None
-    node_id = _identifier(value.get('id'), f'node {index + 1} id', out)
+    node_id = _identifier(value.get('id'), f'node {index + 1} id', out, schema)
     if node_id is None:
         return None
     node_type = value.get('type')
@@ -248,13 +255,13 @@ def _node(value: object, index: int, out: _Collector, schema: str) -> dict[str, 
     }
 
 
-def _edge(value: object, index: int, out: _Collector) -> dict[str, Any] | None:
+def _edge(value: object, index: int, out: _Collector, schema: str) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         out.add(f'edge {index + 1} must be an object')
         return None
-    edge_id = _identifier(value.get('id'), f'edge {index + 1} id', out)
-    source = _identifier(value.get('source'), f'edge {index + 1} source', out)
-    target = _identifier(value.get('target'), f'edge {index + 1} target', out)
+    edge_id = _identifier(value.get('id'), f'edge {index + 1} id', out, schema)
+    source = _identifier(value.get('source'), f'edge {index + 1} source', out, schema)
+    target = _identifier(value.get('target'), f'edge {index + 1} target', out, schema)
     label = value.get('label')
     if label is not None and label not in EDGE_LABELS:
         out.add(f"edge {index + 1} label must be one of {', '.join(EDGE_LABELS)}")
@@ -324,7 +331,7 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
     if schema == SCHEMA_V2 and raw_loops:
         out.add('an engineering flow repeats through its board, so it declares no loops')
     nodes = [node for i, value in enumerate(raw_nodes) if (node := _node(value, i, out, schema))]
-    edges = [edge for i, value in enumerate(raw_edges) if (edge := _edge(value, i, out))]
+    edges = [edge for i, value in enumerate(raw_edges) if (edge := _edge(value, i, out, schema))]
     loops = [loop for i, value in enumerate(raw_loops) if (loop := _loop(value, i, out))]
     _unique(nodes, 'node', out)
     _unique(edges, 'edge', out)
@@ -337,6 +344,14 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
         out.add('only an engineering flow has a budget')
     elif budget is not None:   # (kept only when set: a flow saved before budgets reads and encodes as before)
         parsed['budget'] = budget
+    # (7.52.00: an engineering flow's declared inputs, kept only when set, as its budget)
+    inputs, refused = engineering.inputs_of(raw.get('inputs'))
+    if refused:
+        out.add(refused)
+    elif inputs is not None and schema != SCHEMA_V2:
+        out.add('only an engineering flow declares inputs')
+    elif inputs is not None:
+        parsed['inputs'] = inputs
     return parsed
 
 

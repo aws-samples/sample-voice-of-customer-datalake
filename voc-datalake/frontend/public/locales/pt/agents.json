@@ -645,6 +645,10 @@
       "label": "Memória",
       "description": "Ler ou escrever na memória do repositório, de um papel ou de uma pessoa."
     },
+    "call_flow": {
+      "label": "Chamar um fluxo",
+      "description": "Executa outro fluxo de engenharia salvo, na revisão indicada, no lugar desta etapa."
+    },
     "stop_at_pr": {
       "label": "Parar no PR",
       "description": "O fluxo termina num pull request para pessoas reverem: nada é alguma vez integrado."

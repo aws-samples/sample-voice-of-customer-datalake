@@ -57,6 +57,7 @@ from engineering.orchestration.compile import (
     Sources,
     compile_bundle,
     eval_cases,
+    gate_briefs,
     kind_of,
     kiro_files,
     kiro_tools,
@@ -300,6 +301,16 @@ def _placeholder_problems(root: Path) -> Problems:
     return found
 
 
+def brief_problems(root: Path, packs: frozenset[str]) -> Problems:
+    """Each brief is the source of truth for packs that exist (7.52.00: the bundle's ``gates.briefs``), and every pack
+    has one."""
+    briefs = gate_briefs(root)
+    found = [f'gates/briefs/{brief["id"]}.md: it names no gate pack (an alias of two, or a pack of its name)'
+             for brief in briefs if not set(brief['packs']) <= packs]
+    covered = {pack for brief in briefs for pack in brief['packs']}
+    return found + [f'gates/{pack}: no brief in gates/briefs is its source of truth' for pack in sorted(packs - covered)]
+
+
 def drift_problems(text: str, root: Path = ROOT) -> Problems:
     """``bundle.json`` and its Lambda copy are ``text``, the compile's output."""
     return [f'{"lambda/shared/" + path.name if path == LAMBDA_COPY else relative(path, root)}: it is not the '
@@ -455,6 +466,7 @@ def problems(root: Path = ROOT, *, drift: bool = True) -> Problems:
         return [f'gates: {error}']
     found += _skill_problems(sources) + _card_problems(sources) + _flow_problems(sources, packs)
     found += _automation_problems(sources) + _eval_problems(root) + _placeholder_problems(root)
+    found += brief_problems(root, packs)
     if found:
         return found
     bundle: dict[str, Any] = {}

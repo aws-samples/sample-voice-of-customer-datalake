@@ -21,7 +21,24 @@ to the same answers by the shared fixture ``frontend/src/test/engineeringFlows.j
 - ``memory``: ``mode`` read | write, ``scope`` repo | role | person, ``limit`` 1 to 50 for a read;
 - ``stop_at_pr``: the flow's end on a pull request (no arrow leaves it, never a merge: there is no merge step). A flow
   with a committer or a PR author (an agent, or a board's claimers) must end there: every way their work can end is
-  a stop at PR or a human decision point, and at least one is a stop at PR.
+  a stop at PR or a human decision point, and at least one is a stop at PR;
+- ``call_flow`` (7.52.00): another saved engineering flow run in this step's place, ``flow`` its id at a pinned
+  revision (``wf_<id>@<revision>``), with optional ``inputs`` (names to short text, recorded with the run) and
+  ``budget_share`` (the called flow's part of the run's budget, which its agents' shares are scaled to). The call is
+  expanded before the run starts (``shared/flow_expand.py``): the runtime only ever sees a flat flow. That the called
+  flow exists, its depth, its size, a cycle and its stop at PR are the expansion's to check (they need the stored
+  flows); the rules here are the step's own shape.
+
+An agent may come from a Registry card (7.52.00): ``params.card`` ``<card>@v<n>`` names the card's version it was made
+from, and the step then pins its skill version (the card's: ``v<n>``, never ``latest``). That the card exists and the
+step carries its role, skill version and model is the save's to check (the cards are stored). A quality gate may say
+who runs it the same way (7.52.00): ``runner`` and ``final_go``, each its role at ``latest`` or a version
+(``gate-runner@v3``) or a card of that role at a version (``gate-runner-strict@v2``); left out, ``<role>@latest``.
+
+Three more 7.52.00 rules, all additive: an assertion is checked only where it can be (``ASSERTION_PLACES``: a gate's
+on a quality gate, Learn's on the flow's Learn, every other one on an agent or a board) and ``on_fail: fail_arrow``
+only on a quality gate; and a flow may declare its ``inputs`` (``{<name>: {type, max?, required?, description?}}``,
+``inputs_of``), what a run of it takes and what a call of it may name.
 
 Two settings are 7.50.00's, both optional and kept in ``params``, so a flow saved before them stays valid and every
 editor keeps them as they are (D1; the editor and the assistant leave ``params`` as written):
@@ -50,8 +67,10 @@ from typing import Any, Final
 
 SCHEMA_V2: Final = 'voc-workflow/2'
 NODE_STOP_AT_PR: Final = 'stop_at_pr'
+#: Another saved flow, run in a step's place (7.52.00): expanded before the run starts (shared/flow_expand.py).
+NODE_CALL_FLOW: Final = 'call_flow'
 ENGINEERING_NODE_TYPES: Final = ('agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop',
-                                 'self_improvement', 'memory', NODE_STOP_AT_PR)
+                                 'self_improvement', 'memory', NODE_CALL_FLOW, NODE_STOP_AT_PR)
 #: The agent catalog's roles (engineering.connectors.identity AGENT_ROLES; a lockstep test holds the two together).
 ENGINEERING_ROLES: Final = ('mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer',
                             'gate-runner', 'pr-author', 'pr-reviewer', 'final-go', 'coordinator', 'coach')
@@ -77,11 +96,18 @@ MAX_SHARD_CAP: Final = 200
 MAX_GATE_ROUNDS: Final = 5
 #: What a quality gate step may set (engineering.quality_gate.gate PARAMS but the ids the runtime fills in), and each
 #: reviewer's settings and the default reviewers (its REVIEWER_KEYS and DEFAULT_REVIEWERS; a lockstep test holds them).
-GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel'})
 #: ``max_parallel`` (7.51.00, optional): the most agents of the step at work at once, which the board's ``launch`` holds
-#: (board/flow_guard.py); on the steps that take several tasks at once.
+#: (board/flow_guard.py); on the steps that take several tasks at once. ``runner`` and ``final_go`` (7.52.00): who runs
+#: the gate, the role or a Registry card of it at a version (``GATE_AGENTS``; left out, the defaults).
+GATE_SETTINGS: Final = frozenset({'max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel',
+                                  'runner', 'final_go'})
 MAX_PARALLEL: Final = 50
 PARALLEL_TYPES: Final = frozenset({'agent', 'board', 'quality_gate'})
+#: A gate's agents: each setting's role, and its default (the role at its latest skill).
+GATE_AGENTS: Final[Mapping[str, str]] = {'runner': 'gate-runner', 'final_go': 'final-go'}
+GATE_AGENT_DEFAULTS: Final[Mapping[str, str]] = {key: f'{role}@latest' for key, role in GATE_AGENTS.items()}
+#: A role or a Registry card at a version: ``<role>@latest``, ``<role>@v<n>``, ``<role>-<slug>@v<n>``.
+AGENT_REF: Final = re.compile(r'(?P<id>[a-z][a-z0-9-]{0,63})@(?P<version>latest|v[1-9][0-9]{0,5})\Z')
 REVIEWER_SETTINGS: Final = frozenset({'name', 'focus', 'model_id', 'advisory'})
 #: The default reviewers, each with whether it is advisory (a reviewer that leaves ``advisory`` out takes its own).
 DEFAULT_REVIEWERS: Final = {'security': False, 'quality': False, 'first-principles': True}
@@ -99,6 +125,25 @@ ASSERTION_ARGS: Final[Mapping[str, tuple[str, ...]]] = {
 }
 ASSERTION_ON_FAIL: Final = ('block', 'fail_arrow', 'warn')
 MAX_ASSERTIONS: Final = 10
+#: Where each assertion is checked (7.52.00): a gate's on a quality gate, Learn's on the flow's Learn (its start step's
+#: ``learn.assert``), every other one on an agent or a board (what records findings, notes, tasks, patches and host
+#: writes). ``fail_arrow`` is a quality gate's alone (its fail arrow).
+ASSERTION_PLACES: Final[Mapping[str, tuple[str, ...]]] = {'gate.': ('quality_gate',), 'learn.': ('learn',)}
+ASSERTION_STEPS: Final = ('agent', 'board')
+FAIL_ARROW_STEPS: Final = ('quality_gate',)
+#: How a place reads in a message.
+PLACE_WORDS: Final[Mapping[str, str]] = {'quality_gate': 'a quality gate', 'learn': "the flow's Learn",
+                                         'agent': 'an agent', 'board': 'a board'}
+#: A flow's declared inputs (7.52.00, ``definition.inputs``): what a run of it takes, and what a call of it may name.
+MAX_FLOW_INPUTS: Final = 10
+INPUT_SPEC_KEYS: Final = frozenset({'type', 'max', 'required', 'description'})
+MAX_INPUT_TYPE_CHARS: Final = 40
+MAX_INPUT_ITEMS: Final = 1000
+MAX_INPUT_DESCRIPTION_CHARS: Final = 200
+INPUTS_RULE: Final = (f"a flow's inputs map at most {MAX_FLOW_INPUTS} names (lowercase letters, digits and '_') to "
+                      f"{{type, max?, required?, description?}}: a type of at most {MAX_INPUT_TYPE_CHARS} characters, "
+                      f"max a whole number from 1 to {MAX_INPUT_ITEMS}, required true or false, a description of at "
+                      f'most {MAX_INPUT_DESCRIPTION_CHARS} characters')
 #: The flow's own settings, on its start step's params (7.50.00): its memory recall, its built-in Learn step and how
 #: its pull request opens (ready for review by default; a person merges, always).
 LEARN_SETTINGS: Final = frozenset({'enabled', 'model', 'budget_share', 'roles', 'after_needs_human_hours', 'assert'})
@@ -116,8 +161,28 @@ GATE_FAIL_TO_A_PERSON: Final = ("a quality gate's 'fail' arrow goes to a human d
                                 '(an end step that needs a human)')
 ENDS_AT_A_STOP_AT_PR: Final = ('a committer or PR author ends the flow at a stop at PR: every way its work can end '
                                'is a stop at PR or a human decision point, and at least one is a stop at PR')
+#: A call's settings (``call_flow``) and how many named inputs it takes.
+CALL_SETTINGS: Final = frozenset({'flow', 'inputs', 'budget_share'})
+MAX_CALL_INPUTS: Final = 10
+MAX_CALL_INPUT_CHARS: Final = 200
+#: A saved flow at a revision (``shared.agents_store`` ids: ``wf_`` and 12 hex digits; its revisions 1 to 999,999).
+FLOW_REF: Final = re.compile(r'(?P<flow>wf_[0-9a-f]{12})@(?P<revision>[1-9][0-9]{0,5})\Z')
+#: A Registry card at a version (``<role>-<slug>@v<n>``: engineering/registry/cards.py).
+CARD_REF: Final = re.compile(r'(?P<card>[a-z][a-z0-9-]{0,63})@v(?P<version>[1-9][0-9]{0,5})\Z')
+CALL_NEEDS_A_FLOW: Final = ("a call needs params.flow: a saved engineering flow at its revision, like "
+                            "'wf_0123456789ab@3'")
+CALL_SETTINGS_RULE: Final = f"a call's settings are {', '.join(sorted(CALL_SETTINGS))}"
+CALL_INPUTS_RULE: Final = (f"a call's params.inputs maps at most {MAX_CALL_INPUTS} names (lowercase letters, digits "
+                           f"and '_') to text of at most {MAX_CALL_INPUT_CHARS} characters")
+SHARE_RULE: Final = 'is a fraction of the run\'s budget, above 0 and at most 1'
+CARD_RULE: Final = "an agent's params.card is a Registry card at its version, like 'fixer-python@v2'"
+CARD_PINS: Final = "an agent from a Registry card pins its skill version (the card's), never 'latest'"
 _SKILL_VERSION = re.compile(r'(?:latest|v[1-9][0-9]{0,4})\Z')
-_WORK = frozenset({'agent', 'map', 'board', 'quality_gate', 'learning_loop'})
+_INPUT_NAME = re.compile(r'[a-z][a-z0-9_]{0,39}\Z')
+_INPUT_TYPE = re.compile(r'[a-z][a-z0-9_./-]{0,39}\Z')
+_WORK = frozenset({'agent', 'map', 'board', 'quality_gate', 'learning_loop', NODE_CALL_FLOW})
+#: The steps whose ``budget_share`` is a part of the run's budget (an agent's; a call's, for the flow it runs).
+_SHARED_BUDGET = frozenset({'agent', NODE_CALL_FLOW})
 _TERMINAL = frozenset({'end', NODE_STOP_AT_PR})
 
 Issues = list[tuple[str, str | None]]
@@ -148,9 +213,36 @@ def _agent_issues(params: Mapping[str, Any]) -> list[str]:
         issues.append("an agent's params.skill_version is 'latest' or a version like 'v3'")
     if not _model(params, 'model'):
         issues.append(f"an agent's params.model is a model id of at most {MAX_MODEL_CHARS} characters")
-    share = params.get('budget_share')
-    if share is not None and (isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share <= 1):
-        issues.append("an agent's params.budget_share is a fraction of the run's budget, above 0 and at most 1")
+    if not _share_ok(params.get('budget_share')):
+        issues.append(f"an agent's params.budget_share {SHARE_RULE}")
+    card = params.get('card')
+    if card is not None and not (isinstance(card, str) and CARD_REF.fullmatch(card)):
+        issues.append(CARD_RULE)
+    elif card is not None and params.get('skill_version', 'latest') == 'latest':
+        issues.append(CARD_PINS)
+    return issues
+
+
+def _share_ok(share: object) -> bool:
+    """Left out (a null is read as none set), or a fraction of the run's budget above 0 and at most 1."""
+    return share is None or (not isinstance(share, bool) and isinstance(share, (int, float)) and 0 < share <= 1)
+
+
+def _call_issues(params: Mapping[str, Any]) -> list[str]:
+    """A ``call_flow`` step's own settings: the flow at its revision, its inputs, its share."""
+    issues = []
+    if set(params) - CALL_SETTINGS:
+        issues.append(CALL_SETTINGS_RULE)
+    flow = params.get('flow')
+    if not (isinstance(flow, str) and FLOW_REF.fullmatch(flow)):
+        issues.append(CALL_NEEDS_A_FLOW)
+    inputs = params.get('inputs', {})
+    if not (isinstance(inputs, Mapping) and len(inputs) <= MAX_CALL_INPUTS
+            and all(isinstance(name, str) and _INPUT_NAME.fullmatch(name) for name in inputs)
+            and all(isinstance(text, str) and len(text) <= MAX_CALL_INPUT_CHARS for text in inputs.values())):
+        issues.append(CALL_INPUTS_RULE)
+    if not _share_ok(params.get('budget_share')):
+        issues.append(f"a call's params.budget_share {SHARE_RULE}")
     return issues
 
 
@@ -187,7 +279,23 @@ def _gate_issues(params: Mapping[str, Any]) -> list[str]:
         issues.append(f"a quality gate's params.packs is 'auto' or a list of gate packs: {', '.join(GATE_PACKS)}")
     if not _model(params, 'final_go_model'):
         issues.append(f"a quality gate's params.final_go_model is a model id of at most {MAX_MODEL_CHARS} characters")
+    issues += [gate_agent_rule(key) for key in GATE_AGENTS if key in params and not gate_agent_ok(key, params[key])]
     return issues
+
+
+def gate_agent_ok(key: str, value: object) -> bool:
+    """A gate's ``runner`` or ``final_go``: its role at ``latest`` or a version, or a card of that role
+    (``<role>-<slug>``) at a version."""
+    match = AGENT_REF.fullmatch(value) if isinstance(value, str) else None
+    role = GATE_AGENTS[key]
+    return match is not None and (match['id'] == role
+                                  or (match['id'].startswith(f'{role}-') and match['version'] != 'latest'))
+
+
+def gate_agent_rule(key: str) -> str:
+    role = GATE_AGENTS[key]
+    return (f"a quality gate's params.{key} is the {role} or a Registry card of it, at a version: '{role}@latest', "
+            f"'{role}@v3' or '{role}-strict@v2'")
 
 
 def _board_issues(params: Mapping[str, Any]) -> list[str]:
@@ -220,21 +328,54 @@ def _memory_issues(params: Mapping[str, Any]) -> list[str]:
     return issues
 
 
-def _assertion_issues(raw: object) -> list[str]:
-    """A step's ``params.assert``: checks of the vocabulary, each with exactly the arguments it takes."""
+def assertion_places(check: str) -> tuple[str, ...]:
+    """Where ``check`` is checked (``ASSERTION_PLACES`` by its prefix, else ``ASSERTION_STEPS``)."""
+    return next((places for prefix, places in ASSERTION_PLACES.items() if check.startswith(prefix)), ASSERTION_STEPS)
+
+
+def _assertion_issues(raw: object, place: str) -> list[str]:
+    """A step's ``params.assert`` (``place``: the step's type, or ``learn`` for the flow's Learn): checks of the
+    vocabulary, each with exactly the arguments it takes, each checked where it can be (``assertion_places``), and
+    ``fail_arrow`` only on a quality gate."""
     if not isinstance(raw, list) or len(raw) > MAX_ASSERTIONS:
         return [f"a step's params.assert is a list of at most {MAX_ASSERTIONS} assertions"]
     issues = []
     for item in raw:
         check = item.get('check') if isinstance(item, Mapping) else None
         args = item.get('args', {}) if isinstance(item, Mapping) else None
+        on_fail = item.get('on_fail', 'block') if isinstance(item, Mapping) else None
         if not isinstance(item, Mapping) or set(item) - {'check', 'args', 'on_fail'} or check not in ASSERTION_ARGS:
             issues.append(f"an assertion is {{check, args?, on_fail?}}, its check one of {', '.join(ASSERTION_ARGS)}")
         elif not isinstance(args, Mapping) or set(args) != set(ASSERTION_ARGS[check]):
             issues.append(f"the assertion {check} takes {', '.join(ASSERTION_ARGS[check]) or 'no arguments'}")
-        elif item.get('on_fail', 'block') not in ASSERTION_ON_FAIL:
+        elif on_fail not in ASSERTION_ON_FAIL:
             issues.append(f"an assertion's on_fail is one of {', '.join(ASSERTION_ON_FAIL)}")
+        elif place not in assertion_places(check):
+            where = ' or '.join(PLACE_WORDS[step] for step in assertion_places(check))
+            issues.append(f'the assertion {check} is checked on {where}')
+        elif on_fail == 'fail_arrow' and place not in FAIL_ARROW_STEPS:
+            issues.append("an assertion's on_fail fail_arrow is a quality gate's (its fail arrow): block or warn here")
     return issues
+
+
+def _input_ok(name: object, spec: object) -> bool:
+    if not (isinstance(name, str) and _INPUT_NAME.fullmatch(name)) or not isinstance(spec, Mapping) \
+            or set(spec) - INPUT_SPEC_KEYS:
+        return False
+    kind, most, description = spec.get('type'), spec.get('max', 1), spec.get('description', '')
+    return (isinstance(kind, str) and _INPUT_TYPE.fullmatch(kind) is not None
+            and type(most) is int and 1 <= most <= MAX_INPUT_ITEMS
+            and isinstance(spec.get('required', False), bool)
+            and isinstance(description, str) and len(description) <= MAX_INPUT_DESCRIPTION_CHARS)
+
+
+def inputs_of(raw: object) -> tuple[dict[str, Any] | None, str | None]:
+    """A flow's declared ``inputs`` (7.52.00), or the rule they break; ``(None, None)`` when it declares none."""
+    if raw is None:
+        return None, None
+    if not isinstance(raw, Mapping) or len(raw) > MAX_FLOW_INPUTS or not all(map(_input_ok, raw, raw.values())):
+        return None, INPUTS_RULE
+    return {str(name): dict(spec) for name, spec in raw.items()}, None
 
 
 def _recall_issues(raw: object) -> list[str]:
@@ -257,7 +398,7 @@ def _learn_issues(raw: object) -> list[str]:
         issues.append(f"a flow's learn.roles is a list of roles, each once ({', '.join(ENGINEERING_ROLES)})")
     if not _whole(raw, 'after_needs_human_hours', 1, MAX_NEEDS_HUMAN_HOURS, default=72):
         issues.append(f"a flow's learn.after_needs_human_hours is a whole number from 1 to {MAX_NEEDS_HUMAN_HOURS}")
-    return issues + (_assertion_issues(raw['assert']) if 'assert' in raw else [])
+    return issues + (_assertion_issues(raw['assert'], 'learn') if 'assert' in raw else [])
 
 
 def _start_issues(params: Mapping[str, Any]) -> list[str]:
@@ -270,7 +411,7 @@ def _start_issues(params: Mapping[str, Any]) -> list[str]:
 
 
 _PARAMS = {'agent': _agent_issues, 'quality_gate': _gate_issues, 'board': _board_issues, 'map': _map_issues,
-           'memory': _memory_issues, 'start': _start_issues}
+           'memory': _memory_issues, NODE_CALL_FLOW: _call_issues, 'start': _start_issues}
 
 
 def flow_settings(definition: object) -> dict[str, Any]:
@@ -315,7 +456,9 @@ def budget_of(raw: object) -> tuple[dict[str, float] | None, str | None]:
 def params_issues(node_type: str, params: Mapping[str, Any]) -> list[str]:
     """What is wrong with an engineering step's settings (empty when nothing is): its own, and its assertions."""
     check = _PARAMS.get(node_type)
-    asserted = _assertion_issues(params['assert']) if 'assert' in params and node_type in ENGINEERING_NODE_TYPES else []
+    # (a call's steps carry their own assertions: the call itself takes none, CALL_SETTINGS)
+    asserts = 'assert' in params and node_type in ENGINEERING_NODE_TYPES and node_type != NODE_CALL_FLOW
+    asserted = _assertion_issues(params['assert'], node_type) if asserts else []
     wrong = 'max_parallel' in params and (node_type not in PARALLEL_TYPES
                                           or not _whole(params, 'max_parallel', 1, MAX_PARALLEL))
     parallel = [(f"a step's params.max_parallel is a whole number from 1 to {MAX_PARALLEL}, on an agent, a board or "
@@ -420,7 +563,8 @@ def graph_issues(nodes: Sequence[Mapping[str, Any]], edges: Sequence[Mapping[str
     """
     by_id = {node['id']: node for node in nodes}
     types = {node_id: node['type'] for node_id, node in by_id.items()}
-    shares = [node['data']['params'].get('budget_share') for node in nodes if node['type'] == 'agent']
+    # (a call's share is the flow it runs: its agents' shares are scaled into it, shared/flow_expand.py)
+    shares = [node['data']['params'].get('budget_share') for node in nodes if node['type'] in _SHARED_BUDGET]
     issues: Issues = []
     # fsum: 0.1 + 0.2 + 0.7 is the whole budget, not a hair over it.
     if math.fsum(share for share in shares if isinstance(share, (int, float))) > 1:

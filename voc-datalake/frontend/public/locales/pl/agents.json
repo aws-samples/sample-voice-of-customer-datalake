@@ -720,6 +720,10 @@
       "label": "Pamięć",
       "description": "Odczyt z pamięci repozytorium, roli lub osoby albo zapis do niej."
     },
+    "call_flow": {
+      "label": "Wywołaj przepływ",
+      "description": "Uruchamia w miejscu tego kroku inny zapisany przepływ inżynieryjny, w podanej rewizji."
+    },
     "stop_at_pr": {
       "label": "Stop na PR",
       "description": "Przepływ kończy się pull requestem do przejrzenia przez ludzi: nic nie jest nigdy scalane."

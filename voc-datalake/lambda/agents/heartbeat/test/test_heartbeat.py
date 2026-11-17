@@ -111,6 +111,16 @@ class TestTick:
             _agent(env, enabled=False)
             assert hb.run_heartbeat(_context(), now=NOW)['evaluated'] == 0
 
+    def test_a_paused_agent_starts_no_run_until_it_is_resumed(self):
+        """7.52.00: an administrator's pause holds an automation that is on; its due trigger starts nothing."""
+        with _tick_env() as env:
+            agent = _agent(env, triggers=[{'kind': 'schedule', 'every': '12h'}])
+            store.set_paused(env.agents, agent['agent_id'], True, by='admin-sub', username='alice', now=NOW)
+            assert hb.run_heartbeat(_context(), now=NOW) == {'evaluated': 0, 'started': 0, 'outcomes': {}}
+            assert env.sfn.start_execution.call_count == 0
+            store.set_paused(env.agents, agent['agent_id'], False, by='admin-sub', username='alice', now=NOW)
+            assert hb.run_heartbeat(_context(), now=NOW)['started'] == 1
+
     def test_daily_cap(self):
         with _tick_env() as env:
             agent = _agent(env, triggers=[{'kind': 'schedule', 'every': '12h'}],

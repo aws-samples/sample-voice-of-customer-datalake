@@ -1803,7 +1803,7 @@
   },
   "errors": [
    {
-    "message": "a quality gate's settings are assert, final_go_model, max_parallel, max_rounds, packs, reviewers",
+    "message": "a quality gate's settings are assert, final_go, final_go_model, max_parallel, max_rounds, packs, reviewers, runner",
     "node_id": "step"
    }
   ]
@@ -3465,5 +3465,2313 @@
     "node_id": "hunt"
    }
   ]
+ },
+ {
+  "name": "a call of a saved flow at its revision",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "budget_share": 0.5,
+       "inputs": {
+        "issue": "the run's issue"
+       }
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": []
+ },
+ {
+  "name": "a call with no revision",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab"
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call needs params.flow: a saved engineering flow at its revision, like 'wf_0123456789ab@3'",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call of no flow",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {}
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call needs params.flow: a saved engineering flow at its revision, like 'wf_0123456789ab@3'",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call with an unknown setting",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "colour": "red"
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call's settings are budget_share, flow, inputs",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call with assertions",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "assert": []
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call's settings are budget_share, flow, inputs",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call with too many inputs",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "inputs": {
+        "input_0": "x",
+        "input_1": "x",
+        "input_2": "x",
+        "input_3": "x",
+        "input_4": "x",
+        "input_5": "x",
+        "input_6": "x",
+        "input_7": "x",
+        "input_8": "x",
+        "input_9": "x",
+        "input_10": "x"
+       }
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call's params.inputs maps at most 10 names (lowercase letters, digits and '_') to text of at most 200 characters",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call input that is not text",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "inputs": {
+        "issue": 12
+       }
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call's params.inputs maps at most 10 names (lowercase letters, digits and '_') to text of at most 200 characters",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call with a share of 0",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "budget_share": 0
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a call's params.budget_share is a fraction of the run's budget, above 0 and at most 1",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a call and an agent over the budget",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.6
+      }
+     }
+    },
+    {
+     "id": "call",
+     "type": "call_flow",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "call",
+      "params": {
+       "flow": "wf_0123456789ab@3",
+       "budget_share": 0.5
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-call-",
+     "source": "hunt",
+     "target": "call"
+    },
+    {
+     "id": "call-end-",
+     "source": "call",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "the agents' budget shares add up to more than the run's budget (at most 1 in all)"
+   }
+  ]
+ },
+ {
+  "name": "an agent from a Registry card",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "role": "fixer",
+       "skill_version": "v3",
+       "card": "fixer-python@v2"
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": []
+ },
+ {
+  "name": "an agent from a card at latest",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "role": "fixer",
+       "card": "fixer-python@v2"
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "an agent from a Registry card pins its skill version (the card's), never 'latest'",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "an agent with a bad card",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "role": "fixer",
+       "skill_version": "v3",
+       "card": "fixer python"
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "an agent's params.card is a Registry card at its version, like 'fixer-python@v2'",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a gate run by cards and its own assertions",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto",
+       "runner": "gate-runner-strict@v2",
+       "final_go": "final-go@v3",
+       "assert": [
+        {
+         "check": "gate.passed",
+         "on_fail": "fail_arrow"
+        },
+        {
+         "check": "gate.pack_checks_ran"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": []
+ },
+ {
+  "name": "a gate run by another role",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto",
+       "runner": "fixer@latest"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a quality gate's params.runner is the gate-runner or a Registry card of it, at a version: 'gate-runner@latest', 'gate-runner@v3' or 'gate-runner-strict@v2'",
+    "node_id": "gate"
+   }
+  ]
+ },
+ {
+  "name": "a gate card at latest",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto",
+       "final_go": "final-go-strict@latest"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a quality gate's params.final_go is the final-go or a Registry card of it, at a version: 'final-go@latest', 'final-go@v3' or 'final-go-strict@v2'",
+    "node_id": "gate"
+   }
+  ]
+ },
+ {
+  "name": "a gate's assertion on an agent",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "gate.passed"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "the assertion gate.passed is checked on a quality gate",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "fail_arrow on an agent",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "findings.cite_evidence",
+         "on_fail": "fail_arrow"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "an assertion's on_fail fail_arrow is a quality gate's (its fail arrow): block or warn here",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "an unknown assertion",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "tests.green"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "an assertion is {check, args?, on_fail?}, its check one of findings.cite_evidence, gate.pack_checks_ran, gate.passed, learn.proposals_name_case, notes.cite_sources, patch.max_lines, patch.no_ci_changes, patch.submitted, patch.touches_tests, pr.links_issue, pr.opened, pr.state_as_flow, push.tree_is_judged_tree, review.commented, review.no_blocking, tasks.posted, triage.commented, triage.labelled, triage.recorded",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "an assertion without its arguments",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "tasks.posted"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "the assertion tasks.posted takes role, min",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "an assertion with a bad on_fail",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "tasks.posted",
+         "on_fail": "stop",
+         "args": {
+          "role": "fixer",
+          "min": 1
+         }
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "an assertion's on_fail is one of block, fail_arrow, warn",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "too many assertions",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3,
+       "assert": [
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        },
+        {
+         "check": "findings.cite_evidence"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "a step's params.assert is a list of at most 10 assertions",
+    "node_id": "hunt"
+   }
+  ]
+ },
+ {
+  "name": "an assertion on a map",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "step",
+     "type": "map",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "step",
+      "params": {
+       "shard_by": "packages",
+       "assert": [
+        {
+         "check": "notes.cite_sources"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "end",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "end",
+      "params": {}
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-step-",
+     "source": "start",
+     "target": "step"
+    },
+    {
+     "id": "step-end-",
+     "source": "step",
+     "target": "end"
+    }
+   ],
+   "loops": []
+  },
+  "errors": [
+   {
+    "message": "the assertion notes.cite_sources is checked on an agent or a board",
+    "node_id": "step"
+   }
+  ]
+ },
+ {
+  "name": "a flow with its inputs",
+  "definition": {
+   "schema": "voc-workflow/2",
+   "name": "Bug hunt and fix",
+   "nodes": [
+    {
+     "id": "start",
+     "type": "start",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "start",
+      "params": {}
+     }
+    },
+    {
+     "id": "hunt",
+     "type": "agent",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "hunt",
+      "params": {
+       "role": "hunter",
+       "budget_share": 0.3
+      }
+     }
+    },
+    {
+     "id": "board",
+     "type": "board",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "board",
+      "params": {
+       "posters": [
+        "hunter"
+       ],
+       "claimers": [
+        "fixer",
+        "committer"
+       ]
+      }
+     }
+    },
+    {
+     "id": "gate",
+     "type": "quality_gate",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "gate",
+      "params": {
+       "max_rounds": 3,
+       "packs": "auto"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "stop_at_pr",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "pr",
+      "params": {}
+     }
+    },
+    {
+     "id": "human",
+     "type": "end",
+     "position": {
+      "x": 0,
+      "y": 0
+     },
+     "data": {
+      "title": "human",
+      "params": {
+       "status": "needs_human"
+      }
+     }
+    }
+   ],
+   "edges": [
+    {
+     "id": "start-hunt-",
+     "source": "start",
+     "target": "hunt"
+    },
+    {
+     "id": "hunt-board-",
+     "source": "hunt",
+     "target": "board"
+    },
+    {
+     "id": "board-gate-",
+     "source": "board",
+     "target": "gate"
+    },
+    {
+     "id": "gate-pr-pass",
+     "source": "gate",
+     "target": "pr",
+     "label": "pass"
+    },
+    {
+     "id": "gate-human-fail",
+     "source": "gate",
+     "target": "human",
+     "label": "fail"
+    }
+   ],
+   "loops": [],
+   "inputs": {
+    "issue": {
+     "type": "issue_ref",
+     "required": true
+    },
+    "feedback": {
+     "type": "feedback_ids",
+     "max": 50
+    }
+   }
+  },
+  "errors": []
  }
 ]

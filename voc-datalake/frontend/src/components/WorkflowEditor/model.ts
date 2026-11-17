@@ -14,7 +14,11 @@ import type {
   WorkflowSchema,
 } from '../../api/workflowsApi'
 
-export type PaletteGroup = 'flow' | 'research' | 'documents' | 'review' | 'prototype' | 'delivery' | 'engineering'
+/**
+ * `flows` (7.52.00): a call of another saved flow (`call_flow`), placed from the library's flows rather than the
+ * step list, so no palette lists it yet (the Flows palette section names each flow at its revision).
+ */
+export type PaletteGroup = 'flow' | 'research' | 'documents' | 'review' | 'prototype' | 'delivery' | 'engineering' | 'flows'
 
 interface NodeTypeSpec {
   group: PaletteGroup
@@ -50,6 +54,7 @@ export const NODE_CATALOGUE: Readonly<Record<WorkflowNodeType, NodeTypeSpec>> = 
   learning_loop: { group: 'engineering' },
   self_improvement: { group: 'engineering' },
   memory: { group: 'engineering', params: { mode: 'read', scope: 'repo', limit: 10 } },
+  call_flow: { group: 'flows' },
   stop_at_pr: { group: 'engineering' },
   end: { group: 'flow', params: { status: 'completed' } },
 }

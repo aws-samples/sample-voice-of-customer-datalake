@@ -34,11 +34,18 @@ kiro-agents/<role>.json            GENERATED: each launchable role's Kiro CLI ag
 - **A flow** lists its steps in order. Each step chains to the next unless it ends the flow (`end`, `stop_at_pr`) or
   is a quality gate with `on: {pass, fail}`.
   - `memory`, `learn` and `pr` are the flow's own settings, kept on the compiled start step's params.
-  - `assert` lists each step's checks, from the closed vocabulary (`lambda/engineering/orchestration/assertions.py`).
+  - `assert` lists each step's checks, from the closed vocabulary (`lambda/engineering/orchestration/assertions.py`):
+    a `gate.*` check on a quality gate, a `learn.*` one on `learn`, the others on an agent or a board; `fail_arrow`
+    on a quality gate only (7.52.00).
+  - `inputs` is what a run of the flow takes; since 7.52.00 it compiles into the definition (`definition.inputs`),
+    so a call of the flow may name them. A quality gate's `runner` and `final_go` stay on its step.
   - Pull requests open ready for review (`pr: ready`), or as drafts (`pr: draft`). Merging is always a person's.
 - **An automation** is a seeded agent: its marker (`AGENTSEED#<id>`), its body as the agents API takes it, the flow
   it is seeded with, and the readiness checks Enable waits on.
-- **A gate pack** follows its brief. Record any difference in `gates/briefs/RECONCILIATION.md`.
+- **A gate pack** follows its brief. Record any difference in `gates/briefs/RECONCILIATION.md`. Each brief is the
+  source of truth for the packs of its name (`python-ts` for `python` and `typescript`, `rust-ts` for `rust` and
+  `typescript`, `java` for `java`); validate holds every pack to one, and since 7.52.00 the bundle carries the briefs'
+  text and digest (`gates.briefs`) with each pack's steps and tools, for the Registry's Quality gates view.
 
 ## Validating, compiling, running
 

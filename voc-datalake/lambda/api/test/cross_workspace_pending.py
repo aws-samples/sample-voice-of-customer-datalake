@@ -233,6 +233,18 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/docs/<connection_id>/preview',
         'POST /agents/engineering/docs/<connection_id>/publish',
     }),
+    # The Registry, the gates, the assertions, a flow's expansion and an automation's pause (7.52.00, included by
+    # agents_handler.py): the deployment's, like the agents and their flows, so they move with them in 3g3.
+    'agents_engineering_registry_routes.py': frozenset({
+        'GET /agents/engineering/assertions',
+        'GET /agents/engineering/gates',
+        'GET /agents/engineering/registry',
+        'GET /agents/engineering/registry/<card>',
+        'GET /workflows/<workflow_id>/expanded',
+        'POST /agents/<agent_id>/pause',
+        'POST /agents/<agent_id>/resume',
+        'POST /agents/engineering/registry/cards',
+    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

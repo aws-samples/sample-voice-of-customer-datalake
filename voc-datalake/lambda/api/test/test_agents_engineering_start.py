@@ -100,7 +100,7 @@ def test_an_admin_starts_a_saved_flow_with_its_stored_budget_as_themselves(lambd
                     'commit': COMMIT, 'language': 'python', 'goal': 'Fix the paging bugs', 'actor': 'admin-sub',
                     'repo': 'example-org/shop', 'default_branch': 'main', 'max_cost_usd': 50.0, 'max_tokens': 10_000_000}
     assert body == {'run': {'run_id': sent['run_id'], 'status': 'active', 'workflow_id': workflow_id,
-                            'started_by': 'admin-sub'}}
+                            'started_by': 'admin-sub', 'expansion': []}}
 
 
 def test_a_run_starts_from_the_flows_current_revision(lambda_context: Any, start: tuple[Start, str]) -> None:

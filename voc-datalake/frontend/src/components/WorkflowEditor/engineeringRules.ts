@@ -6,6 +6,7 @@
  *
  * @module components/WorkflowEditor/engineeringRules
  */
+import { ENGINEERING_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../../lib/typeGuards'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowIssue, WorkflowNode } from '../../api/workflowsApi'
 
@@ -29,17 +30,57 @@ export const MAX_SHARD_CAP = 200
 export const MAX_GATE_ROUNDS = 5
 export const MAX_MEMORY_LIMIT = 50
 const MAX_MODEL_CHARS = 128
-// (max_parallel, 7.51.00: the most agents of the step at once, which the board's launch holds)
-const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel'])
+// (max_parallel, 7.51.00: the most agents of the step at once, which the board's launch holds; runner and final_go,
+// 7.52.00: who runs the gate)
+const GATE_SETTINGS = new Set(['max_rounds', 'reviewers', 'packs', 'final_go_model', 'assert', 'max_parallel', 'runner',
+  'final_go'])
+/** Who runs a gate (7.52.00): each setting's role; left out, the role at its latest skill. */
+const GATE_AGENTS: Readonly<Record<string, string>> = { runner: 'gate-runner', final_go: 'final-go' }
+/** A role or a Registry card at a version: `<role>@latest`, `<role>@v<n>`, `<role>-<slug>@v<n>`. */
+const AGENT_REF = /^([a-z][a-z0-9-]{0,63})@(latest|v[1-9]\d{0,5})$/
+/**
+ * The closed vocabulary of step assertions and the arguments each takes (`ASSERTION_ARGS` in
+ * workflow_engineering.py, in its order), and where each is checked (7.52.00: a gate's on a quality gate, Learn's on
+ * the flow's Learn, every other one on an agent or a board; `fail_arrow` on a quality gate only).
+ */
+const ASSERTION_ARGS: Readonly<Record<string, readonly string[]>> = {
+  'findings.cite_evidence': [], 'gate.pack_checks_ran': [], 'gate.passed': [], 'learn.proposals_name_case': [],
+  'notes.cite_sources': [], 'patch.max_lines': ['max'], 'patch.no_ci_changes': [], 'patch.submitted': [],
+  'patch.touches_tests': [], 'pr.links_issue': [], 'pr.opened': [], 'pr.state_as_flow': [],
+  'push.tree_is_judged_tree': [], 'review.commented': [], 'review.no_blocking': ['by'],
+  'tasks.posted': ['role', 'min'], 'triage.commented': [], 'triage.labelled': [], 'triage.recorded': [],
+}
+const ASSERTION_ON_FAIL = ['block', 'fail_arrow', 'warn'] as const
+const MAX_ASSERTIONS = 10
+const ASSERTION_PLACES: ReadonlyArray<readonly [string, readonly string[]]> = [['gate.', ['quality_gate']], ['learn.', ['learn']]]
+const ASSERTION_STEPS = ['agent', 'board'] as const
+const PLACE_WORDS: Readonly<Record<string, string>> = {
+  quality_gate: 'a quality gate', learn: "the flow's Learn", agent: 'an agent', board: 'a board',
+}
+/** Where a check is checked (the server's `assertion_places`). */
+const assertionPlaces = (check: string): readonly string[] =>
+  ASSERTION_PLACES.find(([prefix]) => check.startsWith(prefix))?.[1] ?? ASSERTION_STEPS
 const REVIEWER_SETTINGS = new Set(['name', 'focus', 'model_id', 'advisory'])
 /** The default reviewers, each with whether it is advisory. */
 const DEFAULT_REVIEWERS: Readonly<Record<string, boolean>> = { security: false, quality: false, 'first-principles': true }
 const PUSHING_ROLES = new Set(['committer', 'pr-author'])
 const GATE_LABELS = ['pass', 'fail']
-const WORK = new Set(['agent', 'map', 'board', 'quality_gate', 'learning_loop'])
+const WORK = new Set(['agent', 'map', 'board', 'quality_gate', 'learning_loop', 'call_flow'])
 const TERMINAL = new Set(['end', 'stop_at_pr'])
+/** The steps whose `budget_share` is a part of the run's budget: an agent's, and a call's (for the flow it runs). */
+const SHARED_BUDGET = new Set(['agent', 'call_flow'])
 const SKILL_VERSION = /^(?:latest|v[1-9]\d{0,4})$/
 const REVIEWER_NAME = /^[a-z][a-z0-9-]{0,39}$/
+/** A call's settings (7.52.00, `call_flow`): another saved flow at a pinned revision, its inputs, its share. */
+const CALL_SETTINGS = new Set(['flow', 'inputs', 'budget_share'])
+const MAX_CALL_INPUTS = 10
+const MAX_CALL_INPUT_CHARS = 200
+/** A saved flow at its revision (`wf_` and 12 hex digits, `@`, 1 to 999,999). */
+const FLOW_REF = /^wf_[0-9a-f]{12}@[1-9]\d{0,5}$/
+/** A Registry card at its version (`<role>-<slug>@v<n>`). */
+const CARD_REF = /^[a-z][a-z0-9-]{0,63}@v[1-9]\d{0,5}$/
+const INPUT_NAME = /^[a-z][a-z0-9_]{0,39}$/
+const SHARE_RULE = "is a fraction of the run's budget, above 0 and at most 1"
 
 const GATE_NEEDS_BOTH_ARROWS = "a quality gate needs a 'pass' arrow (GO) and a 'fail' arrow (NO-GO), every arrow labelled"
 const GATE_FAIL_TO_A_PERSON = "a quality gate's 'fail' arrow goes to a human decision point (an end step that needs a human)"
@@ -73,12 +114,41 @@ function agentIssues(params: Params): string[] {
     issues.push("an agent's params.skill_version is 'latest' or a version like 'v3'")
   }
   if (!model(params, 'model')) issues.push(`an agent's params.model is a model id of at most ${MAX_MODEL_CHARS} characters`)
-  const share = params.budget_share
-  // The server reads a null share as none set (its `share is not None`), unlike its other settings.
-  if (share !== undefined && share !== null && (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 1)) {
-    issues.push("an agent's params.budget_share is a fraction of the run's budget, above 0 and at most 1")
-  }
+  if (!shareOk(params.budget_share)) issues.push(`an agent's params.budget_share ${SHARE_RULE}`)
+  const card = cardIssue(params)
+  if (card !== undefined) issues.push(card)
   return issues
+}
+
+/** A step from a Registry card (7.52.00): the card at its version, and the skill version it pins (the card's). */
+function cardIssue(params: Params): string | undefined {
+  const card = params.card
+  if (card === undefined || card === null) return undefined
+  if (typeof card !== 'string' || !CARD_REF.test(card)) {
+    return "an agent's params.card is a Registry card at its version, like 'fixer-python@v2'"
+  }
+  return setting(params, 'skill_version', 'latest') === 'latest'
+    ? "an agent from a Registry card pins its skill version (the card's), never 'latest'" : undefined
+}
+
+/** The server reads a null share as none set (its `share is not None`), unlike its other settings. */
+const shareOk = (share: unknown): boolean =>
+  share === undefined || share === null || (typeof share === 'number' && Number.isFinite(share) && share > 0 && share <= 1)
+
+const inputsOk = (inputs: unknown): boolean => isRecord(inputs) && Object.keys(inputs).length <= MAX_CALL_INPUTS
+  && Object.entries(inputs).every(([name, text]) => INPUT_NAME.test(name) && typeof text === 'string'
+    && Array.from(text).length <= MAX_CALL_INPUT_CHARS)
+
+function callIssues(params: Params): string[] {
+  const settings = [...CALL_SETTINGS].sort((a, b) => a.localeCompare(b)).join(', ')
+  return [
+    Object.keys(params).some((key) => !CALL_SETTINGS.has(key)) ? `a call's settings are ${settings}` : undefined,
+    typeof params.flow === 'string' && FLOW_REF.test(params.flow)
+      ? undefined : "a call needs params.flow: a saved engineering flow at its revision, like 'wf_0123456789ab@3'",
+    inputsOk(setting(params, 'inputs', {})) ? undefined : `a call's params.inputs maps at most ${MAX_CALL_INPUTS} names `
+      + `(lowercase letters, digits and '_') to text of at most ${MAX_CALL_INPUT_CHARS} characters`,
+    shareOk(params.budget_share) ? undefined : `a call's params.budget_share ${SHARE_RULE}`,
+  ].filter((message): message is string => message !== undefined)
 }
 
 function reviewerOk(item: unknown): item is Record<string, unknown> & { name: string } {
@@ -118,7 +188,70 @@ function gateIssues(params: Params): string[] {
     packsOk(params) ? undefined : `a quality gate's params.packs is 'auto' or a list of gate packs: ${GATE_PACKS.join(', ')}`,
     model(params, 'final_go_model')
       ? undefined : `a quality gate's params.final_go_model is a model id of at most ${MAX_MODEL_CHARS} characters`,
+    ...Object.entries(GATE_AGENTS).filter(([key]) => key in params && !gateAgentOk(key, params[key]))
+      .map(([key, role]) => `a quality gate's params.${key} is the ${role} or a Registry card of it, at a version: `
+        + `'${role}@latest', '${role}@v3' or '${role}-strict@v2'`),
   ].filter((message): message is string => message !== undefined)
+}
+
+/** A gate's `runner` or `final_go`: its role at `latest` or a version, or a card of that role at a version. */
+function gateAgentOk(key: string, value: unknown): boolean {
+  const match = typeof value === 'string' ? AGENT_REF.exec(value) : null
+  const role = GATE_AGENTS[key]
+  if (match === null || role === undefined) return false
+  const [, id, version] = match
+  return id === role || (id?.startsWith(`${role}-`) === true && version !== 'latest')
+}
+
+const ASSERTION_KEYS: ReadonlySet<string> = new Set(['check', 'args', 'on_fail'])
+
+/** An assertion of the vocabulary: itself, its check and the arguments that check takes; undefined otherwise. */
+function vocabularyEntry(item: unknown): readonly [Params, string, readonly string[]] | undefined {
+  if (!isRecord(item) || Object.keys(item).some((key) => !ASSERTION_KEYS.has(key))) return undefined
+  const check = item.check
+  if (typeof check !== 'string' || !Object.hasOwn(ASSERTION_ARGS, check)) return undefined
+  const wanted = ASSERTION_ARGS[check]
+  return wanted === undefined ? undefined : [item, check, wanted]
+}
+
+/** The arguments given are exactly the ones the check takes. */
+function argumentsMatch(args: unknown, wanted: readonly string[]): boolean {
+  if (!isRecord(args)) return false
+  const given = Object.keys(args)
+  return given.length === wanted.length && wanted.every((name) => given.includes(name))
+}
+
+/** Where the check is checked (7.52.00), and `fail_arrow` on a quality gate only. */
+function placeIssue(check: string, onFail: unknown, place: string): string | undefined {
+  const places = assertionPlaces(check)
+  if (!places.includes(place)) {
+    return `the assertion ${check} is checked on ${places.map((step) => PLACE_WORDS[step] ?? step).join(' or ')}`
+  }
+  return onFail === 'fail_arrow' && place !== 'quality_gate'
+    ? "an assertion's on_fail fail_arrow is a quality gate's (its fail arrow): block or warn here" : undefined
+}
+
+/** One assertion's issue (the server's `_assertion_issues`, message for message), undefined for none. */
+function assertionIssue(item: unknown, place: string): string | undefined {
+  const entry = vocabularyEntry(item)
+  if (entry === undefined) {
+    return `an assertion is {check, args?, on_fail?}, its check one of ${Object.keys(ASSERTION_ARGS).join(', ')}`
+  }
+  const [assertion, check, wanted] = entry
+  if (!argumentsMatch(setting(assertion, 'args', {}), wanted)) {
+    return `the assertion ${check} takes ${wanted.length > 0 ? wanted.join(', ') : 'no arguments'}`
+  }
+  const onFail = setting(assertion, 'on_fail', 'block')
+  if (!oneOf(ASSERTION_ON_FAIL, onFail)) return `an assertion's on_fail is one of ${ASSERTION_ON_FAIL.join(', ')}`
+  return placeIssue(check, onFail, place)
+}
+
+/** A step's `params.assert` (`place`: its type, or `learn`): at most ten, each of the vocabulary and in its place. */
+function assertionIssues(raw: unknown, place: string): string[] {
+  if (!Array.isArray(raw) || raw.length > MAX_ASSERTIONS) {
+    return [`a step's params.assert is a list of at most ${MAX_ASSERTIONS} assertions`]
+  }
+  return raw.map((item: unknown) => assertionIssue(item, place)).filter((issue): issue is string => issue !== undefined)
 }
 
 function boardIssues(params: Params): string[] {
@@ -150,11 +283,16 @@ function memoryIssues(params: Params): string[] {
 
 const PARAMS: Readonly<Record<string, (params: Params) => string[]>> = {
   agent: agentIssues, quality_gate: gateIssues, board: boardIssues, map: mapIssues, memory: memoryIssues,
+  call_flow: callIssues,
 }
 
-/** What is wrong with an engineering step's settings (empty when nothing is). */
+/** The engineering steps whose `params.assert` is checked (a call takes none: its flow's steps carry theirs). */
+const ASSERTING: ReadonlySet<string> = new Set(ENGINEERING_NODE_TYPES.filter((type) => type !== 'call_flow'))
+
+/** What is wrong with an engineering step's settings (empty when nothing is): its own, and its assertions. */
 export function engineeringParamsIssues(nodeType: string, params: Params): string[] {
-  return PARAMS[nodeType]?.(params) ?? []
+  const own = PARAMS[nodeType]?.(params) ?? []
+  return 'assert' in params && ASSERTING.has(nodeType) ? [...own, ...assertionIssues(params.assert, nodeType)] : own
 }
 
 type Adjacency = ReadonlyMap<string, readonly string[]>
@@ -275,7 +413,8 @@ export function engineeringGraphIssues(
 ): WorkflowIssue[] {
   const nodes = new Map(definition.nodes.map((node) => [node.id, node]))
   const types = new Map<string, string>(definition.nodes.map((node) => [node.id, node.type]))
-  const shares = definition.nodes.filter((node) => node.type === 'agent').map((node) => node.data.params?.budget_share)
+  // (a call's share is the flow it runs: the server scales that flow's agents' shares into it, shared/flow_expand.py)
+  const shares = definition.nodes.filter((node) => SHARED_BUDGET.has(node.type)).map((node) => node.data.params?.budget_share)
   const out: WorkflowIssue[] = []
   if (compensatedSum(shares.filter((share): share is number => typeof share === 'number')) > 1) {
     out.push({ message: "the agents' budget shares add up to more than the run's budget (at most 1 in all)" })

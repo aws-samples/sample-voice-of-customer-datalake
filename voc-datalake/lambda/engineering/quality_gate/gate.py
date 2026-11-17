@@ -54,8 +54,10 @@ NO_PATHS: tuple[str, ...] = ()
 NO_AUTHORS: frozenset[str] = frozenset()
 #: ``assert``: the step's assertions (7.50.00), the board's to evaluate on what the gate recorded; ``max_parallel``
 #: (7.51.00): the board's launch holds it. The gate reads neither.
+#: ``runner``, ``final_go`` (7.52.00): who runs the gate (a role or a Registry card at a version), the launch's to
+#: resolve (engineering/skills/resolve.py ``step_pin``); the gate reads neither.
 PARAMS = frozenset({'max_rounds', 'reviewers', 'final_go_model', 'node_id', 'node_title', 'packs', 'assert',
-                    'max_parallel'})
+                    'max_parallel', 'runner', 'final_go'})
 REVIEWER_KEYS = frozenset({'name', 'focus', 'model_id', 'advisory'})
 _NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
 

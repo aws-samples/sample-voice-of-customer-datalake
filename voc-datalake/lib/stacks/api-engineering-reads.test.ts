@@ -112,8 +112,9 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(reads)).not.toMatch(/BatchGet|Scan/);
   });
 
-  it('write the skills\' partitions with exactly the store\'s actions, keyed by dynamodb:LeadingKeys', () => {
-    // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions)
+  it('write the skills\' and the Registry cards\' partitions with exactly the stores\' actions, keyed by dynamodb:LeadingKeys', () => {
+    // (7.08.00: an administrator's accept, reject, rollback and benchmark, the skills store's transactions; 7.52.00: a
+    // card made from a skill, its HEAD, create-only version and log rows and its listing row, nothing else)
     const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
       && statement.actions.some((action) => /^dynamodb:(Put|Update|ConditionCheck)/.test(action)));
     // (7.52.00: and the repositories' partitions, the knowledge flows' decisions: below)
@@ -121,10 +122,12 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
       [['dynamodb:ConditionCheckItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
         ['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
     expect(writes[0]?.condition).toStrictEqual({
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] },
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*', 'WS#*#AGENTCARD#*'] },
       Null: { 'dynamodb:LeadingKeys': 'false' },
     });
     expect(writes[0]?.resource).toMatch(/^\{"Fn::ImportValue":"[^"]*Engineering/);
+    // (the Registry is in-app only, owner decision 7.52.00: no AWS Agent Registry client, so no grant of it)
+    expect(JSON.stringify(policyStatementsOf(on(), 'AgentsLambdaRole'))).not.toMatch(/agent-registry|bedrock-agentcore:.*Registry/);
   });
 
   it('write the repositories\' partitions (WS#*#REPO#*) with Put and Update only: approvals and tenets (7.52.00)', () => {
@@ -144,7 +147,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
 
   it('give the agents API no write of the engineering table while the module is off', () => {
     const statements = policyStatementsOf(apiTemplate(), 'AgentsLambdaRole');
-    expect(JSON.stringify(statements)).not.toMatch(/SKILL|ConditionCheckItem/);
+    expect(JSON.stringify(statements)).not.toMatch(/SKILL|AGENTCARD|ConditionCheckItem/);
   });
 
   it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {

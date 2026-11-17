@@ -20,19 +20,49 @@
     "flows": {"type": "array", "items": {"$ref": "#/$defs/flow"}},
     "automations": {"type": "array", "items": {"$ref": "#/$defs/automation"}},
     "gates": {
-      "type": "object", "additionalProperties": false, "required": ["packs", "aliases"],
+      "type": "object", "additionalProperties": false,
+      "required": ["packs", "aliases", "own_gate", "messages", "briefs"],
       "properties": {
         "packs": {"type": "array", "items": {
-          "type": "object", "additionalProperties": false, "required": ["id", "name", "languages", "image", "network"],
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "name", "languages", "image", "network", "tools", "steps", "briefs"],
           "properties": {
             "id": {"type": "string"}, "name": {"type": "string"},
             "languages": {"type": "array", "items": {"type": "string"}},
             "image": {"type": "object", "additionalProperties": {"type": "string"}},
-            "network": {"type": "array", "items": {"type": "string"}}
+            "network": {"type": "array", "items": {"type": "string"}},
+            "tools": {"description": "The tools whose versions the gate records (the manifest's [tools]).",
+                      "type": "array", "items": {
+              "type": "object", "additionalProperties": false, "required": ["name", "version_argv"],
+              "properties": {"name": {"type": "string"}, "version_argv": {"type": "array", "items": {"type": "string"}}}
+            }},
+            "steps": {"description": "The manifest's [[steps]], every field (7.52.00: the Registry's Quality gates view).",
+                      "type": "array", "items": {"$ref": "#/$defs/gate_step"}},
+            "briefs": {"description": "The owner's briefs that are the source of truth for the pack (gates.briefs ids).",
+                       "type": "array", "items": {"type": "string"}}
           }
         }},
         "aliases": {"description": "Pack ids a stored flow may still name, and the packs each stands for.",
-                    "type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}}
+                    "type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+        "own_gate": {"description": "The repository's own gate: where it exists, it runs instead of every pack step.",
+                     "type": "object", "additionalProperties": false, "required": ["file", "argv", "timeout_s"],
+                     "properties": {"file": {"type": "string"}, "argv": {"type": "array", "items": {"type": "string"}},
+                                    "timeout_s": {"type": "integer"}}},
+        "messages": {"description": "What the gate record says of a check that did not pass, by what happened: the gate's own words with their {placeholders} (7.52.00).",
+                     "type": "object", "additionalProperties": false,
+                     "required": ["missing_tool", "timeout", "empty_exit", "empty_output", "fail", "setup_failed"],
+                     "properties": {"missing_tool": {"type": "string"}, "timeout": {"type": "string"},
+                                    "empty_exit": {"type": "string"}, "empty_output": {"type": "string"},
+                                    "fail": {"type": "string"}, "setup_failed": {"type": "string"}}},
+        "briefs": {"description": "The owner's quality-gate briefs (gates/briefs/<id>.md), each the source of truth for its packs (7.52.00).",
+                   "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "path", "packs", "digest", "bytes", "text"],
+          "properties": {
+            "id": {"type": "string"}, "path": {"type": "string"},
+            "packs": {"type": "array", "items": {"type": "string"}},
+            "digest": {"$ref": "#/$defs/digest"}, "bytes": {"type": "integer"}, "text": {"type": "string", "minLength": 1}
+          }
+        }}
       }
     },
     "evals": {"type": "array", "items": {
@@ -46,6 +76,29 @@
   },
   "$defs": {
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "gate_condition": {
+      "description": "A step's condition: exactly one of file, glob and absent, with contains or npm_script on a file.",
+      "type": "object", "additionalProperties": false,
+      "properties": {"file": {"type": "string"}, "glob": {"type": "string"}, "absent": {"type": "string"},
+                     "contains": {"type": "string"}, "npm_script": {"type": "string"}}
+    },
+    "gate_step": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "language", "name", "kind", "argv", "timeout_s", "when_any", "prefer", "empty_exit_codes",
+                   "expect_output"],
+      "properties": {
+        "id": {"type": "string"}, "language": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"},
+        "argv": {"type": "array", "items": {"type": "string"}}, "timeout_s": {"type": "integer"},
+        "when_any": {"type": "array", "items": {"$ref": "#/$defs/gate_condition"}},
+        "prefer": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["when", "argv"],
+          "properties": {"when": {"type": "array", "items": {"$ref": "#/$defs/gate_condition"}},
+                         "argv": {"type": "array", "items": {"type": "string"}}}
+        }},
+        "empty_exit_codes": {"type": "array", "items": {"type": "integer"}},
+        "expect_output": {"type": "string"}
+      }
+    },
     "skill_record": {
       "description": "A voc-skill/1 record, exactly as runtime/harness/skills.py Skill.to_record writes it.",
       "type": "object", "additionalProperties": false,
@@ -68,8 +121,11 @@
       "description": "One role's card as compiled; skill is its voc-skill/1 record (null for the Learn card).",
       "type": "object", "additionalProperties": false,
       "required": ["id", "version", "label", "digest", "purpose", "harness", "model", "tools", "pending_tools",
-                   "broker_ops", "pending_broker_ops", "caps", "trust", "inputs", "outputs", "evals", "skill"],
+                   "broker_ops", "pending_broker_ops", "caps", "trust", "inputs", "outputs", "evals", "allowed_tools",
+                   "skill"],
       "properties": {
+        "allowed_tools": {"description": "Every tool the role may have (role_specs), whatever a skill names: a Registry card's tools are a subset of these (7.52.00). Not in the digest.",
+                          "type": "array", "items": {"type": "string"}},
         "id": {"type": "string"},
         "version": {"type": "integer", "minimum": 1},
         "label": {"description": "<role>@template-<version>: the bundled template as a session row names it.",

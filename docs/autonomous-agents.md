@@ -238,6 +238,93 @@ newer}`, `newer` when the scope has versions and none was seeded from a template
   role's history, like any proposal; nothing is ever adopted or accepted by itself. Both routes are an administrator's
   acting for themselves (403 otherwise, an MCP credential included), 404 while the module is off.
 
+## Registry
+
+*Built* (7.52.00: the server and its routes; the web app's Registry tab is planned), for
+administrators where the engineering agents are on. The Registry is the catalogue of the building blocks a flow is
+made of: every role's agent card, the cards administrators make from a skill, and, as a filter of the same tab
+(**Agents | Quality gates**, `/agents/gates` an alias of it), the quality gates. It is the app's own: nothing is
+published to AWS Agent Registry (owner decision, 7.52.00; no client, no grant). The tab order is Automations · Runs ·
+Skills · Spend · Flows · Registry · Connections. Routes: `lambda/shared/agents_engineering_registry_routes.py`, the
+views and the card store in `lambda/engineering/registry/`.
+
+- **A role's card** (`GET /agents/engineering/registry?connection=&month=` → `{month, connection, cards}`), composed on
+  the server for the scope (the shared skills by default, or a connection's): the role's bundled template (purpose,
+  harness, inputs and outputs, caps, trust, eval cases; its version, label and digest); the skill the scope runs (the
+  scope's current version, the connection's own else the shared one, or the template: `skill {source, label,
+  version, status, provenance, template_version, template_newer}`, the last one Skills' "Template updated"); its model
+  and tools (the running skill's); `gates {packs}` for the gate runner and the final go (the packs they run); the
+  scorecard of the running label over its latest runs on the connection (none for the shared scope: a scorecard is a
+  connection's); the month's spend by role (`spend {month, usd, tokens_in, tokens_out, microvm_seconds}`, the ledger's
+  agents `<role>-<n>` summed); and `node`, the agent step the Flows palette drops (`{role, skill_version: latest}`;
+  none for the coach, Learn's card, which is never launched). `kind: role`. **The contract**: every role has a card
+  whose id is the role, so a step that names only a role resolves to it. A flow belongs to no connection, so
+  `?connection=<id>` answers that connection's skill head (its own current version, else the shared one), and without
+  it each card answers the shared head plus `heads_by_connection` (`{<connection>: {source, own, label, connection,
+  version}}`, for every stored connection: `own` false where it runs the shared skill or the template).
+- **Create from a skill** (`POST /agents/engineering/registry/cards` `{from_skill: {role, connection?, version},
+  slug, purpose, title?, model?, caps?, expected_version?}` → 201 `{card}`): a card of the role (`base_role`) on one
+  of its ACCEPTED skill versions, in the scope named. Its id is `<role>-<slug>`; its model, tools and harness are the
+  skill version's, read when it is made (the model one of `ALLOWED_MODEL_IDS`, a `model` given must be it, the tools
+  a subset of what the role may have, `role_specs`), so a card says what runs; its caps, recorded with it, are each
+  at most the template's. 400 for a body off its shape, 404 for a version the scope does not have, 409 for a
+  proposal (not accepted), a model or a tool off its rule, a slug already taken (without `expected_version`) or a
+  card that moved since the version named. `kind: card`, with `node` `{role: base_role, skill_version: 'v<n>',
+  model, card: '<id>@v<version>'}`.
+- **A card** (`GET …/registry/<card>` → `{card, versions, events}`): a role's card (no versions), or a card made from
+  a skill at its current version, every version newest first and who made each.
+- **Storage** (voc-engineering, D1/D4 as for skills): `WS#default#AGENTCARD#<id>` / `HEAD` (the counter, the current
+  version), `VER#<n>` (the card's record, `voc-registry-card/1`, create-only), `LOG#<n>#created` (who and when,
+  create-only), and the listing's `WS#default#AGENTCARD#_list` / `CARD#<id>` (the current record), written in one
+  transaction. Nothing is deleted. The Agents API's role writes these partitions only (PutItem, UpdateItem,
+  ConditionCheckItem by `dynamodb:LeadingKeys`, beside the skills').
+- **In a flow.** A step from a card is an agent step whose `params.card` names it (`<card>@v<n>`) and which pins its
+  skill version (the card's, never `latest`; the rules and the editor refuse it otherwise). A save checks the card
+  is the Registry's and the step carries its role, skill version and model. IAM stays per role: the run launches
+  the role on that pinned version, resolved as any pin is (the run's connection's version first, then the shared
+  one: autonomous-engineering.md, "Which skill an agent runs"), so a card made from a connection's version is for
+  that connection's runs.
+- **Quality gates** (`GET /agents/engineering/gates` → `{packs, aliases, own_gate, briefs, runners, defaults,
+  stops}`, read only): each pack's steps (every field of its manifest; `messages`, what the gate record says when the
+  step does not pass, in the gate's own words: a missing tool, the time limit, an empty check, a failing exit, a
+  failed setup step for the later ones; and `looked_at_nothing`, its vacuous-pass rule in words, from its
+  `empty_exit_codes` and `expect_output`, or none), its `tools` (the tools whose versions a gate records: the packs pin
+  none, a repository's own pins decide them), image pins, registries and briefs; the repository's own gate; the
+  owner's briefs (`templates/orchestration/gates/briefs/<id>.md`: the packs each is the source of truth for, its text
+  and its digest), from the orchestration bundle's `gates`; who runs a gate that names nobody (`defaults`:
+  `gate-runner@latest`, `final-go@latest`); and why a gate stops at a person (`stops`: `check_failed`,
+  `looked_at_nothing`, `own_gate_changed`, `review_blocked`, `rounds_used_up`, each with its decision payload, its
+  actions, a text key `gates.stops.<code>` and the English words).
+- **Who runs a gate.** A quality gate step's `runner` and `final_go` name the gate runner and the final go: the role
+  at `latest` or a version (`gate-runner@v3`, which the launch pins), or a Registry card of the role at a version
+  (`gate-runner-strict@v2`, checked at the save: a card of that role the Registry has; the launch runs the role's
+  current skill for it). Left out, the defaults. The templates set both.
+- **Assertions** (`GET /agents/engineering/assertions` → `{checks: [{check, asks, label_key, description_key, args,
+  args_schema, kinds, on_fail}], on_fail, default_on_fail, max, roles}`): the closed vocabulary a step's
+  `params.assert` takes, each check with what it asks, its text keys (`assertions.checks.<check>.label`, its dots as
+  `_`), its arguments and their JSON Schema (`tasks.posted {role, min}`, `review.no_blocking {by}`, `patch.max_lines
+  {max}`), the steps it is checked on (`kinds`: `gate.*` on a quality gate, `learn.*` on the flow's Learn, the others
+  on an agent or a board) and the `on_fail` it takes there (`fail_arrow` on a quality gate only). A save holds a flow
+  to the same rules (`shared/workflow_engineering.py`), and the editor's `engineeringRules.ts` mirrors them.
+
+Every Registry route is an administrator's acting for themselves (403 otherwise, an MCP credential included), 404
+while the module is off, 503 when a table cannot be read.
+
+## Paused
+
+*Built* (7.52.00): an automation that is on can be **paused** by an administrator (`POST /agents/<id>/pause`), and is
+then exactly that, not inferred from whether it ever ran: the agent row carries `paused`, `paused_at` and `paused_by`
+(answered with the agent), and the heartbeat starts no run of it (no schedule, no new reviews, no threshold, no issue)
+until someone resumes it (`POST /agents/<id>/resume`); a run under way finishes, and Run now still runs it. Only an
+automation that is on is paused (409 for one that is off); pausing a paused one, or resuming one that is not, answers
+it as it is and writes nothing. Turning a paused automation off ends its pause. Each change is audited: a
+create-only `AGENT#<id>` / `LOG#<at>#<n>` row (`paused` or `resumed`, who, when, and `via`: the route, or `disabled`),
+written in the same transaction as the agent row (`shared/agents_store.py` `set_paused`). A paused Issue triage still
+counts as watching its connection, so the Bug fixer and Feature builder on it wait for its triage rather than acting
+on untriaged issues. Administrators acting for themselves only; 404 for an unknown or archived agent.
+
+The web app's states (planned): off is **Ready**, on and paused **Paused** (primary **Resume**), on **Enabled**.
+
 ## Triggers and budgets
 
 | Trigger | Fires when |
@@ -325,6 +412,28 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
   saved. Duplicating one (`POST /workflows/{id}/duplicate`) validates the copy, so fix it first.
 - With nothing selected the panel shows the workflow's name, description and an outline that selects any step or
   loop, so every setting is reachable from the keyboard.
+
+### Shared flows: Used by
+
+*Built* (7.52.00, the server; the library's "Used by", the editor's banner and the confirmation are the web app's,
+planned). Several automations may run one flow, so editing it from one automation's page changes every one of them
+from its next run. The server says so and asks first:
+
+- **Used by.** `GET /workflows/<id>` and the library's list (`GET /workflows`) answer each flow's `used_by`:
+  `{automations: [{agent_id, name, kind, connection, language}], flows: [{workflow_id, name, revision}]}`. The
+  automations that run it (`kind` `engineering` or `agents`; an engineering one's connection and language), by name,
+  archived ones left out, and only those the caller may see (an engineering automation is an administrator's; a
+  product one is read by its category scope, as the agents list is); and the saved flows whose current revision calls
+  it (`call_flow`), each with the revision of it that it pins.
+- **The guard.** `PUT /workflows/<id>` of a flow other automations run (any in `used_by.automations` but `agent_id`,
+  the automation whose page the edit comes from, when the body names it) needs `confirm_shared: true`; without it the
+  answer is 409 `{code: shared_flow, used_by}` (the same shape) and nothing is saved. A flow nobody else runs saves as
+  before. A rename changes no step and needs no confirmation; a flow that calls this one pins its revision
+  (`call_flow`, autonomous-engineering.md), so a save never changes its callers and never needs confirming for them.
+- **A flow's inputs** (7.52.00): an engineering flow may declare what a run of it takes, `definition.inputs`
+  (`{<name>: {type, max?, required?, description?}}`, at most 10; the templates declare theirs: `issue`, `triage`,
+  `feedback`, `prd`, `pull_request`), kept with the definition and answered by `GET /workflows/<id>`; a call of it may
+  name only those (`call_flow` `inputs`).
 
 ### Engineering flows (`voc-workflow/2`)
 
@@ -739,7 +848,8 @@ decided) or the agent already has another active run. The run view carries `need
 |---|---|---|
 | `AGENT#{agent_id}` | `META` | agent (`gsi1pk=AGENTS`, `gsi1sk={name}`) |
 | `WORKFLOW#{workflow_id}` | `REV#{revision:06d}` / `CURRENT` | definition revision / current pointer (`gsi1pk=WORKFLOWS`) |
-| `AGENT#{agent_id}` | `RUN#{run_id}` | run (`gsi1pk=RUNS_ACTIVE` while running) |
+| `AGENT#{agent_id}` | `RUN#{run_id}` | run (`gsi1pk=RUNS_ACTIVE` while running); an engineering agent's records the calls its flow expanded, `expansion` (7.52.00) |
+| `AGENT#{agent_id}` | `LOG#{at}#{n}` | a pause or a resume (7.52.00): `event`, `by`, `username`, `at`, `via`; create-only — see "Paused" |
 | `RUN#{run_id}` | `EVT#{seq:08d}` | run event (the Runs tab journal): `summary` for people, `detail` (failed steps only) for the technical log |
 | `RUN#{run_id}` | `MATE#{role}#{seq:06d}` | crewmate transcript |
 | `PLAN#{plan_id}` | `META` / `STEP#{step_id}` / `EVT#{seq:08d}` | approved assistant plan, its steps, its journal (`gsi1pk=PLANS#{approver_sub}`) — see "Plans" |

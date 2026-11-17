@@ -7,7 +7,7 @@
 import {
   Bot, Brain, Combine, Copy, Database, FilePen, FileText, Flag, FolderKanban, GitPullRequest, Globe, GraduationCap,
   Hammer, KanbanSquare, Layers, MapPin, MessagesSquare, Newspaper, Play, Send, ShieldCheck, Sparkles, Split,
-  UserPlus, Users, Wrench,
+  UserPlus, Users, Workflow, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkflowNodeType } from '../../api/workflowsApi'
@@ -38,6 +38,7 @@ const ICONS: Readonly<Record<WorkflowNodeType, LucideIcon>> = {
   learning_loop: GraduationCap,
   self_improvement: Brain,
   memory: Database,
+  call_flow: Workflow,
   stop_at_pr: GitPullRequest,
   end: Flag,
 }

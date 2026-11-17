@@ -77,8 +77,9 @@ def _raw_workflow(env: AgentsEnv, definition: dict, **attrs: Any) -> None:
 def _save_revision(lambda_context: Any, workflow_id: str, name: str) -> None:
     changed = workflow_schema.default_template()
     changed['name'] = name
+    # (the agent runs it: a save of a flow an automation runs is confirmed, 7.52.00)
     status, _ = _call(lambda_context, 'PUT', f'/workflows/{workflow_id}',
-                      body={'definition': changed, 'expected_revision': 1})
+                      body={'definition': changed, 'expected_revision': 1, 'confirm_shared': True})
     assert status == 200
 
 

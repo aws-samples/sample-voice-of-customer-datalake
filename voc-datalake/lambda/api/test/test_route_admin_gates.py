@@ -132,6 +132,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/tenets/<connection_id>/versions/<version>/reject',
         'POST /agents/engineering/docs/<connection_id>/publish',
     }),
+    # A Registry card made from a skill, and an automation's pause and resume (7.52.00, included by agents_handler.py):
+    # an admin acting for themselves.
+    'agents_engineering_registry_routes.py': frozenset({
+        'POST /agents/engineering/registry/cards', 'POST /agents/<agent_id>/pause', 'POST /agents/<agent_id>/resume',
+    }),
     # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),

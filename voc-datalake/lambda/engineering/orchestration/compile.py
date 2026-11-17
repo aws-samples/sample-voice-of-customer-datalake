@@ -12,11 +12,16 @@ What it makes of each source (``schema.py`` reads them):
   the next unless it ends the flow (``end``, ``stop_at_pr``) or says where its arrows go (a quality gate's
   ``on: {pass, fail}``); the flow's ``memory``, ``learn`` and ``pr`` go on the start step's params, each step's
   ``assert`` on its own params (``shared/workflow_engineering.py``). Positions are laid out at 120 px: the steps down
-  one column, a step only a ``fail`` arrow reaches beside its gate.
+  one column, a step only a ``fail`` arrow reaches beside its gate. Since 7.52.00 the flow's ``inputs`` are the
+  definition's own (``definition.inputs``), and a quality gate keeps who runs it on its params (``runner``,
+  ``final_go``).
 - ``automations/<id>.yaml``: the agent body ``shared/agent_seed.py`` creates (what ``store.normalize_agent`` takes),
   with its seed marker, its flow and the flow's monthly budget.
 - ``gates/<pack>/manifest.toml`` and ``evals/<flow>/cases/<case>/``: listed (packs with their images, the aliases,
-  each case with its kind), so a reader needs no walk of the folder.
+  each case with its kind), so a reader needs no walk of the folder. Since 7.52.00 each pack also carries its pinned
+  tools and its steps (every field of the manifest's), and ``gates.briefs`` the owner's briefs
+  (``gates/briefs/<id>.md``: the packs each is the source of truth for, its text and its digest), with the
+  repository's own gate (``own_gate``): what the Registry's Quality gates view shows, from the Lambdas' copy.
 
 Beside the bundle, one Kiro CLI agent config per launchable role, ``kiro-agents/<role>.json`` (Kiro's v3 universal
 agent JSON; 7.53.00 prep: nothing loads them yet). Its prompt is the platform rules and then the role's skill, as the
@@ -40,10 +45,25 @@ from typing import Any, Final
 
 from engineering.orchestration.bundle import SCHEMA as BUNDLE_SCHEMA
 from engineering.orchestration.schema import ROOT, SkillText, read_skill, read_yaml, relative
-from engineering.quality_gate.packs import ALIASES, load_packs
+from engineering.quality_gate.packs import (
+    ALIASES,
+    EMPTY_EXIT,
+    EMPTY_OUTPUT,
+    FAILED,
+    MISSING_TOOL,
+    OWN_GATE_ARGV,
+    OWN_GATE_FILE,
+    OWN_GATE_TIMEOUT_S,
+    SETUP_FAILED,
+    TIMED_OUT,
+    Condition,
+    Step,
+    load_packs,
+)
 from engineering.runtime.harness.cli import TOOL_SERVER
 from engineering.runtime.harness.skills import Example, Skill, skill_record
 from engineering.runtime.harness.tool_server import SERVER_NAME
+from engineering.runtime.harness.tools import role_specs
 from shared.workflow_engineering import ENGINEERING_ROLES
 from shared.workflow_schema import DEFAULT_WORKFLOW_ID, SCHEMA_V2
 
@@ -60,7 +80,10 @@ STEP_KINDS: Final = ('agent', 'board', 'quality_gate', 'map', 'reduce', 'stop_at
 TERMINAL: Final = frozenset({'stop_at_pr', 'end'})
 #: The files a bundle is compiled from (its source digest covers them).
 SOURCE_GLOBS: Final = ('_shared/*.md', 'agents/*/agent.yaml', 'agents/*/SKILL.md', 'automations/*.yaml',
-                       'evals/*/cases/*/case.json', 'flows/*.yaml', 'gates/*/manifest.toml', 'schemas/*.schema.json')
+                       'evals/*/cases/*/case.json', 'flows/*.yaml', 'gates/*/manifest.toml', 'gates/briefs/*.md',
+                       'schemas/*.schema.json')
+#: The briefs' folder also holds the notes that reconcile each pack with its brief: not a brief.
+BRIEF_NOTES: Final = 'RECONCILIATION'
 
 
 @dataclass(frozen=True)
@@ -117,8 +140,10 @@ def _agent(card: Mapping[str, Any], skill: SkillText | None) -> dict[str, Any]:
               'broker_ops': list(card['broker_ops']), 'pending_broker_ops': list(card.get('pending_broker_ops', [])),
               'caps': dict(card['caps']), 'trust': dict(card['trust']), 'inputs': list(card['inputs']),
               'outputs': list(card['outputs']), 'evals': list(card['evals'])}
+    # (7.52.00: every tool the role may have, for a Registry card's check; outside the digest, which is the template's)
+    allowed = sorted(spec.name for spec in role_specs(str(card['id'])))
     return {'id': card['id'], 'version': card['version'], 'label': f'{card["id"]}@template-{card["version"]}',
-            'digest': digest({'card': fields, 'skill': record}), **fields, 'skill': record}
+            'digest': digest({'card': fields, 'skill': record}), **fields, 'allowed_tools': allowed, 'skill': record}
 
 
 def role_order(roles: Iterable[str]) -> list[str]:
@@ -144,7 +169,8 @@ def _params(step: Mapping[str, Any]) -> dict[str, Any]:
         params: dict[str, Any] = {'role': role, **({'skill_version': version} if version != 'latest' else {})}
         params.update({key: step[key] for key in ('model', 'budget_share') if key in step})
     elif kind == 'quality_gate':
-        params = {key: value for key, value in step['quality_gate'].items() if key not in ('runner', 'final_go')}
+        # (7.52.00: who runs it stays on the step, ``runner`` and ``final_go``, as the stored flow names it)
+        params = dict(step['quality_gate'])
     else:
         params = dict(step[kind])
     # (7.51.00: the most agents of the step at once, which the board's launch holds)
@@ -197,7 +223,10 @@ def definition(template: Mapping[str, Any]) -> dict[str, Any]:
                                  **({'instructions': step['instructions']} if 'instructions' in step else {}),
                                  'params': _params(step)}} for step in steps]
     return {'schema': SCHEMA_V2, 'name': template['name'], 'description': template['description'], 'nodes': nodes,
-            'edges': _edges(steps), 'loops': [], 'budget': {'monthly_usd': template['budget']['monthly_usd']}}
+            'edges': _edges(steps), 'loops': [], 'budget': {'monthly_usd': template['budget']['monthly_usd']},
+            # (7.52.00: what a run of it takes, and what a call of it may name)
+            **({'inputs': {name: dict(spec) for name, spec in template['inputs'].items()}}
+               if template.get('inputs') else {})}
 
 
 def step_skills(template: Mapping[str, Any]) -> dict[str, str]:
@@ -267,11 +296,57 @@ def _automation(automation: Mapping[str, Any]) -> dict[str, Any]:
             'pr': automation.get('pr'), 'readiness': list(automation['readiness']), 'body': agent_body(automation)}
 
 
+def _condition(condition: Condition) -> dict[str, str]:
+    return {key: value for key, value in (('file', condition.file), ('glob', condition.glob),
+                                          ('absent', condition.absent), ('contains', condition.contains),
+                                          ('npm_script', condition.npm_script)) if value}
+
+
+def _step(step: Step) -> dict[str, Any]:
+    """A pack step as the Registry's Quality gates view reads it (the manifest's, every field)."""
+    return {'id': step.id, 'language': step.language, 'name': step.name, 'kind': step.kind, 'argv': list(step.argv),
+            'timeout_s': step.timeout_s, 'when_any': [_condition(condition) for condition in step.when_any],
+            'prefer': [{'when': [_condition(condition) for condition in alternative.when],
+                        'argv': list(alternative.argv)} for alternative in step.prefer],
+            'empty_exit_codes': sorted(step.empty_exit_codes), 'expect_output': step.expect_output}
+
+
+def brief_packs(brief_id: str) -> tuple[str, ...]:
+    """The packs a brief is the source of truth for: an alias's two (``python-ts``), else the pack of its name."""
+    return ALIASES.get(brief_id, (brief_id,))
+
+
+def gate_briefs(root: Path = ROOT) -> list[dict[str, Any]]:
+    """The owner's quality-gate briefs (``gates/briefs/<id>.md``, the RECONCILIATION notes aside), each with the packs
+    it is the source of truth for, its digest and its text (7.52.00: the Registry's Quality gates view)."""
+    briefs = []
+    for path in sorted((root / 'gates' / 'briefs').glob('*.md')):
+        if path.stem == BRIEF_NOTES:
+            continue
+        text = path.read_text(encoding='utf-8')
+        briefs.append({'id': path.stem, 'path': relative(path, root), 'packs': list(brief_packs(path.stem)),
+                       'digest': digest(text.encode()), 'bytes': len(text.encode()), 'text': text})
+    return briefs
+
+
 def _gates(root: Path) -> dict[str, Any]:
     packs = load_packs(root / 'gates')
+    briefs = gate_briefs(root)
     return {'packs': [{'id': pack.id, 'name': pack.name, 'languages': [language.id for language in pack.languages],
-                       'image': dict(pack.needs.image), 'network': list(pack.needs.network)} for pack in packs],
-            'aliases': {alias: list(packs_of) for alias, packs_of in ALIASES.items()}}
+                       'image': dict(pack.needs.image), 'network': list(pack.needs.network),
+                       'tools': [{'name': tool.name, 'version_argv': list(tool.version_argv)}
+                                 for tool in pack.needs.tools],
+                       'steps': [_step(step) for step in pack.steps],
+                       'briefs': [brief['id'] for brief in briefs if pack.id in brief['packs']]} for pack in packs],
+            'aliases': {alias: list(packs_of) for alias, packs_of in ALIASES.items()},
+            'own_gate': {'file': OWN_GATE_FILE, 'argv': list(OWN_GATE_ARGV), 'timeout_s': OWN_GATE_TIMEOUT_S},
+            'messages': dict(GATE_MESSAGES), 'briefs': briefs}
+
+
+#: What the gate record says of a check that did not pass, by what happened (the gate's own words, packs.py, which
+#: ``checks.judge`` fills in): the Registry's Quality gates view reads them from the bundle.
+GATE_MESSAGES: Final = {'missing_tool': MISSING_TOOL, 'timeout': TIMED_OUT, 'empty_exit': EMPTY_EXIT,
+                        'empty_output': EMPTY_OUTPUT, 'fail': FAILED, 'setup_failed': SETUP_FAILED}
 
 
 def compile_bundle(sources: Sources) -> dict[str, Any]:

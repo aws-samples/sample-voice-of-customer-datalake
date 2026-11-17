@@ -1681,6 +1681,43 @@ the run monitor and in the reports.
 | memory (read, write) | not yet run: the flow goes on without the read (context) or the write |
 | learning loop | not yet run: the flow goes on; the run's retrospective at its end still runs for every run |
 | self-improvement | not yet run, and it is the whole of its flow's work: it stops at a person |
+| call a flow (7.52.00) | never reaches the runtime: expanded into the run's copy before the start ([Calling another flow](#calling-another-flow-call_flow-75200)); a copy that still held one would stop at a person |
+
+#### Calling another flow (`call_flow`, 7.52.00)
+
+*Built* (the server: `voc-datalake/lambda/shared/flow_expand.py`; the editor's Flows palette section is the web app's
+planned). A `call_flow` step runs another saved engineering flow in its place: params `{flow: '<workflow_id>@<revision>',
+inputs?, budget_share?}`. The revision is a pin: a later save of the called flow changes none of its callers.
+`inputs` maps at most 10 names (lowercase letters, digits, `_`) to text of at most 200 characters, each one the called
+flow declares (its `definition.inputs`, 7.52.00), recorded with the run; a call takes no `assert` of its own (its
+called flow's steps carry theirs). The step's own shape is the rules'
+(`shared/workflow_engineering.py`, mirrored by the editor's `engineeringRules.ts` and held to the same answers by
+`frontend/src/test/engineeringFlows.json`); the rest needs the stored flows, so the expansion checks it.
+
+- **Where it is expanded** (D52-4): in the Agents API and the agents' heartbeat, at a run's start, for both paths
+  (`shared/engineering_agent_runs.py` `stored_flow`: an administrator's `POST /agents/engineering/runs`, and an
+  engineering agent's Run now or trigger), before the start function is asked. The runtime only ever sees a flat
+  flow; a flow whose start read none of its calls is refused before the start (409).
+- **How.** Each called flow is read at its pinned revision; its steps become `<call>.<step>` (a call inside it
+  `<call>.<inner call>.<step>`), each id at most 64 characters (the ids of an engineering flow take a `.` for this:
+  a flow a person saves has none, the save refuses one). The arrows into the call go to the steps the called flow's
+  start leads to, and what reached its plain end goes where the call led; its human decision points and its stop at
+  PR stay. The called flow's agents' `budget_share` are that share of the call's (floored to six places), and the
+  run's shares, the calls' included, add up to at most 1. Its own memory, Learn, pull request mode and monthly budget
+  are not taken: the caller's apply to the run.
+- **Refused** (409 at a start, 400 at a save): a call more than 2 deep (a flow, a flow it calls, a flow that one
+  calls); more than 60 steps once every call is in; a cycle (a flow in its own chain of calls, by its id, whatever
+  the revision); a called flow that ends at a pull request, or has no plain end, unless the call is its flow's last
+  step (every arrow out of it goes to an end); a flow or a revision that is not saved, an agents workflow, or a flow
+  that breaks a rule now; an input the called flow does not declare; and a flat flow that breaks any of the server's
+  rules.
+- **What the run records** (D4): the flat flow is the run's copy (its `FLOW` row), and its start step's
+  `params.expansion` lists the calls, `[{step, flow, revision, inputs?}]`, the outer before the inner; an engineering
+  agent's run row (voc-agents) keeps `expansion` too, and the start's answer names it.
+- **At a save.** `POST`/`PUT /workflows` (and `POST /workflows/validate` for an administrator) simulate the expansion
+  on the stored flows, so a flow whose calls cannot be expanded is never saved; `GET /workflows/<id>/expanded?revision=`
+  (an administrator's) answers the flat flow a run of that revision would follow, with `expansion`, `calls` and
+  `steps`, or 409 `{error, node_id}` with the refusal.
 
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
 stops at the proposal), the run's end when its flow finishes (today the coordinator finishes its task and the run
@@ -2573,7 +2610,8 @@ A launch resolves the agent's skill once (`lambda/engineering/skills/resolve.py`
 in this order, and records the label on the agent's session row (`skill_version`); the argv takes that skill's model
 and harness:
 
-1. the flow step's pin (an agent step's `params.skill_version` `v<n>`): version `n` of the run's connection's own
+1. the flow step's pin (an agent step's `params.skill_version` `v<n>`; since 7.52.00 also a quality gate's `runner`
+   or `final_go` naming its role at a version, `gate-runner@v<n>`): version `n` of the run's connection's own
    skill, else of the shared skill, accepted only (a pin to no version, or to one nobody accepted, refuses the launch);
 2. the skills store's current version for the run's connection (`SkillStore.current`: its own, else the shared one);
 3. the role's bundled template, `<role>@template-<version>` (`skills/templates.py`: the templates' `bundle.json`,
@@ -2581,7 +2619,8 @@ and harness:
    harness's shipped records).
 
 A store that cannot be read refuses the launch (the board answers 503 and the coordinator asks again): a template never
-stands in for a version a person accepted. The runtime's role reads the skill rows it already reads for the coach
+stands in for a version a person accepted. An agent step made from a Registry card (7.52.00, `params.card`
+`<card>@v<n>`) also names it on the session row (`card`, `card_version`), beside its skill label. The runtime's role reads the skill rows it already reads for the coach
 (`LearningCoachSkills`, pinned). The session then fetches its record through the board's `skill` op, by the label its
 session row records, never one it names (`board/api.py`); the board answers the record and the platform's rules (the
 bundle's `platform_rules`). A label the board cannot serve (no row, a template version this deployment no
@@ -3009,8 +3048,9 @@ are not published: the store keeps each announcement (its id, type and line) on 
 the answer returns it with `published: false`, and publishing it from the API's own source (`voc.engineering/api`)
 would widen both that grant and `bus/senders.py`, which refuses these types from it. **The grant**: one statement on the Agents API's role
 (`SkillDecisions`): `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:ConditionCheckItem` on `voc-engineering`
-with `dynamodb:LeadingKeys` `WS#*#SKILL#*` (`ForAllValues:StringLike`, beside `Null` `false` so a request naming
-no key never matches it vacuously), exactly what the store's writes use (a
+with `dynamodb:LeadingKeys` `WS#*#SKILL#*` and, since 7.52.00, the Registry's cards `WS#*#AGENTCARD#*`
+([autonomous-agents.md](autonomous-agents.md#registry)) (`ForAllValues:StringLike`, beside `Null` `false` so a
+request naming no key never matches it vacuously), exactly what the stores' writes use (a
 transaction is authorised by its items' actions); no delete; the key through DynamoDB is `AgentsTablesKey`'s;
 nothing while the module is off (pinned in `lib/stacks/api-engineering-reads.test.ts`). **The screens**: on a
 version's detail, Accept and Reject (a proposed version), Record benchmark (a proposed version with none) and Roll

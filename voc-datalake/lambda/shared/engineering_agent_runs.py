@@ -6,7 +6,9 @@ run through voc-engineering-start (lambda/engineering/runtime/handler.py ``start
 trigger. Both read the same things the same way, from here:
 
 * the stored flow (``stored_flow``): its definition and revision, which the run copies and follows, and its monthly
-  budget, from the stored workflow, never from a request;
+  budget, from the stored workflow, never from a request; since 7.52.00 with its ``call_flow`` steps expanded
+  (``shared/flow_expand.py``: each called flow read at the revision its call pins, through ``revision_reader``), so
+  the run copies a flat flow and the calls it expanded (its start step's ``params.expansion``);
 * the stored connection (``connection_row``, ``run_connection``): its repository and default branch, copied onto the
   run, read from its row in voc-agents (``CONNECTIONS#<ws>`` / ``CONNECTION#<id>``: the spelling of
   engineering/connectors/connections.py, held to it by ``shared/test/test_engineering_agent_runs.py``);
@@ -32,7 +34,7 @@ from typing import Any, Final, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, EndpointConnectionError
 
-from shared import workflow_schema
+from shared import flow_expand, workflow_schema
 from shared.dynamo_values import plain
 from shared.exceptions import ConflictError, ServiceUnavailableError, ValidationError
 from shared.logging import logger
@@ -104,11 +106,33 @@ class StoredFlow:
     budget_usd: float | None
     definition: str
     revision: int
+    #: The calls expanded into ``definition`` (7.52.00, ``shared/flow_expand.py``): ``[{step, flow, revision,
+    #: inputs?}]``, which its copy's start step records too.
+    expansion: tuple[dict[str, Any], ...] = ()
+    #: The calls it still holds (read without a reader): such a flow is never started (``start_request``).
+    calls: int = 0
 
 
-def stored_flow(workflow: Mapping[str, Any] | None) -> StoredFlow:
+#: Why a flow is never started with its calls in it (the runtime has no ``call_flow`` step to run).
+UNEXPANDED: Final = 'a flow that calls other flows starts with its calls expanded: its start read none of them'
+
+
+def revision_reader(table: Any) -> flow_expand.ReadRevision:
+    """A saved revision's definition from voc-agents (``agents_store.get_revision``), None for none."""
+    from shared import agents_store as store
+
+    def read(workflow_id: str, revision: int) -> Mapping[str, Any] | None:
+        found = store.get_revision(table, workflow_id, revision)
+        definition = None if found is None else found.get('definition')
+        return definition if isinstance(definition, Mapping) else None
+    return read
+
+
+def stored_flow(workflow: Mapping[str, Any] | None,
+                read_revision: flow_expand.ReadRevision | None = None) -> StoredFlow:
     """The flow a workflow's CURRENT row holds (the caller reads it, archived ones left out): 400 for none or an agents
-    workflow, 409 for a stored budget off its rule."""
+    workflow, 409 for a stored budget off its rule. With ``read_revision`` (a run's start: ``revision_reader``), its
+    calls expanded, each called flow at the revision its call pins; 409 for a call that cannot be expanded."""
     if workflow is None:
         raise ValidationError('workflow_id does not name a saved workflow')
     definition = workflow_schema.decode_definition(workflow.get('definition')) or {}
@@ -118,8 +142,18 @@ def stored_flow(workflow: Mapping[str, Any] | None) -> StoredFlow:
     if broken:
         raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
     revision = plain(workflow.get('revision')) or 1
+    expansion: tuple[dict[str, Any], ...] = ()
+    pending = len(flow_expand.calls(definition))
+    if pending and read_revision is not None:
+        root = workflow.get('workflow_id')
+        try:
+            expanded = flow_expand.expand(definition, read_revision, root=root if isinstance(root, str) else None)
+        except flow_expand.ExpansionError as refused:
+            raise ConflictError(f'the flow\'s calls cannot be expanded ({refused.message}): change the flow and save '
+                                'it again') from None
+        definition, expansion, pending = expanded.definition, expanded.expansion, 0
     return StoredFlow(None if budget is None else float(budget['monthly_usd']),
-                      workflow_schema.encode_definition(definition), int(revision))
+                      workflow_schema.encode_definition(definition), int(revision), expansion, pending)
 
 
 def connection_key(connection_id: str) -> dict[str, str]:
@@ -260,7 +294,10 @@ def start_request(plan: StartPlan) -> dict[str, Any]:
     flow has one), the hard cap forced on (``hard_cap``: the run is capped at what is left of the flow's month even
     when the administrators' hard cap is off), the commit resolved by the start (the head of the connection's default
     branch, through the broker), and what the run started from (``issue``, ``feedback``, ``prd``) and by whom
-    (``actor``, ``via``: the agent and its run, recorded on the run's first ``RUNLOG#`` row, D4)."""
+    (``actor``, ``via``: the agent and its run, recorded on the run's first ``RUNLOG#`` row, D4). A flow read with its
+    calls left in is refused (409): the runtime runs only a flat flow."""
+    if plan.flow.calls:
+        raise ConflictError(UNEXPANDED)
     request: dict[str, Any] = {
         'action': 'start_run', 'run_id': plan.run_id, 'flow': plan.workflow_id,
         'flow_definition': plan.flow.definition, 'flow_revision': plan.flow.revision,
@@ -391,7 +428,7 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
     written: a flow off its rule or without a monthly budget, a goal over its limit."""
     from shared import agents_store as store
 
-    flow = stored_flow(workflow)
+    flow = stored_flow(workflow, revision_reader(table))
     if flow.budget_usd is None:
         raise ConflictError("the agent's flow has no monthly budget: set one in its Workflow tab before it runs")
     settings = agent.get('engineering') or {}
@@ -408,6 +445,8 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
         fields['prd'] = dict(start.prd)
     if start.feedback is not None:
         fields['feedback_count'] = start.feedback.count
+    if flow.expansion:   # (7.52.00: the calls its flow expanded, as the run's copy of it records them)
+        fields['expansion'] = [dict(call) for call in flow.expansion]
     request = store.RunStart(
         trigger=start.trigger, requested_by=start.requested_by, workflow_revision=flow.revision,
         trigger_detail=start.trigger_detail, counts_against_daily_cap=start.counts_against_daily_cap,

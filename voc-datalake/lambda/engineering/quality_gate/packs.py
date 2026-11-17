@@ -141,6 +141,16 @@ class Language:
     root_globs: tuple[str, ...] = ()
 
 
+#: What the gate record says of a planned check that did not pass (its ``reason``), by its status: the words
+#: ``checks.judge`` and ``checks.run_plan`` fill in (7.52.00: the Registry's Quality gates view shows each pack
+#: step's, engineering/registry/views.py).
+MISSING_TOOL = '{tool} is not installed'
+TIMED_OUT = 'still running after {timeout_s} s'
+EMPTY_EXIT = 'exit {code}: it found nothing to check'
+EMPTY_OUTPUT = 'its output does not show that anything was checked'
+FAILED = 'exit {code}'
+SETUP_FAILED = 'not run: setup step "{setup}" failed'
+
 #: The repository's own gate: when a repository a pack covers has it, it runs instead of every pack step.
 OWN_GATE_FILE = 'scripts/validate.sh'
 OWN_GATE_ARGV = ('bash', OWN_GATE_FILE)

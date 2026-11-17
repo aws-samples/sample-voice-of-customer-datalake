@@ -645,6 +645,10 @@
       "label": "Memoria",
       "description": "Lee o escribe en la memoria del repositorio, de un rol o de una persona."
     },
+    "call_flow": {
+      "label": "Llamar a un flujo",
+      "description": "Ejecuta otro flujo de ingeniería guardado, en la revisión que indica, en lugar de este paso."
+    },
     "stop_at_pr": {
       "label": "Parar en el PR",
       "description": "El flujo termina en un pull request para que lo revisen personas: nunca se fusiona nada."

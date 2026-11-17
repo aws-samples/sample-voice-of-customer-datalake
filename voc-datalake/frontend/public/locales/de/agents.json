@@ -640,6 +640,10 @@
       "label": "Gedächtnis",
       "description": "Aus dem Gedächtnis des Repositorys, einer Rolle oder einer Person lesen oder hineinschreiben."
     },
+    "call_flow": {
+      "label": "Flow aufrufen",
+      "description": "Führt an dieser Stelle einen anderen gespeicherten Engineering-Flow in der genannten Revision aus."
+    },
     "stop_at_pr": {
       "label": "Stopp beim PR",
       "description": "Der Ablauf endet mit einem Pull Request, den Menschen prüfen: es wird nie etwas gemergt."

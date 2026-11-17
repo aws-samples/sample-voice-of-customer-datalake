@@ -54,13 +54,21 @@ Permissions:
   bundled template against the scope, ``GET …/skills/<role>/template``, and its adoption as a person's proposal,
   ``POST …/skills/<role>/template/adopt``), and an ended run's
   reactions read asked for by hand (``POST /agents/engineering/<run_id>/reactions``, 7.10.00: the start function's
-  ``ask_reactions``, below); while the engineering agents are off every caller gets 404.
+  ``ask_reactions``, below), and, since 7.52.00, the Registry (its cards, a card made from a skill), the quality
+  gates and the assertions' vocabulary (``/agents/engineering/registry``, ``…/registry/<card>``, ``POST
+  …/registry/cards``, ``…/gates``, ``…/assertions``: shared/agents_engineering_registry_routes.py); while the
+  engineering agents are off every caller gets 404;
+- a flow's expansion (``GET /workflows/<id>/expanded``) and an automation's pause and resume (``POST
+  /agents/<id>/pause``, ``…/resume``) are administrators' too (7.52.00, the same router); a workflow's ``used_by``
+  (the automations that run it, read as the agents are, and the flows that call it) is answered with it, and the
+  save of a flow other automations run needs ``confirm_shared: true`` (409 ``shared_flow`` with them otherwise).
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket (GetItem and Query), the skills' writes (PutItem, UpdateItem and
-ConditionCheckItem on the ``WS#*#SKILL#*`` partitions only, what the skills store's transactions use; no delete) and ``lambda:InvokeFunction`` on the board's
+their table and workspace bucket (GetItem and Query), the skills' and, since 7.52.00, the Registry cards' writes
+(PutItem, UpdateItem and ConditionCheckItem on the ``WS#*#SKILL#*`` and ``WS#*#AGENTCARD#*`` partitions only, what
+the stores' transactions use; no delete) and ``lambda:InvokeFunction`` on the board's
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
 events back for this role to publish as the person (engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
@@ -103,9 +111,11 @@ from shared import (
     agent_run_resume,
     agent_seed,
     agents_engineering_knowledge_routes,
+    agents_engineering_registry_routes,
     agents_engineering_run_routes,
     agents_engineering_setup_routes,
     engineering_templates,
+    flow_expand,
     plans_store,
     project_access,
     workflow_methodology,
@@ -445,7 +455,7 @@ def update_agent(agent_id: str):
             return refused
         fields.update(_run_as(caller))
     updated = store.update_agent(_agents_table(), agent_id, fields, updated_by=caller.subject, now=store.utc_now())
-    return {'agent': store.agent_view(updated)}
+    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller))}
 
 
 @app.delete('/agents/<agent_id>')
@@ -480,7 +490,19 @@ def _set_enabled(agent_id: str, enabled: bool) -> dict | Response:
                 return refused
             change.update(_run_as(caller))
     updated = store.update_agent(_agents_table(), agent_id, change, updated_by=caller.subject, now=store.utc_now())
-    return {'agent': store.agent_view(updated)}
+    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller))}
+
+
+def _pause_ended_if_off(agent: dict, caller: Caller) -> dict:
+    """An agent just turned off ends its pause (7.52.00: only an automation that is on is paused), logged as resumed
+    ``via: disabled``; the agent as it is now."""
+    if agent.get('enabled') is True or agent.get('paused') is not True:
+        return agent
+    try:
+        return store.set_paused(_agents_table(), str(agent['agent_id']), False, by=caller.subject,
+                                username=caller.username or caller.subject, now=store.utc_now(), via='disabled')
+    except ConflictError:   # (someone resumed it meanwhile)
+        return store.get_agent(_agents_table(), str(agent['agent_id'])) or agent
 
 
 @app.post('/agents/<agent_id>/enable')
@@ -720,6 +742,79 @@ def _valid_definition(raw: object) -> dict[str, Any] | Response:
     return result.definition
 
 
+def _save_issues(definition: Mapping[str, Any], workflow_id: str | None) -> list[dict[str, str]]:
+    """What a save of an engineering flow is refused for beyond its own rules (7.52.00): a call that cannot be
+    expanded (the expansion a run's start makes, simulated on the stored flows: shared/flow_expand.py), a step id with
+    the expansion's ``.``, a recorded ``expansion``, or a step from a Registry card that does not carry the card's
+    role, skill version and model. 503 when the stored flows or cards cannot be read."""
+    try:
+        found = flow_expand.save_issues(definition, eng_runs.revision_reader(_agents_table()), root=workflow_id)
+        found += agents_engineering_registry_routes.card_issues(definition)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Workflow: the flows it calls or its cards could not be read')
+        raise ServiceUnavailableError('the flows it calls could not be read: retry') from exc
+    return [{'message': message, **({'node_id': node_id} if node_id else {})} for message, node_id in found]
+
+
+def _refused_save(definition: Mapping[str, Any], workflow_id: str | None) -> Response | None:
+    """The 400 a save of ``definition`` gets from ``_save_issues``, None when it gets none."""
+    issues = _save_issues(definition, workflow_id)
+    if not issues:
+        return None
+    return _json(400, {'success': False, 'error': 'The workflow is not valid', 'valid': False, 'errors': issues})
+
+
+SHARED_FLOW = ('other automations run this flow: saving changes each of them from its next run. Save again with '
+               'confirm_shared: true to change them all')
+
+
+def _automation(agent: Mapping[str, Any]) -> dict[str, Any]:
+    settings = agent.get('engineering') if isinstance(agent.get('engineering'), Mapping) else {}
+    return {'agent_id': str(agent.get('agent_id')), 'name': str(agent.get('name') or agent.get('agent_id')),
+            'kind': 'engineering' if store.is_engineering_agent(agent) else 'agents',
+            'connection': settings.get('connection'), 'language': settings.get('language')}
+
+
+def _used_by(caller: Caller, workflows: list[dict] | None = None) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Each workflow's users (7.52.00, "Used by"): ``{workflow_id: {automations: [{agent_id, name, kind, connection,
+    language}], flows: [{workflow_id, name, revision}]}}``. The automations that run it, as ``caller`` may see them
+    (archived ones left out, by name); the saved flows whose current revision calls it (``call_flow``), each with the
+    revision of it that it pins (archived ones left out). ``workflows``: the library's rows, when already read."""
+    scope: CategoryScope | None = None
+    found: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for agent in store.list_agents(_agents_table()):
+        workflow_id = agent.get('workflow_id')
+        if (agent.get('status') == store.AGENT_STATUS_ARCHIVED or not isinstance(workflow_id, str)
+                or not _lists_engineering(agent, caller)):
+            continue
+        if not acts_as_admin(caller):
+            scope = scope or _viewer_scope(caller)
+            if not store.agent_visible(scope, agent):
+                continue
+        found.setdefault(workflow_id, {'automations': [], 'flows': []})['automations'].append(_automation(agent))
+    rows = workflows if workflows is not None else store.list_workflows(_agents_table())
+    for row in rows:
+        if store.is_archived_workflow(row):
+            continue
+        definition = workflow_schema.decode_definition(row.get('definition'))
+        pins = {ref for call in flow_expand.calls(definition)
+                if (ref := flow_expand.flow_ref(call.get('data', {}).get('params', {}).get('flow'))) is not None}
+        for called, revision in sorted(pins):
+            found.setdefault(called, {'automations': [], 'flows': []})['flows'].append({
+                'workflow_id': str(row.get('workflow_id')), 'name': str(row.get('name') or row.get('workflow_id')),
+                'revision': revision})
+    return {workflow_id: {'automations': sorted(users['automations'],
+                                                key=lambda user: (user['name'].lower(), user['agent_id'])),
+                          'flows': sorted(users['flows'], key=lambda user: (user['name'].lower(),
+                                                                            user['workflow_id'], user['revision']))}
+            for workflow_id, users in found.items()}
+
+
+def _uses(caller: Caller, workflow_id: str) -> dict[str, list[dict[str, Any]]]:
+    """One workflow's users (``_used_by``), nobody's when it has none."""
+    return _used_by(caller).get(workflow_id) or {'automations': [], 'flows': []}
+
+
 def _create_from(raw: object, derived_from: str | None) -> Response:
     caller = _caller()
     require_admin_caller(caller)
@@ -732,6 +827,9 @@ def _create_from(raw: object, derived_from: str | None) -> Response:
         # module is deployed (owner decision 28, held on the server too); one already saved keeps working.
         raise ConflictError('engineering flows are created only where the engineering agents module is deployed: '
                             'an engineering flow already saved still opens and saves')
+    refused = _refused_save(definition, None)
+    if refused is not None:
+        return refused
     created = store.create_workflow(_agents_table(), definition, created_by=caller.subject,
                                     username=caller.username, now=store.utc_now(), derived_from=derived_from)
     logger.info('Workflow created', extra={'workflow_id': created['workflow_id']})
@@ -750,10 +848,14 @@ def list_workflows():
     if include_archived:
         require_admin_caller(caller)
     # Both kinds are listed, each with its `kind`: the editor opens either; an agent's picker offers only `agents`.
-    rows = [row for row in store.list_workflows(_agents_table())
-            if include_archived or not store.is_archived_workflow(row)]
+    every = store.list_workflows(_agents_table())
+    rows = [row for row in every if include_archived or not store.is_archived_workflow(row)]
     builtin, stored = rows[:1], sorted(rows[1:], key=lambda row: str(row.get('gsi1sk') or ''))
-    items = [store.workflow_view(row, include_definition=False) for row in builtin + stored]
+    # (7.52.00: each with the automations that run it, as the caller may see them, and the flows that call it)
+    users = _used_by(caller, every)
+    items = [{**store.workflow_view(row, include_definition=False),
+              'used_by': users.get(str(row.get('workflow_id'))) or {'automations': [], 'flows': []}}
+             for row in builtin + stored]
     return {'items': items, 'count': len(items)}
 
 
@@ -767,8 +869,10 @@ def create_workflow():
 @app.post('/workflows/validate')
 @tracer.capture_method
 def validate_workflow():
-    """``{definition, workflow_id?}`` → ``{valid, errors, diff?}``; the diff is against that workflow's current revision."""
-    _caller()
+    """``{definition, workflow_id?}`` → ``{valid, errors, diff?}``; the diff is against that workflow's current revision.
+    For an administrator (who saves), an engineering flow's errors include what its save would be refused for (its
+    calls expanded, its Registry cards: ``_save_issues``)."""
+    caller = _caller()
     body = json_object_body(app)
     result = workflow_schema.validate_definition(body.get('definition'))
     response: dict[str, Any] = result.to_dict()
@@ -778,6 +882,11 @@ def validate_workflow():
     agents_flow = definition is not None and definition['schema'] == workflow_schema.SCHEMA
     response['warnings'] = workflow_methodology.methodology_warnings(definition) if definition and agents_flow else []
     workflow_id = body.get('workflow_id')
+    if definition is not None and not agents_flow and acts_as_admin(caller):
+        # (7.52.00: what its save would be refused for beyond its rules: its calls expanded, its Registry cards)
+        issues = _save_issues(definition, workflow_id if store.is_workflow_id(workflow_id) else None)
+        if issues:
+            response['valid'], response['errors'] = False, issues
     if workflow_id is not None and isinstance(body.get('definition'), Mapping):
         current = workflow_schema.decode_definition(_workflow(str(workflow_id)).get('definition'))
         response['diff'] = workflow_schema.diff_definitions(current, result.definition or body['definition'])
@@ -810,9 +919,11 @@ def list_workflow_templates():
 @app.get('/workflows/<workflow_id>')
 @tracer.capture_method
 def get_workflow(workflow_id: str):
-    """The current revision (with its definition) and the revision list."""
-    workflow = _workflow(workflow_id, include_archived=_sees_archived(_caller()))
-    return {'workflow': store.workflow_view(workflow),
+    """The current revision (with its definition and, 7.52.00, the automations that run it: ``used_by``) and the
+    revision list."""
+    caller = _caller()
+    workflow = _workflow(workflow_id, include_archived=_sees_archived(caller))
+    return {'workflow': {**store.workflow_view(workflow), 'used_by': _uses(caller, workflow_id)},
             'revisions': store.list_revisions(_agents_table(), workflow_id)}
 
 
@@ -845,13 +956,21 @@ def get_workflow_revision(workflow_id: str, revision: str):
 @app.put('/workflows/<workflow_id>')
 @tracer.capture_method
 def save_workflow(workflow_id: str):
-    """Save a new revision (admin): ``{definition, expected_revision}``; 409 when stale."""
+    """Save a new revision (admin): ``{definition, expected_revision, confirm_shared?, agent_id?}``; 409 when stale.
+
+    A flow other automations run (7.52.00, "Used by": any but ``agent_id``, the automation whose page the edit comes
+    from) changes each of them from its next run, so its save needs ``confirm_shared: true``: without it, 409
+    ``{code: shared_flow, used_by}`` and nothing is saved. An engineering flow's calls are expanded first, as a run's
+    start will (400 for one that cannot be)."""
     caller = _caller()
     require_admin_caller(caller)
     body = json_object_body(app)
     expected = body.get('expected_revision')
     if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
         raise ValidationError('expected_revision must be the revision you edited (a whole number ≥ 1)')
+    confirmed, from_agent = body.get('confirm_shared', False), body.get('agent_id')
+    if not isinstance(confirmed, bool) or (from_agent is not None and not store.is_agent_id(from_agent)):
+        raise ValidationError('confirm_shared is true or false, and agent_id the automation the edit comes from')
     current = workflow_schema.decode_definition(_workflow(workflow_id).get('definition')) or {}
     definition = _valid_definition(body.get('definition'))
     if isinstance(definition, Response):
@@ -859,9 +978,16 @@ def save_workflow(workflow_id: str):
     if definition['schema'] != current.get('schema', workflow_schema.SCHEMA):
         # An agent may run this workflow: it stays an agents workflow (or an engineering flow) for good.
         raise ValidationError(KEEPS_ITS_KIND)
+    refused = _refused_save(definition, workflow_id)
+    if refused is not None:
+        return refused
+    # (the flows that call it pin a revision of it: a save changes none of them, so only automations hold it)
+    users = _uses(caller, workflow_id)
+    if not confirmed and any(user['agent_id'] != from_agent for user in users['automations']):
+        return _json(409, {'success': False, 'error': SHARED_FLOW, 'code': 'shared_flow', 'used_by': users})
     saved = store.save_revision(_agents_table(), workflow_id, definition, expected_revision=expected,
                                 saved_by=caller.subject, username=caller.username, now=store.utc_now())
-    return {'workflow': store.workflow_view(saved)}
+    return {'workflow': {**store.workflow_view(saved), 'used_by': users}}
 
 
 @app.post('/workflows/<workflow_id>/duplicate')
@@ -1633,6 +1759,8 @@ app.include_router(agents_engineering_setup_routes.app)
 # The run workspace (7.51.00: the runs list, an agent's thread and tabs, the assertions, steering, a child run's restart;
 # shared/agents_engineering_run_routes.py), before /agents/engineering/<run_id>.
 app.include_router(agents_engineering_run_routes.app)
+# The Registry, gates, assertions, a flow's expansion, pause/resume (7.52.00: shared/agents_engineering_registry_routes.py).
+app.include_router(agents_engineering_registry_routes.app)
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository
@@ -2067,9 +2195,10 @@ def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _stored_flow(workflow_id: str) -> eng_runs.StoredFlow:
-    """The stored engineering flow (its budget, definition and revision: ``eng_runs.stored_flow``): 400 for an id that
-    names no saved workflow or an agents workflow, 409 for a stored budget off its rule."""
-    return eng_runs.stored_flow(_find_workflow(workflow_id))
+    """The stored engineering flow (its budget, definition and revision: ``eng_runs.stored_flow``), its calls expanded
+    (7.52.00, shared/flow_expand.py): 400 for an id that names no saved workflow or an agents workflow, 409 for a
+    stored budget off its rule or a call that cannot be expanded."""
+    return eng_runs.stored_flow(_find_workflow(workflow_id), eng_runs.revision_reader(_agents_table()))
 
 
 @cache
@@ -2152,7 +2281,8 @@ def start_engineering_run():
     logger.info('Engineering run started', extra={'run_id': request['run_id'], 'workflow_id': fields['workflow_id'],
                                                   'started_by': caller.subject})
     return _json(202, {'run': {'run_id': request['run_id'], 'status': str(answer.get('status', 'active')),
-                               'workflow_id': fields['workflow_id'], 'started_by': caller.subject}})
+                               'workflow_id': fields['workflow_id'], 'started_by': caller.subject,
+                               'expansion': list(flow.expansion)}})
 
 
 @app.get('/agents/engineering/<run_id>')
