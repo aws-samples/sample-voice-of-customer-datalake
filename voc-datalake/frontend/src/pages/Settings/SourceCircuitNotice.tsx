@@ -29,9 +29,30 @@ interface Props {
   readonly onReset: () => void
 }
 
+/** Reset, an admin's: for anyone else focusable and off (aria-disabled), saying why in its tooltip. */
+function ResetButton({ isAdmin, resetting, onReset }: Readonly<Pick<Props, 'isAdmin' | 'resetting' | 'onReset'>>) {
+  const { t } = useTranslation('settings')
+  const adminOnly = useAdminOnlyReason(isAdmin)
+  return (
+    <Tooltip kind="description" content={adminOnly ?? t('sourceCard.circuit.resetHint')}>
+      <button
+        type="button"
+        onClick={isAdmin ? onReset : undefined}
+        disabled={isAdmin && resetting}
+        aria-disabled={isAdmin ? undefined : true}
+        className="btn btn-secondary btn-sm flex items-center gap-1.5 self-start disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {resetting
+          ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+          : <RotateCcw size={14} aria-hidden="true" />}
+        {resetting ? t('sourceCard.circuit.resetting') : t('sourceCard.circuit.reset')}
+      </button>
+    </Tooltip>
+  )
+}
+
 export default function SourceCircuitNotice({ circuit, isAdmin, resetting, resetFailed, onReset }: Props) {
   const { t, i18n } = useTranslation('settings')
-  const adminOnly = useAdminOnlyReason(isAdmin)
   if (!circuit.tripped) return null
 
   const reason = circuit.last_error === null || circuit.last_error === '' ? null : shortReason(circuit.last_error)
@@ -58,20 +79,7 @@ export default function SourceCircuitNotice({ circuit, isAdmin, resetting, reset
           <p className="text-muted">{t('sourceCard.circuit.enableResets')}</p>
           {resetFailed && <p className="text-warn" role="alert">{t('sourceCard.circuit.resetFailed')}</p>}
         </div>
-        <Tooltip kind="description" content={adminOnly ?? t('sourceCard.circuit.resetHint')}>
-          <button
-            type="button"
-            onClick={isAdmin ? onReset : undefined}
-            disabled={isAdmin && resetting}
-            aria-disabled={isAdmin ? undefined : true}
-            className="btn btn-secondary btn-sm flex items-center gap-1.5 self-start disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {resetting
-              ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-              : <RotateCcw size={14} aria-hidden="true" />}
-            {resetting ? t('sourceCard.circuit.resetting') : t('sourceCard.circuit.reset')}
-          </button>
-        </Tooltip>
+        <ResetButton isAdmin={isAdmin} resetting={resetting} onReset={onReset} />
       </div>
     </div>
   )

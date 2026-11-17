@@ -57,7 +57,8 @@ function stoppedStep(overview: EngineeringOverview, ids: ReadonlySet<string>, li
   const point = flowPointStep(overview.run.waiting_at)
   if (point !== null && ids.has(point)) return point
   const failed = failedAgent(overview.agents)
-  const lane = Object.entries(overview.lanes).find(([step, lanes]) => ids.has(step) && lanes.some((entry) => entry.agent === failed?.agent))
+  if (failed === null) return focusStepId(lit)
+  const lane = Object.entries(overview.lanes).find(([step, lanes]) => ids.has(step) && lanes.some((entry) => entry.agent === failed.agent))
   return lane?.[0] ?? focusStepId(lit)
 }
 
@@ -68,6 +69,25 @@ const atWork = (overview: EngineeringOverview, step: string, phase: RunPhase) =>
 /** A step still under way in a run that stopped: held while the run waits for a person, stopped once it ended. */
 const HALTED_AS: Readonly<Record<Exclude<RunPhase, 'active'>, StepState['status']>> = { halted: 'paused', ended: 'stopped' }
 
+/** A run under way: a running step spins only while an agent is at work on it, and the one it is on is marked. */
+function markUnderWay(overview: EngineeringOverview, lit: Map<string, StepState>): Map<string, StepState> {
+  for (const [step, state] of lit) if (state.status === 'running') lit.set(step, { ...state, spin: atWork(overview, step, 'active') })
+  const here = focusStepId(lit)
+  const state = here === undefined ? undefined : lit.get(here)
+  if (here !== undefined && state !== undefined) lit.set(here, { ...state, here: 'on' })
+  return lit
+}
+
+/** A run that stopped: its steps under way held or stopped, and where it stopped marked (a finished run: nowhere). */
+function markStopped(overview: EngineeringOverview, ids: ReadonlySet<string>, lit: Map<string, StepState>,
+  phase: Exclude<RunPhase, 'active'>): Map<string, StepState> {
+  const here = overview.run.status === 'done' ? undefined : stoppedStep(overview, ids, lit)
+  const state = here === undefined ? undefined : lit.get(here)
+  for (const [step, each] of lit) if (each.status === 'running') lit.set(step, { ...each, status: HALTED_AS[phase], spin: false })
+  if (here !== undefined) lit.set(here, { ...(state ?? { rounds: 1 }), status: stoppedAs(overview, state), here: 'stopped', spin: false })
+  return lit
+}
+
 /** The steps lit, each gate step with its verdict, the one the run is on marked, or the one where it stopped. */
 export function runStepStates(overview: EngineeringOverview, definition: WorkflowDefinition): Map<string, StepState> {
   const ids = new Set(definition.nodes.map((node) => node.id))
@@ -77,17 +97,5 @@ export function runStepStates(overview: EngineeringOverview, definition: Workflo
     if (gate !== null && ids.has(step)) lit.set(step, { ...(lit.get(step) ?? { status: 'done', rounds: 1 }), gate })
   }
   const phase = runPhase(overview.run)
-  if (phase === 'active') {
-    for (const [step, state] of lit) if (state.status === 'running') lit.set(step, { ...state, spin: atWork(overview, step, phase) })
-    const here = focusStepId(lit)
-    const state = here === undefined ? undefined : lit.get(here)
-    if (here !== undefined && state !== undefined) lit.set(here, { ...state, here: 'on' })
-    return lit
-  }
-  // (a run that finished stopped nowhere; one that stopped, where it was when it stopped)
-  const here = overview.run.status === 'done' ? undefined : stoppedStep(overview, ids, lit)
-  const state = here === undefined ? undefined : lit.get(here)
-  for (const [step, each] of lit) if (each.status === 'running') lit.set(step, { ...each, status: HALTED_AS[phase], spin: false })
-  if (here !== undefined) lit.set(here, { ...(state ?? { rounds: 1 }), status: stoppedAs(overview, state), here: 'stopped', spin: false })
-  return lit
+  return phase === 'active' ? markUnderWay(overview, lit) : markStopped(overview, ids, lit, phase)
 }

@@ -99,15 +99,15 @@ describe('the run control bar', () => {
     renderWorkspace(RUN_PATH)
     const bar = within(await screen.findByRole('region', { name: 'Run controls' }))
     expect([bar.queryByRole('button', { name: 'Pause' }), bar.queryByRole('button', { name: 'More run controls' }),
-      bar.getByRole('button', { name: 'Stop' }) !== null,
-      bar.getByText("Pause, Resume and Save can't reach this run from this deployment: it names no start function.") !== null])
+      bar.getByRole('button', { name: 'Stop' }).isConnected,
+      bar.getByText("Pause, Resume and Save can't reach this run from this deployment: it names no start function.").isConnected])
       .toStrictEqual([null, null, true, true])
     cleanup()
     withSignals(undefined, { ...fixture.overview.answer, stop_available: false })
     renderWorkspace(RUN_PATH)
     const signalling = within(await screen.findByRole('region', { name: 'Run controls' }))
-    expect([signalling.getByRole('button', { name: 'Pause' }) !== null, signalling.queryByRole('button', { name: 'Stop' }),
-      signalling.queryByText(/Pause, Resume and Save can't reach/), signalling.getByText(/Stop can't reach this run/) !== null])
+    expect([signalling.getByRole('button', { name: 'Pause' }).isConnected, signalling.queryByRole('button', { name: 'Stop' }),
+      signalling.queryByText(/Pause, Resume and Save can't reach/), signalling.getByText(/Stop can't reach this run/).isConnected])
       .toStrictEqual([true, null, null, true])
   })
 

@@ -97,6 +97,13 @@ export function useSaveFlow<S extends StoredDocument>({
       const written = mode.title === undefined ? send?.(sent, on, { checked: mode.checked, mark }) : renameStored?.(mode.title, on)
       return written ?? Promise.reject(new Error('This document is not written here'))
     }
+    // A failed save of this draft: the conflict or the refused mark it shows (nothing once the draft moved on).
+    const failed = (error: unknown) => {
+      if (!current()) return
+      if (mode.checked && conflictOf(error)) setConflict(true)
+      const refusal = mark === null ? null : refusalOf?.(error) ?? null
+      if (refusal !== null) setRefused({ message: refusal.message, checked: mode.checked })
+    }
     try {
       // "Saving" lasts as long as the write itself (a read-back after it is not a save on its way).
       setPending((count) => count + 1)
@@ -111,11 +118,8 @@ export function useSaveFlow<S extends StoredDocument>({
       if (saved === undefined) throw new Error('The saved version could not be read back')
       onSaved(saved, sent)
     } catch (error) {
-      if (!current()) return
-      if (mode.checked && conflictOf(error)) setConflict(true)
-      const refusal = mark === null ? null : refusalOf?.(error) ?? null
-      if (refusal !== null) setRefused({ message: refusal.message, checked: mode.checked })
-      throw error
+      failed(error)
+      if (current()) throw error
     }
   }, [conflictOf, edits, generation, load, markOf, onSaved, refusalOf, renameStored, send, stored])
 

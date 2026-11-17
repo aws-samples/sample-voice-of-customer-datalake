@@ -43,13 +43,30 @@ function OrchestratorStrip({ agent, current, onOpen }: Readonly<{ agent: Enginee
   )
 }
 
+/** The canvas view: the orchestrator's strip over the run's flow (lines while it loads; said when there is none). */
+function CanvasView({ overview, flow, current, onOpen }: Readonly<Props & { flow: ReturnType<typeof useRunFlow> }>) {
+  const { t } = useTranslation('agents')
+  const { definition, isError, isLoading } = flow
+  const orchestrator = orchestratorOf(overview.agents)
+  return (
+    <>
+      {orchestrator !== null && <OrchestratorStrip agent={orchestrator} current={current} onOpen={onOpen} />}
+      {overview.run.flow !== '' && isLoading && <div className="skeleton min-h-0 flex-1" />}
+      {!isLoading && (isError || definition === null) && <p className="p-4 text-sm text-muted">{t('engineeringRun.noFlow')}</p>}
+      {definition !== null && (
+        <div className="min-h-0 flex-1"><RunCanvas overview={overview} definition={definition} current={current} onOpen={onOpen} /></div>
+      )}
+    </>
+  )
+}
+
 export function FlowPane({ overview, current, onOpen }: Readonly<Props>) {
   const { t } = useTranslation('agents')
   const [view, setView] = useState<View>('canvas')
-  const { definition, isError, isLoading } = useRunFlow(overview.run)
+  const flow = useRunFlow(overview.run)
+  const { definition } = flow
   const timeline = useMemo(() => buildTimeline(overview, definition === null ? new Map() : runStepStates(overview, definition)),
     [overview, definition])
-  const orchestrator = orchestratorOf(overview.agents)
   const toggle = (id: View, Icon: typeof Workflow) => (
     <button type="button" aria-pressed={view === id} onClick={() => setView(id)}
       className={clsx('btn btn-secondary btn-sm', view === id && 'border-accent bg-accent-subtle text-accent-text')}>
@@ -67,12 +84,7 @@ export function FlowPane({ overview, current, onOpen }: Readonly<Props>) {
       </div>
       <div className="flex h-[min(34rem,70vh)] min-h-[18rem] flex-col overflow-hidden">
         {view === 'timeline' && <div className="h-full overflow-y-auto"><RunTimeline timeline={timeline} current={current} onOpen={onOpen} /></div>}
-        {view === 'canvas' && orchestrator !== null && <OrchestratorStrip agent={orchestrator} current={current} onOpen={onOpen} />}
-        {view === 'canvas' && overview.run.flow !== '' && isLoading && <div className="skeleton min-h-0 flex-1" />}
-        {view === 'canvas' && !isLoading && (isError || definition === null) && <p className="p-4 text-sm text-muted">{t('engineeringRun.noFlow')}</p>}
-        {view === 'canvas' && definition !== null && (
-          <div className="min-h-0 flex-1"><RunCanvas overview={overview} definition={definition} current={current} onOpen={onOpen} /></div>
-        )}
+        {view === 'canvas' && <CanvasView overview={overview} flow={flow} current={current} onOpen={onOpen} />}
       </div>
     </section>
   )

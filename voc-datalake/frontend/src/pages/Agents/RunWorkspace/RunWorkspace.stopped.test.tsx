@@ -35,12 +35,14 @@ describe('the banner of a run at a person whose orchestrator failed', () => {
   it('says what happened, who, at which step, why, the cost so far and what to do next', async () => {
     renderWorkspace(FAILED_PATH)
     const banner = await bannerOf()
-    expect(banner.getByText('Agent: coordinator-1 (the orchestrator)')).toBeInTheDocument()
     expect(await banner.findByText('Step: Understand and classify')).toBeInTheDocument()
-    expect(banner.getByText('Cost so far: $0.03')).toBeInTheDocument()
+    expect([
+      banner.queryByText('Agent: coordinator-1 (the orchestrator)') !== null,
+      banner.queryByText('Cost so far: $0.03') !== null,
+      banner.queryByText(/^Once the cause is fixed, Resume the run from its controls/) !== null,
+      screen.getByRole('region', { name: HEADLINE }).dataset.tone,
+    ]).toStrictEqual([true, true, true, 'danger'])
     expect(banner.getByText('Why:').parentElement).toHaveTextContent(`Why: ${fixture.failed_overview.answer.run.waiting_detail}`)
-    expect(banner.getByText(/^Once the cause is fixed, Resume the run from its controls/)).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: HEADLINE })).toHaveAttribute('data-tone', 'danger')
   })
 
   it('keeps the last exit behind Show details: its code, how long it ran and the end of its error output', async () => {
@@ -83,11 +85,13 @@ describe('the flow of a run that stopped', () => {
     renderWorkspace(FAILED_PATH)
     const flow = await flowOf()
     const step = await flow.findByTestId('step-classify')
-    expect(within(step).getByText('Stopped here: Failed')).toBeInTheDocument()
-    expect(within(step).getByLabelText('Failed')).toBeInTheDocument()
-    expect(flow.getByRole('button', { name: /^Orchestrator\s*coordinator-1\s*Failed/ })).toBeInTheDocument()
-    expect(flow.queryByText('You are here')).not.toBeInTheDocument()
-    expect(flowSpinners()).toHaveLength(0)
+    expect([
+      within(step).queryByText('Stopped here: Failed') !== null,
+      within(step).queryByLabelText('Failed') !== null,
+      flow.queryByRole('button', { name: /^Orchestrator\s*coordinator-1\s*Failed/ }) !== null,
+      flow.queryByText('You are here'),
+      flowSpinners().length,
+    ]).toStrictEqual([true, true, true, null, 0])
   })
 
   it('gives the orchestrator its own row in the timeline, and a step with no agent no chevron', async () => {
@@ -96,12 +100,13 @@ describe('the flow of a run that stopped', () => {
     const timeline = within(screen.getByRole('list', { name: 'What has happened, step by step' }))
     const [first] = timeline.getAllByRole('listitem')
     expect(first).toHaveTextContent(/^Orchestratorcoordinator-1Failedattempt 1 \(now\)$/)
-    expect(timeline.queryByText('On no step of the flow')).not.toBeInTheDocument()
     const classify = timeline.getByText('Understand and classify').closest('li')
-    expect(classify).toHaveTextContent('Stopped here')
-    expect(classify).toHaveTextContent('No agents')
-    expect(within(classify ?? document.body).queryByRole('button')).not.toBeInTheDocument()
-    expect(flowSpinners()).toHaveLength(0)
+    expect([classify?.textContent.includes('Stopped here'), classify?.textContent.includes('No agents')]).toStrictEqual([true, true])
+    expect([
+      timeline.queryByText('On no step of the flow'),
+      within(classify ?? document.body).queryByRole('button'),
+      flowSpinners().length,
+    ]).toStrictEqual([null, null, 0])
   })
 })
 
@@ -111,11 +116,13 @@ describe('the orchestrator\'s thread', () => {
     const thread = within(await screen.findByRole('list', { name: `The thread of ${FAILED_ORCHESTRATOR}` }))
     const starting = await thread.findByText('Starting… · $0.00')
     expect(starting.parentElement).toHaveTextContent('said 3 times')
-    expect(thread.getByText('coordinator-1 stopped unexpectedly and was restarted (attempt 2 of 3)')).toBeInTheDocument()
-    expect(thread.getByText('coordinator-1 stopped unexpectedly and was restarted (attempt 3 of 3)')).toBeInTheDocument()
-    expect(thread.getByText('coordinator-1 failed 3 times; the run needs a person')).toBeInTheDocument()
-    expect(thread.getByText(/^coordinator-1 could not start: The repository checkout failed/)).toBeInTheDocument()
-    expect(thread.getByText('Failed · $0.03')).toBeInTheDocument()
+    expect([
+      'coordinator-1 stopped unexpectedly and was restarted (attempt 2 of 3)',
+      'coordinator-1 stopped unexpectedly and was restarted (attempt 3 of 3)',
+      'coordinator-1 failed 3 times; the run needs a person',
+      /^coordinator-1 could not start: The repository checkout failed/,
+      'Failed · $0.03',
+    ].map((line) => thread.queryByText(line) !== null)).toStrictEqual([true, true, true, true, true])
     expect(thread.queryByText('1 booting (tokens 0, cost_usd 0.00)', { exact: false })).not.toBeVisible()
     expect(await screen.findByText('This session has ended: it failed.')).toBeInTheDocument()
   })

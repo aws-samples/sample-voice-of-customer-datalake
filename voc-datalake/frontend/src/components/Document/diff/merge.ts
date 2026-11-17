@@ -94,6 +94,12 @@ function baseBlocks(lines: readonly DiffLine[]): string[] {
   return lines.filter((line) => line.kind !== 'add').map((line) => line.text)
 }
 
+/** How one change of the latest version stands against `mine`: its old text there once, its new text there once, or neither. */
+function statusIn(mine: string, before: string, after: string): MergeStatus {
+  if (occursOnce(mine, before)) return 'applies'
+  return occursOnce(mine, after) ? 'already' : 'conflict'
+}
+
 /**
  * The latest version's changes over `base`, each judged against `mine`; null when the texts are too large to compare
  * (lineDiff's caps): the surface then offers the side-by-side compare and the two other ways out only.
@@ -104,8 +110,7 @@ export function mergeChanges(base: string, theirs: string, mine: string): readon
   const blocks = baseBlocks(diff.lines)
   return hunksOf(diff.lines).map((hunk, index): MergeChange => {
     const { before, after } = replacementOf(hunk, blocks, base)
-    const status: MergeStatus = occursOnce(mine, before) ? 'applies' : (occursOnce(mine, after) ? 'already' : 'conflict')
-    return { id: `change-${String(index + 1)}`, before, after, status }
+    return { id: `change-${String(index + 1)}`, before, after, status: statusIn(mine, before, after) }
   })
 }
 

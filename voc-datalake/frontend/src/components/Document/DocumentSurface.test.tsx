@@ -52,9 +52,11 @@ describe('DocumentSurface: read', () => {
 
     const sheet = screen.getByRole('dialog', { name: 'Launch plan' })
     expect(sheet).toHaveClass('sheet-panel', 'sm:max-w-[44rem]')
-    expect(within(sheet).getByText('Saved on 17 November')).toHaveClass('dialog-description')
-    expect(sheet.querySelector('.dialog-footer')).toContainElement(within(sheet).getByRole('button', { name: 'Close' }))
-    expect(within(sheet).getByRole('region', { name: 'Launch plan' })).toHaveAttribute('data-variant', 'sheet')
+    expect([
+      within(sheet).getByText('Saved on 17 November').classList.contains('dialog-description'),
+      sheet.querySelector('.dialog-footer')?.contains(within(sheet).getByRole('button', { name: 'Close' })),
+      within(sheet).getByRole('region', { name: 'Launch plan' }).dataset.variant,
+    ]).toStrictEqual([true, true, 'sheet'])
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
   })

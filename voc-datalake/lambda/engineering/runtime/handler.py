@@ -2003,6 +2003,23 @@ def _hand_on_launch(run_id: str, actor: str) -> None:
                         {'action': 'launch_coordinator', 'run_id': run_id, 'actor': actor})
 
 
+def _beside_a_start(event: Mapping[str, Any]) -> dict[str, Any] | None:
+    """voc-engineering-start's actions other than a run's start, each answered by its own handler (looked up when
+    called); None for ``start_run`` and for an action it does not take (start_handler refuses that one)."""
+    action = event.get('action')
+    if action == ASK_REACTIONS_ACTION:
+        return ask_reactions(event)
+    if action == STOP_ACTION:
+        return stop_from_api(event)
+    if action == run_signals.SIGNAL_ACTION:
+        return signal_from_api(event)
+    if action == RESTART_ACTION:
+        return restart_run(event)
+    if action == PUBLISH_DOCS_ACTION:
+        return publish_docs(event)
+    return None
+
+
 @metrics.log_metrics
 @measure_invocation_cost
 def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
@@ -2021,16 +2038,9 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
     voc-engineering-runtime (``launch_coordinator``, asynchronously: a session's start does not fit behind API
     Gateway's 29 s). Any failure once the run exists is ``StartFailed``, naming it; the run is sent to a person first
     (the hand-on failed: still active), so it is never left active with nobody to launch its coordinator."""
-    if event.get('action') == ASK_REACTIONS_ACTION:
-        return ask_reactions(event)
-    if event.get('action') == STOP_ACTION:
-        return stop_from_api(event)
-    if event.get('action') == run_signals.SIGNAL_ACTION:
-        return signal_from_api(event)
-    if event.get('action') == RESTART_ACTION:
-        return restart_run(event)
-    if event.get('action') == PUBLISH_DOCS_ACTION:
-        return publish_docs(event)
+    beside = _beside_a_start(event)
+    if beside is not None:
+        return beside
     if event.get('action') != START_ACTION:
         logger.warning('engineering start: an action other than start_run refused',
                        extra={'action': str(event.get('action'))[:40]})

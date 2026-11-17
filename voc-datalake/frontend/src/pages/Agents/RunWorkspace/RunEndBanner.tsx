@@ -85,8 +85,9 @@ function Facts({ end, overview, step }: Readonly<{ end: RunEnd; overview: Engine
   const { t } = useTranslation('agents')
   const usd = useDollars()
   const cost = overview.run.cost_usd ?? overview.run.manifest?.cost_usd ?? null
+  const agentKey = end.orchestrator ? 'runWorkspace.end.agentOrchestrator' : 'runWorkspace.end.agent'
   const facts = [
-    end.agent === null ? null : t(end.orchestrator ? 'runWorkspace.end.agentOrchestrator' : 'runWorkspace.end.agent', { agent: end.agent.agent }),
+    end.agent === null ? null : t(agentKey, { agent: end.agent.agent }),
     step === null ? null : t('runWorkspace.end.step', { step }),
     cost === null ? null : t('runWorkspace.end.cost', { cost: usd(cost) }),
   ].filter((fact): fact is string => fact !== null)

@@ -102,6 +102,24 @@ interface Held<S extends StoredDocument> {
 /** A version this draft moved to itself (saved, loaded, merged), to select unless the draft moved on since. */
 interface ToSelect<S> { readonly next: S; readonly generation: number }
 
+/**
+ * What a move to `loaded` keeps of the draft (`adopt`'s rule). A merge (`kept`) keeps its text and the title held,
+ * dirty unless they equal the version's. A save that landed (`sent`) keeps what was typed since it was sent. A load
+ * keeps nothing.
+ */
+function draftAfter(
+  loaded: { readonly content: string; readonly title: string }, held: { readonly text: string; readonly title: string },
+  sent: DocumentDraft | null, kept: string | null, titleEditable: boolean,
+): { readonly draft: string; readonly title: string; readonly dirty: boolean } {
+  if (kept !== null) {
+    return { draft: kept, title: held.title, dirty: kept !== loaded.content || (titleEditable && held.title !== loaded.title) }
+  }
+  const keepText = sent !== null && held.text !== sent.content
+  const keepTitle = sent !== null && held.title !== sent.title
+  return { draft: keepText ? held.text : loaded.content, title: keepTitle ? held.title : loaded.title,
+    dirty: keepText || (titleEditable && keepTitle) }
+}
+
 /** One state machine (the module's doc); its parts that stand alone are followVersion, saveShortcut and useSaveFlow. */
 export function useDocumentDraft<S extends StoredDocument, H extends DraftEditor>(
   adapter: DocumentAdapter<S>, { stored: document, onSelect }: DraftArgs<S>,
@@ -146,13 +164,8 @@ export function useDocumentDraft<S extends StoredDocument, H extends DraftEditor
     const loaded = baselineOf(next, sent === null ? base.generation + 1 : base.generation)
     const handle = handleRef.current
     const text = currentText()
-    const keepText = kept !== null || (sent !== null && text !== sent.content)
-    const keepTitle = kept !== null || (sent !== null && heldTitle !== sent.title)
-    const nextDraft = kept ?? (keepText ? text : loaded.content)
-    const nextTitle = keepTitle ? heldTitle : loaded.title
-    const stillDirty = kept === null
-      ? keepText || (titleEditable && keepTitle)
-      : kept !== loaded.content || (titleEditable && heldTitle !== loaded.title)
+    const { draft: nextDraft, title: nextTitle, dirty: stillDirty } = draftAfter(loaded, { text, title: heldTitle }, sent,
+      kept, titleEditable)
     held.current = { ...held.current, baseline: loaded, draft: nextDraft, title: nextTitle }
     dirtyRef.current = stillDirty
     setBaseline(loaded)

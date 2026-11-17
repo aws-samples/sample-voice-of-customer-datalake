@@ -47,13 +47,19 @@ describe('FIT_VIEW_OPTIONS', () => {
 
 describe('focusStepId', () => {
   it('prefers the running step, then a failed one, then the last finished', () => {
-    expect(focusStepId(new Map([['a', state('done')], ['b', state('running')]]))).toBe('b')
-    expect(focusStepId(new Map([['a', state('done')], ['b', state('failed')]]))).toBe('b')
-    expect(focusStepId(new Map([['a', state('done')], ['b', state('done')], ['c', state('idle')]]))).toBe('b')
-    expect(focusStepId(new Map())).toBeUndefined()
-    // (7.51.04) the step marked where the run is or stopped first; one waiting for a person before one that failed
-    expect(focusStepId(new Map([['a', state('running')], ['b', { ...state('failed'), here: 'stopped' }]]))).toBe('b')
-    expect(focusStepId(new Map([['a', state('failed')], ['b', state('waiting')]]))).toBe('b')
+    expect([
+      focusStepId(new Map([['a', state('done')], ['b', state('running')]])),
+      focusStepId(new Map([['a', state('done')], ['b', state('failed')]])),
+      focusStepId(new Map([['a', state('done')], ['b', state('done')], ['c', state('idle')]])),
+      focusStepId(new Map()),
+    ]).toStrictEqual(['b', 'b', 'b', undefined])
+  })
+
+  it('prefers the step marked where the run is or stopped, and one waiting for a person to one that failed (7.51.04)', () => {
+    expect([
+      focusStepId(new Map([['a', state('running')], ['b', { ...state('failed'), here: 'stopped' }]])),
+      focusStepId(new Map([['a', state('failed')], ['b', state('waiting')]])),
+    ]).toStrictEqual(['b', 'b'])
   })
 
   it('finds the start step of a definition', () => {

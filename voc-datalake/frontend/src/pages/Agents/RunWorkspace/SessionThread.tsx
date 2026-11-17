@@ -108,10 +108,10 @@ function Items({ runId, agent, status, orchestrator, canReply }: Readonly<{
   const list = useRef<HTMLDivElement>(null)
   // Whether the reader is at the list's end (as of their last scroll): new items then scroll into view.
   const following = useRef(true)
-  const items = thread.data?.items ?? []
+  const items = thread.data?.items
   // (7.51.04) A run of the supervisor's same health line is one line, its latest.
-  const shown = useMemo(() => foldRepeats(items), [items])
-  const count = items.length
+  const shown = useMemo(() => foldRepeats(items ?? []), [items])
+  const count = items?.length ?? 0
   useEffect(() => {
     const element = list.current
     if (element !== null && following.current) element.scrollTop = element.scrollHeight

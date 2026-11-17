@@ -51,24 +51,25 @@ function health(text: string): SupervisorLine | null {
   }
 }
 
+/** Each known line's shape and what it says, the first that matches winning. */
+const SHAPES: readonly (readonly [RegExp, (found: RegExpExecArray) => SupervisorLine])[] = [
+  // (the first session is the agent's first try: a continuation n after a crash is its try n + 1)
+  [CONTINUED, (found) => (found[3] === 'crash'
+    ? { kind: 'restarted', agent: found[1] ?? '', attempt: Number(found[2]) + 1 }
+    : { kind: 'continued', agent: found[1] ?? '' })],
+  [FAILED_OUT, (found) => ({ kind: 'failedOut', agent: found[1] ?? '', times: Number(found[2]) })],
+  [COULD_NOT_START, (found) => ({ kind: 'couldNotStart', agent: found[1] ?? '', reason: found[2] ?? '' })],
+  [NOT_ANSWERING, (found) => ({ kind: 'notAnswering', agent: found[1] ?? '' })],
+  [NO_ROOM, (found) => ({ kind: 'noRoom', agent: found[1] ?? '', times: Number(found[2]) })],
+  [STOPPED, (found) => ({ kind: 'stopped', sessions: Number(found[1]) })],
+]
+
 /** One line of the supervisor's, read; null for a line of no known shape. */
 export function readSupervisorLine(text: string): SupervisorLine | null {
-  const continued = CONTINUED.exec(text)
-  if (continued !== null) {
-    const agent = continued[1] ?? ''
-    // (the first session is the agent's first try: a continuation n after a crash is its try n + 1)
-    return continued[3] === 'crash' ? { kind: 'restarted', agent, attempt: Number(continued[2]) + 1 } : { kind: 'continued', agent }
+  for (const [shape, read] of SHAPES) {
+    const found = shape.exec(text)
+    if (found !== null) return read(found)
   }
-  const failedOut = FAILED_OUT.exec(text)
-  if (failedOut !== null) return { kind: 'failedOut', agent: failedOut[1] ?? '', times: Number(failedOut[2]) }
-  const couldNotStart = COULD_NOT_START.exec(text)
-  if (couldNotStart !== null) return { kind: 'couldNotStart', agent: couldNotStart[1] ?? '', reason: couldNotStart[2] ?? '' }
-  const notAnswering = NOT_ANSWERING.exec(text)
-  if (notAnswering !== null) return { kind: 'notAnswering', agent: notAnswering[1] ?? '' }
-  const noRoom = NO_ROOM.exec(text)
-  if (noRoom !== null) return { kind: 'noRoom', agent: noRoom[1] ?? '', times: Number(noRoom[2]) }
-  const stopped = STOPPED.exec(text)
-  if (stopped !== null) return { kind: 'stopped', sessions: Number(stopped[1]) }
   return health(text)
 }
 
@@ -78,8 +79,10 @@ export const isSupervisors = (item: ThreadItem): boolean => item.from.kind === '
 /** The same health (each status's count), whatever the cost: a repeat of the line before. */
 function sameHealth(a: SupervisorLine | null, b: SupervisorLine | null): boolean {
   if (a?.kind !== 'health' || b?.kind !== 'health') return false
-  return a.counts.length === b.counts.length && a.counts.every((count, index) => (
-    count.status === b.counts[index]?.status && count.count === b.counts[index]?.count))
+  return a.counts.length === b.counts.length && a.counts.every((count, index) => {
+    const other = b.counts[index]
+    return count.status === other?.status && count.count === other.count
+  })
 }
 
 /** An item as the thread shows it: the latest of a run of the same health line, with every item of the run. */
@@ -94,13 +97,13 @@ export interface ShownItem {
 /** The thread's items with each run of the supervisor's same health line, one after another, folded into its latest. */
 export function foldRepeats(items: readonly ThreadItem[]): ShownItem[] {
   const shown: ShownItem[] = []
-  let previous: SupervisorLine | null = null
-  for (const item of items) {
+  // (each step hands on the line it read: the next one folds into it when they are the same health)
+  items.reduce<SupervisorLine | null>((previous, item) => {
     const line = isSupervisors(item) ? readSupervisorLine(item.text) : null
     const last = shown.at(-1)
     if (last !== undefined && sameHealth(previous, line)) shown[shown.length - 1] = { key: last.key, item, said: [...last.said, item] }
     else shown.push({ key: item.ref, item, said: [item] })
-    previous = line
-  }
+    return line
+  }, null)
   return shown
 }

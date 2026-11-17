@@ -146,8 +146,18 @@ function StepHeader({ step }: Readonly<{ step: WorkflowNode }>) {
   )
 }
 
-export function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
+/** A step's run under its title: its rounds past the first, and its gate's verdict and where the run is. */
+function StepRunLines({ run }: Readonly<{ run: StepState }>) {
   const { t } = useTranslation('agents')
+  return (
+    <>
+      {run.rounds > 1 && <p className="mt-0.5 text-[11px] text-muted font-mono">{t('run.rounds', { n: run.rounds })}</p>}
+      {(run.gate !== undefined || run.here !== undefined) && <RunMarks run={run} />}
+    </>
+  )
+}
+
+export function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
   const { step, issues, run } = data
   return (
     <div
@@ -162,10 +172,7 @@ export function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
           run?.status === 'idle' || run?.status === 'skipped' ? 'text-muted' : 'text-text-strong')}>{step.data.title}</p>
         {run !== undefined && <RunBadge run={run} />}
       </div>
-      {run !== undefined && run.rounds > 1 && (
-        <p className="mt-0.5 text-[11px] text-muted font-mono">{t('run.rounds', { n: run.rounds })}</p>
-      )}
-      {run !== undefined && (run.gate !== undefined || run.here !== undefined) && <RunMarks run={run} />}
+      {run !== undefined && <StepRunLines run={run} />}
       <StepIssues issues={issues} />
       {step.type !== 'end' && <Handle type="source" position={Position.Bottom} />}
     </div>
