@@ -31,7 +31,7 @@
     "choose": "Choisissez une marque",
     "unknownBrand": "{{key}} (absente de la liste des marques)",
     "noBrand": "Aucune marque Radar pour l'instant.",
-    "addBrand": "Ajoutez une marque dans Administration → Sources → Radar",
+    "addBrand": "Ajoutez une marque dans Administration → Sources de données → Radar",
     "needsBrand": "Choisissez une marque, sinon cette source reste ordinaire.",
     "loading": "Chargement des marques Radar...",
     "loadFailed": "Les marques Radar n'ont pas pu être chargées."
@@ -302,7 +302,7 @@
     "select": "Sélectionner...",
     "configuredInSettings": "{{name}} se connecte dans {{where}} : collez-y le jeton et ses réglages, puis revenez ici.",
     "configuredInSettingsNoToken": "{{name}} se configure dans {{where}} : saisissez-y ses paramètres, puis revenez ici.",
-    "openDataSourceSettings": "Ouvrir les réglages des sources",
+    "openDataSourceSettings": "Ouvrir Sources de données",
     "saveFailed": "Impossible d’enregistrer. Veuillez réessayer."
   },
   "refresh": "Actualiser",

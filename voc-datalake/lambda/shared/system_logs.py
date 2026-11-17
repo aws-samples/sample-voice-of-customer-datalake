@@ -1,6 +1,6 @@
 """`GET /logs/system`: this deployment's errors, read with CloudWatch Logs Insights.
 
-Administration → System → Logs → System errors. The real exceptions (a persona avatar
+Administration → Logs → System errors. The real exceptions (a persona avatar
 that failed, an App Store run, an assist job…) are only in CloudWatch; this module finds
 every log group of the deployment (shared/system_log_sources.py: its Lambdas, the state
 machines and the API access log), runs one Insights query per ≤ 50 groups of one kind

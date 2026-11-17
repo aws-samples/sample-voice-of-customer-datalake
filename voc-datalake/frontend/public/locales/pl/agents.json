@@ -1689,7 +1689,7 @@
       "unknown": "Jeszcze nieznane",
       "openConnections": "Otwórz Połączenia",
       "openDeploymentSources": "Otwórz Administracja → Źródła danych",
-      "openSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
+      "openSources": "Otwórz Administracja → Źródła danych",
       "sourcesOutside": "Poza jakimkolwiek obszarem roboczym: automatyzacje czytają tylko źródła wdrożenia.",
       "deploymentTitle": "To wdrożenie",
       "connectedAs": "Połączono przez aplikację: {{list}}.",

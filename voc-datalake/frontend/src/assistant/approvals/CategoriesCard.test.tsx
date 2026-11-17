@@ -185,12 +185,12 @@ describe('save_categories card', () => {
     onlyWorkspaceScope()
   })
 
-  it('outside a workspace, links to Administration → Taxonomy → Categories', async () => {
+  it('outside a workspace, links to Administration → Categories', async () => {
     routes()
     const { user, onResolve } = card()
     await screen.findAllByLabelText('Label')
     await approve(user, onResolve)
-    expect(screen.getByRole('link', { name: 'Open Administration → Taxonomy → Categories' }))
-      .toHaveAttribute('href', '/admin/taxonomy/categories')
+    expect(screen.getByRole('link', { name: 'Open Administration → Categories' }))
+      .toHaveAttribute('href', '/admin/categories')
   })
 })

@@ -114,7 +114,7 @@ describe('the switch of a set-up agent', () => {
     expect([within(alert).getByText('Not enabled: these checks a run needs fail.'),
       within(alert).getByText('Set your way of working to AI-driven.')]).toHaveLength(2)
     // The way-of-working check links to Users, where the administrator sets AI-driven.
-    expect(within(alert).getByRole('link', { name: 'Set your way of working in Users' })).toHaveAttribute('href', '/admin/access/users')
+    expect(within(alert).getByRole('link', { name: 'Set your way of working in Users' })).toHaveAttribute('href', '/admin/people')
   })
 
   it('waits for a required check that is unknown', async () => {

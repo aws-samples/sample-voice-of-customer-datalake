@@ -1,220 +1,91 @@
 /**
- * @fileoverview Administration (was Settings) — admin-only
- * operational configuration at `/admin` (`/settings` redirects here).
- * @module pages/Settings
+ * @fileoverview Administration (was Settings) — admin-only operational configuration at `/admin` (`/settings`
+ * redirects here), 7.54.00: a home and nine tabs, ordered by the job an administrator comes to do and how often
+ * (adminTabs.ts, docs/account-vs-admin.md):
  *
- * Six tabs grouped by job (seven for a platform admin), some with a section switch (`/admin/<tab>/<section>`,
- * adminPaths.ts; the model in `adminTabs.ts`):
- * - General (brand; the dev-only API configuration). Software settings only:
- *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
- * - Sources: Data sources, Integrations, Email inbox, Radar
- * - Data sources (platform admins only, 7.50.00): the deployment's own sources from any address
- *   (DeploymentDataSources.tsx)
- * - Taxonomy: Categories, Dimensions
- * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains), Workspaces (the
- *   platform console, platform admins only)
- * - AI models
- * - System: Logs, Version
+ * - the home (`/admin`, SettingsHome.tsx): search, "Needs attention", the groups, the version;
+ * - Everyday: People · Data sources · Logs; Regularly: Categories · Feedback boards; Set up once: AI models · Brand &
+ *   appearance; Rare: Privacy · Platform (platform admins); and Version, from the home's footer.
+ *
+ * A tab is one page (`/admin/<tab>`), its sections cards on it (`/admin/<tab>/<section>` focuses one), under a header
+ * with "← Administration", the tab's name and its job; from `lg` up the groups are on its left (AdminNav.tsx). Every
+ * card saves itself: there is no page-level Save. `/` focuses the search on these pages.
+ *
+ * @module pages/Settings
  */
-
-import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings'
-import { useExpiringValue } from '../../hooks/useExpiringValue'
-import { useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
-import { ChevronDown } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
-import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
-import { api } from '../../api/client'
-import clsx from 'clsx'
-import { TabsTrack } from './TabsTrack'
-import { SectionSwitch } from './SectionSwitch'
 import AdminSectionContent from './AdminSectionContent'
-import { SECTION_PANEL_ID, buildSections, buildTabs, sectionTabId } from './adminTabLabels'
-import { isLeavingAdmin, useAdminLocation } from './useAdminLocation'
-import { useApiEndpointField, useBrandForm } from './useSettingsSync'
-import { useBrandEditRight } from './useBrandEditRight'
-import { Header, ApiConfigSection, BrandConfigSection } from './SettingsSections'
-import DefaultThemeCard from './DefaultThemeCard'
+import AdminNav from './AdminNav'
+import SettingsHome from './SettingsHome'
+import { SETTINGS_SEARCH_ID } from './SettingsSearch'
+import { ADMIN_PATH } from './adminPaths'
+import type { AdminTabId } from './adminTabs'
+import { tabHintKey, tabLabelKey } from './adminTabLabels'
+import { useAdminLocation, useSectionFocus } from './useAdminLocation'
+import { useApiEndpointField } from './useSettingsSync'
 
-/** A non-General tab's content: the tabpanel of the section switch when one is shown. */
-function SectionPanel({ labelledBy, children }: Readonly<{ labelledBy: string | null; children: ReactNode }>) {
-  if (labelledBy === null) return <div className="space-y-4 sm:space-y-6">{children}</div>
+/** Whether a key pressed in `target` is typing (an input, a text area, an editable region), not a shortcut. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+/** `/` focuses the search (Administration's pages only: the listener goes with the page). ⌘K stays untouched. */
+function useSlashFocus(): void {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
+      const search = document.getElementById(SETTINGS_SEARCH_ID)
+      if (search === null) return
+      event.preventDefault()
+      search.focus()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+}
+
+function TabHeader({ tab }: Readonly<{ tab: AdminTabId }>) {
+  const { t } = useTranslation('settings')
   return (
-    <div id={SECTION_PANEL_ID} role="tabpanel" aria-labelledby={labelledBy} className="space-y-4 sm:space-y-6">
-      {children}
-    </div>
+    <header className="mb-6">
+      <Link to={ADMIN_PATH} className="link inline-flex items-center gap-1 text-sm">
+        <ArrowLeft size={14} aria-hidden="true" /> {t('title')}
+      </Link>
+      <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-strong">{t(tabLabelKey(tab))}</h1>
+      <p className="mt-1 max-w-prose text-sm text-muted">{t(tabHintKey(tab))}</p>
+    </header>
   )
 }
 
 export default function Settings() {
-  const { t } = useTranslation('settings')
-  const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
   const isPlatformAdmin = useIsPlatformAdmin()
-  const canEditBrand = useBrandEditRight(isAdmin)
-  // "Saved" clears itself after 3 s; the timer goes with the page.
-  const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
-  const saved = savedShown !== null
-  const [saving, setSaving] = useState(false)
-  const [saveFailed, setSaveFailed] = useState(false)
-  const { location, selectTab, selectSection } = useAdminLocation(isAdmin, isPlatformAdmin)
-  const activeTab = location.tab
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
+  const { place } = useAdminLocation(isAdmin, isPlatformAdmin)
+  // The field follows the stored endpoint and pushes a runtime config's into the store (useSettingsSync.ts).
   const { apiEndpoint, setApiEndpoint } = useApiEndpointField(config.apiEndpoint, setConfig)
+  useSlashFocus()
+  useSectionFocus(place.section)
 
-  const {
-    data: backendSettings, isLoading: loadingSettings, isError: brandLoadFailed, refetch: refetchBrand,
-  } = useBrandSettings(config.apiEndpoint)
-
-  const {
-    brandName, setBrandName,
-    brandHandles, setBrandHandles,
-    hashtags, setHashtags,
-    urlsToTrack, setUrlsToTrack,
-    dirty: brandDirty, markSaved: markBrandSaved, discard: discardBrand,
-  } = useBrandForm(config, setConfig, backendSettings)
-
-  const parseArrayInput = (input: string, separator: string): string[] =>
-    input.split(separator).map(s => s.trim()).filter(Boolean)
-
-  /** Returns false when the backend rejected the save, so the header never claims "Saved!" for it. */
-  const saveToBackend = async (brandHandlesArray: string[], hashtagsArray: string[], urlsArray: string[]): Promise<boolean> => {
-    setSaving(true)
-    try {
-      await api.saveBrandSettings({
-        brand_name: brandName,
-        brand_handles: brandHandlesArray,
-        hashtags: hashtagsArray,
-        urls_to_track: urlsArray,
-      })
-      void queryClient.invalidateQueries({ queryKey: brandSettingsKey() })
-      return true
-    } catch (err) {
-      if (import.meta.env.DEV) console.error('Failed to save brand settings:', err)
-      return false
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleSave = async (): Promise<boolean> => {
-    const brandHandlesArray = parseArrayInput(brandHandles, ',')
-    const hashtagsArray = parseArrayInput(hashtags, ',')
-    const urlsArray = parseArrayInput(urlsToTrack, '\n')
-
-    setConfig({
-      apiEndpoint,
-      brandName,
-      brandHandles: brandHandlesArray,
-      hashtags: hashtagsArray,
-      urlsToTrack: urlsArray,
-      sources: config.sources,
-    })
-
-    const ok = apiEndpoint ? await saveToBackend(brandHandlesArray, hashtagsArray, urlsArray) : true
-    setSaveFailed(!ok)
-    if (ok) {
-      markBrandSaved()
-      showSaved(true)
-    } else {
-      clearSaved()
-    }
-    return ok
-  }
-  // Brand edits live at page level, so switching tabs (a path under /admin) keeps them; leaving the page asks (E2E F6).
-  const guard = useUnsavedChangesGuard({ dirty: brandDirty, onSave: handleSave, onDiscard: discardBrand, shouldBlock: isLeavingAdmin })
-
-  const tabs = buildTabs(t, isAdmin, isPlatformAdmin)
-  const sections = buildSections(t, activeTab, isAdmin, isPlatformAdmin)
-
-  const activeTabData = tabs.find(t => t.id === activeTab)
-
+  if (place.tab === null) return <SettingsHome isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} apiEndpoint={apiEndpoint} />
   return (
-    // min-w-0: inside the shell's flex column, a wide child (the logs tab track)
-    // would otherwise stretch the page past 390px instead of scrolling itself.
-    <div className="max-w-5xl mx-auto min-w-0 w-full">
-      <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={canEditBrand} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
-      {guard.dialog}
-
-      {/* Mobile Tab Dropdown */}
-      <div className="sm:hidden mb-4">
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-expanded={mobileMenuOpen}
-          aria-controls="settings-mobile-tabs"
-          className="w-full flex items-center justify-between px-3 py-2.5 text-sm bg-bg-elevated border border-border rounded-lg hover:border-border-strong transition-colors focus-ring"
-        >
-          <span className="flex items-center gap-2">
-            {activeTabData && <activeTabData.icon size={16} className="text-accent-text" />}
-            <span className="font-medium text-text-strong">{activeTabData?.label}</span>
-          </span>
-          <ChevronDown size={16} className={clsx('text-muted transition-transform', mobileMenuOpen && 'rotate-180')} />
-        </button>
-        {mobileMenuOpen && (
-          <div id="settings-mobile-tabs" className="menu mt-1">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => { selectTab(tab.id); setMobileMenuOpen(false) }}
-                type="button"
-                aria-current={activeTab === tab.id ? 'page' : undefined}
-                className={clsx(
-                  'menu-item w-full flex items-center gap-2 py-2.5',
-                  activeTab === tab.id && 'nav-active'
-                )}
-              >
-                <tab.icon size={14} />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Desktop Tabs */}
-      <div className="hidden sm:block tabs-rail mb-6">
-        <TabsTrack tabs={tabs} active={activeTab} onSelect={selectTab} />
-      </div>
-
-      {location.section !== null && (
-        <SectionSwitch sections={sections} active={location.section} onSelect={selectSection} label={activeTabData?.label ?? ''} />
-      )}
-
-      {/* Tab Content */}
-      {activeTab === 'brand' ? (
-        <div className="space-y-4 sm:space-y-6">
-          <ApiConfigSection
-            apiEndpoint={apiEndpoint}
-            onApiEndpointChange={setApiEndpoint}
-          />
-          <BrandConfigSection
-            apiEndpoint={apiEndpoint}
-            loadingSettings={loadingSettings}
-            loadFailed={brandLoadFailed}
-            onRetry={() => void refetchBrand()}
-            brandName={brandName}
-            brandHandles={brandHandles}
-            hashtags={hashtags}
-            urlsToTrack={urlsToTrack}
-            onBrandNameChange={setBrandName}
-            onBrandHandlesChange={setBrandHandles}
-            onHashtagsChange={setHashtags}
-            onUrlsToTrackChange={setUrlsToTrack}
-            readOnly={!canEditBrand}
-          />
-          <DefaultThemeCard apiEndpoint={apiEndpoint} canEdit={isPlatformAdmin} />
+    // min-w-0: inside the shell's flex column, a wide child (the logs tab track) would otherwise stretch the page past
+    // 390px instead of scrolling itself.
+    <div className="max-w-6xl mx-auto min-w-0 w-full">
+      <TabHeader tab={place.tab} />
+      <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <AdminNav active={place.tab} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
+        <div className="min-w-0 space-y-4 sm:space-y-6">
+          <AdminSectionContent tab={place.tab} section={place.section} apiEndpoint={apiEndpoint}
+            onApiEndpointChange={setApiEndpoint} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
         </div>
-      ) : (
-        <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>
-          <AdminSectionContent tab={activeTab} section={location.section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
-        </SectionPanel>
-      )}
+      </div>
     </div>
   )
 }

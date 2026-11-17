@@ -204,7 +204,8 @@ test.describe('s1 assistant', () => {
         const categoryNames = listOf(categories.body, 'categories').map((c) => stringField(c, 'name') ?? '').filter((n) => n !== '')
         fs.writeFileSync(path.join(OUT_DIR, 'settings-truth.json'), JSON.stringify({ brand: brand.body, categories: categories.body, model: model.body }, null, 2))
         r.note(`GET /settings/brand -> ${brand.status} brand_name=${brandName}; /settings/categories -> ${categories.status} ${categoryNames.length} categories; /settings/model -> ${model.status}`)
-        // The settings tools load only on the Settings page (PAGE_TOOL_PACKS.settings, admin-only).
+        // The settings tools load only on Administration's pages (PAGE_TOOL_PACKS.settings, admin-only): here its
+        // Brand & appearance tab.
         await page.goto(site('/admin/brand'), { waitUntil: 'domcontentloaded' })
         await settle(page, 800)
         await openFloating(page)

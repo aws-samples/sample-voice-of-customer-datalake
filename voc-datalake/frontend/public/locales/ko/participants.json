@@ -209,7 +209,6 @@
     "emailOff": "구성되지 않음(발신자 이메일 주소를 지정해 배포하세요)",
     "boardLink": "피드백 보드 링크:",
     "boardOff": "배포되지 않음",
-    "saved": "저장했습니다.",
     "loadFailed": "참가자 설정을 불러올 수 없습니다."
   },
   "unsubscribe": {

@@ -1,6 +1,6 @@
 /**
  * @fileoverview "Reprocess existing feedback" — re-derive stored reviews after the
- * categories change (admin only): the deployment's in Administration → Taxonomy, a
+ * categories change (admin only): the deployment's in Administration → Categories, a
  * workspace's own on its Workspace settings page beside its categories (since 7.13.00).
  *
  * Mode choice (re-categorise processed text, reprocess from raw data, re-infer dimensions),

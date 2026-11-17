@@ -659,7 +659,7 @@ email features:
   without the flag too (above); the authorizer accepts the app pool AND the board pool on
   `/feature-requests/*` and `/review/*` only; a board token reaches no other route. The pool
   allows self sign-up, but its PreSignUp trigger refuses any email that no board audience (see
-  **Participants → Settings → company domains**) and no active review link admits. The pool runs on
+  **Administration → Feedback boards → Company domains**) and no active review link admits. The pool runs on
   the Cognito **Essentials** feature plan, billed per monthly active user; the app's own pool is
   unchanged.
 
@@ -680,7 +680,9 @@ ask skips them.
 Turning the flag off later removes the board pool and its users (with `protectData` on, the default,
 the pool is retained, detached from the stack).
 
-### System errors (Administration → System → Logs → System errors)
+<a id="system-errors-administration--system--logs--system-errors"></a>
+
+### System errors (Administration → Logs → System errors)
 
 The default tab of the Logs page is built so that someone **without access to the AWS
 account** (a developer reading the page, or its JSON download) can tell what failed and
@@ -745,7 +747,7 @@ or failed agreement shows there as a warning.
     the sources whose circuit breaker is open (`last_error` redacted) and `log_coverage`
     (what the search can read) (`system_environment.py`). A section that cannot be read
     answers `{"unavailable": true}`. The platform version is the SPA's build constant
-    (System → Version), not a Lambda variable (it would change every template each release).
+    (Administration → Version), not a Lambda variable (it would change every template each release).
 - **IAM** (`lib/stacks/api-logs-diagnostics.ts`): `logs:DescribeLogGroups` on
   `log-group:*`; `logs:StartQuery` on the three name patterns above (+ `:*`) and the
   VocCoreStack name prefixes only; `logs:GetQueryResults` / `logs:StopQuery` and
@@ -759,11 +761,13 @@ or failed agreement shows there as a warning.
   the most), and each "Show the whole request" a 40-minute search of one group. Lines
   older than a log group's retention (30 days) are gone.
 
-### Operational alerts (Administration → System → Logs → Alerts)
+<a id="operational-alerts-administration--system--logs--alerts"></a>
+
+### Operational alerts (Administration → Logs → Alerts)
 
 No CloudWatch alarm is deployed by CDK: an alarm is billed every hour it exists,
 and one nobody is subscribed to notifies nobody. A platform admin turns alerting on in
-**Administration → System → Logs → Alerts** (the alarms watch the deployment's own Lambdas and their recipients hear
+**Administration → Logs → Alerts** (the alarms watch the deployment's own Lambdas and their recipients hear
 about every workspace, so the writes are platform admins' only, checked live; the deployment's
 administrators still read the status, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); the logs API (`voc-logs-api`,
 `lambda/shared/ops_alerts.py`) then creates the alarms with `PutMetricAlarm`, and
@@ -827,7 +831,7 @@ CloudWatch and KMS pricing for your region.
 **Upgrading from a release that deployed the alarms with CDK (before 5.00.00).** The next deploy deletes the
 five `…-messages-visible` alarms and any `-c alarmEmail` subscription; the
 `alarmEmail` context key is no longer read (remove it from `cdk.context.json`). Turn
-alerting on in Administration → System → Logs → Alerts and add the addresses there.
+alerting on in Administration → Logs → Alerts and add the addresses there.
 <a id="failure-queue-alarms-alarmemail"></a>
 
 **VocApiStack resource budget (for contributors).** A CloudFormation template holds at most 500 resources, and

@@ -209,7 +209,6 @@
     "emailOff": "未配置（请在部署时指定发件人邮箱地址）",
     "boardLink": "反馈看板链接：",
     "boardOff": "未部署",
-    "saved": "已保存。",
     "loadFailed": "无法加载参与者设置。"
   },
   "unsubscribe": {

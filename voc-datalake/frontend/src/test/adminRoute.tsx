@@ -11,14 +11,14 @@ import { createTestQueryClient, renderWithQueryClient } from '@test/query-client
 import type { ReactNode } from 'react'
 import type { GuardUser, GuardedEditorScenario } from '@test/unsavedGuardContract'
 
-export function mountAtAdmin(page: ReactNode) {
+export function mountAtAdmin(page: ReactNode, path = '/admin') {
   const client = createTestQueryClient()
   const router = createMemoryRouter(
     [
       { path: '/', element: <p>Home page</p> },
       { path: '/admin/*', element: <><Link to="/">Home</Link>{page}</> },
     ],
-    { initialEntries: ['/admin'] },
+    { initialEntries: [path] },
   )
   renderWithQueryClient(<RouterProvider router={router} />, client)
   return { client, router }
@@ -29,6 +29,8 @@ type AdminMount = ReturnType<typeof mountAtAdmin>
 /** What a spec supplies: its page, when it is ready, the edit and how to see it, what lands meanwhile. */
 interface AdminGuardParts {
   readonly page: () => ReactNode
+  /** Where under /admin the editor is (default `/admin`). */
+  readonly path?: string
   readonly ready: () => Promise<void>
   readonly edit: (user: GuardUser) => Promise<void>
   readonly expectDraft: () => void
@@ -46,13 +48,13 @@ export function adminGuardScenario(parts: AdminGuardParts): { scenario: GuardedE
   return {
     scenario: {
       mount: async () => {
-        slot.current = mountAtAdmin(parts.page())
+        slot.current = mountAtAdmin(parts.page(), parts.path)
         await parts.ready()
       },
       edit: parts.edit,
       expectDraft: parts.expectDraft,
       leave: async (user: GuardUser) => { await user.click(screen.getByRole('link', { name: 'Home' })) },
-      expectStayed: () => expect(mounted().router.state.location.pathname).toBe('/admin'),
+      expectStayed: () => expect(mounted().router.state.location.pathname).toBe(parts.path ?? '/admin'),
       expectLeft: async () => { expect(await screen.findByText('Home page')).toBeInTheDocument() },
       whileDialogOpen: whileDialogOpen === undefined ? undefined : () => whileDialogOpen(mounted()),
     },

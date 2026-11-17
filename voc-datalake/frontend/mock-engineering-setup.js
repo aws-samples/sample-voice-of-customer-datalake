@@ -89,7 +89,7 @@ function agentChecks(agent, budgetOf) {
       'Create the label, and let only maintainers put it on an issue.', 'docs/github-issues.md'),
     human
       ? check('dial', 'fail', 'The runs follow admin-demo, whose way of working is Human-driven, so a run would push nothing. This flow needs AI-assisted or AI-driven.',
-        'An administrator sets the way of working of admin-demo to AI-assisted or AI-driven in Administration → Privacy & access → Users; with AI-assisted, each push waits for a person’s go on the run.', 'docs/ways-of-working.md')
+        'An administrator sets the way of working of admin-demo to AI-assisted or AI-driven in Administration → People; with AI-assisted, each push waits for a person’s go on the run.', 'docs/ways-of-working.md')
       : check('dial', 'pass', 'The runs follow admin-demo, whose way of working is AI-driven, which this flow runs in.'),
     budgetOf(agent) === null
       ? check('budget', 'fail', 'Its flow has no monthly budget.', 'Set it up: give its flow a monthly budget.')

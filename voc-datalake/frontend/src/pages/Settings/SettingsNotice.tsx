@@ -1,6 +1,6 @@
 /**
  * @fileoverview The warning notice, the read-only notice and the loading line the admin Settings cards share
- * (Logs → Alerts, Sources → Email inbox, General → Default theme).
+ * (Logs → Alerts, Data sources → Email inbox, Brand & appearance → Default theme).
  * @module pages/Settings/SettingsNotice
  */
 import { AlertCircle, Loader2, Lock } from 'lucide-react'

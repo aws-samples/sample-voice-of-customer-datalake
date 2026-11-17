@@ -1,6 +1,6 @@
 /**
  * @fileoverview The Radar note on one source profile (docs/radar.md). Radar brands are set up
- * in Administration → Sources → Radar now, and a scraper or connector picks its brand on the
+ * in Administration → Data sources → Radar now, and a scraper or connector picks its brand on the
  * Scrapers page, so a profile no longer offers "Radar source". A legacy profile that already
  * names a brand keeps it (the backend still reads it, and the source's reviews still go to
  * Radar); it is shown read-only, with a link to where brands are set up. An ordinary profile

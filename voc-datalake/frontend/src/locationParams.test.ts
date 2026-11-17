@@ -60,6 +60,7 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   'pages/Agents/skillsView.ts': { kind: 'filter', keys: ['connection'], reason: 'the Skills scope picker (the shared skills or one connection); the role and version are the path' },
   'pages/Agents/RunWorkspace/runsFilters.ts': { kind: 'filter', keys: ['flow', 'status'], reason: 'the Runs list\'s flow and status filters (7.51.00; its month through spendView.ts): they combine freely; a run and its agent are the path' },
   'pages/Agents/RunWorkspace/RunsView.tsx': { kind: 'filter', keys: [], reason: 'writes the Runs filters runsFilters.ts reads' },
+  'pages/Settings/adminPaths.ts': { kind: 'filter', keys: ['scope'], reason: 'the Data sources scope switch (this workspace or the deployment); the tab, card and source are the path' },
   // The review modal.
   'hooks/useReviewModal.ts': { kind: 'overlay', keys: ['review', 'reviewBrand'], reason: 'one review over whatever page is open; Back closes it' },
   // Prefilled forms.

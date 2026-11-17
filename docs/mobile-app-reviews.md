@@ -330,7 +330,7 @@ To read one specific Android locale, set the app entry's `lang` and `country`.
 - One country failing does not stop other countries (warning logged, empty list returned)
 - All errors are logged with structured context (app name, country, error type)
 - **Every app's storefronts are summarised** after each collection, so a failure is visible in
-  Administration → System → Logs without AWS access:
+  Administration → Logs without AWS access:
   - INFO `iOS <app> (<id>): <n> storefronts with reviews, <n> empty, <n> failed, <n> reviews`
     (structured `storefront_summary`: `app`, `app_identifier`, `storefronts_with_reviews`,
     `storefronts_empty`, `storefronts_failed`, `reviews`);

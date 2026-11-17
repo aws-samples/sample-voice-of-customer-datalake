@@ -64,7 +64,7 @@ export default function CreateUserModal({
     <ModalShell isOpen={isOpen} onClose={onClose} ariaLabelledBy={titleId} panelClassName="max-w-md max-h-[90vh]">
         <div className="dialog-header">
           <UserPlus size={20} className="text-accent shrink-0" aria-hidden="true" />
-          <h3 id={titleId} className="dialog-title">{t('userAdmin.addNewUser')}</h3>
+          <h3 id={titleId} className="dialog-title">{t('userAdmin.invite')}</h3>
         </div>
 
         <div className="dialog-body space-y-4">

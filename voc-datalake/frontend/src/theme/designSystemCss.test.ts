@@ -13,9 +13,9 @@ import { at } from '@test/defined'
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8')
 const css = read('../index.css')
 
-/** Class string of ModalShell's outer `fixed inset-0` wrapper. */
+/** Class string of ModalShell's outer `fixed inset-0` wrapper (its `SHELL_WRAPPER`, whatever the placement). */
 function modalWrapperClass(): string {
-  const m = /<div className="(fixed inset-0 [^"]*)"/.exec(read('../components/ModalShell/ModalShell.tsx'))
+  const m = /const SHELL_WRAPPER = '(fixed inset-0 [^']*)'/.exec(read('../components/ModalShell/ModalShell.tsx'))
   if (m === null) throw new Error('ModalShell has no `fixed inset-0` wrapper')
   return at(m, 1)
 }
@@ -84,6 +84,13 @@ describe('design-system CSS', () => {
       zOf(panel, /fullscreen: '[^']*'/),
     ]
     for (const z of assistant) expect(modal).toBeGreaterThan(z)
+  })
+
+  it('slides the SideSheet in from the end on the house easing, full height, 30rem from sm', () => {
+    const rule = /\.sheet-panel \{[^}]*\}/.exec(css)?.[0] ?? ''
+    expect(rule).toMatch(/\bh-full\b.*\banimate-slide-in-end\b.*\bsm:max-w-\[30rem\]/)
+    expect(css).toMatch(/--animate-slide-in-end: slide-in-end \.24s cubic-bezier\(\.16, 1, \.3, 1\)/)
+    expect(css).toMatch(/@keyframes slide-in-end \{ from \{ transform: translateX\(100%\) \}/)
   })
 
   it('defines the KiroCrew badge tones and none of the legacy badge names', () => {

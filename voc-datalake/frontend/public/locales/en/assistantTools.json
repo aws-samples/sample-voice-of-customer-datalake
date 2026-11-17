@@ -31,7 +31,7 @@
     },
     "openScraper": "Open this scraper on the Data sources page",
     "openScrapers": "Open the Data sources page",
-    "openUsers": "Open Privacy & access → Users",
+    "openUsers": "Open Administration → People",
     "approvePlan": "Approve and run",
     "change": "Change",
     "changeLabel": "What should change?",
@@ -39,8 +39,8 @@
     "confirmChange": "Ask for changes",
     "openFeedback": "Open the feedback list",
     "openRadar": "Open Radar",
-    "openRadarSettings": "Open Administration → Sources → Radar",
-    "openCategories": "Open Administration → Taxonomy → Categories",
+    "openRadarSettings": "Open Administration → Data sources → Radar",
+    "openCategories": "Open Administration → Categories",
     "openWorkspaceCategories": "Open Workspace settings → Categories"
   },
   "preview": {

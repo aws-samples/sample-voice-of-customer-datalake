@@ -1,38 +1,31 @@
 /**
- * @fileoverview The two user-admin dialogs are real modal dialogs (E2E F5 audit).
- *
- * Both used to be a bare `dialog-overlay` div: no `role="dialog"`, no accessible
- * name, no focus trap (Escape alone came from `useEscapeKey`). They now render
- * through ModalShell like every other dialog in the app.
+ * @fileoverview The People dialogs are real modal dialogs (E2E F5 audit): the invite dialog and a person's editor
+ * sheet are each named, close on Escape once and keep the focus inside, through ModalShell like every other dialog.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import { cognitoUser } from './userAdmin-fixtures'
+import { primeUserClient } from './userAdmin-sheet-fixtures'
 
-vi.mock('../../api/client', () => ({
-  api: {
-    createUser: vi.fn(),
-    updateUser: vi.fn(),
-  },
-}))
+const client = await vi.hoisted(async () => (await import('./userAdmin-sheet-fixtures')).createUserClientMock())
+vi.mock('../../api/client', () => client.module)
+vi.mock('../../store/authStore', () => ({ useIsPlatformAdmin: () => false }))
 
-import CreateUserModal from './CreateUserModal'
-import EditUserModal from './EditUserModal'
+const { default: CreateUserModal } = await import('./CreateUserModal')
+const { default: UserEditorSheet } = await import('./UserEditorSheet')
 
 const CASES = [
   {
-    name: 'Add New User',
+    name: 'Invite person',
     render: (onClose: () => void) =>
       renderWithQueryClient(<CreateUserModal isOpen onClose={onClose} onSuccess={vi.fn()} />),
   },
   {
-    name: 'Edit User',
+    name: 'Edit Ann',
     render: (onClose: () => void) =>
-      renderWithQueryClient(
-        <EditUserModal isOpen user={cognitoUser({ username: 'u-1', given_name: 'Ann' })} onClose={onClose} onSuccess={vi.fn()} />,
-      ),
+      renderWithQueryClient(<UserEditorSheet user={cognitoUser({ username: 'u-1', given_name: 'Ann' })} onClose={onClose} onDeleted={vi.fn()} />),
   },
 ] as const
 
@@ -40,6 +33,8 @@ const CASES = [
 function focused(): HTMLElement | null {
   return document.activeElement instanceof HTMLElement ? document.activeElement : null
 }
+
+beforeEach(() => { primeUserClient(client) })
 
 describe.each(CASES)('$name dialog', ({ name, render }) => {
   it('is a named modal dialog', () => {

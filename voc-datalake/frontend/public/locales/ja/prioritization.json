@@ -78,7 +78,7 @@
     "saving": "保存中...",
     "title": "この行の内容"
   },
-  "configureApiEndpoint": "優先順位付けを表示するには、「管理 → 一般」でAPIエンドポイントを構成してください。",
+  "configureApiEndpoint": "優先順位付けを表示するには、「管理 → ブランドと外観」でAPIエンドポイントを構成してください。",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

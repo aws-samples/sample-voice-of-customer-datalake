@@ -130,7 +130,9 @@ and section, the item open on it, a sub-view, a mode) is the path; only what com
 ever named so (`frontend/src/routes.paramNames.test.ts`). There are no redirects from the forms of before (`/w/…`,
 `?tab=`, `&section=`, `?doc=`, `?view=`, `?request=`, `/login?expired=1`): a pre-release change, nobody has them
 installed. A path that does not name its place as it should (an unknown tab, a tab without its section) is
-replaced in place by the place's own path.
+replaced in place by the place's own path. Nor are Administration's paths of before 7.54.00 aliased
+(`/admin/access/…`, `/admin/taxonomy/…`, `/admin/system/…`, `/admin/data-sources`, `/admin/sources/plugins`): an
+unknown Administration tab is replaced by its home, `/admin` ([account-vs-admin.md](account-vs-admin.md)).
 
 A project page's tab and the document on it:
 
@@ -155,8 +157,11 @@ The other pages (each area's `*Paths.ts` in `frontend/src/pages/`, the shared pa
 
 | Address | Shows |
 |---|---|
-| `/admin/<tab>[/<section>]` (`/admin` is General) | an Administration tab and section ([account-vs-admin.md](account-vs-admin.md)) |
-| `/admin/access/boards/<boardId>` | a feedback board's editor |
+| `/admin` | Administration's home (7.54.00) |
+| `/admin/<tab>[/<section>]` | an Administration tab, its one page, opened at one of its cards ([account-vs-admin.md](account-vs-admin.md)) |
+| `/admin/boards/<boardId>` | a feedback board's editor |
+| `/admin/people/<username>`, `/admin/people/invite` | a person's editor, the invite dialog |
+| `/admin/sources/<source>` | Data sources opened at one source's card |
 | `/account/<tab>` | an Account tab |
 | `/company/<tab>`, `/memory/<tab>`, `/participants/<tab>` | that page's tab |
 | `/data-explorer/raw` (`/data-explorer`), `/data-explorer/processed` | the Data Explorer's tab |
@@ -179,7 +184,7 @@ What stays in the query, and why:
 
 | Kind | Keys |
 |---|---|
-| Filters and search | Categories' `q`, `source`, `sentiment`, `usefulness`, `category`, `subcategory`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`, `types`; Problem Analysis' too, and `resolved`, `similarity`; the Dashboard's facets; Radar's `brand` and `days`; a board list's `q`, `status`, `sort`; Insights' `board`, `days`; Agents → Spend's `month`, `by`, `workflow`; Agents → Skills' scope, `connection` |
+| Filters and search | Categories' `q`, `source`, `sentiment`, `usefulness`, `category`, `subcategory`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`, `types`; Problem Analysis' too, and `resolved`, `similarity`; the Dashboard's facets; Radar's `brand` and `days`; Administration → Data sources' `scope` (`deployment`: the deployment's own sources, platform admins); a board list's `q`, `status`, `sort`; Insights' `board`, `days`; Agents → Spend's `month`, `by`, `workflow`; Agents → Skills' scope, `connection` |
 | The review modal | `review`, `reviewBrand`: one review over whatever page is open (Back closes it), so no one page's path |
 | A form's prefill, read once | Connect's `project` (the token's pin); a project's Decisions `newDecision`, `title`, `verdict`, `rationale`, `feedback` |
 | External callbacks | GitHub's App returns, `/agents/connections/github/created?code=&state=` and `…/installed?installation_id=&setup_action=&state=`; the MCP OAuth consent's authorize request; the emailed board sign-in link's `email`, `code`; the unsubscribe link's `t`. Each is the other party's by design, and each page takes it once and strips it |

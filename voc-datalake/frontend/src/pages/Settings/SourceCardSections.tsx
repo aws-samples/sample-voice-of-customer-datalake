@@ -3,34 +3,21 @@
  * @module pages/Settings/SourceCardSections
  */
 
-import type React from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Save, Check, Loader2, Copy, ExternalLink, Eye, EyeOff, Webhook, Key,
 } from 'lucide-react'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
-import clsx from 'clsx'
 import { ConfigFieldOptions } from '../Scrapers/PluginConfigParts'
 import type { ConfigField, SetupInfo, WebhookInfo } from '../../plugins/types'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 
 // ============================================
 // Helper Functions
 // ============================================
 
-function getSaveButtonIcon(isPending: boolean, saveSuccess: boolean): React.ReactElement {
-  if (isPending) return <Loader2 size={14} className="animate-spin" />
-  if (saveSuccess) return <Check size={14} />
-  return <Save size={14} />
-}
-
-function getSaveButtonText(
-  saveSuccess: boolean, t: (key: string) => string
-): { full: string; short: string } {
-  if (saveSuccess) return { full: t('sourceCard.saved'), short: t('sourceCard.saved') }
-  return { full: t('sourceCard.saveToSecrets'), short: t('sourceCard.save') }
-}
 
 /**
  * Whether `Save to Secrets Manager` is available, and if not, whether to say why.
@@ -128,9 +115,6 @@ export function CredentialsSection({
   onCredentialsChange, onToggleSecrets, lead,
 }: CredentialsSectionProps) {
   const { t } = useTranslation('settings')
-  const saveIcon = getSaveButtonIcon(updateCredentialsMutation.isPending, saveSuccess)
-  const saveText = getSaveButtonText(saveSuccess, t)
-  const saveButtonClass = saveSuccess ? 'bg-ok text-ok-fg border-ok' : 'btn-primary'
   const saveState = getSaveButtonState(
     updateCredentialsMutation.isPending, Object.keys(credentials).length > 0, isAdmin
   )
@@ -163,12 +147,14 @@ export function CredentialsSection({
             onClick={() => updateCredentialsMutation.mutate(credentials)}
             disabled={saveState.disabled}
             title={saveState.title}
-            className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}
+            className="btn btn-primary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
           >
-            {saveIcon}
-            <span className="hidden xs:inline">{saveText.full}</span>
-            <span className="xs:hidden">{saveText.short}</span>
+            {updateCredentialsMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            <span className="hidden xs:inline">{t('sourceCard.saveToSecrets')}</span>
+            <span className="xs:hidden">{t('sourceCard.save')}</span>
           </button>
+          {/* The one Saved (components/SavedStatus): until the next edit of these fields. */}
+          <SavedStatus saved={saveSuccess} />
         </StickyActionBar>
       </div>
     </div>

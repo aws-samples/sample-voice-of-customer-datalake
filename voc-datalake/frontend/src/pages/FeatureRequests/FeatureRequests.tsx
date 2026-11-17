@@ -1,7 +1,7 @@
 /**
  * @fileoverview `/feature-requests` (docs/feature-requests.md): two tabs over the app session —
- * Boards (the feedback boards as cards; an admin's gear opens Administration → Privacy & access →
- * Boards) and Insights (`/feature-requests/insights`: the boards as their own evidence source, never
+ * Boards (the feedback boards as cards; an admin's gear opens Administration → Feedback
+ * boards) and Insights (`/feature-requests/insights`: the boards as their own evidence source, never
  * mixed into review metrics). A request known only by its id (`/feature-requests/requests/<id>`: a
  * document's citation, Insights) opens that request on its board instead. Board-pool users reach the same boards at `/board`, without Insights.
  */

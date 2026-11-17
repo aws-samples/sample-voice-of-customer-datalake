@@ -209,7 +209,6 @@
     "emailOff": "nicht konfiguriert (mit einer Absenderadresse bereitstellen)",
     "boardLink": "Link zu den Feedback-Boards:",
     "boardOff": "nicht bereitgestellt",
-    "saved": "Gespeichert.",
     "loadFailed": "Die Einstellungen für Teilnehmende konnten nicht geladen werden."
   },
   "unsubscribe": {

@@ -344,7 +344,7 @@
     "close": "Close",
     "show": "Show QR code",
     "title": "QR code",
-    "unavailable": "QR code unavailable until the API endpoint is configured in Administration → General"
+    "unavailable": "QR code unavailable until the API endpoint is configured in Administration → Brand & appearance"
   },
   "personaExport": {
     "copied": "Copied!",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "Reprocess file",
       "confirmTitle": "Reprocess {{filename}}?",
-      "confirmMessage": "This runs the file through the import pipeline again, under its source {{source}}. Rows already in the data lake are skipped as duplicates, so only missing rows are imported. Stored rows are not re-enriched: to re-categorize them, use \"Reprocess existing feedback\" in Administration → Taxonomy.",
+      "confirmMessage": "This runs the file through the import pipeline again, under its source {{source}}. Rows already in the data lake are skipped as duplicates, so only missing rows are imported. Stored rows are not re-enriched: to re-categorize them, use \"Reprocess existing feedback\" in Administration → Categories.",
       "confirm": "Reprocess",
       "running": "Reprocessing {{filename}}...",
       "failed": "Reprocessing {{filename}} failed. The system logs have the details.",
@@ -411,8 +411,6 @@
   },
   "userAdmin": {
     "active": "Active",
-    "addNewUser": "Add New User",
-    "addUser": "Add User",
     "adminRole": "Admin",
     "cancel": "Cancel",
     "confirmDelete": "Are you sure you want to delete {{email}}? This cannot be undone.",
@@ -421,42 +419,30 @@
     "confirmReset": "Send a password reset email to {{email}}?",
     "delete": "Delete",
     "deleteUser": "Delete User",
-    "deleteUserTitle": "Delete user",
     "disable": "Disable",
     "disabled": "Disabled",
     "disableUser": "Disable User",
-    "disableUserTitle": "Disable user",
-    "editUser": "Edit User",
-    "editUserTitle": "Edit user",
     "emailHelp": "A temporary password will be sent to this email",
     "emailLabel": "Email Address *",
     "enable": "Enable",
     "enableUser": "Enable User",
-    "enableUserTitle": "Enable user",
     "firstNameLabel": "First Name",
     "lastNameLabel": "Last Name",
     "loadError": "Failed to load users. Make sure you have admin access.",
-    "noUsers": "No users found. Add your first user above.",
+    "noUsers": "No one has been invited yet. Invite the first person above.",
     "passwordResetSent": "Password reset email sent",
     "pendingStatus": "Pending",
     "resetPassword": "Reset Password",
-    "resetPasswordTitle": "Reset password",
     "roleLabel": "Role",
-    "roleUpdated": "User role updated",
     "saveChanges": "Save Changes",
     "sendInvite": "Send Invite",
     "sendResetEmail": "Send Reset Email",
-    "tableActions": "Actions",
-    "tableRole": "Role",
-    "tableStatus": "Status",
-    "tableUser": "User",
     "userDeleted": "User deleted",
     "userDisabled": "User disabled",
     "userEnabled": "User enabled",
     "userRole": "User",
-    "usersCount_one": "({{count, number}} user)",
-    "usersCount_other": "({{count, number}} users)",
-    "roleFor": "Role for {{email}}",
+    "usersCount_one": "{{count, number}} person",
+    "usersCount_other": "{{count, number}} people",
     "categoryAccess": {
       "title": "Category access",
       "noCategories": "No categories are configured yet.",
@@ -466,7 +452,6 @@
       "ownersNote": "Product owners always see their own categories, even if they are not selected here.",
       "saveError": "Category access could not be saved.",
       "loadError": "Category access could not be loaded.",
-      "saved": "Category access updated for {{email}}",
       "current": "Current access",
       "currentCategories": "Categories: {{value}}",
       "currentSources": "Sources: {{value}}",
@@ -479,7 +464,7 @@
       "otherHint": "Reviews without a category"
     },
     "aiMode": {
-      "title": "Ways of working with AI",
+      "title": "Way of working with AI",
       "description": "Sets, per person, how much AI writes their PR/FAQs and PRDs, and whether the engineering automations they enable may push and open pull requests.",
       "notSet": "Not set",
       "notSetEffect": "Documents use AI-driven · automations won't push until you choose",
@@ -510,19 +495,15 @@
       "aiDrivenTooltip": "AI-assisted, plus agents may write documents for you and push code for the automations you enable.",
       "unlockPrfaq": "PR/FAQ with AI",
       "unlockPrd": "PRD with AI",
-      "unlockPrfaqFor": "PR/FAQ with AI: {{user}}",
-      "unlockPrdFor": "PRD with AI: {{user}}",
       "unlockTooltip": "Once they have learned, let AI draft and rewrite this document type with them (agents still may not)."
     },
     "flags": {
-      "title": "Memory & ownership flags",
       "description": "Memory reviewers curate company memory. The fallback owner (one admin) receives agent-created projects whose category has no owner.",
       "fallbackOwner": "Fallback owner",
       "memoryReviewer": "Memory reviewer",
-      "fallbackOwnerFor": "Fallback owner: {{user}}",
-      "memoryReviewerFor": "Memory reviewer: {{user}}",
       "fallbackAdminOnly": "Only an admin can be the fallback owner.",
-      "saveFailed": "Could not update the flag. Try again."
+      "saveFailed": "Could not update the flag. Try again.",
+      "platformAdmin": "Platform admin"
     },
     "sourceAccess": {
       "title": "Sources",
@@ -530,7 +511,40 @@
       "all": "Every source, restricted ones included",
       "selected": "Only selected sources",
       "restricted": "Restricted",
-      "noProfiles": "No source profiles are configured yet (Administration → Privacy & access → Source policies)."
+      "noProfiles": "No source profiles are configured yet (Administration → Privacy)."
+    },
+    "invite": "Invite person",
+    "edit": "Edit",
+    "table": {
+      "name": "Name",
+      "role": "Role",
+      "wayOfWorking": "Way of working",
+      "flags": "Flags",
+      "status": "Status",
+      "actions": "Actions",
+      "noFlags": "None"
+    },
+    "editor": {
+      "title": "Edit {{name}}",
+      "delete": "Delete {{name}}…",
+      "sections": {
+        "role": "Role",
+        "access": "Category and source access",
+        "flags": "Memory and ownership",
+        "platformAdmin": "Platform admin",
+        "name": "Name",
+        "account": "Account"
+      },
+      "roleHint": "Admins open Administration and see every category.",
+      "roleFailed": "Could not change the role. Try again.",
+      "changeAccess": "Change access…",
+      "saveName": "Save name",
+      "nameFailed": "Could not save the name. Try again.",
+      "accountHint": "A disabled person cannot sign in; what they made stays.",
+      "resetPassword": "Reset password…",
+      "disable": "Disable sign-in…",
+      "enable": "Enable sign-in…",
+      "actionFailed": "That did not go through. Try again."
     }
   },
   "pageLoader": {
@@ -581,7 +595,7 @@
     "sourceRadarHint": "Radar source ({{brand}}): these rows go to the Radar page, never into your own dashboards and metrics.",
     "defaultsTitle": "Dimensions and tags",
     "defaultsHint": "Every review from here carries these values; its own values win per dimension.",
-    "noDimensions": "No dimensions are configured yet (Administration → Taxonomy → Dimensions).",
+    "noDimensions": "No dimensions are configured yet (Administration → Categories → Dimensions).",
     "noDefault": "No default"
   },
   "draftSaveBar": {
@@ -669,7 +683,7 @@
       "summaryOnlyHint": "Only derived fields (summary, category, sentiment, dimensions) are kept; the original text is withheld."
     },
     "restrictedLabel": "Restricted",
-    "restrictedHint": "Only admins and users granted this source in Users → access see its reviews.",
+    "restrictedHint": "Only admins and the people granted this source (People → a person's access) see its reviews.",
     "defaultsTitle": "Dimension values for every review from this source",
     "noDefault": "No default",
     "empty": "No profiles yet: every source keeps everything, forever, visible to everyone.",
@@ -688,7 +702,7 @@
       "radarBrand": "{{name}}: name the brand this Radar source tracks."
     },
     "radarLegacy": "Radar source for {{brand}}: this source's reviews go to Radar.",
-    "radarLegacyHint": "Radar brands are set up in Administration → Sources → Radar, and a scraper or connector picks its brand on the Data sources page.",
+    "radarLegacyHint": "Radar brands are set up in Administration → Data sources → Radar, and a scraper or connector picks its brand on the Data sources page.",
     "radarLegacyLink": "Open Radar settings"
   },
   "erasure": {
@@ -918,5 +932,8 @@
       "body": "Step {{n}} needs a text.",
       "anchor": "Step {{n}} points at nothing: remove it and pick its element again."
     }
+  },
+  "savedStatus": {
+    "saved": "Saved"
   }
 }

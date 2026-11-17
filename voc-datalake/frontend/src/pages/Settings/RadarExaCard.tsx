@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Sources → Radar, "Exa (second search index)" (docs/radar.md):
+ * @fileoverview Administration → Data sources → Radar, "Exa (second search index)" (docs/radar.md):
  * whether an Exa API key is stored, a password box to store or replace it
  * (PUT /radar/settings/exa-key) and Remove behind a confirm (DELETE). The key is never shown
  * back: the box is cleared once it is saved and the server only ever says `exa_configured`.
@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { serverReason } from '../../lib/errors'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import type { RadarOverview } from '../../api/radarSchema'
 
@@ -47,9 +48,8 @@ function Feedback({ save, remove, invalid }: Readonly<{
   if (invalid) return <p role="alert" className="text-xs text-danger">{t('exa.invalidKey')}</p>
   if (save.isError) return <p role="alert" className="text-xs text-danger">{t('exa.saveFailed')} {serverReason(save.error) ?? ''}</p>
   if (remove.isError) return <p role="alert" className="text-xs text-danger">{t('exa.removeFailed')} {serverReason(remove.error) ?? ''}</p>
-  if (save.isSuccess) return <p role="status" className="text-xs text-ok">{t('exa.saved')}</p>
-  if (remove.isSuccess) return <p role="status" className="text-xs text-ok">{t('exa.removed')}</p>
-  return null
+  // The one Saved pattern (components/SavedStatus): said until the next edit of the key.
+  return <SavedStatus saved={save.isSuccess || remove.isSuccess} label={save.isSuccess ? t('exa.saved') : t('exa.removed')} small />
 }
 
 export default function RadarExaCard({ configured }: Readonly<{ configured: boolean }>) {
@@ -81,7 +81,7 @@ export default function RadarExaCard({ configured }: Readonly<{ configured: bool
           </label>
           <input id={inputId} type="password" autoComplete="off" spellCheck={false} className="input font-mono" value={key}
             placeholder={configured ? t('exa.replacePlaceholder') : t('exa.placeholder')} aria-invalid={invalid}
-            onChange={(e) => setKey(e.target.value)} />
+            onChange={(e) => { save.reset(); remove.reset(); setKey(e.target.value) }} />
         </div>
         <StickyActionBar variant="inline" className="flex flex-wrap gap-2">
           <button type="submit" className="btn btn-primary btn-sm" disabled={trimmed === '' || save.isPending}>

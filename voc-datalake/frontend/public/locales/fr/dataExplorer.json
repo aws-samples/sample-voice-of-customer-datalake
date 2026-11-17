@@ -41,7 +41,7 @@
     "search": "Rechercher des retours"
   },
   "newFile": "Nouveau fichier",
-  "notConfigured": "Configurez le point de terminaison API dans Administration → Général pour explorer les données",
+  "notConfigured": "Configurez le point de terminaison API dans Administration → Marque et apparence pour explorer les données",
   "refresh": "Actualiser",
   "s3Browser": {
     "back": "Retour",
@@ -84,7 +84,7 @@
     "loading": "Chargement de la qualité des données…",
     "empty": "Aucun retour sur cette période.",
     "unratedShare": "{{share}} des retours de cette période ne sont pas encore évalués.",
-    "backfillHint": "Les retours enregistrés avant l'existence des évaluations n'ont pas de niveau ; un retraitement des catégories (Administration → Taxonomie) les évalue.",
+    "backfillHint": "Les retours enregistrés avant l'existence des évaluations n'ont pas de niveau ; un retraitement des catégories (Administration → Catégories) les évalue.",
     "chartTop_one": "Le graphique montre la source la plus active ; le tableau liste toutes les sources.",
     "chartTop_other": "Le graphique montre les {{count, number}} sources les plus actives ; le tableau liste toutes les sources.",
     "chartTop_many": "Le graphique présente les {{count, number}} de sources les plus actives ; le tableau répertorie toutes les sources.",

@@ -1644,7 +1644,7 @@
       "unknown": "まだ不明",
       "openConnections": "接続を開く",
       "openDeploymentSources": "管理 → データソース を開く",
-      "openSources": "管理 → ソース → ソース設定 を開く",
+      "openSources": "管理 → データソース を開く",
       "sourcesOutside": "どのワークスペースにも入らずに行います。自動化はデプロイのソースだけを読みます。",
       "deploymentTitle": "このデプロイ",
       "connectedAs": "App で接続済み: {{list}}。",

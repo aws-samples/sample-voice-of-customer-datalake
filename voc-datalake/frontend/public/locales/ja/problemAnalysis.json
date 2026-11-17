@@ -1,5 +1,5 @@
 {
-  "configureApi": "「管理 → 一般」でAPIエンドポイントを構成してください",
+  "configureApi": "「管理 → ブランドと外観」でAPIエンドポイントを構成してください",
   "filters": {
     "allCategories": "すべてのカテゴリ",
     "allSources": "すべてのソース",

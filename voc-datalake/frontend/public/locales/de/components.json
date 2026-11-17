@@ -344,7 +344,7 @@
     "close": "Schließen",
     "show": "QR-Code anzeigen",
     "title": "QR-Code",
-    "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt unter Administration → Allgemein konfiguriert ist"
+    "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt unter Administration → Marke & Darstellung konfiguriert ist"
   },
   "personaExport": {
     "copied": "Kopiert!",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "Datei neu verarbeiten",
       "confirmTitle": "{{filename}} neu verarbeiten?",
-      "confirmMessage": "Die Datei durchläuft die Import-Pipeline erneut, unter ihrer Quelle {{source}}. Zeilen, die schon im Data Lake sind, werden als Duplikate übersprungen, also werden nur fehlende Zeilen importiert. Gespeicherte Zeilen werden nicht neu angereichert: Um sie neu zu kategorisieren, nutzen Sie „Vorhandenes Feedback neu verarbeiten“ unter Administration → Taxonomie.",
+      "confirmMessage": "Die Datei durchläuft die Import-Pipeline erneut, unter ihrer Quelle {{source}}. Zeilen, die schon im Data Lake sind, werden als Duplikate übersprungen, also werden nur fehlende Zeilen importiert. Gespeicherte Zeilen werden nicht neu angereichert: Um sie neu zu kategorisieren, nutzen Sie „Vorhandenes Feedback neu verarbeiten“ unter Administration → Kategorien.",
       "confirm": "Neu verarbeiten",
       "running": "{{filename}} wird neu verarbeitet...",
       "failed": "Die Neuverarbeitung von {{filename}} ist fehlgeschlagen. Details stehen in den Systemprotokollen.",
@@ -411,8 +411,6 @@
   },
   "userAdmin": {
     "active": "Aktiv",
-    "addNewUser": "Neuen Benutzer hinzufügen",
-    "addUser": "Benutzer hinzufügen",
     "adminRole": "Administrator",
     "cancel": "Abbrechen",
     "confirmDelete": "Möchten Sie {{email}} wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
@@ -421,42 +419,30 @@
     "confirmReset": "Passwort-Zurücksetzen-E-Mail an {{email}} senden?",
     "delete": "Löschen",
     "deleteUser": "Benutzer löschen",
-    "deleteUserTitle": "Benutzer löschen",
     "disable": "Deaktivieren",
     "disabled": "Deaktiviert",
     "disableUser": "Benutzer deaktivieren",
-    "disableUserTitle": "Benutzer deaktivieren",
-    "editUser": "Benutzer bearbeiten",
-    "editUserTitle": "Benutzer bearbeiten",
     "emailHelp": "Ein temporäres Passwort wird an diese E-Mail gesendet",
     "emailLabel": "E-Mail-Adresse *",
     "enable": "Aktivieren",
     "enableUser": "Benutzer aktivieren",
-    "enableUserTitle": "Benutzer aktivieren",
     "firstNameLabel": "Vorname",
     "lastNameLabel": "Nachname",
     "loadError": "Fehler beim Laden der Benutzer. Stellen Sie sicher, dass Sie Administratorzugriff haben.",
-    "noUsers": "Keine Benutzer gefunden. Fügen Sie oben Ihren ersten Benutzer hinzu.",
+    "noUsers": "Noch niemand eingeladen. Laden Sie oben die erste Person ein.",
     "passwordResetSent": "E-Mail zum Zurücksetzen des Passworts gesendet",
     "pendingStatus": "Ausstehend",
     "resetPassword": "Passwort zurücksetzen",
-    "resetPasswordTitle": "Passwort zurücksetzen",
     "roleLabel": "Rolle",
-    "roleUpdated": "Benutzerrolle aktualisiert",
     "saveChanges": "Änderungen speichern",
     "sendInvite": "Einladung senden",
     "sendResetEmail": "E-Mail zum Zurücksetzen senden",
-    "tableActions": "Aktionen",
-    "tableRole": "Rolle",
-    "tableStatus": "Zustand",
-    "tableUser": "Benutzer",
     "userDeleted": "Benutzer gelöscht",
     "userDisabled": "Benutzer deaktiviert",
     "userEnabled": "Benutzer aktiviert",
     "userRole": "Benutzer",
-    "usersCount_one": "({{count, number}} Benutzer)",
-    "usersCount_other": "({{count, number}} Benutzer)",
-    "roleFor": "Rolle für {{email}}",
+    "usersCount_one": "{{count, number}} Person",
+    "usersCount_other": "{{count, number}} Personen",
     "categoryAccess": {
       "title": "Kategoriezugriff",
       "noCategories": "Es sind noch keine Kategorien konfiguriert.",
@@ -466,7 +452,6 @@
       "ownersNote": "Product Owner sehen ihre eigenen Kategorien immer, auch wenn sie hier nicht ausgewählt sind.",
       "saveError": "Der Kategoriezugriff konnte nicht gespeichert werden.",
       "loadError": "Der Kategoriezugriff konnte nicht geladen werden.",
-      "saved": "Kategoriezugriff für {{email}} aktualisiert",
       "current": "Aktueller Zugriff",
       "currentCategories": "Kategorien: {{value}}",
       "currentSources": "Quellen: {{value}}",
@@ -479,7 +464,7 @@
       "otherHint": "Bewertungen ohne Kategorie"
     },
     "aiMode": {
-      "title": "Arbeitsweisen mit KI",
+      "title": "Arbeitsweise mit KI",
       "description": "Legt pro Person fest, wie viel die KI an ihren PR/FAQs und PRDs schreibt und ob die Engineering-Automationen, die sie aktiviert, pushen und Pull Requests öffnen dürfen.",
       "notSet": "Nicht festgelegt",
       "notSetEffect": "Dokumente nutzen KI-geführt · Automationen pushen nicht, bis Sie wählen",
@@ -510,19 +495,15 @@
       "aiDrivenTooltip": "KI-unterstützt, und zusätzlich dürfen Agenten Dokumente für Sie schreiben und für die Automationen, die Sie aktivieren, Code pushen.",
       "unlockPrfaq": "PR/FAQ mit KI",
       "unlockPrd": "PRD mit KI",
-      "unlockPrfaqFor": "PR/FAQ mit KI: {{user}}",
-      "unlockPrdFor": "PRD mit KI: {{user}}",
       "unlockTooltip": "Sobald die Person es gelernt hat, darf die KI diesen Dokumenttyp mit ihr entwerfen und umschreiben (Agenten weiterhin nicht)."
     },
     "flags": {
-      "title": "Gedächtnis- und Eigentümer-Markierungen",
       "description": "Gedächtnisprüfer pflegen das Unternehmensgedächtnis. Der Ersatz-Eigentümer (ein Admin) erhält von Agenten erstellte Projekte, deren Kategorie keinen Eigentümer hat.",
       "fallbackOwner": "Ersatz-Eigentümer",
       "memoryReviewer": "Gedächtnisprüfer",
-      "fallbackOwnerFor": "Ersatz-Eigentümer: {{user}}",
-      "memoryReviewerFor": "Gedächtnisprüfer: {{user}}",
       "fallbackAdminOnly": "Nur ein Admin kann Ersatz-Eigentümer sein.",
-      "saveFailed": "Die Markierung konnte nicht aktualisiert werden. Bitte erneut versuchen."
+      "saveFailed": "Die Markierung konnte nicht aktualisiert werden. Bitte erneut versuchen.",
+      "platformAdmin": "Plattform-Admin"
     },
     "sourceAccess": {
       "title": "Quellen",
@@ -530,7 +511,40 @@
       "all": "Alle Quellen, einschließlich eingeschränkter",
       "selected": "Nur ausgewählte Quellen",
       "restricted": "Eingeschränkt",
-      "noProfiles": "Noch keine Quellprofile konfiguriert (Administration → Datenschutz & Zugriff → Quellenrichtlinien)."
+      "noProfiles": "Noch keine Quellprofile konfiguriert (Administration → Datenschutz)."
+    },
+    "invite": "Person einladen",
+    "edit": "Bearbeiten",
+    "table": {
+      "name": "Name",
+      "role": "Rolle",
+      "wayOfWorking": "Arbeitsweise",
+      "flags": "Markierungen",
+      "status": "Status",
+      "actions": "Aktionen",
+      "noFlags": "Keine"
+    },
+    "editor": {
+      "title": "{{name}} bearbeiten",
+      "delete": "{{name}} löschen…",
+      "sections": {
+        "role": "Rolle",
+        "access": "Zugriff auf Kategorien und Quellen",
+        "flags": "Gedächtnis und Eigentum",
+        "platformAdmin": "Plattform-Admin",
+        "name": "Name",
+        "account": "Konto"
+      },
+      "roleHint": "Admins öffnen die Administration und sehen jede Kategorie.",
+      "roleFailed": "Die Rolle konnte nicht geändert werden. Bitte erneut versuchen.",
+      "changeAccess": "Zugriff ändern…",
+      "saveName": "Namen speichern",
+      "nameFailed": "Der Name konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "accountHint": "Eine deaktivierte Person kann sich nicht anmelden; was sie erstellt hat, bleibt.",
+      "resetPassword": "Passwort zurücksetzen…",
+      "disable": "Anmeldung deaktivieren…",
+      "enable": "Anmeldung aktivieren…",
+      "actionFailed": "Das hat nicht geklappt. Bitte erneut versuchen."
     }
   },
   "pageLoader": {
@@ -581,7 +595,7 @@
     "sourceRadarHint": "Radar-Quelle ({{brand}}): Diese Zeilen landen auf der Radar-Seite, nie in Ihren eigenen Dashboards und Kennzahlen.",
     "defaultsTitle": "Dimensionen und Tags",
     "defaultsHint": "Jede Bewertung von hier erhält diese Werte; ihre eigenen Werte haben pro Dimension Vorrang.",
-    "noDimensions": "Noch keine Dimensionen konfiguriert (Administration → Taxonomie → Dimensionen).",
+    "noDimensions": "Noch keine Dimensionen konfiguriert (Administration → Kategorien → Dimensionen).",
     "noDefault": "Kein Standard"
   },
   "draftSaveBar": {
@@ -669,7 +683,7 @@
       "summaryOnlyHint": "Nur abgeleitete Felder (Zusammenfassung, Kategorie, Stimmung, Dimensionen) bleiben erhalten; der Originaltext wird nicht gespeichert."
     },
     "restrictedLabel": "Eingeschränkt",
-    "restrictedHint": "Nur Admins und Nutzer, denen diese Quelle unter Benutzer → Zugriff gewährt wurde, sehen ihre Bewertungen.",
+    "restrictedHint": "Nur Admins und Personen, denen diese Quelle gewährt wurde (Personen → Zugriff einer Person), sehen ihre Bewertungen.",
     "defaultsTitle": "Dimensionswerte für jede Bewertung aus dieser Quelle",
     "noDefault": "Kein Standard",
     "empty": "Noch keine Profile: Jede Quelle behält alles, unbegrenzt und für alle sichtbar.",
@@ -688,7 +702,7 @@
       "radarBrand": "{{name}}: Geben Sie die Marke an, die diese Radar-Quelle beobachtet."
     },
     "radarLegacy": "Radar-Quelle für {{brand}}: Die Bewertungen dieser Quelle gehen an Radar.",
-    "radarLegacyHint": "Radar-Marken werden unter Administration → Quellen → Radar eingerichtet, und ein Scraper oder Connector wählt seine Marke auf der Seite Datenquellen.",
+    "radarLegacyHint": "Radar-Marken werden unter Administration → Datenquellen → Radar eingerichtet, und ein Scraper oder Connector wählt seine Marke auf der Seite Datenquellen.",
     "radarLegacyLink": "Radar-Einstellungen öffnen"
   },
   "erasure": {
@@ -918,5 +932,8 @@
       "body": "Schritt {{n}} braucht einen Text.",
       "anchor": "Schritt {{n}} zeigt auf nichts: Entfernen Sie ihn und wählen Sie sein Element erneut."
     }
+  },
+  "savedStatus": {
+    "saved": "Gespeichert"
   }
 }

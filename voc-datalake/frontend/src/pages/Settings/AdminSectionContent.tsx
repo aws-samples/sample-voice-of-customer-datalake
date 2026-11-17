@@ -1,79 +1,83 @@
 /**
- * @fileoverview The content of every Administration tab but General (whose
- * brand form state lives in Settings itself), per tab and section. Admin-only
- * sections render nothing for anyone else, even when a deep link names them.
+ * @fileoverview The page of each Administration tab (7.54.00): its cards, in order, each section's card wrapped in its
+ * anchor (SectionAnchor.tsx) so a path naming it focuses it. An admin-only card renders nothing for anyone else, even
+ * when a link names it (adminTabs.ts already sends such a link to its tab).
  * @module pages/Settings/AdminSectionContent
  */
+import { useTranslation } from 'react-i18next'
+import UserAdmin from '../../components/UserAdmin/UserAdmin'
 import LogsSection from './LogsSection'
 import AiModelSection from './AiModelSection'
-import IntegrationsSection from './IntegrationsSection'
 import VersionSection from './VersionSection'
-import RadarSection from './RadarSection'
-import EmailInboxCard from './EmailInboxCard'
-import ParticipantSettingsCard from './ParticipantSettingsCard'
 import BoardsSection from './boards/BoardsSection'
 import PlatformWorkspacesSection from './PlatformWorkspacesSection'
 import DeploymentBrandCard from './DeploymentBrandCard'
-import DeploymentDataSources from './DeploymentDataSources'
+import DataSourcesPage from './DataSourcesPage'
+import BrandPage from './BrandPage'
 import { DimensionsSection, SourcePoliciesSection } from './DataGovernanceSections'
-import { CategoriesSection, DataSourcesSection, UserAdminSection } from './SettingsSections'
+import { CategoriesSection, ConfigureFirstNotice } from './SettingsSections'
+import { SectionAnchor } from './SectionAnchor'
+import { usePersonInPath } from './useAdminLocation'
 import type { AdminSectionId, AdminTabId } from './adminTabs'
 
 interface ContentProps {
+  readonly tab: AdminTabId
+  readonly section: AdminSectionId | null
+  /** The API endpoint field's value (the dev-only Advanced card edits it). */
   readonly apiEndpoint: string
+  readonly onApiEndpointChange: (value: string) => void
   readonly isAdmin: boolean
+  readonly isPlatformAdmin: boolean
 }
 
-/** The admin-only sections; nothing for anyone else. */
-function AdminOnlySection({ section, apiEndpoint }: Readonly<{ section: AdminSectionId; apiEndpoint: string }>) {
-  switch (section) {
-    case 'integrations': return <IntegrationsSection />
-    case 'inbox': return <EmailInboxCard />
-    case 'radar': return <RadarSection />
-    case 'dimensions': return <DimensionsSection />
-    case 'policies': return <SourcePoliciesSection />
-    // The engagement settings sit with the users: they decide who counts as a colleague.
-    case 'users': return (
-      <div className="space-y-6">
-        <UserAdminSection apiEndpoint={apiEndpoint} />
-        {apiEndpoint ? <ParticipantSettingsCard /> : null}
-      </div>
-    )
+/** People: one table and the person's editor (`/admin/people/<username>`) or the invite (`/admin/people/invite`). */
+function PeoplePage({ apiEndpoint }: Readonly<{ apiEndpoint: string }>) {
+  const { t } = useTranslation('settings')
+  const [item, openItem] = usePersonInPath()
+  if (!apiEndpoint) return <ConfigureFirstNotice message={t('users.configureFirst')} />
+  return <div className="card"><UserAdmin openItem={item} onOpenItem={openItem} /></div>
+}
+
+function CategoriesPage({ apiEndpoint, isAdmin }: Readonly<{ apiEndpoint: string; isAdmin: boolean }>) {
+  return (
+    <>
+      <CategoriesSection apiEndpoint={apiEndpoint} />
+      {isAdmin ? <SectionAnchor section="dimensions"><DimensionsSection /></SectionAnchor> : null}
+    </>
+  )
+}
+
+/** Every workspace, then the brand outside them (DeploymentBrandCard.tsx). */
+function PlatformPage() {
+  return (
+    <>
+      <PlatformWorkspacesSection />
+      <SectionAnchor section="deployment-brand"><DeploymentBrandCard /></SectionAnchor>
+    </>
+  )
+}
+
+/** The admin-only pages; nothing for anyone else. */
+function AdminOnlyPage({ tab, apiEndpoint, isPlatformAdmin }: Readonly<Pick<ContentProps, 'tab' | 'apiEndpoint' | 'isPlatformAdmin'>>) {
+  switch (tab) {
+    case 'people': return <PeoplePage apiEndpoint={apiEndpoint} />
     case 'boards': return apiEndpoint ? <BoardsSection /> : null
+    case 'privacy': return <SourcePoliciesSection />
+    // The platform console: platform admins only, like its tab (adminTabs.ts).
+    case 'platform': return isPlatformAdmin && apiEndpoint ? <PlatformPage /> : null
     case 'version': return <VersionSection />
     default: return null
   }
 }
 
-/** Every workspace, then the brand outside them (DeploymentBrandCard.tsx). */
-function PlatformConsole() {
-  return (
-    <div className="space-y-6">
-      <PlatformWorkspacesSection />
-      <DeploymentBrandCard />
-    </div>
-  )
-}
-
-function SectionContent({ section, apiEndpoint, isAdmin }: Readonly<ContentProps & { section: AdminSectionId }>) {
-  switch (section) {
-    case 'plugins': return <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
-    case 'categories': return <CategoriesSection apiEndpoint={apiEndpoint} />
+export default function AdminSectionContent(props: ContentProps) {
+  const { tab, section, apiEndpoint, onApiEndpointChange, isAdmin, isPlatformAdmin } = props
+  switch (tab) {
+    case 'sources': return <DataSourcesPage apiEndpoint={apiEndpoint} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} section={section} />
     case 'logs': return <LogsSection apiEndpoint={apiEndpoint} />
-    default: return isAdmin ? <AdminOnlySection section={section} apiEndpoint={apiEndpoint} /> : null
+    case 'categories': return <CategoriesPage apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+    case 'ai': return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+    case 'brand': return <BrandPage apiEndpoint={apiEndpoint} onApiEndpointChange={onApiEndpointChange} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
+    default: return isAdmin ? <AdminOnlyPage tab={tab} apiEndpoint={apiEndpoint} isPlatformAdmin={isPlatformAdmin} /> : null
   }
-}
-
-export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin, isPlatformAdmin }: Readonly<ContentProps & {
-  tab: AdminTabId
-  section: AdminSectionId | null
-  isPlatformAdmin: boolean
-}>) {
-  if (tab === 'ai') return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
-  // The deployment's Data sources: platform admins only, like its tab (adminTabs.ts), from any address.
-  if (tab === 'data-sources') return isAdmin && isPlatformAdmin ? <DeploymentDataSources apiEndpoint={apiEndpoint} isAdmin /> : null
-  if (section === null) return null
-  // The platform console: platform admins only, like its tab (adminTabs.ts), with the deployment's default brand.
-  if (section === 'workspaces') return isAdmin && isPlatformAdmin && apiEndpoint ? <PlatformConsole /> : null
-  return <SectionContent section={section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
 }

@@ -77,7 +77,7 @@ describe('SourcesManager', () => {
     await user.type(basis, 'x')
     await user.clear(basis)
     await user.tab()
-    expect(screen.getByRole('status')).toHaveTextContent('Support tickets: give the legal basis of the retention period.')
+    expect(screen.getByText('Support tickets: give the legal basis of the retention period.')).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
@@ -101,7 +101,7 @@ describe('SourcesManager', () => {
     await user.type(days, '7')
     // Validated on blur / submit: leaving the field shows why.
     await user.tab()
-    expect(screen.getByRole('status')).toHaveTextContent('Support tickets: retention must be 30-3,650 days')
+    expect(screen.getByText(/Support tickets: retention must be 30-3,650 days/)).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 

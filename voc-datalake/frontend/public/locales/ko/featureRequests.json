@@ -290,7 +290,7 @@
     "configure": "보드 설정",
     "emptyTitle": "아직 보드가 없습니다",
     "empty": "아직 공유된 보드가 없습니다.",
-    "emptyAdmin": "<admin>관리의 개인정보 및 액세스, 보드</admin>에서 보드를 만드세요.",
+    "emptyAdmin": "<admin>관리 → 피드백 보드</admin>에서 보드를 만드세요.",
     "loadFailed": "보드를 불러오지 못했습니다.",
     "notFoundTitle": "보드를 찾을 수 없음",
     "notFound": "이 보드가 없거나 공유되지 않았습니다.",

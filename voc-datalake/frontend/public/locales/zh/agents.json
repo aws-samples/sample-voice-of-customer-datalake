@@ -1644,7 +1644,7 @@
       "unknown": "尚不清楚",
       "openConnections": "打开连接",
       "openDeploymentSources": "打开 管理 → 数据来源",
-      "openSources": "打开 管理 → 来源 → 来源设置",
+      "openSources": "打开 管理 → 数据来源",
       "sourcesOutside": "在任何工作区之外进行：自动化只读取部署的来源。",
       "deploymentTitle": "此部署",
       "connectedAs": "已通过 App 连接：{{list}}。",

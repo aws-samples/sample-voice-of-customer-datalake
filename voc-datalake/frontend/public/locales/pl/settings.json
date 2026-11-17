@@ -152,22 +152,17 @@
     "handlesPlaceholder": "@twojamarka, twojamarka, TwojaMarka",
     "hashtagsLabel": "Hashtagi do śledzenia (oddzielone przecinkami)",
     "hashtagsPlaceholder": "#twojamarka, #twojprodukt",
-    "loadingSettings": "Wczytywanie ustawień z serwera...",
     "nameLabel": "Nazwa marki",
     "namePlaceholder": "Nazwa Twojej marki",
     "syncedToBackend": "Zsynchronizowano z backendem",
     "title": "Konfiguracja marki",
     "urlsHint": "Konkretne adresy URL do monitorowania za pomocą wyszukiwania w sieci",
     "urlsLabel": "Adresy URL do śledzenia (jeden w wierszu)",
-    "loadFailed": "Nie udało się wczytać ustawień marki z serwera. Wyświetlono wartości zapisane w tej przeglądarce.",
-    "retry": "Ponów",
     "notSynced": "Niezsynchronizowano",
-    "saveFailed": "Nie udało się zapisać na serwerze. Spróbuj ponownie.",
-    "savedToServer": "Zapisano markę.",
     "adminOnlyNotice": "Tylko administratorzy mogą zmieniać konfigurację marki. Możesz ją tutaj przeglądać."
   },
   "categories": {
-    "configureFirst": "Skonfiguruj endpoint API w zakładce Ogólne, aby zarządzać kategoriami.",
+    "configureFirst": "Skonfiguruj adres API w Marka i wygląd → Zaawansowane, aby zarządzać kategoriami.",
     "description": "Skonfiguruj kategorie i podkategorie do klasyfikacji opinii.",
     "title": "Kategorie opinii"
   },
@@ -179,8 +174,7 @@
     "resetTitle": "Resetuj wszystkie ustawienia"
   },
   "dataSources": {
-    "configureFirst": "Skonfiguruj endpoint API w zakładce Ogólne, aby zarządzać źródłami danych.",
-    "description": "Konfiguruj dane uwierzytelniające API, webhooki i włączaj lub wyłączaj harmonogramy źródeł danych.",
+    "configureFirst": "Skonfiguruj adres API w Marka i wygląd → Zaawansowane, aby zarządzać źródłami danych.",
     "noPlugins": "Nie znaleziono wtyczek źródeł danych. Uruchom <code>npm run generate:manifests</code>, aby wygenerować manifesty wtyczek."
   },
   "logs": {
@@ -222,7 +216,7 @@
     },
     "noRunsYet": "Brak uruchomień",
     "clear": "Wyczyść",
-    "configureFirst": "Skonfiguruj endpoint API w zakładce Ogólne, aby wyświetlić logi.",
+    "configureFirst": "Skonfiguruj adres API w Marka i wygląd → Zaawansowane, aby wyświetlić logi.",
     "daysAgo_one": "{{count, number}}d temu",
     "daysAgo_other": "{{count, number}}d temu",
     "errorLabel": "Błąd:",
@@ -386,7 +380,6 @@
     "fileExplorer": "Eksplorator plików",
     "hide": "Ukryj",
     "save": "Zapisz",
-    "saved": "Zapisano!",
     "saveToSecrets": "Zapisz w Secrets Manager",
     "selectOption": "Wybierz...",
     "show": "Pokaż",
@@ -426,34 +419,34 @@
       "manual": "Skonfiguruj ręcznie (zaawansowane)"
     }
   },
-  "subtitle": "Konfiguruj platformę dla wszystkich (tylko administratorzy).",
+  "subtitle": "Osoby, dane, kategorie i AI tego wdrożenia.",
   "tabs": {
-    "general": "Ogólne",
-    "sources": "Źródła",
-    "taxonomy": "Taksonomia",
-    "access": "Prywatność i dostęp",
+    "sources": "Źródła danych",
     "ai": "Modele AI",
-    "system": "System",
-    "dataSources": "Źródła danych"
+    "people": "Osoby",
+    "logs": "Logi",
+    "categories": "Kategorie",
+    "boards": "Tablice opinii",
+    "brand": "Marka i wygląd",
+    "privacy": "Prywatność",
+    "platform": "Platforma",
+    "version": "Wersja"
   },
   "sections": {
-    "plugins": "Ustawienia źródeł",
-    "integrations": "Integracje",
     "inbox": "Skrzynka e-mail",
-    "categories": "Kategorie",
     "dimensions": "Wymiary",
-    "policies": "Polityki źródeł",
-    "users": "Użytkownicy",
-    "logs": "Logi",
-    "version": "Wersja",
     "radar": "Radar",
-    "boards": "Tablice"
+    "tokens": "Tokeny systemu projektowego",
+    "domains": "Domeny firmy",
+    "participants": "E-mail do uczestników",
+    "theme": "Domyślny motyw",
+    "erasure": "Usuwanie danych",
+    "deploymentBrand": "Marka wdrożenia",
+    "advanced": "Zaawansowane"
   },
   "title": "Administracja",
   "users": {
-    "configureFirst": "Skonfiguruj adres API na karcie Ogólne, aby zarządzać użytkownikami.",
-    "description": "Zarządzaj użytkownikami, rolami i uprawnieniami platformy VoC.",
-    "title": "Zarządzanie użytkownikami"
+    "configureFirst": "Skonfiguruj adres API w Marka i wygląd → Zaawansowane, aby zarządzać osobami."
   },
   "company": {
     "title": "Firma",
@@ -614,7 +607,7 @@
     "kindHints": {
       "website": "Otwieramy stronę w bezpiecznej przeglądarce i odczytujemy jej kolory, czcionki i logo.",
       "github": "Publiczne repozytoria działają bez tokenu. Odczytujemy pliki motywu, kolorów i czcionek oraz logo.",
-      "figma": "Wymaga tokenu Figma (Administracja → Źródła → Integracje)."
+      "figma": "Wymaga tokenu Figma (Administracja → Źródła danych → Tokeny systemu projektowego)."
     },
     "readingHint": {
       "link": "Trwa odczytywanie — może potrwać kilka minut.",
@@ -790,10 +783,10 @@
     "notConfigured": "Nieskonfigurowano",
     "saveTokens": "Zapisz tokeny",
     "integrationsMoved": "Tokeny Figma i GitHub ustawia się w",
-    "integrationsLink": "Administracja → Źródła → Integracje"
+    "integrationsLink": "Administracja → Źródła danych → Tokeny systemu projektowego"
   },
   "integrations": {
-    "title": "Integracje",
+    "title": "Tokeny systemu projektowego",
     "description": "Tokeny tylko do zapisu, których platforma używa do odczytu plików Figma i repozytoriów GitHub na potrzeby systemu projektowego. Są przechowywane w Secrets Manager i nigdy więcej nie są wyświetlane.",
     "mcpHint": "Dostęp MCP dla zewnętrznych asystentów jest przypisany do użytkownika, w sekcji",
     "mcpLink": "Połączenia"
@@ -859,7 +852,13 @@
   },
   "sources": {
     "title": "Polityki źródeł",
-    "description": "Ochrona danych dla poszczególnych źródeł: obsługa danych osobowych, retencja, kto może je widzieć i usuwanie."
+    "description": "Ochrona danych dla poszczególnych źródeł: obsługa danych osobowych, retencja, kto może je widzieć i usuwanie.",
+    "scope": {
+      "label": "Źródła",
+      "workspace": "Ten obszar roboczy",
+      "deployment": "Wdrożenie"
+    },
+    "advancedHint": "Konfigurowane raz: skrzynka e-mail, marki i skanowanie Radaru oraz tokeny, którymi system projektowy czyta Figmę i GitHub."
   },
   "version": {
     "title": "Wersja",
@@ -916,7 +915,7 @@
     "participantCard": {
       "domains": "Domeny firmy: {{list}}.",
       "noDomains": "Brak domen firmy.",
-      "editInBoards": "Edytuj je w sekcji Tablice"
+      "editInBoards": "Edytuj je w Domenach firmy"
     },
     "list": {
       "title": "Tablice opinii",
@@ -1058,10 +1057,137 @@
     "saveFailed": "Nie udało się zapisać domyślnego motywu. Spróbuj ponownie."
   },
   "deploymentSources": {
-    "title": "Źródła danych wdrożenia",
-    "feeds": "Te źródła zasilają wdrożenie: opinie, które pobierają, dotyczą całego wdrożenia, poza każdym obszarem roboczym, niezależnie od tego, w którym obszarze roboczym teraz jesteś. Dane logowania, harmonogramy i wstrzymania na tej stronie należą do samego wdrożenia.",
-    "engineering": "To jedyne opinie, które czytają automatyzacje inżynieryjne (Bug fixer, Feature builder, Issue triage): ich uruchomienia nigdy nie biorą opinii obszaru roboczego.",
-    "appSignIn": "Źródło GitHub Issues konfiguruje się samo, gdy połączysz GitHub w Agenci → Połączenia: issues każdego połączonego repozytorium są czytane przez GitHub App wdrożenia. Jego karta tutaj to widok zaawansowany.",
-    "inWorkspace": "Jesteś w {{name}}, ale nic na tej stronie go nie zmienia: własne źródła tego obszaru roboczego są na karcie Źródła."
+    "notice": "Te źródła wnoszą opinie z całego wdrożenia, spoza wszystkich obszarów roboczych. To jedyne opinie, które czytają automatyzacje inżynieryjne."
+  },
+  "home": {
+    "inWorkspace": "Jesteś w obszarze roboczym {{name}}: jego własne ustawienia są w <settings>Ustawieniach obszaru roboczego</settings>.",
+    "invite": "Zaproś osobę",
+    "version": "Wersja {{version}} · <notes>Informacje o wydaniach</notes>",
+    "attention": {
+      "title": "Wymaga uwagi",
+      "sourcesPaused_one": "{{count, number}} źródło wstrzymane po błędach: {{list}}",
+      "sourcesPaused_other": "{{count, number}} źródła wstrzymane po błędach: {{list}}",
+      "sourcesPaused_many": "{{count, number}} źródeł wstrzymanych po błędach: {{list}}",
+      "sourcesPaused_few": "{{count, number}} źródła wstrzymane po błędach: {{list}}",
+      "waysUnset_one": "{{count, number}} osoba nie ma ustawionego sposobu pracy",
+      "waysUnset_other": "{{count, number}} osoby nie mają ustawionego sposobu pracy",
+      "waysUnset_many": "{{count, number}} osób nie ma ustawionego sposobu pracy",
+      "waysUnset_few": "{{count, number}} osoby nie mają ustawionego sposobu pracy",
+      "modelsBlocked_one": "{{count, number}} modelu AI nie można wywołać na tym koncie",
+      "modelsBlocked_other": "{{count, number}} modeli AI nie można wywołać na tym koncie",
+      "modelsBlocked_many": "{{count, number}} modeli AI nie można wywołać na tym koncie",
+      "modelsBlocked_few": "{{count, number}} modeli AI nie można wywołać na tym koncie",
+      "reviewSources": "Sprawdź źródła",
+      "openPeople": "Otwórz Osoby",
+      "openModels": "Otwórz Modele AI"
+    },
+    "groups": {
+      "everyday": "Na co dzień",
+      "regular": "Regularnie",
+      "once": "Konfiguracja jednorazowa",
+      "rare": "Rzadko",
+      "elsewhere": "Gdzie indziej"
+    },
+    "jobs": {
+      "people": {
+        "title": "Osoby",
+        "hint": "Zapraszanie, usuwanie, role i sposoby pracy"
+      },
+      "sources": {
+        "title": "Źródła danych",
+        "hint": "Łączenie, planowanie, wstrzymywanie i sprawdzanie źródeł"
+      },
+      "logs": {
+        "title": "Logi",
+        "hint": "Błędy i nieudane elementy"
+      },
+      "categories": {
+        "title": "Kategorie i wymiary",
+        "hint": "Jak opinie są klasyfikowane i tagowane"
+      },
+      "boards": {
+        "title": "Tablice opinii",
+        "hint": "Tablice, domeny firmy i e-mail do uczestników"
+      },
+      "ai": {
+        "title": "Modele AI",
+        "hint": "Model każdej funkcji AI i jego przepustowość"
+      },
+      "brand": {
+        "title": "Marka i wygląd",
+        "hint": "Twoja marka i domyślny motyw"
+      },
+      "privacy": {
+        "title": "Prywatność i usuwanie danych",
+        "hint": "Polityki źródeł oraz usuwanie danych osoby lub źródła"
+      },
+      "platform": {
+        "title": "Platforma: obszary robocze",
+        "hint": "Obszary robocze i marka wdrożenia"
+      },
+      "version": {
+        "title": "Wersja",
+        "hint": "Ta kompilacja i informacje o wydaniach"
+      }
+    },
+    "counts": {
+      "people_one": "{{count, number}} osoba",
+      "people_other": "{{count, number}} osoby",
+      "people_many": "{{count, number}} osób",
+      "people_few": "{{count, number}} osoby",
+      "sources": "włączone: {{on, number}} · wstrzymane: {{paused, number}}",
+      "errors_one": "{{count, number}} błąd w ciągu ostatnich 24 godzin",
+      "errors_other": "{{count, number}} błędu w ciągu ostatnich 24 godzin",
+      "errors_many": "{{count, number}} błędów w ciągu ostatnich 24 godzin",
+      "errors_few": "{{count, number}} błędy w ciągu ostatnich 24 godzin"
+    },
+    "elsewhere": {
+      "cost": "Koszty: Agenci › Wydatki",
+      "github": "GitHub: Agenci › Połączenia",
+      "preferences": "Twoje preferencje: Konto › Preferencje"
+    }
+  },
+  "search": {
+    "titles": {
+      "connections": "Połączenia",
+      "spend": "Wydatki",
+      "preferences": "Preferencje"
+    },
+    "places": {
+      "agents": "Agenci",
+      "account": "Konto"
+    },
+    "label": "Szukaj ustawień",
+    "placeholder": "Szukaj ustawień…",
+    "empty": "Żadne ustawienie nie pasuje do „{{q}}”",
+    "result": "{{title}} w: {{tab}}",
+    "count_one": "Znaleziono {{count, number}} ustawienie",
+    "count_other": "Znaleziono {{count, number}} ustawienia",
+    "count_many": "Znaleziono {{count, number}} ustawień",
+    "count_few": "Znaleziono {{count, number}} ustawienia",
+    "terms": {
+      "people": "zaproś, dodaj osobę, użytkownik, usuń, rola, administrator, sposób pracy, tryb AI, właściciel zastępczy, recenzent pamięci, administrator platformy, hasło, wyłącz, dostęp, invite",
+      "sources": "połącz, źródło, scraper, dane logowania, token, harmonogram, wstrzymaj, wznów, wtyczka, webhook, opinie o aplikacjach, import S3, GitHub Issues, wdrożenie",
+      "logs": "błędy, nieudane, walidacja, przetwarzanie, uruchomienia scraperów, alerty, CloudWatch, logi systemowe",
+      "categories": "taksonomia, kategoria, podkategoria, przetwórz ponownie, klasyfikuj, sugestie AI",
+      "boards": "prośby o funkcje, tablica, głosowanie, roadmapa, pomysły",
+      "ai": "model, Bedrock, Claude, Anthropic, GPT, limit, przepustowość, testuj model, tokeny na minutę, umowa",
+      "brand": "nazwa marki, logo, konta, hashtagi, śledzone adresy URL, rebranding, adres API",
+      "privacy": "polityki źródeł, przechowywanie, dane osobowe, PII, ograniczone, RODO, GDPR, ochrona danych",
+      "platform": "obszary robocze, nowy zespół, utwórz obszar roboczy, administratorzy platformy, wejdź",
+      "version": "informacje o wydaniach, dziennik zmian, commit, kompilacja, nowości",
+      "inbox": "e-mail, skrzynka, przekazywanie, poczta przychodząca, limity",
+      "radar": "konkurencja, marki, wiadomości, wydania, Exa, skanowanie",
+      "tokens": "Figma, token GitHub, system projektowy, integracje",
+      "dimensions": "wymiar, produkt, moduł, typ użytkownika, tagi, filtr",
+      "domains": "domena firmy, domena e-mail, współpracownicy, odbiorcy",
+      "participants": "uczestnicy, nazwa nadawcy, dzienny limit, osoby z zewnątrz, wysyłka e-maili",
+      "theme": "motyw, kolor, ciemny, jasny, wygląd",
+      "erasure": "usuń, usuwanie danych, RODO, GDPR, prawo do bycia zapomnianym, usuń źródło",
+      "deploymentBrand": "domyślna marka, wdrożenie, poza obszarami roboczymi",
+      "connections": "GitHub, aplikacja GitHub, repozytorium, połączenie, instalacja, zgłoszenia",
+      "spend": "koszty, wydatki, budżet, limit, rozliczenia",
+      "preferences": "język, motyw, moje preferencje, tryb ciemny"
+    }
   }
 }

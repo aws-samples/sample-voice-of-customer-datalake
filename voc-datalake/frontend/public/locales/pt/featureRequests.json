@@ -297,7 +297,7 @@
     "configure": "Configurar quadros",
     "emptyTitle": "Ainda não há quadros",
     "empty": "Nenhum quadro foi compartilhado com você ainda.",
-    "emptyAdmin": "Crie um quadro em <admin>Administração, Privacidade e acesso, Quadros</admin>.",
+    "emptyAdmin": "Crie um quadro em <admin>Administração → Quadros de feedback</admin>.",
     "loadFailed": "Não foi possível carregar os quadros.",
     "notFoundTitle": "Quadro não encontrado",
     "notFound": "Este quadro não existe ou não foi compartilhado com você.",

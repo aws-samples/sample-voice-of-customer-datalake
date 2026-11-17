@@ -78,7 +78,7 @@
     "saving": "Saving...",
     "title": "What this row holds"
   },
-  "configureApiEndpoint": "Configure API endpoint in Administration → General to view prioritization.",
+  "configureApiEndpoint": "Configure API endpoint in Administration → Brand & appearance to view prioritization.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

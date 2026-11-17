@@ -47,7 +47,7 @@ The field is optional, so no migration is needed. Reviews stored before the band
 shows them as "Not rated", the aggregator writes no band row for them, and the LLM-context sample
 ranks them last among equals but never drops them.
 
-To rate them, run a **category reprocess** (Administration → Taxonomy → Categories → "Reprocess
+To rate them, run a **category reprocess** (Administration → Categories → "Reprocess
 existing feedback", [categories](categories.md#reprocessing-existing-feedback)). Every mode computes
 the band from the stored text, with no extra model call for the band itself:
 

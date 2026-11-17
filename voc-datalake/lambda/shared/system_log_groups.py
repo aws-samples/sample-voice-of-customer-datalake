@@ -1,6 +1,6 @@
 """Grouping of CloudWatch Logs Insights rows for `GET /logs/system` (shared/system_logs.py).
 
-Turns the rows one search returned into the groups Administration → System → Logs
+Turns the rows one search returned into the groups Administration → Logs
 shows: one per (function, level, normalized message), newest first. Every text that
 leaves this module went through `shared.pii_redaction.redact_text` (regex only) and is
 truncated. Nothing here logs a row: the rows are the deployment's own log lines and

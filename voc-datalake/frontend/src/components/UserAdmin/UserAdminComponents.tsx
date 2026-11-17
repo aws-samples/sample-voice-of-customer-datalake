@@ -1,279 +1,148 @@
 /**
- * @fileoverview Sub-components for UserAdmin: table rows, cards, action buttons.
+ * @fileoverview The People list (7.54.00): one row per person with what an administrator checks at a glance — Name,
+ * Role, Way of working, Flags and Status — and an Edit button that opens the person's editor sheet. From `md` up it is
+ * a table; below, a card per person with the same facts. Every change is made in the sheet (UserEditorSheet.tsx).
  * @module components/UserAdmin/UserAdminComponents
  */
-
-import clsx from 'clsx'
-import {
-  Key, UserX, UserCheck, Trash2, Pencil, ShieldCheck,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { readStoredAiMode } from '../../api/aiModeApi'
 import type { CognitoUser } from '../../api/types'
+import { MODE_KEYS } from './aiModeCopy'
+import { displayName, isAdminUser, shownFlags } from './userFacts'
+import type { ShownFlag } from './userFacts'
 
-type UserGroup = 'admins' | 'users'
-export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit' | 'access'
-
-function getDisplayName(user: CognitoUser): string {
-  const hasGivenName = user.given_name != null && user.given_name !== ''
-  const hasFamilyName = user.family_name != null && user.family_name !== ''
-  return hasGivenName || hasFamilyName
-    ? `${user.given_name ?? ''} ${user.family_name ?? ''}`.trim()
-    : user.name
+const FLAG_COPY: Readonly<Record<ShownFlag, { readonly labelKey: string }>> = {
+  fallbackOwner: { labelKey: 'components:userAdmin.flags.fallbackOwner' },
+  memoryReviewer: { labelKey: 'components:userAdmin.flags.memoryReviewer' },
+  platformAdmin: { labelKey: 'components:userAdmin.flags.platformAdmin' },
 }
 
-// Status Badge Component
 function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
   const { t } = useTranslation('components')
-  if (!user.enabled) {
-    return <span className="badge badge-danger">{t('userAdmin.disabled')}</span>
-  }
-  if (user.status === 'CONFIRMED') {
-    return <span className="badge badge-ok">{t('userAdmin.active')}</span>
-  }
-  if (user.status === 'FORCE_CHANGE_PASSWORD') {
-    return <span className="badge badge-warn">{t('userAdmin.pendingStatus')}</span>
-  }
+  if (!user.enabled) return <span className="badge badge-danger">{t('userAdmin.disabled')}</span>
+  if (user.status === 'CONFIRMED') return <span className="badge badge-ok">{t('userAdmin.active')}</span>
+  if (user.status === 'FORCE_CHANGE_PASSWORD') return <span className="badge badge-warn">{t('userAdmin.pendingStatus')}</span>
   return <span className="badge badge-muted">{user.status}</span>
 }
 
-// Role Select Component
-interface RoleSelectProps {
-  readonly user: CognitoUser
-  readonly isPending: boolean
-  readonly onChange: (username: string, group: UserGroup) => void
-  readonly size?: 'sm' | 'md'
+function RoleText({ user }: Readonly<{ user: CognitoUser }>) {
+  const { t } = useTranslation('components')
+  return <span className="text-sm text-text">{isAdminUser(user) ? t('userAdmin.adminRole') : t('userAdmin.userRole')}</span>
 }
 
-function RoleSelect({
-  user, isPending, onChange, size = 'sm',
-}: RoleSelectProps) {
+/** The saved way of working, or "Not set" (a state: nothing saved, so the automations push nothing for them). */
+function WayOfWorking({ user }: Readonly<{ user: CognitoUser }>) {
   const { t } = useTranslation('components')
-  const isAdmin = user.groups.includes('admins')
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value
-    if (value === 'admins' || value === 'users') {
-      onChange(user.username, value)
-    }
-  }
+  const mode = readStoredAiMode(user)
+  if (!mode.saved) return <span className="badge badge-warn">{t('userAdmin.aiMode.notSet')}</span>
+  return <span className="text-sm text-text">{t(MODE_KEYS[mode.mode].labelKey)}</span>
+}
 
+function Flags({ user }: Readonly<{ user: CognitoUser }>) {
+  const { t } = useTranslation('components')
+  const flags = shownFlags(user)
+  if (flags.length === 0) return <span className="text-sm text-muted">{t('userAdmin.table.noFlags')}</span>
   return (
-    <select
-      value={isAdmin ? 'admins' : 'users'}
-      onChange={handleChange}
-      disabled={isPending}
-      aria-label={t('userAdmin.roleFor', { email: user.email || user.username })}
-      title={t('userAdmin.roleFor', { email: user.email || user.username })}
-      className={clsx(
-        'select w-auto',
-        size === 'sm' ? 'select-sm' : 'py-1.5',
-        isAdmin && 'border-aim bg-aim-subtle text-aim',
-      )}
-    >
-      <option value="users">{t('userAdmin.userRole')}</option>
-      <option value="admins">{t('userAdmin.adminRole')}</option>
-    </select>
+    <span className="flex flex-wrap gap-1">
+      {flags.map((flag) => <span key={flag} className="badge badge-muted">{t(FLAG_COPY[flag].labelKey)}</span>)}
+    </span>
   )
 }
 
-// User Action Buttons Component
-interface UserActionButtonsProps {
-  readonly user: CognitoUser
-  readonly onAction: (type: ActionType, user: CognitoUser) => void
-  readonly iconSize?: number
-  readonly buttonPadding?: string
+/** The name (or the email when none is set) and, under it, the email. Both wrap rather than being cut. */
+function Who({ user }: Readonly<{ user: CognitoUser }>) {
+  const name = displayName(user)
+  return (
+    <span className="block min-w-0">
+      <span className="block font-medium text-text-strong break-words [overflow-wrap:anywhere]">{name}</span>
+      {name === user.email ? null : <span className="block text-sm text-muted break-words [overflow-wrap:anywhere]">{user.email}</span>}
+    </span>
+  )
 }
 
-function UserActionButtons({
-  user, onAction, iconSize = 16, buttonPadding = 'p-1.5',
-}: UserActionButtonsProps) {
+function EditButton({ user, onEdit }: Readonly<{ user: CognitoUser; onEdit: (user: CognitoUser) => void }>) {
   const { t } = useTranslation('components')
   return (
-    <div className="flex items-center gap-1">
-      <button
-        onClick={() => onAction('edit', user)}
-        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
-        title={t('userAdmin.editUserTitle')}
-      >
-        <Pencil size={iconSize} />
-      </button>
-      <button
-        onClick={() => onAction('access', user)}
-        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
-        title={t('userAdmin.categoryAccess.title')}
-        aria-label={t('userAdmin.categoryAccess.title')}
-      >
-        <ShieldCheck size={iconSize} />
-      </button>
-      <button
-        onClick={() => onAction('reset', user)}
-        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
-        title={t('userAdmin.resetPasswordTitle')}
-      >
-        <Key size={iconSize} />
-      </button>
-      {user.enabled ? (
-        <button
-          onClick={() => onAction('disable', user)}
-          className={clsx(buttonPadding, 'text-muted hover:text-warn hover:bg-warn-subtle rounded-sm')}
-          title={t('userAdmin.disableUserTitle')}
-        >
-          <UserX size={iconSize} />
-        </button>
-      ) : (
-        <button
-          onClick={() => onAction('enable', user)}
-          className={clsx(buttonPadding, 'text-muted hover:text-ok hover:bg-ok-subtle rounded-sm')}
-          title={t('userAdmin.enableUserTitle')}
-        >
-          <UserCheck size={iconSize} />
-        </button>
-      )}
-      <button
-        onClick={() => onAction('delete', user)}
-        className={clsx(buttonPadding, 'text-muted hover:text-danger hover:bg-danger-subtle rounded-sm')}
-        title={t('userAdmin.deleteUserTitle')}
-      >
-        <Trash2 size={iconSize} />
-      </button>
-    </div>
+    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEdit(user)}
+      aria-label={t('userAdmin.editor.title', { name: displayName(user) })}>
+      <Pencil size={14} aria-hidden="true" /> {t('userAdmin.edit')}
+    </button>
   )
 }
 
-// Desktop Table Row Component
-interface UserTableRowProps {
-  readonly user: CognitoUser
-  readonly onRoleChange: (username: string, group: UserGroup) => void
-  readonly onAction: (type: ActionType, user: CognitoUser) => void
-  readonly isRoleChangePending: boolean
-}
-
-function UserTableRow({
-  user, onRoleChange, onAction, isRoleChangePending,
-}: UserTableRowProps) {
-  return (
-    <tr className="hover:bg-bg-hover">
-      <td className="px-4 py-3">
-        <div>
-          <p className="font-medium text-text-strong">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-muted">{getDisplayName(user)}</p>}
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <StatusBadge user={user} />
-      </td>
-      <td className="px-4 py-3">
-        <RoleSelect user={user} isPending={isRoleChangePending} onChange={onRoleChange} />
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center justify-end">
-          <UserActionButtons user={user} onAction={onAction} />
-        </div>
-      </td>
-    </tr>
-  )
-}
-
-// Mobile Card Component
-interface UserCardProps {
-  readonly user: CognitoUser
-  readonly onRoleChange: (username: string, group: UserGroup) => void
-  readonly onAction: (type: ActionType, user: CognitoUser) => void
-  readonly isRoleChangePending: boolean
-}
-
-function UserCard({
-  user, onRoleChange, onAction, isRoleChangePending,
-}: UserCardProps) {
-  return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-medium text-text-strong truncate" title={user.email}>{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-muted">{getDisplayName(user)}</p>}
-        </div>
-        <StatusBadge user={user} />
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <RoleSelect user={user} isPending={isRoleChangePending} onChange={onRoleChange} size="md" />
-        <UserActionButtons user={user} onAction={onAction} iconSize={18} buttonPadding="p-2" />
-      </div>
-    </div>
-  )
-}
-
-/** Props of both user-list layouts: the desktop table and the mobile cards. */
 interface UsersListProps {
-  readonly users: CognitoUser[]
-  readonly onRoleChange: (username: string, group: UserGroup) => void
-  readonly onAction: (type: ActionType, user: CognitoUser) => void
-  readonly isRoleChangePending: boolean
+  readonly users: readonly CognitoUser[]
+  readonly onEdit: (user: CognitoUser) => void
 }
 
-// Desktop Table Component
+const HEADER_CELL = 'px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-[.04em] text-muted-strong'
 
-export function UsersTable({
-  users, onRoleChange, onAction, isRoleChangePending,
-}: UsersListProps) {
+export function UsersTable({ users, onEdit }: UsersListProps) {
   const { t } = useTranslation('components')
   return (
-    <div className="border border-border rounded-lg overflow-hidden hidden md:block">
+    <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
       <table className="w-full">
-        <thead className="bg-bg-accent border-b border-border">
+        <thead className="border-b border-border bg-bg-accent">
           <tr>
-            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableUser')}</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableStatus')}</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableRole')}</th>
-            <th className="text-right px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableActions')}</th>
+            <th scope="col" className={HEADER_CELL}>{t('userAdmin.table.name')}</th>
+            <th scope="col" className={HEADER_CELL}>{t('userAdmin.table.role')}</th>
+            <th scope="col" className={HEADER_CELL}>{t('userAdmin.table.wayOfWorking')}</th>
+            <th scope="col" className={HEADER_CELL}>{t('userAdmin.table.flags')}</th>
+            <th scope="col" className={HEADER_CELL}>{t('userAdmin.table.status')}</th>
+            <th scope="col" className={HEADER_CELL}><span className="sr-only">{t('userAdmin.table.actions')}</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {users.map((user) => (
-            <UserTableRow
-              key={user.username}
-              user={user}
-              onRoleChange={onRoleChange}
-              onAction={onAction}
-              isRoleChangePending={isRoleChangePending}
-            />
+            <tr key={user.username} className="align-middle hover:bg-bg-hover">
+              <td className="px-4 py-3"><Who user={user} /></td>
+              <td className="px-4 py-3"><RoleText user={user} /></td>
+              <td className="px-4 py-3"><WayOfWorking user={user} /></td>
+              <td className="px-4 py-3"><Flags user={user} /></td>
+              <td className="px-4 py-3"><StatusBadge user={user} /></td>
+              <td className="px-4 py-3 text-right"><EditButton user={user} onEdit={onEdit} /></td>
+            </tr>
           ))}
         </tbody>
       </table>
-
-      {users.length === 0 && (
-        <div className="text-center py-8 text-muted">
-          {t('userAdmin.noUsers')}
-        </div>
-      )}
+      {users.length === 0 ? <p className="py-8 text-center text-muted">{t('userAdmin.noUsers')}</p> : null}
     </div>
   )
 }
 
-// Mobile Cards Component
+/** One fact of a card: its label (the table's column header) and its value. */
+function Fact({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  )
+}
 
-export function UsersCards({
-  users, onRoleChange, onAction, isRoleChangePending,
-}: UsersListProps) {
+export function UsersCards({ users, onEdit }: UsersListProps) {
   const { t } = useTranslation('components')
   if (users.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted border border-border rounded-lg">
-        {t('userAdmin.noUsers')}
-      </div>
-    )
+    return <p className="rounded-lg border border-border py-8 text-center text-muted">{t('userAdmin.noUsers')}</p>
   }
-
   return (
-    <div className="space-y-3">
+    <ul className="space-y-3">
       {users.map((user) => (
-        <UserCard
-          key={user.username}
-          user={user}
-          onRoleChange={onRoleChange}
-          onAction={onAction}
-          isRoleChangePending={isRoleChangePending}
-        />
+        <li key={user.username} className="space-y-3 rounded-lg border border-border p-4">
+          <div className="flex items-start justify-between gap-2">
+            <Who user={user} />
+            <StatusBadge user={user} />
+          </div>
+          <dl className="space-y-1.5">
+            <Fact label={t('userAdmin.table.role')}><RoleText user={user} /></Fact>
+            <Fact label={t('userAdmin.table.wayOfWorking')}><WayOfWorking user={user} /></Fact>
+            <Fact label={t('userAdmin.table.flags')}><Flags user={user} /></Fact>
+          </dl>
+          <EditButton user={user} onEdit={onEdit} />
+        </li>
       ))}
-    </div>
+    </ul>
   )
 }

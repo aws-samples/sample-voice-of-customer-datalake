@@ -28,7 +28,7 @@
     "noSubmissionsYet": "まだ回答はありません。フォームを共有して回答を集めましょう。",
     "themeSwatch": "フォームの色"
   },
-  "configureApiFirst": "フィードバックフォームを管理するには、「管理 → 一般」でAPIエンドポイントを構成してください。",
+  "configureApiFirst": "フィードバックフォームを管理するには、「管理 → ブランドと外観」でAPIエンドポイントを構成してください。",
   "createForm": "フォームを作成",
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このフォームを削除してもよろしいですか？この操作は元に戻せません。",
@@ -38,7 +38,7 @@
     "backgroundColor": "背景色",
     "borderRadius": "角丸",
     "cancel": "キャンセル",
-    "categoryHint": "カテゴリは「管理 → 分類体系 → カテゴリ」で構成されます",
+    "categoryHint": "カテゴリは「管理 → カテゴリ」で構成されます",
     "categoryLabel": "カテゴリ",
     "categoryRoutingDescription": "このフォームにカテゴリを割り当てます。このフォームから送信されたすべてのフィードバックは、選択したカテゴリで自動的にタグ付けされます。",
     "categoryRoutingTitle": "カテゴリルーティング",

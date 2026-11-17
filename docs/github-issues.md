@@ -17,8 +17,8 @@ saves a token and at least one repository. Set it to `false` to deploy without i
      (`GitHub 401`) and, after five in a row, a circuit-broken schedule.
 2. Deploy with `"github_issues": true` in `pluginStatus` (the default; `npm run generate:config`
    regenerates the frontend manifest after any change), and fill in the plugin's fields in
-   **Administration → Sources → Source settings** (`/admin/sources/plugins`; the
-   **GitHub Issues** entry on the Data sources page links there):
+   **Administration → Data sources** (`/admin/sources`, the card itself at `/admin/sources/github_issues`; the
+   **GitHub Issues** entry on the Data sources page, `/scrapers`, links there):
    - **Repositories**: one per line, up to 20. `owner/name`, or any GitHub URL inside the
      repository: `https://github.com/owner/name`, `…/name/issues`, `…/name/issues/42`,
      `…/name/pulls`, a `.git` clone URL. Only the first two path segments count. An entry that
@@ -78,7 +78,7 @@ things to know:
   so a missing grant shows as a repository with no data, not a failed run.
 - Issue text from a private repository becomes ordinary feedback in the data lake: visible on
   the Dashboard, in search and to the assistant for every user whose category access covers its
-  category. Restrict categories (Administration → Taxonomy → Categories, user category access) if that matters.
+  category. Restrict categories (Administration → People → a person's category access) if that matters.
 
 The design-system GitHub token (`voc/design-integrations`, [company-context.md](company-context.md)) is deliberately **not** reused: it
 lives in a different secret with different readers, and a separate, issues-only token keeps both
@@ -118,8 +118,8 @@ voc-agent: created"), and readiness's `issues_source` and `issue_label` checks p
 poll. A connection made before 7.50.02 shows **Not read yet** until **Check installation** (or **Read its issues now**
 on it) runs once.
 
-**The card is the advanced view.** Administration → Data sources → GitHub Issues (`/admin/data-sources/github_issues`
-opens it, expanded) then says "Managed by your GitHub connection: issues from N repositories", with a link to Agents →
+**The card is the advanced view.** Administration → Data sources → GitHub Issues, in its Deployment scope
+(`/admin/sources/github_issues?scope=deployment` opens it, expanded) then says "Managed by your GitHub connection: issues from N repositories", with a link to Agents →
 Connections; the fields are under **Configure manually (advanced)**. That manual path signs in App-first: with an App,
 the App is chosen (the only one preselected, a select for several) and the token field sits behind **Use a
 fine-grained token instead**; a source saved with a token stays on the token; with no App, **Connect GitHub** links to
@@ -144,8 +144,8 @@ the Agents API already invokes.
 Where the engineering agents are deployed (`-c engineeringAgents=true`), a deployment-wide source can sign in with one
 of the deployment's GitHub Apps instead of a token: the Apps an administrator makes under Agents → Connections
 ([autonomous-engineering.md](autonomous-engineering.md#a-github-app-in-two-clicks-74500)). On the deployment's card
-(Administration → Data sources, `/admin/data-sources`, for platform admins from any address since 7.50.00; or the
-Source settings card outside a workspace), the App is the default once one exists (7.50.02: the only one preselected,
+(Administration → Data sources in its Deployment scope, `/admin/sources?scope=deployment`, for platform admins from
+any address; outside a workspace the page is the deployment's), the App is the default once one exists (7.50.02: the only one preselected,
 a select for several; its id is saved as `github_app_id`), and **Use a fine-grained token instead** saves `none`,
 which is no App. Since 7.50.02 connecting a repository does all of this for you (above). A new App is named `VoC Autonomous Agent <4 hex>` (7.49.00); renaming one is done on GitHub
 (Settings → Developer settings → GitHub Apps → the App → **Edit**), and **Check installation** on Agents →

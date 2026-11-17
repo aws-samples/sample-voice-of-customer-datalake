@@ -5,7 +5,7 @@
  *   project / Theme. The editor is opened from "Create Form" → a template → Continue, each
  *   tab is clicked and its own content checked, then Cancel: NOTHING is saved
  *   (no POST/PUT /feedback-forms is sent), so it is safe in production.
- * - Admin → Logs: Validation Failures / Processing Errors / Scraper Runs (admin
+ * - Administration → Logs (`/admin/logs`): Validation Failures / Processing Errors / Scraper Runs (admin
  *   only). Each sub-tab is pressed, its panel's GET answers, and the panel shows
  *   its own content (rows or its empty state). Read only. Also the 2.12 "logs
  *   show no customer data" check: no rendered text block over 200 characters.
@@ -107,7 +107,7 @@ test.describe('in-page tabs', () => {
     const { record, problems } = await runStep({
       page, role, theme: 'dark', step: 'p3-admin-logs-tabs',
       action: async (recorder) => {
-        await page.goto(site('/admin/system/logs'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/logs'), { waitUntil: 'domcontentloaded' })
         await expect(page.getByRole('heading', { name: 'System Logs' })).toBeVisible()
         for (const [index, tab] of LOGS_TABS.entries()) {
           const button = page.getByRole('button', { name: tab.name, exact: true })

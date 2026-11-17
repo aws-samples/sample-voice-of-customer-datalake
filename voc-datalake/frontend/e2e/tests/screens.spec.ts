@@ -47,6 +47,10 @@ test.describe('screens', () => {
             if (screen.step === 'settings-redirect' && role === 'admin') {
               expect(landed).toBe('/admin')
             }
+            // No Administration path of before 7.54.00 is aliased: a stale one is quietly replaced by the home.
+            if (screen.step.startsWith('admin-') && role === 'admin') {
+              expect(landed, 'the Administration place is its own canonical path').toBe(target)
+            }
           },
         })
         expect(problems, `${screen.step}: ${record.screenshot ?? ''}`).toEqual([])

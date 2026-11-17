@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → System → Version: the build stamps (platform version,
+ * @fileoverview Administration → Version: the build stamps (platform version,
  * git commit, build time) and the release notes from CHANGELOG.md, which is
  * loaded only when this tab opens and rendered a page of releases at a time.
  *

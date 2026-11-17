@@ -30,7 +30,7 @@
     "noSubmissionsYet": "Brak zgłoszeń — udostępnij formularz, aby zebrać pierwsze.",
     "themeSwatch": "Kolor formularza"
   },
-  "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Ogólne, aby zarządzać formularzami opinii.",
+  "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Marka i wygląd, aby zarządzać formularzami opinii.",
   "createForm": "Utwórz formularz",
   "deleteConfirmLabel": "Usuń",
   "deleteConfirmMessage": "Czy na pewno chcesz usunąć ten formularz? Tej operacji nie można cofnąć.",
@@ -40,7 +40,7 @@
     "backgroundColor": "Kolor tła",
     "borderRadius": "Zaokrąglenie ramki",
     "cancel": "Anuluj",
-    "categoryHint": "Kategorie są konfigurowane w sekcji Administracja → Taksonomia → Kategorie",
+    "categoryHint": "Kategorie są konfigurowane w sekcji Administracja → Kategorie",
     "categoryLabel": "Kategoria",
     "categoryRoutingDescription": "Przypisz kategorię do tego formularza. Wszystkie opinie przesłane przez ten formularz będą automatycznie oznaczane wybraną kategorią, co ułatwia filtrowanie i analizowanie opinii według źródła.",
     "categoryRoutingTitle": "Przypisywanie kategorii",

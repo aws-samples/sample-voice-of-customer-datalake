@@ -127,7 +127,7 @@ describe('the installation\'s return', () => {
     }) })
     expect(await screen.findByText(/signs in with a token: add these repositories under Administration → Data sources/))
       .toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources/github_issues')
+    expect(screen.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/sources/github_issues?scope=deployment')
     expect([screen.getByText(/schedule is off/), screen.getByText(/the source could not be read: try Check installation/)]).toHaveLength(2)
   })
 

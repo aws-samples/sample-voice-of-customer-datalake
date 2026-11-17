@@ -15,13 +15,13 @@ may use; one board opens directly) and `/board/{slug}`. An open request is a pat
 (`insights` and `requests` are reserved slugs). The list's search, status filter and sort stay in the query, `?q=`,
 `?status=` and `?sort=`, as do Insights' `?board=&days=`. No query link of before (`?request=<id>`, `?tab=insights`) is redirected (7.49.00, a pre-release change;
 [Addresses](document-canvas.md#addresses)). A signed-out visitor of a board signs in at
-`/board/login/{slug}[/{id}]` and lands back on it. Admins create and configure boards in **Administration → Privacy &
-access → Boards** (`/admin/access/boards`, one board's editor `/admin/access/boards/{board_id}`), which also holds the
-company domains.
+`/board/login/{slug}[/{id}]` and lands back on it. Admins create and configure boards in **Administration → Feedback
+boards** (`/admin/boards`, one board's editor `/admin/boards/{board_id}`), which also holds the company domains
+(`/admin/boards/domains`) and the participant email (`/admin/boards/participants`).
 
 ## Using a board
 
-1. **Set it up** (admin): in Administration → Privacy & access → Boards, create a board from a template (below),
+1. **Set it up** (admin): in Administration → Feedback boards, create a board from a template (below),
    choose its audience, and copy its share link (`/board/{slug}`).
 2. **Post**: anyone the board admits files a request with a title, a description and the board's fields. Their
    own +1 is created with it.
@@ -110,7 +110,7 @@ sign-up audience, keeps its requests and stops new posts (`409 board_archived`).
 An admin can restore (unarchive) it. In the app, **Delete is offered only on an archived board** (the API
 still deletes an empty board, and `?with_requests=true` archives first, below). Deleting an empty board is one
 confirm; a board with requests is deleted together with its requests and every +1 on them, after the admin
-types the board's name (the card's Delete on Feedback boards, or Administration → Privacy & access → Boards →
+types the board's name (the card's Delete on Feedback boards, or Administration → Feedback boards →
 the editor's Delete). The dialog shows how many requests are gone so far; if it stops, pressing Delete
 again continues (the API: `?with_requests=true`, below). Projects already created from its requests are kept. Admins can delete any request or
 support.
@@ -276,7 +276,7 @@ What people file is also kept in the raw lake, write-once (`lambda/shared/featur
 
 Nothing more than the row stores: no status, totals or bookkeeping, so an admin's triage writes no new version.
 The copies are **opt-in**: none is written until an admin saves a `feature_requests` source profile (Administration →
-Privacy & access → Source policies) that permits one; under `redact` or `summary_only` none is written either, and an
+Privacy → Source policies) that permits one; under `redact` or `summary_only` none is written either, and an
 unreadable profile writes none. Opt-in because the copies hold reporters' and supporters' emails. Deleting a request or
 a +1 (`DELETE /feature-requests/{id}`, `DELETE …/supports/{id}`) does not delete its raw copies (the raw lake keeps
 history); an erasure by email removes the copies of that person's requests and +1s ([Erasure](#erasure)), and a
@@ -300,7 +300,7 @@ enrichment: {status: 'ok' | 'failed', category, subcategory, sentiment: positive
   description) says which text was enriched.
 - **What.** ONE call on the `enrichment` surface (the model the admin picked for it in Administration → AI models;
   never a hard-coded id). `model_id` is the model that answered, after any capacity fallback. The category and
-  subcategory are checked against the categories config (Administration → Taxonomy); an unknown one is stored as
+  subcategory are checked against the categories config (Administration → Categories); an unknown one is stored as
   `null`, never invented. The title is reduced to one line and the description is fenced as data the model is told
   never to obey.
 - **Newer edits win.** The result is written only while the request still exists with the title and description

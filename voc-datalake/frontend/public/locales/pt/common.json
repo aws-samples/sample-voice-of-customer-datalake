@@ -235,10 +235,8 @@
       "more": "Mostrar mais"
     },
     "platformAdmins": {
-      "title": "Administradores da plataforma",
       "description": "Os administradores da plataforma criam espaços de trabalho e podem entrar em qualquer um como administradores. Só um administrador pode sê-lo, e sempre resta pelo menos um ativo. Uma mudança chega à sessão da pessoa na próxima vez que ela for renovada.",
       "label": "Administração da plataforma",
-      "for": "Administração da plataforma: {{user}}",
       "adminsOnly": "Só um administrador pode ser administrador da plataforma."
     },
     "settings": {
@@ -505,7 +503,7 @@
       "resetBubble": "Redefinir posição da bolha"
     },
     "access": {
-      "hint": "O que você pode ver neste aplicativo. Um administrador altera isso em Administração, Privacidade e acesso, Usuários.",
+      "hint": "O que você pode ver neste aplicativo. Um administrador altera isso em Administração → Pessoas.",
       "categories": "Categorias",
       "sources": "Fontes",
       "everyCategory": "Todas as categorias",
@@ -716,7 +714,7 @@
     "problemsOnlyHint": "Bugs, falhas de serviço, desempenho, usabilidade, preços e cobrança, e experiência de suporte. Pedidos de recursos, elogios, perguntas e outras avaliações ficam ocultos.",
     "allTypes": "Todos os tipos",
     "untyped": "Avaliações ainda sem tipo: {{n, number}} (continuam visíveis)",
-    "untypedHint": "Avaliações guardadas antes de existirem os tipos não têm tipo até que um administrador as classifique em Administração → Taxonomia. Continuam visíveis com qualquer filtro de tipo."
+    "untypedHint": "Avaliações guardadas antes de existirem os tipos não têm tipo até que um administrador as classifique em Administração → Categorias. Continuam visíveis com qualquer filtro de tipo."
   },
   "infoTip": {
     "label": "Mais informações"

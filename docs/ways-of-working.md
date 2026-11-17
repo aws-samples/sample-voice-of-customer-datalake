@@ -1,9 +1,11 @@
 # Ways of working with AI
 
 Each person has a **way of working with AI** for PR/FAQs and PRDs, and (with the engineering agents) for whether those
-agents may push and open pull requests for them. An administrator sets it per user in **Administration → Privacy &
-access → Users** ("Ways of working with AI"). Every other document type (research, custom, prototypes, decisions)
-behaves the same in every mode.
+agents may push and open pull requests for them. An administrator sets it per person in **Administration → People**:
+the person's editor (Edit on their row, a side sheet at `/admin/people/<username>`), section **Way of working with AI**
+(7.54.00; the Users page's ways-of-working panel before). The People table shows each person's in its **Way of
+working** column. Every other document type (research, custom, prototypes, decisions) behaves the same in every
+mode.
 
 | Mode | What the AI does for a PR/FAQ or PRD |
 |---|---|
@@ -17,10 +19,11 @@ There is no deploy flag.
 
 **Not set (7.50.02).** The default is for documents only. The engineering agents' dial
 (`lambda/engineering/connectors/dial.py`) fails closed: a run pushes and opens a pull request only for a person whose
-AI-assisted or AI-driven was **saved**. So the Users page shows a person with nothing saved as "Not set (documents
-default to AI-driven; engineering agents push nothing until it is set)", with no option selected: one click on
-AI-driven saves it. The `ai_mode` block of `GET /users`, `PUT /users/{username}/flags` and `GET /users/me/ai-mode`
-carries `saved` (false: nothing stored). Readiness's `dial` check says "Not set yet: choose AI-assisted or AI-driven
+AI-assisted or AI-driven was **saved**. So People shows a person with nothing saved as **Not set** (the editor:
+"Documents use AI-driven · automations won't push until you choose", with no option selected; one click on any mode,
+AI-driven included, saves it), and the Administration home's **Needs attention** counts the enabled people with
+nothing saved ("N people have no way of working set", with **Open People**). The `ai_mode` block of `GET /users`,
+`PUT /users/{username}/flags` and `GET /users/me/ai-mode` carries `saved` (false: nothing stored). Readiness's `dial` check says "Not set yet: choose AI-assisted or AI-driven
 for <name>" for it, and "Human-driven" only when Human-driven was saved; the engineering agent's Set up dialog offers
 **Set my way of working to AI-driven**, which saves the caller's own (`PUT /users/<their username>/flags`, an
 administrator's route), never another person's.

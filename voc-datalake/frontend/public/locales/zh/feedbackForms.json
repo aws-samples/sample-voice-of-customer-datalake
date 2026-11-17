@@ -28,7 +28,7 @@
     "noSubmissionsYet": "还没有提交——分享表单即可开始收集。",
     "themeSwatch": "表单颜色"
   },
-  "configureApiFirst": "请在“管理 → 常规”中配置API端点以管理反馈表单。",
+  "configureApiFirst": "请在“管理 → 品牌与外观”中配置API端点以管理反馈表单。",
   "createForm": "创建表单",
   "deleteConfirmLabel": "删除",
   "deleteConfirmMessage": "确定要删除此表单吗？此操作无法撤销。",
@@ -38,7 +38,7 @@
     "backgroundColor": "背景色",
     "borderRadius": "圆角",
     "cancel": "取消",
-    "categoryHint": "类别在“管理 → 分类体系 → 分类”中配置",
+    "categoryHint": "类别在“管理 → 分类”中配置",
     "categoryLabel": "类别",
     "categoryRoutingDescription": "为此表单分配一个类别。通过此表单提交的所有反馈将自动标记为所选类别。",
     "categoryRoutingTitle": "类别路由",

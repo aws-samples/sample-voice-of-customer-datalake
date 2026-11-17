@@ -1644,7 +1644,7 @@
       "unknown": "Noch unbekannt",
       "openConnections": "Verbindungen öffnen",
       "openDeploymentSources": "Administration → Datenquellen öffnen",
-      "openSources": "Administration → Quellen → Quelleneinstellungen öffnen",
+      "openSources": "Administration → Datenquellen öffnen",
       "sourcesOutside": "Außerhalb jedes Arbeitsbereichs: Die Automatisierungen lesen nur die Quellen der Bereitstellung.",
       "deploymentTitle": "Diese Bereitstellung",
       "connectedAs": "Über eine App verbunden: {{list}}.",

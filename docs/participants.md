@@ -12,8 +12,8 @@ Pages: **Participants** in the sidebar (Validate section, `/participants`), and 
 | What | Where |
 |---|---|
 | Sending email | Deploy with `-c emailFrom=noreply@your-domain.example`. The SES identity of that domain must be **verified**, and the account **out of the SES sandbox** in the deployment region; otherwise SES refuses every send. Without `emailFrom`, everything works except asks (`409 email_not_configured`); the feedback boards' sign-in then uses Cognito's own sender ([feature-requests.md](feature-requests.md#sign-in-a-separate-user-pool)). |
-| External people, daily cap, sender name | Administration → Privacy & access → Users → participant email card, or `PUT /participants/settings` (admin) |
-| Company domains | Administration → Privacy & access → **Boards**, or `PUT /participants/settings` (admin) |
+| External people, daily cap, sender name | Administration → Feedback boards → Participant email (`/admin/boards/participants`; on Users before 7.54.00), or `PUT /participants/settings` (admin) |
+| Company domains | Administration → Feedback boards → **Company domains** (`/admin/boards/domains`), or `PUT /participants/settings` (admin) |
 
 Settings (`SETTINGS` / `engagement` in the participants table):
 
@@ -148,8 +148,8 @@ stay the deployment's ([multi-workspace.md](multi-workspace.md#the-project-plan-
 - **Erasure** (`DELETE /participants/people/{id}`, admin) deletes the person, the email guard, every
   membership (both sides, `member_count` adjusted), the project links, every token and the person's ask mirrors.
   Each recipient row keeps only `person_id` and its status, so an ask's counts stay correct while nothing on it
-  identifies the person. Answers already submitted are feedback data: erase them with Administration → Privacy &
-  access → Source policies ([source-policies.md](source-policies.md)).
+  identifies the person. Answers already submitted are feedback data: erase them with Administration → Privacy
+  (the erasure panels, [source-policies.md](source-policies.md)).
   The request body states the erasure's legal basis, `{"legal_basis": "GDPR art. 17 request #123"}` (required since
   6.00.00, at most 300 characters, never the person's name or email; **400** without it; the person's dialog asks
   for it). Before anything is deleted the erasure is recorded in voc-participants, with no email or name: a

@@ -295,7 +295,7 @@ its original goes to the raw lake (`raw/s3_import/…`, above) when the `s3_impo
 files. Reprocess works on staged files only: once a file has expired, `POST /s3-import/reprocess`
 answers 404 naming the raw copy, and the file is uploaded again from it. Administrators use the file
 explorer on the **S3 Bulk Import**
-card in **Administration → Sources → Source settings**. Its API (`s3_import_handler.py`) is
+card in **Administration → Data sources**. Its API (`s3_import_handler.py`) is
 **admin-only on every route**, because an upload ingests its rows into the pipeline and the listings
 expose the bucket name and every staged file.
 
@@ -326,7 +326,7 @@ processing failure, or to restore rows after an accidental erasure.
   upload (an S3 upload event under `processed/` still gets `S3 - processed`). A file moved to ANOTHER
   folder is a new source, and its rows are imported as new feedback.
 - **Stored rows are not re-enriched.** To re-categorize feedback that is already stored, use
-  *Reprocess existing feedback* in Administration → Taxonomy (`POST /settings/categories/reprocess`).
+  *Reprocess existing feedback* in Administration → Categories (`POST /settings/categories/reprocess`).
 - **The run is a source run.** `POST /s3-import/reprocess` writes `SOURCE_RUN#s3_import` / `<run id>`
   (`running`) in the aggregates table, and the ingestor moves it to `completed` (with `items_found`,
   the rows sent to the processing queue, duplicates included) or `error` (the exception type only).

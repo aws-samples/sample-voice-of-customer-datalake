@@ -1,5 +1,5 @@
 /**
- * @fileoverview Boards → one board's editor (`/admin/access/boards/<id>`): basics,
+ * @fileoverview Boards → one board's editor (`/admin/boards/<id>`): basics,
  * audience, fields, statuses, then Archive / Delete. One Save = one PUT of the whole configuration;
  * a 409 (`slug_taken`, `status_in_use`) is explained in words. The shared unsaved-changes guard
  * catches leaving with edits (Back to boards, another section or page, closing the tab).
@@ -10,6 +10,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import SavedStatus from '../../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { useUnsavedChangesGuard } from '../../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
 import { sameJson } from '../../../lib/sameJson'
@@ -53,7 +54,7 @@ function SaveBar({ dirty, problems, pending, error, saved, onSave }: Readonly<{
         <ul className="text-xs text-danger">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
       ) : null}
       {error === null ? null : <p role="alert" className="text-sm text-danger">{error}</p>}
-      {saved && !dirty ? <p role="status" className="text-sm text-ok">{t('boards.saved')}</p> : null}
+      <SavedStatus saved={saved && !dirty} label={t('boards.saved')} />
     </StickyActionBar>
   )
 }

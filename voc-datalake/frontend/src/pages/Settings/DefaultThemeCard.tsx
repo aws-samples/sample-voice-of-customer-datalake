@@ -1,9 +1,9 @@
 /**
- * @fileoverview Administration → General → "Default theme": the start theme every person
- * sees until they pick their own in Account → Preferences (`GET|PUT /settings/appearance`).
+ * @fileoverview Administration → Brand & appearance → "Default theme" (`/admin/brand/theme`): the start theme every
+ * person sees until they pick their own in Account → Preferences (`GET|PUT /settings/appearance`).
  *
- * Platform admins pick and Save (the card's own button: General's header Save belongs to the
- * brand form); a saved theme also becomes this browser's cached workspace theme at once. An unsaved
+ * Platform admins pick and Save (the card's own button, like every card's); a saved theme also becomes this
+ * browser's cached workspace theme at once, and the card says "Saved" until the next pick. An unsaved
  * pick is under the shared unsaved-changes guard: leaving the page or switching tabs asks
  * Save / Discard / Cancel. Everyone else, a plain administrator included, sees the current pick
  * read-only (the PUT is platform-admin-only server-side, checked live: one colour scheme for the
@@ -12,11 +12,11 @@
  * @module pages/Settings/DefaultThemeCard
  */
 import { useId, useState } from 'react'
-import type { Location } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Save } from 'lucide-react'
 import ThemePicker from '../../components/ThemePicker/ThemePicker'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
 import { useThemeNames } from '../../components/ThemePicker/themeNames'
@@ -26,7 +26,7 @@ import { ignoreRejection } from '../../lib/rejections'
 import { COLOR_THEME_IDS, isColorThemeId } from '../../theme/themeCatalog'
 import type { ColorThemeId } from '../../theme/themeCatalog'
 import { useThemeStore } from '../../theme/themeStore'
-import { adminTabSegment } from './adminPaths'
+import { leavesAdminTab } from './useAdminLocation'
 import { SECTION_TITLE } from './sectionTitle'
 import { ReadOnlyNotice, SettingsLoading, SettingsNotice } from './SettingsNotice'
 
@@ -54,9 +54,11 @@ function useSaveDefaultTheme(onSaved: () => void) {
 }
 
 /** The platform admin's Save row, with the save error above it (`error`: the failed save's, else null). */
-function DefaultThemeSaveBar({ dirty, pending, error, onSave }: Readonly<{
+function DefaultThemeSaveBar({ dirty, pending, saved, error, onSave }: Readonly<{
   dirty: boolean
   pending: boolean
+  /** The last save was accepted and nothing was picked since. */
+  saved: boolean
   error: unknown
   onSave: () => void
 }>) {
@@ -64,7 +66,8 @@ function DefaultThemeSaveBar({ dirty, pending, error, onSave }: Readonly<{
   return (
     <>
       {error ? <SettingsNotice text={t(messageKeyForStatus(error, SAVE_ERROR_KEYS, SAVE_FAILED))} /> : null}
-      <StickyActionBar variant="inline" className="flex justify-end py-2">
+      <StickyActionBar variant="inline" className="flex flex-wrap items-center justify-end gap-3 py-2">
+        <SavedStatus saved={saved} />
         <button type="button" disabled={!dirty || pending} className="btn btn-primary btn-sm flex items-center gap-1.5" onClick={onSave}>
           {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
           {pending ? t('appearance.saving') : t('appearance.save')}
@@ -74,10 +77,6 @@ function DefaultThemeSaveBar({ dirty, pending, error, onSave }: Readonly<{
   )
 }
 
-/** What can unmount the card and lose a pick: leaving General, its tab of /admin (not an overlay like `?review=`). */
-function losesTheCard(current: Location, next: Location): boolean {
-  return adminTabSegment(current.pathname) !== adminTabSegment(next.pathname)
-}
 
 /** The admin's unsaved pick, its save, and the guard that asks before it is lost. */
 function useDefaultThemeDraft(saved: ColorThemeId | undefined, canEdit: boolean) {
@@ -89,7 +88,7 @@ function useDefaultThemeDraft(saved: ColorThemeId | undefined, canEdit: boolean)
     await save.mutateAsync(draft)
     return true
   }
-  const guard = useUnsavedChangesGuard({ dirty, onSave: saveDraft, onDiscard: () => setDraft(null), shouldBlock: losesTheCard })
+  const guard = useUnsavedChangesGuard({ dirty, onSave: saveDraft, onDiscard: () => setDraft(null), shouldBlock: leavesAdminTab })
   return { draft, setDraft, dirty, save, saveDraft, guard }
 }
 
@@ -126,7 +125,8 @@ export default function DefaultThemeCard({ apiEndpoint, canEdit }: CardProps) {
         />
       )}
       {canEdit && current !== undefined ? (
-        <DefaultThemeSaveBar dirty={dirty} pending={save.isPending} error={save.isError ? save.error : null}
+        <DefaultThemeSaveBar dirty={dirty} pending={save.isPending} saved={save.isSuccess && draft === null}
+          error={save.isError ? save.error : null}
           onSave={() => { saveDraft().catch(ignoreRejection) }} />
       ) : null}
     </section>

@@ -1,6 +1,6 @@
 /**
  * @fileoverview An admin's Pause / Resume, Archive / Restore and Delete of one board, shared by the
- * board card (Feedback boards) and the board editor (Administration → Privacy & access → Boards).
+ * board card (Feedback boards) and the board editor (Administration → Feedback boards).
  *
  * - **Pause** is temporary: the board stays readable by its audience, but nobody posts, adds a +1 or
  *   edits until it is resumed (the API answers 409 `board_paused`). Pause asks first; Resume does not.

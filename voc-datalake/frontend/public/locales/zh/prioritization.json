@@ -78,7 +78,7 @@
     "saving": "保存中...",
     "title": "该行包含的内容"
   },
-  "configureApiEndpoint": "在“管理 → 常规”中配置 API 端点以查看优先级排序。",
+  "configureApiEndpoint": "在“管理 → 品牌与外观”中配置 API 端点以查看优先级排序。",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

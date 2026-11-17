@@ -32,7 +32,7 @@ const ALICE: CognitoUser = {
   status: 'CONFIRMED', enabled: true, groups: ['users'], created_at: '2026-01-01T00:00:00Z', last_modified: null,
 }
 const GRANT_ALL = { success: true, username: 'u-alice', all: true, categories: ['*'], sources: null, owned_categories: [] }
-const USERS_LINK = { name: 'Open Privacy & access → Users', href: '/admin/access/users' }
+const USERS_LINK = { name: 'Open Administration → People', href: '/admin/people' }
 const OK = { success: true, message: 'ok' }
 
 /**

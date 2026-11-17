@@ -1,4 +1,4 @@
-// Dev mock of Administration → System → Logs → System errors (admin-only on the real
+// Dev mock of Administration → Logs → System errors (admin-only on the real
 // routes; the dev mock's session is an admin). Wire shapes follow lambda/api/logs_handler.py
 // and lambda/shared/system_*.py:
 //   GET /logs/system              grouped ERROR/CRITICAL(/WARNING) lines of Lambdas, the API

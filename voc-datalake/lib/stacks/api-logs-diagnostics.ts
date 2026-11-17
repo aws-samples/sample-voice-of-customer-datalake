@@ -1,5 +1,5 @@
 /**
- * Administration → System → Logs diagnostics on the LogsApi role (lambda/shared/system_*.py):
+ * Administration → Logs diagnostics on the LogsApi role (lambda/shared/system_*.py):
  * what `GET /logs/system`, `/logs/system/request`, `/logs/system/queues` and
  * `/logs/system/environment` read, and the env vars that name it.
  *

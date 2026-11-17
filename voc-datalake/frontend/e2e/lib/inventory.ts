@@ -15,14 +15,20 @@ export interface Screen {
   needs?: 'project' | 'agent' | 'feedback' | 'workflow'
 }
 
-// pages/Settings/adminTabs.ts: every tab, and every section of a tab that has them (`/admin/<tab>/<section>`).
+// pages/Settings/adminTabs.ts (7.54.00): every tab (`/admin/<tab>`, one page) and every card of it a path may name
+// (`/admin/<tab>/<section>`), in the navigation's order; the home `/admin` is its own step. Platform (platform admins
+// only) is workspace-admin.spec.ts's. No path of before 7.54.00 is aliased: a stale one lands on the home, which
+// screens.spec.ts refuses (an admin lands on each location's own path).
 const ADMIN_LOCATIONS = [
-  'brand',
-  'sources/plugins', 'sources/integrations', 'sources/inbox', 'sources/radar',
-  'taxonomy/categories', 'taxonomy/dimensions',
-  'access/policies', 'access/users', 'access/boards',
+  'people',
+  'sources', 'sources/inbox', 'sources/radar', 'sources/tokens',
+  'logs',
+  'categories', 'categories/dimensions',
+  'boards', 'boards/domains', 'boards/participants',
   'ai',
-  'system/logs', 'system/version',
+  'brand', 'brand/theme',
+  'privacy', 'privacy/erasure',
+  'version',
 ] as const
 // pages/ProjectDetail/types.ts TAB_IDS. No 'mcp': the Export / MCP tab was removed (projects-mcp-removed.spec.ts).
 const PROJECT_TABS = ['overview', 'personas', 'product', 'documents', 'decisions', 'participants'] as const
@@ -69,6 +75,7 @@ export const SCREENS: readonly Screen[] = [
   ...AGENT_TABS.map((tab): Screen => ({ step: `agent-${tab}`, path: `/agents/{agent}/${tab}`, needs: 'agent' })),
   { step: 'connect', path: '/connect' },
   ...ACCOUNT_TABS.map((tab): Screen => ({ step: `account-${tab}`, path: `/account/${tab}` })),
+  { step: 'admin-home', path: '/admin', adminOnly: true },
   ...ADMIN_LOCATIONS.map((location): Screen => ({ step: `admin-${adminStep(location)}`, path: `/admin/${location}`, adminOnly: true })),
   { step: 'settings-redirect', path: '/settings', adminOnly: true },
   // Public pages (no session needed; the signed-in visit must not break them either).

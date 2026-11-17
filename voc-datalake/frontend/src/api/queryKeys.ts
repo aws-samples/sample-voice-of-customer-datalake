@@ -13,7 +13,7 @@
  * @module api/queryKeys
  */
 
-/** Cognito users (Settings → Users, the category-owner picker). */
+/** Cognito users (Administration → People, the category-owner picker). */
 export const usersKey = () => ['users'] as const
 
 /** The caller's own way of working with AI (`GET /users/me/ai-mode`; the PR/FAQ / PRD editor). */
@@ -36,6 +36,9 @@ export const appConfigsKey = (pluginId: string) => ['app-configs', pluginId] as 
 
 /** Every plugin's app connectors: the root alone matches every list, `ids` names one read. */
 export const allAppConfigsKey = (...ids: readonly string[]) => ['all-app-configs', ...ids] as const
+
+/** `GET /logs/summary` over `days` (Administration → Logs and the home's Logs count); the root alone matches every window. */
+export const logsSummaryKey = (...days: readonly number[]) => ['logs-summary', ...days] as const
 
 /** `GET /sources/status` (every plugin's schedule on/off and circuit): one call per page, shared by its readers. */
 export const sourcesStatusKey = () => ['sources-status'] as const

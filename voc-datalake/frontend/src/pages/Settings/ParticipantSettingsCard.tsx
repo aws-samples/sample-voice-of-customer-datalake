@@ -1,10 +1,10 @@
 /**
- * @fileoverview Administration → Privacy & access → Users → "Participant email"
- * (docs/participants.md): whether people outside the company domains may be added as
+ * @fileoverview Administration → Feedback boards → "Participant email" (`/admin/boards/participants`, moved from
+ * Users in 7.54.00; docs/participants.md): whether people outside the company domains may be added as
  * participants, the daily send cap, the sender name — and, read-only, whether email sending
  * is configured (`-c emailFrom`) and the board link to share. The company domains themselves
- * moved to Privacy & access → Boards (linked from here); this card never sends them, so its
- * partial save cannot overwrite them. Admin-only save.
+ * are the Company domains card above it (linked from here); this card never sends them, so its
+ * partial save cannot overwrite them. Admin-only save; "Saved" until the next edit.
  * @module pages/Settings/ParticipantSettingsCard
  */
 import { useState } from 'react'
@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Loader2, Mail, Save } from 'lucide-react'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import Switch from '../../components/Switch/Switch'
 import { MAX_SENDER_NAME_CHARS, participantsApi, participantsKeys } from '../../api/participantsApi'
@@ -27,7 +28,7 @@ import { useSaveEngagementSettings } from './useSaveEngagementSettings'
 /** What this card saves: every engagement setting but the company domains (Boards owns them). */
 type CardInput = Omit<SettingsInput, 'company_domains'>
 
-const BOARDS_SECTION = adminPath({ tab: 'access', section: 'boards' })
+const DOMAINS_CARD = adminPath({ tab: 'boards', section: 'domains' })
 
 function isValidCap(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_DAILY_SEND_CAP
@@ -53,14 +54,14 @@ function StatusLines({ view }: Readonly<{ view: SettingsView }>) {
   )
 }
 
-/** The company domains, read-only: they are edited in Privacy & access → Boards. */
+/** The company domains, read-only: they are edited on the Company domains card. */
 function CompanyDomainsLine({ domains }: Readonly<{ domains: readonly string[] }>) {
   const { t } = useTranslation('settings')
   return (
     <p className="text-sm text-muted">
       {domains.length === 0 ? t('boards.participantCard.noDomains') : t('boards.participantCard.domains', { list: domains.join(', ') })}
       {' '}
-      <Link to={BOARDS_SECTION} className="link">{t('boards.participantCard.editInBoards')}</Link>
+      <Link to={DOMAINS_CARD} className="link">{t('boards.participantCard.editInBoards')}</Link>
     </p>
   )
 }
@@ -115,7 +116,7 @@ function SettingsForm({ view, canSave, saved, onSavedChange }: Readonly<{
             {t('actions.save')}
           </button>
           {save.isError ? <p role="alert" className="text-sm text-danger">{participantErrorMessage(save.error, t)}</p> : null}
-          {saved ? <p role="status" className="text-sm text-ok">{t('settings.saved')}</p> : null}
+          <SavedStatus saved={saved} />
         </StickyActionBar>
       ) : null}
     </form>

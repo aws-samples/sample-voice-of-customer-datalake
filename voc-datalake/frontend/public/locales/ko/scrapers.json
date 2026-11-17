@@ -31,7 +31,7 @@
     "choose": "브랜드 선택",
     "unknownBrand": "{{key}}(브랜드 목록에 없음)",
     "noBrand": "아직 레이더 브랜드가 없습니다.",
-    "addBrand": "관리 → 소스 → 레이더에서 브랜드 추가",
+    "addBrand": "관리 → 데이터 소스 → 레이더에서 브랜드 추가",
     "needsBrand": "브랜드를 선택하지 않으면 일반 소스로 유지됩니다.",
     "loading": "레이더 브랜드를 불러오는 중...",
     "loadFailed": "레이더 브랜드를 불러오지 못했습니다."
@@ -281,7 +281,7 @@
     "select": "선택...",
     "configuredInSettings": "{{name}}은(는) {{where}}에서 연결합니다. 그곳에 토큰과 설정을 붙여넣은 뒤 여기로 돌아오세요.",
     "configuredInSettingsNoToken": "{{name}}은(는) {{where}}에서 설정합니다. 그곳에서 설정을 입력한 뒤 여기로 돌아오세요.",
-    "openDataSourceSettings": "소스 설정 열기",
+    "openDataSourceSettings": "데이터 소스 열기",
     "saveFailed": "저장하지 못했습니다. 다시 시도하세요."
   },
   "refresh": "새로고침",

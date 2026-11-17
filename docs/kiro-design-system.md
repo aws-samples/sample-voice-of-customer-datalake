@@ -506,6 +506,25 @@ The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md 
 - Confirmations use `ConfirmModal` (title, description, footer with `btn-danger-solid` or `btn-primary`).
 - Don't invent a header or footer for a dialog that has none.
 
+### Side sheets
+
+`SideSheet` (`components/SideSheet/SideSheet.tsx`, KiroCrew's `SideSheet.tsx` ported onto `ModalShell`) edits one row of a list beside it: People's person editor (7.54.00). It is `ModalShell` with `placement="end"`: the same focus trap, Escape, backdrop, stacking (`z-[70]`) and focus return to the element that opened it, with the panel at the inline end.
+
+```tsx
+<SideSheet isOpen onClose={close} title="Edit Ada Lovelace" description="ada@example.com" icon={UserCog}
+  footer={<><SavedStatus saved={saved} /><button className="btn btn-danger btn-sm">Delete Ada Lovelace…</button></>}>
+  …sections…
+</SideSheet>
+```
+
+- `.sheet-panel`: full height, the viewport's width below `sm` and `max-w-[30rem]` from it, `border-s` and `shadow-2xl`, sliding in from the end (`animate-slide-in-end`). Its header, body and footer are `dialog-header` / `dialog-body` / `dialog-footer`: only the body scrolls, so the footer stays in view whatever the sheet holds.
+- The title is the sheet's `h2` and its accessible name; the header's `DialogClose` ("Dismiss") closes it. A confirmation opened from inside it (`ConfirmModal`) stacks above it.
+- Prefer a sheet to a stepped dialog when the row it edits should stay in view; a sheet whose item is a place is a path (`/admin/people/<username>`), so Back closes it.
+
+### Saving: one "Saved" per card
+
+Every settings card saves itself: there is no page-level Save. After a save the server accepted, the card says so with `SavedStatus` (`components/SavedStatus/SavedStatus.tsx`): a polite `role="status"`, rendered only while it has something to say (as the app's other status lines), that reads "Saved" (or the card's own words, "Password reset email sent"), and **stays until the card is edited again**, never on a timer. A failed save says why in words (`role="alert"`). A card or sheet whose controls save the moment they change (a switch, a select, a radio group) shows one `SavedStatus` for all of them, beside its foot.
+
 ### Menus and popovers
 
 `menu` (container: `rounded-lg border bg-bg-elevated p-1 shadow-lg`, scales in) · `menu-item` (`rounded-md px-3 py-1.5 text-[13px]`, hover `bg-bg-hover`) · `menu-label` · `menu-separator`. Position with utilities (`absolute right-0 top-full mt-1 w-52`).
@@ -610,6 +629,7 @@ delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/T
 | Name an icon button, or add a date or an id on hover and focus | `Tooltip` (`kind="label"` / `kind="description"`) |
 | Explain something that would not fit as visible text | `InfoTip` |
 | Text that may be cut | `TruncatedText` |
+| Edit one row of a list beside it | `SideSheet` |
 | Status | `badge` + a status tone (`ok` / `warn` / `danger` / `info` / `aim`) |
 | Name, kind or value (a label) | `badge badge-muted`; the row's one primary classification `badge badge-accent` |
 
@@ -628,6 +648,7 @@ House easing: **`cubic-bezier(.16, 1, .3, 1)`** (fast out, soft settle). Duratio
 | Theme change | `body` cross-fades background and colour over .25s |
 | Dialog / menu entrance | `animate-scale-in` (.2s, scale .92 → 1); overlay `animate-fade-in` (.15s) |
 | Tooltip | 80 ms in (0 ms in a group), 100 ms out, instant on focus; `animate-fade-in` ([Tooltips](#tooltips)) |
+| Side sheet entrance | `animate-slide-in-end` (.24s, house easing, from 100% to 0 along the inline axis) |
 | Content entrance | `animate-rise` (.35s, 8px up) |
 | Loading | `skeleton` (pulse) · `animate-spin` spinners in `border-accent` |
 | Switch | Track `transition-colors`, knob `transition-transform` |

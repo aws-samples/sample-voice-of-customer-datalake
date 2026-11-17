@@ -9,7 +9,7 @@
   "categoryDistributionHint": "カテゴリをクリックすると下の結果を絞り込めます",
   "clear": "クリア",
   "clearFilters": "フィルターをクリア",
-  "configureApiEndpoint": "「管理 → 一般」でAPIエンドポイントを構成してください",
+  "configureApiEndpoint": "「管理 → ブランドと外観」でAPIエンドポイントを構成してください",
   "export": "エクスポート",
   "feedbackResults": "フィードバック結果",
   "filterBySource": "ソースで絞り込み",

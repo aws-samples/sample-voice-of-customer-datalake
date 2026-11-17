@@ -145,7 +145,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'agents_engineering_registry_routes.py': frozenset({
         'POST /agents/engineering/registry/cards', 'POST /agents/<agent_id>/pause', 'POST /agents/<agent_id>/resume',
     }),
-    # The deployment's start theme (Administration → General): every person sees it until they pick their own.
+    # The deployment's start theme (Administration → Brand & appearance): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.

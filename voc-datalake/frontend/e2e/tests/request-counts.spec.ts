@@ -2,9 +2,9 @@
  * Request counts per page load (E2E F10, perf F4/F5, #399). Each of these was
  * once N identical calls; the fix is a shared query (or one batched read), so a
  * regression shows up as a count, not as a failure. READ-only, both roles
- * (Admin › Data Sources only as the admin), safe on production.
+ * (Administration → Data sources only as the admin), safe on production.
  *
- * - `/admin/sources/plugins`: ONE `GET /sources/status` (each SourceCard used to fetch it).
+ * - `/admin/sources`: ONE `GET /sources/status` (each SourceCard used to fetch it).
  * - `/feedback-forms`: ONE `GET /feedback-forms?include=stats` and NO per-card
  *   `GET /feedback-forms/{id}/stats` (the list seeds every card's stats).
  * - `/categories`: ONE `GET /feedback/entities` (two hooks share the key).
@@ -50,7 +50,7 @@ interface CountCase {
 
 const CASES: readonly CountCase[] = [
   {
-    step: 'counts-admin-plugins', path: '/admin/sources/plugins', adminOnly: true,
+    step: 'counts-admin-sources', path: '/admin/sources', adminOnly: true,
     check: (gets) => {
       expect(count(gets, (g) => g.path === '/sources/status' && g.search === ''), 'GET /sources/status').toBe(1)
       expect(count(gets, (g) => g.path === '/integrations/status'), 'GET /integrations/status').toBeLessThanOrEqual(1)

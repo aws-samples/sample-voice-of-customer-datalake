@@ -2,7 +2,7 @@
  * @fileoverview The translated name and description of a data-source plugin.
  *
  * `manifests.json` is generated from each plugin's `manifest.json`, which is English
- * (5.35.03, e2e 5.35.02: in Spanish, Administration → Sources still read "Android App
+ * (5.35.03, e2e 5.35.02: in Spanish, Administration → Data sources still read "Android App
  * Reviews … Collect customer reviews from the Google Play Store"). The copy shown in the
  * app comes from the locale files instead, keyed by plugin id; the manifest's own text is
  * the fallback for a plugin added without keys (pluginCopy.test.tsx fails for one).

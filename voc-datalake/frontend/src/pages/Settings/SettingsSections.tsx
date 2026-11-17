@@ -1,82 +1,39 @@
 /**
- * @fileoverview The Settings page's header and per-tab sections.
+ * @fileoverview Parts of Administration's pages: the dev-only API endpoint field, the brand fields, the Categories
+ * card and the Data sources cards (health first).
  * @module pages/Settings/SettingsSections
  */
 
 import { useState } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import {
-  Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users,
-  Plug, ChevronDown, RefreshCw, Lock,
+  Save, AlertCircle, Loader2, CheckCircle2, Tags, Lock,
 } from 'lucide-react'
 import CategoriesManager from '../../components/CategoriesManager/CategoriesManager'
-import UserAdmin from '../../components/UserAdmin/UserAdmin'
-import clsx from 'clsx'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import SourceCard from './SourceCard'
+import { api } from '../../api/client'
+import { sourcesStatusKey } from '../../api/queryKeys'
+import type { SourceStatus } from '../../api/sourcesStatusSchema'
 import { getEnabledPlugins } from '../../plugins'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ownValue } from '../Scrapers/scraper-helpers'
 import { SECTION_TITLE } from './sectionTitle'
-import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import WorkspaceConfigNotice from '../../workspace/WorkspaceConfigNotice'
-import { ConfigScopeContext } from '../../workspace/configScope'
+import { ConfigScopeContext, scopedKey, useConfigScope } from '../../workspace/configScope'
 
-// ============================================
-// Header Component
-// ============================================
-
-interface HeaderProps {
-  readonly saved: boolean
-  readonly saving: boolean
-  readonly saveFailed: boolean
-  readonly onSave: () => void
-  /** False for a non-admin: `PUT /settings/brand` is admin-only (#242). */
-  readonly canSave: boolean
-  /** The brand form's Save: shown on General only, the one tab whose edits it saves. */
-  readonly showSave: boolean
-}
-
-export function SaveButtonContent({ saving, saved }: Readonly<{ saving: boolean; saved: boolean }>) {
+/** A save button's content: "Saving…" while the save runs, else "Save changes" (the card's SavedStatus says Saved). */
+export function SaveButtonContent({ saving }: Readonly<{ saving: boolean }>) {
   const { t } = useTranslation('settings')
   if (saving) return <><Loader2 size={16} className="animate-spin" />{t('saving')}</>
-  if (saved) return <><Check size={16} />{t('saved')}</>
   return <><Save size={16} />{t('saveChanges')}</>
-}
-
-export function Header({ saved, saving, saveFailed, onSave, canSave, showSave }: HeaderProps) {
-  const { t } = useTranslation('settings')
-  const buttonClass = saved ? 'bg-ok text-ok-fg border-ok' : 'btn-primary'
-
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('title')}</h1>
-        <p className="text-sm text-muted mt-1 max-w-prose">{t('subtitle')}</p>
-      </div>
-      {showSave && <div className="flex flex-col sm:items-end gap-1.5">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving || !canSave}
-          title={canSave ? undefined : ADMIN_ONLY_TITLE}
-          className={clsx('btn flex items-center justify-center gap-2 w-full sm:w-auto', buttonClass, (saving || !canSave) && 'opacity-75 cursor-not-allowed')}
-        >
-          <SaveButtonContent saving={saving} saved={saved} />
-        </button>
-        {saveFailed && (
-          <p role="alert" className="text-xs text-danger flex items-center gap-1">
-            <AlertCircle size={12} /> {t('brand.saveFailed')}
-          </p>
-        )}
-      </div>}
-    </div>
-  )
 }
 
 // ============================================
 // Shared bits
 // ============================================
 
-function ConfigureFirstNotice({ message }: Readonly<{ message: string }>) {
+export function ConfigureFirstNotice({ message }: Readonly<{ message: string }>) {
   return (
     <div className="flex items-start gap-2 text-sm text-warn bg-warn-subtle border border-warn/30 p-3 rounded-lg">
       <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
@@ -92,74 +49,48 @@ function ConfigureFirstNotice({ message }: Readonly<{ message: string }>) {
 interface ApiConfigSectionProps {
   readonly apiEndpoint: string
   readonly onApiEndpointChange: (value: string) => void
+  /** Keep the endpoint in this browser's config (the field's value). */
+  readonly onSave: () => void
 }
 
 /**
- * API Configuration section — shown only in development builds.
+ * The API endpoint field, under Brand & appearance → Advanced, shown only in development builds (the caller renders
+ * it only there; this checks again).
  *
- * In a production build the API endpoint comes solely from the deployment's
- * runtime config (config.json) and cannot be edited. This prevents a
- * social-engineering attack where a user is persuaded to paste a foreign URL
- * and the app then sends their Cognito bearer token to it.
- *
- * The dev gate lives here rather than in the parent Settings component so the
- * parent's cyclomatic complexity stays within the lint budget.
+ * In a production build the API endpoint comes solely from the deployment's runtime config (config.json) and cannot
+ * be edited. This prevents a social-engineering attack where a user is persuaded to paste a foreign URL and the app
+ * then sends their Cognito bearer token to it. Like every card it saves itself (its own Save, one Saved).
  */
-export function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSectionProps) {
+export function ApiConfigSection({ apiEndpoint, onApiEndpointChange, onSave }: ApiConfigSectionProps) {
   const { t } = useTranslation('settings')
-  const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
+  const [saved, setSaved] = useState(false)
 
   // Production builds: no editable endpoint field.
   if (!import.meta.env.DEV) return null
 
   return (
-    <div className="card">
-      <button
-        type="button"
-        onClick={() => setShowApiConfig(!showApiConfig)}
-        aria-expanded={showApiConfig}
-        className="w-full flex flex-wrap items-center justify-between gap-2 text-left rounded-md focus-ring"
-      >
-        <h2 className={SECTION_TITLE}>{t('api.title')}</h2>
-        <span className="flex items-center gap-2">
-          {apiEndpoint && <span className="badge badge-ok flex items-center gap-1"><CheckCircle2 size={12} /> {t('api.connected')}</span>}
-          <ChevronDown size={16} className={clsx('text-muted transition-transform', showApiConfig && 'rotate-180')} />
-        </span>
-      </button>
-
-      {showApiConfig && (
-        <div className="space-y-4 mt-4 pt-4 border-t border-border">
-          <div>
-            <label htmlFor="settings-api-endpoint" className="block text-sm font-medium text-text mb-1">{t('api.endpointLabel')}</label>
-            <input id="settings-api-endpoint" type="url" value={apiEndpoint} onChange={(e) => onApiEndpointChange(e.target.value)} placeholder={t('api.endpointPlaceholder')} className="input" />
-            <p className="text-xs text-muted mt-1">{t('api.endpointHint')}</p>
-          </div>
-        </div>
-      )}
-    </div>
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSave(); setSaved(true) }}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold tracking-tight text-text-strong">{t('api.title')}</h3>
+        {apiEndpoint && <span className="badge badge-ok flex items-center gap-1"><CheckCircle2 size={12} /> {t('api.connected')}</span>}
+      </div>
+      <div>
+        <label htmlFor="settings-api-endpoint" className="block text-sm font-medium text-text mb-1">{t('api.endpointLabel')}</label>
+        <input id="settings-api-endpoint" type="url" value={apiEndpoint}
+          onChange={(e) => { setSaved(false); onApiEndpointChange(e.target.value) }} placeholder={t('api.endpointPlaceholder')} className="input" />
+        <p className="text-xs text-muted mt-1">{t('api.endpointHint')}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" className="btn btn-primary btn-sm"><Save size={14} aria-hidden="true" /> {t('saveChanges')}</button>
+        <SavedStatus saved={saved} />
+      </div>
+    </form>
   )
 }
 
 // ============================================
 // Brand Config Section
 // ============================================
-
-interface BrandConfigSectionProps {
-  readonly apiEndpoint: string
-  readonly loadingSettings: boolean
-  readonly loadFailed: boolean
-  readonly onRetry: () => void
-  readonly brandName: string
-  readonly brandHandles: string
-  readonly hashtags: string
-  readonly urlsToTrack: string
-  readonly onBrandNameChange: (value: string) => void
-  readonly onBrandHandlesChange: (value: string) => void
-  readonly onHashtagsChange: (value: string) => void
-  readonly onUrlsToTrackChange: (value: string) => void
-  /** True for a non-admin: every field is disabled (`PUT /settings/brand` is admin-only, #242). */
-  readonly readOnly: boolean
-}
 
 export function BrandSyncStatus({ apiEndpoint, loadingSettings, loadFailed }: Readonly<{ apiEndpoint: string; loadingSettings: boolean; loadFailed: boolean }>) {
   const { t } = useTranslation('settings')
@@ -230,42 +161,6 @@ export function BrandFields({ values, readOnly, idPrefix = 'settings-brand' }: R
   )
 }
 
-export function BrandConfigSection({ apiEndpoint, loadingSettings, loadFailed, onRetry, brandName, brandHandles, hashtags, urlsToTrack, onBrandNameChange, onBrandHandlesChange, onHashtagsChange, onUrlsToTrackChange, readOnly }: BrandConfigSectionProps) {
-  const { t } = useTranslation('settings')
-  // Inside a workspace the brand is the workspace's, and only its admins change it.
-  const inWorkspace = useCurrentWorkspace() !== null
-  const values: BrandFieldValues = {
-    brandName, brandHandles, hashtags, urlsToTrack,
-    setBrandName: onBrandNameChange, setBrandHandles: onBrandHandlesChange, setHashtags: onHashtagsChange, setUrlsToTrack: onUrlsToTrackChange,
-  }
-  return (
-    <div className="card">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h2 className={SECTION_TITLE}>{t('brand.title')}</h2>
-        <BrandSyncStatus apiEndpoint={apiEndpoint} loadingSettings={loadingSettings} loadFailed={loadFailed} />
-      </div>
-      {loadingSettings && apiEndpoint && (
-        <div className="flex items-center gap-2 text-sm text-muted mb-4">
-          <Loader2 size={14} className="animate-spin" />{t('brand.loadingSettings')}
-        </div>
-      )}
-      {loadFailed && apiEndpoint && !loadingSettings && (
-        <div role="alert" className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm text-danger bg-danger-subtle border border-danger/30 p-3 rounded-lg mb-4">
-          <span className="flex items-start gap-2 flex-1">
-            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-            {t('brand.loadFailed')}
-          </span>
-          <button type="button" onClick={onRetry} className="btn btn-secondary btn-sm flex items-center justify-center gap-1.5">
-            <RefreshCw size={14} /> {t('brand.retry')}
-          </button>
-        </div>
-      )}
-      {readOnly && <BrandReadOnlyNotice text={inWorkspace ? t('common:workspaces.settings.brandReadOnly') : t('brand.adminOnlyNotice')} />}
-      <BrandFields values={values} readOnly={readOnly} />
-    </div>
-  )
-}
-
 // ============================================
 // Categories Section
 // ============================================
@@ -303,69 +198,59 @@ export function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
   readonly isAdmin: boolean
-  /** The source whose card the address opens (the deployment's `/admin/data-sources/<source>`), or none. */
+  /** The source whose card the address opens (`/admin/sources/<source>`), or none. */
   readonly openSource?: string | null
 }
 
+/** Paused after errors first, then failing (a failure counted, or an unreadable state), then the rest. */
+function healthRank(status: SourceStatus | undefined): number {
+  if (status === undefined) return 2
+  if (status.circuit.tripped) return 0
+  return status.circuit.failure_count > 0 || status.error !== undefined ? 1 : 2
+}
+
+/**
+ * The cards' order, health first (paused or failing on top), in the manifests' order within each rank. Fixed when the
+ * status first arrives, so a card a reset or a toggle heals does not jump away from the pointer while it is used.
+ */
+function useHealthOrder(apiEndpoint: string, ids: readonly string[]): readonly string[] {
+  const scope = useConfigScope()
+  // The key and read every SourceCard of the scope shares (useSourceSchedule.ts): one call for the page.
+  const { data } = useQuery({
+    queryKey: scopedKey(sourcesStatusKey(), scope),
+    queryFn: () => api.getSourcesStatus(undefined, scope),
+    enabled: apiEndpoint !== '',
+  })
+  const [order, setOrder] = useState<readonly string[] | null>(null)
+  if (order === null && data !== undefined) {
+    setOrder([...ids].sort((a, b) => healthRank(ownValue(data.sources, a)) - healthRank(ownValue(data.sources, b))))
+  }
+  return order ?? ids
+}
+
+/** One card per enabled source plugin, health first, in the enclosing scope (workspace/configScope.ts). */
 export function DataSourcesSection({ apiEndpoint, isAdmin, openSource = null }: DataSourcesSectionProps) {
   const { t } = useTranslation('settings')
   const pluginManifests = getEnabledPlugins()
+  const order = useHealthOrder(apiEndpoint, pluginManifests.map((manifest) => manifest.id))
+  const ordered = order.flatMap((id) => pluginManifests.filter((manifest) => manifest.id === id))
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <div className="flex items-center gap-2 mb-1">
-          <Plug className="text-accent" size={16} />
-          <h2 className={SECTION_TITLE}>{t('sections.plugins')}</h2>
+    <div className="space-y-3 sm:space-y-4">
+      {apiEndpoint ? null : <ConfigureFirstNotice message={t('dataSources.configureFirst')} />}
+      {pluginManifests.length === 0 ? (
+        <div className="card text-sm text-muted">
+          <Trans
+            i18nKey="dataSources.noPlugins"
+            ns="settings"
+            components={{ code: <code className="bg-bg-hover px-1 rounded-sm font-mono" /> }}
+          />
         </div>
-        <p data-testid="data-sources-description" className="text-sm text-muted hyphens-auto [overflow-wrap:break-word]">{t('dataSources.description')}</p>
-        {!apiEndpoint && (
-          <div className="mt-4">
-            <ConfigureFirstNotice message={t('dataSources.configureFirst')} />
-          </div>
-        )}
-      </div>
-      <div className="space-y-3 sm:space-y-4">
-        {pluginManifests.length === 0 ? (
-          <div className="card text-sm text-muted">
-            <Trans
-              i18nKey="dataSources.noPlugins"
-              ns="settings"
-              components={{ code: <code className="bg-bg-hover px-1 rounded-sm font-mono" /> }}
-            />
-          </div>
-        ) : (
-          pluginManifests.map((manifest) => (
-            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin}
-              initiallyOpen={manifest.id === openSource} />
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ============================================
-// User Admin Section
-// ============================================
-
-interface UserAdminSectionProps {
-  readonly apiEndpoint: string
-}
-
-export function UserAdminSection({ apiEndpoint }: UserAdminSectionProps) {
-  const { t } = useTranslation('settings')
-  return (
-    <div className="card">
-      <div className="flex items-center gap-2 mb-1">
-        <Users className="text-accent" size={16} />
-        <h2 className={SECTION_TITLE}>{t('users.title')}</h2>
-      </div>
-      <p className="text-sm text-muted mb-4">{t('users.description')}</p>
-      {!apiEndpoint ? (
-        <ConfigureFirstNotice message={t('users.configureFirst')} />
       ) : (
-        <UserAdmin />
+        ordered.map((manifest) => (
+          <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin}
+            initiallyOpen={manifest.id === openSource} />
+        ))
       )}
     </div>
   )

@@ -344,7 +344,7 @@
     "close": "閉じる",
     "show": "QRコードを表示",
     "title": "QRコード",
-    "unavailable": "「管理 → 一般」でAPIエンドポイントを構成するまでQRコードは利用できません"
+    "unavailable": "「管理 → ブランドと外観」でAPIエンドポイントを構成するまでQRコードは利用できません"
   },
   "personaExport": {
     "copied": "コピーしました！",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "ファイルを再処理",
       "confirmTitle": "{{filename}} を再処理しますか?",
-      "confirmMessage": "このファイルをソース {{source}} としてインポートパイプラインに再度通します。データレイクに既にある行は重複としてスキップされるため、取り込まれるのは欠けている行だけです。保存済みの行は再エンリッチされません。再分類するには、管理 → 分類体系 の「既存のフィードバックを再処理」を使ってください。",
+      "confirmMessage": "このファイルをソース {{source}} としてインポートパイプラインに再度通します。データレイクに既にある行は重複としてスキップされるため、取り込まれるのは欠けている行だけです。保存済みの行は再エンリッチされません。再分類するには、管理 → カテゴリ の「既存のフィードバックを再処理」を使ってください。",
       "confirm": "再処理",
       "running": "{{filename}} を再処理しています...",
       "failed": "{{filename}} の再処理に失敗しました。詳細はシステムログを確認してください。",
@@ -411,8 +411,6 @@
   },
   "userAdmin": {
     "active": "アクティブ",
-    "addNewUser": "新しいユーザーを追加",
-    "addUser": "ユーザーを追加",
     "adminRole": "管理者",
     "cancel": "キャンセル",
     "confirmDelete": "{{email}}を削除してもよろしいですか？この操作は取り消せません。",
@@ -421,42 +419,30 @@
     "confirmReset": "{{email}}にパスワードリセットメールを送信しますか？",
     "delete": "削除",
     "deleteUser": "ユーザーを削除",
-    "deleteUserTitle": "ユーザーを削除",
     "disable": "無効化",
     "disabled": "無効",
     "disableUser": "ユーザーを無効化",
-    "disableUserTitle": "ユーザーを無効化",
-    "editUser": "ユーザーを編集",
-    "editUserTitle": "ユーザーを編集",
     "emailHelp": "このメールアドレスに仮パスワードが送信されます",
     "emailLabel": "メールアドレス *",
     "enable": "有効化",
     "enableUser": "ユーザーを有効化",
-    "enableUserTitle": "ユーザーを有効化",
     "firstNameLabel": "名",
     "lastNameLabel": "姓",
     "loadError": "ユーザーの読み込みに失敗しました。管理者アクセス権があることを確認してください。",
-    "noUsers": "ユーザーが見つかりません。上記から最初のユーザーを追加してください。",
+    "noUsers": "まだ誰も招待されていません。上から最初のユーザーを招待してください。",
     "passwordResetSent": "パスワードリセットメールが送信されました",
     "pendingStatus": "保留中",
     "resetPassword": "パスワードをリセット",
-    "resetPasswordTitle": "パスワードをリセット",
     "roleLabel": "ロール",
-    "roleUpdated": "ユーザーロールが更新されました",
     "saveChanges": "変更を保存",
     "sendInvite": "招待を送信",
     "sendResetEmail": "リセットメールを送信",
-    "tableActions": "アクション",
-    "tableRole": "ロール",
-    "tableStatus": "ステータス",
-    "tableUser": "ユーザー",
     "userDeleted": "ユーザーが削除されました",
     "userDisabled": "ユーザーが無効化されました",
     "userEnabled": "ユーザーが有効化されました",
     "userRole": "ユーザー",
-    "usersCount_one": "（{{count, number}}ユーザー）",
-    "usersCount_other": "（{{count, number}}ユーザー）",
-    "roleFor": "{{email}} のロール",
+    "usersCount_one": "{{count, number}} 人",
+    "usersCount_other": "{{count, number}} 人",
     "categoryAccess": {
       "title": "カテゴリへのアクセス",
       "noCategories": "カテゴリはまだ設定されていません。",
@@ -466,7 +452,6 @@
       "ownersNote": "プロダクトオーナーは、ここで選択されていなくても担当カテゴリを常に閲覧できます。",
       "saveError": "カテゴリへのアクセスを保存できませんでした。",
       "loadError": "カテゴリへのアクセスを読み込めませんでした。",
-      "saved": "{{email}} のカテゴリへのアクセスを更新しました",
       "current": "現在のアクセス",
       "currentCategories": "カテゴリ: {{value}}",
       "currentSources": "ソース: {{value}}",
@@ -510,19 +495,15 @@
       "aiDrivenTooltip": "AI アシストに加えて、エージェントがドキュメントを代わりに書き、あなたが有効にするオートメーションのためにコードをプッシュできます。",
       "unlockPrfaq": "AI で PR/FAQ",
       "unlockPrd": "AI で PRD",
-      "unlockPrfaqFor": "AI で PR/FAQ: {{user}}",
-      "unlockPrdFor": "AI で PRD: {{user}}",
       "unlockTooltip": "習得したら、このドキュメントの種類を AI が一緒に下書き・書き直しできるようにします(エージェントは引き続き不可)。"
     },
     "flags": {
-      "title": "メモリと所有者のフラグ",
       "description": "メモリレビュー担当は会社のメモリを管理します。代替オーナー（管理者 1 名）は、カテゴリにオーナーがいないエージェント作成プロジェクトを受け取ります。",
       "fallbackOwner": "代替オーナー",
       "memoryReviewer": "メモリレビュー担当",
-      "fallbackOwnerFor": "代替オーナー: {{user}}",
-      "memoryReviewerFor": "メモリレビュー担当: {{user}}",
       "fallbackAdminOnly": "代替オーナーになれるのは管理者のみです。",
-      "saveFailed": "フラグを更新できませんでした。もう一度お試しください。"
+      "saveFailed": "フラグを更新できませんでした。もう一度お試しください。",
+      "platformAdmin": "プラットフォーム管理者"
     },
     "sourceAccess": {
       "title": "ソース",
@@ -530,7 +511,40 @@
       "all": "制限付きを含むすべてのソース",
       "selected": "選択したソースのみ",
       "restricted": "制限付き",
-      "noProfiles": "ソースプロファイルはまだありません(管理 → プライバシーとアクセス → ソースポリシー)。"
+      "noProfiles": "ソースプロファイルはまだありません(管理 → プライバシー)。"
+    },
+    "invite": "ユーザーを招待",
+    "edit": "編集",
+    "table": {
+      "name": "名前",
+      "role": "ロール",
+      "wayOfWorking": "働き方",
+      "flags": "フラグ",
+      "status": "ステータス",
+      "actions": "操作",
+      "noFlags": "なし"
+    },
+    "editor": {
+      "title": "{{name}} を編集",
+      "delete": "{{name}} を削除…",
+      "sections": {
+        "role": "ロール",
+        "access": "カテゴリとソースへのアクセス",
+        "flags": "メモリと所有者",
+        "platformAdmin": "プラットフォーム管理者",
+        "name": "名前",
+        "account": "アカウント"
+      },
+      "roleHint": "管理者は「管理」を開け、すべてのカテゴリを見られます。",
+      "roleFailed": "ロールを変更できませんでした。もう一度お試しください。",
+      "changeAccess": "アクセスを変更…",
+      "saveName": "名前を保存",
+      "nameFailed": "名前を保存できませんでした。もう一度お試しください。",
+      "accountHint": "無効化されたユーザーはサインインできません。作成したものは残ります。",
+      "resetPassword": "パスワードをリセット…",
+      "disable": "サインインを無効化…",
+      "enable": "サインインを有効化…",
+      "actionFailed": "完了できませんでした。もう一度お試しください。"
     }
   },
   "pageLoader": {
@@ -581,7 +595,7 @@
     "sourceRadarHint": "レーダーソース（{{brand}}）: これらの行はレーダーページに送られ、自社のダッシュボードや指標には含まれません。",
     "defaultsTitle": "ディメンションとタグ",
     "defaultsHint": "ここからのレビューにはすべてこの値が付きます。レビュー自身の値がディメンションごとに優先されます。",
-    "noDimensions": "ディメンションはまだ設定されていません(管理 → 分類体系 → ディメンション)。",
+    "noDimensions": "ディメンションはまだ設定されていません(管理 → カテゴリ → ディメンション)。",
     "noDefault": "既定なし"
   },
   "draftSaveBar": {
@@ -669,7 +683,7 @@
       "summaryOnlyHint": "派生フィールド(要約・カテゴリ・感情・ディメンション)のみ保持し、元のテキストは保存しません。"
     },
     "restrictedLabel": "制限付き",
-    "restrictedHint": "管理者と、ユーザー → アクセスでこのソースを許可されたユーザーだけがレビューを見られます。",
+    "restrictedHint": "管理者と、このソースを許可されたユーザー(ユーザー → 各ユーザーのアクセス)だけがレビューを見られます。",
     "defaultsTitle": "このソースのすべてのレビューに付けるディメンションの値",
     "noDefault": "既定なし",
     "empty": "プロファイルはまだありません。すべてのソースはすべてを無期限に保持し、全員に表示します。",
@@ -688,7 +702,7 @@
       "radarBrand": "{{name}}: このレーダーソースが追跡するブランド名を入力してください。"
     },
     "radarLegacy": "{{brand}} のレーダーソース: このソースのレビューはレーダーに送られます。",
-    "radarLegacyHint": "レーダーのブランドは 管理 → ソース → レーダー で設定し、スクレイパーやコネクタのブランドはデータソースページで選びます。",
+    "radarLegacyHint": "レーダーのブランドは 管理 → データソース → レーダー で設定し、スクレイパーやコネクタのブランドはデータソースページで選びます。",
     "radarLegacyLink": "レーダー設定を開く"
   },
   "erasure": {
@@ -918,5 +932,8 @@
       "body": "ステップ {{n}} に本文が必要です。",
       "anchor": "ステップ {{n}} は何も指していません。削除して要素を選び直してください。"
     }
+  },
+  "savedStatus": {
+    "saved": "保存しました"
   }
 }

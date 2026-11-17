@@ -363,7 +363,7 @@
     "close": "Fermer",
     "show": "Afficher le code QR",
     "title": "Code QR",
-    "unavailable": "Code QR indisponible jusqu'à la configuration du point de terminaison API dans Administration → Général"
+    "unavailable": "Code QR indisponible jusqu'à la configuration du point de terminaison API dans Administration → Marque et apparence"
   },
   "personaExport": {
     "copied": "Copié !",
@@ -413,7 +413,7 @@
     "reprocess": {
       "action": "Retraiter le fichier",
       "confirmTitle": "Retraiter {{filename}} ?",
-      "confirmMessage": "Le fichier repasse dans le pipeline d'import, sous sa source {{source}}. Les lignes déjà présentes dans le data lake sont ignorées comme doublons : seules les lignes manquantes sont importées. Les lignes stockées ne sont pas ré-enrichies : pour les recatégoriser, utilisez « Retraiter les retours existants » dans Administration → Taxonomie.",
+      "confirmMessage": "Le fichier repasse dans le pipeline d'import, sous sa source {{source}}. Les lignes déjà présentes dans le data lake sont ignorées comme doublons : seules les lignes manquantes sont importées. Les lignes stockées ne sont pas ré-enrichies : pour les recatégoriser, utilisez « Retraiter les retours existants » dans Administration → Catégories.",
       "confirm": "Retraiter",
       "running": "Retraitement de {{filename}}...",
       "failed": "Le retraitement de {{filename}} a échoué. Les journaux système donnent le détail.",
@@ -433,8 +433,6 @@
   },
   "userAdmin": {
     "active": "Actif",
-    "addNewUser": "Ajouter un nouvel utilisateur",
-    "addUser": "Ajouter un utilisateur",
     "adminRole": "Administrateur",
     "cancel": "Annuler",
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer {{email}} ? Cette action ne peut pas être annulée.",
@@ -443,43 +441,31 @@
     "confirmReset": "Envoyer un email de réinitialisation de mot de passe à {{email}} ?",
     "delete": "Supprimer",
     "deleteUser": "Supprimer l'utilisateur",
-    "deleteUserTitle": "Supprimer l'utilisateur",
     "disable": "Désactiver",
     "disabled": "Désactivé",
     "disableUser": "Désactiver l'utilisateur",
-    "disableUserTitle": "Désactiver l'utilisateur",
-    "editUser": "Modifier l'utilisateur",
-    "editUserTitle": "Modifier l'utilisateur",
     "emailHelp": "Un mot de passe temporaire sera envoyé à cet email",
     "emailLabel": "Adresse email *",
     "enable": "Activer",
     "enableUser": "Activer l'utilisateur",
-    "enableUserTitle": "Activer l'utilisateur",
     "firstNameLabel": "Prénom",
     "lastNameLabel": "Nom de famille",
     "loadError": "Impossible de charger les utilisateurs. Assurez-vous d'avoir accès administrateur.",
-    "noUsers": "Aucun utilisateur trouvé. Ajoutez votre premier utilisateur ci-dessus.",
+    "noUsers": "Personne n'a encore été invité. Invitez la première personne ci-dessus.",
     "passwordResetSent": "Email de réinitialisation du mot de passe envoyé",
     "pendingStatus": "En attente",
     "resetPassword": "Réinitialiser le mot de passe",
-    "resetPasswordTitle": "Réinitialiser le mot de passe",
     "roleLabel": "Rôle",
-    "roleUpdated": "Rôle de l'utilisateur mis à jour",
     "saveChanges": "Enregistrer les modifications",
     "sendInvite": "Envoyer une invitation",
     "sendResetEmail": "Envoyer un email de réinitialisation",
-    "tableActions": "Opérations",
-    "tableRole": "Rôle",
-    "tableStatus": "Statut",
-    "tableUser": "Utilisateur",
     "userDeleted": "Utilisateur supprimé",
     "userDisabled": "Utilisateur désactivé",
     "userEnabled": "Utilisateur activé",
     "userRole": "Utilisateur",
-    "usersCount_one": "({{count, number}} utilisateurs)",
-    "usersCount_many": "({{count, number}} utilisateurs)",
-    "usersCount_other": "({{count, number}} utilisateurs)",
-    "roleFor": "Rôle de {{email}}",
+    "usersCount_one": "{{count, number}} personne",
+    "usersCount_many": "{{count, number}} personnes",
+    "usersCount_other": "{{count, number}} personnes",
     "categoryAccess": {
       "title": "Accès par catégorie",
       "noCategories": "Aucune catégorie n'est encore configurée.",
@@ -489,7 +475,6 @@
       "ownersNote": "Les responsables produit voient toujours leurs propres catégories, même si elles ne sont pas sélectionnées ici.",
       "saveError": "L'accès par catégorie n'a pas pu être enregistré.",
       "loadError": "L'accès par catégorie n'a pas pu être chargé.",
-      "saved": "Accès par catégorie mis à jour pour {{email}}",
       "current": "Accès actuel",
       "currentCategories": "Catégories : {{value}}",
       "currentSources": "Sources : {{value}}",
@@ -502,7 +487,7 @@
       "otherHint": "Avis sans catégorie"
     },
     "aiMode": {
-      "title": "Façons de travailler avec l’IA",
+      "title": "Façon de travailler avec l’IA",
       "description": "Définit, pour chaque personne, la part de ses PR/FAQ et PRD que l’IA écrit, et si les automatisations d’ingénierie qu’elle active peuvent pousser du code et ouvrir des pull requests.",
       "notSet": "Non défini",
       "notSetEffect": "Les documents sont pilotés par l’IA · les automatisations ne poussent rien tant que vous n’avez pas choisi",
@@ -533,19 +518,15 @@
       "aiDrivenTooltip": "Assisté par l’IA, et en plus les agents peuvent écrire des documents pour vous et pousser du code pour les automatisations que vous activez.",
       "unlockPrfaq": "PR/FAQ avec l’IA",
       "unlockPrd": "PRD avec l’IA",
-      "unlockPrfaqFor": "PR/FAQ avec l’IA : {{user}}",
-      "unlockPrdFor": "PRD avec l’IA : {{user}}",
       "unlockTooltip": "Une fois la méthode apprise, l’IA peut rédiger et réécrire ce type de document avec cette personne (les agents restent exclus)."
     },
     "flags": {
-      "title": "Indicateurs de mémoire et de propriété",
       "description": "Les relecteurs de mémoire gèrent la mémoire d'entreprise. Le propriétaire de secours (un administrateur) reçoit les projets créés par des agents dont la catégorie n'a pas de propriétaire.",
       "fallbackOwner": "Propriétaire de secours",
       "memoryReviewer": "Relecteur de mémoire",
-      "fallbackOwnerFor": "Propriétaire de secours : {{user}}",
-      "memoryReviewerFor": "Relecteur de mémoire : {{user}}",
       "fallbackAdminOnly": "Seul un administrateur peut être propriétaire de secours.",
-      "saveFailed": "Impossible de mettre à jour l'indicateur. Réessayez."
+      "saveFailed": "Impossible de mettre à jour l'indicateur. Réessayez.",
+      "platformAdmin": "Administrateur de la plateforme"
     },
     "sourceAccess": {
       "title": "Sources",
@@ -553,7 +534,40 @@
       "all": "Toutes les sources, y compris les restreintes",
       "selected": "Uniquement les sources sélectionnées",
       "restricted": "Restreinte",
-      "noProfiles": "Aucun profil de source n'est encore configuré (Administration → Confidentialité et accès → Politiques des sources)."
+      "noProfiles": "Aucun profil de source n'est encore configuré (Administration → Confidentialité)."
+    },
+    "invite": "Inviter une personne",
+    "edit": "Modifier",
+    "table": {
+      "name": "Nom",
+      "role": "Rôle",
+      "wayOfWorking": "Façon de travailler",
+      "flags": "Indicateurs",
+      "status": "Statut",
+      "actions": "Actions",
+      "noFlags": "Aucun"
+    },
+    "editor": {
+      "title": "Modifier {{name}}",
+      "delete": "Supprimer {{name}}…",
+      "sections": {
+        "role": "Rôle",
+        "access": "Accès aux catégories et aux sources",
+        "flags": "Mémoire et propriété",
+        "platformAdmin": "Administrateur de la plateforme",
+        "name": "Nom",
+        "account": "Compte"
+      },
+      "roleHint": "Les administrateurs ouvrent l'Administration et voient toutes les catégories.",
+      "roleFailed": "Impossible de changer le rôle. Réessayez.",
+      "changeAccess": "Modifier l'accès…",
+      "saveName": "Enregistrer le nom",
+      "nameFailed": "Impossible d'enregistrer le nom. Réessayez.",
+      "accountHint": "Une personne désactivée ne peut plus se connecter ; ce qu'elle a créé reste.",
+      "resetPassword": "Réinitialiser le mot de passe…",
+      "disable": "Désactiver la connexion…",
+      "enable": "Activer la connexion…",
+      "actionFailed": "L'action n'a pas abouti. Réessayez."
     }
   },
   "pageLoader": {
@@ -604,7 +618,7 @@
     "sourceRadarHint": "Source Radar ({{brand}}) : ces lignes vont sur la page Radar, jamais dans vos propres tableaux de bord ni métriques.",
     "defaultsTitle": "Dimensions et étiquettes",
     "defaultsHint": "Chaque avis venant d'ici porte ces valeurs ; ses propres valeurs l'emportent par dimension.",
-    "noDimensions": "Aucune dimension n'est encore configurée (Administration → Taxonomie → Dimensions).",
+    "noDimensions": "Aucune dimension n'est encore configurée (Administration → Catégories → Dimensions).",
     "noDefault": "Aucune valeur par défaut"
   },
   "draftSaveBar": {
@@ -692,7 +706,7 @@
       "summaryOnlyHint": "Seuls les champs dérivés (résumé, catégorie, sentiment, dimensions) sont conservés ; le texte d'origine n'est pas gardé."
     },
     "restrictedLabel": "Restreinte",
-    "restrictedHint": "Seuls les administrateurs et les utilisateurs ayant accès à cette source (Utilisateurs → accès) voient ses avis.",
+    "restrictedHint": "Seuls les administrateurs et les personnes ayant accès à cette source (Personnes → accès d’une personne) voient ses avis.",
     "defaultsTitle": "Valeurs de dimension pour chaque avis de cette source",
     "noDefault": "Aucune valeur par défaut",
     "empty": "Aucun profil pour l'instant : chaque source conserve tout, indéfiniment, visible par tous.",
@@ -711,7 +725,7 @@
       "radarBrand": "{{name}} : indiquez la marque suivie par cette source Radar."
     },
     "radarLegacy": "Source Radar pour {{brand}} : les avis de cette source vont dans Radar.",
-    "radarLegacyHint": "Les marques Radar se configurent dans Administration → Sources → Radar, et chaque scraper ou connecteur choisit sa marque sur la page Sources de données.",
+    "radarLegacyHint": "Les marques Radar se configurent dans Administration → Sources de données → Radar, et chaque scraper ou connecteur choisit sa marque sur la page Sources de données.",
     "radarLegacyLink": "Ouvrir les réglages Radar"
   },
   "erasure": {
@@ -951,5 +965,8 @@
       "body": "L’étape {{n}} a besoin d’un texte.",
       "anchor": "L’étape {{n}} ne pointe vers rien : retirez-la et choisissez à nouveau son élément."
     }
+  },
+  "savedStatus": {
+    "saved": "Enregistré"
   }
 }

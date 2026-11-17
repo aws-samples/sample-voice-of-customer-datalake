@@ -94,7 +94,7 @@ export function deriveSteps(inputs: StepInputs): OnboardingStep[] {
     {
       id: 'categories',
       status: statusOf(categories === undefined ? undefined : categoriesReady(categories)),
-      to: adminPath({ tab: 'taxonomy', section: 'categories' }),
+      to: adminPath({ tab: 'categories', section: null }),
     },
     { id: 'source', status: statusOf(sourceConnected(inputs)), to: '/scrapers' },
     { id: 'feedback', status: statusOf(signals?.feedback_present), to: '/categories' },

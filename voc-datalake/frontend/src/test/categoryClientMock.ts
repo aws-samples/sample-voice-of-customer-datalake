@@ -1,6 +1,6 @@
 /**
  * Shared `api/client` double for the category UI tests (the "Change category"
- * control and Settings → Users → Category access): `api.getCategoriesConfig`
+ * control and Administration → People → Category access): `api.getCategoriesConfig`
  * plus `fetchApi`, which the category-access / category-change APIs call.
  *
  * `vi.mock` factories are hoisted above static imports, so a test obtains the

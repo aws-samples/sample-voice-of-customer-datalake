@@ -5,10 +5,11 @@
  *
  * - The sidebar's LISTEN item reads "Feedback boards" and opens `/feature-requests`, the board list
  *   (h1 "Feedback boards"), whose seeded Sales board card opens `/feature-requests/sales-feature-requests`.
- * - Admin: the card's Edit links to `/admin/access/boards/<id>`, the gear
- *   ("Configure boards") to `/admin/access/boards`.
- * - Admin: Administration → Privacy & access → Boards lists the boards with the company domains above
- *   them; Edit on the Sales board opens its editor (`/admin/access/boards/brd_sales`), and "Back to boards" returns.
+ * - Admin: the card's Edit links to `/admin/boards/<id>`, the gear
+ *   ("Configure boards") to `/admin/boards`.
+ * - Admin: Administration → Feedback boards (h1 "Feedback boards", its link current in the left navigation) lists
+ *   the boards, then the Company domains and Participant email cards; Edit on the Sales board opens its editor
+ *   (`/admin/boards/brd_sales`), and "Back to boards" returns.
  * - Admin: the Sales card's Delete opens the delete dialog; when the board has requests it asks for the
  *   board's name (Delete stays off until it is typed). The dialog is only cancelled, never confirmed.
  * - e2e-user (production only): the list shows no Edit, no Delete and no gear.
@@ -27,7 +28,7 @@ import { recordCreated } from '../lib/ledger'
 
 /** The board seeded on every deployment (shared/feature_boards_store.py) and in the dev mock. */
 const SALES = { id: 'brd_sales', slug: 'sales-feature-requests', name: 'Sales feature requests' } as const
-const BOARDS_ADMIN = '/admin/access/boards'
+const BOARDS_ADMIN = '/admin/boards'
 
 async function visit(page: Page, pathname: string): Promise<void> {
   await page.goto(site(pathname), { waitUntil: 'domcontentloaded' })
@@ -55,7 +56,7 @@ test.describe('feedback boards', () => {
     })
   })
 
-  test('admin: Edit and the gear lead to Administration → Boards', async ({ page }, testInfo) => {
+  test('admin: Edit and the gear lead to Administration → Feedback boards', async ({ page }, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'admin controls')
     await assertStep(page, 'admin', 'fb-03-admin-links', async () => {
       await visit(page, '/feature-requests')
@@ -65,7 +66,10 @@ test.describe('feedback boards', () => {
     })
     await assertStep(page, 'admin', 'fb-04-admin-section', async () => {
       await page.getByRole('link', { name: 'Configure boards' }).click()
-      await expect(page.getByRole('tab', { name: 'Boards', exact: true })).toHaveAttribute('aria-selected', 'true')
+      // One page per tab (7.54.00): its h1, and its link current in the left navigation (shown from `lg`, 1440 here).
+      await expect(page.getByRole('heading', { name: 'Feedback boards', level: 1 })).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'Administration', exact: true })
+        .getByRole('link', { name: 'Feedback boards', exact: true })).toHaveAttribute('aria-current', 'page')
       await expect(page.getByRole('heading', { name: 'Company domains', level: 2 })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Feedback boards', level: 2 })).toBeVisible()
       await page.getByRole('button', { name: `Edit ${SALES.name}` }).click()

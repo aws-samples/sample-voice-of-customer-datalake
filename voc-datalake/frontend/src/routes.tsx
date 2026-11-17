@@ -193,7 +193,7 @@ export const routes: RouteObject[] = [
       // The current workspace's brand and plugins (the same menu), for every member; "Page not found" outside one.
       { path: 'workspace-settings', ...page(<WorkspaceSettings />) },
       // Administration (was Settings): admins only. Its tab, section and open board editor are paths
-      // (/admin/access/boards/<boardId>, Settings/adminPaths.ts); the old /settings path redirects (to /admin).
+      // (/admin/boards/<boardId>, Settings/adminPaths.ts); the old /settings path redirects (to /admin).
       { path: 'admin/*', ...page(<AdminRoute><Settings /></AdminRoute>) },
       { path: 'settings', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
       // Unknown URLs render a "Page not found" state INSIDE the layout, so the

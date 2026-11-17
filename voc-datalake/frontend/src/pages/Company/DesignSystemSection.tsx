@@ -147,7 +147,7 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
           {isAdmin ? (
             <p className="text-xs text-muted">
               {t('designSystem.integrationsMoved')}{' '}
-              <Link to={adminPath({ tab: 'sources', section: 'integrations' })} className="link">{t('designSystem.integrationsLink')}</Link>
+              <Link to={adminPath({ tab: 'sources', section: 'tokens' })} className="link">{t('designSystem.integrationsLink')}</Link>
             </p>
           ) : null}
         </div>

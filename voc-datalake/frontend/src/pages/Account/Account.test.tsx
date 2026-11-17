@@ -84,13 +84,13 @@ function profileValues(): Record<string, string> {
 }
 
 describe('Account — tab bar with deep links', () => {
-  it('shows the five tabs on the design-system tabs track, Profile selected by default', () => {
+  it('shows the five tabs on the design-system tabs track, Preferences selected by default (7.54.00, the landing)', () => {
     renderAt()
     const tablist = screen.getByRole('tablist', { name: 'Account' })
     expect(within(tablist).getAllByRole('tab').map((tab) => tab.textContent.trim()))
       .toStrictEqual(['Profile', 'Preferences', 'Morning brief', 'Objectives', 'Access & tokens'])
     expect(tablist).toHaveClass('tabs-track')
-    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Preferences' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it.each([
@@ -118,13 +118,13 @@ describe('Account — tab bar with deep links', () => {
     expect(placeOf(router)).toBe('/account/access?review=fb_1')
   })
 
-  it('reads no tab from the query: an old `?tab=` / `?section=` link opens Profile (no redirect)', () => {
+  it('reads no tab from the query: an old `?tab=` / `?section=` link opens Preferences, the landing (no redirect)', () => {
     renderAt('?tab=briefing&section=password')
-    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Preferences' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it.each([
-    ['/nope', '/account/profile'], ['/nope?review=fb_1', '/account/profile?review=fb_1'], ['/briefing/x', '/account/briefing'],
+    ['/nope', '/account/preferences'], ['/nope?review=fb_1', '/account/preferences?review=fb_1'], ['/briefing/x', '/account/briefing'],
   ])('replaces a path naming no tab, %s, with %s, in place', async (from, to) => {
     const router = renderInRouter(from)
     await waitFor(() => { expect(placeOf(router)).toBe(to) })
@@ -165,21 +165,21 @@ describe('Account — morning brief (its only home; Home links here)', () => {
 
 describe('Account — profile', () => {
   it('lists name, email, username, role and groups', () => {
-    renderAt()
+    renderAt('/profile')
     expect(profileValues()).toStrictEqual({ Name: 'Ada Moreno', Email: 'ada@example.com', Username: 'ada', Role: 'User', Groups: 'users' })
   })
 
   it('shows Administrator and the admins group for admins', () => {
     state.isAdmin = true
     state.user = { name: 'Root', email: 'root@example.com', username: 'root', groups: ['admins', 'users'] }
-    renderAt()
+    renderAt('/profile')
     expect(profileValues()).toMatchObject({ Role: 'Administrator' })
     expect(within(section('Profile')).getAllByRole('listitem').map((li) => li.textContent)).toStrictEqual(['admins', 'users'])
   })
 
   it('wraps the page title and a long email instead of cutting them off (200 % text)', () => {
     state.user = { name: 'Ada Moreno', email: 'a-very-long-address.for-testing@example.com', username: 'ada', groups: [] }
-    renderAt()
+    renderAt('/profile')
     expect(screen.getByRole('heading', { level: 1 })).not.toHaveClass('truncate')
     const email = within(section('Profile')).getByText('a-very-long-address.for-testing@example.com')
     expect(email).not.toHaveClass('truncate')
@@ -188,7 +188,7 @@ describe('Account — profile', () => {
 
   it('renders a dash for missing fields and hides groups when there are none', () => {
     state.user = { email: 'x@example.com', groups: [] }
-    renderAt()
+    renderAt('/profile')
     expect(profileValues()).toStrictEqual({ Name: '—', Email: 'x@example.com', Username: '—', Role: 'User' })
   })
 })

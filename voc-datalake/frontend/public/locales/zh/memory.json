@@ -19,7 +19,7 @@
     "submit": "记住"
   },
   "cancel": "取消",
-  "configureFirst": "请先在“管理 → 常规”中连接 API 端点。",
+  "configureFirst": "请先在“管理 → 品牌与外观”中连接 API 端点。",
   "confirm": "+1",
   "confirmHint": "我同意——算我一个支持者",
   "alreadyBacked": "你已支持这条记忆。每人只计一次。",

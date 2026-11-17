@@ -1,5 +1,5 @@
 {
-  "configureApi": "관리 → 일반에서 API 엔드포인트를 구성하세요",
+  "configureApi": "관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요",
   "filters": {
     "allCategories": "모든 카테고리",
     "allSources": "모든 소스",

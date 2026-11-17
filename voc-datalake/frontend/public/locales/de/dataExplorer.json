@@ -41,7 +41,7 @@
     "search": "Feedback durchsuchen"
   },
   "newFile": "Neue Datei",
-  "notConfigured": "API-Endpunkt unter Administration → Allgemein konfigurieren, um Daten zu erkunden",
+  "notConfigured": "API-Endpunkt unter Administration → Marke & Darstellung konfigurieren, um Daten zu erkunden",
   "refresh": "Aktualisieren",
   "s3Browser": {
     "back": "Zurück",
@@ -84,7 +84,7 @@
     "loading": "Datenqualität wird geladen…",
     "empty": "Kein Feedback in diesem Zeitraum.",
     "unratedShare": "{{share}} des Feedbacks in diesem Zeitraum ist noch nicht bewertet.",
-    "backfillHint": "Feedback, das vor der Bewertung gespeichert wurde, hat keine Stufe; eine Neuverarbeitung der Kategorien (Administration → Taxonomie) bewertet es.",
+    "backfillHint": "Feedback, das vor der Bewertung gespeichert wurde, hat keine Stufe; eine Neuverarbeitung der Kategorien (Administration → Kategorien) bewertet es.",
     "chartTop_one": "Das Diagramm zeigt die aktivste Quelle; die Tabelle listet alle Quellen.",
     "chartTop_other": "Das Diagramm zeigt die {{count, number}} aktivsten Quellen; die Tabelle listet alle Quellen.",
     "partial": "Einige Daten konnten nicht rechtzeitig gelesen werden, daher können diese Zahlen niedriger als die tatsächlichen sein.",

@@ -235,10 +235,8 @@
       "more": "Mostrar más"
     },
     "platformAdmins": {
-      "title": "Administradores de la plataforma",
       "description": "Los administradores de la plataforma crean espacios de trabajo y pueden entrar en cualquiera como administradores. Solo puede serlo un administrador, y siempre queda al menos uno habilitado. Un cambio llega a la sesión de la persona la próxima vez que se renueva.",
       "label": "Administración de la plataforma",
-      "for": "Administración de la plataforma: {{user}}",
       "adminsOnly": "Solo un administrador puede ser administrador de la plataforma."
     },
     "settings": {
@@ -505,7 +503,7 @@
       "resetBubble": "Restablecer posición de la burbuja"
     },
     "access": {
-      "hint": "Lo que puedes ver en esta aplicación. Un administrador lo cambia en Administración, Privacidad y acceso, Usuarios.",
+      "hint": "Lo que puedes ver en esta aplicación. Un administrador lo cambia en Administración → Personas.",
       "categories": "Categorías",
       "sources": "Fuentes",
       "everyCategory": "Todas las categorías",
@@ -716,7 +714,7 @@
     "problemsOnlyHint": "Errores, fallos del servicio, rendimiento, usabilidad, precios y facturación, y experiencia de soporte. Se ocultan las solicitudes de funciones, los elogios, las preguntas y otras reseñas.",
     "allTypes": "Todos los tipos",
     "untyped": "Reseñas aún sin tipo: {{n, number}} (se siguen mostrando)",
-    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Taxonomía. Siguen visibles con cualquier filtro de tipo."
+    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Categorías. Siguen visibles con cualquier filtro de tipo."
   },
   "infoTip": {
     "label": "Más información"

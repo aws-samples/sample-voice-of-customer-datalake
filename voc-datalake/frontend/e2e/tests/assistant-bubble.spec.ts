@@ -27,15 +27,17 @@ const VIEWPORTS = [
  * Pages with primary actions, per role (admin-only routes redirect a user).
  * Includes every page whose form save / submit row the R3 audit made a
  * registered sticky bar (`actionBars.audit.test.ts`): Company (both tabs),
- * Account (password + objectives), Connect (Create token), Memory (Remember),
- * Administration data sources and categories.
+ * Account (Profile's password + objectives; `/account` lands on Preferences since
+ * 7.54.00), Connect (Create token), Memory (Remember),
+ * Administration's Brand & appearance, Data sources and Categories (7.54.00:
+ * every card saves itself; `/admin` is the home, which has no Save).
  */
 const ACTION_PAGES: Record<'admin' | 'user', readonly string[]> = {
   admin: [
-    '/feedback-forms', '/scrapers', '/projects', '/company', '/company/design', '/account', '/account/objectives',
-    '/connect', '/memory', '/admin', '/admin/sources/plugins', '/admin/taxonomy/categories',
+    '/feedback-forms', '/scrapers', '/projects', '/company', '/company/design', '/account/profile',
+    '/account/objectives', '/connect', '/memory', '/admin/brand', '/admin/sources', '/admin/categories',
   ],
-  user: ['/feedback-forms', '/projects', '/company', '/account', '/account/objectives', '/connect', '/memory'],
+  user: ['/feedback-forms', '/projects', '/company', '/account/profile', '/account/objectives', '/connect', '/memory'],
 }
 const PRIMARY = /Save|Create|Import|Run|Change Password|Remember|Start reprocess/
 /** The app's clamp margin and key steps (src/assistant/bubble/geometry.ts). */

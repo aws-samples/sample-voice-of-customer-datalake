@@ -10,7 +10,7 @@
  *    opens "<brand> reviews"; a review's Details opens
  *    "Radar review details" (`GET /radar/brands/{brand}/reviews/{id}` 200) on top;
  *    Escape closes that one first, then the reviews list.
- * 5. Admin: Administration → Sources → Radar offers "Scan now". It is NEVER clicked
+ * 5. Admin: Administration → Data sources → Radar (in its Advanced fold) offers "Scan now". It is NEVER clicked
  *    (a scan runs billed third-party web searches), and the spec fails if any
  *    `POST /radar/scan` leaves the page.
  *
@@ -44,7 +44,7 @@ const TEXT = {
   scanNow: 'Scan now',
 } as const
 
-/** Administration → Sources → Radar (radarFormat.ts RADAR_SETUP_PATH). */
+/** Administration → Data sources → Radar, the Advanced fold opened (radarFormat.ts RADAR_SETUP_PATH). */
 const RADAR_SETUP_PATH = '/admin/sources/radar'
 
 const compareSection = (page: Page): Locator => page.getByRole('region', { name: TEXT.compare })

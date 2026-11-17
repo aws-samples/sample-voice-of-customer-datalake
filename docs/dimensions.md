@@ -8,7 +8,7 @@ feedback, metrics, the AI assistant and the MCP server by all three.
 
 ## The model
 
-An admin defines up to 10 dimensions in **Administration → Taxonomy → Dimensions**. The definitions are
+An admin defines up to 10 dimensions in **Administration → Categories → Dimensions** (`/admin/categories/dimensions`). The definitions are
 stored in `voc-aggregates` as `pk=SETTINGS#dimensions, sk=config`:
 
 ```json
@@ -66,7 +66,7 @@ One primary type per review:
   output tokens). It follows the normal order below, so a CSV column, a source profile default,
   an email alias or a manual edit (`PUT /feedback/{id}/dimensions`) wins over the model.
 - **Reviews stored before 5.45**: they have no type until an admin runs **Administration →
-  Taxonomy → Dimensions → Classify review types** (the reprocess job, `mode: dimensions`, all
+  Categories → Dimensions → Classify review types** (the reprocess job, `mode: dimensions`, all
   time, manual values kept). It shows how many reviews are not typed yet, costs one
   enrichment-model call per stored review (typed ones are re-checked too, up to 50,000 per run)
   and never starts by itself.

@@ -3,9 +3,9 @@
  * @module pages/Settings/SourceCard
  * 
  * Renders a data source configuration card based on plugin manifest. Its reads and writes are the current
- * workspace's, or in the deployment's scope (Administration → Data sources, workspace/configScope.ts) the
+ * workspace's, or in the deployment's scope (Administration → Data sources → Deployment, workspace/configScope.ts) the
  * deployment's, inside a workspace too: they then never send `X-Workspace-Id`. A card the address opens
- * (`/admin/data-sources/<source>`, 7.50.02: `initiallyOpen`) starts expanded and is scrolled into view.
+ * (`/admin/sources/<source>`, `initiallyOpen`) starts expanded and is scrolled into view.
  */
 
 import { useEffect, useRef, useState, useId, type ReactNode } from 'react'
@@ -25,7 +25,6 @@ import { storedCredentialsKey } from './githubSignIn'
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
-import { useExpiringValue } from '../../hooks/useExpiringValue'
 import S3ImportExplorer from '../../components/S3ImportExplorer/S3ImportExplorer'
 import { scopedKey, useConfigScope } from '../../workspace/configScope'
 import clsx from 'clsx'
@@ -54,7 +53,7 @@ interface SourceCardProps {
    *  indication it had been refused. A disabled control fails visibly; that one
    *  failed silently. */
   readonly isAdmin: boolean
-  /** The card the address opens (`/admin/data-sources/<source>`): it starts expanded, scrolled into view. */
+  /** The card the address opens (`/admin/sources/<source>`): it starts expanded, scrolled into view. */
   readonly initiallyOpen?: boolean
 }
 
@@ -97,9 +96,8 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
   const cardRef = useOpenedCard(initiallyOpen === true)
   const [showSecrets, setShowSecrets] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string>>({})
-  // "Saved" clears itself after 3 s; the timer goes with the card.
-  const [saveSuccessShown, showSaveSuccess] = useExpiringValue<true>(3000)
-  const saveSuccess = saveSuccessShown !== null
+  // "Saved" until the next edit of the credentials (components/SavedStatus).
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const { copy: copyToClipboard, copiedKey: copiedUrl } = useCopyToClipboard()
 
   // GET /integrations/status is admin-gated server-side; only issue the query
@@ -116,7 +114,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
   const updateCredentialsMutation = useMutation({
     mutationFn: (creds: Record<string, string>) => api.updateIntegrationCredentials(manifest.id, creds, scope),
     onSuccess: () => {
-      showSaveSuccess(true)
+      setSaveSuccess(true)
       void queryClient.invalidateQueries({ queryKey: scopedKey(INTEGRATION_STATUS_KEY, scope) })
       // (what the card read of its stored values, the GitHub Issues card's sign-in: githubSignIn.ts)
       void queryClient.invalidateQueries({ queryKey: storedCredentialsKey(manifest.id) })
@@ -168,7 +166,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
                 saveSuccess={saveSuccess}
                 isAdmin={isAdmin}
                 updateCredentialsMutation={updateCredentialsMutation}
-                onCredentialsChange={setCredentials}
+                onCredentialsChange={(next) => { setSaveSuccess(false); setCredentials(next) }}
                 onToggleSecrets={() => setShowSecrets(!showSecrets)}
               />
             </AdvancedWhenRaw>

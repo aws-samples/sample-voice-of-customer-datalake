@@ -30,7 +30,7 @@
     "choose": "Wybierz markę",
     "unknownBrand": "{{key}} (brak na liście marek)",
     "noBrand": "Brak marek w Radarze.",
-    "addBrand": "Dodaj markę w Administracja → Źródła → Radar",
+    "addBrand": "Dodaj markę w Administracja → Źródła danych → Radar",
     "needsBrand": "Wybierz markę, w przeciwnym razie to pozostanie zwykłym źródłem.",
     "loading": "Ładowanie marek Radaru...",
     "loadFailed": "Nie udało się wczytać marek Radaru."
@@ -318,7 +318,7 @@
     "select": "Wybierz...",
     "configuredInSettings": "{{name}} jest połączony w {{where}}: wklej tam token i jego ustawienia, a następnie wróć tutaj.",
     "configuredInSettingsNoToken": "{{name}} konfiguruje się w {{where}}: wpisz tam jego ustawienia, a potem wróć tutaj.",
-    "openDataSourceSettings": "Otwórz ustawienia źródła",
+    "openDataSourceSettings": "Otwórz Źródła danych",
     "saveFailed": "Nie udało się zapisać. Spróbuj ponownie."
   },
   "status": {

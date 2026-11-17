@@ -1,5 +1,5 @@
 /**
- * @fileoverview The Radar brand list as edited in Administration → Sources → Radar: the draft
+ * @fileoverview The Radar brand list as edited in Administration → Data sources → Radar: the draft
  * built from GET /radar/brands (list brands and legacy source-profile brands alike), the checks
  * an added brand passes before it joins the draft, and the PUT /radar/brands body. The server
  * validates again (shared/radar_brands.py); these checks only spare a round trip.

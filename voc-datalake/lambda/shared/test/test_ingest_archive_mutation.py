@@ -47,7 +47,7 @@ class TestEveryRefusalNamesItsCause:
     def test_an_unconfigured_source_id(self) -> None:
         with pytest.raises(ValidationError) as exc:
             upload_profile(_profiles_table([{'id': 'sales_csv'}]), ' nope ')
-        assert str(exc.value) == 'Unknown source_id "nope": configure it in Administration → Privacy & access → Source policies first'
+        assert str(exc.value) == 'Unknown source_id "nope": configure it in Administration → Privacy first'
 
     def test_an_unreadable_profile_row_is_logged(self) -> None:
         table = MagicMock()

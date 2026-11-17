@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Sources → Radar, "Brands tracked": the one place to set up the
+ * @fileoverview Administration → Data sources → Radar, "Brands tracked": the one place to set up the
  * brands Radar follows (docs/radar.md). Add a brand with its name and website domains (and,
  * optionally, its search language and news feeds), edit them, remove it (a confirm says its reviews are kept), then Save brands = one
  * PUT /radar/brands with the whole list. A legacy brand named only by a source profile is listed
@@ -16,6 +16,7 @@ import { invalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { serverReason } from '../../lib/errors'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import RadarAddBrandForm from './RadarAddBrandForm'
@@ -149,7 +150,7 @@ function SaveBar({ dirty, blocked, save, onSave }: Readonly<{ dirty: boolean; bl
       </button>
       {dirty ? <p className="text-xs text-muted">{t('brands.unsaved')}</p> : null}
       {blocked === null ? null : <p className="text-xs text-danger">{t(BLOCKED_MESSAGES[blocked].messageKey)}</p>}
-      {save.isSuccess && !dirty ? <p role="status" className="text-xs text-ok">{t('brands.saved')}</p> : null}
+      <SavedStatus saved={save.isSuccess && !dirty} label={t('brands.saved')} small />
       {save.error === null ? null : <p role="alert" className="text-xs text-danger">{t('brands.saveFailed')} {save.error}</p>}
     </StickyActionBar>
   )

@@ -1,68 +1,111 @@
 /**
- * @fileoverview Administration's addresses, as paths (7.49.00; the model is adminTabs.ts):
+ * @fileoverview Administration's addresses, as paths (7.54.00; the model is adminTabs.ts):
  *
- * - a tab: `/admin/<tab>` (`/admin` is General too), and on a tab with sections `/admin/<tab>/<section>`
- *   (`/admin/access/workspaces`);
- * - the Boards section's open editor: `/admin/access/boards/<boardId>`;
- * - the deployment's Data sources opened at one source's card: `/admin/data-sources/<source>` (7.50.02: the readiness
- *   fix and the setup guide open the GitHub Issues card at `/admin/data-sources/github_issues`), for a source the
- *   page shows (an unknown one is replaced by `/admin/data-sources`).
+ * - the home: `/admin`;
+ * - a tab: `/admin/<tab>` (`/admin/people`), and one card of its page: `/admin/<tab>/<section>`
+ *   (`/admin/categories/dimensions`, `/admin/sources/radar`);
+ * - the item open on a tab: a board's editor `/admin/boards/<boardId>`, a person's editor `/admin/people/<username>`
+ *   (the invite dialog: `/admin/people/invite`), one source's card `/admin/sources/<source>` for a source the page
+ *   shows (an unknown one is replaced by `/admin/sources`).
  *
- * A path that does not name its place as it should (a tab without its section, a section hidden from this caller,
- * an unknown id) is replaced by the place's own path, in place, the query kept. The query names no place: no
- * `?tab=&section=&board=` link of before is read (7.49.00, a pre-release change).
+ * The query holds only the Data sources scope switch (`?scope=deployment`: the deployment's own sources, for platform
+ * admins; `locationParams.test.ts`), a filter that combines with every Data sources address. The readiness fix and the
+ * setup guide open the deployment's GitHub Issues card at `/admin/sources/github_issues?scope=deployment`.
+ *
+ * A path that does not name its place as it should (an unknown tab or section, one hidden from this caller, an extra
+ * segment) is replaced by the place's own path, in place, the rest of the query kept; a scope this caller may not
+ * use, or on another tab, is dropped. No address of before 7.54.00 is aliased (`/admin/access/users`,
+ * `/admin/data-sources`, `/admin/taxonomy/categories`, …): an unknown tab opens the home.
  *
  * @module pages/Settings/adminPaths
  */
-import { pathOf, segmentsUnder } from '../../utils/pathPlace'
+import { pathOf, searchWithout, segmentsUnder } from '../../utils/pathPlace'
 import type { Address, PlaceRead } from '../../utils/pathPlace'
-import { resolveAdminLocation } from './adminTabs'
-import type { AdminLocation } from './adminTabs'
+import { ADMIN_HOME, isAdminTabId, isVisibleSection, resolveAdminLocation } from './adminTabs'
+import type { AdminLocation, AdminTabId } from './adminTabs'
 
 export const ADMIN_PATH = '/admin'
 
-/** Where Administration is: its tab and section, on Boards the board whose editor is open, on Data sources the card. */
+/** The Data sources scope switch's query parameter, and its one value (absent: this workspace's sources). */
+const SOURCE_SCOPE_PARAM = 'scope'
+const DEPLOYMENT_SCOPE = 'deployment'
+
+/** The People item that opens the invite dialog rather than a person's editor (usernames are UUIDs, never this). */
+export const PEOPLE_INVITE = 'invite'
+
+/** Where Administration is: its tab and card, and the item open on the tab (a board, a person, a source's card). */
 export interface AdminPlace extends AdminLocation {
-  /** The board open in the Boards section's editor; null: the list. */
-  readonly boardId: string | null
-  /** The source whose card the deployment's Data sources opens (`/admin/data-sources/<source>`); null: none. */
-  readonly sourceId: string | null
+  /** Boards: the board whose editor is open; People: the person whose editor is open, or `invite`; Data sources: the
+   * source whose card is opened. Null: none. */
+  readonly item: string | null
 }
 
-const GENERAL: AdminPlace = { tab: 'brand', section: null, boardId: null, sourceId: null }
-const DATA_SOURCES = 'data-sources'
+const HOME: AdminPlace = { ...ADMIN_HOME, item: null }
 
-/** The path of a tab and section (`/admin/access/users`) and, on Boards, of one board's editor. */
-export function adminPath(location: AdminLocation, boardId: string | null = null): string {
-  const section = location.section === null ? [] : [location.section]
-  const board = boardId !== null && boardId !== '' && location.section === 'boards' ? [boardId] : []
-  return pathOf(['admin', location.tab, ...section, ...board])
+/** The tabs whose second segment may name an item rather than a section. */
+const ITEM_TABS: ReadonlySet<AdminTabId> = new Set(['boards', 'people', 'sources'])
+
+/** The path of a place: the home, a tab, a tab's card, or the item open on a tab (`/admin/boards/brd_sales`). */
+export function adminPath(location: AdminLocation, item: string | null = null): string {
+  if (location.tab === null) return ADMIN_PATH
+  if (location.section !== null) return pathOf(['admin', location.tab, location.section])
+  const opened = item !== null && item !== '' && ITEM_TABS.has(location.tab) ? [item] : []
+  return pathOf(['admin', location.tab, ...opened])
 }
+
+/** One tab's path (`/admin/people`). */
+export const adminTabPath = (tab: AdminTabId): string => adminPath({ tab, section: null })
 
 /**
- * The deployment's Data sources opened at one source's card (7.50.02): `/admin/data-sources/<source>` (the GitHub
- * Issues card is `/admin/data-sources/github_issues`), the card opened and scrolled into view.
+ * The deployment's own Data sources opened at one source's card (`/admin/sources/github_issues?scope=deployment`): the
+ * card opened and scrolled into view, the deployment's sources whatever workspace the app is in (platform admins).
  */
 export function deploymentSourcePath(source: string): string {
-  return pathOf(['admin', DATA_SOURCES, source])
+  return `${adminPath({ tab: 'sources', section: null }, source)}?${SOURCE_SCOPE_PARAM}=${DEPLOYMENT_SCOPE}`
 }
 
-/** The source an Administration path opens on the deployment's Data sources (`/admin/data-sources/<source>`), or null. */
-export function adminSourceOf(pathname: string): string | null {
-  const [tab, source] = segmentsUnder(ADMIN_PATH, pathname) ?? []
-  return tab === DATA_SOURCES && source !== undefined ? source : null
-}
-
-/** The tab segment of an Administration path (`/admin` is General), or null outside Administration. */
+/** The tab segment of an Administration path ('' for the home `/admin`), or null outside Administration. */
 export function adminTabSegment(pathname: string): string | null {
   const segments = segmentsUnder(ADMIN_PATH, pathname)
-  return segments === null ? null : segments[0] ?? 'brand'
+  return segments === null ? null : segments[0] ?? ''
 }
 
-/** The board an Administration path opens in the Boards editor (`/admin/access/boards/<boardId>`), or null. */
-export function adminBoardOf(pathname: string): string | null {
-  const [tab, section, boardId] = segmentsUnder(ADMIN_PATH, pathname) ?? []
-  return tab === 'access' && section === 'boards' && boardId !== undefined ? boardId : null
+/** The item an Administration path opens on `tab` (`/admin/boards/<boardId>` on boards), or null. */
+export function adminItemOf(pathname: string, tab: AdminTabId): string | null {
+  const [first, second] = segmentsUnder(ADMIN_PATH, pathname) ?? []
+  if (first !== tab || second === undefined || !ITEM_TABS.has(tab)) return null
+  // A section's card is no item (on Data sources: `/admin/sources/radar` is the Radar card, not a source).
+  return isVisibleSection(tab, second, true, true) ? null : second
+}
+
+/** The item a place may keep: any board or person, a source only when the page shows it. */
+function itemOf(location: AdminLocation, segment: string | undefined, sources: readonly string[]): string | null {
+  if (location.tab === null || location.section !== null || segment === undefined || !ITEM_TABS.has(location.tab)) return null
+  if (location.tab === 'sources') return sources.includes(segment) ? segment : null
+  return segment
+}
+
+/** Whose sources a Data sources address shows: the deployment's (`?scope=deployment`) or, absent, this workspace's. */
+export type SourceScope = 'workspace' | 'deployment'
+
+/** The scope an address's query names (the page's address is already canonical: a scope it may not use is gone). */
+export function sourceScopeOf(search: string): SourceScope {
+  return new URLSearchParams(search).get(SOURCE_SCOPE_PARAM) === DEPLOYMENT_SCOPE ? 'deployment' : 'workspace'
+}
+
+/** `search` switched to `scope`, every other parameter kept. */
+export function withSourceScope(search: string, scope: SourceScope): string {
+  const rest = searchWithout(search, [SOURCE_SCOPE_PARAM])
+  if (scope === 'workspace') return rest
+  const joiner = rest === '' ? '?' : '&'
+  return `${rest}${joiner}${SOURCE_SCOPE_PARAM}=${DEPLOYMENT_SCOPE}`
+}
+
+/** The query a place keeps: the scope only on Data sources, for a caller who may use it, and only its one value. */
+function placeSearch(search: string, place: AdminPlace, mayUseDeployment: boolean): string {
+  if (!new URLSearchParams(search).has(SOURCE_SCOPE_PARAM)) return search
+  const kept = place.tab === 'sources' && mayUseDeployment && sourceScopeOf(search) === 'deployment'
+  return kept ? search : searchWithout(search, [SOURCE_SCOPE_PARAM])
 }
 
 /**
@@ -74,15 +117,11 @@ export function readAdminAddress(address: Address, isAdmin: boolean, isPlatformA
   sources: readonly string[] = []): PlaceRead<AdminPlace> | null {
   const segments = segmentsUnder(ADMIN_PATH, address.pathname)
   if (segments === null) return null
-  if (segments.length === 0) return { place: GENERAL, replaceWith: null }
-  const [tab = null, section = null] = segments
-  const location = resolveAdminLocation(tab, section, isAdmin, isPlatformAdmin)
-  const board = adminBoardOf(address.pathname)
-  const source = adminSourceOf(address.pathname)
-  const place: AdminPlace = {
-    ...location, boardId: location.section === 'boards' ? board : null,
-    sourceId: location.tab === DATA_SOURCES && source !== null && sources.includes(source) ? source : null,
-  }
-  const pathname = place.sourceId === null ? adminPath(location, place.boardId) : deploymentSourcePath(place.sourceId)
-  return { place, replaceWith: pathname === address.pathname ? null : { pathname, search: address.search } }
+  const [tab = null, second] = segments
+  const location = resolveAdminLocation(tab !== null && isAdminTabId(tab) ? tab : null, second ?? null, isAdmin, isPlatformAdmin)
+  const place: AdminPlace = location.tab === null ? HOME : { ...location, item: itemOf(location, second, sources) }
+  const pathname = adminPath(place, place.item)
+  const search = placeSearch(address.search, place, isAdmin && isPlatformAdmin)
+  const own = pathname === address.pathname && search === address.search
+  return { place, replaceWith: own ? null : { pathname, search } }
 }

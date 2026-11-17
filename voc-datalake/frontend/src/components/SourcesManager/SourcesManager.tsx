@@ -34,7 +34,9 @@ import type { DraftProfile } from './sourceDraft'
 import { scrapersKey } from '../../api/queryKeys'
 import { scopedKey, useConfigScope } from '../../workspace/configScope'
 
-function ProfilesEditor({ stored, withErasure }: Readonly<{ stored: readonly SourceProfile[]; withErasure: boolean }>) {
+function ProfilesEditor({ stored, withErasure, erasureId }: Readonly<{
+  stored: readonly SourceProfile[]; withErasure: boolean; erasureId: string | undefined
+}>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
   const queryClient = useQueryClient()
   const invalidateFeedbackData = useInvalidateFeedbackData()
@@ -77,10 +79,11 @@ function ProfilesEditor({ stored, withErasure }: Readonly<{ stored: readonly Sou
       <AddSourceProfile knownIds={knownIds} draft={draft} disabled={draft.length >= MAX_SOURCE_PROFILES} onAdd={(id) => edit([...draft, newProfile(id)])} />
       <DraftSaveBar {...barProps} />
       {withErasure && (
-        <>
+        // The erasure panels as one target a page can focus (Administration → Privacy → Erasure, `erasureId`).
+        <div id={erasureId} tabIndex={erasureId === undefined ? undefined : -1} className="space-y-4 scroll-mt-4 rounded-lg focus:outline-none">
           <ErasurePanel profiles={stored} />
           <SourceErasurePanel profiles={stored} />
-        </>
+        </div>
       )}
     </div>
   )
@@ -91,14 +94,15 @@ function ProfilesEditor({ stored, withErasure }: Readonly<{ stored: readonly Sou
  * row or email names the current workspace inside one (that workspace's member admins; its reviews only) and is
  * the deployment's outside; a whole-source erasure is always the deployment's (no `X-Workspace-Id`, its
  * administrators). A workspace's settings page leaves them out: it edits only that workspace's profiles.
+ * `erasureId`: the id of the panels' wrapper, which a page focuses when its address names them.
  */
-export default function SourcesManager({ withErasure = true }: Readonly<{ withErasure?: boolean }>) {
+export default function SourcesManager({ withErasure = true, erasureId }: Readonly<{ withErasure?: boolean; erasureId?: string }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
   const { data, isLoading, isError, dataUpdatedAt } = useSourceProfiles(useConfigScope())
   return (
     <DraftLoadGate isLoading={isLoading} isError={isError} errorText={t('loadError')}>
       {/* Remounted when the stored list changes, so the draft restarts from it. */}
-      <ProfilesEditor key={dataUpdatedAt} stored={data ?? []} withErasure={withErasure} />
+      <ProfilesEditor key={dataUpdatedAt} stored={data ?? []} withErasure={withErasure} erasureId={erasureId} />
     </DraftLoadGate>
   )
 }

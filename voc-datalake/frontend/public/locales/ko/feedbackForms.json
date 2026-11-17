@@ -28,7 +28,7 @@
     "noSubmissionsYet": "아직 응답이 없습니다. 양식을 공유해 응답을 받으세요.",
     "themeSwatch": "양식 색상"
   },
-  "configureApiFirst": "피드백 양식을 관리하려면 관리 → 일반에서 API 엔드포인트를 구성하세요.",
+  "configureApiFirst": "피드백 양식을 관리하려면 관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요.",
   "createForm": "양식 만들기",
   "deleteConfirmLabel": "삭제",
   "deleteConfirmMessage": "이 양식을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
@@ -38,7 +38,7 @@
     "backgroundColor": "배경 색상",
     "borderRadius": "테두리 반경",
     "cancel": "취소",
-    "categoryHint": "카테고리는 관리 → 분류 체계 → 카테고리에서 구성됩니다",
+    "categoryHint": "카테고리는 관리 → 카테고리에서 구성됩니다",
     "categoryLabel": "카테고리",
     "categoryRoutingDescription": "이 양식에 카테고리를 할당합니다. 이 양식을 통해 제출된 모든 피드백은 선택한 카테고리로 자동 태그됩니다.",
     "categoryRoutingTitle": "카테고리 라우팅",

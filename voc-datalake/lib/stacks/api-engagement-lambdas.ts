@@ -124,7 +124,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py).
   userPool.grant(logsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 
-  // Administration → System → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
+  // Administration → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
   const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
     opsAlertsQueues: opsAlerts.environment.OPS_ALERTS_QUEUES ?? '',
     // A plain string (the stack's name), not a token: no cross-stack reference.

@@ -1,14 +1,16 @@
 /**
- * Administration → Data sources (7.50.00, DeploymentDataSources.tsx): the deployment's own sources from any address.
- * The real API client runs against a stubbed `fetch`, so these specs read the request headers themselves. Inside a
- * workspace no request of the page carries `X-Workspace-Id` (the credentials' status, read and save, the schedules and
- * their pauses, a reset, the GitHub Issues card's App sign-in and the Apps it lists), and the page says what these
- * sources feed and who reads it; `/admin/data-sources/github_issues` opens the GitHub Issues card, scrolled into view
- * (7.50.02); the workspace's own Data sources page (Sources → Source settings) still names the workspace on every
- * request but the deployment-only schedule switch, and offers no App sign-in.
+ * Administration → Data sources (7.54.00, DataSourcesPage.tsx): one page, This workspace | Deployment.
+ *
+ * The real API client runs against a stubbed `fetch`, so these specs read the request headers themselves. In the
+ * deployment's scope (`?scope=deployment`, a platform admin's, inside a workspace) no request of the page carries
+ * `X-Workspace-Id` (the credentials' status, read and save, the schedules and their pauses, a reset, the GitHub Issues
+ * card's App sign-in and the Apps it lists), and the two-sentence notice says what these sources feed;
+ * `/admin/sources/github_issues?scope=deployment` opens the GitHub Issues card, scrolled into view. In this workspace's
+ * scope every request but the deployment-only schedule switch names the workspace, and the card offers no App sign-in.
+ * The cards come health first; Email inbox, Radar and the Design-system tokens sit in the Advanced fold.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
@@ -25,6 +27,9 @@ vi.mock('../../runtimeConfig', async (importOriginal) => ({
 }))
 vi.mock('../../services/auth', () => import('@test/api-mocks').then((m) => m.authServiceMock()))
 vi.mock('../../components/S3ImportExplorer/S3ImportExplorer', () => ({ default: () => null }))
+vi.mock('./EmailInboxCard', () => ({ default: () => <p>Email inbox card</p> }))
+vi.mock('./RadarSection', () => ({ default: () => <p>Radar card</p> }))
+vi.mock('./IntegrationsSection', () => ({ default: () => <p>Design-system tokens card</p> }))
 
 const ISSUES = 'github_issues'
 const issuesManifest: PluginManifest = {
@@ -35,11 +40,14 @@ const issuesManifest: PluginManifest = {
     { key: 'github_app_id', label: 'GitHub App id (optional)', type: 'text', required: false, secret: false },
   ],
 }
-vi.mock('../../plugins', () => ({ getEnabledPlugins: () => [issuesManifest] }))
+const scraperManifest: PluginManifest = {
+  id: 'webscraper', name: 'Web scraper', icon: 'Web', enabled: true, hasIngestor: true, hasWebhook: false, hasS3Trigger: false, config: [],
+}
+const plugins = { list: [issuesManifest] }
+vi.mock('../../plugins', () => ({ getEnabledPlugins: () => plugins.list }))
 
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
-import DeploymentDataSources from './DeploymentDataSources'
-import { DataSourcesSection } from './SettingsSections'
+import DataSourcesPage from './DataSourcesPage'
 
 const TRIPPED = { tripped: true, tripped_at: '2026-11-16T09:00:00Z', failure_count: 5, last_error: 'HTTPError: 429' }
 const CLOSED = { tripped: false, tripped_at: null, failure_count: 0, last_error: null }
@@ -82,11 +90,19 @@ beforeEach(() => {
   })
   act(() => setCurrentWorkspace(ACME))
 })
-afterEach(() => { setCurrentWorkspace(null) })
+afterEach(() => {
+  setCurrentWorkspace(null)
+  plugins.list = [issuesManifest]
+})
 
-/** The deployment's Data sources at `path` (Administration's own route renders it under the router). */
-const renderDeployment = (path = '/admin/data-sources') => renderWithQueryClient(
-  <TestRouter initialEntries={[path]}><DeploymentDataSources apiEndpoint={`${API}/`} isAdmin /></TestRouter>)
+/** Data sources at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator). */
+const renderPage = (path: string, isPlatformAdmin = true) => renderWithQueryClient(
+  <TestRouter initialEntries={[path]}>
+    <DataSourcesPage apiEndpoint={`${API}/`} isAdmin isPlatformAdmin={isPlatformAdmin} section={null} />
+  </TestRouter>)
+
+/** The deployment's sources (`?scope=deployment`). */
+const renderDeployment = (path = '/admin/sources') => renderPage(`${path}?scope=deployment`)
 
 /** Reset the card's pause, open it and save its credentials (on the deployment's card, choosing the token back). */
 async function useTheCard(withAppSignIn: boolean) {
@@ -114,29 +130,23 @@ describe("the deployment's Data sources", () => {
     expect(sent().filter((s) => s.workspace !== undefined)).toStrictEqual([])
   })
 
-  it('says what its sources feed and who reads it, and that the workspace the app is in is not changed', async () => {
+  it('says in two sentences what its sources feed and who reads it, and offers the switch back', async () => {
     renderDeployment()
-    const notice = screen.getByTestId('deployment-sources-notice')
-    const text = notice.textContent
-    expect([
-      text.includes('the feedback they bring in is deployment-wide, outside every workspace'),
-      /only feedback the engineering automations read \(Bug fixer, Feature builder, Issue triage\)/.test(text),
-      text.includes('configures itself when you connect GitHub under Agents → Connections'),
-    ]).toStrictEqual([true, true, true])
-    expect(within(notice).getByRole('note')).toHaveTextContent(`You are in ${ACME.name}, but nothing on this page changes it`)
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'These sources bring in deployment-wide feedback, outside every workspace. It is the only feedback the engineering automations read.')
+    expect(screen.getByRole('radio', { name: 'Deployment' })).toHaveAttribute('aria-checked', 'true')
     expect(await screen.findByRole('button', { name: /GitHub Issues/ })).toBeInTheDocument()
   })
 
-  it('leaves the workspace line out outside a workspace', () => {
-    act(() => setCurrentWorkspace(null))
+  it('folds no Advanced cards into the deployment\'s view', () => {
     renderDeployment()
-    expect(within(screen.getByTestId('deployment-sources-notice')).queryByRole('note')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Advanced' })).not.toBeInTheDocument()
   })
 
-  it('opens the GitHub Issues card from /admin/data-sources/github_issues, scrolled into view', async () => {
+  it('opens the GitHub Issues card from /admin/sources/github_issues?scope=deployment, scrolled into view', async () => {
     const restore = stubElementScrollIntoView()
     try {
-      renderDeployment(`/admin/data-sources/${ISSUES}`)
+      renderDeployment(`/admin/sources/${ISSUES}`)
       expect(screen.getByRole('button', { name: /GitHub Issues/ })).toHaveAttribute('aria-expanded', 'true')
       expect(await screen.findByText(/Signs in with your GitHub App/)).toBeInTheDocument()
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
@@ -151,9 +161,9 @@ describe("the deployment's Data sources", () => {
   })
 })
 
-describe("a workspace's own Data sources, beside it", () => {
+describe("this workspace's sources (the page's default)", () => {
   it('still names the workspace on every request but the schedule switch, and offers no App sign-in', async () => {
-    renderWithQueryClient(<DataSourcesSection apiEndpoint={`${API}/`} isAdmin />)
+    renderPage('/admin/sources')
     await useTheCard(false)
 
     expect(screen.queryByTestId('github-sign-in')).not.toBeInTheDocument()
@@ -161,5 +171,43 @@ describe("a workspace's own Data sources, beside it", () => {
     expect(requests.map((s) => s.request)).not.toContain('GET /agents/engineering/github-apps')
     expect(requests.length).toBeGreaterThan(2)
     expect(requests.filter((s) => s.workspace !== ACME.id)).toStrictEqual([])
+  })
+
+  it('switches to the deployment as a radio group (This workspace checked), with no notice yet', async () => {
+    renderPage('/admin/sources')
+    const user = userEvent.setup()
+    expect([screen.getByRole('radio', { name: 'This workspace' }).getAttribute('aria-checked'), screen.queryByRole('note')])
+      .toStrictEqual(['true', null])
+    await user.click(screen.getByRole('radio', { name: 'Deployment' }))
+    expect(await screen.findByRole('note')).toHaveTextContent('deployment-wide feedback')
+  })
+
+  it('offers no switch to a plain administrator', () => {
+    renderPage('/admin/sources', false)
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('offers no switch outside a workspace, where the page is the deployment\'s', () => {
+    act(() => setCurrentWorkspace(null))
+    renderPage('/admin/sources')
+    expect([screen.queryByRole('radiogroup'), screen.getByRole('note')]).toStrictEqual([null, expect.anything()])
+  })
+
+  it('puts a paused source on top (health first)', async () => {
+    plugins.list = [scraperManifest, issuesManifest]
+    renderPage('/admin/sources')
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /GitHub Issues|Web Scraper/ }).map((b) => b.textContent))
+        .toStrictEqual([expect.stringContaining('GitHub Issues'), expect.stringContaining('Web Scraper')])
+    })
+  })
+
+  it('folds Email inbox, Radar and the Design-system tokens under Advanced', async () => {
+    renderPage('/admin/sources')
+    const user = userEvent.setup()
+    expect(screen.queryByText('Radar card')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Advanced' }))
+    expect([screen.getByText('Email inbox card'), screen.getByText('Radar card'), screen.getByText('Design-system tokens card')])
+      .toHaveLength(3)
   })
 })

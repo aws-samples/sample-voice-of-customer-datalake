@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Sources → Radar (admin): the brands tracked and how Radar
+ * @fileoverview Administration → Data sources → Radar (admin): the brands tracked and how Radar
  * works (RadarSetupGuide), the news-scan cadence and its cost guards, the Exa key (RadarExaCard),
  * the last scan, and "Scan now" (docs/radar.md).
  * @module pages/Settings/RadarSection
@@ -10,6 +10,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { CADENCES, MAX_BRANDS_LIMIT, QUERY_CAP_LIMIT } from '../../api/radarSchema'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { LastScan, ScanNow } from '../Radar/RadarScan'
@@ -46,11 +47,13 @@ function SettingsForm({ initial }: Readonly<{ initial: RadarScanSettings }>) {
   const { t } = useTranslation('radar')
   const queryClient = useQueryClient()
   const cadenceId = useId()
-  const [draft, setDraft] = useState<RadarScanSettings>(initial)
+  const [draft, setDraftOnly] = useState<RadarScanSettings>(initial)
   const save = useMutation({
     mutationFn: (settings: RadarScanSettings) => radarApi.saveSettings(settings),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: radarKeys.overview() }) },
   })
+  // An edit ends the last save's "Saved" (components/SavedStatus).
+  const setDraft = (next: RadarScanSettings) => { save.reset(); setDraftOnly(next) }
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.mutate(draft) }}>
       <div>
@@ -66,7 +69,7 @@ function SettingsForm({ initial }: Readonly<{ initial: RadarScanSettings }>) {
         max={QUERY_CAP_LIMIT} onChange={(value) => setDraft({ ...draft, query_cap: value })} />
       <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
         <button type="submit" className="btn btn-primary btn-sm" disabled={save.isPending}>{t('settings.save')}</button>
-        {save.isSuccess ? <p role="status" className="text-xs text-ok">{t('settings.saved')}</p> : null}
+        <SavedStatus saved={save.isSuccess} label={t('settings.saved')} small />
         {save.isError ? <p role="alert" className="text-xs text-danger">{t('settings.saveFailed')}</p> : null}
       </StickyActionBar>
     </form>

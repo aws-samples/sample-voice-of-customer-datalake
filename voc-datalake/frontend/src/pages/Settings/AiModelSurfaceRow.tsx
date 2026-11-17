@@ -5,7 +5,8 @@
  * from what is stored. Nothing is saved until Save.
  */
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, FlaskConical, Save, Undo2 } from 'lucide-react'
+import { FlaskConical, Save, Undo2 } from 'lucide-react'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import ModelTestPill from './ModelTestPill'
 import type { ModelTestResult } from '../../api/modelTestSchema'
 
@@ -102,11 +103,7 @@ function RowStatus({ result, testing, dirty, saving, justSaved, onSave, onDiscar
     <div className="flex flex-wrap items-center justify-between gap-2">
       <ModelTestPill result={result} testing={testing} />
       <div className="flex items-center gap-2">
-        {justSaved && (
-          <span className="text-xs text-ok flex items-center gap-1">
-            <CheckCircle2 size={14} aria-hidden="true" /> {t('aiModel.saved')}
-          </span>
-        )}
+        <SavedStatus saved={justSaved} label={t('aiModel.saved')} small />
         {dirty && (
           <>
             <span className="text-xs text-warn">{t('aiModel.test.unsaved')}</span>

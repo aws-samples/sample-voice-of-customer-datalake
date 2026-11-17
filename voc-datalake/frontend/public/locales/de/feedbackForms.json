@@ -28,7 +28,7 @@
     "noSubmissionsYet": "Noch keine Einsendungen – teilen Sie das Formular, um welche zu erhalten.",
     "themeSwatch": "Formularfarbe"
   },
-  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um Feedback-Formulare zu verwalten.",
+  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Marke & Darstellung, um Feedback-Formulare zu verwalten.",
   "createForm": "Formular erstellen",
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie dieses Formular wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -38,7 +38,7 @@
     "backgroundColor": "Hintergrundfarbe",
     "borderRadius": "Eckenradius",
     "cancel": "Abbrechen",
-    "categoryHint": "Kategorien werden unter Administration → Taxonomie → Kategorien konfiguriert",
+    "categoryHint": "Kategorien werden unter Administration → Kategorien konfiguriert",
     "categoryLabel": "Kategorie",
     "categoryRoutingDescription": "Weisen Sie diesem Formular eine Kategorie zu. Alle über dieses Formular eingereichten Rückmeldungen werden automatisch mit der ausgewählten Kategorie versehen.",
     "categoryRoutingTitle": "Kategorie-Routing",

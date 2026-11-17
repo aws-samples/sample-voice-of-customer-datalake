@@ -23,7 +23,7 @@ import { Tooltip } from '../Tooltip/Tooltip'
 const MAX_PRODUCT_LENGTH = 120
 const MAX_OWNERS = 20
 
-/** Same key and fetcher as Settings → Users, so the two share one cached list. */
+/** Same key and fetcher as Administration → People, so the two share one cached list. */
 
 type CategoryDetails = Pick<Category, 'product' | 'owners'>
 

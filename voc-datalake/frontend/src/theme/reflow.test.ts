@@ -51,8 +51,8 @@ describe('rows reflow at 390 px and 200 % text', () => {
   })
 
   it.each([
-    ['../pages/Settings/SettingsSections.tsx', 'w-full flex flex-wrap items-center justify-between'],
-    ['../pages/Settings/SettingsSections.tsx', 'flex flex-wrap items-center justify-between gap-3 mb-4'],
+    ['../pages/Settings/SettingsSections.tsx', 'flex flex-wrap items-center justify-between gap-2'],
+    ['../pages/Settings/BrandEditorCard.tsx', 'flex flex-wrap items-center justify-between gap-3'],
     ['../pages/Settings/LogsSection.tsx', 'flex flex-wrap items-center justify-between gap-3 mb-4'],
     ['../pages/Settings/LogsSection.tsx', 'grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]'],
     ['../pages/Settings/SourceLogList.tsx', "'flex flex-wrap items-center gap-2 mb-3'"],

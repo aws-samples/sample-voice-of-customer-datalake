@@ -9,6 +9,7 @@ import type { SyntheticEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Save } from 'lucide-react'
+import SavedStatus from '../../components/SavedStatus/SavedStatus'
 import { CAP_BOUNDS, CAP_KEYS, emailInboxApi, emailInboxKey } from '../../api/emailInboxApi'
 import type { CapKey, EmailInboxCaps } from '../../api/emailInboxApi'
 
@@ -88,7 +89,7 @@ export default function EmailInboxCapsForm({ caps }: { readonly caps: EmailInbox
             capKey={key}
             value={draft[key]}
             disabled={save.isPending}
-            onChange={(value) => setDraft((current) => ({ ...current, [key]: value }))}
+            onChange={(value) => { save.reset(); setDraft((current) => ({ ...current, [key]: value })) }}
           />
         ))}
       </div>
@@ -97,7 +98,7 @@ export default function EmailInboxCapsForm({ caps }: { readonly caps: EmailInbox
           {save.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
           {t('caps.save')}
         </button>
-        {save.isSuccess && <span role="status" className="text-sm text-ok">{t('caps.saved')}</span>}
+        <SavedStatus saved={save.isSuccess} label={t('caps.saved')} />
         {save.isError && <span role="alert" className="text-sm text-danger">{t('errors.save')}</span>}
       </div>
     </form>

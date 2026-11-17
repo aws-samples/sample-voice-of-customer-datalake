@@ -12,7 +12,7 @@
     "personas_one": "{{count, number}} persona",
     "personas_other": "{{count, number}} personas"
   },
-  "configureEndpoint": "Configure API endpoint in Administration → General first",
+  "configureEndpoint": "Configure API endpoint in Administration → Brand & appearance first",
   "list": {
     "search": "Search projects",
     "scopeLabel": "Whose projects",

@@ -31,7 +31,7 @@
     },
     "openScraper": "데이터 소스 페이지에서 이 스크레이퍼 열기",
     "openScrapers": "데이터 소스 페이지 열기",
-    "openUsers": "개인정보 및 액세스 → 사용자 열기",
+    "openUsers": "관리 → 사용자 열기",
     "approvePlan": "승인하고 실행",
     "change": "변경",
     "changeLabel": "무엇을 바꿀까요?",
@@ -39,8 +39,8 @@
     "confirmChange": "변경 요청",
     "openFeedback": "피드백 목록 열기",
     "openRadar": "Radar 열기",
-    "openRadarSettings": "관리 → 소스 → 레이더 열기",
-    "openCategories": "관리 → 분류 체계 → 카테고리 열기",
+    "openRadarSettings": "관리 → 데이터 소스 → 레이더 열기",
+    "openCategories": "관리 → 카테고리 열기",
     "openWorkspaceCategories": "워크스페이스 설정의 카테고리 열기"
   },
   "preview": {

@@ -1,5 +1,5 @@
 /**
- * @fileoverview The build stamps shown on Administration → System → Version.
+ * @fileoverview The build stamps shown on Administration → Version.
  *
  * vite.config.ts stamps them with `define` at build (or dev-server start):
  * the repo-root package.json version, the short git commit ('unknown' without

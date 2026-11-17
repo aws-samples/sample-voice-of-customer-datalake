@@ -145,7 +145,7 @@ export default function IntegrationSetupGuide() {
       <ul className="space-y-2">
         {INTEGRATION_GUIDES.map((guide) => <GuideDisclosure key={guide.provider} guide={guide} />)}
       </ul>
-      <p className="text-xs text-muted">{t('settings:integrationGuide.otherCredentials', { plugins: `${t('settings:tabs.sources')} → ${t('settings:sections.plugins')}` })}</p>
+      <p className="text-xs text-muted">{t('settings:integrationGuide.otherCredentials', { plugins: t('settings:tabs.sources') })}</p>
     </div>
   )
 }

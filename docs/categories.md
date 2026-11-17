@@ -4,7 +4,7 @@ Categories decide how every review is classified. Each category maps to the
 **product** (or product area) it belongs to and the **product owners**
 responsible for it: owners automatically see their categories' feedback and are
 the people who act on it. Setting categories up is an essential onboarding step
-(Home → "Set up your categories", then Administration → Taxonomy → Categories).
+(Home → "Set up your categories", then Administration → Categories).
 
 ## Category configuration
 
@@ -149,7 +149,7 @@ Admins and unrestricted users are unaffected.
 
 ### With the AI assistant (administrators)
 
-On Administration → Privacy & access → Users (`/admin/access/users`) the assistant can administer users for you, and you stay in control: it
+On Administration → People (`/admin/people`) the assistant can administer users for you, and you stay in control: it
 proposes, an approval card shows exactly what will be saved, and nothing changes until you
 approve. Every one of these tools is admin-only — a non-admin's assistant never has them, and
 the `/users/*` routes they end in are `require_admin` anyway.
@@ -164,7 +164,7 @@ the `/users/*` routes they end in are `require_admin` anyway.
 | `set_user_access` | write | The grant above, with `PUT /users/{u}/category-access`: `["*"]` or configured category names; sources omitted (unchanged), `null` (default rule), `["*"]` or configured profile ids. Refused for administrators (they always see everything) and for an unconfigured name; refused on approve if the grant changed since the card was shown. |
 
 Not available through the assistant, on purpose: deleting a user, password resets and the user
-flags (fallback owner, memory reviewer) — use Administration → Privacy & access → Users. These tools are not on the global
+flags (fallback owner, memory reviewer) — use the person's editor on Administration → People. These tools are not on the global
 MCP server (`/mcp/global`).
 
 ## Filtering by several values
@@ -219,7 +219,7 @@ list and every breakdown card, like the other filters.
   with `dims=feedback_type:<value>` (the select the pills replaced) opens as that one pill.
 - Server: the pills go out inside `dims` as `feedback_type:a|b|~unset`, after any configured
   dimension pairs. Untyped reviews (`~unset`) always stay in view, so while few reviews are typed
-  a type choice changes little; classify them in Administration → Taxonomy → Dimensions.
+  a type choice changes little; classify them in Administration → Categories → Dimensions.
 - The counts come from the unfiltered window (`/feedback/entities` → `dimensions.feedback_type`,
   untyped = the window total minus the typed reviews), so they do not change as you pick pills.
 
@@ -246,7 +246,7 @@ the only feedback write path reachable from the browser.
 ## Reprocessing existing feedback
 
 When the categories change, an admin can re-categorise what is already stored
-(Administration → Taxonomy → Categories → "Reprocess existing feedback").
+(Administration → Categories → "Reprocess existing feedback").
 Inside a workspace (since 7.13.00) its admins do the same for that workspace on its
 Workspace settings page, beside its categories: the routes below with `X-Workspace-Id`
 start, show and cancel the workspace's own job (one at a time per workspace), which
@@ -290,7 +290,7 @@ ceiling (50,000 reviews, `MAX_REPROCESS_ITEMS`) ends `partial` with a `resume_fr
 starts a new job with the same mode, `include_manual` and slice at that cursor, so it
 never restarts from the top. The new job carries `resumed_from`, the partial one
 `resumed_by`, and a partial job is resumed by one job at a time: a resumer that fails or is cancelled
-hands it back (its `resumed_by` is removed), so it can be resumed again. Administration → Taxonomy shows the
+hands it back (its `resumed_by` is removed), so it can be resumed again. Administration → Categories shows the
 slice, and a **Resume** button on a partial job.
 
 ### What a reprocess records

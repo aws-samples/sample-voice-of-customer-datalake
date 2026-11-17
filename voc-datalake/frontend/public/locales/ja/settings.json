@@ -152,22 +152,17 @@
     "handlesPlaceholder": "@あなたのブランド, ブランド名, BrandName",
     "hashtagsLabel": "追跡するハッシュタグ（カンマ区切り）",
     "hashtagsPlaceholder": "#あなたのブランド, #製品名",
-    "loadingSettings": "サーバーから設定を読み込み中...",
     "nameLabel": "ブランド名",
     "namePlaceholder": "ブランド名を入力",
     "syncedToBackend": "バックエンドと同期済み",
     "title": "ブランド設定",
     "urlsHint": "ウェブ検索で監視する特定のURL",
     "urlsLabel": "追跡するURL（1行に1つ）",
-    "loadFailed": "サーバーからブランド設定を読み込めませんでした。このブラウザーに保存された値を表示しています。",
-    "retry": "再試行",
     "notSynced": "未同期",
-    "saveFailed": "サーバーに保存できませんでした。もう一度お試しください。",
-    "savedToServer": "ブランドを保存しました。",
     "adminOnlyNotice": "ブランド設定を変更できるのは管理者のみです。ここで内容を確認できます。"
   },
   "categories": {
-    "configureFirst": "カテゴリを管理するには、一般タブでAPIエンドポイントを設定してください。",
+    "configureFirst": "カテゴリを管理するには、ブランドと外観 → 詳細設定 で API エンドポイントを構成してください。",
     "description": "フィードバック分類のカテゴリとサブカテゴリを設定します。",
     "title": "フィードバックカテゴリ"
   },
@@ -179,13 +174,12 @@
     "resetTitle": "すべての設定をリセット"
   },
   "dataSources": {
-    "configureFirst": "データソースを管理するには、一般タブでAPIエンドポイントを設定してください。",
-    "description": "API認証情報、Webhookの設定、データソーススケジュールの有効化/無効化。",
+    "configureFirst": "データソースを管理するには、ブランドと外観 → 詳細設定 で API エンドポイントを構成してください。",
     "noPlugins": "データソースプラグインが見つかりません。<code>npm run generate:manifests</code> を実行してプラグインマニフェストを生成してください。"
   },
   "logs": {
     "clear": "クリア",
-    "configureFirst": "ログを表示するには、一般タブでAPIエンドポイントを設定してください。",
+    "configureFirst": "ログを表示するには、ブランドと外観 → 詳細設定 で API エンドポイントを構成してください。",
     "daysAgo_one": "{{count, number}}日前",
     "daysAgo_other": "{{count, number}}日前",
     "errorLabel": "エラー:",
@@ -354,7 +348,6 @@
     "fileExplorer": "ファイルエクスプローラー",
     "hide": "非表示",
     "save": "保存",
-    "saved": "保存しました！",
     "saveToSecrets": "Secrets Managerに保存",
     "selectOption": "選択...",
     "show": "表示",
@@ -392,34 +385,34 @@
       "manual": "手動で設定（詳細）"
     }
   },
-  "subtitle": "VoCプラットフォームを設定",
+  "subtitle": "このデプロイのユーザー、データ、カテゴリ、AI。",
   "tabs": {
-    "general": "一般",
-    "sources": "ソース",
-    "taxonomy": "分類体系",
-    "access": "プライバシーとアクセス",
+    "sources": "データソース",
     "ai": "AIモデル",
-    "system": "システム",
-    "dataSources": "データソース"
+    "people": "ユーザー",
+    "logs": "ログ",
+    "categories": "カテゴリ",
+    "boards": "フィードバックボード",
+    "brand": "ブランドと外観",
+    "privacy": "プライバシー",
+    "platform": "プラットフォーム",
+    "version": "バージョン"
   },
   "sections": {
-    "plugins": "ソース設定",
-    "integrations": "連携",
     "inbox": "メール受信箱",
     "radar": "レーダー",
-    "categories": "カテゴリ",
     "dimensions": "ディメンション",
-    "policies": "ソースポリシー",
-    "users": "ユーザー",
-    "logs": "ログ",
-    "version": "バージョン",
-    "boards": "ボード"
+    "tokens": "デザインシステムのトークン",
+    "domains": "会社のドメイン",
+    "participants": "参加者へのメール",
+    "theme": "既定のテーマ",
+    "erasure": "消去",
+    "deploymentBrand": "デプロイのブランド",
+    "advanced": "詳細設定"
   },
   "title": "設定",
   "users": {
-    "configureFirst": "ユーザーを管理するには、一般タブでAPIエンドポイントを設定してください。",
-    "description": "VoCプラットフォームのユーザー、ロール、権限を管理します。",
-    "title": "ユーザー管理"
+    "configureFirst": "ユーザーを管理するには、ブランドと外観 → 詳細設定 で API エンドポイントを構成してください。"
   },
   "company": {
     "title": "会社",
@@ -576,7 +569,7 @@
     "kindHints": {
       "website": "安全なブラウザーでページを開き、色、フォント、ロゴを読み取ります。",
       "github": "公開リポジトリはトークンなしで使えます。テーマ・色・フォントのファイルとロゴを読み取ります。",
-      "figma": "Figma トークンが必要です（管理 → ソース → 連携）。"
+      "figma": "Figma トークンが必要です（管理 → データソース → デザインシステムのトークン）。"
     },
     "readingHint": {
       "link": "読み取り中です。数分かかることがあります。",
@@ -738,10 +731,10 @@
     "notConfigured": "未設定",
     "saveTokens": "トークンを保存",
     "integrationsMoved": "Figma と GitHub のトークンの設定場所:",
-    "integrationsLink": "管理 → ソース → 連携"
+    "integrationsLink": "管理 → データソース → デザインシステムのトークン"
   },
   "integrations": {
-    "title": "連携",
+    "title": "デザインシステムのトークン",
     "description": "デザインシステム用に Figma ファイルと GitHub リポジトリを読み取るために、プラットフォームが使用する書き込み専用トークンです。Secrets Manager に保存され、再表示されることはありません。",
     "mcpHint": "外部アシスタント向けの MCP アクセスはユーザーごとに設定します。設定場所:",
     "mcpLink": "接続"
@@ -807,7 +800,13 @@
   },
   "sources": {
     "title": "ソースポリシー",
-    "description": "ソースごとのデータ保護: 個人データの扱い、保持期間、閲覧できる人、消去。"
+    "description": "ソースごとのデータ保護: 個人データの扱い、保持期間、閲覧できる人、消去。",
+    "scope": {
+      "label": "ソースの範囲",
+      "workspace": "このワークスペース",
+      "deployment": "デプロイ"
+    },
+    "advancedHint": "一度だけ設定するもの: メール受信箱、レーダーのブランドとスキャン、デザインシステムが Figma と GitHub を読むトークン。"
   },
   "version": {
     "title": "バージョン",
@@ -864,7 +863,7 @@
     "participantCard": {
       "domains": "会社のドメイン: {{list}}。",
       "noDomains": "会社のドメインはまだありません。",
-      "editInBoards": "ボードで編集"
+      "editInBoards": "会社のドメインで編集"
     },
     "list": {
       "title": "フィードバックボード",
@@ -1000,10 +999,125 @@
     "saveFailed": "既定のテーマを保存できませんでした。もう一度お試しください。"
   },
   "deploymentSources": {
-    "title": "デプロイのデータソース",
-    "feeds": "これらのソースはデプロイ全体にフィードバックを取り込みます。今どのワークスペースにいても、取り込まれるフィードバックはどのワークスペースにも属さないデプロイ全体のものです。このページの認証情報、スケジュール、一時停止はデプロイ自身のものです。",
-    "engineering": "エンジニアリングの自動化（Bug fixer、Feature builder、Issue triage）が読むのはこのフィードバックだけです。その実行がワークスペースのフィードバックを使うことはありません。",
-    "appSignIn": "エージェント → 接続 で GitHub を接続すると、GitHub Issues ソースは自動で設定されます。接続した各リポジトリの Issue はデプロイの GitHub App で読み取られます。ここにあるカードは詳細ビューです。",
-    "inWorkspace": "現在 {{name}} にいますが、このページの操作はそのワークスペースを変更しません。そのワークスペース独自のソースは「ソース」タブにあります。"
+    "notice": "これらのソースは、どのワークスペースにも属さないデプロイ全体のフィードバックを取り込みます。エンジニアリングの自動化が読むのはこのフィードバックだけです。"
+  },
+  "home": {
+    "inWorkspace": "ワークスペース {{name}} にいます。このワークスペース自身の設定は<settings>ワークスペースの設定</settings>にあります。",
+    "invite": "ユーザーを招待",
+    "version": "バージョン {{version}} · <notes>リリースノート</notes>",
+    "attention": {
+      "title": "対応が必要",
+      "sourcesPaused_one": "エラーで一時停止したソース {{count, number}} 件: {{list}}",
+      "sourcesPaused_other": "エラーで一時停止したソース {{count, number}} 件: {{list}}",
+      "waysUnset_one": "AI との働き方が未設定のユーザー {{count, number}} 人",
+      "waysUnset_other": "AI との働き方が未設定のユーザー {{count, number}} 人",
+      "modelsBlocked_one": "このアカウントで呼び出せない AI モデル {{count, number}} 件",
+      "modelsBlocked_other": "このアカウントで呼び出せない AI モデル {{count, number}} 件",
+      "reviewSources": "ソースを確認",
+      "openPeople": "ユーザーを開く",
+      "openModels": "AIモデルを開く"
+    },
+    "groups": {
+      "everyday": "毎日",
+      "regular": "定期的に",
+      "once": "一度だけ設定",
+      "rare": "まれに",
+      "elsewhere": "ほかの場所"
+    },
+    "jobs": {
+      "people": {
+        "title": "ユーザー",
+        "hint": "招待、削除、ロール、AI との働き方"
+      },
+      "sources": {
+        "title": "データソース",
+        "hint": "ソースの接続、スケジュール、一時停止、確認"
+      },
+      "logs": {
+        "title": "ログ",
+        "hint": "エラーと失敗した項目"
+      },
+      "categories": {
+        "title": "カテゴリとディメンション",
+        "hint": "フィードバックの分類とタグ付け"
+      },
+      "boards": {
+        "title": "フィードバックボード",
+        "hint": "ボード、会社のドメイン、参加者へのメール"
+      },
+      "ai": {
+        "title": "AIモデル",
+        "hint": "各 AI 機能のモデルとその容量"
+      },
+      "brand": {
+        "title": "ブランドと外観",
+        "hint": "ブランドと既定のテーマ"
+      },
+      "privacy": {
+        "title": "プライバシーと消去",
+        "hint": "ソースポリシーと、個人やソースのデータの消去"
+      },
+      "platform": {
+        "title": "プラットフォーム: ワークスペース",
+        "hint": "ワークスペースとデプロイのブランド"
+      },
+      "version": {
+        "title": "バージョン",
+        "hint": "このビルドとリリースノート"
+      }
+    },
+    "counts": {
+      "people_one": "{{count, number}} 人",
+      "people_other": "{{count, number}} 人",
+      "sources": "オン {{on, number}} · 一時停止 {{paused, number}}",
+      "errors_one": "過去 24 時間のエラー {{count, number}} 件",
+      "errors_other": "過去 24 時間のエラー {{count, number}} 件"
+    },
+    "elsewhere": {
+      "cost": "コスト: エージェント › 費用",
+      "github": "GitHub: エージェント › 接続",
+      "preferences": "自分の設定: アカウント › 設定"
+    }
+  },
+  "search": {
+    "titles": {
+      "connections": "接続",
+      "spend": "費用",
+      "preferences": "設定"
+    },
+    "places": {
+      "agents": "エージェント",
+      "account": "アカウント"
+    },
+    "label": "設定を検索",
+    "placeholder": "設定を検索…",
+    "empty": "「{{q}}」に一致する設定はありません",
+    "result": "{{tab}} の {{title}}",
+    "count_one": "{{count, number}} 件の設定が見つかりました",
+    "count_other": "{{count, number}} 件の設定が見つかりました",
+    "terms": {
+      "people": "招待, ユーザー追加, ユーザー, 削除, ロール, 管理者, 働き方, AI モード, 代理オーナー, メモリーレビュアー, プラットフォーム管理者, パスワード, 無効化, アクセス, invite",
+      "sources": "接続, ソース, スクレイパー, 認証情報, トークン, スケジュール, 一時停止, 再開, プラグイン, Webhook, アプリレビュー, S3 インポート, GitHub Issues, デプロイ",
+      "logs": "エラー, 失敗, 検証, 処理, スクレイパーの実行, アラート, CloudWatch, システムログ",
+      "categories": "分類体系, カテゴリ, サブカテゴリ, 再処理, 分類, AI の提案",
+      "boards": "機能リクエスト, ボード, 投票, ロードマップ, アイデア",
+      "ai": "モデル, Bedrock, Claude, Anthropic, GPT, クォータ, 容量, モデルをテスト, 1 分あたりのトークン, 契約",
+      "brand": "ブランド名, ロゴ, ハンドル, ハッシュタグ, 追跡する URL, リブランド, API エンドポイント",
+      "privacy": "ソースポリシー, 保持, 個人データ, PII, 制限, GDPR, データ保護",
+      "platform": "ワークスペース, 新しいチーム, ワークスペースを作成, プラットフォーム管理者, ワークスペースに入る",
+      "version": "リリースノート, 変更履歴, コミット, ビルド, 新機能",
+      "inbox": "メール, メールボックス, 転送, 受信メール, 上限",
+      "radar": "競合, ブランド, ニュース, リリース, Exa, スキャン",
+      "tokens": "Figma, GitHub トークン, デザインシステム, 連携",
+      "dimensions": "ディメンション, 製品, モジュール, ユーザー種別, タグ, フィルター",
+      "domains": "会社のドメイン, メールドメイン, 同僚, 対象",
+      "participants": "参加者, 送信者名, 1 日の上限, 外部の人, メール送信",
+      "theme": "テーマ, 色, ダーク, ライト, 外観",
+      "erasure": "消去, データ削除, GDPR, 忘れられる権利, ソースの削除",
+      "deploymentBrand": "既定のブランド, デプロイ, ワークスペースの外",
+      "connections": "GitHub, GitHub App, リポジトリ, 接続, インストール, Issue",
+      "spend": "コスト, 費用, 予算, 上限, 請求",
+      "preferences": "言語, テーマ, 自分の設定, ダークモード"
+    }
   }
 }

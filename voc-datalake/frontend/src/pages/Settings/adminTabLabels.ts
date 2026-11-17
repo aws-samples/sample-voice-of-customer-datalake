@@ -1,47 +1,51 @@
 /**
- * @fileoverview Labels and icons of the Administration tabs and sections
- * (`settings:tabs.*`, `settings:sections.*`) for the caller's visible set.
+ * @fileoverview Labels of the Administration tabs, groups and sections, and the tabs' icons (`settings:tabs.*`,
+ * `settings:home.groups.*`, `settings:sections.*`, `settings:home.jobs.<tab>.hint`), spelled out so the i18n audit
+ * sees every key.
  * @module pages/Settings/adminTabLabels
  */
-import {
-  Building2, Cpu, Database, FileWarning, Info, KeyRound, Layers, Lightbulb, Mail, Plug, Radar, Server, ShieldCheck, Tags,
-  Users,
-} from 'lucide-react'
+import { Building2, Cpu, FileWarning, History, Lightbulb, Palette, Plug, ShieldCheck, Tags, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { visibleSections, visibleTabs } from './adminTabs'
-import type { AdminSectionId, AdminTabId } from './adminTabs'
-import type { SectionItem as LabelledItem } from './SectionSwitch'
+import type { AdminGroupId, AdminSectionId, AdminTabId } from './adminTabs'
 
-const TAB_ICONS: Readonly<Record<AdminTabId, LucideIcon>> = {
-  brand: Building2, sources: Plug, 'data-sources': Database, taxonomy: Tags, access: ShieldCheck, ai: Cpu, system: Server,
+export const TAB_ICONS: Readonly<Record<AdminTabId, LucideIcon>> = {
+  people: Users, sources: Plug, logs: FileWarning, categories: Tags, boards: Lightbulb, ai: Cpu, brand: Palette,
+  privacy: ShieldCheck, platform: Building2, version: History,
 }
 
-const SECTION_ICONS: Readonly<Record<AdminSectionId, LucideIcon>> = {
-  plugins: Plug, integrations: KeyRound, inbox: Mail, radar: Radar,
-  categories: Tags, dimensions: Layers,
-  policies: ShieldCheck, users: Users, boards: Lightbulb, workspaces: Building2,
-  logs: FileWarning, version: Info,
+const TAB_LABEL_KEYS: Readonly<Record<AdminTabId, string>> = {
+  people: 'tabs.people', sources: 'tabs.sources', logs: 'tabs.logs', categories: 'tabs.categories', boards: 'tabs.boards',
+  ai: 'tabs.ai', brand: 'tabs.brand', privacy: 'tabs.privacy', platform: 'tabs.platform', version: 'tabs.version',
 }
 
-/** A tab's label key: `brand` keeps its pre-5.09 key, `general`; `data-sources` is `dataSources`. */
-export function tabLabelKey(id: AdminTabId): string {
-  if (id === 'brand') return 'tabs.general'
-  return id === 'data-sources' ? 'tabs.dataSources' : `tabs.${id}`
+const TAB_HINT_KEYS: Readonly<Record<AdminTabId, string>> = {
+  people: 'home.jobs.people.hint', sources: 'home.jobs.sources.hint', logs: 'home.jobs.logs.hint',
+  categories: 'home.jobs.categories.hint', boards: 'home.jobs.boards.hint', ai: 'home.jobs.ai.hint',
+  brand: 'home.jobs.brand.hint', privacy: 'home.jobs.privacy.hint', platform: 'home.jobs.platform.hint',
+  version: 'home.jobs.version.hint',
 }
 
-/** The platform console's label lives with the rest of its copy, `common:workspaces.platform.*`. */
-const sectionLabelKey = (id: AdminSectionId): string => (id === 'workspaces' ? 'common:workspaces.platform.title' : `sections.${id}`)
-
-/** The id of a section's tab button in the section switch; its panel is labelled by it. */
-export const sectionTabId = (id: string): string => `admin-section-tab-${id}`
-export const SECTION_PANEL_ID = 'admin-section-panel'
-
-type Translate = (key: string) => string
-
-export function buildTabs(t: Translate, isAdmin: boolean, isPlatformAdmin: boolean): LabelledItem<AdminTabId>[] {
-  return visibleTabs(isAdmin, isPlatformAdmin).map((id) => ({ id, label: t(tabLabelKey(id)), icon: TAB_ICONS[id] }))
+const GROUP_LABEL_KEYS: Readonly<Record<AdminGroupId, string>> = {
+  everyday: 'home.groups.everyday', regular: 'home.groups.regular', once: 'home.groups.once', rare: 'home.groups.rare',
 }
 
-export function buildSections(t: Translate, tab: AdminTabId, isAdmin: boolean, isPlatformAdmin: boolean): LabelledItem<AdminSectionId>[] {
-  return visibleSections(tab, isAdmin, isPlatformAdmin).map((id) => ({ id, label: t(sectionLabelKey(id)), icon: SECTION_ICONS[id] }))
+const SECTION_LABEL_KEYS: Readonly<Record<AdminSectionId, string>> = {
+  inbox: 'sections.inbox', radar: 'sections.radar', tokens: 'sections.tokens', dimensions: 'sections.dimensions',
+  domains: 'sections.domains', participants: 'sections.participants', theme: 'sections.theme',
+  erasure: 'sections.erasure', 'deployment-brand': 'sections.deploymentBrand',
 }
+
+/** A tab's label key (`settings:tabs.*`). */
+export const tabLabelKey = (id: AdminTabId): string => TAB_LABEL_KEYS[id]
+
+/** A tab's one-line job (`settings:home.jobs.<tab>.hint`): under its title on the home and on its page. */
+export const tabHintKey = (id: AdminTabId): string => TAB_HINT_KEYS[id]
+
+/** A group's heading key (`settings:home.groups.*`). */
+export const groupLabelKey = (id: AdminGroupId): string => GROUP_LABEL_KEYS[id]
+
+/** A section's label key (`settings:sections.*`). */
+export const sectionLabelKey = (id: AdminSectionId): string => SECTION_LABEL_KEYS[id]
+
+/** The id of a section's card on its tab's page: a path naming the section scrolls it into view and focuses it. */
+export const sectionAnchorId = (id: AdminSectionId): string => `admin-section-${id}`

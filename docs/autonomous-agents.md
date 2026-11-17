@@ -84,9 +84,9 @@ these steps, with Issue triage first):
    `github_issue` label rule below. A connection saved with a pasted token says nothing of it and is taken as public.
 2. **Attest its CI** on the connection (the broker serves no push or pull request until then).
 3. **Ingest its issues**: the [GitHub Issues source](github-issues.md#signing-in-with-a-github-app-74500),
-   deployment-wide (Administration → Data sources, `/admin/data-sources`, for a platform admin from any address since
-   7.50.00; outside any workspace, Administration → Sources → Source settings too), with the repository listed and
-   **Sign in with** → GitHub App, that App, in place of a fine-grained token (each run then reads with installation
+   deployment-wide (Administration → Data sources, its Deployment scope `/admin/sources?scope=deployment` since
+   7.54.00, for a platform admin from any address; outside any workspace the page is the deployment's), with the
+   repository listed and **Sign in with** → GitHub App, that App, in place of a fine-grained token (each run then reads with installation
    tokens of `{issues: read, metadata: read}` alone). A pasted token still works.
 4. **Set up** on Bug fixer's card (on the Agents list or its page): the connection, the language and the monthly budget ($50 prefilled), then
    **Enable**. It runs as you from then. Enable checks first what a run needs (7.50.00, the connection, the CI
@@ -155,7 +155,7 @@ recommends (the first one neither done nor skipped).
 
 | Step | What it sets up | Done when |
 |---|---|---|
-| 0. Prerequisites | GitHub connected with the deployment's GitHub App in two clicks (Agents → Connections), the repository's CI points attested on its connection, and its issues ingested: the GitHub Issues source for the whole deployment (Administration → Data sources, `/admin/data-sources`, for a platform admin; outside any workspace, Administration → Sources → Source settings) signed in with that App, with the `voc-agent` label on the issues the agents may take | a GitHub connection made through an App has its CI attested, the deployment's GitHub Issues source is not reported unconfigured (7.50.01), and no prerequisite check of an automation's readiness fails (the source's reads and the label are known only from those) |
+| 0. Prerequisites | GitHub connected with the deployment's GitHub App in two clicks (Agents → Connections), the repository's CI points attested on its connection, and its issues ingested: the GitHub Issues source for the whole deployment (Administration → Data sources, its Deployment scope `/admin/sources?scope=deployment`, for a platform admin; outside any workspace, `/admin/sources`) signed in with that App, with the `voc-agent` label on the issues the agents may take | a GitHub connection made through an App has its CI attested, the deployment's GitHub Issues source is not reported unconfigured (7.50.01), and no prerequisite check of an automation's readiness fails (the source's reads and the label are known only from those) |
 | 1. Understand the repository | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
 | 2. Tenets | its flow arrives in 7.52 | never in 7.50 (skip it for now) |
 | 3. Issue triage | the seeded Issue triage automation: its Set up and Enabled control, and its readiness | the automation is enabled |
@@ -202,7 +202,7 @@ administrator's stored way of working. The others are advice.
   keeps its card while a required check does not pass), the Enabled switch on an agent's page and the setup guide
   show each check passed, failing, with a warning or unknown, whether a run needs it, what the server found, its fix
   in the server's words and its doc link (a repository doc or an https address; anything else is not linked). The
-  way-of-working check also links to Administration → Privacy & access → Users, where the administrator sets
+  way-of-working check also links to Administration → People (the person's editor), where the administrator sets
   AI-driven: the agents fix, push and open the pull request, and a person approves and merges it on GitHub.
 - **The Set up dialog reads the readiness of its selection** (7.50.01):
   `GET /agents/engineering/readiness?automation=<agent id>&connection=<id>&language=<language>` answers for the agent

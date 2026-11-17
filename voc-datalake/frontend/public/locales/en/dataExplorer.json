@@ -41,7 +41,7 @@
     "search": "Search feedback"
   },
   "newFile": "New File",
-  "notConfigured": "Configure API endpoint in Administration → General to explore data",
+  "notConfigured": "Configure API endpoint in Administration → Brand & appearance to explore data",
   "refresh": "Refresh",
   "s3Browser": {
     "back": "Back",
@@ -84,7 +84,7 @@
     "loading": "Loading data quality…",
     "empty": "No feedback in this time range.",
     "unratedShare": "{{share}} of the feedback in this range is not rated yet.",
-    "backfillHint": "Feedback stored before ratings existed has no band; a category reprocess (Administration → Taxonomy) rates it.",
+    "backfillHint": "Feedback stored before ratings existed has no band; a category reprocess (Administration → Categories) rates it.",
     "chartTop_one": "The chart shows the busiest source; the table lists every source.",
     "chartTop_other": "The chart shows the {{count, number}} busiest sources; the table lists every source.",
     "partial": "Some data could not be read in time, so these counts may be lower than the real numbers.",

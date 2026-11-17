@@ -14,6 +14,7 @@ import {
   FileWarning, Loader2, AlertCircle, ServerCrash,
 } from 'lucide-react'
 import { api } from '../../api/client'
+import { logsSummaryKey } from '../../api/queryKeys'
 import type { ProcessingLogEntry } from '../../api/types'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { formatCount } from '../../utils/numberFormat'
@@ -144,7 +145,7 @@ function SummaryCardItem({ count, label, icon: Icon, colorScheme }: SummaryCardI
 function LogsSummaryCard({ days }: { readonly days: number }) {
   const { t } = useTranslation('settings')
   const { data, isLoading } = useQuery({
-    queryKey: ['logs-summary', days],
+    queryKey: logsSummaryKey(days),
     queryFn: () => api.getLogsSummary(days),
     refetchInterval: 30000,
   })
@@ -253,7 +254,7 @@ function ValidationLogsPanel({ days }: { readonly days: number }) {
     mutationFn: (source: string) => api.clearValidationLogs(source),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['validation-logs'] })
-      void queryClient.invalidateQueries({ queryKey: ['logs-summary'] })
+      void queryClient.invalidateQueries({ queryKey: logsSummaryKey() })
     },
   })
 

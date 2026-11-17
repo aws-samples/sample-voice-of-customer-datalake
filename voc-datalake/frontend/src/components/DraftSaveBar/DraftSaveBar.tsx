@@ -5,7 +5,8 @@
  * @module components/DraftSaveBar
  */
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Check, Loader2, Save, Undo2 } from 'lucide-react'
+import { AlertCircle, Loader2, Save, Undo2 } from 'lucide-react'
+import SavedStatus from '../SavedStatus/SavedStatus'
 import StickyActionBar from '../StickyActionBar/StickyActionBar'
 
 interface DraftSaveBarProps {
@@ -30,7 +31,8 @@ function Outcome({ pending, saved, error }: Readonly<Pick<DraftSaveBarProps, 'pe
       </p>
     )
   }
-  return saved ? <p className="text-sm text-ok flex items-center gap-2"><Check size={14} />{t('saved')}</p> : null
+  // The one Saved of the admin cards (components/SavedStatus): until the draft is edited again.
+  return <SavedStatus saved={saved} label={t('saved')} />
 }
 
 export default function DraftSaveBar({ dirty, blockedReason, pending, saved, error, onSave, onDiscard }: Readonly<DraftSaveBarProps>) {

@@ -173,7 +173,7 @@ export function grantBody(grant: CategoryScope, sourceGrant?: SourceGrant): { ca
 
 /** Query key of the caller's own scope (shared by every consumer). */
 export const callerCategoryScopeKey = () => ['feedback-access'] as const
-/** Query key of one user's stored grant (Settings → Users). */
+/** Query key of one user's stored grant (Administration → People). */
 export const userCategoryAccessKey = (username: string) => ['user-category-access', username] as const
 
 /** Query key of the caller's whole scope (Account → My access); a separate entry, the shape differs. */

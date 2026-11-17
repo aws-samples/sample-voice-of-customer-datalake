@@ -41,7 +41,7 @@
     "search": "搜索反馈"
   },
   "newFile": "新文件",
-  "notConfigured": "在“管理 → 常规”中配置 API 端点以浏览数据",
+  "notConfigured": "在“管理 → 品牌与外观”中配置 API 端点以浏览数据",
   "refresh": "刷新",
   "s3Browser": {
     "back": "返回",
@@ -84,7 +84,7 @@
     "loading": "正在加载数据质量…",
     "empty": "此时间范围内没有反馈。",
     "unratedShare": "此时间范围内有 {{share}} 的反馈尚未评级。",
-    "backfillHint": "在评级功能之前存储的反馈没有等级；运行类别重新处理（管理 → 分类体系）即可为其评级。",
+    "backfillHint": "在评级功能之前存储的反馈没有等级；运行类别重新处理（管理 → 分类）即可为其评级。",
     "chartTop_one": "图表显示反馈最多的来源；表格列出所有来源。",
     "chartTop_other": "图表显示反馈最多的 {{count, number}} 个来源；表格列出所有来源。",
     "partial": "部分数据未能及时读取，因此这些数字可能低于实际值。",

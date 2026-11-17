@@ -1,7 +1,7 @@
 /**
  * @fileoverview One source's schedule toggle and circuit breaker, read from the
  * page-wide `GET /sources/status` query: the current workspace's breakers, or
- * in the deployment's scope (Administration → Data sources,
+ * in the deployment's scope (Administration → Data sources → Deployment,
  * workspace/configScope.ts) the deployment's, inside a workspace too.
  * @module pages/Settings/useSourceSchedule
  */

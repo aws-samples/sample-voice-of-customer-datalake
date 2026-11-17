@@ -12,7 +12,8 @@
  *   instead of "No feedback in this time range" / "No categories" / "No projects
  *   yet" / "No scrapers configured" / "No Documents Found" (all of which these
  *   pages used to claim when the read failed).
- * - Admin › General: a `role=alert` naming the failure, with Retry.
+ * - Administration → Brand & appearance (`/admin/brand`): the brand card's own `role=alert` ("Could not load
+ *   this section.") with Retry, and its "Not synced" badge.
  * - Memory: "Could not load memories." (list) instead of the empty state.
  *
  * Local dev mock: E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:3417 \
@@ -119,9 +120,12 @@ const CASES: readonly ErrorCase[] = [
     adminOnly: true,
     injections: [{ method: 'GET', path: /\/settings\/brand$/, failure: FAIL_500 }],
     expectShown: async (page) => {
-      const alert = page.getByRole('alert').filter({ hasText: 'load brand settings from the server' })
+      // The brand card (BrandEditorCard.tsx: a region named by its heading) says it, not the page.
+      const card = page.getByRole('region', { name: 'Brand Configuration' })
+      const alert = card.getByRole('alert').filter({ hasText: 'Could not load this section.' })
       await expect(alert).toBeVisible()
       await expect(alert.getByRole('button', { name: 'Retry' })).toBeVisible()
+      await expect(card.getByText('Not synced', { exact: true })).toBeVisible()
     },
   },
   {

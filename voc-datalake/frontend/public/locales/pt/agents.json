@@ -1651,7 +1651,7 @@
       "unknown": "Ainda não se sabe",
       "openConnections": "Abrir Conexões",
       "openDeploymentSources": "Abrir Administração → Fontes de dados",
-      "openSources": "Abrir Administração → Fontes → Configurações de fontes",
+      "openSources": "Abrir Administração → Fontes de dados",
       "sourcesOutside": "Fora de qualquer espaço de trabalho: as automações leem só as fontes da implantação.",
       "deploymentTitle": "Esta implantação",
       "connectedAs": "Conectado por um App: {{list}}.",

@@ -94,11 +94,14 @@
   --animate-scale-in: scale-in .2s cubic-bezier(.16, 1, .3, 1) backwards;
   --animate-float: float 3s ease-in-out infinite;
   --animate-fade-in: fade-in .15s ease-out backwards;
+  /* The SideSheet's entrance from the inline end (components/SideSheet). */
+  --animate-slide-in-end: slide-in-end .24s cubic-bezier(.16, 1, .3, 1) backwards;
 
   @keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
   @keyframes scale-in { from { opacity: 0; transform: scale(.92) } to { opacity: 1; transform: scale(1) } }
   @keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
   @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes slide-in-end { from { transform: translateX(100%) } to { transform: translateX(0) } }
 }
 
 /* ---------------------------------------------------------------------------
@@ -537,6 +540,11 @@
   .dialog-overlay { @apply fixed inset-0 z-50 bg-overlay backdrop-blur-md animate-fade-in; }
   .dialog-panel {
     @apply relative flex flex-col overflow-hidden rounded-xl border border-border bg-card text-text shadow-2xl animate-scale-in;
+  }
+  /* The SideSheet's panel (ModalShell placement "end"): full height at the inline end, the viewport's width below sm,
+     30rem from sm; its body scrolls between a fixed header and footer. */
+  .sheet-panel {
+    @apply relative flex h-full w-full flex-col overflow-hidden border-s border-border bg-card text-text shadow-2xl animate-slide-in-end sm:max-w-[30rem];
   }
   .dialog-header { @apply flex shrink-0 items-center gap-3 border-b border-border px-5 py-3; }
   /* Wraps (owner request, wave 4): a long dialog title used to end in "…". A caller that must stay one line adds `truncate` + `title`. */

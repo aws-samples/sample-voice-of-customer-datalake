@@ -209,7 +209,6 @@
     "emailOff": "not configured (deploy with an email sender address)",
     "boardLink": "Feedback boards link:",
     "boardOff": "not deployed",
-    "saved": "Saved.",
     "loadFailed": "The participant settings could not be loaded."
   },
   "unsubscribe": {

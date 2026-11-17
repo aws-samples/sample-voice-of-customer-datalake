@@ -31,7 +31,7 @@
     },
     "openScraper": "データソースページでこのスクレイパーを開く",
     "openScrapers": "データソースページを開く",
-    "openUsers": "プライバシーとアクセス → ユーザーを開く",
+    "openUsers": "管理 → ユーザー を開く",
     "approvePlan": "承認して実行",
     "change": "変更",
     "changeLabel": "何を変更しますか?",
@@ -39,8 +39,8 @@
     "confirmChange": "変更を依頼",
     "openFeedback": "フィードバック一覧を開く",
     "openRadar": "Radar を開く",
-    "openRadarSettings": "管理 → ソース → レーダー を開く",
-    "openCategories": "管理 → 分類体系 → カテゴリ を開く",
+    "openRadarSettings": "管理 → データソース → レーダー を開く",
+    "openCategories": "管理 → カテゴリ を開く",
     "openWorkspaceCategories": "ワークスペースの設定でカテゴリを開く"
   },
   "preview": {

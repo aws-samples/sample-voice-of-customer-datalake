@@ -140,7 +140,7 @@ describe('DataExplorer - not configured', () => {
   it('shows configuration message when API not configured', () => {
     renderDataExplorer()
 
-    expect(screen.getByText('Configure API endpoint in Administration → General to explore data')).toBeInTheDocument()
+    expect(screen.getByText('Configure API endpoint in Administration → Brand & appearance to explore data')).toBeInTheDocument()
     expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
   })
 })

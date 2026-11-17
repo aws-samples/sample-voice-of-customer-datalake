@@ -11,18 +11,9 @@
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, ShieldAlert } from 'lucide-react'
 import ModelTestPill from './ModelTestPill'
-import { useModelCapacity } from './useModelCapacity'
+import { isBlockedAccess as isBlocked, useModelCapacity } from './useModelCapacity'
+import type { BlockedAccess as BlockedStatus } from './useModelCapacity'
 import type { ModelTests } from './useModelTests'
-import type { ImageAccessStatus } from '../../api/imageModelSchema'
-
-/** The access statuses that mean the model's calls fail; `unknown` (not read) is not one. */
-const BLOCKED_STATUSES = ['not_subscribed', 'no_access', 'not_in_region'] as const
-
-type BlockedStatus = (typeof BLOCKED_STATUSES)[number]
-
-function isBlocked(status: ImageAccessStatus): status is BlockedStatus {
-  return BLOCKED_STATUSES.some((blocked) => blocked === status)
-}
 
 interface BlockedModel {
   readonly id: string

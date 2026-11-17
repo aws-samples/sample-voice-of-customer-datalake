@@ -262,7 +262,7 @@ describe('FeedbackForms - not configured', () => {
   it('shows configuration message when API not configured', () => {
     renderPage()
 
-    expect(screen.getByText('Configure the API endpoint in Administration → General to manage feedback forms.')).toBeInTheDocument()
+    expect(screen.getByText('Configure the API endpoint in Administration → Brand & appearance to manage feedback forms.')).toBeInTheDocument()
     expect(mockGetFeedbackForms).not.toHaveBeenCalled()
   })
 })

@@ -1,289 +1,173 @@
 /**
- * @fileoverview Tests for UserAdmin component.
+ * Administration → People: one list (Name, Role, Way of working, Flags, Status) with an Edit per row, the page's one
+ * primary "Invite person", and the open item the host's path names (`openItem`: a username opens that person's editor
+ * sheet, `invite` the invite dialog); every open and close goes through `onOpenItem`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
-import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { renderWithQueryClient } from '../../test/query-client'
-import { timerOnCleanup } from '../../test/timeoutWatch'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
 import type { CognitoUser } from '../../api/types'
-import { required } from '../component-spec-fixtures'
-import { cognitoUser } from './userAdmin-fixtures'
+import { mount, personRow, primeUserClient } from './userAdmin-sheet-fixtures'
 
-// Mock API before importing component
-const mockGetUsers = vi.fn<() => Promise<unknown>>()
-const mockCreateUser = vi.fn<(data: unknown) => Promise<unknown>>()
-const mockUpdateUserGroup = vi.fn<(username: string, group: string) => Promise<unknown>>()
-const mockResetUserPassword = vi.fn<(username: string) => Promise<unknown>>()
-const mockEnableUser = vi.fn<(username: string) => Promise<unknown>>()
-const mockDisableUser = vi.fn<(username: string) => Promise<unknown>>()
-const mockDeleteUser = vi.fn<(username: string) => Promise<unknown>>()
-const mockUpdateUser = vi.fn<(username: string, data: unknown) => Promise<unknown>>()
+const client = await vi.hoisted(async () => (await import('./userAdmin-sheet-fixtures')).createUserClientMock())
+vi.mock('../../api/client', () => client.module)
+vi.mock('../../store/authStore', () => ({ useIsPlatformAdmin: () => false }))
 
-vi.mock('../../api/client', () => ({
-  api: {
-    getUsers: () => mockGetUsers(),
-    createUser: (data: unknown) => mockCreateUser(data),
-    updateUserGroup: (username: string, group: string) => mockUpdateUserGroup(username, group),
-    updateUser: (username: string, data: unknown) => mockUpdateUser(username, data),
-    resetUserPassword: (username: string) => mockResetUserPassword(username),
-    enableUser: (username: string) => mockEnableUser(username),
-    disableUser: (username: string) => mockDisableUser(username),
-    deleteUser: (username: string) => mockDeleteUser(username),
-  },
-}))
+const { default: UserAdmin } = await import('./UserAdmin')
 
-import UserAdmin from './UserAdmin'
+const ADA = personRow('ada', {
+  given_name: 'Ada', family_name: 'Lovelace', groups: ['admins'], platform_admin: true,
+  flags: { fallback_owner: true, memory_reviewer: true },
+  ai_mode: { mode: 'ai_assisted', ai_writing_prfaq: false, ai_writing_prd: false, saved: true },
+})
+const VIC = personRow('vic', { enabled: false })
 
-/** Mount the admin panel; `users` (when given) is what `GET /users` returns. */
-function renderAdmin(users?: CognitoUser[]): UserEvent {
-  if (users !== undefined) mockGetUsers.mockResolvedValue({ users })
-  const user = userEvent.setup()
-  renderWithQueryClient(<UserAdmin />)
-  return user
+function renderPeople(users: readonly CognitoUser[] = [ADA, VIC], openItem: string | null = null) {
+  primeUserClient(client, users)
+  const onOpenItem = vi.fn<(item: string | null) => void>()
+  const session = mount(<UserAdmin openItem={openItem} onOpenItem={onOpenItem} />)
+  return { session, onOpenItem }
 }
 
-/** Mount with one user and wait for that row's controls. */
-async function renderOneUser(overrides: Partial<CognitoUser> = {}): Promise<UserEvent> {
-  const user = renderAdmin([cognitoUser(overrides)])
-  await screen.findAllByRole('combobox')
-  return user
-}
+/** The desktop table (the cards repeat every row for narrow screens). */
+const table = async () => screen.findByRole('table')
+const rowOf = async (name: string) => within(await table()).getByRole('row', { name: new RegExp(name) })
 
-/**
- * The first element titled `title` — the desktop row's, since desktop and mobile
- * layouts both render every row — once one is on screen.
- */
-async function firstByTitle(title: string): Promise<HTMLElement> {
-  const [first] = await screen.findAllByTitle(title)
-  return required(first, `an element titled "${title}"`)
-}
+beforeEach(() => { primeUserClient(client) })
 
-/** The desktop row's role dropdown. */
-function firstRoleSelect(): HTMLElement {
-  const [first] = screen.getAllByRole('combobox')
-  return required(first, 'a role dropdown')
-}
+describe('the list', () => {
+  it('has the five columns, then Edit', async () => {
+    renderPeople()
 
-/** Mount with no users and open the Add User modal. */
-async function openCreateModal(): Promise<UserEvent> {
-  const user = renderAdmin()
-  await user.click(await screen.findByRole('button', { name: /add user/i }))
-  await screen.findByText('Add New User')
-  return user
-}
-
-describe('UserAdmin', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetUsers.mockResolvedValue({ users: [] })
-    mockCreateUser.mockResolvedValue({ success: true })
-    mockUpdateUserGroup.mockResolvedValue({ success: true })
-    mockUpdateUser.mockResolvedValue({ success: true, message: 'User updated' })
-    mockResetUserPassword.mockResolvedValue({ success: true })
-    mockEnableUser.mockResolvedValue({ success: true })
-    mockDisableUser.mockResolvedValue({ success: true })
-    mockDeleteUser.mockResolvedValue({ success: true })
+    expect(within(await table()).getAllByRole('columnheader').map((cell) => cell.textContent))
+      .toStrictEqual(['Name', 'Role', 'Way of working', 'Flags', 'Status', 'Actions'])
   })
 
-  describe('loading state', () => {
-    it('shows loading spinner while fetching users', () => {
-      mockGetUsers.mockReturnValue(new Promise(() => {}))
+  it('shows a person\'s role, saved way of working, flags and status in their row', async () => {
+    renderPeople()
 
-      renderAdmin()
-
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
-    })
+    const row = within(await rowOf('Ada Lovelace'))
+    expect(row.getByText('Admin')).toBeInTheDocument()
+    expect(row.getByText('AI-assisted')).toBeInTheDocument()
+    expect(['Fallback owner', 'Memory reviewer', 'Platform admin', 'Active'].map((text) => row.getByText(text).className))
+      .toStrictEqual(['badge badge-muted', 'badge badge-muted', 'badge badge-muted', 'badge badge-ok'])
   })
 
-  describe('error state', () => {
-    it('shows error message when fetch fails', async () => {
-      mockGetUsers.mockRejectedValue(new Error('Access denied'))
+  it('marks a way of working nobody saved "Not set", and a disabled person Disabled', async () => {
+    renderPeople()
 
-      renderAdmin()
-
-      expect(await screen.findByText(/failed to load users/i)).toBeInTheDocument()
-    })
+    const row = within(await rowOf('vic@example.com'))
+    expect(row.getByText('Not set')).toHaveClass('badge-warn')
+    expect(row.getByText('Disabled')).toHaveClass('badge-danger')
+    expect(row.getByText('None')).toBeInTheDocument()
   })
 
-  describe('header', () => {
-    it('renders no heading of its own — the Settings "User Administration" card supplies the section title', async () => {
-      renderAdmin()
+  it.each([
+    ['Pending', { status: 'FORCE_CHANGE_PASSWORD' }],
+    ['UNKNOWN', { status: 'UNKNOWN' }],
+  ] as const)('shows %s for a person in that state', async (badge, overrides) => {
+    renderPeople([personRow('pat', overrides)])
 
-      expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument()
-      expect(screen.queryByRole('heading')).not.toBeInTheDocument()
-      expect(screen.queryByText('User Management')).not.toBeInTheDocument()
-    })
-
-    it('displays user count', async () => {
-      renderAdmin([
-        cognitoUser({ username: 'user1', email: 'user1@example.com' }),
-        cognitoUser({ username: 'user2', email: 'user2@example.com', groups: ['admins'] }),
-      ])
-
-      expect(await screen.findByText('(2 users)')).toBeInTheDocument()
-    })
-
-    it('displays Add User button', async () => {
-      renderAdmin()
-
-      expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument()
-    })
+    expect(within(await table()).getByText(badge)).toHaveClass('badge')
   })
 
-  describe('empty state', () => {
-    it('shows empty message when no users exist', async () => {
-      renderAdmin([])
+  it('counts the people and says when there is nobody', async () => {
+    renderPeople([])
 
-      // Both desktop and mobile show the empty state.
-      expect((await screen.findAllByText(/no users found/i)).length).toBeGreaterThan(0)
-    })
+    expect(await screen.findByText('0 people')).toBeInTheDocument()
+    expect(screen.getAllByText('No one has been invited yet. Invite the first person above.')).toHaveLength(2)
   })
 
-  describe('users list', () => {
-    it('displays user email', async () => {
-      renderAdmin([cognitoUser()])
+  it('renders no heading of its own (the People page has it)', async () => {
+    renderPeople()
 
-      // Both desktop and mobile render the email.
-      expect((await screen.findAllByText('test@example.com')).length).toBeGreaterThan(0)
-    })
+    await table()
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+  })
+})
 
-    it('displays user name when available', async () => {
-      renderAdmin([cognitoUser({ name: 'John Doe', given_name: 'John', family_name: 'Doe' })])
+describe('opening and closing', () => {
+  it('opens a person\'s editor through the host, from the row\'s Edit', async () => {
+    const { session, onOpenItem } = renderPeople()
 
-      expect((await screen.findAllByText('John Doe')).length).toBeGreaterThan(0)
-    })
+    await session.click(within(await rowOf('Ada Lovelace')).getByRole('button', { name: 'Edit Ada Lovelace' }))
+
+    expect(onOpenItem).toHaveBeenCalledWith('ada')
   })
 
-  describe('status badges', () => {
-    it.each([
-      ['Active', 'confirmed enabled users', {}],
-      ['Disabled', 'disabled users', { enabled: false }],
-      ['Pending', 'users requiring password change', { status: 'FORCE_CHANGE_PASSWORD' }],
-    ] as const)('shows %s badge for %s', async (badge, _who, overrides) => {
-      renderAdmin([cognitoUser(overrides)])
+  it('shows the editor sheet of the person the path names, and closes it through the host', async () => {
+    const { session, onOpenItem } = renderPeople([ADA, VIC], 'ada')
 
-      // Both desktop and mobile render status badges.
-      expect((await screen.findAllByText(badge)).length).toBeGreaterThan(0)
-    })
+    const sheet = await screen.findByRole('dialog', { name: 'Edit Ada Lovelace' })
+    await session.click(within(sheet).getByRole('button', { name: 'Dismiss' }))
+
+    expect(onOpenItem).toHaveBeenCalledWith(null)
   })
 
-  describe('role selector', () => {
-    it('displays role dropdown with current role selected', async () => {
-      await renderOneUser({ groups: ['admins'] })
+  it('opens nothing for a username the list does not hold', async () => {
+    renderPeople([ADA], 'gone')
 
-      expect(firstRoleSelect()).toHaveValue('admins')
-    })
-
-    it('calls updateUserGroup when role is changed', async () => {
-      const user = await renderOneUser()
-
-      await user.selectOptions(firstRoleSelect(), 'admins')
-
-      await waitFor(() => {
-        expect(mockUpdateUserGroup).toHaveBeenCalledWith('user1', 'admins')
-      })
-    })
+    await table()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  describe('create user modal', () => {
-    it('opens modal when Add User is clicked', async () => {
-      await openCreateModal()
+  it('asks the host to open the invite dialog from the page\'s one primary', async () => {
+    const { session, onOpenItem } = renderPeople()
 
-      expect(screen.getByText('Add New User')).toBeInTheDocument()
-    })
+    await session.click(await screen.findByRole('button', { name: 'Invite person' }))
 
-    it('displays email input field', async () => {
-      await openCreateModal()
+    expect(onOpenItem).toHaveBeenCalledWith('invite')
+  })
+})
 
-      expect(screen.getByPlaceholderText('user@example.com')).toBeInTheDocument()
-    })
+describe('inviting', () => {
+  it('sends the invite with the role chosen, then closes through the host', async () => {
+    const { session, onOpenItem } = renderPeople([], 'invite')
+    const dialog = await screen.findByRole('dialog', { name: 'Invite person' })
 
-    it('displays role selection', async () => {
-      await openCreateModal()
+    await session.type(within(dialog).getByPlaceholderText('user@example.com'), 'new@example.com')
+    await session.click(within(dialog).getByRole('radio', { name: /admin/i }))
+    await session.click(within(dialog).getByRole('button', { name: 'Send Invite' }))
 
-      expect(screen.getByRole('radio', { name: /user/i })).toBeInTheDocument()
-      expect(screen.getByRole('radio', { name: /admin/i })).toBeInTheDocument()
-    })
-
-    it('calls createUser API when form is submitted', async () => {
-      const user = await openCreateModal()
-
-      await user.type(screen.getByPlaceholderText('user@example.com'), 'new@example.com')
-      await user.type(screen.getByPlaceholderText('Jane'), 'New')
-      await user.type(screen.getByPlaceholderText('Doe'), 'User')
-      await user.click(screen.getByRole('button', { name: /send invite/i }))
-
-      await waitFor(() => {
-        expect(mockCreateUser).toHaveBeenCalledWith({
-          username: 'new@example.com',
-          email: 'new@example.com',
-          given_name: 'New',
-          family_name: 'User',
-          group: 'users',
-        })
-      })
-    })
-
-    it('closes modal when Cancel is clicked', async () => {
-      const user = await openCreateModal()
-
-      await user.click(screen.getByRole('button', { name: /cancel/i }))
-
-      await waitFor(() => {
-        expect(screen.queryByText('Add New User')).not.toBeInTheDocument()
-      })
-    })
+    await waitFor(() => expect(client.api.createUser).toHaveBeenCalledWith({
+      username: 'new@example.com', email: 'new@example.com', given_name: '', family_name: '', group: 'admins',
+    }))
+    expect(onOpenItem).toHaveBeenCalledWith(null)
   })
 
-  describe('user actions', () => {
-    it.each([
-      ['reset password', 'Reset password', 'Reset Password', /send a password reset email/i],
-      ['disable', 'Disable user', 'Disable User', /they will not be able to log in/i],
-      ['delete', 'Delete user', 'Delete User', /are you sure you want to delete/i],
-    ] as const)('shows the %s confirmation when its button is clicked', async (_action, title, heading, body) => {
-      const user = renderAdmin([cognitoUser()])
+  it('closes the invite dialog on Cancel, through the host', async () => {
+    const { session, onOpenItem } = renderPeople([], 'invite')
 
-      await user.click(await firstByTitle(title))
+    await session.click(within(await screen.findByRole('dialog', { name: 'Invite person' })).getByRole('button', { name: 'Cancel' }))
 
-      expect(await screen.findByText(heading)).toBeInTheDocument()
-      expect(screen.getByText(body)).toBeInTheDocument()
-    })
+    expect(onOpenItem).toHaveBeenCalledWith(null)
+  })
+})
 
-    it('shows enable button for disabled users', async () => {
-      renderAdmin([cognitoUser({ enabled: false })])
+describe('after a delete', () => {
+  it('closes the sheet and says so on the page until the next move', async () => {
+    const { session, onOpenItem } = renderPeople([ADA, VIC], 'vic')
+    const sheet = await screen.findByRole('dialog', { name: 'Edit vic@example.com' })
 
-      expect(await firstByTitle('Enable user')).toBeInTheDocument()
-    })
+    await session.click(within(sheet).getByRole('button', { name: 'Delete vic@example.com…' }))
+    await session.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(onOpenItem).toHaveBeenCalledWith(null))
+    expect(screen.getAllByRole('status').some((line) => line.textContent === 'User deleted')).toBe(true)
+  })
+})
+
+describe('loading and errors', () => {
+  it('spins while the people load', () => {
+    client.api.getUsers.mockReturnValue(new Promise(() => {}))
+    mount(<UserAdmin openItem={null} onOpenItem={vi.fn()} />)
+
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
   })
 
-  describe('success messages', () => {
-    it('shows success message after role update', async () => {
-      const user = await renderOneUser()
+  it('says when the people could not be loaded', async () => {
+    client.api.getUsers.mockRejectedValue(new Error('Access denied'))
+    mount(<UserAdmin openItem={null} onOpenItem={vi.fn()} />)
 
-      await user.selectOptions(firstRoleSelect(), 'admins')
-
-      expect(await screen.findByText('User role updated')).toBeInTheDocument()
-    })
-
-    it('disables a user after the confirmation, says so, and clears the message after 3 s', async () => {
-      const user = await renderOneUser()
-      await user.click(await firstByTitle('Disable user'))
-      await user.click(await screen.findByRole('button', { name: 'Disable' }))
-
-      expect(await screen.findByText('User disabled')).toBeInTheDocument()
-      expect(mockDisableUser).toHaveBeenCalledWith(cognitoUser().username)
-      expect(screen.queryByText('Disable User')).not.toBeInTheDocument()
-      await waitFor(() => { expect(screen.queryByText('User disabled')).not.toBeInTheDocument() }, { timeout: 5000 })
-    })
-
-    it('cancels the message timer when the panel goes away, so nothing fires after it', async () => {
-      const timer = await timerOnCleanup(3000, async () => {
-        const user = await renderOneUser()
-        await user.selectOptions(firstRoleSelect(), 'admins')
-        return screen.findByText('User role updated')
-      })
-      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
-    })
+    expect(await screen.findByText(/Failed to load users/)).toBeInTheDocument()
   })
 })

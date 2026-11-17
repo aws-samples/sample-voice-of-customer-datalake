@@ -45,11 +45,11 @@ describe('the participant settings card', () => {
     expect(screen.getByText('not deployed')).toBeInTheDocument()
   })
 
-  it('shows the company domains read-only and links to Boards to edit them', async () => {
+  it('shows the company domains read-only and links to their card to edit them', async () => {
     renderCard()
     expect(await screen.findByText(/Company domains: example\.com\./)).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /company email domains/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Edit them in Boards' })).toHaveAttribute('href', '/admin/access/boards')
+    expect(screen.getByRole('link', { name: 'Edit them under Company domains' })).toHaveAttribute('href', '/admin/boards/domains')
   })
 
   it('saves the external-people switch, the cap and the sender name, never the domains', async () => {
@@ -66,7 +66,7 @@ describe('the participant settings card', () => {
     })
   })
 
-  it('says "Saved." after a save that changes the stored version (the form reloads with it)', async () => {
+  it('says "Saved" after a save that changes the stored version (the form reloads with it)', async () => {
     const user = userEvent.setup()
     const stored = new Map([['view', SETTINGS_VIEW]])
     routeFetchApi({
@@ -81,7 +81,7 @@ describe('the participant settings card', () => {
     await user.clear(await screen.findByRole('textbox', { name: /sender name/i }))
     await user.type(screen.getByRole('textbox', { name: /sender name/i }), 'Acme')
     await user.click(screen.getByRole('button', { name: /save/i }))
-    expect(await screen.findByText('Saved.')).toBeInTheDocument()
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /sender name/i })).toHaveDisplayValue('Acme')
   })
 

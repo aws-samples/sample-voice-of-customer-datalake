@@ -6,14 +6,16 @@
  * setup, assistant, this browser) · Morning brief · Objectives · Access &
  * tokens (my access, MCP tokens). docs/account-vs-admin.md is the placement rule.
  *
- * An unknown tab opens Profile, its path replacing the address. No query link of before (`?tab=`, `?section=`) is
- * read (7.49.00, a pre-release change).
+ * `/account` opens Preferences (7.54.00), the tab people come for most (theme, language): it is first here, the
+ * landing; the tab bar keeps its own order (AccountNav.tsx). An unknown tab opens Preferences too, its path
+ * replacing the address. No query link of before (`?tab=`, `?section=`) is read (7.49.00, a pre-release change).
  * @module pages/Account/accountSections
  */
 import { tabPath } from '../../utils/tabPaths'
 import type { TabPage } from '../../utils/tabPaths'
 
-export const ACCOUNT_TAB_IDS = ['profile', 'preferences', 'briefing', 'objectives', 'access'] as const
+/** The first is the landing (`/account`): Preferences. */
+export const ACCOUNT_TAB_IDS = ['preferences', 'profile', 'briefing', 'objectives', 'access'] as const
 
 export type AccountTabId = typeof ACCOUNT_TAB_IDS[number]
 

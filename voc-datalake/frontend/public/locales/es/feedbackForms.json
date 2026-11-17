@@ -29,7 +29,7 @@
     "noSubmissionsYet": "Aún no hay respuestas: comparte el formulario para recibirlas.",
     "themeSwatch": "Color del formulario"
   },
-  "configureApiFirst": "Configure el endpoint de la API en Administración → Configuración general para gestionar formularios de feedback.",
+  "configureApiFirst": "Configure el endpoint de la API en Administración → Marca y apariencia para gestionar formularios de feedback.",
   "createForm": "Crear formulario",
   "deleteConfirmLabel": "Eliminar",
   "deleteConfirmMessage": "¿Está seguro de que desea eliminar este formulario? Esta acción no se puede deshacer.",
@@ -39,7 +39,7 @@
     "backgroundColor": "Color de fondo",
     "borderRadius": "Radio de borde",
     "cancel": "Cancelar",
-    "categoryHint": "Las categorías se configuran en Administración → Taxonomía → Categorías",
+    "categoryHint": "Las categorías se configuran en Administración → Categorías",
     "categoryLabel": "Categoría",
     "categoryRoutingDescription": "Asigne una categoría a este formulario. Todo el feedback enviado a través de este formulario se etiquetará automáticamente con la categoría seleccionada.",
     "categoryRoutingTitle": "Enrutamiento de categoría",

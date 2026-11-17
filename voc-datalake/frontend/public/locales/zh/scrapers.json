@@ -31,7 +31,7 @@
     "choose": "选择品牌",
     "unknownBrand": "{{key}}(不在品牌列表中)",
     "noBrand": "还没有雷达品牌。",
-    "addBrand": "在 管理 → 来源 → 雷达 中添加品牌",
+    "addBrand": "在 管理 → 数据来源 → 雷达 中添加品牌",
     "needsBrand": "请选择品牌,否则这仍是普通来源。",
     "loading": "正在加载雷达品牌...",
     "loadFailed": "无法加载雷达品牌。"
@@ -281,7 +281,7 @@
     "select": "选择...",
     "configuredInSettings": "{{name}} 在 {{where}} 中连接：在那里粘贴令牌和设置，然后回到这里。",
     "configuredInSettingsNoToken": "{{name}} 在 {{where}} 中设置：请在那里填写设置，然后返回此处。",
-    "openDataSourceSettings": "打开来源设置",
+    "openDataSourceSettings": "打开数据来源",
     "saveFailed": "无法保存。请重试。"
   },
   "refresh": "刷新",

@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Building2, Loader2, Save } from 'lucide-react'
+import SavedStatus from '../../../components/SavedStatus/SavedStatus'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { MAX_COMPANY_DOMAINS, participantsApi, participantsKeys } from '../../../api/participantsApi'
 import { useIsAdmin } from '../../../store/authStore'
@@ -36,7 +37,7 @@ function DomainsForm({ stored, canSave, saved, onSavedChange }: Readonly<{
             {t('boards.domains.save')}
           </button>
           {save.isError ? <p role="alert" className="text-sm text-danger">{boardErrorMessage(save.error, t)}</p> : null}
-          {saved && !dirty ? <p role="status" className="text-sm text-ok">{t('boards.saved')}</p> : null}
+          <SavedStatus saved={saved && !dirty} label={t('boards.saved')} />
         </StickyActionBar>
       ) : null}
     </form>

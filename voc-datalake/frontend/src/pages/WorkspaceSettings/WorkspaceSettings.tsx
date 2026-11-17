@@ -118,7 +118,7 @@ function WorkspaceConfigCards({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   )
 }
 
-/** The workspace's brand, kept in the workspace's own browser record too (as Administration → General does). */
+/** The workspace's brand, kept in the workspace's own browser record too (as Administration → Brand & appearance does). */
 function WorkspaceBrandCard({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

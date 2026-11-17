@@ -1,102 +1,78 @@
-/** The Administration navigation model: six tabs and their sections, read from the path's tab and section. */
+/** The Administration navigation model (7.54.00): a home, nine tabs in four groups by frequency, their cards. */
 import { describe, expect, it } from 'vitest'
-import { resolveAdminLocation, visibleSections, visibleTabs } from './adminTabs'
-import type { AdminTabId } from './adminTabs'
+import { ADMIN_GROUPS, resolveAdminLocation, visibleGroups, visibleSections } from './adminTabs'
+import { adminPath, adminTabSegment } from './adminPaths'
 
-describe('resolveAdminLocation', () => {
-  it.each([
-    ['brand', 'brand', null],
-    ['ai', 'ai', null],
-    ['plugins', 'brand', null],
-    ['categories', 'brand', null],
-  ])('reads the tab %s as %s / %s (an id of before 5.09 is no tab any longer)', (tab, expectedTab, section) => {
-    expect(resolveAdminLocation(tab, null, true, false)).toStrictEqual({ tab: expectedTab, section })
-  })
-
-  it.each([
-    ['sources', 'inbox', 'sources', 'inbox'],
-    ['sources', 'plugins', 'sources', 'plugins'],
-    ['sources', null, 'sources', 'plugins'],
-    ['sources', 'policies', 'sources', 'plugins'],
-    ['sources', 'nope', 'sources', 'plugins'],
-    ['taxonomy', 'dimensions', 'taxonomy', 'dimensions'],
-    ['access', 'users', 'access', 'users'],
-    ['access', 'boards', 'access', 'boards'],
-    ['access', null, 'access', 'policies'],
-    ['system', null, 'system', 'logs'],
-    ['system', 'users', 'system', 'logs'],
-  ])('resolves /admin/%s/%s to %s / %s', (tab, section, expectedTab, expectedSection) => {
-    expect(resolveAdminLocation(tab, section, true, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
-  })
-
-  it.each([null, 'mcp', 'nope'])('falls back to General for the tab %s', (tab) => {
-    expect(resolveAdminLocation(tab, null, true, false)).toStrictEqual({ tab: 'brand', section: null })
-  })
-
-  it.each([
-    ['access', 'users', 'brand', null],
-    ['sources', null, 'sources', 'plugins'],
-    ['system', 'version', 'system', 'logs'],
-    ['sources', 'radar', 'sources', 'plugins'],
-    ['sources', 'inbox', 'sources', 'plugins'],
-    ['taxonomy', 'dimensions', 'taxonomy', 'categories'],
-    ['access', 'boards', 'brand', null],
-  ])('keeps a non-admin off admin-only /admin/%s/%s (→ %s / %s)', (tab, section, expectedTab, expectedSection) => {
-    expect(resolveAdminLocation(tab, section, false, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
-  })
-})
-
-describe('visibility', () => {
-  it('shows admins six tabs, and a platform admin the deployment\'s Data sources after Sources', () => {
-    expect([visibleTabs(true, false), visibleTabs(true, true)]).toStrictEqual([
-      ['brand', 'sources', 'taxonomy', 'access', 'ai', 'system'],
-      ['brand', 'sources', 'data-sources', 'taxonomy', 'access', 'ai', 'system'],
+describe('the groups', () => {
+  it('orders the tabs by how often they are needed: Everyday, Regularly, Set up once, Rare', () => {
+    expect(ADMIN_GROUPS.map((group) => [group.id, group.tabs])).toStrictEqual([
+      ['everyday', ['people', 'sources', 'logs']],
+      ['regular', ['categories', 'boards']],
+      ['once', ['ai', 'brand']],
+      ['rare', ['privacy', 'platform']],
     ])
   })
 
-  it('hides Privacy & access, whose sections are all admin-only, from a non-admin', () => {
-    expect(visibleTabs(false, false)).toStrictEqual(['brand', 'sources', 'taxonomy', 'ai', 'system'])
+  it('shows Platform to a platform admin only', () => {
+    expect([visibleGroups(true, true).at(-1)?.tabs, visibleGroups(true, false).at(-1)?.tabs]).toStrictEqual([
+      ['privacy', 'platform'], ['privacy'],
+    ])
   })
 
-  it('leaves a non-admin one open section per sectioned tab', () => {
-    const sections: readonly AdminTabId[] = ['sources', 'taxonomy', 'system']
-    expect(sections.map((tab) => visibleSections(tab, false, false))).toStrictEqual([['plugins'], ['categories'], ['logs']])
-  })
-})
-
-describe('Privacy & access', () => {
-  it('lists Boards after Source policies and Users, for admins only', () => {
-    expect([visibleSections('access', true, false), visibleSections('access', false, false)])
-      .toStrictEqual([['policies', 'users', 'boards'], []])
-  })
-
-  it('adds Workspaces, the platform console, for a platform admin only (an administrator in platform-admins)', () => {
-    expect([visibleSections('access', true, true), visibleSections('access', false, true)])
-      .toStrictEqual([['policies', 'users', 'boards', 'workspaces'], []])
-  })
-
-  it('sends a deep link to Workspaces back to the tab\'s first section for anyone else', () => {
-    expect([resolveAdminLocation('access', 'workspaces', true, true), resolveAdminLocation('access', 'workspaces', true, false)])
-      .toStrictEqual([{ tab: 'access', section: 'workspaces' }, { tab: 'access', section: 'policies' }])
+  it('leaves a non-admin Data sources, Logs, Categories, AI models and Brand & appearance', () => {
+    expect(visibleGroups(false, false)).toStrictEqual([
+      { id: 'everyday', tabs: ['sources', 'logs'] }, { id: 'regular', tabs: ['categories'] }, { id: 'once', tabs: ['ai', 'brand'] },
+    ])
   })
 })
 
-describe('Data sources, the deployment\'s (7.50.00)', () => {
-  it('opens /admin/data-sources, a page with no section switch, for a platform admin', () => {
-    expect(resolveAdminLocation('data-sources', null, true, true)).toStrictEqual({ tab: 'data-sources', section: null })
-    expect(visibleSections('data-sources', true, true)).toStrictEqual([])
-  })
-
+describe('the cards a path may name', () => {
   it.each([
-    ['a plain administrator', true, false],
-    ['a non-admin', false, false],
-    ['a platform admin outside admins (no Administration at all)', false, true],
-  ])('sends %s back to General, and never lists the tab', (_who, isAdmin, isPlatformAdmin) => {
-    expect(resolveAdminLocation('data-sources', null, isAdmin, isPlatformAdmin)).toStrictEqual({ tab: 'brand', section: null })
-    expect(visibleTabs(isAdmin, isPlatformAdmin)).not.toContain('data-sources')
+    ['sources', ['inbox', 'radar', 'tokens'], []],
+    ['categories', ['dimensions'], []],
+    ['boards', ['domains', 'participants'], []],
+    ['brand', ['theme'], ['theme']],
+    ['privacy', ['erasure'], []],
+    ['people', [], []],
+  ] as const)('%s: %o for an admin, %o for anyone else', (tab, admin, others) => {
+    expect([visibleSections(tab, true, false), visibleSections(tab, false, false)]).toStrictEqual([admin, others])
   })
 
-  it('drops a section named after it, keeping the tab', () => {
-    expect(resolveAdminLocation('data-sources', 'plugins', true, true)).toStrictEqual({ tab: 'data-sources', section: null })
+  it('gives the deployment brand of Platform to a platform admin only', () => {
+    expect([visibleSections('platform', true, true), visibleSections('platform', true, false)]).toStrictEqual([['deployment-brand'], []])
+  })
+})
+
+describe('resolveAdminLocation', () => {
+  it.each([
+    [null, null, { tab: null, section: null }],
+    ['people', null, { tab: 'people', section: null }],
+    ['categories', 'dimensions', { tab: 'categories', section: 'dimensions' }],
+    ['categories', 'nope', { tab: 'categories', section: null }],
+    ['brand', 'radar', { tab: 'brand', section: null }],
+  ])('reads /admin/%s/%s as %o', (tab, section, expected) => {
+    expect(resolveAdminLocation(tab, section, true, false)).toStrictEqual(expected)
+  })
+
+  it.each(['access', 'taxonomy', 'system', 'data-sources', 'general', 'nope'])('opens the home for %s, no alias', (tab) => {
+    expect(resolveAdminLocation(tab, 'users', true, true)).toStrictEqual({ tab: null, section: null })
+  })
+})
+
+describe('paths', () => {
+  it.each([
+    [{ tab: null, section: null }, null, '/admin'],
+    [{ tab: 'people', section: null }, null, '/admin/people'],
+    [{ tab: 'people', section: null }, 'invite', '/admin/people/invite'],
+    [{ tab: 'boards', section: null }, 'brd_sales', '/admin/boards/brd_sales'],
+    [{ tab: 'boards', section: 'domains' }, 'brd_sales', '/admin/boards/domains'],
+    [{ tab: 'logs', section: null }, 'nothing-open-on-logs', '/admin/logs'],
+  ] as const)('%o with %s is %s', (location, item, path) => {
+    expect(adminPath(location, item)).toBe(path)
+  })
+
+  it('reads the tab segment ("" for the home, null outside)', () => {
+    expect([adminTabSegment('/admin'), adminTabSegment('/admin/people/u-1'), adminTabSegment('/administration')])
+      .toStrictEqual(['', 'people', null])
   })
 })

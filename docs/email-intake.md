@@ -3,7 +3,8 @@
 Customers, staff and partners can email feedback to the platform: `feedback@`, `ideas@`, `bugs@`
 and `reviews@` your inbox domain. Each email is checked, deduplicated, its attachments are read, and
 it becomes at most one feedback item with source `email_intake`. An operator turns the inbox on at
-deploy time; administrators then watch it and set its caps in **Administration → Sources → Email inbox**.
+deploy time; administrators then watch it and set its caps in **Administration → Data sources → Email inbox**
+(`/admin/sources/inbox`, in the page's Advanced fold).
 The inbox is **off by default**: without `-c inboundEmailDomain` nothing is deployed and nothing costs
 anything.
 
@@ -57,7 +58,7 @@ local part at the domain is accepted on the channel of that local part.
 ## Guards
 
 The inbox is public, so every email passes cheap, deterministic checks first. A dropped email is
-counted (Administration → Sources → Email inbox → today) and deleted; **nothing is ever sent back**: no bounce, no
+counted (Administration → Data sources → Email inbox → today) and deleted; **nothing is ever sent back**: no bounce, no
 auto-reply, no backscatter.
 
 | Reason | Rule |
@@ -69,7 +70,7 @@ auto-reply, no backscatter.
 | `sender_cap` | More than the per-sender cap today (default 20). The cap counts the full address when SES's SPF or DKIM verdict is `PASS`; an unauthenticated sender shares ONE bucket with every other unauthenticated sender at the same domain, so rotating `From` addresses does not multiply it |
 | `no_text` / `unparseable` / `too_large` | Nothing to read; not an email (also a structure the parser cannot survive: recursion or memory exhausted, or `message/rfc822` nested more than 3 levels deep); over 25 MB (checked from the object's size before it is downloaded) |
 
-Caps are checked before any model call and are admin-editable in Administration → Sources → Email inbox. Days are UTC.
+Caps are checked before any model call and are admin-editable in Administration → Data sources → Email inbox. Days are UTC.
 
 **The overall daily cap (`daily_cap`, default 200) never drops mail.** Past it an email is
 **deferred** exactly like a spent model budget (below): it stays in `inbound/` and is retried after
@@ -149,7 +150,7 @@ Set the budget to 0 to read no attachments and gate no replies at all (every suc
   `shared/source_profiles.py`): names, email addresses, phone numbers, IBANs, cards and IPs in the
   subject, text, attachment summaries and every metadata value are replaced before archive or queue,
   and the author is dropped ([source-policies.md](source-policies.md)). Saving a profile for
-  `email_intake` in Administration → Privacy & access → Source policies replaces that default.
+  `email_intake` in Administration → Privacy → Source policies replaces that default.
 - **The one exception** to "the redacted message is the only copy": the original email, attachments included, is kept under `inbound-raw/<item id>/message.eml` in the
   inbound bucket for **90 days** (lifecycle rule), KMS-encrypted, never public, reachable only by the
   intake Lambda and account administrators. `metadata.attachments_key` points to it. Dropped and
@@ -228,7 +229,7 @@ npm run deploy:infra -- -c inboundEmailDomain=voc.example.com \
      Find it with `aws ses describe-active-receipt-rule-set --region <region>`.
    - No active set: deploy without the flag. CDK creates `voc-email-intake-<account>-<region>` with the
      rule and outputs `InboundEmailActivateRuleSet`, the command to activate it. Run it only if no other
-     receiving rule set is needed; Administration → Sources → Email inbox warns until it is active.
+     receiving rule set is needed; Administration → Data sources → Email inbox warns until it is active.
 6. **Test** with a sample email (any mailbox, or SES itself when the sender is a verified identity):
 
    ```bash
@@ -238,7 +239,7 @@ npm run deploy:infra -- -c inboundEmailDomain=voc.example.com \
    aws logs tail /aws/lambda/voc-email-intake-<account>-<region> --since 5m
    ```
 
-   Administration → Sources → Email inbox shows it under **Accepted**; the item appears in the feedback list with source
+   Administration → Data sources → Email inbox shows it under **Accepted**; the item appears in the feedback list with source
    `email_intake` a minute later.
 
 ### Removing the inbox
@@ -253,4 +254,4 @@ and records are removed. An own rule set is deleted with it (deactivate it first
 | CDK | `lib/stacks/email-intake.ts` (flags: `lib/utils/inbound-email.ts`), VocIngestionStack |
 | Worker | `lambda/email_intake/` (`handler.py`, `intake.py`, `guards.py`, `mime.py`, `text_cleanup.py`, `state.py`, `model_calls.py`, `compose.py`); tests and `.eml` fixtures in `lambda/email_intake/test/` |
 | Settings API | `GET` / `PUT /settings/email-inbox`, `POST /settings/email-inbox/feedback-type-dimension` (kept for older clients, answers `created: false`) (admin; `settings_handler.py`, `shared/email_intake_settings.py`) |
-| UI | `frontend/src/pages/Settings/EmailInboxCard.tsx` (Administration → Sources → Email inbox) |
+| UI | `frontend/src/pages/Settings/EmailInboxCard.tsx` (Administration → Data sources → Email inbox) |

@@ -8,7 +8,6 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import { renderWithQueryClient } from '../../test/query-client'
-import { timerOnCleanup } from '../../test/timeoutWatch'
 import SourceCard from './SourceCard'
 // Imported rather than restated: the subject of these assertions is the admin GATE,
 // not the wording, so a later decision to translate the tooltip must not fail them.
@@ -340,19 +339,12 @@ describe('SourceCard', () => {
       })
     })
 
-    it('shows success message after saving', async () => {
+    it('says "Saved" after saving, until the credentials are edited again (no timer)', async () => {
       await saveApiKey('secret-key')
 
-      // The Save button swaps its label for the confirmation.
-      expect(await screen.findByRole('button', { name: /saved!/i })).toBeInTheDocument()
-    })
-
-    it('cancels the "Saved!" timer when the card goes away, so nothing fires after it', async () => {
-      const timer = await timerOnCleanup(3000, async () => {
-        await saveApiKey('secret-key')
-        return screen.findByRole('button', { name: /saved!/i })
-      })
-      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
+      expect(await screen.findByText('Saved')).toHaveAttribute('role', 'status')
+      await userEvent.type(screen.getByPlaceholderText('Enter api key'), 'x')
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument()
     })
 
     /**

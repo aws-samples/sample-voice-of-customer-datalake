@@ -1,5 +1,5 @@
 /**
- * @fileoverview Settings → Users → "Category access": which categories of
+ * @fileoverview Administration → People → "Category access": which categories of
  * reviews one user may see, and from which sources (`SourceAccessFields`).
  *
  * "All categories" (the default — no stored row means all, so nobody loses

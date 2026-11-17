@@ -232,10 +232,8 @@
       "more": "Show more"
     },
     "platformAdmins": {
-      "title": "Platform admins",
       "description": "Platform admins create workspaces and can enter any of them as an admin. Only an administrator can be one, and one enabled platform admin always remains. A change reaches the person's session the next time it refreshes.",
       "label": "Platform admin",
-      "for": "Platform admin: {{user}}",
       "adminsOnly": "Only an administrator can be a platform admin."
     },
     "settings": {
@@ -501,7 +499,7 @@
       "resetBubble": "Reset bubble position"
     },
     "access": {
-      "hint": "What you can see in this app. An administrator changes it in Administration, Privacy & access, Users.",
+      "hint": "What you can see in this app. An administrator changes it in Administration → People.",
       "categories": "Categories",
       "sources": "Sources",
       "everyCategory": "Every category",
@@ -711,7 +709,7 @@
     "problemsOnlyHint": "Bugs, service failures, performance, usability, pricing and billing, and support experience. Feature requests, praise, questions and other reviews are hidden.",
     "allTypes": "All types",
     "untyped": "Reviews not typed yet: {{n, number}} (kept in view)",
-    "untypedHint": "Reviews stored before review types existed have no type until an administrator classifies them in Administration → Taxonomy. They stay in view under every type filter."
+    "untypedHint": "Reviews stored before review types existed have no type until an administrator classifies them in Administration → Categories. They stay in view under every type filter."
   },
   "infoTip": {
     "label": "More information"

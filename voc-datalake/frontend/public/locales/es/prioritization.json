@@ -78,7 +78,7 @@
     "saving": "Guardando...",
     "title": "Qué contiene esta fila"
   },
-  "configureApiEndpoint": "Configure el endpoint de la API en Administración → Configuración general para ver la priorización.",
+  "configureApiEndpoint": "Configure el endpoint de la API en Administración → Marca y apariencia para ver la priorización.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

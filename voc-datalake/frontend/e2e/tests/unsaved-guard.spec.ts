@@ -156,14 +156,15 @@ test.describe('admin settings (Cancel / Discard only, never saved)', () => {
   test('F6-s1: brand edits ask before leaving; nothing is written', async ({ page }, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', '/admin is admin-only')
     const writes = recordWrites(page)
-    await page.goto(site('/admin'))
+    // Administration → Brand & appearance: the brand card's unsaved edit (`/admin` is the home, 7.54.00).
+    await page.goto(site('/admin/brand'))
     const brand = page.getByLabel('Brand Name')
     await expect(brand).toBeVisible()
     await brand.fill(`${await brand.inputValue()} e2e-unsaved`)
     await sidebarHome(page).click()
     await expectGuardButtons(page)
     await guard(page).getByRole('button', { name: 'Cancel', exact: true }).click()
-    await expect(page).toHaveURL(/\/admin/)
+    await expect(page).toHaveURL(/\/admin\/brand$/)
     await sidebarHome(page).click()
     await guard(page).getByRole('button', { name: 'Discard', exact: true }).click()
     await expect(page).toHaveURL(/\/$/)

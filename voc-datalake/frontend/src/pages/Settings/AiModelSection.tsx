@@ -44,7 +44,6 @@ import { useModelTests } from './useModelTests'
 import type { ModelTests } from './useModelTests'
 import type { ModelTestStatus } from '../../api/modelTestSchema'
 import { modelSettingsKey } from '../../api/queryKeys'
-import { useResetAfter } from '../../hooks/useResetAfter'
 
 interface AiModelSectionProps {
   readonly apiEndpoint: string
@@ -111,18 +110,6 @@ function AiModelSectionBody({ data, isLoading, isError }: AiModelSectionBodyProp
   return <AiModelEditor data={data} />
 }
 
-const SAVED_BADGE_MS = 2000
-
-/** Saved-badge timer: shows `surface` as just saved for two seconds (useResetAfter: a newer save restarts it). */
-function useJustSaved(): [string | null, (surface: string) => void] {
-  const [savedSurface, setSavedSurface] = useState<string | null>(null)
-  const resetAfter = useResetAfter()
-  const mark = (surface: string) => {
-    setSavedSurface(surface)
-    resetAfter(SAVED_BADGE_MS, () => setSavedSurface(null))
-  }
-  return [savedSurface, mark]
-}
 
 function AiModelEditor({ data }: { readonly data: ModelSettings }) {
   const { t } = useTranslation('settings')
@@ -132,7 +119,8 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
   // Surface key -> draft select value ('' = Automatic). Absent = no draft.
   const [drafts, setDrafts] = useState<Partial<Record<string, string>>>({})
   const [pending, setPending] = useState<PendingSave | null>(null)
-  const [savedSurface, markSaved] = useJustSaved()
+  // The surface saved last says "Saved" until the next pick on the page (components/SavedStatus).
+  const [savedSurface, setSavedSurface] = useState<string | null>(null)
 
   const dropDraft = (surface: string) =>
     setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== surface)))
@@ -140,7 +128,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
   const saveMutation = useMutation({
     mutationFn: ({ surface, modelId }: PendingSave) => api.saveModelSettings(surface, modelId),
     onSuccess: async (_result, { surface }) => {
-      markSaved(surface)
+      setSavedSurface(surface)
       await queryClient.invalidateQueries({ queryKey: modelSettingsKey() })
       dropDraft(surface)
     },
@@ -203,7 +191,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
               testDisabled={isBusy(tests, resolvedId)}
               saving={saveMutation.isPending}
               justSaved={savedSurface === surface.key}
-              onDraft={(value) => setDrafts((current) => ({ ...current, [surface.key]: value }))}
+              onDraft={(value) => { setSavedSurface(null); setDrafts((current) => ({ ...current, [surface.key]: value })) }}
               onTest={() => void tests.runTest(resolvedId)}
               onSave={() => requestSave({ surface: surface.key, modelId: draft === '' ? null : draft, resolvedId })}
               onDiscard={() => dropDraft(surface.key)}

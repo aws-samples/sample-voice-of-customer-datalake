@@ -214,7 +214,6 @@
     "emailOff": "non configuré (déployez avec une adresse d'expéditeur)",
     "boardLink": "Lien des tableaux de retours :",
     "boardOff": "non déployé",
-    "saved": "Enregistré.",
     "loadFailed": "Impossible de charger les paramètres des participants."
   },
   "unsubscribe": {

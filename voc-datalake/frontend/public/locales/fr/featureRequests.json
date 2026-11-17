@@ -297,7 +297,7 @@
     "configure": "Configurer les tableaux",
     "emptyTitle": "Aucun tableau pour l’instant",
     "empty": "Aucun tableau ne vous est encore partagé.",
-    "emptyAdmin": "Créez un tableau dans <admin>Administration, Confidentialité et accès, Tableaux</admin>.",
+    "emptyAdmin": "Créez un tableau dans <admin>Administration → Tableaux de retours</admin>.",
     "loadFailed": "Les tableaux n’ont pas pu être chargés.",
     "notFoundTitle": "Tableau introuvable",
     "notFound": "Ce tableau n’existe pas ou ne vous est pas partagé.",

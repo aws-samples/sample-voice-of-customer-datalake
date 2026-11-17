@@ -31,7 +31,7 @@
     "choose": "Marke wählen",
     "unknownBrand": "{{key}} (nicht in der Markenliste)",
     "noBrand": "Noch keine Radar-Marke.",
-    "addBrand": "Marke unter Administration → Quellen → Radar hinzufügen",
+    "addBrand": "Marke unter Administration → Datenquellen → Radar hinzufügen",
     "needsBrand": "Wählen Sie eine Marke, sonst bleibt dies eine normale Quelle.",
     "loading": "Radar-Marken werden geladen...",
     "loadFailed": "Die Radar-Marken konnten nicht geladen werden."
@@ -281,7 +281,7 @@
     "select": "Auswählen...",
     "configuredInSettings": "{{name}} wird unter {{where}} verbunden: Fügen Sie dort das Token und die Einstellungen ein und kommen Sie dann hierher zurück.",
     "configuredInSettingsNoToken": "{{name}} wird unter {{where}} eingerichtet: dort die Einstellungen eintragen und dann hierher zurückkehren.",
-    "openDataSourceSettings": "Quelleneinstellungen öffnen",
+    "openDataSourceSettings": "Datenquellen öffnen",
     "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
   },
   "refresh": "Aktualisieren",

@@ -63,7 +63,7 @@ describe('DeploymentBrandCard', () => {
     await waitFor(async () => expect(await brandName()).toHaveValue('Juniper Trail Co.'))
     await userEvent.type(await brandName(), ' Outfitters')
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Brand saved.')
+    expect(await screen.findByText('Saved')).toHaveAttribute('role', 'status')
     expect(saved).toHaveBeenCalledWith({ ...DEPLOYMENT_BRAND, brand_name: 'Juniper Trail Co. Outfitters' })
     expect(fetchApi).toHaveBeenCalledWith('/settings/brand', expect.objectContaining({ method: 'PUT' }), 'deployment')
   })
@@ -86,8 +86,9 @@ describe('DeploymentBrandCard', () => {
     routeFetchApi({ 'GET /settings/brand': () => DEPLOYMENT_BRAND, 'GET /platform/workspaces': () => ({ workspaces: [], next_cursor: null }) })
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <TestRouter initialEntries={['/admin']}>
-          <AdminSectionContent tab="access" section="workspaces" apiEndpoint="https://api.example.com" isAdmin isPlatformAdmin />
+        <TestRouter initialEntries={['/admin/platform']}>
+          <AdminSectionContent tab="platform" section={null} apiEndpoint="https://api.example.com" onApiEndpointChange={vi.fn()}
+            isAdmin isPlatformAdmin />
         </TestRouter>
       </QueryClientProvider>,
     )

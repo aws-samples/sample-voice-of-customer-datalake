@@ -1,5 +1,6 @@
 /**
- * @fileoverview The admin-only Dimensions and Source policies sections of Administration.
+ * @fileoverview The admin-only Dimensions (Categories → Dimensions) and Source policies (Privacy) cards of
+ * Administration.
  * @module pages/Settings/DataGovernanceSections
  */
 import { useTranslation } from 'react-i18next'
@@ -9,6 +10,7 @@ import SourcesManager from '../../components/SourcesManager/SourcesManager'
 import { SectionHeader } from '../Company/ContextParts'
 import WorkspaceConfigNotice from '../../workspace/WorkspaceConfigNotice'
 import { ConfigScopeContext } from '../../workspace/configScope'
+import { sectionAnchorId } from './adminTabLabels'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -34,14 +36,14 @@ export function DimensionsSection() {
   )
 }
 
-/** Privacy & access → Source policies: source profiles and erasure (the Email inbox moved to Sources). */
+/** Privacy: source profiles, then the erasure panels (`/admin/privacy/erasure` focuses them). */
 export function SourcePoliciesSection() {
   const { t } = useTranslation('settings')
   return (
     <Section icon={ShieldCheck} title={t('sources.title')} description={t('sources.description')}>
       {/* The deployment's profiles, beside the deployment's erasure panels, from any address. */}
       <WorkspaceConfigNotice />
-      <ConfigScopeContext.Provider value="deployment"><SourcesManager /></ConfigScopeContext.Provider>
+      <ConfigScopeContext.Provider value="deployment"><SourcesManager erasureId={sectionAnchorId('erasure')} /></ConfigScopeContext.Provider>
     </Section>
   )
 }

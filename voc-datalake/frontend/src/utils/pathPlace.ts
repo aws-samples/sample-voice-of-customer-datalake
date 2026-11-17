@@ -35,7 +35,7 @@ function decodedSegment(segment: string): string {
 }
 
 /**
- * The segments of `pathname` under `base`, decoded (`/admin/access/users` under `/admin` → `['access', 'users']`,
+ * The segments of `pathname` under `base`, decoded (`/admin/people/u-1` under `/admin` → `['people', 'u-1']`,
  * `/admin` → `[]`), or null when `pathname` is not `base` or under it (`/administration`).
  */
 export function segmentsUnder(base: string, pathname: string): string[] | null {

@@ -31,7 +31,7 @@
     },
     "openScraper": "Diesen Scraper auf der Seite „Datenquellen“ öffnen",
     "openScrapers": "Seite „Datenquellen“ öffnen",
-    "openUsers": "Datenschutz & Zugriff → Benutzer öffnen",
+    "openUsers": "Administration → Personen öffnen",
     "approvePlan": "Freigeben und ausführen",
     "change": "Ändern",
     "changeLabel": "Was soll sich ändern?",
@@ -39,8 +39,8 @@
     "confirmChange": "Änderungen anfordern",
     "openFeedback": "Feedback-Liste öffnen",
     "openRadar": "Radar öffnen",
-    "openRadarSettings": "Administration → Quellen → Radar öffnen",
-    "openCategories": "Administration → Taxonomie → Kategorien öffnen",
+    "openRadarSettings": "Administration → Datenquellen → Radar öffnen",
+    "openCategories": "Administration → Kategorien öffnen",
     "openWorkspaceCategories": "Einstellungen des Arbeitsbereichs → Kategorien öffnen"
   },
   "preview": {

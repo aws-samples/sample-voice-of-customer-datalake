@@ -1,27 +1,15 @@
 /**
- * Wave 4 copy findings: the Sources tab opened under the heading "Data Sources &
- * Integrations" while its section switch said "Source settings", and the Radar
- * notes sent people to a "Scrapers page" the navigation no longer has (it is
- * "Data sources" since 5.x).
+ * Wave 4 copy findings, kept through 7.54.00: the Radar notes sent people to a "Scrapers page" the navigation no
+ * longer has (it is "Data sources" since 5.x), and Administration's sources tab is called what its page is called.
  */
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
-import { DataSourcesSection } from './SettingsSections'
-import { resolveAdminLocation } from './adminTabs'
-
-vi.mock('../../plugins', () => ({ getEnabledPlugins: () => [] }))
 
 const say = (key: string, ns: string) => i18n.t(key, { ns })
 
-describe('Administration → Sources copy', () => {
-  it('heads the section with its own name, "Source settings"', () => {
-    render(<DataSourcesSection apiEndpoint="" isAdmin />)
-    expect(screen.getByRole('heading', { level: 2, name: say('sections.plugins', 'settings') })).toHaveTextContent('Source settings')
-  })
-
-  it('opens /admin/sources on that section', () => {
-    expect(resolveAdminLocation('sources', null, true, false)).toStrictEqual({ tab: 'sources', section: 'plugins' })
+describe('Administration → Data sources copy', () => {
+  it('names the tab after its page, "Data sources" (no "Sources" / "Source settings" pair any longer)', () => {
+    expect([say('tabs.sources', 'settings'), say('home.jobs.sources.title', 'settings')]).toStrictEqual(['Data sources', 'Data sources'])
   })
 
   it.each([
@@ -35,11 +23,5 @@ describe('Administration → Sources copy', () => {
     const text = say(key, ns)
     expect(text).toContain('Data sources page')
     expect(text).not.toContain('Scrapers page')
-  })
-
-  // verify5/V6: de "Datenquellen-Zeitpläne aktivieren/deaktivieren" overflowed at 390 px / 200 %.
-  it('lets the section description break long words', () => {
-    render(<DataSourcesSection apiEndpoint="" isAdmin />)
-    expect(screen.getByTestId('data-sources-description')).toHaveClass('hyphens-auto', '[overflow-wrap:break-word]')
   })
 })

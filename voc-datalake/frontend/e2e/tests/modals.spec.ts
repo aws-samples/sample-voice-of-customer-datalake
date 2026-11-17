@@ -73,6 +73,12 @@ async function clickAndDialog(page: Page, trigger: Locator, name: DialogName): P
   return dialog
 }
 
+/** People → the first person's editor sheet (its row's Edit), then "Change access…": Category access over the sheet. */
+async function openCategoryAccess(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: /^Edit / }).first().click()
+  return clickAndDialog(page, page.getByRole('button', { name: 'Change access…' }), DIALOG.categoryAccess)
+}
+
 /** "New source" -> a tile of "Add a data source"; the selector closes and the tile's own dialog opens. */
 async function openSourceTile(page: Page, tile: RegExp, name: DialogName): Promise<Locator> {
   const selector = await openSourceMenu(page)
@@ -96,7 +102,7 @@ const CASES: readonly ModalCase[] = [
   { step: 'modal-json-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^JSON file/, DIALOG.jsonUpload) },
   { step: 'modal-csv-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^Spreadsheet \(CSV\)/, DIALOG.csvUpload) },
   { step: 'modal-create-agent', path: '/agents', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: 'New agent' }).first(), DIALOG.createAgent) },
-  { step: 'modal-category-access', path: '/admin/access/users', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: /category access/i }).first(), DIALOG.categoryAccess) },
+  { step: 'modal-category-access', path: '/admin/people', adminOnly: true, open: openCategoryAccess },
   { step: 'popover-time-range-custom', path: '/dashboard', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^Custom/ }).first(), DIALOG.customRange) },
   {
     step: 'assistant-panel', path: '/dashboard',

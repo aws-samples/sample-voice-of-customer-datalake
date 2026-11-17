@@ -31,7 +31,7 @@
     },
     "openScraper": "Abrir este scraper na página Fontes de dados",
     "openScrapers": "Abrir a página Fontes de dados",
-    "openUsers": "Abrir Privacidade e acesso → Usuários",
+    "openUsers": "Abrir Administração → Pessoas",
     "approvePlan": "Aprovar e executar",
     "change": "Alterar",
     "changeLabel": "O que deve mudar?",
@@ -39,8 +39,8 @@
     "confirmChange": "Pedir alterações",
     "openFeedback": "Abrir a lista de feedback",
     "openRadar": "Abrir Radar",
-    "openRadarSettings": "Abrir Administração → Fontes → Radar",
-    "openCategories": "Abrir Administração → Taxonomia → Categorias",
+    "openRadarSettings": "Abrir Administração → Fontes de dados → Radar",
+    "openCategories": "Abrir Administração → Categorias",
     "openWorkspaceCategories": "Abrir Configurações do espaço de trabalho → Categorias"
   },
   "preview": {

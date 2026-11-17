@@ -31,7 +31,7 @@
     },
     "openScraper": "在数据源页面打开此抓取器",
     "openScrapers": "打开数据源页面",
-    "openUsers": "打开 隐私与访问 → 用户",
+    "openUsers": "打开 管理 → 用户",
     "approvePlan": "批准并运行",
     "change": "修改",
     "changeLabel": "需要修改什么?",
@@ -39,8 +39,8 @@
     "confirmChange": "请求修改",
     "openFeedback": "打开反馈列表",
     "openRadar": "打开 Radar",
-    "openRadarSettings": "打开 管理 → 来源 → 雷达",
-    "openCategories": "打开 管理 → 分类体系 → 分类",
+    "openRadarSettings": "打开 管理 → 数据来源 → 雷达",
+    "openCategories": "打开 管理 → 分类",
     "openWorkspaceCategories": "打开工作区设置中的分类"
   },
   "preview": {

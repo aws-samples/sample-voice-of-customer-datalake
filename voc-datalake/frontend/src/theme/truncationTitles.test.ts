@@ -44,7 +44,8 @@ describe.each(SITES)('%s %s', (file, child) => {
 /** Page subtitles that span the content width (D-READ: up to ~165 characters a line). */
 const SUBTITLES: ReadonlyArray<readonly [string, string]> = [
   ['components/PageTitle/PageTitle.tsx', '{subtitle}</p>'],
-  ['pages/Settings/SettingsSections.tsx', "{t('subtitle')}</p>"],
+  ['pages/Settings/SettingsHome.tsx', "{t('subtitle')}</p>"],
+  ['pages/Settings/Settings.tsx', "{t(tabHintKey(tab))}</p>"],
   ['pages/Prioritization/PrioritizationHeader.tsx', "{t('subtitle')}</p>"],
   ['pages/Projects/Projects.tsx', "{t('description')}</p>"],
   ['pages/Agents/Agents.tsx', "{t('list.subtitle')}</p>"],

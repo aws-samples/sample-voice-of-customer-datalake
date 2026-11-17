@@ -42,6 +42,11 @@ const openDocumentSection = (name: RegExp) => async (p: Page): Promise<void> => 
   const button = documentSectionButtons(p).getByRole('button', { name })
   if (await button.isVisible()) await button.click()
 }
+/** People → the first person's editor sheet (its row's Edit; only the visible layout's button is in the tree). */
+const openPersonEditor = async (p: Page): Promise<void> => {
+  await p.getByRole('button', { name: /^Edit / }).first().click()
+  await expect(p.getByRole('dialog', { name: /^Edit / })).toBeVisible()
+}
 const openAssistant = async (p: Page): Promise<void> => {
   await p.getByRole('button', { name: 'Open assistant' }).click()
   await expect(p.getByRole('textbox', { name: 'Message the assistant' })).toBeVisible()
@@ -53,8 +58,9 @@ const CASES: readonly OverlayCase[] = [
   { step: 'form-submissions', path: '/feedback-forms', trigger: byName(/^(View )?Submissions$/) },
   { step: 'source-template-selector', path: '/scrapers', trigger: byName('New source') },
   { step: 'create-agent', path: '/agents', adminOnly: true, trigger: byName('New agent') },
-  { step: 'category-access', path: '/admin/access/users', adminOnly: true, trigger: byName(/category access/i) },
-  { step: 'data-source-wizard', path: '/admin/sources/plugins', adminOnly: true, trigger: byName(/^(Add (data )?source|New Source|Add Data Source)$/i) },
+  // People: the first person's editor sheet, then its "Change access…" (the Category access dialog over the sheet).
+  { step: 'category-access', path: '/admin/people', adminOnly: true, prepare: openPersonEditor, trigger: byName('Change access…') },
+  { step: 'data-source-wizard', path: '/admin/sources', adminOnly: true, trigger: byName(/^(Add (data )?source|New Source|Add Data Source)$/i) },
   { step: 'time-range-listbox', path: '/dashboard', trigger: (p) => p.locator('button[aria-haspopup="listbox"]').first() },
   { step: 'time-range-custom', path: '/dashboard', trigger: byName(/^Custom/) },
   { step: 'project-share', path: '/projects/{project}', trigger: byName(/^Share/) },

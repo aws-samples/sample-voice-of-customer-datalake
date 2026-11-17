@@ -3,7 +3,7 @@
  * workspaces (mock-workspaces.js: the caller, admin-demo, a platform admin, is the admin of Acme Outfitters, slug
  * acme, and an editor of Juniper Trail Co., slug juniper):
  *
- * 1. The platform console (Administration → Privacy & access → Workspaces) creates "Acme Outfitters Field Team"
+ * 1. The platform console (Administration → Platform, `/admin/platform`) creates "Acme Outfitters Field Team"
  *    (acme-field) and enters it: a full page load to `/workspace/acme-field/`, the header naming it with the Admin role.
  * 2. In acme, the members page adds editor@example.com as an Editor, makes them a Viewer, and the caller's own
  *    demotion (the only admin), confirmed first, is refused with the last-admin message.
@@ -65,8 +65,9 @@ const POPUP_SLUG = 'acme-popup'
 /** platformWorkspacesApi.ts WORKSPACE_NAME_MAX (platform_workspaces.py validated_workspace_name). */
 const NAME_MAX = 80
 
-/** The console's address inside acme (the gate shows the picker for an address without a workspace). */
-const CONSOLE = '/workspace/acme/admin/access/workspaces'
+/** The console's address inside acme (the gate shows the picker for an address without a workspace): Administration →
+ * Platform (7.54.00; Privacy & access → Workspaces before), its Workspaces card and the Deployment brand card. */
+const CONSOLE = '/workspace/acme/admin/platform'
 
 /** admin-demo as the app stores a signed-in user (`voc-auth`, store/authStore.ts): the mock caller's sub. */
 async function signInAsMockCaller(page: Page): Promise<void> {
@@ -204,7 +205,8 @@ test.describe('workspace administration', () => {
       const brand = page.getByRole('region', { name: 'Brand' })
       await brand.getByLabel('Brand Name').fill(TEXT.acmeBrand)
       await brand.getByRole('button', { name: 'Save Changes' }).click()
-      await expect(brand.getByRole('status')).toHaveText('Brand saved.')
+      // The card's own "Saved" (components/SavedStatus, 7.54.00), until its next edit.
+      await expect(brand.getByRole('status')).toHaveText('Saved')
       // Saved in acme, not in the deployment's brand.
       expect(await brandName(page, acmeId)).toBe(TEXT.acmeBrand)
       expect(await brandName(page, null)).not.toBe(TEXT.acmeBrand)
@@ -231,7 +233,7 @@ test.describe('workspace administration', () => {
           page.waitForRequest((request) => request.method() === 'PUT' && new URL(request.url()).pathname === '/settings/brand'),
           card.getByRole('button', { name: 'Save Changes' }).click(),
         ])
-        await expect(card.getByRole('status')).toHaveText('Brand saved.')
+        await expect(card.getByRole('status')).toHaveText('Saved')
         // The client's opt-out: no workspace on this call, though the page is inside acme.
         expect(save.headers()['x-workspace-id']).toBeUndefined()
         expect(await brandName(page, null)).toBe(TEXT.deploymentBrand)

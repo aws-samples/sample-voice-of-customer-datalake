@@ -91,7 +91,7 @@ describe('a connection\'s issues', () => {
       { signs_in: 'token', app_id: null }) })
     const billing = await issuesOf('billing-api')
     expect(billing.getByText(/signs in with a token: add this repository under Administration → Data sources/)).toBeInTheDocument()
-    expect(billing.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/data-sources/github_issues')
+    expect(billing.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/sources/github_issues?scope=deployment')
     expect(billing.getByText('Label voc-agent: on the repository.')).toBeInTheDocument()
   })
 

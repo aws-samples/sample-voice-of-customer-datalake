@@ -1,6 +1,6 @@
 /**
  * @fileoverview Account → Preferences: my colour theme. "Workspace default" follows the
- * theme an administrator picked for everyone (Administration → General); the five themes
+ * theme an administrator picked for everyone (Administration → Brand & appearance); the five themes
  * are my own pick, kept in this browser (theme/themeStore.ts `voc-theme`).
  * @module pages/Account/ColorThemeField
  */

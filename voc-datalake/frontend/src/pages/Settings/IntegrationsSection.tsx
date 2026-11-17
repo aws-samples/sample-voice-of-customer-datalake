@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Sources → Integrations: the write-only Figma / GitHub
+ * @fileoverview Administration → Data sources → Design-system tokens: the write-only Figma / GitHub
  * tokens the design system's references are refreshed with
  * (secrets are admin configuration, so they moved here
  * from Knowledge → Company → Design system). MCP access is per user and lives

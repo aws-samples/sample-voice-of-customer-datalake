@@ -6,11 +6,10 @@ interface NameFieldsProps {
   readonly familyName: string
   readonly onGivenNameChange: (value: string) => void
   readonly onFamilyNameChange: (value: string) => void
-  readonly autoFocusFirst?: boolean
 }
 
 export default function NameFields({
-  givenName, familyName, onGivenNameChange, onFamilyNameChange, autoFocusFirst,
+  givenName, familyName, onGivenNameChange, onFamilyNameChange,
 }: NameFieldsProps) {
   const { t } = useTranslation('components')
   // Each label names its input (it used to name nothing, so screen readers read a bare text box).
@@ -29,7 +28,6 @@ export default function NameFields({
           onChange={(e) => onGivenNameChange(e.target.value)}
           placeholder="Jane"
           className="input"
-          autoFocus={autoFocusFirst}
         />
       </div>
       <div>

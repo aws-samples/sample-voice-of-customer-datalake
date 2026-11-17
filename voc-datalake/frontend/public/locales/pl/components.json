@@ -382,7 +382,7 @@
     "close": "Zamknij",
     "show": "Pokaż kod QR",
     "title": "Kod QR",
-    "unavailable": "Kod QR będzie dostępny po skonfigurowaniu adresu API w Administracja → Ogólne"
+    "unavailable": "Kod QR będzie dostępny po skonfigurowaniu adresu API w Administracja → Marka i wygląd"
   },
   "personaExport": {
     "copied": "Skopiowano!",
@@ -434,7 +434,7 @@
     "reprocess": {
       "action": "Przetwórz plik ponownie",
       "confirmTitle": "Przetworzyć ponownie {{filename}}?",
-      "confirmMessage": "Plik ponownie przejdzie przez potok importu, ze źródłem {{source}}. Wiersze, które są już w data lake, zostaną pominięte jako duplikaty, więc zaimportowane zostaną tylko brakujące wiersze. Zapisane wiersze nie są ponownie wzbogacane: aby zmienić ich kategorie, użyj „Ponownie przetwórz istniejące opinie” w Administracja → Taksonomia.",
+      "confirmMessage": "Plik ponownie przejdzie przez potok importu, ze źródłem {{source}}. Wiersze, które są już w data lake, zostaną pominięte jako duplikaty, więc zaimportowane zostaną tylko brakujące wiersze. Zapisane wiersze nie są ponownie wzbogacane: aby zmienić ich kategorie, użyj „Ponownie przetwórz istniejące opinie” w Administracja → Kategorie.",
       "confirm": "Przetwórz ponownie",
       "running": "Ponowne przetwarzanie {{filename}}...",
       "failed": "Ponowne przetwarzanie {{filename}} nie powiodło się. Szczegóły są w logach systemowych.",
@@ -455,8 +455,6 @@
   },
   "userAdmin": {
     "active": "Aktywny",
-    "addNewUser": "Dodaj nowego użytkownika",
-    "addUser": "Dodaj użytkownika",
     "adminRole": "Administrator",
     "cancel": "Anuluj",
     "confirmDelete": "Czy na pewno chcesz usunąć {{email}}? Tej operacji nie można cofnąć.",
@@ -465,32 +463,24 @@
     "confirmReset": "Wysłać e-mail z resetem hasła na adres {{email}}?",
     "delete": "Usuń",
     "deleteUser": "Usuń użytkownika",
-    "deleteUserTitle": "Usuń użytkownika",
     "disable": "Wyłącz",
     "disabled": "Wyłączony",
     "disableUser": "Wyłącz użytkownika",
-    "disableUserTitle": "Wyłącz użytkownika",
-    "editUser": "Edytuj użytkownika",
-    "editUserTitle": "Edytuj użytkownika",
     "emailHelp": "Tymczasowe hasło zostanie wysłane na ten adres e-mail",
     "emailLabel": "Adres e-mail *",
     "enable": "Włącz",
     "enableUser": "Włącz użytkownika",
-    "enableUserTitle": "Włącz użytkownika",
     "firstNameLabel": "Imię",
     "lastNameLabel": "Nazwisko",
     "loadError": "Nie udało się załadować użytkowników. Upewnij się, że masz uprawnienia administratora.",
-    "noUsers": "Nie znaleziono użytkowników. Dodaj pierwszego użytkownika powyżej.",
+    "noUsers": "Nikt nie został jeszcze zaproszony. Zaproś pierwszą osobę powyżej.",
     "passwordResetSent": "Wysłano e-mail z resetem hasła",
     "pendingStatus": "Oczekuje",
     "resetPassword": "Resetuj hasło",
-    "resetPasswordTitle": "Resetuj hasło",
     "roleLabel": "Rola",
-    "roleUpdated": "Rola użytkownika została zaktualizowana",
     "saveChanges": "Zapisz zmiany",
     "sendInvite": "Wyślij zaproszenie",
     "sendResetEmail": "Wyślij e-mail resetujący",
-    "tableActions": "Akcje",
     "categoryAccess": {
       "title": "Dostęp do kategorii",
       "noCategories": "Nie skonfigurowano jeszcze żadnych kategorii.",
@@ -500,7 +490,6 @@
       "ownersNote": "Właściciele produktów zawsze widzą swoje kategorie, nawet jeśli nie zostały tutaj zaznaczone.",
       "saveError": "Nie udało się zapisać dostępu do kategorii.",
       "loadError": "Nie udało się wczytać dostępu do kategorii.",
-      "saved": "Zaktualizowano dostęp do kategorii dla {{email}}",
       "current": "Obecny dostęp",
       "currentCategories": "Kategorie: {{value}}",
       "currentSources": "Źródła: {{value}}",
@@ -513,7 +502,7 @@
       "otherHint": "Opinie bez kategorii"
     },
     "aiMode": {
-      "title": "Sposoby pracy z AI",
+      "title": "Sposób pracy z AI",
       "description": "Określa dla każdej osoby, ile jej PR/FAQ i PRD pisze AI oraz czy automatyzacje inżynieryjne, które włącza, mogą wypychać kod i otwierać pull requesty.",
       "notSet": "Nie ustawiono",
       "notSetEffect": "Dokumenty działają jako Prowadzone przez AI · automatyzacje niczego nie wypchną, dopóki nie wybierzesz",
@@ -544,19 +533,15 @@
       "aiDrivenTooltip": "Wspierane przez AI, a do tego agenty mogą pisać dokumenty za Ciebie i wypychać kod dla automatyzacji, które włączasz.",
       "unlockPrfaq": "PR/FAQ z AI",
       "unlockPrd": "PRD z AI",
-      "unlockPrfaqFor": "PR/FAQ z AI: {{user}}",
-      "unlockPrdFor": "PRD z AI: {{user}}",
       "unlockTooltip": "Gdy osoba już się nauczyła, AI może szkicować i przepisywać z nią ten typ dokumentu (agenty nadal nie)."
     },
     "flags": {
-      "title": "Flagi pamięci i właścicielstwa",
       "description": "Recenzenci pamięci kuratorują pamięć firmy. Zastępczy właściciel (jeden administrator) otrzymuje projekty utworzone przez agenta, których kategoria nie ma właściciela.",
       "fallbackOwner": "Zastępczy właściciel",
       "memoryReviewer": "Recenzent pamięci",
-      "fallbackOwnerFor": "Zastępczy właściciel: {{user}}",
-      "memoryReviewerFor": "Recenzent pamięci: {{user}}",
       "fallbackAdminOnly": "Zastępczym właścicielem może być tylko administrator.",
-      "saveFailed": "Nie udało się zaktualizować flagi. Spróbuj ponownie."
+      "saveFailed": "Nie udało się zaktualizować flagi. Spróbuj ponownie.",
+      "platformAdmin": "Administrator platformy"
     },
     "sourceAccess": {
       "title": "Źródła",
@@ -564,20 +549,49 @@
       "all": "Wszystkie źródła, również ograniczone",
       "selected": "Tylko wybrane źródła",
       "restricted": "Ograniczone",
-      "noProfiles": "Nie skonfigurowano jeszcze profili źródeł (Administracja → Prywatność i dostęp → Polityki źródeł)."
+      "noProfiles": "Nie skonfigurowano jeszcze profili źródeł (Administracja → Prywatność)."
     },
-    "tableRole": "Rola",
-    "tableStatus": "Status",
-    "tableUser": "Użytkownik",
     "userDeleted": "Użytkownik usunięty",
     "userDisabled": "Użytkownik zablokowany",
     "userEnabled": "Użytkownik aktywowany",
     "userRole": "Użytkownik",
-    "usersCount_one": "({{count, number}} użytkownik)",
-    "usersCount_other": "({{count, number}} użytkownika)",
-    "roleFor": "Rola dla {{email}}",
-    "usersCount_few": "({{count, number}} użytkownicy)",
-    "usersCount_many": "({{count, number}} użytkowników)"
+    "usersCount_one": "{{count, number}} osoba",
+    "usersCount_other": "{{count, number}} osoby",
+    "usersCount_few": "{{count, number}} osoby",
+    "usersCount_many": "{{count, number}} osób",
+    "invite": "Zaproś osobę",
+    "edit": "Edytuj",
+    "table": {
+      "name": "Imię i nazwisko",
+      "role": "Rola",
+      "wayOfWorking": "Sposób pracy",
+      "flags": "Flagi",
+      "status": "Status",
+      "actions": "Akcje",
+      "noFlags": "Brak"
+    },
+    "editor": {
+      "title": "Edytuj: {{name}}",
+      "delete": "Usuń: {{name}}…",
+      "sections": {
+        "role": "Rola",
+        "access": "Dostęp do kategorii i źródeł",
+        "flags": "Pamięć i właścicielstwo",
+        "platformAdmin": "Administrator platformy",
+        "name": "Imię i nazwisko",
+        "account": "Konto"
+      },
+      "roleHint": "Administratorzy otwierają Administrację i widzą każdą kategorię.",
+      "roleFailed": "Nie udało się zmienić roli. Spróbuj ponownie.",
+      "changeAccess": "Zmień dostęp…",
+      "saveName": "Zapisz imię i nazwisko",
+      "nameFailed": "Nie udało się zapisać imienia i nazwiska. Spróbuj ponownie.",
+      "accountHint": "Wyłączona osoba nie może się zalogować; to, co utworzyła, zostaje.",
+      "resetPassword": "Resetuj hasło…",
+      "disable": "Wyłącz logowanie…",
+      "enable": "Włącz logowanie…",
+      "actionFailed": "Nie udało się. Spróbuj ponownie."
+    }
   },
   "pageLoader": {
     "loading": "Ładowanie strony…"
@@ -627,7 +641,7 @@
     "sourceRadarHint": "Źródło Radar ({{brand}}): te wiersze trafiają na stronę Radar, nigdy do Twoich własnych pulpitów i metryk.",
     "defaultsTitle": "Wymiary i tagi",
     "defaultsHint": "Każda opinia z tego miejsca otrzymuje te wartości; jej własne wartości mają pierwszeństwo dla każdego wymiaru.",
-    "noDimensions": "Nie skonfigurowano jeszcze żadnych wymiarów (Administracja → Taksonomia → Wymiary).",
+    "noDimensions": "Nie skonfigurowano jeszcze żadnych wymiarów (Administracja → Kategorie → Wymiary).",
     "noDefault": "Brak domyślnej"
   },
   "draftSaveBar": {
@@ -713,7 +727,7 @@
       "summaryOnlyHint": "Zachowywane są wyłącznie pola pochodne (podsumowanie, kategoria, sentyment, wymiary); oryginalny tekst nie jest przechowywany."
     },
     "restrictedLabel": "Ograniczone",
-    "restrictedHint": "Opinie widzą wyłącznie administratorzy oraz użytkownicy, którym przyznano dostęp do tego źródła w sekcji Użytkownicy → Dostęp.",
+    "restrictedHint": "Opinie widzą wyłącznie administratorzy oraz osoby, którym przyznano to źródło (Osoby → dostęp danej osoby).",
     "defaultsTitle": "Wartości wymiarów dla każdej opinii z tego źródła",
     "noDefault": "Brak domyślnej",
     "empty": "Brak profili: każde źródło zachowuje wszystko na zawsze, a wszystkie opinie są widoczne dla wszystkich.",
@@ -732,7 +746,7 @@
       "radarBrand": "{{name}}: podaj markę, którą śledzi to źródło Radar."
     },
     "radarLegacy": "Źródło Radar dla marki {{brand}}: opinie z tego źródła trafiają do Radar.",
-    "radarLegacyHint": "Marki Radar konfiguruje się w sekcji Administracja → Źródła → Radar, a scraper lub konektor wybiera markę na stronie Źródła danych.",
+    "radarLegacyHint": "Marki Radar konfiguruje się w sekcji Administracja → Źródła danych → Radar, a scraper lub konektor wybiera markę na stronie Źródła danych.",
     "radarLegacyLink": "Otwórz ustawienia Radar",
     "keepForever": "Przechowuj opinie bezterminowo",
     "retentionLabel": "Usuń opinie starsze niż (dni)"
@@ -984,5 +998,8 @@
       "body": "Krok {{n}} potrzebuje tekstu.",
       "anchor": "Krok {{n}} nie wskazuje niczego: usuń go i wybierz element ponownie."
     }
+  },
+  "savedStatus": {
+    "saved": "Zapisano"
   }
 }

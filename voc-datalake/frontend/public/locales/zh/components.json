@@ -344,7 +344,7 @@
     "close": "关闭",
     "show": "显示二维码",
     "title": "二维码",
-    "unavailable": "在“管理 → 常规”中配置API端点后才能显示二维码"
+    "unavailable": "在“管理 → 品牌与外观”中配置API端点后才能显示二维码"
   },
   "personaExport": {
     "copied": "已复制！",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "重新处理文件",
       "confirmTitle": "重新处理 {{filename}}?",
-      "confirmMessage": "该文件将以来源 {{source}} 再次通过导入管道。数据湖中已有的行会作为重复项跳过,因此只导入缺失的行。已存储的行不会重新富化:如需重新分类,请使用 管理 → 分类体系 中的“重新处理现有反馈”。",
+      "confirmMessage": "该文件将以来源 {{source}} 再次通过导入管道。数据湖中已有的行会作为重复项跳过,因此只导入缺失的行。已存储的行不会重新富化:如需重新分类,请使用 管理 → 分类 中的“重新处理现有反馈”。",
       "confirm": "重新处理",
       "running": "正在重新处理 {{filename}}...",
       "failed": "重新处理 {{filename}} 失败。详情请查看系统日志。",
@@ -411,8 +411,6 @@
   },
   "userAdmin": {
     "active": "活跃",
-    "addNewUser": "添加新用户",
-    "addUser": "添加用户",
     "adminRole": "管理员",
     "cancel": "取消",
     "confirmDelete": "确定要删除 {{email}} 吗？此操作无法撤销。",
@@ -421,42 +419,30 @@
     "confirmReset": "向 {{email}} 发送密码重置邮件？",
     "delete": "删除",
     "deleteUser": "删除用户",
-    "deleteUserTitle": "删除用户",
     "disable": "禁用",
     "disabled": "已禁用",
     "disableUser": "禁用用户",
-    "disableUserTitle": "禁用用户",
-    "editUser": "编辑用户",
-    "editUserTitle": "编辑用户",
     "emailHelp": "临时密码将发送到此邮箱",
     "emailLabel": "邮箱地址 *",
     "enable": "启用",
     "enableUser": "启用用户",
-    "enableUserTitle": "启用用户",
     "firstNameLabel": "名",
     "lastNameLabel": "姓",
     "loadError": "加载用户失败。请确保您有管理员权限。",
-    "noUsers": "未找到用户。请在上方添加您的第一个用户。",
+    "noUsers": "尚未邀请任何人。请在上方邀请第一位用户。",
     "passwordResetSent": "密码重置邮件已发送",
     "pendingStatus": "待处理",
     "resetPassword": "重置密码",
-    "resetPasswordTitle": "重置密码",
     "roleLabel": "角色",
-    "roleUpdated": "用户角色已更新",
     "saveChanges": "保存更改",
     "sendInvite": "发送邀请",
     "sendResetEmail": "发送重置邮件",
-    "tableActions": "操作",
-    "tableRole": "角色",
-    "tableStatus": "状态",
-    "tableUser": "用户",
     "userDeleted": "用户已删除",
     "userDisabled": "用户已禁用",
     "userEnabled": "用户已启用",
     "userRole": "用户",
-    "usersCount_one": "（{{count, number}} 个用户）",
-    "usersCount_other": "（{{count, number}} 个用户）",
-    "roleFor": "{{email}} 的角色",
+    "usersCount_one": "{{count, number}} 人",
+    "usersCount_other": "{{count, number}} 人",
     "categoryAccess": {
       "title": "类别访问权限",
       "noCategories": "尚未配置任何类别。",
@@ -466,7 +452,6 @@
       "ownersNote": "产品负责人始终可以看到自己负责的类别，即使此处未选中。",
       "saveError": "无法保存类别访问权限。",
       "loadError": "无法加载类别访问权限。",
-      "saved": "已更新 {{email}} 的类别访问权限",
       "current": "当前访问权限",
       "currentCategories": "类别：{{value}}",
       "currentSources": "来源：{{value}}",
@@ -510,19 +495,15 @@
       "aiDrivenTooltip": "在 AI 辅助的基础上，代理还可以替你撰写文档，并为你启用的自动化推送代码。",
       "unlockPrfaq": "用 AI 写 PR/FAQ",
       "unlockPrd": "用 AI 写 PRD",
-      "unlockPrfaqFor": "用 AI 写 PR/FAQ：{{user}}",
-      "unlockPrdFor": "用 AI 写 PRD：{{user}}",
       "unlockTooltip": "掌握方法后，允许 AI 与其一起起草和改写此类文档（代理仍不可以）。"
     },
     "flags": {
-      "title": "记忆与所有者标记",
       "description": "记忆审核员负责维护公司记忆。备用所有者（一名管理员）接收类别无所有者的代理创建项目。",
       "fallbackOwner": "备用所有者",
       "memoryReviewer": "记忆审核员",
-      "fallbackOwnerFor": "备用所有者：{{user}}",
-      "memoryReviewerFor": "记忆审核员：{{user}}",
       "fallbackAdminOnly": "只有管理员才能成为备用所有者。",
-      "saveFailed": "无法更新标记，请重试。"
+      "saveFailed": "无法更新标记，请重试。",
+      "platformAdmin": "平台管理员"
     },
     "sourceAccess": {
       "title": "来源",
@@ -530,7 +511,40 @@
       "all": "所有来源(包括受限来源)",
       "selected": "仅所选来源",
       "restricted": "受限",
-      "noProfiles": "尚未配置来源(管理 → 隐私与访问 → 来源策略)。"
+      "noProfiles": "尚未配置来源(管理 → 隐私)。"
+    },
+    "invite": "邀请用户",
+    "edit": "编辑",
+    "table": {
+      "name": "姓名",
+      "role": "角色",
+      "wayOfWorking": "工作方式",
+      "flags": "标记",
+      "status": "状态",
+      "actions": "操作",
+      "noFlags": "无"
+    },
+    "editor": {
+      "title": "编辑 {{name}}",
+      "delete": "删除 {{name}}…",
+      "sections": {
+        "role": "角色",
+        "access": "类别和来源访问权限",
+        "flags": "记忆与所有者",
+        "platformAdmin": "平台管理员",
+        "name": "姓名",
+        "account": "账户"
+      },
+      "roleHint": "管理员可以打开“管理”并查看所有类别。",
+      "roleFailed": "无法更改角色，请重试。",
+      "changeAccess": "更改访问权限…",
+      "saveName": "保存姓名",
+      "nameFailed": "无法保存姓名，请重试。",
+      "accountHint": "被禁用的用户无法登录；其创建的内容会保留。",
+      "resetPassword": "重置密码…",
+      "disable": "禁用登录…",
+      "enable": "启用登录…",
+      "actionFailed": "操作未完成，请重试。"
     }
   },
   "pageLoader": {
@@ -581,7 +595,7 @@
     "sourceRadarHint": "雷达来源（{{brand}}）：这些行会进入雷达页面，绝不会计入您自己的仪表板和指标。",
     "defaultsTitle": "维度和标签",
     "defaultsHint": "来自此处的每条评价都带有这些值;每个维度上以评价自身的值为准。",
-    "noDimensions": "尚未配置维度(管理 → 分类体系 → 维度)。",
+    "noDimensions": "尚未配置维度(管理 → 分类 → 维度)。",
     "noDefault": "无默认值"
   },
   "draftSaveBar": {
@@ -669,7 +683,7 @@
       "summaryOnlyHint": "仅保留派生字段(摘要、类别、情绪、维度);不保存原文。"
     },
     "restrictedLabel": "受限",
-    "restrictedHint": "仅管理员和在“用户 → 访问权限”中获授此来源的用户可以看到其评价。",
+    "restrictedHint": "仅管理员和获授此来源的用户(用户 → 某位用户的访问权限)可以看到其评价。",
     "defaultsTitle": "此来源每条评价的维度值",
     "noDefault": "无默认值",
     "empty": "尚无配置:所有来源都会永久保留全部内容,并对所有人可见。",
@@ -688,7 +702,7 @@
       "radarBrand": "{{name}}:请填写此雷达来源跟踪的品牌。"
     },
     "radarLegacy": "{{brand}} 的雷达来源:此来源的评论进入雷达。",
-    "radarLegacyHint": "雷达品牌在 管理 → 来源 → 雷达 中设置,爬虫或连接器在数据源页面选择其品牌。",
+    "radarLegacyHint": "雷达品牌在 管理 → 数据来源 → 雷达 中设置,爬虫或连接器在数据源页面选择其品牌。",
     "radarLegacyLink": "打开雷达设置"
   },
   "erasure": {
@@ -918,5 +932,8 @@
       "body": "第 {{n}} 步需要正文。",
       "anchor": "第 {{n}} 步没有指向任何内容：请删除它并重新选择元素。"
     }
+  },
+  "savedStatus": {
+    "saved": "已保存"
   }
 }

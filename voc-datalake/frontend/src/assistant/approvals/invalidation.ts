@@ -29,7 +29,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query'
 const BRAND_SETTINGS_KEY = ['brand-settings'] as const
 /** Settings/useSourceSchedule.ts (every plugin's schedule on/off and circuit). */
 const SOURCES_STATUS_KEY = sourcesStatusKey()
-/** api/radarApi.ts `radarKeys` (the Radar page and Settings → Sources → Radar) all start with this. */
+/** api/radarApi.ts `radarKeys` (the Radar page and Administration → Data sources → Radar) all start with this. */
 const RADAR_KEY = ['radar'] as const
 /** Card-local keys of the company previews' current-value reads (not shared with Settings, like the brand preview). */
 export const companyPreviewKeys = {
@@ -61,7 +61,7 @@ export const keysFor = {
   brandSettings: (): QueryKey[] => [BRAND_SETTINGS_KEY],
   /** The Cognito user list (a created or edited user). */
   users: (): QueryKey[] => [usersKey()],
-  /** One user's stored category/source grant (Settings → Users → Category access). */
+  /** One user's stored category/source grant (Administration → People → Category access). */
   userAccess: (username: string): QueryKey[] => [userCategoryAccessKey(username)],
   memory: (): QueryKey[] => [memoryKeys.all()],
   companyContext: (): QueryKey[] => [companyContextKey(), companyPreviewKeys.companyContext()],

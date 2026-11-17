@@ -10,13 +10,12 @@ import Notice from '../components/Notice/Notice'
 import { workspaceRefusalMessage } from './workspaceRefusals'
 import type { Refusal } from './workspaceRefusals'
 
-export default function RefusalAlert({ error, refusals, className }: Readonly<{
+export default function RefusalAlert({ error, refusals }: Readonly<{
   error: unknown
   refusals: readonly Refusal[]
-  className?: string
 }>) {
   const { t } = useTranslation()
   if (error === null || error === undefined) return null
   const { messageKey, reason } = workspaceRefusalMessage(error, refusals)
-  return <Notice variant="banner" tone="danger" role="alert" icon={AlertCircle} text={t(messageKey, { reason })} className={className} />
+  return <Notice variant="banner" tone="danger" role="alert" icon={AlertCircle} text={t(messageKey, { reason })} />
 }

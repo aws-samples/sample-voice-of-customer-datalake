@@ -12,8 +12,9 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import SavedStatus from '../SavedStatus/SavedStatus'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Loader2, Check, AlertCircle } from 'lucide-react'
+import { Plus, Loader2, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
 import { categoriesConfigKey, useCategoriesConfig } from '../../hooks/useCategories'
 import { useConfigScope } from '../../workspace/configScope'
@@ -265,12 +266,8 @@ export default function CategoriesManager() {
           {t('saving')}
         </div>
       )}
-      {saveMutation.isSuccess && (
-        <div className="flex items-center gap-2 text-sm text-ok">
-          <Check size={14} />
-          {t('saved')}
-        </div>
-      )}
+      {/* The one Saved of Administration's cards (components/SavedStatus), until the next save starts. */}
+      {saveMutation.isPending ? null : <SavedStatus saved={saveMutation.isSuccess} label={t('saved')} />}
       {saveMutation.isError && (
         <p role="alert" className="text-sm text-text flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
           <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />

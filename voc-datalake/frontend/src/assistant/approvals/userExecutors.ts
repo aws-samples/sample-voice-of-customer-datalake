@@ -65,7 +65,7 @@ function refuseRegistered(users: readonly UserRecord[], emails: readonly string[
   }
 }
 
-/** Create one user like Settings → Users does; the username the route minted. */
+/** Create one user like Administration → People does; the username the route minted. */
 async function createOne(args: CreateUserArgs): Promise<string> {
   // The email doubles as the requested username; the route mints the real one.
   const res = await api.createUser({

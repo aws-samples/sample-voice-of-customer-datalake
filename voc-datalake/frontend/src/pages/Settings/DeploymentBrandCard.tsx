@@ -1,7 +1,7 @@
 /**
- * @fileoverview The deployment's default brand, in the platform console (Administration → Privacy & access →
- * Workspaces): `GET` and `PUT /settings/brand` with NO `X-Workspace-Id` (api/brandApi.ts, the client's explicit
- * opt-out), so it reaches the deployment-wide row from any address. Before it, nobody with a workspace could reach
+ * @fileoverview The deployment's default brand, in the platform console (Administration → Platform → Deployment brand,
+ * `/admin/platform/deployment-brand`): `GET` and `PUT /settings/brand` with NO `X-Workspace-Id` (api/brandApi.ts, the
+ * client's explicit opt-out), so it reaches the deployment-wide row from any address. Before it, nobody with a workspace could reach
  * that row from the web app: the gate always enters a workspace, and inside one the brand form edits the workspace's.
  *
  * The save is the deployment's `admins`' (`require_settings_admin` with no workspace: `require_admin`), the gate this

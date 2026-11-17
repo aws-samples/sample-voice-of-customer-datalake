@@ -22,7 +22,7 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Workspace members (6.13): the list, add by email, role change, the last-admin refusal, leave | `/workspace/{slug}/members` | Covered | workspace-admin M (mock only: memberships cannot be restored with proof on a deployment); remove a member and the other refusals: component specs only |
 | Cross-workspace (6.14): the `/workspace/{slug}/members` address of a workspace the caller is not a member of shows not-found | `/workspace/{slug}/members` | Covered | cross-workspace M (mock only: it needs the mock's two fictional workspaces); the API's 404 per route: `lambda/api/test/test_cross_workspace_routes.py` |
 | Workspace settings (7.38): rename (the client-side refusals, `X-Workspace-Id`, the header's menu, the slug kept) and delete (slug + reason + "I understand", the last dialog, `/` without it, its address not found) | `/workspace/{slug}/workspace-settings` | Covered | workspace-admin M (mock only); on a deployment: workspace-lifecycle (opt-in, run alone: the API's create, rename, members, the web_reviews run in a workspace and the delete, plus the name and delete cards) |
-| Platform console (6.13): list, create, enter (also a workspace the caller is not a member of) | `/admin/access/workspaces` | Covered | workspace-admin M (mock only: a workspace cannot be deleted yet); grant and revoke platform admin (Users): component specs only (the live grant is a Cognito group change) |
+| Platform console (6.13): list, create, enter (also a workspace the caller is not a member of) | `/admin/platform` | Covered | workspace-admin M (mock only: a workspace cannot be deleted yet); grant and revoke platform admin (People → a person's editor): component specs only (the live grant is a Cognito group change) |
 | Home: brief subscribe / Brief settings save, card dismiss (5.23) | `/` | Missing | writes the caller's brief subscription; needs a restore like account.spec |
 | Dashboard: tiles and charts vs the API, empty-workspace welcome | `/dashboard` | Covered | dashboard-data |
 | Dashboard: custom time range popover | `/dashboard` | Covered | modals M |
@@ -65,8 +65,8 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Board request → Promote to project | `/feature-requests/{slug}` | Missing | creates a project and may email supporters |
 | Board templates' fields (Service, Beta): create with their fields, totals | `/feature-requests/{slug}` | Partial | unit tests (BoardTemplates, FeatureBoard); screens only in e2e |
 | Standalone board for the board pool: list, one board, login | `/board`, `/board/{slug}`, `/board/login` | Covered | board M |
-| Administration → Privacy & access → Boards: company domains, board list, editor open / back | `/admin/access/boards[/<id>]` | Covered | feedback-boards M, surfaces M |
-| Boards admin writes: create, save fields / statuses / audience, archive, delete, 409s | `/admin/access/boards` | Partial | unit tests (BoardEditor, BoardsSection); e2e is read-only here (every board save rewrites the shared board-pool sign-up audience row) |
+| Administration → Feedback boards: board list, company domains, participant email, editor open / back | `/admin/boards[/<id>]`, `/admin/boards/domains\|participants` | Covered | feedback-boards M, surfaces M |
+| Boards admin writes: create, save fields / statuses / audience, archive, delete, 409s | `/admin/boards` | Partial | unit tests (BoardEditor, BoardsSection); e2e is read-only here (every board save rewrites the shared board-pool sign-up audience row) |
 | Memory: personal add / forget / restore, review queue errors | `/memory/personal\|company\|review\|imports` | Covered | memory M, error-states M |
 | Memory imports, company memory curation | `/memory/imports\|review` | Partial | screens only |
 | Company: vision, design system; its My objectives link to Account | `/company/vision\|design` | Covered | surfaces M, account M |
@@ -78,9 +78,9 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Account: five tabs | `/account/profile\|preferences\|briefing\|objectives\|access` | Covered | surfaces M |
 | Account: My objectives & KPIs saved and restored | `/account/objectives` | Covered | account M, unsaved-guard |
 | Account: language (9 locales) | `/account/preferences` | Covered | i18n-smoke M, surfaces M (de: participants, featureRequests) |
-| Administration: every tab and section | `/admin/<tab>/<section>` | Covered | surfaces M (renders, canonical URL, version string) |
-| Admin: plugins status, users + category access, logs sub-tabs | `/admin` | Covered | request-counts M, modals M, in-page-tabs M |
-| Admin: Logs → Alerts, inbox, radar brands, dimensions, policies, erasure | `/admin` | Partial | render only: each is a deployment-wide setting, never written by the suite |
+| Administration (7.54.00): the home, every tab and every card a path names; an old path opens the home | `/admin`, `/admin/<tab>[/<section>]` | Covered | surfaces M (renders, canonical URL, h1 and current nav link, version string), screens (each lands on its own path) |
+| Admin: Data sources status, People → a person's editor → category access, Logs sub-tabs | `/admin/sources`, `/admin/people`, `/admin/logs` | Covered | request-counts M, modals M, in-page-tabs M |
+| Admin: Logs → Alerts, Email inbox, Radar brands, Dimensions, Source policies, Erasure | `/admin/logs`, `/admin/sources/inbox\|radar`, `/admin/categories/dimensions`, `/admin/privacy[/erasure]` | Partial | render only: each is a deployment-wide setting, never written by the suite |
 | Admin: AI models test / capacity | `/admin/ai` | Partial | screens only (a model test spends Bedrock) |
 | Methodology on `GET /projects/{id}` and the Overview cards (6.04) | `/projects/{id}/overview` | Covered | methodology-catalogue |
 | Build prototype with no PRD / PR/FAQ: 409, no job (6.04) | `POST /projects/{id}/build-prototype` | Covered | methodology-catalogue |
@@ -91,11 +91,11 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | The SPA opens the Event API WebSocket with no CSP violation (6.04.02) | any signed-in page | Covered | realtime |
 | Global MCP 6.04 tools: read tools listed to a read token, catalogue / Radar / prioritization reads, unknown job, write tools refused, audit log | `POST /mcp/global` | Covered | mcp-tools-6x |
 | Scraper write rules: `mode` create / update, `base_etag`, computed `etag` (409 / 409 / 200 / 404), e2e-user 403 (6.04) | `POST /scrapers` | Covered | features-6x |
-| Colour themes: Account → Preferences pick, reload, restore; Administration → General default theme (read only) (6.01) | `/account/preferences`, `/admin` | Covered | features-6x |
-| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin` | Covered | features-6x |
+| Colour themes: Account → Preferences pick, reload, restore; Administration → Brand & appearance → Default theme (read only) (6.01) | `/account/preferences`, `/admin/brand/theme` | Covered | features-6x |
+| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin/brand` | Covered | features-6x |
 | Board Insights tab, insights and search APIs without names or emails (6.02) | `/feature-requests/insights` | Covered | features-6x |
 | MCP write tools succeeding, with person attribution (6.04) | `POST /mcp/global` | Missing | needs a write token and a real write; the MCP unit tests cover it |
-| Reprocess a slice / resume, silver history (6.03) | Administration → Taxonomy | Missing | rewrites stored feedback in production; pytest covers it |
+| Reprocess a slice / resume, silver history (6.03) | Administration → Categories | Missing | rewrites stored feedback in production; pytest covers it |
 
 ## Public pages (no session)
 

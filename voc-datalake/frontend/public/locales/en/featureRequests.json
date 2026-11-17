@@ -290,7 +290,7 @@
     "configure": "Configure boards",
     "emptyTitle": "No boards yet",
     "empty": "No board is shared with you yet.",
-    "emptyAdmin": "Create a board in <admin>Administration, Privacy & access, Boards</admin>.",
+    "emptyAdmin": "Create a board in <admin>Administration → Feedback boards</admin>.",
     "loadFailed": "The boards could not be loaded.",
     "notFoundTitle": "Board not found",
     "notFound": "This board does not exist, or it is not shared with you.",

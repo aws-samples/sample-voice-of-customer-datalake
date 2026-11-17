@@ -290,7 +290,7 @@
     "configure": "Boards konfigurieren",
     "emptyTitle": "Noch keine Boards",
     "empty": "Mit Ihnen wurde noch kein Board geteilt.",
-    "emptyAdmin": "Legen Sie ein Board unter <admin>Administration, Datenschutz & Zugriff, Boards</admin> an.",
+    "emptyAdmin": "Legen Sie ein Board unter <admin>Administration → Feedback-Boards</admin> an.",
     "loadFailed": "Die Boards konnten nicht geladen werden.",
     "notFoundTitle": "Board nicht gefunden",
     "notFound": "Dieses Board existiert nicht oder wurde nicht mit Ihnen geteilt.",

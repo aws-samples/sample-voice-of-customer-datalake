@@ -209,7 +209,7 @@ def _get(deps: ProcessDeps, url: str, headers: dict, *, what: str, not_found: st
     if status == 429 or (status == 403 and response.headers.get('X-RateLimit-Remaining') == '0'):
         raise ReferenceFetchError(f'{what} rate-limited the request; try again later')
     if status in (401, 403):
-        raise ReferenceFetchError(f'{what} refused access — check the token in Administration → Sources → Integrations')
+        raise ReferenceFetchError(f'{what} refused access — check the token in Administration → Data sources → Design-system tokens')
     if status == 404:
         raise ReferenceFetchError(not_found or f'{what} could not find it (or the token cannot see it)')
     if status >= 300:
@@ -240,7 +240,7 @@ def _json(response: requests.Response, limit: int = MAX_RESPONSE_BYTES) -> Any:
 def figma_digest(deps: ProcessDeps, url: str) -> str:
     token = deps.secrets.get('figma_token')
     if not isinstance(token, str) or not token:
-        raise ReferenceFetchError('No Figma token configured (Administration → Sources → Integrations)')
+        raise ReferenceFetchError('No Figma token configured (Administration → Data sources → Design-system tokens)')
     key = figma_file_key(url)
     data = _json(_get(deps, f'{FIGMA_API}/files/{key}?depth=2', {'X-Figma-Token': token}, what='Figma'))
     if not isinstance(data, dict):
@@ -267,9 +267,9 @@ def figma_digest(deps: ProcessDeps, url: str) -> str:
 
 GITHUB_RAW = 'https://raw.githubusercontent.com'
 GITHUB_NOT_FOUND = ('GitHub could not find that repository or file. A private repository needs a GitHub token '
-                    '(Administration → Sources → Integrations); public ones work without one')
+                    '(Administration → Data sources → Design-system tokens); public ones work without one')
 GITHUB_RATE_LIMITED = ('GitHub rate-limited the request; try again later, or add a GitHub token '
-                       '(Administration → Sources → Integrations) for a higher limit')
+                       '(Administration → Data sources → Design-system tokens) for a higher limit')
 
 
 @dataclass(frozen=True)

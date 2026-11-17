@@ -5,13 +5,16 @@
  * fresh copy of its data while the guard is open (a list refetch), Cancel keeps
  * the edit and the editor open, and the next close asks again.
  *
- * Covers PersonaEditModal, EditUserModal and ScraperEditor (FormEditor runs the contract in its own spec; a new
- * project document has no dialog since 7.38.00: it opens blank on its canvas, whose guard is the canvas's own).
+ * Covers PersonaEditModal, ScraperEditor and the People editor sheet's name (UserNameSection, under a data router:
+ * closing the sheet is a move to `/admin/people`, which the router's blocker holds). FormEditor runs the contract in
+ * its own spec; a new project document has no dialog since 7.38.00: it opens blank on its canvas, whose guard is the
+ * canvas's own.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider, createMemoryRouter, useNavigate } from 'react-router-dom'
 import { createTestQueryClient } from '@test/query-client'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import { makePersona } from '../../pages/ProjectDetail/project-detail-fixtures'
@@ -21,10 +24,13 @@ import type { ReactElement } from 'react'
 import type { GuardedEditorScenario } from '@test/unsavedGuardContract'
 
 vi.mock('../../api/scrapersApi', async (importOriginal) => scrapersApiStubModule(importOriginal))
-vi.mock('../../api/client', () => ({ api: { updateUser: () => Promise.resolve({ success: true }) } }))
+vi.mock('../../api/client', () => ({
+  api: { updateUser: () => Promise.resolve({ success: true }), getCategoriesConfig: () => Promise.resolve({ categories: [] }) },
+  fetchApi: () => Promise.resolve({}),
+}))
 
 const { default: PersonaEditModal } = await import('../../pages/ProjectDetail/PersonaEditModal')
-const { default: EditUserModal } = await import('../UserAdmin/EditUserModal')
+const { default: UserEditorSheet } = await import('../UserAdmin/UserEditorSheet')
 const { default: ScraperEditor } = await import('../../pages/Scrapers/ScraperEditor')
 
 const pressEscape: GuardedEditorScenario['leave'] = async (user) => { await user.keyboard('{Escape}') }
@@ -57,6 +63,30 @@ function dialogScenario({ host, field, typed, expected, onClose, leave = pressEs
   }
 }
 
+/** The People page's path-driven sheet: closing it moves to `/admin/people`; `refresh` hands it a fresh user (a refetch). */
+function personSheetScenario(): GuardedEditorScenario {
+  const handle: { refresh?: () => void } = {}
+  function Sheet() {
+    const navigate = useNavigate()
+    const [user, setUser] = useState(() => cognitoUser({ username: 'u1', given_name: 'Grace' }))
+    useEffect(() => { handle.refresh = () => setUser(cognitoUser({ username: 'u1', given_name: 'Grace' })) })
+    return <UserEditorSheet user={user} onClose={() => { void navigate('/admin/people') }} onDeleted={vi.fn()} />
+  }
+  const router = createMemoryRouter([
+    { path: '/admin/people', element: <p>People list</p> },
+    { path: '/admin/people/:item', element: <Sheet /> },
+  ], { initialEntries: ['/admin/people/u1'] })
+  return {
+    mount: () => { render(<QueryClientProvider client={createTestQueryClient()}><RouterProvider router={router} /></QueryClientProvider>) },
+    edit: async (user) => { await user.type(screen.getByLabelText('First Name'), 'ful') },
+    expectDraft: () => expect(screen.getByLabelText('First Name')).toHaveValue('Graceful'),
+    leave: pressEscape,
+    expectStayed: () => expect(router.state.location.pathname).toBe('/admin/people/u1'),
+    expectLeft: async () => { expect(await screen.findByText('People list')).toBeInTheDocument() },
+    whileDialogOpen: () => { handle.refresh?.(); return Promise.resolve() },
+  }
+}
+
 /** A host that owns a controlled editor's value, as ProjectDetail does. */
 function ControlledPersonaHost({ revision, onClose }: Readonly<{ revision: number; onClose: () => void }>) {
   const [persona, setPersona] = useState(() => makePersona({ name: 'Ada' }))
@@ -76,13 +106,8 @@ describe('editor dialogs — Cancel keeps the draft and stays guarded (R2 contra
     }))
   })
 
-  it('EditUserModal', async () => {
-    const onClose = vi.fn()
-    // A users-list refetch hands the modal a new (equal) user object.
-    await expectCancelKeepsDraftGuarded(dialogScenario({
-      host: () => <EditUserModal isOpen user={cognitoUser({ username: 'u1', given_name: 'Grace' })} onClose={onClose} onSuccess={vi.fn()} />,
-      field: 'First Name', typed: 'ful', expected: 'Graceful', onClose,
-    }))
+  it('UserNameSection, in a person\'s editor sheet (a route change)', async () => {
+    await expectCancelKeepsDraftGuarded(personSheetScenario())
   })
 
   it('ScraperEditor', async () => {

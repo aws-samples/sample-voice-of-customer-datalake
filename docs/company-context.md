@@ -12,7 +12,7 @@ copy from. Everyone can read them; administrators edit the company-wide parts.
 | Design system (tokens, guidelines, components, logo, references) | Company → **Design system** (`/company/design`) | admins |
 | Company personas | Company → **Personas** (`/company/personas`; [project-workspace.md](project-workspace.md#company-personas)) | admins |
 | My objectives and KPIs | **Account → Objectives** (`/account/objectives`) | each user, for themselves |
-| Figma and GitHub tokens for design references | Administration → Sources → Integrations ([below](#getting-the-figma-and-github-tokens)) | admins |
+| Figma and GitHub tokens for design references | Administration → Data sources → Advanced → Design-system tokens ([below](#getting-the-figma-and-github-tokens)) | admins |
 
 A project's **Product** tab (`/projects/{id}/product`) describes that one product. It shows the company context
 and design system it inherits, read-only, with a link to the Company page.
@@ -365,7 +365,7 @@ VocApiStack).
 
 ## Getting the Figma and GitHub tokens
 
-Administration → Sources → Integrations (`/admin/sources/integrations`) carries the same steps in-page (a "Setup help"
+Administration → Data sources → Design-system tokens (`/admin/sources/tokens`, in the page's Advanced fold) carries the same steps in-page (a "Setup help"
 disclosure per token, in every locale). Summary:
 
 | Token | Needed for | Where to create it | Grant | Sent only to |

@@ -1590,7 +1590,7 @@
       "unknown": "Not known yet",
       "openConnections": "Open Connections",
       "openDeploymentSources": "Open Administration → Data sources",
-      "openSources": "Open Administration → Sources → Source settings",
+      "openSources": "Open Administration → Data sources",
       "sourcesOutside": "Outside any workspace: the automations read only the deployment's sources.",
       "deploymentTitle": "This deployment",
       "connectedAs": "Connected through an App: {{list}}.",

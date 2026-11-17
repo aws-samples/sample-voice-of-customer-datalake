@@ -152,22 +152,17 @@
     "handlesPlaceholder": "@您的品牌, 品牌名, BrandName",
     "hashtagsLabel": "要跟踪的标签（逗号分隔）",
     "hashtagsPlaceholder": "#您的品牌, #您的产品",
-    "loadingSettings": "正在从服务器加载设置...",
     "nameLabel": "品牌名称",
     "namePlaceholder": "您的品牌名称",
     "syncedToBackend": "已同步到后端",
     "title": "品牌配置",
     "urlsHint": "通过网络搜索监控的特定URL",
     "urlsLabel": "要跟踪的URL（每行一个）",
-    "loadFailed": "无法从服务器加载品牌设置。正在显示此浏览器中保存的值。",
-    "retry": "重试",
     "notSynced": "未同步",
-    "saveFailed": "无法保存到服务器。请重试。",
-    "savedToServer": "品牌已保存。",
     "adminOnlyNotice": "只有管理员可以更改品牌配置。您可以在此查看。"
   },
   "categories": {
-    "configureFirst": "请在常规选项卡中配置API端点以管理分类。",
+    "configureFirst": "请在 品牌与外观 → 高级 中配置 API 端点，以管理分类。",
     "description": "配置反馈分类的类别和子类别。",
     "title": "反馈分类"
   },
@@ -179,13 +174,12 @@
     "resetTitle": "重置所有设置"
   },
   "dataSources": {
-    "configureFirst": "请在常规选项卡中配置API端点以管理数据源。",
-    "description": "配置API凭据、Webhook，启用/禁用数据源计划。",
+    "configureFirst": "请在 品牌与外观 → 高级 中配置 API 端点，以管理数据来源。",
     "noPlugins": "未找到数据源插件。请运行 <code>npm run generate:manifests</code> 生成插件清单。"
   },
   "logs": {
     "clear": "清除",
-    "configureFirst": "请在常规选项卡中配置API端点以查看日志。",
+    "configureFirst": "请在 品牌与外观 → 高级 中配置 API 端点以查看日志。",
     "daysAgo_one": "{{count, number}}天前",
     "daysAgo_other": "{{count, number}}天前",
     "errorLabel": "错误：",
@@ -354,7 +348,6 @@
     "fileExplorer": "文件浏览器",
     "hide": "隐藏",
     "save": "保存",
-    "saved": "已保存！",
     "saveToSecrets": "保存到Secrets Manager",
     "selectOption": "选择...",
     "show": "显示",
@@ -392,34 +385,34 @@
       "manual": "手动配置（高级）"
     }
   },
-  "subtitle": "配置您的VoC平台",
+  "subtitle": "此部署的用户、数据、分类和 AI。",
   "tabs": {
-    "general": "常规",
-    "sources": "来源",
-    "taxonomy": "分类体系",
-    "access": "隐私与访问",
+    "sources": "数据来源",
     "ai": "AI 模型",
-    "system": "系统",
-    "dataSources": "数据来源"
+    "people": "用户",
+    "logs": "日志",
+    "categories": "分类",
+    "boards": "反馈看板",
+    "brand": "品牌与外观",
+    "privacy": "隐私",
+    "platform": "平台",
+    "version": "版本"
   },
   "sections": {
-    "plugins": "来源设置",
-    "integrations": "集成",
     "inbox": "电子邮件收件箱",
     "radar": "雷达",
-    "categories": "分类",
     "dimensions": "维度",
-    "policies": "来源策略",
-    "users": "用户",
-    "logs": "日志",
-    "version": "版本",
-    "boards": "看板"
+    "tokens": "设计系统令牌",
+    "domains": "公司域名",
+    "participants": "参与者邮件",
+    "theme": "默认主题",
+    "erasure": "数据删除",
+    "deploymentBrand": "部署品牌",
+    "advanced": "高级"
   },
   "title": "设置",
   "users": {
-    "configureFirst": "请在常规选项卡中配置API端点以管理用户。",
-    "description": "管理VoC平台的用户、角色和权限。",
-    "title": "用户管理"
+    "configureFirst": "请在 品牌与外观 → 高级 中配置 API 端点，以管理用户。"
   },
   "company": {
     "title": "公司",
@@ -576,7 +569,7 @@
     "kindHints": {
       "website": "我们会在安全浏览器中打开页面，读取其颜色、字体和徽标。",
       "github": "公开仓库无需令牌。我们会读取其主题、颜色和字体文件以及徽标。",
-      "figma": "需要 Figma 令牌（管理 → 来源 → 集成）。"
+      "figma": "需要 Figma 令牌（管理 → 数据来源 → 设计系统令牌）。"
     },
     "readingHint": {
       "link": "正在读取，可能需要几分钟。",
@@ -738,10 +731,10 @@
     "notConfigured": "未配置",
     "saveTokens": "保存令牌",
     "integrationsMoved": "Figma 和 GitHub 令牌的设置位置：",
-    "integrationsLink": "管理 → 来源 → 集成"
+    "integrationsLink": "管理 → 数据来源 → 设计系统令牌"
   },
   "integrations": {
-    "title": "集成",
+    "title": "设计系统令牌",
     "description": "平台用于读取您的 Figma 文件和 GitHub 仓库以构建设计系统的只写令牌。令牌存储在 Secrets Manager 中，不会再次显示。",
     "mcpHint": "外部助手的 MCP 访问按用户设置，位于",
     "mcpLink": "连接"
@@ -807,7 +800,13 @@
   },
   "sources": {
     "title": "来源策略",
-    "description": "按来源的数据保护:个人数据处理、保留期限、可见范围和删除。"
+    "description": "按来源的数据保护:个人数据处理、保留期限、可见范围和删除。",
+    "scope": {
+      "label": "来源范围",
+      "workspace": "此工作区",
+      "deployment": "部署"
+    },
+    "advancedHint": "只需设置一次：电子邮件收件箱、雷达的品牌和扫描，以及设计系统读取 Figma 和 GitHub 所用的令牌。"
   },
   "version": {
     "title": "版本",
@@ -864,7 +863,7 @@
     "participantCard": {
       "domains": "公司域名：{{list}}。",
       "noDomains": "尚无公司域名。",
-      "editInBoards": "在看板中编辑"
+      "editInBoards": "在“公司域名”中编辑"
     },
     "list": {
       "title": "反馈看板",
@@ -1000,10 +999,125 @@
     "saveFailed": "无法保存默认主题。请重试。"
   },
   "deploymentSources": {
-    "title": "部署的数据来源",
-    "feeds": "这些来源为整个部署提供反馈：无论你当前在哪个工作区，它们导入的反馈都属于整个部署，不属于任何工作区。此页面上的凭据、计划和暂停都是部署自己的。",
-    "engineering": "工程自动化（Bug fixer、Feature builder、Issue triage）只读取这些反馈：它们的运行从不使用工作区的反馈。",
-    "appSignIn": "在 智能体 → 连接 中连接 GitHub 后，GitHub Issues 来源会自动配置：每个已连接仓库的 Issue 都通过部署的 GitHub App 读取。这里的卡片是高级视图。",
-    "inWorkspace": "你当前在 {{name}} 中，但此页面上的任何操作都不会改变它：该工作区自己的来源位于“来源”选项卡。"
+    "notice": "这些来源带来整个部署范围的反馈，不属于任何工作区。这是工程自动化唯一读取的反馈。"
+  },
+  "home": {
+    "inWorkspace": "你在工作区 {{name}} 中：它自己的设置在<settings>工作区设置</settings>里。",
+    "invite": "邀请用户",
+    "version": "版本 {{version}} · <notes>发布说明</notes>",
+    "attention": {
+      "title": "需要处理",
+      "sourcesPaused_one": "{{count, number}} 个来源因出错已暂停：{{list}}",
+      "sourcesPaused_other": "{{count, number}} 个来源因出错已暂停：{{list}}",
+      "waysUnset_one": "{{count, number}} 位用户尚未设置与 AI 协作的方式",
+      "waysUnset_other": "{{count, number}} 位用户尚未设置与 AI 协作的方式",
+      "modelsBlocked_one": "{{count, number}} 个 AI 模型无法在此账户中调用",
+      "modelsBlocked_other": "{{count, number}} 个 AI 模型无法在此账户中调用",
+      "reviewSources": "查看来源",
+      "openPeople": "打开用户",
+      "openModels": "打开 AI 模型"
+    },
+    "groups": {
+      "everyday": "日常",
+      "regular": "定期",
+      "once": "一次性设置",
+      "rare": "偶尔",
+      "elsewhere": "其他位置"
+    },
+    "jobs": {
+      "people": {
+        "title": "用户",
+        "hint": "邀请、移除、角色和与 AI 协作的方式"
+      },
+      "sources": {
+        "title": "数据来源",
+        "hint": "连接、计划、暂停和检查来源"
+      },
+      "logs": {
+        "title": "日志",
+        "hint": "错误和失败的条目"
+      },
+      "categories": {
+        "title": "分类和维度",
+        "hint": "反馈如何分类和打标签"
+      },
+      "boards": {
+        "title": "反馈看板",
+        "hint": "看板、公司域名和参与者邮件"
+      },
+      "ai": {
+        "title": "AI 模型",
+        "hint": "每项 AI 功能使用的模型及其容量"
+      },
+      "brand": {
+        "title": "品牌与外观",
+        "hint": "你的品牌和默认主题"
+      },
+      "privacy": {
+        "title": "隐私与数据删除",
+        "hint": "来源策略，以及删除某个人或某个来源的数据"
+      },
+      "platform": {
+        "title": "平台：工作区",
+        "hint": "工作区和部署品牌"
+      },
+      "version": {
+        "title": "版本",
+        "hint": "此构建和发布说明"
+      }
+    },
+    "counts": {
+      "people_one": "{{count, number}} 位用户",
+      "people_other": "{{count, number}} 位用户",
+      "sources": "开启 {{on, number}} · 暂停 {{paused, number}}",
+      "errors_one": "过去 24 小时 {{count, number}} 个错误",
+      "errors_other": "过去 24 小时 {{count, number}} 个错误"
+    },
+    "elsewhere": {
+      "cost": "成本：智能体 › 费用",
+      "github": "GitHub：智能体 › 连接",
+      "preferences": "你的偏好设置：账户 › 偏好设置"
+    }
+  },
+  "search": {
+    "titles": {
+      "connections": "连接",
+      "spend": "费用",
+      "preferences": "偏好设置"
+    },
+    "places": {
+      "agents": "智能体",
+      "account": "账户"
+    },
+    "label": "搜索设置",
+    "placeholder": "搜索设置…",
+    "empty": "没有与“{{q}}”匹配的设置",
+    "result": "{{tab}} 中的 {{title}}",
+    "count_one": "找到 {{count, number}} 项设置",
+    "count_other": "找到 {{count, number}} 项设置",
+    "terms": {
+      "people": "邀请, 添加用户, 用户, 移除, 删除用户, 角色, 管理员, 协作方式, AI 模式, 备用负责人, 记忆审核员, 平台管理员, 密码, 停用, 访问权限, invite",
+      "sources": "连接, 来源, 爬虫, 凭据, 令牌, 计划, 暂停, 恢复, 插件, Webhook, 应用评价, S3 导入, GitHub Issues, 部署",
+      "logs": "错误, 失败, 验证, 处理, 爬虫运行, 告警, CloudWatch, 系统日志",
+      "categories": "分类体系, 分类, 子分类, 重新处理, 归类, AI 建议",
+      "boards": "功能请求, 看板, 投票, 路线图, 想法",
+      "ai": "模型, Bedrock, Claude, Anthropic, GPT, 配额, 容量, 测试模型, 每分钟令牌数, 协议",
+      "brand": "品牌名称, 标志, 账号, 话题标签, 要跟踪的网址, 品牌重塑, API 端点",
+      "privacy": "来源策略, 保留期限, 个人数据, PII, 受限, GDPR, 数据保护",
+      "platform": "工作区, 新团队, 创建工作区, 平台管理员, 进入工作区",
+      "version": "发布说明, 更新日志, 提交, 构建, 新功能",
+      "inbox": "电子邮件, 邮箱, 转发, 收到的邮件, 上限",
+      "radar": "竞争对手, 品牌, 新闻, 发布, Exa, 扫描",
+      "tokens": "Figma, GitHub 令牌, 设计系统, 集成",
+      "dimensions": "维度, 产品, 模块, 用户类型, 标签, 筛选",
+      "domains": "公司域名, 邮箱域名, 同事, 受众",
+      "participants": "参与者, 发件人名称, 每日上限, 外部人员, 邮件发送",
+      "theme": "主题, 颜色, 深色, 浅色, 外观",
+      "erasure": "删除, 删除数据, GDPR, 被遗忘权, 删除来源",
+      "deploymentBrand": "默认品牌, 部署, 工作区之外",
+      "connections": "GitHub, GitHub 应用, 仓库, 连接, 安装, Issue",
+      "spend": "成本, 费用, 预算, 上限, 计费",
+      "preferences": "语言, 主题, 我的偏好, 深色模式"
+    }
   }
 }

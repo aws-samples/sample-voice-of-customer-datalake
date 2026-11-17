@@ -28,7 +28,7 @@
     "noSubmissionsYet": "No submissions yet — share the form to collect some.",
     "themeSwatch": "Form colour"
   },
-  "configureApiFirst": "Configure the API endpoint in Administration → General to manage feedback forms.",
+  "configureApiFirst": "Configure the API endpoint in Administration → Brand & appearance to manage feedback forms.",
   "createForm": "Create Form",
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this form? This action cannot be undone.",
@@ -38,7 +38,7 @@
     "backgroundColor": "Background Color",
     "borderRadius": "Border Radius",
     "cancel": "Cancel",
-    "categoryHint": "Categories are configured in Administration → Taxonomy → Categories",
+    "categoryHint": "Categories are configured in Administration → Categories",
     "categoryLabel": "Category",
     "categoryRoutingDescription": "Assign a category to this form. All feedback submitted through this form will be automatically tagged with the selected category, making it easy to filter and analyze feedback by source.",
     "categoryRoutingTitle": "Category Routing",

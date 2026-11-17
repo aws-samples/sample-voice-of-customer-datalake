@@ -344,7 +344,7 @@
     "close": "닫기",
     "show": "QR 코드 표시",
     "title": "QR 코드",
-    "unavailable": "관리 → 일반에서 API 엔드포인트를 구성할 때까지 QR 코드를 사용할 수 없습니다"
+    "unavailable": "관리 → 브랜드 및 모양에서 API 엔드포인트를 구성할 때까지 QR 코드를 사용할 수 없습니다"
   },
   "personaExport": {
     "copied": "복사됨!",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "파일 재처리",
       "confirmTitle": "{{filename}} 파일을 재처리할까요?",
-      "confirmMessage": "이 파일을 소스 {{source}}(으)로 가져오기 파이프라인에 다시 보냅니다. 데이터 레이크에 이미 있는 행은 중복으로 건너뛰므로 누락된 행만 가져옵니다. 저장된 행은 다시 보강되지 않습니다. 다시 분류하려면 관리 → 분류 체계의 \"기존 피드백 재처리\"를 사용하세요.",
+      "confirmMessage": "이 파일을 소스 {{source}}(으)로 가져오기 파이프라인에 다시 보냅니다. 데이터 레이크에 이미 있는 행은 중복으로 건너뛰므로 누락된 행만 가져옵니다. 저장된 행은 다시 보강되지 않습니다. 다시 분류하려면 관리 → 카테고리의 \"기존 피드백 재처리\"를 사용하세요.",
       "confirm": "재처리",
       "running": "{{filename}} 재처리 중...",
       "failed": "{{filename}} 재처리에 실패했습니다. 자세한 내용은 시스템 로그를 확인하세요.",
@@ -411,8 +411,6 @@
   },
   "userAdmin": {
     "active": "활성",
-    "addNewUser": "새 사용자 추가",
-    "addUser": "사용자 추가",
     "adminRole": "관리자",
     "cancel": "취소",
     "confirmDelete": "{{email}}을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
@@ -421,42 +419,30 @@
     "confirmReset": "{{email}}로 비밀번호 재설정 이메일을 보내시겠습니까?",
     "delete": "삭제",
     "deleteUser": "사용자 삭제",
-    "deleteUserTitle": "사용자 삭제",
     "disable": "비활성화",
     "disabled": "비활성화됨",
     "disableUser": "사용자 비활성화",
-    "disableUserTitle": "사용자 비활성화",
-    "editUser": "사용자 편집",
-    "editUserTitle": "사용자 편집",
     "emailHelp": "임시 비밀번호가 이 이메일로 전송됩니다",
     "emailLabel": "이메일 주소 *",
     "enable": "활성화",
     "enableUser": "사용자 활성화",
-    "enableUserTitle": "사용자 활성화",
     "firstNameLabel": "이름",
     "lastNameLabel": "성",
     "loadError": "사용자를 로드하지 못했습니다. 관리자 권한이 있는지 확인하세요.",
-    "noUsers": "사용자를 찾을 수 없습니다. 위에서 첫 번째 사용자를 추가하세요.",
+    "noUsers": "아직 초대한 사용자가 없습니다. 위에서 첫 사용자를 초대하세요.",
     "passwordResetSent": "비밀번호 재설정 이메일이 전송되었습니다",
     "pendingStatus": "대기 중",
     "resetPassword": "비밀번호 재설정",
-    "resetPasswordTitle": "비밀번호 재설정",
     "roleLabel": "역할",
-    "roleUpdated": "사용자 역할이 업데이트되었습니다",
     "saveChanges": "변경 사항 저장",
     "sendInvite": "초대 전송",
     "sendResetEmail": "재설정 이메일 전송",
-    "tableActions": "작업",
-    "tableRole": "역할",
-    "tableStatus": "상태",
-    "tableUser": "사용자",
     "userDeleted": "사용자가 삭제되었습니다",
     "userDisabled": "사용자가 비활성화되었습니다",
     "userEnabled": "사용자가 활성화되었습니다",
     "userRole": "사용자",
-    "usersCount_one": "({{count, number}}명의 사용자)",
-    "usersCount_other": "({{count, number}}명의 사용자)",
-    "roleFor": "{{email}}의 역할",
+    "usersCount_one": "{{count, number}}명",
+    "usersCount_other": "{{count, number}}명",
     "categoryAccess": {
       "title": "카테고리 접근 권한",
       "noCategories": "아직 구성된 카테고리가 없습니다.",
@@ -466,7 +452,6 @@
       "ownersNote": "제품 담당자는 여기서 선택되지 않았더라도 자신의 카테고리를 항상 볼 수 있습니다.",
       "saveError": "카테고리 접근 권한을 저장하지 못했습니다.",
       "loadError": "카테고리 접근 권한을 불러오지 못했습니다.",
-      "saved": "{{email}}의 카테고리 접근 권한을 업데이트했습니다",
       "current": "현재 접근 권한",
       "currentCategories": "카테고리: {{value}}",
       "currentSources": "소스: {{value}}",
@@ -510,19 +495,15 @@
       "aiDrivenTooltip": "AI 지원에 더해 에이전트가 문서를 대신 작성하고, 내가 활성화한 자동화를 위해 코드를 푸시할 수 있습니다.",
       "unlockPrfaq": "AI로 PR/FAQ",
       "unlockPrd": "AI로 PRD",
-      "unlockPrfaqFor": "AI로 PR/FAQ: {{user}}",
-      "unlockPrdFor": "AI로 PRD: {{user}}",
       "unlockTooltip": "방법을 익힌 뒤에는 AI가 이 문서 유형을 함께 초안 작성하고 다시 쓸 수 있습니다(에이전트는 여전히 불가)."
     },
     "flags": {
-      "title": "메모리 및 소유자 플래그",
       "description": "메모리 검토자는 회사 메모리를 관리합니다. 대체 소유자(관리자 1명)는 카테고리에 소유자가 없는 에이전트 생성 프로젝트를 받습니다.",
       "fallbackOwner": "대체 소유자",
       "memoryReviewer": "메모리 검토자",
-      "fallbackOwnerFor": "대체 소유자: {{user}}",
-      "memoryReviewerFor": "메모리 검토자: {{user}}",
       "fallbackAdminOnly": "관리자만 대체 소유자가 될 수 있습니다.",
-      "saveFailed": "플래그를 업데이트하지 못했습니다. 다시 시도하세요."
+      "saveFailed": "플래그를 업데이트하지 못했습니다. 다시 시도하세요.",
+      "platformAdmin": "플랫폼 관리자"
     },
     "sourceAccess": {
       "title": "소스",
@@ -530,7 +511,40 @@
       "all": "제한된 소스를 포함한 모든 소스",
       "selected": "선택한 소스만",
       "restricted": "제한됨",
-      "noProfiles": "아직 소스 프로필이 없습니다(관리 → 개인정보 및 액세스 → 소스 정책)."
+      "noProfiles": "아직 소스 프로필이 없습니다(관리 → 개인정보)."
+    },
+    "invite": "사용자 초대",
+    "edit": "편집",
+    "table": {
+      "name": "이름",
+      "role": "역할",
+      "wayOfWorking": "일하는 방식",
+      "flags": "플래그",
+      "status": "상태",
+      "actions": "작업",
+      "noFlags": "없음"
+    },
+    "editor": {
+      "title": "{{name}} 편집",
+      "delete": "{{name}} 삭제…",
+      "sections": {
+        "role": "역할",
+        "access": "카테고리 및 소스 접근 권한",
+        "flags": "메모리 및 소유자",
+        "platformAdmin": "플랫폼 관리자",
+        "name": "이름",
+        "account": "계정"
+      },
+      "roleHint": "관리자는 관리 화면을 열고 모든 카테고리를 볼 수 있습니다.",
+      "roleFailed": "역할을 변경하지 못했습니다. 다시 시도하세요.",
+      "changeAccess": "접근 권한 변경…",
+      "saveName": "이름 저장",
+      "nameFailed": "이름을 저장하지 못했습니다. 다시 시도하세요.",
+      "accountHint": "비활성화된 사용자는 로그인할 수 없으며, 만든 항목은 그대로 남습니다.",
+      "resetPassword": "비밀번호 재설정…",
+      "disable": "로그인 비활성화…",
+      "enable": "로그인 활성화…",
+      "actionFailed": "완료하지 못했습니다. 다시 시도하세요."
     }
   },
   "pageLoader": {
@@ -581,7 +595,7 @@
     "sourceRadarHint": "레이더 소스({{brand}}): 이 행들은 레이더 페이지로 가며, 자체 대시보드와 지표에는 절대 포함되지 않습니다.",
     "defaultsTitle": "차원 및 태그",
     "defaultsHint": "여기서 들어오는 모든 리뷰에 이 값이 적용되며, 차원별로 리뷰 자체 값이 우선합니다.",
-    "noDimensions": "아직 차원이 없습니다(관리 → 분류 체계 → 차원).",
+    "noDimensions": "아직 차원이 없습니다(관리 → 카테고리 → 차원).",
     "noDefault": "기본값 없음"
   },
   "draftSaveBar": {
@@ -669,7 +683,7 @@
       "summaryOnlyHint": "파생 필드(요약, 카테고리, 감정, 차원)만 보관하고 원문은 저장하지 않습니다."
     },
     "restrictedLabel": "제한됨",
-    "restrictedHint": "관리자와 사용자 → 접근 권한에서 이 소스를 허용받은 사용자만 리뷰를 볼 수 있습니다.",
+    "restrictedHint": "관리자와 이 소스를 허용받은 사용자(사용자 → 각 사용자의 접근 권한)만 리뷰를 볼 수 있습니다.",
     "defaultsTitle": "이 소스의 모든 리뷰에 적용할 차원 값",
     "noDefault": "기본값 없음",
     "empty": "아직 프로필이 없습니다. 모든 소스가 모든 내용을 영구 보관하며 모두에게 표시됩니다.",
@@ -688,7 +702,7 @@
       "radarBrand": "{{name}}: 이 레이더 소스가 추적하는 브랜드 이름을 입력하세요."
     },
     "radarLegacy": "{{brand}}의 레이더 소스: 이 소스의 리뷰는 레이더로 갑니다.",
-    "radarLegacyHint": "레이더 브랜드는 관리 → 소스 → 레이더에서 설정하고, 스크레이퍼나 커넥터의 브랜드는 데이터 소스 페이지에서 고릅니다.",
+    "radarLegacyHint": "레이더 브랜드는 관리 → 데이터 소스 → 레이더에서 설정하고, 스크레이퍼나 커넥터의 브랜드는 데이터 소스 페이지에서 고릅니다.",
     "radarLegacyLink": "레이더 설정 열기"
   },
   "erasure": {
@@ -918,5 +932,8 @@
       "body": "{{n}}단계에 본문이 필요합니다.",
       "anchor": "{{n}}단계가 아무것도 가리키지 않습니다. 삭제하고 요소를 다시 선택하세요."
     }
+  },
+  "savedStatus": {
+    "saved": "저장됨"
   }
 }

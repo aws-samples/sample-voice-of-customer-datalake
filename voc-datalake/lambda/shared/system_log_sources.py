@@ -1,4 +1,4 @@
-"""Which CloudWatch log groups Administration → System → Logs reads (`GET /logs/system*`).
+"""Which CloudWatch log groups Administration → Logs reads (`GET /logs/system*`).
 
 Four kinds of group, each named to the logs Lambda by CDK (lib/stacks/api-logs-diagnostics.ts):
 

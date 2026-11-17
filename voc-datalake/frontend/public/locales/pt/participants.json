@@ -214,7 +214,6 @@
     "emailOff": "não configurado (implante com um endereço de remetente)",
     "boardLink": "Link dos quadros de feedback:",
     "boardOff": "não implantado",
-    "saved": "Salvo.",
     "loadFailed": "Não foi possível carregar as configurações de participantes."
   },
   "unsubscribe": {

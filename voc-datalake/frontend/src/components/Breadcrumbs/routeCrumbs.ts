@@ -142,7 +142,7 @@ function agentsTrail(segments: readonly string[]): string[] {
 /**
  * The segments of `pathname` the trail shows. A page's places are paths (7.49.00): a project's tab, document, older
  * version and full screen (`/projects/<id>/documents/<docId>/v/<n>/focus`, pages/ProjectDetail/projectPaths.ts), a
- * page's tab and section (`/admin/access/boards/<id>`), an agent's tab, a view of the Agents list, a board's open
+ * page's tab and section (`/admin/boards/<id>`), an agent's tab, a view of the Agents list, a board's open
  * request and the boards' Insights: its tabs and toolbar show them, so the trail ends at the page (or the record).
  */
 export function trailSegments(pathname: string): string[] {

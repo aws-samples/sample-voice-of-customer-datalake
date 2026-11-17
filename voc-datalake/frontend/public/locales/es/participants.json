@@ -214,7 +214,6 @@
     "emailOff": "no configurado (despliega con una dirección de remitente)",
     "boardLink": "Enlace de los tableros de feedback:",
     "boardOff": "no desplegado",
-    "saved": "Guardado.",
     "loadFailed": "No se ha podido cargar la configuración de participantes."
   },
   "unsubscribe": {

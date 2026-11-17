@@ -34,7 +34,7 @@ export function userAdminEndpoints(fetchApi: FetchApi) {
     updateUserGroup: (username: string, group: 'admins' | 'users') =>
       fetchApi<UserMessage>(userPath(username, '/group'), put({ group })),
 
-    // Update user attributes (first/last name). Used by EditUserModal.
+    // Update user attributes (first/last name). Used by the People editor sheet (UserNameSection).
     updateUser: (username: string, data: { given_name: string; family_name: string }) =>
       fetchApi<UserMessage & { given_name: string; family_name: string; name: string }>(userPath(username), put(data)),
 

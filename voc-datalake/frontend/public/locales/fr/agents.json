@@ -1651,7 +1651,7 @@
       "unknown": "Pas encore connu",
       "openConnections": "Ouvrir Connexions",
       "openDeploymentSources": "Ouvrir Administration → Sources de données",
-      "openSources": "Ouvrir Administration → Sources → Réglages des sources",
+      "openSources": "Ouvrir Administration → Sources de données",
       "sourcesOutside": "Hors de tout espace de travail : les automatisations ne lisent que les sources du déploiement.",
       "deploymentTitle": "Ce déploiement",
       "connectedAs": "Connecté via une App : {{list}}.",

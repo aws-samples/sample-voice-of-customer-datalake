@@ -290,7 +290,7 @@
     "configure": "配置看板",
     "emptyTitle": "还没有看板",
     "empty": "还没有与你共享的看板。",
-    "emptyAdmin": "请在<admin>“管理”的“隐私与访问”中的“看板”</admin>里创建看板。",
+    "emptyAdmin": "请在<admin>管理 → 反馈看板</admin>里创建看板。",
     "loadFailed": "无法加载看板。",
     "notFoundTitle": "未找到看板",
     "notFound": "此看板不存在，或未与你共享。",

@@ -190,8 +190,8 @@ class TestHttpGet:
     @pytest.mark.parametrize(('failure', 'message'), [
         (requests.exceptions.ConnectTimeout(), 'Figma did not answer in time'),
         (requests.exceptions.ConnectionError(), 'Could not reach Figma'),
-        (_Body(status=401), 'Figma refused access — check the token in Administration → Sources → Integrations'),
-        (_Body(status=403), 'Figma refused access — check the token in Administration → Sources → Integrations'),
+        (_Body(status=401), 'Figma refused access — check the token in Administration → Data sources → Design-system tokens'),
+        (_Body(status=403), 'Figma refused access — check the token in Administration → Data sources → Design-system tokens'),
         (_Body(status=404), 'Figma could not find it (or the token cannot see it)'),
         (_Body(status=429), 'Figma rate-limited the request; try again later'),
         (_Body(status=300), 'Figma answered HTTP 300'),
@@ -239,7 +239,7 @@ class TestFigmaDigest:
     def test_token_must_be_a_non_empty_string(self, secrets):
         with pytest.raises(dr.ReferenceFetchError) as exc_info:
             dr.figma_digest(_world(secrets=secrets).deps, FIGMA_URL)
-        assert _message(exc_info) == 'No Figma token configured (Administration → Sources → Integrations)'
+        assert _message(exc_info) == 'No Figma token configured (Administration → Data sources → Design-system tokens)'
 
     def test_non_object_answer(self):
         world = _world({FIGMA_FILES_URL: _json_body(['x'])}, {'figma_token': 'tok'})

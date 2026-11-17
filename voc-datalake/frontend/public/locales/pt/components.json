@@ -363,7 +363,7 @@
     "close": "Fechar",
     "show": "Mostrar código QR",
     "title": "Código QR",
-    "unavailable": "Código QR indisponível até que o endpoint da API seja configurado em Administração → Geral"
+    "unavailable": "Código QR indisponível até que o endpoint da API seja configurado em Administração → Marca e aparência"
   },
   "personaExport": {
     "copied": "Copiado!",
@@ -413,7 +413,7 @@
     "reprocess": {
       "action": "Reprocessar arquivo",
       "confirmTitle": "Reprocessar {{filename}}?",
-      "confirmMessage": "O arquivo passa de novo pelo pipeline de importação, com a origem {{source}}. As linhas que já estão no data lake são ignoradas como duplicadas, então só as linhas que faltam são importadas. As linhas armazenadas não são enriquecidas de novo: para recategorizá-las, use \"Reprocessar o feedback existente\" em Administração → Taxonomia.",
+      "confirmMessage": "O arquivo passa de novo pelo pipeline de importação, com a origem {{source}}. As linhas que já estão no data lake são ignoradas como duplicadas, então só as linhas que faltam são importadas. As linhas armazenadas não são enriquecidas de novo: para recategorizá-las, use \"Reprocessar o feedback existente\" em Administração → Categorias.",
       "confirm": "Reprocessar",
       "running": "Reprocessando {{filename}}...",
       "failed": "Falha ao reprocessar {{filename}}. Os logs do sistema têm os detalhes.",
@@ -433,8 +433,6 @@
   },
   "userAdmin": {
     "active": "Ativo",
-    "addNewUser": "Adicionar Novo Usuário",
-    "addUser": "Adicionar Usuário",
     "adminRole": "Administrador",
     "cancel": "Cancelar",
     "confirmDelete": "Tem certeza de que deseja deletar {{email}}? Isso não pode ser desfeito.",
@@ -443,43 +441,31 @@
     "confirmReset": "Enviar um email de redefinição de senha para {{email}}?",
     "delete": "Excluir",
     "deleteUser": "Excluir Usuário",
-    "deleteUserTitle": "Excluir usuário",
     "disable": "Desativar",
     "disabled": "Desativado",
     "disableUser": "Desativar Usuário",
-    "disableUserTitle": "Desativar usuário",
-    "editUser": "Editar Usuário",
-    "editUserTitle": "Editar usuário",
     "emailHelp": "Uma senha temporária será enviada para este email",
     "emailLabel": "Endereço de Email *",
     "enable": "Ativar",
     "enableUser": "Ativar Usuário",
-    "enableUserTitle": "Ativar usuário",
     "firstNameLabel": "Nome",
     "lastNameLabel": "Sobrenome",
     "loadError": "Falha ao carregar usuários. Certifique-se de que você tem acesso de administrador.",
-    "noUsers": "Nenhum usuário encontrado. Adicione seu primeiro usuário acima.",
+    "noUsers": "Ninguém foi convidado ainda. Convide a primeira pessoa acima.",
     "passwordResetSent": "Email de redefinição de senha enviado",
     "pendingStatus": "Pendente",
     "resetPassword": "Redefinir Senha",
-    "resetPasswordTitle": "Redefinir senha",
     "roleLabel": "Função",
-    "roleUpdated": "Função do usuário atualizada",
     "saveChanges": "Salvar Alterações",
     "sendInvite": "Enviar Convite",
     "sendResetEmail": "Enviar Email de Redefinição",
-    "tableActions": "Ações",
-    "tableRole": "Função",
-    "tableStatus": "Situação",
-    "tableUser": "Usuário",
     "userDeleted": "Usuário excluído",
     "userDisabled": "Usuário desativado",
     "userEnabled": "Usuário ativado",
     "userRole": "Usuário",
-    "usersCount_one": "({{count, number}} usuários)",
-    "usersCount_many": "({{count, number}} usuários)",
-    "usersCount_other": "({{count, number}} usuários)",
-    "roleFor": "Função de {{email}}",
+    "usersCount_one": "{{count, number}} pessoa",
+    "usersCount_many": "{{count, number}} pessoas",
+    "usersCount_other": "{{count, number}} pessoas",
     "categoryAccess": {
       "title": "Acesso por categoria",
       "noCategories": "Ainda não há categorias configuradas.",
@@ -489,7 +475,6 @@
       "ownersNote": "Os responsáveis de produto sempre veem as próprias categorias, mesmo que não estejam selecionadas aqui.",
       "saveError": "Não foi possível salvar o acesso por categoria.",
       "loadError": "Não foi possível carregar o acesso por categoria.",
-      "saved": "Acesso por categoria atualizado para {{email}}",
       "current": "Acesso atual",
       "currentCategories": "Categorias: {{value}}",
       "currentSources": "Fontes: {{value}}",
@@ -502,7 +487,7 @@
       "otherHint": "Avaliações sem categoria"
     },
     "aiMode": {
-      "title": "Formas de trabalhar com IA",
+      "title": "Forma de trabalhar com IA",
       "description": "Define, por pessoa, quanto a IA escreve dos seus PR/FAQs e PRDs e se as automações de engenharia que ela ativa podem enviar código e abrir pull requests.",
       "notSet": "Não definido",
       "notSetEffect": "Os documentos usam Conduzido por IA · as automações não enviam nada até você escolher",
@@ -533,19 +518,15 @@
       "aiDrivenTooltip": "Assistido por IA e, além disso, agentes podem escrever documentos por você e enviar código para as automações que você ativa.",
       "unlockPrfaq": "PR/FAQ com IA",
       "unlockPrd": "PRD com IA",
-      "unlockPrfaqFor": "PR/FAQ com IA: {{user}}",
-      "unlockPrdFor": "PRD com IA: {{user}}",
       "unlockTooltip": "Depois que a pessoa aprender, a IA pode redigir e reescrever este tipo de documento com ela (os agentes continuam sem poder)."
     },
     "flags": {
-      "title": "Sinalizadores de memória e propriedade",
       "description": "Revisores de memória curam a memória da empresa. O proprietário substituto (um administrador) recebe projetos criados por agentes cuja categoria não tem proprietário.",
       "fallbackOwner": "Proprietário substituto",
       "memoryReviewer": "Revisor de memória",
-      "fallbackOwnerFor": "Proprietário substituto: {{user}}",
-      "memoryReviewerFor": "Revisor de memória: {{user}}",
       "fallbackAdminOnly": "Somente um administrador pode ser o proprietário substituto.",
-      "saveFailed": "Não foi possível atualizar o sinalizador. Tente novamente."
+      "saveFailed": "Não foi possível atualizar o sinalizador. Tente novamente.",
+      "platformAdmin": "Administrador da plataforma"
     },
     "sourceAccess": {
       "title": "Fontes",
@@ -553,7 +534,40 @@
       "all": "Todas as fontes, incluindo as restritas",
       "selected": "Somente as fontes selecionadas",
       "restricted": "Restrita",
-      "noProfiles": "Ainda não há perfis de fonte (Administração → Privacidade e acesso → Políticas de fontes)."
+      "noProfiles": "Ainda não há perfis de fonte (Administração → Privacidade)."
+    },
+    "invite": "Convidar pessoa",
+    "edit": "Editar",
+    "table": {
+      "name": "Nome",
+      "role": "Função",
+      "wayOfWorking": "Forma de trabalhar",
+      "flags": "Sinalizadores",
+      "status": "Status",
+      "actions": "Ações",
+      "noFlags": "Nenhum"
+    },
+    "editor": {
+      "title": "Editar {{name}}",
+      "delete": "Excluir {{name}}…",
+      "sections": {
+        "role": "Função",
+        "access": "Acesso a categorias e fontes",
+        "flags": "Memória e propriedade",
+        "platformAdmin": "Administrador da plataforma",
+        "name": "Nome",
+        "account": "Conta"
+      },
+      "roleHint": "Administradores abrem a Administração e veem todas as categorias.",
+      "roleFailed": "Não foi possível alterar a função. Tente novamente.",
+      "changeAccess": "Alterar acesso…",
+      "saveName": "Salvar nome",
+      "nameFailed": "Não foi possível salvar o nome. Tente novamente.",
+      "accountHint": "Uma pessoa desativada não pode entrar; o que ela criou permanece.",
+      "resetPassword": "Redefinir senha…",
+      "disable": "Desativar acesso…",
+      "enable": "Ativar acesso…",
+      "actionFailed": "Não foi possível concluir. Tente novamente."
     }
   },
   "pageLoader": {
@@ -604,7 +618,7 @@
     "sourceRadarHint": "Fonte do Radar ({{brand}}): estas linhas vão para a página Radar, nunca para os seus próprios painéis e métricas.",
     "defaultsTitle": "Dimensões e etiquetas",
     "defaultsHint": "Cada avaliação daqui recebe estes valores; os valores próprios prevalecem em cada dimensão.",
-    "noDimensions": "Ainda não há dimensões (Administração → Taxonomia → Dimensões).",
+    "noDimensions": "Ainda não há dimensões (Administração → Categorias → Dimensões).",
     "noDefault": "Sem padrão"
   },
   "draftSaveBar": {
@@ -692,7 +706,7 @@
       "summaryOnlyHint": "Somente os campos derivados (resumo, categoria, sentimento, dimensões) são mantidos; o texto original não é guardado."
     },
     "restrictedLabel": "Restrita",
-    "restrictedHint": "Somente administradores e usuários com acesso a esta fonte em Usuários → acesso veem suas avaliações.",
+    "restrictedHint": "Somente administradores e as pessoas com acesso a esta fonte (Pessoas → acesso de uma pessoa) veem suas avaliações.",
     "defaultsTitle": "Valores de dimensão para cada avaliação desta fonte",
     "noDefault": "Sem padrão",
     "empty": "Ainda não há perfis: toda fonte mantém tudo, para sempre, visível para todos.",
@@ -711,7 +725,7 @@
       "radarBrand": "{{name}}: indique a marca que esta fonte do Radar acompanha."
     },
     "radarLegacy": "Fonte do Radar para {{brand}}: as avaliações desta fonte vão para o Radar.",
-    "radarLegacyHint": "As marcas do Radar são configuradas em Administração → Fontes → Radar, e cada scraper ou conector escolhe a sua marca na página Fontes de dados.",
+    "radarLegacyHint": "As marcas do Radar são configuradas em Administração → Fontes de dados → Radar, e cada scraper ou conector escolhe a sua marca na página Fontes de dados.",
     "radarLegacyLink": "Abrir as definições do Radar"
   },
   "erasure": {
@@ -951,5 +965,8 @@
       "body": "O passo {{n}} precisa de um texto.",
       "anchor": "O passo {{n}} não aponta para nada: remova-o e escolha o elemento de novo."
     }
+  },
+  "savedStatus": {
+    "saved": "Salvo"
   }
 }

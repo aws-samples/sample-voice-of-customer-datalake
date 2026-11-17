@@ -12,7 +12,7 @@
     "editProject": "プロジェクト {{name}} を編集",
     "owner": "オーナー: {{name}}"
   },
-  "configureEndpoint": "まず「管理 → 一般」でAPIエンドポイントを構成してください",
+  "configureEndpoint": "まず「管理 → ブランドと外観」でAPIエンドポイントを構成してください",
   "list": {
     "search": "プロジェクトを検索",
     "scopeLabel": "誰のプロジェクトか",

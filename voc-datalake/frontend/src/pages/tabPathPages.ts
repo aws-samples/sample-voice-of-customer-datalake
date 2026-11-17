@@ -1,5 +1,5 @@
 /**
- * @fileoverview The pages whose tab (and section) is their path's second segment (7.49.00: `/admin/access/…`,
+ * @fileoverview The pages whose tab (and section) is their path's second segment (7.49.00: `/admin/<tab>/…`,
  * `/account/briefing`, `/memory/personal`), read from each page's own path module so a page added there is added
  * here. The breadcrumbs end their trail at the page (components/Breadcrumbs/routeCrumbs.ts) and the assistant's page
  * context reads the tab from that segment (assistant/page/pageContext.ts).

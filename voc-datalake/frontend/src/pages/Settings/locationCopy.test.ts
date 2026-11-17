@@ -1,8 +1,8 @@
 /**
- * Copy that names a place in Administration names one that exists (5.10 sweep):
+ * Copy that names a place in Administration names one that exists (5.10 sweep, 7.54.00 tabs):
  * in every locale, each "<Administration> → <tab>[ → <section>]" in any
- * namespace starts with a tab label of that locale and, when the tab has a
- * section switch and the path goes on, one of that tab's section labels. No
+ * namespace starts with a tab label of that locale and, when the tab has
+ * cards a path names and the path goes on, one of those cards' labels. No
  * string points to the retired "<Settings> → …" page. Third-party UI paths
  * (Figma / GitHub token steps in `settings:integrationGuide`) are not ours.
  */
@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
-import { visibleSections, visibleTabs } from './adminTabs'
-import { tabLabelKey } from './adminTabLabels'
+import { ADMIN_GROUPS, visibleSections } from './adminTabs'
+import { sectionLabelKey, tabLabelKey } from './adminTabLabels'
 import type { AdminTabId } from './adminTabs'
 
 const LOCALES_DIR = path.join(__dirname, '../../../public/locales')
@@ -58,10 +58,11 @@ interface Place { readonly label: string; readonly sections: readonly string[] }
 function places(locale: string): Place[] {
   const labels = settingsSchema.parse(readJson(locale, 'settings'))
   const tabLabel = (id: AdminTabId) => labels.tabs[tabLabelKey(id).replace(/^tabs\./, '')] ?? id
-  // Every place an administrator may be sent: a platform admin's (the Data sources tab, the platform console) too.
-  return visibleTabs(true, true).map((id) => ({
+  // Every place an administrator may be sent: a platform admin's (Platform) too, and Version.
+  const tabs: readonly AdminTabId[] = [...ADMIN_GROUPS.flatMap((group) => group.tabs), 'version']
+  return tabs.map((id) => ({
     label: tabLabel(id),
-    sections: visibleSections(id, true, true).map((section) => labels.sections[section] ?? section),
+    sections: visibleSections(id, true, true).map((section) => labels.sections[sectionLabelKey(section).replace(/^sections\./, '')] ?? section),
   }))
 }
 
@@ -107,9 +108,10 @@ describe('copy naming an Administration place', () => {
 
   it('recognises a stale place (the checker is not vacuous)', () => {
     const known = places('en')
-    expect(namesAPlace('Dimensions).', known)).toBe(false)
-    expect(namesAPlace('Taxonomy → Users', known)).toBe(false)
-    expect(namesAPlace('Taxonomy → Dimensions).', known)).toBe(true)
+    expect([namesAPlace('Dimensions).', known), namesAPlace('Taxonomy → Users', known),
+      namesAPlace('General → Brand', known)]).toStrictEqual([false, false, false])
+    expect(namesAPlace('Categories → Dimensions).', known)).toBe(true)
+    expect(namesAPlace('Categories → Users', known)).toBe(false)
     expect(namesAPlace('AI models.', known)).toBe(true)
   })
 })

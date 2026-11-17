@@ -14,7 +14,7 @@
  *
  * Since 7.50.02 the block says whether a mode is stored at all (`saved`): with nothing saved
  * documents work AI-driven, but the engineering agents push nothing for the person (their dial
- * takes only an explicitly saved AI-assisted or AI-driven), so the Users page shows "Not set"
+ * takes only an explicitly saved AI-assisted or AI-driven), so the People page shows "Not set"
  * ({@link readStoredAiMode}) rather than AI-driven.
  *
  * @module api/aiModeApi
@@ -63,7 +63,7 @@ const SavedSchema = z.object({
 })
 
 /**
- * The `ai_mode` block with whether a mode is saved (the Users page): no block, or a block whose mode is
+ * The `ai_mode` block with whether a mode is saved (the People page): no block, or a block whose mode is
  * not one of {@link AI_MODES}, is not saved.
  */
 export function readStoredAiMode(raw: unknown): StoredAiMode {

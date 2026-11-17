@@ -96,7 +96,7 @@ describe('WorkspaceSettings: the brand', () => {
     await userEvent.clear(await brandName())
     await userEvent.type(await brandName(), 'Acme Outfitters Trail Gear')
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Brand saved.')
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved')
     expect(saved).toHaveBeenCalledWith({ ...BRAND, brand_name: 'Acme Outfitters Trail Gear' })
   })
 

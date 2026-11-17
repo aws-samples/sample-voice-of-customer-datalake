@@ -1,5 +1,5 @@
 /**
- * Administration → System → Logs (GET /logs/system, /request, /queues, /environment): the LogsApi
+ * Administration → Logs (GET /logs/system, /request, /queues, /environment): the LogsApi
  * role may search exactly this deployment's Lambda, Step Functions and API access log groups plus
  * VocCoreStack's CloudFormation-named Lambda log groups, and peek (never consume) the failure
  * queues; the Lambda gets every name it reads (lambda/shared/system_log_sources.py, system_queues.py).

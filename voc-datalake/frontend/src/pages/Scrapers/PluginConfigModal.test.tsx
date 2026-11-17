@@ -198,20 +198,20 @@ describe('PluginConfigModal', () => {
       render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
 
       await waitFor(() => { expect(screen.queryByText('Automatic Schedule')).not.toBeInTheDocument() })
-      expect(screen.getByRole('link', { name: 'Open source settings' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Open Data sources' })).toBeInTheDocument()
     })
 
     it('points to the source settings instead', async () => {
       render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
       await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
-      expect(screen.getByRole('link', { name: 'Open source settings' })).toHaveAttribute('href', '/admin/sources/plugins')
+      expect(screen.getByRole('link', { name: 'Open Data sources' })).toHaveAttribute('href', '/admin/sources')
     })
 
     // 5.34.00 live finding: S3 Bulk Import has no token, yet its dialog said "paste the token".
     it('asks a source without a token for its settings, never a token', async () => {
       render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
       await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
-      expect(screen.getByText(/S3 Bulk Import is set up in Administration → Sources → Source settings: enter its settings there/)).toBeInTheDocument()
+      expect(screen.getByText(/S3 Bulk Import is set up in Administration → Data sources: enter its settings there/)).toBeInTheDocument()
       expect(screen.queryByText(/token/i)).not.toBeInTheDocument()
     })
 
@@ -225,7 +225,7 @@ describe('PluginConfigModal', () => {
       render(<PluginConfigModal plugin={github} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
       await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['github_issues']) })
 
-      expect(screen.getByText(/GitHub Issues is connected in Administration → Sources → Source settings: paste the token/)).toBeInTheDocument()
+      expect(screen.getByText(/GitHub Issues is connected in Administration → Data sources: paste the token/)).toBeInTheDocument()
       expect(screen.queryByText(/above/)).not.toBeInTheDocument()
     })
   })

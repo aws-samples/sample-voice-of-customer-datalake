@@ -1,6 +1,7 @@
 /**
- * Account's tabs as paths (`/account/<id>`): each tab's path opens it, an unknown tab opens Profile (its path
- * replacing the address), and no query names a tab (no `?tab=` / `?section=` link of before is read).
+ * Account's tabs as paths (`/account/<id>`): each tab's path opens it, `/account` and an unknown tab open
+ * Preferences (7.54.00, the landing; an unknown tab's path is replaced), and no query names a tab (no `?tab=` /
+ * `?section=` link of before is read).
  */
 import { describe, it, expect } from 'vitest'
 import { readTabAddress } from '../../utils/tabPaths'
@@ -14,10 +15,10 @@ describe('the Account page\'s addresses', () => {
   })
 
   it.each([
-    ['/account', '', 'profile', null],
-    ['/account', '?tab=briefing&section=password', 'profile', null],
-    ['/account/password', '?review=fb_1', 'profile', { pathname: '/account/profile', search: '?review=fb_1' }],
-    ['/account/nope', '', 'profile', { pathname: '/account/profile', search: '' }],
+    ['/account', '', 'preferences', null],
+    ['/account', '?tab=briefing&section=password', 'preferences', null],
+    ['/account/password', '?review=fb_1', 'preferences', { pathname: '/account/preferences', search: '?review=fb_1' }],
+    ['/account/nope', '', 'preferences', { pathname: '/account/preferences', search: '' }],
   ])('%s%s opens %s, replaced by %o', (pathname, search, tab, replaceWith) => {
     expect(read(pathname, search)).toStrictEqual({ place: tab, replaceWith })
   })

@@ -58,12 +58,12 @@ export function shareLinkFor(host: Pick<BoardHost, 'basePath'>, boardRef: string
   return `${origin}${pageHref(boardRequestPath(host, boardRef, requestId))}`
 }
 
-/** Where admins create and configure boards (Administration → Privacy & access → Boards). */
-export const BOARDS_ADMIN_PATH = adminPath({ tab: 'access', section: 'boards' })
+/** Where admins create and configure boards (Administration → Feedback boards). */
+export const BOARDS_ADMIN_PATH = adminPath({ tab: 'boards', section: null })
 
 /** The admin editor of one board. */
 export function boardEditorPath(boardId: string): string {
-  return adminPath({ tab: 'access', section: 'boards' }, boardId)
+  return adminPath({ tab: 'boards', section: null }, boardId)
 }
 
 /** Board configuration is an app-pool admin's (the editor lives in the app's Administration). */

@@ -126,7 +126,7 @@ function exaKeyRoute(method, body) {
 
 function startScan(body, shared) {
   const all = brands(shared);
-  if (all.length === 0) return [400, { success: false, error: 'No Radar brand yet: add one in Administration → Sources → Radar first' }];
+  if (all.length === 0) return [400, { success: false, error: 'No Radar brand yet: add one in Administration → Data sources → Radar first' }];
   const brand = body?.brand ?? null;
   if (brand !== null && !all.some((b) => b.key === brand)) return [404, { success: false, error: 'Radar brand not found' }];
   const stamp = new Date().toISOString();
