@@ -14,7 +14,8 @@
  *
  * @module pages/Agents/RunWorkspace/runLanes
  */
-import { STEP_HEIGHT, STEP_WIDTH } from '../../../components/WorkflowEditor/model'
+import { STEP_WIDTH } from '../../../components/WorkflowEditor/model'
+import { nodeSize } from '../../../components/WorkflowEditor/nodes/nodeKinds'
 import type { LaneState } from '../../../components/WorkflowEditor/runState'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 import type { RunLane } from '../../../api/engineeringRunsApi'
@@ -124,13 +125,15 @@ export function layoutRun(definition: WorkflowDefinition, lanes: Readonly<Record
         views.push({
           id: `lane:${step.id}:${lane.task_id}`, step: step.id, agent: lane.agent, label: laneLabel(lane), role: lane.role,
           state: laneState(lane, phase), attempt: lane.attempt,
-          position: { x: left.x + at * (LANE_WIDTH + LANE_GAP), y: cursor.top + STEP_HEIGHT + LANE_DROP },
+          // (7.52.00: under the step's own shape, each kind as tall as it draws)
+          position: { x: left.x + at * (LANE_WIDTH + LANE_GAP), y: cursor.top + nodeSize(step).height + LANE_DROP },
         })
       })
       left.x += width + STAGE_GAP
     })
     const tall = steps.some((step) => (lanes[step.id]?.length ?? 0) > 0)
-    cursor.top += STEP_HEIGHT + (tall ? LANE_DROP + LANE_HEIGHT : 0) + ROW_GAP
+    const rowHeight = Math.max(0, ...steps.map((step) => nodeSize(step).height))
+    cursor.top += rowHeight + (tall ? LANE_DROP + LANE_HEIGHT : 0) + ROW_GAP
   }
   const nodes = definition.nodes.map((node) => ({ ...node, position: placed.get(node.id) ?? node.position }))
   return { definition: { ...definition, nodes }, lanes: views }

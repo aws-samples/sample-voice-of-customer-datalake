@@ -4,9 +4,6 @@
     { "key": "voc-datalake/frontend/src/components/DocumentCanvas/actions/DocumentActionsBar.tsx", "count": 2, "reason": "Document editor: wave 1 only (its icon buttons); the document-component extraction restructures it next (ToolbarTip moves onto Tooltip then)." },
     { "key": "voc-datalake/frontend/src/components/DocumentCanvas/page/InlineTitle.tsx", "count": 1, "reason": "Document editor: wave 1 only (its icon buttons); the document-component extraction restructures it next (ToolbarTip moves onto Tooltip then)." },
     { "key": "voc-datalake/frontend/src/components/WorkflowEditor/ArrowSettings.tsx", "count": 1, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." },
-    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/CanvasNodes.tsx", "count": 2, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." },
-    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/LoopSettings.tsx", "count": 1, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." },
-    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/NodePalette.tsx", "count": 1, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." },
-    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/WorkflowEditor.tsx", "count": 1, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." }
+    { "key": "voc-datalake/frontend/src/components/WorkflowEditor/LoopSettings.tsx", "count": 1, "reason": "Flow canvas: wave 1 only (its icon buttons); the 7.52 canvas rework restructures these nodes and inspectors next." }
   ]
 }

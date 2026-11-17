@@ -619,6 +619,28 @@ delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/T
 
 **Bundle.** Reading never loads the editor: nothing under `components/Document/{read,text,diff}` and no Agents page imports `@tiptap/*` statically (`src/build/readEngineImports.test.ts`).
 
+### Flow canvas
+
+One canvas and one inspector draw a flow everywhere (`components/WorkflowEditor/FlowCanvas.tsx`, `FlowInspector.tsx`), in `mode` `build` (an administrator edits), `view` (read only: a viewer, an agent's Flow tab, a template preview) or `run` (a run's state, inert: a click selects, never acts). The node language is `nodes/nodeKinds.ts` (pure) and its renderers in `nodes/`.
+
+**Kind is shape plus icon** (never colour alone), each centred in a 220 px column so stored positions never move:
+
+| Kind | Shape | Size | Tile (who acts) |
+|---|---|---|---|
+| Trigger, End, Stop at PR | pill | 180 × 44 | neutral |
+| Agent, Team (a board) | rounded card, `rounded-lg`, a round avatar with the role's glyph | 220 × 88 | `aim` |
+| Gate | elongated hexagon (clip-path; the outer layer is the outline) | 220 × 76 | strong neutral |
+| Calls a flow | stacked card: two sheets at 4 and 8 px | 220 × 88 | neutral |
+| A person decides | pill with a `warn` diamond holding `Hand` | 200 × 52 | `warn` |
+| Platform step (map, reduce, memory) | square-cornered card, `rounded-sm` | 200 × 56 | neutral |
+
+- **Tone says who acts, never which kind**, on the icon tile only: `aim` where a model does the step, `warn` where a person must, neutral where the platform does. The tile never changes with a run's state (a gate's shield shows its verdict, the one exception).
+- **Four channels that never share one line:** state is the outline (`data-state`: running 2 px `--accent`, waiting 2 px `--warn`, paused dashed `--warn`, failed 2 px `--danger`, planned dashed, skipped dotted `--border-strong`) and a 20 px corner badge (icon and words); selection is the `--accent-subtle` fill (plus a 2 px accent outline unless a state holds it); focus is the `--ring` at 3 px on the React Flow wrapper; hover is an outline step (`--control-border-hover`). "You are here" and "Stopped here" are tags above the node, never a ring. Nothing is dimmed by opacity.
+- **Outlines, arrows and handles' rings are `--control-border`**, 3:1 or more on the canvas and on a node in every theme (`theme/canvasContrast.test.ts`); handles look 10 px with a 24 px target. A gate's GO and NO-GO are two source handles at a quarter and three quarters of its bottom edge, each with its word, so the verdict is set by where you drag (the arrow's `label`, `pass` / `fail`).
+- **The minimap** fills by kind while building or viewing (agents `--aim`, gates `--text-strong`, decisions `--warn`, the rest `--muted`) and by state in a run; it adds nothing the canvas does not show.
+- **The stacked sheets are the one exception to "shadows are for things that float"**: a shape, not elevation, and no `--shadow-*` token (Quick's flat shadows leave it).
+- **The inspector** keeps **In this flow** (the step's own fields: inputs while building, a definition list otherwise, never disabled inputs) apart from **From the card** (always read only: a `bg-bg-accent` panel with a lock). It is a 360 px docked column from `lg` and the app's `SideSheet` below it; Escape closes it and returns focus to the step. The palette is grouped by kind, each row a 20 × 14 mini shape (`.voc-mini-shape-*`), its hints visible text; a drag shows the node it makes (`NodePreview`).
+
 ### Choosing a component
 
 | Need | Use |

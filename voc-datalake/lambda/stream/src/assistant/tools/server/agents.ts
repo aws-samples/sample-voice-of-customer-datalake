@@ -117,8 +117,10 @@ function getWorkflowTool(deps: ToolDeps): ServerToolDefinition {
   const spec = toolSpec(
     'get_workflow',
     'A workflow (defaults to the workflow of the agent on screen): its current definition (nodes, edges, loops), '
-      + 'current revision and the revision list. Read it before proposing update_workflow, and pass its revision as '
-      + 'expected_revision.',
+      + 'current revision and the revision list, and (7.52.00) used_by: the automations that run it and the flows '
+      + 'that call it. Read it before proposing update_workflow, and pass its revision as expected_revision; when '
+      + 'other automations run it, tell the user the change reaches all of them before proposing it with '
+      + 'confirm_shared: true.',
     { workflow_id: idProperty('Workflow id; omit to use the workflow of the agent on screen.') },
   );
   return serverTool('get_workflow', 'agents', spec, async (input, ctx) => {

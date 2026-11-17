@@ -2232,5 +2232,331 @@
       "toControls": "Zur Steuerung des Laufs",
       "openSession": "Sitzung von {{agent}} öffnen"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "Auslöser",
+      "agent": "Agent",
+      "team": "Team",
+      "gate": "Prüfung",
+      "call": "Ruft einen Ablauf auf",
+      "decision": "Eine Person entscheidet",
+      "end": "Ende",
+      "platform": "Plattformschritt"
+    },
+    "nodeName": "{{kind}}: {{rest}}",
+    "state": {
+      "invalid": "Hat ein Problem",
+      "waitingForYou": "Wartet auf Sie"
+    },
+    "chips": {
+      "pinned": "{{version}} festgelegt",
+      "updateAvailable": "Update verfügbar",
+      "share": "{{percent}} %",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} Agent",
+      "agents_other": "{{count}} Agenten",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · eingestellt von {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "Automatisch erkennen",
+      "rounds": "≤ {{n}} Runden",
+      "reviewers_one": "{{count}} Prüfer",
+      "reviewers_other": "{{count}} Prüfer"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "Einig",
+      "notAgreed": "Nicht einig",
+      "arrow": "Pfeil {{word}}"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "Noch kein Ablauf gewählt",
+      "progress": "{{done}} von {{total}} Schritten erledigt"
+    },
+    "decision": {
+      "title": "Eine Person entscheidet",
+      "line": "Der Lauf wartet auf eine Person",
+      "waiting": "Wartet auf Sie"
+    },
+    "trigger": {
+      "line": "Startet den Lauf"
+    },
+    "end": {
+      "completed": "Abgeschlossen",
+      "prReady": "Pull Request · bereit zur Prüfung",
+      "prDraft": "Pull Request · als Entwurf"
+    },
+    "platform": {
+      "map": "Nach {{by}} · höchstens {{n}}",
+      "memoryRead": "Liest Gedächtnis ({{whose}}) · {{n}}",
+      "memoryWrite": "Schreibt Gedächtnis ({{whose}})",
+      "reduce": "Führt die Stücke zusammen"
+    },
+    "drop": "Ablegen, um {{name}} hinzuzufügen",
+    "dropAny": "Ablegen, um den Schritt hinzuzufügen",
+    "aria": {
+      "node": "Drücken Sie die Eingabe- oder Leertaste, um einen Schritt auszuwählen und seine Einrichtung zu öffnen. Mit Entf entfernen Sie ihn, mit Esc brechen Sie ab.",
+      "nodeKeyboard": "Drücken Sie die Eingabe- oder Leertaste, um einen Schritt auszuwählen und seine Einrichtung zu öffnen. Danach verschieben ihn die Pfeiltasten; mit Entf entfernen Sie ihn, mit Esc brechen Sie ab.",
+      "moved": "Ausgewählten Schritt verschoben: {{direction}}. Neue Position: x {{x}}, y {{y}}",
+      "edge": "Drücken Sie die Eingabe- oder Leertaste, um einen Pfeil auszuwählen. Mit Entf entfernen Sie ihn, mit Esc brechen Sie ab.",
+      "controls": "Steuerung der Arbeitsfläche",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fitView": "Ablauf einpassen",
+      "interactive": "Arbeitsfläche sperren oder entsperren",
+      "handle": "Verbindungspunkt"
+    },
+    "shared": {
+      "banner_one": "Wird von {{count}} Automatisierung verwendet: {{names}}. Speichern ändert sie ab ihrem nächsten Lauf.",
+      "banner_other": "Wird von {{count}} Automatisierungen verwendet: {{names}}. Speichern ändert jede davon ab ihrem nächsten Lauf.",
+      "confirmTitle": "Gemeinsam genutzten Ablauf speichern?",
+      "confirmMessage": "{{names}} führen diesen Ablauf aus. Speichern ändert jede davon ab ihrem nächsten Lauf.",
+      "confirmAction": "Für alle speichern",
+      "usedByLine": "Verwendet von {{names}}",
+      "calledBy": "Aufgerufen von {{names}}",
+      "approvalNote": "Mit der Freigabe wird er für jede Automatisierung gespeichert, die ihn ausführt: {{names}}.",
+      "approvalRefused": "{{names}} führen diesen Ablauf aus: Das Speichern wird abgelehnt, solange die Änderung nicht für alle bestätigt ist."
+    }
+  },
+  "inspector": {
+    "close": "Inspektor schließen",
+    "tabs": "Einrichtung des Schritts",
+    "sheetTitle": "Einrichtung des Schritts",
+    "inFlow": "In diesem Ablauf",
+    "fromCard": "Aus der Karte {{card}} v{{n}}",
+    "fromCardAny": "Aus der Karte {{card}}",
+    "fromCardLabel": "Aus der Karte",
+    "readOnly": "Schreibgeschützt.",
+    "readOnlyShort": "schreibgeschützt",
+    "editInFlows": "In Abläufen bearbeiten",
+    "asRun": "Wie dieser Lauf ihn verwendet hat · r{{n}}",
+    "asRunUsed": "Wie dieser Lauf ihn verwendet hat",
+    "openSkill": "Skill-Verlauf öffnen",
+    "loop": "Schleife",
+    "tab": {
+      "agents": "Agenten",
+      "setup": "Einrichtung",
+      "assertions": "Zusicherungen",
+      "arrows": "Pfeile",
+      "checks": "Checks",
+      "reviewers": "Prüfer",
+      "packs": "Prüfpakete",
+      "preview": "Vorschau"
+    },
+    "agent": {
+      "card": "Karte",
+      "latest": "Neueste angenommene",
+      "cardModel": "Wie in der Karte",
+      "share": "Anteil am Budget jedes Laufs",
+      "sharesInAll": "Anteile der Agenten: {{used}} von 100 %",
+      "overrides": "Ersetzt das Modell der Karte ({{model}})",
+      "useCards": "Modell der Karte verwenden",
+      "cardsModel": "Modell der Karte: {{model}}",
+      "purpose": "Zweck",
+      "skill": "Skill",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "Modell",
+      "tools": "Werkzeuge",
+      "host": "Host",
+      "hostBroker": "Nur lesend, über den Broker ({{ops}})",
+      "caps": "Obergrenzen",
+      "turns": "{{n}} Turns",
+      "tokens": "{{n}} k Eingabe-Tokens",
+      "reads": "Liest",
+      "writes": "Schreibt",
+      "scorecard": "Scorecard",
+      "scorecardLine": "{{runs}} Läufe · {{rate}} % bestanden",
+      "thisMonth": "Diesen Monat",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "Prüfpakete",
+      "rounds": "Runden (höchstens)",
+      "reviewers": "Prüfer",
+      "blocks": "blockiert",
+      "advisory": "beratend",
+      "addReviewer": "Prüfer hinzufügen",
+      "reviewerName": "Name des Prüfers",
+      "reviewerFocus": "Worauf er achtet",
+      "reviewerRole": "{{name}}: blockiert oder beratend",
+      "removeReviewer": "{{name}} entfernen",
+      "runsIt": "Ausgeführt von",
+      "finalGo": "Endfreigabe",
+      "arrows": "Pfeile",
+      "pack": "Prüfpaket {{name}}",
+      "image": "Image",
+      "network": "Netzwerk (nur beim Setup)",
+      "tools": "Werkzeuge",
+      "ownPins": "Die im Repository festgelegten Versionen.",
+      "ownPinsRecorded": "Die im Repository festgelegten Versionen. Zuletzt erfasst: {{list}}",
+      "steps": "Schritte",
+      "always": "immer",
+      "whenFile": "wenn {{file}} vorhanden ist",
+      "whenContains": "wenn {{file}} {{text}} enthält",
+      "whenScript": "wenn {{file}} ein Skript {{script}} hat",
+      "or": " oder ",
+      "lookedAtNothing": "Schlägt fehl, wenn sie nichts geprüft hat.",
+      "forAutomation": "Für {{automation}}: {{pack}}",
+      "brief": "Briefing des Eigentümers ({{path}})",
+      "briefOpen": "Briefing des Eigentümers ({{path}})",
+      "stepKinds": {
+        "setup": "setup",
+        "lint": "lint",
+        "format": "format",
+        "types": "typen",
+        "test": "test"
+      },
+      "stops": {
+        "check_failed": "Ein Check ist fehlgeschlagen, und die Korrekturen haben daran nichts geändert.",
+        "looked_at_nothing": "Die Prüfung hat nichts geprüft: Kein Check deckt das Repository ab, oder ein Check fand nichts zu prüfen.",
+        "own_gate_changed": "Die Änderung betrifft die eigene Prüfung des Repositorys.",
+        "review_blocked": "Ein Review hat sie blockiert: Die Endfreigabe lautete NO-GO.",
+        "rounds_used_up": "Nach der letzten Runde blieben blockierende Befunde übrig."
+      }
+    },
+    "assertions": {
+      "add": "Zusicherung hinzufügen",
+      "check": "Check",
+      "choose": "Check auswählen",
+      "argument": "{{name}}",
+      "onFail": "{{check}}: wenn er fehlschlägt",
+      "remove": "{{check}} entfernen",
+      "full": "Höchstens {{max}} Zusicherungen.",
+      "noneApply": "Für diese Art von Schritt gibt es keinen passenden Check.",
+      "checks": {
+        "findings_cite_evidence": "Jeder Befund nennt eine Datei, eine Zeile und seinen Beleg",
+        "gate_pack_checks_ran": "Der Gate-Ausführer hat mindestens einen Check erfasst",
+        "gate_passed": "Der Gate-Ausführer und die Endfreigabe sagten beide GO",
+        "learn_proposals_name_case": "Jeder Vorschlag des Coachs nennt einen bestehenden Eval-Fall",
+        "notes_cite_sources": "Jede Notiz nennt eine Quelle",
+        "patch_max_lines": "Kein eingereichter Patch ändert mehr als max Zeilen",
+        "patch_no_ci_changes": "Kein eingereichter Patch ändert eine CI-Definition",
+        "patch_submitted": "Ein Patch wurde eingereicht",
+        "patch_touches_tests": "Jeder eingereichte Patch ändert einen Test",
+        "pr_links_issue": "Jeder Pull Request gibt an, dass er das Issue des Laufs behebt",
+        "pr_opened": "Ein Pull Request wurde geöffnet",
+        "pr_state_as_flow": "Jeder Pull Request wurde so geöffnet, wie der Ablauf es vorgibt (bereit oder Entwurf)",
+        "push_tree_is_judged_tree": "Jeder Push ist genau der Tree, den die Endfreigabe beurteilt hat",
+        "review_commented": "Im Pull Request wurde ein Review-Kommentar veröffentlicht",
+        "review_no_blocking": "Die mit „by“ benannte Rolle hat keinen blockierenden Befund geschrieben",
+        "tasks_posted": "Für die Rolle wurden mindestens min Aufgaben eingestellt",
+        "tenets_recorded": "Ein Grundsätze-Datensatz mit 1 bis 30 Grundsätzen wurde erfasst",
+        "triage_commented": "Die Triage wurde als Kommentar im Issue des Laufs veröffentlicht",
+        "triage_labelled": "Das Issue trägt die Labels für Art und Schweregrad aus der Triage",
+        "triage_recorded": "Ein Triage-Datensatz mit Art und Schweregrad wurde erfasst"
+      }
+    },
+    "call": {
+      "flow": "Ablauf",
+      "revision": "Revision",
+      "inputs": "Eingaben",
+      "noInputs": "Der aufgerufene Ablauf deklariert keine Eingaben.",
+      "inputRequired": "{{name}} (erforderlich)",
+      "inputUnset": "nicht angegeben",
+      "steps": "Seine Schritte",
+      "childSteps_one": "{{count}} Schritt",
+      "childSteps_other": "{{count}} Schritte",
+      "expands": "Wird erweitert zu",
+      "inAll": "{{total}} von {{max}} Schritten insgesamt",
+      "usedBy": "Verwendet von",
+      "openFlow": "Ablauf öffnen",
+      "preview": "{{name}}, schreibgeschützt",
+      "noPreview": "Wählen Sie einen Ablauf, um eine Vorschau zu sehen."
+    },
+    "decision": {
+      "happens": "Was passiert",
+      "happensText": "Der Lauf hält an und wartet auf eine Person. Das Issue erhält einen Kommentar, und unter Automatisierungen ist zu sehen, dass Ihre Entscheidung nötig ist.",
+      "reachedFrom": "Erreicht von",
+      "fromVerdict": "{{step}} ({{verdict}})",
+      "ifNobody": "Wenn niemand entscheidet",
+      "ifNobodyText": "Learn liest es nach {{hours}} h"
+    },
+    "trigger": {
+      "startedBy": "Gestartet von",
+      "nobody": "Noch keine Automatisierung verwendet diesen Ablauf.",
+      "inputs": "Eingaben",
+      "inputMax": "{{name}}, höchstens {{max}}",
+      "memory": "Gedächtnis",
+      "recall": "Gedächtnis des Repositorys zu Beginn abrufen",
+      "recallOn": "Zu Beginn abgerufen",
+      "recallOff": "Nicht abgerufen",
+      "learn": "Learn",
+      "learnEnabled": "Aus jedem Lauf lernen",
+      "learnOn": "An",
+      "learnOff": "Aus",
+      "roles_one": "{{count}} Rolle",
+      "roles_other": "{{count}} Rollen",
+      "after": "nach {{hours}} h",
+      "learnAssertions": "Zusicherungen von Learn",
+      "pr": "Pull Request",
+      "prReady": "Bereit zur Prüfung",
+      "prDraft": "Als Entwurf"
+    },
+    "end": {
+      "happens": "Was passiert",
+      "completed": "Der Lauf endet hier. Es wird nie etwas gemergt.",
+      "stopAtPr": "Der Lauf öffnet einen Pull Request und hält an. Es wird nie etwas gemergt: Das übernimmt eine Person.",
+      "pullRequest": "Pull Request",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "Einstellung"
+    },
+    "edge": {
+      "title": "Pfeil",
+      "from": "Von",
+      "to": "Nach",
+      "condition": "Bedingung",
+      "always": "Immer: Dieser Schritt meldet kein Urteil",
+      "inRun": "In diesem Lauf",
+      "taken": "Genommen",
+      "notTaken": "Nicht genommen"
+    },
+    "run": {
+      "agents": "Die Agenten des Schritts",
+      "ran": "Ausgeführt: {{skill}} · {{model}}",
+      "round": "Runde {{n}}",
+      "finalGo": "Endfreigabe: {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "Wählen Sie einen Schritt, um seine Einrichtung zu sehen. Die Eingabetaste öffnet sie, Esc schließt sie.",
+      "cardMissing": "Dieser Schritt verweist auf {{card}}; diese Karte steht nicht in der Registry.",
+      "cardAdmins": "Die Einrichtung dahinter sehen Administratoren dort, wo die Engineering-Agenten aktiviert sind.",
+      "autoDetect": "Prüfpakete werden beim Start eines Laufs im Repository erkannt. Noch keine Automatisierung verwendet diesen Ablauf.",
+      "notRun": "Noch nicht gelaufen.",
+      "gateNotRun": "Die Prüfung ist noch nicht gelaufen.",
+      "noAssertions": "Keine Zusicherungen.",
+      "noAssertionsBuild": "Keine Zusicherungen. Fügen Sie eine hinzu, um zu prüfen, was dieser Schritt erfasst hat."
+    }
+  },
+  "palette": {
+    "search": "Schritte durchsuchen",
+    "noMatch": "Kein Schritt passt.",
+    "madeFromSkill": "aus einem Skill erstellt",
+    "gateOf": "Qualitätsprüfung: {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "Er ruft diesen Ablauf auf: Ein Aufruf von hier würde einen Zyklus bilden.",
+    "groups": {
+      "startEnd": "Start und Ende",
+      "agents": "Agenten",
+      "gates": "Qualitätsprüfungen",
+      "flows": "Abläufe",
+      "platform": "Plattformschritte"
+    },
+    "hints": {
+      "startEnd": "Wo ein Lauf beginnt und endet; jedes NO-GO geht an eine Person, die entscheidet.",
+      "agents": "Die Karten der Registry: die jeder Rolle und die aus einem Skill erstellten.",
+      "gates": "Checks und Reviews zur Änderung; „Automatisch erkennen“ wählt die Prüfpakete im Repository.",
+      "flows": "Ein anderer gespeicherter Ablauf, aufgerufen in seiner Revision.",
+      "platform": "Schritte, die die Plattform ausführt: Aufteilen, Zusammenführen der Stücke, ein Board, Gedächtnis, Learn."
+    }
   }
 }

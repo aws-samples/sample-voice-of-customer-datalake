@@ -134,3 +134,13 @@ export const WEB_REVIEWS_CONNECTOR_CASE: WriteRequestCase = {
     body: { app: { app_name: 'ExampleAir Trustpilot', url: 'https://www.trustpilot.com/review/www.example-air.com', max_pages: '10', max_reviews: '0', frequency_minutes: '0', radar_brand: 'example-air' }, mode: 'create' },
   },
 };
+
+/**
+ * (7.52.00) update_workflow of a flow other automations run, once the user agreed to change it for all of them
+ * (WRITE_REQUEST_CASES holds one case per tool: the unconfirmed one): `confirm_shared: true` in the body.
+ */
+export const SHARED_WORKFLOW_CASE: WriteRequestCase = {
+  tool: 'update_workflow',
+  args: { workflow_id: 'wf_1', expected_revision: 2, definition: SAMPLE_WORKFLOW, change_summary: 'Loop', confirm_shared: true },
+  request: proxied('agents', 'PUT', 'workflows', 'wf_1', { definition: SAMPLE_WORKFLOW, expected_revision: 2, confirm_shared: true }),
+};

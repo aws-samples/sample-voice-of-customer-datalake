@@ -19,6 +19,8 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import Notice from '../../components/Notice/Notice'
 import { RowActionsMenu } from '../../components/RowActionsMenu/RowActionsMenu'
 import { FlowCanvas } from '../../components/WorkflowEditor/FlowCanvas'
+import { FlowInspector } from '../../components/WorkflowEditor/FlowInspector'
+import type { FlowSelection } from '../../components/WorkflowEditor/FlowCanvas'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { isEngineeringAgent } from '../../api/agentsApi'
 import { useAgentMutations } from './useAgents'
@@ -66,6 +68,8 @@ function RunAnotherFlow({ agent, current }: Readonly<{ agent: Agent; current: st
 
 export function AgentFlowTab({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>) {
   const { t } = useTranslation('agents')
+  // (7.52.00 C2: a step clicked, or Enter on it, opens its setup beside the canvas, read only)
+  const [selection, setSelection] = useState<FlowSelection>(null)
   const workflowId = agent.workflow_id ?? DEFAULT_WORKFLOW_ID
   // (the cache entry the Runs tab, the run's graph and the flow's page read)
   const read = useQuery({ queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId) })
@@ -94,8 +98,13 @@ export function AgentFlowTab({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmi
       {workflow.definition === null
         ? <div className="p-4"><Notice variant="empty" icon={Workflow} title={t('detail.flow.unreadableTitle')} text={t('detail.flow.unreadable')} /></div>
         : (
-            <div className="h-[min(34rem,70vh)] min-h-[18rem]" data-testid="flow-canvas">
-              <FlowCanvas definition={workflow.definition} mode="view" />
+            <div className="flex flex-col lg:flex-row">
+              <div className="h-[min(34rem,70vh)] min-h-[18rem] min-w-0 flex-1" data-testid="flow-canvas">
+                <FlowCanvas definition={workflow.definition} mode="view" onSelect={setSelection} />
+              </div>
+              <FlowInspector definition={workflow.definition} mode="view" selection={selection} onClose={() => setSelection(null)}
+                workflowId={workflowId} connection={agent.engineering?.connection ?? null}
+                editPath={isAdmin ? workflowPath(workflowId) : null} />
             </div>
           )}
     </section>

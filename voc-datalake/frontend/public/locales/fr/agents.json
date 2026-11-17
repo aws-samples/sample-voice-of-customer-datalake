@@ -2251,5 +2251,331 @@
       "toControls": "Aller aux commandes de l’exécution",
       "openSession": "Ouvrir la session de {{agent}}"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "Déclencheur",
+      "agent": "Agent",
+      "team": "Équipe",
+      "gate": "Contrôle",
+      "call": "Appelle un flux",
+      "decision": "Une personne décide",
+      "end": "Fin",
+      "platform": "Étape de la plateforme"
+    },
+    "nodeName": "{{kind}} : {{rest}}",
+    "state": {
+      "invalid": "Présente un problème",
+      "waitingForYou": "Vous attend"
+    },
+    "chips": {
+      "pinned": "{{version}} épinglée",
+      "updateAvailable": "Mise à jour disponible",
+      "share": "{{percent}} %",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · publiées par {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "Détection automatique",
+      "rounds": "≤ {{n}} tours",
+      "reviewers_one": "{{count}} relecteur",
+      "reviewers_other": "{{count}} relecteurs"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "Accord",
+      "notAgreed": "Désaccord",
+      "arrow": "Flèche {{word}}"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "Aucun flux choisi pour l’instant",
+      "progress": "{{done}} étapes sur {{total}} terminées"
+    },
+    "decision": {
+      "title": "Une personne décide",
+      "line": "L’exécution attend une personne",
+      "waiting": "Vous attend"
+    },
+    "trigger": {
+      "line": "Lance l’exécution"
+    },
+    "end": {
+      "completed": "Terminée",
+      "prReady": "Pull request · prête pour la relecture",
+      "prDraft": "Pull request · en brouillon"
+    },
+    "platform": {
+      "map": "Par {{by}} · au plus {{n}}",
+      "memoryRead": "Lit la mémoire ({{whose}}) · {{n}}",
+      "memoryWrite": "Écrit dans la mémoire ({{whose}})",
+      "reduce": "Regroupe les lots"
+    },
+    "drop": "Déposez pour ajouter {{name}}",
+    "dropAny": "Déposez pour ajouter l’étape",
+    "aria": {
+      "node": "Appuyez sur Entrée ou Espace pour sélectionner une étape et ouvrir sa configuration. Appuyez sur Suppr pour la retirer et sur Échap pour annuler.",
+      "nodeKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner une étape et ouvrir sa configuration. Les touches fléchées la déplacent ensuite ; appuyez sur Suppr pour la retirer et sur Échap pour annuler.",
+      "moved": "Étape sélectionnée déplacée : {{direction}}. Nouvelle position : x {{x}}, y {{y}}",
+      "edge": "Appuyez sur Entrée ou Espace pour sélectionner une flèche. Appuyez sur Suppr pour la retirer ou sur Échap pour annuler.",
+      "controls": "Commandes du canevas",
+      "zoomIn": "Zoom avant",
+      "zoomOut": "Zoom arrière",
+      "fitView": "Ajuster le flux à l’écran",
+      "interactive": "Verrouiller ou déverrouiller le canevas",
+      "handle": "Point de connexion"
+    },
+    "shared": {
+      "banner_one": "Utilisé par {{count}} automatisation : {{names}}. L’enregistrer la modifie dès sa prochaine exécution.",
+      "banner_other": "Utilisé par {{count}} automatisations : {{names}}. L’enregistrer modifie chacune d’elles dès sa prochaine exécution.",
+      "confirmTitle": "Enregistrer un flux partagé ?",
+      "confirmMessage": "{{names}} exécutent ce flux. L’enregistrer modifie chacune d’elles dès sa prochaine exécution.",
+      "confirmAction": "Enregistrer pour toutes",
+      "usedByLine": "Utilisé par {{names}}",
+      "calledBy": "Appelé par {{names}}",
+      "approvalNote": "L’approuver l’enregistre pour chaque automatisation qui l’exécute : {{names}}.",
+      "approvalRefused": "{{names}} exécutent ce flux : l’enregistrement est refusé tant que la modification n’est pas confirmée pour toutes."
+    }
+  },
+  "inspector": {
+    "close": "Fermer l’inspecteur",
+    "tabs": "Configuration de l’étape",
+    "sheetTitle": "Configuration de l’étape",
+    "inFlow": "Dans ce flux",
+    "fromCard": "De la carte {{card}} v{{n}}",
+    "fromCardAny": "De la carte {{card}}",
+    "fromCardLabel": "De la carte",
+    "readOnly": "Lecture seule.",
+    "readOnlyShort": "lecture seule",
+    "editInFlows": "Modifier dans Flux",
+    "asRun": "Tel que cette exécution l’a utilisé · r{{n}}",
+    "asRunUsed": "Tel que cette exécution l’a utilisé",
+    "openSkill": "Ouvrir l’historique de sa compétence",
+    "loop": "Boucle",
+    "tab": {
+      "agents": "Agents",
+      "setup": "Configuration",
+      "assertions": "Assertions",
+      "arrows": "Flèches",
+      "checks": "Vérifications",
+      "reviewers": "Relecteurs",
+      "packs": "Packs",
+      "preview": "Aperçu"
+    },
+    "agent": {
+      "card": "Carte",
+      "latest": "La dernière acceptée",
+      "cardModel": "Celui de la carte",
+      "share": "Part du budget de chaque exécution",
+      "sharesInAll": "Parts des agents : {{used}} sur 100 %",
+      "overrides": "Remplace celui de la carte ({{model}})",
+      "useCards": "Utiliser celui de la carte",
+      "cardsModel": "Modèle de la carte : {{model}}",
+      "purpose": "Objectif",
+      "skill": "Compétence",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "Modèle",
+      "tools": "Outils",
+      "host": "Hôte",
+      "hostBroker": "Lecture seule, via le broker ({{ops}})",
+      "caps": "Plafonds",
+      "turns": "{{n}} tours",
+      "tokens": "{{n}} k jetons d’entrée",
+      "reads": "Lit",
+      "writes": "Écrit",
+      "scorecard": "Fiche de résultats",
+      "scorecardLine": "{{runs}} exécutions · {{rate}} % réussies",
+      "thisMonth": "Ce mois-ci",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "Packs",
+      "rounds": "Tours (au plus)",
+      "reviewers": "Relecteurs",
+      "blocks": "bloque",
+      "advisory": "consultatif",
+      "addReviewer": "Ajouter un relecteur",
+      "reviewerName": "Nom du relecteur",
+      "reviewerFocus": "Ce qu’il examine",
+      "reviewerRole": "{{name}} : bloque ou consultatif",
+      "removeReviewer": "Retirer {{name}}",
+      "runsIt": "Exécuté par",
+      "finalGo": "Feu vert final",
+      "arrows": "Flèches",
+      "pack": "Pack {{name}}",
+      "image": "Image",
+      "network": "Réseau (préparation uniquement)",
+      "tools": "Outils",
+      "ownPins": "Les versions épinglées par le dépôt lui-même.",
+      "ownPinsRecorded": "Les versions épinglées par le dépôt lui-même. Dernier relevé : {{list}}",
+      "steps": "Étapes",
+      "always": "toujours",
+      "whenFile": "si {{file}} existe",
+      "whenContains": "si {{file}} contient {{text}}",
+      "whenScript": "si {{file}} a un script {{script}}",
+      "or": " ou ",
+      "lookedAtNothing": "Échoue s’il n’a rien examiné.",
+      "forAutomation": "Pour {{automation}} : {{pack}}",
+      "brief": "Les consignes du propriétaire ({{path}})",
+      "briefOpen": "Les consignes du propriétaire ({{path}})",
+      "stepKinds": {
+        "setup": "préparation",
+        "lint": "lint",
+        "format": "format",
+        "types": "types",
+        "test": "tests"
+      },
+      "stops": {
+        "check_failed": "Une vérification a échoué, et les corrections ne l’ont pas fait passer.",
+        "looked_at_nothing": "Le contrôle n’a rien examiné : aucune vérification ne couvre le dépôt, ou une vérification n’a rien trouvé à vérifier.",
+        "own_gate_changed": "La modification touche le contrôle propre au dépôt.",
+        "review_blocked": "Une revue l’a bloquée : le feu vert final a dit NO-GO.",
+        "rounds_used_up": "Des constats bloquants restaient après le dernier tour."
+      }
+    },
+    "assertions": {
+      "add": "Ajouter une assertion",
+      "check": "Vérification",
+      "choose": "Choisir une vérification",
+      "argument": "{{name}}",
+      "onFail": "{{check}} : en cas d’échec",
+      "remove": "Retirer {{check}}",
+      "full": "Au plus {{max}} assertions.",
+      "noneApply": "Aucune vérification ne s’applique à ce type d’étape.",
+      "checks": {
+        "findings_cite_evidence": "Chaque constat cite un fichier, une ligne et sa preuve",
+        "gate_pack_checks_ran": "L’exécuteur de contrôles a enregistré au moins une vérification",
+        "gate_passed": "L’exécuteur de contrôles et le feu vert final ont tous deux dit GO",
+        "learn_proposals_name_case": "Chaque proposition du coach nomme un cas d’évaluation existant",
+        "notes_cite_sources": "Chaque note cite une source",
+        "patch_max_lines": "Aucun patch soumis ne modifie plus de max lignes",
+        "patch_no_ci_changes": "Aucun patch soumis ne modifie une définition de CI",
+        "patch_submitted": "Un patch a été soumis",
+        "patch_touches_tests": "Chaque patch soumis modifie un test",
+        "pr_links_issue": "Chaque pull request indique qu’elle corrige l’issue de l’exécution",
+        "pr_opened": "Une pull request a été ouverte",
+        "pr_state_as_flow": "Chaque pull request a été ouverte comme le prévoit le flux (prête ou brouillon)",
+        "push_tree_is_judged_tree": "Chaque push correspond à l’arbre jugé par le feu vert final",
+        "review_commented": "Un commentaire de revue a été publié sur la pull request",
+        "review_no_blocking": "Le rôle désigné par « by » n’a écrit aucun constat bloquant",
+        "tasks_posted": "Au moins min tâches ont été publiées pour le rôle",
+        "tenets_recorded": "Un relevé de 1 à 30 principes a été enregistré",
+        "triage_commented": "Le tri a été commenté sur l’issue de l’exécution",
+        "triage_labelled": "L’issue porte les labels de type et de gravité issus du tri",
+        "triage_recorded": "Un tri avec un type et une gravité a été enregistré"
+      }
+    },
+    "call": {
+      "flow": "Flux",
+      "revision": "Révision",
+      "inputs": "Entrées",
+      "noInputs": "Le flux appelé ne déclare aucune entrée.",
+      "inputRequired": "{{name}} (obligatoire)",
+      "inputUnset": "non renseigné",
+      "steps": "Ses étapes",
+      "childSteps_one": "{{count}} étape",
+      "childSteps_other": "{{count}} étapes",
+      "expands": "Se développe en",
+      "inAll": "{{total}} étapes sur {{max}} au total",
+      "usedBy": "Utilisé par",
+      "openFlow": "Ouvrir le flux",
+      "preview": "{{name}}, en lecture seule",
+      "noPreview": "Choisissez un flux pour en voir l’aperçu."
+    },
+    "decision": {
+      "happens": "Ce qui se passe",
+      "happensText": "L’exécution s’arrête et attend une personne. L’issue reçoit un commentaire, et Automatisations indique qu’elle attend votre décision.",
+      "reachedFrom": "Atteint depuis",
+      "fromVerdict": "{{step}} ({{verdict}})",
+      "ifNobody": "Si personne ne décide",
+      "ifNobodyText": "Learn la lit au bout de {{hours}} h"
+    },
+    "trigger": {
+      "startedBy": "Lancé par",
+      "nobody": "Aucune automatisation n’utilise encore ce flux.",
+      "inputs": "Entrées",
+      "inputMax": "{{name}}, au plus {{max}}",
+      "memory": "Mémoire",
+      "recall": "Rappeler la mémoire du dépôt au démarrage",
+      "recallOn": "Rappelée au démarrage",
+      "recallOff": "Non rappelée",
+      "learn": "Learn",
+      "learnEnabled": "Apprendre de chaque exécution",
+      "learnOn": "Activé",
+      "learnOff": "Désactivé",
+      "roles_one": "{{count}} rôle",
+      "roles_other": "{{count}} rôles",
+      "after": "au bout de {{hours}} h",
+      "learnAssertions": "Assertions de Learn",
+      "pr": "Pull request",
+      "prReady": "Prête pour la relecture",
+      "prDraft": "En brouillon"
+    },
+    "end": {
+      "happens": "Ce qui se passe",
+      "completed": "L’exécution se termine ici. Rien n’est jamais fusionné.",
+      "stopAtPr": "L’exécution ouvre une pull request et s’arrête. Rien n’est jamais fusionné : c’est une personne qui la fusionne.",
+      "pullRequest": "Pull request",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "Paramètre"
+    },
+    "edge": {
+      "title": "Flèche",
+      "from": "De",
+      "to": "Vers",
+      "condition": "Condition",
+      "always": "Toujours : cette étape ne rend aucun verdict",
+      "inRun": "Dans cette exécution",
+      "taken": "Empruntée",
+      "notTaken": "Non empruntée"
+    },
+    "run": {
+      "agents": "Les agents de l’étape",
+      "ran": "A exécuté {{skill}} · {{model}}",
+      "round": "Tour {{n}}",
+      "finalGo": "Feu vert final : {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "Sélectionnez une étape pour voir sa configuration. Entrée l’ouvre, Échap la ferme.",
+      "cardMissing": "Cette étape désigne {{card}}, qui n’est pas dans le Registre.",
+      "cardAdmins": "La configuration sous-jacente est visible par les administrateurs là où les agents d’ingénierie sont activés.",
+      "autoDetect": "Les packs sont détectés dans le dépôt au démarrage d’une exécution. Aucune automatisation n’utilise encore ce flux.",
+      "notRun": "Pas encore exécutée.",
+      "gateNotRun": "Le contrôle n’a pas encore été exécuté.",
+      "noAssertions": "Aucune assertion.",
+      "noAssertionsBuild": "Aucune assertion. Ajoutez-en une pour vérifier ce que cette étape a enregistré."
+    }
+  },
+  "palette": {
+    "search": "Rechercher des étapes",
+    "noMatch": "Aucune étape ne correspond.",
+    "madeFromSkill": "créée à partir d’une compétence",
+    "gateOf": "Contrôle qualité : {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "Il appelle ce flux : l’appeler d’ici créerait un cycle.",
+    "groups": {
+      "startEnd": "Début et fin",
+      "agents": "Agents",
+      "gates": "Contrôles qualité",
+      "flows": "Flux",
+      "platform": "Étapes de la plateforme"
+    },
+    "hints": {
+      "startEnd": "Où une exécution commence et se termine ; chaque NO-GO va à une personne qui décide.",
+      "agents": "Les cartes du Registre : celle de chaque rôle, et celles créées à partir d’une compétence.",
+      "gates": "Vérifications et revues du changement ; Détection automatique choisit les packs du dépôt.",
+      "flows": "Un autre flux enregistré, appelé à sa révision.",
+      "platform": "Étapes exécutées par la plateforme : découpage en lots, regroupement des lots, un tableau, la mémoire, Learn."
+    }
   }
 }

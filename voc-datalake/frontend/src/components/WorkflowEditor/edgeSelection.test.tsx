@@ -10,7 +10,8 @@
  * test send the edge changes React Flow would send on a click / Delete.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { act, render } from '@testing-library/react'
+import { act } from '@testing-library/react'
+import { renderWithQueryClient as render } from '@test/query-client'
 import { applyEdgeSelection, NO_EDGES } from './edgeSelection'
 import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import type { Edge, EdgeChange, OnSelectionChangeParams } from '@xyflow/react'

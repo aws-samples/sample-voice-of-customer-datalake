@@ -1,20 +1,25 @@
 /*
- * React Flow themed with Kiro design-system tokens only (docs/kiro-design-system.md).
- * The library's structural stylesheet is imported by WorkflowCanvas.tsx; every
- * colour variable it reads is overridden here, so none of its default palette
- * reaches the screen and both themes follow `data-theme` automatically.
+ * React Flow themed with Kiro design-system tokens only (docs/kiro-design-system.md › Flow canvas).
+ * The library's structural stylesheet is imported by FlowCanvas.tsx; every colour variable it reads is
+ * overridden here, so none of its default palette reaches the screen and both themes follow `data-theme`.
+ *
+ * (7.52.00 C2, docs/ux part 5 §5.3) The node language: each kind its own shape (a pill, a rounded card, an
+ * elongated hexagon, a stacked card, a square-cornered card) drawn with `--control-border`, which reaches
+ * 3:1 on the canvas in every theme (theme/canvasContrast.test.ts), as do the arrows and the handles' ring.
+ * State lives in the outline (`data-state`) and a corner badge, selection is a fill, focus a ring, hover an
+ * outline step: four channels that never share one line. No keyframes (R12), no inline SVG (R4).
  */
 .voc-workflow {
   --xy-background-color: var(--bg-accent);
   --xy-background-pattern-color: var(--border);
   --xy-node-color: var(--text);
   --xy-node-background-color: var(--card);
-  --xy-node-border: 1px solid var(--border);
+  --xy-node-border: 1px solid var(--control-border);
   --xy-node-border-radius: var(--radius-lg);
   --xy-node-boxshadow-hover: none;
-  --xy-node-boxshadow-selected: 0 0 0 2px var(--accent);
+  --xy-node-boxshadow-selected: none;
   --xy-node-group-background-color: transparent;
-  --xy-edge-stroke: var(--border-hover);
+  --xy-edge-stroke: var(--control-border);
   --xy-edge-stroke-selected: var(--accent);
   --xy-edge-stroke-width: 1.5;
   --xy-edge-label-color: var(--text);
@@ -22,7 +27,7 @@
   --xy-connectionline-stroke: var(--accent);
   --xy-connectionline-stroke-width: 1.5;
   --xy-handle-background-color: var(--card);
-  --xy-handle-border-color: var(--border-strong);
+  --xy-handle-border-color: var(--control-border);
   --xy-selection-background-color: var(--accent-subtle);
   --xy-selection-border: 1px dashed var(--accent);
   --xy-controls-box-shadow: none;
@@ -34,44 +39,222 @@
   --xy-minimap-background-color: var(--card);
   --xy-minimap-mask-background-color: var(--overlay);
   --xy-minimap-mask-stroke-color: var(--border);
-  --xy-minimap-node-background-color: var(--bg-hover);
-  --xy-minimap-node-stroke-color: var(--border-strong);
+  --xy-minimap-node-background-color: var(--muted);
+  --xy-minimap-node-stroke-color: transparent;
   --xy-attribution-background-color: transparent;
   --xy-resize-background-color: var(--accent);
   font-family: inherit;
 }
 
-/* Step nodes (and a run's lanes) render their own card; the library's node chrome stays out of the way. */
-.voc-workflow .react-flow__node-step,
-.voc-workflow .react-flow__node-lane,
-.voc-workflow .react-flow__node-loopFrame {
+/* A palette item over the canvas: the pane's dashed inset outline (its words are a role="status" line). */
+.voc-workflow[data-dropping='true'] {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+/* Every node renders its own shape; the library's node chrome stays out of the way. */
+.voc-workflow .react-flow__node {
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
   width: auto;
+  border-radius: var(--node-radius, var(--radius-lg));
 }
 
 /* `!important`: React Flow sets an inline `pointer-events: all` on selectable nodes. */
-.voc-workflow .react-flow__node-loopFrame {
+.voc-workflow .react-flow__node-loopFrame,
+.voc-workflow .react-flow__node-callFrame {
   pointer-events: none !important;
 }
 
-/* Only a loop's label pill takes the pointer (the click bubbles to React Flow's
-   node wrapper, which selects the loop and opens its settings); the rest of the
-   frame stays click-through so panning and box-select inside it keep working. */
+/* Only a frame's label pill takes the pointer (the click bubbles to React Flow's node wrapper, which selects
+   the loop and opens its settings); the rest stays click-through so panning and box-select keep working. */
 .voc-workflow .voc-loop-frame-label {
   pointer-events: auto;
   cursor: pointer;
 }
 
-/* Step nodes are Tab stops (React Flow gives them tabindex=0); the library draws
-   no focus state, so they show the design-system ring like every other control. */
+/* The radius each kind's focus ring follows (the React Flow wrapper is unclipped, so a gate's ring is a rectangle). */
+.voc-workflow .voc-kind-trigger,
+.voc-workflow .voc-kind-end,
+.voc-workflow .voc-kind-decision { --node-radius: 9999px; }
+.voc-workflow .voc-kind-agent,
+.voc-workflow .voc-kind-team,
+.voc-workflow .voc-kind-call { --node-radius: var(--radius-lg); }
+.voc-workflow .voc-kind-platform { --node-radius: var(--radius-sm); }
+.voc-workflow .voc-kind-gate { --node-radius: var(--radius-sm); }
+
+/* Nodes are Tab stops (React Flow gives them tabindex=0): the design-system ring at offset 3 px. */
 .voc-workflow .react-flow__node:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-lg);
+  outline-offset: 3px;
 }
+
+/* ── The shapes ─────────────────────────────────────────────────────────────────────────────────── */
+
+.voc-node-shell {
+  position: relative;
+}
+
+.voc-node {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  border: var(--node-edge-w, 1px) var(--node-edge-style, solid) var(--node-edge, var(--control-border));
+  border-radius: var(--node-radius, var(--radius-lg));
+  background-color: var(--card);
+  background-image: var(--node-tint, none);
+  cursor: pointer;
+}
+
+.voc-node-agent,
+.voc-node-call { --node-radius: var(--radius-lg); }
+.voc-node-platform { --node-radius: var(--radius-sm); }
+.voc-node-pill { --node-radius: 9999px; }
+
+/* Gate: an elongated hexagon (owner decision N-D2). The outer layer is the outline; the body repeats the
+   polygon with each point reduced by the edge width, so a 2 px state edge reads as 2 px. A clip cannot dash,
+   so a gate not run yet keeps a solid edge; its badge-less corner and its words say so. */
+.voc-node-gate {
+  --pt: 16px;
+  border: 0;
+  padding: var(--node-edge-w, 1px);
+  background: var(--node-edge, var(--control-border));
+  clip-path: polygon(var(--pt) 0, calc(100% - var(--pt)) 0, 100% 50%, calc(100% - var(--pt)) 100%, var(--pt) 100%, 0 50%);
+}
+
+.voc-node-gate > .voc-node-body {
+  height: 100%;
+  background-color: var(--card);
+  background-image: var(--node-tint, none);
+  clip-path: polygon(calc(var(--pt) - 1px) 0, calc(100% - var(--pt) + 1px) 0, 100% 50%, calc(100% - var(--pt) + 1px) 100%,
+    calc(var(--pt) - 1px) 100%, 0 50%);
+  padding-inline: 14px;
+}
+
+/* Calls a flow: two sheets behind the card. A shape, not elevation: the one documented exception to "shadows are for
+   things that float" (Quick's flat shadows do not remove it: it is no --shadow-* token). */
+.voc-node-call {
+  box-shadow: 4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--control-border),
+    8px 8px 0 -1px var(--card), 8px 8px 0 0 var(--border-strong);
+}
+
+/* A decision's marker: a diamond in the warn tone, its icon counter-rotated. */
+.voc-node-diamond {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  rotate: 45deg;
+  border-radius: 4px;
+  border: 1px solid var(--warn);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.voc-node-diamond > svg {
+  rotate: -45deg;
+}
+
+/* ── States: outline, fill, hover ───────────────────────────────────────────────────────────────── */
+
+.voc-node[data-state='running'] { --node-edge: var(--accent); --node-edge-w: 2px; }
+.voc-node[data-state='waiting'] { --node-edge: var(--warn); --node-edge-w: 2px; }
+.voc-node[data-state='paused'] { --node-edge: var(--warn); --node-edge-w: 2px; --node-edge-style: dashed; }
+.voc-node[data-state='failed'] { --node-edge: var(--danger); --node-edge-w: 2px; }
+.voc-node[data-state='idle'] { --node-edge-style: dashed; }
+.voc-node[data-state='skipped'] { --node-edge: var(--border-strong); --node-edge-style: dotted; }
+
+/* Selected: the fill, and a 2 px accent outline unless a run state holds the outline (then the fill alone). */
+.voc-node[data-selected='true'] { --node-tint: linear-gradient(var(--accent-subtle), var(--accent-subtle)); }
+.voc-node[data-selected='true']:not([data-held='true']) { --node-edge: var(--accent); --node-edge-w: 2px; --node-edge-style: solid; }
+
+/* Hover: an outline step on a neutral outline, never a fill or a movement (R6, R7). */
+.voc-node:not([data-held='true']):not([data-selected='true']):hover { --node-edge: var(--control-border-hover); }
+
+/* Dragging a node (build). */
+.voc-workflow .react-flow__node.dragging .voc-node { box-shadow: var(--shadow-lg); cursor: grabbing; }
+
+/* The corner badge: a 20 px circle on the card with a --control-border ring, at the shape's top-right. */
+.voc-node-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--control-border);
+}
+
+/* "You are here" / "Stopped here": a tag above the node, never a ring. */
+.voc-node-here {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+/* ── Handles: a 10 px look, a 24 px target (WCAG 2.5.8), the ring at 3:1 ───────────────────────────── */
+
+.voc-workflow .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-color: var(--control-border);
+}
+
+.voc-workflow .react-flow__handle::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.voc-workflow .react-flow__handle:hover {
+  border-color: var(--accent);
+}
+
+/* View and run: nothing connects; the handles stay only as the points the arrows meet. */
+.voc-workflow .react-flow__handle.voc-handle-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Connecting: the handles a drop may land on grow and fill. */
+.voc-workflow .react-flow__handle.connectingto,
+.voc-workflow .react-flow__handle.valid {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* A gate's GO and NO-GO handles sit on the bottom edge at a quarter and three quarters, each with its word under it. */
+.voc-workflow .voc-handle-left { left: 25%; }
+.voc-workflow .voc-handle-right { left: 75%; }
+
+.voc-handle-word {
+  position: absolute;
+  top: calc(100% + 8px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.voc-handle-word-left { left: 25%; }
+.voc-handle-word-right { left: 75%; }
+
+/* ── The rest of the canvas ────────────────────────────────────────────────────────────────────── */
 
 .voc-workflow .react-flow__controls {
   border: 1px solid var(--border);
@@ -88,14 +271,18 @@
   border-radius: var(--radius-md);
 }
 
-.voc-workflow .react-flow__handle {
-  width: 9px;
-  height: 9px;
-}
-
-.voc-workflow .react-flow__handle:hover {
-  border-color: var(--accent);
-}
+/* The minimap by kind (build, view) and by state (run); a selected node adds its stroke. */
+.voc-workflow .react-flow__minimap-node { fill: var(--muted); fill-opacity: .4; }
+.voc-workflow .react-flow__minimap-node.voc-mini-agent,
+.voc-workflow .react-flow__minimap-node.voc-mini-team { fill: var(--aim); fill-opacity: .45; }
+.voc-workflow .react-flow__minimap-node.voc-mini-gate { fill: var(--text-strong); fill-opacity: .5; }
+.voc-workflow .react-flow__minimap-node.voc-mini-decision { fill: var(--warn); fill-opacity: .55; }
+.voc-workflow .react-flow__minimap-node.voc-mini-running { fill: var(--accent); fill-opacity: 1; }
+.voc-workflow .react-flow__minimap-node.voc-mini-done { fill: var(--ok); fill-opacity: 1; }
+.voc-workflow .react-flow__minimap-node.voc-mini-failed { fill: var(--danger); fill-opacity: 1; }
+.voc-workflow .react-flow__minimap-node.voc-mini-waiting { fill: var(--warn); fill-opacity: 1; }
+.voc-workflow .react-flow__minimap-node.voc-mini-quiet { fill: var(--muted); fill-opacity: .3; }
+.voc-workflow .react-flow__minimap-node.voc-mini-selected { stroke: var(--accent); stroke-width: 2; }
 
 /* Verdict arrows: tone by meaning (agreed / pass = ok, not agreed / fail = warn). */
 .voc-workflow .voc-edge-ok .react-flow__edge-path {
@@ -115,15 +302,59 @@
   fill: var(--bg-elevated);
 }
 
-/* Edge labels ("Agreed" / "Not agreed") are content: 12px, the content floor
-   (they were 11px — design audit D-READ). */
+/* Edge labels ("GO" / "Not agreed") are content: 12px, the content floor (design audit D-READ). */
 .voc-workflow .react-flow__edge-text {
   fill: var(--text);
   font-size: 12px;
 }
 
-/* Run graph: steps that are done / running light their arrows. */
+/* Run graph: an arrow into a step done or running is lit; one into a way not taken is dashed and muted. */
 .voc-workflow .voc-edge-lit .react-flow__edge-path {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+.voc-workflow .voc-edge-skipped .react-flow__edge-path {
+  stroke: var(--muted);
+  stroke-dasharray: 4 4;
+}
+
+/* ── The palette's mini shapes (20 × 14, in --control-border): the palette teaches the canvas's language ── */
+
+.voc-mini-shape {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--control-border);
+  background: var(--card);
+}
+
+.voc-mini-shape-pill { border-radius: 9999px; }
+.voc-mini-shape-card { border-radius: 4px; }
+.voc-mini-shape-square { border-radius: 1px; }
+.voc-mini-shape-stack { border-radius: 3px; box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--control-border); }
+.voc-mini-shape-hexagon {
+  border: 0;
+  padding: 1px;
+  background: var(--control-border);
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%);
+}
+
+.voc-mini-shape-hexagon::after {
+  content: '';
+  display: block;
+  height: 100%;
+  background: var(--card);
+  clip-path: polygon(3px 0, calc(100% - 3px) 0, 100% 50%, calc(100% - 3px) 100%, 3px 100%, 0 50%);
+}
+
+.voc-mini-shape-diamond {
+  width: 10px;
+  height: 10px;
+  margin-inline: 5px;
+  rotate: 45deg;
+  border-radius: 2px;
+  border-color: var(--warn);
 }

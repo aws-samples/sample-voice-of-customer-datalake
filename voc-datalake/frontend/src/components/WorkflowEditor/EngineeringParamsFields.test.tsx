@@ -110,10 +110,11 @@ describe('a quality gate step', () => {
 })
 
 describe('the palette of each kind', () => {
-  it('an engineering flow offers Start, End and the engineering steps only', () => {
+  it('an engineering flow offers its steps grouped by kind, and no agents workflow step', () => {
     render(<NodePalette onAdd={vi.fn()} schema="voc-workflow/2" />)
-    expect(screen.getByText('Engineering')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Quality gates' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stop at PR' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'A person decides' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /PRD/ })).toBeNull()
   })
 

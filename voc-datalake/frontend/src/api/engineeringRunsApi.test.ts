@@ -27,7 +27,7 @@ describe('parseOverview', () => {
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
       started_at: '2026-11-12T08:00:00Z', ended_at: null, waiting_at: '', waiting_detail: null, stop: null, budget: null,
       flow_steps: null, flow_revision: null, flow_outcome: null, flow_definition: null, issue: null, pull_request: null,
-      cost_usd: null, learn_cost_usd: null, cost_cap_usd: null, parent: null, manifest: null,
+      cost_usd: null, learn_cost_usd: null, cost_cap_usd: null, parent: null, manifest: null, expansion: [],
     })
     expect(overview.agents.map((agent) => [agent.agent, agent.status, agent.task_id, agent.tokens.length])).toStrictEqual([
       ['coordinator-0', 'waiting', null, 1], ['fixer-1', 'working', 'task-1', 1], ['final-go-1', 'working', 'task-3', 0],
@@ -89,6 +89,7 @@ describe('parseOverview', () => {
       microvm_state: null, microvm_age: null, heartbeat_age: null, last_progress_at: null, stuck_why: null,
       recent_tools: [], microvm_seconds: 0, tokens: [{ model: 'm', input_tokens: 0, output_tokens: 0 }],
       cost_usd: null, attempt: 0, commit: null, skill_label: null, model: null, last_exit: null, last_failure: null,
+      card: null, card_version: null,
     }])
     expect([overview.totals, overview.run.ended_at]).toStrictEqual([{ messages: 0, microvm_seconds: 0, by_model: [] }, null])
   })

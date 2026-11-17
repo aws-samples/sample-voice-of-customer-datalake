@@ -5513,5 +5513,74 @@
         "path": "/feedback/catalogue"
       }
     ]
+  },
+  {
+    "file": "api/flowSetupApi.ts",
+    "method": "GET",
+    "call": "scoped(REGISTRY, connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry"
+      },
+      {
+        "path": "/agents/engineering/registry?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/flowSetupApi.ts",
+    "method": "GET",
+    "call": "scoped(`${REGISTRY}/${encodeURIComponent(card)}`, connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry/fixer"
+      },
+      {
+        "path": "/agents/engineering/registry/fixer-careful?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/flowSetupApi.ts",
+    "method": "GET",
+    "call": "scoped(GATES, connection)",
+    "probes": [
+      {
+        "path": "/agents/engineering/gates"
+      },
+      {
+        "path": "/agents/engineering/gates?connection=storefront"
+      }
+    ]
+  },
+  {
+    "file": "api/flowSetupApi.ts",
+    "method": "GET",
+    "call": "`${GATES}/briefs/${encodeURIComponent(id)}`",
+    "probes": [
+      {
+        "path": "/agents/engineering/gates/briefs/java"
+      }
+    ]
+  },
+  {
+    "file": "api/flowSetupApi.ts",
+    "method": "GET",
+    "call": "'/agents/engineering/assertions'",
+    "probes": [
+      {
+        "path": "/agents/engineering/assertions"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "GET",
+    "call": "path(id, revision === undefined ? '/expanded' : `/expanded?revision=${revision}`)",
+    "probes": [
+      {
+        "path": "/workflows/wf_b0f1e2d3c4a5/expanded"
+      }
+    ]
   }
 ]

@@ -142,6 +142,13 @@ describe('agent write tools', () => {
     const result = tool('update_workflow').validate(validArgs('update_workflow'), admin);
     expect(result.ok ? tool('update_workflow').summarize(result.args) : '').toBe('Update workflow wf_1 (revision 2 → 3): Added a loop');
   });
+
+  it('update_workflow takes confirm_shared as a boolean, and says a confirmed save reaches every automation (7.52.00)', () => {
+    expect(ok('update_workflow', { ...validArgs('update_workflow'), confirm_shared: 'yes' })).toBe(false);
+    const result = tool('update_workflow').validate({ ...validArgs('update_workflow'), confirm_shared: true }, admin);
+    expect(result.ok ? tool('update_workflow').summarize(result.args) : '')
+      .toBe('Update workflow wf_1 (revision 2 → 3), for every automation that runs it: Added a loop');
+  });
 });
 
 describe('company write tools', () => {

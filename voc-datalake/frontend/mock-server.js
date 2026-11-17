@@ -25,6 +25,7 @@ import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
 import { SAMPLE_FLOW_ID, SAMPLE_RUN_ID, handleEngineeringRunRoutes, isStoredConnection, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleEngineeringSkillRoutes } from './mock-engineering-skills.js';
+import { handleFlowSetupRoutes } from './mock-flow-setup.js';
 import { handleEngineeringRunRequestRoutes } from './mock-engineering-run-requests.js';
 import { bindSetupAgents, handleEngineeringSetupRoutes, readinessRefusal } from './mock-engineering-setup.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
@@ -1503,6 +1504,8 @@ function handleDomainModules(req, res, url) {
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
     || handleEngineeringSkillRoutes(req, res, url, send, shared)
+    // (7.52.00 C2: the Registry, the gates and the assertions, before the runs' routes, which would read them as a run id)
+    || handleFlowSetupRoutes(req, res, url, send)
     // (before the runs' routes, which would read `setup` and `readiness` as a run id)
     || handleEngineeringSetupRoutes(req, res, url, send, shared)
     // (7.53.00: the run requests, before the runs' routes too)
@@ -3588,9 +3591,29 @@ function storeMockWorkflow(workflowId, definition, { derivedFrom = null, builtin
 
 const currentRevision = (entry) => entry.revisions.at(-1);
 
+/** (7.52.00) Who uses a workflow: the automations that run it and the saved flows whose current revision calls it. */
+function mockUsedBy(workflowId) {
+  const automations = [...mockAgents.values()]
+    .filter((agent) => agent.workflow_id === workflowId && agent.status !== 'archived')
+    .map((agent) => ({
+      agent_id: agent.agent_id, name: agent.name, kind: agent.engineering ? 'engineering' : 'agents',
+      connection: agent.engineering?.connection ?? null, language: agent.engineering?.language ?? null,
+    }))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const flows = [...mockWorkflows.values()].filter((other) => !other.archived).flatMap((other) => {
+    const pins = currentRevision(other).definition.nodes
+      .filter((node) => node.type === 'call_flow' && String(node.data?.params?.flow ?? '').startsWith(`${workflowId}@`));
+    return pins.map((node) => ({
+      workflow_id: other.workflow_id, name: currentRevision(other).definition.name, revision: Number(String(node.data.params.flow).split('@')[1]),
+    }));
+  });
+  return { automations, flows };
+}
+
 function workflowView(entry, { withDefinition = true } = {}) {
   const current = currentRevision(entry);
   return {
+    used_by: mockUsedBy(entry.workflow_id),
     workflow_id: entry.workflow_id, slug: entry.slug, name: current.definition.name,
     description: current.definition.description ?? '', revision: current.revision,
     derived_from: entry.derived_from, builtin: entry.builtin, created_at: entry.created_at,
@@ -4062,6 +4085,11 @@ function saveMockWorkflow(entry, body) {
   if (body.definition.schema !== currentRevision(entry).definition.schema) {
     return [400, { success: false, error: 'a workflow keeps its kind: save an engineering flow as a new workflow, not over an agents one (or the other way round)' }];
   }
+  // (7.52.00) A flow other automations run is saved only with confirm_shared (agents_handler save_workflow).
+  const usedBy = mockUsedBy(entry.workflow_id);
+  if (body.confirm_shared !== true && usedBy.automations.some((user) => user.agent_id !== body.agent_id)) {
+    return [409, { success: false, error: 'other automations run this flow: saving changes each of them from its next run. Save again with confirm_shared: true to change them all', code: 'shared_flow', used_by: usedBy }];
+  }
   entry.revisions.push({ revision: expected + 1, saved_at: new Date().toISOString(), saved_by_username: MOCK_CALLER.username, definition: structuredClone(body.definition) });
   entry.slug = slugifyWorkflow(body.definition.name);
   return [200, { workflow: workflowView(entry) }];
@@ -4109,11 +4137,29 @@ function routeWorkflowItem(req, entry, action, body) {
     definition.name = typeof body?.name === 'string' ? body.name : `${definition.name} (copy)`.slice(0, 120);
     return createMockWorkflowFrom(definition, entry.workflow_id);
   }
+  if (key === 'GET expanded') return expandMockWorkflow(entry);
   if (key === 'GET export') {
     const current = currentRevision(entry);
     return [200, { ...structuredClone(current.definition), exported_from: { workflow_id: entry.workflow_id, revision: current.revision, slug: entry.slug } }];
   }
   return [405, { success: false, error: 'Method not allowed' }];
+}
+
+/** `GET /workflows/{id}/expanded` (7.52.00): the current revision with each call's steps as `<call>.<child>` steps. */
+function expandMockWorkflow(entry) {
+  const definition = structuredClone(currentRevision(entry).definition);
+  if (definition.schema !== 'voc-workflow/2') return [400, { success: false, error: 'an agents workflow calls no flow: only an engineering flow is expanded' }];
+  const expansion = [];
+  const nodes = definition.nodes.flatMap((node) => {
+    if (node.type !== 'call_flow') return [node];
+    const [childId, revision] = String(node.data?.params?.flow ?? '').split('@');
+    const child = mockWorkflows.get(childId);
+    if (!child) return [node];
+    expansion.push({ step: node.id, flow: childId, revision: Number(revision) });
+    return currentRevision(child).definition.nodes.filter((each) => each.type !== 'start' && each.type !== 'end')
+      .map((each) => ({ ...each, id: `${node.id}.${each.id}` }));
+  });
+  return [200, { workflow_id: entry.workflow_id, revision: currentRevision(entry).revision, definition: { ...definition, nodes }, expansion, calls: expansion.length, steps: nodes.length }];
 }
 
 /** `GET /workflows/{id}/revisions/{revision}`: one saved revision (agents_handler.get_workflow_revision). */

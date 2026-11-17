@@ -94,7 +94,11 @@ const AGENTS: Readonly<Record<string, RequestBuilder>> = {
   run_agent: (args) => agents('POST', `${agentId(args)}/run`),
   cancel_agent_run: (args) => agents('POST', `${agentId(args)}/runs/${enc(text(args, 'run_id'))}/cancel`),
   create_workflow: (args) => exact('agents', 'POST', '/workflows', { definition: record(args, 'definition') }),
-  update_workflow: (args) => workflows('PUT', enc(text(args, 'workflow_id')), { definition: record(args, 'definition'), expected_revision: args.expected_revision }),
+  // (7.52.00) `confirm_shared: true` only when the args carry it: a flow other automations run is refused without it.
+  update_workflow: (args) => workflows('PUT', enc(text(args, 'workflow_id')), {
+    definition: record(args, 'definition'), expected_revision: args.expected_revision,
+    ...(args.confirm_shared === true ? { confirm_shared: true } : {}),
+  }),
   duplicate_workflow: (args) => workflows('POST', `${enc(text(args, 'workflow_id'))}/duplicate`, present('name', optionalText(args, 'name'))),
 };
 

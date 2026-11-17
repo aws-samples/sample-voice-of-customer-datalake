@@ -130,12 +130,19 @@ const updateWorkflow = defineClientTool({
   description: 'Save a new revision of a workflow (admin). Send the COMPLETE new definition (never a partial one), '
     + 'built from get_workflow and checked with validate_workflow, plus expected_revision = the revision you read; '
     + 'a newer revision saved meanwhile makes it fail, then re-read and rebuild. The card shows the added, removed '
-    + 'and changed nodes and edges. Agents using it run the new revision from their next run.',
+    + 'and changed nodes and edges. Agents using it run the new revision from their next run. (7.52.00) A flow '
+    + 'other automations run (get_workflow’s used_by) is saved only with confirm_shared: true, after the user '
+    + 'agreed to change it for all of them.',
   properties: {
     workflow_id: WORKFLOW_ID,
     expected_revision: { type: 'integer', minimum: 1, description: 'The current revision you read with get_workflow.' },
     definition: WORKFLOW_DEFINITION_PROPERTY,
     change_summary: stringProperty('One-line description of the change, shown to the user.', MAX_CHANGE_SUMMARY),
+    confirm_shared: {
+      type: 'boolean',
+      description: 'true only after the user agreed to change a flow other automations run (get_workflow’s '
+        + 'used_by lists them): without it the save of a shared flow is refused and nothing is saved.',
+    },
   },
   required: ['workflow_id', 'expected_revision', 'definition', 'change_summary'],
   schema: z.object({
@@ -143,8 +150,10 @@ const updateWorkflow = defineClientTool({
     expected_revision: z.number().int().min(1),
     definition: workflowDefinitionSchema,
     change_summary: changeSummary,
+    confirm_shared: z.boolean().optional(),
   }).strict(),
-  summarize: (args) => `Update workflow ${args.workflow_id} (revision ${args.expected_revision} → ${args.expected_revision + 1}): ${args.change_summary}`,
+  summarize: (args) => `Update workflow ${args.workflow_id} (revision ${args.expected_revision} → ${args.expected_revision + 1})`
+    + `${args.confirm_shared === true ? ', for every automation that runs it' : ''}: ${args.change_summary}`,
 });
 
 const duplicateWorkflow = defineClientTool({

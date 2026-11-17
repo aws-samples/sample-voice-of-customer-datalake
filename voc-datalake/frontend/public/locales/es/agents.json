@@ -2251,5 +2251,331 @@
       "toControls": "Ir a los controles de la ejecución",
       "openSession": "Abrir la sesión de {{agent}}"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "Disparador",
+      "agent": "Agente",
+      "team": "Equipo",
+      "gate": "Control",
+      "call": "Llama a un flujo",
+      "decision": "Decide una persona",
+      "end": "Fin",
+      "platform": "Paso de la plataforma"
+    },
+    "nodeName": "{{kind}}: {{rest}}",
+    "state": {
+      "invalid": "Tiene un problema",
+      "waitingForYou": "Te espera"
+    },
+    "chips": {
+      "pinned": "{{version}} fijada",
+      "updateAvailable": "Actualización disponible",
+      "share": "{{percent}} %",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} agente",
+      "agents_other": "{{count}} agentes",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · publicadas por {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "Detección automática",
+      "rounds": "≤ {{n}} rondas",
+      "reviewers_one": "{{count}} revisor",
+      "reviewers_other": "{{count}} revisores"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "De acuerdo",
+      "notAgreed": "Sin acuerdo",
+      "arrow": "Flecha {{word}}"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "Aún no se ha elegido ningún flujo",
+      "progress": "{{done}} de {{total}} pasos hechos"
+    },
+    "decision": {
+      "title": "Decide una persona",
+      "line": "La ejecución espera a una persona",
+      "waiting": "Te espera"
+    },
+    "trigger": {
+      "line": "Inicia la ejecución"
+    },
+    "end": {
+      "completed": "Completada",
+      "prReady": "Pull request · listo para revisión",
+      "prDraft": "Pull request · como borrador"
+    },
+    "platform": {
+      "map": "Por {{by}} · como máximo {{n}}",
+      "memoryRead": "Lee la memoria ({{whose}}) · {{n}}",
+      "memoryWrite": "Escribe en la memoria ({{whose}})",
+      "reduce": "Une las partes"
+    },
+    "drop": "Suelta para añadir {{name}}",
+    "dropAny": "Suelta para añadir el paso",
+    "aria": {
+      "node": "Pulsa Intro o Espacio para seleccionar un paso y abrir su configuración. Pulsa Supr para quitarlo y Escape para cancelar.",
+      "nodeKeyboard": "Pulsa Intro o Espacio para seleccionar un paso y abrir su configuración. Después, las teclas de flecha lo mueven; pulsa Supr para quitarlo y Escape para cancelar.",
+      "moved": "Paso seleccionado movido: {{direction}}. Nueva posición: x {{x}}, y {{y}}",
+      "edge": "Pulsa Intro o Espacio para seleccionar una flecha. Pulsa Supr para quitarla o Escape para cancelar.",
+      "controls": "Controles del lienzo",
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
+      "fitView": "Encajar el flujo",
+      "interactive": "Bloquear o desbloquear el lienzo",
+      "handle": "Punto de conexión"
+    },
+    "shared": {
+      "banner_one": "Lo usa {{count}} automatización: {{names}}. Al guardar, cambia a partir de su próxima ejecución.",
+      "banner_other": "Lo usan {{count}} automatizaciones: {{names}}. Al guardar, cada una cambia a partir de su próxima ejecución.",
+      "confirmTitle": "¿Guardar un flujo compartido?",
+      "confirmMessage": "{{names}} ejecutan este flujo. Al guardar, cada una cambia a partir de su próxima ejecución.",
+      "confirmAction": "Guardar para todas",
+      "usedByLine": "Lo usan {{names}}",
+      "calledBy": "Lo llaman {{names}}",
+      "approvalNote": "Al aprobarlo, se guarda para todas las automatizaciones que lo ejecutan: {{names}}.",
+      "approvalRefused": "{{names}} ejecutan este flujo: el guardado se rechaza salvo que el cambio se confirme para todas."
+    }
+  },
+  "inspector": {
+    "close": "Cerrar el inspector",
+    "tabs": "Configuración del paso",
+    "sheetTitle": "Configuración del paso",
+    "inFlow": "En este flujo",
+    "fromCard": "De la tarjeta {{card}} v{{n}}",
+    "fromCardAny": "De la tarjeta {{card}}",
+    "fromCardLabel": "De la tarjeta",
+    "readOnly": "Solo lectura.",
+    "readOnlyShort": "solo lectura",
+    "editInFlows": "Editar en Flujos",
+    "asRun": "Tal como lo usó esta ejecución · r{{n}}",
+    "asRunUsed": "Tal como lo usó esta ejecución",
+    "openSkill": "Abrir el historial de su habilidad",
+    "loop": "Bucle",
+    "tab": {
+      "agents": "Agentes",
+      "setup": "Configuración",
+      "assertions": "Aserciones",
+      "arrows": "Flechas",
+      "checks": "Comprobaciones",
+      "reviewers": "Revisores",
+      "packs": "Paquetes",
+      "preview": "Vista previa"
+    },
+    "agent": {
+      "card": "Tarjeta",
+      "latest": "La última aceptada",
+      "cardModel": "El de la tarjeta",
+      "share": "Parte del presupuesto de cada ejecución",
+      "sharesInAll": "Partes de los agentes: {{used}} de 100 %",
+      "overrides": "Sustituye al de la tarjeta ({{model}})",
+      "useCards": "Usar el de la tarjeta",
+      "cardsModel": "Modelo de la tarjeta: {{model}}",
+      "purpose": "Propósito",
+      "skill": "Habilidad",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "Modelo",
+      "tools": "Herramientas",
+      "host": "Host",
+      "hostBroker": "Solo lectura, a través del bróker ({{ops}})",
+      "caps": "Límites",
+      "turns": "{{n}} turnos",
+      "tokens": "{{n}} k tokens de entrada",
+      "reads": "Lee",
+      "writes": "Escribe",
+      "scorecard": "Ficha de resultados",
+      "scorecardLine": "{{runs}} ejecuciones · {{rate}} % superadas",
+      "thisMonth": "Este mes",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "Paquetes",
+      "rounds": "Rondas (máximo)",
+      "reviewers": "Revisores",
+      "blocks": "bloquea",
+      "advisory": "orientativo",
+      "addReviewer": "Añadir un revisor",
+      "reviewerName": "Nombre del revisor",
+      "reviewerFocus": "En qué se fija",
+      "reviewerRole": "{{name}}: bloquea u orientativo",
+      "removeReviewer": "Quitar {{name}}",
+      "runsIt": "Lo ejecuta",
+      "finalGo": "Visto bueno final",
+      "arrows": "Flechas",
+      "pack": "Paquete {{name}}",
+      "image": "Imagen",
+      "network": "Red (solo en la preparación)",
+      "tools": "Herramientas",
+      "ownPins": "Las versiones fijadas por el propio repositorio.",
+      "ownPinsRecorded": "Las versiones fijadas por el propio repositorio. Últimas registradas: {{list}}",
+      "steps": "Pasos",
+      "always": "siempre",
+      "whenFile": "si existe {{file}}",
+      "whenContains": "si {{file}} contiene {{text}}",
+      "whenScript": "si {{file}} tiene un script {{script}}",
+      "or": " o ",
+      "lookedAtNothing": "Falla si no revisó nada.",
+      "forAutomation": "Para {{automation}}: {{pack}}",
+      "brief": "Las instrucciones del propietario ({{path}})",
+      "briefOpen": "Las instrucciones del propietario ({{path}})",
+      "stepKinds": {
+        "setup": "preparación",
+        "lint": "lint",
+        "format": "formato",
+        "types": "tipos",
+        "test": "pruebas"
+      },
+      "stops": {
+        "check_failed": "Una comprobación falló y las correcciones no consiguieron que pasara.",
+        "looked_at_nothing": "El control no revisó nada: ninguna comprobación cubre el repositorio, o una comprobación no encontró nada que comprobar.",
+        "own_gate_changed": "El cambio toca el control propio del repositorio.",
+        "review_blocked": "Una revisión lo bloqueó: el visto bueno final dijo NO-GO.",
+        "rounds_used_up": "Quedaron hallazgos bloqueantes tras la última ronda."
+      }
+    },
+    "assertions": {
+      "add": "Añadir una aserción",
+      "check": "Comprobación",
+      "choose": "Elige una comprobación",
+      "argument": "{{name}}",
+      "onFail": "{{check}}: si falla",
+      "remove": "Quitar {{check}}",
+      "full": "Como máximo {{max}} aserciones.",
+      "noneApply": "Ninguna comprobación se aplica a este tipo de paso.",
+      "checks": {
+        "findings_cite_evidence": "Cada hallazgo cita un archivo, una línea y su evidencia",
+        "gate_pack_checks_ran": "El ejecutor de controles registró al menos una comprobación",
+        "gate_passed": "El ejecutor de controles y el visto bueno final dijeron GO",
+        "learn_proposals_name_case": "Cada propuesta del coach nombra un caso de evaluación existente",
+        "notes_cite_sources": "Cada nota cita una fuente",
+        "patch_max_lines": "Ningún parche enviado cambia más de max líneas",
+        "patch_no_ci_changes": "Ningún parche enviado cambia una definición de CI",
+        "patch_submitted": "Se envió un parche",
+        "patch_touches_tests": "Cada parche enviado cambia una prueba",
+        "pr_links_issue": "Cada pull request indica que corrige el issue de la ejecución",
+        "pr_opened": "Se abrió un pull request",
+        "pr_state_as_flow": "Cada pull request se abrió como indica el flujo (listo o borrador)",
+        "push_tree_is_judged_tree": "Cada push es el árbol que juzgó el visto bueno final",
+        "review_commented": "Se publicó un comentario de revisión en el pull request",
+        "review_no_blocking": "El rol indicado en «by» no escribió ningún hallazgo bloqueante",
+        "tasks_posted": "Se publicaron al menos min tareas para el rol",
+        "tenets_recorded": "Se registró un conjunto de 1 a 30 principios",
+        "triage_commented": "El triaje se comentó en el issue de la ejecución",
+        "triage_labelled": "El issue lleva las etiquetas de tipo y gravedad del triaje",
+        "triage_recorded": "Se registró un triaje con un tipo y una gravedad"
+      }
+    },
+    "call": {
+      "flow": "Flujo",
+      "revision": "Revisión",
+      "inputs": "Entradas",
+      "noInputs": "El flujo al que llama no declara entradas.",
+      "inputRequired": "{{name}} (obligatoria)",
+      "inputUnset": "sin indicar",
+      "steps": "Sus pasos",
+      "childSteps_one": "{{count}} paso",
+      "childSteps_other": "{{count}} pasos",
+      "expands": "Se expande a",
+      "inAll": "{{total}} de {{max}} pasos en total",
+      "usedBy": "Lo usan",
+      "openFlow": "Abrir el flujo",
+      "preview": "{{name}}, solo lectura",
+      "noPreview": "Elige un flujo para verlo en vista previa."
+    },
+    "decision": {
+      "happens": "Qué pasa",
+      "happensText": "La ejecución se detiene y espera a una persona. El issue recibe un comentario y Automatizaciones muestra que necesita tu decisión.",
+      "reachedFrom": "Se llega desde",
+      "fromVerdict": "{{step}} ({{verdict}})",
+      "ifNobody": "Si nadie decide",
+      "ifNobodyText": "Learn lo lee pasadas {{hours}} h"
+    },
+    "trigger": {
+      "startedBy": "Lo inicia",
+      "nobody": "Ninguna automatización usa este flujo todavía.",
+      "inputs": "Entradas",
+      "inputMax": "{{name}}, como máximo {{max}}",
+      "memory": "Memoria",
+      "recall": "Recuperar la memoria del repositorio al empezar",
+      "recallOn": "Se recupera al empezar",
+      "recallOff": "No se recupera",
+      "learn": "Learn",
+      "learnEnabled": "Aprender de cada ejecución",
+      "learnOn": "Activado",
+      "learnOff": "Desactivado",
+      "roles_one": "{{count}} rol",
+      "roles_other": "{{count}} roles",
+      "after": "pasadas {{hours}} h",
+      "learnAssertions": "Aserciones de Learn",
+      "pr": "Pull request",
+      "prReady": "Listo para revisión",
+      "prDraft": "Como borrador"
+    },
+    "end": {
+      "happens": "Qué pasa",
+      "completed": "La ejecución termina aquí. Nunca se fusiona nada.",
+      "stopAtPr": "La ejecución abre un pull request y se detiene. Nunca se fusiona nada: lo fusiona una persona.",
+      "pullRequest": "Pull request",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "Ajuste"
+    },
+    "edge": {
+      "title": "Flecha",
+      "from": "Desde",
+      "to": "Hasta",
+      "condition": "Condición",
+      "always": "Siempre: este paso no da veredicto",
+      "inRun": "En esta ejecución",
+      "taken": "Tomada",
+      "notTaken": "No tomada"
+    },
+    "run": {
+      "agents": "Los agentes del paso",
+      "ran": "Ejecutó {{skill}} · {{model}}",
+      "round": "Ronda {{n}}",
+      "finalGo": "Visto bueno final: {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "Selecciona un paso para ver su configuración. Intro la abre y Escape la cierra.",
+      "cardMissing": "Este paso indica {{card}}, que no está en el Registro.",
+      "cardAdmins": "Los administradores ven la configuración que hay detrás donde los agentes de ingeniería están activados.",
+      "autoDetect": "Los paquetes se detectan en el repositorio al empezar una ejecución. Ninguna automatización usa este flujo todavía.",
+      "notRun": "Aún no se ha ejecutado.",
+      "gateNotRun": "El control aún no se ha ejecutado.",
+      "noAssertions": "Sin aserciones.",
+      "noAssertionsBuild": "Sin aserciones. Añade una para comprobar lo que registró este paso."
+    }
+  },
+  "palette": {
+    "search": "Buscar pasos",
+    "noMatch": "Ningún paso coincide.",
+    "madeFromSkill": "creada a partir de una habilidad",
+    "gateOf": "Control de calidad: {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "Llama a este flujo: llamarlo desde aquí crearía un ciclo.",
+    "groups": {
+      "startEnd": "Inicio y fin",
+      "agents": "Agentes",
+      "gates": "Controles de calidad",
+      "flows": "Flujos",
+      "platform": "Pasos de la plataforma"
+    },
+    "hints": {
+      "startEnd": "Dónde empieza y termina una ejecución; cada NO-GO va a una persona que decide.",
+      "agents": "Las tarjetas del Registro: la de cada rol y las creadas a partir de una habilidad.",
+      "gates": "Comprobaciones y revisiones del cambio; Detección automática elige los paquetes del repositorio.",
+      "flows": "Otro flujo guardado, llamado en su revisión.",
+      "platform": "Pasos que ejecuta la plataforma: división en partes, unión de las partes, un tablero, memoria, Learn."
+    }
   }
 }

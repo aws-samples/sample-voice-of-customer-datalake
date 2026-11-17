@@ -286,6 +286,18 @@ describe('every refusal and failure names its cause', () => {
     await expect(invoke(JOBS_CALL, CLAIMS)).rejects.toMatchObject({ code, message });
   });
 
+  it('keeps a 4xx refusal\u2019s own code, and the automations a shared_flow names (7.52.00)', async () => {
+    const usedBy = { automations: [{ agent_id: 'ag_1', name: 'Bug fixer' }, { name: 7 }, 'x', { name: 'n'.repeat(201) }], flows: [] };
+    await expect(setup(proxy(409, { error: 'other automations run this flow', code: 'shared_flow', used_by: usedBy })).invoke(JOBS_CALL, CLAIMS))
+      .rejects.toMatchObject({ code: 'invalid_input', serverCode: 'shared_flow', automations: ['Bug fixer', `${'n'.repeat(200)}…`] });
+    await expect(setup(proxy(409, { error: 'stale' })).invoke(JOBS_CALL, CLAIMS))
+      .rejects.toMatchObject({ code: 'invalid_input', serverCode: undefined, automations: [] });
+    await expect(setup(proxy(409, { error: 'x', code: 'Not A Code' })).invoke(JOBS_CALL, CLAIMS))
+      .rejects.toMatchObject({ serverCode: undefined, automations: [] });
+    await expect(setup(proxy(403, { error: 'x', code: 'shared_flow' })).invoke(JOBS_CALL, CLAIMS))
+      .rejects.toMatchObject({ code: 'not_permitted', serverCode: undefined });
+  });
+
   it('accepts the 2xx edges and an empty body', async () => {
     await expect(setup(proxy(200, { a: 1 })).invoke(JOBS_CALL, CLAIMS)).resolves.toStrictEqual({ a: 1 });
     await expect(setup(proxy(299, { a: 2 })).invoke(JOBS_CALL, CLAIMS)).resolves.toStrictEqual({ a: 2 });

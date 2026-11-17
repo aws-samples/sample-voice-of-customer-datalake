@@ -74,6 +74,8 @@ export const updateWorkflowArgs = z.strictObject({
   expected_revision: z.number().int().min(1),
   definition: approvalWorkflowDefinitionSchema,
   change_summary: changeSummary,
+  // (7.52.00) The user agreed to change a flow other automations run: the save is sent with confirm_shared.
+  confirm_shared: z.boolean().optional(),
 })
 
 export const duplicateWorkflowArgs = z.strictObject({

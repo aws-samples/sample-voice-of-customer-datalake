@@ -3,13 +3,15 @@
  * agents / workflows API clients (the user's own token; the agents Lambda
  * enforces admin-only and its own limits). A stale `update_workflow`
  * (`expected_revision` behind the stored one, 409) is reported to the model so
- * it re-reads and rebuilds instead of retrying blindly.
+ * it re-reads and rebuilds instead of retrying blindly; (7.52.00) one refused
+ * because other automations run the flow (409 `shared_flow`) names them, and the
+ * model asks the user before it proposes the save again with `confirm_shared`.
  *
  * @module assistant/approvals/agentExecutors
  */
 import { agentsApi } from '../../api/agentsApi'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { workflowsApi } from '../../api/workflowsApi'
+import { isSharedFlowRefusal, usedByOf, workflowsApi } from '../../api/workflowsApi'
 import { invalidateKeys, keysFor } from './invalidation'
 import { StaleApprovalError } from './shown'
 import type { WriteToolExecutionContext } from '../types'
@@ -79,12 +81,35 @@ export async function createWorkflow(args: CreateWorkflowArgs, ctx: WriteToolExe
   return { summary: `Created workflow "${view.name}" (${view.workflow_id}, revision ${view.revision}).`, data: { workflow_id: view.workflow_id } }
 }
 
+/**
+ * (7.52.00) A save refused because other automations run the flow (409 `shared_flow`): nothing was saved. `names`: the
+ * automations, when they could be read.
+ */
+export function sharedWorkflowMessage(names: readonly string[]): string {
+  const who = names.length === 0 ? 'Other automations run this flow' : `Other automations run this flow (${names.join(', ')})`
+  return `${who}; nothing was saved. Tell the user the change would reach each of them from its next run, and only if `
+    + 'they agree to change it for all of them, propose update_workflow again with confirm_shared: true (or duplicate_workflow '
+    + 'to change a copy instead).'
+}
+
+/** The automations that run the workflow, by name (none when the read fails: the refusal is still reported). */
+async function automationNames(workflowId: string): Promise<string[]> {
+  try {
+    const { workflow } = await workflowsApi.get(workflowId)
+    return usedByOf(workflow).automations.map((automation) => automation.name)
+  } catch {
+    return []
+  }
+}
+
 export async function updateWorkflow(args: UpdateWorkflowArgs, ctx: WriteToolExecutionContext) {
   try {
-    const view = await workflowsApi.save(args.workflow_id, args.definition, args.expected_revision)
+    const view = await workflowsApi.save(args.workflow_id, args.definition, args.expected_revision,
+      { confirmShared: args.confirm_shared === true })
     void invalidateKeys(ctx.queryClient, keysFor.workflows())
     return { summary: `Saved workflow ${args.workflow_id} as revision ${view.revision}: ${args.change_summary}`, data: { revision: view.revision } }
   } catch (error) {
+    if (isSharedFlowRefusal(error)) throw new StaleApprovalError(sharedWorkflowMessage(await automationNames(args.workflow_id)))
     if (apiErrorStatus(error) === 409) throw new StaleApprovalError(STALE_WORKFLOW_MESSAGE)
     throw error
   }

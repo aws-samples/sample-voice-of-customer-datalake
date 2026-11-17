@@ -10,6 +10,7 @@ import {
 } from './model'
 import { clampRounds, loopIssues } from './loopFields'
 import { emptyDefinition } from './model-fixtures'
+import { kindSize } from './nodes/nodeKinds'
 import { validateLocally } from './graphRules'
 import { WORKFLOW_ALL_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
@@ -176,13 +177,15 @@ describe('loops', () => {
     expect(removeLoop(d, 0).loops).toStrictEqual([])
   })
 
-  it('frames the loop members with padding', () => {
+  it('frames the loop members with padding, each as tall as its kind draws it', () => {
     const pad = 28 // GROUP_PADDING in model.ts (+16 above for the frame label)
     const d = createLoop(withReview(), ['persona_review_1', 'revise_document_1'])
     const x = 10 - pad
     const y = 140 - pad - 16 // the revise step sits at y=140, the review at 141
+    // (7.52.00) the revise step is an agent card (88 tall), the review a gate (76): the card's bottom is the lowest
+    const bottom = Math.max(140 + kindSize('agent').height, 141 + kindSize('gate').height, 141 + STEP_HEIGHT)
     expect(loopBounds(d, at(d.loops, 0))).toStrictEqual({
-      x, y, width: 300 + STEP_WIDTH + pad - x, height: 141 + STEP_HEIGHT + pad - y,
+      x, y, width: 300 + STEP_WIDTH + pad - x, height: bottom + pad - y,
     })
     expect(loopBounds(d, { node_ids: ['ghost'], until: 'review_pass', max_rounds: 1 })).toBeNull()
   })

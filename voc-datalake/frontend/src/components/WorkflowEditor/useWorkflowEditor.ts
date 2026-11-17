@@ -4,6 +4,12 @@
  * and the library writes — Save (new revision with `expected_revision`, 409 →
  * conflict), Save as, Import, Reset to template.
  *
+ * (7.52.00) A flow other automations run is SHARED: its save changes each of them from its next run, so it is sent
+ * with `confirm_shared` only once the person confirmed (the editor asks first, from the flow's `used_by`); a save the
+ * server refuses as shared (409 `shared_flow`: someone started using it meanwhile) is the outcome `shared`, and the
+ * workflow is read again so the editor names who uses it now. `agentId`: the automation whose page hosts the editor
+ * (its own use needs no confirmation).
+ *
  * With `unsaved` (a default engineering flow's copy, `api/engineeringTemplates.ts`) there is no stored workflow:
  * nothing is read, the copy is the draft and is unsaved until {@link saveOrCreate} makes it a new workflow (the
  * library's own `POST /workflows`, with its validation and its 409 where the engineering module is off).
@@ -14,7 +20,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import {
-  DEFAULT_WORKFLOW_ID, isEngineeringFlow, normalizeDefinition, seedWorkflowDetail, workflowsApi, workflowsKeys,
+  DEFAULT_WORKFLOW_ID, isEngineeringFlow, isSharedFlowRefusal, normalizeDefinition, otherAutomations, seedWorkflowDetail,
+  usedByOf, workflowsApi, workflowsKeys,
 } from '../../api/workflowsApi'
 import { diffDefinitions } from './diff'
 import type { WorkflowDiff } from './diff'
@@ -39,7 +46,10 @@ function parseJson(text: string): unknown {
 /** The saved revisions `GET /workflows/{id}` listed, newest first (none until it answers). */
 const savedRevisions = (data: { revisions: WorkflowRevision[] } | undefined): WorkflowRevision[] => data?.revisions ?? []
 
-export type SaveOutcome = 'saved' | 'conflict' | 'invalid' | 'failed'
+export type SaveOutcome = 'saved' | 'conflict' | 'invalid' | 'failed' | 'shared'
+
+/** How one save is sent: `confirmShared` once the person confirmed changing a flow other automations run. */
+export interface EditorSaveOptions { readonly confirmShared?: boolean }
 
 /** Messages per step id, plus the ones that belong to the workflow as a whole. */
 export function groupIssues(issues: readonly WorkflowIssue[]): { byNode: Map<string, string[]>; general: string[] } {
@@ -103,7 +113,14 @@ function unsavedStart(definition: WorkflowDefinition | undefined): { view?: Work
 /** An unsaved copy is always unsaved; a stored workflow is when the draft differs from it. */
 const isDirty = (unsaved: boolean, diff: WorkflowDiff | null): boolean => unsaved || (diff !== null && !diff.unchanged)
 
-export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?: WorkflowDefinition) {
+/** A failed save's outcome: stale (409), shared (409 `shared_flow`), refused by the rules (400), or failed. */
+function failedOutcome(error: unknown): SaveOutcome {
+  if (isSharedFlowRefusal(error)) return 'shared'
+  if (apiErrorStatus(error) === 409) return 'conflict'
+  return apiErrorStatus(error) === 400 ? 'invalid' : 'failed'
+}
+
+export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?: WorkflowDefinition, agentId?: string) {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: workflowsKeys.detail(workflowId),
@@ -140,8 +157,8 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?
   }, [queryClient])
 
   const saveMutation = useMutation({
-    mutationFn: ({ definition, revision }: { definition: WorkflowDefinition; revision: number }) =>
-      workflowsApi.save(workflowId, definition, revision),
+    mutationFn: ({ definition, revision, confirmShared }: { definition: WorkflowDefinition; revision: number; confirmShared: boolean }) =>
+      workflowsApi.save(workflowId, definition, revision, { confirmShared, ...(agentId === undefined ? {} : { agentId }) }),
     onSuccess: async (view) => {
       queryClient.setQueryData(workflowsKeys.detail(workflowId), (old: { workflow: WorkflowView } | undefined) =>
         (old === undefined ? old : { ...old, workflow: view }))
@@ -149,21 +166,21 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?
     },
   })
 
-  const save = useCallback(async (): Promise<SaveOutcome> => {
+  const save = useCallback(async (options: EditorSaveOptions = {}): Promise<SaveOutcome> => {
     if (draft === null || workflow === undefined || !canEdit || builtin) return 'failed'
     if (validateLocally(draft).length > 0) return 'invalid'
     try {
-      await saveMutation.mutateAsync({ definition: draft, revision: workflow.revision })
+      await saveMutation.mutateAsync({ definition: draft, revision: workflow.revision, confirmShared: options.confirmShared === true })
       setConflict(false)
       return 'saved'
     } catch (error) {
-      if (apiErrorStatus(error) === 409) {
-        setConflict(true)
-        return 'conflict'
-      }
-      return apiErrorStatus(error) === 400 ? 'invalid' : 'failed'
+      const outcome = failedOutcome(error)
+      if (outcome === 'conflict') setConflict(true)
+      // (someone started using it meanwhile: read who, so the confirmation names them)
+      if (outcome === 'shared') void queryClient.invalidateQueries({ queryKey: workflowsKeys.detail(workflowId) })
+      return outcome
     }
-  }, [builtin, canEdit, draft, saveMutation, workflow])
+  }, [builtin, canEdit, draft, queryClient, saveMutation, workflow, workflowId])
 
   /**
    * Save as: the DRAFT becomes a new workflow (unsaved edits included — not
@@ -186,8 +203,8 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?
    * unsaved copy created as a new workflow under its own name, after the same checks (an editor, a draft the local
    * rules pass) and with the same outcomes; `created` is the new workflow.
    */
-  const saveOrCreate = useCallback(async (): Promise<{ outcome: SaveOutcome; created?: WorkflowView }> => {
-    if (unsavedWorkflow === undefined) return { outcome: await save() }
+  const saveOrCreate = useCallback(async (options: EditorSaveOptions = {}): Promise<{ outcome: SaveOutcome; created?: WorkflowView }> => {
+    if (unsavedWorkflow === undefined) return { outcome: await save(options) }
     if (draft === null || !canEdit) return { outcome: 'failed' }
     if (validateLocally(draft).length > 0) return { outcome: 'invalid' }
     try {
@@ -228,8 +245,10 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?
     return { ...draft, exported_from: { workflow_id: workflowId, revision: workflow?.revision ?? 1, unsaved_changes: dirty } }
   }, [builtin, dirty, draft, unsavedWorkflow, workflow?.revision, workflowId])
 
+  const usedBy = usedByOf(workflow)
   return {
     query, workflow, revisions: savedRevisions(query.data), draft, setDraft, issues, methodologyWarnings, localIssues, diff, dirty,
+    usedBy, sharedWith: otherAutomations(usedBy, agentId),
     builtin, conflict, unsaved: unsavedWorkflow !== undefined, saveOrCreate,
     save, saving: saveMutation.isPending,
     saveAs: saveAsMutation.mutateAsync, savingAs: saveAsMutation.isPending,

@@ -6,7 +6,8 @@
  * Start → End workflow, which then opens; New engineering flow only where the deployment has the engineering
  * agents module, `features.engineering`, and beside it Start from a template: the five default engineering flows,
  * each opening the editor on an unsaved copy), and Archive for the ones no active agent runs. The
- * built-in template can be neither renamed nor archived.
+ * built-in template can be neither renamed nor archived. (7.52.00) Each row says who uses the flow ("Used by" its
+ * automations, "Called by" the flows that call it), so a shared flow is told apart before it is opened.
  *
  * Archiving is soft (`DELETE /workflows/{id}`): the workflow leaves the library
  * and the agent workflow picker, becomes read-only, and keeps its revisions. A
@@ -28,8 +29,9 @@ import { failedReads } from '../../utils/failedReads'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import {
-  API_WORKFLOW_LIMITS, seedWorkflowDetail, workflowsApi, workflowsKeys,
+  API_WORKFLOW_LIMITS, seedWorkflowDetail, usedByOf, workflowsApi, workflowsKeys,
 } from '../../api/workflowsApi'
+import { useNames } from '../../components/WorkflowEditor/editorHooks'
 import { isEngineeringAvailable } from '../../runtimeConfig'
 import { workflowPath } from './workflowPaths'
 import { WorkflowTemplateDialog } from './WorkflowTemplateDialog'
@@ -45,6 +47,24 @@ function archiveErrorKey(error: unknown): string {
   return apiErrorStatus(error) === 409 ? 'library.archiveInUse' : 'library.archiveFailed'
 }
 
+/**
+ * (7.52.00) "Used by": the automations that run the flow and the flows that call it (`used_by`), so a shared flow
+ * is told apart before it is opened; nothing for a flow nobody uses.
+ */
+function UsedByLine({ workflow }: Readonly<{ workflow: WorkflowSummary }>) {
+  const { t } = useTranslation('agents')
+  const { automations, flows } = usedByOf(workflow)
+  const names = useNames(automations)
+  if (automations.length === 0 && flows.length === 0) return null
+  return (
+    <p className="text-[12px] text-muted">
+      {automations.length > 0 && t('canvas.shared.usedByLine', { names })}
+      {automations.length > 0 && flows.length > 0 && ' · '}
+      {flows.length > 0 && t('canvas.shared.calledBy', { names: flows.map((flow) => flow.name).join(', ') })}
+    </p>
+  )
+}
+
 function WorkflowRow({ workflow, archiving, onArchive, onRename }: Readonly<{
   workflow: WorkflowSummary; archiving: boolean; onArchive: () => void; onRename: () => void
 }>) {
@@ -55,6 +75,7 @@ function WorkflowRow({ workflow, archiving, onArchive, onRename }: Readonly<{
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-text-strong break-words [overflow-wrap:anywhere]">{workflow.name}</p>
         <p className="text-[12px] text-muted font-mono">{t('editor.revision', { n: workflow.revision })}</p>
+        <UsedByLine workflow={workflow} />
       </div>
       {workflow.builtin && <span className="badge badge-info">{t('editor.builtin')}</span>}
       {workflow.kind === 'engineering' && <span className="badge badge-muted">{t('library.engineeringKind')}</span>}

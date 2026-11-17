@@ -22,7 +22,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { PLAN_STEP_WRITE_TOOLS, buildWriteRequest } from '../../../../lambda/stream/src/assistant/plan/write-requests'
-import { CASE_ENV, UPDATE_SCRAPER_CASE, WEB_REVIEWS_CONNECTOR_CASE, WRITE_REQUEST_CASES } from '../../../../lambda/stream/src/assistant/plan/write-request-fixtures'
+import { CASE_ENV, SHARED_WORKFLOW_CASE, UPDATE_SCRAPER_CASE, WEB_REVIEWS_CONNECTOR_CASE, WRITE_REQUEST_CASES } from '../../../../lambda/stream/src/assistant/plan/write-request-fixtures'
 import { normalizeScrapers } from '../../api/scrapersSchema'
 import { useAuthStore } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
@@ -123,6 +123,11 @@ describe('plan write requests', () => {
 
   it('create_app_connector for a web_reviews page: the same request on both sides', async () => {
     const { tool, args } = WEB_REVIEWS_CONNECTOR_CASE
+    expect(await spaRequests(tool, args)).toStrictEqual([streamRequest(tool, args)])
+  })
+
+  it('update_workflow confirmed for every automation that runs the flow: confirm_shared on both sides (7.52.00)', async () => {
+    const { tool, args } = SHARED_WORKFLOW_CASE
     expect(await spaRequests(tool, args)).toStrictEqual([streamRequest(tool, args)])
   })
 })

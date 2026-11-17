@@ -2309,5 +2309,341 @@
       "toControls": "Przejdź do sterowania przebiegiem",
       "openSession": "Otwórz sesję {{agent}}"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "Wyzwalacz",
+      "agent": "Agent",
+      "team": "Zespół",
+      "gate": "Kontrola",
+      "call": "Wywołuje przepływ",
+      "decision": "Decyduje osoba",
+      "end": "Koniec",
+      "platform": "Krok platformy"
+    },
+    "nodeName": "{{kind}}: {{rest}}",
+    "state": {
+      "invalid": "Ma problem",
+      "waitingForYou": "Czeka na Ciebie"
+    },
+    "chips": {
+      "pinned": "{{version}} przypięta",
+      "updateAvailable": "Dostępna aktualizacja",
+      "share": "{{percent}}%",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} agent",
+      "agents_few": "{{count}} agenci",
+      "agents_many": "{{count}} agentów",
+      "agents_other": "{{count}} agentów",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · zadania publikuje: {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "Wykrywanie automatyczne",
+      "rounds": "Rundy: ≤ {{n}}",
+      "reviewers_one": "{{count}} recenzent",
+      "reviewers_few": "{{count}} recenzenci",
+      "reviewers_many": "{{count}} recenzentów",
+      "reviewers_other": "{{count}} recenzentów"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "Zgoda",
+      "notAgreed": "Brak zgody",
+      "arrow": "Strzałka {{word}}"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "Nie wybrano jeszcze przepływu",
+      "progress": "Ukończone kroki: {{done}} z {{total}}"
+    },
+    "decision": {
+      "title": "Decyduje osoba",
+      "line": "Przebieg czeka na osobę",
+      "waiting": "Czeka na Ciebie"
+    },
+    "trigger": {
+      "line": "Rozpoczyna przebieg"
+    },
+    "end": {
+      "completed": "Zakończono",
+      "prReady": "Pull request · gotowy do przeglądu",
+      "prDraft": "Pull request · szkic"
+    },
+    "platform": {
+      "map": "Według {{by}} · najwyżej {{n}}",
+      "memoryRead": "Odczytuje pamięć {{whose}} · {{n}}",
+      "memoryWrite": "Zapisuje w pamięci {{whose}}",
+      "reduce": "Łączy części"
+    },
+    "drop": "Upuść, aby dodać {{name}}",
+    "dropAny": "Upuść, aby dodać krok",
+    "aria": {
+      "node": "Naciśnij Enter lub Spację, aby wybrać krok i otworzyć jego konfigurację. Naciśnij Delete, aby go usunąć, lub Escape, aby anulować.",
+      "nodeKeyboard": "Naciśnij Enter lub Spację, aby wybrać krok i otworzyć jego konfigurację. Potem przesuwasz go klawiszami strzałek; naciśnij Delete, aby go usunąć, lub Escape, aby anulować.",
+      "moved": "Przesunięto wybrany krok: {{direction}}. Nowa pozycja: x {{x}}, y {{y}}",
+      "edge": "Naciśnij Enter lub Spację, aby wybrać strzałkę. Naciśnij Delete, aby ją usunąć, lub Escape, aby anulować.",
+      "controls": "Sterowanie płótnem",
+      "zoomIn": "Powiększ",
+      "zoomOut": "Pomniejsz",
+      "fitView": "Dopasuj przepływ do widoku",
+      "interactive": "Zablokuj lub odblokuj płótno",
+      "handle": "Punkt połączenia"
+    },
+    "shared": {
+      "banner_one": "Używany przez {{count}} automatyzację: {{names}}. Zapisanie zmieni ją od jej następnego przebiegu.",
+      "banner_few": "Używany przez {{count}} automatyzacje: {{names}}. Zapisanie zmieni każdą z nich od jej następnego przebiegu.",
+      "banner_many": "Używany przez {{count}} automatyzacji: {{names}}. Zapisanie zmieni każdą z nich od jej następnego przebiegu.",
+      "banner_other": "Używany przez {{count}} automatyzacji: {{names}}. Zapisanie zmieni każdą z nich od jej następnego przebiegu.",
+      "confirmTitle": "Zapisać współdzielony przepływ?",
+      "confirmMessage": "{{names}} uruchamiają ten przepływ. Zapisanie zmieni każdą z nich od jej następnego przebiegu.",
+      "confirmAction": "Zapisz dla wszystkich",
+      "usedByLine": "Używany przez: {{names}}",
+      "calledBy": "Wywoływany przez: {{names}}",
+      "approvalNote": "Zatwierdzenie zapisze go dla każdej automatyzacji, która go uruchamia: {{names}}.",
+      "approvalRefused": "{{names}} uruchamiają ten przepływ: zapis zostanie odrzucony, jeśli zmiana nie zostanie potwierdzona dla wszystkich."
+    }
+  },
+  "inspector": {
+    "close": "Zamknij inspektor",
+    "tabs": "Konfiguracja kroku",
+    "sheetTitle": "Konfiguracja kroku",
+    "inFlow": "W tym przepływie",
+    "fromCard": "Z karty {{card}} v{{n}}",
+    "fromCardAny": "Z karty {{card}}",
+    "fromCardLabel": "Z karty",
+    "readOnly": "Tylko do odczytu.",
+    "readOnlyShort": "tylko do odczytu",
+    "editInFlows": "Edytuj w Przepływach",
+    "asRun": "Tak, jak użył go ten przebieg · r{{n}}",
+    "asRunUsed": "Tak, jak użył go ten przebieg",
+    "openSkill": "Otwórz historię jego umiejętności",
+    "loop": "Pętla",
+    "tab": {
+      "agents": "Agenci",
+      "setup": "Konfiguracja",
+      "assertions": "Asercje",
+      "arrows": "Strzałki",
+      "checks": "Sprawdzenia",
+      "reviewers": "Recenzenci",
+      "packs": "Pakiety",
+      "preview": "Podgląd"
+    },
+    "agent": {
+      "card": "Karta",
+      "latest": "Ostatnia zaakceptowana",
+      "cardModel": "Z karty",
+      "share": "Udział w budżecie każdego przebiegu",
+      "sharesInAll": "Udziały agentów: {{used}} ze 100%",
+      "overrides": "Zastępuje model z karty ({{model}})",
+      "useCards": "Użyj modelu z karty",
+      "cardsModel": "Model z karty: {{model}}",
+      "purpose": "Cel",
+      "skill": "Umiejętność",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "Model",
+      "tools": "Narzędzia",
+      "host": "Host",
+      "hostBroker": "Tylko do odczytu, przez brokera ({{ops}})",
+      "caps": "Limity",
+      "turns": "Tury: {{n}}",
+      "tokens": "Tokeny wejściowe: {{n}} k",
+      "reads": "Czyta",
+      "writes": "Zapisuje",
+      "scorecard": "Karta wyników",
+      "scorecardLine": "Przebiegi: {{runs}} · zaliczone: {{rate}}%",
+      "thisMonth": "W tym miesiącu",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "Pakiety",
+      "rounds": "Najwięcej rund",
+      "reviewers": "Recenzenci",
+      "blocks": "blokuje",
+      "advisory": "doradczy",
+      "addReviewer": "Dodaj recenzenta",
+      "reviewerName": "Nazwa recenzenta",
+      "reviewerFocus": "Na co zwraca uwagę",
+      "reviewerRole": "{{name}}: blokuje czy doradczy",
+      "removeReviewer": "Usuń {{name}}",
+      "runsIt": "Uruchamia",
+      "finalGo": "Ostateczna zgoda",
+      "arrows": "Strzałki",
+      "pack": "Pakiet {{name}}",
+      "image": "Obraz",
+      "network": "Sieć (tylko przygotowanie)",
+      "tools": "Narzędzia",
+      "ownPins": "Wersje przypięte w samym repozytorium.",
+      "ownPinsRecorded": "Wersje przypięte w samym repozytorium. Ostatnio zapisane: {{list}}",
+      "steps": "Kroki",
+      "always": "zawsze",
+      "whenFile": "jeśli istnieje {{file}}",
+      "whenContains": "jeśli {{file}} zawiera {{text}}",
+      "whenScript": "jeśli {{file}} ma skrypt {{script}}",
+      "or": " lub ",
+      "lookedAtNothing": "Kończy się niepowodzeniem, jeśli niczego nie sprawdziła.",
+      "forAutomation": "Dla {{automation}}: {{pack}}",
+      "brief": "Zlecenie właściciela ({{path}})",
+      "briefOpen": "Zlecenie właściciela ({{path}})",
+      "stepKinds": {
+        "setup": "przygotowanie",
+        "lint": "lint",
+        "format": "format",
+        "types": "typy",
+        "test": "testy"
+      },
+      "stops": {
+        "check_failed": "Sprawdzenie się nie powiodło, a poprawki tego nie zmieniły.",
+        "looked_at_nothing": "Kontrola niczego nie sprawdziła: żadne sprawdzenie nie obejmuje repozytorium albo sprawdzenie nie znalazło nic do sprawdzenia.",
+        "own_gate_changed": "Zmiana dotyka własnej kontroli repozytorium.",
+        "review_blocked": "Przegląd ją zablokował: ostateczna zgoda brzmiała NO-GO.",
+        "rounds_used_up": "Po ostatniej rundzie zostały blokujące ustalenia."
+      }
+    },
+    "assertions": {
+      "add": "Dodaj asercję",
+      "check": "Sprawdzenie",
+      "choose": "Wybierz sprawdzenie",
+      "argument": "{{name}}",
+      "onFail": "{{check}}: gdy się nie powiedzie",
+      "remove": "Usuń {{check}}",
+      "full": "Najwyżej {{max}} asercji.",
+      "noneApply": "Do tego rodzaju kroku nie pasuje żadne sprawdzenie.",
+      "checks": {
+        "findings_cite_evidence": "Każde ustalenie wskazuje plik, wiersz i dowód",
+        "gate_pack_checks_ran": "Wykonawca kontroli zapisał co najmniej jedno sprawdzenie",
+        "gate_passed": "Wykonawca kontroli i ostateczna zgoda dały GO",
+        "learn_proposals_name_case": "Każda propozycja coacha wskazuje istniejący przypadek ewaluacji",
+        "notes_cite_sources": "Każda notatka podaje źródło",
+        "patch_max_lines": "Żaden przesłany patch nie zmienia więcej niż max wierszy",
+        "patch_no_ci_changes": "Żaden przesłany patch nie zmienia definicji CI",
+        "patch_submitted": "Przesłano patch",
+        "patch_touches_tests": "Każdy przesłany patch zmienia test",
+        "pr_links_issue": "Każdy pull request podaje, że naprawia zgłoszenie przebiegu",
+        "pr_opened": "Otwarto pull request",
+        "pr_state_as_flow": "Każdy pull request otwarto tak, jak określa przepływ (gotowy lub szkic)",
+        "push_tree_is_judged_tree": "Każde wypchnięcie to drzewo ocenione przez ostateczną zgodę",
+        "review_commented": "W pull requeście opublikowano komentarz z przeglądu",
+        "review_no_blocking": "Rola wskazana w „by” nie zapisała żadnego blokującego ustalenia",
+        "tasks_posted": "Dla roli opublikowano co najmniej min zadań",
+        "tenets_recorded": "Zapisano zestaw od 1 do 30 zasad",
+        "triage_commented": "Wynik triażu skomentowano w zgłoszeniu przebiegu",
+        "triage_labelled": "Zgłoszenie ma etykiety rodzaju i ważności z triażu",
+        "triage_recorded": "Zapisano triaż z rodzajem i ważnością"
+      }
+    },
+    "call": {
+      "flow": "Przepływ",
+      "revision": "Wersja",
+      "inputs": "Dane wejściowe",
+      "noInputs": "Wywoływany przepływ nie deklaruje danych wejściowych.",
+      "inputRequired": "{{name}} (wymagane)",
+      "inputUnset": "nie podano",
+      "steps": "Jego kroki",
+      "childSteps_one": "{{count}} krok",
+      "childSteps_few": "{{count}} kroki",
+      "childSteps_many": "{{count}} kroków",
+      "childSteps_other": "{{count}} kroków",
+      "expands": "Rozwija się do",
+      "inAll": "Łącznie {{total}} z {{max}} kroków",
+      "usedBy": "Używany przez",
+      "openFlow": "Otwórz przepływ",
+      "preview": "{{name}}, tylko do odczytu",
+      "noPreview": "Wybierz przepływ, aby zobaczyć podgląd."
+    },
+    "decision": {
+      "happens": "Co się dzieje",
+      "happensText": "Przebieg zatrzymuje się i czeka na osobę. Zgłoszenie dostaje komentarz, a Automatyzacje pokazują, że potrzebna jest Twoja decyzja.",
+      "reachedFrom": "Prowadzi tu",
+      "fromVerdict": "{{step}} ({{verdict}})",
+      "ifNobody": "Jeśli nikt nie zdecyduje",
+      "ifNobodyText": "Learn odczyta to po {{hours}} h"
+    },
+    "trigger": {
+      "startedBy": "Uruchamiany przez",
+      "nobody": "Żadna automatyzacja nie używa jeszcze tego przepływu.",
+      "inputs": "Dane wejściowe",
+      "inputMax": "{{name}}, najwyżej {{max}}",
+      "memory": "Pamięć",
+      "recall": "Przywołaj pamięć repozytorium na początku",
+      "recallOn": "Przywoływana na początku",
+      "recallOff": "Nieprzywoływana",
+      "learn": "Learn",
+      "learnEnabled": "Ucz się z każdego przebiegu",
+      "learnOn": "Włączone",
+      "learnOff": "Wyłączone",
+      "roles_one": "{{count}} rola",
+      "roles_few": "{{count}} role",
+      "roles_many": "{{count}} ról",
+      "roles_other": "{{count}} ról",
+      "after": "po {{hours}} h",
+      "learnAssertions": "Asercje Learn",
+      "pr": "Pull request",
+      "prReady": "Gotowy do przeglądu",
+      "prDraft": "Szkic"
+    },
+    "end": {
+      "happens": "Co się dzieje",
+      "completed": "Przebieg kończy się tutaj. Nic nie jest nigdy scalane.",
+      "stopAtPr": "Przebieg otwiera pull request i się zatrzymuje. Nic nie jest nigdy scalane automatycznie: scala osoba.",
+      "pullRequest": "Pull request",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "Ustawienie"
+    },
+    "edge": {
+      "title": "Strzałka",
+      "from": "Z",
+      "to": "Do",
+      "condition": "Warunek",
+      "always": "Zawsze: ten krok nie zgłasza werdyktu",
+      "inRun": "W tym przebiegu",
+      "taken": "Wybrana",
+      "notTaken": "Niewybrana"
+    },
+    "run": {
+      "agents": "Agenci kroku",
+      "ran": "Uruchomiono {{skill}} · {{model}}",
+      "round": "Runda {{n}}",
+      "finalGo": "Ostateczna zgoda: {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "Wybierz krok, aby zobaczyć jego konfigurację. Enter ją otwiera, Escape zamyka.",
+      "cardMissing": "Ten krok wskazuje {{card}}, której nie ma w Rejestrze.",
+      "cardAdmins": "Konfigurację, która za tym stoi, widzą administratorzy tam, gdzie włączono agentów inżynieryjnych.",
+      "autoDetect": "Pakiety są wykrywane w repozytorium na starcie przebiegu. Żadna automatyzacja nie używa jeszcze tego przepływu.",
+      "notRun": "Jeszcze nie uruchomiono.",
+      "gateNotRun": "Kontrola jeszcze się nie odbyła.",
+      "noAssertions": "Brak asercji.",
+      "noAssertionsBuild": "Brak asercji. Dodaj jedną, aby sprawdzić, co zapisał ten krok."
+    }
+  },
+  "palette": {
+    "search": "Szukaj kroków",
+    "noMatch": "Żaden krok nie pasuje.",
+    "madeFromSkill": "utworzona z umiejętności",
+    "gateOf": "Kontrola jakości: {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "Wywołuje ten przepływ: wywołanie go stąd utworzyłoby cykl.",
+    "groups": {
+      "startEnd": "Start i koniec",
+      "agents": "Agenci",
+      "gates": "Kontrole jakości",
+      "flows": "Przepływy",
+      "platform": "Kroki platformy"
+    },
+    "hints": {
+      "startEnd": "Gdzie przebieg się zaczyna i kończy; każde NO-GO trafia do osoby, która decyduje.",
+      "agents": "Karty z Rejestru: karta każdej roli i karty utworzone z umiejętności.",
+      "gates": "Sprawdzenia i przeglądy zmiany; Wykrywanie automatyczne wybiera pakiety w repozytorium.",
+      "flows": "Inny zapisany przepływ, wywoływany w swojej wersji.",
+      "platform": "Kroki uruchamiane przez platformę: podział na części, scalanie części, tablica, pamięć, Learn."
+    }
   }
 }

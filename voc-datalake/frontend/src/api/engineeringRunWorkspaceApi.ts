@@ -84,6 +84,10 @@ export type AgentFiles = z.output<typeof FilesSchema>
 
 const GateCheckSchema = z.object({
   key: text, name: text, status: text, reason: text, exit_code: maybeNumber, duration_s: maybeNumber, output_tail: text,
+  /** (7.52.00, gap K) The pack and language of the step it ran (`pack` null and language `repo`: the repository's own
+   *  gate). */
+  pack: maybeText.optional().transform((pack) => pack ?? null),
+  language: text.optional().transform((language) => language ?? ''),
 })
 export type GateCheck = z.output<typeof GateCheckSchema>
 const FindingSchema = z.object({
@@ -94,6 +98,14 @@ export type GateFinding = z.output<typeof FindingSchema>
 const GateSchema = z.object({
   record: z.object({ verdict: text, stop_reason: text, findings: eachOf(FindingSchema) }).nullable().catch(null),
   checks: eachOf(GateCheckSchema), passed: z.boolean().nullable().catch(null), ran_at: maybeText,
+  /** (7.52.00, gap K) The latest gate run's round among the agent's runs, the tools' recorded versions, why it stopped
+   *  (a `GET …/gates` stop code, null when the record cannot tell) and the final go's decision. */
+  round: maybeNumber.optional().transform((round) => round ?? null),
+  tool_versions: z.record(z.string(), z.string()).catch({}).optional().transform((versions) => versions ?? {}),
+  stop: z.object({ code: maybeText, text_key: maybeText, recorded: maybeText }).nullable().catch(null)
+    .optional().transform((stop) => stop ?? null),
+  final_go: z.object({ verdict: text, agent: maybeText, model_id: maybeText, reasons: z.array(z.string()).catch([]) })
+    .nullable().catch(null).optional().transform((final) => final ?? null),
 })
 export type AgentGate = z.output<typeof GateSchema>
 

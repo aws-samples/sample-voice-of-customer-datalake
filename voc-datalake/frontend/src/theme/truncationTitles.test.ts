@@ -28,7 +28,7 @@ const SITES: ReadonlyArray<readonly [string, string]> = [
   ['pages/Scrapers/SourceCardParts.tsx', '{value}</dd>'],
   // The Prioritization row, document and form titles now WRAP (wave 4), so nothing is cut:
   // pinned by pages/analyticsTextWraps.test.ts instead.
-  ['components/WorkflowEditor/WorkflowEditor.tsx', '{name}</p>'],
+  ['components/WorkflowEditor/EditorParts.tsx', 'text={name} />'],
 ]
 
 describe.each(SITES)('%s %s', (file, child) => {

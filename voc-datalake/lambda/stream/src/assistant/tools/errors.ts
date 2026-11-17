@@ -26,13 +26,29 @@ const STATUS_BY_CODE: Record<ToolErrorCode, number> = {
   unavailable: 502,
 };
 
+/**
+ * What a domain route's refusal said beyond its words (internal-api.ts `statusError`): its machine-readable `code`
+ * (a snake_case word, `ApiError.code` in lambda/shared/exceptions.py) and, for a workflow save refused because other
+ * automations run the flow (7.52.00, `shared_flow`), their names. Never shown as is: the plan step reads them.
+ */
+export interface ServerRefusal {
+  readonly serverCode?: string;
+  readonly automations?: readonly string[];
+}
+
 export class AssistantToolError extends ApiError {
   readonly code: ToolErrorCode;
+  /** The refusal's own `code` (e.g. `shared_flow`), when the route sent one. */
+  readonly serverCode: string | undefined;
+  /** The automations a `shared_flow` refusal names (its body's `used_by`); none otherwise. */
+  readonly automations: readonly string[];
 
-  constructor(code: ToolErrorCode, message: string) {
+  constructor(code: ToolErrorCode, message: string, refusal: ServerRefusal = {}) {
     super(message, STATUS_BY_CODE[code]);
     this.name = 'AssistantToolError';
     this.code = code;
+    this.serverCode = refusal.serverCode;
+    this.automations = refusal.automations ?? [];
   }
 }
 

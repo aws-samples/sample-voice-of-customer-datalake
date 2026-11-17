@@ -27,14 +27,15 @@ interface WorkflowDetailsProps {
 const OUTLINE_BUTTON = 'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-text hover:bg-bg-hover focus-ring'
 
 /** The definition with its optional fields as given: each one left out when it is not set (a stored workflow without
- * one stays unchanged). */
+ * one stays unchanged). Its declared inputs (7.52.00) are kept as they are. */
 function withOptional(definition: WorkflowDefinition, optional: Pick<WorkflowDefinition, 'description' | 'budget'>): WorkflowDefinition {
-  const { schema, name, nodes, edges, loops } = definition
+  const { schema, name, nodes, edges, loops, inputs } = definition
   const { description, budget } = optional
   return {
     schema, name, nodes, edges, loops,
     ...(description === undefined ? {} : { description }),
     ...(budget === undefined ? {} : { budget }),
+    ...(inputs === undefined ? {} : { inputs }),
   }
 }
 

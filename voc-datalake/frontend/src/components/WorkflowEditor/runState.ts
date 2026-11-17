@@ -34,6 +34,9 @@ export interface StepState {
   /** (7.51.04) Whether a running step's badge spins: false while no agent is at work on it (unset: it spins, as a
    * workflow run's does). */
   spin?: boolean
+  /** (7.52.00) What ran on an engineering step, as its chips say it: the model, the skill's label and the cost of its
+   * agents (the first that names each), and how many agents. */
+  ran?: { model?: string; skill?: string; costUsd?: number; agents: number }
 }
 
 /** What a run graph knows of a lane (KiroCrew planModel's `GraphNodeState`, without `unknown`: a lane is a task

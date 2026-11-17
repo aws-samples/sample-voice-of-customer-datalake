@@ -115,6 +115,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'feedback-preview': 'feedbackData', // the persona / research wizards' live match count
   'feedback-problems': 'feedbackData',
   'feedback-similar': 'feedbackData',
+  'flow-setup': 'config', // (7.52.00) the flow canvas's Registry cards, gate packs, briefs and assertions vocabulary (a release or an administrator changes them)
   'form-stats': 'standard',
   'form-submissions': 'standard',
   'generator-config': 'config',

@@ -9,6 +9,8 @@
  */
 import { WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import { gateLabelFor } from './loopGates'
+import { isRecord } from '../../lib/typeGuards'
+import { NODE_COLUMN, nodeSize } from './nodes/nodeKinds'
 import type {
   WorkflowDefinition, WorkflowEdge, WorkflowEdgeLabel, WorkflowLoop, WorkflowNode, WorkflowNodeRole, WorkflowNodeType,
   WorkflowSchema,
@@ -59,8 +61,41 @@ export const NODE_CATALOGUE: Readonly<Record<WorkflowNodeType, NodeTypeSpec>> = 
   end: { group: 'flow', params: { status: 'completed' } },
 }
 
-/** dataTransfer type the palette writes and the canvas accepts. */
+/** dataTransfer type the palette wrote before 7.52.00 (a bare node type); the canvas still accepts it for a release. */
 export const PALETTE_MIME = 'application/x-voc-workflow-node'
+
+/**
+ * (7.52.00) dataTransfer type of a palette item: a block, JSON `{type, params, title}` (a Registry card's agent step,
+ * a gate pack's gate, a flow's call at its revision, or a plain step), so a dropped item is the step it names.
+ */
+export const BLOCK_MIME = 'application/x-voc-workflow-block+json'
+
+/** One step the palette adds: its type, its title and its settings. */
+export interface PaletteBlock {
+  readonly type: WorkflowNodeType
+  readonly title: string
+  readonly params?: Readonly<Record<string, unknown>>
+}
+
+/** JSON text as an object, or null for anything else (not JSON, a list, a value). */
+function jsonObject(raw: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(raw)
+    return isRecord(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** A block from its dataTransfer text, or null for anything that is not one. */
+export function parseBlock(raw: string): PaletteBlock | null {
+  const value = jsonObject(raw)
+  const type = typeof value?.type === 'string' ? parseNodeType(value.type) : null
+  const title = typeof value?.title === 'string' ? value.title.trim() : ''
+  const params = value?.params
+  if (type === null || title === '' || (params !== undefined && !isRecord(params))) return null
+  return { type, title, ...(isRecord(params) ? { params } : {}) }
+}
 
 const PALETTE_GROUPS: readonly PaletteGroup[] = ['flow', 'research', 'documents', 'review', 'prototype', 'delivery']
 /** An engineering flow's palette: Start and End, and the engineering steps. */
@@ -100,15 +135,43 @@ export function mintId(prefix: string, taken: ReadonlySet<string>): string {
 export function addNode(
   definition: WorkflowDefinition, type: WorkflowNodeType, position: { x: number; y: number }, title: string,
 ): { definition: WorkflowDefinition; nodeId: string } {
-  const spec = NODE_CATALOGUE[type]
-  const nodeId = mintId(type, new Set(definition.nodes.map((n) => n.id)))
+  return addBlock(definition, { type, title }, position)
+}
+
+/** Add a palette block at `position`: its type's defaults, then the block's own settings over them. */
+export function addBlock(
+  definition: WorkflowDefinition, block: PaletteBlock, position: { x: number; y: number },
+): { definition: WorkflowDefinition; nodeId: string } {
+  const spec = NODE_CATALOGUE[block.type]
+  const nodeId = mintId(block.type, new Set(definition.nodes.map((n) => n.id)))
   const node: WorkflowNode = {
     id: nodeId,
-    type,
+    type: block.type,
     position: { x: Math.round(position.x), y: Math.round(position.y) },
-    data: { title, ...(spec.role === undefined ? {} : { role: spec.role }), params: { ...spec.params } },
+    data: {
+      title: block.title, ...(spec.role === undefined ? {} : { role: spec.role }), params: { ...spec.params, ...block.params },
+    },
   }
   return { definition: { ...definition, nodes: [...definition.nodes, node] }, nodeId }
+}
+
+/** The gap between a step and the one added after it. */
+const AFTER_GAP = 72
+
+/**
+ * (7.52.00, the palette's Enter) Add a block after the step `afterId`: below it in its column, connected from it (the
+ * arrow takes the first verdict its source has free, as a canvas drag does); with no such step, below the lowest one.
+ */
+export function addBlockAfter(
+  definition: WorkflowDefinition, block: PaletteBlock, afterId: string | null,
+): { definition: WorkflowDefinition; nodeId: string } {
+  const after = definition.nodes.find((node) => node.id === afterId)
+  if (after === undefined) {
+    const lowest = Math.max(0, ...definition.nodes.map((n) => n.position.y))
+    return addBlock(definition, block, { x: 0, y: lowest + STEP_HEIGHT * 2 })
+  }
+  const added = addBlock(definition, block, { x: after.position.x, y: after.position.y + nodeSize(after).height + AFTER_GAP })
+  return { definition: connect(added.definition, after.id, added.nodeId), nodeId: added.nodeId }
 }
 
 export function updateNode(
@@ -284,14 +347,19 @@ export function loopIndexOf(definition: WorkflowDefinition, nodeId: string): num
 }
 
 const GROUP_PADDING = 28
-/** Approximate rendered step size, for loop frames (matches StepNode's fixed width). */
-export const STEP_WIDTH = 220
+/** A step's column (every kind's shape is centred in it: nodes/nodeKinds.ts) and the row a step is laid out in. */
+export const STEP_WIDTH = NODE_COLUMN
 export const STEP_HEIGHT = 72
 
 /** The frame drawn behind a loop's steps. */
 export function loopBounds(definition: WorkflowDefinition, loop: WorkflowLoop): { x: number; y: number; width: number; height: number } | null {
   const members = definition.nodes.filter((n) => loop.node_ids.includes(n.id))
   if (members.length === 0) return null
+  return frameAround(members)
+}
+
+/** The frame around some steps (a loop's, a run's call): their columns and drawn heights, padded, room for a label. */
+export function frameAround(members: readonly WorkflowNode[]): { x: number; y: number; width: number; height: number } {
   const xs = members.map((n) => n.position.x)
   const ys = members.map((n) => n.position.y)
   const x = Math.min(...xs) - GROUP_PADDING
@@ -299,6 +367,6 @@ export function loopBounds(definition: WorkflowDefinition, loop: WorkflowLoop): 
   return {
     x, y,
     width: Math.max(...xs) + STEP_WIDTH + GROUP_PADDING - x,
-    height: Math.max(...ys) + STEP_HEIGHT + GROUP_PADDING - y,
+    height: Math.max(...members.map((n) => n.position.y + Math.max(STEP_HEIGHT, nodeSize(n).height))) + GROUP_PADDING - y,
   }
 }

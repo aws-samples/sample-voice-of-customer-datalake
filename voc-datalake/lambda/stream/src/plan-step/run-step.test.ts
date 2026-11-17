@@ -6,6 +6,7 @@ import { buildCatalogue } from '../assistant/tools/catalogue.js';
 import { AssistantToolError } from '../assistant/tools/errors.js';
 import type { ApiCall } from '../assistant/tools/internal-api.js';
 import { fakeDeps } from '../assistant/tools/test-fixtures.js';
+import { SAMPLE_WORKFLOW } from '../assistant/tools/client/new-tools-fixtures.js';
 import type { PlanStepDeps } from './deps.js';
 import { MAX_FREE_FIELD_CHARS, cleanFreeText } from './free-fields.js';
 import { matchesDefinition } from './matching.js';
@@ -248,6 +249,41 @@ describe('preconditions, fallbacks and admin gating', () => {
     const h = harness({ 'PUT /memory/mem_1': new AssistantToolError('not_permitted', 'Not permitted.'), 'POST /memory': { memory: { memory_id: 'mem_2', status: 'proposed' } } });
     const step = { id: 's1', pack: 'core', kind: 'write', title: 'Memory', write: { tool: 'update_company_memory', args: { memory_id: 'mem_1', previous_statement: 'A', statement: 'B', kind: 'product', supporters: 2, reason: 'Changed' } } };
     expect(await runPlanStep(event(step), h.deps)).toMatchObject({ status: 'done', outputs: { memory_id: 'mem_2' }, model_calls: 0 });
+  });
+
+  describe('a save of a flow other automations run (7.52.00, 409 shared_flow)', () => {
+    const args = { workflow_id: 'wf_1', expected_revision: 2, definition: SAMPLE_WORKFLOW, change_summary: 'Loop' };
+    const confirmed = { ...args, confirm_shared: true };
+    const step = { id: 's1', pack: 'agents', kind: 'write', title: 'Save the flow', write: { tool: 'update_workflow', args } };
+    const shared = (automations: readonly string[]) => new AssistantToolError('invalid_input', 'Invalid request: other automations run this flow.',
+      { serverCode: 'shared_flow', automations });
+
+    it('asks for an ordinary card with confirm_shared, naming the automations, and saves nothing', async () => {
+      const h = harness({ 'PUT /workflows/wf_1': shared(['Bug fixer', 'Feature builder']) });
+      const result = await runPlanStep(event(step, { claims: ADMIN_CLAIMS }), h.deps);
+      expect(result).toStrictEqual({ status: 'needs_approval', model_calls: 0, pending: {
+        tool: 'update_workflow', args: confirmed, fingerprint: canonicalWriteFingerprint('update_workflow', confirmed),
+        reason: 'Other automations run this flow (Bug fixer, Feature builder): approving saves it for all of them, each from its next run.',
+      } });
+      expect(h.calls.map((c) => c.call.body)).toStrictEqual([{ definition: SAMPLE_WORKFLOW, expected_revision: 2 }]);
+    });
+
+    it('saves the approved card with confirm_shared, the approved fingerprint reported', async () => {
+      const h = harness({ 'PUT /workflows/wf_1': { workflow: { workflow_id: 'wf_1', revision: 3 } } });
+      const approved = { tool: 'update_workflow', args: confirmed, fingerprint: canonicalWriteFingerprint('update_workflow', confirmed) };
+      const result = await runPlanStep(event(step, { claims: ADMIN_CLAIMS, approved_pending: approved }), h.deps);
+      expect(result).toMatchObject({ status: 'done', outputs: { workflow_id: 'wf_1' }, fingerprint: approved.fingerprint });
+      expect(h.calls[0]?.call.body).toStrictEqual({ definition: SAMPLE_WORKFLOW, expected_revision: 2, confirm_shared: true });
+    });
+
+    it('fails a save already confirmed that is refused again, and any other refusal stays a failure', async () => {
+      const approved = { tool: 'update_workflow', args: confirmed, fingerprint: canonicalWriteFingerprint('update_workflow', confirmed) };
+      const again = harness({ 'PUT /workflows/wf_1': shared([]) });
+      expect(await runPlanStep(event(step, { claims: ADMIN_CLAIMS, approved_pending: approved }), again.deps))
+        .toMatchObject({ status: 'failed', error: 'Invalid request: other automations run this flow.' });
+      const stale = harness({ 'PUT /workflows/wf_1': new AssistantToolError('invalid_input', 'Invalid request: stale.') });
+      expect(await runPlanStep(event(step, { claims: ADMIN_CLAIMS }), stale.deps)).toMatchObject({ status: 'failed' });
+    });
   });
 
   it('refuses a plan control tool, an invalid event and a wait step', async () => {

@@ -2232,5 +2232,331 @@
       "toControls": "前往运行控制",
       "openSession": "打开 {{agent}} 的会话"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "触发器",
+      "agent": "智能体",
+      "team": "团队",
+      "gate": "门禁",
+      "call": "调用流程",
+      "decision": "由人决定",
+      "end": "结束",
+      "platform": "平台步骤"
+    },
+    "nodeName": "{{kind}}：{{rest}}",
+    "state": {
+      "invalid": "有问题",
+      "waitingForYou": "等待你处理"
+    },
+    "chips": {
+      "pinned": "固定为 {{version}}",
+      "updateAvailable": "有更新",
+      "share": "{{percent}}%",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} 个智能体",
+      "agents_other": "{{count}} 个智能体",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · 由 {{posters}} 发布"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "自动检测",
+      "rounds": "≤ {{n}} 轮",
+      "reviewers_one": "{{count}} 位评审者",
+      "reviewers_other": "{{count}} 位评审者"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "达成一致",
+      "notAgreed": "未达成一致",
+      "arrow": "{{word}}箭头"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "尚未选择流程",
+      "progress": "已完成 {{done}}/{{total}} 个步骤"
+    },
+    "decision": {
+      "title": "由人决定",
+      "line": "运行等待人来决定",
+      "waiting": "等待你处理"
+    },
+    "trigger": {
+      "line": "启动运行"
+    },
+    "end": {
+      "completed": "已完成",
+      "prReady": "拉取请求 · 可供审阅",
+      "prDraft": "拉取请求 · 草稿"
+    },
+    "platform": {
+      "map": "按{{by}} · 最多 {{n}}",
+      "memoryRead": "读取{{whose}}的记忆 · {{n}}",
+      "memoryWrite": "写入{{whose}}的记忆",
+      "reduce": "汇总分片"
+    },
+    "drop": "松开以添加 {{name}}",
+    "dropAny": "松开以添加步骤",
+    "aria": {
+      "node": "按 Enter 或空格键选择步骤并打开其设置。按 Delete 键删除，按 Esc 键取消。",
+      "nodeKeyboard": "按 Enter 或空格键选择步骤并打开其设置。之后可用方向键移动它；按 Delete 键删除，按 Esc 键取消。",
+      "moved": "已移动所选步骤（{{direction}}）。新位置：x {{x}}，y {{y}}",
+      "edge": "按 Enter 或空格键选择箭头。按 Delete 键删除，或按 Esc 键取消。",
+      "controls": "画布控件",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "fitView": "适应流程大小",
+      "interactive": "锁定或解锁画布",
+      "handle": "连接点"
+    },
+    "shared": {
+      "banner_one": "有 {{count}} 个自动化在使用：{{names}}。保存后，它将从下次运行起改变。",
+      "banner_other": "有 {{count}} 个自动化在使用：{{names}}。保存后，每个自动化都将从其下次运行起改变。",
+      "confirmTitle": "保存共享流程？",
+      "confirmMessage": "{{names}} 运行此流程。保存后，每个自动化都将从其下次运行起改变。",
+      "confirmAction": "为全部保存",
+      "usedByLine": "使用者：{{names}}",
+      "calledBy": "调用者：{{names}}",
+      "approvalNote": "批准后，将为运行它的每个自动化保存：{{names}}。",
+      "approvalRefused": "{{names}} 运行此流程：除非已为全部自动化确认此更改，否则保存会被拒绝。"
+    }
+  },
+  "inspector": {
+    "close": "关闭检查器",
+    "tabs": "步骤设置",
+    "sheetTitle": "步骤设置",
+    "inFlow": "在此流程中",
+    "fromCard": "来自卡片 {{card}} v{{n}}",
+    "fromCardAny": "来自卡片 {{card}}",
+    "fromCardLabel": "来自卡片",
+    "readOnly": "只读。",
+    "readOnlyShort": "只读",
+    "editInFlows": "在“流程”中编辑",
+    "asRun": "本次运行所用的设置 · r{{n}}",
+    "asRunUsed": "本次运行所用的设置",
+    "openSkill": "打开其技能历史",
+    "loop": "循环",
+    "tab": {
+      "agents": "智能体",
+      "setup": "设置",
+      "assertions": "断言",
+      "arrows": "箭头",
+      "checks": "检查",
+      "reviewers": "评审者",
+      "packs": "检查包",
+      "preview": "预览"
+    },
+    "agent": {
+      "card": "卡片",
+      "latest": "最新已接受的版本",
+      "cardModel": "沿用卡片",
+      "share": "每次运行的预算份额",
+      "sharesInAll": "各智能体份额合计：{{used}}/100%",
+      "overrides": "覆盖卡片的 {{model}}",
+      "useCards": "使用卡片的模型",
+      "cardsModel": "卡片的模型：{{model}}",
+      "purpose": "用途",
+      "skill": "技能",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "模型",
+      "tools": "工具",
+      "host": "运行环境",
+      "hostBroker": "只读，通过代理服务（{{ops}}）",
+      "caps": "上限",
+      "turns": "{{n}} 个回合",
+      "tokens": "{{n}}k 输入令牌",
+      "reads": "读取",
+      "writes": "写入",
+      "scorecard": "记分卡",
+      "scorecardLine": "{{runs}} 次运行 · {{rate}}% 通过",
+      "thisMonth": "本月",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "检查包",
+      "rounds": "最多轮次",
+      "reviewers": "评审者",
+      "blocks": "阻止",
+      "advisory": "仅建议",
+      "addReviewer": "添加评审者",
+      "reviewerName": "评审者名称",
+      "reviewerFocus": "关注点",
+      "reviewerRole": "{{name}}：阻止或仅建议",
+      "removeReviewer": "移除 {{name}}",
+      "runsIt": "执行者",
+      "finalGo": "最终批准",
+      "arrows": "箭头",
+      "pack": "检查包 {{name}}",
+      "image": "镜像",
+      "network": "网络（仅限准备阶段）",
+      "tools": "工具",
+      "ownPins": "仓库自身固定的版本。",
+      "ownPinsRecorded": "仓库自身固定的版本。上次记录：{{list}}",
+      "steps": "步骤",
+      "always": "始终",
+      "whenFile": "如果存在 {{file}}",
+      "whenContains": "如果 {{file}} 包含 {{text}}",
+      "whenScript": "如果 {{file}} 中有 {{script}} 脚本",
+      "or": " 或 ",
+      "lookedAtNothing": "如果什么都没检查，则失败。",
+      "forAutomation": "用于 {{automation}}：{{pack}}",
+      "brief": "所有者的任务简报（{{path}}）",
+      "briefOpen": "所有者的任务简报（{{path}}）",
+      "stepKinds": {
+        "setup": "准备",
+        "lint": "lint",
+        "format": "格式",
+        "types": "类型",
+        "test": "测试"
+      },
+      "stops": {
+        "check_failed": "有检查失败，修复后仍未通过。",
+        "looked_at_nothing": "门禁什么都没检查：没有检查覆盖该仓库，或某项检查没有找到可检查的内容。",
+        "own_gate_changed": "此变更涉及仓库自身的门禁。",
+        "review_blocked": "评审阻止了它：最终批准的结果是 NO-GO。",
+        "rounds_used_up": "最后一轮之后仍有阻塞问题。"
+      }
+    },
+    "assertions": {
+      "add": "添加断言",
+      "check": "检查",
+      "choose": "选择检查",
+      "argument": "{{name}}",
+      "onFail": "{{check}}：失败时",
+      "remove": "移除 {{check}}",
+      "full": "最多 {{max}} 个断言。",
+      "noneApply": "没有适用于此类步骤的检查。",
+      "checks": {
+        "findings_cite_evidence": "每个发现都注明文件、行和证据",
+        "gate_pack_checks_ran": "门禁执行者至少记录了一项检查",
+        "gate_passed": "门禁执行者和最终批准都给出了 GO",
+        "learn_proposals_name_case": "教练的每个提案都指明一个现有的评估用例",
+        "notes_cite_sources": "每条笔记都注明来源",
+        "patch_max_lines": "提交的补丁改动都不超过 max 行",
+        "patch_no_ci_changes": "提交的补丁都没有改动 CI 定义",
+        "patch_submitted": "已提交补丁",
+        "patch_touches_tests": "每个提交的补丁都改动了测试",
+        "pr_links_issue": "每个拉取请求都写明它修复了本次运行的 issue",
+        "pr_opened": "已开启拉取请求",
+        "pr_state_as_flow": "每个拉取请求都按流程规定的状态开启（可供审阅或草稿）",
+        "push_tree_is_judged_tree": "每次推送的树都与最终批准评判的树一致",
+        "review_commented": "已在拉取请求上发布评审评论",
+        "review_no_blocking": "“by”指定的角色没有写出阻塞问题",
+        "tasks_posted": "已为该角色发布至少 min 个任务",
+        "tenets_recorded": "已记录一份包含 1 到 30 条原则的原则记录",
+        "triage_commented": "分诊结果已评论到本次运行的 issue 上",
+        "triage_labelled": "该 issue 带有分诊给出的类型和严重程度标签",
+        "triage_recorded": "已记录一份包含类型和严重程度的分诊记录"
+      }
+    },
+    "call": {
+      "flow": "流程",
+      "revision": "修订版本",
+      "inputs": "输入",
+      "noInputs": "所调用的流程未声明任何输入。",
+      "inputRequired": "{{name}}（必填）",
+      "inputUnset": "未提供",
+      "steps": "其步骤",
+      "childSteps_one": "{{count}} 个步骤",
+      "childSteps_other": "{{count}} 个步骤",
+      "expands": "展开为",
+      "inAll": "共 {{total}}/{{max}} 个步骤",
+      "usedBy": "使用者",
+      "openFlow": "打开流程",
+      "preview": "{{name}}，只读",
+      "noPreview": "选择一个流程以预览。"
+    },
+    "decision": {
+      "happens": "会发生什么",
+      "happensText": "运行会停下来等人处理。issue 会收到一条评论，“自动化”中会显示它需要你的决定。",
+      "reachedFrom": "来自",
+      "fromVerdict": "{{step}}（{{verdict}}）",
+      "ifNobody": "如果无人决定",
+      "ifNobodyText": "{{hours}} 小时后由 Learn 读取"
+    },
+    "trigger": {
+      "startedBy": "启动方",
+      "nobody": "还没有自动化使用此流程。",
+      "inputs": "输入",
+      "inputMax": "{{name}}，最多 {{max}}",
+      "memory": "记忆",
+      "recall": "开始时调出仓库的记忆",
+      "recallOn": "开始时调出",
+      "recallOff": "不调出",
+      "learn": "Learn",
+      "learnEnabled": "从每次运行中学习",
+      "learnOn": "开",
+      "learnOff": "关",
+      "roles_one": "{{count}} 个角色",
+      "roles_other": "{{count}} 个角色",
+      "after": "{{hours}} 小时后",
+      "learnAssertions": "Learn 的断言",
+      "pr": "拉取请求",
+      "prReady": "可供审阅",
+      "prDraft": "草稿"
+    },
+    "end": {
+      "happens": "会发生什么",
+      "completed": "运行在此结束。从不合并任何内容。",
+      "stopAtPr": "运行会开启一个拉取请求，然后停止。从不自动合并任何内容：由人来合并。",
+      "pullRequest": "拉取请求",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "设置"
+    },
+    "edge": {
+      "title": "箭头",
+      "from": "从",
+      "to": "到",
+      "condition": "条件",
+      "always": "始终：此步骤不给出结论",
+      "inRun": "在本次运行中",
+      "taken": "已走",
+      "notTaken": "未走"
+    },
+    "run": {
+      "agents": "此步骤的智能体",
+      "ran": "运行了 {{skill}} · {{model}}",
+      "round": "第 {{n}} 轮",
+      "finalGo": "最终批准：{{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "选择一个步骤以查看其设置。按 Enter 打开，按 Esc 关闭。",
+      "cardMissing": "此步骤指定了 {{card}}，但它不在注册中心中。",
+      "cardAdmins": "其背后的设置会在启用了工程智能体的地方向管理员显示。",
+      "autoDetect": "检查包会在运行开始时从仓库中检测。还没有自动化使用此流程。",
+      "notRun": "尚未运行。",
+      "gateNotRun": "门禁尚未运行。",
+      "noAssertions": "没有断言。",
+      "noAssertionsBuild": "没有断言。添加一个断言来检查此步骤记录的内容。"
+    }
+  },
+  "palette": {
+    "search": "搜索步骤",
+    "noMatch": "没有匹配的步骤。",
+    "madeFromSkill": "由技能创建",
+    "gateOf": "质量关卡：{{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "它调用了此流程：从这里调用会形成循环。",
+    "groups": {
+      "startEnd": "开始和结束",
+      "agents": "智能体",
+      "gates": "质量关卡",
+      "flows": "流程",
+      "platform": "平台步骤"
+    },
+    "hints": {
+      "startEnd": "运行开始和结束的位置；每个 NO-GO 都交给人来决定。",
+      "agents": "注册中心的卡片：每个角色的卡片，以及由技能创建的卡片。",
+      "gates": "对变更的检查和评审；“自动检测”会选取仓库中的检查包。",
+      "flows": "另一个已保存的流程，按其修订版本调用。",
+      "platform": "由平台运行的步骤：拆分分片、汇总分片、看板、记忆、Learn。"
+    }
   }
 }

@@ -3,17 +3,31 @@
  * - `update_workflow`: what the proposed COMPLETE definition adds, removes and
  *   changes relative to the stored current revision (nodes and arrows, loops,
  *   name / description, an engineering flow's monthly budget in dollars); moves alone are collapsed. A stored revision newer
- *   than `expected_revision` is called out — the save will be refused.
+ *   than `expected_revision` is called out — the save will be refused. (7.52.00) A flow other automations run says
+ *   who: with `confirm_shared`, approving saves it for all of them; without it, the save will be refused.
  * - `create_workflow`: the steps and arrows of the new workflow, and the monthly budget it sets.
  *
  * @module assistant/approvals/previews/WorkflowDiffPreview
  */
 import { useQuery } from '@tanstack/react-query'
+import { Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { workflowsApi, workflowsKeys } from '../../../api/workflowsApi'
+import Notice from '../../../components/Notice/Notice'
+import { usedByOf, workflowsApi, workflowsKeys } from '../../../api/workflowsApi'
 import { diffDefinitions } from '../../../components/WorkflowEditor/diff'
 import { BudgetChange, WorkflowDiffView } from '../../../components/WorkflowEditor/WorkflowDiffView'
 import type { CreateWorkflowArgs, UpdateWorkflowArgs } from '../agentSchemas'
+
+/** The automations that run the flow (7.52.00), and what approving this save does to them; nothing when none do. */
+function SharedFlowNote({ names, confirmed }: Readonly<{ names: readonly string[]; confirmed: boolean }>) {
+  const { t, i18n } = useTranslation('agents')
+  if (names.length === 0) return null
+  const listed = new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names)
+  return (
+    <Notice variant="banner" tone="warn" icon={Users} role="note"
+      text={confirmed ? t('canvas.shared.approvalNote', { names: listed }) : t('canvas.shared.approvalRefused', { names: listed })} />
+  )
+}
 
 export function WorkflowDiffPreview({ args }: Readonly<{ args: UpdateWorkflowArgs }>) {
   const { t } = useTranslation('assistantTools')
@@ -38,6 +52,8 @@ export function WorkflowDiffPreview({ args }: Readonly<{ args: UpdateWorkflowArg
         </p>
       )}
       <WorkflowDiffView diff={diff} before={current.definition} after={args.definition} />
+      <SharedFlowNote names={usedByOf(current).automations.map((automation) => automation.name)}
+        confirmed={args.confirm_shared === true} />
     </div>
   )
 }

@@ -9,7 +9,8 @@ import { QueryClient } from '@tanstack/react-query'
 vi.mock('../../api/client', (importOriginal) => import('@test/fetchApiRoutes').then((h) => h.clientWithMockedFetchApi(importOriginal)))
 
 import { getWriteTool } from './registry'
-import { STALE_WORKFLOW_MESSAGE } from './agentExecutors'
+import { STALE_WORKFLOW_MESSAGE, sharedWorkflowMessage } from './agentExecutors'
+import { ApiError } from '../../lib/errors'
 import { fetchApi } from '@test/fetchApiRoutes'
 import { wfEdge, wfNode } from '@test/workflowFixtures'
 
@@ -132,6 +133,39 @@ describe('agent executors', () => {
     fetchApi.mockRejectedValue(new Error('API Error: 409'))
     await expect(setup().run('update_workflow', { workflow_id: 'wf_2', expected_revision: 2, definition: WF, change_summary: 's' }))
       .rejects.toThrow(STALE_WORKFLOW_MESSAGE)
+  })
+
+  describe('a save of a flow other automations run (7.52.00, 409 shared_flow)', () => {
+    const ARGS = { workflow_id: 'wf_2', expected_revision: 2, definition: WF, change_summary: 's' }
+    const SHARED = new ApiError(409, 'other automations run this flow', 'shared_flow')
+    const USED_BY = {
+      automations: [
+        { agent_id: 'ag_1', name: 'Bug fixer', kind: 'engineering', connection: 'acme-shop', language: 'python' },
+        { agent_id: 'ag_2', name: 'Feature builder', kind: 'engineering', connection: 'acme-shop', language: 'python' },
+      ],
+      flows: [],
+    }
+
+    it('names the automations, says nothing was saved and asks for the user\u2019s agreement first', async () => {
+      fetchApi.mockRejectedValueOnce(SHARED).mockResolvedValueOnce({ workflow: { ...VIEW, used_by: USED_BY }, revisions: [] })
+      await expect(setup().run('update_workflow', ARGS)).rejects.toThrow(sharedWorkflowMessage(['Bug fixer', 'Feature builder']))
+      expect(calls()).toStrictEqual([['/workflows/wf_2', 'PUT', { definition: WF, expected_revision: 2 }], ['/workflows/wf_2', 'GET', undefined]])
+      expect(sharedWorkflowMessage(['Bug fixer'])).toContain('confirm_shared: true')
+      expect(sharedWorkflowMessage(['Bug fixer'])).toContain('nothing was saved')
+    })
+
+    it('still reports the refusal when the flow cannot be read for the names', async () => {
+      fetchApi.mockRejectedValueOnce(SHARED).mockRejectedValueOnce(new Error('API Error: 500'))
+      await expect(setup().run('update_workflow', ARGS)).rejects.toThrow(sharedWorkflowMessage([]))
+    })
+
+    it('sends confirm_shared once the user agreed, and a stale 409 stays the re-read message', async () => {
+      fetchApi.mockResolvedValueOnce({ workflow: VIEW })
+      await setup().run('update_workflow', { ...ARGS, confirm_shared: true })
+      expect(calls()).toStrictEqual([['/workflows/wf_2', 'PUT', { definition: WF, expected_revision: 2, confirm_shared: true }]])
+      fetchApi.mockRejectedValueOnce(new ApiError(409, 'stale'))
+      await expect(setup().run('update_workflow', { ...ARGS, confirm_shared: true })).rejects.toThrow(STALE_WORKFLOW_MESSAGE)
+    })
   })
 
   it('a copy of an engineering flow where the module is off (409) says why, and that nothing was created', async () => {

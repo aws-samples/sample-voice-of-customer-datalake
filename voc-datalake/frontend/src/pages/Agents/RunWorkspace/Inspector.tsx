@@ -2,7 +2,8 @@
  * @fileoverview The workspace's inspector (7.51.00): for the agent whose session is open, Changes, Files, Gate, Cost
  * (with its session as the supervisor keeps it) and Memory/Learn; and the run's own Assertions, Board (with a
  * person's actions on its tasks) and Reports, which were the run monitor's panels. Each tab reads when it is shown
- * (and the Changes tab reads a file's part of the patch only when it is opened).
+ * (and the Changes tab reads a file's part of the patch only when it is opened). (7.52.00 C2) A step selected on the
+ * canvas opens its Step view instead (RunStepView.tsx: Agents, Setup, Checks); closing it comes back here.
  *
  * @module pages/Agents/RunWorkspace/Inspector
  */
@@ -20,6 +21,7 @@ import { GateTab } from './GateTab'
 import { AssertionsTab } from './AssertionsTab'
 import { CostTab } from './CostTab'
 import { MemoryTab } from './MemoryTab'
+import { RunStepView } from './RunStepView'
 import type { EngineeringAgent, EngineeringOverview } from '../../../api/engineeringRunsApi'
 
 const TABS = ['changes', 'files', 'gate', 'assertions', 'board', 'reports', 'cost', 'memory'] as const
@@ -41,6 +43,9 @@ interface Props {
   /** When the overview was read (the agent's ages are as of then). */
   readAt: number
   onOpen: (agent: string) => void
+  /** (7.52.00) The step whose Step view is open (null: the agent's tabs), and its close. */
+  step?: string | null
+  onCloseStep?: () => void
 }
 
 /** The agents on the run's gate steps (the ones with a verdict to show). */
@@ -74,9 +79,17 @@ function AgentTab({ tab, runId, overview, agent, live, readAt, onOpen }: Readonl
   }
 }
 
-export function Inspector({ agent, ...props }: Readonly<Props>) {
+export function Inspector({ agent, step = null, onCloseStep, ...props }: Readonly<Props>) {
   const { t } = useTranslation('agents')
   const [tab, setTab] = useState<Tab>('changes')
+  if (step !== null) {
+    return (
+      <section className="card min-w-0 space-y-3" aria-label={t('runWorkspace.inspector.label')}>
+        <RunStepView runId={props.runId} overview={props.overview} step={step} live={props.live} onOpen={props.onOpen}
+          onClose={() => onCloseStep?.()} />
+      </section>
+    )
+  }
   return (
     <section className="card min-w-0 space-y-3" aria-label={t('runWorkspace.inspector.label')}>
       <h2 className="text-sm font-medium text-text-strong">

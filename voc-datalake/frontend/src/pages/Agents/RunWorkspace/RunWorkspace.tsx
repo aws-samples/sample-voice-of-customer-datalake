@@ -23,7 +23,7 @@
  *
  * @module pages/Agents/RunWorkspace/RunWorkspace
  */
-import { useId, useMemo } from 'react'
+import { useCallback, useId, useMemo, useState } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
@@ -72,9 +72,13 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
   const agentIds = useMemo(() => new Set(overview.agents.map((agent) => agent.agent)), [overview.agents])
   const sessions = useSessionLayout(runId, current, orchestrator, agentIds)
   const shown = overview.agents.find((agent) => agent.agent === current)
+  // (7.52.00) A step selected on the canvas opens its Step view in the inspector; opening a session closes it.
+  const [step, setStep] = useState<string | null>(null)
+  const { open } = sessions
+  const openSession = useCallback((agent: string) => { setStep(null); open(agent) }, [open])
   return (
     <>
-      {isAdmin && <RunEndBanner overview={overview} controlsId={controlsId} onOpen={sessions.open} />}
+      {isAdmin && <RunEndBanner overview={overview} controlsId={controlsId} onOpen={openSession} />}
       <RunHeader overview={overview} controls={(
         // (a focusable place for the end banner's "Go to the run's controls")
         <div id={controlsId} tabIndex={-1} className="rounded-md">
@@ -83,14 +87,15 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
       )} />
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,26rem)]">
         <div className="order-2 min-w-0 2xl:order-1">
-          <FlowPane overview={overview} current={current} onOpen={sessions.open} />
+          <FlowPane overview={overview} current={current} onOpen={openSession} step={step} onSelectStep={setStep} />
         </div>
         <div className="order-1 min-w-0 2xl:order-2">
           <SessionsPane runId={runId} agents={overview.agents} lanes={overview.lanes} current={current} orchestrator={orchestrator}
             actions={sessionActions(isAdmin, live, overview)} sessions={sessions} />
         </div>
         <div className="order-3 min-w-0 lg:col-span-2 2xl:col-span-1">
-          <Inspector runId={runId} overview={overview} agent={shown} live={live} canAct={canAct} readAt={readAt} onOpen={sessions.open} />
+          <Inspector runId={runId} overview={overview} agent={shown} live={live} canAct={canAct} readAt={readAt} onOpen={openSession}
+            step={step} onCloseStep={() => setStep(null)} />
         </div>
       </div>
       <EngineeringRunReactions runId={runId} status={overview.run.status} reactions={overview.reactions} isAdmin={isAdmin} />

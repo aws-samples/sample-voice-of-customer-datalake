@@ -57,8 +57,8 @@ function stoppedStep(overview: EngineeringOverview, ids: ReadonlySet<string>, li
   const point = flowPointStep(overview.run.waiting_at)
   if (point !== null && ids.has(point)) return point
   const failed = failedAgent(overview.agents)
-  if (failed === null) return focusStepId(lit)
-  const lane = Object.entries(overview.lanes).find(([step, lanes]) => ids.has(step) && lanes.some((entry) => entry.agent === failed.agent))
+  const lane = failed === null ? undefined
+    : Object.entries(overview.lanes).find(([step, lanes]) => ids.has(step) && lanes.some((entry) => entry.agent === failed.agent))
   return lane?.[0] ?? focusStepId(lit)
 }
 
@@ -69,33 +69,58 @@ const atWork = (overview: EngineeringOverview, step: string, phase: RunPhase) =>
 /** A step still under way in a run that stopped: held while the run waits for a person, stopped once it ended. */
 const HALTED_AS: Readonly<Record<Exclude<RunPhase, 'active'>, StepState['status']>> = { halted: 'paused', ended: 'stopped' }
 
+/** Each gate step's verdict, as the board recorded it, on its state (a gate with a verdict ran: done at least). */
+function withGates(lit: Map<string, StepState>, overview: EngineeringOverview, ids: ReadonlySet<string>): void {
+  for (const [step, verdict] of Object.entries(overview.gates)) {
+    const gate = gateOutcome(verdict)
+    if (gate !== null && ids.has(step)) lit.set(step, { ...(lit.get(step) ?? { status: 'done', rounds: 1 }), gate })
+  }
+}
+
 /** A run under way: a running step spins only while an agent is at work on it, and the one it is on is marked. */
-function markUnderWay(overview: EngineeringOverview, lit: Map<string, StepState>): Map<string, StepState> {
+function markActive(lit: Map<string, StepState>, overview: EngineeringOverview): void {
   for (const [step, state] of lit) if (state.status === 'running') lit.set(step, { ...state, spin: atWork(overview, step, 'active') })
   const here = focusStepId(lit)
   const state = here === undefined ? undefined : lit.get(here)
   if (here !== undefined && state !== undefined) lit.set(here, { ...state, here: 'on' })
-  return lit
 }
 
-/** A run that stopped: its steps under way held or stopped, and where it stopped marked (a finished run: nowhere). */
-function markStopped(overview: EngineeringOverview, ids: ReadonlySet<string>, lit: Map<string, StepState>,
-  phase: Exclude<RunPhase, 'active'>): Map<string, StepState> {
+/** A run that stopped: what was under way is held (at a person) or stopped (ended), and where it stopped is marked. */
+function markStopped(lit: Map<string, StepState>, overview: EngineeringOverview, ids: ReadonlySet<string>,
+  phase: Exclude<RunPhase, 'active'>): void {
+  // (a run that finished stopped nowhere; one that stopped, where it was when it stopped)
   const here = overview.run.status === 'done' ? undefined : stoppedStep(overview, ids, lit)
   const state = here === undefined ? undefined : lit.get(here)
   for (const [step, each] of lit) if (each.status === 'running') lit.set(step, { ...each, status: HALTED_AS[phase], spin: false })
   if (here !== undefined) lit.set(here, { ...(state ?? { rounds: 1 }), status: stoppedAs(overview, state), here: 'stopped', spin: false })
-  return lit
 }
 
 /** The steps lit, each gate step with its verdict, the one the run is on marked, or the one where it stopped. */
 export function runStepStates(overview: EngineeringOverview, definition: WorkflowDefinition): Map<string, StepState> {
   const ids = new Set(definition.nodes.map((node) => node.id))
   const lit = liveSteps(overview.agents, ids, overview.run.flow_steps)
-  for (const [step, verdict] of Object.entries(overview.gates)) {
-    const gate = gateOutcome(verdict)
-    if (gate !== null && ids.has(step)) lit.set(step, { ...(lit.get(step) ?? { status: 'done', rounds: 1 }), gate })
-  }
+  withGates(lit, overview, ids)
   const phase = runPhase(overview.run)
-  return phase === 'active' ? markUnderWay(overview, lit) : markStopped(overview, ids, lit, phase)
+  if (phase === 'active') markActive(lit, overview)
+  else markStopped(lit, overview, ids, phase)
+  return lit
+}
+
+/** What ran on each step, from its lanes' agents: the first model and skill label named, the cost, how many agents. */
+export function ranOnSteps(overview: EngineeringOverview): Map<string, NonNullable<StepState['ran']>> {
+  const agents = new Map(overview.agents.map((agent) => [agent.agent, agent]))
+  return new Map(Object.entries(overview.lanes).flatMap(([step, lanes]) => {
+    const ran = lanes.flatMap((lane) => {
+      const agent = lane.agent === null ? undefined : agents.get(lane.agent)
+      return agent === undefined ? [] : [agent]
+    })
+    if (ran.length === 0) return []
+    const costs = ran.map((agent) => agent.cost_usd).filter((usd): usd is number => usd !== null)
+    return [[step, {
+      agents: ran.length,
+      model: ran.map((agent) => agent.model).find((model): model is string => model !== null),
+      skill: ran.map((agent) => agent.skill_label).find((label): label is string => label !== null),
+      costUsd: costs.length === 0 ? undefined : costs.reduce((sum, usd) => sum + usd, 0),
+    }] as const]
+  }))
 }

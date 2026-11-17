@@ -44,7 +44,7 @@ describe('the header and the canvas', () => {
     expect(lanes.map((lane) => [lane.textContent, lane.dataset.laneState])).toStrictEqual([
       ['fixer-3fixer · attempt 2', 'running'], ['gate-runner-4gate-runner', 'ran_ok'], ['final-go-5final-go', 'ran_ok'],
     ])
-    expect(within(screen.getByTestId('step-gate')).getByText('Gate passed')).toBeInTheDocument()
+    expect(within(screen.getByTestId('step-gate')).getByText('GO')).toBeInTheDocument()
     expect(within(screen.getByTestId('step-board')).getByText('You are here')).toBeInTheDocument()
   })
 

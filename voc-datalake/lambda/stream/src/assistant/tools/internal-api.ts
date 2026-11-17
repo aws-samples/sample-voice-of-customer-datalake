@@ -20,7 +20,7 @@
 import { InvokeCommand, LambdaClient, type InvocationResponse } from '@aws-sdk/client-lambda';
 import { z } from 'zod';
 import type { CallerClaims } from '../types.js';
-import { AssistantToolError } from './errors.js';
+import { AssistantToolError, type ServerRefusal } from './errors.js';
 import { isRecord } from '../../lib/is-record.js';
 import { clip, firstString } from './format.js';
 
@@ -235,6 +235,27 @@ function errorText(body: unknown): string | undefined {
   return text === undefined ? undefined : clip(text, MAX_ERROR_TEXT);
 }
 
+/** A refusal's machine-readable code: a snake_case word (lambda/shared/exceptions.py `ApiError.code`). */
+const SERVER_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+/** At most this many automation names are kept from a refusal (each clipped like the error text). */
+const MAX_NAMED_AUTOMATIONS = 10;
+
+/** The automations a refusal names (7.52.00: `used_by.automations[].name` of a `shared_flow` 409), clipped. */
+function namedAutomations(usedBy: unknown): string[] {
+  const automations = isRecord(usedBy) && Array.isArray(usedBy.automations) ? usedBy.automations : [];
+  return automations.flatMap((automation: unknown) => {
+    const name = isRecord(automation) ? firstString(automation.name) : undefined;
+    return name === undefined ? [] : [clip(name, MAX_ERROR_TEXT)];
+  }).slice(0, MAX_NAMED_AUTOMATIONS);
+}
+
+/** What a 4xx body says beyond its words: its `code`, and the automations a `shared_flow` names. */
+function refusalOf(body: unknown): ServerRefusal {
+  if (!isRecord(body)) return {};
+  const code = typeof body.code === 'string' && SERVER_CODE.test(body.code) ? body.code : undefined;
+  return code === undefined ? {} : { serverCode: code, automations: namedAutomations(body.used_by) };
+}
+
 function statusError(fn: ApiFunction, status: number, body: unknown): AssistantToolError {
   const detail = errorText(body);
   const suffix = detail ? `: ${detail}` : '.';
@@ -243,7 +264,7 @@ function statusError(fn: ApiFunction, status: number, body: unknown): AssistantT
   }
   if (status === 404) return new AssistantToolError('not_found', `Not found${suffix}`);
   if (status === 413) return new AssistantToolError('too_large', `Too large${suffix}`);
-  if (status >= 400 && status < 500) return new AssistantToolError('invalid_input', `Invalid request${suffix}`);
+  if (status >= 400 && status < 500) return new AssistantToolError('invalid_input', `Invalid request${suffix}`, refusalOf(body));
   // 5xx text is internal; never relay it.
   return new AssistantToolError('unavailable', `The ${API_LABEL[fn]} service failed (HTTP ${status}). Try again later.`);
 }

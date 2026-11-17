@@ -2232,5 +2232,331 @@
       "toControls": "実行のコントロールへ移動",
       "openSession": "{{agent}} のセッションを開く"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "トリガー",
+      "agent": "エージェント",
+      "team": "チーム",
+      "gate": "ゲート",
+      "call": "フローを呼び出す",
+      "decision": "人が判断",
+      "end": "終了",
+      "platform": "プラットフォームのステップ"
+    },
+    "nodeName": "{{kind}}: {{rest}}",
+    "state": {
+      "invalid": "問題あり",
+      "waitingForYou": "あなたの対応待ち"
+    },
+    "chips": {
+      "pinned": "{{version}} に固定",
+      "updateAvailable": "更新あり",
+      "share": "{{percent}}%",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} エージェント",
+      "agents_other": "{{count}} エージェント",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · 投稿: {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "自動検出",
+      "rounds": "≤ {{n}} ラウンド",
+      "reviewers_one": "レビュアー {{count}} 人",
+      "reviewers_other": "レビュアー {{count}} 人"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "合意",
+      "notAgreed": "不合意",
+      "arrow": "{{word}} の矢印"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "フローがまだ選択されていません",
+      "progress": "{{total}} ステップ中 {{done}} ステップ完了"
+    },
+    "decision": {
+      "title": "人が判断",
+      "line": "実行は人の判断を待ちます",
+      "waiting": "あなたの対応待ち"
+    },
+    "trigger": {
+      "line": "実行を開始します"
+    },
+    "end": {
+      "completed": "完了",
+      "prReady": "プルリクエスト · レビュー可能",
+      "prDraft": "プルリクエスト · 下書き"
+    },
+    "platform": {
+      "map": "{{by}}ごと · 最大 {{n}}",
+      "memoryRead": "{{whose}}のメモリを読み取り · {{n}}",
+      "memoryWrite": "{{whose}}のメモリに書き込み",
+      "reduce": "シャードを集約"
+    },
+    "drop": "ドロップして {{name}} を追加",
+    "dropAny": "ドロップしてステップを追加",
+    "aria": {
+      "node": "Enter キーまたは Space キーでステップを選択し、設定を開きます。Delete キーで削除、Escape キーでキャンセルします。",
+      "nodeKeyboard": "Enter キーまたは Space キーでステップを選択し、設定を開きます。その後は矢印キーで移動できます。Delete キーで削除、Escape キーでキャンセルします。",
+      "moved": "選択したステップを移動しました（{{direction}}）。新しい位置: x {{x}}、y {{y}}",
+      "edge": "Enter キーまたは Space キーで矢印を選択します。Delete キーで削除、Escape キーでキャンセルします。",
+      "controls": "キャンバスの操作",
+      "zoomIn": "拡大",
+      "zoomOut": "縮小",
+      "fitView": "フロー全体を表示",
+      "interactive": "キャンバスのロック / ロック解除",
+      "handle": "接続ポイント"
+    },
+    "shared": {
+      "banner_one": "{{count}} 件の自動化が使用中: {{names}}。保存すると、次回の実行から変更が反映されます。",
+      "banner_other": "{{count}} 件の自動化が使用中: {{names}}。保存すると、それぞれ次回の実行から変更が反映されます。",
+      "confirmTitle": "共有フローを保存しますか？",
+      "confirmMessage": "{{names}} がこのフローを実行しています。保存すると、それぞれ次回の実行から変更が反映されます。",
+      "confirmAction": "すべてに保存",
+      "usedByLine": "使用元: {{names}}",
+      "calledBy": "呼び出し元: {{names}}",
+      "approvalNote": "承認すると、このフローを実行するすべての自動化に保存されます: {{names}}。",
+      "approvalRefused": "{{names}} がこのフローを実行しています。すべてについて変更が確認されない限り、保存は拒否されます。"
+    }
+  },
+  "inspector": {
+    "close": "インスペクターを閉じる",
+    "tabs": "ステップの設定",
+    "sheetTitle": "ステップの設定",
+    "inFlow": "このフロー内",
+    "fromCard": "カード {{card}} v{{n}} から",
+    "fromCardAny": "カード {{card}} から",
+    "fromCardLabel": "カードから",
+    "readOnly": "読み取り専用です。",
+    "readOnlyShort": "読み取り専用",
+    "editInFlows": "フローで編集",
+    "asRun": "この実行で使われた内容 · r{{n}}",
+    "asRunUsed": "この実行で使われた内容",
+    "openSkill": "スキルの履歴を開く",
+    "loop": "ループ",
+    "tab": {
+      "agents": "エージェント",
+      "setup": "設定",
+      "assertions": "アサーション",
+      "arrows": "矢印",
+      "checks": "チェック",
+      "reviewers": "レビュアー",
+      "packs": "パック",
+      "preview": "プレビュー"
+    },
+    "agent": {
+      "card": "カード",
+      "latest": "最新の承認済み",
+      "cardModel": "カードの設定どおり",
+      "share": "各実行の予算の配分",
+      "sharesInAll": "エージェントの配分の合計: {{used}}%（上限 100%）",
+      "overrides": "カードの {{model}} を上書き",
+      "useCards": "カードのモデルを使う",
+      "cardsModel": "カードのモデル: {{model}}",
+      "purpose": "目的",
+      "skill": "スキル",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "モデル",
+      "tools": "ツール",
+      "host": "ホスト",
+      "hostBroker": "読み取り専用、ブローカー経由（{{ops}}）",
+      "caps": "上限",
+      "turns": "{{n}} ターン",
+      "tokens": "入力トークン {{n}}k",
+      "reads": "読み取り",
+      "writes": "書き込み",
+      "scorecard": "スコアカード",
+      "scorecardLine": "{{runs}} 回実行 · 合格率 {{rate}}%",
+      "thisMonth": "今月",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "パック",
+      "rounds": "ラウンドの上限",
+      "reviewers": "レビュアー",
+      "blocks": "ブロック",
+      "advisory": "助言のみ",
+      "addReviewer": "レビュアーを追加",
+      "reviewerName": "レビュアーの名前",
+      "reviewerFocus": "確認する観点",
+      "reviewerRole": "{{name}}: ブロックまたは助言のみ",
+      "removeReviewer": "{{name}} を削除",
+      "runsIt": "実行担当",
+      "finalGo": "最終承認",
+      "arrows": "矢印",
+      "pack": "パック {{name}}",
+      "image": "イメージ",
+      "network": "ネットワーク（セットアップ時のみ）",
+      "tools": "ツール",
+      "ownPins": "リポジトリ自身が固定したバージョン。",
+      "ownPinsRecorded": "リポジトリ自身が固定したバージョン。最後の記録: {{list}}",
+      "steps": "ステップ",
+      "always": "常に",
+      "whenFile": "{{file}} がある場合",
+      "whenContains": "{{file}} に {{text}} が含まれる場合",
+      "whenScript": "{{file}} に {{script}} スクリプトがある場合",
+      "or": " または ",
+      "lookedAtNothing": "何も確認しなかった場合は失敗します。",
+      "forAutomation": "{{automation}} 用: {{pack}}",
+      "brief": "オーナーのブリーフ（{{path}}）",
+      "briefOpen": "オーナーのブリーフ（{{path}}）",
+      "stepKinds": {
+        "setup": "セットアップ",
+        "lint": "lint",
+        "format": "フォーマット",
+        "types": "型",
+        "test": "テスト"
+      },
+      "stops": {
+        "check_failed": "チェックが失敗し、修正しても合格しませんでした。",
+        "looked_at_nothing": "ゲートは何も確認しませんでした。リポジトリを対象とするチェックがないか、チェックが確認対象を見つけられませんでした。",
+        "own_gate_changed": "変更がリポジトリ自身のゲートに及んでいます。",
+        "review_blocked": "レビューでブロックされました。最終承認は NO-GO でした。",
+        "rounds_used_up": "最後のラウンドの後もブロッキングの指摘が残りました。"
+      }
+    },
+    "assertions": {
+      "add": "アサーションを追加",
+      "check": "チェック",
+      "choose": "チェックを選択",
+      "argument": "{{name}}",
+      "onFail": "{{check}}: 失敗したとき",
+      "remove": "{{check}} を削除",
+      "full": "アサーションは最大 {{max}} 件です。",
+      "noneApply": "この種類のステップに適用できるチェックはありません。",
+      "checks": {
+        "findings_cite_evidence": "すべての指摘がファイル、行、根拠を示している",
+        "gate_pack_checks_ran": "ゲート実行担当が少なくとも 1 つのチェックを記録した",
+        "gate_passed": "ゲート実行担当と最終承認の両方が GO と判定した",
+        "learn_proposals_name_case": "コーチの提案がすべて既存の評価ケースを示している",
+        "notes_cite_sources": "すべてのメモが出典を示している",
+        "patch_max_lines": "提出されたパッチがどれも max 行を超えて変更していない",
+        "patch_no_ci_changes": "提出されたパッチがどれも CI 定義を変更していない",
+        "patch_submitted": "パッチが提出された",
+        "patch_touches_tests": "提出されたパッチがすべてテストを変更している",
+        "pr_links_issue": "すべてのプルリクエストが、実行の Issue を修正すると明記している",
+        "pr_opened": "プルリクエストが作成された",
+        "pr_state_as_flow": "すべてのプルリクエストがフローの指定どおり（レビュー可能または下書き）に作成された",
+        "push_tree_is_judged_tree": "すべてのプッシュが、最終承認で判定されたツリーと一致している",
+        "review_commented": "プルリクエストにレビューコメントが投稿された",
+        "review_no_blocking": "「by」で指定したロールがブロッキングの指摘を書いていない",
+        "tasks_posted": "そのロール向けに少なくとも min 件のタスクが投稿された",
+        "tenets_recorded": "1〜30 件の原則を含む原則の記録が保存された",
+        "triage_commented": "トリアージが実行の Issue にコメントされた",
+        "triage_labelled": "Issue にトリアージの種類と重大度のラベルが付いている",
+        "triage_recorded": "種類と重大度を含むトリアージの記録が保存された"
+      }
+    },
+    "call": {
+      "flow": "フロー",
+      "revision": "リビジョン",
+      "inputs": "入力",
+      "noInputs": "呼び出すフローには入力が宣言されていません。",
+      "inputRequired": "{{name}}（必須）",
+      "inputUnset": "未指定",
+      "steps": "含まれるステップ",
+      "childSteps_one": "{{count}} ステップ",
+      "childSteps_other": "{{count}} ステップ",
+      "expands": "展開後",
+      "inAll": "合計 {{total}} / {{max}} ステップ",
+      "usedBy": "使用元",
+      "openFlow": "フローを開く",
+      "preview": "{{name}}（読み取り専用）",
+      "noPreview": "フローを選択するとプレビューできます。"
+    },
+    "decision": {
+      "happens": "どうなるか",
+      "happensText": "実行は停止し、人の判断を待ちます。Issue にコメントが付き、「自動化」にあなたの判断が必要であることが表示されます。",
+      "reachedFrom": "到達元",
+      "fromVerdict": "{{step}}（{{verdict}}）",
+      "ifNobody": "誰も判断しない場合",
+      "ifNobodyText": "{{hours}} 時間後に Learn が読み取ります"
+    },
+    "trigger": {
+      "startedBy": "開始元",
+      "nobody": "このフローを使う自動化はまだありません。",
+      "inputs": "入力",
+      "inputMax": "{{name}}、最大 {{max}}",
+      "memory": "メモリ",
+      "recall": "開始時にリポジトリのメモリを呼び出す",
+      "recallOn": "開始時に呼び出す",
+      "recallOff": "呼び出さない",
+      "learn": "Learn",
+      "learnEnabled": "各実行から学習する",
+      "learnOn": "オン",
+      "learnOff": "オフ",
+      "roles_one": "{{count}} ロール",
+      "roles_other": "{{count}} ロール",
+      "after": "{{hours}} 時間後",
+      "learnAssertions": "Learn のアサーション",
+      "pr": "プルリクエスト",
+      "prReady": "レビュー可能",
+      "prDraft": "下書き"
+    },
+    "end": {
+      "happens": "どうなるか",
+      "completed": "実行はここで終わります。何もマージされません。",
+      "stopAtPr": "実行はプルリクエストを作成して停止します。自動では何もマージされず、マージは人が行います。",
+      "pullRequest": "プルリクエスト",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "設定"
+    },
+    "edge": {
+      "title": "矢印",
+      "from": "接続元",
+      "to": "接続先",
+      "condition": "条件",
+      "always": "常に: このステップは判定を返しません",
+      "inRun": "この実行では",
+      "taken": "通過",
+      "notTaken": "未通過"
+    },
+    "run": {
+      "agents": "このステップのエージェント",
+      "ran": "{{skill}} · {{model}} を実行",
+      "round": "ラウンド {{n}}",
+      "finalGo": "最終承認: {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "ステップを選択すると設定が表示されます。Enter キーで開き、Escape キーで閉じます。",
+      "cardMissing": "このステップは {{card}} を指定していますが、レジストリにありません。",
+      "cardAdmins": "その設定内容は、エンジニアリングエージェントが有効になっている場所で管理者に表示されます。",
+      "autoDetect": "パックは実行の開始時にリポジトリから検出されます。このフローを使う自動化はまだありません。",
+      "notRun": "まだ実行されていません。",
+      "gateNotRun": "ゲートはまだ実行されていません。",
+      "noAssertions": "アサーションはありません。",
+      "noAssertionsBuild": "アサーションはありません。追加すると、このステップが記録した内容を確認できます。"
+    }
+  },
+  "palette": {
+    "search": "ステップを検索",
+    "noMatch": "一致するステップはありません。",
+    "madeFromSkill": "スキルから作成",
+    "gateOf": "品質ゲート: {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "このフローを呼び出しています。ここから呼び出すと循環になります。",
+    "groups": {
+      "startEnd": "開始と終了",
+      "agents": "エージェント",
+      "gates": "品質ゲート",
+      "flows": "フロー",
+      "platform": "プラットフォームのステップ"
+    },
+    "hints": {
+      "startEnd": "実行の開始点と終了点。NO-GO はすべて人の判断に回ります。",
+      "agents": "レジストリのカード: 各ロールのカードと、スキルから作成したカード。",
+      "gates": "変更に対するチェックとレビュー。「自動検出」はリポジトリのパックを選びます。",
+      "flows": "保存済みの別のフローを、そのリビジョンで呼び出します。",
+      "platform": "プラットフォームが実行するステップ: シャード分割、シャードの集約、ボード、メモリ、Learn。"
+    }
   }
 }

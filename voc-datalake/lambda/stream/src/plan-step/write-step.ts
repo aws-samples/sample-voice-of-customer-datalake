@@ -11,7 +11,11 @@
  * Execute: the write's precondition read (stored state, duplicates) → the REST
  * request `buildWriteRequest` builds → invoked as the approver's claims → the
  * ids `extractOutputs` finds. Admin-only tools need `admins` in the claims (the
- * conductor forwards it only after its Cognito re-check).
+ * conductor forwards it only after its Cognito re-check). (7.52.00) An
+ * update_workflow the agents API refuses because other automations run the flow
+ * (409 `shared_flow`) becomes needs_approval: an ordinary card for the same
+ * args with `confirm_shared: true`, naming them; approved, it saves the flow for
+ * all of them. Already confirmed, the refusal is the step's failure.
  */
 import { ADMIN_ONLY_CLIENT_TOOLS } from '../assistant/contract.js';
 import { canonicalWriteFingerprint } from '../assistant/plan/fingerprint.js';
@@ -19,7 +23,7 @@ import { NEVER_PREAPPROVABLE_TOOLS, type PlanStep } from '../assistant/plan/sche
 import { WriteRequestError } from '../assistant/plan/write-args.js';
 import { preconditionFor, settlePrecondition, type PreconditionOutcome } from '../assistant/plan/write-preconditions.js';
 import { PLAN_STEP_WRITE_TOOLS, buildWriteRequest, extractOutputs, forbiddenFallback } from '../assistant/plan/write-requests.js';
-import type { WriteEnv } from '../assistant/plan/write-routes.js';
+import type { WriteEnv, WriteRequest } from '../assistant/plan/write-routes.js';
 import { describeIssues } from '../assistant/tools/spec.js';
 import { missingStoreAppRefusal } from '../assistant/tools/client/store-app-check.js';
 import { describeToolError, isAssistantToolError } from '../assistant/tools/errors.js';
@@ -85,6 +89,37 @@ function storeArgs(args: Record<string, unknown>): { source: string; app_id?: st
   return { source: typeof args.source === 'string' ? args.source : '', ...field('app_id'), ...field('package_name') };
 }
 
+/** The agents API's refusal of a save of a flow other automations run, unconfirmed (7.52.00). */
+const SHARED_FLOW = 'shared_flow';
+
+/**
+ * The card a refused shared-flow save becomes: the same args with `confirm_shared: true`, the automations named;
+ * undefined for any other failure, and for a save already confirmed (that refusal is the step's failure).
+ */
+function sharedFlowCard(toolName: string, args: Record<string, unknown>, error: unknown): PlanStepResult | undefined {
+  if (toolName !== 'update_workflow' || args.confirm_shared === true) return undefined;
+  if (!isAssistantToolError(error) || error.serverCode !== SHARED_FLOW) return undefined;
+  const who = error.automations.length === 0 ? 'Other automations run this flow'
+    : `Other automations run this flow (${error.automations.join(', ')})`;
+  return pending(toolName, { ...args, confirm_shared: true },
+    `${who}: approving saves it for all of them, each from its next run.`);
+}
+
+/** The write's answer (a 403 sent again as its fallback), or the card a refused shared-flow save becomes. */
+async function send(
+  deps: PlanStepDeps, c: WriteContext, toolName: string, args: Record<string, unknown>, request: WriteRequest,
+): Promise<{ response: unknown } | { card: PlanStepResult }> {
+  try {
+    return { response: await deps.invoke(request, c.claims) };
+  } catch (error) {
+    const card = sharedFlowCard(toolName, args, error);
+    if (card !== undefined) return { card };
+    const fallback = forbiddenFallback(toolName, args);
+    if (fallback === undefined || !isAssistantToolError(error) || error.code !== 'not_permitted') throw error;
+    return { response: await deps.invoke(fallback, c.claims) };
+  }
+}
+
 /** Run the write: a create_app_connector's store check, precondition, request (403 fallback), outputs. */
 async function execute(deps: PlanStepDeps, c: WriteContext, toolName: string, args: Record<string, unknown>): Promise<PlanStepResult> {
   const missingApp = toolName === 'create_app_connector' ? await missingStoreAppRefusal(storeArgs(args), deps.lookupStoreApp) : undefined;
@@ -93,11 +128,9 @@ async function execute(deps: PlanStepDeps, c: WriteContext, toolName: string, ar
   const outcome: PreconditionOutcome = read === undefined ? NO_PRECONDITION : settlePrecondition(toolName, args, await deps.invoke(read, c.claims));
   if (!outcome.ok) return failed(outcome.refusal);
   const request = buildWriteRequest(toolName, args, { ...c.env, ...(outcome.current === undefined ? {} : { current: outcome.current }) });
-  const response = await deps.invoke(request, c.claims).catch(async (error: unknown) => {
-    const fallback = forbiddenFallback(toolName, args);
-    if (fallback === undefined || !isAssistantToolError(error) || error.code !== 'not_permitted') throw error;
-    return deps.invoke(fallback, c.claims);
-  });
+  const sent = await send(deps, c, toolName, args, request);
+  if ('card' in sent) return sent.card;
+  const { response } = sent;
   const methodology = isRecord(response) && isRecord(response.methodology) ? response.methodology : undefined;
   return {
     status: 'done',

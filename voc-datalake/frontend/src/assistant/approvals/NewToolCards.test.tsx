@@ -3,7 +3,7 @@
  * shows before the user approves, and the admin / destructive gates.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -114,6 +114,31 @@ describe('new tool approval cards', () => {
   it('update_workflow refuses a budget on an agents workflow', () => {
     renderCard({ id: 't10', name: 'update_workflow', args: { workflow_id: 'wf_2', expected_revision: 2, definition: { ...PROPOSED, budget: { monthly_usd: 5 } }, change_summary: 's' } })
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
+  })
+
+  it('update_workflow of a flow other automations run names them, and what approving does with and without confirm_shared (7.52.00)', async () => {
+    const usedBy = { automations: [
+      { agent_id: 'ag_1', name: 'Bug fixer', kind: 'engineering', connection: null, language: null },
+      { agent_id: 'ag_2', name: 'Feature builder', kind: 'engineering', connection: null, language: null },
+    ], flows: [] }
+    fetchApi.mockResolvedValue({ workflow: { workflow_id: 'wf_2', name: 'Flow', revision: 2, definition: CURRENT, used_by: usedBy }, revisions: [] })
+    const args = { workflow_id: 'wf_2', expected_revision: 2, definition: PROPOSED, change_summary: 'add review' }
+    renderCard({ id: 't12', name: 'update_workflow', args })
+    const refused = await screen.findByRole('note')
+    expect(refused).toHaveTextContent('Bug fixer and Feature builder')
+    const refusedText = refused.textContent
+    cleanup()
+    renderCard({ id: 't13', name: 'update_workflow', args: { ...args, confirm_shared: true } })
+    const confirmed = await screen.findByRole('note')
+    expect(confirmed).toHaveTextContent('Bug fixer and Feature builder')
+    expect(confirmed.textContent).not.toBe(refusedText)
+  })
+
+  it('update_workflow of a flow nobody else runs says nothing of automations', async () => {
+    fetchApi.mockResolvedValue({ workflow: { workflow_id: 'wf_2', name: 'Flow', revision: 2, definition: CURRENT, used_by: { automations: [], flows: [] } }, revisions: [] })
+    renderCard({ id: 't14', name: 'update_workflow', args: { workflow_id: 'wf_2', expected_revision: 2, definition: PROPOSED, change_summary: 's' } })
+    expect(await screen.findByText('Flow: revision 2 → 3')).toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
   it('update_workflow built on an older revision warns the save will be refused', async () => {

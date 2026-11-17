@@ -21,13 +21,15 @@
  */
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
+import { apiErrorStatus, HTTP_CONFLICT } from './apiErrorStatus'
+import { apiErrorCode } from '../lib/errors'
 import {
   MONTHLY_BUDGET_RULE, WORKFLOW_ALL_NODE_TYPES, WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES,
   WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION, isMonthlyBudgetUsd,
 } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
-import { lenientList } from './lenientFields'
+import { eachOf, lenientList } from './lenientFields'
 import type { QueryClient } from '@tanstack/react-query'
 
 export const DEFAULT_WORKFLOW_ID = 'wf_default'
@@ -149,6 +151,7 @@ export type WorkflowLoop = WorkflowDefinition['loops'][number]
 const optionalString = z.string().optional().catch(undefined)
 const nullableString = z.string().nullable().catch(null)
 
+
 const LenientNodeSchema = z.object({
   id: z.string().min(1),
   type: z.enum(WORKFLOW_ALL_NODE_TYPES),
@@ -221,6 +224,57 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
   }
 }
 
+/** An automation that runs a flow (7.52.00 "Used by": `agents_handler._automation`). */
+const UsingAutomationSchema = z.object({
+  agent_id: z.string().min(1),
+  name: z.string().catch(''),
+  kind: z.enum(['agents', 'engineering']).catch('agents'),
+  connection: nullableString.optional().transform((connection) => connection ?? null),
+  language: nullableString.optional().transform((language) => language ?? null),
+})
+/** A saved flow whose current revision calls this one (`call_flow`), at the revision of it that it pins. */
+const CallingFlowSchema = z.object({
+  workflow_id: z.string().min(1),
+  name: z.string().catch(''),
+  revision: z.number().int().positive().catch(1),
+})
+/**
+ * Who uses a workflow (7.52.00, `used_by` on `GET /workflows` and `GET /workflows/{id}`): the automations that run it,
+ * as the caller may see them, and the saved flows that call it. A save of a flow other automations run needs
+ * `confirm_shared: true` (409 `shared_flow` otherwise); the calling flows pin a revision, so a save changes none of them.
+ */
+const UsedBySchema = z.object({
+  automations: eachOf(UsingAutomationSchema),
+  flows: eachOf(CallingFlowSchema),
+})
+export type WorkflowUsedBy = z.output<typeof UsedBySchema>
+export type UsingAutomation = WorkflowUsedBy['automations'][number]
+
+const NO_USERS: WorkflowUsedBy = { automations: [], flows: [] }
+
+/**
+ * A workflow's users as read (nobody when the answer named none: an older API, or an unsaved copy). Parsed here, since
+ * the library's rows are kept as the wire gave them (`normalizeWorkflowList` filters, it does not re-parse).
+ */
+export function usedByOf(view: { used_by?: WorkflowUsedBy } | undefined | null): WorkflowUsedBy {
+  const parsed = UsedBySchema.safeParse(view?.used_by)
+  return parsed.success ? parsed.data : NO_USERS
+}
+
+/** The automations other than `agentId` (the one whose page the edit comes from) that run the flow: a save changes
+ * each of them from its next run, so it asks first (the server's own rule, `save_workflow`). */
+export function otherAutomations(usedBy: WorkflowUsedBy, agentId?: string): UsingAutomation[] {
+  return usedBy.automations.filter((automation) => automation.agent_id !== agentId)
+}
+
+/** The 409 `code` of a save refused because other automations run the flow and it was not confirmed. */
+export const SHARED_FLOW_CODE = 'shared_flow'
+
+/** A save refused for a shared flow (409 `shared_flow`): confirm, then save again with `confirm_shared`. */
+export function isSharedFlowRefusal(error: unknown): boolean {
+  return apiErrorStatus(error) === HTTP_CONFLICT && apiErrorCode(error) === SHARED_FLOW_CODE
+}
+
 const WorkflowSummarySchema = z.object({
   workflow_id: z.string().min(1),
   slug: z.string().catch(''),
@@ -236,6 +290,8 @@ const WorkflowSummarySchema = z.object({
   kind: z.enum(['agents', 'engineering']).catch('agents'),
   /** An engineering flow's monthly budget in dollars (its definition's `budget.monthly_usd`); null for none. */
   monthly_budget_usd: z.number().positive().nullable().catch(null),
+  /** (7.52.00) Who uses it: absent from an older API (read it through {@link usedByOf}). */
+  used_by: UsedBySchema.optional().catch(undefined),
 })
 export type WorkflowSummary = z.output<typeof WorkflowSummarySchema>
 
@@ -306,6 +362,68 @@ function normalizeValidation(raw: unknown): WorkflowValidation {
     : { valid: false, errors: [{ message: 'The validation answer was unreadable', node_id: undefined }], warnings: [] }
 }
 
+/** How a save is sent (`workflowsApi.save`). */
+export interface SaveOptions {
+  /** The person confirmed changing a flow other automations run. */
+  readonly confirmShared?: boolean
+  /** The automation whose page the edit comes from. */
+  readonly agentId?: string
+}
+
+/** One call expanded at a run's start (`flow_expand.py`): the call step, the flow it ran at its revision, its inputs. */
+const ExpansionRecordSchema = z.object({
+  step: z.string().min(1),
+  flow: z.string().min(1),
+  revision: z.number().int().positive(),
+  inputs: z.record(z.string(), z.string()).optional().catch(undefined),
+})
+export type ExpansionRecord = z.output<typeof ExpansionRecordSchema>
+
+/** The expansion records of a list (a run's overview, the expanded preview), the unreadable ones left out. */
+export const expansionRecords = eachOf(ExpansionRecordSchema)
+
+const ExpandedSchema = z.object({
+  workflow_id: z.string().catch(''),
+  revision: z.number().int().catch(1),
+  definition: z.unknown().transform(normalizeDefinition),
+  expansion: expansionRecords,
+  calls: z.number().int().nonnegative().catch(0),
+  steps: z.number().int().nonnegative().catch(0),
+})
+export type ExpandedWorkflow = z.output<typeof ExpandedSchema>
+
+function normalizeExpanded(raw: unknown): ExpandedWorkflow {
+  const parsed = ExpandedSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('The expanded workflow answer was unreadable')
+  return parsed.data
+}
+
+/** One input an engineering flow declares (7.52.00 `definition.inputs`: `{name: {type, max?, required?, description?}}`). */
+export interface FlowInput {
+  readonly name: string
+  readonly type: string
+  readonly max: number | null
+  readonly required: boolean
+  readonly description: string
+}
+
+/** A definition's declared inputs, by name (none when it declares none). */
+export function definitionInputs(definition: Pick<WorkflowDefinition, 'inputs'>): FlowInput[] {
+  return Object.entries(definition.inputs ?? {}).map(([name, spec]) => ({
+    name,
+    type: typeof spec.type === 'string' ? spec.type : 'text',
+    max: typeof spec.max === 'number' ? spec.max : null,
+    required: spec.required === true,
+    description: typeof spec.description === 'string' ? spec.description : '',
+  })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** A call's flow reference (`wf_<12 hex>@<revision>`, params.flow), split; null for anything else. */
+export function parseFlowRef(ref: unknown): { workflowId: string; revision: number } | null {
+  const match = typeof ref === 'string' ? /^(wf_[0-9a-f]{12})@([1-9]\d{0,5})$/.exec(ref) : null
+  return match === null ? null : { workflowId: match[1] ?? '', revision: Number(match[2]) }
+}
+
 // ── REST ─────────────────────────────────────────────────────────────────────
 
 export const workflowsKeys = {
@@ -314,6 +432,8 @@ export const workflowsKeys = {
   detail: (id: string) => ['workflows', 'detail', id] as const,
   /** Under the workflow's detail key, so invalidating the detail covers its revisions too. */
   revision: (id: string, revision: number) => ['workflows', 'detail', id, 'revision', revision] as const,
+  /** (7.52.00) The expanded flow of a revision, under the detail key too. */
+  expanded: (id: string, revision: number | null) => ['workflows', 'detail', id, 'expanded', revision] as const,
 }
 
 const path = (id: string, suffix = '') => `/workflows/${encodeURIComponent(id)}${suffix}`
@@ -349,9 +469,25 @@ export const workflowsApi = {
   create: async (definition: WorkflowDefinition): Promise<WorkflowView> =>
     requireView(await fetchApi<unknown>('/workflows', post({ definition }))),
 
-  /** A new revision; the API answers 409 when `expectedRevision` is stale. */
-  save: async (id: string, definition: WorkflowDefinition, expectedRevision: number): Promise<WorkflowView> =>
-    requireView(await fetchApi<unknown>(path(id), put({ definition, expected_revision: expectedRevision }))),
+  /**
+   * A new revision; the API answers 409 when `expectedRevision` is stale, and (7.52.00) 409 `shared_flow` for a flow
+   * other automations run ({@link isSharedFlowRefusal}) unless `confirmShared`. `agentId`: the automation whose page
+   * the edit comes from (its own use of the flow needs no confirmation). The body carries `confirm_shared` only when
+   * it is true, and `agent_id` only when given, as the assistant's plan writes build it (`write-requests-workspace.ts`).
+   */
+  save: async (id: string, definition: WorkflowDefinition, expectedRevision: number, options: SaveOptions = {}): Promise<WorkflowView> =>
+    requireView(await fetchApi<unknown>(path(id), put({
+      definition, expected_revision: expectedRevision,
+      ...(options.confirmShared === true ? { confirm_shared: true } : {}),
+      ...(options.agentId === undefined ? {} : { agent_id: options.agentId }),
+    }))),
+
+  /**
+   * (7.52.00) The flat flow a run of `revision` (the current one by default) would follow: its calls expanded and
+   * recorded (`GET /workflows/{id}/expanded`); the API answers 409 with its refusal when a call cannot be expanded.
+   */
+  expanded: async (id: string, revision?: number): Promise<ExpandedWorkflow> =>
+    normalizeExpanded(await fetchApi<unknown>(path(id, revision === undefined ? '/expanded' : `/expanded?revision=${revision}`))),
 
   /** "Save as": a copy of the CURRENT stored revision, with lineage. */
   duplicate: async (id: string, name?: string): Promise<WorkflowView> =>

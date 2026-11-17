@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clientToolLookup, fakeContext } from '../tools/test-fixtures.js';
-import { CASE_ENV, UPDATE_SCRAPER_CASE, WEB_REVIEWS_CONNECTOR_CASE, WRITE_REQUEST_CASES } from './write-request-fixtures.js';
+import { CASE_ENV, SHARED_WORKFLOW_CASE, UPDATE_SCRAPER_CASE, WEB_REVIEWS_CONNECTOR_CASE, WRITE_REQUEST_CASES } from './write-request-fixtures.js';
 import { WriteRequestError } from './write-args.js';
 import { preconditionFor, settlePrecondition } from './write-preconditions.js';
 import { storedScraperRecord } from './scraper-records.js';
@@ -36,6 +36,14 @@ describe('buildWriteRequest', () => {
     const c = WEB_REVIEWS_CONNECTOR_CASE;
     expect(tool(c.tool).validate(c.args, admin)).toMatchObject({ ok: true });
     expect(buildWriteRequest(c.tool, c.args, CASE_ENV)).toStrictEqual(c.request);
+  });
+
+  it('sends confirm_shared on an update_workflow the user confirmed for every automation, and only then (7.52.00)', () => {
+    const c = SHARED_WORKFLOW_CASE;
+    expect(tool(c.tool).validate(c.args, admin)).toMatchObject({ ok: true });
+    expect(buildWriteRequest(c.tool, c.args, CASE_ENV)).toStrictEqual(c.request);
+    expect(buildWriteRequest(c.tool, { ...c.args, confirm_shared: false }, CASE_ENV).body)
+      .toStrictEqual({ definition: c.args.definition, expected_revision: 2 });
   });
 
   it('refuses a web_reviews page that is already configured', () => {

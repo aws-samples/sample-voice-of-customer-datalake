@@ -18,7 +18,7 @@ import { fetchApi } from './client'
 import { nextAfterOf } from './seqPages'
 import { eachOf, lenientList } from './lenientFields'
 import { isRecord } from '../lib/typeGuards'
-import { normalizeDefinition } from './workflowsApi'
+import { expansionRecords, normalizeDefinition } from './workflowsApi'
 import { ReactionsSchema } from './engineeringReactionsApi'
 
 /** The signals a run's agents take (`engineering/monitor.py` SIGNALS). */
@@ -94,6 +94,9 @@ const AgentSchema = z.object({
   /** (7.51.04) Why it last failed: its failed command, and the supervisor's own words ("the boot took too long"). */
   last_exit: LastExitSchema.optional().transform((exit) => exit ?? null),
   last_failure: maybeText.optional().transform((failure) => failure ?? null),
+  /** (7.52.00, gap L) The Registry card it ran and its version, from its session row; null for a role's own card. */
+  card: maybeText.optional().transform((card) => card ?? null),
+  card_version: maybeCount.optional().transform((version) => version ?? null),
 })
 export type EngineeringAgent = z.output<typeof AgentSchema>
 
@@ -166,6 +169,9 @@ const OverviewSchema = z.object({
     cost_cap_usd: maybeCount.optional().transform((usd) => usd ?? null),
     parent: RunLinkSchema.nullable().catch(null).optional().transform((parent) => parent ?? null),
     manifest: ManifestSchema.optional().transform((manifest) => manifest ?? null),
+    /** (7.52.00, gap I) The calls its start expanded (`<call>.<child>` steps of the flat copy): each call step, the
+     *  flow it ran and that flow's revision; [] when the flow calls nothing. */
+    expansion: expansionRecords,
   }),
   agents: eachOf(AgentSchema),
   /** (7.51.02) What reaches the run from here, each false when unsaid: steering and answers (the stack names the

@@ -2178,5 +2178,331 @@
       "toControls": "Go to the run's controls",
       "openSession": "Open {{agent}}'s session"
     }
+  },
+  "canvas": {
+    "kinds": {
+      "trigger": "Trigger",
+      "agent": "Agent",
+      "team": "Team",
+      "gate": "Gate",
+      "call": "Calls a flow",
+      "decision": "A person decides",
+      "end": "End",
+      "platform": "Platform step"
+    },
+    "nodeName": "{{kind}}: {{rest}}",
+    "state": {
+      "invalid": "Has an issue",
+      "waitingForYou": "Waiting for you"
+    },
+    "chips": {
+      "pinned": "{{version}} pinned",
+      "updateAvailable": "Update available",
+      "share": "{{percent}} %",
+      "cost": "${{amount}}",
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents",
+      "more": "+{{n}}"
+    },
+    "team": {
+      "line": "{{claimers}} · posted by {{posters}}"
+    },
+    "gate": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "autoDetect": "Auto-detect",
+      "rounds": "≤ {{n}} rounds",
+      "reviewers_one": "{{count}} reviewer",
+      "reviewers_other": "{{count}} reviewers"
+    },
+    "handles": {
+      "go": "GO",
+      "noGo": "NO-GO",
+      "agreed": "Agreed",
+      "notAgreed": "Not agreed",
+      "arrow": "{{word}} arrow"
+    },
+    "call": {
+      "line": "{{name}} · r{{revision}}",
+      "noFlow": "No flow chosen yet",
+      "progress": "{{done}} of {{total}} steps done"
+    },
+    "decision": {
+      "title": "A person decides",
+      "line": "The run waits for a person",
+      "waiting": "Waiting for you"
+    },
+    "trigger": {
+      "line": "Starts the run"
+    },
+    "end": {
+      "completed": "Completed",
+      "prReady": "Pull request · ready for review",
+      "prDraft": "Pull request · a draft"
+    },
+    "platform": {
+      "map": "By {{by}} · at most {{n}}",
+      "memoryRead": "Reads {{whose}} memory · {{n}}",
+      "memoryWrite": "Writes {{whose}} memory",
+      "reduce": "Brings the shards together"
+    },
+    "drop": "Drop to add {{name}}",
+    "dropAny": "Drop to add the step",
+    "aria": {
+      "node": "Press Enter or Space to select a step and open its setup. Press Delete to remove it and Escape to cancel.",
+      "nodeKeyboard": "Press Enter or Space to select a step and open its setup. The arrow keys then move it; press Delete to remove it and Escape to cancel.",
+      "moved": "Moved the selected step {{direction}}. New position: x {{x}}, y {{y}}",
+      "edge": "Press Enter or Space to select an arrow. Press Delete to remove it or Escape to cancel.",
+      "controls": "Canvas controls",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fitView": "Fit the flow",
+      "interactive": "Lock or unlock the canvas",
+      "handle": "Connection point"
+    },
+    "shared": {
+      "banner_one": "Used by {{count}} automation: {{names}}. Saving changes it from its next run.",
+      "banner_other": "Used by {{count}} automations: {{names}}. Saving changes each of them from its next run.",
+      "confirmTitle": "Save a shared flow?",
+      "confirmMessage": "{{names}} run this flow. Saving changes each of them from its next run.",
+      "confirmAction": "Save for all of them",
+      "usedByLine": "Used by {{names}}",
+      "calledBy": "Called by {{names}}",
+      "approvalNote": "Approving saves it for every automation that runs it: {{names}}.",
+      "approvalRefused": "{{names}} run this flow: the save is refused unless the change is confirmed for all of them."
+    }
+  },
+  "inspector": {
+    "close": "Close inspector",
+    "tabs": "Step setup",
+    "sheetTitle": "Step setup",
+    "inFlow": "In this flow",
+    "fromCard": "From the card {{card}} v{{n}}",
+    "fromCardAny": "From the card {{card}}",
+    "fromCardLabel": "From the card",
+    "readOnly": "Read only.",
+    "readOnlyShort": "read only",
+    "editInFlows": "Edit in Flows",
+    "asRun": "As this run used it · r{{n}}",
+    "asRunUsed": "As this run used it",
+    "openSkill": "Open its skill history",
+    "loop": "Loop",
+    "tab": {
+      "agents": "Agents",
+      "setup": "Setup",
+      "assertions": "Assertions",
+      "arrows": "Arrows",
+      "checks": "Checks",
+      "reviewers": "Reviewers",
+      "packs": "Packs",
+      "preview": "Preview"
+    },
+    "agent": {
+      "card": "Card",
+      "latest": "Latest accepted",
+      "cardModel": "The card's",
+      "share": "Share of each run's budget",
+      "sharesInAll": "The agents' shares: {{used}} of 100 %",
+      "overrides": "Overrides the card's {{model}}",
+      "useCards": "Use the card's",
+      "cardsModel": "The card's model: {{model}}",
+      "purpose": "Purpose",
+      "skill": "Skill",
+      "skillVersion": "v{{version}} · {{provenance}}",
+      "model": "Model",
+      "tools": "Tools",
+      "host": "Host",
+      "hostBroker": "Read only, through the broker ({{ops}})",
+      "caps": "Caps",
+      "turns": "{{n}} turns",
+      "tokens": "{{n}} k input tokens",
+      "reads": "Reads",
+      "writes": "Writes",
+      "scorecard": "Scorecard",
+      "scorecardLine": "{{runs}} runs · {{rate}} % passed",
+      "thisMonth": "This month",
+      "usd": "${{amount}}"
+    },
+    "gate": {
+      "packs": "Packs",
+      "rounds": "Rounds at most",
+      "reviewers": "Reviewers",
+      "blocks": "blocks",
+      "advisory": "advisory",
+      "addReviewer": "Add a reviewer",
+      "reviewerName": "Reviewer's name",
+      "reviewerFocus": "What it looks for",
+      "reviewerRole": "{{name}}: blocks or advisory",
+      "removeReviewer": "Remove {{name}}",
+      "runsIt": "Runs it",
+      "finalGo": "Final go",
+      "arrows": "Arrows",
+      "pack": "Pack {{name}}",
+      "image": "Image",
+      "network": "Network (setup only)",
+      "tools": "Tools",
+      "ownPins": "The repository's own pins.",
+      "ownPinsRecorded": "The repository's own pins. Last recorded: {{list}}",
+      "steps": "Steps",
+      "always": "always",
+      "whenFile": "if {{file}} is there",
+      "whenContains": "if {{file}} has {{text}}",
+      "whenScript": "if {{file}} has a {{script}} script",
+      "or": " or ",
+      "lookedAtNothing": "Fails if it looked at nothing.",
+      "forAutomation": "For {{automation}}: {{pack}}",
+      "brief": "The owner's brief ({{path}})",
+      "briefOpen": "The owner's brief ({{path}})",
+      "stepKinds": {
+        "setup": "setup",
+        "lint": "lint",
+        "format": "format",
+        "types": "types",
+        "test": "test"
+      },
+      "stops": {
+        "check_failed": "A check failed, and the fixes did not make it pass.",
+        "looked_at_nothing": "The gate looked at nothing: no check covers the repository, or a check found nothing to check.",
+        "own_gate_changed": "The change touches the repository's own gate.",
+        "review_blocked": "A review blocked it: the final go said NO-GO.",
+        "rounds_used_up": "Blocking findings were left after the last round."
+      }
+    },
+    "assertions": {
+      "add": "Add an assertion",
+      "check": "Check",
+      "choose": "Choose a check",
+      "argument": "{{name}}",
+      "onFail": "{{check}}: when it fails",
+      "remove": "Remove {{check}}",
+      "full": "At most {{max}} assertions.",
+      "noneApply": "No check applies to this kind of step.",
+      "checks": {
+        "findings_cite_evidence": "Every finding cites a file, a line and its evidence",
+        "gate_pack_checks_ran": "The gate runner recorded at least one check",
+        "gate_passed": "The gate runner and the final go both said GO",
+        "learn_proposals_name_case": "Every coach proposal names an existing eval case",
+        "notes_cite_sources": "Every note cites a source",
+        "patch_max_lines": "No submitted patch changes more than max lines",
+        "patch_no_ci_changes": "No submitted patch changes a CI definition",
+        "patch_submitted": "A patch was submitted",
+        "patch_touches_tests": "Every submitted patch changes a test",
+        "pr_links_issue": "Every pull request says it fixes the run's issue",
+        "pr_opened": "A pull request was opened",
+        "pr_state_as_flow": "Every pull request opened as the flow says (ready or draft)",
+        "push_tree_is_judged_tree": "Every push is the tree the final go judged",
+        "review_commented": "A review comment was posted on the pull request",
+        "review_no_blocking": "The role named by \"by\" wrote no blocking finding",
+        "tasks_posted": "At least min tasks were posted for the role",
+        "tenets_recorded": "A tenets record of 1 to 30 tenets was recorded",
+        "triage_commented": "The triage was commented on the run's issue",
+        "triage_labelled": "The issue carries the triage's kind and severity labels",
+        "triage_recorded": "A triage record with a kind and a severity was recorded"
+      }
+    },
+    "call": {
+      "flow": "Flow",
+      "revision": "Revision",
+      "inputs": "Inputs",
+      "noInputs": "The flow it calls declares no inputs.",
+      "inputRequired": "{{name}} (required)",
+      "inputUnset": "not given",
+      "steps": "Its steps",
+      "childSteps_one": "{{count}} step",
+      "childSteps_other": "{{count}} steps",
+      "expands": "Expands to",
+      "inAll": "{{total}} of {{max}} steps in all",
+      "usedBy": "Used by",
+      "openFlow": "Open flow",
+      "preview": "{{name}}, read only",
+      "noPreview": "Choose a flow to preview it."
+    },
+    "decision": {
+      "happens": "What happens",
+      "happensText": "The run stops and waits for a person. The issue gets a comment, and Automations shows it needs your decision.",
+      "reachedFrom": "Reached from",
+      "fromVerdict": "{{step}} ({{verdict}})",
+      "ifNobody": "If nobody decides",
+      "ifNobodyText": "Learn reads it after {{hours}} h"
+    },
+    "trigger": {
+      "startedBy": "Started by",
+      "nobody": "No automation uses this flow yet.",
+      "inputs": "Inputs",
+      "inputMax": "{{name}}, at most {{max}}",
+      "memory": "Memory",
+      "recall": "Recall the repository's memory at the start",
+      "recallOn": "Recalled at the start",
+      "recallOff": "Not recalled",
+      "learn": "Learn",
+      "learnEnabled": "Learn from each run",
+      "learnOn": "On",
+      "learnOff": "Off",
+      "roles_one": "{{count}} role",
+      "roles_other": "{{count}} roles",
+      "after": "after {{hours}} h",
+      "learnAssertions": "Learn's assertions",
+      "pr": "Pull request",
+      "prReady": "Ready for review",
+      "prDraft": "A draft"
+    },
+    "end": {
+      "happens": "What happens",
+      "completed": "The run ends here. Nothing is ever merged.",
+      "stopAtPr": "The run opens a pull request and stops. Nothing is ever merged: a person merges it.",
+      "pullRequest": "Pull request",
+      "prNumber": "PR #{{n}}"
+    },
+    "platform": {
+      "setting": "Setting"
+    },
+    "edge": {
+      "title": "Arrow",
+      "from": "From",
+      "to": "To",
+      "condition": "Condition",
+      "always": "Always: this step reports no verdict",
+      "inRun": "In this run",
+      "taken": "Taken",
+      "notTaken": "Not taken"
+    },
+    "run": {
+      "agents": "The step's agents",
+      "ran": "Ran {{skill}} · {{model}}",
+      "round": "Round {{n}}",
+      "finalGo": "Final go: {{verdict}} {{reasons}}"
+    },
+    "empty": {
+      "selectStep": "Select a step to see its setup. Enter opens it, Escape closes it.",
+      "cardMissing": "This step names {{card}}, which isn't in the Registry.",
+      "cardAdmins": "The setup behind it is shown to administrators where the engineering agents are on.",
+      "autoDetect": "Packs are detected in the repository when a run starts. No automation uses this flow yet.",
+      "notRun": "Not run yet.",
+      "gateNotRun": "The gate hasn't run yet.",
+      "noAssertions": "No assertions.",
+      "noAssertionsBuild": "No assertions. Add one to check what this step recorded."
+    }
+  },
+  "palette": {
+    "search": "Search the steps",
+    "noMatch": "No step matches.",
+    "madeFromSkill": "made from a skill",
+    "gateOf": "Quality gate: {{pack}}",
+    "revision": "r{{n}}",
+    "cycle": "It calls this flow: calling it from here would make a cycle.",
+    "groups": {
+      "startEnd": "Start and end",
+      "agents": "Agents",
+      "gates": "Quality gates",
+      "flows": "Flows",
+      "platform": "Platform steps"
+    },
+    "hints": {
+      "startEnd": "Where a run starts and ends; a person decides where every NO-GO goes.",
+      "agents": "The Registry's cards: each role's, and the ones made from a skill.",
+      "gates": "Checks and reviews on the change; Auto-detect picks the packs in the repository.",
+      "flows": "Another saved flow, called at its revision.",
+      "platform": "Steps the platform runs: sharding, bringing shards together, a board, memory, Learn."
+    }
   }
 }

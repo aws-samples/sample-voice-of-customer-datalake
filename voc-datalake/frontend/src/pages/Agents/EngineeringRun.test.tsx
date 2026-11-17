@@ -88,10 +88,11 @@ describe('the run monitor', () => {
   it('lights the steps its agents are on, and no node for a step in the harness\'s own words', async () => {
     routes()
     renderRun()
+    // (7.52.00: a step's state is its outline, `data-state`, beside its kind's shape)
     const board = await screen.findByTestId('step-board')
-    expect(board.className).toContain('border-accent')
-    expect(screen.getByTestId('step-gate').className).not.toContain('border-accent')
-    expect(screen.getByTestId('step-pr').className).not.toContain('border-accent')
+    expect(board).toHaveAttribute('data-state', 'running')
+    expect(screen.getByTestId('step-gate')).not.toHaveAttribute('data-state', 'running')
+    expect(screen.getByTestId('step-pr')).not.toHaveAttribute('data-state', 'running')
   })
 
   it('draws the run\'s own copy of its flow, its steps lit as the conductor reads them', async () => {
@@ -106,10 +107,11 @@ describe('the run monitor', () => {
     })
     renderRun()
     const gate = await screen.findByTestId('step-gate')
-    expect(gate.className).toContain('border-danger')
-    expect(screen.getByTestId('step-board').className).not.toContain('border-accent')
-    // (7.51.04: a way not taken reads dotted, never dimmed by opacity)
-    expect(screen.getByTestId('step-pr').className).toContain('border-dotted')
+    expect(gate).toHaveAttribute('data-state', 'failed')
+    expect(screen.getByTestId('step-board')).toHaveAttribute('data-state', 'done')
+    // (a way not taken: dotted, never dimmed by opacity)
+    expect(screen.getByTestId('step-pr')).toHaveAttribute('data-state', 'skipped')
+    expect(screen.getByTestId('step-pr').className).not.toContain('opacity-')
   })
 
   it('says in an agent\'s session why it looks stuck, and shows its session\'s facts in the Cost tab', async () => {

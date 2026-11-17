@@ -358,9 +358,11 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     ],
   },
   update_workflow: {
-    good: [{ workflow_id: 'wf_1', expected_revision: 2, definition: WF, change_summary: 'add review' }],
+    good: [{ workflow_id: 'wf_1', expected_revision: 2, definition: WF, change_summary: 'add review' },
+      { workflow_id: 'wf_1', expected_revision: 2, definition: WF, change_summary: 'add review', confirm_shared: true }],
     bad: [
       { workflow_id: 'wf_1', expected_revision: 0, definition: WF, change_summary: 's' },
+      { workflow_id: 'wf_1', expected_revision: 2, definition: WF, change_summary: 's', confirm_shared: 'yes' },
       { workflow_id: 'wf_1', expected_revision: 2, definition: WF },
       { workflow_id: 'wf_1', expected_revision: 2, definition: { ...WF, edges: undefined }, change_summary: 's' },
     ],
