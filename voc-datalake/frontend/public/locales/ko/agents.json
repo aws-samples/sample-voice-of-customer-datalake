@@ -264,7 +264,12 @@
       "idle": "시작 전",
       "running": "실행 중",
       "done": "완료",
-      "failed": "실패"
+      "failed": "실패",
+      "waiting": "사람이 필요함",
+      "paused": "일시 중지됨",
+      "stopped": "중지됨",
+      "skipped": "건너뜀",
+      "ready": "차례가 되었지만 아직 작업 중인 에이전트가 없음"
     },
     "eventKinds": {
       "node_started": "단계 시작",
@@ -300,9 +305,13 @@
       "ran_failed": "실패",
       "running": "작업 중",
       "stopped": "중지됨",
-      "planned": "예정"
+      "planned": "예정",
+      "waiting": "사람이 필요함",
+      "paused": "일시 중지됨"
     },
-    "laneAttempt": "{{role}} · 시도 {{n, number}}"
+    "laneAttempt": "{{role}} · 시도 {{n, number}}",
+    "stoppedHere": "여기서 중지됨",
+    "stoppedHereAs": "여기서 중지됨: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1676,7 +1685,8 @@
     "flow": {
       "canvas": "캔버스",
       "timeline": "타임라인",
-      "view": "흐름 표시 방식"
+      "view": "흐름 표시 방식",
+      "openSession": "세션 열기"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1693,8 +1703,15 @@
         "ok": "완료",
         "failed": "실패",
         "stopped": "중지됨",
-        "planned": "아직 실행 안 됨"
-      }
+        "planned": "아직 실행 안 됨",
+        "ready": "차례가 되었지만 아직 작업 중인 에이전트가 없음",
+        "waiting": "사람이 필요함",
+        "paused": "일시 중지됨",
+        "skipped": "건너뜀"
+      },
+      "noAgentsYet": "아직 에이전트 없음",
+      "notStarted": "시작 전",
+      "noAgents": "에이전트 없음"
     },
     "sessions": {
       "title": "세션",
@@ -1726,7 +1743,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (사람)",
         "conductor": "오케스트레이터 ({{id}})",
-        "system": "{{id}} (플랫폼)"
+        "system": "{{id}} (플랫폼)",
+        "supervisor": "감독자"
       },
       "kinds": {
         "gate": "게이트",
@@ -1744,6 +1762,36 @@
         "failed": "실패",
         "running": "실행 중",
         "loadFailed": "호출을 읽을 수 없습니다. 다시 시도하세요."
+      },
+      "endedDone": "이 세션은 종료되었습니다. 작업이 완료되었습니다.",
+      "endedFailed": "이 세션은 종료되었습니다. 실패했습니다.",
+      "endedStopped": "이 세션은 종료되었습니다. 중지되었습니다.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "시작하는 중…",
+          "working": "작업 중",
+          "pause_requested": "일시 중지하는 중…",
+          "waiting": "대기 중",
+          "paused": "일시 중지됨",
+          "done": "완료",
+          "failed": "실패",
+          "crashed": "비정상 종료",
+          "stopped": "중지됨",
+          "reposted": "넘겨짐"
+        },
+        "restarted": "{{agent}}이(가) 예기치 않게 중지되어 다시 시작되었습니다({{max, number}}번 중 {{n, number}}번째 시도)",
+        "restartedAgain": "{{agent}}이(가) 예기치 않게 중지되어 다시 시작되었습니다({{n, number}}번째 시도)",
+        "continued": "{{agent}}이(가) 일시 중지 후 새 세션에서 계속했습니다",
+        "failedOutRun": "{{agent}}이(가) {{n, number}}번 실패했습니다. 실행에 사람이 필요합니다",
+        "failedOutTask": "{{agent}}이(가) {{n, number}}번 실패했습니다. 작업은 새 에이전트에게 넘어갑니다",
+        "couldNotStart": "{{agent}}을(를) 시작할 수 없습니다: {{reason}}",
+        "notAnswering": "{{agent}}이(가) 응답하지 않습니다",
+        "noRoom": "{{n, number}}번 시도했지만 {{agent}}의 빈 세션이 없습니다. 사람을 기다립니다",
+        "stopped": "실행이 중지되고 세션이 종료되었습니다({{n, number}})",
+        "repeats": "{{count, number}}번",
+        "details": "세부 정보"
       }
     },
     "composer": {
@@ -1937,6 +1985,48 @@
       "refreshFailed": "이 실행을 새로 고칠 수 없습니다. 마지막으로 정상 확인된 상태를 표시합니다.",
       "retry": "다시 시도",
       "stopSent": "중지 요청을 보냄"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "저장소 체크아웃에 실패했습니다. 실행이 사람을 기다리고 있습니다.",
+        "orchestratorFailed": "오케스트레이터 {{agent}}이(가) 실패했습니다. 실행이 사람을 기다리고 있습니다.",
+        "agentFailed": "{{agent}}이(가) 실패했습니다. 실행이 사람을 기다리고 있습니다.",
+        "flowStep": "플로가 “{{step}}”에서 사람의 결정을 기다리고 있습니다.",
+        "budget": "실행이 예산을 모두 썼습니다. 실행이 사람을 기다리고 있습니다.",
+        "thirtyDays": "실행이 30일에 도달했습니다. 실행이 사람을 기다리고 있습니다.",
+        "checkoutCache": "체크아웃 캐시에 실행 커밋의 사용 가능한 사본이 없습니다. 실행이 사람을 기다리고 있습니다.",
+        "orchestratorNotStarted": "오케스트레이터를 시작할 수 없었습니다. 실행이 사람을 기다리고 있습니다.",
+        "waiting": "실행이 사람을 기다리고 있습니다.",
+        "runFailed": "실행이 실패했습니다.",
+        "runFailedOrchestrator": "실행이 실패했습니다. 오케스트레이터 {{agent}}이(가) 실패했습니다.",
+        "runFailedAgent": "실행이 실패했습니다. {{agent}}이(가) 실패했습니다.",
+        "stopped": "실행이 중지되었습니다.",
+        "stoppedNow": "실행이 저장하지 않고 즉시 중지되었습니다."
+      },
+      "next": {
+        "restart": "다시 시도하려면 ‘실행 재시작’으로 이 실행의 체크포인트에서 또는 처음부터 새 실행으로 시작하세요.",
+        "resume": "원인을 해결한 뒤 실행 제어에서 다시 시작하거나(실패한 오케스트레이터는 새 것으로 교체됨) 중지하세요.",
+        "resumeBudget": "플로 예산을 늘린 뒤 실행 제어에서 다시 시작하거나 중지하세요.",
+        "stopThenRestart": "이 배포에서는 아직 다시 시작을 보낼 수 없습니다. 실행 제어에서 중지한 뒤 ‘실행 재시작’으로 새 실행으로 다시 시작하세요.",
+        "nothing": "이 배포에서는 아직 여기에서 실행을 조작할 수 없습니다."
+      },
+      "agent": "에이전트: {{agent}}",
+      "agentOrchestrator": "에이전트: {{agent}}(오케스트레이터)",
+      "step": "단계: {{step}}",
+      "cost": "지금까지의 비용: {{cost}}",
+      "why": "이유:",
+      "exitCode": "마지막 명령이 코드 {{code}}(으)로 종료되었습니다.",
+      "exitNoCode": "마지막 명령이 실패했습니다.",
+      "timedOut": "마지막 명령이 시간 초과되었습니다.",
+      "noReason": "이유가 기록되지 않았습니다. 세션에 더 많은 정보가 있을 수 있습니다.",
+      "details": "세부 정보 보기",
+      "detailStep": "당시 위치",
+      "detailExit": "종료 코드",
+      "detailDuration": "실행 시간",
+      "stderr": "오류 출력의 끝부분",
+      "noStderr": "오류 출력이 없습니다.",
+      "toControls": "실행 제어로 이동",
+      "openSession": "{{agent}}의 세션 열기"
     }
   }
 }

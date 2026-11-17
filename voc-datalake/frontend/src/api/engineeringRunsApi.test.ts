@@ -25,8 +25,8 @@ describe('parseOverview', () => {
     const overview = parseOverview(engineeringOverview())
     expect(overview.run).toStrictEqual({
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
-      started_at: '2026-11-12T08:00:00Z', ended_at: null, waiting_at: '', stop: null, budget: null, flow_steps: null,
-      flow_revision: null, flow_definition: null, issue: null, pull_request: null,
+      started_at: '2026-11-12T08:00:00Z', ended_at: null, waiting_at: '', waiting_detail: null, stop: null, budget: null,
+      flow_steps: null, flow_revision: null, flow_outcome: null, flow_definition: null, issue: null, pull_request: null,
       cost_usd: null, learn_cost_usd: null, cost_cap_usd: null, parent: null, manifest: null,
     })
     expect(overview.agents.map((agent) => [agent.agent, agent.status, agent.task_id, agent.tokens.length])).toStrictEqual([
@@ -47,6 +47,21 @@ describe('parseOverview', () => {
       ['coordinator', { mode: 'stop', requested_at: '2026-11-17T05:00:00Z' }])
     expect(parseOverview(engineeringOverview({ stop: 'soon' })).run.stop).toBeNull()
     expect(parseOverview({ ...engineeringOverview(), stop_available: undefined }).stop_available).toBe(false)
+  })
+
+  it('reads why a run is at a person and why its agent failed, and a reason off its shape as none (7.51.04)', () => {
+    const exit = { exit_code: 128, timed_out: false, duration_seconds: 2, stderr_tail: 'fatal: dubious ownership' }
+    const failed = parseOverview({ ...engineeringOverview({ status: 'needs_human', waiting_at: 'coordinator',
+      waiting_detail: 'The repository checkout failed', flow_outcome: { outcome: 'running', at: null, reason: null } }),
+    agents: [{ agent: 'coordinator-1', status: 'failed', last_exit: exit, last_failure: 'the boot took too long' }] })
+    expect([failed.run.waiting_detail, failed.run.flow_outcome, failed.agents[0]?.last_exit, failed.agents[0]?.last_failure])
+      .toStrictEqual(['The repository checkout failed', { outcome: 'running', at: null, reason: null }, exit, 'the boot took too long'])
+    const odd = parseOverview({ ...engineeringOverview({ waiting_detail: 7, flow_outcome: 'x' }),
+      agents: [{ agent: 'coordinator-1', last_exit: 'boom', last_failure: 3 }] })
+    expect([odd.run.waiting_detail, odd.run.flow_outcome, odd.agents[0]?.last_exit, odd.agents[0]?.last_failure])
+      .toStrictEqual([null, null, null, null])
+    expect(parseOverview({ ...engineeringOverview(), agents: [{ agent: 'x', last_exit: { exit_code: 'one' } }] }).agents[0]?.last_exit)
+      .toStrictEqual({ exit_code: null, timed_out: false, duration_seconds: null, stderr_tail: '' })
   })
 
   it('reads no reactions read as none, and a read off its shape as none too', () => {
@@ -73,7 +88,7 @@ describe('parseOverview', () => {
       agent: 'fixer-1', role: '', task_id: null, status: '', continuation: 0, started_at: null, step: null,
       microvm_state: null, microvm_age: null, heartbeat_age: null, last_progress_at: null, stuck_why: null,
       recent_tools: [], microvm_seconds: 0, tokens: [{ model: 'm', input_tokens: 0, output_tokens: 0 }],
-      cost_usd: null, attempt: 0, commit: null, skill_label: null, model: null,
+      cost_usd: null, attempt: 0, commit: null, skill_label: null, model: null, last_exit: null, last_failure: null,
     }])
     expect([overview.totals, overview.run.ended_at]).toStrictEqual([{ messages: 0, microvm_seconds: 0, by_model: [] }, null])
   })

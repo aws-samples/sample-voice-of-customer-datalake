@@ -265,7 +265,12 @@
       "idle": "Non démarrée",
       "running": "En cours",
       "done": "Terminée",
-      "failed": "Échouée"
+      "failed": "Échouée",
+      "waiting": "Attend une personne",
+      "paused": "En pause",
+      "stopped": "Arrêté",
+      "skipped": "Ignoré",
+      "ready": "Son tour, aucun agent au travail pour l’instant"
     },
     "eventKinds": {
       "node_started": "Étape démarrée",
@@ -301,9 +306,13 @@
       "ran_failed": "Échoué",
       "running": "Au travail",
       "stopped": "Arrêté",
-      "planned": "Prévu"
+      "planned": "Prévu",
+      "waiting": "Attend une personne",
+      "paused": "En pause"
     },
-    "laneAttempt": "{{role}} · tentative {{n, number}}"
+    "laneAttempt": "{{role}} · tentative {{n, number}}",
+    "stoppedHere": "Arrêté ici",
+    "stoppedHereAs": "Arrêté ici : {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1683,7 +1692,8 @@
     "flow": {
       "canvas": "Canevas",
       "timeline": "Chronologie",
-      "view": "Affichage du flux"
+      "view": "Affichage du flux",
+      "openSession": "Ouvrir sa session"
     },
     "canvas": {
       "lane": "{{label}} : {{state}}"
@@ -1700,8 +1710,15 @@
         "ok": "Terminé",
         "failed": "Échoué",
         "stopped": "Arrêté",
-        "planned": "Pas encore exécuté"
-      }
+        "planned": "Pas encore exécuté",
+        "ready": "Son tour, aucun agent au travail pour l’instant",
+        "waiting": "Attend une personne",
+        "paused": "En pause",
+        "skipped": "Ignoré"
+      },
+      "noAgentsYet": "Pas encore d’agents",
+      "notStarted": "Non démarrée",
+      "noAgents": "Aucun agent"
     },
     "sessions": {
       "title": "Sessions",
@@ -1733,7 +1750,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (une personne)",
         "conductor": "Orchestrateur ({{id}})",
-        "system": "{{id}} (la plateforme)"
+        "system": "{{id}} (la plateforme)",
+        "supervisor": "Le superviseur"
       },
       "kinds": {
         "gate": "Contrôle",
@@ -1751,6 +1769,36 @@
         "failed": "Échoué",
         "running": "En cours",
         "loadFailed": "L’appel n’a pas pu être lu : réessayez."
+      },
+      "endedDone": "Cette session est terminée : son travail est fait.",
+      "endedFailed": "Cette session est terminée : elle a échoué.",
+      "endedStopped": "Cette session est terminée : elle a été arrêtée.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}} : {{count, number}}",
+        "status": {
+          "booting": "Démarrage…",
+          "working": "Au travail",
+          "pause_requested": "Mise en pause…",
+          "waiting": "En attente",
+          "paused": "En pause",
+          "done": "Terminé",
+          "failed": "Échoué",
+          "crashed": "Planté",
+          "stopped": "Arrêté",
+          "reposted": "Transmis"
+        },
+        "restarted": "{{agent}} s’est arrêté de façon inattendue et a été relancé (tentative {{n, number}} sur {{max, number}})",
+        "restartedAgain": "{{agent}} s’est arrêté de façon inattendue et a été relancé (tentative {{n, number}})",
+        "continued": "{{agent}} a repris dans une nouvelle session après sa pause",
+        "failedOutRun": "{{agent}} a échoué {{n, number}} fois ; l’exécution attend une personne",
+        "failedOutTask": "{{agent}} a échoué {{n, number}} fois ; sa tâche passe à un nouvel agent",
+        "couldNotStart": "{{agent}} n’a pas pu démarrer : {{reason}}",
+        "notAnswering": "{{agent}} ne répond plus",
+        "noRoom": "Aucune session libre pour {{agent}} après {{n, number}} essais ; il attend une personne",
+        "stopped": "L’exécution a été arrêtée et ses sessions ont pris fin ({{n, number}})",
+        "repeats": "dit {{count, number}} fois",
+        "details": "Détails"
       }
     },
     "composer": {
@@ -1944,6 +1992,48 @@
       "refreshFailed": "Impossible d’actualiser cette exécution : vous voyez son dernier état valide.",
       "retry": "Réessayer",
       "stopSent": "Arrêt envoyé"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "L’extraction du dépôt a échoué : l’exécution attend une personne.",
+        "orchestratorFailed": "L’orchestrateur, {{agent}}, a échoué : l’exécution attend une personne.",
+        "agentFailed": "{{agent}} a échoué : l’exécution attend une personne.",
+        "flowStep": "Le flux attend la décision d’une personne à « {{step}} ».",
+        "budget": "L’exécution a dépensé son budget : l’exécution attend une personne.",
+        "thirtyDays": "L’exécution a atteint ses 30 jours : l’exécution attend une personne.",
+        "checkoutCache": "Le cache d’extraction n’a aucune copie utilisable du commit de l’exécution : l’exécution attend une personne.",
+        "orchestratorNotStarted": "L’orchestrateur n’a pas pu démarrer : l’exécution attend une personne.",
+        "waiting": "L’exécution attend une personne.",
+        "runFailed": "L’exécution a échoué.",
+        "runFailedOrchestrator": "L’exécution a échoué : son orchestrateur, {{agent}}, a échoué.",
+        "runFailedAgent": "L’exécution a échoué : {{agent}} a échoué.",
+        "stopped": "L’exécution a été arrêtée.",
+        "stoppedNow": "L’exécution a été arrêtée tout de suite, sans enregistrer."
+      },
+      "next": {
+        "restart": "Pour réessayer, Relancer l’exécution la démarre comme une nouvelle exécution, depuis les points de contrôle de celle-ci ou de zéro.",
+        "resume": "Une fois la cause corrigée, Reprenez l’exécution depuis ses commandes (un nouvel orchestrateur remplace celui qui a échoué), ou Arrêtez-la.",
+        "resumeBudget": "Augmentez le budget du flux, puis Reprenez l’exécution depuis ses commandes, ou Arrêtez-la.",
+        "stopThenRestart": "Ce déploiement ne peut pas encore envoyer Reprendre : Arrêtez l’exécution depuis ses commandes, puis Relancer l’exécution la redémarre comme une nouvelle exécution.",
+        "nothing": "Ce déploiement ne peut pas encore agir sur l’exécution d’ici."
+      },
+      "agent": "Agent : {{agent}}",
+      "agentOrchestrator": "Agent : {{agent}} (l’orchestrateur)",
+      "step": "Étape : {{step}}",
+      "cost": "Coût jusqu’ici : {{cost}}",
+      "why": "Pourquoi :",
+      "exitCode": "Sa dernière commande s’est terminée avec le code {{code}}.",
+      "exitNoCode": "Sa dernière commande a échoué.",
+      "timedOut": "Sa dernière commande a expiré.",
+      "noReason": "Rien n’indique pourquoi : sa session peut en dire plus.",
+      "details": "Afficher les détails",
+      "detailStep": "Où il en était",
+      "detailExit": "Code de sortie",
+      "detailDuration": "Durée",
+      "stderr": "La fin de sa sortie d’erreur",
+      "noStderr": "Aucune sortie d’erreur.",
+      "toControls": "Aller aux commandes de l’exécution",
+      "openSession": "Ouvrir la session de {{agent}}"
     }
   }
 }

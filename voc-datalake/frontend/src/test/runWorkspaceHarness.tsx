@@ -15,6 +15,9 @@ import type { RouteHandler } from './fetchApiRoutes'
 export const RUN = fixture.run_id
 export const AGENT = fixture.agent
 export const RUN_PATH = `/agents/engineering/${RUN}`
+/** (7.51.04) The run at a person whose orchestrator failed at its checkout, and that orchestrator. */
+export const FAILED_PATH = `/agents/engineering/${fixture.failed_run_id}`
+export const FAILED_ORCHESTRATOR = 'coordinator-1'
 const EMPTY_THREAD = { items: [], next: null, done: false }
 const NO_GATE = { key: null, record: null, checks: [], passed: null, packs: [], ran_at: null }
 
@@ -26,7 +29,8 @@ export function endpointOf(exchange: { path: string; query?: Record<string, stri
 
 const threadOf = (agent: string) => `${RUN_PATH}/agents/${agent}/thread`
 
-/** The fixture's live run, its fixer's thread (two pages, then nothing new), changes, files, gate, memory, assertions. */
+/** The fixture's live run, its fixer's thread (two pages, then nothing new), changes, files, gate, memory, assertions;
+ * (7.51.04) the failed run's overview and its orchestrator's thread. */
 export function workspaceRoutes(extra: Record<string, RouteHandler> = {}): void {
   routeFetchApi({
     [`GET ${RUN_PATH}`]: () => fixture.overview.answer,
@@ -47,6 +51,9 @@ export function workspaceRoutes(extra: Record<string, RouteHandler> = {}): void 
     [`GET ${RUN_PATH}/board`]: () => ({ tasks: [] }),
     [`GET ${RUN_PATH}/conversation?after=0`]: () => ({ items: [], next_after: 0 }),
     [`GET ${RUN_PATH}/reports`]: () => ({ items: [] }),
+    [`GET ${FAILED_PATH}`]: () => fixture.failed_overview.answer,
+    [`GET ${endpointOf(fixture.failed_thread)}`]: () => fixture.failed_thread.answer,
+    [`GET ${FAILED_PATH}/conversation?after=0`]: () => ({ items: [], next_after: 0 }),
     ...extra,
   })
 }

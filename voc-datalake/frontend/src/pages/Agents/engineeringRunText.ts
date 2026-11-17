@@ -71,13 +71,14 @@ export function groupsInOrder(known: readonly string[], present: readonly string
 }
 
 /**
- * How the canvas lights a step of the conductor's (`lambda/engineering/flow/conductor.py`): its turn, under way or at a
- * person as running; done, or passed by a person, as done; blocked or stopped (a person decides) as failed; not run
- * yet, or on a way not taken, dimmed. A step still waiting is left as it is.
+ * How the canvas lights a step of the conductor's (`lambda/engineering/flow/conductor.py`): its turn or under way as
+ * running; at a person's decision point as waiting for a person (7.51.04, UX part 5 N7: never a spinner); done, or
+ * passed by a person, as done; blocked (its task ended without being done) as failed; stopped as stopped; not run yet
+ * as not started; on a way not taken as skipped. A step still waiting is left as it is.
  */
 const FLOW_LIGHT: Readonly<Record<string, StepState['status']>> = {
-  ready: 'running', running: 'running', collecting: 'running', human: 'running',
-  done: 'done', passed: 'done', blocked: 'failed', stopped: 'failed', not_yet_run: 'idle', skipped: 'idle',
+  ready: 'running', running: 'running', collecting: 'running', human: 'waiting',
+  done: 'done', passed: 'done', blocked: 'failed', stopped: 'stopped', not_yet_run: 'idle', skipped: 'skipped',
 }
 
 /**

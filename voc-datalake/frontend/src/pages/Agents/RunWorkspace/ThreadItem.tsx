@@ -4,7 +4,8 @@
  * tool, whether it worked and a one-line input) that expands on click into its whole event and result (read then,
  * `…/thread/<ref>`), the harness's messages to the model folded, the conversation's messages (an agent's own question
  * with a Reply), a person's steering marked, and the run's events (gate results, findings, signals, checkpoints, a
- * crash, the end) inline.
+ * crash, the end) inline; (7.51.04) the supervisor's own lines in plain words, their raw text behind "Details"
+ * (SupervisorLine.tsx).
  *
  * Transcript text is the model's and the tools': rendered as Markdown with NO raw HTML (`skipHtml`), no images (no
  * request leaves for an address a transcript names), links opened apart with no opener or referrer, and cut to a
@@ -18,7 +19,7 @@ import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
-  AlertTriangle, Bot, Brain, CheckCircle2, ChevronRight, Circle, Compass, Flag, Loader2, Radio, Save, Search,
+  Activity, AlertTriangle, Bot, Brain, CheckCircle2, ChevronRight, Circle, Compass, Flag, Loader2, Radio, Save, Search,
   ShieldCheck, User, Workflow, XCircle,
 } from 'lucide-react'
 import { formatTime } from '../../../utils/dateUtils'
@@ -26,6 +27,8 @@ import { isRecord } from '../../../lib/typeGuards'
 import { boundedText, lookOf } from './threadModel'
 import { useThreadItem } from './useRunWorkspace'
 import { QuestionReply } from './QuestionReply'
+import { SupervisorLineView } from './SupervisorLine'
+import { isSupervisors, readSupervisorLine } from './supervisorLines'
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { Components } from 'react-markdown'
@@ -50,7 +53,7 @@ function TranscriptMarkdown({ text }: Readonly<{ text: string }>) {
   )
 }
 
-const SENDER_ICONS: Readonly<Record<string, LucideIcon>> = { agent: Bot, human: User, conductor: Workflow }
+const SENDER_ICONS: Readonly<Record<string, LucideIcon>> = { agent: Bot, human: User, conductor: Workflow, supervisor: Activity }
 
 function SenderLine({ item }: Readonly<{ item: ThreadItem }>) {
   const { t, i18n } = useTranslation('agents')
@@ -152,7 +155,21 @@ function Folded({ icon: Icon, summary, children }: Readonly<{ icon: LucideIcon; 
   )
 }
 
-function ItemBody({ runId, agent, item }: Readonly<{ runId: string; agent: string; item: ThreadItem }>) {
+/** What an item shows beside itself: every item it stands for (a run of the supervisor's same line), the run's
+ * orchestrator. */
+interface Context {
+  said: readonly ThreadItem[]
+  orchestrator: string | null
+}
+
+/** A conversation message; the supervisor's in plain words where its shape is known (7.51.04). */
+function MessageBody({ item, text, context }: Readonly<{ item: ThreadItem; text: string; context: Context }>) {
+  const line = isSupervisors(item) ? readSupervisorLine(item.text) : null
+  if (line !== null) return <SupervisorLineView line={line} said={context.said} orchestrator={context.orchestrator} />
+  return <p className="whitespace-pre-wrap break-words text-[13px] text-text">{text}</p>
+}
+
+function ItemBody({ runId, agent, item, context }: Readonly<{ runId: string; agent: string; item: ThreadItem; context: Context }>) {
   const { t } = useTranslation('agents')
   const { text, cut } = boundedText(item)
   switch (lookOf(item)) {
@@ -178,7 +195,7 @@ function ItemBody({ runId, agent, item }: Readonly<{ runId: string; agent: strin
         </div>
       )
     case 'message':
-      return <p className="whitespace-pre-wrap break-words text-[13px] text-text">{text}</p>
+      return <MessageBody item={item} text={text} context={context} />
     case 'event':
       return <EventLine item={item} />
   }
@@ -186,15 +203,17 @@ function ItemBody({ runId, agent, item }: Readonly<{ runId: string; agent: strin
 
 /**
  * One item; `header` starts a message group (who, and when); `reply`: the thread of the agent's own question this
- * item is, which an admin may answer on (QuestionReply.tsx).
+ * item is, which an admin may answer on (QuestionReply.tsx); `said`: every item it stands for (7.51.04: the latest
+ * of a run of the supervisor's same line stands for the run; else itself), `orchestrator` the run's.
  */
-export function ThreadItemView({ runId, agent, item, header, reply }: Readonly<{
+export function ThreadItemView({ runId, agent, item, header, reply, said = [item], orchestrator = null }: Readonly<{
   runId: string; agent: string; item: ThreadItem; header: boolean; reply?: string
+  said?: readonly ThreadItem[]; orchestrator?: string | null
 }>) {
   return (
     <li className="px-3 py-0.5" data-ref={item.ref}>
       {header && <SenderLine item={item} />}
-      <ItemBody runId={runId} agent={agent} item={item} />
+      <ItemBody runId={runId} agent={agent} item={item} context={{ said, orchestrator }} />
       {reply !== undefined && <QuestionReply runId={runId} agent={agent} threadId={reply} />}
     </li>
   )

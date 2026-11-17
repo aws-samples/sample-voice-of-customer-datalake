@@ -3,7 +3,9 @@
  * its flow (as its start wrote it; for a run without one, the flow's current revision), each step a stage lit as the
  * conductor reads it, a gate step's pass or fail from the board's verdict, "you are here" on the step the run is on
  * (canvasFocus.ts `focusStepId`), and each step's agents as sibling lanes under it (runLanes.ts): a spinner on one at
- * work, dashed while planned, solid once it ran, the one open outlined.
+ * work, dashed while planned, solid once it ran, the one open filled. (7.51.04) Lit from the run's real state
+ * (runFlow.ts): once it ended or waits for a person, "Stopped here" on the step where it stopped, in the state it
+ * stopped in, and no spinner anywhere; the orchestrator is the run itself, above the canvas (FlowPane.tsx).
  *
  * INERT, like KiroCrew's run graph: a click selects (a lane opens its agent's session; a step, its first agent's), it
  * never acts. Nothing on the canvas signals, restarts or spends.
@@ -15,6 +17,7 @@ import { useTranslation } from 'react-i18next'
 import { WorkflowCanvas } from '../../../components/WorkflowEditor/WorkflowCanvas'
 import { LANE_HEIGHT, LANE_WIDTH, layoutRun } from './runLanes'
 import { runStepStates } from './runFlow'
+import { runPhase } from './agentStatus'
 import type { LaneFlowNode } from '../../../components/WorkflowEditor/CanvasNodes'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
@@ -29,8 +32,8 @@ interface Props {
 
 export function RunCanvas({ overview, definition, current, onOpen }: Readonly<Props>) {
   const { t } = useTranslation('agents')
-  const ended = overview.run.ended_at !== null
-  const layout = useMemo(() => layoutRun(definition, overview.lanes, ended), [definition, overview.lanes, ended])
+  const phase = runPhase(overview.run)
+  const layout = useMemo(() => layoutRun(definition, overview.lanes, phase), [definition, overview.lanes, phase])
   const states = useMemo(() => runStepStates(overview, definition), [overview, definition])
   const lanes = useMemo((): LaneFlowNode[] => layout.lanes.map((lane) => ({
     id: lane.id, type: 'lane', position: lane.position,

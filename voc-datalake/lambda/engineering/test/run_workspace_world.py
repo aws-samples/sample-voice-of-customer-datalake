@@ -5,15 +5,18 @@ quality gate and a stop at its pull request; the coordinator, a fixer on its sec
 a gate runner and the final go; the fixer's transcript (its brief with a recalled lesson, its reasoning and words, its
 tool calls and their results, a checkpoint), its submitted patch and a checkpoint's; the gate runner's gate run and
 record; the conversation (a person's steering, the orchestrator's relay, the fixer's question and its answer, a
-signal); the gate's assertions; Learn's lesson; the pull request and the committer's push; and a child run restarted
-from an earlier run, in this month's runs list. Used by the views' tests, the routes' tests and the shared fixture
+signal); the gate's assertions; Learn's lesson; the pull request and the committer's push; a child run restarted
+from an earlier run, in this month's runs list; and (7.51.04) a run at a person whose orchestrator never got past its
+repository checkout (the owner's first run on b-): its coordinator restarted twice, then failed with its last exit
+(128) and stderr, the run waiting at ``checkout_failed`` with its supervisor's plain reason (7.51.03), and the
+supervisor's lines in its conversation. Used by the views' tests, the routes' tests and the shared fixture
 (frontend/src/test/engineeringRunWorkspace.json).
 """
 from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -35,6 +38,14 @@ RUN: Final = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3'
 #: A run of the same flow that ended, and its child, restarted from it.
 ENDED_RUN: Final = '01JDA0B1C2D3E4F5G6H7J8K9M0'
 CHILD_RUN: Final = '01JDA9W8X7Y6Z5V4T3S2R1Q0P9'
+#: (7.51.04) A run at a person: its orchestrator failed at its checkout, on a triage flow.
+FAILED_RUN: Final = '01JDAF5Q0C8R2N7W4X6Y1Z3K9M'
+TRIAGE_FLOW: Final = 'wf_3e8a1c5d7f90'
+CHECKOUT_STDERR: Final = "fatal: detected dubious ownership in repository at '/mnt/voc-cache/storefront/0123456789ab'"
+#: Its supervisor's plain reason (7.51.03's words), on META, in its coordinator's inspection data and in its
+#: conversation, and the decision point the run waits at for it.
+FAILED_REASON: Final = f'The repository checkout failed (git clone, exit 128): {CHECKOUT_STDERR}'
+CHECKOUT_FAILED: Final = 'checkout_failed'
 FLOW: Final = 'wf_7c2d9e41a0b3'
 REPO: Final = 'example-org/storefront'
 COMMIT: Final = '0123456789abcdef0123456789abcdef01234567'
@@ -79,6 +90,22 @@ def flow_definition() -> dict[str, Any]:
         {'id': 'e1', 'source': 'start', 'target': 'board'}, {'id': 'e2', 'source': 'board', 'target': 'gate'},
         {'id': 'e3', 'source': 'gate', 'target': 'pr', 'label': 'pass'},
         {'id': 'e4', 'source': 'gate', 'target': 'human', 'label': 'fail'},
+    ], 'loops': []}
+
+
+def triage_definition() -> dict[str, Any]:
+    """The failed run's flow (voc-workflow/2, issue-triage's shape): understand and classify, then locate."""
+    def node(node_id: str, kind: str, title: str, **params: Any) -> dict[str, Any]:
+        return {'id': node_id, 'type': kind, 'position': {'x': 0, 'y': 0}, 'data': {'title': title, 'params': params}}
+
+    return {'schema': SCHEMA_V2, 'name': 'Issue triage', 'nodes': [
+        node('start', 'start', 'Start'),
+        node('classify', 'agent', 'Understand and classify', role='understander'),
+        node('locate', 'agent', 'Reproduce or locate', role='hunter'),
+        node('end', 'end', 'The triage on the issue', status='completed'),
+    ], 'edges': [
+        {'id': 'e1', 'source': 'start', 'target': 'classify'}, {'id': 'e2', 'source': 'classify', 'target': 'locate'},
+        {'id': 'e3', 'source': 'locate', 'target': 'end'},
     ], 'loops': []}
 
 
@@ -306,6 +333,29 @@ def _conversation() -> list[dict[str, Any]]:
     ]
 
 
+def _failed_conversation() -> list[dict[str, Any]]:
+    """The failed run's conversation: the supervisor's lines about its coordinator, as board_bus.message words them
+    (a tick's health, each crash's continuation, the third crash, 7.51.03's "could not start" with its reason), in its
+    first minutes (the evening before START)."""
+    lines = [
+        (-700, 'run.health', '1 booting (tokens 0, cost_usd 0.00)'),
+        (-699, 'run.health', '1 booting (tokens 0, cost_usd 0.00)'),
+        (-698, 'run.health', '1 booting (tokens 0, cost_usd 0.00)'),
+        (-697, 'run.agent_continued',
+         f'{COORDINATOR} continued in a new session (1). (continuation 1, after crash, checkpoint none)'),
+        (-696, 'run.health', '1 booting (tokens 0, cost_usd 0.01)'),
+        (-695, 'run.agent_continued',
+         f'{COORDINATOR} continued in a new session (2). (continuation 2, after crash, checkpoint none)'),
+        (-694, 'run.agent_failed', f'{COORDINATOR} crashed 3 times.'),
+        (-693.9, 'run.agent_failed', f'{COORDINATOR} could not start. {FAILED_REASON}'),
+        (-693, 'run.health', '1 failed (tokens 0, cost_usd 0.03)'),
+    ]
+    return [_message(minutes, event_id=f'01JDAF5{index:019d}', run_id=FAILED_RUN, thread_id=FAILED_RUN, attempt=1,
+                     task_id='coordinate', type=kind, summary=summary, to={'kind': 'run', 'id': FAILED_RUN},
+                     **{'from': {'kind': 'supervisor', 'id': 'supervisor'}})
+            for index, (minutes, kind, summary) in enumerate(lines, start=1)]
+
+
 def _task(task_id: str, role: str, title: str, *, state: str, attempt: int, agent: str, step: str,
           results: tuple[str, ...] = ()) -> dict[str, Any]:
     item: dict[str, Any] = {
@@ -322,19 +372,20 @@ def _task(task_id: str, role: str, title: str, *, state: str, attempt: int, agen
 
 
 def _session(agent: str, role: str, task: str, attempt: int, status: str, started: float, seconds: int,
-             tokens: dict[str, dict[str, int]], step: str) -> AgentSession:
-    return AgentSession(run_id=RUN, agent_id=agent, role=role, task_id=task, language='python', egress=('pypi.org',),
-                        connection='conn-storefront', commit=COMMIT, paths=('',), harness=('python3', '-m', 'harness'),
-                        vm_id=f'vm-{agent}', endpoint=f'https://{agent}.example.org', started_at=epoch(started),
-                        status=status, task_attempt=attempt, microvm_seconds=seconds, tokens=tokens,
-                        inspect={'step': step, 'recent_tools': [], 'heartbeat_age': 20})
+             tokens: dict[str, dict[str, int]], step: str, *, run_id: str = RUN,
+             inspect: dict[str, Any] | None = None) -> AgentSession:
+    return AgentSession(run_id=run_id, agent_id=agent, role=role, task_id=task, language='python',
+                        egress=('pypi.org',), connection='conn-storefront', commit=COMMIT, paths=('',),
+                        harness=('python3', '-m', 'harness'), vm_id=f'vm-{agent}', endpoint=f'https://{agent}.example.org',
+                        started_at=epoch(started), status=status, task_attempt=attempt, microvm_seconds=seconds,
+                        tokens=tokens, inspect={'step': step, 'recent_tools': [], 'heartbeat_age': 20, **(inspect or {})})
 
 
 def _meta(run_id: str, *, status: str, started: str, ended: str = '', goal: str,
-          parent: dict[str, str] | None = None) -> dict[str, Any]:
+          parent: dict[str, str] | None = None, flow: str = FLOW) -> dict[str, Any]:
     item: dict[str, Any] = {
         'pk': {'S': f'WS#default#RUN#{run_id}'}, 'sk': {'S': 'META'}, 'run_id': {'S': run_id}, 'status': {'S': status},
-        'started_at': {'S': started}, 'goal': {'S': goal}, 'repo': {'S': REPO}, 'flow': {'S': FLOW},
+        'started_at': {'S': started}, 'goal': {'S': goal}, 'repo': {'S': REPO}, 'flow': {'S': flow},
         'connection': {'S': 'conn-storefront'}, 'commit': {'S': COMMIT}, 'default_branch': {'S': 'main'},
         'max_tasks': {'N': '20'}, 'task_count': {'N': '4'}, 'msg_seq': {'N': '0'}, 'max_cost_usd': {'S': '50.0'},
         'budget_usd': {'S': '50.0'}, 'budget_alert': {'N': '0'}}
@@ -346,15 +397,38 @@ def _meta(run_id: str, *, status: str, started: str, ended: str = '', goal: str,
 
 
 def _listed(run_id: str, *, started: str, status: str, goal: str, ended: str = '',
-            parent: dict[str, str] | None = None) -> dict[str, Any]:
+            parent: dict[str, str] | None = None, flow: str = FLOW) -> dict[str, Any]:
     item: dict[str, Any] = {'pk': {'S': f'WS#default#RUNLIST#{MONTH}'}, 'sk': {'S': f'RUN#{started}#{run_id}'},
-                            'run_id': {'S': run_id}, 'flow': {'S': FLOW}, 'goal': {'S': goal}, 'status': {'S': status},
+                            'run_id': {'S': run_id}, 'flow': {'S': flow}, 'goal': {'S': goal}, 'status': {'S': status},
                             'started_at': {'S': started}}
     if ended:
         item['ended_at'] = {'S': ended}
     if parent:
         item['parent'] = {'M': {name: {'S': value} for name, value in parent.items()}}
     return item
+
+
+def _failed_run(client: Any, sessions: SessionStore, put: Any) -> None:
+    """The run at a person (7.51.04): its triage flow's copy, its coordinator failed with its checkout's last exit
+    after two restarts and the supervisor's reason (its session written while the run was active), then META at
+    ``checkout_failed`` (7.51.03's decision point) with the reason."""
+    goal = 'Triage issue #12: the cart total ignores the discount'
+    put(_meta(FAILED_RUN, status='active', started=at(-700), goal=goal, flow=TRIAGE_FLOW))
+    copy = flow_item(f'WS#default#RUN#{FAILED_RUN}', workflow_id=TRIAGE_FLOW, revision=1,
+                     definition=json.dumps(triage_definition(), sort_keys=True), at=at(-700))
+    put({name: _SERIALIZE.serialize(value) for name, value in copy.items()})
+    failed = _session(COORDINATOR, 'coordinator', 'coordinate', 1, 'failed', -695, 40, {}, '', run_id=FAILED_RUN,
+                      inspect={'last_failure': FAILED_REASON,
+                               'last_exit': {'exit_code': 128, 'timed_out': False, 'duration_seconds': 2,
+                                             'stdout_tail': '', 'stderr_tail': CHECKOUT_STDERR}})
+    sessions.create(replace(failed, continuation=2, crashes=2), labels={'model': 'model-large', 'skill_version': ''})
+    row = {'pk': {'S': f'WS#default#RUN#{FAILED_RUN}'}, 'sk': {'S': f'AGENT#{COORDINATOR}'}}
+    client.update_item(TableName=TABLE, Key=row, UpdateExpression='SET cost_usd = :c',
+                       ExpressionAttributeValues={':c': {'N': '0.03'}})
+    meta = _meta(FAILED_RUN, status='needs_human', started=at(-700), goal=goal, flow=TRIAGE_FLOW)
+    put({**meta, 'needs_human': {'S': CHECKOUT_FAILED}, 'needs_human_at': {'N': str(epoch(-694))},
+         'needs_human_detail': {'S': FAILED_REASON}})
+    put(_listed(FAILED_RUN, started=at(-700), status='needs_human', goal=goal, flow=TRIAGE_FLOW))
 
 
 def build(region: str = 'us-east-1') -> World:
@@ -424,8 +498,9 @@ def build(region: str = 'us-east-1') -> World:
                  _listed(CHILD_RUN, started=at(-60), status='active', goal='Fix the export bug', parent=parent),
                  _listed(RUN, started=at(0), status='active', goal='Fix the paging bugs reported this week')):
         put(item)
+    _failed_run(client, sessions, put)
     conversation = ConversationStore(client, TABLE)
-    for message in _conversation():
+    for message in _conversation() + _failed_conversation():
         conversation.append_to_conversation(parse(message))
     # The workspace: the fixer's transcript (two chunks: its checkpoint flushed the first), its patches, the gate's.
     _transcript(s3, FIXER, 2, _fixer_events(), flush_after=frozenset({9}))

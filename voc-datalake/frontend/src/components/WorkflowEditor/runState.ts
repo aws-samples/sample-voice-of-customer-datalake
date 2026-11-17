@@ -13,7 +13,12 @@
  */
 import type { RunEvent } from '../../api/agentsApi'
 
-type StepStatus = 'idle' | 'running' | 'done' | 'failed'
+/**
+ * A step's state. A workflow run's journal says the first four; an engineering run's conductor and the run's own
+ * state say the rest (7.51.04, docs/ux part 5 N7): `waiting` for a person to act (warn), `paused` while the run is
+ * held (warn), `stopped` (muted) and `skipped`, a way not taken (muted).
+ */
+type StepStatus = 'idle' | 'running' | 'done' | 'failed' | 'waiting' | 'paused' | 'stopped' | 'skipped'
 
 export interface StepState {
   status: StepStatus
@@ -23,21 +28,29 @@ export interface StepState {
   lastSummary?: string
   /** (7.51.00) A gate step's verdict, as pass or fail. */
   gate?: 'pass' | 'fail'
-  /** (7.51.00) The step the run is on ("you are here"). */
-  here?: boolean
+  /** (7.51.00) The step the run is on ("you are here"); (7.51.04) `stopped`: where a run that ended or waits for a
+   * person stopped ("Stopped here"). */
+  here?: 'on' | 'stopped'
+  /** (7.51.04) Whether a running step's badge spins: false while no agent is at work on it (unset: it spins, as a
+   * workflow run's does). */
+  spin?: boolean
 }
 
-/** What a run graph knows of a lane (KiroCrew planModel's `GraphNodeState`, without `unknown`: a lane is a task posted). */
-export type LaneState = 'ran_ok' | 'ran_failed' | 'running' | 'stopped' | 'planned'
+/** What a run graph knows of a lane (KiroCrew planModel's `GraphNodeState`, without `unknown`: a lane is a task
+ * posted); (7.51.04) `waiting`: its task waits for a person; `paused`: its agent is held, no session at work. */
+export type LaneState = 'ran_ok' | 'ran_failed' | 'running' | 'waiting' | 'paused' | 'stopped' | 'planned'
 
-/** A lane's border (WorkflowRunGraph's `chipClass`): dashed while nothing has run on it, solid once it has. */
+/** A lane's border (WorkflowRunGraph's `chipClass`): dashed while nothing has run on it, solid once it has; a state's
+ * tone at full strength (7.51.04: no tone at an opacity, no dimming). */
 export function laneBorder(state: LaneState): string {
   switch (state) {
-    case 'ran_failed': return 'border-danger/60'
+    case 'ran_failed': return 'border-danger'
     case 'running': return 'border-accent'
-    case 'ran_ok': return 'border-ok/50'
-    case 'stopped': return 'border-border'
-    case 'planned': return 'border-dashed border-border opacity-70'
+    case 'waiting': return 'border-warn'
+    case 'paused': return 'border-dashed border-warn'
+    case 'ran_ok': return 'border-ok'
+    case 'stopped': return 'border-border-strong'
+    case 'planned': return 'border-dashed border-border-strong'
   }
 }
 

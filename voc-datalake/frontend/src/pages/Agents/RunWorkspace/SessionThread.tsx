@@ -9,7 +9,9 @@
  * composer is shown off with why. One conversation, one
  * session: the thread is the run's own record, read live, never a private copy.
  *
- * The list follows its end while the reader is at it, and stays where they scrolled to otherwise.
+ * The list follows its end while the reader is at it, and stays where they scrolled to otherwise. (7.51.04) The
+ * supervisor's lines read in plain words, a run of its same health line as one line (supervisorLines.ts), and the
+ * line under an ended thread says how its session ended.
  *
  * @module pages/Agents/RunWorkspace/SessionThread
  */
@@ -19,6 +21,7 @@ import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { useEngineeringConversation } from '../useEngineeringRun'
 import { startsGroup } from './threadModel'
+import { foldRepeats } from './supervisorLines'
 import { ThreadItemView } from './ThreadItem'
 import { SteerComposer } from './SteerComposer'
 import { AgentControls } from './AgentControls'
@@ -48,6 +51,8 @@ interface Props {
   /** The session's agent (the orchestrator's is the run's coordinator). */
   agent: EngineeringAgent
   orchestrator: boolean
+  /** The run's orchestrator (7.51.04: its failure sends the run to a person, as its thread says). */
+  orchestratorId: string | null
   actions: SessionActions | null
   /** The session in focus (the one the address names): its composer's Send is the primary button. */
   focused: boolean
@@ -89,7 +94,14 @@ function useQuestions(runId: string, agent: string, live: boolean): ReadonlyMap<
     .map((message) => [`c${String(message.seq)}`, message.message.thread_id] as const)), [messages, agent])
 }
 
-function Items({ runId, agent, canReply }: Readonly<{ runId: string; agent: string; canReply: boolean }>) {
+/** The line under a thread that has ended, by how its session ended (7.51.04). */
+const ENDED_LINES: Readonly<Record<string, string>> = {
+  done: 'runWorkspace.thread.endedDone', failed: 'runWorkspace.thread.endedFailed', stopped: 'runWorkspace.thread.endedStopped',
+}
+
+function Items({ runId, agent, status, orchestrator, canReply }: Readonly<{
+  runId: string; agent: string; status: string; orchestrator: string | null; canReply: boolean
+}>) {
   const { t } = useTranslation('agents')
   const thread = useAgentThread(runId, agent)
   const questions = useQuestions(runId, agent, canReply)
@@ -97,6 +109,8 @@ function Items({ runId, agent, canReply }: Readonly<{ runId: string; agent: stri
   // Whether the reader is at the list's end (as of their last scroll): new items then scroll into view.
   const following = useRef(true)
   const items = thread.data?.items ?? []
+  // (7.51.04) A run of the supervisor's same health line is one line, its latest.
+  const shown = useMemo(() => foldRepeats(items), [items])
   const count = items.length
   useEffect(() => {
     const element = list.current
@@ -113,23 +127,25 @@ function Items({ runId, agent, canReply }: Readonly<{ runId: string; agent: stri
     <div ref={list} className="min-h-0 flex-1 overflow-y-auto py-1" onScroll={onScroll}>
       {count === 0 && <p className="p-3 text-sm text-muted">{t('runWorkspace.thread.empty')}</p>}
       <ol aria-label={t('runWorkspace.thread.label', { agent })}>
-        {items.map((item, index) => (
-          <ThreadItemView key={item.ref} runId={runId} agent={agent} item={item} header={startsGroup(items[index - 1], item)}
-            reply={canReply ? questions.get(item.ref) : undefined} />
+        {shown.map(({ key, item, said }, index) => (
+          <ThreadItemView key={key} runId={runId} agent={agent} item={item} header={startsGroup(shown[index - 1]?.item, item)}
+            reply={canReply ? questions.get(item.ref) : undefined} said={said} orchestrator={orchestrator} />
         ))}
       </ol>
-      {thread.data?.done === true && <p className="px-3 pt-2 text-[12px] text-muted">{t('runWorkspace.thread.ended')}</p>}
+      {thread.data?.done === true && (
+        <p className="px-3 pt-2 text-[12px] text-muted">{t(ENDED_LINES[status] ?? 'runWorkspace.thread.ended')}</p>
+      )}
     </div>
   )
 }
 
-export function SessionThread({ runId, agent, orchestrator, actions, focused, lanes, tools }: Readonly<Props>) {
+export function SessionThread({ runId, agent, orchestrator, orchestratorId, actions, focused, lanes, tools }: Readonly<Props>) {
   const steer = actions?.steer === true
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col" aria-label={agent.agent}>
       <SessionHeader agent={agent} orchestrator={orchestrator} tools={tools} />
       {actions?.signals === true && !orchestrator && takesSignals(agent, lanes) && <AgentControls runId={runId} agent={agent} />}
-      <Items runId={runId} agent={agent.agent} canReply={steer} />
+      <Items runId={runId} agent={agent.agent} status={agent.status} orchestrator={orchestratorId} canReply={steer} />
       {actions !== null && <SteerComposer runId={runId} agent={orchestrator ? null : agent.agent} primary={focused} connected={steer} />}
     </section>
   )

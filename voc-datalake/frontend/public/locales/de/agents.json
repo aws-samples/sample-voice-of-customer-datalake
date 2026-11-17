@@ -264,7 +264,12 @@
       "idle": "Nicht gestartet",
       "running": "Läuft",
       "done": "Fertig",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "waiting": "Braucht eine Person",
+      "paused": "Pausiert",
+      "stopped": "Gestoppt",
+      "skipped": "Übersprungen",
+      "ready": "An der Reihe, noch kein Agent bei der Arbeit"
     },
     "eventKinds": {
       "node_started": "Schritt gestartet",
@@ -300,9 +305,13 @@
       "ran_failed": "Fehlgeschlagen",
       "running": "Arbeitet",
       "stopped": "Gestoppt",
-      "planned": "Geplant"
+      "planned": "Geplant",
+      "waiting": "Braucht eine Person",
+      "paused": "Pausiert"
     },
-    "laneAttempt": "{{role}} · Versuch {{n, number}}"
+    "laneAttempt": "{{role}} · Versuch {{n, number}}",
+    "stoppedHere": "Hier gestoppt",
+    "stoppedHereAs": "Hier gestoppt: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1676,7 +1685,8 @@
     "flow": {
       "canvas": "Arbeitsfläche",
       "timeline": "Zeitleiste",
-      "view": "Darstellung des Ablaufs"
+      "view": "Darstellung des Ablaufs",
+      "openSession": "Seine Sitzung öffnen"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1693,8 +1703,15 @@
         "ok": "Erledigt",
         "failed": "Fehlgeschlagen",
         "stopped": "Gestoppt",
-        "planned": "Noch nicht gelaufen"
-      }
+        "planned": "Noch nicht gelaufen",
+        "ready": "An der Reihe, noch kein Agent bei der Arbeit",
+        "waiting": "Braucht eine Person",
+        "paused": "Pausiert",
+        "skipped": "Übersprungen"
+      },
+      "noAgentsYet": "Noch keine Agenten",
+      "notStarted": "Nicht gestartet",
+      "noAgents": "Keine Agenten"
     },
     "sessions": {
       "title": "Sitzungen",
@@ -1726,7 +1743,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (eine Person)",
         "conductor": "Orchestrator ({{id}})",
-        "system": "{{id}} (die Plattform)"
+        "system": "{{id}} (die Plattform)",
+        "supervisor": "Der Supervisor"
       },
       "kinds": {
         "gate": "Prüfung",
@@ -1744,6 +1762,36 @@
         "failed": "Fehlgeschlagen",
         "running": "Läuft",
         "loadFailed": "Der Aufruf konnte nicht gelesen werden: Versuchen Sie es erneut."
+      },
+      "endedDone": "Diese Sitzung ist beendet: Ihre Arbeit ist getan.",
+      "endedFailed": "Diese Sitzung ist beendet: Sie ist fehlgeschlagen.",
+      "endedStopped": "Diese Sitzung ist beendet: Sie wurde gestoppt.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "Startet…",
+          "working": "Bei der Arbeit",
+          "pause_requested": "Wird pausiert…",
+          "waiting": "Wartet",
+          "paused": "Pausiert",
+          "done": "Erledigt",
+          "failed": "Fehlgeschlagen",
+          "crashed": "Abgestürzt",
+          "stopped": "Gestoppt",
+          "reposted": "Weitergegeben"
+        },
+        "restarted": "{{agent}} wurde unerwartet beendet und neu gestartet (Versuch {{n, number}} von {{max, number}})",
+        "restartedAgain": "{{agent}} wurde unerwartet beendet und neu gestartet (Versuch {{n, number}})",
+        "continued": "{{agent}} hat nach seiner Pause in einer neuen Sitzung weitergemacht",
+        "failedOutRun": "{{agent}} ist {{n, number}}-mal fehlgeschlagen; der Lauf braucht eine Person",
+        "failedOutTask": "{{agent}} ist {{n, number}}-mal fehlgeschlagen; seine Aufgabe geht an einen neuen Agenten",
+        "couldNotStart": "{{agent}} konnte nicht starten: {{reason}}",
+        "notAnswering": "{{agent}} antwortet nicht mehr",
+        "noRoom": "Keine freie Sitzung für {{agent}} nach {{n, number}} Versuchen; er wartet auf eine Person",
+        "stopped": "Der Lauf wurde gestoppt und seine Sitzungen beendet ({{n, number}})",
+        "repeats": "{{count, number}}-mal gesagt",
+        "details": "Details"
       }
     },
     "composer": {
@@ -1937,6 +1985,48 @@
       "refreshFailed": "Dieser Lauf ließ sich nicht aktualisieren: Sie sehen seinen letzten guten Stand.",
       "retry": "Erneut versuchen",
       "stopSent": "Stopp gesendet"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "Das Auschecken des Repositorys ist fehlgeschlagen: Der Lauf wartet auf eine Person.",
+        "orchestratorFailed": "Der Orchestrator, {{agent}}, ist fehlgeschlagen: Der Lauf wartet auf eine Person.",
+        "agentFailed": "{{agent}} ist fehlgeschlagen: Der Lauf wartet auf eine Person.",
+        "flowStep": "Der Ablauf wartet bei „{{step}}“ auf die Entscheidung einer Person.",
+        "budget": "Der Lauf hat sein Budget ausgeschöpft: Der Lauf wartet auf eine Person.",
+        "thirtyDays": "Der Lauf hat seine 30 Tage erreicht: Der Lauf wartet auf eine Person.",
+        "checkoutCache": "Der Checkout-Cache hat keine brauchbare Kopie des Commits des Laufs: Der Lauf wartet auf eine Person.",
+        "orchestratorNotStarted": "Der Orchestrator konnte nicht starten: Der Lauf wartet auf eine Person.",
+        "waiting": "Der Lauf wartet auf eine Person.",
+        "runFailed": "Der Lauf ist fehlgeschlagen.",
+        "runFailedOrchestrator": "Der Lauf ist fehlgeschlagen: Sein Orchestrator, {{agent}}, ist fehlgeschlagen.",
+        "runFailedAgent": "Der Lauf ist fehlgeschlagen: {{agent}} ist fehlgeschlagen.",
+        "stopped": "Der Lauf wurde gestoppt.",
+        "stoppedNow": "Der Lauf wurde sofort gestoppt, ohne zu sichern."
+      },
+      "next": {
+        "restart": "Für einen neuen Versuch startet „Lauf neu starten“ ihn als neuen Lauf, von dessen Checkpoints oder von vorn.",
+        "resume": "Sobald die Ursache behoben ist, setzen Sie den Lauf über seine Steuerung fort (ein neuer Orchestrator ersetzt einen fehlgeschlagenen) oder stoppen ihn.",
+        "resumeBudget": "Erhöhen Sie das Budget des Ablaufs und setzen Sie den Lauf dann über seine Steuerung fort, oder stoppen Sie ihn.",
+        "stopThenRestart": "Diese Bereitstellung kann „Fortsetzen“ noch nicht senden: Stoppen Sie den Lauf über seine Steuerung, dann startet „Lauf neu starten“ ihn als neuen Lauf.",
+        "nothing": "Diese Bereitstellung kann von hier aus noch nicht auf den Lauf einwirken."
+      },
+      "agent": "Agent: {{agent}}",
+      "agentOrchestrator": "Agent: {{agent}} (der Orchestrator)",
+      "step": "Schritt: {{step}}",
+      "cost": "Bisherige Kosten: {{cost}}",
+      "why": "Warum:",
+      "exitCode": "Sein letzter Befehl endete mit Code {{code}}.",
+      "exitNoCode": "Sein letzter Befehl ist fehlgeschlagen.",
+      "timedOut": "Sein letzter Befehl hat das Zeitlimit überschritten.",
+      "noReason": "Kein Grund vermerkt: Seine Sitzung sagt vielleicht mehr.",
+      "details": "Details anzeigen",
+      "detailStep": "Wo es war",
+      "detailExit": "Exit-Code",
+      "detailDuration": "Laufzeit",
+      "stderr": "Das Ende seiner Fehlerausgabe",
+      "noStderr": "Keine Fehlerausgabe.",
+      "toControls": "Zur Steuerung des Laufs",
+      "openSession": "Sitzung von {{agent}} öffnen"
     }
   }
 }

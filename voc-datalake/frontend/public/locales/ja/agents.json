@@ -264,7 +264,12 @@
       "idle": "未開始",
       "running": "実行中",
       "done": "完了",
-      "failed": "失敗"
+      "failed": "失敗",
+      "waiting": "人の対応が必要",
+      "paused": "一時停止中",
+      "stopped": "停止",
+      "skipped": "スキップ",
+      "ready": "順番が来ていますが、作業中のエージェントはまだいません"
     },
     "eventKinds": {
       "node_started": "ステップ開始",
@@ -300,9 +305,13 @@
       "ran_failed": "失敗",
       "running": "作業中",
       "stopped": "停止",
-      "planned": "予定"
+      "planned": "予定",
+      "waiting": "人の対応が必要",
+      "paused": "一時停止中"
     },
-    "laneAttempt": "{{role}} · 試行 {{n, number}}"
+    "laneAttempt": "{{role}} · 試行 {{n, number}}",
+    "stoppedHere": "ここで停止",
+    "stoppedHereAs": "ここで停止: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1676,7 +1685,8 @@
     "flow": {
       "canvas": "キャンバス",
       "timeline": "タイムライン",
-      "view": "フローの表示方法"
+      "view": "フローの表示方法",
+      "openSession": "セッションを開く"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1693,8 +1703,15 @@
         "ok": "完了",
         "failed": "失敗",
         "stopped": "停止",
-        "planned": "未実行"
-      }
+        "planned": "未実行",
+        "ready": "順番が来ていますが、作業中のエージェントはまだいません",
+        "waiting": "人の対応が必要",
+        "paused": "一時停止中",
+        "skipped": "スキップ"
+      },
+      "noAgentsYet": "まだエージェントはいません",
+      "notStarted": "未開始",
+      "noAgents": "エージェントなし"
     },
     "sessions": {
       "title": "セッション",
@@ -1726,7 +1743,8 @@
         "agent": "{{id}}",
         "human": "{{id}}（人）",
         "conductor": "オーケストレーター（{{id}}）",
-        "system": "{{id}}（プラットフォーム）"
+        "system": "{{id}}（プラットフォーム）",
+        "supervisor": "スーパーバイザー"
       },
       "kinds": {
         "gate": "ゲート",
@@ -1744,6 +1762,36 @@
         "failed": "失敗",
         "running": "実行中",
         "loadFailed": "呼び出しを読み込めませんでした。もう一度お試しください。"
+      },
+      "endedDone": "このセッションは終了しました。作業は完了しています。",
+      "endedFailed": "このセッションは終了しました。失敗しました。",
+      "endedStopped": "このセッションは終了しました。停止されました。",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "起動中…",
+          "working": "作業中",
+          "pause_requested": "一時停止中…",
+          "waiting": "待機中",
+          "paused": "一時停止中",
+          "done": "完了",
+          "failed": "失敗",
+          "crashed": "クラッシュ",
+          "stopped": "停止",
+          "reposted": "引き継ぎ済み"
+        },
+        "restarted": "{{agent}} が予期せず停止し、再起動されました（{{max, number}} 回中 {{n, number}} 回目）",
+        "restartedAgain": "{{agent}} が予期せず停止し、再起動されました（{{n, number}} 回目）",
+        "continued": "{{agent}} は一時停止の後、新しいセッションで続行しました",
+        "failedOutRun": "{{agent}} が {{n, number}} 回失敗しました。実行には人の対応が必要です",
+        "failedOutTask": "{{agent}} が {{n, number}} 回失敗しました。タスクは新しいエージェントに渡されます",
+        "couldNotStart": "{{agent}} を開始できませんでした: {{reason}}",
+        "notAnswering": "{{agent}} が応答しなくなりました",
+        "noRoom": "{{n, number}} 回試しても {{agent}} の空きセッションがありません。人の対応を待っています",
+        "stopped": "実行は停止され、セッションは終了しました（{{n, number}}）",
+        "repeats": "{{count, number}} 回",
+        "details": "詳細"
       }
     },
     "composer": {
@@ -1937,6 +1985,48 @@
       "refreshFailed": "この実行を更新できませんでした。表示は最後に取得できた状態です。",
       "retry": "再試行",
       "stopSent": "停止を送信しました"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "リポジトリのチェックアウトに失敗しました。実行は人の対応を待っています。",
+        "orchestratorFailed": "オーケストレーター {{agent}} が失敗しました。実行は人の対応を待っています。",
+        "agentFailed": "{{agent}} が失敗しました。実行は人の対応を待っています。",
+        "flowStep": "フローは「{{step}}」で人の判断を待っています。",
+        "budget": "実行は予算を使い切りました。実行は人の対応を待っています。",
+        "thirtyDays": "実行は 30 日に達しました。実行は人の対応を待っています。",
+        "checkoutCache": "チェックアウトキャッシュに実行のコミットの使えるコピーがありません。実行は人の対応を待っています。",
+        "orchestratorNotStarted": "オーケストレーターを開始できませんでした。実行は人の対応を待っています。",
+        "waiting": "実行は人の対応を待っています。",
+        "runFailed": "実行は失敗しました。",
+        "runFailedOrchestrator": "実行は失敗しました。オーケストレーター {{agent}} が失敗しました。",
+        "runFailedAgent": "実行は失敗しました。{{agent}} が失敗しました。",
+        "stopped": "実行は停止されました。",
+        "stoppedNow": "実行は保存せずにすぐ停止されました。"
+      },
+      "next": {
+        "restart": "やり直すには、「実行をやり直す」でこの実行のチェックポイントから、または最初から新しい実行として開始します。",
+        "resume": "原因を解決したら、実行のコントロールから再開してください（失敗したオーケストレーターは新しいものに置き換わります）。または停止してください。",
+        "resumeBudget": "フローの予算を増やしてから実行のコントロールで再開するか、停止してください。",
+        "stopThenRestart": "このデプロイではまだ再開を送れません。実行のコントロールで停止してから、「実行をやり直す」で新しい実行として開始してください。",
+        "nothing": "このデプロイでは、まだここから実行を操作できません。"
+      },
+      "agent": "エージェント: {{agent}}",
+      "agentOrchestrator": "エージェント: {{agent}}（オーケストレーター）",
+      "step": "ステップ: {{step}}",
+      "cost": "これまでの費用: {{cost}}",
+      "why": "理由:",
+      "exitCode": "最後のコマンドはコード {{code}} で終了しました。",
+      "exitNoCode": "最後のコマンドが失敗しました。",
+      "timedOut": "最後のコマンドがタイムアウトしました。",
+      "noReason": "理由は記録されていません。セッションに詳しい情報があるかもしれません。",
+      "details": "詳細を表示",
+      "detailStep": "その時点の作業",
+      "detailExit": "終了コード",
+      "detailDuration": "実行時間",
+      "stderr": "エラー出力の末尾",
+      "noStderr": "エラー出力はありません。",
+      "toControls": "実行のコントロールへ移動",
+      "openSession": "{{agent}} のセッションを開く"
     }
   }
 }

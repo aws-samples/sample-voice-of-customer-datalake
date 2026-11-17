@@ -17,6 +17,43 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.51.04] - 2026-11-17
+
+The run workspace now says when a run has stopped, and why. The owner's first real run waited for a person because its orchestrator could not check out the repository (exit 128, "detected dubious ownership"), yet the canvas still showed "Understand and classify" spinning with "You are here", the timeline put coordinator-1 "On no step of the flow" beside an empty "Agents: 0" step, and the thread read "1 booting (tokens 0, cost_usd 0.00)". Now a banner says what happened, the step where the run stopped reads as failed, the orchestrator has its own row, and the supervisor's lines are in plain words.
+
+### Added
+
+- **The end banner** (`RunEndBanner.tsx`, `runEnd.ts`). Shown at the top of the workspace, for an admin, whenever the run waits for a person, failed or was stopped. It says:
+  - what happened, in plain words: a checkout that failed, the orchestrator or another agent that failed, the decision point the run waits at (budget, 30 days, checkout cache, a flow step), or a person's Stop;
+  - which agent ("Agent: coordinator-1 (the orchestrator)"), at which step, and the cost so far;
+  - why: the supervisor's stored reason (7.51.03's `needs_human_detail`), else the flow's reason at a step's decision point, else the agent's `last_failure`, else its last exit code; when nothing records why, it says so and points to the agent's session;
+  - the last failed command behind "Show details": where the agent was, the exit code, how long it ran, and the end of its stderr (redacted by the server);
+  - what to do next with the run's own controls: Resume (after raising the budget, at a spent one), Stop then Restart run where this deployment can't send Resume, or Restart run once the run has ended. It has a "Go to the run's controls" button (focus moves to the control bar) and a button that opens the failed agent's session. The banner itself acts on nothing.
+
+  It is toned by meaning: danger when something failed, warn when the run waits for a person's decision, muted when a person stopped it.
+- **The overview says why** (`engineering/run_overview.py`, `monitor.py`). Each agent gains `last_exit` (`{exit_code, timed_out, duration_seconds, stderr_tail}`, never stdout) and `last_failure`, both from the supervisor's inspection data. The run gains `waiting_detail`, META's `needs_human_detail`, given only while the run is at a person. Each text is redacted and stripped of control characters as the thread is (`views_thread.display`), within 500 characters. The web app also reads the `flow_outcome` the overview already sent. No new IAM.
+- **The supervisor's lines in plain words** (`supervisorLines.ts`, `SupervisorLine.tsx`). Each known line maps to an i18n string, with the raw text behind "Details":
+  - "1 booting (tokens 0, cost_usd 0.00)" → "Starting… · $0.00";
+  - "… continued in a new session (n) … after crash" → "coordinator-1 stopped unexpectedly and was restarted (attempt n + 1 of 3)";
+  - "… crashed 3 times." → "coordinator-1 failed 3 times; the run needs a person" (for an agent that isn't the orchestrator: "its task goes to a new agent");
+  - "… could not start. <reason>" (7.51.03), "stopped answering", "found no free agent session", and "Stopped: n session(s) ended." each read the same way.
+
+  A run of the same health line one after another becomes one line that shows the latest ("said 3 times"). The supervisor is named as the sender, and an ended thread says how its session ended ("This session has ended: it failed.").
+- **Dev mock and shared fixture.** The test world and the fixture gain a run at a person whose orchestrator failed at its checkout (`failed_run_id`, `failed_overview`, `failed_thread`): `checkout_failed`, the stored reason, exit 128 with its stderr, two crash restarts, and the supervisor's lines. The mock serves its overview and its orchestrator's thread, and lists it in Agents → Runs.
+
+### Changed
+
+- **Step state from the run's real state** (`runFlow.ts`, `runLanes.ts`, `runTimelineModel.ts`). Once the run ended or waits for a person, the step where it stopped is marked "Stopped here". It reads as failed (danger) when an agent or the checkout failed, as needing a person (warn) at a decision, or as stopped (muted), and nothing spins. Any other step still under way reads as paused (run at a person) or stopped (ended run). While the run is under way, a step spins only when an agent is at work on it; a step whose turn it is with nobody on it shows a still "ready" mark.
+  - Lanes follow their agent's session: held agents read as paused, a task at a person as needing a person (never failed).
+  - The run's orchestrator is now the newest coordinator started (a Resume's replacement, not the failed one).
+- **The orchestrator is the run's own**, not a stray lane. The timeline opens with an "Orchestrator" row (who, its session's status, its attempts); the canvas shows it as a strip above the steps that opens its session. A step with no agent has no chevron and says "No agents yet", "Not started" or "No agents".
+- **Canvas state layers** (UX part 5 N7, N8, N10, N11, the cheap part; the node redesign is 7.52 C).
+  - The conductor's `human` reads as waiting for a person, `stopped` as stopped and `skipped` as skipped, each with its own badge (Hand, CirclePause, Square, SkipForward).
+  - "You are here" and "Stopped here" are tags, not a ring; the open lane has the selected fill.
+  - Neutral outlines answer a hover. Nothing is dimmed by opacity, and lane borders are at full strength.
+  - `focusStepId` centres on the marked step first.
+- i18n: the new strings are in all 9 locales. Versions are 7.51.4.
+
 ## [7.51.03] - 2026-11-17
 
 The first real engineering run on AWS (`b-`, `01M7MKH4…`) failed at its first command, the coordinator's checkout. Git refused the checkout cache as "dubious ownership" (exit 128). The supervisor took that for a crash, continued the session twice, and the run went to a person with nothing more than "crashed 3 times". The cache's files now show as the agent user's, so the checkout works. A checkout that fails with an error of its own now ends the agent at once and says why.

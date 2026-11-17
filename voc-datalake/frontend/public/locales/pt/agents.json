@@ -265,7 +265,12 @@
       "idle": "Não iniciada",
       "running": "Em execução",
       "done": "Concluída",
-      "failed": "Falhou"
+      "failed": "Falhou",
+      "waiting": "Precisa de uma pessoa",
+      "paused": "Em pausa",
+      "stopped": "Parado",
+      "skipped": "Ignorado",
+      "ready": "A sua vez, ainda sem agentes a trabalhar"
     },
     "eventKinds": {
       "node_started": "Etapa iniciada",
@@ -301,9 +306,13 @@
       "ran_failed": "Falhou",
       "running": "Trabalhando",
       "stopped": "Parado",
-      "planned": "Planejado"
+      "planned": "Planejado",
+      "waiting": "Precisa de uma pessoa",
+      "paused": "Em pausa"
     },
-    "laneAttempt": "{{role}} · tentativa {{n, number}}"
+    "laneAttempt": "{{role}} · tentativa {{n, number}}",
+    "stoppedHere": "Parou aqui",
+    "stoppedHereAs": "Parou aqui: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1683,7 +1692,8 @@
     "flow": {
       "canvas": "Tela",
       "timeline": "Linha do tempo",
-      "view": "Como o fluxo é exibido"
+      "view": "Como o fluxo é exibido",
+      "openSession": "Abrir a sua sessão"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1700,8 +1710,15 @@
         "ok": "Concluído",
         "failed": "Falhou",
         "stopped": "Parado",
-        "planned": "Ainda não executado"
-      }
+        "planned": "Ainda não executado",
+        "ready": "A sua vez, ainda sem agentes a trabalhar",
+        "waiting": "Precisa de uma pessoa",
+        "paused": "Em pausa",
+        "skipped": "Ignorado"
+      },
+      "noAgentsYet": "Ainda sem agentes",
+      "notStarted": "Não iniciada",
+      "noAgents": "Sem agentes"
     },
     "sessions": {
       "title": "Sessões",
@@ -1733,7 +1750,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (uma pessoa)",
         "conductor": "Orquestrador ({{id}})",
-        "system": "{{id}} (a plataforma)"
+        "system": "{{id}} (a plataforma)",
+        "supervisor": "O supervisor"
       },
       "kinds": {
         "gate": "Controle",
@@ -1751,6 +1769,36 @@
         "failed": "Falhou",
         "running": "Em execução",
         "loadFailed": "Não foi possível ler a chamada: tente de novo."
+      },
+      "endedDone": "Esta sessão terminou: o seu trabalho está feito.",
+      "endedFailed": "Esta sessão terminou: falhou.",
+      "endedStopped": "Esta sessão terminou: foi parada.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "A iniciar…",
+          "working": "A trabalhar",
+          "pause_requested": "A pausar…",
+          "waiting": "À espera",
+          "paused": "Em pausa",
+          "done": "Concluído",
+          "failed": "Falhou",
+          "crashed": "Caiu",
+          "stopped": "Parado",
+          "reposted": "Passado adiante"
+        },
+        "restarted": "{{agent}} parou inesperadamente e foi reiniciado (tentativa {{n, number}} de {{max, number}})",
+        "restartedAgain": "{{agent}} parou inesperadamente e foi reiniciado (tentativa {{n, number}})",
+        "continued": "{{agent}} continuou numa nova sessão depois da pausa",
+        "failedOutRun": "{{agent}} falhou {{n, number}} vezes; a execução precisa de uma pessoa",
+        "failedOutTask": "{{agent}} falhou {{n, number}} vezes; a sua tarefa passa para um novo agente",
+        "couldNotStart": "{{agent}} não conseguiu iniciar: {{reason}}",
+        "notAnswering": "{{agent}} deixou de responder",
+        "noRoom": "Nenhuma sessão livre para {{agent}} após {{n, number}} tentativas; aguarda uma pessoa",
+        "stopped": "A execução foi parada e as suas sessões terminaram ({{n, number}})",
+        "repeats": "dito {{count, number}} vezes",
+        "details": "Detalhes"
       }
     },
     "composer": {
@@ -1944,6 +1992,48 @@
       "refreshFailed": "Não foi possível atualizar esta execução: vê o seu último estado válido.",
       "retry": "Tentar de novo",
       "stopSent": "Paragem enviada"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "O checkout do repositório falhou: a execução aguarda uma pessoa.",
+        "orchestratorFailed": "O orquestrador, {{agent}}, falhou: a execução aguarda uma pessoa.",
+        "agentFailed": "{{agent}} falhou: a execução aguarda uma pessoa.",
+        "flowStep": "O fluxo aguarda a decisão de uma pessoa em «{{step}}».",
+        "budget": "A execução gastou o seu orçamento: a execução aguarda uma pessoa.",
+        "thirtyDays": "A execução chegou aos seus 30 dias: a execução aguarda uma pessoa.",
+        "checkoutCache": "A cache de checkout não tem uma cópia utilizável do commit da execução: a execução aguarda uma pessoa.",
+        "orchestratorNotStarted": "O orquestrador não conseguiu iniciar: a execução aguarda uma pessoa.",
+        "waiting": "A execução aguarda uma pessoa.",
+        "runFailed": "A execução falhou.",
+        "runFailedOrchestrator": "A execução falhou: o seu orquestrador, {{agent}}, falhou.",
+        "runFailedAgent": "A execução falhou: {{agent}} falhou.",
+        "stopped": "A execução foi parada.",
+        "stoppedNow": "A execução foi parada de imediato, sem guardar."
+      },
+      "next": {
+        "restart": "Para tentar de novo, Reiniciar a execução inicia-a como uma nova execução, a partir dos pontos de controlo desta ou do zero.",
+        "resume": "Depois de corrigida a causa, Retome a execução a partir dos seus controlos (um novo orquestrador substitui o que falhou), ou Pare-a.",
+        "resumeBudget": "Aumente o orçamento do fluxo e depois Retome a execução a partir dos seus controlos, ou Pare-a.",
+        "stopThenRestart": "Esta implementação ainda não consegue enviar Retomar: Pare a execução a partir dos seus controlos e depois Reiniciar a execução inicia-a de novo como uma nova execução.",
+        "nothing": "Esta implementação ainda não consegue agir sobre a execução a partir daqui."
+      },
+      "agent": "Agente: {{agent}}",
+      "agentOrchestrator": "Agente: {{agent}} (o orquestrador)",
+      "step": "Passo: {{step}}",
+      "cost": "Custo até agora: {{cost}}",
+      "why": "Porquê:",
+      "exitCode": "O seu último comando terminou com o código {{code}}.",
+      "exitNoCode": "O seu último comando falhou.",
+      "timedOut": "O seu último comando excedeu o tempo.",
+      "noReason": "Nada registou o motivo: a sua sessão pode dizer mais.",
+      "details": "Mostrar detalhes",
+      "detailStep": "Onde estava",
+      "detailExit": "Código de saída",
+      "detailDuration": "Duração",
+      "stderr": "O fim da sua saída de erros",
+      "noStderr": "Sem saída de erros.",
+      "toControls": "Ir para os controlos da execução",
+      "openSession": "Abrir a sessão de {{agent}}"
     }
   }
 }

@@ -1,7 +1,7 @@
 /**
  * @fileoverview The run canvas's model against the shared fixture: each step a stage in rows from the start, a step's
  * agents as sibling lanes under it that never overlap, a lane's state (and its dashed border while planned), the
- * bounded label, a gate's verdict, and the timeline of steps, agents and attempts.
+ * bounded label, a gate's verdict, and the timeline of steps, agents and attempts (7.51.04: the orchestrator its own).
  */
 import { describe, expect, it } from 'vitest'
 import fixture from '@test/engineeringRunWorkspace.json'
@@ -17,7 +17,7 @@ const definition: WorkflowDefinition | null = overview.run.flow_definition
 const flow = definition ?? { nodes: [], edges: [], loops: [], name: '', schema: 'voc-workflow/2' }
 
 describe('layoutRun', () => {
-  const { definition: placed, lanes } = layoutRun(flow, overview.lanes, false)
+  const { definition: placed, lanes } = layoutRun(flow, overview.lanes, 'active')
   const y = (id: string) => placed.nodes.find((node) => node.id === id)?.position.y ?? -1
 
   it('stacks the stages from the start along the flow, the gate\'s two ways side by side', () => {
@@ -39,18 +39,25 @@ describe('layoutRun', () => {
 
 describe('a lane', () => {
   it.each([
-    [{ state: 'done', agent: 'a' }, false, 'ran_ok'],
-    [{ state: 'failed', agent: 'a' }, false, 'ran_failed'],
-    [{ state: 'needs_human', agent: 'a' }, false, 'ran_failed'],
-    [{ state: 'open', agent: null }, false, 'planned'],
-    [{ state: 'in_progress', agent: 'a' }, false, 'running'],
-    [{ state: 'in_progress', agent: 'a' }, true, 'stopped'],
-  ])('reads %o (the run ended: %s) as %s', (lane, ended, state) => {
-    expect(laneState(lane, ended)).toBe(state)
+    [{ state: 'done', agent: 'a', status: 'done' }, 'active', 'ran_ok'],
+    [{ state: 'failed', agent: 'a', status: 'failed' }, 'active', 'ran_failed'],
+    // (7.51.04: a task at a person waits for one, never a failure)
+    [{ state: 'needs_human', agent: 'a', status: 'done' }, 'active', 'waiting'],
+    [{ state: 'open', agent: null, status: null }, 'active', 'planned'],
+    [{ state: 'in_progress', agent: 'a', status: 'working' }, 'active', 'running'],
+    [{ state: 'claimed', agent: 'a', status: null }, 'active', 'running'],
+    [{ state: 'in_progress', agent: 'a', status: 'paused' }, 'active', 'paused'],
+    [{ state: 'in_progress', agent: 'a', status: 'failed' }, 'active', 'ran_failed'],
+    [{ state: 'in_progress', agent: 'a', status: 'working' }, 'halted', 'paused'],
+    [{ state: 'in_progress', agent: 'a', status: 'working' }, 'ended', 'stopped'],
+  ] as const)('reads %o (the run %s) as %s', (lane, phase, state) => {
+    expect(laneState(lane, phase)).toBe(state)
   })
 
-  it('is dashed only while nothing has run on it', () => {
+  it('is dashed only while nothing has run on it (or held), its tone at full strength and never dimmed', () => {
     expect([laneBorder('planned').includes('border-dashed'), laneBorder('ran_ok').includes('border-dashed')]).toStrictEqual([true, false])
+    const states = ['ran_ok', 'ran_failed', 'running', 'waiting', 'paused', 'stopped', 'planned'] as const
+    expect(states.filter((state) => /\/\d|opacity/.test(laneBorder(state)))).toStrictEqual([])
   })
 
   it('is labelled by its agent, else its role, bounded', () => {
@@ -65,21 +72,23 @@ describe('the gate and the steps lit', () => {
     expect(['GO', 'NO-GO', 'unread', undefined].map(gateOutcome)).toStrictEqual(['pass', 'fail', null, null])
   })
 
-  it('marks the gate step\'s verdict and the step the run is on', () => {
+  it('marks the gate step\'s verdict and the step the run is on, spinning while an agent is at work on it', () => {
     const states = runStepStates(overview, flow)
-    expect([states.get('gate')?.gate, states.get('board')?.here, states.get('start')?.here]).toStrictEqual(['pass', true, undefined])
+    expect([states.get('gate')?.gate, states.get('board')?.here, states.get('start')?.here]).toStrictEqual(['pass', 'on', undefined])
+    expect(states.get('board')?.spin).toBe(true)
   })
 })
 
 describe('buildTimeline', () => {
-  const steps = buildTimeline(overview, runStepStates(overview, flow))
+  const { orchestrator, steps } = buildTimeline(overview, runStepStates(overview, flow))
 
-  it('lists the steps that ran or are under way in the flow\'s order, then the agents on no step', () => {
-    expect(steps.map((step) => [step.step, step.state])).toStrictEqual([['start', 'ok'], ['board', 'running'], ['gate', 'ok'], ['', 'running']])
+  it('lists the steps that ran or are under way in the flow\'s order; the orchestrator on no step of the flow', () => {
+    expect(steps.map((step) => [step.step, step.state])).toStrictEqual([['start', 'ok'], ['board', 'running'], ['gate', 'ok']])
+    // (7.51.04: the orchestrator is the run's own row, held for a long wait here)
+    expect([orchestrator?.agent, orchestrator?.status, orchestrator?.state]).toStrictEqual(['coordinator-1', 'waiting', 'paused'])
   })
 
   it('lists each step\'s agents with their attempts, newest first', () => {
     expect(steps.find((step) => step.step === 'board')?.agents.map((agent) => [agent.label, agent.attempts])).toStrictEqual([['fixer-3', [2, 1]]])
-    expect(steps.at(-1)?.agents.map((agent) => agent.agent)).toStrictEqual(['coordinator-1'])
   })
 })

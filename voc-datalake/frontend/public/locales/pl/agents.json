@@ -262,7 +262,12 @@
       "idle": "Nie rozpoczęto",
       "running": "W toku",
       "done": "Gotowe",
-      "failed": "Nieudane"
+      "failed": "Nieudane",
+      "waiting": "Potrzebna osoba",
+      "paused": "Wstrzymane",
+      "stopped": "Zatrzymane",
+      "skipped": "Pominięte",
+      "ready": "Jego kolej, żaden agent jeszcze nie pracuje"
     },
     "eventKinds": {
       "node_started": "Krok rozpoczęty",
@@ -325,9 +330,13 @@
       "ran_failed": "Nieudane",
       "running": "Pracuje",
       "stopped": "Zatrzymane",
-      "planned": "Zaplanowane"
+      "planned": "Zaplanowane",
+      "waiting": "Potrzebna osoba",
+      "paused": "Wstrzymane"
     },
-    "laneAttempt": "{{role}} · próba {{n, number}}"
+    "laneAttempt": "{{role}} · próba {{n, number}}",
+    "stoppedHere": "Zatrzymano tutaj",
+    "stoppedHereAs": "Zatrzymano tutaj: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1723,7 +1732,8 @@
     "flow": {
       "canvas": "Płótno",
       "timeline": "Oś czasu",
-      "view": "Sposób pokazania przepływu"
+      "view": "Sposób pokazania przepływu",
+      "openSession": "Otwórz jego sesję"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1740,8 +1750,15 @@
         "ok": "Gotowe",
         "failed": "Nieudane",
         "stopped": "Zatrzymane",
-        "planned": "Jeszcze nie uruchomione"
-      }
+        "planned": "Jeszcze nie uruchomione",
+        "ready": "Jego kolej, żaden agent jeszcze nie pracuje",
+        "waiting": "Potrzebna osoba",
+        "paused": "Wstrzymane",
+        "skipped": "Pominięte"
+      },
+      "noAgentsYet": "Jeszcze bez agentów",
+      "notStarted": "Nie rozpoczęto",
+      "noAgents": "Bez agentów"
     },
     "sessions": {
       "title": "Sesje",
@@ -1773,7 +1790,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (osoba)",
         "conductor": "Orkiestrator ({{id}})",
-        "system": "{{id}} (platforma)"
+        "system": "{{id}} (platforma)",
+        "supervisor": "Nadzorca"
       },
       "kinds": {
         "gate": "Kontrola",
@@ -1791,6 +1809,36 @@
         "failed": "Nieudane",
         "running": "W toku",
         "loadFailed": "Nie udało się odczytać wywołania: spróbuj ponownie."
+      },
+      "endedDone": "Ta sesja się zakończyła: jej praca jest wykonana.",
+      "endedFailed": "Ta sesja się zakończyła: nie powiodła się.",
+      "endedStopped": "Ta sesja się zakończyła: została zatrzymana.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "Uruchamianie…",
+          "working": "W pracy",
+          "pause_requested": "Wstrzymywanie…",
+          "waiting": "Czeka",
+          "paused": "Wstrzymane",
+          "done": "Gotowe",
+          "failed": "Nieudane",
+          "crashed": "Awaria",
+          "stopped": "Zatrzymane",
+          "reposted": "Przekazane"
+        },
+        "restarted": "{{agent}} niespodziewanie się zatrzymał i został uruchomiony ponownie (próba {{n, number}} z {{max, number}})",
+        "restartedAgain": "{{agent}} niespodziewanie się zatrzymał i został uruchomiony ponownie (próba {{n, number}})",
+        "continued": "{{agent}} kontynuował po przerwie w nowej sesji",
+        "failedOutRun": "{{agent}} zawiódł {{n, number}} razy; przebieg potrzebuje osoby",
+        "failedOutTask": "{{agent}} zawiódł {{n, number}} razy; jego zadanie trafia do nowego agenta",
+        "couldNotStart": "{{agent}} nie mógł się uruchomić: {{reason}}",
+        "notAnswering": "{{agent}} przestał odpowiadać",
+        "noRoom": "Brak wolnej sesji dla {{agent}} po {{n, number}} próbach; czeka na osobę",
+        "stopped": "Przebieg zatrzymano, a jego sesje się zakończyły ({{n, number}})",
+        "repeats": "powiedziane {{count, number}} razy",
+        "details": "Szczegóły"
       }
     },
     "composer": {
@@ -1984,6 +2032,48 @@
       "refreshFailed": "Nie udało się odświeżyć tego przebiegu: widzisz jego ostatni poprawny stan.",
       "retry": "Spróbuj ponownie",
       "stopSent": "Wysłano zatrzymanie"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "Pobranie repozytorium nie powiodło się: przebieg czeka na osobę.",
+        "orchestratorFailed": "Orkiestrator {{agent}} zawiódł: przebieg czeka na osobę.",
+        "agentFailed": "{{agent}} zawiódł: przebieg czeka na osobę.",
+        "flowStep": "Przepływ czeka na decyzję osoby w kroku „{{step}}”.",
+        "budget": "Przebieg wyczerpał budżet: przebieg czeka na osobę.",
+        "thirtyDays": "Przebieg osiągnął swoje 30 dni: przebieg czeka na osobę.",
+        "checkoutCache": "Pamięć podręczna pobrań nie ma użytecznej kopii commita przebiegu: przebieg czeka na osobę.",
+        "orchestratorNotStarted": "Orkiestrator nie mógł się uruchomić: przebieg czeka na osobę.",
+        "waiting": "Przebieg czeka na osobę.",
+        "runFailed": "Przebieg się nie powiódł.",
+        "runFailedOrchestrator": "Przebieg się nie powiódł: jego orkiestrator {{agent}} zawiódł.",
+        "runFailedAgent": "Przebieg się nie powiódł: {{agent}} zawiódł.",
+        "stopped": "Przebieg zatrzymano.",
+        "stoppedNow": "Przebieg zatrzymano od razu, bez zapisu."
+      },
+      "next": {
+        "restart": "Aby spróbować ponownie, „Uruchom przebieg ponownie” uruchamia go jako nowy przebieg, z punktów kontrolnych tego lub od nowa.",
+        "resume": "Gdy przyczyna zostanie usunięta, wznów przebieg z jego sterowania (nowy orkiestrator zastąpi ten, który zawiódł) albo go zatrzymaj.",
+        "resumeBudget": "Zwiększ budżet przepływu, a potem wznów przebieg z jego sterowania albo go zatrzymaj.",
+        "stopThenRestart": "To wdrożenie nie może jeszcze wysłać wznowienia: zatrzymaj przebieg z jego sterowania, a potem „Uruchom przebieg ponownie” uruchomi go jako nowy przebieg.",
+        "nothing": "To wdrożenie nie może jeszcze stąd działać na przebiegu."
+      },
+      "agent": "Agent: {{agent}}",
+      "agentOrchestrator": "Agent: {{agent}} (orkiestrator)",
+      "step": "Krok: {{step}}",
+      "cost": "Koszt do tej pory: {{cost}}",
+      "why": "Dlaczego:",
+      "exitCode": "Jego ostatnie polecenie zakończyło się kodem {{code}}.",
+      "exitNoCode": "Jego ostatnie polecenie się nie powiodło.",
+      "timedOut": "Jego ostatnie polecenie przekroczyło limit czasu.",
+      "noReason": "Nie zapisano przyczyny: jego sesja może powiedzieć więcej.",
+      "details": "Pokaż szczegóły",
+      "detailStep": "Gdzie był",
+      "detailExit": "Kod wyjścia",
+      "detailDuration": "Czas działania",
+      "stderr": "Koniec jego wyjścia błędów",
+      "noStderr": "Brak wyjścia błędów.",
+      "toControls": "Przejdź do sterowania przebiegiem",
+      "openSession": "Otwórz sesję {{agent}}"
     }
   }
 }

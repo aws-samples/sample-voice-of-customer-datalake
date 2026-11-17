@@ -132,7 +132,8 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
                            'issue': None, 'pull_request': None,   # (started from no issue, no pull request yet)
-                           'waiting_at': '', 'stop': None,   # (at no person's decision point; nobody stopped it)
+                           'waiting_at': '', 'waiting_detail': None,   # (at no person's decision point)
+                           'stop': None,   # (nobody stopped it)
                            # (7.51.00: no session row priced yet, no cap, no parent; a live run has no manifest)
                            'cost_usd': 0.0, 'learn_cost_usd': 0.0, 'cost_cap_usd': None, 'parent': None,
                            'manifest': None}
@@ -144,7 +145,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
         'microvm_seconds': 300, 'tokens': [{'model': 'model-a', 'input_tokens': 1000, 'output_tokens': 200}],
         # (7.51.00: its session row's cost and labels, none written here; its attempt, commit and thread's tail)
         'cost_usd': 0.0, 'attempt': 1, 'commit': 'a' * 40, 'skill_label': None, 'model': None,
-        'transcript_cursor': TAIL}
+        'transcript_cursor': TAIL, 'last_exit': None, 'last_failure': None}   # (7.51.04: it has not failed)
     assert (view['lanes'], view['gates'], view['children']) == ({}, {}, [])
     assert (coordinator['task_id'], coordinator['heartbeat_age'], len(coordinator['stuck_why'])) == (None, None, MAX_LINE)
     assert view['totals'] == {'messages': 12, 'microvm_seconds': 300, 'by_model': [
@@ -551,6 +552,48 @@ def test_the_overview_shows_a_stop_under_way_and_the_decision_point_a_run_waits_
         'coordinator', {'mode': 'stop', 'requested_at': '2026-11-12T08:00:00Z'})
 
 
+#: A GitHub token's shape (the redaction's own pattern), in a failed command's output.
+TOKEN = 'ghp_' + 'A1b2C3d4' * 5
+
+
+def test_the_overview_says_why_an_agent_failed_redacted_and_bounded(run) -> None:
+    client, _, runtime, publisher, _ = run
+    failed = replace(COORDINATOR, status='failed', inspect={
+        'last_failure': f'the boot took too long\x07 ({TOKEN})',
+        'last_exit': {'exit_code': 128, 'timed_out': False, 'duration_seconds': 3, 'stdout_tail': 'never shown',
+                      'stderr_tail': f"fatal: detected dubious ownership in repository at '/mnt/voc-cache/x'\x00 {TOKEN}"}})
+    long_tail = replace(FIXER, inspect={'last_exit': {'exit_code': None, 'timed_out': True, 'stderr_tail': 'e' * 900}})
+    monitor = RunMonitor(client, TABLE, Sessions(long_tail, failed), runtime=runtime, publisher=publisher,
+                         now=lambda: START)
+    view = monitor.overview(RUN)
+    assert view is not None
+    coordinator, fixer = view['agents']
+    assert coordinator['last_exit'] == {
+        'exit_code': 128, 'timed_out': False, 'duration_seconds': 3,
+        'stderr_tail': "fatal: detected dubious ownership in repository at '/mnt/voc-cache/x' <redacted>"}
+    assert coordinator['last_failure'] == 'the boot took too long (<redacted>)'
+    assert (fixer['last_exit']['exit_code'], fixer['last_exit']['timed_out'], fixer['last_exit']['duration_seconds'],
+            len(fixer['last_exit']['stderr_tail']), fixer['last_failure']) == (None, True, None, 500, None)
+    assert 'never shown' not in json.dumps(view)
+
+
+@pytest.mark.parametrize(('status', 'reason', 'shown'), [
+    ('needs_human', f'The repository checkout failed (exit 128): fatal: {TOKEN}',
+     'The repository checkout failed (exit 128): fatal: <redacted>'),
+    ('needs_human', '   ', None),   # (nothing said)
+    ('running', 'The repository checkout failed (exit 128)', None),   # (resumed since: the old wait's reason is moot)
+])
+def test_a_run_at_a_person_says_why_in_its_supervisors_words(run, status: str, reason: str, shown: str | None) -> None:
+    client, monitor, _, _, _ = run
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET #s = :s, needs_human = :c, needs_human_detail = :r',
+                       ExpressionAttributeNames={'#s': 'status'},
+                       ExpressionAttributeValues={':s': {'S': status}, ':c': {'S': 'coordinator'}, ':r': {'S': reason}})
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert view['run']['waiting_detail'] == shown
+
+
 def test_the_lambda_stopper_calls_the_start_functions_stop_and_says_how_it_failed() -> None:
     client = LambdaClient({'status': 'stopped', 'tasks_closed': ['coordinate']})
     assert LambdaStopper(client, 'voc-engineering-start').stop(RUN, 'stop_now', actor='admin-1')['status'] == 'stopped'
@@ -673,3 +716,15 @@ def test_the_overview_shows_the_lanes_the_gates_the_cost_and_the_family_of_a_run
         assert (ended['run']['manifest']['cost_usd'], ended['run']['manifest']['version']) == (3.1415, 1)
         assert child['run']['parent'] == {'run_id': world.ENDED_RUN, 'mode': 'resume', 'by': 'admin-sub',
                                           'at': world.at(-60)}
+        # (7.51.04) The run at a person: where it waits and why, its failed orchestrator's last exit, the step it is on.
+        failed = monitor.overview(world.FAILED_RUN)
+        assert failed is not None
+        assert (failed['run']['status'], failed['run']['waiting_at'], failed['run']['waiting_detail']) == (
+            'needs_human', world.CHECKOUT_FAILED, world.FAILED_REASON)
+        [coordinator] = failed['agents']
+        assert (coordinator['status'], coordinator['continuation'], coordinator['last_failure']) == (
+            'failed', 2, world.FAILED_REASON)
+        assert coordinator['last_exit'] == {'exit_code': 128, 'timed_out': False, 'duration_seconds': 2,
+                                            'stderr_tail': world.CHECKOUT_STDERR}
+        assert (failed['run']['flow_steps']['classify'], failed['lanes'], failed['run']['cost_usd']) == (
+            'ready', {}, 0.03)

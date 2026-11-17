@@ -264,7 +264,12 @@
       "idle": "未开始",
       "running": "运行中",
       "done": "完成",
-      "failed": "失败"
+      "failed": "失败",
+      "waiting": "需要人处理",
+      "paused": "已暂停",
+      "stopped": "已停止",
+      "skipped": "已跳过",
+      "ready": "轮到它了，但还没有代理在工作"
     },
     "eventKinds": {
       "node_started": "步骤开始",
@@ -300,9 +305,13 @@
       "ran_failed": "失败",
       "running": "工作中",
       "stopped": "已停止",
-      "planned": "计划中"
+      "planned": "计划中",
+      "waiting": "需要人处理",
+      "paused": "已暂停"
     },
-    "laneAttempt": "{{role}} · 第 {{n, number}} 次尝试"
+    "laneAttempt": "{{role}} · 第 {{n, number}} 次尝试",
+    "stoppedHere": "在此停止",
+    "stoppedHereAs": "在此停止：{{state}}"
   },
   "editor": {
     "methodology": {
@@ -1676,7 +1685,8 @@
     "flow": {
       "canvas": "画布",
       "timeline": "时间线",
-      "view": "流程的显示方式"
+      "view": "流程的显示方式",
+      "openSession": "打开其会话"
     },
     "canvas": {
       "lane": "{{label}}：{{state}}"
@@ -1693,8 +1703,15 @@
         "ok": "完成",
         "failed": "失败",
         "stopped": "已停止",
-        "planned": "尚未运行"
-      }
+        "planned": "尚未运行",
+        "ready": "轮到它了，但还没有代理在工作",
+        "waiting": "需要人处理",
+        "paused": "已暂停",
+        "skipped": "已跳过"
+      },
+      "noAgentsYet": "还没有代理",
+      "notStarted": "未开始",
+      "noAgents": "没有代理"
     },
     "sessions": {
       "title": "会话",
@@ -1726,7 +1743,8 @@
         "agent": "{{id}}",
         "human": "{{id}}（人）",
         "conductor": "编排者（{{id}}）",
-        "system": "{{id}}（平台）"
+        "system": "{{id}}（平台）",
+        "supervisor": "监督者"
       },
       "kinds": {
         "gate": "门禁",
@@ -1744,6 +1762,36 @@
         "failed": "失败",
         "running": "运行中",
         "loadFailed": "无法读取此调用：请重试。"
+      },
+      "endedDone": "此会话已结束：工作已完成。",
+      "endedFailed": "此会话已结束：它失败了。",
+      "endedStopped": "此会话已结束：它被停止了。",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}：{{count, number}}",
+        "status": {
+          "booting": "正在启动…",
+          "working": "工作中",
+          "pause_requested": "正在暂停…",
+          "waiting": "等待中",
+          "paused": "已暂停",
+          "done": "已完成",
+          "failed": "失败",
+          "crashed": "崩溃",
+          "stopped": "已停止",
+          "reposted": "已移交"
+        },
+        "restarted": "{{agent}} 意外停止并已重新启动（第 {{n, number}} 次，共 {{max, number}} 次）",
+        "restartedAgain": "{{agent}} 意外停止并已重新启动（第 {{n, number}} 次）",
+        "continued": "{{agent}} 暂停后在新会话中继续",
+        "failedOutRun": "{{agent}} 失败了 {{n, number}} 次；运行需要人处理",
+        "failedOutTask": "{{agent}} 失败了 {{n, number}} 次；其任务交给新的代理",
+        "couldNotStart": "{{agent}} 无法启动：{{reason}}",
+        "notAnswering": "{{agent}} 停止响应",
+        "noRoom": "尝试 {{n, number}} 次后仍没有可供 {{agent}} 使用的会话；它在等人处理",
+        "stopped": "运行已停止，其会话已结束（{{n, number}}）",
+        "repeats": "共 {{count, number}} 次",
+        "details": "详细信息"
       }
     },
     "composer": {
@@ -1937,6 +1985,48 @@
       "refreshFailed": "无法刷新此运行：显示的是最后一次正常读取的状态。",
       "retry": "重试",
       "stopSent": "已发送停止"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "仓库检出失败：运行正在等人处理。",
+        "orchestratorFailed": "编排者 {{agent}} 失败了：运行正在等人处理。",
+        "agentFailed": "{{agent}} 失败了：运行正在等人处理。",
+        "flowStep": "流程在“{{step}}”处等待人做决定。",
+        "budget": "运行已用完预算：运行正在等人处理。",
+        "thirtyDays": "运行已满 30 天：运行正在等人处理。",
+        "checkoutCache": "检出缓存中没有该运行提交的可用副本：运行正在等人处理。",
+        "orchestratorNotStarted": "编排者无法启动：运行正在等人处理。",
+        "waiting": "运行正在等人处理。",
+        "runFailed": "运行失败了。",
+        "runFailedOrchestrator": "运行失败了：其编排者 {{agent}} 失败了。",
+        "runFailedAgent": "运行失败了：{{agent}} 失败了。",
+        "stopped": "运行已停止。",
+        "stoppedNow": "运行已立即停止，未保存。"
+      },
+      "next": {
+        "restart": "要重试，“重新开始运行”会将其作为新运行启动，从本次运行的检查点或从头开始。",
+        "resume": "原因解决后，在运行控制中继续运行（新的编排者会替换失败的那个），或将其停止。",
+        "resumeBudget": "提高流程的预算，然后在运行控制中继续运行，或将其停止。",
+        "stopThenRestart": "本部署暂时无法发送“继续”：请在运行控制中停止运行，然后“重新开始运行”会将其作为新运行再次启动。",
+        "nothing": "本部署暂时无法在此处操作该运行。"
+      },
+      "agent": "代理：{{agent}}",
+      "agentOrchestrator": "代理：{{agent}}（编排者）",
+      "step": "步骤：{{step}}",
+      "cost": "目前费用：{{cost}}",
+      "why": "原因：",
+      "exitCode": "其最后一个命令以代码 {{code}} 退出。",
+      "exitNoCode": "其最后一个命令失败了。",
+      "timedOut": "其最后一个命令超时了。",
+      "noReason": "没有记录原因：其会话中可能有更多信息。",
+      "details": "显示详细信息",
+      "detailStep": "当时所在",
+      "detailExit": "退出代码",
+      "detailDuration": "运行时长",
+      "stderr": "其错误输出的结尾",
+      "noStderr": "没有错误输出。",
+      "toControls": "前往运行控制",
+      "openSession": "打开 {{agent}} 的会话"
     }
   }
 }

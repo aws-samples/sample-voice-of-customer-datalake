@@ -13,6 +13,9 @@
 //   POST …/<run>/steer {text, about?, thread_id?}        202; recorded as msg.steer to the conductor
 //   POST …/<run>/restart {mode, agents?, base, confirm}  409 for the live sample run; 202 a child for the ended run
 //   GET  /agents/engineering/<ended run> and <child run>  their overviews (a parent and its child)
+//   GET  /agents/engineering/<failed run>[/agents/coordinator-1/thread]  (7.51.04) a run at a person whose
+//                                                       orchestrator failed at its checkout (exit 128, the
+//                                                       supervisor's reason), and that orchestrator's thread
 import { readFileSync } from 'node:fs';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./src/test/engineeringRunWorkspace.json', import.meta.url), 'utf8'));
@@ -28,6 +31,8 @@ const TAIL = FIXTURE.overview.answer.agents.find((agent) => agent.agent === FIXT
 /** The runs the mock serves beyond the sample run: the ended one and its child (their overviews, a restart). */
 export const ENDED_RUN_ID = FIXTURE.ended_run_id;
 export const CHILD_RUN_ID = FIXTURE.child_run_id;
+/** (7.51.04) The run at a person whose orchestrator failed: its overview and its orchestrator's thread. */
+export const FAILED_RUN_ID = FIXTURE.failed_run_id;
 
 export function runsList(url) {
   const month = url.searchParams.get('month');
@@ -39,9 +44,17 @@ export function runsList(url) {
   return [200, { runs, next: null }];
 }
 
-/** An ended run's or a child run's overview (the fixture's). */
+const OTHER_OVERVIEWS = { [ENDED_RUN_ID]: 'ended_overview', [CHILD_RUN_ID]: 'child_overview', [FAILED_RUN_ID]: 'failed_overview' };
+
+/** An ended run's, a child run's or (7.51.04) the failed run's overview (the fixture's). */
 export function otherOverview(runId) {
-  return answerOf(runId === ENDED_RUN_ID ? 'ended_overview' : 'child_overview');
+  return answerOf(OTHER_OVERVIEWS[runId]);
+}
+
+/** `GET …/<failed run>/agents/<agent>/thread`: its orchestrator's thread (every page the same: it has ended). */
+export function failedRunThread(agent) {
+  const orchestrator = answerOf('failed_overview').agents[0].agent;
+  return agent === orchestrator ? [200, answerOf('failed_thread')] : [404, { message: 'No such agent in this run' }];
 }
 
 /** What the run workspace adds to the sample run's overview: per agent (by id), the run's cost, lanes, gates. */

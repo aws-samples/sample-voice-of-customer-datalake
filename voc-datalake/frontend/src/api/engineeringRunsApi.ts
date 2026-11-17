@@ -62,6 +62,11 @@ export interface NewTask {
 
 const maybeCount = z.number().nullable().catch(null)
 const TokensSchema = z.object({ model: text, input_tokens: count, output_tokens: count })
+/** (7.51.04) An agent's last failed command as the supervisor kept it: its stderr's tail redacted by the server. */
+const LastExitSchema = z.object({
+  exit_code: maybeCount, timed_out: z.boolean().catch(false), duration_seconds: maybeCount, stderr_tail: text,
+}).nullable().catch(null)
+export type AgentLastExit = NonNullable<z.output<typeof LastExitSchema>>
 
 const AgentSchema = z.object({
   agent: z.string().min(1),
@@ -86,6 +91,9 @@ const AgentSchema = z.object({
   commit: maybeText.optional().transform((commit) => commit ?? null),
   skill_label: maybeText.optional().transform((label) => label ?? null),
   model: maybeText.optional().transform((model) => model ?? null),
+  /** (7.51.04) Why it last failed: its failed command, and the supervisor's own words ("the boot took too long"). */
+  last_exit: LastExitSchema.optional().transform((exit) => exit ?? null),
+  last_failure: maybeText.optional().transform((failure) => failure ?? null),
 })
 export type EngineeringAgent = z.output<typeof AgentSchema>
 
@@ -103,6 +111,8 @@ const RunBudgetSchema = z.object({
 const FlowStepsSchema = z.record(z.string(), z.string()).nullable().catch(null)
 /** The revision of the flow the run's start copied; null for none. */
 const FlowRevisionSchema = z.number().int().positive().nullable().catch(null)
+/** The flow's outcome (`running`, `needs_human`, `finished`), the step it is at and why; null for none. */
+const FlowOutcomeSchema = z.object({ outcome: text, at: maybeText, reason: maybeText }).nullable().catch(null)
 
 /** The host kinds a connection is on (`lambda/engineering/run_links.py` HOSTS). */
 const RunHostSchema = z.enum(['github', 'gitlab'])
@@ -138,10 +148,14 @@ const OverviewSchema = z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
     /** The decision point a run at a person waits at (`coordinator`, `budget`, `flow:<step>`…); '' for none. */
     waiting_at: z.string().optional().catch('').transform((point) => point ?? ''),
+    /** (7.51.04) Why, in the plain words its supervisor gave (7.51.03); null for none. */
+    waiting_detail: maybeText.optional().transform((reason) => reason ?? null),
     stop: RunStopSchema.optional().transform((stop) => stop ?? null),
     budget: RunBudgetSchema.optional().transform((budget) => budget ?? null),
     flow_steps: FlowStepsSchema.optional().transform((steps) => steps ?? null),
     flow_revision: FlowRevisionSchema.optional().transform((revision) => revision ?? null),
+    /** (7.51.04) Where the flow stands as the conductor reads it, and why (a step blocked at a person says so). */
+    flow_outcome: FlowOutcomeSchema.optional().transform((outcome) => outcome ?? null),
     /** The run's own copy of its flow, as its start wrote it (what the monitor draws); null for none. */
     flow_definition: z.unknown().optional().transform((definition) => normalizeDefinition(definition ?? null)),
     issue: IssueLinkSchema.optional().transform((issue) => issue ?? null),

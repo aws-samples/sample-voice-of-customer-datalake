@@ -41,14 +41,16 @@
 // agent's thread and inspector tabs (…/agents/<agent>/{thread,changes,files,gate,memory}), the assertions, a person's
 // steering (POST …/steer), an ended run's restart as a child run (POST …/restart; the ended run and its child are served
 // too), the restart signal ({signal: restart, from: checkpoint | fresh, …, confirm: true}), and an answer to an agent
-// only on the thread its own question opened (400 without a thread_id, 404 on another thread).
+// only on the thread its own question opened (400 without a thread_id, 404 on another thread). 7.51.04: a run at a
+// person whose orchestrator failed at its checkout (its overview and its orchestrator's thread, in the runs list).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
 // agent id).
 
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
 import { handleIssuesSourceRoutes } from './mock-issues-source.js';
 import {
-  CHILD_RUN_ID, ENDED_RUN_ID, agentRoute, assertions, otherOverview, restart, runsList, steer, workspaceOverview,
+  CHILD_RUN_ID, ENDED_RUN_ID, FAILED_RUN_ID, agentRoute, assertions, failedRunThread, otherOverview, restart, runsList, steer,
+  workspaceOverview,
 } from './mock-engineering-run-workspace.js';
 
 export const SAMPLE_RUN_ID = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3';
@@ -870,6 +872,14 @@ function otherRunRoute(req, res, send, shared, runId, sub) {
   } else send(404, { message: 'Engineering run not found' });
 }
 
+/** (7.51.04) The failed run's reads (an admin's): its overview and its orchestrator's thread; nothing else. */
+function failedRunRoute(req, send, sub, rest) {
+  if (!isAdmin()) send(403, { message: 'Admin access required' });
+  else if (req.method === 'GET' && sub === undefined) send(200, otherOverview(FAILED_RUN_ID));
+  else if (req.method === 'GET' && sub === 'agents' && rest.length === 2 && rest[1] === 'thread') send(...failedRunThread(rest[0]));
+  else send(404, { message: 'Engineering run not found' });
+}
+
 /** The routes of one exact path under the prefix. */
 const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRoute };
 
@@ -892,6 +902,10 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   const nested = (req.method === 'GET' && ['reports', 'agents'].includes(sub)) || (req.method === 'POST' && sub === 'board');
   if ([ENDED_RUN_ID, CHILD_RUN_ID].includes(runId) && rest.length === 0) {
     otherRunRoute(req, res, send, shared, runId, sub);
+    return true;
+  }
+  if (runId === FAILED_RUN_ID) {
+    failedRunRoute(req, send, sub, rest);
     return true;
   }
   if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) send(404, { message: 'Engineering run not found' });

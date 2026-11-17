@@ -722,6 +722,9 @@
     "probes": [
       {
         "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3"
+      },
+      {
+        "path": "/agents/engineering/01JDAF5Q0C8R2N7W4X6Y1Z3K9M"
       }
     ]
   },
@@ -845,6 +848,9 @@
       },
       {
         "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/agents/fixer-3/thread?after=eyJrIjoxLCJvIjoyNDQxLCJwIjoiMi4xLjIyNjAiLCJzIjoyLCJ2IjoxfQ&limit=200"
+      },
+      {
+        "path": "/agents/engineering/01JDAF5Q0C8R2N7W4X6Y1Z3K9M/agents/coordinator-1/thread?limit=200"
       }
     ]
   },

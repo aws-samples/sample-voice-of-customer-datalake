@@ -653,10 +653,11 @@ describe('liveSteps', () => {
   it('lights each step as the conductor reads it when the run follows its flow, and leaves the unknown ones', () => {
     const { agents } = parseOverview(engineeringOverview())
     const steps = { start: 'done', board: 'collecting', gate: 'human', pr: 'not_yet_run', human: 'waiting', x: 'done',
-      odd: 'teleported' }
-    expect(Object.fromEntries([...liveSteps(agents, new Set(['start', 'board', 'gate', 'pr', 'human', 'odd']), steps)]
-      .map(([step, state]) => [step, state.status]))).toStrictEqual(
-      { start: 'done', board: 'running', gate: 'running', pr: 'idle' })
+      odd: 'teleported', fix: 'blocked', learn: 'skipped', commit: 'stopped' }
+    const ids = new Set(['start', 'board', 'gate', 'pr', 'human', 'odd', 'fix', 'learn', 'commit'])
+    // (7.51.04: a step at a person waits for one, a stopped one is stopped and a way not taken skipped, never a failure)
+    expect(Object.fromEntries([...liveSteps(agents, ids, steps)].map(([step, state]) => [step, state.status]))).toStrictEqual(
+      { start: 'done', board: 'running', gate: 'waiting', pr: 'idle', fix: 'failed', learn: 'skipped', commit: 'stopped' })
   })
 
   it('reads a run with no flow copy as none', () => {

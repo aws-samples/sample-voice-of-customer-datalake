@@ -85,7 +85,7 @@ function Pane({ pane, ...props }: Readonly<Omit<Props, 'grid'> & { pane: GridLea
     onPointerDown={() => { if (agent !== undefined && agent.agent !== props.current) props.onFocus(agent.agent) }}>
       {agent === undefined
         ? <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-muted">{t('runWorkspace.sessions.emptyPane')}<span className="ml-auto flex gap-1">{tools}</span></div>
-        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} actions={props.actions}
+        : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} orchestratorId={props.orchestrator} actions={props.actions}
           focused={agent.agent === props.current} lanes={props.lanes} tools={tools} />}
     </div>
   )

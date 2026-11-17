@@ -456,7 +456,11 @@ Since 7.51.00 the overview (`GET …/{run_id}`) also carries `lanes` (each flow 
 their agents), `gates` (`{step: verdict}`), `children`, each agent's `cost_usd`, `attempt`, `commit`, `skill_label`,
 `model` and `transcript_cursor`, and the run's `cost_usd`, `learn_cost_usd`, `cost_cap_usd`, `parent` and (ended)
 `manifest`; the Agents API reads the runs' transcripts, patches, gate records and manifests for them, and lists only the
-transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`).
+transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). Since 7.51.04 each agent also carries why it
+last failed, as the supervisor keeps it: `last_exit` (`{exit_code, timed_out, duration_seconds, stderr_tail}`, never
+its stdout) and `last_failure`; and a run at a person carries `waiting_detail`, the plain reason its supervisor stored
+(META's `needs_human_detail`, 7.51.03; null otherwise). Each is redacted and stripped of control characters as a thread
+is, and at most 500 characters.
 
 ### The run workspace
 
@@ -487,6 +491,18 @@ while the run is under way, an open thread by its cursor (D51-5; the push comes 
   the board's verdict as pass or fail, and "You are here" marks the step the run is on. The canvas is inert: a click
   opens a session, it never signals, restarts or spends anything. A toggle switches to the **timeline**: the steps in
   the flow's order, the agents on each with their attempts, newest first, and the agents on no step of the flow last.
+  Since 7.51.04 both read the run's real state: once it ended or waits for a person, the step where it stopped is
+  marked "Stopped here" as failed (an agent or its checkout failed), as needing a person, or as stopped, and nothing
+  spins; while it is under way, a step spins only while an agent is at work on it. The orchestrator is the run's own:
+  a strip above the canvas and the timeline's first row, never "on no step of the flow". A step with no agent has no
+  chevron ("No agents yet", "Not started").
+- **End banner** (7.51.04, administrators): at the top of a run that waits for a person, failed or was stopped, what
+  happened in plain words, which agent and step, why (the supervisor's stored reason, else the agent's last word or
+  exit code; its last command's exit and the end of its error output behind "Show details"), the cost so far, and what
+  to do next with the run controls it moves to (Resume, Stop, Restart run); danger for a failure, warn for a decision,
+  muted for a person's Stop. The supervisor's own lines in a thread read in plain words ("Starting… · $0.00",
+  "coordinator-1 stopped unexpectedly and was restarted (attempt 2 of 3)"), a run of the same line once, the raw text
+  behind "Details".
 - **Sessions** (centre; first on a narrow screen): the open agents' threads, as tabs (the app's tabs, which scroll;
   the close button beside the tablist, and one "Open another agent" menu) or a grid of 1, 2 or 4 panes whose dividers
   move; the layout is kept for the run in this browser tab (sessionStorage, per

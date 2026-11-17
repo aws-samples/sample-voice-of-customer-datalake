@@ -18,6 +18,7 @@ import { STEP_HEIGHT, STEP_WIDTH } from '../../../components/WorkflowEditor/mode
 import type { LaneState } from '../../../components/WorkflowEditor/runState'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 import type { RunLane } from '../../../api/engineeringRunsApi'
+import type { RunPhase } from './agentStatus'
 
 export const LANE_WIDTH = 168
 export const LANE_HEIGHT = 44
@@ -42,13 +43,31 @@ export interface LaneView {
   readonly position: { readonly x: number; readonly y: number }
 }
 
-/** The lane's state, from its task's board state and whether the run has ended (planModel's `agentState`): a task
- * over reads as it ended, one nothing was launched for as planned, and one still under way when the run ended as stopped. */
-export function laneState(lane: Pick<RunLane, 'state' | 'agent'>, runEnded: boolean): LaneState {
+/** An agent's session statuses held with no session at work (runtime/sessions.py), and those over. */
+const HELD: ReadonlySet<string> = new Set(['paused', 'waiting'])
+const OVER: ReadonlySet<string> = new Set(['stopped', 'reposted'])
+
+/**
+ * An agent's state from its session's status and where the run stands (7.51.04): done, failed, stopped (or posted
+ * again) as they say; held (paused) while the run waits for a person or the session is held; stopped once the run
+ * has ended; else at work (booting, working, pausing, or a launch with no session row yet), the only state that spins.
+ */
+export function sessionState(status: string | null, phase: RunPhase): LaneState {
+  if (status === 'done') return 'ran_ok'
+  if (status === 'failed' || status === 'crashed') return 'ran_failed'
+  if (phase === 'ended' || (status !== null && OVER.has(status))) return 'stopped'
+  return phase === 'halted' || (status !== null && HELD.has(status)) ? 'paused' : 'running'
+}
+
+/** The lane's state, from its task's board state, its agent's session and where the run stands (planModel's
+ * `agentState`): a task over reads as it ended, one waiting for a person as waiting (7.51.04, never a failure), one
+ * nothing was launched for as planned, and one under way as its agent's session (sessionState). */
+export function laneState(lane: Pick<RunLane, 'state' | 'agent' | 'status'>, phase: RunPhase): LaneState {
   if (lane.state === 'done') return 'ran_ok'
-  if (lane.state === 'failed' || lane.state === 'needs_human') return 'ran_failed'
+  if (lane.state === 'failed') return 'ran_failed'
+  if (lane.state === 'needs_human') return 'waiting'
   if (lane.state === 'open' && lane.agent === null) return 'planned'
-  return runEnded ? 'stopped' : 'running'
+  return sessionState(lane.status, phase)
 }
 
 /** A lane's text, bounded (WorkflowRunGraph's `nodeTitle`): its agent, else its role. */
@@ -82,10 +101,11 @@ const stageWidth = (lanes: number) => Math.max(STEP_WIDTH, lanes * LANE_WIDTH + 
 
 /**
  * The run's flow laid out as stages, with each step's lanes under it: the definition with its steps placed (its
- * edges and loops kept), and the lanes. `runEnded`: an ended run's lanes still under way read as stopped.
+ * edges and loops kept), and the lanes. `phase`: where the run stands (an ended run's lanes still under way read as
+ * stopped, a run's at a person as held: laneState).
  */
 export function layoutRun(definition: WorkflowDefinition, lanes: Readonly<Record<string, readonly RunLane[]>>,
-  runEnded: boolean): { definition: WorkflowDefinition; lanes: LaneView[] } {
+  phase: RunPhase): { definition: WorkflowDefinition; lanes: LaneView[] } {
   const levels = levelsOf(definition)
   const rows = [...new Set(levels.values())].sort((a, b) => a - b)
   const placed = new Map<string, { x: number; y: number }>()
@@ -103,7 +123,7 @@ export function layoutRun(definition: WorkflowDefinition, lanes: Readonly<Record
       stageLanes.forEach((lane, at) => {
         views.push({
           id: `lane:${step.id}:${lane.task_id}`, step: step.id, agent: lane.agent, label: laneLabel(lane), role: lane.role,
-          state: laneState(lane, runEnded), attempt: lane.attempt,
+          state: laneState(lane, phase), attempt: lane.attempt,
           position: { x: left.x + at * (LANE_WIDTH + LANE_GAP), y: cursor.top + STEP_HEIGHT + LANE_DROP },
         })
       })

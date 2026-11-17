@@ -67,7 +67,7 @@ export function SessionsPane({ runId, agents, lanes, current, orchestrator, acti
           <div className="flex h-[min(36rem,70vh)] min-h-0 flex-col" role="tabpanel">
             {shown === undefined
               ? <p className="p-3 text-sm text-muted">{current === null ? t('engineeringRun.noAgents') : t('runWorkspace.sessions.noAgent', { agent: current })}</p>
-              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} actions={actions}
+              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} orchestratorId={orchestrator} actions={actions}
                 focused lanes={lanes} />}
           </div>
         </>

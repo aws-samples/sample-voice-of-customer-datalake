@@ -3,7 +3,15 @@
 - Per agent, from its session row (``AGENT#<agent>``): its cost so far (``cost_usd``: its session time and, since
   7.50.00, its tokens at their prices, with the brokers' metering), the attempt and commit it works on, its skill's
   label and its model, and ``transcript_cursor``: the cursor that opens its thread at its transcript's end
-  (views_thread.TAIL; None for an agent with no transcript to read).
+  (views_thread.TAIL; None for an agent with no transcript to read); and (7.51.04) why it last failed, as the
+  supervisor's inspection data holds it: ``last_exit`` (its failed command's exit code, whether it timed out, how long
+  it ran and its stderr's tail; never its stdout) and ``last_failure`` (the supervisor's own words: "the boot took too
+  long"), each shown as the thread shows text (redacted, no control character: views_thread.display) and bounded,
+  None for none.
+- (7.51.04) A run at a person: ``waiting_detail``, the plain reason its supervisor gave for it (META's
+  ``needs_human_detail``, written since 7.51.03 beside the decision point, as at ``checkout_failed``: "The repository
+  checkout failed (git clone, exit 128): …"), shown the same way; None for none, and for a run that is not at a person
+  (a reason kept from an earlier wait says nothing of the run now).
 - The lanes: each flow step's tasks (``flow_step``) with the agent on each (its holder, else the agent launched for its
   attempt) and that agent's status, the canvas's sibling nodes of a stage.
 - The run's cost: its agents' and Learn's (``LEARN#spend``, learning/budget.py), against its cost cap.
@@ -27,10 +35,16 @@ from engineering.rows import amount_attr, string_attr
 from engineering.run_objects import RunObjects
 from engineering.runtime.manifest import MAX_VERSIONS, manifest_key
 from engineering.runtime.sessions import AgentSession
-from engineering.views_thread import TAIL, Subject
+from engineering.views_thread import TAIL, Subject, display
 
 MAX_CHILDREN: Final = 50
 _DESERIALIZE: Final = TypeDeserializer()
+#: (7.51.04) The longest stderr tail and reason the overview shows (the supervisor keeps 500 characters of a tail).
+MAX_STDERR: Final = 500
+MAX_REASON: Final = 500
+#: META's plain reason for a run at a person (7.51.03, and its ``RUNLOG#`` row's ``detail``), beside ``needs_human``
+#: (the decision point it waits at).
+NEEDS_HUMAN_DETAIL: Final = 'needs_human_detail'
 
 
 def usd(value: Decimal) -> float:
@@ -44,7 +58,43 @@ def agent_extras(run_id: str, session: AgentSession, row: Mapping[str, Any] | No
                       attempt=session.task_attempt, commit=session.commit, status=session.status)
     return {'cost_usd': usd(amount_attr(row, 'cost_usd')), 'attempt': session.task_attempt,
             'commit': session.commit or None, 'skill_label': string_attr(row, 'skill_version') or None,
-            'model': string_attr(row, 'model') or None, 'transcript_cursor': TAIL if subject.transcripts else None}
+            'model': string_attr(row, 'model') or None, 'transcript_cursor': TAIL if subject.transcripts else None,
+            'last_exit': last_exit(session.inspect),
+            'last_failure': shown(session.inspect.get('last_failure'), MAX_REASON)}
+
+
+def shown(value: Any, limit: int) -> str | None:
+    """A stored text as a person reads it (views_thread.display: redacted, no control character), cut to ``limit``;
+    None for none."""
+    if not isinstance(value, str):
+        return None
+    text = display(value).strip()
+    if not text:
+        return None
+    return text if len(text) <= limit else f'{text[:limit - 1]}…'
+
+
+def _whole(value: Any) -> int | None:
+    return int(value) if isinstance(value, int | float | Decimal) and not isinstance(value, bool) else None
+
+
+def last_exit(inspect: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The agent's last failed command (the supervisor's ``last_exit``: ``{exit_code, timed_out, duration_seconds,
+    stderr_tail}``, its stderr shown and bounded), None for none."""
+    raw = inspect.get('last_exit')
+    if not isinstance(raw, Mapping):
+        return None
+    return {'exit_code': _whole(raw.get('exit_code')), 'timed_out': raw.get('timed_out') is True,
+            'duration_seconds': _whole(raw.get('duration_seconds')),
+            'stderr_tail': shown(raw.get('stderr_tail'), MAX_STDERR) or ''}
+
+
+def waiting_detail(meta: Mapping[str, Any]) -> str | None:
+    """Why a run at a person is there, in the plain words its supervisor gave (7.51.03); None for none, and for a run
+    that is not at a person."""
+    if string_attr(meta, 'status') != 'needs_human':
+        return None
+    return shown(string_attr(meta, NEEDS_HUMAN_DETAIL), MAX_REASON)
 
 
 def _agent_of(task: Task) -> str:

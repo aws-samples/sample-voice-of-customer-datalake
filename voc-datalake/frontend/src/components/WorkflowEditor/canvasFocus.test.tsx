@@ -51,6 +51,9 @@ describe('focusStepId', () => {
     expect(focusStepId(new Map([['a', state('done')], ['b', state('failed')]]))).toBe('b')
     expect(focusStepId(new Map([['a', state('done')], ['b', state('done')], ['c', state('idle')]]))).toBe('b')
     expect(focusStepId(new Map())).toBeUndefined()
+    // (7.51.04) the step marked where the run is or stopped first; one waiting for a person before one that failed
+    expect(focusStepId(new Map([['a', state('running')], ['b', { ...state('failed'), here: 'stopped' }]]))).toBe('b')
+    expect(focusStepId(new Map([['a', state('failed')], ['b', state('waiting')]]))).toBe('b')
   })
 
   it('finds the start step of a definition', () => {

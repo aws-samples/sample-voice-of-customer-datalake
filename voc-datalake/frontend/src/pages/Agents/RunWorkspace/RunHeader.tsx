@@ -12,14 +12,9 @@ import { formatCount } from '../../../utils/numberFormat'
 import { EngineeringRunHeader } from '../EngineeringRunHeader'
 import { shareTone, budgetShare } from '../spendView'
 import { runWorkspacePath } from './runWorkspacePaths'
+import { useDollars } from './useDollars'
 import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
-
-function useDollars(): (value: number) => string {
-  const { i18n } = useTranslation()
-  const format = new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return (value) => format.format(value)
-}
 
 function BudgetMeter({ share }: Readonly<{ share: number }>) {
   const { t } = useTranslation('agents')

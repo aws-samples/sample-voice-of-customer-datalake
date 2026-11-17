@@ -264,7 +264,12 @@
       "idle": "Not started",
       "running": "Running",
       "done": "Done",
-      "failed": "Failed"
+      "failed": "Failed",
+      "waiting": "Needs a person",
+      "paused": "Paused",
+      "stopped": "Stopped",
+      "skipped": "Skipped",
+      "ready": "Its turn, no agent at work yet"
     },
     "eventKinds": {
       "node_started": "Step started",
@@ -300,9 +305,13 @@
       "ran_failed": "Failed",
       "running": "At work",
       "stopped": "Stopped",
-      "planned": "Planned"
+      "planned": "Planned",
+      "waiting": "Needs a person",
+      "paused": "Paused"
     },
-    "laneAttempt": "{{role}} · attempt {{n, number}}"
+    "laneAttempt": "{{role}} · attempt {{n, number}}",
+    "stoppedHere": "Stopped here",
+    "stoppedHereAs": "Stopped here: {{state}}"
   },
   "editor": {
     "methodology": {
@@ -1622,7 +1631,8 @@
     "flow": {
       "canvas": "Canvas",
       "timeline": "Timeline",
-      "view": "How the flow is shown"
+      "view": "How the flow is shown",
+      "openSession": "Open its session"
     },
     "canvas": {
       "lane": "{{label}}: {{state}}"
@@ -1639,8 +1649,15 @@
         "ok": "Done",
         "failed": "Failed",
         "stopped": "Stopped",
-        "planned": "Not run yet"
-      }
+        "planned": "Not run yet",
+        "ready": "Its turn, no agent at work yet",
+        "waiting": "Needs a person",
+        "paused": "Paused",
+        "skipped": "Skipped"
+      },
+      "noAgentsYet": "No agents yet",
+      "notStarted": "Not started",
+      "noAgents": "No agents"
     },
     "sessions": {
       "title": "Sessions",
@@ -1672,7 +1689,8 @@
         "agent": "{{id}}",
         "human": "{{id}} (a person)",
         "conductor": "Orchestrator ({{id}})",
-        "system": "{{id}} (the platform)"
+        "system": "{{id}} (the platform)",
+        "supervisor": "The supervisor"
       },
       "kinds": {
         "gate": "Gate",
@@ -1690,6 +1708,36 @@
         "failed": "Failed",
         "running": "Running",
         "loadFailed": "The call could not be read: try again."
+      },
+      "endedDone": "This session has ended: its work is done.",
+      "endedFailed": "This session has ended: it failed.",
+      "endedStopped": "This session has ended: it was stopped.",
+      "supervisor": {
+        "health": "{{states}} · {{cost}}",
+        "count": "{{status}}: {{count, number}}",
+        "status": {
+          "booting": "Starting…",
+          "working": "At work",
+          "pause_requested": "Pausing…",
+          "waiting": "Waiting",
+          "paused": "Paused",
+          "done": "Done",
+          "failed": "Failed",
+          "crashed": "Crashed",
+          "stopped": "Stopped",
+          "reposted": "Handed on"
+        },
+        "restarted": "{{agent}} stopped unexpectedly and was restarted (attempt {{n, number}} of {{max, number}})",
+        "restartedAgain": "{{agent}} stopped unexpectedly and was restarted (attempt {{n, number}})",
+        "continued": "{{agent}} carried on in a new session after its pause",
+        "failedOutRun": "{{agent}} failed {{n, number}} times; the run needs a person",
+        "failedOutTask": "{{agent}} failed {{n, number}} times; its task goes to a new agent",
+        "couldNotStart": "{{agent}} could not start: {{reason}}",
+        "notAnswering": "{{agent}} stopped responding",
+        "noRoom": "No free session for {{agent}} after {{n, number}} tries; it waits for a person",
+        "stopped": "The run was stopped and its sessions ended ({{n, number}})",
+        "repeats": "said {{count, number}} times",
+        "details": "Details"
       }
     },
     "composer": {
@@ -1883,6 +1931,48 @@
       "refreshFailed": "Couldn't refresh this run: what you see is its last good state.",
       "retry": "Retry",
       "stopSent": "Stop sent"
+    },
+    "end": {
+      "what": {
+        "checkoutFailed": "The repository checkout failed: the run is waiting for a person.",
+        "orchestratorFailed": "The orchestrator, {{agent}}, failed: the run is waiting for a person.",
+        "agentFailed": "{{agent}} failed: the run is waiting for a person.",
+        "flowStep": "The flow is waiting for a person's decision at “{{step}}”.",
+        "budget": "The run has spent its budget: the run is waiting for a person.",
+        "thirtyDays": "The run has reached its 30 days: the run is waiting for a person.",
+        "checkoutCache": "The checkout cache has no usable copy of the run's commit: the run is waiting for a person.",
+        "orchestratorNotStarted": "The orchestrator could not start: the run is waiting for a person.",
+        "waiting": "The run is waiting for a person.",
+        "runFailed": "The run failed.",
+        "runFailedOrchestrator": "The run failed: its orchestrator, {{agent}}, failed.",
+        "runFailedAgent": "The run failed: {{agent}} failed.",
+        "stopped": "The run was stopped.",
+        "stoppedNow": "The run was stopped at once, without saving."
+      },
+      "next": {
+        "restart": "To try again, Restart run starts it as a new run, from this one's checkpoints or afresh.",
+        "resume": "Once the cause is fixed, Resume the run from its controls (a new orchestrator replaces a failed one), or Stop it.",
+        "resumeBudget": "Raise the flow's budget, then Resume the run from its controls, or Stop it.",
+        "stopThenRestart": "This deployment can't send Resume yet: Stop the run from its controls, then Restart run starts it again as a new run.",
+        "nothing": "This deployment can't act on the run from here yet."
+      },
+      "agent": "Agent: {{agent}}",
+      "agentOrchestrator": "Agent: {{agent}} (the orchestrator)",
+      "step": "Step: {{step}}",
+      "cost": "Cost so far: {{cost}}",
+      "why": "Why:",
+      "exitCode": "Its last command exited with code {{code}}.",
+      "exitNoCode": "Its last command failed.",
+      "timedOut": "Its last command timed out.",
+      "noReason": "Nothing recorded why: its session may say more.",
+      "details": "Show details",
+      "detailStep": "Where it was",
+      "detailExit": "Exit code",
+      "detailDuration": "Ran for",
+      "stderr": "The end of its error output",
+      "noStderr": "No error output.",
+      "toControls": "Go to the run's controls",
+      "openSession": "Open {{agent}}'s session"
     }
   }
 }

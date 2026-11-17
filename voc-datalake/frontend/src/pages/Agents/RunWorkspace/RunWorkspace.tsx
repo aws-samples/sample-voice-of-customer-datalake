@@ -17,15 +17,16 @@
  * Wide, the flow comes first and the inspector last; narrow, the sessions (the main task) come first. Above them the
  * header (budget used against the cap, the parent and child runs) with the run's control bar (RunControlBar.tsx:
  * Pause or Resume, the run's Stop with "Stop now, without saving", Save; Restart run once it ended), which a failed
- * read keeps (its last good state, retried with a backoff); below them people's reactions on the host.
+ * read keeps (its last good state, retried with a backoff); below them people's reactions on the host. (7.51.04) At
+ * the top, for an admin, the banner of a run that waits for a person, failed or was stopped (RunEndBanner.tsx): what
+ * happened, which agent and step, why, the cost so far, and what to do next with the control bar it links to.
  *
  * @module pages/Agents/RunWorkspace/RunWorkspace
  */
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
-import { COORDINATE_TASK } from '../../../api/engineeringRunsApi'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { useIsAdmin } from '../../../store/authStore'
 import { useReplaceAddress } from '../../../utils/pathPlace'
@@ -40,6 +41,8 @@ import { RunControlBar } from './RunControlBar'
 import { FlowPane } from './FlowPane'
 import { SessionsPane } from './SessionsPane'
 import { Inspector } from './Inspector'
+import { RunEndBanner } from './RunEndBanner'
+import { orchestratorOf } from './agentStatus'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 import type { SessionActions } from './SessionThread'
 
@@ -54,28 +57,29 @@ function sessionActions(isAdmin: boolean, live: boolean, overview: EngineeringOv
   return { steer: overview.steer_available, signals: overview.signals_available }
 }
 
-/** The run's orchestrator: its coordinator, whose session the run's own address shows. */
-const orchestratorOf = (overview: EngineeringOverview) =>
-  overview.agents.find((agent) => agent.task_id === COORDINATE_TASK || agent.role === 'coordinator')?.agent ?? null
-
 function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Readonly<{
   runId: string; agentInPath: string | null; overview: EngineeringOverview; live: boolean; readAt: number
   /** The last read of the run failed (the one shown is the last good one), and its retry. */
   refresh: { failed: boolean; retry: () => void }
 }>) {
   const isAdmin = useIsAdmin()
+  const controlsId = useId()
   // A person's board actions by their own flag (7.51.02: none reaches a run yet, the bus taking only steering and
   // answers from the Agents API).
   const canAct = isAdmin && overview.board_available
-  const orchestrator = orchestratorOf(overview)
+  const orchestrator = orchestratorOf(overview.agents)?.agent ?? null
   const current = agentInPath ?? orchestrator
   const agentIds = useMemo(() => new Set(overview.agents.map((agent) => agent.agent)), [overview.agents])
   const sessions = useSessionLayout(runId, current, orchestrator, agentIds)
   const shown = overview.agents.find((agent) => agent.agent === current)
   return (
     <>
+      {isAdmin && <RunEndBanner overview={overview} controlsId={controlsId} onOpen={sessions.open} />}
       <RunHeader overview={overview} controls={(
-        <RunControlBar runId={runId} overview={overview} live={live} isAdmin={isAdmin} refreshFailed={refresh.failed} onRetry={refresh.retry} />
+        // (a focusable place for the end banner's "Go to the run's controls")
+        <div id={controlsId} tabIndex={-1} className="rounded-md">
+          <RunControlBar runId={runId} overview={overview} live={live} isAdmin={isAdmin} refreshFailed={refresh.failed} onRetry={refresh.retry} />
+        </div>
       )} />
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,26rem)]">
         <div className="order-2 min-w-0 2xl:order-1">

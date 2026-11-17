@@ -23,12 +23,16 @@ export const FIT_VIEW_OPTIONS = { padding: 0.15, minZoom: 0.6, maxZoom: 1 } as c
 /** A fit at (or within rounding of) the floor did not show the whole graph. */
 const ZOOM_EPSILON = 0.01
 
-/** The step a run graph centres on: running, else failed, else the last one that finished. */
+/**
+ * The step a run graph centres on: the one marked as where the run is or stopped (7.51.04), else running, else
+ * waiting for a person, else failed, else the last one that finished.
+ */
 export function focusStepId(runStates: ReadonlyMap<string, StepState> | undefined): string | undefined {
   if (runStates === undefined) return undefined
   const entries = [...runStates.entries()]
   const byStatus = (status: StepState['status']) => entries.filter(([, state]) => state.status === status).map(([id]) => id)
-  return byStatus('running').at(0) ?? byStatus('failed').at(0) ?? byStatus('done').at(-1)
+  return entries.find(([, state]) => state.here !== undefined)?.[0]
+    ?? byStatus('running').at(0) ?? byStatus('waiting').at(0) ?? byStatus('failed').at(0) ?? byStatus('done').at(-1)
 }
 
 /** The editor's focus: the workflow's start step. */

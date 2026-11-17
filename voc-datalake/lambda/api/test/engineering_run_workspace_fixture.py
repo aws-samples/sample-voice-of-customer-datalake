@@ -3,7 +3,8 @@
 
 Every route of the run workspace is called through ``agents_handler.lambda_handler`` (the API Gateway event, an
 administrator acting for themselves) on one fixed run (engineering/test/run_workspace_world.py): the overview of the
-run, of an ended run and of its child, the runs list, an agent's thread (its start, a later page, its tail) and one item,
+run, of an ended run and of its child, and (7.51.04) of a run at a person whose orchestrator failed, with that
+orchestrator's thread, the runs list, an agent's thread (its start, a later page, its tail) and one item,
 its changes (its submitted patch, a checkpoint's, one file), its files, the gate runner's gate, its memory, the
 assertions, and the three actions (a person's steering, a restart signal, an ended run's restart as a child run), each
 with its method, path, query, body, status and answer. The web app builds against the file (the run workspace's zod
@@ -127,6 +128,11 @@ def answers() -> dict[str, Any]:
     found['overview'] = exchange('GET', base)
     found['ended_overview'] = exchange('GET', f'/agents/engineering/{world.ENDED_RUN}')
     found['child_overview'] = exchange('GET', f'/agents/engineering/{world.CHILD_RUN}')
+    # (7.51.04) The run at a person whose orchestrator failed at its checkout, and its orchestrator's thread.
+    failed = f'/agents/engineering/{world.FAILED_RUN}'
+    found['failed_run_id'] = world.FAILED_RUN
+    found['failed_overview'] = exchange('GET', failed)
+    found['failed_thread'] = exchange('GET', f'{failed}/agents/{world.COORDINATOR}/thread', query={'limit': '200'})
     found['runs'] = exchange('GET', '/agents/engineering/runs', query={'month': world.MONTH})
     found['thread'] = exchange('GET', f'{fixer}/thread', query={'limit': '8'})
     found['thread_next'] = exchange('GET', f'{fixer}/thread', query={'after': found['thread']['answer']['next']})

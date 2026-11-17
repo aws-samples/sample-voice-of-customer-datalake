@@ -429,6 +429,8 @@ class RunMonitor:
                     # (7.50.03: None for none; stopping while it has not ended).
                     'waiting_at': string_attr(meta, 'needs_human') if string_attr(meta, 'status') == 'needs_human'
                     else '',
+                    # (7.51.04) And why, in the plain words its supervisor gave (7.51.03; None for none).
+                    'waiting_detail': run_overview.waiting_detail(meta),
                     'stop': _stop_view(meta),
                     # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
                     'budget': budget_view(meta), **flow,
