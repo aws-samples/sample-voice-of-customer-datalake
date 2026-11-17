@@ -98,6 +98,7 @@ from shared import (
     agent_run_decisions,
     agent_run_resume,
     agent_seed,
+    agents_engineering_run_routes,
     agents_engineering_setup_routes,
     engineering_templates,
     plans_store,
@@ -1147,7 +1148,7 @@ def decline_plan_step(plan_id: str, step_id: str):
 # category, so the run's feedback ids hide nothing from them.
 # --------------------------------------------------------------------------
 
-ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
+ENGINEERING_RUN_NOT_FOUND = agents_engineering_run_routes.RUN_NOT_FOUND
 _VERSION = re.compile(r'[0-9]{1,4}\Z')
 
 
@@ -1350,20 +1351,29 @@ def _monitor(run_id: str) -> Any:
     run's partition of the engineering table, read only); its signals and answers need the runtime
     (ENGINEERING_RUNTIME_FUNCTION) and the bus (ENGINEERING_BUS_NAME); its Stop (7.50.03) only the start function
     (ENGINEERING_START_FUNCTION, ``stop_run``: this role invokes no other runtime function)."""
-    table, _ = _engineering_tables(run_id)
+    table, bucket = _engineering_tables(run_id)
     from engineering.bus.publish import EventBridgePublisher
     from engineering.monitor import API_SOURCE, LambdaRuntime, LambdaStopper, RunMonitor
+    from engineering.run_objects import RunObjects
     from engineering.runtime.runs import RunStore
     from engineering.runtime.sessions import SessionStore
-    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_lambda_client
+    from shared.aws import (
+        get_dynamodb_client,
+        get_dynamodb_resource,
+        get_eventbridge_client,
+        get_lambda_client,
+        get_s3_client,
+    )
 
     bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
     start = os.environ.get(eng_runs.START_FUNCTION_ENV, '')
     engineering = get_dynamodb_resource().Table(table)
+    # (7.51.00: the workspace bucket's run objects, for an ended run's manifest)
     return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
                       runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
                       publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None,
-                      stopper=LambdaStopper(_start_client(), start) if start else None)
+                      stopper=LambdaStopper(_start_client(), start) if start else None,
+                      objects=RunObjects(get_s3_client(), bucket))
 
 
 _MONITOR_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
@@ -1618,6 +1628,9 @@ def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
 
 # The setup guide's progress (7.50.00, GET/PUT /agents/engineering/setup: shared/agents_engineering_setup_routes.py).
 app.include_router(agents_engineering_setup_routes.app)
+# The run workspace (7.51.00: the runs list, an agent's thread and tabs, the assertions, steering, a child run's restart;
+# shared/agents_engineering_run_routes.py), before /agents/engineering/<run_id>.
+app.include_router(agents_engineering_run_routes.app)
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository

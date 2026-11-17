@@ -263,10 +263,13 @@ def test_an_admin_answers_the_conductor_or_an_agent_of_the_run(lambda_context: A
     status, body = _call(lambda_context, 'POST', f'{BASE}/messages', body={'to': 'conductor', 'text': 'Skip docs'})
     assert (status, actions.bus.entries[0]['DetailType']) == (200, 'msg.answer')
     assert body['message']['thread_id'].startswith('human-')
+    # (7.51.00: an answer to an agent replies on the thread its own question opened, the fixture's t-1)
     assert _call(lambda_context, 'POST', f'{BASE}/messages',
-                 body={'to': 'agent', 'agent': 'fixer-1', 'text': 'Yes'})[0] == 200
+                 body={'to': 'agent', 'agent': 'fixer-1', 'text': 'Yes', 'thread_id': 't-1'})[0] == 200
     assert _call(lambda_context, 'POST', f'{BASE}/messages',
-                 body={'to': 'agent', 'agent': 'fixer-9', 'text': 'Hi'})[0] == 404
+                 body={'to': 'agent', 'agent': 'fixer-1', 'text': 'Yes'})[0] == 400
+    assert _call(lambda_context, 'POST', f'{BASE}/messages',
+                 body={'to': 'agent', 'agent': 'fixer-9', 'text': 'Hi', 'thread_id': 't-1'})[0] == 404
 
 
 # --- a person's board actions (engineering/board/api.py PersonBoard) ------------------------------------------------

@@ -306,6 +306,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.50.00: the engineering setup guide's one row in voc-agents and its history row, in one transaction (as the
     # hard cap's, engineering/settings.py): the deployment's, like the engineering agents (phase 3).
     'lambda/shared/agents_engineering_setup_routes.py': (3, {'meta.client': 1, 'transact': 1}),
+    # 7.51.00: the run workspace's steering and restart read the supervisor's session rows (voc-engineering, as the
+    # Agents API's run monitor does): the deployment's, like the engineering agents (phase 3).
+    'lambda/shared/agents_engineering_run_routes.py': (3, {'Table': 1}),
     'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 3, 'transact': 3}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),
     # BatchGetItem's one bounded helper (MCP tokens, projects); the layer's `batch_get_item` is the workspace's.

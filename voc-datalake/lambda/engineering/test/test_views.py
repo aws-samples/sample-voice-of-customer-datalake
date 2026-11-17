@@ -159,3 +159,25 @@ def test_a_racing_older_version_does_not_become_the_latest(run: EngineeringRun) 
                            UpdateExpression='SET latest_version = :v', ExpressionAttributeValues={':v': {'N': '5'}})
     store.publish('default', RUN, 'goal', RUN, document=lambda v: ({'version': v}, f'v{v}'))
     assert [entry.latest_version for entry in store.index('default', RUN)] == [5]
+
+
+def test_the_assertions_are_the_flows_with_what_was_recorded_of_each() -> None:
+    from engineering.test import run_workspace_world as world
+
+    with mock_aws():
+        built = world.build()
+        views = EngineeringViews(built.client, world.TABLE, WorkspaceStore(built.s3, world.BUCKET))
+        recorded = views.assertions(world.RUN)
+        assert recorded is not None
+        assert [(found['check'], found['status'], found['on_fail']) for found in recorded] == [
+            ('gate.passed', 'pass', 'block'), ('patch.touches_tests', 'pass', 'warn'), ('patch.max_lines', 'pass', 'block')]
+        # Before the step records any: each one declared, pending.
+        built.client.delete_item(TableName=world.TABLE, Key={'pk': {'S': f'WS#default#RUN#{world.RUN}'},
+                                                             'sk': {'S': 'ASSERT#gate#1'}})
+        pending = views.assertions(world.RUN)
+        assert pending is not None
+        assert [(found['status'], found['args'], found['attempt']) for found in pending] == [
+            ('pending', {}, None), ('pending', {}, None), ('pending', {'max': 400}, None)]
+        # A run without a flow has none; an unknown run is None (the route's 404).
+        assert views.assertions(world.ENDED_RUN) == []
+        assert views.assertions('01JD0000000000000000000009') is None

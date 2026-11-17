@@ -204,6 +204,21 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/setup',
         'PUT /agents/engineering/setup',
     }),
+    # The run workspace (7.51.00, included by agents_handler.py): the deployment's engineering runs (their RUNLIST#
+    # rows, transcripts, patches and gate records), so it moves with the engineering agents in 3g3.
+    'agents_engineering_run_routes.py': frozenset({
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/changes',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/changes/file',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/files',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/gate',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/memory',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/thread',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/thread/<ref>',
+        'GET /agents/engineering/<run_id>/assertions',
+        'GET /agents/engineering/runs',
+        'POST /agents/engineering/<run_id>/restart',
+        'POST /agents/engineering/<run_id>/steer',
+    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

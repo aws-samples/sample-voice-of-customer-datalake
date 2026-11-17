@@ -48,22 +48,27 @@ from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.board.model import FINAL, OPEN, PERSON_PREFIX
+from engineering import run_overview
+from engineering.board.model import FINAL, OPEN, PERSON_PREFIX, Task
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.record import run_flow
 from engineering.learning.reactions import ReactionsStore
 from engineering.learning.reactions import view as reactions_view
-from engineering.rows import Refused, amount_attr, budget_view, run_pk, string_attr
+from engineering.rows import Refused, amount_attr, budget_view, run_pk, run_rows, string_attr
 from engineering.run_links import run_links
+from engineering.run_objects import RunObjects
 from engineering.runtime.runs import ENDED
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
+from shared.dynamo_paging import iter_query
 from shared.logging import logger
 
 API_SOURCE = 'voc.engineering/api'
-SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now')
+SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart')
+#: Where a restarted agent starts again (7.51.00): its newest checkpoint, or its task afresh (its attempt re-posted).
+RESTART_FROM = ('checkpoint', 'fresh')
 #: A person's Stop of the whole run (runtime/runs.py STOP, STOP_NOW), and the whole-run signal each one is.
 STOP, STOP_NOW = 'stop', 'stop_now'
 WHOLE_RUN_STOPS = {'shutdown': STOP, 'stop_now': STOP_NOW}
@@ -106,7 +111,8 @@ class Applied:
 class Runtime(Protocol):
     """The supervisor's signal (``LambdaRuntime`` calls voc-engineering-runtime)."""
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied: ...
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
+               restart_from: str = '') -> Applied: ...
 
 
 def _line(value: Any) -> str | None:
@@ -156,15 +162,23 @@ class Signal:
     task_id: str
     attempt: int
     note: str
+    #: A restart's start (``RESTART_FROM``; '' for every other signal).
+    restart_from: str = ''
 
 
 def parse_signal(body: Mapping[str, Any]) -> Signal:
-    """``{signal, task_id?, attempt?, note?, confirm?}``: a task's agent at an attempt, or (no task) the whole run."""
+    """``{signal, task_id?, attempt?, note?, confirm?}``: a task's agent at an attempt, or (no task) the whole run.
+    ``restart`` (7.51.00) is an agent's only, ``{signal: restart, from: checkpoint | fresh, task_id, attempt, confirm:
+    true}``: the agent's session ends and its task starts again from its newest checkpoint, or afresh as its next
+    attempt."""
     name, task_id, attempt, note = body.get('signal'), body.get('task_id'), body.get('attempt'), body.get('note', '')
     if name not in SIGNALS:
         raise MonitorError('invalid', f"signal is one of {', '.join(SIGNALS)}")
     if name == 'stop_now' and body.get('confirm') is not True:
         raise MonitorError('invalid', 'stop_now stops without a checkpoint: send confirm: true')
+    if 'from' in body and name != 'restart':
+        raise MonitorError('invalid', 'from goes with a restart')
+    restart_from = _restart_from(body) if name == 'restart' else ''
     if task_id is None:
         if attempt is not None:
             raise MonitorError('invalid', 'attempt goes with a task_id (a signal to the whole run has none)')
@@ -173,7 +187,19 @@ def parse_signal(body: Mapping[str, Any]) -> Signal:
         raise MonitorError('invalid', 'task_id is a task id')
     if not isinstance(attempt, int) or isinstance(attempt, bool) or not 1 <= attempt <= 1_000_000:
         raise MonitorError('invalid', 'attempt is the attempt you saw (the task\'s lease epoch)')
-    return Signal(name, task_id, attempt, _note(note))
+    return Signal(name, task_id, attempt, _note(note), restart_from)
+
+
+def _restart_from(body: Mapping[str, Any]) -> str:
+    """A restart's ``from``, after its ``confirm`` and its task (a restart is an agent's, never the whole run's)."""
+    if body.get('from') not in RESTART_FROM:
+        raise MonitorError('invalid', f"a restart's from is {' or '.join(RESTART_FROM)}")
+    if body.get('confirm') is not True:
+        raise MonitorError('invalid', "a restart ends the agent's session (afresh: its work since its last checkpoint "
+                                      'too): send confirm: true')
+    if body.get('task_id') is None:
+        raise MonitorError('invalid', "a restart is an agent's: name its task_id and the attempt you saw")
+    return str(body['from'])
 
 
 def _note(note: Any) -> str:
@@ -212,7 +238,9 @@ class Answer:
 
 
 def parse_message(body: Mapping[str, Any], run_id: str) -> Answer:
-    """``{to: 'conductor' | 'agent', agent?, text, thread_id?}``: a person's answer, in a thread (new if left out)."""
+    """``{to: 'conductor' | 'agent', agent?, text, thread_id?}``: a person's answer, in a thread (new if left out).
+    Since 7.51.00 an answer to an agent replies on the thread its own question opened (``msg.question``: D51-4), so it
+    names that ``thread_id``; anything else a person tells an agent goes as steering, through the orchestrator."""
     to, text, thread = body.get('to'), body.get('text'), body.get('thread_id')
     if to == 'conductor':
         party = Party('conductor', run_id)
@@ -224,7 +252,46 @@ def parse_message(body: Mapping[str, Any], run_id: str) -> Answer:
         raise MonitorError('invalid', f'text is what you say, at most {MAX_SUMMARY_BYTES} bytes')
     if thread is not None and not (isinstance(thread, str) and ID.fullmatch(thread)):
         raise MonitorError('invalid', 'thread_id is the id of the thread you answer')
+    if party.kind == 'agent' and thread is None:
+        raise MonitorError('invalid', "an answer to an agent names the thread_id of its question (to steer it, steer "
+                                      'the run)')
     return Answer(party, text.strip(), thread or f'human-{new_event_id()}')
+
+
+#: The most conversation messages an answer's check reads, newest first, for the question it answers.
+MAX_QUESTION_READ = 5_000
+
+
+@dataclass(frozen=True)
+class Steer:
+    text: str
+    about: str
+    thread_id: str
+
+
+STEER_FIELDS = frozenset({'text', 'about', 'thread_id'})
+
+
+def parse_steer(body: Mapping[str, Any]) -> Steer:
+    """``{text, about?, thread_id?}`` (7.51.00): a person's instruction to the run's orchestrator, optionally about
+    one agent of the run, on a thread (new if left out)."""
+    text, about, thread = body.get('text'), body.get('about'), body.get('thread_id')
+    if not set(body) <= STEER_FIELDS:
+        raise MonitorError('invalid', 'the body is {text, about?, thread_id?}')
+    if about is not None and not (isinstance(about, str) and ID.fullmatch(about)):
+        raise MonitorError('invalid', "about is the id of an agent of the run")
+    if thread is not None and not (isinstance(thread, str) and ID.fullmatch(thread)):
+        raise MonitorError('invalid', 'thread_id is the id of the thread you steer on')
+    said = text.strip() if isinstance(text, str) else ''
+    if not said or len(_steering(said, about or '').encode('utf-8')) > MAX_SUMMARY_BYTES:
+        raise MonitorError('invalid', f'text is what the orchestrator should do, at most {MAX_SUMMARY_BYTES} bytes '
+                                      'with the agent it is about')
+    return Steer(said, about or '', thread or f'steer-{new_event_id()}')
+
+
+def _steering(text: str, about: str) -> str:
+    """The steering as the conversation keeps it (and the orchestrator reads it): the agent it is about first."""
+    return f'About {about}: {text}' if about else text
 
 
 def _at(now: datetime) -> str:
@@ -235,7 +302,9 @@ def _record(signal: Signal, actor: Actor, target: Party) -> str:
     """The request as the conversation keeps it: who asked what of whom, and their note."""
     whom = f'agent {target.id}' if target.kind == 'agent' else 'the whole run'
     note = f' Note: {signal.note}' if signal.note else ''
-    return fit_summary(f"{signal.name.replace('_', ' ')} requested from the run monitor by {actor.name} for {whom}.{note}")
+    start = {'checkpoint': ' from its checkpoint', 'fresh': ' afresh'}.get(signal.restart_from, '')
+    return fit_summary(f"{signal.name.replace('_', ' ')}{start} requested from the run monitor by {actor.name} for "
+                       f'{whom}.{note}')
 
 
 def _outcome_text(answer: Applied) -> str:
@@ -258,10 +327,14 @@ class LambdaRuntime:
         self.client = client
         self.function_name = function_name
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied:
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
+               restart_from: str = '') -> Applied:
         """``actor``: the person who sent it (the signal record's sender), for the runtime to record who changed the
-        run's status (a whole-run Resume: D4, ``runtime/runs.py``) and name on a new coordinator's launch."""
+        run's status (a whole-run Resume: D4, ``runtime/runs.py``) and name on a new coordinator's launch;
+        ``restart_from``: a restart's start (``checkpoint`` or ``fresh``)."""
         request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal, 'actor': actor}
+        if restart_from:
+            request['restart_from'] = restart_from
         if agent_id is not None:
             request['agent_id'] = agent_id
             if attempt is not None:
@@ -329,11 +402,13 @@ def _stop_view(meta: Mapping[str, Any]) -> dict[str, Any] | None:
 class RunMonitor:
     def __init__(self, client: Any, table: str, sessions: Sessions, *, runtime: Runtime | None,
                  publisher: Publisher | None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
-                 stopper: Stopper | None = None) -> None:
+                 stopper: Stopper | None = None, objects: RunObjects | None = None) -> None:
         """``client`` is a low-level DynamoDB client on voc-engineering; ``sessions`` the supervisor's rows;
         ``runtime`` and ``publisher`` the signals' and answers' (None: they are unavailable); ``stopper`` the Stop's
-        (None: it is unavailable)."""
+        (None: it is unavailable); ``objects`` the workspace bucket's run objects (an ended run's manifest; None: not
+        read)."""
         self.client, self.table = client, table
+        self.objects = objects
         self.sessions = sessions
         self.runtime = runtime
         self.publisher = publisher
@@ -349,8 +424,13 @@ class RunMonitor:
         meta = self._get(run_id, 'META')
         if meta is None:
             return None
-        agents = sorted((_agent_view(session) for session in self.sessions.of_run(run_id)),
-                        key=lambda agent: agent['agent'])
+        rows = {string_attr(row, 'sk').removeprefix('AGENT#'): row
+                for row in run_rows(self.client, self.table, WORKSPACE, run_id, 'AGENT#')}
+        agents = sorted(({**_agent_view(session), **run_overview.agent_extras(run_id, session, rows.get(session.agent_id))}
+                         for session in self.sessions.of_run(run_id)), key=lambda agent: agent['agent'])
+        tasks = [Task.from_item(item) for item in run_rows(self.client, self.table, WORKSPACE, run_id, 'TASK#')]
+        flow, gates = self._flow_view(run_id, meta, tasks)
+        ended = string_attr(meta, 'status') in ENDED
         return {
             'run': {'run_id': run_id, 'goal': string_attr(meta, 'goal'), 'repo': string_attr(meta, 'repo'),
                     'flow': string_attr(meta, 'flow'), 'status': string_attr(meta, 'status'),
@@ -362,10 +442,18 @@ class RunMonitor:
                     else '',
                     'stop': _stop_view(meta),
                     # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
-                    'budget': budget_view(meta), **self._flow_view(run_id, meta),
+                    'budget': budget_view(meta), **flow,
                     # The issue it was started from and its pull request (each None for none: run_links.py).
-                    **run_links(self.client, self.table, WORKSPACE, run_id, meta)},
+                    **run_links(self.client, self.table, WORKSPACE, run_id, meta),
+                    # (7.51.00) Its cost against its cap, the run it was restarted from, an ended run's manifest.
+                    **run_overview.run_cost(meta, agents, self._get(run_id, 'LEARN#spend')),
+                    'parent': run_overview.parent(meta),
+                    'manifest': run_overview.manifest(self.objects, run_id) if ended else None},
             'agents': agents,
+            # (7.51.00) Each flow step's tasks and their agents (the canvas's lanes), each gate's verdict as the board
+            # recorded it, and the runs restarted from this one.
+            'lanes': run_overview.lanes(tasks, agents), 'gates': gates,
+            'children': run_overview.children(run_rows(self.client, self.table, WORKSPACE, run_id, 'CHILD#')),
             # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
             # the stack wires them, every action answers 503, so the page offers none).
             'actions_available': self.actions_available,
@@ -388,20 +476,22 @@ class RunMonitor:
             raise MonitorError('not_found', 'Engineering run not found')
         return string_attr(meta, 'status') in ENDED
 
-    def _flow_view(self, run_id: str, meta: Mapping[str, Any]) -> dict[str, Any]:
+    def _flow_view(self, run_id: str, meta: Mapping[str, Any],
+                   tasks: list[Task]) -> tuple[dict[str, Any], dict[str, str]]:
         """The run's flow as it runs: the revision its start copied and when, each step's status from the conductor
         (the canvas's steps lit) and where the flow stands; all None for a run started without a flow, or whose copy
-        cannot be followed (logged)."""
+        cannot be followed (logged). And each quality gate's verdict (``{step: GO | NO-GO | unread}``, 7.51.00)."""
         # (no gate records read here: a gate's verdict as the board recorded it, else not yet read)
-        found = run_flow(self.client, self.table, WORKSPACE, run_id, meta)
+        found = run_flow(self.client, self.table, WORKSPACE, run_id, meta, tasks=tasks)
         if found is None:
             return {'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None, 'flow_steps': None,
-                    'flow_outcome': None}
+                    'flow_outcome': None}, {}
         plan = found.plan
         return {'flow_revision': found.revision or None, 'flow_copied_at': found.copied_at or None,
                 # The run's own copy, as its start wrote it: what the monitor draws (never the flow as saved since).
                 'flow_definition': found.definition, 'flow_steps': plan.lit(),
-                'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)}}
+                'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)}}, \
+            dict(plan.verdicts)
 
     @property
     def actions_available(self) -> bool:
@@ -525,7 +615,8 @@ class RunMonitor:
         one = target.kind == 'agent'
         try:
             answer = self.runtime.signal(run_id, target.id if one else None, signal.name,
-                                         signal.attempt if one else None, actor=actor.subject)
+                                         signal.attempt if one else None, actor=actor.subject,
+                                         restart_from=signal.restart_from)
         except (ClientError, BotoCoreError) as exc:
             self._outcome(publisher, record, 'not applied: the supervisor could not be reached')
             raise MonitorError('unavailable', 'The supervisor could not be reached: send the signal again') from exc
@@ -560,11 +651,52 @@ class RunMonitor:
         self.open_run(run_id)
         if answer.to.kind == 'agent' and all(s.agent_id != answer.to.id for s in self.sessions.of_run(run_id)):
             raise MonitorError('not_found', 'no such agent in this run')
+        if answer.to.kind == 'agent' and not self._asked(run_id, answer.to.id, answer.thread_id):
+            raise MonitorError('not_found', f'agent {answer.to.id} asked no question on this thread: an answer to an '
+                                            'agent replies on the thread its own question opened')
         event_id, at = new_event_id(), _at(self.now())
         _publish(publisher, Message(
             event_id=event_id, ws=WORKSPACE, run_id=run_id, thread_id=answer.thread_id, attempt=0,
             sender=Party('human', actor.subject), to=answer.to, type='msg.answer', summary=answer.text, at=at))
         return {'event_id': event_id, 'thread_id': answer.thread_id, 'at': at}
+
+    def _asked(self, run_id: str, agent: str, thread: str) -> bool:
+        """Whether ``agent`` opened ``thread`` with its own question (``msg.question`` from it on that thread): the
+        conversation's questions read newest first, stopping at the first that is (``iter_query`` reads no further
+        page), at most ``MAX_QUESTION_READ`` of them."""
+        request: dict[str, Any] = {
+            'TableName': self.table, 'ConsistentRead': True, 'ScanIndexForward': False, 'Limit': 500,
+            'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :msg)', 'FilterExpression': '#type = :question',
+            'ExpressionAttributeNames': {'#type': 'type'},
+            'ExpressionAttributeValues': {':pk': {'S': run_pk(WORKSPACE, run_id)}, ':msg': {'S': 'MSG#'},
+                                          ':question': {'S': 'msg.question'}}}
+        for item in iter_query(self.client, request, max_items=MAX_QUESTION_READ):
+            try:
+                message = json.loads(string_attr(item, 'message'))
+            except ValueError:
+                continue
+            sender = message.get('from') if isinstance(message, dict) else None
+            if isinstance(sender, dict) and (sender.get('kind'), sender.get('id')) == ('agent', agent) \
+                    and message.get('thread_id') == thread:
+                return True
+        return False
+
+    def steer(self, run_id: str, steer: Steer, actor: Actor) -> dict[str, Any]:
+        """Publish a person's steering to the run's orchestrator (``msg.steer`` from the API to the conductor: the
+        router records it in the conversation, who and when, D4; the delivery wakes the coordinator, which relays it);
+        answers its event and thread."""
+        publisher = self.bus()
+        self.open_run(run_id)
+        if steer.about and all(s.agent_id != steer.about for s in self.sessions.of_run(run_id)):
+            raise MonitorError('not_found', 'no such agent in this run')
+        event_id, at = new_event_id(), _at(self.now())
+        _publish(publisher, Message(
+            event_id=event_id, ws=WORKSPACE, run_id=run_id, thread_id=steer.thread_id, attempt=0,
+            sender=Party('human', actor.subject), to=Party('conductor', run_id), type='msg.steer',
+            summary=_steering(steer.text, steer.about), at=at))
+        logger.info('engineering: a person steered the run', extra={
+            'run_id': run_id, 'by': actor.subject, 'about': steer.about or None, 'event_id': event_id})
+        return {'event_id': event_id, 'thread_id': steer.thread_id, 'at': at}
 
     def bus(self) -> Publisher:
         if self.publisher is None:

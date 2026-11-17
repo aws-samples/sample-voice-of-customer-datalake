@@ -74,7 +74,10 @@ def test_the_thread_writer_lists_its_series_in_both_scopes():
 
 
 def test_every_module_that_builds_a_thread_writes_it_through_put_thread():
-    builders = {rel for rel, text in _sources().items() if re.search(r'\bthread_item\(', text)}
+    # (an engineering run's thread item, engineering/thread_items.py since 7.51.00, is one line of an agent's transcript
+    # as the run workspace reads it: never a comment thread, never written)
+    builders = {rel for rel, text in _sources().items() if re.search(r'\bthread_item\(', text)
+                and not rel.startswith('lambda/engineering/')}
     assert builders
     assert sorted(rel for rel in builders if not re.search(r'\bput_thread\(', _sources()[rel])) == []
 

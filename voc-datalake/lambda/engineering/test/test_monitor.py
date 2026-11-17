@@ -15,7 +15,9 @@ from botocore.exceptions import ClientError
 from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
 from engineering.bus.publish import PublishError
-from engineering.bus.schema import Message, MessageError, parse
+from engineering.bus.schema import Message, MessageError, Party, parse
+from engineering.bus.test.messages import message
+from engineering.conversation.store import ConversationStore
 from engineering.monitor import (
     MAX_LINE,
     Actor,
@@ -26,11 +28,13 @@ from engineering.monitor import (
     RunMonitor,
     parse_message,
     parse_signal,
+    parse_steer,
     parse_stop,
 )
 from engineering.rows import run_pk
 from engineering.runtime.sessions import AgentSession
 from engineering.test.run_fixture import FIXER, LambdaClient
+from engineering.views_thread import TAIL
 
 ADMIN = Actor('admin-sub', 'ada')
 START = datetime(2026, 11, 12, 9, 0, tzinfo=UTC)
@@ -70,12 +74,15 @@ class Runtime:
         self.answer: dict[str, str] = {}
         self.not_applied: set[str] = set()
         self.actors: list[str] = []
+        self.restarts: list[str] = []
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied:
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str,
+               restart_from: str = '') -> Applied:
         if self.fail is not None:
             raise self.fail
         self.calls.append((run_id, agent_id, signal, attempt))
         self.actors.append(actor)
+        self.restarts.append(restart_from)
         agents = self.answer or {agent_id or 'fixer-1': 'paused'}
         return Applied(agents, {agent: agent not in self.not_applied and status not in {'busy', 'stale'}
                                 for agent, status in agents.items()})
@@ -127,13 +134,20 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
                            'issue': None, 'pull_request': None,   # (started from no issue, no pull request yet)
-                           'waiting_at': '', 'stop': None}   # (at no person's decision point; nobody stopped it)
+                           'waiting_at': '', 'stop': None,   # (at no person's decision point; nobody stopped it)
+                           # (7.51.00: no session row priced yet, no cap, no parent; a live run has no manifest)
+                           'cost_usd': 0.0, 'learn_cost_usd': 0.0, 'cost_cap_usd': None, 'parent': None,
+                           'manifest': None}
     coordinator, fixer = view['agents']
     assert fixer == {
         'agent': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1', 'status': 'working', 'continuation': 0,
         'started_at': 1000, 'step': 'fix', 'microvm_state': 'running', 'microvm_age': 600, 'heartbeat_age': 30,
         'last_progress_at': 1500, 'stuck_why': None, 'recent_tools': ['read_file', 'run_tests'],
-        'microvm_seconds': 300, 'tokens': [{'model': 'model-a', 'input_tokens': 1000, 'output_tokens': 200}]}
+        'microvm_seconds': 300, 'tokens': [{'model': 'model-a', 'input_tokens': 1000, 'output_tokens': 200}],
+        # (7.51.00: its session row's cost and labels, none written here; its attempt, commit and thread's tail)
+        'cost_usd': 0.0, 'attempt': 1, 'commit': 'a' * 40, 'skill_label': None, 'model': None,
+        'transcript_cursor': TAIL}
+    assert (view['lanes'], view['gates'], view['children']) == ({}, {}, [])
     assert (coordinator['task_id'], coordinator['heartbeat_age'], len(coordinator['stuck_why'])) == (None, None, MAX_LINE)
     assert view['totals'] == {'messages': 12, 'microvm_seconds': 300, 'by_model': [
         {'model': 'model-a', 'input_tokens': 1050, 'output_tokens': 205},
@@ -300,8 +314,16 @@ def test_without_the_runtime_or_the_bus_the_actions_are_unavailable(run) -> None
     assert (unsent.value.kind, runtime.calls) == ('unavailable', [])
 
 
+def _asks(client: Any, thread: str, agent: str = 'fixer-1') -> None:
+    """The agent's question on ``thread``, in the conversation as the router writes it."""
+    ConversationStore(client, TABLE).append_to_conversation(parse(message(
+        run_id=RUN, thread_id=thread, **{'from': {'kind': 'agent', 'id': agent}}, to={'kind': 'run', 'id': RUN},
+        refs={'s3': []})))
+
+
 def test_a_person_answers_an_agent_or_the_conductor_in_a_thread(run) -> None:
-    _, monitor, _, publisher, _ = run
+    client, monitor, _, publisher, _ = run
+    _asks(client, 't-7')
     reply = monitor.message(RUN, parse_message({'to': 'agent', 'agent': 'fixer-1', 'text': ' Yes, inclusive. ',
                                                 'thread_id': 't-7'}, RUN), ADMIN)
     fresh = monitor.message(RUN, parse_message({'to': 'conductor', 'text': 'Skip the docs task'}, RUN), ADMIN)
@@ -316,8 +338,30 @@ def test_a_person_answers_an_agent_or_the_conductor_in_a_thread(run) -> None:
 def test_an_answer_to_an_agent_not_in_the_run_is_refused(run) -> None:
     _, monitor, _, publisher, _ = run
     with pytest.raises(MonitorError) as missing:
-        monitor.message(RUN, parse_message({'to': 'agent', 'agent': 'fixer-9', 'text': 'Hi'}, RUN), ADMIN)
+        monitor.message(RUN, parse_message({'to': 'agent', 'agent': 'fixer-9', 'text': 'Hi', 'thread_id': 't-1'}, RUN),
+                        ADMIN)
     assert (missing.value.kind, publisher.sent) == ('not_found', [])
+
+
+@pytest.mark.parametrize(('asker', 'thread'), [
+    ('', 't-7'),                 # (no question at all)
+    ('fixer-1', 't-8'),          # (its question is on another thread)
+    ('coordinator-1', 't-7'),    # (another agent's question on that thread)
+], ids=['no question', 'another thread', 'another agent'])
+def test_an_answer_to_an_agent_goes_only_on_a_thread_its_own_question_opened(run, asker: str, thread: str) -> None:
+    # (D51-4, 7.51.00: anything else a person tells an agent is steering, through the orchestrator)
+    client, monitor, _, publisher, _ = run
+    if asker:
+        _asks(client, thread, asker)
+    with pytest.raises(MonitorError, match='asked no question on this thread') as refused:
+        monitor.message(RUN, parse_message({'to': 'agent', 'agent': 'fixer-1', 'text': 'Yes', 'thread_id': 't-7'}, RUN),
+                        ADMIN)
+    assert (refused.value.kind, publisher.sent) == ('not_found', [])
+
+
+def test_an_answer_to_an_agent_names_the_thread_of_its_question() -> None:
+    with pytest.raises(MonitorError, match='names the thread_id of its question'):
+        parse_message({'to': 'agent', 'agent': 'fixer-1', 'text': 'Yes'}, RUN)
 
 
 @pytest.mark.parametrize(('body', 'says'), [
@@ -580,3 +624,103 @@ def test_the_origin_is_the_engineering_agents_run_its_start_recorded(run) -> Non
         'via': {'M': {'agent_id': {'S': 'ag_cd22db36272d'}, 'agent_run_id': {'S': 'ar_01a1e7bd34969e48d125'},
                       'trigger': {'S': 'github_issue'}}}})
     assert monitor.origin(RUN) == {'agent_id': 'ag_cd22db36272d', 'agent_run_id': 'ar_01a1e7bd34969e48d125'}
+# --- 7.51.00: an agent's restart, a person's steering ---------------------------------------------------------------
+
+@pytest.mark.parametrize('start', ['checkpoint', 'fresh'])
+def test_a_restart_is_recorded_then_sent_to_the_supervisor_with_where_it_starts(run, start: str) -> None:
+    _, monitor, runtime, publisher, task_id = run
+    sent = monitor.signal(RUN, parse_signal({'signal': 'restart', 'from': start, 'task_id': task_id, 'attempt': 1,
+                                             'confirm': True}), ADMIN)
+    assert (runtime.calls, runtime.restarts, sent['signal']) == ([(RUN, 'fixer-1', 'restart', 1)], [start], 'restart')
+    record = publisher.sent[0]
+    how = 'from its checkpoint' if start == 'checkpoint' else 'afresh'
+    assert (record.type, record.summary) == ('signal.restart',
+                                             f'restart {how} requested from the run monitor by ada for agent fixer-1.')
+
+
+def test_the_lambda_runtime_sends_a_restarts_start() -> None:
+    client = LambdaClient({'agents': {'fixer-1': 'working'}, 'applied': {'fixer-1': True}})
+    LambdaRuntime(client, 'voc-engineering-runtime').signal(RUN, 'fixer-1', 'restart', 2, actor='admin-sub',
+                                                            restart_from='fresh')
+    assert json.loads(client.requests[0]['Payload']) == {
+        'action': 'signal', 'run_id': RUN, 'signal': 'restart', 'actor': 'admin-sub', 'restart_from': 'fresh',
+        'agent_id': 'fixer-1', 'attempt': 2}
+
+
+@pytest.mark.parametrize(('body', 'says'), [
+    ({'signal': 'restart', 'task_id': 'task-1', 'attempt': 1, 'confirm': True}, "restart's from"),
+    ({'signal': 'restart', 'from': 'scratch', 'task_id': 'task-1', 'attempt': 1, 'confirm': True}, "restart's from"),
+    ({'signal': 'restart', 'from': 'fresh', 'task_id': 'task-1', 'attempt': 1}, 'confirm: true'),
+    ({'signal': 'restart', 'from': 'checkpoint', 'confirm': True}, "a restart is an agent's"),
+    ({'signal': 'pause', 'from': 'fresh'}, 'from goes with a restart'),
+])
+def test_a_restart_off_its_rule_says_what_to_send(body: dict[str, Any], says: str) -> None:
+    with pytest.raises(MonitorError, match=says):
+        parse_signal(body)
+
+
+def test_a_person_steers_the_orchestrator_about_an_agent(run) -> None:
+    _, monitor, runtime, publisher, _ = run
+    sent = monitor.steer(RUN, parse_steer({'text': ' Keep the signature. ', 'about': 'fixer-1'}), ADMIN)
+    [steer] = publisher.sent
+    assert (steer.type, steer.sender, steer.to, steer.summary, steer.thread_id) == (
+        'msg.steer', Party('human', 'admin-sub'), Party('conductor', RUN), 'About fixer-1: Keep the signature.',
+        sent['thread_id'])
+    assert sent['thread_id'].startswith('steer-')
+    assert runtime.calls == []
+    plain = monitor.steer(RUN, parse_steer({'text': 'Skip the docs', 'thread_id': 'steer-7'}), ADMIN)
+    assert (publisher.sent[1].summary, plain['thread_id']) == ('Skip the docs', 'steer-7')
+
+
+def test_steering_about_an_agent_not_in_the_run_or_in_an_ended_run_is_refused(run) -> None:
+    client, monitor, _, publisher, _ = run
+    with pytest.raises(MonitorError) as missing:
+        monitor.steer(RUN, parse_steer({'text': 'Hi', 'about': 'fixer-9'}), ADMIN)
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET ended_at = :t', ExpressionAttributeValues={':t': {'S': '2026-11-12T10:00Z'}})
+    with pytest.raises(MonitorError) as ended:
+        monitor.steer(RUN, parse_steer({'text': 'Hi'}), ADMIN)
+    assert (missing.value.kind, ended.value.kind, publisher.sent) == ('not_found', 'conflict', [])
+
+
+@pytest.mark.parametrize(('body', 'says'), [
+    ({}, 'text is'), ({'text': ' '}, 'text is'), ({'text': 'x' * 1020, 'about': 'fixer-1'}, 'text is'),
+    ({'text': 'Hi', 'about': 'a b'}, 'about is'), ({'text': 'Hi', 'thread_id': 'a b'}, 'thread_id'),
+    ({'text': 'Hi', 'to': 'agent'}, 'the body is'),
+])
+def test_steering_off_its_rule_says_what_to_send(body: dict[str, Any], says: str) -> None:
+    with pytest.raises(MonitorError, match=says):
+        parse_steer(body)
+
+
+def test_the_overview_shows_the_lanes_the_gates_the_cost_and_the_family_of_a_run() -> None:
+    from moto import mock_aws
+
+    from engineering.run_objects import RunObjects
+    from engineering.runtime.runs import RunStore
+    from engineering.runtime.sessions import SessionStore
+    from engineering.test import run_workspace_world as world
+
+    with mock_aws():
+        built = world.build()
+        import boto3
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(world.TABLE)
+        monitor = RunMonitor(built.client, world.TABLE, SessionStore(table, RunStore(table)), runtime=None,
+                             publisher=None, objects=RunObjects(built.s3, world.BUCKET))
+        view = monitor.overview(world.RUN)
+        assert view is not None
+        assert {step: [lane['agent'] for lane in lanes] for step, lanes in view['lanes'].items()} == {
+            'board': [world.FIXER], 'gate': [world.GATE_RUNNER, world.FINAL_GO]}
+        assert view['gates'] == {'gate': 'GO'}
+        assert (view['run']['cost_usd'], view['run']['cost_cap_usd'], view['run']['manifest']) == (1.6095, 50.0, None)
+        fixer = next(agent for agent in view['agents'] if agent['agent'] == world.FIXER)
+        assert (fixer['cost_usd'], fixer['attempt'], fixer['skill_label'], fixer['model']) == (
+            0.9375, 2, 'fixer@v3', 'model-medium')
+        ended = monitor.overview(world.ENDED_RUN)
+        child = monitor.overview(world.CHILD_RUN)
+        assert ended is not None
+        assert child is not None
+        assert [child_run['run_id'] for child_run in ended['children']] == [world.CHILD_RUN]
+        assert (ended['run']['manifest']['cost_usd'], ended['run']['manifest']['version']) == (3.1415, 1)
+        assert child['run']['parent'] == {'run_id': world.ENDED_RUN, 'mode': 'resume', 'by': 'admin-sub',
+                                          'at': world.at(-60)}

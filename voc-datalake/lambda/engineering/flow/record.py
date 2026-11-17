@@ -157,10 +157,11 @@ class RunFlow:
 
 
 def run_flow(client: Any, table: str, ws: str, run_id: str, meta: Mapping[str, Any] | None,
-             read: ReadRecord | None = None) -> RunFlow | None:
+             read: ReadRecord | None = None, tasks: Sequence[Task] | None = None) -> RunFlow | None:
     """The run's flow and plan (its copy, its tasks and step rows read here; its gates' verdicts from their records
     with ``read``, else as the board recorded them), None for a run started without a flow; None too for a copy the
-    conductor cannot follow (logged: the record is broken, the reader goes on without it)."""
+    conductor cannot follow (logged: the record is broken, the reader goes on without it). ``tasks``: the run's tasks
+    when the caller read them already (7.51.00: the run overview's lanes)."""
     copy = get_row(client, table, {'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': FLOW_SK}})
     if copy is None:
         return None
@@ -170,7 +171,8 @@ def run_flow(client: Any, table: str, ws: str, run_id: str, meta: Mapping[str, A
     except FlowError:
         logger.exception('engineering: a run\'s copy of its flow cannot be followed', extra={'run_id': run_id})
         return None
-    tasks = [Task.from_item(item) for item in run_rows(client, table, ws, run_id, 'TASK#')]
+    if tasks is None:
+        tasks = [Task.from_item(item) for item in run_rows(client, table, ws, run_id, 'TASK#')]
     return RunFlow(revision=number_value(copy.get('revision')), copied_at=string_attr(copy, 'copied_at'),
                    definition=definition, flow=flow,
                    plan=FlowRecord(client, table).plan_of(flow, ws, run_id, tasks, meta, read=read))

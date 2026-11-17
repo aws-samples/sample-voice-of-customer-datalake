@@ -304,9 +304,10 @@ def _payload(response: Mapping[str, Any], run_id: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def invoke_start(client: Any, function: str, request: Mapping[str, Any]) -> StartAnswer:
-    """``request`` sent to ``function`` (a synchronous invoke, never retried by the client) and what came of it."""
-    run_id = request['run_id']
+def invoke_start(client: Any, function: str, request: Mapping[str, Any], *, run_id: str | None = None) -> StartAnswer:
+    """``request`` sent to ``function`` (a synchronous invoke, never retried by the client) and what came of it.
+    ``run_id``: the run the answer must name, when it is not the request's (7.51.00: a restart's child run)."""
+    run_id = run_id or request['run_id']
     try:
         response = client.invoke(FunctionName=function, InvocationType='RequestResponse',
                                  Payload=json.dumps(request).encode())

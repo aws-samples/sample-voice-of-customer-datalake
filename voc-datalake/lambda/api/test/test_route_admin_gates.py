@@ -118,6 +118,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     }),
     # The engineering setup guide's progress (7.50.00, included by agents_handler.py): an admin acting for themselves.
     'agents_engineering_setup_routes.py': frozenset({'PUT /agents/engineering/setup'}),
+    # The run workspace's actions (7.51.00, included by agents_handler.py): a person's steering to a run's orchestrator
+    # and an ended run's restart as a child run; an admin acting for themselves, like the run's signals.
+    'agents_engineering_run_routes.py': frozenset({
+        'POST /agents/engineering/<run_id>/steer', 'POST /agents/engineering/<run_id>/restart',
+    }),
     # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
@@ -1090,13 +1095,26 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     **TWO_PATH_ADMIN_READS,
     # The erasure jobs (field, value hash, counts, who started them): administrators (in a workspace, its admins).
     'settings_handler.py': frozenset({'GET /settings/erasure'}),
+    # The run workspace's reads (7.51.00, included by agents_handler.py): the runs list, an agent's thread and its
+    # inspector's tabs (its transcripts, patches and gate records), a run's assertions; administrators acting for
+    # themselves, like every engineering run read.
+    'agents_engineering_run_routes.py': frozenset({
+        'GET /agents/engineering/runs', 'GET /agents/engineering/<run_id>/agents/<agent_id>/thread',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/thread/<ref>',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/changes',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/changes/file',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/files',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/gate',
+        'GET /agents/engineering/<run_id>/agents/<agent_id>/memory', 'GET /agents/engineering/<run_id>/assertions',
+    }),
 }
 
 
 @pytest.mark.parametrize(('handler', 'route'), sorted(
     (handler, route) for handler, routes in ADMIN_ONLY_READS.items() for route in routes))
 def test_every_admin_only_read_exists_and_carries_its_gate(handler, route):
-    reads = routes_with_gates((API_DIR / handler).read_text(encoding='utf-8'), frozenset({'get'}))
+    # (a handler in lambda/api/, or a router it includes in lambda/shared/)
+    reads = routes_with_gates(_route_file(handler).read_text(encoding='utf-8'), frozenset({'get'}))
     assert reads.get(route) is True, f'{handler} {route} is missing or lost its admin gate'
 
 
