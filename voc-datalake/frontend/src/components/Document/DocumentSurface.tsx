@@ -4,8 +4,9 @@
  * route.
  *
  * - Variants: `page` (Projects documents; a full-page view), `panel` (a 360 px inspector: compact type, the text
- *   scrolling inside, Open full page), `sheet` (a dialog or side sheet: header, body, sticky footer) and `inline` (no
- *   chrome).
+ *   scrolling inside, Open full page), `sheet` (the app's one side sheet, SideSheet `size="wide"`: its title, the
+ *   document's details as its description, the decision or Close in its footer, the body scrolling between) and
+ *   `inline` (no chrome).
  * - Modes: `read` (the light reader: Rendered / Source, Contents, comments), `edit` (the draft, its save row and the
  *   canvas, loaded on Edit; or a plain text's field) and `compare` (two versions, DocumentDiff).
  * - States: loading (the header from what the caller knows, then skeleton lines), empty ("Nothing written yet."),
@@ -28,6 +29,7 @@ import EditBody from './surface/EditBody'
 import PageFrame from './surface/PageFrame'
 import ReadBody from './surface/ReadBody'
 import { ReadOnlyNote } from './surface/ReadOnlyNote'
+import SideSheet from '../SideSheet/SideSheet'
 import type { ReactNode } from 'react'
 import type { SurfaceComments } from './surface/ReadBody'
 import type { PageFrameProps } from './surface/PageFrame'
@@ -62,8 +64,10 @@ export interface DocumentSurfaceProps<S extends StoredDocument> {
   readonly onSaved: (stored: S) => void
   /** The full-page address of this document (a panel or sheet's "Open full page"; null: none). */
   readonly fullPath: string | null
-  /** A sheet's sticky footer (its decision, Close); null: none. */
+  /** A sheet's footer (its decision, Close: SideSheet's footer); null: none. */
   readonly footer: ReactNode
+  /** A sheet's close (Escape, its close button, the backdrop); null for the other variants. */
+  readonly onClose: (() => void) | null
   /** A page with a frame of its own (Projects: its bar, focus view, older version); null: the surface's own card. */
   readonly page: Omit<PageFrameProps, 'children' | 'documentId'> | null
   /** The page's own body (Projects: its canvas, coaching and evidence); null: the surface's body for the mode. */
@@ -75,14 +79,14 @@ const HEADINGS = { 1: 'h1', 2: 'h2', 3: 'h3' } as const
 const VARIANT_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   page: 'rounded-xl border border-border bg-card p-4 sm:p-6',
   panel: 'flex max-h-[min(70vh,40rem)] flex-col',
-  sheet: 'flex min-h-0 flex-col',
+  sheet: 'space-y-4',
   inline: '',
 }
 
 const TITLE_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   page: 'text-xl font-bold tracking-tight text-text-strong break-words',
   panel: 'text-[14px] font-semibold text-text-strong break-words',
-  sheet: 'dialog-title break-words',
+  sheet: 'sr-only',
   inline: 'sr-only',
 }
 
@@ -112,18 +116,16 @@ function Body<S extends StoredDocument>({ props, stored }: Readonly<{ props: Doc
   return <ReadBody content={stored.content} title={title} contentType={adapter.contentType} split={split} variant={variant} comments={comments} />
 }
 
-export default function DocumentSurface<S extends StoredDocument>(props: DocumentSurfaceProps<S>) {
+/** The surface's own section: its heading, details and read-only note, its body, and a footer. */
+function SurfaceSection<S extends StoredDocument>({ props }: Readonly<{ props: DocumentSurfaceProps<S> }>) {
   const { t } = useTranslation('documents')
   const headingId = useId()
-  const { adapter, variant, title, headingLevel, meta, stored, mode, fullPath, footer, page, children } = props
-  if (page !== null) {
-    return <PageFrame {...page} documentId={adapter.id}>{children}</PageFrame>
-  }
+  const { adapter, variant, title, headingLevel, meta, stored, mode, fullPath, footer, children } = props
   const Heading = HEADINGS[headingLevel]
   const reason = adapter.permissions.edit === true ? null : adapter.permissions.edit
   return (
     <section aria-labelledby={headingId} data-document={adapter.id} data-variant={variant} className={VARIANT_CLASS[variant]}>
-      <header className={clsx('space-y-2', variant !== 'inline' && 'mb-4')}>
+      <header className={clsx('space-y-2', variant !== 'inline' && variant !== 'sheet' && 'mb-4')}>
         <div className="flex flex-wrap items-center gap-2">
           <Heading id={headingId} className={clsx('mr-auto min-w-0', TITLE_CLASS[variant])}>{title}</Heading>
           {fullPath === null ? null : (
@@ -135,10 +137,29 @@ export default function DocumentSurface<S extends StoredDocument>(props: Documen
         {meta}
         {reason === null || mode === 'compare' ? null : <ReadOnlyNote reason={reason} olderVersion={null} />}
       </header>
-      <div className={clsx('min-h-0', (variant === 'panel' || variant === 'sheet') && 'overflow-y-auto', variant === 'sheet' && 'max-h-[70vh]')}>
+      <div className={clsx('min-h-0', variant === 'panel' && 'overflow-y-auto')}>
         {stored === undefined ? <Loading /> : (children ?? <Body props={props} stored={stored} />)}
       </div>
       {footer === null ? null : <div className="sticky bottom-0 mt-4 border-t border-border bg-card pt-3">{footer}</div>}
     </section>
   )
+}
+
+/** The `sheet` variant on the app's side sheet (SideSheet, wide): the sheet's own title, description and footer. */
+function SurfaceSheet<S extends StoredDocument>({ props, onClose }: Readonly<{ props: DocumentSurfaceProps<S>; onClose: () => void }>) {
+  const { title, meta, footer } = props
+  return (
+    <SideSheet isOpen onClose={onClose} size="wide" title={title} description={meta ?? undefined} footer={footer ?? undefined}>
+      <SurfaceSection props={{ ...props, meta: null, footer: null, onClose: null }} />
+    </SideSheet>
+  )
+}
+
+export default function DocumentSurface<S extends StoredDocument>(props: DocumentSurfaceProps<S>) {
+  const { adapter, variant, page, children, onClose } = props
+  if (page !== null) {
+    return <PageFrame {...page} documentId={adapter.id}>{children}</PageFrame>
+  }
+  if (variant === 'sheet' && onClose !== null) return <SurfaceSheet props={props} onClose={onClose} />
+  return <SurfaceSection props={props} />
 }

@@ -73,4 +73,12 @@ describe('SideSheet', () => {
 
     expect(screen.getByRole('dialog', { name: 'Details' }).querySelector('.dialog-footer')).toBeNull()
   })
+
+  it('is 30rem wide from sm by default and 44rem when it holds a document (size="wide")', () => {
+    const { rerender } = render(<SideSheet isOpen onClose={vi.fn()} title="Details"><p>Body</p></SideSheet>)
+    expect(screen.getByRole('dialog', { name: 'Details' })).not.toHaveClass('sm:max-w-[44rem]')
+
+    rerender(<SideSheet isOpen onClose={vi.fn()} title="Details" size="wide"><p>Body</p></SideSheet>)
+    expect(screen.getByRole('dialog', { name: 'Details' })).toHaveClass('sheet-panel', 'sm:max-w-[44rem]')
+  })
 })

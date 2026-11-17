@@ -325,7 +325,7 @@ export default function DocumentPage({
   // (menus, status, toolbar), its older version and its body (the canvas, or the review view around it).
   return (
     <DocumentSurface adapter={adapter} variant="page" title={document.title} headingLevel={1} meta={null} stored={document}
-      mode={editable ? 'edit' : 'read'} compare={null} comments={null} onSaved={onSelectDoc} fullPath={null} footer={null}
+      mode={editable ? 'edit' : 'read'} compare={null} comments={null} onSaved={onSelectDoc} fullPath={null} footer={null} onClose={null}
       page={{
         focusActive: focus.active, fullWidth: view.fullWidth.on, dirty: state.dirty, note: pageNote(focus.active, viewed, t),
         headerRef,

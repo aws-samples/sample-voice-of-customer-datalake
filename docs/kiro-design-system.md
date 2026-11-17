@@ -518,6 +518,7 @@ The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md 
 ```
 
 - `.sheet-panel`: full height, the viewport's width below `sm` and `max-w-[30rem]` from it, `border-s` and `shadow-2xl`, sliding in from the end (`animate-slide-in-end`). Its header, body and footer are `dialog-header` / `dialog-body` / `dialog-footer`: only the body scrolls, so the footer stays in view whatever the sheet holds.
+- `size="wide"` (`sm:max-w-[44rem]`) holds a document: the document component's `sheet` variant is this sheet ([Documents](#documents): the History's Open and Compare), so the app has one side sheet.
 - The title is the sheet's `h2` and its accessible name; the header's `DialogClose` ("Dismiss") closes it. A confirmation opened from inside it (`ConfirmModal`) stacks above it.
 - Prefer a sheet to a stepped dialog when the row it edits should stay in view; a sheet whose item is a place is a path (`/admin/people/<username>`), so Back closes it.
 
@@ -596,7 +597,7 @@ delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/T
 |---|---|---|
 | `page` | a document's own page | the page frame: bar, sheet at the reading width or full width, focus view; Contents from three headings |
 | `panel` | a 360 px inspector | compact title, the text scrolling inside `max-h-[min(70vh,40rem)]`, `.md-content-compact`, Open full page; edits plain text only |
-| `sheet` | a dialog or side sheet | header, body, sticky footer (the decision, Close) |
+| `sheet` | a document beside its list or page (the History's Open and Compare) | the app's one side sheet, `SideSheet size="wide"` ([Side sheets](#side-sheets)): its title, the details as its description, the decision or Close in its footer, the body scrolling between |
 | `inline` | inside a card or a `<details>` | no chrome |
 
 | Mode | Shows |

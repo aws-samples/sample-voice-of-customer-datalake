@@ -3,6 +3,8 @@
  * `end` placement): full height at the inline end, the viewport's width below `sm` and 30rem from it, sliding in from
  * the end (`--animate-slide-in-end`, 0.24 s on the house easing). It keeps the row that opened it in view beside it,
  * and its height is the viewport's whatever it holds: the header and footer stay put while the body scrolls.
+ * `size="wide"` (44rem from `sm`) holds a document: the shared document component's `sheet` variant sits on it
+ * (docs/kiro-design-system.md › Documents), so the app has one side sheet.
  *
  * ModalShell owns the dialog semantics: `role="dialog"` + `aria-modal`, the title as its name, Escape and the
  * backdrop closing it, focus moved in on open, trapped, and returned to the element
@@ -28,12 +30,17 @@ interface SideSheetProps {
   readonly children: ReactNode
   /** The footer's controls, pinned under the body (`dialog-footer`); none: no footer. */
   readonly footer?: ReactNode
+  /** `default` (30rem from `sm`: a row's editor) or `wide` (44rem: a document, DocumentSurface's `sheet` variant). */
+  readonly size?: 'default' | 'wide'
 }
 
-export default function SideSheet({ isOpen, onClose, title, description, icon: Icon, children, footer }: SideSheetProps) {
+/** The panel's width from `sm` per size (`.sheet-panel` holds the default). */
+const SIZE_CLASS = { default: '', wide: 'sm:max-w-[44rem]' } as const
+
+export default function SideSheet({ isOpen, onClose, title, description, icon: Icon, children, footer, size = 'default' }: SideSheetProps) {
   const titleId = useId()
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} ariaLabelledBy={titleId} placement="end">
+    <ModalShell isOpen={isOpen} onClose={onClose} ariaLabelledBy={titleId} placement="end" panelClassName={SIZE_CLASS[size]}>
       <div className="dialog-header justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {Icon === undefined ? null : <Icon size={20} className="shrink-0 text-accent" aria-hidden="true" />}

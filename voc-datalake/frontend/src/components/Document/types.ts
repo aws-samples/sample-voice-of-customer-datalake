@@ -26,8 +26,9 @@ export type ContentType = 'markdown' | 'plain' | 'code'
 export type ReadOnlyReason = 'viewer' | 'olderVersion' | 'managedByTemplate' | 'decided' | 'proposalOnly' | 'editedElsewhere'
 
 /**
- * Where a surface sits: a page (Projects documents, a full-page view), a 360 px panel (an inspector), a sheet (a
- * dialog or side sheet: header, body, sticky footer) or inline (no chrome, in a card or a details).
+ * Where a surface sits: a page (Projects documents, a full-page view), a 360 px panel (an inspector), a sheet (the
+ * app's side sheet, SideSheet `size="wide"`: its header, scrolling body and footer) or inline (no chrome, in a card or
+ * a details).
  */
 export type SurfaceVariant = 'page' | 'panel' | 'sheet' | 'inline'
 

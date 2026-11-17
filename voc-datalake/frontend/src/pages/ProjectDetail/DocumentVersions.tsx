@@ -6,7 +6,8 @@
  * series; a research / custom edit saves what it replaced), so nothing a user or
  * the assistant overwrote is lost. Restoring adds a NEW version with the old
  * content — history is only added to. Shown in the document page's History dialog:
- * the list (with each version's content) is fetched only when it opens.
+ * the list (with each version's content) is fetched only when it opens. A version opened
+ * or compared opens beside it in the document component's sheet (SideSheet, wide).
  *
  * @module pages/ProjectDetail/DocumentVersions
  */
@@ -16,7 +17,6 @@ import { Loader2, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
-import ModalShell from '../../components/ModalShell/ModalShell'
 import DocumentSurface from '../../components/Document/DocumentSurface'
 import { projectsApi } from '../../api/projectsApi'
 import { useVersionRestore } from './useVersionRestore'
@@ -100,18 +100,17 @@ function VersionDialog({ version, current, mode, onClose }: Readonly<{
   const title = comparing ? t('documents.versions.compareTitle', { label }) : `${version.title} · ${label}`
   const adapter = useMemo(() => versionAdapter(version), [version])
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabel={title} panelClassName="w-full max-w-3xl p-5">
-      <DocumentSurface adapter={adapter} variant="sheet" title={title} headingLevel={2} stored={comparing ? current : version}
-        meta={<p className="dialog-description">{formatDateTime(version.created_at, i18n.language)}</p>}
-        mode={comparing ? 'compare' : 'read'} comments={null} onSaved={onClose} fullPath={null} page={null}
-        compare={comparing ? {
-          before: version.content, beforeLabel: label, afterLabel: t('documents.versions.current'),
-          identicalText: t('documents.versions.identical'),
-        } : null}
-        footer={<div className="flex justify-end"><button type="button" className="btn btn-secondary" onClick={onClose}>{t('documents.versions.close')}</button></div>}>
-        {null}
-      </DocumentSurface>
-    </ModalShell>
+    // (the document component's sheet: the app's side sheet, SideSheet size="wide", 7.54.00)
+    <DocumentSurface adapter={adapter} variant="sheet" title={title} headingLevel={2} stored={comparing ? current : version}
+      meta={formatDateTime(version.created_at, i18n.language)}
+      mode={comparing ? 'compare' : 'read'} comments={null} onSaved={onClose} onClose={onClose} fullPath={null} page={null}
+      compare={comparing ? {
+        before: version.content, beforeLabel: label, afterLabel: t('documents.versions.current'),
+        identicalText: t('documents.versions.identical'),
+      } : null}
+      footer={<button type="button" className="btn btn-secondary ms-auto" onClick={onClose}>{t('documents.versions.close')}</button>}>
+      {null}
+    </DocumentSurface>
   )
 }
 

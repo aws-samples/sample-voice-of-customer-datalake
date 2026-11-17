@@ -29,7 +29,7 @@ function renderSurface(props: Partial<DocumentSurfaceProps<Doc>>) {
   const all: DocumentSurfaceProps<Doc> = {
     adapter: adapterOf(), variant: 'page', title: 'Launch plan', headingLevel: 1, meta: null,
     stored: { title: 'Launch plan', content: '# Plan\n\nShip it.', rev: 1 }, mode: 'read', compare: null, comments: null,
-    onSaved: vi.fn(), fullPath: null, footer: null, page: null, children: null, ...props,
+    onSaved: vi.fn(), fullPath: null, footer: null, onClose: null, page: null, children: null, ...props,
   }
   return render(<MemoryRouter><DocumentSurface {...all} /></MemoryRouter>)
 }
@@ -43,6 +43,20 @@ describe('DocumentSurface: read', () => {
     expect(screen.getByRole('region', { name: 'Launch plan' })).toHaveAttribute('data-variant', 'page')
     expect(screen.getByRole('heading', { level: 2, name: 'Goals' })).toHaveAttribute('id', 'h-goals')
     expect(screen.getByRole('navigation', { name: 'Contents' })).toBeInTheDocument()
+  })
+
+  it('opens a sheet on the app\'s side sheet, whose title, description and footer are the sheet\'s (SideSheet, wide)', async () => {
+    const onClose = vi.fn()
+    renderSurface({ variant: 'sheet', headingLevel: 2, meta: 'Saved on 17 November', onClose,
+      footer: <button type="button">Close</button> })
+
+    const sheet = screen.getByRole('dialog', { name: 'Launch plan' })
+    expect(sheet).toHaveClass('sheet-panel', 'sm:max-w-[44rem]')
+    expect(within(sheet).getByText('Saved on 17 November')).toHaveClass('dialog-description')
+    expect(sheet.querySelector('.dialog-footer')).toContainElement(within(sheet).getByRole('button', { name: 'Close' }))
+    expect(within(sheet).getByRole('region', { name: 'Launch plan' })).toHaveAttribute('data-variant', 'sheet')
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('shows the text as stored under Source', async () => {
@@ -71,7 +85,7 @@ describe('DocumentSurface: read', () => {
     expect(screen.getByText('Nothing written yet.')).toBeInTheDocument()
 
     rerender(<MemoryRouter><DocumentSurface adapter={adapterOf()} variant="panel" title="Launch plan" headingLevel={3} meta={null}
-      stored={undefined} mode="read" compare={null} comments={null} onSaved={vi.fn()} fullPath="/docs/1" footer={null} page={null}>
+      stored={undefined} mode="read" compare={null} comments={null} onSaved={vi.fn()} fullPath="/docs/1" footer={null} onClose={null} page={null}>
       {null}
     </DocumentSurface></MemoryRouter>)
 

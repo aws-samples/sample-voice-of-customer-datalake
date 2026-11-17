@@ -57,7 +57,7 @@ export default function ReviewDocument({ shareId, fetchApi, session }: ReviewDoc
   return (
     <DocumentSurface adapter={adapter} variant="page" title={document.title} headingLevel={1} stored={document} mode="read"
       compare={null} comments={{ threads, viewed: { documentId: document.document_id }, actions, canComment: true }}
-      onSaved={ignoreSaved} fullPath={null} footer={null} page={null}
+      onSaved={ignoreSaved} fullPath={null} footer={null} onClose={null} page={null}
       meta={(
         <p className="text-sm text-muted">
           {t('reviewPage.intro')}
