@@ -43,6 +43,42 @@
         "voc-datalake/frontend/src/components/PasskeyPrompt/AddPasskeyButton.tsx"
       ],
       "reason": "two one-button components of different areas: a labelled primary 'Add a passkey' (login namespace) and the icon-only Delete document with its title and screen-reader name (the one delete button of the document page and the prototype pane); only the 'busy -> spinner, else icon' shape matches, and a shared busy-button would take the class, the icon, the label and its placement as parameters"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Agents/documents/runReportDocument.ts",
+        "voc-datalake/frontend/src/pages/Agents/documents/skillDocument.ts",
+        "voc-datalake/frontend/src/pages/Agents/documents/tenetsDocument.ts"
+      ],
+      "reason": "each document kind's DocumentAdapter (the surface's one interface: id, content type, policy, permissions, versionOf, load) over its own API, version key and read-only rule; the shape is the interface's"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/WorkflowEditor/inspector/AgentInspector.tsx",
+        "voc-datalake/frontend/src/components/WorkflowEditor/inspector/GateInspector.tsx"
+      ],
+      "reason": "each step kind's inspector switching over its own tabs (agents vs checks, reviewers and packs) to its own views; only the exhaustive-switch shape and the shared Arrows and Assertions tabs match"
+    },
+    {
+      "files": [
+        "voc-datalake/lib/stacks/engineering-broker.ts",
+        "voc-datalake/lib/stacks/engineering-kiro.ts"
+      ],
+      "reason": "two SecureString reads kept apart on purpose: the connections' credentials are a path the administrator fills at run time (StringLike on the parameter ARN, acknowledged for cdk-nag), the Kiro key exactly one parameter (StringEquals); each grant names its own statements"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/S3ImportExplorer/S3ImportReprocess.tsx",
+        "voc-datalake/frontend/src/pages/Company/DesignTokensEditor.tsx"
+      ],
+      "reason": "two features' icon buttons (a file's Reprocess, a token's Remove), each its own label, icon and tones: the shared part is the design system's labelled icon button recipe (a Tooltip kind=label around the button)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Agents/Knowledge/KnowledgeReview.tsx",
+        "voc-datalake/frontend/src/pages/Agents/Knowledge/TenetsReview.tsx"
+      ],
+      "reason": "the two knowledge reviews read their overview the same way through the shared pieces (knowledgeReads.useKnowledgeRead, components/LoadFailed/ReadPending); what matches is those calls and the empty line, each over its own read, words and view"
     }
   ]
 }

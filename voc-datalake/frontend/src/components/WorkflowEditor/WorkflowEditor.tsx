@@ -45,7 +45,6 @@ import type { FlowSelection, SelectHow } from './FlowCanvas'
 import type { PaletteBlock } from './model'
 import MethodologyWarnings from './MethodologyWarnings'
 import type { WorkflowDefinition, WorkflowView } from '../../api/workflowsApi'
-import type { ReactNode } from 'react'
 
 interface WorkflowEditorProps {
   workflowId: string
@@ -58,13 +57,6 @@ interface WorkflowEditorProps {
   onSavedAs?: (workflow: WorkflowView) => void
   /** A confirmation shown in the status line while nothing has changed (e.g. after Save as). */
   notice?: string
-  /**
-   * Host replacement for the workflow's name at the start of the toolbar (the
-   * agent page's workflow switcher); the revision line stays below it. Given
-   * whether the draft has unsaved changes and its name, so the host can confirm
-   * before replacing the draft.
-   */
-  renderTitle?: (state: Readonly<{ dirty: boolean; name: string }>) => ReactNode
   /** A definition to edit that is not stored yet (`workflowId` is then ''): unsaved until Save creates it. */
   unsaved?: WorkflowDefinition
   /** Told whenever the draft gains or loses unsaved changes (the flow page's Start a run runs the saved version). */
@@ -86,7 +78,7 @@ function downloadJson(fileName: string, value: unknown): void {
 type Editor = ReturnType<typeof useWorkflowEditor>
 
 export function WorkflowEditor({
-  workflowId, canEdit, onSavedAs, notice, renderTitle, unsaved, onDirtyChange, agentId,
+  workflowId, canEdit, onSavedAs, notice, unsaved, onDirtyChange, agentId,
 }: Readonly<WorkflowEditorProps>) {
   const { t } = useTranslation('agents')
   const editor = useWorkflowEditor(workflowId, canEdit, unsaved, agentId)
@@ -119,8 +111,7 @@ export function WorkflowEditor({
   return (
     <>
       <EditorBody editor={editor} draft={editor.draft} workflow={editor.workflow} canEdit={canEdit} onSavedAs={savedAs} notice={notice}
-        outcome={outcome} setOutcome={setOutcome}
-        title={renderTitle?.({ dirty: canEdit && editor.dirty, name: editor.draft.name })} />
+        outcome={outcome} setOutcome={setOutcome} />
       {guard.dialog}
     </>
   )
@@ -222,9 +213,9 @@ function paletteAdd(draft: WorkflowDefinition, block: PaletteBlock, after: strin
   return addBlock(draft, block, { x: 0, y: lowest + STEP_HEIGHT * 2 })
 }
 
-function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title, outcome, setOutcome }: Readonly<{
+function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, outcome, setOutcome }: Readonly<{
   editor: Editor; draft: WorkflowDefinition; workflow: WorkflowView; canEdit: boolean; onSavedAs: (workflow: WorkflowView) => void
-  notice?: string; title?: ReactNode; outcome: EditorOutcome; setOutcome: (outcome: EditorOutcome) => void
+  notice?: string; outcome: EditorOutcome; setOutcome: (outcome: EditorOutcome) => void
 }>) {
   const { t } = useTranslation('agents')
   const [selection, setSelectionState] = useState<CanvasSelection>(EMPTY_SELECTION)
@@ -304,7 +295,7 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <EditorTitle title={title} name={draft.name} builtin={editor.builtin} dirty={editor.dirty} />
+        <EditorTitle name={draft.name} builtin={editor.builtin} dirty={editor.dirty} />
         <StatusLine outcome={outcome} dirty={editor.dirty} issueCount={editor.issues.length} notice={notice} />
         {canEdit && (
           <EditActions draft={draft} unsaved={editor.unsaved} canSave={canSave} saving={saving}

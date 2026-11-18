@@ -10,16 +10,17 @@
  * @module pages/Agents/Knowledge/KnowledgeReview
  */
 import { useId, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitPullRequest, Loader2 } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import ReadPending from '../../../components/LoadFailed/ReadPending'
 import PressedChoices from '../../../components/PressedChoices/PressedChoices'
 import { KNOWLEDGE_KINDS, engineeringKnowledgeApi, engineeringKnowledgeKeys } from '../../../api/engineeringKnowledgeApi'
 import { serverReason } from '../../../lib/errors'
-import { useConfigStore } from '../../../store/configStore'
 import { useSkillFormats } from '../skillFormats'
 import { DocsPublishSheet } from './DocsPublishSheet'
+import { useKnowledgeRead } from './knowledgeReads'
 import { approvable, isKnowledgeStale, knowledgeAdapter, knowledgeDocumentOf, versionsNewestFirst, versionToReview } from '../documents/knowledgeDocument'
 import ReadOnlySurface from '../documents/ReadOnlySurface'
 import type { KnowledgeKind, KnowledgePackage, KnowledgeVersion, PackVersion } from '../../../api/engineeringKnowledgeApi'
@@ -28,14 +29,9 @@ import type { SurfaceCompare } from '../../../components/Document/DocumentSurfac
 type View = 'read' | 'compare'
 const VIEWS: readonly View[] = ['read', 'compare']
 
-function usePackVersion(connection: string, segment: string, version: number | null) {
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  return useQuery({
-    queryKey: engineeringKnowledgeKeys.packVersion(connection, segment, version ?? 0),
-    queryFn: () => engineeringKnowledgeApi.packVersion(connection, segment, version ?? 0),
-    enabled: configured && version !== null,
-  })
-}
+const usePackVersion = (connection: string, segment: string, version: number | null) => useKnowledgeRead(
+  engineeringKnowledgeKeys.packVersion(connection, segment, version ?? 0),
+  () => engineeringKnowledgeApi.packVersion(connection, segment, version ?? 0), version !== null)
 
 /** The seven documents' switcher: segments from `sm`, a select below it (the same choice). */
 function KindSwitcher({ kind, onChange }: Readonly<{ kind: KnowledgeKind; onChange: (kind: KnowledgeKind) => void }>) {
@@ -177,15 +173,10 @@ function PackageReview({ connection, pkg }: Readonly<{ connection: string; pkg: 
 
 export function KnowledgeReview({ connection }: Readonly<{ connection: string }>) {
   const { t } = useTranslation('agents')
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
   const [publishing, setPublishing] = useState(false)
-  const read = useQuery({
-    queryKey: engineeringKnowledgeKeys.knowledge(connection), queryFn: () => engineeringKnowledgeApi.knowledge(connection),
-    enabled: configured,
-  })
-  if (read.isLoading) return <div className="skeleton h-24" role="status" aria-label={t('knowledge.loading')} />
-  if (read.isError || read.data === undefined) {
-    return <LoadFailed message={t('knowledge.failed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
+  const read = useKnowledgeRead(engineeringKnowledgeKeys.knowledge(connection), () => engineeringKnowledgeApi.knowledge(connection))
+  if (read.isLoading || read.isError || read.data === undefined) {
+    return <ReadPending read={read} loading={t('knowledge.loading')} failed={t('knowledge.failed')} skeleton="h-24" />
   }
   const { packages, rendering } = read.data
   if (packages.length === 0) return <p className="rounded-md border border-border p-3 text-sm text-muted">{t('knowledge.none')}</p>

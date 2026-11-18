@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import ReadPending from '../../components/LoadFailed/ReadPending'
 import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
 import { engineeringSkillActionsApi } from '../../api/engineeringSkillActionsApi'
 import { serverReason } from '../../lib/errors'
@@ -91,9 +92,8 @@ function TemplateDiff({ connection, role, onProposed }: Readonly<{
     queryKey: engineeringSkillsKeys.template(connection, role),
     queryFn: () => engineeringSkillsApi.template(connection, role),
   })
-  if (read.isLoading) return <div className="skeleton h-16" role="status" aria-label={t('skills.template.loading')} />
-  if (read.isError || read.data === undefined) {
-    return <LoadFailed message={t('skills.template.readFailed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
+  if (read.isLoading || read.isError || read.data === undefined) {
+    return <ReadPending read={read} loading={t('skills.template.loading')} failed={t('skills.template.readFailed')} skeleton="h-16" />
   }
   const update = read.data
   return (

@@ -126,7 +126,7 @@
   --panel: #211d25;
   --chrome: rgba(25, 22, 29, .95);
   --text: #dcdadf; --text-strong: #f2f1f4; --muted: #938f9b; --muted-strong: #8f8a97;
-  --border: #352f3d; --border-strong: #4a464f; --border-hover: #5e5966;
+  --border: #352f3d; --border-strong: #4a464f;
   /* The boundary that IDENTIFIES a form control (input, select, textarea,
    * checkbox, radio): WCAG 1.4.11 asks 3:1 against what is next to it, and
    * --border is 1.28:1 on the card (design audit D-13). ≥ 3:1 on every surface
@@ -179,7 +179,7 @@
   --panel: #fafafa;
   --chrome: rgba(255, 255, 255, .95);
   --text: #4a464f; --text-strong: #19161d; --muted: #5e5966; --muted-strong: #4a464f;
-  --border: #e4e4e7; --border-strong: #d4d4d8; --border-hover: #a1a1aa;
+  --border: #e4e4e7; --border-strong: #d4d4d8;
   --control-border: #86818e; --control-border-hover: #5e5966;
   --accent: #8e48ff; --accent-fg: #ffffff; --accent-hover: #7a35e0; --accent-subtle: rgba(142, 72, 255, .12);
   --accent-glow: rgba(142, 72, 255, .15); --accent-text: #723acc; --ring: #8e48ff;

@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next'
 import CodeView from '../text/CodeView'
 import MarkdownRead from './MarkdownRead'
 import { TextViews } from './ViewToggle'
-import type { Ref } from 'react'
 import type { MarkdownPolicy } from './markdownPolicy'
 import type { OutlineItem } from '../types'
 
@@ -20,15 +19,13 @@ interface ReadViewProps {
   readonly className?: string
   readonly onOutline?: (items: readonly OutlineItem[]) => void
   readonly headingIds?: boolean
-  readonly rootRef?: Ref<HTMLDivElement>
 }
 
-export default function ReadView({ source, policy, title, className, onOutline, headingIds, rootRef }: ReadViewProps) {
+export default function ReadView({ source, policy, title, className, onOutline, headingIds }: ReadViewProps) {
   const { t } = useTranslation('documents')
   return (
     <TextViews
-      rendered={<MarkdownRead source={source} policy={policy} className={className} onOutline={onOutline} headingIds={headingIds}
-        rootRef={rootRef} />}
+      rendered={<MarkdownRead source={source} policy={policy} className={className} onOutline={onOutline} headingIds={headingIds} />}
       source={<CodeView text={source} label={t('view.sourceOf', { title })} />} />
   )
 }

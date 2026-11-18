@@ -95,7 +95,7 @@ export function ReadinessList({ checks, label }: Readonly<{ checks: readonly Rea
   )
 }
 
-/** "Failing: 2 · Unknown: 1 · Warnings: 1 · Passed: 9", the summary a collapsed list shows. */
+/** "Failing: 2 · Unknown: 1 · Warnings: 1 · Passed: 9", the summary beside the section's heading. */
 function ReadinessSummary({ checks }: Readonly<{ checks: readonly ReadinessCheck[] }>) {
   const { t } = useTranslation('agents')
   const count = (status: CheckStatus) => checks.filter((check) => check.status === status).length
@@ -128,11 +128,10 @@ function CompactChecks({ checks }: Readonly<{ checks: readonly ReadinessCheck[] 
 
 /**
  * The readiness of `subject` as a section: its state while it loads or when it fails (Enable stays the server's to
- * refuse then), else the checks, compact (CompactChecks), under `title` (default "Readiness"). `collapsed` folds the
- * whole list under its summary (the agents list's card).
+ * refuse then), else the checks, compact (CompactChecks), under `title` (default "Readiness").
  */
-export function ReadinessSection({ subject, enabled, collapsed = false, title }: Readonly<{
-  subject: ReadinessSubject; enabled: boolean; collapsed?: boolean; title?: string
+export function ReadinessSection({ subject, enabled, title }: Readonly<{
+  subject: ReadinessSubject; enabled: boolean; title?: string
 }>) {
   const { t } = useTranslation('agents')
   const read = useReadiness(subject, enabled)
@@ -143,23 +142,13 @@ export function ReadinessSection({ subject, enabled, collapsed = false, title }:
   const checks = read.data ?? []
   if (checks.length === 0) return <p className="text-[12px] text-muted">{t('readiness.none')}</p>
   const heading = title ?? t('readiness.title')
-  if (!collapsed) {
-    return (
-      <section className="space-y-1" aria-label={heading}>
-        <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text-strong">
-          {heading} <ReadinessSummary checks={checks} />
-        </h3>
-        <CompactChecks checks={checks} />
-      </section>
-    )
-  }
   return (
-    <details className="rounded-md border border-border px-3 py-1 text-left">
-      <summary className="cursor-pointer py-1 text-[12px] font-semibold text-text-strong focus-ring rounded-sm">
+    <section className="space-y-1" aria-label={heading}>
+      <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text-strong">
         {heading} <ReadinessSummary checks={checks} />
-      </summary>
-      <ReadinessList checks={checks} label={t('readiness.label')} />
-    </details>
+      </h3>
+      <CompactChecks checks={checks} />
+    </section>
   )
 }
 

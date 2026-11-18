@@ -10,7 +10,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import ReadPending from '../../../components/LoadFailed/ReadPending'
 import { engineeringRegistryApi, engineeringRegistryKeys } from '../../../api/engineeringRegistryApi'
 import { useConfigStore } from '../../../store/configStore'
 import { GateBriefPanel } from './GateBrief'
@@ -109,9 +109,8 @@ export function QualityGates({ connection }: Readonly<{ connection: string }>) {
     queryKey: engineeringRegistryKeys.gates(connection), queryFn: () => engineeringRegistryApi.gates(connection), enabled: configured,
     staleTime: 5 * 60_000,
   })
-  if (read.isLoading) return <div className="skeleton h-32" role="status" aria-label={t('gates.loading')} />
-  if (read.isError || read.data === undefined) {
-    return <LoadFailed message={t('gates.failed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
+  if (read.isLoading || read.isError || read.data === undefined) {
+    return <ReadPending read={read} loading={t('gates.loading')} failed={t('gates.failed')} skeleton="h-32" />
   }
   const gates = read.data
   return (

@@ -110,8 +110,12 @@
       "reason": "Alias target: canvasResolve.ts (applied by vite.config.ts and vitest.config.ts, so dev, the e2e runs, the unit tests and the bundle alike) points @tiptap/y-tiptap and @tiptap/extension-collaboration at it, and the drag handle's Yjs imports bind to these stand-ins; the program cannot see that bundler edge, so no reference reaches the four exports (CanvasEditor.test.tsx checks the alias by module identity, a namespace import that names none of them)."
     },
     {
-      "key": "frontend:src/components/DocumentCanvas/actions/useCanvasDocument.ts#CanvasDocument.setTitle",
+      "key": "frontend:src/components/Document/draft/useDocumentDraft.ts#DocumentDraftState.setTitle",
       "reason": "The draft title a failed inline rename leaves unsaved (Save, Discard and the conflict path still carry it); the page edits the title through rename, and the canvas harness drives that draft state through this member."
+    },
+    {
+      "key": "frontend:src/components/Tooltip/Tooltip.tsx#TriggerProps.data-tooltip",
+      "reason": "A DOM attribute the Tooltip sets on its trigger (label or description, while it has content): read from the element, by the specs' [data-tooltip] queries and the page's own inspection, never as a prop."
     }
   ]
 }

@@ -1,6 +1,6 @@
 /**
  * @fileoverview The light reader: Markdown rendered with react-markdown (the `vendor-markdown` chunk the assistant,
- * Reports and History already load) through one safe policy (markdownPolicy.tsx), reading as the canvas does
+ * Reports and History already load) through one safe policy (markdownPolicy.ts), reading as the canvas does
  * (remarkParity: callouts, to-dos, heading ids, raw source as code) without loading the editor. Read, panel and
  * inline surfaces use it; it never imports `@tiptap/*` (build/readEngineImports.test.ts).
  *

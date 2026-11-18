@@ -13,7 +13,10 @@ import type { CanvasEditorProps } from './editor/CanvasEditor'
 
 const CanvasEditor = lazy(() => import('./editor/CanvasEditor'))
 
-export default function MarkdownEdit(props: CanvasEditorProps) {
+/** The canvas editor's props a field editor takes: no outline, comment selection or focus on mount here. */
+type MarkdownEditProps = Omit<CanvasEditorProps, 'autoFocus' | 'onCommentSelection' | 'onOutlineChange'>
+
+export default function MarkdownEdit(props: MarkdownEditProps) {
   return (
     <Suspense fallback={<MarkdownRead source={props.markdown} policy={markdownPolicy.stored} className={props.className} headingIds={false} />}>
       <CanvasEditor {...props} />

@@ -26,6 +26,7 @@ import { reviseBlockedReason, threadsToConsider } from '../../components/Documen
 import { useRevisePass } from '../../components/DocumentCanvas/revise/useRevisePass'
 import { useDocumentComments } from './useDocumentComments'
 import { serverReason } from '../../lib/errors'
+import { assignRef } from '../../utils/assignRef'
 import type { ReactNode, Ref } from 'react'
 import type { ReviewActions } from '../../components/DocumentCanvas/actions/toolbarItems'
 import type { ReviseCanvas } from '../../components/DocumentCanvas/revise/useRevisePass'
@@ -126,12 +127,6 @@ function useReportActions(actions: ReviewActions | null, onActions: (actions: Re
   useEffect(() => () => { onActions(null) }, [onActions])
 }
 
-
-/** Hands the editor's handle to this view and to the page's ref alike. */
-function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
-  if (typeof ref === 'function') ref(value)
-  else if (ref !== null && ref !== undefined) ref.current = value
-}
 
 /**
  * The text as edited so far (null: none since the canvas's text): threads and the revision follow it. A draft replaced

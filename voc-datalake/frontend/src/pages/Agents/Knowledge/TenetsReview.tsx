@@ -14,16 +14,17 @@
  * @module pages/Agents/Knowledge/TenetsReview
  */
 import { useId, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitPullRequest, Loader2 } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import ReadPending from '../../../components/LoadFailed/ReadPending'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { engineeringKnowledgeApi, engineeringKnowledgeKeys } from '../../../api/engineeringKnowledgeApi'
 import { serverReason } from '../../../lib/errors'
-import { useConfigStore } from '../../../store/configStore'
 import { useSkillFormats } from '../skillFormats'
 import { DocsPublishSheet } from './DocsPublishSheet'
+import { useKnowledgeRead } from './knowledgeReads'
 import { TenetsChanges } from './TenetsChanges'
 import ReadOnlySurface from '../documents/ReadOnlySurface'
 import {
@@ -38,14 +39,9 @@ function useLabels(): TenetsLabels {
   return { summary: t('tenets.projection.summary'), why: t('tenets.projection.why'), cites: t('tenets.projection.cites') }
 }
 
-function useTenetsVersion(connection: string, version: number | null) {
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  return useQuery({
-    queryKey: engineeringKnowledgeKeys.tenetsVersion(connection, version ?? 0),
-    queryFn: () => engineeringKnowledgeApi.tenetsVersion(connection, version ?? 0),
-    enabled: configured && version !== null,
-  })
-}
+const useTenetsVersion = (connection: string, version: number | null) => useKnowledgeRead(
+  engineeringKnowledgeKeys.tenetsVersion(connection, version ?? 0),
+  () => engineeringKnowledgeApi.tenetsVersion(connection, version ?? 0), version !== null)
 
 /** Accept or reject a draft with a reason, from the accepted version the screen showed; a 409: read it again. */
 function Decision({ connection, version, head, onReadAgain }: Readonly<{
@@ -165,17 +161,13 @@ function TenetsSurface({ connection, number, version, labels }: Readonly<{
 
 export function TenetsReview({ connection }: Readonly<{ connection: string }>) {
   const { t } = useTranslation('agents')
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
   const queryClient = useQueryClient()
   const selectId = useId()
   const [chosen, setChosen] = useState<number | null>(null)
   const [publishing, setPublishing] = useState(false)
-  const read = useQuery({
-    queryKey: engineeringKnowledgeKeys.tenets(connection), queryFn: () => engineeringKnowledgeApi.tenets(connection), enabled: configured,
-  })
-  if (read.isLoading) return <div className="skeleton h-24" role="status" aria-label={t('tenets.loading')} />
-  if (read.isError || read.data === undefined) {
-    return <LoadFailed message={t('tenets.failed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
+  const read = useKnowledgeRead(engineeringKnowledgeKeys.tenets(connection), () => engineeringKnowledgeApi.tenets(connection))
+  if (read.isLoading || read.isError || read.data === undefined) {
+    return <ReadPending read={read} loading={t('tenets.loading')} failed={t('tenets.failed')} skeleton="h-24" />
   }
   const { head, versions } = read.data
   if (versions.length === 0) return <p className="rounded-md border border-border p-3 text-sm text-muted">{t('tenets.none')}</p>

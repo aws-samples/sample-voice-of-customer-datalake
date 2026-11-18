@@ -7,7 +7,6 @@
  *
  * @module components/Document/text/CodeView
  */
-import clsx from 'clsx'
 import { Check, Copy, WrapText } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -17,7 +16,6 @@ interface CodeViewProps {
   readonly text: string
   /** The region's accessible name ("Source of …", "Properties"). */
   readonly label: string
-  readonly className?: string
 }
 
 /** The text's lines as shown: a final newline ends the last line, it does not start an empty one. */
@@ -26,13 +24,13 @@ function linesOf(text: string): readonly string[] {
   return lines.length > 1 && lines.at(-1) === '' ? lines.slice(0, -1) : lines
 }
 
-export default function CodeView({ text, label, className }: CodeViewProps) {
+export default function CodeView({ text, label }: CodeViewProps) {
   const { t } = useTranslation('documents')
   const [wrap, setWrap] = useState(true)
   const { tryCopy, copiedKey } = useCopyToClipboard()
   const lines = useMemo(() => linesOf(text), [text])
   return (
-    <div className={clsx('code-view', className)} data-wrap={wrap ? '' : undefined}>
+    <div className="code-view" data-wrap={wrap ? '' : undefined}>
       <div className="code-view__bar">
         <span className="mr-auto">{t('code.lines', { n: lines.length })}</span>
         <button type="button" className="btn btn-ghost btn-sm" aria-pressed={wrap} onClick={() => setWrap((on) => !on)}>

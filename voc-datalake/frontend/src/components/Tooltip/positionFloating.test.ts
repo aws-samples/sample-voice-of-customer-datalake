@@ -59,7 +59,7 @@ describe('positionFloating', () => {
     const atStart = place(0, 400)
     const atEnd = place(VIEWPORT.width - TRIGGER.width, 400)
     await positionFloating(atStart.trigger, atStart.bubble, 'top')
-    await positionFloating(atEnd.trigger, atEnd.bubble, 'bottom')
+    await positionFloating(atEnd.trigger, atEnd.bubble, 'top')
     expect(atStart.bubble.style.left).toBe(`${VIEWPORT_MARGIN_PX}px`)
     expect(atEnd.bubble.style.left).toBe(`${VIEWPORT.width - VIEWPORT_MARGIN_PX - BUBBLE.width}px`)
   })
@@ -72,7 +72,6 @@ describe('physicalSide', () => {
     ['start', true, 'right'],
     ['end', true, 'left'],
     ['top', true, 'top'],
-    ['bottom', false, 'bottom'],
   ] as const)('%s (rtl %s) is %s', (placement, rtl, side) => {
     expect(physicalSide(placement, rtl)).toBe(side)
   })

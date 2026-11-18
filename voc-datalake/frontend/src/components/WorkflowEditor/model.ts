@@ -132,10 +132,16 @@ export function mintId(prefix: string, taken: ReadonlySet<string>): string {
   return free ?? `${base}_${taken.size + 1}`
 }
 
+/** A step added: the definition with it, and its id. */
+export interface AddedStep {
+  readonly definition: WorkflowDefinition
+  readonly nodeId: string
+}
+
 /** Add a palette block at `position`: its type's defaults, then the block's own settings over them. */
 export function addBlock(
   definition: WorkflowDefinition, block: PaletteBlock, position: { x: number; y: number },
-): { definition: WorkflowDefinition; nodeId: string } {
+): AddedStep {
   const spec = NODE_CATALOGUE[block.type]
   const nodeId = mintId(block.type, new Set(definition.nodes.map((n) => n.id)))
   const node: WorkflowNode = {
@@ -158,7 +164,7 @@ const AFTER_GAP = 72
  */
 export function addBlockAfter(
   definition: WorkflowDefinition, block: PaletteBlock, afterId: string | null,
-): { definition: WorkflowDefinition; nodeId: string } {
+): AddedStep {
   const after = definition.nodes.find((node) => node.id === afterId)
   if (after === undefined) {
     const lowest = Math.max(0, ...definition.nodes.map((n) => n.position.y))

@@ -13,8 +13,6 @@ import type { DocumentAdapter, StoredDocument } from '../../../components/Docume
 import type { SourceKind, TemplateSource } from '../../../api/engineeringRegistryApi'
 
 export interface SourceDocument extends StoredDocument {
-  readonly kind: SourceKind
-  readonly id: string
   readonly path: string
   readonly digest: string
   readonly templateVersion: number | null
@@ -22,7 +20,7 @@ export interface SourceDocument extends StoredDocument {
 
 export function sourceDocumentOf(source: TemplateSource): SourceDocument {
   return {
-    title: source.path, content: source.text, kind: source.kind, id: source.id, path: source.path, digest: source.digest,
+    title: source.path, content: source.text, path: source.path, digest: source.digest,
     templateVersion: source.template_version,
   }
 }

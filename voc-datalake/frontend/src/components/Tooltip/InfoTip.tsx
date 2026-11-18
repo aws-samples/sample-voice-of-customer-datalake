@@ -18,17 +18,13 @@ import { useTranslation } from 'react-i18next'
 import { noCleanup } from '../../hooks/noCleanup'
 import { TooltipBubble } from './TooltipBubble'
 import { triggerHandlers, useTooltip } from './useTooltip'
-import type { FloatingPlacement } from './positionFloating'
 
 interface InfoTipProps {
   /** The explanation (already translated). */
   readonly text: string
-  /** The glyph's name (already translated); "More information" by default. */
-  readonly label?: string
-  readonly placement?: FloatingPlacement
 }
 
-export function InfoTip({ text, label, placement = 'top' }: InfoTipProps) {
+export function InfoTip({ text }: InfoTipProps) {
   const { t } = useTranslation('common')
   const tipId = useId()
   const [glyph, setGlyph] = useState<HTMLButtonElement | null>(null)
@@ -47,11 +43,11 @@ export function InfoTip({ text, label, placement = 'top' }: InfoTipProps) {
   }, [open, timer, tipId, glyph])
   return (
     <>
-      <button ref={setGlyph} type="button" className="icon-btn p-0.5 cursor-help" aria-label={label ?? t('infoTip.label')}
+      <button ref={setGlyph} type="button" className="icon-btn p-0.5 cursor-help" aria-label={t('infoTip.label')}
         aria-describedby={tipId} {...triggerHandlers(timer)} onClick={() => timer.togglePin()}>
         <Info size={14} aria-hidden="true" />
       </button>
-      <TooltipBubble id={tipId} open={open} content={text} anchor={glyph} placement={placement} decorative={false}
+      <TooltipBubble id={tipId} open={open} content={text} anchor={glyph} placement="top" decorative={false}
         timer={timer} />
     </>
   )

@@ -2,6 +2,7 @@
 import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import { withPrdStep } from '@test/workflowFixtures'
 import { addBlock } from './model'
+import type { AddedStep } from './model'
 import type { WorkflowDefinition, WorkflowNodeType } from '../../api/workflowsApi'
 
 export function emptyDefinition(name: string): WorkflowDefinition {
@@ -26,6 +27,6 @@ export const EDITED_FLOW: WorkflowDefinition = withPrdStep(emptyDefinition('Rese
 /** `definition` with a step of `type` titled `title` at `position` (its type's defaults): a block dropped there. */
 export function addNode(
   definition: WorkflowDefinition, type: WorkflowNodeType, position: { x: number; y: number }, title: string,
-): { definition: WorkflowDefinition; nodeId: string } {
+): AddedStep {
   return addBlock(definition, { type, title }, position)
 }

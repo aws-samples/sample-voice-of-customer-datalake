@@ -14,11 +14,11 @@ describe('the Registry\'s answers', () => {
       .map((card) => [card.id, card.version, card.skill.source])).toStrictEqual([['fixer', null, 'store']])
   })
 
-  it('read a card\'s page strictly, its versions and events kept', () => {
+  it('read a card\'s page strictly, its versions kept', () => {
     expect(() => parseCardDetail({ versions: [] })).toThrow('The Registry card answer was unreadable')
     const made = { kind: 'card', id: 'fixer-careful', version: 2, skill: { version: 3 } }
-    expect(parseCardDetail({ card: made, versions: [made], events: [{ version: 2, event: 'created', by: 'a', at: 't' }] }).events)
-      .toStrictEqual([{ version: 2, event: 'created', by: 'a', at: 't' }])
+    expect(parseCardDetail({ card: made, versions: [made], events: [{ version: 2, event: 'created', by: 'a', at: 't' }] }).versions
+      .map((version) => [version.id, version.version])).toStrictEqual([['fixer-careful', 2]])
   })
 
   it('read the quality gates with their packs, and a template\'s source only with its text', () => {

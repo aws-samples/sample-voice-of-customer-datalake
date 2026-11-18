@@ -9,7 +9,7 @@ import {
   useCallback, useEffect, useRef, useState,
   type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type RefObject,
 } from 'react'
-import { noCleanup } from '../../hooks/noCleanup'
+import { useCloseOnPressOutside } from '../../hooks/useCloseOnPressOutside'
 import { MENU_KEYS, rovingIndex } from '../../utils/rovingIndex'
 
 /** Which item takes focus when the menu opens. */
@@ -97,17 +97,8 @@ export function useMenuButton(): MenuButton {
   }, [open, openFocus])
 
   // A press outside the button and the menu closes it (focus stays where the press put it).
-  useEffect(() => {
-    if (!open) return noCleanup
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (menuRef.current?.contains(target) === true || buttonRef.current?.contains(target) === true) return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [open])
+  const closeQuietly = useCallback(() => setOpen(false), [])
+  useCloseOnPressOutside(open, closeQuietly, menuRef, buttonRef)
 
   const onButtonKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return

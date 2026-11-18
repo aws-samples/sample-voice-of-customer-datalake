@@ -25,6 +25,7 @@
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { parseEach } from './lenientFields'
+import { parsedAnswer as strictly } from './strictAnswer'
 import { post } from './requestKit'
 import { isRecord } from '../lib/typeGuards'
 
@@ -165,12 +166,6 @@ const PUBLISH_REFUSALS = ['human_driven', 'already_published', 'digest_mismatch'
 export type PublishRefusal = (typeof PUBLISH_REFUSALS)[number]
 export const isPublishRefusal = (code: string | null): code is PublishRefusal =>
   PUBLISH_REFUSALS.some((known) => known === code)
-
-function strictly<T>(schema: z.ZodType<T>, raw: unknown, what: string): T {
-  const parsed = schema.safeParse(raw)
-  if (!parsed.success) throw new Error(`The ${what} answer was unreadable`)
-  return parsed.data
-}
 
 export function parseKnowledge(raw: unknown): KnowledgeOverview {
   if (!isRecord(raw) || !Array.isArray(raw.packages)) throw new Error('The knowledge answer was unreadable')

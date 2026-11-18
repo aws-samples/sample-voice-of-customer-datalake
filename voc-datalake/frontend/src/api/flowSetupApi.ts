@@ -15,6 +15,7 @@
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { eachOf } from './lenientFields'
+import { parsedAnswer as parsed } from './strictAnswer'
 
 const text = z.string().catch('')
 const maybeText = z.string().nullable().catch(null)
@@ -173,12 +174,6 @@ const VocabularySchema = z.object({
 })
 export type AssertionVocabulary = z.output<typeof VocabularySchema>
 
-function parsed<S extends z.ZodType>(schema: S, raw: unknown, what: string): z.output<S> {
-  const result = schema.safeParse(raw)
-  if (!result.success) throw new Error(`The ${what} answer was unreadable`)
-  return result.data
-}
-
 const scoped = (route: string, connection: string | null): string =>
   (connection === null || connection === '' ? route : `${route}?${new URLSearchParams({ connection }).toString()}`)
 
@@ -186,7 +181,6 @@ const REGISTRY = '/agents/engineering/registry'
 const GATES = '/agents/engineering/gates'
 
 export const flowSetupKeys = {
-  all: () => ['flow-setup'] as const,
   registry: (connection: string | null) => ['flow-setup', 'registry', connection ?? ''] as const,
   card: (card: string, connection: string | null) => ['flow-setup', 'card', card, connection ?? ''] as const,
   gates: (connection: string | null) => ['flow-setup', 'gates', connection ?? ''] as const,

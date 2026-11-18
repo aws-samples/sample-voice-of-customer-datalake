@@ -25,6 +25,7 @@
 import { cloneElement, useCallback, useEffect, useId, useState } from 'react'
 import { TooltipBubble } from './TooltipBubble'
 import { triggerHandlers, useTooltip } from './useTooltip'
+import { assignRef } from '../../utils/assignRef'
 import type { FocusEventHandler, PointerEventHandler, ReactElement, ReactNode, Ref } from 'react'
 import type { FloatingPlacement } from './positionFloating'
 
@@ -45,11 +46,6 @@ interface TooltipProps {
   readonly kind: 'label' | 'description'
   readonly placement?: FloatingPlacement
   readonly children: ReactElement<TriggerProps>
-}
-
-function assignRef(ref: Ref<HTMLElement> | undefined, node: HTMLElement | null): void {
-  if (typeof ref === 'function') ref(node)
-  else if (ref !== null && ref !== undefined) ref.current = node
 }
 
 /** Calls the trigger's own handler, then the tooltip's (only while it has content). */

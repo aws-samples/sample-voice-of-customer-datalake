@@ -56,7 +56,7 @@ interface Pass {
   readonly outline: OutlineItem[]
 }
 
-/** The canvas's inline rule (fromMdast `inlineToDoc`): anything it has no mark or node for is raw. */
+/** The canvas's inline rule (fromMdast `inlinesToDoc`): anything it has no mark or node for is raw. */
 function inline(nodes: readonly PhrasingContent[], pass: Pass): PhrasingContent[] {
   return nodes.flatMap((node): PhrasingContent[] => {
     switch (node.type) {

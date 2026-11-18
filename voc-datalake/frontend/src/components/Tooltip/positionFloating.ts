@@ -11,8 +11,11 @@
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom'
 import type { Placement } from '@floating-ui/dom'
 
-/** Where a bubble goes. `start` and `end` follow the reading direction (left and right in LTR). */
-export type FloatingPlacement = 'top' | 'bottom' | 'start' | 'end'
+/**
+ * Where a bubble goes: above its trigger, or beside it (`start` and `end` follow the reading direction: left and
+ * right in LTR). Below is where `flip` moves a bubble with no room above, never a side asked for.
+ */
+export type FloatingPlacement = 'top' | 'start' | 'end'
 
 /** Space between the trigger and the bubble. */
 export const FLOATING_GAP_PX = 6

@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { post } from './requestKit'
 import { fetchApi } from './client'
 import { eachOf } from './lenientFields'
+import { parsedAnswer as parsed } from './strictAnswer'
 import type { CursorPage } from './cursorPage'
 
 const text = z.string().catch('')
@@ -151,13 +152,6 @@ export interface RestartRequest {
 
 const SteeredSchema = z.object({ message: z.object({ event_id: z.string().min(1), at: text }) })
 const RestartedSchema = z.object({ run: z.object({ run_id: z.string().min(1) }) })
-
-/** A read that is not its shape at all is an error (a bad entry inside one costs itself). */
-function parsed<T>(schema: z.ZodType<T>, raw: unknown, what: string): T {
-  const read = schema.safeParse(raw)
-  if (!read.success) throw new Error(`The ${what} answer was unreadable`)
-  return read.data
-}
 
 const runRoute = (runId: string, suffix: string) => `/agents/engineering/${encodeURIComponent(runId)}${suffix}`
 const agentRoute = (runId: string, agent: string, suffix: string) =>

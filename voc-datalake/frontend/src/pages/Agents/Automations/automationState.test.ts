@@ -37,7 +37,7 @@ const stateOf = (input: Partial<AutomationInput> & { agent: Agent }) =>
 describe('an engineering automation', () => {
   it('needs setup with no primary while it has no connection it can use (the group says so once)', () => {
     const state = stateOf({ agent: agentOf(ENGINEERING), engineering: NO_CONNECTION })
-    expect([state.state, state.primary, state.noConnection]).toStrictEqual(['needs_setup', null, true])
+    expect([state.state, state.primary]).toStrictEqual(['needs_setup', null])
   })
 
   it('needs setup with Set up while it is not set up (no language), counting its checks to fix once read', () => {

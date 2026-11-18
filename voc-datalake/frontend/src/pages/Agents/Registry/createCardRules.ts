@@ -40,7 +40,7 @@ type CardIssue =
 export interface FieldIssue { readonly field: CardField; readonly issue: CardIssue }
 
 /** The card's id the slug makes (`fixer-careful`). */
-export const cardIdOf = (role: string, slug: string) => `${role}-${slug.trim()}`
+export const madeCardId = (role: string, slug: string) => `${role}-${slug.trim()}`
 
 function textIssues(form: CardForm): FieldIssue[] {
   const issues: FieldIssue[] = []

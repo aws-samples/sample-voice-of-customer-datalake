@@ -9,7 +9,7 @@
  * `TemplateSelector`'s scraper and import tiles, `LearnedMethodLine`) and, since the 7.54.00 settings
  * redesign, `pages/Settings` (`SourceCard`'s Enabled switch, `SourceCardSections`' Save to Secrets
  * Manager, `SourceCircuitNotice`'s Reset, `LogsSection`'s Clear), which used an English literal
- * (`constants/admin.ts`, gone) as a native `title` until then.
+ * (ADMIN_ONLY_TITLE, removed in 7.54.00) as a native `title` until then.
  *
  * The routes: `POST`/`DELETE /integrations/{source}/apps`, `PUT /integrations/{source}/credentials`,
  * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`, `POST /sources/{source}/reset`,

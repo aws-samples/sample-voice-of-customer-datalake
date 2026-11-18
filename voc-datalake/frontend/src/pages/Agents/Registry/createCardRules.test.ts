@@ -5,7 +5,7 @@
  * given, the scope only for a connection).
  */
 import { describe, it, expect } from 'vitest'
-import { cardIdOf, cardIssues, createCardBody } from './createCardRules'
+import { madeCardId, cardIssues, createCardBody } from './createCardRules'
 import type { CardForm } from './createCardRules'
 
 const ROLES = ['fixer', 'hunter']
@@ -51,6 +51,6 @@ describe('Create from a skill: the body', () => {
     expect(createCardBody(form({ connection: 'storefront', title: ' Careful fixer ' }))).toStrictEqual({
       from_skill: { role: 'fixer', connection: 'storefront', version: 3 }, slug: 'careful', purpose: 'The fixer, held to fewer turns.',
       title: 'Careful fixer' })
-    expect(cardIdOf('fixer', ' careful ')).toBe('fixer-careful')
+    expect(madeCardId('fixer', ' careful ')).toBe('fixer-careful')
   })
 })

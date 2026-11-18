@@ -64,8 +64,6 @@ export interface AutomationState {
   /** The warnings, said only when nothing is to fix ("1 warning"). */
   readonly warnings: number
   readonly reason: AutomationReason | null
-  /** It has no connection it can use (rule 1): the group says so once, with Connect GitHub. */
-  readonly noConnection: boolean
   /** Its last run waits for a person (the override). */
   readonly needsDecision: boolean
   /** Its reads failed: the state is the `enabled` flag's alone. */
@@ -79,7 +77,6 @@ interface Rule {
   readonly state: AutomationStateId
   readonly primary: AutomationPrimary | null
   readonly reason?: AutomationReason | null
-  readonly noConnection?: boolean
 }
 
 /** Rules 5 to 7, every automation's (an engineering one's once its own rules pass). */
@@ -94,7 +91,7 @@ function commonRule(agent: Agent): Rule {
 function engineeringRule(agent: Agent, facts: EngineeringRead, toFix: number): Rule | null {
   const setUp = readinessOf(agent, facts.connections, facts.budget)
   if (agent.enabled) return setUp === 'ready' ? null : { state: 'cant_run', primary: 'fix', reason: 'connection_gone' }
-  if (setUp === 'no_connection') return { state: 'needs_setup', primary: null, noConnection: true }
+  if (setUp === 'no_connection') return { state: 'needs_setup', primary: null }
   if (setUp === 'set_up' || toFix > 0) return { state: 'needs_setup', primary: 'set_up' }
   return null
 }
@@ -123,7 +120,7 @@ export function automationState(input: AutomationInput): AutomationState {
   const needsDecision = agent.stats.last_run_status === 'needs_human'
   const counts = checkCounts(agent, checks)
   const matched = matchingRule(input, counts.toFix)
-  const base = { ...counts, needsDecision, unchecked: false, noConnection: false, reason: null }
+  const base = { ...counts, needsDecision, unchecked: false, reason: null }
   if (matched === null) return { ...base, state: 'loading', primary: null }
   const { rule, failed } = matched
   const primary = needsDecision ? 'review' : rule.primary
@@ -132,7 +129,6 @@ export function automationState(input: AutomationInput): AutomationState {
     state: rule.state,
     primary: isAdmin ? primary : null,
     reason: rule.reason ?? null,
-    noConnection: rule.noConnection === true,
     unchecked: failed,
   }
 }

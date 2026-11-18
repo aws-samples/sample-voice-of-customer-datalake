@@ -16,7 +16,6 @@ import { useState } from 'react'
 import { TooltipBubble } from './TooltipBubble'
 import { useTooltip } from './useTooltip'
 import type { ReactNode } from 'react'
-import type { FloatingPlacement } from './positionFloating'
 
 type TextTag = 'span' | 'p' | 'h2' | 'h3' | 'code' | 'dd' | 'li'
 
@@ -28,7 +27,6 @@ interface TruncatedTextProps {
   readonly as?: TextTag
   /** Carries the cut: `truncate` or `line-clamp-*`. */
   readonly className?: string
-  readonly placement?: FloatingPlacement
   /** What the element shows when it is not `text` itself (the same text with markup). */
   readonly children?: ReactNode
 }
@@ -38,7 +36,7 @@ function isCut(element: HTMLElement): boolean {
   return element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight
 }
 
-export function TruncatedText({ text, id, as: Tag = 'span', className, placement = 'top', children }: TruncatedTextProps) {
+export function TruncatedText({ text, id, as: Tag = 'span', className, children }: TruncatedTextProps) {
   const [element, setElement] = useState<HTMLElement | null>(null)
   const { open, timer } = useTooltip()
   return (
@@ -51,7 +49,7 @@ export function TruncatedText({ text, id, as: Tag = 'span', className, placement
         {children ?? text}
       </Tag>
       {open ? (
-        <TooltipBubble open content={text} anchor={element} placement={placement} decorative timer={timer} />
+        <TooltipBubble open content={text} anchor={element} placement="top" decorative timer={timer} />
       ) : null}
     </>
   )

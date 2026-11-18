@@ -1,7 +1,7 @@
 /**
  * @fileoverview The Set up drawer of an engineering automation (7.52.00 C1; ux-agents-redesign part 1 §2.4 and part 2
  * S5): the app's one `SideSheet` at the inline end, so the row that opened it stays in view, whatever its height. One
- * drawer serves the Automations list, the automation's page and the setup guide's steps (useSetupDrawer.tsx).
+ * drawer serves the Automations list, the automation's page and the setup guide's steps (its form: useSetupDrawerForm.ts).
  *
  * - **① Repository:** the connection it works on, `owner/name` first (with a GitHub issue trigger only GitHub ones);
  *   with one it can use, that repository as text and a way to Connections. **② Language**, **③ Monthly budget**

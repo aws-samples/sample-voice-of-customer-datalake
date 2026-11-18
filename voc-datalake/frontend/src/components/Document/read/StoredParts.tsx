@@ -1,5 +1,5 @@
 /**
- * @fileoverview How the stored-text policy (markdownPolicy.tsx) renders a link, an image and a to-do's box.
+ * @fileoverview How the stored-text policy (markdownPolicy.ts) renders a link, an image and a to-do's box.
  *
  * @module components/Document/read/StoredParts
  */

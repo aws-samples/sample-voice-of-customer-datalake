@@ -14,7 +14,6 @@ import Notice from '../Notice/Notice'
 import { TruncatedText } from '../Tooltip/TruncatedText'
 import { isEngineeringFlow } from '../../api/workflowsApi'
 import { savesAsNew, useNames } from './editorHooks'
-import type { ReactNode } from 'react'
 import type { UsingAutomation, WorkflowDefinition } from '../../api/workflowsApi'
 import type { SaveOutcome } from './useWorkflowEditor'
 
@@ -48,11 +47,11 @@ export function StatusLine({ outcome, dirty, issueCount, notice }: Readonly<{
 }
 
 /** The toolbar's title: the host's (the agent page's workflow picker) or the workflow's name, then its badges. */
-export function EditorTitle({ title, name, builtin, dirty }: Readonly<{ title?: ReactNode; name: string; builtin: boolean; dirty: boolean }>) {
+export function EditorTitle({ name, builtin, dirty }: Readonly<{ name: string; builtin: boolean; dirty: boolean }>) {
   const { t } = useTranslation('agents')
   return (
     <div className="mr-auto min-w-0">
-      {title ?? <TruncatedText as="p" className="truncate text-sm font-semibold text-text-strong" text={name} />}
+      <TruncatedText as="p" className="truncate text-sm font-semibold text-text-strong" text={name} />
       {(builtin || dirty) && (
         <p className="flex gap-2 text-[12px] text-muted">
           {builtin && <span className="badge badge-info">{t('editor.builtin')}</span>}

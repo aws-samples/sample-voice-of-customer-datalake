@@ -19,7 +19,7 @@ import { engineeringSkillsApi, engineeringSkillsKeys, isSkillRole } from '../../
 import { serverReason } from '../../../lib/errors'
 import { useConfigStore } from '../../../store/configStore'
 import { ScopePicker } from '../ScopePicker'
-import { CARD_LIMITS, cardIdOf, cardIssues, createCardBody } from './createCardRules'
+import { CARD_LIMITS, madeCardId, cardIssues, createCardBody } from './createCardRules'
 import { useCardTitle } from './cardTitle'
 import type { ReactNode } from 'react'
 import type { CardField, CardForm, FieldIssue } from './createCardRules'
@@ -164,7 +164,7 @@ export function CreateCardSheet({ roles, role, connection, onClose, onCreated }:
         onChange={(next) => set({ connection: next, version: null })} />
       <VersionField form={form} onChange={(version) => set({ version })} issue={issueOf('version')} />
       <Field label={t('registry.create.slug')} issue={issueOf('slug')}
-        hint={t('registry.create.slugHint', { id: cardIdOf(form.role, form.slug === '' ? 'slug' : form.slug) })}>
+        hint={t('registry.create.slugHint', { id: madeCardId(form.role, form.slug === '' ? 'slug' : form.slug) })}>
         {(id, describedBy) => (
           <input id={id} className="input w-full font-mono" maxLength={CARD_LIMITS.maxSlug} value={form.slug} aria-describedby={describedBy}
             aria-invalid={issueOf('slug') === null ? undefined : true} onChange={(event) => set({ slug: event.target.value })} />

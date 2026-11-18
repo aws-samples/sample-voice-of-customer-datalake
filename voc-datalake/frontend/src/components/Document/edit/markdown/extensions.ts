@@ -63,7 +63,7 @@ const CanvasTaskItem = TaskItem.extend({
 
 /**
  * An image shows only from an address the canvas would link to (never `data:` or `javascript:`: the shared policy,
- * components/Document/read/markdownPolicy.tsx). Its stored source is kept as written: only the rendered `src` goes.
+ * components/Document/read/markdownPolicy.ts). Its stored source is kept as written: only the rendered `src` goes.
  */
 const CanvasImage = Image.extend({
   addAttributes() {

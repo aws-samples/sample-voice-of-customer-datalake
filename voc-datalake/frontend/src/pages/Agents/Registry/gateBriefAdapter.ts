@@ -19,10 +19,7 @@ import type { DocumentAdapter, StoredDocument } from '../../../components/Docume
 import type { GateBriefText } from '../../../api/engineeringRegistryApi'
 
 export interface GateBriefDocument extends StoredDocument {
-  readonly id: string
-  readonly path: string
   readonly digest: string
-  readonly bytes: number
   readonly packs: readonly string[]
 }
 
@@ -31,8 +28,7 @@ export const briefFileName = (path: string, id: string) => path.split('/').pop()
 
 export function gateBriefDocumentOf(brief: GateBriefText): GateBriefDocument {
   return {
-    title: briefFileName(brief.path, brief.id), content: brief.text, id: brief.id, path: brief.path, digest: brief.digest,
-    bytes: brief.bytes, packs: brief.packs,
+    title: briefFileName(brief.path, brief.id), content: brief.text, digest: brief.digest, packs: brief.packs,
   }
 }
 

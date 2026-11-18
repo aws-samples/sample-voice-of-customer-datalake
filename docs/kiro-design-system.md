@@ -182,7 +182,6 @@ In Kiro Light `--card` equals `--bg`, so cards **must** keep their border.
 |---|---|---|---|
 | `border-border` | `#352f3d` | `#e4e4e7` | Default 1px border, dividers (`divide-border`) |
 | `border-border-strong` | `#4a464f` | `#d4d4d8` | Hover border, emphasised edges |
-| `--border-hover` (no utility) | `#5e5966` | `#a1a1aa` | Strongest neutral edge: React Flow edges (`workflowCanvas.css`) |
 | `border-control-border` | `#77727f` | `#86818e` | The edge that **identifies a form control** (`.input`, `.select`, textarea, checkbox, radio). Not for dividers or cards |
 | `border-control-border-hover` | `#938f9b` | `#5e5966` | That edge on hover |
 
@@ -547,7 +546,7 @@ delay (1–2 s on macOS) and never shows on focus or touch. In `src/components/T
 </Tooltip>
 ```
 
-- **API:** `<Tooltip content kind="label|description" placement="top|bottom|start|end">` wraps exactly one element and
+- **API:** `<Tooltip content kind="label|description" placement="top|start|end">` wraps exactly one element and
   composes its handlers and ref. An empty `content` shows nothing (`content={off ? reason : undefined}`), without
   remounting the trigger.
   - `kind="label"`: the trigger's name, which it already carries (`aria-label`, or `sr-only` text); the bubble is

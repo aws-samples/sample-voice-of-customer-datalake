@@ -43,8 +43,7 @@ describe('a gate brief as a document', () => {
 
   it('is listed by the quality gates without its text (gap N), and named by its file', () => {
     const gates = parseGates({ packs: [], briefs: [{ ...BRIEF, text: undefined }], connection: '' })
-    expect([gates.briefs, gates.connection]).toStrictEqual([[{ id: 'python-ts', path: BRIEF.path, packs: BRIEF.packs,
-      digest: 'sha256:b', bytes: 45_627 }], null])
+    expect(gates.briefs).toStrictEqual([{ id: 'python-ts', path: BRIEF.path, packs: BRIEF.packs, digest: 'sha256:b', bytes: 45_627 }])
     expect(briefFileName('gates/briefs/java.md', 'java')).toBe('java.md')
   })
 })

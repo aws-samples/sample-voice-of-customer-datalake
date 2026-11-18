@@ -4,7 +4,8 @@
  * - `GET /agents/engineering/registry?connection=` → `{month, connection, cards}`: every role's card (`kind: 'role'`,
  *   composed on the server for the scope's skill head: its template, skill, model, tools, gates, inputs and outputs,
  *   caps, scorecard on a connection, the month's spend), then the cards made from a skill (`kind: 'card'`);
- * - `GET …/registry/<card>?connection=` → `{card, versions, events}` (a role's card has neither);
+ * - `GET …/registry/<card>?connection=` → `{card, versions, events}`, read as its card and versions (a role's card has
+ *   neither);
  * - `POST …/registry/cards` `{from_skill: {role, connection?, version}, slug, purpose, title?, model?, caps?,
  *   expected_version?}` → 201 `{card}`; 400 a bad body, 404 no such skill version, 409 a proposal, a bad model or tool,
  *   a slug taken or a stale `expected_version`, each in the server's words;
@@ -89,14 +90,10 @@ const CardSchema = z.object({
 })
 export type RegistryCard = z.output<typeof CardSchema>
 
-const EventSchema = z.object({ version: count, event: text, by: text, at: text })
-type RegistryCardEvent = z.output<typeof EventSchema>
-
 export interface RegistryCardDetail {
   card: RegistryCard
   /** A made card's versions, newest first (none for a role's card). */
   versions: RegistryCard[]
-  events: RegistryCardEvent[]
 }
 
 const StepSchema = z.object({
@@ -144,11 +141,8 @@ export interface QualityGates {
   packs: GatePack[]
   briefs: GateBrief[]
   ownGate: { file: string; argv: string[]; timeout_s: number } | null
-  runners: string[]
   defaults: Record<string, string>
   stops: GateStop[]
-  /** The connection the recorded versions are of (null: the shared view, none recorded). */
-  connection: string | null
 }
 
 const OwnGateSchema = z.object({ file: text, argv: names, timeout_s: count }).nullable().catch(null)
@@ -187,7 +181,7 @@ export function parseCardDetail(raw: unknown): RegistryCardDetail {
   const card = CardSchema.safeParse(isRecord(raw) ? raw.card : undefined)
   if (!card.success) throw new Error('The Registry card answer was unreadable')
   const record = isRecord(raw) ? raw : {}
-  return { card: card.data, versions: parseEach(CardSchema, record.versions), events: parseEach(EventSchema, record.events) }
+  return { card: card.data, versions: parseEach(CardSchema, record.versions) }
 }
 
 export function parseGates(raw: unknown): QualityGates {
@@ -196,8 +190,7 @@ export function parseGates(raw: unknown): QualityGates {
   const defaults = z.record(z.string(), z.string()).catch({}).parse(record.defaults)
   return {
     packs, briefs: parseEach(BriefSchema, record.briefs), ownGate: OwnGateSchema.parse(record.own_gate),
-    runners: names.parse(record.runners), defaults, stops: parseEach(StopSchema, record.stops),
-    connection: typeof record.connection === 'string' && record.connection !== '' ? record.connection : null,
+    defaults, stops: parseEach(StopSchema, record.stops),
   }
 }
 
