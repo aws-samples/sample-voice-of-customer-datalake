@@ -22,7 +22,6 @@ import {
 } from 'lucide-react'
 import { IconBadge } from '../../../components/IconBadge/IconBadge'
 import { formatRelativeDate } from '../../../utils/dateUtils'
-import { formatCount } from '../../../utils/numberFormat'
 import { isEngineeringAgent } from '../../../api/agentsApi'
 import { agentPath } from '../agentsPaths'
 import { budgetShare, shareTone } from '../spendView'
@@ -148,12 +147,11 @@ function EngineeringUsage({ usd, budget }: Readonly<{ usd: number | null; budget
 
 /** A product automation's model calls this month ("214 of 5,000" when capped). */
 function ProductUsage({ agent }: Readonly<{ agent: Agent }>) {
-  const { t, i18n } = useTranslation('agents')
+  const { t } = useTranslation('agents')
   const count = agent.stats.model_calls_this_month
-  const calls = formatCount(count, i18n.language)
   const cap = agent.budget.monthly_call_cap
-  if (cap === null) return <span>{t('automations.activity.calls', { count, calls })}</span>
-  return <span>{t('automations.activity.callsOf', { calls, cap: formatCount(cap, i18n.language) })}</span>
+  if (cap === null) return <span>{t('automations.activity.calls', { count, calls: count })}</span>
+  return <span>{t('automations.activity.callsOf', { calls: count, cap })}</span>
 }
 
 /** Usage (module doc): what it spent or the model calls it made this month, and today's scheduled runs. */

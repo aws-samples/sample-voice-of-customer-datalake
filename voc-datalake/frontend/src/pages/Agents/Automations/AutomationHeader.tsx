@@ -15,7 +15,6 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { RowActionsMenu } from '../../../components/RowActionsMenu/RowActionsMenu'
 import { isEngineeringAgent } from '../../../api/agentsApi'
-import { formatCount } from '../../../utils/numberFormat'
 import { agentsPath } from '../agentsPaths'
 import { ScopeSummary } from '../AgentBadges'
 import { AutomationStateChip, AutomationTileIcon, StateReason } from './AutomationCells'
@@ -26,7 +25,7 @@ import type { AutomationView } from './useAutomation'
 
 /** The meta line (module doc). */
 function MetaLine({ agent }: Readonly<{ agent: Agent }>) {
-  const { t, i18n } = useTranslation('agents')
+  const { t } = useTranslation('agents')
   const { stats } = agent
   const runs = t('detail.meta.runs', { count: stats.runs_total })
   const today = t('detail.meta.today', { count: stats.scheduled_runs_today })
@@ -37,7 +36,7 @@ function MetaLine({ agent }: Readonly<{ agent: Agent }>) {
     ]
     return <p className="text-[12px] text-muted tabular-nums">{parts.join(' · ')}</p>
   }
-  const calls = t('detail.meta.calls', { count: stats.model_calls_this_month, calls: formatCount(stats.model_calls_this_month, i18n.language) })
+  const calls = t('detail.meta.calls', { count: stats.model_calls_this_month, calls: stats.model_calls_this_month })
   return (
     <p className="text-[12px] text-muted tabular-nums">
       <span><ScopeSummary scope={agent.scope} /></span> · {runs} · {today} · {calls}
