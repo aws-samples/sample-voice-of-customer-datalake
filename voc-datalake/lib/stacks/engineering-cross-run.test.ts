@@ -67,11 +67,12 @@ describe('the scheduled cross-run Learn pass', () => {
       expect(found.Target.Arn).toStrictEqual({ 'Fn::GetAtt': [expect.stringMatching(/EngineeringSupervisor/), 'Arn'] });
     });
 
-    it('gives the schedule a role of its own that only this schedule assumes and that only invokes the runtime', () => {
+    it('gives the schedule a role of its own that only the default schedule group assumes and that only invokes the runtime', () => {
       const [role] = Object.entries(template.findResources('AWS::IAM::Role'))
         .filter(([id]) => id.includes('EngineeringCrossRunSchedulerRole')).map(([, found]) => JSON.stringify(found));
       expect([role?.includes('"Service":"scheduler.amazonaws.com"'), role?.includes('"aws:SourceAccount":"111111111111"'),
-        role?.includes(':schedule/default/voc-eng-cross-run-learn"')]).toStrictEqual([true, true, true]);
+        role?.includes(':schedule-group/default"'), role?.includes(':schedule/default/')])
+        .toStrictEqual([true, true, true, false]);
       const invoker = statements(template, 'EngineeringCrossRunSchedulerRole');
       expect(invoker.map((found) => [found.Sid, found.Action])).toStrictEqual([['InvokeTheRuntime', 'lambda:InvokeFunction']]);
       expect(invoker[0]?.Resource).toStrictEqual({ 'Fn::GetAtt': [expect.stringMatching(/EngineeringSupervisor/), 'Arn'] });

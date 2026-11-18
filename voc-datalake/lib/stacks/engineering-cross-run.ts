@@ -87,19 +87,22 @@ function grantPass(props: CrossRunProps): void {
 }
 
 /**
- * The pass's weekly schedule, its own role (assumed by EventBridge Scheduler for this account and this schedule
- * only; it may invoke the runtime and nothing else), and the runtime role's grants. The schedule is created DISABLED
+ * The pass's weekly schedule, its own role (assumed by EventBridge Scheduler for this account and the default
+ * schedule group only; it may invoke the runtime and nothing else), and the runtime role's grants. The schedule is created DISABLED
  * unless `-c engineeringCrossRunLearn=weekly`; it never retries (a missed week is the next week's).
  */
 export function grantCrossRunLearn(scope: Construct, props: CrossRunProps): scheduler.CfnSchedule {
   const stack = cdk.Stack.of(scope);
   const name = props.uniqueName('voc-eng-cross-run-learn');
-  const scheduleArn = stack.formatArn({
-    service: 'scheduler', resource: 'schedule', resourceName: `default/${name}`, arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+  // EventBridge Scheduler names the schedule's GROUP as the aws:SourceArn when it assumes the role (and checks it at
+  // creation), never the schedule itself: a schedule ARN here fails CreateSchedule with "The execution role you
+  // provide must allow AWS EventBridge Scheduler to assume the role" (as engineering-reactions.ts' group condition).
+  const groupArn = stack.formatArn({
+    service: 'scheduler', resource: 'schedule-group', resourceName: 'default', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
   });
   const invoker = new iam.Role(scope, 'EngineeringCrossRunSchedulerRole', {
     assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-      conditions: { StringEquals: { 'aws:SourceAccount': stack.account }, ArnEquals: { 'aws:SourceArn': scheduleArn } },
+      conditions: { StringEquals: { 'aws:SourceAccount': stack.account }, ArnEquals: { 'aws:SourceArn': groupArn } },
     }),
   });
   invoker.addToPrincipalPolicy(new iam.PolicyStatement({
