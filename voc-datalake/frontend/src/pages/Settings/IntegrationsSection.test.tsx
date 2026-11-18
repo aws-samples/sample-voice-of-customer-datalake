@@ -8,18 +8,14 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { parsedJson } from '@test/jsonText'
+import { emptyDesignSystem } from '@test/designSystemFixtures'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 vi.mock('../../api/client', () => ({ fetchApi: (endpoint: string, options?: RequestInit) => fetchApi(endpoint, options) }))
 
 const { default: IntegrationsSection } = await import('./IntegrationsSection')
 
-const DESIGN = {
-  tokens: { colors: [], typography: [], spacing: [], radius: [] },
-  guidelines: '',
-  references: [],
-  integrations: { figma: true, github: false },
-}
+const DESIGN = emptyDesignSystem({ integrations: { figma: true, github: false } })
 
 beforeEach(() => { fetchApi.mockReset() })
 

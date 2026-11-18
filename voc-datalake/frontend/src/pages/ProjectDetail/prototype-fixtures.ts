@@ -118,6 +118,12 @@ export function datedDoc(
   return { document_id: id, document_type: documentType, title, content: 'x', created_at: createdAt }
 }
 
+/** Version `n` of the "Checkout" prototype series (document `proto_<n>`, made on 2026-05-0<n>); `extra` over it. */
+export const checkoutPrototype = (n: number, extra: Partial<ProjectDocument> = {}): ProjectDocument => ({
+  document_id: `proto_${String(n)}`, document_type: 'prototype', title: `Checkout (v${String(n)})`,
+  base_title: 'Checkout', version: n, content: '', created_at: `2026-05-0${String(n)}T10:00:00Z`, ...extra,
+})
+
 /** A prototype revision row; override whatever the test needs to differ. */
 export function prototypeDoc(
   overrides: Partial<ProjectDocument> & { document_id: string },

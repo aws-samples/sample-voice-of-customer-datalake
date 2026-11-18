@@ -10,6 +10,7 @@ import { designCalls, registerDesignSectionHooks, renderDesignSection } from '@t
 import { installFetchMock } from '@test/fetch-mock'
 import { SvgConversionError } from '../../utils/svgToPng'
 import { imageFile, stubImaging, stubOversizedImaging } from '../ProjectDetail/imaging-fixtures'
+import { emptyDesignSystem } from '@test/designSystemFixtures'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -21,7 +22,7 @@ vi.mock('../../utils/svgToPng', async (importOriginal) => ({
   svgToPng: (file: File) => convert(file),
 }))
 
-const DESIGN = { tokens: { colors: [], typography: [], spacing: [], radius: [] }, guidelines: '', references: [], integrations: { figma: false, github: false } }
+const DESIGN = emptyDesignSystem()
 const UPLOAD_URL = 'https://uploads.example.com/logo'
 
 registerDesignSectionHooks()

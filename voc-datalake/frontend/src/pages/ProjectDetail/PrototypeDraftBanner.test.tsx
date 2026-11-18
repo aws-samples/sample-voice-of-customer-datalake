@@ -11,6 +11,7 @@ import { renderWithQueryClient } from '../../test/query-client'
 import { PrototypeWithDraft } from './PrototypeDraftBanner'
 import PrototypePinsReview from '../../components/PrototypePins/PrototypePinsReview'
 import { draftCandidates, shownDraft } from './prototypeDraft'
+import { checkoutPrototype } from './prototype-fixtures'
 import type { ProjectDocument } from '../../api/types'
 import type { ProjectJob } from '../../api/projectTypes'
 import type { PrototypeDraft } from '../../api/prototypeDraftSchema'
@@ -30,11 +31,8 @@ const submitPrototypePin = vi.hoisted(() => vi.fn<(formId: string, body: unknown
 const fetchApi = vi.hoisted(() => vi.fn<(endpoint: string) => Promise<unknown>>())
 vi.mock('../../api/client', () => ({ api: { submitPrototypePin }, fetchApi }))
 
-const prototype = (n: number, extra: Partial<ProjectDocument> = {}): ProjectDocument => ({
-  document_id: `proto_${String(n)}`, document_type: 'prototype', title: `Checkout (v${String(n)})`,
-  base_title: 'Checkout', version: n, content: '', created_at: `2026-05-0${String(n)}T10:00:00Z`,
-  prototype_url: `https://cdn.example.com/prototypes/p1/proto_${String(n)}.html`, ...extra,
-})
+const prototype = (n: number, extra: Partial<ProjectDocument> = {}): ProjectDocument =>
+  checkoutPrototype(n, { prototype_url: `https://cdn.example.com/prototypes/p1/proto_${String(n)}.html`, ...extra })
 const v1 = prototype(1)
 const v2 = prototype(2)
 const otherSeries = prototype(9, { document_id: 'other_9', title: 'Onboarding (v9)', base_title: 'Onboarding' })

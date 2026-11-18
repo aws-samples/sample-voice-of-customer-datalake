@@ -10,16 +10,14 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import PrototypeBackButton from './PrototypeBack'
 import { backTarget } from './documentEdit'
+import { checkoutPrototype } from './prototype-fixtures'
 import type { ProjectDocument } from '../../api/types'
 import { ApiError } from '../../lib/errors'
 
 const restoreDocumentVersion = vi.hoisted(() => vi.fn<(projectId: string, documentId: string, versionId: string, editId: string) => Promise<ProjectDocument | null>>())
 vi.mock('../../api/projectsApi', () => ({ projectsApi: { restoreDocumentVersion } }))
 
-const prototype = (n: number, extra: Partial<ProjectDocument> = {}): ProjectDocument => ({
-  document_id: `proto_${String(n)}`, document_type: 'prototype', title: `Checkout (v${String(n)})`,
-  base_title: 'Checkout', version: n, content: '', created_at: `2026-05-0${String(n)}T10:00:00Z`, ...extra,
-})
+const prototype = checkoutPrototype
 const v1 = prototype(1)
 const v2 = prototype(2)
 const v3 = prototype(3)

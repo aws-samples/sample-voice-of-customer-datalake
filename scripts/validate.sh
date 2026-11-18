@@ -208,6 +208,8 @@ def tsc  frontend,frontend-static           "node: frontend i18n audit"         
 def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs scripts/mock-edit-stamp.test.mjs scripts/mock-reprocess.test.mjs scripts/mock-methodology.test.mjs scripts/mock-users.test.mjs scripts/mock-workspaces.test.mjs scripts/mock-document-revise.test.mjs scripts/mock-prototype-feedback.test.mjs && node scripts/check-mock-coverage.mjs'
 # Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA imports the modules it
 # shares with the stream Lambda through @stream (frontend/streamSource.ts), so there is no mirror to exclude.
+# .jscpd.json skips import lines and, its last three ignorePattern entries, a spec's vi.mock(...) statements: like imports
+# they declare its module doubles and must stay in the spec (vi.mock is hoisted), so neighbouring specs repeat them.
 def lint repo                               "jscpd"                              'cd "$ROOT" && npx jscpd --fail-on-empty --reporters console --silent'
 # GitHub Actions workflows: pinned actionlint (+ shellcheck) and zizmor --offline, every finding fails.
 def lint repo                               "actions: actionlint + zizmor"       'cd "$ROOT" && node --test scripts/actions-lint.test.mjs && bash scripts/actions-lint.sh'
