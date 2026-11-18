@@ -443,9 +443,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.51.00: a run's direction, a create-only DIRECTION#v<n> row with META's version, one transaction.
     'lambda/engineering/board/directions.py': (3, {'transact': 1}),
     'lambda/engineering/connectors/cache.py': (3, {'put_object': 2}),
+    # (also the deployment's GitHub Apps, 7.45.00: an App's row with its audit row in the connections' partition,
+    # written through connections.put_with_audit since 7.54.00)
     'lambda/engineering/connectors/connections.py': (3, {'meta.client': 3, 'transact': 3}),
-    # The deployment's GitHub Apps (7.45.00): an App's row with its audit row, in the connections' partition.
-    'lambda/engineering/connectors/github_apps.py': (3, {'meta.client': 1, 'transact': 1}),
     # The broker's one Table call is voc-aggregates: the starter's way of working (USERFLAGS#{sub}, shared/ai_mode.py),
     # a person's flag, the deployment's on this branch; when the dial moves per workspace, the push gate moves with it.
     'lambda/engineering/connectors/handler.py': (3, {'Table': 1}),
@@ -457,9 +457,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/engineering/knowledge/tenets.py': (3, {'transact': 2}),
     # 7.50.00: Learn's spend, its LEARN#spend row in the run's partition with its spend ledger rows, one transaction
     # (the engineering agents' own table, the deployment's like the sessions' metering until agents move: 3g3).
+    # (7.53.00: also the scheduled cross-run Learn pass's spend, its flow's SPEND# row and the ledger in one
+    # transaction, through budget.spent_with_ledger since 7.54.00)
     'lambda/engineering/learning/budget.py': (3, {'meta.client': 1, 'transact': 1}),
-    # (7.53.00: the scheduled cross-run Learn pass's spend, its flow's SPEND# row and the ledger in one transaction)
-    'lambda/engineering/learning/cross_run.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/engineering/rows.py': (3, {'transact': 1}),
     'lambda/engineering/runtime/delivery.py': (3, {'meta.client': 1, 'transact': 1}),
     # The readiness probe's create-only put of its one object (7.50.00, ws/default/_readiness/probe.json).
