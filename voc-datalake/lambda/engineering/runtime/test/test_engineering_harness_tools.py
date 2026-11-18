@@ -297,3 +297,16 @@ class TestProgressLine:
         from engineering.runtime.harness.tools import progress_line
         assert progress_line('  ran the gate:  3 checks ') == 'ran the gate: 3 checks'
         assert progress_line('\n \t') == 'working'
+
+
+class TestClaudeThinkingIsShown:
+    """Claude's thinking reaches the transcript as text (Bedrock's default display is ``omitted``)."""
+
+    def test_claude_models_ask_for_summarized_thinking(self):
+        from engineering.runtime.harness.converse_loop import model_request_fields
+        fields = model_request_fields('global.anthropic.claude-sonnet-5-5')
+        assert fields == {'additionalModelRequestFields': {'thinking': {'type': 'adaptive', 'display': 'summarized'}}}
+
+    def test_other_models_get_no_extra_fields(self):
+        from engineering.runtime.harness.converse_loop import model_request_fields
+        assert model_request_fields('amazon.nova-pro-v1:0') == {}

@@ -44,6 +44,16 @@ def nudge(role: str) -> str:
     return COORDINATOR_NUDGE if role == 'coordinator' else NUDGE
 
 
+#: Claude on Bedrock thinks adaptively by default but sends its thinking with an empty text (``display: omitted``):
+#: ``summarized`` makes the run's thread show what the agent thought (the transcript keeps it; checked live on
+#: global.anthropic.claude-sonnet-5-5, 2026-11-18: the same reasoning block, now with its summary's text).
+CLAUDE_THINKING: Final = {'thinking': {'type': 'adaptive', 'display': 'summarized'}}
+
+
+def model_request_fields(model_id: str) -> dict[str, Any]:
+    """The Converse call's extra fields for ``model_id``: Claude's visible thinking, nothing for other models."""
+    return {'additionalModelRequestFields': CLAUDE_THINKING} if 'anthropic.claude' in model_id else {}
+
 def system_prompt(context: AgentContext, skill: Skill | None) -> str:
     """The platform's rules with the session's fence (the bundle's, as the board served them with the skill, else
     the harness's own: no skill version can drop them), then the skill's instructions and examples (``skill``: the
@@ -153,7 +163,8 @@ class ConverseAdapter:
         started = time.monotonic()
         answer = self._client.converse(modelId=self._model_id, messages=messages,
                                        system=[{'text': system_prompt(session.context, session.tools.skill)}],
-                                       toolConfig=tools, inferenceConfig={'maxTokens': MAX_TOKENS})
+                                       toolConfig=tools, inferenceConfig={'maxTokens': MAX_TOKENS},
+                                       **model_request_fields(self._model_id))
         usage = answer.get('usage', {})
         tokens_in, tokens_out = int(usage.get('inputTokens', 0)), int(usage.get('outputTokens', 0))
         session.context.status.add_tokens(self._model_id, tokens_in, tokens_out)
