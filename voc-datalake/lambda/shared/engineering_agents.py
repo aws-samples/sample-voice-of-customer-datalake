@@ -19,6 +19,10 @@ APP_TOKENS_FUNCTION_ENV: Final = 'ENGINEERING_APP_TOKENS_FUNCTION'
 ISSUES_CONFIG_FUNCTION_ENV: Final = 'ENGINEERING_ISSUES_CONFIG_FUNCTION'
 #: voc-engineering's name, where the module is on (the Agents API, the broker, the agents' heartbeat: 7.47.00).
 ENGINEERING_TABLE_ENV: Final = 'ENGINEERING_TABLE'
+#: An engineering run's statuses (engineering/runtime/runs.py: its two live ones and the three it ends in), as the
+#: runs list's filter takes them: the Agents API's route (shared/agents_engineering_run_routes.py) and the MCP tool's
+#: (shared/mcp_global_tools_engineering.py).
+RUN_STATUSES: Final = ('active', 'needs_human', 'done', 'failed', 'stopped')
 
 
 def engineering_agents_on() -> bool:

@@ -13,11 +13,13 @@ from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, CliNotOffered, ch
 from engineering.runtime.harness.converse_loop import MAX_INPUT_TOKENS, SYSTEM_PROMPT, ConverseAdapter, system_prompt
 from engineering.runtime.harness.interface import PAUSED_EXIT_CODE
 from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage
-from engineering.runtime.harness.skills import FIXER, platform_rules
+from engineering.runtime.harness.skills import SKILLS, platform_rules
 from engineering.runtime.harness.tool_server import SessionFiles, answer, serve
 from engineering.runtime.harness.tools import ToolResult
 from engineering.runtime.liveness import PAUSED_EXIT_CODE as SUPERVISOR_PAUSED
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, opened, use, world
+
+FIXER = SKILLS['fixer']
 
 
 def test_the_harness_pauses_with_the_code_the_supervisor_reads_as_paused():

@@ -21,7 +21,6 @@ from engineering.knowledge.store import PackVersion
 from engineering.knowledge.understand import understand_package
 from engineering.learning.scorecard import ScorecardStore, VersionCard
 from engineering.runtime import runs, unit_runner
-from engineering.runtime.harness import skills
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
 from engineering.thread_items import is_thread_item
 
@@ -94,21 +93,6 @@ AgentMemoryStore.agent_memory_history
 AgentMemoryStore.pending_agent_memories
 AgentMemoryStore.recall_for_task
 Recall.left_out
-
-# The shipped skills by role and the models they name (7.53.00: read from the compiled bundle). Production reads
-# ``SKILLS`` by role; the specs, the benchmark's and the board's fixtures name the records themselves. They stay as
-# long as the specs read them so.
-skills.HAIKU
-skills.SONNET
-skills.OPUS
-skills.MAPPER
-skills.HUNTER
-skills.FIXER
-skills.BUILDER
-skills.COMMIT_REVIEWER
-skills.PR_AUTHOR
-skills.PR_REVIEWER
-skills.FINAL_GO
 
 # Set and read by the standard library, never by name in this code: socketserver's per-request threads and its
 # admission hook (unit_runner.UnixServer), and tarfile's member fields (the Kiro session state's archive, written

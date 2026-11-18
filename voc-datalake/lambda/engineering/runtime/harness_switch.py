@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from typing import Final
 
 from engineering.connectors.identity import AGENT_ROLES
-from engineering.runtime.harness.kiro import KEY_PARAMETER_RE, KIRO_CLI_VERSION
+from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CLI_VERSION
 from engineering.runtime.interface import RuntimeRefused
 
 HARNESS_ENV: Final = 'ENGINEERING_HARNESS'

@@ -62,17 +62,15 @@ from typing import Any, Final
 
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.acp import AcpClient, AcpError, AcpTimeout, Notification
-from engineering.runtime.harness.cli import TOOL_SERVER, sync_notes
+from engineering.runtime.harness.cli import PATH, TOOL_SERVER, sync_notes
 from engineering.runtime.harness.converse_loop import NUDGE, opening, system_prompt
 from engineering.runtime.harness.interface import AgentSession, Ending
+from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE
 from engineering.runtime.harness.seed import seed_prefix
 from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 from engineering.runtime.harness.tools import DIRECTION, MAX_RUN_SECONDS, STEER
 from engineering.runtime.harness.transcript import tool_kind
 
-#: The one kiro-cli the images install (engineering-images/common/install-kiro.sh, at its published sha256), and the
-#: version the harness accepts (``check``; the launch's argv names it: runtime/harness_switch.py).
-KIRO_CLI_VERSION: Final = '3.4.0'
 KIRO_BINARY: Final = '/usr/local/bin/kiro-cli'
 #: How it is started: ACP on stdio, the v3 engine (whose agents are chosen per session, ``session/set_config_option``).
 KIRO_ARGV: Final = ('acp', '--agent-engine=v3')
@@ -80,8 +78,6 @@ KIRO_ARGV: Final = ('acp', '--agent-engine=v3')
 KIRO_AGENTS_DIR: Final = '/opt/voc/orchestration/kiro-agents'
 #: The variable kiro-cli reads its API key from (headless, no login: checked with kiro-cli 3.3.0 and 3.4.0).
 KEY_ENV: Final = 'KIRO_API_KEY'
-#: The deployment's key parameter: ``/voc/engineering/_kiro/api-key``, or ``/<prefix>-voc/…`` on a prefixed one.
-KEY_PARAMETER_RE: Final = re.compile(r'/(?:[a-z0-9][a-z0-9-]{0,40}-)?voc/engineering/_kiro/api-key\Z')
 #: The isolated Kiro home and its working directory, under the agent's home (the same path in every session of the
 #: agent, so a restored session's workspace is the one it was saved in: Kiro keys its sessions by that directory).
 KIRO_ROOT: Final = os.path.join('.voc', 'kiro')
@@ -121,7 +117,6 @@ CONTINUE_LOADED: Final = ('You are continuing this task in a new session: your c
 CONTINUE_LIMIT: Final = 'Continue with your task where you stopped.'
 #: The environment kiro-cli gets from the harness's own (its proxy: the agent's, the session's one way out).
 PROXY_VARIABLES: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy')
-PATH: Final = '/usr/local/bin:/usr/bin:/bin'
 
 
 class KiroNotOffered(RuntimeError):

@@ -20,7 +20,6 @@ instructions and its role's tools.
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from functools import cache
@@ -146,29 +145,20 @@ class Skill:
             raise SkillError(f'a skill record lacks {error}') from error
 
 
-#: The models of the doc's model table (docs/autonomous-engineering.md, "Models"), as the deployment's allowlist spells
-#: them (shared/model_config.py ALLOWED_MODEL_IDS; a test holds them to it: this module ships without it).
-HAIKU: Final = 'global.anthropic.claude-haiku-5-5'
-SONNET: Final = 'global.anthropic.claude-sonnet-5-5'
-OPUS: Final = 'global.anthropic.claude-opus-5-5'
-
 #: The compiled orchestration bundle (``templates/orchestration`` compiled: ``orchestration/compile.py``) the harness
 #: takes its shipped skills and the platform's rules from, so they are the templates' and nothing else (7.53.00: one
 #: source of truth; before, each role's record was written out here too, and they drifted). The places, the first
-#: that exists: ``VOC_ORCHESTRATION_BUNDLE``; an image's copy beside its engineering package
-#: (``/opt/voc/orchestration/bundle.json``, every Dockerfile copies it there); the Lambdas' copy
-#: (``lambda/shared/orchestration_bundle.json``, byte for byte the same: ``orchestration:validate`` holds both to a fresh
-#: compile). A harness with none of them refuses to start.
-BUNDLE_ENV: Final = 'VOC_ORCHESTRATION_BUNDLE'
+#: that exists: an image's copy beside its engineering package (``/opt/voc/orchestration/bundle.json``, every
+#: Dockerfile copies it there); the Lambdas' copy (``lambda/shared/orchestration_bundle.json``, byte for byte the same:
+#: ``orchestration:validate`` holds both to a fresh compile). A harness with neither refuses to start.
 _PACKAGE_ROOT: Final = Path(__file__).resolve().parents[3]
 BUNDLE_PATHS: Final = (_PACKAGE_ROOT / 'orchestration' / 'bundle.json',
                        _PACKAGE_ROOT / 'shared' / 'orchestration_bundle.json')
 
 
 def bundle_path() -> Path:
-    """The bundle this harness reads (``BUNDLE_PATHS``, ``BUNDLE_ENV`` first)."""
-    named = os.environ.get(BUNDLE_ENV)
-    for path in ((Path(named),) if named else ()) + BUNDLE_PATHS:
+    """The bundle this harness reads (``BUNDLE_PATHS``' first that exists)."""
+    for path in BUNDLE_PATHS:
         if path.is_file():
             return path
     raise SkillError(f'no orchestration bundle at {", ".join(str(path) for path in BUNDLE_PATHS)}')
@@ -210,18 +200,6 @@ def platform_rules(fence: str, text: str = '') -> str:
 #: The shipped skill of each role that has one: every launchable role (the coach is never launched as an agent), the
 #: bundle's (7.53.00; ``test_engineering_role_skills.py`` holds each to the bundle's record).
 SKILLS: Final[Mapping[str, Skill]] = shipped_skills()
-COORDINATOR: Final = SKILLS['coordinator']
-MAPPER: Final = SKILLS['mapper']
-UNDERSTANDER: Final = SKILLS['understander']
-HUNTER: Final = SKILLS['hunter']
-FIXER: Final = SKILLS['fixer']
-BUILDER: Final = SKILLS['builder']
-COMMITTER: Final = SKILLS['committer']
-COMMIT_REVIEWER: Final = SKILLS['commit-reviewer']
-GATE_RUNNER: Final = SKILLS['gate-runner']
-PR_AUTHOR: Final = SKILLS['pr-author']
-PR_REVIEWER: Final = SKILLS['pr-reviewer']
-FINAL_GO: Final = SKILLS['final-go']
 
 
 #: The harness's entry in every image (engineering-images/common/harness.py).

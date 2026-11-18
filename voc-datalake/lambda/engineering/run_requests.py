@@ -31,9 +31,9 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from engineering.connectors.identity import WORKSPACE
 from engineering.rows import string_attr
 
-WORKSPACE: Final = 'default'
 PK: Final = f'WS#{WORKSPACE}#RUNREQ#queue'
 SK_PREFIX: Final = 'REQ#'
 PENDING: Final = 'pending'
@@ -49,7 +49,6 @@ MAX_PENDING_PER_TOKEN: Final = 3
 MAX_LISTED: Final = 100
 MAX_NOTE: Final = 500
 MAX_OUTCOME: Final = 300
-_AT: Final = '%Y-%m-%dT%H:%M:%SZ'
 
 
 class RequestError(Exception):
@@ -77,7 +76,7 @@ def _key(request_id: str) -> dict[str, Any]:
 
 
 def _stamp(at: datetime) -> str:
-    return at.strftime(_AT)
+    return at.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def _conditional_failure(exc: ClientError) -> bool:

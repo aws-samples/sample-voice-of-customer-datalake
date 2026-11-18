@@ -67,7 +67,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared import engineering_agent_runs as eng_runs
 from shared.agents_store import get_agents_table
 from shared.api import validate_int
-from shared.engineering_agents import engineering_agents_on
+from shared.engineering_agents import RUN_STATUSES, engineering_agents_on
 from shared.exceptions import (
     ConflictError,
     NotFoundError,
@@ -75,8 +75,8 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
-from shared.project_access import Caller, claims_from_event, delegated_engineering_allowed, mcp_via
-from shared.project_gate import caller_from_event, require_admin_caller
+from shared.project_access import Caller, claims_from_event, mcp_via
+from shared.project_gate import caller_from_event, engineering_caller
 from shared.request_body import json_object_body
 from shared.route_answers import json_response as _json
 
@@ -87,8 +87,6 @@ AGENT_NOT_FOUND: Final = 'No such agent in this run'
 UNREADABLE: Final = 'the run could not be read: retry'
 #: A month of the runs list, ``yyyy-mm``.
 _MONTH: Final = re.compile(r'20[0-9]{2}-(?:0[1-9]|1[0-2])\Z')
-#: A run's statuses (runtime/runs.py: its two live ones and the three it ends in).
-RUN_STATUSES: Final = ('active', 'needs_human', 'done', 'failed', 'stopped')
 RESTART_MODES: Final = ('resume', 'restart')
 RESTART_BASES: Final = ('same', 'head')
 RESTART_FIELDS: Final = frozenset({'mode', 'agents', 'base', 'confirm'})
@@ -112,14 +110,9 @@ def _caller() -> Caller:
 
 
 def _engineering_caller(op: str | None = None) -> Caller:
-    """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
-    operation (never an admin: see the module's header); 403 for anyone else."""
-    caller = _caller()
-    if op is not None and caller.delegated and not caller.agent_id and delegated_engineering_allowed(
-            claims_from_event(app.current_event.raw_event), op):
-        return caller
-    require_admin_caller(caller)
-    return caller
+    """An administrator acting for themselves, or ``op``'s MCP tool (never an admin: see the module's header;
+    ``project_gate.engineering_caller``)."""
+    return engineering_caller(app.current_event.raw_event, op)
 
 
 
@@ -342,10 +335,6 @@ def get_engineering_assertions(run_id: str):
     return _json(200, _found(_read(lambda: views.assertions(run_id))))
 
 
-#: The run's row naming the failures its retrospective took to the coach (engineering/learning/loop.py CHOSEN_SK).
-RETRO_CHOSEN_SK: Final = 'RETRO#coach'
-
-
 def _failure_view(failure: Any, display: Callable[[str], str]) -> dict[str, Any]:
     attempt = failure.attempt
     return {'key': failure.key, 'task_id': attempt.task.task_id, 'attempt': attempt.attempt, 'role': attempt.role,
@@ -381,6 +370,7 @@ def get_engineering_retrospective(run_id: str):
     ``engineering_run_analysis``'s (7.53.00)."""
     table, bucket = _tables('run_analysis')
     _id(run_id, RUN_NOT_FOUND)
+    from engineering.learning.loop import CHOSEN_SK
     from engineering.learning.records import RunRecordReader
     from engineering.learning.retrospective import build_retrospective
     from engineering.rows import get_row, run_pk, run_rows
@@ -394,7 +384,7 @@ def get_engineering_retrospective(run_id: str):
     record = _found(_read(lambda: reader.read('default', run_id)))
     retro = build_retrospective(record)
     chosen = _read(lambda: get_row(client, table, {'pk': {'S': run_pk('default', run_id)},
-                                                   'sk': {'S': RETRO_CHOSEN_SK}}))
+                                                   'sk': {'S': CHOSEN_SK}}))
     learned = _read(lambda: run_rows(client, table, 'default', run_id, 'LEARNED#'))
     keys = (chosen or {}).get('keys', {}).get('L') if chosen is not None else None
     meta = _read(lambda: get_row(client, table, {'pk': {'S': run_pk('default', run_id)}, 'sk': {'S': 'META'}}))

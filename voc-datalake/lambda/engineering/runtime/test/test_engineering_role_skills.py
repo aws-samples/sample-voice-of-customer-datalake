@@ -42,7 +42,9 @@ WRITERS = {'committer': 'push_commit', 'pr-author': 'open_draft_pr', 'pr-reviewe
            'understander': 'label_issue'}
 #: The doc's model table (docs/autonomous-engineering.md, "Models"): map shards, classification, cheap checks on
 #: Haiku; fixing, building, reviewing on Sonnet; the final go on Opus (the coordinator's own record predates it).
-MODELS = {'mapper': skills.HAIKU, 'understander': skills.HAIKU, 'gate-runner': skills.HAIKU, 'final-go': skills.OPUS}
+HAIKU, SONNET, OPUS = ('global.anthropic.claude-haiku-5-5', 'global.anthropic.claude-sonnet-5-5',
+                       'global.anthropic.claude-opus-5-5')
+MODELS = {'mapper': HAIKU, 'understander': HAIKU, 'gate-runner': HAIKU, 'final-go': OPUS}
 CODE_RUNNING = {spec.name for spec in CODE_TOOLS} | {'run_gate'}
 #: A gate pack of the tests' own (``run_gate``'s plan): a Python root, its setup step and its one test step; the bug
 #: hunt's end-to-end test takes the pack with its test step alone.
@@ -106,8 +108,8 @@ def test_each_skill_is_a_record_the_skills_store_keeps_on_an_allowed_model_run_b
     stored = store_model.Skill.from_record(json.loads(json.dumps(skill.to_record())))
     assert (stored.name, stored.content.harness, skill.model in ALLOWED_MODEL_IDS) == (role, 'converse', True)
     assert skills.Skill.from_record(skill.to_record()) == skill
-    assert skill.model == MODELS.get(role, skills.SONNET)
-    assert {skills.HAIKU, skills.SONNET, skills.OPUS} <= ALLOWED_MODEL_IDS
+    assert skill.model == MODELS.get(role, SONNET)
+    assert {HAIKU, SONNET, OPUS} <= ALLOWED_MODEL_IDS
 
 
 def test_the_platforms_rules_keep_tenet_3_and_read_every_outside_text_as_data():
@@ -131,19 +133,18 @@ def test_the_shipped_skills_and_rules_are_the_bundles_one_source_of_truth():
     assert skills.shipped_skills(image_copy) == dict(skills.SKILLS)
     assert skills.bundled_platform_rules(image_copy) == skills.bundled_platform_rules() == bundle.platform_rules()
     assert skills.platform_rules('f00d').startswith(bundle.platform_rules().strip())
-    assert (skills.SKILLS['coordinator'], skills.SKILLS['fixer']) == (skills.COORDINATOR, skills.FIXER)
     # (7.51.00's steering tools, which the shipped records lacked while they were written out here)
-    assert {'relay_steering', 'set_direction'} <= set(skills.COORDINATOR.tool_policy)
+    assert {'relay_steering', 'set_direction'} <= set(skills.SKILLS['coordinator'].tool_policy)
 
 
 def test_the_harness_reads_the_image_copy_where_the_image_puts_it(tmp_path, monkeypatch):
     image = tmp_path / 'bundle.json'
     image.write_text((Path(__file__).resolve().parents[4] / 'templates' / 'orchestration' / 'bundle.json').read_text())
-    monkeypatch.setenv(skills.BUNDLE_ENV, str(image))
-    assert skills.bundle_path() == image
-    # (an image's engineering package is /opt/voc/engineering: its bundle /opt/voc/orchestration/bundle.json)
+    # (an image's engineering package is /opt/voc/engineering: its bundle /opt/voc/orchestration/bundle.json, read
+    # before the Lambdas' copy)
     assert skills.BUNDLE_PATHS[0].parts[-2:] == ('orchestration', 'bundle.json')
-    monkeypatch.setenv(skills.BUNDLE_ENV, str(tmp_path / 'missing.json'))
+    monkeypatch.setattr(skills, 'BUNDLE_PATHS', (tmp_path / 'missing.json', image))
+    assert skills.bundle_path() == image
     monkeypatch.setattr(skills, 'BUNDLE_PATHS', (tmp_path / 'none.json',))
     with pytest.raises(skills.SkillError, match='no orchestration bundle'):
         skills.bundle_path()
@@ -185,10 +186,10 @@ def test_a_tool_beyond_the_role_is_refused_at_the_call_too(tmp_path):
 def test_a_candidate_skill_runs_with_its_own_tools_and_never_for_another_role(tmp_path):
     w = world(tmp_path, role='fixer')
     narrower = skills.Skill(name='fixer', version=2, instructions='Fix it.', examples=(),
-                            tool_policy=('read_file', 'finish'), model=skills.SONNET, harness='converse')
+                            tool_policy=('read_file', 'finish'), model=SONNET, harness='converse')
     assert [spec.name for spec in ToolBox(w.session.context, narrower).specs] == ['read_file', 'finish']
     with pytest.raises(ValueError, match='not a skill of role fixer'):
-        ToolBox(w.session.context, skills.HUNTER)
+        ToolBox(w.session.context, skills.SKILLS['hunter'])
 
 
 def test_the_harness_keeps_its_readers_values():
@@ -287,7 +288,7 @@ def _record(w: Any, key: str) -> gate_record.GateRecord:
 
 def test_the_final_gos_record_names_its_own_session_and_is_the_one_the_go_ledger_reads(tmp_path):
     w = world(tmp_path, role='final-go')
-    w.session.context.agent_id, w.session.context.model = 'final-go-1', skills.OPUS
+    w.session.context.agent_id, w.session.context.model = 'final-go-1', OPUS
     w.session.context.gate_tree = w.runner.tree = TREE
     # Whatever the model sends beside its verdict, the final go section is the session's own, and the tree the one
     # the harness hashed (a tree the model types is not taken).
@@ -300,7 +301,7 @@ def test_the_final_gos_record_names_its_own_session_and_is_the_one_the_go_ledger
     record = _record(w, key)
     assert record.final_go is not None
     assert (record.verdict, record.tree_hash, record.packs, record.final_go.agent, record.final_go.model_id,
-            record.final_go.go, record.final_go.reasons) == ('GO', TREE, ('python-ts',), 'final-go-1', skills.OPUS,
+            record.final_go.go, record.final_go.reasons) == ('GO', TREE, ('python-ts',), 'final-go-1', OPUS,
                                                              True, ('checked',))
     task = Task(task_id='t-go', role='final-go', state='done', title='Final go', spec='{}', spec_hash='h', depth=0,
                 priority=1, attempt=1, lease_agent='final-go-1', result_keys=(key,))
@@ -308,12 +309,12 @@ def test_the_final_gos_record_names_its_own_session_and_is_the_one_the_go_ledger
     again = world(tmp_path / 'again', role='final-go')
     again.session.context.gate_tree = again.runner.tree = TREE
     for wrong in ({'verdict': 'STOPPED', 'reasons': ['r']}, {'verdict': 'GO'}, {'verdict': 'GO', 'reasons': ['x' * 401]}):
-        again.session.context.model = skills.OPUS
+        again.session.context.model = OPUS
         assert again.session.tools.call('write_gate_record', wrong).error, wrong
     again.session.context.model = ''
     assert 'no model' in again.session.tools.call('write_gate_record', {'verdict': 'GO', 'reasons': ['r']}).text
     # A task that names no submitted patch judged no tree: no GO, whatever the model types for one.
-    again.session.context.model, again.session.context.gate_tree = skills.OPUS, ''
+    again.session.context.model, again.session.context.gate_tree = OPUS, ''
     assert 'names none' in again.session.tools.call('write_gate_record', {'verdict': 'GO', 'tree_hash': TREE,
                                                                           'reasons': ['r']}).text
     assert again.store.objects == {}
@@ -375,7 +376,7 @@ def test_the_gate_runners_checks_are_the_ones_the_harness_saw_and_a_go_needs_the
 def test_a_go_is_refused_when_the_checkout_drifted_from_the_judged_tree_and_a_no_go_still_written(tmp_path,
                                                                                                     role: str):
     w = world(tmp_path, role=role)
-    w.session.context.gate_tree, w.session.context.model = TREE, skills.OPUS
+    w.session.context.gate_tree, w.session.context.model = TREE, OPUS
     w.session.context.checks.append({'name': 'pytest -q', 'status': 'pass'})
     w.session.context.gate_ran = True   # (a gate runner's GO is run_gate's)
     # A check changed a file: the checkout's tree, hashed again by the harness's own git, is another one.

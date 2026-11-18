@@ -59,6 +59,7 @@ from engineering.runtime.interface import (
 from engineering.runtime.launcher import RENEW_MARGIN_SECONDS, Launcher
 from engineering.runtime.liveness import ended, judge
 from engineering.runtime.ports import Board, Bus, Lease, RunControl
+from engineering.runtime.run_signals import AGENT_SIGNALS, RESTART_STARTS
 from engineering.runtime.sessions import (
     LIVE_STATUSES,
     WITH_SESSION,
@@ -80,10 +81,6 @@ CHECKOUT_CACHE_POINT: Final = 'checkout_cache'
 CHECKOUT_FAILED_POINT: Final = 'checkout_failed'
 #: How much of a failed checkout command's stderr its reason quotes, on one line.
 REASON_STDERR_CHARACTERS: Final = 300
-SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now', 'restart'})
-#: Where a restarted agent starts again (7.51.00): its newest checkpoint, or afresh (its task re-posted at the next
-#: attempt, which the coordinator launches a new agent for).
-RESTART_FROM: Final = frozenset({'checkpoint', 'fresh'})
 #: The reason a fresh restart's re-post records (the task's history row).
 RESTARTED: Final = 'restarted'
 #: Where a held agent goes once it has paused (or crashed while a pause was asked of it).
@@ -895,7 +892,7 @@ class Supervisor:
         state (its current status; a final one means nothing to send again), or, given the ``attempt`` of the task
         the caller saw on that one agent, when the agent works on another one (``stale``: nothing done). A Stop now
         is never stale: a person's kill switch reaches whatever attempt the agent is on."""
-        if kind not in SIGNALS:
+        if kind not in AGENT_SIGNALS:
             raise RuntimeRefused(f'unknown signal {kind!r}')
         if kind == 'restart':
             self._may_restart(run_id, agent_id, restart_from, now)
@@ -937,8 +934,8 @@ class Supervisor:
         del now
         if agent_id is None:
             raise RuntimeRefused('a restart names one agent (agent_id): restart an ended run as a child run instead')
-        if restart_from not in RESTART_FROM:
-            raise RuntimeRefused(f'a restart is from one of {sorted(RESTART_FROM)}')
+        if restart_from not in RESTART_STARTS:
+            raise RuntimeRefused(f'a restart is from one of {sorted(RESTART_STARTS)}')
         if restart_from == 'fresh' and agent_id.startswith('coordinator-'):
             raise RuntimeRefused('the coordinator plans the run: it restarts from its checkpoint, never afresh')
         if self.control.stop_requested(run_id):

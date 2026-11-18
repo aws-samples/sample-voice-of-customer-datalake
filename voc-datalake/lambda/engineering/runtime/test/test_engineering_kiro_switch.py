@@ -16,14 +16,17 @@ from engineering.readiness import CHECK_IDS, REQUIRED, ReadFailed, SandboxSeen, 
 from engineering.runtime import egress, harness_switch, sandbox, unit_runner
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness import seed
-from engineering.runtime.harness.kiro import KIRO_CLI_VERSION, KiroAcp
-from engineering.runtime.harness.skills import FIXER, harness_argv
+from engineering.runtime.harness.kiro import KiroAcp
+from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION
+from engineering.runtime.harness.skills import SKILLS, harness_argv
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.restart import _kiro_state
 from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID
 from engineering.runtime.test.test_engineering_harness_main import _ports
 from engineering.runtime.test.test_engineering_images import installed
 from engineering.test.test_readiness import Ports as ReadyPorts
+
+FIXER = SKILLS['fixer']
 
 IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
 PARAMETER = '/voc/engineering/_kiro/api-key'

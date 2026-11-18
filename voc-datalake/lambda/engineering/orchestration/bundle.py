@@ -2,13 +2,12 @@
 
 ``bundle.json`` is compiled from voc-datalake/templates/orchestration (``compile.py``) and committed; the Lambdas ship
 its copy, ``lambda/shared/orchestration_bundle.json`` (beside this package's tree: ``BUNDLE_FILE``), and an agent
-image keeps one where ``VOC_ORCHESTRATION_BUNDLE`` says. ``validate`` holds both to a fresh compile, so what a reader
-gets here is what the templates say.
+image keeps one at ``/opt/voc/orchestration/bundle.json`` (its harness names it: ``harness/skills.py``
+``BUNDLE_PATHS``). ``validate`` holds both to a fresh compile, so what a reader gets here is what the templates say.
 """
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
@@ -17,8 +16,6 @@ from typing import Any, Final
 SCHEMA: Final = 'voc-orchestration-bundle/1'
 #: lambda/shared/orchestration_bundle.json (this file is lambda/engineering/orchestration/bundle.py).
 BUNDLE_FILE: Final = Path(__file__).resolve().parents[2] / 'shared' / 'orchestration_bundle.json'
-#: Where an image keeps its copy, when it is not beside the package.
-BUNDLE_ENV: Final = 'VOC_ORCHESTRATION_BUNDLE'
 
 
 class BundleError(ValueError):
@@ -34,8 +31,8 @@ def _read(path: Path) -> Mapping[str, Any]:
 
 
 def load(path: Path | None = None) -> Mapping[str, Any]:
-    """The bundle (read once per path): ``path``, the image's (``BUNDLE_ENV``), or the Lambdas' copy."""
-    return _read(path or Path(os.environ.get(BUNDLE_ENV) or BUNDLE_FILE))
+    """The bundle (read once per path): ``path``, or the Lambdas' copy."""
+    return _read(path or BUNDLE_FILE)
 
 
 def agent(role: str, path: Path | None = None) -> Mapping[str, Any] | None:

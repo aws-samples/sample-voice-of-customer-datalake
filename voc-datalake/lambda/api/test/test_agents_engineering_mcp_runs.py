@@ -21,8 +21,9 @@ from agents_handler_fixtures import ADMIN
 from agents_handler_fixtures import call as _call
 from engineering_run_workspace_fixture import Bus, Lambdas, reached
 
+from engineering.learning.loop import CHOSEN_SK
 from engineering.test import run_workspace_world as world
-from shared.agents_engineering_run_routes import CROSS_RUN_UNAVAILABLE, MCP_STEER_MARK, RETRO_CHOSEN_SK
+from shared.agents_engineering_run_routes import CROSS_RUN_UNAVAILABLE, MCP_STEER_MARK
 from shared.project_access import MCP_ENGINEERING_OPS
 
 BASE = f'/agents/engineering/{world.RUN}'
@@ -163,7 +164,7 @@ def test_the_retrospective_names_the_failures_learn_took_to_the_coach(lambda_con
                                                                      api: tuple[Any, Bus, Lambdas]) -> None:
     built, _, _ = api
     built.client.put_item(TableName=world.TABLE, Item={
-        'pk': {'S': f'WS#default#RUN#{world.ENDED_RUN}'}, 'sk': {'S': RETRO_CHOSEN_SK},
+        'pk': {'S': f'WS#default#RUN#{world.ENDED_RUN}'}, 'sk': {'S': CHOSEN_SK},
         'keys': {'L': [{'S': 'task-x#1#failed'}]}})
     status, answer = _call(lambda_context, 'GET', f'/agents/engineering/{world.ENDED_RUN}/retrospective',
                            claims=mcp('run_analysis'))
@@ -181,9 +182,3 @@ def test_the_retrospective_of_an_unknown_run_or_off_module_is_404(lambda_context
     # 'on' back into os.environ, which every later test of the worker then reads)
     with patch.dict(os.environ, {'ENGINEERING_AGENTS': 'off'}):
         assert _call(lambda_context, 'GET', f'{BASE}/retrospective', claims=mcp('run_analysis'))[0] == 404
-
-
-def test_the_retrospective_is_a_routes_answer_and_the_loop_names_its_row_the_same() -> None:
-    from engineering.learning.loop import CHOSEN_SK
-
-    assert RETRO_CHOSEN_SK == CHOSEN_SK

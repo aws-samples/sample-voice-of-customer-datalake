@@ -69,16 +69,8 @@
       "reason": "the quality gate's reviewer name shape and the workflow editor's copy: shared/ cannot import the engineering package (see REVIEWER_KEYS|REVIEWER_SETTINGS); test_workflow_lockstep.py's pairwise test holds the editor to the gate"
     },
     {
-      "key": "BEDROCK_MODEL_ID|SONNET|_SONNET55::*",
-      "reason": "the platform's last-resort default model, the name of one allowlisted model, and the model the engineering role skills name (runtime/harness/skills.py SONNET): the default moves without the alias table moving, and the harness ships alone in the agents' images without shared/model_config.py, so its copy is held to the allowlist by test_engineering_role_skills.py"
-    },
-    {
-      "key": "HAIKU|_HAIKU55::*",
-      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
-    },
-    {
-      "key": "OPUS|_OPUS55::*",
-      "reason": "the model the engineering role skills name (runtime/harness/skills.py) and its alias in the allowlist (shared/model_config.py): the harness ships alone in the agents' images without shared/, and test_engineering_role_skills.py holds its copy to ALLOWED_MODEL_IDS"
+      "key": "BEDROCK_MODEL_ID|_SONNET55::*",
+      "reason": "the platform's last-resort default model (shared/aws.py) and the name of one allowlisted model (shared/model_config.py): the default moves without the alias table moving"
     },
     {
       "key": "OPEN_ROW_SESSION_SK_PREFIX|ROW_SK_PREFIX::*",
@@ -147,6 +139,10 @@
     {
       "key": "WORKSPACE_ID_RE|_WORKSPACE_ID::lambda/shared/review_share_audience.py,lambda/shared/workspace_ids.py",
       "reason": "the board pool's trigger bundle ships review_share_audience.py without workspace_ids.py, so it spells the workspace id rule itself; lambda/shared/test/test_review_share_routing.py holds the two rules equal, value by value"
+    },
+    {
+      "key": "PENDING::lambda/engineering/run_requests.py,lambda/shared/assist_jobs.py",
+      "reason": "an engineering run request waiting for an administrator (engineering/run_requests.py, 7.53.00) and an assist job its worker has not claimed yet (shared/assist_jobs.py, voc-jobs): the same word for two lifecycles whose states move apart (a request is confirmed, declined or expired; a job runs, then completes or fails)"
     }
   ]
 }

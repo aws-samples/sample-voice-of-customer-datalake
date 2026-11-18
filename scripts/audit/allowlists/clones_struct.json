@@ -71,6 +71,22 @@
       ],
       "name": "_deleted_key",
       "reason": "unrelated: a batch delete's re-sent key, checked to be a DeleteRequest (the workspace layer), and an Exa API key's format check; they only share the nested-get-and-raise shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/agents_handler.py",
+        "voc-datalake/lambda/shared/mcp_global_tools_engineering.py"
+      ],
+      "name": "_run_prd",
+      "reason": "a run's PRD ids checked at each of its two boundaries: the global MCP server's engineering_request_run tool (_prd_arg) answers the model with its own InvalidToolArgument and its id_arg before it calls the Agents API route, which checks the body again with the API's ValidationError and validated_row_id (_run_prd); one shape, each layer's own refusal (7.53.00)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/credentials.py",
+        "voc-datalake/lambda/shared/radar_routing.py"
+      ],
+      "name": "__init__",
+      "reason": "two unrelated time-boxed caches whose constructors only store their settings and an empty dict: the GitHub App keys' and connection credentials' SSM reads (credentials._CachedParameters) and the Radar's brand labels (radar_routing.BrandLabels); nothing to share but the assignments"
     }
   ]
 }

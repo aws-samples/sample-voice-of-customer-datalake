@@ -52,6 +52,9 @@ GATED_CONTEXT: dict[str, object] = {
     # the engineering agents' connector broker, bus and board (lib/stacks/engineering-broker.ts, engineering-bus.ts)
     # and their MicroVM runtime (lib/stacks/engineering-runtime.ts)
     'engineeringAgents': True,
+    # every launchable role on the Kiro harness (7.53.00, lib/stacks/engineering-kiro.ts): the runtime's and the
+    # Agents API's ENGINEERING_KIRO_KEY_PARAMETER and the Kiro key's grants
+    'engineeringHarness': 'kiro',
     'defaultModelId': 'global.anthropic.claude-sonnet-5-5',
     'inboundEmailDomain': 'voc.example.com',
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers

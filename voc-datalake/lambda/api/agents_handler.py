@@ -153,7 +153,7 @@ from shared.logging import logger, tracer
 from shared.plan_canonical import FINGERPRINT_RE
 from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_plan
 from shared.project_access import Caller
-from shared.project_gate import acts_as_admin, caller_from_event, require_admin_caller
+from shared.project_gate import acts_as_admin, caller_from_event, engineering_caller, require_admin_caller
 from shared.request_body import json_object_body
 from shared.request_workspace import request_workspace
 from shared.route_answers import json_response as _json
@@ -1484,14 +1484,8 @@ app.include_router(agents_engineering_knowledge_routes.app)
 
 
 def _engineering_caller(op: str | None = None) -> Caller:
-    """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
-    operation (7.53.00: never an admin, ``project_access.delegated_engineering_allowed``); 403 for anyone else."""
-    caller = _caller()
-    if op is not None and caller.delegated and not caller.agent_id and project_access.delegated_engineering_allowed(
-            project_access.claims_from_event(app.current_event.raw_event), op):
-        return caller
-    require_admin_caller(caller)
-    return caller
+    """An administrator acting for themselves, or ``op``'s MCP tool (``project_gate.engineering_caller``)."""
+    return engineering_caller(app.current_event.raw_event, op)
 
 
 def _engineering_tables(run_id: str, op: str | None = None) -> tuple[str, str]:

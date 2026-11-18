@@ -11,10 +11,12 @@ from engineering.runtime.harness.cli import ClaudeCli
 from engineering.runtime.harness.converse_loop import SYSTEM_PROMPT, ConverseAdapter
 from engineering.runtime.harness.coordinator import LANGUAGES, TASK_ROLES
 from engineering.runtime.harness.ports import HarnessPortNotWired, TaskSummary
-from engineering.runtime.harness.skills import COORDINATOR, SKILLS, Skill, SkillError, platform_rules, skill_label
+from engineering.runtime.harness.skills import SKILLS, Skill, SkillError, platform_rules, skill_label
 from engineering.runtime.interface import MAX_TASK_PATHS
 from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBedrock, opened, use, world
 from shared.model_config import ALLOWED_MODEL_IDS
+
+COORDINATOR = SKILLS['coordinator']
 
 
 @dataclass

@@ -16,7 +16,7 @@ from engineering.runtime import supervisor as supervisor_module
 from engineering.runtime.agentcore import AgentCoreRuntime
 from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.caps import SessionPricing, SessionRates
-from engineering.runtime.harness.skills import COORDINATOR, SKILLS, harness_argv
+from engineering.runtime.harness.skills import SKILLS, harness_argv
 from engineering.runtime.interface import AgentSpec, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, StartReadFailed, meta_key, run_pk
 from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
@@ -35,6 +35,8 @@ from engineering.runtime.test.conftest import (
 from engineering.runtime.test.local_runtime import LocalAgentRuntime
 from engineering.skills.templates import BundleTemplates, bundled
 from shared import aws as shared_aws
+
+COORDINATOR = SKILLS['coordinator']
 
 OTHER_RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 ENDED_RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0EF'

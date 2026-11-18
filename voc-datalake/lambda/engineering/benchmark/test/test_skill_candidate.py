@@ -16,8 +16,12 @@ from engineering.benchmark.cases import ReviewCheck
 from engineering.benchmark.gate import benchmark_run, decide
 from engineering.benchmark.runner import CandidateError, CaseView, patch_paths, run_suite
 from engineering.benchmark.test.fixtures import CASES, DURATION, MONOREPO, REVIEW, SLUG, needs_node
-from engineering.runtime.harness.skills import BUILDER, FIXER, PR_REVIEWER, Skill
+from engineering.runtime.harness.skills import SKILLS, Skill
 from engineering.runtime.test.harness_fakes import FakeBedrock, use
+
+BUILDER = SKILLS['builder']
+FIXER = SKILLS['fixer']
+PR_REVIEWER = SKILLS['pr-reviewer']
 
 
 def known_files(case_id: str, scratch: Path) -> dict[str, str]:

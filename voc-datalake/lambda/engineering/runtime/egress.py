@@ -35,9 +35,10 @@ REGISTRY_HOSTS: Final[dict[str, tuple[str, ...]]] = {
 MAX_EXTRA_HOSTS: Final = 10
 #: The Kiro service, for an agent on the Kiro harness (7.53.00): measured with kiro-cli 3.4.0 and an API key of the
 #: us-east-1 profile, behind a proxy that let only these two through: its model runtime, and its management API (the
-#: model registry a prompt needs; without it a prompt fails ``ModelRegistryUnavailableError``). Everything else it
-#: tries (app.kiro.dev, desktop-release.q.us-east-1.amazonaws.com, the other partitions' and regions' management hosts,
-#: telemetry) was refused and the session worked without it. A key of another Kiro region needs that region's pair.
+#: model registry a prompt needs; without it kiro-cli fails a prompt with "ModelRegistryUnavailableError"). Everything
+#: else it tries (app.kiro.dev, desktop-release.q.us-east-1.amazonaws.com, the other partitions' and regions' management
+#: hosts, telemetry) was refused and the session worked without it. A key of another Kiro region needs that region's
+#: pair.
 KIRO_SERVICE_HOSTS: Final = ('management.us-east-1.kiro.dev', 'runtime.us-east-1.kiro.dev')
 _REGION_RE: Final = re.compile(r'^[a-z]{2}(-[a-z]+)+-\d\Z')
 _BUCKET_RE: Final = re.compile(r'^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\Z')

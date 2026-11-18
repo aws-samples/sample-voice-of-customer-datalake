@@ -19,7 +19,6 @@ from engineering.runtime.harness.acp import AcpClient, AcpError
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.kiro import (
     CONTINUE_LOADED,
-    KIRO_CLI_VERSION,
     KiroAcp,
     KiroNotOffered,
     StateRefused,
@@ -31,6 +30,7 @@ from engineering.runtime.harness.kiro import (
     ssm_key,
     unpack_sessions,
 )
+from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION
 from engineering.runtime.harness.ports import PAUSE, InboxMessage
 from engineering.runtime.harness.tools import STEER
 from engineering.runtime.harness.transcript import Transcript

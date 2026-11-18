@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from shared import mcp_global_tokens as gt
+from shared.engineering_agents import RUN_STATUSES
 from shared.mcp_global_kit import (
     DOMAIN_AGENTS,
     ID_SCHEMA,
@@ -41,8 +42,6 @@ from shared.mcp_global_kit import (
     text_arg,
 )
 
-#: A run's statuses (the runs list route's own, shared/agents_engineering_run_routes.RUN_STATUSES).
-RUN_STATUSES: Final = ('active', 'needs_human', 'done', 'failed', 'stopped')
 MONTH_PATTERN: Final = '^20[0-9]{2}-(0[1-9]|1[0-2])$'
 _MONTH: Final = re.compile(MONTH_PATTERN)
 MAX_RUNS_PAGE: Final = 50

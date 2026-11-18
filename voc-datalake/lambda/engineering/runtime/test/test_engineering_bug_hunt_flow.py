@@ -50,7 +50,7 @@ from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.ports import BrokerRefused
 from engineering.runtime.harness.runner_client import RunnerClient
-from engineering.runtime.harness.skills import COORDINATOR, SKILLS, Skill, harness_argv
+from engineering.runtime.harness.skills import SKILLS, Skill, harness_argv
 from engineering.runtime.test.broker_stub import AgentSessions, FunctionUrl
 from engineering.runtime.test.conftest import BOARD_URL, BROKER_URL, COMMIT, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeRunner, use
@@ -63,6 +63,8 @@ from engineering.skills.templates import BundleTemplates
 from engineering.workspace.store import WorkspaceStore
 from shared.ai_mode import MODE_AI_DRIVEN, ai_mode_key
 from shared.workflow_schema import encode_definition
+
+COORDINATOR = SKILLS['coordinator']
 
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 #: The harness's own session builder (a test points its checkout at a temporary directory).
