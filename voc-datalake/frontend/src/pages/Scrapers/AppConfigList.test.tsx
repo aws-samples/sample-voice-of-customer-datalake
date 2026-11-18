@@ -7,9 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
+import { webReviewsPlugin } from './scrapers-fixtures'
 import AppConfigList from './AppConfigList'
 import { STALE_RUN_MS } from './useAppRun'
-import type { PluginManifest } from '../../plugins/types'
 
 type RunRow = Record<string, unknown>
 const mockGetAppConfigs = vi.fn<(source: string) => unknown>()
@@ -22,14 +22,10 @@ vi.mock('../../api/client', () => ({
   },
 }))
 vi.mock('../../store/configStore', () => configStoreModule())
-/** No Radar brand on these pages: every label lookup finds none. */
-const noBrand = (): string | undefined => void 0
-vi.mock('./useRadarBrands', () => ({ useRadarBrandLabeler: () => noBrand }))
+// No Radar brand on these pages: every label lookup finds none.
+vi.mock('./useRadarBrands', () => import('@test/radarBrandFixtures').then((m) => m.noRadarBrandsModule()))
 
-const plugin: PluginManifest = {
-  id: 'web_reviews', name: 'Web Reviews', icon: 'Web', config: [], enabled: true,
-  hasIngestor: true, hasWebhook: false, hasS3Trigger: false,
-}
+const plugin = webReviewsPlugin()
 const G2 = 'https://www.g2.com/products/example-connect/reviews'
 const GARTNER = 'https://www.gartner.com/reviews/product/example-connect'
 const pages = [

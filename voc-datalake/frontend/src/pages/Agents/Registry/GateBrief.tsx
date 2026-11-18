@@ -13,12 +13,11 @@ import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
-import DocumentSurface from '../../../components/Document/DocumentSurface'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { briefFileName, gateBriefAdapter, useGateBrief } from './gateBriefAdapter'
 import { gateBriefPath, registryPath } from './registryPaths'
-import { neverSaved } from '../documents/readOnly'
+import ReadOnlySurface from '../documents/ReadOnlySurface'
 import type { GateBrief } from '../../../api/engineeringRegistryApi'
 
 /** "From the template · for python, typescript". */
@@ -42,12 +41,9 @@ export function BriefSurface({ brief, variant, headingLevel, open }: Readonly<{
   if (apiErrorStatus(read.error) === 404) return <p className="text-sm text-muted">{t('gates.brief.missing', { id: brief.id })}</p>
   if (read.isError) return <LoadFailed message={t('gates.brief.failed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
   return (
-    <DocumentSurface adapter={gateBriefAdapter(brief.id)} variant={variant} title={briefFileName(brief.path, brief.id)}
+    <ReadOnlySurface adapter={gateBriefAdapter(brief.id)} variant={variant} title={briefFileName(brief.path, brief.id)}
       headingLevel={headingLevel} meta={<BriefMeta packs={read.data?.packs ?? brief.packs} />} stored={read.data} mode="read"
-      compare={null} comments={null} onSaved={neverSaved} fullPath={variant === 'panel' ? gateBriefPath(brief.id) : null}
-      footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+      compare={null} fullPath={variant === 'panel' ? gateBriefPath(brief.id) : null} />
   )
 }
 

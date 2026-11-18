@@ -34,7 +34,7 @@ export function issuesConfigFunctionName(uniqueName: (baseName: string) => strin
 }
 
 /** The github_issues ingestor's schedule rule (VocIngestionStack's name for it). */
-export function issuesScheduleRuleName(uniqueName: (baseName: string) => string): string {
+function issuesScheduleRuleName(uniqueName: (baseName: string) => string): string {
   return uniqueName(`voc-ingest-${GITHUB_APP_SIGN_IN_PLUGIN}-schedule`);
 }
 

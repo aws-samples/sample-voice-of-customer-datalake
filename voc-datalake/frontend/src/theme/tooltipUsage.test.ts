@@ -8,11 +8,12 @@
  * more than its entry allows, when a file that is not listed has one, and when a count fell without its entry
  * falling too, so the list only ever shrinks. The lint rule (eslint.config.js) skips exactly the listed files.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { productionSourcePaths } from '@test/appSources'
 
 const SRC = resolve(__dirname, '..')
 const FRONTEND = resolve(SRC, '..')
@@ -29,11 +30,7 @@ const WAITING = [/^components\/WorkflowEditor\//, /^components\/DocumentCanvas\/
 
 /** Every production .tsx under src (specs and test support excluded). */
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    if (statSync(path).isDirectory()) return name === 'test' ? [] : sourceFiles(path)
-    return name.endsWith('.tsx') && !/\.(test|spec)\.tsx$/u.test(name) ? [path] : []
-  })
+  return productionSourcePaths(dir, /\.(test|spec)\.tsx?$|[/\\]test[/\\]/u).filter((path) => path.endsWith('.tsx'))
 }
 
 const isTitled = (tag: string) => (/^[a-z]/u.test(tag) && tag !== 'iframe') || tag === 'Link' || tag === 'NavLink'

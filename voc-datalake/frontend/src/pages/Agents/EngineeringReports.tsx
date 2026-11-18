@@ -15,7 +15,6 @@ import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import DocumentSurface from '../../components/Document/DocumentSurface'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { apiErrorStatus, retryOnceUnlessNotFound } from '../../api/apiErrorStatus'
 import { REPORT_LEVELS, engineeringRunsApi, engineeringRunsKeys } from '../../api/engineeringRunsApi'
@@ -23,7 +22,7 @@ import { formatDateTime } from '../../utils/dateUtils'
 import { groupsInOrder } from './engineeringRunText'
 import { useEngineeringReports } from './useEngineeringRun'
 import { newerReport, reportDocumentOf, reportVersions, runReportAdapter } from './documents/runReportDocument'
-import { neverSaved } from './documents/readOnly'
+import ReadOnlySurface from './documents/ReadOnlySurface'
 import type { ReactNode } from 'react'
 import type { EngineeringReport, EngineeringReportEntry } from '../../api/engineeringRunsApi'
 
@@ -81,11 +80,8 @@ function ReportBody({ runId, entry, version, query, missing, meta }: Readonly<{
       retrying={query.isFetching} />
   }
   return (
-    <DocumentSurface adapter={runReportAdapter(runId, entry)} variant="panel" title={entry.subject} headingLevel={3} meta={meta}
-      stored={query.data === undefined ? undefined : reportDocumentOf(entry, version, query.data)} mode="read" compare={null}
-      comments={null} onSaved={neverSaved} fullPath={null} footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+    <ReadOnlySurface adapter={runReportAdapter(runId, entry)} variant="panel" title={entry.subject} headingLevel={3} meta={meta}
+      stored={query.data === undefined ? undefined : reportDocumentOf(entry, version, query.data)} mode="read" compare={null} fullPath={null} />
   )
 }
 

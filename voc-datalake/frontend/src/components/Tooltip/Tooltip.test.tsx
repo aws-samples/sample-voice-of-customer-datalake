@@ -8,13 +8,11 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { advance, tooltipTimersForSuite } from '@test/tooltipTimers'
 import { Tooltip } from './Tooltip'
-import { OPEN_DELAY_MS, SKIP_DELAY_MS } from './tooltipTiming'
+import { OPEN_DELAY_MS } from './tooltipTiming'
 
-const advance = (ms: number) => act(() => {
-  vi.advanceTimersByTime(ms)
-})
 const hover = (element: Element, pointerType = 'mouse') => fireEvent.pointerOver(element, { pointerType })
 /** Keyboard focus: jsdom matches `:focus-visible` on a scripted focus only after a key press. */
 const focus = (element: HTMLElement) => {
@@ -42,18 +40,7 @@ function Buttons() {
 const deleteButton = () => screen.getByRole('button', { name: 'Delete' })
 const editButton = () => screen.getByRole('button', { name: 'Edit' })
 
-beforeAll(() => {
-  vi.useFakeTimers()
-})
-
-afterEach(() => {
-  escape()
-  advance(SKIP_DELAY_MS * 2)
-})
-
-afterAll(() => {
-  vi.useRealTimers()
-})
+tooltipTimersForSuite()
 
 describe('kind="label"', () => {
   it('opens 80 ms after a mouse rests on the trigger, hidden from assistive technology', () => {

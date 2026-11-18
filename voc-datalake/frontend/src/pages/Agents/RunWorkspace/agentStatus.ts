@@ -43,7 +43,7 @@ export function runPhase(run: Pick<EngineeringOverview['run'], 'status' | 'ended
 /** An agent's session statuses of a failure. */
 const FAILED_SESSIONS: ReadonlySet<string> = new Set(['failed', 'crashed'])
 
-export const hasFailed = (agent: Pick<EngineeringAgent, 'status'>): boolean => FAILED_SESSIONS.has(agent.status)
+const hasFailed = (agent: Pick<EngineeringAgent, 'status'>): boolean => FAILED_SESSIONS.has(agent.status)
 
 /**
  * The run's orchestrator: its coordinator, whose session the run's own address shows. A Resume that replaces a

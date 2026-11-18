@@ -15,7 +15,7 @@ import { NodeChips, NodeFrame, NodeIssue, NodeLines, NodeTile } from './NodePart
 import { isQuiet, useStateWords } from './nodeState'
 import { roleGlyphName } from './nodeGlyphs'
 import { GlyphIcon } from './GlyphIcon'
-import { agentChips, agentLine, cardIdOf, modelShortName, teamLine } from './nodeText'
+import { agentChips, agentLine, cardIdOf, modelShortName, nodeWords, teamLine } from './nodeText'
 import { useFlowLookups } from './nodeData'
 import type { TFunction } from 'i18next'
 import type { NodeProps } from '@xyflow/react'
@@ -69,7 +69,7 @@ export function AgentNode({ id, data, selected }: NodeProps<StepFlowNode>) {
   const state = useStateWords(data)
   return (
     <NodeFrame id={id} data={data} selected={selected} shape="voc-node-agent"
-      description={[t(`canvas.kinds.${kind}`), line, ...chips.map((chip) => chip.text), state].filter((part) => part !== '').join(', ')}>
+      description={nodeWords([t(`canvas.kinds.${kind}`), line, ...chips.map((chip) => chip.text), state])}>
       <span className="flex items-start gap-2 px-3 py-2">
         <NodeTile step={step} kind={kind} round />
         <span className="min-w-0 flex-1">

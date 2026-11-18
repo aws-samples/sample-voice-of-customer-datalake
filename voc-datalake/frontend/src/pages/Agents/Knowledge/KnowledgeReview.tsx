@@ -13,7 +13,6 @@ import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitPullRequest, Loader2 } from 'lucide-react'
-import DocumentSurface from '../../../components/Document/DocumentSurface'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import PressedChoices from '../../../components/PressedChoices/PressedChoices'
 import { KNOWLEDGE_KINDS, engineeringKnowledgeApi, engineeringKnowledgeKeys } from '../../../api/engineeringKnowledgeApi'
@@ -22,7 +21,7 @@ import { useConfigStore } from '../../../store/configStore'
 import { useSkillFormats } from '../skillFormats'
 import { DocsPublishSheet } from './DocsPublishSheet'
 import { approvable, isKnowledgeStale, knowledgeAdapter, knowledgeDocumentOf, versionsNewestFirst, versionToReview } from '../documents/knowledgeDocument'
-import { neverSaved } from '../documents/readOnly'
+import ReadOnlySurface from '../documents/ReadOnlySurface'
 import type { KnowledgeKind, KnowledgePackage, KnowledgeVersion, PackVersion } from '../../../api/engineeringKnowledgeApi'
 import type { SurfaceCompare } from '../../../components/Document/DocumentSurface'
 
@@ -83,12 +82,9 @@ function KindDocument({ connection, pkg, version, kind, view }: Readonly<{
   if (stored === null) return <p className="text-sm text-muted">{t('knowledge.kindMissing')}</p>
   const compare = compareWithApproved(approved.data, approvedVersion, version, kind, t('knowledge.identical'))
   return (
-    <DocumentSurface adapter={knowledgeAdapter(connection, pkg.segment, kind, version.status, title)} variant="inline" title={title}
+    <ReadOnlySurface adapter={knowledgeAdapter(connection, pkg.segment, kind, version.status, title)} variant="inline" title={title}
       headingLevel={3} meta={null} stored={approvedVersion !== null && compare === null ? undefined : stored}
-      mode={compare === null ? 'read' : 'compare'} compare={compare}
-      comments={null} onSaved={neverSaved} fullPath={null} footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+      mode={compare === null ? 'read' : 'compare'} compare={compare} fullPath={null} />
   )
 }
 

@@ -17,8 +17,8 @@ import { useId } from 'react'
 import { CanvasMenuEntries } from './CanvasMenu'
 import type { ReactNode, RefObject } from 'react'
 import type { RovingItem } from './useRovingToolbar'
-import type { LucideIcon } from 'lucide-react'
 import type { CanvasMenuEntry } from './CanvasMenu'
+import type { ToolbarControl } from './toolbarItems'
 import type { useMenuButton } from '../../ProfileMenu/useMenuButton'
 
 type MenuButtonState = ReturnType<typeof useMenuButton>
@@ -41,21 +41,8 @@ function toolbarButtonClass(wide: boolean): string {
   return clsx(BUTTON_CLASS, wide ? 'px-2 text-[0.8125rem] font-medium' : 'w-8')
 }
 
-interface ToolbarButtonProps {
+interface ToolbarButtonProps extends ToolbarControl {
   readonly rove: RovingItem
-  readonly label: string
-  readonly hint: string
-  readonly icon: LucideIcon
-  /** A toggle: whether it is on (`aria-pressed`); absent for an action. */
-  readonly pressed?: boolean
-  /** A count beside the icon (the open comments); its number is in `label`. */
-  readonly badge?: number
-  readonly disabled?: boolean
-  /** Its action is running: a spinner in place of the icon. */
-  readonly busy?: boolean
-  /** It opens a dialog (History). */
-  readonly opensDialog?: boolean
-  readonly keyShortcuts?: string
   readonly buttonRef?: RefObject<HTMLButtonElement | null>
   readonly onClick: () => void
 }
@@ -100,13 +87,9 @@ interface ToolbarMenuProps {
 }
 
 export function ToolbarMenu({ menu, rove, label, hint, face, wide = false, entries, notice }: ToolbarMenuProps) {
-  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = menu
+  const { open, buttonRef, menuRef, toggle, choose, onButtonKeyDown, onMenuKeyDown } = menu
   const menuId = useId()
   const tipId = useId()
-  const choose = (run: () => void) => {
-    close(true)
-    run()
-  }
   return (
     <div className="relative">
       <button ref={buttonRef} type="button" {...rove} className={toolbarButtonClass(wide)} aria-label={label}

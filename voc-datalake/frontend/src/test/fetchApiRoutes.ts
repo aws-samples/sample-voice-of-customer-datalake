@@ -49,6 +49,12 @@ export function authStoreModule() {
   return { useIsAdmin: () => adminFlag.isAdmin, useMySub: () => SIGNED_IN_SUB }
 }
 
+/** The real `store/authStore` module with {@link authStoreModule}'s doubles beside it (code that reads its other parts). */
+export async function authStoreWithOriginal(importOriginal: <T>() => Promise<T>) {
+  const actual = await importOriginal<typeof import('../store/authStore')>()
+  return { ...actual, ...authStoreModule() }
+}
+
 interface RouteOptions {
   /** The `API Error: <status>` an unrouted request rejects with (default 404). */
   missStatus?: number

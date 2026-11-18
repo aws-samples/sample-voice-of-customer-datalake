@@ -29,7 +29,7 @@ export interface CallFrameSpec {
   readonly nodeIds: readonly string[]
 }
 
-export const LOOP_PREFIX = 'loop:'
+const LOOP_PREFIX = 'loop:'
 const CALL_PREFIX = 'call:'
 const LANE_PREFIX = 'lane:'
 const NO_ISSUES: readonly string[] = []
@@ -45,7 +45,7 @@ export const isStepId = (id: string): boolean => !id.startsWith(LOOP_PREFIX) && 
 export const isLaneId = (id: string): boolean => id.startsWith(LANE_PREFIX)
 
 /** "<kind>: <title>, <state>" — the role, the chips and the reason are the node's description. */
-export function stepLabel(t: TFunction<'agents'>, step: WorkflowNode, run: StepState | undefined): string {
+function stepLabel(t: TFunction<'agents'>, step: WorkflowNode, run: StepState | undefined): string {
   const parts = [step.data.title]
   if (run !== undefined) parts.push(t(`run.stepStatus.${run.status}`).toLowerCase())
   if (run?.gate === 'pass') parts.push(t('canvas.gate.go'))

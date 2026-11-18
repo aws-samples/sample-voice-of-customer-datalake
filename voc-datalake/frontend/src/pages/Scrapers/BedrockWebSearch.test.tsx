@@ -67,6 +67,14 @@ function renderForm() {
   return onClose
 }
 
+/** Add page pressed: the page saved as `config` for Web Reviews, then the form closed. */
+async function expectAddPageSaves(user: ReturnType<typeof userEvent.setup>, onClose: () => void,
+  config: Record<string, string>): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Add page' }))
+  await waitFor(() => { expect(onClose).toHaveBeenCalledTimes(1) })
+  expect(mockSaveAppConfig).toHaveBeenCalledWith('web_reviews', config)
+}
+
 describe('the source menu', () => {
   it('offers the Bedrock tile beside "Review page" once the plugin reads a method, with the method preset', () => {
     const [website] = buildSourceMenu([webReviews(true)], [], [])
@@ -116,10 +124,7 @@ describe('the form it opens', () => {
     await user.type(at(fields, 0), 'G2 - Example')
     await user.type(at(fields, 1), 'https://www.g2.com/products/example/reviews')
     await user.type(at(fields, 2), '50')
-    await user.click(screen.getByRole('button', { name: 'Add page' }))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledTimes(1) })
-    expect(mockSaveAppConfig).toHaveBeenCalledWith('web_reviews', {
+    await expectAddPageSaves(user, onClose, {
       method: 'bedrock_web_search', app_name: 'G2 - Example', url: 'https://www.g2.com/products/example/reviews', max_reviews: '50',
     })
   })
@@ -159,10 +164,7 @@ describe('Read with, on the review page form', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(4)
     await user.type(at(screen.getAllByRole('textbox'), 0), 'Reviews - Example')
     await user.type(at(screen.getAllByRole('textbox'), 1), 'https://www.reviews.example/example')
-    await user.click(screen.getByRole('button', { name: 'Add page' }))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledTimes(1) })
-    expect(mockSaveAppConfig).toHaveBeenCalledWith('web_reviews', {
+    await expectAddPageSaves(user, onClose, {
       method: 'auto', app_name: 'Reviews - Example', url: 'https://www.reviews.example/example',
     })
   })

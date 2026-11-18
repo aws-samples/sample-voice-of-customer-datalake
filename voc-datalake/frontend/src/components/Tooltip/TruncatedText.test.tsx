@@ -2,16 +2,14 @@
  * TruncatedText: the whole text in a tooltip only while it is cut, and the element it renders. jsdom lays
  * nothing out, so the cut is stubbed through the element's scroll and client widths.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { advance, tooltipTimersForSuite } from '@test/tooltipTimers'
 import { TruncatedText } from './TruncatedText'
-import { OPEN_DELAY_MS, SKIP_DELAY_MS } from './tooltipTiming'
+import { OPEN_DELAY_MS } from './tooltipTiming'
 
 const NAME = 'Quarterly churn interviews, enterprise segment, EMEA'
 
-const advance = (ms: number) => act(() => {
-  vi.advanceTimersByTime(ms)
-})
 
 function stubWidths(element: HTMLElement, scrollWidth: number, clientWidth: number): void {
   Object.defineProperty(element, 'scrollWidth', { configurable: true, value: scrollWidth })
@@ -23,18 +21,7 @@ function hoverName(): void {
   advance(OPEN_DELAY_MS)
 }
 
-beforeAll(() => {
-  vi.useFakeTimers()
-})
-
-afterEach(() => {
-  fireEvent.keyDown(document.body, { key: 'Escape' })
-  advance(SKIP_DELAY_MS * 2)
-})
-
-afterAll(() => {
-  vi.useRealTimers()
-})
+tooltipTimersForSuite()
 
 describe('TruncatedText', () => {
   it('renders the text in the element and class asked for', () => {

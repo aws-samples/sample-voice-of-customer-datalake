@@ -298,7 +298,7 @@ export class DeploymentNaming {
 }
 
 /** Longest name an AgentCore runtime, browser or browser profile may carry (`[a-zA-Z][a-zA-Z0-9_]{0,47}`). */
-export const AGENTCORE_NAME_LENGTH_LIMIT = 48;
+const AGENTCORE_NAME_LENGTH_LIMIT = 48;
 
 /**
  * An Amazon Bedrock AgentCore resource's name (a runtime, a custom browser, a browser profile: letters, digits and

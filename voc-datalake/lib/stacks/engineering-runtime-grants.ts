@@ -142,7 +142,7 @@ export function denyIssueTriageWrites(scope: Construct, role: iam.IRole, agentsT
 }
 
 /** An understander's recorded triage of a run (7.50.00, lambda/engineering/runtime/triage_end.py). */
-export const TRIAGE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_triage/*';
+const TRIAGE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_triage/*';
 
 /**
  * A triage run's end (7.50.00, lambda/engineering/runtime/triage_end.py, from the retrospective), on the runtime's role:
@@ -235,7 +235,7 @@ export function grantRunEnd(role: iam.IRole, workspaceBucket: s3.IBucket, agents
 }
 
 /** An understander's recorded tenets of a run (7.52.00, lambda/engineering/runtime/tenets_end.py). */
-export const TENETS_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_tenets/*';
+const TENETS_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_tenets/*';
 /**
  * Every attribute a tenets draft writes (lambda/engineering/knowledge/tenets.py DRAFT_ATTRIBUTES; a Python test holds the
  * two equal): the counter's `versions`, the version's and its log's and its run's rows. Never an acceptance's

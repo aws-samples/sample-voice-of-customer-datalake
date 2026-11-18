@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { NodeFrame, NodeIssue, NodeLines, NodeTile } from './NodeParts'
 import { isQuiet, useStateWords } from './nodeState'
 import { VerdictBadge } from './NodeStateBadge'
-import { gateLine } from './nodeText'
+import { gateLine, nodeWords } from './nodeText'
 import type { NodeProps } from '@xyflow/react'
 import type { TFunction } from 'i18next'
 import type { StepFlowNode } from './nodeData'
@@ -34,7 +34,7 @@ export function GateNode({ id, data, selected }: NodeProps<StepFlowNode>) {
   const verdict = verdictWord(t, run?.gate)
   return (
     <NodeFrame id={id} data={data} selected={selected} shape="voc-node-gate"
-      description={[t('canvas.kinds.gate'), line, state, verdict].filter((part) => part !== '').join(', ')}>
+      description={nodeWords([t('canvas.kinds.gate'), line, state, verdict])}>
       <span className="voc-node-body flex items-center gap-2 py-2">
         <NodeTile step={step} kind={kind} size={24} glyph={run?.gate === undefined ? undefined : VERDICT_GLYPHS[run.gate]} />
         <span className="min-w-0 flex-1">

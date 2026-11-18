@@ -15,7 +15,6 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
-import DocumentSurface from '../../components/Document/DocumentSurface'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
 import { engineeringSkillActionsApi } from '../../api/engineeringSkillActionsApi'
@@ -24,7 +23,7 @@ import { SkillChanges } from './SkillChanges'
 import { skillMarkdown, skillTemplateAdapter, skillTemplateDocumentOf } from './documents/skillDocument'
 import { useSkillHead, useSkillVersion } from './useSkillInUse'
 import { useSkillHistory } from './useSkillHistory'
-import { neverSaved } from './documents/readOnly'
+import ReadOnlySurface from './documents/ReadOnlySurface'
 import type { SkillRole, SkillTemplate, SkillTemplateUpdate as Update, SkillVersionDetail } from '../../api/engineeringSkillsApi'
 
 /** "Update available (v3)" for a role whose template is newer than its versions; nothing otherwise. */
@@ -75,14 +74,12 @@ function TemplateCompare({ connection, role, update }: Readonly<{ connection: st
     return <LoadFailed message={t('skills.versionFailed')} onRetry={() => void current.refetch()} retrying={current.isFetching} />
   }
   return (
-    <DocumentSurface adapter={skillTemplateAdapter(connection, role, title)} variant="inline" title={title} headingLevel={3}
+    <ReadOnlySurface adapter={skillTemplateAdapter(connection, role, title)} variant="inline" title={title} headingLevel={3}
       meta={null} stored={before === null ? undefined : skillTemplateDocumentOf(update, title)} mode="compare"
       compare={before === null ? null : {
         before, beforeLabel: inUse === null ? t('skills.document.nothing') : `v${String(inUse.version)}`,
         afterLabel: t('skills.template.label', { version: update.template.version }), identicalText: t('skills.document.identical'),
-      }} comments={null} onSaved={neverSaved} fullPath={null} footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+      }} fullPath={null} />
   )
 }
 

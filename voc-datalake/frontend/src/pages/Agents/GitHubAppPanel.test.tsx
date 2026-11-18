@@ -18,24 +18,16 @@ import { fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/
 import { stubLocationAssign } from '@test/location'
 import { chooseInRowMenu } from '@test/connectionDialog'
 import { ApiError } from '../../lib/errors'
+import { appConnection, githubApp } from '@test/githubAppFixtures'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const { EngineeringConnections } = await import('./EngineeringConnections')
 
-const app = (fields: Record<string, unknown> = {}) => ({
-  app_id: '271828', slug: 'voc-agents-3f9a2c', owner: 'example-org', owner_type: 'Organization',
-  html_url: 'https://github.com/apps/voc-agents-3f9a2c', webhook: true, connections: ['billing-api'],
-  created_at: '2026-11-10T10:00:00Z', created_by: 'admin-a', version: 1, ...fields,
-})
+const app = githubApp
 const FRESH = app({ app_id: '314159', slug: 'voc-agents-314159', owner: 'alice', owner_type: 'User', webhook: false, connections: [] })
-const BILLING = {
-  connection_id: 'billing-api', host: 'github', repository: 'example-org/billing-api', default_branch: 'main',
-  credential: { kind: 'app_reference', set: true, app_id: '271828', installation_id: '31415926', expires_at: null },
-  created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null,
-  repository_private: true,
-}
+const BILLING = appConnection('billing-api', 'example-org/billing-api')
 const APPS = 'GET /agents/engineering/github-apps'
 const LIST = 'GET /agents/engineering/connections'
 const MANIFEST = 'POST /agents/engineering/github-apps/manifest'

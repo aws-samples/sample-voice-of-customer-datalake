@@ -22,7 +22,7 @@ import type { PaletteBlock } from './model'
 
 
 /** An engineering flow's palette sections, by kind. */
-export const ENGINEERING_SECTIONS = ['startEnd', 'agents', 'gates', 'flows', 'platform'] as const
+const ENGINEERING_SECTIONS = ['startEnd', 'agents', 'gates', 'flows', 'platform'] as const
 type EngineeringSection = (typeof ENGINEERING_SECTIONS)[number]
 
 export interface PaletteItem {

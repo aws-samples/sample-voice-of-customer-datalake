@@ -119,6 +119,17 @@ export function contextWith(fields: Partial<ProductContext> = {}): ProductContex
 }
 
 /** A QueryClient with retries off so failing queries settle immediately. */
+/**
+ * The n-th call of a document save double (`projectsApi.updateDocument`) as its (project, document, body), the
+ * body's fresh edit id reduced to its type (undefined: no such call).
+ */
+export function savedEditOf<B extends { edit_id?: string }>(calls: readonly (readonly [string, string, B])[], n = 0): unknown {
+  const call = calls[n]
+  if (call === undefined) return undefined
+  const [projectId, documentId, body] = call
+  return [projectId, documentId, { ...body, edit_id: typeof body.edit_id }]
+}
+
 export function createQueryClient() {
   return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

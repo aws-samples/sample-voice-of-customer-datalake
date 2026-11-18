@@ -16,7 +16,7 @@ import { useIsAdmin } from '../../../store/authStore'
 import type { RegistryCard } from '../../../api/flowSetupApi'
 
 /** Setup reads stay fresh this long (the Registry, the gates and the vocabulary change by a release or a person). */
-export const SETUP_STALE_MS = 5 * 60_000
+const SETUP_STALE_MS = 5 * 60_000
 
 /** Whether this person, here, may read the setup routes (administrators, where the engineering agents are on). */
 export function useCanReadSetup(): boolean {

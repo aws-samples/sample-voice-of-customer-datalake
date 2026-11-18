@@ -1,4 +1,5 @@
 /** Callouts are stored as GFM alerts: a blockquote whose first line is `[!NOTE]`, `[!TIP]` … */
+import type { TFunction } from 'i18next'
 import type { Blockquote } from 'mdast'
 
 const CALLOUT_KINDS = ['note', 'tip', 'important', 'warning', 'caution'] as const
@@ -11,6 +12,14 @@ export const isCalloutKind = (value: unknown): value is CalloutKind =>
   typeof value === 'string' && CALLOUT_KINDS.some((kind) => kind === value)
 
 export const alertMarker = (kind: CalloutKind): string => `[!${kind.toUpperCase()}]`
+
+/** Each callout's label ("Note", "Tip", …) in the reader's language: the editor's and the reader's. */
+export function calloutLabelsOf(t: TFunction<'documents'>): Record<CalloutKind, string> {
+  return {
+    note: t('editor.callout.note'), tip: t('editor.callout.tip'), important: t('editor.callout.important'),
+    warning: t('editor.callout.warning'), caution: t('editor.callout.caution'),
+  }
+}
 
 /** The alert kind of a blockquote, or null: the marker must be the first paragraph's first line, alone. */
 export function calloutKindOf(quote: Blockquote): CalloutKind | null {

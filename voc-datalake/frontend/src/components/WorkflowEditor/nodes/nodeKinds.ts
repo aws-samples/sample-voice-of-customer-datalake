@@ -17,9 +17,6 @@ import type { StepState } from '../runState'
 
 export type NodeKind = 'trigger' | 'agent' | 'team' | 'gate' | 'call' | 'decision' | 'end' | 'platform'
 
-/** Every kind, in the order the palette and the docs list them. */
-export const NODE_KINDS: readonly NodeKind[] = ['trigger', 'agent', 'team', 'gate', 'call', 'decision', 'end', 'platform']
-
 /** Each node type's kind (a decision is an `end` that needs a person: {@link kindOf}). */
 export const KIND_OF_TYPE: Readonly<Record<WorkflowNodeType, NodeKind>> = {
   start: 'trigger',
@@ -55,7 +52,7 @@ export const KIND_OF_TYPE: Readonly<Record<WorkflowNodeType, NodeKind>> = {
 }
 
 /** `end` with `status: needs_human`: a person decides (where every NO-GO goes). */
-export const isDecision = (node: Pick<WorkflowNode, 'type' | 'data'>): boolean =>
+const isDecision = (node: Pick<WorkflowNode, 'type' | 'data'>): boolean =>
   node.type === 'end' && node.data.params?.status === 'needs_human'
 
 export function kindOf(node: Pick<WorkflowNode, 'type' | 'data'>): NodeKind {
@@ -85,7 +82,7 @@ export const kindSize = (kind: NodeKind): NodeSize => SIZES[kind]
 export const nodeSize = (node: Pick<WorkflowNode, 'type' | 'data'>): NodeSize => SIZES[kindOf(node)]
 
 /** How far a kind's shape sits from its column's left edge (centred in it). */
-export const columnOffset = (kind: NodeKind): number => (NODE_COLUMN - SIZES[kind].width) / 2
+const columnOffset = (kind: NodeKind): number => (NODE_COLUMN - SIZES[kind].width) / 2
 
 /** Where a step's shape is drawn: its stored position (the column's corner) moved to centre the shape. */
 export function drawnPosition(node: Pick<WorkflowNode, 'type' | 'data' | 'position'>): { x: number; y: number } {
@@ -175,17 +172,22 @@ export function minimapClass(kind: NodeKind, run: StepState | undefined, selecte
  * after the rest.
  */
 export function flowOrder(definition: Pick<WorkflowDefinition, 'nodes' | 'edges'>): WorkflowNode[] {
+  const levels = stepLevels(definition)
+  const level = (node: WorkflowNode) => levels.get(node.id) ?? 0
+  return [...definition.nodes].sort((a, b) => level(a) - level(b) || a.position.y - b.position.y || a.position.x - b.position.x)
+}
+
+/** Each step's distance from the start along the edges; a step the start never reaches is one row past the rest. */
+export function stepLevels(definition: Pick<WorkflowDefinition, 'nodes' | 'edges'>): Map<string, number> {
   const start = definition.nodes.find((node) => node.type === 'start') ?? definition.nodes[0]
   const levels = new Map<string, number>(start === undefined ? [] : [[start.id, 0]])
   const queue = start === undefined ? [] : [start.id]
   for (const id of queue) {
-    for (const edge of definition.edges) {
-      if (edge.source !== id || levels.has(edge.target)) continue
-      levels.set(edge.target, (levels.get(id) ?? 0) + 1)
-      queue.push(edge.target)
-    }
+    const next = definition.edges.filter((edge) => edge.source === id && !levels.has(edge.target))
+    next.forEach((edge) => { levels.set(edge.target, (levels.get(id) ?? 0) + 1) })
+    queue.push(...next.map((edge) => edge.target))
   }
-  const past = definition.nodes.length + 1
-  const level = (node: WorkflowNode) => levels.get(node.id) ?? past
-  return [...definition.nodes].sort((a, b) => level(a) - level(b) || a.position.y - b.position.y || a.position.x - b.position.x)
+  const past = Math.max(-1, ...levels.values()) + 1
+  definition.nodes.forEach((node) => { if (!levels.has(node.id)) levels.set(node.id, past) })
+  return levels
 }

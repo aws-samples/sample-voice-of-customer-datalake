@@ -22,7 +22,7 @@ export interface OlderVersionNote {
 const NOTE_CLASS = 'flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-subtle p-3 text-sm text-text'
 
 /** "Viewing v2 of 4 · Read only", Back to latest and (for an editor) Restore. */
-export function OlderVersionBanner({ note }: Readonly<{ note: OlderVersionNote }>) {
+function OlderVersionBanner({ note }: Readonly<{ note: OlderVersionNote }>) {
   const { t } = useTranslation('documents')
   const version = t('versions.number', { number: note.number })
   const text = note.latest === null

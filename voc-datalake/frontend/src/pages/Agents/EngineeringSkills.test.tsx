@@ -6,10 +6,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import Where from '@test/LocationWhere'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -24,11 +25,6 @@ const FIXER = {
 
 function route(routes: Record<string, RouteHandler>) {
   routeFetchApi({ 'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }), ...routes }, { missStatus: 500 })
-}
-
-function Where() {
-  const location = useLocation()
-  return <p data-testid="where">{`${location.pathname}${location.search}`}</p>
 }
 
 function renderSkills(entry = '/agents/skills') {

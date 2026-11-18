@@ -6,25 +6,15 @@
  *
  * @module components/WorkflowEditor/nodes/NodeStateBadge
  */
-import {
-  AlertTriangle, CircleCheck, CircleDot, CirclePause, CircleX, Hand, Loader2, MapPin, ShieldCheck, ShieldX, SkipForward,
-  Square,
-} from 'lucide-react'
+import { AlertTriangle, CircleDot, MapPin, ShieldCheck, ShieldX } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
-import type { LucideIcon } from 'lucide-react'
+import { RUN_STATE_ICONS } from './runStateIcons'
+import type { RunStateIcon } from './runStateIcons'
 import type { StepState } from '../runState'
 
-/** Each run state's badge (planned has none: its dashed outline and words say it). */
-const RUN_BADGES: Readonly<Partial<Record<StepState['status'], { icon: LucideIcon; tone: string }>>> = {
-  running: { icon: Loader2, tone: 'animate-spin text-accent-text' },
-  done: { icon: CircleCheck, tone: 'text-ok' },
-  failed: { icon: CircleX, tone: 'text-danger' },
-  waiting: { icon: Hand, tone: 'text-warn' },
-  paused: { icon: CirclePause, tone: 'text-warn' },
-  stopped: { icon: Square, tone: 'fill-current text-muted' },
-  skipped: { icon: SkipForward, tone: 'text-muted' },
-}
+/** Each run state's badge (RUN_STATE_ICONS). */
+const RUN_BADGES: Readonly<Partial<Record<StepState['status'], RunStateIcon>>> = RUN_STATE_ICONS
 
 export function NodeStateBadge({ run, invalid }: Readonly<{ run: StepState | undefined; invalid: boolean }>) {
   const { t } = useTranslation('agents')

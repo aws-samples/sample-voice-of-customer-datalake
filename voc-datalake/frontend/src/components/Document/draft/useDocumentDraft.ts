@@ -32,13 +32,13 @@ import type { DocumentAdapter, DocumentConflict, DocumentDraft, DraftEditor, Sto
 import type { Baseline } from './followVersion'
 
 /** A mark the next saves carry while the text keeps what it marks (Projects: a Revise pass's accepted changes). */
-export interface SaveMark {
+interface SaveMark {
   readonly id: string
   readonly keeps: (content: string) => boolean
 }
 
 /** Compare and merge: the latest version, and its changes judged against the draft. */
-export interface MergeProposal<S extends StoredDocument> {
+interface MergeProposal<S extends StoredDocument> {
   readonly latest: S
   /** Null: too large to compare block by block (only the other two ways out are left). */
   readonly changes: readonly MergeChange[] | null

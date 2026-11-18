@@ -27,6 +27,7 @@ import { useConfigStore } from '../../store/configStore'
 import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
 import { EngineeringHardCap } from './EngineeringHardCap'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { patchedParams } from '../../utils/searchParams'
 import type { LucideIcon } from 'lucide-react'
 import type { MonthSpend, SpendGroup, SpendGrouping, SpendQuery, SpendUsage } from '../../api/engineeringSpendApi'
 import type { ListedRun } from '../../api/engineeringRunWorkspaceApi'
@@ -294,13 +295,7 @@ export function EngineeringSpend() {
   const library = useLibrary()
   const { names } = library
   const failure = failedReads([read])
-  const change = (next: Partial<SpendQuery>) => setSearchParams((params) => {
-    for (const [name, value] of Object.entries(next)) {
-      if (value === '') params.delete(name)
-      else params.set(name, value)
-    }
-    return params
-  }, { replace: true })
+  const change = (next: Partial<SpendQuery>) => setSearchParams(patchedParams(next), { replace: true })
   const spend = read.data
   return (
     <section className="space-y-4" aria-busy={read.isFetching}>

@@ -31,7 +31,7 @@ export function knowledgeDocumentOf(connection: string, segment: string, loaded:
 }
 
 /** Why a document is read only: an approved version is decided; a draft is approved or left, never edited. */
-export function knowledgeReadOnlyReason(status: string): ReadOnlyReason {
+function knowledgeReadOnlyReason(status: string): ReadOnlyReason {
   return status === 'approved' ? 'decided' : 'proposalOnly'
 }
 

@@ -10,34 +10,16 @@ import { act } from '@testing-library/react'
 import { renderWithQueryClient as render } from '@test/query-client'
 import { engineeringOverview } from '@test/engineeringRunFixtures'
 import { parseOverview } from '../../../api/engineeringRunsApi'
-import { callGroups, callOfStep } from '../../../components/WorkflowEditor/callGroups'
+import { callGroups } from '../../../components/WorkflowEditor/callGroups'
 import { ranOnSteps } from './runFlow'
-import type { Node, OnSelectionChangeParams } from '@xyflow/react'
+import { probedFlowProps as props } from '@test/reactFlowProbe'
+import type { Node } from '@xyflow/react'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 
-interface ProbeProps {
-  nodes: Node[]
-  /** (React Flow passes its mouse event first; the canvas reads only the node) */
-  onNodeClick: (event: unknown, node: Node) => void
-  onSelectionChange: (params: OnSelectionChangeParams) => void
-}
-const probe: { last: ProbeProps | null } = { last: null }
-
-vi.mock('@xyflow/react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@xyflow/react')>()
-  function ReactFlowProbe(props: ProbeProps) {
-    probe.last = props
-    return null
-  }
-  return { ...actual, ReactFlow: ReactFlowProbe }
-})
+vi.mock('@xyflow/react', async (importOriginal) =>
+  (await import('@test/reactFlowProbe')).reactFlowProbeModule(importOriginal))
 
 const { RunCanvas } = await import('./RunCanvas')
-
-function props(): ProbeProps {
-  if (probe.last === null) throw new Error('ReactFlow was not rendered')
-  return probe.last
-}
 
 /** The first lane the canvas draws. */
 function firstLane(): Node {
@@ -104,11 +86,10 @@ describe('the run canvas (N-D3)', () => {
 })
 
 describe('callGroups', () => {
-  it('finds each call\'s steps in the flat copy and how many are done; a step of the flow is no call\'s', () => {
+  it('finds each call\'s steps in the flat copy and how many are done', () => {
     const states = new Map([['triage.classify', { status: 'done' as const, rounds: 1 }]])
     const groups = callGroups(FLOW, [{ step: 'triage', flow: 'wf_17a9e5c3b2d0', revision: 2 }, { step: 'gone', flow: 'wf_x', revision: 1 }], states)
     expect(groups).toStrictEqual([{ call: 'triage', flow: 'wf_17a9e5c3b2d0', revision: 2, nodeIds: ['triage.classify', 'triage.label'], done: 1, total: 2 }])
-    expect([callOfStep('triage.label', groups)?.call, callOfStep('board', groups)]).toStrictEqual(['triage', null])
   })
 
   it('says what ran on a step: its model, its skill\'s label, what it cost and how many agents', () => {

@@ -19,3 +19,17 @@ export function withOwnedParams(
   const kept = [...current].filter(([key]) => !owned.includes(key))
   return new URLSearchParams([...kept, ...next])
 }
+
+/**
+ * An update for react-router's `setSearchParams`: each key of `next` set to its value, or removed when the value is
+ * '' (a filter back at "all"); every other param kept as it was.
+ */
+export function patchedParams(next: Readonly<Record<string, string>>): (params: URLSearchParams) => URLSearchParams {
+  return (params) => {
+    for (const [name, value] of Object.entries(next)) {
+      if (value === '') params.delete(name)
+      else params.set(name, value)
+    }
+    return params
+  }
+}

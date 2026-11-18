@@ -14,14 +14,10 @@
  * @module pages/Agents/SkillVersionDetail
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, PenLine } from 'lucide-react'
-import DocumentSurface from '../../components/Document/DocumentSurface'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import PressedChoices from '../../components/PressedChoices/PressedChoices'
-import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
-import { useConfigStore } from '../../store/configStore'
 import { ApiError } from '../../lib/errors'
 import { BenchmarkLines, SkillStatusBadge, VersionEvents, VersionWhy } from './SkillHistory'
 import { useSkillFormats, useSkillTitle } from './skillFormats'
@@ -29,8 +25,8 @@ import { SkillActions } from './SkillActions'
 import { SkillChanges } from './SkillChanges'
 import { isVersionInUse } from './skillActionRules'
 import { skillAdapter, skillDocumentOf, skillMarkdown } from './documents/skillDocument'
-import { useSkillVersion } from './useSkillInUse'
-import { neverSaved } from './documents/readOnly'
+import { useSkillVersion, useSkillVersionTarget } from './useSkillInUse'
+import ReadOnlySurface from './documents/ReadOnlySurface'
 import type { ActionTarget } from './SkillActionParts'
 import type { SurfaceCompare } from '../../components/Document/DocumentSurface'
 import type { SurfaceVariant } from '../../components/Document/types'
@@ -136,13 +132,11 @@ function Instructions({ target, variant, changes }: Readonly<{ target: ActionTar
   const compare = changes && base.text !== null ? compareOf(base.text) : null
   const waiting = changes && compare === null
   return (
-    <DocumentSurface adapter={skillAdapter(connection, role, detail.status, (version) => title(role, version))} variant={variant}
+    <ReadOnlySurface adapter={skillAdapter(connection, role, detail.status, (version) => title(role, version))} variant={variant}
       title={t('skills.document.instructions')} headingLevel={3} meta={null}
       stored={waiting ? undefined : skillDocumentOf(connection, role, detail, title(role, detail.version))}
-      mode={compare === null ? 'read' : 'compare'} compare={compare} comments={null} onSaved={neverSaved}
-      fullPath={null} footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+      mode={compare === null ? 'read' : 'compare'} compare={compare}
+      fullPath={null} />
   )
 }
 
@@ -195,15 +189,8 @@ export function SkillVersionDetail({ connection, role, version, current, onBack,
 }>) {
   const { t } = useTranslation('agents')
   const title = useSkillTitle()
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const read = useQuery({
-    queryKey: engineeringSkillsKeys.version(connection, role, version),
-    queryFn: () => engineeringSkillsApi.version(connection, role, version),
-    enabled: configured,
-  })
+  const { read, target } = useSkillVersionTarget(connection, role, version, current)
   const missing = read.error instanceof ApiError && read.error.status === 404
-  const target: ActionTarget | null = read.data === undefined ? null
-    : { connection, role, detail: read.data, current: current.own, sharedCurrent: current.shared }
   return (
     <section aria-labelledby="skill-version" aria-busy={read.isFetching} className="space-y-3">
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onBack()}>

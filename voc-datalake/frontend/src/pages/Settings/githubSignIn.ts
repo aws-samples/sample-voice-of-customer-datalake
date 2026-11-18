@@ -46,7 +46,7 @@ const NO_APP = 'none'
 /** An App's id as GitHub numbers it. */
 const APP_ID = /^[1-9]\d{0,19}$/
 
-export type SignInMethod = 'token' | 'app'
+type SignInMethod = 'token' | 'app'
 
 export interface GitHubSignIn {
   method: SignInMethod
@@ -84,7 +84,7 @@ const storedApp = (stored: Readonly<Record<string, string>> | undefined): string
 }
 
 /** What the stored values decide (null: nothing yet): an App's id is the App, `none` or repositories alone the token. */
-export function storedMethod(stored: Readonly<Record<string, string>> | undefined): SignInMethod | null {
+function storedMethod(stored: Readonly<Record<string, string>> | undefined): SignInMethod | null {
   if (stored === undefined) return null
   if (storedApp(stored) !== '') return 'app'
   return (stored[APP_ID_KEY] ?? '').trim() === NO_APP || lines(stored[REPOS_KEY]).length > 0 ? 'token' : null
@@ -108,7 +108,7 @@ function namedApp(pending: string | undefined, saved: string, only: string): str
  * How the card signs in (the person's choice, else what is stored, else the App once the deployment has one), the
  * App it names and the credentials it shows and saves: the pending ones, with the only App when nothing names one.
  */
-export function signInState(read: SignInRead, chosen: SignInMethod | null, credentials: Record<string, string>) {
+function signInState(read: SignInRead, chosen: SignInMethod | null, credentials: Record<string, string>) {
   const method: SignInMethod = chosen ?? storedMethod(read.stored) ?? (read.apps !== undefined && read.apps.length > 0 ? 'app' : 'token')
   const saved = storedApp(read.stored)
   const only = onlyApp(read.apps)

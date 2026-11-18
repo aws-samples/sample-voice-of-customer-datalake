@@ -125,7 +125,7 @@ const BROKER_WRITE_PARTITIONS = 'WS#*#WRITES#*';
  * The connections' docs writes' partitions (7.52.00, `WS#<ws>#DOCS#<connection>`, records.py docs_pk): the approved
  * docs' claim rows, once per (connection, kind, version), with a run's claims' attributes.
  */
-export const BROKER_DOCS_PARTITIONS = 'WS#*#DOCS#*';
+const BROKER_DOCS_PARTITIONS = 'WS#*#DOCS#*';
 /**
  * The connections' CI attestations' partitions in voc-agents (`CONNECTIONS#<ws>#CI#<connection>`, attestations.py
  * attestation_pk): beside the connections' own (`CONNECTIONS#<ws>`), which this pattern does not match.

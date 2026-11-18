@@ -21,6 +21,12 @@ export function wfEdge(id: string, source: string, target: string) {
   return { id, source, target }
 }
 
+/** A bug hunt's arrows: start → fix → gate, and the gate's GO to the pull request (`pr`). */
+export const BUG_HUNT_EDGES: WorkflowDefinition['edges'] = [
+  { id: 'e1', source: 'start', target: 'fix' }, { id: 'e2', source: 'fix', target: 'gate' },
+  { id: 'e3', source: 'gate', target: 'pr', label: 'pass' },
+]
+
 /** The `GET /workflows/wf_1` answer (`slug: 'flow'`, no revisions) wrapping `definition`. */
 export function workflowView<D extends { name: string }>(revision: number, definition: D, extra: Record<string, unknown> = {}) {
   return {

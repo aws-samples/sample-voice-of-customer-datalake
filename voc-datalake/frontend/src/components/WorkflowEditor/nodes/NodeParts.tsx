@@ -18,6 +18,7 @@ import { HELD_STATES, TILE_CLASS, hasSource, hasTarget, kindSize, tileTone, verd
 import { glyphNameOf } from './nodeGlyphs'
 import { GlyphIcon } from './GlyphIcon'
 import { foldChips } from './nodeText'
+import { isQuiet } from './nodeState'
 import { nodeDescriptionId, useFlowLookups } from './nodeData'
 import type { ReactNode } from 'react'
 import type { WorkflowNode } from '../../../api/workflowsApi'
@@ -116,6 +117,31 @@ export function NodeChips({ chips }: Readonly<{ chips: readonly NodeChip[] }>) {
         <span key={chip.text} className={clsx('badge', chip.tone === 'info' ? 'badge-info' : 'badge-muted')}>{chip.text}</span>
       ))}
       {more > 0 && <span className="badge badge-muted">{t('canvas.chips.more', { n: more })}</span>}
+    </span>
+  )
+}
+
+/** A node of a 24 px tile and its text (Platform, Trigger, End): `shape` its outline, `padding` its vertical padding. */
+export function TiledNode({ id, data, selected, shape, padding, description, line }: Readonly<{
+  id: string; data: StepNodeData; selected: boolean; shape: string; padding: 'py-1' | 'py-1.5'; description: string
+  line: string | undefined
+}>) {
+  return (
+    <NodeFrame id={id} data={data} selected={selected} shape={shape} description={description}>
+      <span className={clsx('flex h-full items-center gap-2 px-3', padding)}>
+        <NodeTile step={data.step} kind={data.kind} size={24} />
+        <NodeBody data={data} line={line} />
+      </span>
+    </NodeFrame>
+  )
+}
+
+/** A node's text beside its tile: the title, the second line and the first issue (a step not reached reads muted). */
+export function NodeBody({ data, line }: Readonly<{ data: StepNodeData; line: string | undefined }>) {
+  return (
+    <span className="min-w-0 flex-1">
+      <NodeLines title={data.step.data.title} line={line} quiet={isQuiet(data)} />
+      <NodeIssue issues={data.issues} />
     </span>
   )
 }

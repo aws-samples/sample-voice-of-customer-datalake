@@ -17,7 +17,7 @@ import remarkGfm from 'remark-gfm'
 import { remarkParity } from './remarkParity'
 import type { Ref } from 'react'
 import type { MarkdownPolicy } from './markdownPolicy'
-import type { CalloutKind } from '../edit/markdown/callout'
+import { calloutLabelsOf } from '../edit/markdown/callout'
 import type { OutlineItem } from '../types'
 
 interface MarkdownReadProps {
@@ -39,10 +39,7 @@ function MarkdownRead({ source, policy, className, onOutline, headingIds = true,
   const { t } = useTranslation('documents')
   const outline = useRef<readonly OutlineItem[]>([])
   const plugins = useMemo<NonNullable<Options['remarkPlugins']>>(() => {
-    const calloutLabels: Record<CalloutKind, string> = {
-      note: t('editor.callout.note'), tip: t('editor.callout.tip'), important: t('editor.callout.important'),
-      warning: t('editor.callout.warning'), caution: t('editor.callout.caution'),
-    }
+    const calloutLabels = calloutLabelsOf(t)
     const onHeadings = (items: readonly OutlineItem[]) => { outline.current = items }
     return [remarkGfm, [remarkParity, { calloutLabels, ids: headingIds, onHeadings }]]
   }, [headingIds, t])

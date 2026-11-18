@@ -47,6 +47,12 @@ export function useAgentMutations(agentId: string) {
     queryClient.setQueryData(agentsKeys.detail(agentId), agent)
     void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
   }
+  // A run started or decided: its list, the agent's stats and the Automations list (its Last run cell) move.
+  const runsMoved = () => {
+    void queryClient.invalidateQueries({ queryKey: agentsKeys.runs(agentId) })
+    void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agentId) })
+    void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
+  }
   const update = useMutation({ mutationFn: (fields: Partial<AgentForm>) => agentsApi.update(agentId, fields), onSuccess: settle })
   const setEnabled = useMutation({
     mutationFn: (enabled: boolean) => (enabled ? agentsApi.enable(agentId) : agentsApi.disable(agentId)),
@@ -60,12 +66,7 @@ export function useAgentMutations(agentId: string) {
   const archive = useMutation({ mutationFn: () => agentsApi.archive(agentId), onSuccess: settle })
   const runNow = useMutation({
     mutationFn: (body?: RunNowBody) => agentsApi.run(agentId, body),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.runs(agentId) })
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agentId) })
-      // (the Automations list's Last run cell)
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
-    },
+    onSuccess: runsMoved,
   })
   const cancelRun = useMutation({
     mutationFn: (runId: string) => agentsApi.cancelRun(agentId, runId),
@@ -81,9 +82,7 @@ export function useAgentMutations(agentId: string) {
       agentsApi.decideRun(agentId, runId, decision, note),
     onSuccess: (run) => {
       queryClient.setQueryData(agentsKeys.run(agentId, run.run_id), run)
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.runs(agentId) })
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.detail(agentId) })
-      void queryClient.invalidateQueries({ queryKey: agentsKeys.list() })
+      runsMoved()
     },
   })
   return { update, setEnabled, setPaused, archive, runNow, cancelRun, decideRun }

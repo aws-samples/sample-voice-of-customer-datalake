@@ -4,12 +4,12 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  NODE_CATALOGUE, addNode, addToLoop, clearDefinition, connect, createLoop, edgeLabelsFor, loopBounds, loopIndexOf, mintId,
+  NODE_CATALOGUE, addToLoop, clearDefinition, connect, createLoop, edgeLabelsFor, loopBounds, loopIndexOf, mintId,
   moveNodes, parseNodeType, removeEdges, removeFromLoop, removeLoop, removeNodes, setEdgeLabel, updateLoop, updateNode,
   STEP_HEIGHT, STEP_WIDTH,
 } from './model'
 import { clampRounds, loopIssues } from './loopFields'
-import { emptyDefinition } from './model-fixtures'
+import { addNode, emptyDefinition } from './model-fixtures'
 import { kindSize } from './nodes/nodeKinds'
 import { validateLocally } from './graphRules'
 import { WORKFLOW_ALL_NODE_TYPES } from '@stream/assistant/tools/agent-limits'

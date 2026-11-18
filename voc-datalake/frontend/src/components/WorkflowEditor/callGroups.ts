@@ -35,8 +35,3 @@ export function callGroups(
       return [{ call: record.step, flow: record.flow, revision: record.revision, nodeIds, done, total: nodeIds.length }]
     })
 }
-
-/** The call a step of the run's copy came from (its innermost), or null for a step of the flow itself. */
-export function callOfStep(stepId: string, groups: readonly CallGroup[]): CallGroup | null {
-  return [...groups].reverse().find((group) => group.nodeIds.includes(stepId)) ?? null
-}

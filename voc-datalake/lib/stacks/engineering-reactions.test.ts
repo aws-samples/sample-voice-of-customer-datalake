@@ -7,10 +7,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { Match, type Template } from 'aws-cdk-lib/assertions';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { type Admitted, count, policyText, runtimeStack, supervisorEnv } from '../test-support/engineering-runtime-fixture';
+import { count, engineeringOnStack, policyText, runtimeStack, supervisorEnv } from '../test-support/engineering-runtime-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { REACTIONS_SCHEDULE_PREFIX } from './engineering-reactions';
 
@@ -37,77 +37,73 @@ describe('people\'s reactions on the host', () => {
   });
 
   describe('with -c engineeringAgents=true', () => {
-    let template: Template;
-    let admitted: Admitted[];
-    beforeAll(() => {
-      ({ template, admitted } = runtimeStack({ engineeringAgents: 'true' }));
-    }, SYNTH_TIMEOUT_MS);
+    const on = engineeringOnStack();
 
     it('creates one schedule group and no schedule in it (each run\'s is created at its end)', () => {
-      expect(count(template, 'AWS::Scheduler::ScheduleGroup', { Name: 'voc-engineering-reactions' })).toBe(1);
+      expect(count(on.template, 'AWS::Scheduler::ScheduleGroup', { Name: 'voc-engineering-reactions' })).toBe(1);
       // (the one schedule the stack holds is the weekly cross-run Learn pass's, in the default group:
       // engineering-cross-run.test.ts)
-      expect(count(template, 'AWS::Scheduler::Schedule', { GroupName: 'voc-engineering-reactions' })).toBe(0);
+      expect(count(on.template, 'AWS::Scheduler::Schedule', { GroupName: 'voc-engineering-reactions' })).toBe(0);
     });
 
     it('gives the scheduler a role of its own that only this account\'s group assumes and that only invokes the runtime', () => {
-      template.hasResourceProperties('AWS::IAM::Role', {
+      on.template.hasResourceProperties('AWS::IAM::Role', {
         AssumeRolePolicyDocument: { Statement: [Match.objectLike({
           Principal: { Service: 'scheduler.amazonaws.com' },
           Condition: { StringEquals: { 'aws:SourceAccount': '111111111111' }, ArnEquals: { 'aws:SourceArn': Match.anyValue() } },
         })] },
       });
-      const invoker = statements(template, 'EngineeringReactionsSchedulerRole');
+      const invoker = statements(on.template, 'EngineeringReactionsSchedulerRole');
       expect(invoker.map((found) => [found.Sid, found.Action])).toStrictEqual([['InvokeTheRuntime', 'lambda:InvokeFunction']]);
       expect(JSON.stringify(invoker[0]?.Resource)).toMatch(/:function:voc-engineering-runtime"\]\]\}$/);
     });
 
     it('lets the runtime create schedules in its group by their prefix only, and pass the scheduler\'s role to the scheduler only', () => {
-      expect(sid(template, 'ReactionsSchedules')).toMatchObject({ Effect: 'Allow', Action: 'scheduler:CreateSchedule' });
-      expect(JSON.stringify(sid(template, 'ReactionsSchedules')?.Resource)).toContain(SCHEDULES);
-      expect(sid(template, 'ReactionsSchedulerRole')).toMatchObject({
+      expect(sid(on.template, 'ReactionsSchedules')).toMatchObject({ Effect: 'Allow', Action: 'scheduler:CreateSchedule' });
+      expect(JSON.stringify(sid(on.template, 'ReactionsSchedules')?.Resource)).toContain(SCHEDULES);
+      expect(sid(on.template, 'ReactionsSchedulerRole')).toMatchObject({
         Action: 'iam:PassRole', Resource: { 'Fn::GetAtt': [expect.stringMatching(/EngineeringReactionsSchedulerRole/), 'Arn'] },
         Condition: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } },
       });
       // (no update, delete or any other scheduler action: a schedule deletes itself once it has run)
-      expect(policyText(template, 'EngineeringSupervisorRole').match(/"scheduler:\w+"/g)).toStrictEqual(['"scheduler:CreateSchedule"']);
+      expect(policyText(on.template, 'EngineeringSupervisorRole').match(/"scheduler:\w+"/g)).toStrictEqual(['"scheduler:CreateSchedule"']);
     });
 
     it('lets the runtime call the broker only through its IAM-authenticated function URL, as the agents do', () => {
-      expect(sid(template, 'ReactionsBrokerUrl')).toMatchObject({
+      expect(sid(on.template, 'ReactionsBrokerUrl')).toMatchObject({
         Action: 'lambda:InvokeFunctionUrl', Resource: BROKER, Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
       });
-      expect(sid(template, 'ReactionsBrokerThroughUrl')).toMatchObject({
+      expect(sid(on.template, 'ReactionsBrokerThroughUrl')).toMatchObject({
         Action: 'lambda:InvokeFunction', Resource: BROKER, Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
       });
     });
 
     it('lets the runtime read whether a run keeps a pull request, in the runs\' writes\' partitions only', () => {
-      expect(sid(template, 'ReactionsPullRequestReads')).toMatchObject({
+      expect(sid(on.template, 'ReactionsPullRequestReads')).toMatchObject({
         Effect: 'Allow', Action: ['dynamodb:GetItem', 'dynamodb:Query'],
         Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#WRITES#*'] } },
       });
     });
 
     it('asks the broker to admit the runtime\'s own role, by its function\'s name', () => {
-      expect(admitted.filter((entry) => entry.start !== true)).toStrictEqual([
+      expect(on.admitted.filter((entry) => entry.start !== true)).toStrictEqual([
         { role: { Ref: expect.stringMatching(/^EngineeringRuntimeEngineeringSupervisorRole/) }, functionName: 'voc-engineering-runtime' },
       ]);
     });
 
     it('writes the reactions rows with the grants it holds already: the run\'s partition and the scorecards\' PutItem', () => {
-      const runRows = statements(template, 'EngineeringSupervisorRole').filter((found) => JSON.stringify(found).includes('"WS#*#RUN#*"'));
+      const runRows = statements(on.template, 'EngineeringSupervisorRole').filter((found) => JSON.stringify(found).includes('"WS#*#RUN#*"'));
       expect(runRows.flatMap((found) => [found.Action].flat())).toContain('dynamodb:PutItem');
-      expect(sid(template, 'LearningScorecards')).toMatchObject({ Action: 'dynamodb:PutItem' });
-      expect(policyText(template, 'EngineeringSupervisorRole')).not.toMatch(/dynamodb:DeleteItem[^}]*WS#\*#RUN#\*/);
+      expect(sid(on.template, 'LearningScorecards')).toMatchObject({ Action: 'dynamodb:PutItem' });
+      expect(policyText(on.template, 'EngineeringSupervisorRole')).not.toMatch(/dynamodb:DeleteItem[^}]*WS#\*#RUN#\*/);
     });
 
     it('hands the runtime its group, the scheduler\'s role and the delay (3 days by default); the delivery none of them', () => {
-      expect(supervisorEnv(template)).toMatchObject({
+      expect(supervisorEnv(on.template)).toMatchObject({
         ENGINEERING_REACTIONS_GROUP: 'voc-engineering-reactions', ENGINEERING_REACTIONS_DELAY_DAYS: '3',
         ENGINEERING_REACTIONS_ROLE_ARN: { 'Fn::GetAtt': [expect.stringMatching(/EngineeringReactionsSchedulerRole/), 'Arn'] },
       });
-      const delivery = JSON.stringify(template.findResources('AWS::Lambda::Function', {
+      const delivery = JSON.stringify(on.template.findResources('AWS::Lambda::Function', {
         Properties: { FunctionName: Match.stringLikeRegexp('voc-engineering-(delivery|start)') },
       }));
       expect(delivery).not.toContain('ENGINEERING_REACTIONS_');

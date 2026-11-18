@@ -19,7 +19,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { FlowMode } from '../nodes/nodeData'
 
-export interface InspectorTabs<T extends string> {
+interface InspectorTabs<T extends string> {
   readonly ids: readonly T[]
   readonly active: T
   readonly icons: Readonly<Record<T, LucideIcon>>

@@ -19,7 +19,7 @@ type Params = Readonly<Record<string, unknown>>
 export interface NodeChip { readonly text: string; readonly tone: 'muted' | 'info' }
 
 /** Chips shown on a node at most; the rest fold into "+N". */
-export const MAX_CHIPS = 3
+const MAX_CHIPS = 3
 
 const FAMILY = /claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?!\d)/i
 
@@ -145,4 +145,9 @@ export function flowPrState(nodes: readonly Pick<WorkflowNode, 'type' | 'data'>[
 /** At most {@link MAX_CHIPS} chips, and how many more there are. */
 export function foldChips(chips: readonly NodeChip[]): { shown: NodeChip[]; more: number } {
   return { shown: chips.slice(0, MAX_CHIPS), more: Math.max(0, chips.length - MAX_CHIPS) }
+}
+
+/** A node's accessible description: its parts in order, the empty ones left out ("Agent, Fixer, Running"). */
+export function nodeWords(parts: readonly string[]): string {
+  return parts.filter((part) => part !== '').join(', ')
 }

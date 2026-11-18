@@ -11,8 +11,8 @@ import type { Construct } from 'constructs';
 
 import { booleanContextFlag } from './context-flag';
 
-export const WEB_REVIEWS_BOT_AUTH_CONTEXT_KEY = 'webReviewsBotAuth';
-export const WEB_REVIEWS_BROWSER_PROFILE_CONTEXT_KEY = 'webReviewsBrowserProfile';
+const WEB_REVIEWS_BOT_AUTH_CONTEXT_KEY = 'webReviewsBotAuth';
+const WEB_REVIEWS_BROWSER_PROFILE_CONTEXT_KEY = 'webReviewsBrowserProfile';
 
 /** Whether the ingestor's browser signs its requests (`-c webReviewsBotAuth=true|false`, on by default). */
 export function webReviewsBotAuth(scope: Construct): boolean {

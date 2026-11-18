@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { TestRouter } from '@test/TestRouter'
 import { renderWithQueryClient } from '@test/query-client'
 import { adminFlag, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { BUG_HUNT_EDGES } from '@test/workflowFixtures'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import type { FlowSelection } from './FlowCanvas'
@@ -38,10 +39,7 @@ const FLOW: WorkflowDefinition = {
     node('human', 'end', 'A person decides', { status: 'needs_human' }),
     node('pr', 'stop_at_pr', 'Pull request'),
   ],
-  edges: [
-    { id: 'e1', source: 'start', target: 'fix' }, { id: 'e2', source: 'fix', target: 'gate' },
-    { id: 'e3', source: 'gate', target: 'pr', label: 'pass' }, { id: 'e4', source: 'gate', target: 'human', label: 'fail' },
-  ],
+  edges: [...BUG_HUNT_EDGES, { id: 'e4', source: 'gate', target: 'human', label: 'fail' }],
   loops: [],
 }
 

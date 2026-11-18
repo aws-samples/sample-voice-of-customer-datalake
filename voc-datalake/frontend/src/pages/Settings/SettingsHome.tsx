@@ -32,7 +32,7 @@ import { accountTabPath } from '../Account/accountSections'
 import { PEOPLE_INVITE, adminPath, adminTabPath } from './adminPaths'
 import { visibleGroups, visibleSections } from './adminTabs'
 import type { AdminGroupId, AdminTabId } from './adminTabs'
-import { TAB_ICONS, groupLabelKey, sectionLabelKey } from './adminTabLabels'
+import { TAB_ICONS, groupLabelKey, sectionLabelKey, tabHintKey } from './adminTabLabels'
 import { BUILD_INFO, paddedVersion } from './buildInfo'
 import { isBlockedAccess, useModelCapacity } from './useModelCapacity'
 import SettingsSearch from './SettingsSearch'
@@ -48,13 +48,6 @@ const JOB_TITLE_KEYS: Readonly<Record<AdminTabId, string>> = {
   categories: 'home.jobs.categories.title', boards: 'home.jobs.boards.title', ai: 'home.jobs.ai.title',
   brand: 'home.jobs.brand.title', privacy: 'home.jobs.privacy.title', platform: 'home.jobs.platform.title',
   version: 'home.jobs.version.title',
-}
-
-const JOB_HINT_KEYS: Readonly<Record<AdminTabId, string>> = {
-  people: 'home.jobs.people.hint', sources: 'home.jobs.sources.hint', logs: 'home.jobs.logs.hint',
-  categories: 'home.jobs.categories.hint', boards: 'home.jobs.boards.hint', ai: 'home.jobs.ai.hint',
-  brand: 'home.jobs.brand.hint', privacy: 'home.jobs.privacy.hint', platform: 'home.jobs.platform.hint',
-  version: 'home.jobs.version.hint',
 }
 
 /** The page's reads, shared (same keys) with the pages that make them; each only where its route lets this caller. */
@@ -148,7 +141,7 @@ function JobCard({ tab, data }: Readonly<{ tab: AdminTabId; data: HomeData }>) {
           <Icon size={16} className="text-accent" aria-hidden="true" />
           <span id={titleId} className="font-semibold tracking-tight text-text-strong group-hover:text-accent-text">{t(JOB_TITLE_KEYS[tab])}</span>
         </span>
-        <span id={hintId} className="text-sm text-muted">{t(JOB_HINT_KEYS[tab])}</span>
+        <span id={hintId} className="text-sm text-muted">{t(tabHintKey(tab))}</span>
         {count === null ? null : <span id={countId} className="mt-auto pt-2 text-sm font-medium text-text">{count}</span>}
       </Link>
       {tab === 'people' ? (

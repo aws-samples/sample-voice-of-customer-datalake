@@ -26,7 +26,7 @@ export type StepNodeData = {
 }
 export type StepFlowNode = Node<StepNodeData, NodeKind>
 
-export type LoopFrameData = {
+type LoopFrameData = {
   loop: WorkflowLoop
   index: number
   width: number
@@ -35,7 +35,7 @@ export type LoopFrameData = {
 export type LoopFrameFlowNode = Node<LoopFrameData, 'loopFrame'>
 
 /** (7.52.00, run) A call's steps grouped under it: `<call>.<child>` steps of the run's flat copy. */
-export type CallFrameData = {
+type CallFrameData = {
   /** The call step's id (the prefix of its children's). */
   call: string
   /** What the frame's label reads ("Issue triage · r2"). */
@@ -47,7 +47,7 @@ export type CallFrameData = {
 }
 export type CallFrameFlowNode = Node<CallFrameData, 'callFrame'>
 
-export type LaneData = {
+type LaneData = {
   /** The agent on the task, else its role. */
   label: string
   role: string
@@ -80,7 +80,7 @@ export interface FlowLookups {
 const NO_CARDS: ReadonlyMap<string, RegistryCard> = new Map()
 const NO_FLOWS: ReadonlyMap<string, FlowName> = new Map()
 
-export const EMPTY_LOOKUPS: FlowLookups = {
+const EMPTY_LOOKUPS: FlowLookups = {
   mode: 'view', cards: NO_CARDS, flows: NO_FLOWS, descPrefix: 'flow', prState: null, handles: false,
 }
 

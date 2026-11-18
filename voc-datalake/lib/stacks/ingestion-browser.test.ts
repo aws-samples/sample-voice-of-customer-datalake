@@ -12,6 +12,7 @@ import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture'
 import { IamPolicySchema } from '../test-support/iam-statements';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 import { valueAt } from '../test-support/guards';
+import { FunctionEnvironmentSchema as FunctionSchema } from '../test-support/template-resources';
 import { BROWSER_IDENTIFIER_ENV, BROWSER_PROFILE_IDENTIFIER_ENV } from './ingestion-browser';
 
 const BROWSER = 'AWS::BedrockAgentCore::BrowserCustom';
@@ -22,9 +23,6 @@ const RoleSchema = z.object({
     Policies: z.unknown().optional(),
     ManagedPolicyArns: z.unknown().optional(),
   }),
-});
-const FunctionSchema = z.object({
-  Properties: z.object({ FunctionName: z.unknown(), Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),
 });
 const BrowserSchema = z.object({ Properties: z.record(z.string(), z.unknown()) });
 

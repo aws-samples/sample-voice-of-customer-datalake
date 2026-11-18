@@ -11,6 +11,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
+import { canvasHandleDouble } from '@test/canvasHandleDouble'
 import { renderWithQueryClient as render } from '@test/query-client'
 import { projectsApi } from '../../../api/projectsApi'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
@@ -22,10 +23,7 @@ import type { VersionChoice } from '../actions/versionChoices'
 import type { DocumentVersion } from '../../../api/projectDetailSchema'
 import type { ProjectDocument } from '../../../api/types'
 
-const handle = {
-  root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(),
-  run: vi.fn(() => true), can: vi.fn(() => true),
-}
+const handle = canvasHandleDouble()
 const canvasState = {
   content: 'Latest text', title: 'Refunds (v4)', setTitle: vi.fn(), rename: vi.fn(() => Promise.resolve()), draft: '',
   onChange: vi.fn(), dirty: false, saving: false, save: vi.fn(), discard: vi.fn(), conflict: null, titleEditable: false,

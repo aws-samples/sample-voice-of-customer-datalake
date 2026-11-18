@@ -7,9 +7,9 @@
  * @module components/WorkflowEditor/nodes/TerminalNode
  */
 import { useTranslation } from 'react-i18next'
-import { NodeFrame, NodeIssue, NodeLines, NodeTile } from './NodeParts'
-import { isQuiet, useStateWords } from './nodeState'
-import { terminalLine } from './nodeText'
+import { TiledNode } from './NodeParts'
+import { useStateWords } from './nodeState'
+import { nodeWords, terminalLine } from './nodeText'
 import { useFlowLookups } from './nodeData'
 import type { NodeProps } from '@xyflow/react'
 import type { StepFlowNode } from './nodeData'
@@ -22,15 +22,7 @@ export function TerminalNode({ id, data, selected }: NodeProps<StepFlowNode>) {
   const line = engineering ? terminalLine(t, step, prState ?? 'ready') : undefined
   const state = useStateWords(data)
   return (
-    <NodeFrame id={id} data={data} selected={selected} shape="voc-node-pill"
-      description={[t(`canvas.kinds.${kind}`), line ?? '', state].filter((part) => part !== '').join(', ')}>
-      <span className="flex h-full items-center gap-2 px-3 py-1">
-        <NodeTile step={step} kind={kind} size={24} />
-        <span className="min-w-0 flex-1">
-          <NodeLines title={step.data.title} line={line} quiet={isQuiet(data)} />
-          <NodeIssue issues={data.issues} />
-        </span>
-      </span>
-    </NodeFrame>
+    <TiledNode id={id} data={data} selected={selected} shape="voc-node-pill" padding="py-1"
+      description={nodeWords([t(`canvas.kinds.${kind}`), line ?? '', state])} line={line} />
   )
 }

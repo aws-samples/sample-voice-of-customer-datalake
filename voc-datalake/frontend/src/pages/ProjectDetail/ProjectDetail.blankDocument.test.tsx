@@ -14,6 +14,7 @@ import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
 import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
 import { renderProjectDetailPage as renderPage } from './project-detail-page-fixtures'
 import { emptyProductContext } from './productContextFields'
+import { selectedRange } from '@test/selectText'
 import type { ProjectDocument } from '../../api/types'
 
 const { getProject, getJobs, getProductContext } = projectDataMocks
@@ -38,15 +39,9 @@ vi.mock('../../api/projectsApi', () => ({
 vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => ({
   default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeCanvasEditor,
 }))
-vi.mock('./DocumentReviewView', async () => {
-  const { FakeCanvasEditor } = await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')
-  return {
-    default: ({ document, markdown, editable, onChange, handleRef }: {
-      document: ProjectDocument; markdown: string; editable: boolean
-      onChange?: (markdown: string) => void; handleRef?: React.Ref<never>
-    }) => <FakeCanvasEditor markdown={markdown} editable={editable} ariaLabel={document.title} onChange={onChange} handleRef={handleRef} />,
-  }
-})
+vi.mock('./DocumentReviewView', async () => ({
+  default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeReviewView,
+}))
 vi.mock('./useDocumentComments', () => ({
   useDocumentComments: () => ({ query: { isSuccess: false }, share: null, createShare: vi.fn(), revokeShare: vi.fn() }),
 }))
@@ -88,10 +83,13 @@ async function openDocumentsTab(user: User) {
   await user.click(await screen.findByRole('tab', { name: /documents/i }))
 }
 
-/** The selection inside a text field: [start, end]. */
-function selectedRange(field: HTMLElement): [number | null, number | null] {
-  if (!(field instanceof HTMLInputElement)) throw new Error('not a text field')
-  return [field.selectionStart, field.selectionEnd]
+/** The page rendered, its Documents tab open and New Document pressed: the new document's title field. */
+async function newDocument(): Promise<{ user: User; title: HTMLElement }> {
+  const user = userEvent.setup()
+  renderPage()
+  await openDocumentsTab(user)
+  await user.click(screen.getByRole('button', { name: 'New Document' }))
+  return { user, title: await screen.findByRole('textbox', { name: 'Document title' }) }
 }
 
 describe('ProjectDetail: New document, blank and named in place', () => {
@@ -103,12 +101,8 @@ describe('ProjectDetail: New document, blank and named in place', () => {
   })
 
   it('creates a blank document at once under the first free name and opens it with the title selected', async () => {
-    const user = userEvent.setup()
-    renderPage()
-    await openDocumentsTab(user)
-    await user.click(screen.getByRole('button', { name: 'New Document' }))
+    const { title } = await newDocument()
 
-    const title = await screen.findByRole('textbox', { name: 'Document title' })
     expect([api.createDocument.mock.calls, screen.queryByRole('dialog')])
       .toStrictEqual([[['proj-1', { title: 'Untitled document 2', content: '', document_type: 'custom' }]], null])
     await waitFor(() => expect(title).toHaveFocus())
@@ -120,11 +114,7 @@ describe('ProjectDetail: New document, blank and named in place', () => {
     api.updateDocument.mockImplementation((_projectId, _documentId, body) => Promise.resolve({
       document: { ...createdAs(field(body, 'title')), revision: 2 },
     }))
-    const user = userEvent.setup()
-    renderPage()
-    await openDocumentsTab(user)
-    await user.click(screen.getByRole('button', { name: 'New Document' }))
-    const title = await screen.findByRole('textbox', { name: 'Document title' })
+    const { user, title } = await newDocument()
     await waitFor(() => expect(title).toHaveFocus())
 
     await user.keyboard('Launch notes{Enter}')

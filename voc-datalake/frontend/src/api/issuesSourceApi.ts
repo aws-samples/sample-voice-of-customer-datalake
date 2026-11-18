@@ -28,8 +28,8 @@ import { isRecord } from '../lib/typeGuards'
  * repositories, not an App's connection, no source deployed, or not in the source's list yet (`pending`: a connection
  * made before 7.50.02, its next sync adds it). A reason the page does not know reads as `unknown` (a plain "not read").
  */
-export const ISSUES_REASONS = ['off', 'token', 'other_app', 'limit', 'not_app', 'not_deployed', 'pending'] as const
-export type IssuesReason = (typeof ISSUES_REASONS)[number] | 'unknown'
+const ISSUES_REASONS = ['off', 'token', 'other_app', 'limit', 'not_app', 'not_deployed', 'pending'] as const
+type IssuesReason = (typeof ISSUES_REASONS)[number] | 'unknown'
 
 const isReason = (value: string): value is (typeof ISSUES_REASONS)[number] => ISSUES_REASONS.some((reason) => reason === value)
 
@@ -40,8 +40,8 @@ function readReason(reason: string | null): IssuesReason | null {
 }
 
 /** The `voc-agent` label on a repository: made by the automation, already there, or not made (Check installation tries again). */
-export const LABEL_STATES = ['created', 'present', 'failed'] as const
-export type LabelState = (typeof LABEL_STATES)[number]
+const LABEL_STATES = ['created', 'present', 'failed'] as const
+type LabelState = (typeof LABEL_STATES)[number]
 
 const SIGN_INS = ['app', 'token', 'none'] as const
 

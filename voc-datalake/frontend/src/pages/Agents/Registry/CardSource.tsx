@@ -10,13 +10,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import DocumentSurface from '../../../components/Document/DocumentSurface'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import PressedChoices from '../../../components/PressedChoices/PressedChoices'
 import { engineeringRegistryApi, engineeringRegistryKeys } from '../../../api/engineeringRegistryApi'
 import { retryOnceUnlessNotFound } from '../../../api/apiErrorStatus'
 import { sourceDocumentOf, templateSourceAdapter } from '../documents/templateSourceDocument'
-import { neverSaved } from '../documents/readOnly'
+import ReadOnlySurface from '../documents/ReadOnlySurface'
 
 type SourceFile = 'skill' | 'card'
 const FILES: readonly SourceFile[] = ['skill', 'card']
@@ -43,11 +42,8 @@ function SourceDocument({ kind, role }: Readonly<{ kind: SourceFile; role: strin
     </p>
   )
   return (
-    <DocumentSurface adapter={templateSourceAdapter(kind, role)} variant="inline" title={FILE_NAMES[kind]} headingLevel={3}
-      meta={meta} stored={read.data} mode="read" compare={null} comments={null} onSaved={neverSaved} fullPath={null}
-      footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+    <ReadOnlySurface adapter={templateSourceAdapter(kind, role)} variant="inline" title={FILE_NAMES[kind]} headingLevel={3}
+      meta={meta} stored={read.data} mode="read" compare={null} fullPath={null} />
   )
 }
 

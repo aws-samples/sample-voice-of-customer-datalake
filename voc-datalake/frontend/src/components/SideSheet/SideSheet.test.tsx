@@ -25,12 +25,16 @@ function Host({ onClose = vi.fn() }: Readonly<{ onClose?: () => void }>) {
 /** The focused element, as an HTMLElement or null. */
 const focused = (): HTMLElement | null => (document.activeElement instanceof HTMLElement ? document.activeElement : null)
 
+/** The host rendered and its sheet opened from "Edit Ada": the sheet. */
+async function openAdaSheet(): Promise<HTMLElement> {
+  render(<Host />)
+  await userEvent.click(screen.getByRole('button', { name: 'Edit Ada' }))
+  return screen.getByRole('dialog', { name: 'Edit Ada' })
+}
+
 describe('SideSheet', () => {
   it('is a modal dialog named by its title, at the end, with the dialog recipes', async () => {
-    render(<Host />)
-    await userEvent.click(screen.getByRole('button', { name: 'Edit Ada' }))
-
-    const sheet = screen.getByRole('dialog', { name: 'Edit Ada' })
+    const sheet = await openAdaSheet()
     expect(sheet).toHaveAttribute('aria-modal', 'true')
     expect(sheet).toHaveClass('sheet-panel')
     expect(sheet.parentElement).toHaveClass('justify-end', 'items-stretch')
@@ -39,8 +43,7 @@ describe('SideSheet', () => {
   })
 
   it('shows its description under the title', async () => {
-    render(<Host />)
-    await userEvent.click(screen.getByRole('button', { name: 'Edit Ada' }))
+    await openAdaSheet()
 
     expect(screen.getByText('ada@example.com')).toHaveClass('dialog-description')
   })
@@ -59,9 +62,7 @@ describe('SideSheet', () => {
   })
 
   it('keeps the focus inside however far Tab goes', async () => {
-    render(<Host />)
-    await userEvent.click(screen.getByRole('button', { name: 'Edit Ada' }))
-    const sheet = screen.getByRole('dialog', { name: 'Edit Ada' })
+    const sheet = await openAdaSheet()
 
     await Array.from({ length: 5 }).reduce<Promise<void>>((done) => done.then(() => userEvent.tab()), Promise.resolve())
 

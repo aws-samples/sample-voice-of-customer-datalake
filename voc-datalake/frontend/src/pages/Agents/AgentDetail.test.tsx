@@ -77,15 +77,17 @@ beforeEach(() => {
   adminFlag.isAdmin = true
 })
 
+/** The agent's page rendered and loaded: its tabs' names, in order. */
+async function tabNames(): Promise<string[]> {
+  renderDetail()
+  await findHeading()
+  return within(screen.getByRole('tablist', { name: 'Agent sections' })).getAllByRole('tab').map((tab) => tab.textContent.trim())
+}
+
 describe('AgentDetail — tabs', () => {
   it("renders a product automation's tabs, Settings open before its first run", async () => {
     route(baseRoutes())
-    renderDetail()
-    await findHeading()
-    const tabs = within(screen.getByRole('tablist', { name: 'Agent sections' })).getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent.trim())).toStrictEqual(
-      ['Runs', 'Triggers', 'Settings', 'Personas', 'Flow', 'Budget & models'],
-    )
+    expect(await tabNames()).toStrictEqual(['Runs', 'Triggers', 'Settings', 'Personas', 'Flow', 'Budget & models'])
     expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Name')).toHaveValue('Scout')
   })
@@ -100,10 +102,7 @@ describe('AgentDetail — tabs', () => {
   it("renders an engineering automation's tabs: no Personas, Budget alone", async () => {
     const engineering = { ...AGENT, engineering: { connection: null, language: null, feedback_type: 'bug' } }
     route(baseRoutes({ 'GET /agents/ag_1': () => ({ agent: engineering }), 'GET /agents/engineering/connections': () => ({ connections: [], limit: 20 }) }))
-    renderDetail()
-    await findHeading()
-    const tabs = within(screen.getByRole('tablist', { name: 'Agent sections' })).getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent.trim())).toStrictEqual(['Runs', 'Triggers', 'Settings', 'Flow', 'Budget'])
+    expect(await tabNames()).toStrictEqual(['Runs', 'Triggers', 'Settings', 'Flow', 'Budget'])
   })
 
   it("the settings' workflow picker never offers an engineering flow", async () => {

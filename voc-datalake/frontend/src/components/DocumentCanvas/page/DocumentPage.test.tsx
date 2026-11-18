@@ -9,20 +9,19 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { MemoryRouter } from 'react-router-dom'
+import { canvasHandleDouble } from '@test/canvasHandleDouble'
 import { renderWithQueryClient as render } from '@test/query-client'
 import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { VIEWER_ACCESS } from '../../../pages/ProjectDetail/projectAccess-fixtures'
 import DocumentPage from './DocumentPage'
 import { useFocusViewActive } from './focusView'
+import { selectedRange } from '@test/selectText'
 import type { ReactNode } from 'react'
 import type { ProjectDocument } from '../../../api/types'
 import type { OutlineItem } from '../../Document/types'
 
-const handle = {
-  root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scrollToHeading: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(),
-  run: vi.fn(() => true), can: vi.fn(() => true),
-}
+const handle = canvasHandleDouble()
 const canvasState = {
   content: '', title: 'Notes', setTitle: vi.fn(), rename: vi.fn(() => Promise.resolve()), draft: '', onChange: vi.fn(),
   dirty: false, saving: false,
@@ -113,10 +112,11 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-/** The selection inside a text field: [start, end]. */
-function selectedRange(field: HTMLElement): [number | null, number | null] {
-  if (!(field instanceof HTMLInputElement)) throw new Error('not a text field')
-  return [field.selectionStart, field.selectionEnd]
+/** A document with no comments on the page, and its title field. */
+function renderTitled() {
+  const user = userEvent.setup()
+  renderPage(doc({}))
+  return { user, title: screen.getByRole('textbox', { name: 'Document title' }) }
 }
 
 describe('DocumentPage: a document with no comments (research, custom)', () => {
@@ -136,9 +136,7 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
   })
 
   it('renames in place: typing changes nothing yet, Enter saves the new name and leaves for the text', async () => {
-    const user = userEvent.setup()
-    renderPage(doc({}))
-    const title = screen.getByRole('textbox', { name: 'Document title' })
+    const { user, title } = renderTitled()
     await user.type(title, 'X')
     expect([title.getAttribute('value'), canvasState.rename.mock.calls.length]).toStrictEqual(['NotesX', 0])
     await user.keyboard('{Enter}')
@@ -147,9 +145,7 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
   })
 
   it('saves the new name when the title is left, once, and trims it', async () => {
-    const user = userEvent.setup()
-    renderPage(doc({}))
-    const title = screen.getByRole('textbox', { name: 'Document title' })
+    const { user, title } = renderTitled()
     await user.clear(title)
     await user.type(title, '  Field notes  ')
     await user.tab()
@@ -157,9 +153,7 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
   })
 
   it('puts the saved name back on Escape, saving nothing', async () => {
-    const user = userEvent.setup()
-    renderPage(doc({}))
-    const title = screen.getByRole('textbox', { name: 'Document title' })
+    const { user, title } = renderTitled()
     await user.type(title, ' draft')
     await user.keyboard('{Escape}')
     expect(title).toHaveValue('Notes')
@@ -168,9 +162,7 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
   })
 
   it('refuses an empty name: Enter says why and keeps the field, leaving it puts the saved name back', async () => {
-    const user = userEvent.setup()
-    renderPage(doc({}))
-    const title = screen.getByRole('textbox', { name: 'Document title' })
+    const { user, title } = renderTitled()
     await user.clear(title)
     await user.keyboard('{Enter}')
     expect(title).toHaveAccessibleDescription('A document needs a name.')
@@ -181,9 +173,7 @@ describe('DocumentPage: a document with no comments (research, custom)', () => {
   })
 
   it('saves nothing when the name is left unchanged', async () => {
-    const user = userEvent.setup()
-    renderPage(doc({}))
-    const title = screen.getByRole('textbox', { name: 'Document title' })
+    const { user, title } = renderTitled()
     await user.type(title, 'X{Backspace}')
     await user.keyboard('{Enter}')
     expect(canvasState.rename).not.toHaveBeenCalled()

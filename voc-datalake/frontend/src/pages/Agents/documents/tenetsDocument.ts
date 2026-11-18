@@ -55,7 +55,7 @@ export type TenetChange =
   | { readonly kind: 'removed'; readonly tenet: Tenet }
   | { readonly kind: 'changed'; readonly tenet: Tenet; readonly fields: readonly TenetField[] }
 
-export type TenetField = 'title' | 'statement' | 'rationale' | 'citations'
+type TenetField = 'title' | 'statement' | 'rationale' | 'citations'
 const FIELDS: readonly TenetField[] = ['title', 'statement', 'rationale', 'citations']
 
 const fieldOf = (tenet: Tenet, field: TenetField) => (field === 'citations' ? tenet.citations.join('\n') : tenet[field].trim())
@@ -94,7 +94,7 @@ export function tenetsToReview(versions: readonly TenetsVersion[], head: TenetsH
 }
 
 /** Why a version is read only: decided once accepted or rejected; a draft is decided on, never edited (D6-3). */
-export function tenetsReadOnlyReason(status: string): ReadOnlyReason {
+function tenetsReadOnlyReason(status: string): ReadOnlyReason {
   return status === 'draft' ? 'proposalOnly' : 'decided'
 }
 

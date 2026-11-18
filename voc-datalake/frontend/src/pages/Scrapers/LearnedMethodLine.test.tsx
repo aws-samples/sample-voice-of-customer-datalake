@@ -9,10 +9,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
+import { webReviewsPlugin } from './scrapers-fixtures'
 import AppConfigList from './AppConfigList'
 import { ADMIN_ONLY } from '@test/adminOnly'
 import type { WebReviewMethodRecord } from '../../api/webReviewMethodsApi'
-import type { PluginManifest } from '../../plugins/types'
 
 const mockList = vi.fn<() => Promise<WebReviewMethodRecord[]>>()
 const mockClear = vi.fn<(domain: string) => Promise<unknown>>()
@@ -31,14 +31,12 @@ vi.mock('../../api/webReviewMethodsApi', () => ({
   webReviewMethodsApi: { list: () => mockList(), clear: (domain: string) => mockClear(domain) },
 }))
 vi.mock('../../store/configStore', () => configStoreModule())
-const noBrand = (): string | undefined => void 0
-vi.mock('./useRadarBrands', () => ({ useRadarBrandLabeler: () => noBrand }))
+vi.mock('./useRadarBrands', () => import('@test/radarBrandFixtures').then((m) => m.noRadarBrandsModule()))
 
-const plugin: PluginManifest = {
-  id: 'web_reviews', name: 'Web Reviews', icon: 'Web', enabled: true, hasIngestor: true, hasWebhook: false, hasS3Trigger: false,
+const plugin = webReviewsPlugin({
   config: [{ key: 'method', label: 'Read with', type: 'select', required: false, secret: false,
     options: [{ value: 'auto', label: 'Automatic' }, { value: 'browser', label: 'Browser only' }] }],
-}
+})
 const pages = [
   { id: 'p1', app_name: 'Reviews - Acme', url: 'https://www.Reviews.example/acme' },
   { id: 'p2', app_name: 'Forum - Acme', url: 'https://forum.example/acme', method: 'browser' },

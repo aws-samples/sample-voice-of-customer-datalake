@@ -90,7 +90,7 @@ const CardSchema = z.object({
 export type RegistryCard = z.output<typeof CardSchema>
 
 const EventSchema = z.object({ version: count, event: text, by: text, at: text })
-export type RegistryCardEvent = z.output<typeof EventSchema>
+type RegistryCardEvent = z.output<typeof EventSchema>
 
 export interface RegistryCardDetail {
   card: RegistryCard
@@ -154,7 +154,7 @@ export interface QualityGates {
 const OwnGateSchema = z.object({ file: text, argv: names, timeout_s: count }).nullable().catch(null)
 
 /** The kinds of template whose source text the server reads from the bundle. */
-export const SOURCE_KINDS = ['skill', 'card', 'flow', 'brief'] as const
+const SOURCE_KINDS = ['skill', 'card', 'flow', 'brief'] as const
 export type SourceKind = (typeof SOURCE_KINDS)[number]
 const SourceSchema = z.object({
   kind: z.enum(SOURCE_KINDS), id: z.string(), path: text, text: z.string(), digest: text,
@@ -214,7 +214,7 @@ export function parseTemplateSource(raw: unknown): TemplateSource {
   return parsed.data
 }
 
-export function parseCreatedCard(raw: unknown): RegistryCard {
+function parseCreatedCard(raw: unknown): RegistryCard {
   const parsed = CardSchema.safeParse(isRecord(raw) ? raw.card : undefined)
   if (!parsed.success) throw new Error('The answer to making the card was unreadable')
   return parsed.data

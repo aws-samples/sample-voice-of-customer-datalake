@@ -14,32 +14,15 @@ import { act } from '@testing-library/react'
 import { renderWithQueryClient as render } from '@test/query-client'
 import { applyEdgeSelection, NO_EDGES } from './edgeSelection'
 import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
-import type { Edge, EdgeChange, OnSelectionChangeParams } from '@xyflow/react'
+import { probedFlowProps as lastProps } from '@test/reactFlowProbe'
+import type { Edge } from '@xyflow/react'
 import type { CanvasSelection } from './selection'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 
-interface ProbeProps {
-  edges: Edge[]
-  onEdgesChange: (changes: EdgeChange[]) => void
-  onSelectionChange: (params: OnSelectionChangeParams) => void
-}
-const probe: { last: ProbeProps | null } = { last: null }
-
-vi.mock('@xyflow/react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@xyflow/react')>()
-  function ReactFlowProbe(props: ProbeProps) {
-    probe.last = props
-    return null
-  }
-  return { ...actual, ReactFlow: ReactFlowProbe }
-})
+vi.mock('@xyflow/react', async (importOriginal) =>
+  (await import('@test/reactFlowProbe')).reactFlowProbeModule(importOriginal))
 
 const { WorkflowCanvas } = await import('./WorkflowCanvas')
-
-function lastProps(): ProbeProps {
-  if (probe.last === null) throw new Error('ReactFlow was not rendered')
-  return probe.last
-}
 
 const edgeById = (id: string): Edge | undefined => lastProps().edges.find((e) => e.id === id)
 

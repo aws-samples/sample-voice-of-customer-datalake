@@ -43,7 +43,6 @@ const CardIoSchema = z.object({
   required: z.boolean().catch(false),
   trust: text,
 })
-export type CardIo = z.output<typeof CardIoSchema>
 
 /** A role's card over its connection's runs (null for the shared scope). */
 const ScorecardSchema = z.object({
@@ -134,7 +133,6 @@ export type GateBrief = z.output<typeof BriefSchema>
 
 /** Why a gate stops at a person: a code, its text key (`gates.stops.<code>`) and the English words. */
 const GateStopSchema = z.object({ code: z.string().min(1), text: text, text_key: text })
-export type GateStop = z.output<typeof GateStopSchema>
 
 const GatesSchema = z.object({
   packs: eachOf(GatePackSchema),
@@ -150,10 +148,8 @@ const GatesSchema = z.object({
 })
 export type GatesView = z.output<typeof GatesSchema>
 
-
 /** One argument of an assertion: `role` (a role id), `integer` (with its bounds) or text. */
 const AssertionArgSchema = z.object({ name: z.string().min(1), type: text, minimum: maybeNumber, maximum: maybeNumber })
-export type AssertionArg = z.output<typeof AssertionArgSchema>
 
 /** One check of the vocabulary: what it asks, its text keys, its arguments, the steps it is checked on, its `on_fail`s. */
 const AssertionCheckSchema = z.object({

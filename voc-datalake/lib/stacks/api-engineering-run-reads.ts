@@ -26,17 +26,17 @@ import { ENGINEERING_WORKSPACE } from './core-buckets';
 
 const RUN_AGENT_COMMITS = `ws/${ENGINEERING_WORKSPACE}/runs/*/*/commits/*`;
 /** An agent's transcript chunks (runtime/harness/transcript.py). */
-export const RUN_TRANSCRIPT_KEYS = `${RUN_AGENT_COMMITS}/_transcripts/*`;
+const RUN_TRANSCRIPT_KEYS = `${RUN_AGENT_COMMITS}/_transcripts/*`;
 /** An agent's patches: the submitted ones and each checkpoint's (runtime/harness/tools.py snapshot). */
-export const RUN_PATCH_KEYS = `${RUN_AGENT_COMMITS}/_patches/*`;
+const RUN_PATCH_KEYS = `${RUN_AGENT_COMMITS}/_patches/*`;
 /** An agent's gate record (`…/_gate/attempt-<n>/record.json`, quality_gate/record.py). */
-export const RUN_GATE_KEYS = `${RUN_AGENT_COMMITS}/_gate/*`;
+const RUN_GATE_KEYS = `${RUN_AGENT_COMMITS}/_gate/*`;
 /** A run's manifest versions (runtime/manifest.py). */
-export const RUN_MANIFEST_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_manifest/*`;
+const RUN_MANIFEST_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*/_manifest/*`;
 /** The flows' weekly cross-run Learn records (7.53.00, learning/cross_run.py record_key). */
 const CROSS_RUN_RECORD_READS = `ws/${ENGINEERING_WORKSPACE}/learn/*`;
 /** What the role may list: an attempt's transcript chunks and its patches, and a flow's recorded weeks. */
-export const RUN_LISTED_PREFIXES = [RUN_TRANSCRIPT_KEYS, RUN_PATCH_KEYS, CROSS_RUN_RECORD_READS];
+const RUN_LISTED_PREFIXES = [RUN_TRANSCRIPT_KEYS, RUN_PATCH_KEYS, CROSS_RUN_RECORD_READS];
 
 export function grantEngineeringRunReads(role: iam.Role, bucket: s3.IBucket): void {
   const objects = [RUN_TRANSCRIPT_KEYS, RUN_PATCH_KEYS, RUN_GATE_KEYS, RUN_MANIFEST_KEYS, CROSS_RUN_RECORD_READS]

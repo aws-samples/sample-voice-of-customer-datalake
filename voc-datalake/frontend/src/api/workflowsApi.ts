@@ -268,7 +268,7 @@ export function otherAutomations(usedBy: WorkflowUsedBy, agentId?: string): Usin
 }
 
 /** The 409 `code` of a save refused because other automations run the flow and it was not confirmed. */
-export const SHARED_FLOW_CODE = 'shared_flow'
+const SHARED_FLOW_CODE = 'shared_flow'
 
 /** A save refused for a shared flow (409 `shared_flow`): confirm, then save again with `confirm_shared`. */
 export function isSharedFlowRefusal(error: unknown): boolean {

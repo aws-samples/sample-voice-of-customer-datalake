@@ -17,7 +17,7 @@
 import { engineeringSkillsApi } from '../../../api/engineeringSkillsApi'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { unlessGone } from './readOnly'
-import { joinFrontMatter, splitFrontMatter } from '../../../components/Document/text/frontMatter'
+import { joinFrontMatter } from '../../../components/Document/text/frontMatter'
 import type { DocumentAdapter, ReadOnlyReason, StoredDocument } from '../../../components/Document/types'
 import type { ProposeBody } from '../../../api/engineeringSkillActionsApi'
 import type { SkillRole, SkillTemplateUpdate, SkillVersionDetail } from '../../../api/engineeringSkillsApi'
@@ -48,7 +48,7 @@ const flat = (value: string) => {
 }
 
 /** The version's properties as a SKILL.md front-matter (flat lines: model, harness, tools). */
-export function skillFrontMatter(record: SkillVersionDetail['record']): string {
+function skillFrontMatter(record: SkillVersionDetail['record']): string {
   const lines = [`model: ${flat(record.model)}`, `harness: ${flat(record.harness)}`, `tools: ${flat(record.tool_policy.join(', '))}`]
   return `---\n${lines.join('\n')}\n---\n`
 }
@@ -58,17 +58,12 @@ export function skillMarkdown(record: SkillVersionDetail['record']): string {
   return joinFrontMatter(skillFrontMatter(record), record.instructions)
 }
 
-/** The instructions a SKILL.md's body is (what a proposal sends), the front-matter left as it was read. */
-export function instructionsOf(markdown: string): string {
-  return splitFrontMatter(markdown).body
-}
-
 export function skillDocumentOf(connection: string, role: SkillRole, detail: SkillVersionDetail, title: string): SkillDocument {
   return { title, content: skillMarkdown(detail.record), connection, role, version: detail.version }
 }
 
 /** Why a version is read only: an accepted or rejected one is decided; a proposal is decided on, never edited. */
-export function skillReadOnlyReason(status: string): ReadOnlyReason {
+function skillReadOnlyReason(status: string): ReadOnlyReason {
   return status === 'accepted' || status === 'rejected' ? 'decided' : 'proposalOnly'
 }
 

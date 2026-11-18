@@ -8,8 +8,9 @@
  */
 import { Hand } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { NodeFrame, NodeIssue, NodeLines } from './NodeParts'
-import { isQuiet, useStateWords } from './nodeState'
+import { NodeBody, NodeFrame } from './NodeParts'
+import { useStateWords } from './nodeState'
+import { nodeWords } from './nodeText'
 import type { NodeProps } from '@xyflow/react'
 import type { StepFlowNode } from './nodeData'
 
@@ -20,13 +21,10 @@ export function DecisionNode({ id, data, selected }: NodeProps<StepFlowNode>) {
   const state = useStateWords(data)
   return (
     <NodeFrame id={id} data={data} selected={selected} shape="voc-node-pill"
-      description={[t('canvas.kinds.decision'), line, state].filter((part) => part !== '').join(', ')}>
+      description={nodeWords([t('canvas.kinds.decision'), line, state])}>
       <span className="flex h-full items-center gap-2.5 px-4 py-1.5">
         <span className="voc-node-diamond" aria-hidden="true"><Hand size={12} /></span>
-        <span className="min-w-0 flex-1">
-          <NodeLines title={data.step.data.title} line={line} quiet={isQuiet(data)} />
-          <NodeIssue issues={data.issues} />
-        </span>
+        <NodeBody data={data} line={line} />
       </span>
     </NodeFrame>
   )

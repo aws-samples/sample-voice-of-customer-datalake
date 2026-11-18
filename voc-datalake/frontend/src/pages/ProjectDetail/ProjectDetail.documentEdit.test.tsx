@@ -15,7 +15,7 @@ import { ApiError } from '../../lib/errors'
 import { useConfigStore } from '../../store/configStore'
 import enDocuments from '../../../public/locales/en/documents.json'
 import enComponents from '../../../public/locales/en/components.json'
-import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
+import { makeProject, preloadDocumentPage, savedEditOf } from './project-detail-fixtures'
 import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
 import { renderProjectDetailPage } from './project-detail-page-fixtures'
 import { emptyProductContext } from './productContextFields'
@@ -28,12 +28,7 @@ type EditBody = { title?: string; content?: string; edit_id?: string; expected_r
 const mockUpdateDocument = vi.fn<(projectId: string, documentId: string, body: EditBody) => unknown>()
 
 /** The n-th save's (project, document, body), with the fresh edit id reduced to its type. */
-function savedEdit(n = 0): unknown {
-  const call = mockUpdateDocument.mock.calls[n]
-  if (call === undefined) return undefined
-  const [projectId, documentId, body] = call
-  return [projectId, documentId, { ...body, edit_id: typeof body.edit_id }]
-}
+const savedEdit = (n = 0): unknown => savedEditOf(mockUpdateDocument.mock.calls, n)
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -49,15 +44,9 @@ vi.mock('../../components/Document/edit/editor/CanvasEditor', async () => ({
   default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeCanvasEditor,
 }))
 // A PR/FAQ / PRD reads inside the comments view (T3's); here only its canvas matters.
-vi.mock('./DocumentReviewView', async () => {
-  const { FakeCanvasEditor } = await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')
-  return {
-    default: ({ document, markdown, editable, onChange, handleRef }: {
-      document: ProjectDocument; markdown: string; editable: boolean
-      onChange?: (markdown: string) => void; handleRef?: React.Ref<never>
-    }) => <FakeCanvasEditor markdown={markdown} editable={editable} ariaLabel={document.title} onChange={onChange} handleRef={handleRef} />,
-  }
-})
+vi.mock('./DocumentReviewView', async () => ({
+  default: (await import('../../components/DocumentCanvas/actions/canvas-editor-fixtures')).FakeReviewView,
+}))
 vi.mock('./useDocumentComments', () => ({
   useDocumentComments: () => ({ query: { isSuccess: false }, share: null, createShare: vi.fn(), revokeShare: vi.fn() }),
 }))

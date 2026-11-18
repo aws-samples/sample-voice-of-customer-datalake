@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Wrench } from 'lucide-react'
 import { ENGINEERING_MAX_MONTHLY_BUDGET_USD } from '@stream/assistant/tools/agent-limits'
+import { LabeledField } from '../../../components/LabeledField/LabeledField'
 import SideSheet from '../../../components/SideSheet/SideSheet'
 import { failingChecksOf } from '../../../api/engineeringReadinessApi'
 import { serverReason } from '../../../lib/errors'
@@ -42,14 +43,7 @@ export type DrawerFocus = 'fields' | 'readiness'
 function StepField({ n, label, hint, hintTone = 'muted', children }: Readonly<{
   n: number; label: string; hint?: string; hintTone?: 'muted' | 'danger'; children: (id: string) => ReactNode
 }>) {
-  const id = useId()
-  return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="block text-[12px] font-medium text-muted"><StepTitle n={n}>{label}</StepTitle></label>
-      {children(id)}
-      {hint !== undefined && <p id={`${id}-hint`} className={hintTone === 'danger' ? 'text-[12px] text-danger' : 'text-[12px] text-muted'}>{hint}</p>}
-    </div>
-  )
+  return <LabeledField label={<StepTitle n={n}>{label}</StepTitle>} hint={hint} hintTone={hintTone}>{children}</LabeledField>
 }
 
 /** ① The repository: one it can use as text (and the way to Connections), several in a select, `owner/name` first. */

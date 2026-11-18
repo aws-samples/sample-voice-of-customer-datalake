@@ -18,10 +18,8 @@ import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 // Partial: the Plans list reaches the assistant store, which reads the real auth store.
-vi.mock('../../store/authStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../store/authStore')>()),
-  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
-}))
+vi.mock('../../store/authStore', (importOriginal) =>
+  import('@test/fetchApiRoutes').then((m) => m.authStoreWithOriginal(importOriginal)))
 vi.mock('../../runtimeConfig', (importOriginal) =>
   import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
 

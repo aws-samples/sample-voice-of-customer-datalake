@@ -12,7 +12,7 @@ import { joinFrontMatter, splitFrontMatter } from '../../../components/Document/
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const {
-  exampleChanges, instructionsOf, isStaleBase, proposalIssues, proposeBody, skillAdapter, skillDocumentOf, skillMarkdown,
+  exampleChanges, isStaleBase, proposalIssues, proposeBody, skillAdapter, skillDocumentOf, skillMarkdown,
 } = await import('./skillDocument')
 const { parseDetail } = await import('../../../api/engineeringSkillsApi')
 
@@ -37,9 +37,8 @@ describe('a skill version as a SKILL.md', () => {
     expect(joinFrontMatter(frontMatter, body)).toBe(markdown)
   })
 
-  it('reads its instructions back from the body alone, whatever the editor did not touch', () => {
-    expect(instructionsOf(skillMarkdown(RECORD))).toBe(RECORD.instructions)
-    expect(instructionsOf(skillMarkdown({ ...RECORD, instructions: '', tool_policy: [] }))).toBe('')
+  it('has an empty body when it has no instructions, its front-matter still there', () => {
+    expect(splitFrontMatter(skillMarkdown({ ...RECORD, instructions: '', tool_policy: [] })).body).toBe('')
   })
 
   it('is read only by its status: an accepted or rejected version decided, a proposal changed only by proposing', () => {

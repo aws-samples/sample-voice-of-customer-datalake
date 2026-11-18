@@ -13,7 +13,7 @@ import clsx from 'clsx'
 import { lazy, Suspense, useEffect, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { noCleanup } from '../../../../hooks/noCleanup'
-import type { CalloutKind } from '../markdown/callout'
+import { calloutLabelsOf } from '../markdown/callout'
 import { markdownToDoc } from '../markdown/convert'
 import { canvasExtensions } from '../markdown/extensions'
 import { canRunCommand, runCommand, type CanvasCommand } from './commands'
@@ -97,13 +97,7 @@ function focusText(editor: Editor | null, scroll: boolean) {
 function useExtensions(controller: CanvasController) {
   const { t } = useTranslation('documents')
   const [extensions] = useState(() => {
-    const calloutLabels: Record<CalloutKind, string> = {
-      note: t('editor.callout.note'),
-      tip: t('editor.callout.tip'),
-      important: t('editor.callout.important'),
-      warning: t('editor.callout.warning'),
-      caution: t('editor.callout.caution'),
-    }
+    const calloutLabels = calloutLabelsOf(t)
     return [
       ...canvasExtensions({ placeholder: t('editor.placeholder'), calloutLabels, taskLabel: () => t('editor.task'), emptyClass: EMPTY_CLASS }),
       HeadingIds,

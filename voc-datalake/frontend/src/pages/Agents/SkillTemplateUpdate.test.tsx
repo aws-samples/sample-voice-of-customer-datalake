@@ -69,6 +69,15 @@ function renderSkills(entry = '/agents/skills/fixer') {
 
 beforeEach(() => { resetFetchApi() })
 
+/** The Skills page rendered; its "Template updated" panel opened on what it changes, and its Propose pressed. */
+async function proposeTheTemplate() {
+  renderSkills()
+  const panel = await screen.findByRole('region', { name: 'Template updated' })
+  await userEvent.click(within(panel).getByRole('button', { name: 'Show what it changes' }))
+  await userEvent.click(await within(panel).findByRole('button', { name: 'Propose v2 from the template' }))
+  return panel
+}
+
 describe('the wire shape', () => {
   it('reads the template a history names, and none from one that names none or one it cannot read', () => {
     expect([parseHistory(history(NEWER)).template, parseHistory(history(undefined)).template, parseHistory(history('v2')).template])
@@ -118,10 +127,7 @@ describe('Template updated', () => {
   it('proposes it from what the screen showed, and opens the proposal for review', async () => {
     route({ ...ADOPTABLE, 'GET /agents/engineering/skills/fixer/versions/4?connection=': () => ({ ...CURRENT,
       version: { ...CURRENT.version, version: 4, status: 'proposed', base: { shared: true, version: 3 } } }) })
-    renderSkills()
-    const panel = await screen.findByRole('region', { name: 'Template updated' })
-    await userEvent.click(within(panel).getByRole('button', { name: 'Show what it changes' }))
-    await userEvent.click(await within(panel).findByRole('button', { name: 'Propose v2 from the template' }))
+    const panel = await proposeTheTemplate()
     expect(await within(panel).findByRole('status')).toHaveTextContent('The template is proposed as version 4')
     expect(sentFetchApiBody('/agents/engineering/skills/fixer/template/adopt?connection=', 'POST'))
       .toStrictEqual({ expected_current: 3, template_version: 2 })
@@ -136,10 +142,7 @@ describe('Template updated', () => {
         throw new Error('it changed since you opened it: the current version moved; read it again')
       },
     })
-    renderSkills()
-    const panel = await screen.findByRole('region', { name: 'Template updated' })
-    await userEvent.click(within(panel).getByRole('button', { name: 'Show what it changes' }))
-    await userEvent.click(await within(panel).findByRole('button', { name: 'Propose v2 from the template' }))
+    const panel = await proposeTheTemplate()
     expect(await within(panel).findByRole('alert')).toHaveTextContent("The template couldn't be adopted.")
   })
 

@@ -14,10 +14,7 @@ import { normalizeAgent } from '../../api/agentsApi'
 import type { Agent } from '../../api/agentsApi'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-vi.mock('../../store/authStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../store/authStore')>()),
-  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
-}))
+vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
 vi.mock('../../runtimeConfig', (importOriginal) =>
   import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
 

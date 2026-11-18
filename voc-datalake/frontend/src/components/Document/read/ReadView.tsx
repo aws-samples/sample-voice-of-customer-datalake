@@ -4,14 +4,12 @@
  *
  * @module components/Document/read/ReadView
  */
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CodeView from '../text/CodeView'
 import MarkdownRead from './MarkdownRead'
-import ViewToggle from './ViewToggle'
+import { TextViews } from './ViewToggle'
 import type { Ref } from 'react'
 import type { MarkdownPolicy } from './markdownPolicy'
-import type { TextView } from './ViewToggle'
 import type { OutlineItem } from '../types'
 
 interface ReadViewProps {
@@ -27,14 +25,10 @@ interface ReadViewProps {
 
 export default function ReadView({ source, policy, title, className, onOutline, headingIds, rootRef }: ReadViewProps) {
   const { t } = useTranslation('documents')
-  const [view, setView] = useState<TextView>('rendered')
   return (
-    <div className="space-y-3">
-      <ViewToggle value={view} onChange={setView} />
-      {view === 'rendered' ? (
-        <MarkdownRead source={source} policy={policy} className={className} onOutline={onOutline} headingIds={headingIds}
-          rootRef={rootRef} />
-      ) : <CodeView text={source} label={t('view.sourceOf', { title })} />}
-    </div>
+    <TextViews
+      rendered={<MarkdownRead source={source} policy={policy} className={className} onOutline={onOutline} headingIds={headingIds}
+        rootRef={rootRef} />}
+      source={<CodeView text={source} label={t('view.sourceOf', { title })} />} />
   )
 }

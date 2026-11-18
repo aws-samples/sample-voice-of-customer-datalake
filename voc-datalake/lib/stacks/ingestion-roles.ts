@@ -164,10 +164,10 @@ export const WEB_SEARCH_ACTIONS = ['bedrock-websearch:InvokeSearch', 'bedrock-we
 /** AgentCore Web Search (`InvokeWebSearch`), on the AWS-managed tool only (the web_reviews `auto` cascade's last step). */
 export const AGENTCORE_WEB_SEARCH_ACTION = 'bedrock-agentcore:InvokeWebSearch';
 /** The AWS-managed AgentCore Web Search tool's id (its ARN's resource name). */
-export const AGENTCORE_WEB_SEARCH_TOOL = 'web-search.v1';
+const AGENTCORE_WEB_SEARCH_TOOL = 'web-search.v1';
 
 /** The AWS-managed AgentCore Web Search tool of the stack's region: an `aws`-owned resource, like aws.browser.v1. */
-export function agentCoreWebSearchToolArn(stack: cdk.Stack): string {
+function agentCoreWebSearchToolArn(stack: cdk.Stack): string {
   return stack.formatArn({ service: 'bedrock-agentcore', account: 'aws', resource: 'tool', resourceName: AGENTCORE_WEB_SEARCH_TOOL });
 }
 
@@ -184,7 +184,7 @@ function starAcknowledgement(browser: boolean, webSearch: boolean): NagAck {
 
 /** A web-search-capable role's statements: the Responses API on the default project, search and cached fetch, and
  *  AgentCore Web Search on the region's managed tool. */
-export function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
+function webSearchStatements(stack: cdk.Stack): iam.PolicyStatement[] {
   return [
     mantleInferenceStatement(stack),
     new iam.PolicyStatement({
@@ -212,7 +212,7 @@ export function managedBrowserArn(stack: cdk.Stack): string {
  * SaveBrowserSessionProfile on the profile, and the save on the browser too (the action names both); the stream
  * connect on `*`.
  */
-export function browserSessionStatements({ arn, profileArn }: BrowserGrant): iam.PolicyStatement[] {
+function browserSessionStatements({ arn, profileArn }: BrowserGrant): iam.PolicyStatement[] {
   const statements = [new iam.PolicyStatement({
     actions: profileArn ? [...BROWSER_SESSION_ACTIONS, BROWSER_PROFILE_SAVE_ACTION] : BROWSER_SESSION_ACTIONS,
     resources: [arn],

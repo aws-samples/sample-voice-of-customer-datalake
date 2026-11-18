@@ -10,10 +10,12 @@ import type * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { beforeAll } from 'vitest';
 import { z } from 'zod';
 
 import { type EngineeringPeers, addEngineeringRuntime } from '../stacks/engineering-runtime';
 import { fixtureBucket } from './fixture-resources';
+import { SYNTH_TIMEOUT_MS } from './synth-app';
 
 export const ACCOUNT = 'arn:aws:lambda:us-east-1:111111111111';
 
@@ -44,7 +46,7 @@ function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>
 
 /** A runtime (or, `start`, the start function: 7.47.00) the broker was asked to admit: its role's name (resolved) and
  *  its function's. */
-export interface Admitted { role: unknown; functionName: string; start?: boolean }
+interface Admitted { role: unknown; functionName: string; start?: boolean }
 
 export interface RuntimeStack {
   template: Template; added: boolean; pins: Map<string, string>;
@@ -76,6 +78,18 @@ export function runtimeStack(context: Record<string, unknown>, withPeers = true)
     peers: withPeers ? fakePeers(stack, kmsKey, pins, admitted) : undefined,
   });
   return { template: Template.fromStack(stack), added, pins, admitted };
+}
+
+/**
+ * The stack with the module on (`-c engineeringAgents=true`), synthesized once in a beforeAll of the describe block
+ * that calls this; its tests read `on.template` and `on.admitted`.
+ */
+export function engineeringOnStack(): Pick<RuntimeStack, 'template' | 'admitted'> {
+  const on: Pick<RuntimeStack, 'template' | 'admitted'> = { template: Template.fromJSON({}), admitted: [] };
+  beforeAll(() => {
+    ({ template: on.template, admitted: on.admitted } = runtimeStack({ engineeringAgents: 'true' }));
+  }, SYNTH_TIMEOUT_MS);
+  return on;
 }
 
 /** How many resources of `type` match `properties`. */

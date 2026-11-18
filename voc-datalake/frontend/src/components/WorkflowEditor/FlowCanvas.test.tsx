@@ -9,35 +9,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent } from '@testing-library/react'
 import { renderWithQueryClient as render } from '@test/query-client'
-import type { Connection, Edge, Node, OnSelectionChangeParams } from '@xyflow/react'
+import { probedFlowProps as props } from '@test/reactFlowProbe'
+import { BUG_HUNT_EDGES } from '@test/workflowFixtures'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 
-interface ProbeProps {
-  nodes: Node[]
-  edges: Edge[]
-  nodesDraggable: boolean
-  nodesConnectable: boolean
-  deleteKeyCode: unknown
-  onConnect: (connection: Connection) => void
-  onSelectionChange: (params: OnSelectionChangeParams) => void
-}
-const probe: { last: ProbeProps | null } = { last: null }
-
-vi.mock('@xyflow/react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@xyflow/react')>()
-  function ReactFlowProbe(props: ProbeProps) {
-    probe.last = props
-    return null
-  }
-  return { ...actual, ReactFlow: ReactFlowProbe }
-})
+vi.mock('@xyflow/react', async (importOriginal) =>
+  (await import('@test/reactFlowProbe')).reactFlowProbeModule(importOriginal))
 
 const { FlowCanvas } = await import('./FlowCanvas')
-
-function props(): ProbeProps {
-  if (probe.last === null) throw new Error('ReactFlow was not rendered')
-  return probe.last
-}
 
 const node = (id: string, type: WorkflowDefinition['nodes'][number]['type'], y: number, params: Record<string, unknown> = {}) =>
   ({ id, type, position: { x: 0, y }, data: { title: id === 'gate' ? 'Quality gate' : id, params } })
@@ -53,11 +32,7 @@ const FLOW: WorkflowDefinition = {
     node('fix', 'agent', 130, { role: 'fixer' }),
     node('start', 'start', 0),
   ],
-  edges: [
-    { id: 'e1', source: 'start', target: 'fix' },
-    { id: 'e2', source: 'fix', target: 'gate' },
-    { id: 'e3', source: 'gate', target: 'pr', label: 'pass' },
-  ],
+  edges: BUG_HUNT_EDGES,
   loops: [],
 }
 

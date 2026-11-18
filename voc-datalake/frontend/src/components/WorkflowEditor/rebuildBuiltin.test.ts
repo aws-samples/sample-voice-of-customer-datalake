@@ -14,8 +14,8 @@ import { describe, it, expect } from 'vitest'
 import builtinJson from '@test/builtinWorkflow.json'
 import { normalizeDefinition } from '../../api/workflowsApi'
 import { validateLocally } from './graphRules'
-import { NODE_CATALOGUE, addNode, addToLoop, clearDefinition, connect, loopIndexOf, updateLoop, updateNode } from './model'
-import { emptyDefinition } from './model-fixtures'
+import { NODE_CATALOGUE, addToLoop, clearDefinition, connect, loopIndexOf, updateLoop, updateNode } from './model'
+import { addNode, emptyDefinition } from './model-fixtures'
 import type { WorkflowDefinition, WorkflowNode } from '../../api/workflowsApi'
 
 function builtin(): WorkflowDefinition {

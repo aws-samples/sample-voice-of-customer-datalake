@@ -12,7 +12,7 @@
  *
  * @module pages/Agents/ConnectionDetails
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Copy, Info } from 'lucide-react'
@@ -20,11 +20,10 @@ import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
-import { noCleanup } from '../../hooks/noCleanup'
+import { useCloseOnPressOutside } from '../../hooks/useCloseOnPressOutside'
 import { placeFixedMenu } from '../../utils/fixedMenu'
 import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
 import { useAttestationText } from './connectionText'
-import type { RefObject } from 'react'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { ConnectionIssues } from '../../api/issuesSourceApi'
 
@@ -57,21 +56,6 @@ function Fact({ label, children }: Readonly<{ label: string; children: string }>
       <dd className="text-[12px] text-text break-words [overflow-wrap:anywhere]">{children}</dd>
     </div>
   )
-}
-
-/** While open, a press anywhere but the popover and its button closes it (focus stays where the press put it). */
-function useCloseOnPressOutside(open: boolean, close: () => void, panel: RefObject<HTMLElement | null>,
-  button: RefObject<HTMLElement | null>): void {
-  useEffect(() => {
-    if (!open) return noCleanup
-    const controller = new AbortController()
-    document.addEventListener('mousedown', (event) => {
-      const path = event.composedPath()
-      const kept = [panel.current, button.current].some((element) => element !== null && path.includes(element))
-      if (!kept) close()
-    }, { signal: controller.signal })
-    return () => controller.abort()
-  }, [open, close, panel, button])
 }
 
 /** The ids, each copyable (a connection made through an App or with a pasted key has an App and an installation). */

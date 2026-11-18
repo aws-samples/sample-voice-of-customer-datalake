@@ -24,6 +24,7 @@ import { RunRequests } from './RunRequests'
 import Notice from '../../../components/Notice/Notice'
 import { currentMonth } from '../../../api/engineeringSpendApi'
 import { agentsPath } from '../agentsPaths'
+import { patchedParams } from '../../../utils/searchParams'
 import type { ListedRun, RunsQuery } from '../../../api/engineeringRunWorkspaceApi'
 
 /** The engineering flows' names by id (the library's list, which the Workflows tab reads too). */
@@ -96,13 +97,7 @@ export function RunsView() {
   const query = runsQueryOf(searchParams)
   const flows = useFlowNames()
   const { query: pages, rows } = useCursorPages<ListedRun>(runWorkspaceKeys.runs(query), (cursor) => runWorkspaceApi.runs(query, cursor))
-  const change = (next: Partial<RunsQuery>) => setSearchParams((params) => {
-    for (const [name, value] of Object.entries(next)) {
-      if (value === '') params.delete(name)
-      else params.set(name, value)
-    }
-    return params
-  }, { replace: true })
+  const change = (next: Partial<RunsQuery>) => setSearchParams(patchedParams(next), { replace: true })
   const copy = {
     loading: t('runWorkspace.loading'), loadFailed: t('runWorkspace.runs.loadFailed'), more: t('runWorkspace.runs.more'),
     moreFailed: t('runWorkspace.runs.moreFailed'), refreshFailed: t('runWorkspace.runs.loadFailed'),

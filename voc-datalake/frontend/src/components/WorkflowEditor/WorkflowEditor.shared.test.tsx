@@ -9,9 +9,9 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
-import { fileInput, jsonFile, withPrdStep, workflowView } from '@test/workflowFixtures'
+import { fileInput, jsonFile, workflowView } from '@test/workflowFixtures'
 import { ApiError } from '../../lib/errors'
-import { emptyDefinition } from './model-fixtures'
+import { EDITED_FLOW as EDITED, STORED_FLOW as STORED } from './model-fixtures'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
@@ -19,8 +19,6 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 
 const { WorkflowEditor } = await import('./WorkflowEditor')
 
-const STORED: WorkflowDefinition = emptyDefinition('Research flow')
-const EDITED: WorkflowDefinition = withPrdStep(emptyDefinition('Research flow'))
 const BUG_FIXER = { agent_id: 'ag_0123456789ab', name: 'Bug fixer', kind: 'agents', connection: null, language: null }
 const SHARED = { automations: [BUG_FIXER], flows: [] }
 const NOBODY = { automations: [], flows: [] }

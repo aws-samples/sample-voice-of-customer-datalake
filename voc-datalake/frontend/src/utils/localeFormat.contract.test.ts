@@ -12,9 +12,10 @@
  *   for the time zone is fine);
  * - date-fns `format` outside `utils/dateUtils.ts` (its patterns are English month names).
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { productionSourcePaths } from '@test/appSources'
 
 const SRC = resolve(__dirname, '..')
 
@@ -33,11 +34,7 @@ const RULES: ReadonlyArray<readonly [name: string, pattern: RegExp]> = [
 
 /** Every non-test .ts/.tsx file under src, relative to src. */
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    if (statSync(path).isDirectory()) return sourceFiles(path)
-    return /\.tsx?$/u.test(name) && !/\.(?:test|spec)\.tsx?$/u.test(name) ? [relative(SRC, path)] : []
-  })
+  return productionSourcePaths(dir, /\.(?:test|spec)\.tsx?$/u).map((path) => relative(SRC, path))
 }
 
 /** `text` without its block comments (plain scanning: no backtracking regex). */

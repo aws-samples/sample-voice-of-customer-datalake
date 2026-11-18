@@ -7,15 +7,12 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { webReviewsPlugin } from './scrapers-fixtures'
 import { AppConfigCard } from './AppConfigComponents'
 import type { RunStatusInfo } from './AppConfigComponents'
 import type { StepRead, TargetRead } from './reviewReads'
-import type { PluginManifest } from '../../plugins/types'
 
-const plugin: PluginManifest = {
-  id: 'web_reviews', name: 'Web Reviews', icon: 'Web', config: [], enabled: true,
-  hasIngestor: true, hasWebhook: false, hasS3Trigger: false,
-}
+const plugin = webReviewsPlugin()
 const page = { id: 'p1', app_name: 'Reviews - Acme', url: 'https://www.reviews.example/acme' }
 
 const BLOCKED: StepRead = { method: 'browser', outcome: 'blocked', vendor: 'Cloudflare', reviews: 0 }

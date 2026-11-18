@@ -15,11 +15,11 @@
  */
 import clsx from 'clsx'
 import { FileText, MoreHorizontal, PenLine, Trash2 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { CanvasMenuItem, type CanvasMenuEntry } from '../../components/DocumentCanvas/actions/CanvasMenu'
-import { noCleanup } from '../../hooks/noCleanup'
+import { useCloseOnPressOutside } from '../../hooks/useCloseOnPressOutside'
 import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import { placeFixedMenu, tabTargetFrom } from '../../utils/fixedMenu'
@@ -51,24 +51,6 @@ function cardMenuEntries(actions: CardMenuActions, t: TFunction<'projectDetail'>
     })
   }
   return entries
-}
-
-/**
- * While open, a press anywhere but the menu (and, opened from it, the "⋯" button, whose click toggles it) closes it.
- * Focus stays where the press put it.
- */
-function useCloseOnPressOutside(open: boolean, close: () => void, menu: RefObject<HTMLElement | null>,
-  trigger: RefObject<HTMLElement | null> | null): void {
-  useEffect(() => {
-    if (!open) return noCleanup
-    const controller = new AbortController()
-    document.addEventListener('mousedown', (event) => {
-      const path = event.composedPath()
-      const kept = [menu.current, trigger?.current ?? null].some((element) => element !== null && path.includes(element))
-      if (!kept) close()
-    }, { signal: controller.signal })
-    return () => controller.abort()
-  }, [open, close, menu, trigger])
 }
 
 /** The menu's own keys: arrows / Home / End move, Tab leaves it (for the control after, or before, its opener). */

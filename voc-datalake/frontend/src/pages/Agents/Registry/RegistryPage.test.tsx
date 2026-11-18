@@ -8,18 +8,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { ApiError } from '../../../lib/errors'
+import Where from '@test/LocationWhere'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-vi.mock('../../../store/authStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../store/authStore')>()),
-  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
-}))
+vi.mock('../../../store/authStore', (importOriginal) =>
+  import('@test/fetchApiRoutes').then((m) => m.authStoreWithOriginal(importOriginal)))
 vi.mock('../../../runtimeConfig', (importOriginal) =>
   import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
 
@@ -60,11 +59,6 @@ function route(routes: Record<string, RouteHandler> = {}) {
     [BRIEF_READ]: () => BRIEF,
     ...routes,
   }, { missStatus: 500 })
-}
-
-function Where() {
-  const location = useLocation()
-  return <p data-testid="where">{`${location.pathname}${location.search}`}</p>
 }
 
 function renderRegistry(entry = '/agents/registry') {

@@ -14,21 +14,18 @@
  */
 import { useState } from 'react'
 import clsx from 'clsx'
-import {
-  CheckCircle2, ChevronRight, Circle, CircleDot, CirclePause, Hand, Loader2, MapPin, SkipForward, Square, XCircle,
-} from 'lucide-react'
+import { ChevronRight, Circle, CircleDot, MapPin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { statusChipClass } from './agentStatus'
-import type { LucideIcon } from 'lucide-react'
+import { RUN_STATE_ICONS } from '../../../components/WorkflowEditor/nodes/runStateIcons'
+import type { RunStateIcon } from '../../../components/WorkflowEditor/nodes/runStateIcons'
 import type { Timeline, TimelineAgent, TimelineState, TimelineStep } from './runTimelineModel'
 import type { LaneState } from '../../../components/WorkflowEditor/runState'
 
-const STEP_ICONS: Readonly<Record<TimelineState, { icon: LucideIcon; tone: string }>> = {
-  running: { icon: Loader2, tone: 'animate-spin text-accent-text' }, ready: { icon: CircleDot, tone: 'text-accent-text' },
-  ok: { icon: CheckCircle2, tone: 'text-ok' }, failed: { icon: XCircle, tone: 'text-danger' },
-  waiting: { icon: Hand, tone: 'text-warn' }, paused: { icon: CirclePause, tone: 'text-warn' },
-  stopped: { icon: Square, tone: 'fill-current text-muted' }, skipped: { icon: SkipForward, tone: 'text-muted' },
-  planned: { icon: Circle, tone: 'text-muted' },
+const { done, ...SHARED_ICONS } = RUN_STATE_ICONS
+/** The canvas's state icons (runStateIcons), `done` as `ok`, with a ready step's and a planned one's. */
+const STEP_ICONS: Readonly<Record<TimelineState, RunStateIcon>> = {
+  ...SHARED_ICONS, ok: done, ready: { icon: CircleDot, tone: 'text-accent-text' }, planned: { icon: Circle, tone: 'text-muted' },
 }
 const LANE_TO_STEP: Readonly<Record<LaneState, TimelineState>> = {
   running: 'running', ran_ok: 'ok', ran_failed: 'failed', waiting: 'waiting', paused: 'paused', stopped: 'stopped',

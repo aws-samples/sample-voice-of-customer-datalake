@@ -13,7 +13,7 @@ import type { ProjectDocument } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
 import enProjectDetail from '../../../public/locales/en/projectDetail.json'
 import enDocuments from '../../../public/locales/en/documents.json'
-import { makeProject, preloadDocumentPage } from './project-detail-fixtures'
+import { makeProject, preloadDocumentPage, savedEditOf } from './project-detail-fixtures'
 import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
 import { renderProjectDetailPage } from './project-detail-page-fixtures'
 import { emptyProductContext } from './productContextFields'
@@ -77,12 +77,7 @@ type User = ReturnType<typeof userEvent.setup>
 
 const cardOf = (title: string) => screen.getByRole('button', { name: new RegExp(`${title}$`) })
 /** The n-th PUT's (project, document, body), with the fresh edit id reduced to its type. */
-function put(n = 0): unknown {
-  const call = mockUpdateDocument.mock.calls[n]
-  if (call === undefined) return undefined
-  const [projectId, documentId, body] = call
-  return [projectId, documentId, { ...body, edit_id: typeof body.edit_id }]
-}
+const put = (n = 0): unknown => savedEditOf(mockUpdateDocument.mock.calls, n)
 
 async function openDocumentsTab(user: User) {
   await user.click(await screen.findByRole('tab', { name: /documents/i }))
@@ -128,15 +123,21 @@ describe('ProjectDetail card Rename', () => {
   })
 })
 
+/** The page rendered, its Documents tab open and the Notes card's document open on its canvas. */
+async function openNotes(): Promise<User> {
+  const user = userEvent.setup()
+  renderProjectDetailPage()
+  await openDocumentsTab(user)
+  await user.click(cardOf('Notes'))
+  await screen.findByRole('textbox', { name: 'Notes' })
+  return user
+}
+
 describe('ProjectDetail card Delete', () => {
   const confirmDialog = () => screen.findByRole('dialog', { name: enProjectDetail.confirmDelete.documentTitle })
 
   it('asks first, deletes on Delete and drops the card; the open document stays open', async () => {
-    const user = userEvent.setup()
-    renderProjectDetailPage()
-    await openDocumentsTab(user)
-    await user.click(cardOf('Notes'))
-    await screen.findByRole('textbox', { name: 'Notes' })
+    const user = await openNotes()
 
     await chooseOnCard(user, 'Other notes', enProjectDetail.documents.deleteDocument)
     const dialog = await confirmDialog()
@@ -149,11 +150,7 @@ describe('ProjectDetail card Delete', () => {
   })
 
   it('closes the open document when it is the one deleted, as the page\'s Delete does', async () => {
-    const user = userEvent.setup()
-    renderProjectDetailPage()
-    await openDocumentsTab(user)
-    await user.click(cardOf('Notes'))
-    await screen.findByRole('textbox', { name: 'Notes' })
+    const user = await openNotes()
 
     await chooseOnCard(user, 'Notes', enProjectDetail.documents.deleteDocument)
     await user.click(within(await confirmDialog()).getByRole('button', { name: enProjectDetail.confirmDelete.confirm }))

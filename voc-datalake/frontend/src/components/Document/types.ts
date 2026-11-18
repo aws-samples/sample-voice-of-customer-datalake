@@ -36,7 +36,7 @@ export type SurfaceVariant = 'page' | 'panel' | 'sheet' | 'inline'
 export type SurfaceMode = 'read' | 'edit' | 'compare'
 
 /** A stored version's identity: `token` names it (a new one resets the draft), `number` orders versions. */
-export interface VersionRef { readonly token: string; readonly number?: number }
+interface VersionRef { readonly token: string; readonly number?: number }
 
 /** What a draft writes: its title and its text. */
 export interface DocumentDraft {

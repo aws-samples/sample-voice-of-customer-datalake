@@ -13,10 +13,8 @@
 import { useCallback, useMemo } from 'react'
 import { useDocumentDraft } from '../../Document/draft/useDocumentDraft'
 import { useProjectDocumentAdapter } from '../../../pages/ProjectDetail/documentAdapter'
-import type { ReactNode, RefObject } from 'react'
 import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
-import type { MergeProposal } from '../../Document/draft/useDocumentDraft'
-import type { DocumentConflict } from '../../Document/types'
+import type { DocumentDraftState } from '../../Document/draft/useDocumentDraft'
 import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 
@@ -27,49 +25,23 @@ interface CanvasDocumentArgs {
   readonly onSelectDoc: (doc: ProjectDocument) => void
 }
 
-export interface CanvasDocument {
-  /**
-   * The stored text the canvas is on (its baseline): the editable editor's `markdown`. It changes only when the
-   * canvas moves to a version, never because the page selected a newer copy while the canvas holds changes.
-   */
-  readonly content: string
-  readonly title: string
-  readonly setTitle: (title: string) => void
-  /**
-   * Rename the document (a research / custom one; a PRD / PR/FAQ title is its series' own): saved at once as ONE new
-   * version carrying only the title, after a save on its way. Unsaved text stays the draft. Rejects on failure (the
-   * title then stays unsaved, with the conflict when it was one).
-   */
-  readonly rename: (title: string) => Promise<void>
-  /** The text being written (the editor's last change): the page counts its words. */
-  readonly draft: string
-  /** The editor's onChange. */
-  readonly onChange: (markdown: string) => void
-  readonly dirty: boolean
-  readonly saving: boolean
-  /** Rejects on failure (the conflict, or the error, stays on screen). A clean canvas saves nothing. */
-  readonly save: () => Promise<void>
-  readonly discard: () => void
-  readonly conflict: DocumentConflict | null
-  /** A research / custom title is edited in place; a PRD / PR/FAQ title is its series' own. */
-  readonly titleEditable: boolean
-  readonly handleRef: RefObject<CanvasEditorHandle | null>
-  /** The caller may write this document on its canvas (editor of the project, not a prototype / decision). */
-  readonly editable: boolean
+/**
+ * The shared draft's state (useDocumentDraft), as a project document's canvas has it: its baseline changes only when
+ * the canvas moves to a version, never because the page selected a newer copy while the canvas holds changes; a
+ * rename (a research / custom document; a PRD / PR/FAQ title is its series' own, `titleEditable` false) is saved at
+ * once as ONE new version carrying only the title, unsaved text staying the draft; the page counts the draft's
+ * words; `editable`: the caller may write this document on its canvas (editor of the project, not a prototype /
+ * decision); the guard dialog is rendered once, by the action bar; and the generation moves whenever the draft is
+ * replaced without a save (Discard, Load the latest, an approved edit's reload, following another version, a
+ * merge), when "Revise from comments" puts its accepted changes back to pending.
+ */
+export interface CanvasDocument extends Pick<DocumentDraftState<ProjectDocument, CanvasEditorHandle>,
+  'content' | 'title' | 'setTitle' | 'rename' | 'draft' | 'onChange' | 'dirty' | 'saving' | 'save' | 'discard'
+  | 'conflict' | 'titleEditable' | 'handleRef' | 'editable' | 'reloadLatest' | 'guardDialog' | 'generation'> {
   /** The page's guarded selection (Versions' restore selects the restored version through it). */
   readonly selectDoc: (doc: ProjectDocument) => void
-  /** Reload the canvas on the newest stored version (after the assistant's approved edit); asks first while dirty. */
-  readonly reloadLatest: () => void
-  /** The unsaved-changes dialog: rendered once, by the action bar. */
-  readonly guardDialog: ReactNode
   /** This canvas's last save, as it landed (a new object per save; null until one): "Revise from comments" reads it. */
   readonly lastSaved: SavedVersion | null
-  /**
-   * The canvas's generation: it moves whenever the draft is replaced without a save (Discard, Load the latest, an
-   * approved edit's reload, following another version, a merge); a save keeps it. "Revise from comments" puts its
-   * accepted changes back to pending when it moves.
-   */
-  readonly generation: number
   /**
    * "Revise from comments" names its pass and says how to tell whether a saved text keeps changes the person accepted
    * from its proposal (null: it holds none): a PR/FAQ / PRD save whose text does names the pass (`revise_job_id`,
@@ -79,11 +51,7 @@ export interface CanvasDocument {
   /** The server would not record the last save as a revise (400, code `revise_refused`): its reason, and "Save as my own edit". */
   readonly reviseRefused: ReviseRefused | null
   /** Compare and merge after a 409 (the bar's banner opens it): the latest version's changes against this draft. */
-  readonly merge?: {
-    readonly proposal: MergeProposal<ProjectDocument> | null
-    readonly take: (changeIds: readonly string[]) => void
-    readonly close: () => void
-  }
+  readonly merge?: DocumentDraftState<ProjectDocument, CanvasEditorHandle>['merge']
 }
 
 /** The accepted changes of a "Revise from comments" pass in the draft: the pass's job id, and whether a text keeps one. */

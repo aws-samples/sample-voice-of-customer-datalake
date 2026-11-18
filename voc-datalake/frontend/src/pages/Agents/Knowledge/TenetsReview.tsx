@@ -17,7 +17,6 @@ import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitPullRequest, Loader2 } from 'lucide-react'
-import DocumentSurface from '../../../components/Document/DocumentSurface'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { engineeringKnowledgeApi, engineeringKnowledgeKeys } from '../../../api/engineeringKnowledgeApi'
@@ -26,7 +25,7 @@ import { useConfigStore } from '../../../store/configStore'
 import { useSkillFormats } from '../skillFormats'
 import { DocsPublishSheet } from './DocsPublishSheet'
 import { TenetsChanges } from './TenetsChanges'
-import { neverSaved } from '../documents/readOnly'
+import ReadOnlySurface from '../documents/ReadOnlySurface'
 import {
   MAX_TENETS_REASON, comparedWith, isTenetsStale, tenetsAdapter, tenetsChanges, tenetsDecisionBody, tenetsDocumentOf,
   tenetsToReview,
@@ -157,12 +156,10 @@ function TenetsSurface({ connection, number, version, labels }: Readonly<{
   const { t } = useTranslation('agents')
   const title = (n: number) => t('tenets.title', { version: n })
   return (
-    <DocumentSurface adapter={tenetsAdapter(connection, version?.status ?? 'draft', title, labels)} variant="inline"
+    <ReadOnlySurface adapter={tenetsAdapter(connection, version?.status ?? 'draft', title, labels)} variant="inline"
       title={title(number)} headingLevel={3} meta={null}
       stored={version === null ? undefined : tenetsDocumentOf(connection, version, title(version.version), labels)} mode="read"
-      compare={null} comments={null} onSaved={neverSaved} fullPath={null} footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+      compare={null} fullPath={null} />
   )
 }
 

@@ -132,12 +132,6 @@ export function mintId(prefix: string, taken: ReadonlySet<string>): string {
   return free ?? `${base}_${taken.size + 1}`
 }
 
-export function addNode(
-  definition: WorkflowDefinition, type: WorkflowNodeType, position: { x: number; y: number }, title: string,
-): { definition: WorkflowDefinition; nodeId: string } {
-  return addBlock(definition, { type, title }, position)
-}
-
 /** Add a palette block at `position`: its type's defaults, then the block's own settings over them. */
 export function addBlock(
   definition: WorkflowDefinition, block: PaletteBlock, position: { x: number; y: number },

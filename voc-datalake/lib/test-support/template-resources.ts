@@ -8,3 +8,8 @@ export const TemplateResourcesSchema = z.record(z.string(), z.object({
   Type: z.string(),
   Properties: z.record(z.string(), z.unknown()).optional().transform((p) => p ?? {}),
 }));
+
+/** An `AWS::Lambda::Function`'s name and environment variables. */
+export const FunctionEnvironmentSchema = z.object({
+  Properties: z.object({ FunctionName: z.unknown(), Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),
+});

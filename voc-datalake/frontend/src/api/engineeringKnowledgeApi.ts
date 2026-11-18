@@ -38,7 +38,7 @@ export const KNOWLEDGE_KINDS = ['architecture', 'convention', 'review-guide', 't
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number]
 
 /** What a docs pull request publishes. */
-export const DOCS_KINDS = ['knowledge', 'tenets'] as const
+const DOCS_KINDS = ['knowledge', 'tenets'] as const
 export type DocsKind = (typeof DOCS_KINDS)[number]
 
 const PackVersionSchema = z.object({
@@ -71,7 +71,7 @@ export type KnowledgePackage = z.output<typeof PackageSchema>
 const RenderingSchema = z.object({
   kind: text, version: count, digest: text, approved_by: maybeText, approved_at: maybeText,
 }).nullable().catch(null)
-export type DocsRendering = z.output<typeof RenderingSchema>
+type DocsRendering = z.output<typeof RenderingSchema>
 
 export interface KnowledgeOverview {
   packages: KnowledgePackage[]
@@ -161,7 +161,7 @@ const PublishedSchema = z.object({
 export type DocsPublished = z.output<typeof PublishedSchema>
 
 /** Why a publish was refused, as its 409's `code` says (anything else: the server's words). */
-export const PUBLISH_REFUSALS = ['human_driven', 'already_published', 'digest_mismatch', 'not_approved'] as const
+const PUBLISH_REFUSALS = ['human_driven', 'already_published', 'digest_mismatch', 'not_approved'] as const
 export type PublishRefusal = (typeof PUBLISH_REFUSALS)[number]
 export const isPublishRefusal = (code: string | null): code is PublishRefusal =>
   PUBLISH_REFUSALS.some((known) => known === code)

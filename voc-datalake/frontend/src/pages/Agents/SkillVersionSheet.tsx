@@ -7,18 +7,15 @@
  *
  * @module pages/Agents/SkillVersionSheet
  */
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ExternalLink } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import SideSheet from '../../components/SideSheet/SideSheet'
-import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
-import { useConfigStore } from '../../store/configStore'
 import { agentsPath } from './agentsPaths'
 import { SkillProvenance, SkillVersionActions, SkillVersionBody } from './SkillVersionDetail'
 import { useSkillTitle } from './skillFormats'
-import type { ActionTarget } from './SkillActionParts'
+import { useSkillVersionTarget } from './useSkillInUse'
 import type { SkillRole } from '../../api/engineeringSkillsApi'
 
 interface SheetProps {
@@ -42,14 +39,7 @@ export function SkillVersionSheet({ connection, role, version, current, onClose,
   const { t } = useTranslation('agents')
   const { t: td } = useTranslation('documents')
   const title = useSkillTitle()
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const read = useQuery({
-    queryKey: engineeringSkillsKeys.version(connection, role, version),
-    queryFn: () => engineeringSkillsApi.version(connection, role, version),
-    enabled: configured,
-  })
-  const target: ActionTarget | null = read.data === undefined ? null
-    : { connection, role, detail: read.data, current: current.own, sharedCurrent: current.shared }
+  const { read, target } = useSkillVersionTarget(connection, role, version, current)
   const footer = (
     <>
       <Link to={fullPathOf(connection, role, version)} className="btn btn-ghost btn-sm">

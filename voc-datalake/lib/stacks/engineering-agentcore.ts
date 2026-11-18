@@ -40,6 +40,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
+import { agentCoreTrust } from '../utils/agentcore-trust';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { agentCoreName } from '../utils/naming';
 
@@ -159,7 +160,7 @@ export function buildRoles(scope: Construct, roles: readonly string[]): string[]
 }
 
 /** `-c engineeringSessionRates`: the four rates as decimal text, AgentCore's published ones by default. */
-export function sessionRates(scope: Construct): Record<string, string> {
+function sessionRates(scope: Construct): Record<string, string> {
   const usage = `Use -c ${RATES_CONTEXT}='${JSON.stringify(DEFAULT_RATES)}' (USD per hour, 0 to ${MAX_USD_PER_HOUR}, at most 12 digits after the point; 0 leaves that part unpriced).`;
   const value = jsonContext(scope, RATES_CONTEXT, DEFAULT_RATES, usage);
   const names = Object.keys(DEFAULT_RATES);
@@ -182,7 +183,7 @@ export function sessionRates(scope: Construct): Record<string, string> {
  * 2026-11-16), so a run's cost cap and its flow's budget bound model spend. `{}` by default: the defaults. A model
  * with no price is priced at the dearest listed (caps.py TokenPrices), never left out.
  */
-export function modelPrices(scope: Construct): Record<string, Record<string, string>> {
+function modelPrices(scope: Construct): Record<string, Record<string, string>> {
   const usage = `Use -c ${MODEL_PRICES_CONTEXT}='{"global.anthropic.claude-sonnet-5-5":{"input":"2","output":"10"}}' (USD per million tokens, 0 to ${MAX_USD_PER_MILLION_TOKENS}, at most 12 digits after the point; input and output, optionally cacheRead and cacheWrite).`;
   const value = jsonContext(scope, MODEL_PRICES_CONTEXT, {}, usage);
   if (!isRecord(value)) throw new Error(`${MODEL_PRICES_CONTEXT} must be a JSON object. ${usage}`);
@@ -310,10 +311,7 @@ export class EngineeringAgentCore extends Construct {
   private executionRole(languages: string[]): iam.Role {
     const stack = cdk.Stack.of(this);
     const role = new iam.Role(this, 'SessionRole', {
-      assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com').withConditions({
-        StringEquals: { 'aws:SourceAccount': stack.account },
-        ArnLike: { 'aws:SourceArn': stack.formatArn({ service: 'bedrock-agentcore', resource: '*' }) },
-      }),
+      assumedBy: agentCoreTrust(stack),
       description: 'Engineering agent sessions: pull their image and write their logs, nothing else',
     });
     role.addToPolicy(new iam.PolicyStatement({

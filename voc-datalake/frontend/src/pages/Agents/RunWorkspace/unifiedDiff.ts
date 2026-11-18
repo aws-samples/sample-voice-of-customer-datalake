@@ -13,7 +13,7 @@
  * @module pages/Agents/RunWorkspace/unifiedDiff
  */
 
-export type DiffLineKind = 'context' | 'add' | 'del'
+type DiffLineKind = 'context' | 'add' | 'del'
 
 export interface DiffLine {
   readonly kind: DiffLineKind
@@ -29,7 +29,7 @@ export interface DiffHunk {
   readonly lines: DiffLine[]
 }
 
-export type DiffStatus = 'added' | 'deleted' | 'renamed' | 'copied' | 'modified'
+type DiffStatus = 'added' | 'deleted' | 'renamed' | 'copied' | 'modified'
 
 export interface DiffFile {
   /** The file's path (its new side; the old one for a deletion). */

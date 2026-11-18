@@ -50,7 +50,7 @@ export interface KindViewProps {
 }
 
 /** A step's own fields as text: its title and instructions, then the kind's rows. */
-export function StepFacts({ node, rows = [] }: Readonly<{ node: WorkflowNode; rows?: ReadonlyArray<readonly [string, ReactNode] | null> }>) {
+function StepFacts({ node, rows = [] }: Readonly<{ node: WorkflowNode; rows?: ReadonlyArray<readonly [string, ReactNode] | null> }>) {
   const { t } = useTranslation('agents')
   return (
     <Facts rows={[
@@ -86,7 +86,7 @@ export function InThisFlow({ props, rows, extras }: Readonly<{
 }
 
 /** A step's arrows in words ("→ Commit the fix · GO"); an arrow that cannot carry a condition always runs. */
-export function ArrowsText({ node, definition, run }: Readonly<{ node: WorkflowNode; definition: WorkflowDefinition; run?: InspectorRun }>) {
+function ArrowsText({ node, definition, run }: Readonly<{ node: WorkflowNode; definition: WorkflowDefinition; run?: InspectorRun }>) {
   const { t } = useTranslation('agents')
   const out = definition.edges.filter((edge) => edge.source === node.id)
   if (out.length === 0) return <p className="text-[12px] text-muted">{t('editor.noArrowsOut')}</p>

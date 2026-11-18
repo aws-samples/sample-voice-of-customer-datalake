@@ -17,7 +17,6 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Download, ExternalLink, FileText, Loader2 } from 'lucide-react'
-import DocumentSurface from '../../../components/Document/DocumentSurface'
 import CodeView from '../../../components/Document/text/CodeView'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import SideSheet from '../../../components/SideSheet/SideSheet'
@@ -26,7 +25,7 @@ import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { useConfigStore } from '../../../store/configStore'
 import { downloadFile } from '../../../utils/file'
 import { patchFileName, previewFileAdapter, previewFileDocumentOf, publishOutcomeOf } from '../documents/docsPreviewDocument'
-import { neverSaved } from '../documents/readOnly'
+import ReadOnlySurface from '../documents/ReadOnlySurface'
 import type { DocsKind, DocsPreview, DocsPublished } from '../../../api/engineeringKnowledgeApi'
 import type { PublishOutcome } from '../documents/docsPreviewDocument'
 
@@ -36,11 +35,8 @@ function FileDocument({ connection, preview, path }: Readonly<{ connection: stri
   const stored = file === undefined ? null : previewFileDocumentOf(file)
   if (stored === null) return <p className="text-sm text-muted">{t('knowledge.publish.inPatch')}</p>
   return (
-    <DocumentSurface adapter={previewFileAdapter(connection, preview.kind, path)} variant="inline" title={path} headingLevel={3}
-      meta={null} stored={stored} mode="read" compare={null} comments={null} onSaved={neverSaved} fullPath={null}
-      footer={null} onClose={null} page={null}>
-      {null}
-    </DocumentSurface>
+    <ReadOnlySurface adapter={previewFileAdapter(connection, preview.kind, path)} variant="inline" title={path} headingLevel={3}
+      meta={null} stored={stored} mode="read" compare={null} fullPath={null} />
   )
 }
 

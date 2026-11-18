@@ -9,21 +9,16 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
-import { fileInput, jsonFile, wfEdge, withPrdStep, workflowView } from '@test/workflowFixtures'
+import { fileInput, jsonFile, wfEdge, workflowView } from '@test/workflowFixtures'
 import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import { workflowDefinitionSchema } from '../../api/workflowsApi'
-import { emptyDefinition } from './model-fixtures'
+import { EDITED_FLOW as EDITED, STORED_FLOW as STORED, emptyDefinition } from './model-fixtures'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const { WorkflowEditor } = await import('./WorkflowEditor')
-
-const STORED: WorkflowDefinition = emptyDefinition('Research flow')
-
-/** A valid definition that differs from {@link STORED} (one step in between). */
-const EDITED: WorkflowDefinition = withPrdStep(emptyDefinition('Research flow'))
 
 const view = (revision: number, definition: WorkflowDefinition, extra: Record<string, unknown> = {}) =>
   workflowView(revision, definition, { slug: 'research-flow', ...extra })

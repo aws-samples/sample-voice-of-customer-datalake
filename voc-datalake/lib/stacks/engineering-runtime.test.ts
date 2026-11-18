@@ -1,10 +1,10 @@
 import { Match, type Template } from 'aws-cdk-lib/assertions';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { policiesWithStatement } from '../test-support/engineering-template';
 import {
-  ACCOUNT, type Admitted, EnvSchema, count, functionEnv, policyText, runtimeStack, supervisorEnv,
+  ACCOUNT, EnvSchema, count, engineeringOnStack, functionEnv, policyText, runtimeStack, supervisorEnv,
 } from '../test-support/engineering-runtime-fixture';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
@@ -18,6 +18,14 @@ const StatementsSchema = z.array(z.looseObject({
   Condition: z.looseObject({ StringLike: z.looseObject({ 's3:prefix': z.array(z.string()).optional() }).optional() })
     .optional(),
 }));
+
+/** The start function's role holds every one of `statements` in one of its policies. */
+function expectStartRoleHolds(template: Template, statements: unknown[]): void {
+  template.hasResourceProperties('AWS::IAM::Policy', {
+    Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]),
+    PolicyDocument: { Statement: Match.arrayWith(statements) },
+  });
+}
 
 /** How many of the fixer agent role's policies hold every one of `statements`. */
 function fixerPoliciesWith(template: Template, statements: unknown[]): number {
@@ -47,15 +55,11 @@ describe('the engineering runtime is off by default', () => {
 });
 
 describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => {
-  let template: Template;
-  let admitted: Admitted[];
-  beforeAll(() => {
-    ({ template, admitted } = runtimeStack({ engineeringAgents: 'true' }));
-  }, SYNTH_TIMEOUT_MS);
+  const on = engineeringOnStack();
 
   it('ticks the supervisor every minute from an EventBridge rule created disabled, failures to the bus\'s DLQ', () => {
-    const [dlq] = Object.keys(template.findResources('AWS::SQS::Queue'));
-    expect(count(template, 'AWS::Events::Rule', {
+    const [dlq] = Object.keys(on.template.findResources('AWS::SQS::Queue'));
+    expect(count(on.template, 'AWS::Events::Rule', {
       Name: 'voc-engineering-supervisor',
       ScheduleExpression: 'rate(1 minute)',
       State: 'DISABLED',
@@ -65,41 +69,41 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
         DeadLetterConfig: { Arn: { 'Fn::GetAtt': [dlq, 'Arn'] } },
       })],
     })).toBe(1);
-    expect(count(template, 'AWS::Lambda::Function', {
+    expect(count(on.template, 'AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime', Handler: 'engineering/runtime/handler.lambda_handler',
     })).toBe(1);
   });
 
   it('makes no queue of its own: every queue is on the stack\'s key (the bus\'s DLQ, given to it)', () => {
     // Only the test's stand-in for voc-engineering-dlq, on the customer-managed key.
-    expect(count(template, 'AWS::SQS::Queue')).toBe(1);
-    expect(count(template, 'AWS::SQS::Queue', { KmsMasterKeyId: Match.objectLike({ 'Fn::GetAtt': Match.anyValue() }) }))
+    expect(count(on.template, 'AWS::SQS::Queue')).toBe(1);
+    expect(count(on.template, 'AWS::SQS::Queue', { KmsMasterKeyId: Match.objectLike({ 'Fn::GetAtt': Match.anyValue() }) }))
       .toBe(1);
     expect(() => runtimeStack({ engineeringAgents: 'true' }, false)).toThrow(/engineering bus/);
   });
 
   it('runs voc-engineering-delivery on the supervisor\'s code with a role of its own, retried twice, failures to the DLQ', () => {
-    const [dlq] = Object.keys(template.findResources('AWS::SQS::Queue'));
-    const functions = template.findResources('AWS::Lambda::Function', {
+    const [dlq] = Object.keys(on.template.findResources('AWS::SQS::Queue'));
+    const functions = on.template.findResources('AWS::Lambda::Function', {
       Properties: { FunctionName: Match.stringLikeRegexp('^voc-engineering-(runtime|delivery)$') },
     });
     const roles = new Set(Object.values(functions).map((fn) => JSON.stringify(fn.Properties?.Role)));
     expect([Object.keys(functions).length, roles.size]).toStrictEqual([2, 2]);
-    template.hasResourceProperties('AWS::Lambda::Function', {
+    on.template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-delivery',
       Role: { 'Fn::GetAtt': [Match.stringLikeRegexp('EngineeringDeliveryRole'), 'Arn'] },
     });
-    expect(count(template, 'AWS::Lambda::Function', {
+    expect(count(on.template, 'AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-delivery', Handler: 'engineering/runtime/handler.delivery_handler',
     })).toBe(1);
-    expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+    expect(count(on.template, 'AWS::Lambda::EventInvokeConfig', {
       MaximumRetryAttempts: 2,
       DestinationConfig: { OnFailure: { Destination: { 'Fn::GetAtt': [dlq, 'Arn'] } } },
     })).toBe(1);
   });
 
   /** voc-engineering-start's function resource. */
-  const startFunction = () => Object.values(template.findResources('AWS::Lambda::Function', {
+  const startFunction = () => Object.values(on.template.findResources('AWS::Lambda::Function', {
     Properties: { FunctionName: 'voc-engineering-start' },
   }))[0];
 
@@ -114,7 +118,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(['ENGINEERING_SETTINGS_TABLE', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_AGENT_RUNTIMES', 'ENGINEERING_AGENT_ROLE_ARNS',
       'ENGINEERING_RUNTIME_FUNCTION', 'ENGINEERING_BENCHMARK_CASES'].map((name) => env.includes(name)))
       .toStrictEqual([true, true, true, true, true, false]);
-    expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+    expect(count(on.template, 'AWS::Lambda::EventInvokeConfig', {
       FunctionName: { Ref: Match.stringLikeRegexp('EngineeringStart') }, MaximumRetryAttempts: 0,
     })).toBe(1);
   });
@@ -124,11 +128,11 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     // (30 s: the API waits 25 s, under API Gateway's 29; the launch runs in the runtime's 5 minutes)
     expect([start?.Properties?.Timeout, JSON.stringify(EnvSchema.parse(start?.Properties?.Environment).Variables
       .ENGINEERING_RUNTIME_FUNCTION)]).toStrictEqual([30, expect.stringMatching(/EngineeringSupervisor/)]);
-    expect(policyText(template, 'EngineeringStartRole')).toMatch(/lambda:InvokeFunction[^\]]*function:/);
+    expect(policyText(on.template, 'EngineeringStartRole')).toMatch(/lambda:InvokeFunction[^\]]*function:/);
   });
 
   it('gives the start function only what a start needs: no session, no agent role, no bus, no delete, no rule off', () => {
-    const start = policyText(template, 'EngineeringStartRole');
+    const start = policyText(on.template, 'EngineeringStartRole');
     expect(start).not.toMatch(/bedrock-agentcore|sts:|events:(PutEvents|DisableRule)|DeleteItem|s3:|sqs:|bedrock:/);
     const actions = new Set(start.match(/"(dynamodb|events|lambda|kms):[A-Za-z]+"/g)
       ?.filter((name) => !/LeadingKeys|ViaService|FunctionUrlAuthType|InvokedViaFunctionUrl/.test(name)));
@@ -136,24 +140,21 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       '"dynamodb:GetItem"', '"dynamodb:PutItem"', '"dynamodb:Query"', '"dynamodb:UpdateItem"', '"events:EnableRule"',
       '"kms:Decrypt"', '"kms:GenerateDataKey"', '"lambda:InvokeFunction"', '"lambda:InvokeFunctionUrl"']);
     // A Stop's reads (7.50.03): Query of the run's own partition only, never the registry of the runs.
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]),
-      PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({
-        Sid: 'StopRunReads', Action: 'dynamodb:Query',
-        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } } })]) },
-    });
+    expectStartRoleHolds(on.template, [Match.objectLike({
+      Sid: 'StopRunReads', Action: 'dynamodb:Query',
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } } })]);
     // Its writes stay in the runs' partitions, the registry and the runs list (7.51.00); its other reads are a flow's
     // month and the hard cap.
     expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS","WS#default#RUNLIST#20\?\?-\?\?"/);
     // The agent roles trust only the two launchers, never the start function.
-    expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
+    expect(policyText(on.template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
   });
 
   it('hands a person\'s signal on with the grants a start had (7.51.02): its statements exactly, one invoke of the runtime', () => {
     // signal_run reads the run's META, the agent's row and its task (GetItem), puts its RUNLOG# row in the run's
     // partition (StartRunRows) and invokes the runtime's signal (HandTheLaunchOn): nothing was added for it.
     const statements = z.array(z.looseObject({ Sid: z.string().optional(), Action: z.unknown(), Resource: z.unknown() }))
-      .parse(Object.values(template.findResources('AWS::IAM::Policy', {
+      .parse(Object.values(on.template.findResources('AWS::IAM::Policy', {
         Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]) },
       })).flatMap((policy) => policy.Properties?.PolicyDocument?.Statement ?? []));
     expect(statements.map((statement) => statement.Sid ?? [statement.Action].flat().join()).sort((a, b) => a.localeCompare(b, 'en')))
@@ -169,17 +170,14 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('lets a start resolve its commit through the broker\'s function URL alone, IAM-authenticated (7.47.00)', () => {
     const broker = `${ACCOUNT}:function:voc-engineering-broker`;
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringStartRole') }]),
-      PolicyDocument: { Statement: Match.arrayWith([
-        Match.objectLike({ Sid: 'StartBrokerHead', Action: 'lambda:InvokeFunctionUrl', Resource: broker,
-          Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } } }),
-        Match.objectLike({ Sid: 'StartBrokerHeadThroughUrl', Action: 'lambda:InvokeFunction', Resource: broker,
-          Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } } }),
-      ]) },
-    });
+    expectStartRoleHolds(on.template, [
+      Match.objectLike({ Sid: 'StartBrokerHead', Action: 'lambda:InvokeFunctionUrl', Resource: broker,
+        Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } } }),
+      Match.objectLike({ Sid: 'StartBrokerHeadThroughUrl', Action: 'lambda:InvokeFunction', Resource: broker,
+        Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } } }),
+    ]);
     // The broker is asked to admit this role, by the start function's name, for its `head` alone.
-    expect(admitted.filter((entry) => entry.start === true)).toStrictEqual([
+    expect(on.admitted.filter((entry) => entry.start === true)).toStrictEqual([
       { role: { Ref: expect.stringMatching(/^EngineeringRuntimeEngineeringStartRole/) }, functionName: 'voc-engineering-start', start: true },
     ]);
     expect(Object.keys(EnvSchema.parse(startFunction()?.Properties?.Environment).Variables))
@@ -187,14 +185,14 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('configures no agent runtime by default, so every launch is refused until an image is named', () => {
-    expect(supervisorEnv(template).ENGINEERING_AGENT_RUNTIMES).toBe('{}');
-    expect(count(template, 'AWS::BedrockAgentCore::Runtime')).toBe(0);
+    expect(supervisorEnv(on.template).ENGINEERING_AGENT_RUNTIMES).toBe('{}');
+    expect(count(on.template, 'AWS::BedrockAgentCore::Runtime')).toBe(0);
   });
 
   it('prices model tokens at the runtime\'s defaults unless -c engineeringModelPrices names a model\'s own (7.50.00)', () => {
     // {} keeps runtime/caps.py DEFAULT_TOKEN_PRICES; the delivery prices a continuation's writes the same way.
-    expect(supervisorEnv(template).ENGINEERING_MODEL_PRICES).toBe('{}');
-    expect(functionEnv(template, 'voc-engineering-delivery').ENGINEERING_MODEL_PRICES).toBe('{}');
+    expect(supervisorEnv(on.template).ENGINEERING_MODEL_PRICES).toBe('{}');
+    expect(functionEnv(on.template, 'voc-engineering-delivery').ENGINEERING_MODEL_PRICES).toBe('{}');
     const prices = { 'global.anthropic.claude-sonnet-5-5': { input: '3', output: '15', cacheRead: '0.3' } };
     const priced = runtimeStack({ engineeringAgents: 'true', engineeringModelPrices: JSON.stringify(prices) }).template;
     expect(JSON.parse(String(supervisorEnv(priced).ENGINEERING_MODEL_PRICES))).toStrictEqual(prices);
@@ -215,22 +213,22 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('adds no alarm unless asked (an alarm is a fixed cost)', () => {
-    expect(count(template, 'AWS::CloudWatch::Alarm')).toBe(0);
+    expect(count(on.template, 'AWS::CloudWatch::Alarm')).toBe(0);
     const withAlarm = runtimeStack({ engineeringAgents: 'true', engineeringSupervisorAlarm: 'true' }).template;
     // The supervisor's errors; its undelivered ticks are the engineering DLQ's, which alerting already watches.
     expect(count(withAlarm, 'AWS::CloudWatch::Alarm')).toBe(1);
   });
 
   it('has one fixed role per agent role, trusted only by the two launchers (the supervisor, the delivery)', () => {
-    const roles = template.findResources('AWS::IAM::Role', { Properties: { RoleName: Match.stringLikeRegexp('^voc-eng-') } });
+    const roles = on.template.findResources('AWS::IAM::Role', { Properties: { RoleName: Match.stringLikeRegexp('^voc-eng-') } });
     // The broker's and the board's 13 roles (connectors/identity.py AGENT_ROLES), named as their pattern reads them.
     expect(Object.keys(roles)).toHaveLength(13);
-    template.hasResourceProperties('AWS::IAM::Role', { RoleName: 'voc-eng-gate-runner' });
+    on.template.hasResourceProperties('AWS::IAM::Role', { RoleName: 'voc-eng-gate-runner' });
     const launcher = (roleId: string) => Match.objectLike({
       Action: ['sts:AssumeRole', 'sts:TagSession'],
       Principal: { AWS: { 'Fn::GetAtt': [Match.stringLikeRegexp(roleId), 'Arn'] } },
     });
-    template.hasResourceProperties('AWS::IAM::Role', {
+    on.template.hasResourceProperties('AWS::IAM::Role', {
       RoleName: 'voc-eng-fixer',
       AssumeRolePolicyDocument: Match.objectLike({
         Statement: [launcher('EngineeringSupervisorRole'), launcher('EngineeringDeliveryRole')],
@@ -247,13 +245,13 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       } },
     });
     // Every one of the 13 agent roles, both of its trust statements.
-    expect(count(template, 'AWS::IAM::Role', {
+    expect(count(on.template, 'AWS::IAM::Role', {
       AssumeRolePolicyDocument: Match.objectLike({ Statement: [tagged, tagged] }),
     })).toBe(13);
   });
 
   it('reads and lists the same keys: its cache in the raw bucket, its run in the workspace bucket', () => {
-    const agent = template.findResources('AWS::IAM::Policy', {
+    const agent = on.template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }] },
     });
     const statements = Object.values(agent).flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
@@ -264,15 +262,15 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       'ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/*']);
     for (const keys of listed) expect(read).toContain(`/${keys}`);
     // Each in its own bucket: the cache in the raw one, the run (read, list, its own writes) in the workspace one.
-    const on = (sid: string) => JSON.stringify(statements.find((statement) => statement.Sid === sid)?.Resource);
-    expect([on('ListCache'), on('ListRun'), on('WriteOwnKeys')].map((text) => /Workspace/.test(text)))
+    const resourceOf = (sid: string) => JSON.stringify(statements.find((statement) => statement.Sid === sid)?.Resource);
+    expect([resourceOf('ListCache'), resourceOf('ListRun'), resourceOf('WriteOwnKeys')].map((text) => /Workspace/.test(text)))
       .toStrictEqual([false, true, true]);
     expect(read).toMatch(/Raw.*engineering\/cache|engineering\/cache.*Raw/);
     expect(read).toMatch(/Workspace.*ws\/|ws\/.*Workspace/);
   });
 
   it('scopes an agent role to its session: its cache and run, its own keys, and no queue', () => {
-    const agent = policyText(template, 'EngineeringAgentFixerRole');
+    const agent = policyText(on.template, 'EngineeringAgentFixerRole');
     expect(agent).toContain('ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
     expect(agent).not.toContain('engineering/runs/');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
@@ -284,7 +282,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     const board = `${ACCOUNT}:function:voc-engineering-board`;
     const broker = `${ACCOUNT}:function:voc-engineering-broker`;
     const iamOnly = { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } };
-    expect(fixerPoliciesWith(template, [
+    expect(fixerPoliciesWith(on.template, [
           Match.objectLike({ Sid: 'BoardUrl', Action: 'lambda:InvokeFunctionUrl', Resource: board, Condition: iamOnly }),
           Match.objectLike({ Sid: 'BrokerUrl', Action: 'lambda:InvokeFunctionUrl', Resource: broker, Condition: iamOnly }),
           Match.objectLike({
@@ -296,7 +294,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('gives every agent role the broker\'s function URL alone, IAM-authenticated, and no other URL call', () => {
     const broker = `${ACCOUNT}:function:voc-engineering-broker`;
-    const agentPolicies = template.findResources('AWS::IAM::Policy', {
+    const agentPolicies = on.template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: [{ Ref: Match.stringLikeRegexp('^EngineeringRuntimeEngineeringAgent') }] },
     });
     const UrlStatements = z.array(z.looseObject({
@@ -319,7 +317,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('hands the broker\'s function URL to the agents through the supervisor and the delivery', () => {
     for (const name of ['voc-engineering-runtime', 'voc-engineering-delivery', 'voc-engineering-start']) {
-      expect(functionEnv(template, name).ENGINEERING_BROKER_URL).toBe('https://def456.lambda-url.us-east-1.on.aws/');
+      expect(functionEnv(on.template, name).ENGINEERING_BROKER_URL).toBe('https://def456.lambda-url.us-east-1.on.aws/');
     }
   });
 
@@ -328,7 +326,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect([pins.get('Supervisor'), pins.get('Delivery')]).toStrictEqual(['voc.engineering/supervisor',
       'voc.engineering/supervisor']);
     for (const role of ['EngineeringSupervisorRole', 'EngineeringDeliveryRole']) {
-      template.hasResourceProperties('AWS::IAM::Policy', {
+      on.template.hasResourceProperties('AWS::IAM::Policy', {
         Roles: [{ Ref: Match.stringLikeRegexp(role) }],
         PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
           Sid: 'SpeakAsTheSupervisor', Action: 'events:PutEvents',
@@ -343,13 +341,13 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     expect(pins.size).toBe(15);
     expect(pins.get('Fixer')).toBe('voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}');
     expect(pins.get('Coordinator')).toBe('voc.engineering/conductor/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
-    expect(policyText(template, 'EngineeringAgentFixerRole')).toContain(':event-bus/voc-engineering');
+    expect(policyText(on.template, 'EngineeringAgentFixerRole')).toContain(':event-bus/voc-engineering');
   });
 
   it('lets the coach speak on the bus only as its own run\'s coach (a run-scoped source)', () => {
     const { pins } = runtimeStack({ engineeringAgents: 'true' });
     expect(pins.get('Coach')).toBe('voc.engineering/coach/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
-    expect(policyText(template, 'EngineeringAgentCoachRole')).toContain('PutOnTheBus');
+    expect(policyText(on.template, 'EngineeringAgentCoachRole')).toContain('PutOnTheBus');
   });
 
   it('lets each engineering role use the key only through the services that store its data', () => {
@@ -358,14 +356,14 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       Condition: { StringEquals: { 'kms:ViaService': Match.anyValue() } },
     });
     for (const role of ['EngineeringAgentFixerRole', 'EngineeringSupervisorRole', 'EngineeringDeliveryRole']) {
-      expect(count(template, 'AWS::IAM::Policy', {
+      expect(count(on.template, 'AWS::IAM::Policy', {
         Roles: [{ Ref: Match.stringLikeRegexp(role) }],
         PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([via]) }),
       })).toBe(1);
-      expect(policyText(template, role)).not.toMatch(/kms:Encrypt"|kms:ReEncrypt/);
+      expect(policyText(on.template, role)).not.toMatch(/kms:Encrypt"|kms:ReEncrypt/);
     }
     // The delivery's failed invocations go to the encrypted DLQ: without SQS here their records would be lost.
-    expect(count(template, 'AWS::IAM::Policy', {
+    expect(count(on.template, 'AWS::IAM::Policy', {
       Roles: [{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }],
       PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
         Action: ['kms:Decrypt', 'kms:GenerateDataKey'],
@@ -375,12 +373,12 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('lets the run coordinator speak on the bus only as its run\'s conductor', () => {
-    expect(policyText(template, 'EngineeringAgentCoordinatorRole'))
+    expect(policyText(on.template, 'EngineeringAgentCoordinatorRole'))
       .toContain('voc.engineering/conductor/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
   });
 
   it('denies an agent role any role chaining and any bus source but its own', () => {
-    expect(fixerPoliciesWith(template, [
+    expect(fixerPoliciesWith(on.template, [
           Match.objectLike({ Sid: 'NoRoleChaining', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:TagSession'] }),
           Match.objectLike({
             Sid: 'OwnEventSourceOnly', Effect: 'Deny', Action: 'events:PutEvents',
@@ -390,7 +388,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('lets the supervisor touch only the runs\' rows and their registry, its own rule and the agent roles', () => {
-    template.hasResourceProperties('AWS::IAM::Policy', {
+    on.template.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
@@ -406,14 +404,14 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
         ]),
       }),
     });
-    const supervisor = policyText(template, 'EngineeringSupervisorRole');
+    const supervisor = policyText(on.template, 'EngineeringSupervisorRole');
     expect(supervisor).toContain(':rule/voc-engineering-supervisor');
     // The checkpoints it reads are the agents' in the workspace bucket's layout; the raw bucket only for the cache.
     expect(supervisor).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
     // No AgentCore grant without a runtime (engineering-agentcore.test.ts has them).
     expect(supervisor).not.toMatch(/bedrock-agentcore|Microvm/);
     expect(supervisor).not.toMatch(/s3:DeleteObject|dynamodb:\*|s3:\*|gsi1|engineering\/runs\//);
-    template.hasResourceProperties('AWS::Lambda::Function', {
+    on.template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime',
       Environment: { Variables: Match.objectLike({ ENGINEERING_TABLE: Match.anyValue() }) },
     });
@@ -422,8 +420,8 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   /** The supervisor role's statements, parsed: its inline policies' and the managed ones CDK moves a long one's into. */
   function supervisorStatements(): z.infer<typeof StatementsSchema> {
     const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
-    const policies = [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
-      ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))];
+    const policies = [...Object.values(on.template.findResources('AWS::IAM::Policy', roles)),
+      ...Object.values(on.template.findResources('AWS::IAM::ManagedPolicy', roles))];
     return StatementsSchema.parse(policies.flatMap((policy) => z.looseObject({
       Properties: z.looseObject({ PolicyDocument: z.looseObject({ Statement: z.array(z.unknown()) }) }),
     }).parse(policy).Properties.PolicyDocument.Statement));
@@ -467,18 +465,18 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     });
 
     it('lets the start function read the parent\'s partition for its plan (a Query of the runs\' partitions only)', () => {
-      expect(policiesWithStatement(template, 'EngineeringStartRole', {
+      expect(policiesWithStatement(on.template, 'EngineeringStartRole', {
         Sid: 'RestartReadsTheParent', Action: 'dynamodb:Query',
         Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
       })).toHaveLength(1);
     });
 
     it('lets no agent role write a seed, its own run\'s or another\'s, nor read another run\'s', () => {
-      const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+      const roles = Object.keys(on.template.findResources('AWS::IAM::Role'))
         .filter((id) => /EngineeringAgent\w+Role/.test(id));
       expect(roles.length).toBeGreaterThan(10);
       for (const role of roles) {
-        const text = policyText(template, role);
+        const text = policyText(on.template, role);
         expect(text).not.toMatch(/_seed|_patches/);
         // Its reads are its run's keys, by its session's tags; its writes its own keys (the test above).
         expect(text).toContain('/ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/*');
@@ -489,19 +487,19 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   it('lets the launch read the skills\' rows (the coach\'s statement), never delete one (7.50.00)', () => {
     // The skills' rows: the launch's resolution reads them (GetItem), the coach's proposal writes them.
-    expect(JSON.stringify(template.toJSON())).not.toMatch(/"dynamodb:DeleteItem"[^\]]*WS#\*#SKILL#\*/);
-    expect(policiesWithStatement(template, 'EngineeringSupervisorRole', {
+    expect(JSON.stringify(on.template.toJSON())).not.toMatch(/"dynamodb:DeleteItem"[^\]]*WS#\*#SKILL#\*/);
+    expect(policiesWithStatement(on.template, 'EngineeringSupervisorRole', {
       Sid: 'LearningCoachSkills', Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
       Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#SKILL#*'] } },
     })).toHaveLength(1);
   });
 
   it('lets no agent role write anything but its own keys: no other agent\'s transcript, no manifest (7.50.00)', () => {
-    const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+    const roles = Object.keys(on.template.findResources('AWS::IAM::Role'))
       .filter((id) => /^EngineeringRuntimeEngineeringAgent\w+Role/.test(id) || /EngineeringAgent\w+Role/.test(id));
     expect(roles.length).toBeGreaterThan(10);
     for (const role of roles) {
-      const statements = Object.values(template.findResources('AWS::IAM::Policy', {
+      const statements = Object.values(on.template.findResources('AWS::IAM::Policy', {
         Properties: { Roles: Match.arrayWith([{ Ref: role }]) },
       })).flatMap((policy) => z.looseObject({
         Properties: z.looseObject({ PolicyDocument: z.looseObject({ Statement: z.array(z.looseObject({
@@ -511,27 +509,27 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(puts.map((statement) => statement.Sid)).toStrictEqual(['WriteOwnKeys']);
       expect(JSON.stringify(puts[0]?.Resource))
         .toContain('/ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
-      expect(policyText(template, role)).not.toMatch(/_manifest|transcripts-index/);
+      expect(policyText(on.template, role)).not.toMatch(/_manifest|transcripts-index/);
     }
   });
 
   it('gives no agent role a repository\'s knowledge, tenets or docs rows, or the packs\' objects (7.52.00)', () => {
     // (its tenets go under its own keys, and only the runtime drafts them; the docs write is the start's, never an
     // agent's: the broker refuses push_approved_docs to every agent role, test_broker_docs.py)
-    const roles = Object.keys(template.findResources('AWS::IAM::Role'))
+    const roles = Object.keys(on.template.findResources('AWS::IAM::Role'))
       .filter((id) => /^EngineeringRuntimeEngineeringAgent\w+Role/.test(id) || /EngineeringAgent\w+Role/.test(id));
     expect(roles.length).toBeGreaterThan(10);
-    expect(roles.filter((role) => /REPO#|DOCS#|\/knowledge\//.test(policyText(template, role)))).toStrictEqual([]);
+    expect(roles.filter((role) => /REPO#|DOCS#|\/knowledge\//.test(policyText(on.template, role)))).toStrictEqual([]);
   });
 
   it('gives the supervisor one IAM action: the pass of the reactions schedule\'s role, never an IAM write', () => {
     // (to EventBridge Scheduler alone, 7.10.00: engineering-reactions.test.ts pins the statement)
-    expect(policyText(template, 'EngineeringSupervisorRole').match(/"iam:\w+"/g))
+    expect(policyText(on.template, 'EngineeringSupervisorRole').match(/"iam:\w+"/g))
       .toStrictEqual(['"iam:PassRole"', '"iam:PassedToService"']);
   });
 
   it('gives the delivery only what a wake needs: the runs\' rows, the checkpoints, the launch, its DLQ (no runtime yet)', () => {
-    const policies = template.findResources('AWS::IAM::Policy', {
+    const policies = on.template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
     });
     const statements = Object.values(policies)
@@ -548,7 +546,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('lets the delivery touch the runs\' partitions only: never the registry of active runs, its rule or a delete', () => {
-    template.hasResourceProperties('AWS::IAM::Policy', {
+    on.template.hasResourceProperties('AWS::IAM::Policy', {
       Roles: [{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }],
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([Match.objectLike({
@@ -557,7 +555,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
         })]),
       }),
     });
-    const delivery = policyText(template, 'EngineeringDeliveryRole');
+    const delivery = policyText(on.template, 'EngineeringDeliveryRole');
     expect(delivery).not.toMatch(/WS#\*#RUNS|events:Put(Rule|Targets)|events:(Enable|Disable)|s3:PutObject|dynamodb:DeleteItem|InvokeAgentRuntimeCommand|iam:/);
     // Its one bus action, only as the supervisor (a wake's continuation is reported to the run).
     expect(delivery.match(/"events:[A-Z]\w*"/g)).toStrictEqual(['"events:PutEvents"']);
@@ -566,7 +564,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
 
   /** The policies of `role` holding statement `sid`: `action` on the table, only on `keys`' partitions. */
   const keyedGrants = (role: string, sid: string, action: string | string[], keys: string) => policiesWithStatement(
-    template, role, { Sid: sid, Action: action, Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [keys] } } });
+    on.template, role, { Sid: sid, Action: action, Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [keys] } } });
 
   it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
     'lets %s update the spend ledger\'s month partitions only (the same transaction as a priced session write)', (role) => {
@@ -579,18 +577,18 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     ['HardCapSetting', 'dynamodb:GetItem', 'SETTINGS#engineering'],
   ])('gives the supervisor alone %s (%s on %s): a flow\'s month total, the alerts\' own partition', (sid, action, keys) => {
     expect(keyedGrants('EngineeringSupervisorRole', sid, action, keys)).toHaveLength(1);
-    expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/#BUDGET#|SETTINGS#/);
+    expect(policyText(on.template, 'EngineeringDeliveryRole')).not.toMatch(/#BUDGET#|SETTINGS#/);
   });
 
   it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
     'lets %s, a launcher, put the sessions\' walls (one row per language) and nothing else there', (role) => {
       expect(keyedGrants(role, 'SandboxRecord', 'dynamodb:PutItem', 'WS#*#SANDBOX')).toHaveLength(1);
-      expect(policyText(template, role).match(/WS#\*#SANDBOX/g)).toHaveLength(1);
+      expect(policyText(on.template, role).match(/WS#\*#SANDBOX/g)).toHaveLength(1);
     });
 
   it('gives the delivery role only UpdateItem on the spend ledger, whatever the statement', () => {
     const Statement = z.array(z.looseObject({ Action: z.union([z.string(), z.array(z.string())]), Condition: z.unknown().optional() }));
-    const policies = template.findResources('AWS::IAM::Policy', {
+    const policies = on.template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
     });
     const onLedger = Object.values(policies)
@@ -600,7 +598,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
   });
 
   it('runs the delivery without what only the supervisor uses (its rule\'s name, the extra egress of a launch)', () => {
-    const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {
+    const [fn] = Object.values(on.template.findResources('AWS::Lambda::Function', {
       Properties: { FunctionName: 'voc-engineering-delivery' },
     }));
     const env = Object.keys(EnvSchema.parse(fn?.Properties?.Environment).Variables);
@@ -622,8 +620,8 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     /** The supervisor role's statements (its inline policies' and the managed ones CDK moves a long one's into). */
     function supervisorStatements(): Record<string, unknown>[] {
       const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
-      const policies = [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
-        ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))];
+      const policies = [...Object.values(on.template.findResources('AWS::IAM::Policy', roles)),
+        ...Object.values(on.template.findResources('AWS::IAM::ManagedPolicy', roles))];
       return policies.flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
     }
 
@@ -645,7 +643,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     });
 
     it('never lets the runtime touch a person\'s memories, a knowledge pack or delete a learning row', () => {
-      const supervisor = policyText(template, 'EngineeringSupervisorRole');
+      const supervisor = policyText(on.template, 'EngineeringSupervisorRole');
       expect(supervisor).not.toMatch(/AMEM#PERSON|AMEM#REPO|AMEM#\*|#KNOW|WS#\*"/);
       // (the registry's, above; the voc-agents Deny of the hard cap's rows names it too, as a Deny)
       const allows = JSON.stringify(supervisorStatements().filter((found) => found.Effect !== 'Deny'));
@@ -660,10 +658,10 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     });
 
     it('never retries an asynchronous invocation of the runtime (each learning step is claimed once)', () => {
-      const [fn] = Object.keys(template.findResources('AWS::Lambda::Function', {
+      const [fn] = Object.keys(on.template.findResources('AWS::Lambda::Function', {
         Properties: { FunctionName: 'voc-engineering-runtime' },
       }));
-      expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+      expect(count(on.template, 'AWS::Lambda::EventInvokeConfig', {
         FunctionName: { Ref: fn }, MaximumRetryAttempts: 0,
       })).toBe(1);
     });
@@ -674,11 +672,11 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(JSON.stringify(invoke?.Resource)).toMatch(/:function:voc-engineering-runtime"\]\]\}$/);
       // (the others: the checkout cache's writer, engineering-cache.test.ts; the broker, only through its function URL,
       // for the reactions read, engineering-reactions.test.ts)
-      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(3);
+      expect(policyText(on.template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(3);
     });
 
     it('lets the runtime call the allowlisted Claude models (the coach), and the delivery none', () => {
-      const attachedTo = (role: string): number => count(template, 'AWS::IAM::ManagedPolicy', {
+      const attachedTo = (role: string): number => count(on.template, 'AWS::IAM::ManagedPolicy', {
         Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
         PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
           Sid: 'ClaudeProfiles', Action: 'bedrock:InvokeModel',
@@ -689,7 +687,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     });
 
     it('runs under a service the denied-reads alarm sums (it reads the gate records as missing when denied)', () => {
-      expect(supervisorEnv(template).POWERTOOLS_SERVICE_NAME).toBe(ENGINEERING_WORKSPACE_READER_SERVICES[3]);
+      expect(supervisorEnv(on.template).POWERTOOLS_SERVICE_NAME).toBe(ENGINEERING_WORKSPACE_READER_SERVICES[3]);
     });
 
     it('writes an issue\'s trusted triage row create-only: PutItem on ISSUE_TRIAGE#* alone (7.50.00)', () => {
@@ -702,7 +700,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     });
 
     it('lets the runtime update or delete no triage row and write no other part of voc-agents', () => {
-      const supervisor = policyText(template, 'EngineeringSupervisorRole');
+      const supervisor = policyText(on.template, 'EngineeringSupervisorRole');
       expect(supervisor).not.toMatch(/"dynamodb:(UpdateItem|DeleteItem|BatchWriteItem)"[^}]*ISSUE_TRIAGE/);
       const agentsWrites = supervisorStatements().filter((found) => AGENTS_TABLE.test(JSON.stringify(found.Resource))
         && found.Effect !== 'Deny' && /PutItem|UpdateItem|DeleteItem/.test(JSON.stringify(found)));
@@ -714,14 +712,14 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(records).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });
       expect(JSON.stringify(records?.Resource))
         .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_triage\/\*"/);
-      expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/_triage|ISSUE_TRIAGE/);
+      expect(policyText(on.template, 'EngineeringDeliveryRole')).not.toMatch(/_triage|ISSUE_TRIAGE/);
     });
 
     /** Every statement of the supervisor's role: its inline policies' and the managed ones CDK moves a long one's into. */
     function everyStatement(): Record<string, unknown>[] {
       const roles = { Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) } };
-      return [...Object.values(template.findResources('AWS::IAM::Policy', roles)),
-        ...Object.values(template.findResources('AWS::IAM::ManagedPolicy', roles))]
+      return [...Object.values(on.template.findResources('AWS::IAM::Policy', roles)),
+        ...Object.values(on.template.findResources('AWS::IAM::ManagedPolicy', roles))]
         .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
     }
 
@@ -751,13 +749,13 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(records).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });
       expect(JSON.stringify(records?.Resource))
         .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_tenets\/\*"/);
-      expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/_tenets|REPO#/);
+      expect(policyText(on.template, 'EngineeringDeliveryRole')).not.toMatch(/_tenets|REPO#/);
     });
 
     it('names the benchmark\'s shipped cases for the coach', () => {
       expect(benchmarkCaseIds()).toStrictEqual(
         ['divide-floor-bug', 'duration-hours-feature', 'monorepo-units-bug', 'pagination-review', 'slug-cut-bug']);
-      expect(supervisorEnv(template).ENGINEERING_BENCHMARK_CASES).toBe(JSON.stringify(benchmarkCaseIds()));
+      expect(supervisorEnv(on.template).ENGINEERING_BENCHMARK_CASES).toBe(JSON.stringify(benchmarkCaseIds()));
     });
   });
 });

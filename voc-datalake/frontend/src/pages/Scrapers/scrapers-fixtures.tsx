@@ -38,6 +38,14 @@ export const SYNTHETIC_PLUGIN_MANIFEST: PluginManifest = {
   enabled: true,
 }
 
+/** The Web Reviews plugin's manifest as the Scrapers page lists it (no settings unless `fields` give some). */
+export function webReviewsPlugin(fields: Partial<PluginManifest> = {}): PluginManifest {
+  return {
+    id: 'web_reviews', name: 'Web Reviews', icon: 'Web', config: [], enabled: true,
+    hasIngestor: true, hasWebhook: false, hasS3Trigger: false, ...fields,
+  }
+}
+
 /** A saved scraper config on top of `DEFAULT_SCRAPER`, with the given overrides. */
 export function makeScraper(overrides: Partial<ScraperConfig>): ScraperConfig {
   return {

@@ -22,6 +22,8 @@ interface MenuButton {
   readonly toggle: () => void
   /** Close the menu; `returnFocus` puts focus back on the button (Escape, item activation). */
   readonly close: (returnFocus?: boolean) => void
+  /** An item's activation: close the menu, focus back on the button, then run the item's action. */
+  readonly choose: (run: () => void) => void
   readonly onButtonKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
   readonly onMenuKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
 }
@@ -133,5 +135,10 @@ export function useMenuButton(): MenuButton {
     items[next]?.focus()
   }, [close])
 
-  return { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown }
+  const choose = useCallback((run: () => void) => {
+    close(true)
+    run()
+  }, [close])
+
+  return { open, buttonRef, menuRef, toggle, close, choose, onButtonKeyDown, onMenuKeyDown }
 }

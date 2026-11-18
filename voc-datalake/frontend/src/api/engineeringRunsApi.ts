@@ -22,7 +22,7 @@ import { expansionRecords, normalizeDefinition } from './workflowsApi'
 import { ReactionsSchema } from './engineeringReactionsApi'
 
 /** The signals a run's agents take (`engineering/monitor.py` SIGNALS). */
-export type EngineeringSignal = 'save' | 'pause' | 'resume' | 'shutdown' | 'stop_now'
+type EngineeringSignal = 'save' | 'pause' | 'resume' | 'shutdown' | 'stop_now'
 /** A run's statuses once it has ended (`runtime/runs.py` ENDED): it takes no more actions. */
 export const ENDED_RUN_STATUSES: readonly string[] = ['done', 'failed', 'stopped']
 /** The board's states, in the order the monitor shows them (`engineering/board/model.py`). */

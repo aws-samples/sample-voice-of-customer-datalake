@@ -28,12 +28,16 @@ const firstName = () => within(sheet()).getByRole('textbox', { name: 'First Name
 
 beforeEach(() => { primeUserClient(client) })
 
+/** Opens the sheet, adds a letter to the first name and presses Save name. */
+async function saveAnEditedName(): Promise<void> {
+  const { session } = openSheet()
+  await session.type(firstName(), 'y')
+  await session.click(within(sheet()).getByRole('button', { name: 'Save name' }))
+}
+
 describe('name', () => {
   it('saves the edited name and says Saved', async () => {
-    const { session } = openSheet()
-    await session.type(firstName(), 'y')
-
-    await session.click(within(sheet()).getByRole('button', { name: 'Save name' }))
+    await saveAnEditedName()
 
     await waitFor(() => expect(client.api.updateUser).toHaveBeenCalledWith('grace', { given_name: 'Gracey', family_name: 'Hopper' }))
     await waitFor(() => expect(sheetStatus()).toHaveTextContent('Saved'))
@@ -52,10 +56,7 @@ describe('name', () => {
 
   it('says the server\'s reason when the name is refused', async () => {
     client.api.updateUser.mockResolvedValue({ success: false, message: 'Name too long' })
-    const { session } = openSheet()
-    await session.type(firstName(), 'y')
-
-    await session.click(within(sheet()).getByRole('button', { name: 'Save name' }))
+    await saveAnEditedName()
 
     expect(await within(sheet()).findByRole('alert')).toHaveTextContent('Name too long')
   })

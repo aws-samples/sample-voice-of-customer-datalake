@@ -33,7 +33,7 @@ export interface CardForm {
 }
 
 export type CardField = 'role' | 'version' | 'slug' | 'title' | 'purpose' | `cap:${string}`
-export type CardIssue =
+type CardIssue =
   | 'role' | 'version' | 'slugMissing' | 'slugShape' | 'titleLong' | 'titleText'
   | 'purposeMissing' | 'purposeLong' | 'purposeText' | 'capShape' | 'capOver'
 

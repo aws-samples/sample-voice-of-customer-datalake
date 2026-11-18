@@ -30,6 +30,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
+import { agentCoreTrust } from '../utils/agentcore-trust';
 import { webReviewsBotAuth, webReviewsBrowserProfile } from '../utils/web-reviews-browser';
 import { type BrowserGrant, managedBrowserArn } from './ingestion-roles';
 
@@ -40,7 +41,7 @@ export const BROWSER_PROFILE_IDENTIFIER_ENV = 'BROWSER_PROFILE_IDENTIFIER';
 /** The base of the browser's and the profile's names (`uniqueName` → `agentCoreName`: `[<prefix>_]voc_web_reviews`). */
 export const WEB_REVIEWS_BROWSER_BASE_NAME = 'voc_web_reviews';
 
-export interface IngestorBrowserProps {
+interface IngestorBrowserProps {
   /** An AgentCore name (lib/utils/naming.ts `agentCoreName`), the browser's and the profile's. */
   readonly name: string;
   /** Web Bot Auth: the deployment's own signing browser; false: the AWS-managed `aws.browser.v1`. */
@@ -58,10 +59,7 @@ export interface IngestorBrowser extends BrowserGrant {
 /** The execution role signing needs: trusted by AgentCore for this account's resources in the region, no policy. */
 function signingRole(stack: cdk.Stack): iam.Role {
   return new iam.Role(stack, 'WebReviewsBrowserRole', {
-    assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com').withConditions({
-      StringEquals: { 'aws:SourceAccount': stack.account },
-      ArnLike: { 'aws:SourceArn': stack.formatArn({ service: 'bedrock-agentcore', resource: '*' }) },
-    }),
+    assumedBy: agentCoreTrust(stack),
     description: 'Web Reviews browser (Web Bot Auth): AgentCore signs its requests; no permissions',
   });
 }

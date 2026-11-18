@@ -28,22 +28,29 @@ export interface ReviewActions {
   readonly rewrite: { readonly running: boolean; readonly reason: string | null; readonly start: () => void } | null
 }
 
-export interface ToolbarItem {
-  readonly id: string
+/** What a toolbar button shows: an item's (below) and ToolbarButton's (toolbarControls.tsx). */
+export interface ToolbarControl {
   /** Its name (a count it shows included). */
   readonly label: string
-  /** Its name in the "⋯" menu (no count). */
-  readonly menuLabel: string
   /** Its tooltip. */
   readonly hint: string
   readonly icon: LucideIcon
-  /** A toggle's state (`aria-pressed`); absent for an action. */
+  /** A toggle: whether it is on (`aria-pressed`); absent for an action. */
   readonly pressed?: boolean
+  /** A count beside the icon (the open comments); its number is in `label`. */
   readonly badge?: number
   readonly disabled?: boolean
+  /** Its action is running: a spinner in place of the icon. */
   readonly busy?: boolean
+  /** It opens a dialog (History). */
   readonly opensDialog?: boolean
   readonly keyShortcuts?: string
+}
+
+export interface ToolbarItem extends ToolbarControl {
+  readonly id: string
+  /** Its name in the "⋯" menu (no count). */
+  readonly menuLabel: string
   /** Into "⋯" on a narrow screen. */
   readonly overflows: boolean
   readonly run: () => void

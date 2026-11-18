@@ -7,12 +7,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
 import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
+import Where from '@test/LocationWhere'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -37,11 +38,6 @@ function route(routes: Record<string, RouteHandler>) {
     'GET /agents/engineering/settings': () => ({ hard_cap: false, updated_at: null, updated_by: null }),
     ...routes,
   }, { missStatus: 500 })
-}
-
-function Where() {
-  const location = useLocation()
-  return <p data-testid="where">{location.pathname + location.search}</p>
 }
 
 function renderSpend(entry = '/agents/spend?month=2026-11') {

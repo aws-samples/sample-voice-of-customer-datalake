@@ -13,7 +13,8 @@
  *
  * @module pages/Agents/RunWorkspace/runTimelineModel
  */
-import { laneLabel, laneState, levelsOf, sessionState } from './runLanes'
+import { laneLabel, laneState, sessionState } from './runLanes'
+import { stepLevels } from '../../../components/WorkflowEditor/nodes/nodeKinds'
 import { orchestratorOf, runPhase } from './agentStatus'
 import type { LaneState, StepState } from '../../../components/WorkflowEditor/runState'
 import type { EngineeringAgent, EngineeringOverview } from '../../../api/engineeringRunsApi'
@@ -81,7 +82,7 @@ export function buildTimeline(overview: EngineeringOverview, lit: ReadonlyMap<st
   const { run, lanes } = overview
   const phase = runPhase(run)
   const definition = run.flow_definition
-  const levels = definition === null ? new Map<string, number>() : levelsOf(definition)
+  const levels = definition === null ? new Map<string, number>() : stepLevels(definition)
   const titles = new Map(definition?.nodes.map((node) => [node.id, node.data.title]) ?? [])
   const order = [...new Set([...[...levels.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id), ...Object.keys(lanes)])]
   const orchestrator = orchestratorOf(overview.agents)

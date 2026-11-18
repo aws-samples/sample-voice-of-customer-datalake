@@ -6,17 +6,13 @@
  */
 import { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import { FIXTURE_REALTIME_HTTP_DNS } from '../test-support/fixture-resources';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { byCodeUnit } from '../utils/compare';
 import { REALTIME_HTTP_DNS_ENV, type RealtimeNamespace } from '../utils/realtime';
 import { expectPublishesOnlyOn, realtimeNamespacesOfRole } from '../test-support/realtime-assertions';
-
-const FunctionSchema = z.object({
-  Properties: z.object({ FunctionName: z.unknown(), Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),
-});
+import { FunctionEnvironmentSchema as FunctionSchema } from '../test-support/template-resources';
 
 /** Function base name → the logical id (prefix) of its role and the namespace it publishes on. */
 const PUBLISHERS: Record<string, [string, RealtimeNamespace]> = {

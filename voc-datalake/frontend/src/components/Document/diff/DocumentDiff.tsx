@@ -5,12 +5,10 @@
  *
  * @module components/Document/diff/DocumentDiff
  */
-import { useState } from 'react'
 import BlockDiff from './BlockDiff'
 import TextDiff from './TextDiff'
-import ViewToggle from '../read/ViewToggle'
+import { TextViews } from '../read/ViewToggle'
 import type { MarkdownPolicy } from '../read/markdownPolicy'
-import type { TextView } from '../read/ViewToggle'
 
 interface DocumentDiffProps {
   readonly before: string
@@ -24,13 +22,8 @@ interface DocumentDiffProps {
 }
 
 export default function DocumentDiff({ before, after, policy, identicalText, beforeLabel, afterLabel }: DocumentDiffProps) {
-  const [view, setView] = useState<TextView>('rendered')
   return (
-    <div className="space-y-3">
-      <ViewToggle value={view} onChange={setView} />
-      {view === 'rendered'
-        ? <BlockDiff before={before} after={after} policy={policy} identicalText={identicalText} />
-        : <TextDiff before={before} after={after} identicalText={identicalText} beforeLabel={beforeLabel} afterLabel={afterLabel} />}
-    </div>
+    <TextViews rendered={<BlockDiff before={before} after={after} policy={policy} identicalText={identicalText} />}
+      source={<TextDiff before={before} after={after} identicalText={identicalText} beforeLabel={beforeLabel} afterLabel={afterLabel} />} />
   )
 }

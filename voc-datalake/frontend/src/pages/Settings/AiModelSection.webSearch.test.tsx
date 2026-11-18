@@ -14,20 +14,11 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import AiModelSection from './AiModelSection'
-import type { ModelTestResult } from '../../api/modelTestSchema'
+import { modelApi } from './ai-model-section-fixtures'
 
-const mockGetModelSettings = vi.fn<() => Promise<unknown>>()
-const mockSaveModelSettings = vi.fn<(surface: string, modelId: string | null) => Promise<unknown>>()
-const mockTestModel = vi.fn<(modelId: string) => Promise<ModelTestResult>>()
+const { getModelSettings: mockGetModelSettings, saveModelSettings: mockSaveModelSettings, testModel: mockTestModel } = modelApi
 
-vi.mock('../../api/client', () => ({
-  api: {
-    getModelSettings: () => mockGetModelSettings(),
-    saveModelSettings: (surface: string, modelId: string | null) => mockSaveModelSettings(surface, modelId),
-    testModel: (modelId: string) => mockTestModel(modelId),
-    getModelCapacity: () => Promise.resolve({ models: [], image: null }),
-  },
-}))
+vi.mock('../../api/client', () => import('./ai-model-section-fixtures').then((m) => m.modelClientModule()))
 
 const SONNET55 = 'global.anthropic.claude-sonnet-5-5'
 const HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'

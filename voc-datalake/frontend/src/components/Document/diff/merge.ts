@@ -11,7 +11,7 @@ import { diffBlocks } from './lineDiff'
 import type { DiffLine } from './lineDiff'
 
 /** Where a change of theirs stands against the draft. */
-export type MergeStatus = 'applies' | 'already' | 'conflict'
+type MergeStatus = 'applies' | 'already' | 'conflict'
 
 export interface MergeChange {
   readonly id: string

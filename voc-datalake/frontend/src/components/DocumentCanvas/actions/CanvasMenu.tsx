@@ -122,13 +122,9 @@ export function CanvasMenuEntries({ entries, choose }: Readonly<{
 }
 
 export default function CanvasMenu({ label, entries }: CanvasMenuProps) {
-  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
+  const { open, buttonRef, menuRef, toggle, choose, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
   const menuId = useId()
   const triggerId = useId()
-  const choose = (run: () => void) => {
-    close(true)
-    run()
-  }
   return (
     <div className="relative">
       <button ref={buttonRef} id={triggerId} type="button" className={MENUBAR_TRIGGER_CLASS}

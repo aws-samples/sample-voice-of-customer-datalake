@@ -107,7 +107,7 @@ export const ENGINEERING_API_DETAIL_TYPES = ['msg.answer', 'msg.steer'] as const
 export const AGENTS_API_ROLE_BASE_NAME = 'voc-agents-api';
 
 /** That role's ARN in `scope`'s account, by the deployment's prefix-aware `uniqueName` (the one source of its name). */
-export function agentsApiRoleArn(scope: Construct, uniqueName: (baseName: string) => string): string {
+function agentsApiRoleArn(scope: Construct, uniqueName: (baseName: string) => string): string {
   return cdk.Arn.format({ service: 'iam', region: '', resource: 'role', resourceName: uniqueName(AGENTS_API_ROLE_BASE_NAME) },
     cdk.Stack.of(scope));
 }

@@ -23,10 +23,8 @@ import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 // (the original kept beside the doubles: the shared safe-Markdown policy's links reach the assistant's store)
-vi.mock('../../store/authStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../store/authStore')>()),
-  ...(await import('@test/fetchApiRoutes')).authStoreModule(),
-}))
+vi.mock('../../store/authStore', (importOriginal) =>
+  import('@test/fetchApiRoutes').then((m) => m.authStoreWithOriginal(importOriginal)))
 
 const { default: EngineeringRun } = await import('./RunWorkspace/RunWorkspace')
 

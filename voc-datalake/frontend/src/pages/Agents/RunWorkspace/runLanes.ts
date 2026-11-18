@@ -15,7 +15,7 @@
  * @module pages/Agents/RunWorkspace/runLanes
  */
 import { STEP_WIDTH } from '../../../components/WorkflowEditor/model'
-import { nodeSize } from '../../../components/WorkflowEditor/nodes/nodeKinds'
+import { nodeSize, stepLevels } from '../../../components/WorkflowEditor/nodes/nodeKinds'
 import type { LaneState } from '../../../components/WorkflowEditor/runState'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 import type { RunLane } from '../../../api/engineeringRunsApi'
@@ -83,21 +83,6 @@ export function gateOutcome(verdict: string | undefined): 'pass' | 'fail' | null
   return verdict === 'NO-GO' || verdict === 'NO_GO' ? 'fail' : null
 }
 
-/** Each step's distance from the start along the edges; a step the start never reaches is one row past the rest. */
-export function levelsOf(definition: WorkflowDefinition): Map<string, number> {
-  const start = definition.nodes.find((node) => node.type === 'start') ?? definition.nodes[0]
-  const levels = new Map<string, number>(start === undefined ? [] : [[start.id, 0]])
-  const queue = start === undefined ? [] : [start.id]
-  for (const id of queue) {
-    const next = definition.edges.filter((edge) => edge.source === id && !levels.has(edge.target))
-    next.forEach((edge) => { levels.set(edge.target, (levels.get(id) ?? 0) + 1) })
-    queue.push(...next.map((edge) => edge.target))
-  }
-  const past = Math.max(-1, ...levels.values()) + 1
-  definition.nodes.forEach((node) => { if (!levels.has(node.id)) levels.set(node.id, past) })
-  return levels
-}
-
 const stageWidth = (lanes: number) => Math.max(STEP_WIDTH, lanes * LANE_WIDTH + Math.max(0, lanes - 1) * LANE_GAP)
 
 /**
@@ -107,7 +92,7 @@ const stageWidth = (lanes: number) => Math.max(STEP_WIDTH, lanes * LANE_WIDTH + 
  */
 export function layoutRun(definition: WorkflowDefinition, lanes: Readonly<Record<string, readonly RunLane[]>>,
   phase: RunPhase): { definition: WorkflowDefinition; lanes: LaneView[] } {
-  const levels = levelsOf(definition)
+  const levels = stepLevels(definition)
   const rows = [...new Set(levels.values())].sort((a, b) => a - b)
   const placed = new Map<string, { x: number; y: number }>()
   const views: LaneView[] = []

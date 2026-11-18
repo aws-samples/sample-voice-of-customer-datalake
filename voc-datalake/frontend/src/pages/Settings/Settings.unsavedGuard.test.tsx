@@ -88,12 +88,18 @@ describe('/admin/brand brand form — Cancel keeps the draft and stays guarded (
   })
 })
 
+/** Settings on the brand page, the stored brand loaded and " draft" typed after its name. */
+async function draftTheBrandName() {
+  getBrandSettings.mockResolvedValue(stored('Stored brand'))
+  const { router } = mountAtAdmin(<Settings />, BRAND)
+  const user = userEvent.setup()
+  await user.type(await screen.findByLabelText('Brand Name'), ' draft')
+  return { router, user }
+}
+
 describe('/admin/brand brand form — the tab is the draft\'s page', () => {
   it('asks before another tab is opened, and Cancel keeps the draft on the brand page', async () => {
-    getBrandSettings.mockResolvedValue(stored('Stored brand'))
-    const { router } = mountAtAdmin(<Settings />, BRAND)
-    const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('Brand Name'), ' draft')
+    const { router, user } = await draftTheBrandName()
     await user.click(screen.getByRole('link', { name: 'Logs' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(screen.getByRole('button', { name: /cancel/i }))
@@ -102,10 +108,7 @@ describe('/admin/brand brand form — the tab is the draft\'s page', () => {
   })
 
   it('lets an overlay such as ?review= open without asking', async () => {
-    getBrandSettings.mockResolvedValue(stored('Stored brand'))
-    const { router } = mountAtAdmin(<Settings />, BRAND)
-    const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('Brand Name'), ' draft')
+    const { router } = await draftTheBrandName()
     await act(() => router.navigate(`${BRAND}?review=fb_1`))
     expect([router.state.location.search, screen.queryByRole('dialog')]).toStrictEqual(['?review=fb_1', null])
   })

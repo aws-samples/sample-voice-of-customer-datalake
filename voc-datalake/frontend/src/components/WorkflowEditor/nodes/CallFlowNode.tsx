@@ -9,7 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { NodeChips, NodeFrame, NodeIssue, NodeLines, NodeTile } from './NodeParts'
 import { isQuiet, useStateWords } from './nodeState'
-import { callLine, shareChip } from './nodeText'
+import { callLine, nodeWords, shareChip } from './nodeText'
 import { useFlowLookups } from './nodeData'
 import type { NodeProps } from '@xyflow/react'
 import type { StepFlowNode } from './nodeData'
@@ -24,7 +24,7 @@ export function CallFlowNode({ id, data, selected }: NodeProps<StepFlowNode>) {
   const state = useStateWords(data)
   return (
     <NodeFrame id={id} data={data} selected={selected} shape="voc-node-call"
-      description={[t('canvas.kinds.call'), line, share?.text ?? '', state].filter((part) => part !== '').join(', ')}>
+      description={nodeWords([t('canvas.kinds.call'), line, share?.text ?? '', state])}>
       <span className="flex items-start gap-2 px-3 py-2">
         <NodeTile step={step} kind={kind} />
         <span className="min-w-0 flex-1">
