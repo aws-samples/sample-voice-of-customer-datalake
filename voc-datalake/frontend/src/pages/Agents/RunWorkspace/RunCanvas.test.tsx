@@ -83,6 +83,27 @@ describe('the run canvas (N-D3)', () => {
     const frames = props().nodes.filter((node) => node.type === 'callFrame').map((node) => node.ariaLabel)
     expect(frames).toStrictEqual(['wf_17a9e5c3b2d0 · r2, 1 of 2 steps done'])
   })
+
+  it('lays a lane beside its step\'s card, and the rows again by the card as React Flow measured it (7.54.00)', () => {
+    renderCanvas()
+    const at = (id: string) => props().nodes.find((node) => node.id === id)?.position ?? { x: NaN, y: NaN }
+    expect(firstLane().position.x).toBeGreaterThanOrEqual(at('board').x + 220)
+    const gate = at('gate').y
+    act(() => props().onNodesChange([{ type: 'dimensions', id: 'board', dimensions: { width: 220, height: 220 } }]))
+    expect(at('gate').y).toBeGreaterThan(gate)
+    expect(firstLane().position.y).toBe(at('board').y + (220 - 44) / 2)
+  })
+
+  it('holds a call\'s lanes inside its frame (7.54.00)', () => {
+    const base = engineeringOverview({ expansion: [{ step: 'triage', flow: 'wf_17a9e5c3b2d0', revision: 2 }] })
+    const lane = { agent: 'fixer-1', role: 'understander', status: 'working', state: 'in_progress', task_id: 'task-9', attempt: 1, shard: null }
+    render(<RunCanvas overview={parseOverview({ ...base, lanes: { 'triage.label': [lane] } })} definition={FLOW} current={null} onOpen={vi.fn()} />)
+    const frame = props().nodes.find((node) => node.type === 'callFrame')
+    const drawn = firstLane()
+    const size = (key: 'width' | 'height') => Number(frame?.data[key] ?? 0)
+    expect(drawn.position.x + 168).toBeLessThanOrEqual((frame?.position.x ?? 0) + size('width'))
+    expect(drawn.position.y + 44).toBeLessThanOrEqual((frame?.position.y ?? 0) + size('height'))
+  })
 })
 
 describe('callGroups', () => {

@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../../../lib/errors'
-import { adminFlag, resetFetchApi, sentFetchApiBody, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
+import { SIGNED_IN_SUB, adminFlag, resetFetchApi, sentFetchApiBody, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
+import { withMemoryLocalStorage } from '@test/memoryLocalStorage'
 import { AGENT, FAILED_ORCHESTRATOR, FAILED_PATH, RUN_PATH, calledEndpoints, endpointOf, renderWorkspace, workspaceRoutes } from '@test/runWorkspaceHarness'
 import fixture from '@test/engineeringRunWorkspace.json'
 import type { RouteHandler } from '@test/fetchApiRoutes'
@@ -83,9 +84,22 @@ describe('a run under way', () => {
       renderWorkspace(AT_FIXER)
       const thread = await threadOf()
       expect(await thread.findByText('I will read the paging helper first.')).toBeVisible()
-      expect(thread.getByText('The slice end adds one: that is the extra item.')).not.toBeVisible()
+      // (7.54.00: "Thinking…" with its first words beside it; the whole of it inside, folded)
+      const thinking = thread.getByText('Thinking…').closest('details')
+      expect(thinking).not.toHaveAttribute('open')
+      expect(within(thinking ?? document.body).getByText('The slice end adds one: that is the extra item.', { selector: 'p' })).not.toBeVisible()
       expect(thread.getAllByText('To the model, from harness').length).toBeGreaterThan(0)
     })
+
+    it('shows what the agent hands in as its reply, under its name, before the call that carries it (7.54.00)', async () => {
+      renderWorkspace(AT_FIXER)
+      const thread = await threadOf()
+      const reply = await thread.findByText('The last page now holds at most a page.', { selector: 'p' }, { timeout: 8000 })
+      const row = reply.closest('li')
+      expect(row?.dataset.ref).toMatch(/\.1$/)
+      expect(within(row ?? document.body).getByText(AGENT)).toBeInTheDocument()
+      expect(row?.nextElementSibling).toHaveTextContent('submit_work')
+    }, 15_000)
 
     it('reads its next page by cursor: a later item replaces the call by its ref, steering inline', async () => {
       renderWorkspace(AT_FIXER)
@@ -158,12 +172,54 @@ describe('a run under way', () => {
       expect(window.sessionStorage.getItem('voc-run-workspace')).toContain('"mode":"grid"')
     })
 
-    it('keeps only tabs in the tablist: the session\'s close button sits beside it, and one menu opens another agent', async () => {
+    it('keeps only tabs in the tablist, each with its own close, the panel named by the tab shown (7.54.00)', async () => {
       renderWorkspace(RUN_PATH)
       const tablist = await screen.findByRole('tablist', { name: 'Open sessions' })
       expect(within(tablist).queryAllByRole('button')).toStrictEqual([])
-      expect(screen.getByRole('button', { name: 'Close Orchestrator' })).toHaveClass('icon-btn')
-      expect(screen.getByRole('combobox', { name: 'Open another agent' })).toBeInTheDocument()
+      const tab = within(tablist).getByRole('tab', { name: 'Orchestrator' })
+      // (its × is part of the tab, out of the accessibility tree; Delete closes it, as its description says; no select)
+      expect([
+        within(tab).getByTestId('close-tab-coordinator-1').getAttribute('aria-hidden'), tab.getAttribute('aria-keyshortcuts'),
+        screen.getByRole('tabpanel', { name: 'Orchestrator' }).id === tab.getAttribute('aria-controls'),
+        screen.queryByRole('combobox', { name: 'Open another agent' }),
+      ]).toStrictEqual(['true', 'Delete', true, null])
+      expect(tab).toHaveAccessibleDescription('Delete closes this tab.')
+    })
+
+    it('opens another agent from "Open…" at the end of the strip, and moves between the tabs by arrow (7.54.00)', async () => {
+      const router = renderWorkspace(RUN_PATH)
+      await userEvent.click(await screen.findByRole('button', { name: 'Open another agent' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: AGENT }))
+      await waitFor(() => expect(router.state.location.pathname).toBe(AT_FIXER))
+      const tablist = within(screen.getByRole('tablist', { name: 'Open sessions' }))
+      const fixer = tablist.getByRole('tab', { name: new RegExp(AGENT) })
+      expect([fixer.getAttribute('aria-selected'), fixer.tabIndex]).toStrictEqual(['true', 0])
+      fixer.focus()
+      await userEvent.keyboard('{ArrowLeft}')
+      expect(tablist.getByRole('tab', { name: 'Orchestrator' })).toHaveFocus()
+      await userEvent.keyboard('{End}')
+      // (manual activation: moving opens nothing; Enter does)
+      expect([document.activeElement === fixer, router.state.location.pathname]).toStrictEqual([true, AT_FIXER])
+    })
+
+    it('closes a tab from its own × or by Delete, the focus on the tab now in its place (7.54.00)', async () => {
+      const router = renderWorkspace(RUN_PATH)
+      const tablist = within(await screen.findByRole('tablist', { name: 'Open sessions' }))
+      const openFixer = async () => {
+        await userEvent.click(screen.getByRole('button', { name: 'Open another agent' }))
+        await userEvent.click(screen.getByRole('menuitem', { name: AGENT }))
+        await waitFor(() => expect(tablist.getAllByRole('tab')).toHaveLength(2))
+      }
+      await openFixer()
+      await userEvent.click(tablist.getByTestId(`close-tab-${AGENT}`))
+      await waitFor(() => expect(tablist.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual(['Orchestrator']))
+      await waitFor(() => expect(router.state.location.pathname).toBe(RUN_PATH))
+      await openFixer()
+      const fixer = tablist.getByRole('tab', { name: new RegExp(AGENT) })
+      fixer.focus()
+      await userEvent.keyboard('{Delete}')
+      await waitFor(() => expect([tablist.getAllByRole('tab').length, document.activeElement === tablist.queryByRole('tab', { name: 'Orchestrator' })])
+        .toStrictEqual([1, true]))
     })
 
     it('shows a non-admin the run read-only: no composer, no controls', async () => {
@@ -173,6 +229,35 @@ describe('a run under way', () => {
       await thread.findByText('I will read the paging helper first.')
       expect(screen.queryByRole('textbox', { name: 'Steer the orchestrator' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('"Show thinking" (7.54.00)', () => {
+    const saved = withMemoryLocalStorage()
+    const switchOf = () => screen.getByRole('switch', { name: 'Show thinking' })
+
+    it('is on for an admin with no choice yet, and off hides the thinking, kept for this person', async () => {
+      renderWorkspace(AT_FIXER)
+      const thread = await threadOf()
+      await thread.findByText('Thinking…')
+      expect(switchOf()).toBeChecked()
+      await userEvent.click(switchOf())
+      expect(thread.queryByText('Thinking…')).not.toBeInTheDocument()
+      expect(thread.getByText('I will read the paging helper first.')).toBeVisible()
+      expect(saved.get(`voc-thread-thinking:${SIGNED_IN_SUB}`)).toBe('off')
+    })
+
+    it('is off for someone else with no choice yet, and their stored choice wins', async () => {
+      adminFlag.isAdmin = false
+      renderWorkspace(AT_FIXER)
+      const thread = await threadOf()
+      await thread.findByText('I will read the paging helper first.')
+      expect(switchOf()).not.toBeChecked()
+      expect(thread.queryByText('Thinking…')).not.toBeInTheDocument()
+      cleanup()
+      saved.set(`voc-thread-thinking:${SIGNED_IN_SUB}`, 'on')
+      renderWorkspace(AT_FIXER)
+      expect(await (await threadOf()).findByText('Thinking…')).toBeInTheDocument()
     })
   })
 

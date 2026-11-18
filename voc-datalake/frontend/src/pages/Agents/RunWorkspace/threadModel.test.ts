@@ -7,7 +7,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { fetchApi } from '@test/fetchApiRoutes'
 import fixture from '@test/engineeringRunWorkspace.json'
 import { runWorkspaceApi } from '../../../api/engineeringRunWorkspaceApi'
-import { MAX_ITEM_TEXT, boundedText, lookOf, mergeThread, startsGroup } from './threadModel'
+import {
+  LONG_TEXT_CHARS, LONG_TEXT_LINES, MAX_ITEM_TEXT, boundedText, isLongText, lookOf, mergeThread, startsGroup, withoutThinking,
+} from './threadModel'
 import type { ThreadItem } from '../../../api/engineeringRunWorkspaceApi'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -62,6 +64,24 @@ describe('how an item reads', () => {
       startsGroup(first, item('c', '2026-11-17T09:01:00Z', { from: { kind: 'human', id: 'admin-sub' } })),
       startsGroup(first, item('d', '2026-11-17T09:30:00Z')),
     ]).toStrictEqual([true, false, true, true])
+  })
+
+  it('starts a group for the agent\'s words or thinking after its tool calls, so a reply says who and when (7.54.00)', () => {
+    const tool = item('t', '2026-11-17T09:00:00Z', { kind: 'tool', tool: { name: 'run', ok: true, input: '', kind: 'execute', status: 'completed' } })
+    const said = item('s', '2026-11-17T09:00:01Z')
+    const thought = item('h', '2026-11-17T09:00:01Z', { kind: 'thought' })
+    expect([startsGroup(tool, said), startsGroup(tool, thought), startsGroup(thought, said), startsGroup(said, { ...tool, at: '2026-11-17T09:00:02Z' })])
+      .toStrictEqual([true, true, false, false])
+  })
+
+  it('leaves the thinking out while it is not shown, and keeps everything else in its order (7.54.00)', () => {
+    const entries = [item('a', '1'), item('b', '2', { kind: 'thought' }), item('c', '3', { kind: 'tool' })].map((entry) => ({ item: entry }))
+    expect(withoutThinking(entries).map((entry) => entry.item.ref)).toStrictEqual(['a', 'c'])
+  })
+
+  it('folds a text behind "Show more" past its characters or its lines (7.54.00)', () => {
+    expect([isLongText('x'.repeat(LONG_TEXT_CHARS)), isLongText('x'.repeat(LONG_TEXT_CHARS + 1)),
+      isLongText('a\n'.repeat(LONG_TEXT_LINES - 1)), isLongText('a\n'.repeat(LONG_TEXT_LINES))]).toStrictEqual([false, true, false, true])
   })
 
   it('bounds a text, and says it was cut here or by the server', () => {

@@ -535,6 +535,21 @@
   .tab-active, .tab[aria-selected="true"] {
     @apply border-border bg-card text-accent-text shadow-sm hover:text-accent-text;
   }
+  /* A strip of tabs that scrolls sideways (7.54.00, the run workspace's sessions): the side that is cut fades
+     (`data-cut-start` / `data-cut-end`, set as it scrolls), and its scroll buttons sit beside it. */
+  .tab-strip {
+    /* (the padding keeps a tab's focus ring inside what the strip clips; the scroll padding keeps a tab scrolled
+       into view clear of the fade) */
+    @apply overflow-x-auto overscroll-x-contain p-0.5;
+    scroll-padding-inline: 1.75rem;
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }
+  .tab-strip[data-cut-start="true"] { mask-image: linear-gradient(to right, transparent, black 1.5rem); }
+  .tab-strip[data-cut-end="true"] { mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent); }
+  .tab-strip[data-cut-start="true"][data-cut-end="true"] {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+  }
 
   /* --- Dialog: KiroCrew ui/dialog.tsx ---------------------------------- */
   .dialog-overlay { @apply fixed inset-0 z-50 bg-overlay backdrop-blur-md animate-fade-in; }
@@ -741,6 +756,11 @@
 .md-content-compact h1 { font-size: 0.9375rem; }
 .md-content-compact h2 { font-size: 0.875rem; }
 .md-content-compact :where(h3, h4, h5, h6) { font-size: 0.8125rem; font-weight: 600; }
+/* (7.54.00) An agent's thinking in the run workspace's thread: de-emphasised (muted, 12 px; its bold and headings in
+   body text, not strong), beside its words in body text. Unlayered like `.md-content`, whose colour a utility cannot
+   override. */
+.md-content-quiet { color: var(--muted); font-size: 0.75rem; }
+.md-content-quiet :where(strong, b, h1, h2, h3, h4) { color: var(--text); }
 /* A text shown exactly as stored (components/Document/source/CodeView.tsx): 12 px mono, decorative line numbers
    (never selected), wrapped by default; a long line scrolls inside the view when wrapping is off. */
 .code-view { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-accent); }

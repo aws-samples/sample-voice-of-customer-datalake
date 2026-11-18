@@ -2052,7 +2052,13 @@
       "paneAgent": "Agent tego panelu",
       "closePane": "Zamknij ten panel",
       "emptyPane": "Wybierz agenta dla tego panelu.",
-      "openAnother": "Otwórz innego agenta"
+      "openAnother": "Otwórz innego agenta",
+      "open": "Otwórz…",
+      "closeHint": "Delete zamyka tę kartę.",
+      "scrollStart": "Przewiń do wcześniejszych kart",
+      "scrollEnd": "Przewiń do kolejnych kart",
+      "showThinking": "Pokaż rozumowanie",
+      "closePaneOf": "Zamknij panel {{name}}"
     },
     "thread": {
       "label": "Wątek agenta {{agent}}",
@@ -2060,7 +2066,9 @@
       "ended": "Ta sesja się zakończyła.",
       "notFound": "Wątku tego agenta nie ma.",
       "cut": "Ucięte tutaj: reszta jest w transkrypcji.",
-      "thought": "Myślenie",
+      "thought": "Myślenie…",
+      "showMore": "Pokaż więcej",
+      "showLess": "Pokaż mniej",
       "toModel": "Do modelu, od {{id}}",
       "steering": "Sterowanie",
       "senders": {
@@ -2085,6 +2093,7 @@
         "ok": "Udane",
         "failed": "Nieudane",
         "running": "W toku",
+        "endedFirst": "Brak wyniku: sesja zakończyła się wcześniej",
         "loadFailed": "Nie udało się odczytać wywołania: spróbuj ponownie."
       },
       "endedDone": "Ta sesja się zakończyła: jej praca jest wykonana.",

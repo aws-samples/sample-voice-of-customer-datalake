@@ -1975,7 +1975,13 @@
       "paneAgent": "このペインのエージェント",
       "closePane": "このペインを閉じる",
       "emptyPane": "このペインに表示するエージェントを選んでください。",
-      "openAnother": "別のエージェントを開く"
+      "openAnother": "別のエージェントを開く",
+      "open": "開く…",
+      "closeHint": "Delete キーでこのタブを閉じます。",
+      "scrollStart": "前のタブへスクロール",
+      "scrollEnd": "ほかのタブへスクロール",
+      "showThinking": "思考を表示",
+      "closePaneOf": "{{name}} のペインを閉じる"
     },
     "thread": {
       "label": "{{agent}} のスレッド",
@@ -1983,7 +1989,9 @@
       "ended": "このセッションは終了しました。",
       "notFound": "このエージェントのスレッドが見つかりません。",
       "cut": "ここで省略しています。続きはトランスクリプトにあります。",
-      "thought": "思考",
+      "thought": "思考…",
+      "showMore": "もっと見る",
+      "showLess": "折りたたむ",
       "toModel": "モデルへ（送信元: {{id}}）",
       "steering": "指示",
       "senders": {
@@ -2008,6 +2016,7 @@
         "ok": "成功",
         "failed": "失敗",
         "running": "実行中",
+        "endedFirst": "結果なし: 先にセッションが終了しました",
         "loadFailed": "呼び出しを読み込めませんでした。もう一度お試しください。"
       },
       "endedDone": "このセッションは終了しました。作業は完了しています。",

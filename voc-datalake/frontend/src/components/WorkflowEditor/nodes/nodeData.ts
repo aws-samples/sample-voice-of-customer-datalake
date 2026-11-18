@@ -48,6 +48,8 @@ type CallFrameData = {
 export type CallFrameFlowNode = Node<CallFrameData, 'callFrame'>
 
 type LaneData = {
+  /** (7.54.00) The step it is a lane of: a frame around the step holds it too. */
+  step: string
   /** The agent on the task, else its role. */
   label: string
   role: string

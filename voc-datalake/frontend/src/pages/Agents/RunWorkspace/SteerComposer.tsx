@@ -56,12 +56,14 @@ export function SteerComposer({ runId, agent, primary, connected }: Readonly<Pro
     send()
   }
   return (
-    <form className="space-y-1 border-t border-border p-2" onSubmit={(event) => { event.preventDefault(); send() }}>
+    // (7.54.00) A container: in a narrow pane (a grid of four) the field is one line and the keys' hint goes, so the
+    // thread keeps the room; from 28rem it is two lines with the hint.
+    <form className="@container shrink-0 space-y-1 border-t border-border p-2" onSubmit={(event) => { event.preventDefault(); send() }}>
       <label htmlFor={fieldId} className="sr-only">{t('runWorkspace.composer.label')}</label>
       <div className="flex items-end gap-2">
-        <textarea id={fieldId} rows={2} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={onKeyDown}
+        <textarea id={fieldId} rows={1} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={onKeyDown}
           placeholder={about === null ? t('runWorkspace.composer.placeholder') : t('runWorkspace.composer.placeholderAbout', { agent: about })}
-          className="input min-h-[2.5rem] flex-1 resize-y text-[13px]" aria-invalid={tooLong} disabled={!connected}
+          className="input min-h-[2.25rem] flex-1 resize-y text-[13px] @max-md:placeholder:truncate @md:min-h-[3.75rem]" aria-invalid={tooLong} disabled={!connected}
           aria-describedby={connected ? undefined : whyId} />
         <button type="submit" className={primary ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} disabled={held}
           aria-label={t('runWorkspace.composer.send')}>
@@ -76,7 +78,7 @@ export function SteerComposer({ runId, agent, primary, connected }: Readonly<Pro
           </label>
         )}
         <span className={tooLong ? 'text-danger' : undefined}>{t('engineeringRun.bytes', { used, max: MAX_ANSWER_BYTES })}</span>
-        <span>{t('runWorkspace.composer.hint')}</span>
+        <span className="sr-only @md:not-sr-only">{t('runWorkspace.composer.hint')}</span>
       </div>
       {!connected && <p id={whyId} className="text-[12px] text-muted">{t('runWorkspace.composer.unavailable')}</p>}
       <SteerOutcome steer={steer} />

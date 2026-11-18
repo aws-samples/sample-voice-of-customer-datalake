@@ -7,7 +7,7 @@
  *
  * @module test/reactFlowProbe
  */
-import type { Connection, Edge, EdgeChange, Node, OnSelectionChangeParams } from '@xyflow/react'
+import type { Connection, Edge, EdgeChange, Node, NodeChange, OnSelectionChangeParams } from '@xyflow/react'
 
 /** What the specs read of the props a canvas passes React Flow (FlowCanvas, WorkflowCanvas, RunCanvas). */
 export interface ProbedFlowProps {
@@ -18,6 +18,8 @@ export interface ProbedFlowProps {
   deleteKeyCode: unknown
   onConnect: (connection: Connection) => void
   onEdgesChange: (changes: EdgeChange[]) => void
+  /** (7.54.00) What React Flow reports of its nodes: a measure (`dimensions`), a move, a selection. */
+  onNodesChange: (changes: NodeChange[]) => void
   /** (React Flow passes its mouse event first; the canvas reads only the node) */
   onNodeClick: (event: unknown, node: Node) => void
   onSelectionChange: (params: OnSelectionChangeParams) => void

@@ -85,6 +85,50 @@ def test_a_tool_call_is_one_item_with_its_result_and_its_acp_kinds(view: ThreadV
     assert (submit['tool']['status'], submit['tool']['ok'], submit['update']) == ('in_progress', None, 'tool_call')
 
 
+def test_a_reply_tools_words_are_the_agents_own_said_item_just_before_its_call(view: ThreadView) -> None:
+    items = view.page(world.RUN, _fixer(view), Cursor(), 200)['items']
+    submit = next(item for item in items if item.get('tool', {}).get('name') == 'submit_work')
+    said = items[items.index(submit) - 1]
+    # (7.54.00: the summary the agent hands in is its reply, shown as its words; the call keeps its own line)
+    assert (said['kind'], said['ref'], said['from'], said['text'], said['update'], said['at']) == (
+        'said', f'{submit["ref"]}.1', {'kind': 'agent', 'id': world.FIXER}, 'The last page now holds at most a page.',
+        'agent_message_chunk', submit['at'])
+    assert is_thread_item(said)
+
+
+def _built(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from engineering.views_thread import Event, Subject, _Transcript
+
+    subject = Subject(world.RUN, world.FIXER, 'fixer', world.FIX_TASK, 2, world.COMMIT, 'working')
+    built, _ = _Transcript(subject, RunObjects(None, world.BUCKET)).build(
+        [Event(1, index * 100, index * 100 + 99, event) for index, event in enumerate(events)])
+    return [entry.item for entry in built]
+
+
+def test_only_a_reply_tools_own_field_is_said_redacted_and_unfenced() -> None:
+    items = _built([
+        {'kind': 'tool_call', 'tool': 'report_progress', 'input': {'step': 'Read the helper; AKIA' + 'ABCDEFGHIJKLMNOP'}},
+        {'kind': 'tool_call', 'tool': 'finish', 'input': {'summary': '<<<DATA notes abc>>>\nDone.\n<<<END DATA notes abc>>>'}},
+        {'kind': 'tool_call', 'tool': 'finish', 'input': {'summary': '   '}},
+        {'kind': 'tool_call', 'tool': 'finish', 'input': {'summary': 7}},
+        {'kind': 'tool_call', 'tool': 'write_file', 'input': {'path': 'a.py', 'text': 'print(1)'}},
+        {'kind': 'tool_call', 'tool': 'post_comment', 'input': {'body': 'A comment on the issue'}},
+    ])
+    said = [(item['ref'], item['text']) for item in items if item['kind'] == 'said']
+    assert said == [('2.1.0.1', 'Read the helper; <redacted>'), ('2.1.100.1', '[notes]\nDone.')]
+    assert [item['tool']['name'] for item in items if item['kind'] == 'tool'] == [
+        'report_progress', 'finish', 'finish', 'finish', 'write_file', 'post_comment']
+
+
+def test_a_reply_answered_in_the_same_read_keeps_its_words_and_its_calls_result() -> None:
+    items = _built([
+        {'kind': 'tool_call', 'tool': 'finish', 'call_id': 'c1', 'input': {'summary': 'Fixed the slice.'}},
+        {'kind': 'tool_result', 'tool': 'finish', 'call_id': 'c1', 'text': 'finished', 'error': False},
+    ])
+    assert [(item['kind'], item['text']) for item in items] == [('said', 'Fixed the slice.'), ('tool', 'finished')]
+    assert items[1]['tool']['ok'] is True
+
+
 @pytest.mark.parametrize('limit', [1, 2, 3, 5, 8])
 def test_pages_of_any_size_give_the_whole_thread_once(view: ThreadView, limit: int) -> None:
     whole = {item['ref']: item for item in view.page(world.RUN, _fixer(view), Cursor(), 200)['items']}

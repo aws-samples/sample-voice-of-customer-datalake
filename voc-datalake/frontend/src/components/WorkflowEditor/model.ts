@@ -346,7 +346,7 @@ export function loopIndexOf(definition: WorkflowDefinition, nodeId: string): num
   return definition.loops.findIndex((l) => l.node_ids.includes(nodeId))
 }
 
-const GROUP_PADDING = 28
+export const GROUP_PADDING = 28
 /** A step's column (every kind's shape is centred in it: nodes/nodeKinds.ts) and the row a step is laid out in. */
 export const STEP_WIDTH = NODE_COLUMN
 export const STEP_HEIGHT = 72

@@ -5,9 +5,11 @@
 
 - the agent's transcript (runtime/harness/transcript.py: ``…/<agent>/commits/<sha>/_transcripts/attempt-<n>/
   <chunk:04d>.jsonl``, one redacted JSON event a line, its chunks create-only): its words (``said``), its reasoning
-  (``thought``), what the harness told it (``message`` from the platform), each tool call with its result as one
-  ``tool`` item, its checkpoints and session starts (``checkpoint``), a crash and its end; a model call's numbers are
-  not an item;
+  (``thought``, when the model returned its text: an empty reasoning block is not an item), what the harness told it
+  (``message`` from the platform), each tool call with its result as one ``tool`` item, its checkpoints and session
+  starts (``checkpoint``), a crash and its end; a model call's numbers are not an item. (7.54.00) A call of a tool
+  whose input is the agent's reply (``REPLY_TOOLS``: ``report_progress``, ``submit_work``, ``finish``) is also its
+  words, a ``said`` item just before the call (its ref with ``.1``; a page takes both or neither);
 - the run's conversation (conversation/store.py) where it is about the agent: what it sent, what was sent to it (a
   relayed steer, an answer), a signal or a board change of its task at its attempt, steering relayed to its role; for
   the run's coordinator (the orchestrator) also what went to or came from the conductor, and the signals and events of
@@ -26,8 +28,8 @@ A cursor of ``TAIL`` (the run overview's ``transcript_cursor`` for each agent) o
 range read of its last chunks only (``parse_tail``), the last ``limit`` items, and the cursor from there.
 
 ``GET …/thread/<ref>`` answers one item's whole event: ``<attempt>.<chunk>.<offset>`` (the byte its line starts at in
-its chunk; a second item of the same event, an answer's words after its reasoning, adds ``.1``) or ``c<seq>``, a tool
-call with its result. Every text is redacted again, its NUL and control characters taken out, and the DATA fences the
+its chunk; a second item of the same event, an answer's words after its reasoning or a reply's words before its call,
+adds ``.1``) or ``c<seq>``, a tool call with its result. Every text is redacted again, its NUL and control characters taken out, and the DATA fences the
 harness put around what it handed the model (quality_gate/text.data_block) unwrapped to their name and body; a page
 reads at most ``PAGE_BYTES`` of transcript, an event answer at most ``MAX_EVENT_BYTES``.
 
@@ -76,6 +78,10 @@ MAX_RESULT_LINE: Final = 300
 #: The session statuses after which an agent writes nothing more (runtime/sessions.py).
 ENDED: Final = frozenset({'done', 'failed', 'stopped', 'reposted'})
 HARNESS: Final = {'kind': 'system', 'id': 'harness'}
+#: (7.54.00) The tools whose input is the agent's reply in its own words, by the field that holds it
+#: (runtime/harness/tools.py): what it did and is doing now, what it hands in, what it did and found. Most of what a
+#: model on the Converse loop says reaches a person here, not as text beside its calls.
+REPLY_TOOLS: Final = {'report_progress': 'step', 'submit_work': 'summary', 'finish': 'summary'}
 _CHUNK: Final = re.compile(r'([0-9]{4})\.jsonl\Z')
 _REF: Final = re.compile(r'(?:([1-9][0-9]{0,3})\.([0-9]{1,4})\.([0-9]{1,10})(?:\.([1-9]))?|c([1-9][0-9]{0,7}))\Z')
 DATA_FENCE: Final = re.compile(r'<<<DATA (\S+) (\S+)>>>\n?(.*?)\n?<<<END DATA \1 \2>>>', re.DOTALL)
@@ -312,6 +318,14 @@ def _tool_input(event: Mapping[str, Any]) -> str:
     return raw if isinstance(raw, str) else json.dumps(raw, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _reply(event: Mapping[str, Any]) -> str:
+    """What a call of one of ``REPLY_TOOLS`` says in the agent's own words ('' for any other call, or none said)."""
+    field = REPLY_TOOLS.get(str(event.get('tool', '')))
+    raw = event.get('input')
+    said = raw.get(field) if field is not None and isinstance(raw, Mapping) else None
+    return display(said).strip() if isinstance(said, str) else ''
+
+
 def _call_key(event: Mapping[str, Any]) -> str:
     """How a result names its call: its ``call_id`` when the harness recorded one, else the tool's name."""
     call_id = event.get('call_id')
@@ -359,8 +373,12 @@ class _Transcript:
             position = (event.chunk, event.end)
             if data.get('kind') == 'tool_call':
                 name = str(data.get('tool', ''))
-                open_calls.append((len(built), _call_key(data), name))
                 pending = ref
+                reply = _reply(data)
+                if reply:   # (7.54.00: the agent's reply first, as its words, then the call that carries it: one event)
+                    built.append(Built(thread_item(ref=f'{ref}.1', at=at, kind='said', sender=self.agent, text=reply),
+                                       position, pending, joined=True))
+                open_calls.append((len(built), _call_key(data), name))
                 built.append(Built(thread_item(ref=ref, at=at, kind='tool', sender=self.agent,
                                                tool={'name': name, 'input': _tool_input(data)}), position, pending))
             elif data.get('kind') == 'tool_result':

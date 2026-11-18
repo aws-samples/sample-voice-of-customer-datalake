@@ -13,7 +13,7 @@
  * @module components/WorkflowEditor/nodes/nodeKinds
  */
 import type { WorkflowDefinition, WorkflowEdgeLabel, WorkflowNode, WorkflowNodeType } from '../../../api/workflowsApi'
-import type { StepState } from '../runState'
+import type { LaneState, StepState } from '../runState'
 
 export type NodeKind = 'trigger' | 'agent' | 'team' | 'gate' | 'call' | 'decision' | 'end' | 'platform'
 
@@ -165,6 +165,15 @@ export function minimapClass(kind: NodeKind, run: StepState | undefined, selecte
   const fill = run === undefined ? `voc-mini-${kind}` : `voc-mini-${MINIMAP_STATE[run.status]}`
   return selected ? `${fill} voc-mini-selected` : fill
 }
+
+const LANE_MINIMAP_STATE: Readonly<Record<LaneState, MinimapState>> = {
+  running: 'running', ran_ok: 'done', ran_failed: 'failed', waiting: 'waiting', paused: 'waiting', stopped: 'quiet',
+  planned: 'quiet',
+}
+
+/** (7.54.00) A run lane's minimap class: its state's fill, as its step's (it was the library's grey). */
+export const laneMinimapClass = (state: LaneState, open: boolean): string =>
+  `voc-mini-${LANE_MINIMAP_STATE[state]} voc-mini-lane${open ? ' voc-mini-selected' : ''}`
 
 /**
  * The steps in flow order (owner N14: Tab follows the flow, not creation): by their distance from the start along the

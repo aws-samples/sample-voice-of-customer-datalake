@@ -1975,7 +1975,13 @@
       "paneAgent": "此窗格的智能体",
       "closePane": "关闭此窗格",
       "emptyPane": "为此窗格选择一个智能体。",
-      "openAnother": "打开其他代理"
+      "openAnother": "打开其他代理",
+      "open": "打开…",
+      "closeHint": "按 Delete 键关闭此标签页。",
+      "scrollStart": "滚动到前面的标签页",
+      "scrollEnd": "滚动到更多标签页",
+      "showThinking": "显示思考过程",
+      "closePaneOf": "关闭 {{name}} 的窗格"
     },
     "thread": {
       "label": "{{agent}} 的线程",
@@ -1983,7 +1989,9 @@
       "ended": "此会话已结束。",
       "notFound": "找不到此智能体的线程。",
       "cut": "在此截断：其余内容见完整记录。",
-      "thought": "思考",
+      "thought": "思考…",
+      "showMore": "显示更多",
+      "showLess": "收起",
       "toModel": "发给模型，来自 {{id}}",
       "steering": "引导",
       "senders": {
@@ -2008,6 +2016,7 @@
         "ok": "成功",
         "failed": "失败",
         "running": "运行中",
+        "endedFirst": "无结果：会话已先结束",
         "loadFailed": "无法读取此调用：请重试。"
       },
       "endedDone": "此会话已结束：工作已完成。",

@@ -7,29 +7,89 @@ import { describe, expect, it } from 'vitest'
 import fixture from '@test/engineeringRunWorkspace.json'
 import { parseOverview } from '../../../api/engineeringRunsApi'
 import { laneBorder } from '../../../components/WorkflowEditor/runState'
-import { LANE_WIDTH, gateOutcome, laneLabel, laneState, layoutRun } from './runLanes'
+import { STEP_WIDTH } from '../../../components/WorkflowEditor/model'
+import { drawnPosition, nodeSize } from '../../../components/WorkflowEditor/nodes/nodeKinds'
+import { LANES_PER_LINE, LANE_HEIGHT, LANE_OFFSET, LANE_WIDTH, gateOutcome, laneLabel, laneState, layoutRun } from './runLanes'
 import { buildTimeline } from './runTimelineModel'
 import { runStepStates } from './runFlow'
-import type { WorkflowDefinition } from '../../../api/workflowsApi'
+import type { WorkflowDefinition, WorkflowNode } from '../../../api/workflowsApi'
+import type { RunLane } from '../../../api/engineeringRunsApi'
 
 const overview = parseOverview(fixture.overview.answer)
 const definition: WorkflowDefinition | null = overview.run.flow_definition
 const flow = definition ?? { nodes: [], edges: [], loops: [], name: '', schema: 'voc-workflow/2' }
 
+interface Box { x: number; y: number; width: number; height: number }
+
+const overlaps = (a: Box, b: Box): boolean =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+/** Whether the straight segment from `a` to `b` passes through `box` (sampled every 2 px along it). */
+function crossesBox(a: { x: number; y: number }, b: { x: number; y: number }, box: Box): boolean {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2))
+  return Array.from({ length: steps + 1 }, (_, i) => i / steps).some((t) => {
+    const x = a.x + (b.x - a.x) * t
+    const y = a.y + (b.y - a.y) * t
+    return x > box.x && x < box.x + box.width && y > box.y && y < box.y + box.height
+  })
+}
+
+/** A card as the run draws it at the least: its shape centred in its column, its kind's height and a run's growth. */
+function cardBox(node: WorkflowNode): Box {
+  const size = nodeSize(node)
+  return { ...drawnPosition(node), width: size.width, height: size.height + 32 }
+}
+
 describe('layoutRun', () => {
   const { definition: placed, lanes } = layoutRun(flow, overview.lanes, 'active')
   const y = (id: string) => placed.nodes.find((node) => node.id === id)?.position.y ?? -1
+  const x = (id: string) => placed.nodes.find((node) => node.id === id)?.position.x ?? -1
 
   it('stacks the stages from the start along the flow, the gate\'s two ways side by side', () => {
     expect([y('start') < y('board'), y('board') < y('gate'), y('gate') < y('pr')]).toStrictEqual([true, true, true])
     expect(y('pr')).toBe(y('human'))
   })
 
-  it('places each step\'s agents as lanes under it, siblings side by side that never overlap', () => {
+  it('places each step\'s agents as lanes BESIDE it, siblings side by side that never overlap (7.54.00)', () => {
     const gate = lanes.filter((lane) => lane.step === 'gate')
     expect(lanes.map((lane) => [lane.step, lane.agent])).toStrictEqual([['board', 'fixer-3'], ['gate', 'gate-runner-4'], ['gate', 'final-go-5']])
     expect((gate[1]?.position.x ?? 0) - (gate[0]?.position.x ?? 0)).toBeGreaterThanOrEqual(LANE_WIDTH)
-    expect(gate.every((lane) => lane.position.y > y('gate') && lane.position.y < y('pr'))).toBe(true)
+    expect(gate.every((lane) => lane.position.y >= y('gate') && lane.position.y < y('pr'))).toBe(true)
+    expect(gate.every((lane) => lane.position.x >= x('gate') + STEP_WIDTH + LANE_OFFSET)).toBe(true)
+  })
+
+  it('never puts a lane on a card, nor on the straight way an arrow takes between two cards (7.54.00)', () => {
+    const cards = placed.nodes.map((node) => ({ id: node.id, ...cardBox(node) }))
+    const boxes = lanes.map((lane) => ({ x: lane.position.x, y: lane.position.y, width: LANE_WIDTH, height: LANE_HEIGHT }))
+    expect(boxes.filter((box) => cards.some((card) => overlaps(box, card)))).toStrictEqual([])
+    const crossed = placed.edges.filter((edge) => {
+      const from = cards.find((card) => card.id === edge.source)
+      const to = cards.find((card) => card.id === edge.target)
+      return from !== undefined && to !== undefined && boxes.some((box) => crossesBox(
+        { x: from.x + from.width / 2, y: from.y + from.height }, { x: to.x + to.width / 2, y: to.y }, box))
+    })
+    expect(crossed).toStrictEqual([])
+  })
+
+  it('keeps a step alone in its row on one axis with the others, its lanes trailing to the right', () => {
+    expect(new Set(['start', 'board', 'gate'].map(x)).size).toBe(1)
+  })
+
+  it('lays the rows out again by the cards\' measured heights: a taller card moves the rows under it down', () => {
+    const measured = layoutRun(flow, overview.lanes, 'active', new Map([['board', { width: 220, height: 160 }]]))
+    const at = (id: string) => measured.definition.nodes.find((node) => node.id === id)?.position.y ?? -1
+    expect(at('gate') - y('gate')).toBeGreaterThan(0)
+    const fixer = measured.lanes.find((lane) => lane.agent === 'fixer-3')
+    // (centred on the card as it is drawn)
+    expect(fixer?.position.y).toBe(at('board') + (160 - LANE_HEIGHT) / 2)
+  })
+
+  it('puts a fourth parallel lane on a second line under the first three, still beside the card', () => {
+    const lane: RunLane = { agent: 'fixer-0', role: 'fixer', status: 'working', state: 'in_progress', task_id: 't0', attempt: 1, shard: null }
+    const many = { board: [0, 1, 2, 3].map((n) => ({ ...lane, task_id: `t${String(n)}`, agent: `fixer-${String(n)}` })) }
+    const { lanes: wrapped } = layoutRun(flow, many, 'active')
+    const ys = [...new Set(wrapped.map((lane) => lane.position.y))]
+    expect([wrapped.length, ys.length, wrapped.filter((lane) => lane.position.y === ys[0]).length]).toStrictEqual([4, 2, LANES_PER_LINE])
   })
 
   it('keeps the flow\'s edges and loops, only the steps moved', () => {

@@ -4,8 +4,9 @@
  * - `build` — an administrator edits: drag, connect (a gate's GO and NO-GO from their own handles), delete, drop a
  *   palette item (a block: a Registry card, a gate pack, a flow to call), multi-select;
  * - `view` — read only (a viewer, an agent's Flow tab, a template preview): nothing moves or connects;
- * - `run` — a run's flow lit by its state (the outline and the corner badge), a run's lanes under its steps and a
- *   call's `<call>.<child>` steps framed under it; inert: a click selects, never acts.
+ * - `run` — a run's flow lit by its state (the outline and the corner badge), a run's lanes beside its steps (placed
+ *   by the host, by the steps' measured sizes: `onMeasured`) and a call's `<call>.<child>` steps framed under it, the
+ *   frames holding their lanes; a small minimap, by state, lanes too; inert: a click selects, never acts.
  *
  * Opening follows the SELECTION, not a click, so the keyboard reaches it (N14): Tab moves through the steps in flow
  * order, Enter or Space selects one (`onSelect`), Escape clears it. React Flow keeps its own measured nodes, so the
@@ -16,17 +17,19 @@
  */
 import '@xyflow/react/dist/style.css'
 import './workflowCanvas.css'
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, applyNodeChanges, useReactFlow } from '@xyflow/react'
 import { useTranslation } from 'react-i18next'
 import { isEngineeringFlow } from '../../api/workflowsApi'
 import { FIT_VIEW_OPTIONS, focusStepId, startStepId, useFocusStep } from './canvasFocus'
 import { NO_EDGES, applyEdgeSelection } from './edgeSelection'
 import { BLOCK_MIME, PALETTE_MIME, addBlock, connect, moveNodes, parseBlock, parseNodeType, removeEdges, removeNodes } from './model'
-import { ariaWords, buildEdges, buildNodes, carryOver, isLaneId, isStepId, loopIndexOfFrame, withSelectedNodes } from './flowCanvasModel'
+import {
+  NO_SIZES, ariaWords, buildEdges, buildNodes, carryOver, isLaneId, isStepId, loopIndexOfFrame, withMeasured, withSelectedNodes,
+} from './flowCanvasModel'
 import { FlowLookupsContext } from './nodes/nodeData'
 import { NODE_TYPES } from './nodes/nodeTypes'
-import { kindOf, labelOfHandle, minimapClass, storedPosition } from './nodes/nodeKinds'
+import { kindOf, labelOfHandle, laneMinimapClass, minimapClass, storedPosition } from './nodes/nodeKinds'
 import { flowPrState } from './nodes/nodeText'
 import { cardsById, useFlowLibrary, useRegistryCards } from './inspector/useFlowSetup'
 import { dragTitle } from './paletteItems'
@@ -34,7 +37,7 @@ import type { DragEvent, KeyboardEvent } from 'react'
 import type { TFunction } from 'i18next'
 import type { Connection, EdgeChange, Node, NodeChange, OnSelectionChangeParams } from '@xyflow/react'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
-import type { CallFrameSpec, FlowNode } from './flowCanvasModel'
+import type { CallFrameSpec, FlowNode, MeasuredSizes } from './flowCanvasModel'
 import type { FlowLookups, FlowMode, FlowName, LaneFlowNode } from './nodes/nodeData'
 import type { CanvasSelection } from './selection'
 import type { StepState } from './runState'
@@ -74,6 +77,9 @@ export interface FlowCanvasProps {
   readonly issuesByNode?: ReadonlyMap<string, readonly string[]>
   /** The canvas's name for assistive tech (default: the editor's, or the run graph's). */
   readonly label?: string
+  /** (7.54.00, run) The steps' sizes once React Flow measured them (a run's cards grow with their chips), so the host
+   * lays its lanes and rows out by what is drawn. */
+  readonly onMeasured?: (sizes: MeasuredSizes) => void
 }
 
 const NO_LANES: readonly LaneFlowNode[] = []
@@ -157,9 +163,9 @@ function DropStatus() {
  */
 function useCanvasNodes(t: TFunction<'agents'>, inputs: Parameters<typeof buildNodes>[1], selection: CanvasSelection | undefined) {
   const building = inputs.mode === 'build'
-  const { definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes } = inputs
-  const derived = useMemo(() => buildNodes(t, { definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes }),
-    [t, definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes])
+  const { definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes, sizes } = inputs
+  const derived = useMemo(() => buildNodes(t, { definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes, sizes }),
+    [t, definition, issuesByNode, runStates, mode, descPrefix, keyboardDescription, calls, lanes, sizes])
   const [nodes, setNodes] = useState<FlowNode[]>(derived)
   const [synced, setSynced] = useState(derived)
   if (synced !== derived) {
@@ -180,8 +186,21 @@ function useCanvasNodes(t: TFunction<'agents'>, inputs: Parameters<typeof buildN
   return { nodes, setNodes, selectedEdges, setSelectedEdges }
 }
 
+/** The minimap's fill of a node: a step by its kind (build, view) or state (run), a run's lane by its state. */
+function useMinimapClass(definition: WorkflowDefinition, runStates: ReadonlyMap<string, StepState> | undefined) {
+  return useCallback((node: FlowNode) => {
+    if (node.type === 'lane') return laneMinimapClass(node.data.state, node.data.open)
+    if (!isStepId(node.id)) return ''
+    const step = definition.nodes.find((each) => each.id === node.id)
+    return step === undefined ? '' : minimapClass(kindOf(step), runStates?.get(step.id), node.selected === true)
+  }, [definition.nodes, runStates])
+}
+
+/** (7.54.00, run) A run's minimap is small, so it never covers the steps of a pane; a narrow canvas hides it (CSS). */
+const RUN_MINIMAP_STYLE = { width: 132, height: 88 } as const
+
 function CanvasInner({
-  definition, mode, runState, onSelect, selection, onSelectionChange, onChange, issuesByNode, label,
+  definition, mode, runState, onSelect, selection, onSelectionChange, onChange, issuesByNode, label, onMeasured,
 }: Readonly<FlowCanvasProps>) {
   const { t } = useTranslation('agents')
   const { screenToFlowPosition } = useReactFlow()
@@ -192,9 +211,11 @@ function CanvasInner({
   // The run graph follows the active step; the editor opens on its start (floored fit, canvasFocus.ts).
   const [startId] = useState(() => startStepId(definition))
   useFocusStep(definition, focusOf(runStates, startId))
+  // (7.54.00) A run's steps as React Flow measured them: its frames hold the cards as drawn, and the host lays out by them.
+  const [sizes, setSizes] = useState<MeasuredSizes>(NO_SIZES)
   const { nodes, setNodes, selectedEdges, setSelectedEdges } = useCanvasNodes(t, {
     definition, issuesByNode, runStates, mode, descPrefix: rfId, keyboardDescription: `react-flow__node-desc-${rfId}`,
-    calls: runState?.calls ?? NO_CALLS, lanes: runState?.lanes ?? NO_LANES,
+    calls: runState?.calls ?? NO_CALLS, lanes: runState?.lanes ?? NO_LANES, sizes,
   }, selection)
   const edges = useMemo(() => buildEdges(t, { definition, runStates, building, selected: selectedEdges }),
     [t, definition, runStates, building, selectedEdges])
@@ -209,6 +230,11 @@ function CanvasInner({
 
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
     setNodes((current) => applyNodeChanges(changes, current))
+    if (mode === 'run') {
+      const measured = changes.flatMap((change) => (change.type === 'dimensions' && change.dimensions !== undefined && isStepId(change.id)
+        ? [[change.id, change.dimensions] as const] : []))
+      if (measured.length > 0) setSizes((before) => withMeasured(before, measured))
+    }
     if (!building) return
     const steps = new Map(definition.nodes.map((node) => [node.id, node]))
     const moves = new Map<string, { x: number; y: number }>()
@@ -222,7 +248,7 @@ function CanvasInner({
       if (change.type === 'remove') removed.add(step.id)
     }
     emit(removeNodes(moveNodes(definition, moves), removed))
-  }, [building, definition, emit, setNodes])
+  }, [building, definition, emit, mode, setNodes])
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     if (!building) return
@@ -239,10 +265,14 @@ function CanvasInner({
   // React Flow sends the selection again whenever its onSelectionChange changes (its SelectionListener's effect). A
   // host's handlers made anew each render (a run's lane opens its session) would then re-apply the same selection on
   // every render, forever: React Flow is handed one stable handler that calls the host's latest ones.
-  const handlers = useRef({ onSelect, onSelectionChange })
+  const handlers = useRef({ onSelect, onSelectionChange, onMeasured })
   useLayoutEffect(() => {
-    handlers.current = { onSelect, onSelectionChange }
+    handlers.current = { onSelect, onSelectionChange, onMeasured }
   })
+  // (the host hears of a new measure once, after the render that took it)
+  useEffect(() => {
+    if (sizes !== NO_SIZES) handlers.current.onMeasured?.(sizes)
+  }, [sizes])
   const handleSelection = useCallback(({ nodes: picked, edges: pickedEdges }: OnSelectionChangeParams) => {
     const ids = picked.map((n) => n.id)
     handlers.current.onSelectionChange?.({
@@ -281,11 +311,7 @@ function CanvasInner({
     emit(addBlock(definition, block, storedPosition({ type: block.type, data: { title: block.title, params: { ...block.params } } }, at)).definition)
   }, [building, definition, emit, screenToFlowPosition, t])
 
-  const minimapNode = useCallback((node: FlowNode) => {
-    if (!isStepId(node.id)) return ''
-    const step = definition.nodes.find((each) => each.id === node.id)
-    return step === undefined ? '' : minimapClass(kindOf(step), runStates?.get(step.id), node.selected === true)
-  }, [definition.nodes, runStates])
+  const minimapNode = useMinimapClass(definition, runStates)
 
   return (
     <FlowLookupsContext.Provider value={lookups}>
@@ -315,7 +341,8 @@ function CanvasInner({
         >
           <Background gap={20} size={1} />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable ariaLabel={t('editor.minimap')} nodeClassName={minimapNode} />
+          <MiniMap pannable zoomable ariaLabel={t('editor.minimap')} nodeClassName={minimapNode}
+            style={mode === 'run' ? RUN_MINIMAP_STYLE : undefined} />
         </ReactFlow>
         {dropping && <DropStatus />}
       </div>

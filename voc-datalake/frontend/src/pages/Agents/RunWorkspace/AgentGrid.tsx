@@ -10,6 +10,7 @@ import { useId } from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from '../../../components/Tooltip/Tooltip'
 import { SessionThread } from './SessionThread'
 import type { SessionActions } from './SessionThread'
 import { useSessionName } from './useSessionLayout'
@@ -65,26 +66,30 @@ function Pane({ pane, ...props }: Readonly<Omit<Props, 'grid'> & { pane: GridLea
   const pickerId = useId()
   const nameOf = useSessionName(props.orchestrator)
   const agent = props.agents.find((candidate) => candidate.agent === pane.agent)
+  // (7.54.00) A compact picker and a named close with its Tooltip (rule 5), which fit a quarter pane's header line.
+  const closeLabel = agent === undefined ? t('runWorkspace.sessions.closePane')
+    : t('runWorkspace.sessions.closePaneOf', { name: nameOf(agent.agent) })
   const tools = (
     <>
       <label htmlFor={pickerId} className="sr-only">{t('runWorkspace.sessions.paneAgent')}</label>
-      <select id={pickerId} className="select w-auto text-[12px]" value={pane.agent ?? ''}
+      <select id={pickerId} className="select select-sm w-auto max-w-[9rem] text-[12px]" value={pane.agent ?? ''}
         onChange={(event) => props.onFill(pane.id, event.target.value === '' ? null : event.target.value)}>
         <option value="">{t('runWorkspace.sessions.choose')}</option>
         {props.agents.map((option) => <option key={option.agent} value={option.agent}>{nameOf(option.agent)}</option>)}
       </select>
-      <button type="button" className="btn btn-ghost btn-sm" onClick={() => props.onClosePane(pane.id)}
-        aria-label={t('runWorkspace.sessions.closePane')}>
-        <X size={14} aria-hidden="true" />
-      </button>
+      <Tooltip kind="label" content={closeLabel}>
+        <button type="button" className="icon-btn" onClick={() => props.onClosePane(pane.id)} aria-label={closeLabel}>
+          <X size={14} aria-hidden="true" />
+        </button>
+      </Tooltip>
     </>
   )
   return (
-    <div className={clsx('flex h-full min-h-0 min-w-0 flex-col rounded-md border',
+    <div className={clsx('flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border',
       pane.agent !== null && pane.agent === props.current ? 'border-accent' : 'border-border')}
     onPointerDown={() => { if (agent !== undefined && agent.agent !== props.current) props.onFocus(agent.agent) }}>
       {agent === undefined
-        ? <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-muted">{t('runWorkspace.sessions.emptyPane')}<span className="ml-auto flex gap-1">{tools}</span></div>
+        ? <div className="flex flex-wrap items-center gap-2 p-2 text-sm text-muted">{t('runWorkspace.sessions.emptyPane')}<span className="ml-auto flex items-center gap-1">{tools}</span></div>
         : <SessionThread runId={props.runId} agent={agent} orchestrator={agent.agent === props.orchestrator} orchestratorId={props.orchestrator} actions={props.actions}
           focused={agent.agent === props.current} lanes={props.lanes} tools={tools} />}
     </div>

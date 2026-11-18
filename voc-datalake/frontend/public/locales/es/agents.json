@@ -1994,7 +1994,13 @@
       "paneAgent": "El agente de este panel",
       "closePane": "Cerrar este panel",
       "emptyPane": "Elige un agente para este panel.",
-      "openAnother": "Abrir otro agente"
+      "openAnother": "Abrir otro agente",
+      "open": "Abrir…",
+      "closeHint": "Suprimir cierra esta pestaña.",
+      "scrollStart": "Desplazar a las pestañas anteriores",
+      "scrollEnd": "Desplazar a más pestañas",
+      "showThinking": "Mostrar el razonamiento",
+      "closePaneOf": "Cerrar el panel de {{name}}"
     },
     "thread": {
       "label": "El hilo de {{agent}}",
@@ -2002,7 +2008,9 @@
       "ended": "Esta sesión ha terminado.",
       "notFound": "El hilo de este agente no existe.",
       "cut": "Cortado aquí: el resto está en la transcripción.",
-      "thought": "Razonamiento",
+      "thought": "Razonamiento…",
+      "showMore": "Mostrar más",
+      "showLess": "Mostrar menos",
       "toModel": "Al modelo, de {{id}}",
       "steering": "Orientación",
       "senders": {
@@ -2027,6 +2035,7 @@
         "ok": "Funcionó",
         "failed": "Falló",
         "running": "En ejecución",
+        "endedFirst": "Sin resultado: la sesión terminó antes",
         "loadFailed": "No se pudo leer la llamada: inténtalo de nuevo."
       },
       "endedDone": "Esta sesión ha terminado: su trabajo está hecho.",

@@ -1994,7 +1994,13 @@
       "paneAgent": "O agente deste painel",
       "closePane": "Fechar este painel",
       "emptyPane": "Escolha um agente para este painel.",
-      "openAnother": "Abrir outro agente"
+      "openAnother": "Abrir outro agente",
+      "open": "Abrir…",
+      "closeHint": "Delete fecha esta guia.",
+      "scrollStart": "Rolar para as guias anteriores",
+      "scrollEnd": "Rolar para mais guias",
+      "showThinking": "Mostrar o raciocínio",
+      "closePaneOf": "Fechar o painel de {{name}}"
     },
     "thread": {
       "label": "O fio de {{agent}}",
@@ -2002,7 +2008,9 @@
       "ended": "Esta sessão terminou.",
       "notFound": "O fio deste agente não existe.",
       "cut": "Cortado aqui: o resto está na transcrição.",
-      "thought": "Raciocínio",
+      "thought": "Raciocínio…",
+      "showMore": "Mostrar mais",
+      "showLess": "Mostrar menos",
       "toModel": "Para o modelo, de {{id}}",
       "steering": "Orientação",
       "senders": {
@@ -2027,6 +2035,7 @@
         "ok": "Funcionou",
         "failed": "Falhou",
         "running": "Em execução",
+        "endedFirst": "Sem resultado: a sessão terminou antes",
         "loadFailed": "Não foi possível ler a chamada: tente de novo."
       },
       "endedDone": "Esta sessão terminou: o seu trabalho está feito.",

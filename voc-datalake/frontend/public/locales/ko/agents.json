@@ -1975,7 +1975,13 @@
       "paneAgent": "이 패널의 에이전트",
       "closePane": "이 패널 닫기",
       "emptyPane": "이 패널에 표시할 에이전트를 선택하세요.",
-      "openAnother": "다른 에이전트 열기"
+      "openAnother": "다른 에이전트 열기",
+      "open": "열기…",
+      "closeHint": "Delete 키로 이 탭을 닫습니다.",
+      "scrollStart": "이전 탭으로 스크롤",
+      "scrollEnd": "다른 탭으로 스크롤",
+      "showThinking": "생각 표시",
+      "closePaneOf": "{{name}} 창 닫기"
     },
     "thread": {
       "label": "{{agent}}의 스레드",
@@ -1983,7 +1989,9 @@
       "ended": "이 세션은 종료되었습니다.",
       "notFound": "이 에이전트의 스레드가 없습니다.",
       "cut": "여기서 잘렸습니다. 나머지는 트랜스크립트에 있습니다.",
-      "thought": "생각",
+      "thought": "생각…",
+      "showMore": "더 보기",
+      "showLess": "접기",
       "toModel": "모델에게 ({{id}}에서 보냄)",
       "steering": "지시",
       "senders": {
@@ -2008,6 +2016,7 @@
         "ok": "성공",
         "failed": "실패",
         "running": "실행 중",
+        "endedFirst": "결과 없음: 세션이 먼저 끝났습니다",
         "loadFailed": "호출을 읽을 수 없습니다. 다시 시도하세요."
       },
       "endedDone": "이 세션은 종료되었습니다. 작업이 완료되었습니다.",

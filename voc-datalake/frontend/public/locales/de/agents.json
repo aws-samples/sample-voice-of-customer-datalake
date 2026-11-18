@@ -1975,7 +1975,13 @@
       "paneAgent": "Agent dieses Bereichs",
       "closePane": "Diesen Bereich schließen",
       "emptyPane": "Wählen Sie einen Agenten für diesen Bereich.",
-      "openAnother": "Weiteren Agenten öffnen"
+      "openAnother": "Weiteren Agenten öffnen",
+      "open": "Öffnen…",
+      "closeHint": "Entf schließt diesen Tab.",
+      "scrollStart": "Zu früheren Tabs blättern",
+      "scrollEnd": "Zu weiteren Tabs blättern",
+      "showThinking": "Überlegungen zeigen",
+      "closePaneOf": "Bereich von {{name}} schließen"
     },
     "thread": {
       "label": "Thread von {{agent}}",
@@ -1983,7 +1989,9 @@
       "ended": "Diese Sitzung ist beendet.",
       "notFound": "Der Thread dieses Agenten ist nicht vorhanden.",
       "cut": "Hier gekürzt: Der Rest steht im Transkript.",
-      "thought": "Überlegung",
+      "thought": "Überlegung…",
+      "showMore": "Mehr zeigen",
+      "showLess": "Weniger zeigen",
       "toModel": "An das Modell, von {{id}}",
       "steering": "Steuerung",
       "senders": {
@@ -2008,6 +2016,7 @@
         "ok": "Erfolgreich",
         "failed": "Fehlgeschlagen",
         "running": "Läuft",
+        "endedFirst": "Kein Ergebnis: die Sitzung endete vorher",
         "loadFailed": "Der Aufruf konnte nicht gelesen werden: Versuchen Sie es erneut."
       },
       "endedDone": "Diese Sitzung ist beendet: Ihre Arbeit ist getan.",

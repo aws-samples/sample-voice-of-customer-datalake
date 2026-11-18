@@ -118,6 +118,10 @@
    so a gate not run yet keeps a solid edge; its badge-less corner and its words say so. */
 .voc-node-gate {
   --pt: 16px;
+  /* (7.54.00) A column, so the body fills the shape's least height: a percentage height had no definite height to
+     resolve against, so a body shorter than 76 px left the outline's fill showing as a thick band under it. */
+  display: flex;
+  flex-direction: column;
   border: 0;
   padding: var(--node-edge-w, 1px);
   background: var(--node-edge, var(--control-border));
@@ -125,6 +129,7 @@
 }
 
 .voc-node-gate > .voc-node-body {
+  flex: 1 1 auto;
   height: 100%;
   background-color: var(--card);
   background-image: var(--node-tint, none);
@@ -194,11 +199,13 @@
   box-shadow: 0 0 0 1px var(--control-border);
 }
 
-/* "You are here" / "Stopped here": a tag above the node, never a ring. */
+/* "You are here" / "Stopped here": a tag above the node, never a ring. (7.54.00) It ends 12 px left of the node's
+   centre, where the arrow comes in: a longer tag ("Stopped here: Failed") ran across the arrow, which showed through
+   its tint. */
 .voc-node-here {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  right: calc(50% + 12px);
   z-index: 1;
   white-space: nowrap;
 }
@@ -269,6 +276,14 @@
 .voc-workflow .react-flow__minimap {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+/* (7.54.00) A run's canvas in a narrow pane (a phone, the workspace's two columns): no minimap over its steps; the
+   controls' fit and the pan show the rest. */
+.voc-workflow[data-mode='run'] { container-type: inline-size; }
+
+@container (max-width: 26rem) {
+  .voc-workflow[data-mode='run'] .react-flow__minimap { display: none; }
 }
 
 /* The minimap by kind (build, view) and by state (run); a selected node adds its stroke. */

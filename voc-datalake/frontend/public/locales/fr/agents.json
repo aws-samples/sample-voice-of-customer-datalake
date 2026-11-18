@@ -1994,7 +1994,13 @@
       "paneAgent": "L’agent de ce panneau",
       "closePane": "Fermer ce panneau",
       "emptyPane": "Choisissez un agent pour ce panneau.",
-      "openAnother": "Ouvrir un autre agent"
+      "openAnother": "Ouvrir un autre agent",
+      "open": "Ouvrir…",
+      "closeHint": "Suppr ferme cet onglet.",
+      "scrollStart": "Faire défiler vers les onglets précédents",
+      "scrollEnd": "Faire défiler vers d'autres onglets",
+      "showThinking": "Afficher la réflexion",
+      "closePaneOf": "Fermer le volet de {{name}}"
     },
     "thread": {
       "label": "Le fil de {{agent}}",
@@ -2002,7 +2008,9 @@
       "ended": "Cette session est terminée.",
       "notFound": "Le fil de cet agent est introuvable.",
       "cut": "Coupé ici : la suite est dans la transcription.",
-      "thought": "Réflexion",
+      "thought": "Réflexion…",
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins",
       "toModel": "Au modèle, de la part de {{id}}",
       "steering": "Pilotage",
       "senders": {
@@ -2027,6 +2035,7 @@
         "ok": "Réussi",
         "failed": "Échoué",
         "running": "En cours",
+        "endedFirst": "Pas de résultat : la session s'est terminée avant",
         "loadFailed": "L’appel n’a pas pu être lu : réessayez."
       },
       "endedDone": "Cette session est terminée : son travail est fait.",

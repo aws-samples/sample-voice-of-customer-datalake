@@ -21,12 +21,15 @@ export interface IconTabsProps<T extends string> {
   readonly onSelect: (id: T) => void
   /** Called when a tab is hovered or focused (a prefetch); absent = nothing. */
   readonly onWarm?: (id: T) => void
+  /** (7.54.00) The tabs wrap onto a second line in a narrow column (the run workspace's inspector, eight tabs in
+   * 26rem) instead of scrolling with no sign that more are there. */
+  readonly wrap?: boolean
 }
 
-export function IconTabs<T extends string>({ tabs, active, icons, label, labelOf, onSelect, onWarm }: IconTabsProps<T>) {
+export function IconTabs<T extends string>({ tabs, active, icons, label, labelOf, onSelect, onWarm, wrap = false }: IconTabsProps<T>) {
   return (
-    <div className="tabs-rail overflow-x-auto">
-      <div className="tabs-track" role="tablist" aria-label={label}>
+    <div className={clsx('tabs-rail', wrap ? 'overflow-visible' : 'overflow-x-auto')}>
+      <div className={clsx('tabs-track', wrap && 'flex-wrap overflow-visible')} role="tablist" aria-label={label}>
         {tabs.map((id) => {
           const Icon: LucideIcon = icons[id]
           const warm = onWarm === undefined ? undefined : () => onWarm(id)

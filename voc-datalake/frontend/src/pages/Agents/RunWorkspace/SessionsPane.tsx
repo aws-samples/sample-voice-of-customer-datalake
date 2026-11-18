@@ -1,15 +1,20 @@
 /**
  * @fileoverview The workspace's centre (7.51.00): the open sessions, as tabs (the default) or a grid of 1, 2 or 4,
  * with the switch between them; the choice is kept for the run in this browser tab (useSessionLayout.ts).
+ * (7.54.00) Beside it "Show thinking", the person's own choice for every thread (useShowThinking.ts); the tab panel is
+ * named by the tab shown (AgentTabs.tsx).
  *
  * @module pages/Agents/RunWorkspace/SessionsPane
  */
+import { useId } from 'react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import Switch from '../../../components/Switch/Switch'
 import { GRID_SIZES, sizeOf } from './agentGridModel'
 import { AgentTabs } from './AgentTabs'
 import { AgentGrid } from './AgentGrid'
 import { SessionThread } from './SessionThread'
+import { ShowThinkingContext, useShowThinking } from './useShowThinking'
 import type { EngineeringAgent, RunLane } from '../../../api/engineeringRunsApi'
 import type { SessionActions } from './SessionThread'
 import type { useSessionLayout } from './useSessionLayout'
@@ -47,31 +52,43 @@ function LayoutSwitch({ sessions }: Readonly<Pick<Props, 'sessions'>>) {
 
 export function SessionsPane({ runId, agents, lanes, current, orchestrator, actions, sessions }: Readonly<Props>) {
   const { t } = useTranslation('agents')
+  const ids = useId()
+  const thinking = useShowThinking()
   const shown = agents.find((agent) => agent.agent === current)
+  const panelId = `${ids}-panel`
+  const tabId = (agent: string) => `${ids}-tab-${agent}`
+  const named = current !== null && sessions.tabs.includes(current)
   return (
     <section className="card flex min-h-[28rem] min-w-0 flex-col p-0" aria-label={t('runWorkspace.sessions.label')}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2">
         <h2 className="text-sm font-medium text-text-strong">{t('runWorkspace.sessions.title')}</h2>
-        <span className="ml-auto"><LayoutSwitch sessions={sessions} /></span>
+        <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Switch label={t('runWorkspace.sessions.showThinking')} checked={thinking.on} onChange={thinking.set} disabled={false} />
+          <LayoutSwitch sessions={sessions} />
+        </span>
       </div>
-      {sessions.mode === 'grid' && sessions.grid !== null ? (
-        <div className="h-[min(36rem,70vh)] min-h-0">
-          <AgentGrid runId={runId} grid={sessions.grid} agents={agents} orchestrator={orchestrator} current={current}
-            actions={actions} lanes={lanes} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
-            onResize={sessions.resize} />
-        </div>
-      ) : (
-        <>
-          <AgentTabs tabs={sessions.tabs} current={current} agents={agents} orchestrator={orchestrator}
-            onOpen={sessions.open} onClose={sessions.close} />
-          <div className="flex h-[min(36rem,70vh)] min-h-0 flex-col" role="tabpanel">
-            {shown === undefined
-              ? <p className="p-3 text-sm text-muted">{current === null ? t('engineeringRun.noAgents') : t('runWorkspace.sessions.noAgent', { agent: current })}</p>
-              : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} orchestratorId={orchestrator} actions={actions}
-                focused lanes={lanes} />}
+      <ShowThinkingContext.Provider value={thinking.on}>
+        {sessions.mode === 'grid' && sessions.grid !== null ? (
+          <div className="h-[min(36rem,70vh)] min-h-0">
+            <AgentGrid runId={runId} grid={sessions.grid} agents={agents} orchestrator={orchestrator} current={current}
+              actions={actions} lanes={lanes} onFocus={sessions.open} onFill={sessions.fillPane} onClosePane={sessions.closePane}
+              onResize={sessions.resize} />
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <AgentTabs tabs={sessions.tabs} current={current} agents={agents} orchestrator={orchestrator}
+              onOpen={sessions.open} onClose={sessions.close} panelId={panelId} tabId={tabId} />
+            <div id={panelId} className="flex h-[min(36rem,70vh)] min-h-0 flex-col" role="tabpanel"
+              aria-labelledby={named ? tabId(current) : undefined}
+              aria-label={named ? undefined : t('runWorkspace.sessions.label')}>
+              {shown === undefined
+                ? <p className="p-3 text-sm text-muted">{current === null ? t('engineeringRun.noAgents') : t('runWorkspace.sessions.noAgent', { agent: current })}</p>
+                : <SessionThread key={shown.agent} runId={runId} agent={shown} orchestrator={shown.agent === orchestrator} orchestratorId={orchestrator} actions={actions}
+                  focused lanes={lanes} />}
+            </div>
+          </>
+        )}
+      </ShowThinkingContext.Provider>
     </section>
   )
 }

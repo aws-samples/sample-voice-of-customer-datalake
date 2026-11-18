@@ -96,7 +96,7 @@ export function Inspector({ agent, step = null, onCloseStep, ...props }: Readonl
         {agent === undefined ? t('runWorkspace.inspector.title') : t('runWorkspace.inspector.of', { agent: agent.agent })}
       </h2>
       <IconTabs tabs={TABS} active={tab} icons={TAB_ICONS} label={t('runWorkspace.inspector.tabs')}
-        labelOf={(id) => t(`runWorkspace.inspector.tab.${id}`)} onSelect={setTab} />
+        labelOf={(id) => t(`runWorkspace.inspector.tab.${id}`)} onSelect={setTab} wrap />
       <div role="tabpanel" aria-label={t(`runWorkspace.inspector.tab.${tab}`)} className="max-h-[70vh] overflow-y-auto">
         {RUN_TABS.has(tab) && <RunTab tab={tab} {...props} />}
         {!RUN_TABS.has(tab) && agent !== undefined && <AgentTab tab={tab} agent={agent} {...props} />}

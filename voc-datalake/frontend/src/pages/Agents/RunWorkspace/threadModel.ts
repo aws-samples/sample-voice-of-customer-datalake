@@ -63,12 +63,34 @@ export function lookOf(item: ThreadItem): ItemLook {
   }
 }
 
-/** Whether `item` starts a new message group (Slack's sender and time line): another sender, or a pause since. */
+/** The looks that are the agent's own words or thinking: a reply reads as a message, never as one more tool line. */
+const WORDS: ReadonlySet<ItemLook> = new Set(['said', 'thought'])
+
+/**
+ * Whether `item` starts a new message group (Slack's sender and time line): another sender, a pause since, or
+ * (7.54.00) the agent's words or thinking after its tool calls or the run's events, so each reply carries who said
+ * it and when.
+ */
 export function startsGroup(previous: ThreadItem | undefined, item: ThreadItem): boolean {
   if (previous === undefined) return true
   if (previous.from.kind !== item.from.kind || previous.from.id !== item.from.id) return true
+  if (WORDS.has(lookOf(item)) && !WORDS.has(lookOf(previous))) return true
   const gap = Date.parse(item.at) - Date.parse(previous.at)
   return !(gap >= 0 && gap <= GROUP_MS)
+}
+
+/** (7.54.00) The thread without the agent's thinking, as shown while the person has "Show thinking" off. */
+export function withoutThinking<T extends { readonly item: ThreadItem }>(items: readonly T[]): readonly T[] {
+  return items.filter((entry) => lookOf(entry.item) !== 'thought')
+}
+
+/** A text longer than this many characters, or lines, opens folded with "Show more" (7.54.00). */
+export const LONG_TEXT_CHARS = 700
+export const LONG_TEXT_LINES = 10
+
+/** Whether a text is long enough to open folded behind "Show more". */
+export function isLongText(text: string): boolean {
+  return text.length > LONG_TEXT_CHARS || text.split('\n').length > LONG_TEXT_LINES
 }
 
 /** `text` bounded to {@link MAX_ITEM_TEXT}, and whether it was cut here or by the server. */

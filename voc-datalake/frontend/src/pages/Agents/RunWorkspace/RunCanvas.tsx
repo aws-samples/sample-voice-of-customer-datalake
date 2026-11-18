@@ -3,7 +3,8 @@
  * components/WorkflowEditor/FlowCanvas.tsx): the run's own copy of its flow (as its start wrote it; for a run without
  * one, the flow's current revision), each step a stage in its kind's shape, lit as the conductor reads it (the
  * outline and the corner badge), a gate's GO or NO-GO from the board's verdict, "you are here" on the step the run is
- * on (canvasFocus.ts `focusStepId`), each step's agents as sibling lanes under it (runLanes.ts), and (7.52.00) a call's
+ * on (canvasFocus.ts `focusStepId`), each step's agents as sibling lanes beside it (runLanes.ts; 7.54.00: never on its
+ * card, laid out by the cards as drawn), and (7.52.00) a call's
  * `<call>.<child>` steps framed under the call they came from (`run.expansion`, callGroups.ts) with how many are done.
  * An agent step's chips are what ran: its model, its skill's label, its cost, how many agents.
  *
@@ -13,7 +14,7 @@
  *
  * @module pages/Agents/RunWorkspace/RunCanvas
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FlowCanvas } from '../../../components/WorkflowEditor/FlowCanvas'
 import { callGroups } from '../../../components/WorkflowEditor/callGroups'
@@ -22,6 +23,7 @@ import { LANE_HEIGHT, LANE_WIDTH, layoutRun } from './runLanes'
 import { ranOnSteps, runStepStates } from './runFlow'
 import { runPhase } from './agentStatus'
 import type { FlowRunState, FlowSelection } from '../../../components/WorkflowEditor/FlowCanvas'
+import type { MeasuredSizes } from '../../../components/WorkflowEditor/flowCanvasModel'
 import type { LaneFlowNode } from '../../../components/WorkflowEditor/nodes/nodeData'
 import type { WorkflowDefinition } from '../../../api/workflowsApi'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
@@ -45,7 +47,9 @@ const selectionOf = (step: string | null | undefined): CanvasSelection =>
 export function RunCanvas({ overview, definition, current, onOpen, step, onSelectStep }: Readonly<Props>) {
   const { t } = useTranslation('agents')
   const phase = runPhase(overview.run)
-  const layout = useMemo(() => layoutRun(definition, overview.lanes, phase), [definition, overview.lanes, phase])
+  // (7.54.00) The cards as the canvas drew them: the lanes beside each and the rows under it follow its real height.
+  const [sizes, setSizes] = useState<MeasuredSizes>(() => new Map())
+  const layout = useMemo(() => layoutRun(definition, overview.lanes, phase, sizes), [definition, overview.lanes, phase, sizes])
   const library = useFlowLibrary(overview.run.expansion.length > 0)
   const runState = useMemo((): FlowRunState => {
     const lit = runStepStates(overview, definition)
@@ -64,7 +68,7 @@ export function RunCanvas({ overview, definition, current, onOpen, step, onSelec
     const lanes = layout.lanes.map((lane): LaneFlowNode => ({
       id: lane.id, type: 'lane', position: lane.position,
       data: {
-        label: lane.label, role: lane.role, state: lane.state, attempt: lane.attempt,
+        step: lane.step, label: lane.label, role: lane.role, state: lane.state, attempt: lane.attempt,
         open: lane.agent !== null && lane.agent === current, width: LANE_WIDTH, height: LANE_HEIGHT,
       },
       ariaLabel: t('runWorkspace.canvas.lane', { label: lane.label, state: t(`run.laneStates.${lane.state}`) }),
@@ -82,5 +86,8 @@ export function RunCanvas({ overview, definition, current, onOpen, step, onSelec
     if (picked?.kind === 'step') onSelectStep?.(picked.id)
     else if (picked === null) onSelectStep?.(null)
   }
-  return <FlowCanvas definition={layout.definition} mode="run" runState={runState} selection={selection} onSelect={select} />
+  return (
+    <FlowCanvas definition={layout.definition} mode="run" runState={runState} selection={selection} onSelect={select}
+      onMeasured={setSizes} />
+  )
 }

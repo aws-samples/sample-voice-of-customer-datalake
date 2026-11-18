@@ -1921,7 +1921,13 @@
       "paneAgent": "This pane's agent",
       "closePane": "Close this pane",
       "emptyPane": "Choose an agent for this pane.",
-      "openAnother": "Open another agent"
+      "openAnother": "Open another agent",
+      "open": "Open…",
+      "closeHint": "Delete closes this tab.",
+      "scrollStart": "Scroll to earlier tabs",
+      "scrollEnd": "Scroll to more tabs",
+      "showThinking": "Show thinking",
+      "closePaneOf": "Close {{name}}'s pane"
     },
     "thread": {
       "label": "The thread of {{agent}}",
@@ -1929,7 +1935,9 @@
       "ended": "This session has ended.",
       "notFound": "This agent's thread is not there.",
       "cut": "Cut here: the rest is in the transcript.",
-      "thought": "Thinking",
+      "thought": "Thinking…",
+      "showMore": "Show more",
+      "showLess": "Show less",
       "toModel": "To the model, from {{id}}",
       "steering": "Steering",
       "senders": {
@@ -1954,6 +1962,7 @@
         "ok": "Worked",
         "failed": "Failed",
         "running": "Running",
+        "endedFirst": "No result: the session ended first",
         "loadFailed": "The call could not be read: try again."
       },
       "endedDone": "This session has ended: its work is done.",

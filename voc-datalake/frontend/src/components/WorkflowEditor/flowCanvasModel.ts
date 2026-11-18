@@ -8,7 +8,7 @@
  * @module components/WorkflowEditor/flowCanvasModel
  */
 import { MarkerType } from '@xyflow/react'
-import { frameAround, loopBounds } from './model'
+import { GROUP_PADDING, frameAround, loopBounds } from './model'
 import { drawnPosition, flowOrder, kindOf, verdictHandles } from './nodes/nodeKinds'
 import { nodeDescriptionId } from './nodes/nodeData'
 import type { AriaLabelConfig, Edge } from '@xyflow/react'
@@ -21,12 +21,47 @@ import type { CanvasSelection } from './selection'
 
 export type FlowNode = StepFlowNode | LoopFrameFlowNode | CallFrameFlowNode | LaneFlowNode
 
+/** (7.54.00) The steps' drawn sizes as React Flow measured them, by step id (a run's cards grow with their chips). */
+export type MeasuredSizes = ReadonlyMap<string, { readonly width: number; readonly height: number }>
+
+export const NO_SIZES: MeasuredSizes = new Map()
+
+/** `before` with the `measured` sizes, or `before` itself when none changed by a pixel (no re-render, no re-layout). */
+export function withMeasured(before: MeasuredSizes,
+  measured: readonly (readonly [string, { readonly width: number; readonly height: number }])[]): MeasuredSizes {
+  const changed = measured.filter(([id, size]) => {
+    const known = before.get(id)
+    return known === undefined || Math.abs(known.width - size.width) >= 1 || Math.abs(known.height - size.height) >= 1
+  })
+  if (changed.length === 0) return before
+  const next = new Map(before)
+  for (const [id, size] of changed) next.set(id, { width: Math.round(size.width), height: Math.round(size.height) })
+  return next
+}
+
 /** A call of a run's flat copy: the call step, what its frame reads, and its `<call>.<child>` steps. */
 export interface CallFrameSpec {
   readonly call: string
   readonly label: string
   readonly progress: string
   readonly nodeIds: readonly string[]
+}
+
+/** A frame's box. */
+interface FrameBox { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+
+/**
+ * (7.54.00) A frame around some steps (`box`, `frameAround`'s) grown to hold their run lanes (beside the steps,
+ * runLanes.ts) and their cards as tall as they were measured; with no lanes and no sizes (building, viewing), `box`.
+ */
+function holding(box: FrameBox, members: readonly WorkflowNode[], lanes: readonly LaneFlowNode[], sizes: MeasuredSizes): FrameBox {
+  const ids = new Set(members.map((node) => node.id))
+  const beside = lanes.filter((lane) => ids.has(lane.data.step))
+  const right = Math.max(box.x + box.width, ...beside.map((lane) => lane.position.x + lane.data.width + GROUP_PADDING))
+  const bottom = Math.max(box.y + box.height,
+    ...members.map((node) => node.position.y + (sizes.get(node.id)?.height ?? 0) + GROUP_PADDING),
+    ...beside.map((lane) => lane.position.y + lane.data.height + GROUP_PADDING))
+  return { x: box.x, y: box.y, width: right - box.x, height: bottom - box.y }
 }
 
 const LOOP_PREFIX = 'loop:'
@@ -83,13 +118,15 @@ function stepNodes(t: TFunction<'agents'>, inputs: StepInputs): StepFlowNode[] {
   })
 }
 
-function loopFrames(t: TFunction<'agents'>, definition: WorkflowDefinition): LoopFrameFlowNode[] {
+function loopFrames(t: TFunction<'agents'>, definition: WorkflowDefinition, lanes: readonly LaneFlowNode[],
+  sizes: MeasuredSizes): LoopFrameFlowNode[] {
   const label = (loop: WorkflowLoop, index: number) => t('editor.loopFrameLabel', {
     n: index + 1, until: t(`loopUntil.${loop.until}`), rounds: loop.max_rounds,
   })
   return definition.loops.flatMap((loop, index) => {
-    const box = loopBounds(definition, loop)
-    if (box === null) return []
+    const bounds = loopBounds(definition, loop)
+    if (bounds === null) return []
+    const box = holding(bounds, definition.nodes.filter((node) => loop.node_ids.includes(node.id)), lanes, sizes)
     // Selectable and focusable: clicking a loop's frame (or Tab + Enter) opens its settings.
     return [{
       id: `${LOOP_PREFIX}${index}`, type: 'loopFrame', position: { x: box.x, y: box.y },
@@ -99,11 +136,12 @@ function loopFrames(t: TFunction<'agents'>, definition: WorkflowDefinition): Loo
   })
 }
 
-function callFrames(definition: WorkflowDefinition, calls: readonly CallFrameSpec[]): CallFrameFlowNode[] {
+function callFrames(definition: WorkflowDefinition, calls: readonly CallFrameSpec[], lanes: readonly LaneFlowNode[],
+  sizes: MeasuredSizes): CallFrameFlowNode[] {
   return calls.flatMap((call) => {
     const members = definition.nodes.filter((node) => call.nodeIds.includes(node.id))
     if (members.length === 0) return []
-    const box = frameAround(members)
+    const box = holding(frameAround(members), members, lanes, sizes)
     return [{
       id: `${CALL_PREFIX}${call.call}`, type: 'callFrame', position: { x: box.x, y: box.y },
       data: { call: call.call, label: call.label, progress: call.progress, width: box.width, height: box.height },
@@ -113,11 +151,14 @@ function callFrames(definition: WorkflowDefinition, calls: readonly CallFrameSpe
   })
 }
 
-/** Every node the canvas draws: the frames behind, the steps in flow order, then a run's lanes. */
+/** Every node the canvas draws: the frames behind (around their steps and, in a run, their lanes and their measured
+ * cards), the steps in flow order, then a run's lanes. */
 export function buildNodes(t: TFunction<'agents'>, inputs: StepInputs & {
-  readonly calls: readonly CallFrameSpec[]; readonly lanes: readonly LaneFlowNode[]
+  readonly calls: readonly CallFrameSpec[]; readonly lanes: readonly LaneFlowNode[]; readonly sizes?: MeasuredSizes
 }): FlowNode[] {
-  return [...loopFrames(t, inputs.definition), ...callFrames(inputs.definition, inputs.calls), ...stepNodes(t, inputs), ...inputs.lanes]
+  const { definition, lanes } = inputs
+  const sizes = inputs.sizes ?? NO_SIZES
+  return [...loopFrames(t, definition, lanes, sizes), ...callFrames(definition, inputs.calls, lanes, sizes), ...stepNodes(t, inputs), ...lanes]
 }
 
 /** Keep React Flow's measurements, selection and in-flight drag positions across re-derivations. */
