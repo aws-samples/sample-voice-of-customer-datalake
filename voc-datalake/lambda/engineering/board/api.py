@@ -18,7 +18,7 @@ only when it moved). The run's coordinator also has ``set_direction`` (``{text}`
 board/directions.py) and ``steer`` (``{to: {kind: agent | role, id}, text}``: a person's steering relayed to one agent
 of the run or every agent of a role, published as ``msg.steer`` from the board's source as the conductor, the one
 message the board sends as another kind than ``system``: bus/senders.py). The run's coordinator
-also has ``tasks`` (its run's tasks) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
+also has ``tasks`` (its run's tasks, each with the ``agent`` on it: ``_worker``) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
 through ``voc-engineering-runtime``'s ``launch`` action only, with the run's commit and connection from its META;
 recorded on the task with its attempt and paths, so a retried launch launches the same agent and a repost's new
 attempt a new one; the runtime's refusals answer 409, and a first launch's bad request or another task's session clears
@@ -172,6 +172,16 @@ def _person_event(task: Task, run_id: str, subject: str, action: str) -> Message
                    sender=Party('human', subject), to=Party('run', run_id), type=kind,
                    summary=_summary(f'{task.title} ({task.state}): {action} by a person'),
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+
+
+def _worker(task: Task) -> str | None:
+    """Who works on the task, as the coordinator reads its board (7.54.00: who it waits for, whom it steers): its
+    lease's holder (an agent; ``human`` for a person who took it, never their subject), else the agent launched for it
+    at its attempt (booting, about to claim it); None for a task posted with no agent launched yet, or re-posted since
+    its launch."""
+    if task.lease_agent:
+        return 'human' if task.lease_agent.startswith(PERSON_PREFIX) else task.lease_agent
+    return task.launched_agent if task.launched_agent and task.launched_attempt == task.attempt else None
 
 
 def _post_is_last(task: Task) -> bool:
@@ -414,7 +424,7 @@ class BoardApi:
                            'flow_step': t.flow_step or None, 'shard': t.shard or None,
                            # (a finished task's outputs: a fixer's or builder's submitted patch, which the
                            # coordinator names on the gate's and the committer's tasks)
-                           'result_keys': list(t.result_keys)}
+                           'result_keys': list(t.result_keys), 'agent': _worker(t)}
                           for t in self.store.tasks(WORKSPACE, caller.run_id)]}
 
     def _flow(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:

@@ -31,7 +31,8 @@ The ACP mapping (docs/autonomous-engineering.md, "The Kiro harness (7.53.00)"):
   says the mode is the role: its prompt and rules would not apply) then ``session/prompt`` with ``converse_loop.opening``;
 - steering (7.51's ``relay_steering`` and the run's direction, from the inbox) = a ``session/prompt`` sent mid-turn, in
   the session's ``<<<STEERING …>>>`` fence below the platform rules: Kiro cancels the running turn (``cancelled``) and
-  goes on with it, keeping its context;
+  goes on with it, keeping its context; for the run coordinator a wake for its tool server too (7.54.00), so a
+  ``wait_for_agents`` under way ends and the next tool call is not held behind it;
 - a pause (a person's Stop, a Shut down, a save-and-stop) = ``session/cancel``, then the session's checkpoint, then exit
   75; a crash saves the checkpoint too;
 - progress = ``session/update``: ``agent_message_chunk`` and ``agent_thought_chunk`` (coalesced), Kiro's own tool calls
@@ -63,13 +64,14 @@ from typing import Any, Final
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.acp import AcpClient, AcpError, AcpTimeout, Notification
 from engineering.runtime.harness.cli import PATH, TOOL_SERVER, sync_notes
-from engineering.runtime.harness.converse_loop import NUDGE, opening, system_prompt
+from engineering.runtime.harness.converse_loop import nudge, opening, system_prompt
 from engineering.runtime.harness.interface import AgentSession, Ending
 from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE
 from engineering.runtime.harness.seed import seed_prefix
 from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 from engineering.runtime.harness.tools import DIRECTION, MAX_RUN_SECONDS, STEER
 from engineering.runtime.harness.transcript import tool_kind
+from engineering.runtime.harness.waiting import TOOL
 
 KIRO_BINARY: Final = '/usr/local/bin/kiro-cli'
 #: How it is started: ACP on stdio, the v3 engine (whose agents are chosen per session, ``session/set_config_option``).
@@ -760,7 +762,7 @@ class _KiroRun:
         if self.nudged:
             return self.done()
         self.nudged = True
-        self.prompt('nudge', NUDGE)
+        self.prompt('nudge', nudge(self.context.role))
         return None
 
     def after_finish(self) -> Ending | None:
@@ -805,6 +807,7 @@ class _KiroRun:
             self.cancel()
             self.end()
             self.seen = sync_notes(self.session, self.files, self.seen, self.turns)
+            self.session.paused_with(others)
             self.session.checkpoint(turn=self.turns)
             return 'paused'
         steering = [message for message in others if message.kind in (STEER, DIRECTION)]
@@ -813,6 +816,9 @@ class _KiroRun:
             # (each in the session's steering block, below the platform rules; recorded as ``steer`` events)
             self.prompt('steer', '\n\n'.join(self.context.note(message) for message in steering),
                         [message.event_id for message in steering if message.event_id])
+            if TOOL in self.allowed:
+                # (its tool server answers one call at a time: a wait under way would hold the steered turn's calls)
+                self.files.wake()
         if rest:
             name = self.files.post([{'kind': message.kind, 'summary': message.summary, 'sender': message.sender}
                                     for message in rest])

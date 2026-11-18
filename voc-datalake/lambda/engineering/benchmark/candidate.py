@@ -66,8 +66,8 @@ class _Ports:
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         self.said.append(f'heartbeat {run_id}/{task_id} {agent_id}')
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-        self.said.append(f'{run_id}/{task_id} {agent_id}: {step}')
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        self.said.append(f'{run_id}/{task_id} {agent_id}: {step}' + (' (waiting)' if waiting else ''))
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
         del run_id, task_id, result_keys

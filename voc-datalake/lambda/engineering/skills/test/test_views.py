@@ -13,13 +13,13 @@ def test_a_pages_numbers_are_read_in_ranges_of_at_most_a_page_each() -> None:
 
 
 def test_a_number_is_labelled_shipped_only_if_the_role_shipped_it() -> None:
-    # (7.53.00: the shipped skills are the compiled bundle's: the coordinator's v5, the fixer's v3)
-    assert [score_source('coordinator', n) for n in (1, 5, 6)] == ['shipped', 'shipped', NOT_SHIPPED]
+    # (7.53.00: the shipped skills are the compiled bundle's: the coordinator's v6 since 7.54.00, the fixer's v3)
+    assert [score_source('coordinator', n) for n in (1, 6, 7)] == ['shipped', 'shipped', NOT_SHIPPED]
     assert (score_source('fixer', 3), score_source('fixer', 4), score_source('coach', 1)) == (
         'shipped', NOT_SHIPPED, NOT_SHIPPED)
 
 
 def test_the_default_scorecards_are_the_shipped_versions_alone() -> None:
     assert (SCORE_SOURCE, shipped_versions('fixer'), shipped_versions('coordinator')) == (
-        'shipped', [3, 2, 1], [5, 4, 3, 2, 1])
+        'shipped', [3, 2, 1], [6, 5, 4, 3, 2])   # (at most DEFAULT_COMPARED, newest first)
     assert shipped_versions('coach') == []

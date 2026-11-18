@@ -9,7 +9,8 @@
   working tree as a patch).
 - ``submit_work``: the working tree as a patch under the agent's own keys, handed to the broker, which alone
   writes to the repository host.
-- ``finish``: the task is done; its summary is the task's last progress.
+- ``finish``: the task is done; its summary is the task's last progress. The run coordinator's is refused while
+  its agents still work on the run (7.54.00: ``waiting.finish_refusal``), which it waits for with ``wait_for_agents``.
 
 The agents that run no repository code (the writers, the reviewers, the coordinator) get no ``run``,
 ``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: every
@@ -52,6 +53,7 @@ from engineering.runtime.harness.ports import (
 from engineering.runtime.harness.skills import SKILLS, Skill, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.transcript import Transcript, tool_kind
+from engineering.runtime.harness.waiting import Waiter, finish_refusal
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
 
@@ -93,6 +95,8 @@ class ToolResult:
     finished: str | None = None
     #: Set by ``save_checkpoint``: what the agent wants a continuation to know.
     checkpoint: dict[str, Any] | None = None
+    #: Set by ``wait_for_agents`` when a pause came while it waited (7.54.00): the adapter checkpoints and pauses.
+    paused: bool = False
 
 
 @dataclass
@@ -158,15 +162,23 @@ class AgentContext:
     #: call (it has no checkpoint of its own).
     transcript: Transcript | None = None
     flush_each_call: bool = False
+    #: How ``wait_for_agents`` looks at the inbox (7.54.00, ``waiting.py``): the Converse loop's own
+    #: ``AgentSession.take_messages``, the CLI's and Kiro's tool server's batches from its harness; None: no wait (a
+    #: session no adapter wired it for). Its clock and its sleep between looks.
+    waiter: Waiter | None = None
+    clock: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
 
     @property
     def runs_code(self) -> bool:
         return self.role in CODE_ROLES
 
-    def progress(self, step: str) -> None:
+    def progress(self, step: str, *, waiting: bool = False) -> None:
+        """Report ``step`` on the task (one line: ``progress_line``); ``waiting`` opens a wait on the lease, and a
+        report without it closes one (7.54.00: ``wait_for_agents``)."""
         step = progress_line(step)
         self.status.at(step)
-        self.board.progress(self.run_id, self.task_id, self.agent_id, step)
+        self.board.progress(self.run_id, self.task_id, self.agent_id, step, waiting=waiting)
 
     def data(self, source: str, text: str) -> str:
         """``text`` fenced as data from ``source`` with this session's fence (``as_data``)."""
@@ -439,6 +451,11 @@ class ToolBox:
         return ToolResult('saved', checkpoint=state)
 
     def _finish(self, arguments: Mapping[str, Any]) -> ToolResult:
+        if self.context.role == 'coordinator':
+            # (7.54.00: never while its agents still work on a run that can go on; it waits for them instead)
+            refusal = finish_refusal(self.context)
+            if refusal is not None:
+                return ToolResult(refusal, error=True)
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
         self.context.progress(f'finished: {summary[:480]}')
         self.context.board.move(self.context.run_id, self.context.task_id, to_state='done',

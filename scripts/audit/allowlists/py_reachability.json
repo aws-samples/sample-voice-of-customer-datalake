@@ -11,6 +11,7 @@
     {"key": "lambda/engineering/runtime/harness/runner_client.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/status.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tool_server.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/waiting.py", "reason": "The run coordinator's wait_for_agents and its finish rule (7.54.00) run inside the coordinator's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tools.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/coordinator.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/gate_tools.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},

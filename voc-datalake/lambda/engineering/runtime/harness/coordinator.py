@@ -1,6 +1,7 @@
-"""The run coordinator's own tools: read the board, post a task, launch its agent, read the knowledge pack, and (7.51.00)
+"""The run coordinator's own tools: read the board, post a task, launch its agent, read the knowledge pack, (7.51.00)
 relay a person's steering to an agent or a role (``relay_steering``) or make it the run's direction
-(``set_direction``: a new create-only version every agent reads at its next turn).
+(``set_direction``: a new create-only version every agent reads at its next turn), and (7.54.00) wait for its agents
+(``wait_for_agents``: ``waiting.py``, which also holds the rule its ``finish`` keeps).
 
 The coordinator plans; it changes no code. What it posts and launches goes through the board (``ports.Planner``),
 which checks the caller's identity and role as for every agent, and runs on the caller's run's connection and
@@ -17,6 +18,7 @@ from typing import Any, Final
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.harness.board_client import BoardRefused
+from engineering.runtime.harness.waiting import MAX_WAIT_SECONDS, TOOL, wait_for_agents
 from engineering.runtime.interface import MAX_TASK_PATHS, check_id
 from engineering.runtime.outputs import PATCH_ROLES, is_submitted_patch
 
@@ -50,8 +52,9 @@ def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
     role = {'type': 'string', 'enum': sorted(TASK_ROLES)}
     step = {'type': 'string', 'description': 'The id of a ready step of the run\'s flow (read_flow).'}
     return (
-        tool_spec('read_board', 'The run\'s tasks on the board: each one\'s id, role, title, state, attempt, step and '
-                  'outputs (a fixer\'s or builder\'s submitted patch among them).', {}),
+        tool_spec('read_board', 'The run\'s tasks on the board: each one\'s id, role, title, state, attempt, step, '
+                  'agent (who works on it: none for a task no agent was launched for at its attempt) and outputs (a '
+                  'fixer\'s or builder\'s submitted patch among them).', {}),
         tool_spec('read_flow', 'The run\'s flow: every step\'s status, and the ready ones with their roles, settings '
                   'and what to do at them. The only steps you may work on.', {}),
         tool_spec('post_task', 'Post one task for one role of a ready step, with instructions a person could follow.',
@@ -82,6 +85,9 @@ def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
                   'agent of the run reads at its next turn and each new session, replacing the one before.',
                   {'text': {'type': 'string', 'description': f'The direction, at most {MAX_DIRECTION} characters.'}},
                   ('text',)),
+        tool_spec(TOOL, 'Wait while the agents you launched work. It returns at the first news (a task '
+                  'done or failed, an agent that stopped, a question, a person\'s steering), or after '
+                  f'{MAX_WAIT_SECONDS // 60} minutes with none; then read the flow and the board again.', {}),
     )
 
 
@@ -210,7 +216,8 @@ def handlers(context: Built, result: Callable[..., Built],
 
     def read_board(_arguments: Mapping[str, Any]) -> Built:
         tasks = [{'task_id': task.task_id, 'role': task.role, 'title': task.title, 'state': task.state,
-                  'attempt': task.attempt, 'step': task.step or None, 'outputs': list(task.result_keys)}
+                  'attempt': task.attempt, 'step': task.step or None, 'agent': task.agent or None,
+                  'outputs': list(task.result_keys)}
                  for task in context.planner.tasks(run_id=context.run_id)]
         return result(as_data('board', json.dumps(tasks)))
 
@@ -240,7 +247,8 @@ def handlers(context: Built, result: Callable[..., Built],
 
     tools = {'read_board': read_board, 'post_task': post_task, 'launch_agent': launch_agent,
              'read_knowledge': read_knowledge, **_flow_tools(context, result, as_data),
-             **_steering_tools(context, result)}
+             **_steering_tools(context, result),
+             TOOL: lambda _arguments: wait_for_agents(context, result)}
     return {name: answered(tool, result) for name, tool in tools.items()}
 
 

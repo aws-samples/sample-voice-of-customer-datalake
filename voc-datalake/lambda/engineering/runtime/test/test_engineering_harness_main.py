@@ -32,6 +32,7 @@ from engineering.runtime.test.harness_fakes import (
     FakeRunner,
     use,
 )
+from engineering.runtime.test.test_engineering_coordinator import FakePlanner
 from engineering.runtime.test.test_engineering_images import IMAGES, RUNTIME, SHIPPED
 from engineering.runtime.unit_runner import Runner, serve
 from engineering.workspace.layout import parse_agent_key
@@ -445,6 +446,29 @@ def test_a_continuation_renews_its_lease_at_once_before_the_restore(aws, tmp_pat
     assert keys == [key]
 
 
+def test_a_coordinators_continuation_closes_the_wait_its_last_session_left_open(aws, tmp_path):
+    # (7.54.00) Its wait_for_agents was paused without news: the wait stayed open on its lease, and this session
+    # closes it first, so the supervisor never holds it on a wait it is no longer in.
+    s3, _ = aws
+    checkpoints = CHECKPOINTS.replace('/fixer-1/', '/coordinator-1/')
+    key = f'{checkpoints}000002-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 4}, 'notes': 'waiting for task-2'}))
+    env = _env(tmp_path, VOC_RESTORE_KEY=key, VOC_ROLE='coordinator', VOC_AGENT_ID='coordinator-1')
+    board = OrderedBoard()
+    ports = replace(_ports(board), planner=FakePlanner())
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], env, s3=s3, ports=ports, runner=FakeRunner(),
+         bedrock=lambda: FakeBedrock([[use('finish', summary='the flow has finished')]]))
+    assert (board.progress_seen[0][3], board.waiting_seen[0]) == (harness_main.CONTINUING, False)
+    # A fresh start opens no wait to close; nor does any other role's continuation.
+    fresh = OrderedBoard()
+    (tmp_path / 'fresh').mkdir()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'],
+         _env(tmp_path / 'fresh', VOC_ROLE='coordinator', VOC_AGENT_ID='coordinator-1'), s3=s3,
+         ports=replace(_ports(fresh), planner=FakePlanner()), runner=FakeRunner(),
+         bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert harness_main.CONTINUING not in [seen[3] for seen in fresh.progress_seen]
+
+
 def test_until_the_board_lands_the_harness_refuses_rather_than_guess(aws, tmp_path):
     s3, _ = aws
     with pytest.raises(HarnessPortNotWired, match=r'is not wired \(the session was handed no'):
@@ -615,8 +639,8 @@ def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(a
     calls: list[str] = []
 
     class Ordered(FakeBoard):
-        def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-            super().progress(run_id, task_id, agent_id, step)
+        def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+            super().progress(run_id, task_id, agent_id, step, waiting=waiting)
             calls.append(step)
 
         def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:

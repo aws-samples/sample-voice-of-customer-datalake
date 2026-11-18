@@ -22,6 +22,9 @@ notes, plan and working tree (``git apply`` on the parent's own commit, ``git ap
 not apply reaches the model as data, never a crash); every session reads the run's direction at its start
 (``AgentSession.read_direction``); and the transcript's clock flushes its events every ``transcript.FLUSH_SECONDS``
 beside the heartbeat.
+
+7.54.00: the tool server's ``wait_for_agents`` takes the batches its harness leaves (``tool_server.waiter``), and a
+coordinator's continuation first closes the wait its last session may have left open (``CONTINUING``).
 """
 from __future__ import annotations
 
@@ -68,7 +71,7 @@ from engineering.runtime.harness.seed import MAX_SEED_BYTES, SeedError, check_se
 from engineering.runtime.harness.seed import parse as parse_seed
 from engineering.runtime.harness.skills import Skill
 from engineering.runtime.harness.status import StatusReport
-from engineering.runtime.harness.tool_server import SessionFiles, serve
+from engineering.runtime.harness.tool_server import SessionFiles, serve, waiter
 from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
 from engineering.runtime.harness.transcript import FLUSH_SECONDS, Transcript
 from engineering.runtime.harness.workspace import Workspace
@@ -87,6 +90,8 @@ COORDINATOR_ROLE: Final = 'coordinator'
 STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person decides what happens next.'
 #: The run coordinator's (its stop is a crash, which the supervisor continues: no person is asked yet).
 COORDINATOR_STOPPED: Final = 'Stopped without finishing the run: continued as a crash.'
+#: A coordinator continuation's first progress report, which closes a wait its last session left open (7.54.00).
+CONTINUING: Final = 'continuing from the checkpoint'
 
 
 class S3Store:
@@ -450,7 +455,10 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         os.environ.pop(KEY_ENV, None)
         env = {name: value for name, value in env.items() if name != KEY_ENV}
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient(), restore=False)
-        serve(session.tools, SessionFiles(env['VOC_SESSION_FILES']), sys.stdin, sys.stdout)
+        files = SessionFiles(env['VOC_SESSION_FILES'])
+        # (its wait takes what the harness, the inbox's one reader here, leaves for it: never the inbox itself)
+        session.context.waiter = waiter(files)
+        serve(session.tools, files, sys.stdin, sys.stdout)
         return DONE_EXIT_CODE
 
     def _bedrock() -> Any:
@@ -474,10 +482,7 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient())
         _start_flusher(session, stop)
         _started(session, args)
-        if session.restored is None:
-            # A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to
-            # snapshot): its brief, so a continuation reads it there and never claims the task it already holds.
-            session.checkpoint(turn=0, clean=True)
+        _begun(session)
         # The tool server's tree is the one this harness hashed, never one the session's start named.
         tool_env = {name: value for name, value in env.items() if name not in (GATE_TREE_ENV, FENCE_ENV)}
         if session.context.gate_tree:
@@ -506,6 +511,17 @@ def _started(session: AgentSession, args: argparse.Namespace) -> None:
                                   model=args.model, adapter=args.adapter, skill=context.skill_label,
                                   continuation=session.restored is not None,
                                   tools=[spec.name for spec in session.tools.specs])
+
+
+def _begun(session: AgentSession) -> None:
+    """A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to
+    snapshot): its brief, so a continuation reads it there and never claims the task it already holds. A
+    coordinator's continuation (7.54.00) first closes a wait its last session left open (``wait_for_agents``, paused
+    without news): it reads its inbox and the board itself now, and the supervisor's clocks apply again."""
+    if session.restored is None:
+        session.checkpoint(turn=0, clean=True)
+    elif session.context.role == COORDINATOR_ROLE:
+        session.context.progress(CONTINUING, waiting=False)
 
 
 def _ended(session: AgentSession, ending: str) -> None:

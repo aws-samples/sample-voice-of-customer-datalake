@@ -1001,10 +1001,18 @@ class Supervisor:
             return self._continue(replace(session, wait_since=wait, woken_wait=wait,
                                           woken_continuation=session.continuation + 1), now, crashed=False)
         in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
-        # A continuation's one grace is never moved by a later message; nor is a running one. An agent the tick has
-        # not seen on a wait gets none (it reads its inbox as it works).
-        keep = in_grace or self._continued_for_a_message(session) or session.wait_since is None
+        # A continuation's one grace is never moved by a later message; nor is a running one. An agent not on a wait
+        # gets none (it reads its inbox as it works). One whose wait no tick has seen yet (7.54.00: a coordinator's
+        # wait_for_agents opened since the last tick) is on one by its lease, which is read for it: without the grace
+        # the next tick would suspend it before its harness read the message, and nothing would wake it again.
+        on_a_wait = session.wait_since is not None or self._lease_waits(session)
+        keep = in_grace or self._continued_for_a_message(session) or not on_a_wait
         return self._save(replace(self._renew(self._wake(session), now), woken_at=session.woken_at if keep else now))
+
+    def _lease_waits(self, session: AgentSession) -> bool:
+        """The agent's lease says it is on an open wait (the board's ``waiting``)."""
+        lease = self._lease(session)
+        return lease is not None and lease.waiting
 
     def _signal_paused(self, session: AgentSession, kind: str, now: int) -> AgentSession:
         if kind == 'resume':

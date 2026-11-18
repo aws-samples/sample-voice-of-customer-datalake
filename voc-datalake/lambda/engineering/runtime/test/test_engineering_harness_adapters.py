@@ -360,8 +360,8 @@ class BoardRefused(Exception):
 class FailingBoard(FakeBoard):
     """Its progress fails."""
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-        raise BoardRefused(f'no board for {run_id}/{task_id}/{agent_id}: {step}')
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        raise BoardRefused(f'no board for {run_id}/{task_id}/{agent_id}{" (waiting)" if waiting else ""}: {step}')
 
 
 def test_a_port_failing_inside_a_cli_tool_call_crashes_the_session_never_ends_it_as_done(tmp_path):

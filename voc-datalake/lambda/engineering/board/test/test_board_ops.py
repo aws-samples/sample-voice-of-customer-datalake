@@ -339,6 +339,24 @@ def test_only_the_coordinator_lists_its_runs_tasks(run: Board) -> None:
     assert call(run, FIXER, op='tasks')[0] == 403
 
 
+def _agents(run: Board) -> dict[str, Any]:
+    return {t['task_id']: t['agent'] for t in call(run, COORDINATOR, op='tasks')[1]['tasks']}
+
+
+def test_the_coordinators_board_says_who_works_on_each_task(run: Board) -> None:
+    # (7.54.00: whom its wait_for_agents waits for, and whom it steers)
+    task_id = fixer_task(run)
+    assert _agents(run)[task_id] is None                     # posted: no agent launched yet
+    _launch(run, task_id)
+    assert _agents(run)[task_id] == 'fixer-2'                # launched at its attempt, booting before its claim
+    call(run, LAUNCHED, op='claim', task_id=task_id)
+    assert _agents(run)[task_id] == 'fixer-2'                # its lease's holder
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    assert _agents(run)[task_id] == 'human'                  # a person holds it: never their subject
+    run.store.release(WS, RUN, task_id, actor=PERSON)
+    assert _agents(run)[task_id] is None                     # open again at its next attempt: no agent launched for it
+
+
 # --- a person's actions (the store's; the Agents API's routes are tested in api/test) ----------------------------
 
 PERSON = 'human:admin-1'

@@ -5,6 +5,11 @@ other), with every built-in tool of its own off, so these are the only tools it 
 2.0, one per line: ``initialize``, ``tools/list``, ``tools/call``, ``ping``; notifications get no answer.
 What ``finish`` and ``save_checkpoint`` return is handed back to the harness through ``SessionFiles`` in the
 agent's home (the CLI is the harness's child; the server is the CLI's).
+
+The harness reads the inbox and leaves its messages here in batches, which reach the model with the next tool result;
+the run coordinator's ``wait_for_agents`` (7.54.00) takes them while it waits (``waiter``), and a wake the Kiro
+adapter leaves when it sends a person's steering as a prompt ends that wait too. A pause is the harness's: it ends
+this server with its CLI.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ from typing import IO, Any, Final
 
 from engineering.runtime.harness.ports import InboxMessage
 from engineering.runtime.harness.tools import AgentContext, ToolBox, ToolResult
+from engineering.runtime.harness.waiting import News, Waiter
 
 PROTOCOL_VERSION: Final = '2025-06-18'
 SERVER_NAME: Final = 'voc'
@@ -61,6 +67,22 @@ class SessionFiles:
         """Whether the batch ``name`` is still there, not yet taken by the tool server."""
         return os.path.exists(self._path(name))
 
+    def wake(self) -> None:
+        """End a ``wait_for_agents`` under way (7.54.00: the Kiro adapter, which sends steering as a prompt, never as a
+        batch): one marker file, never rewritten."""
+        self.write(f'wake-{time.time_ns():020d}-{secrets.token_hex(4)}', {})
+
+    def woken(self) -> bool:
+        """Whether a wake was left; each marker is taken once."""
+        found = False
+        with contextlib.suppress(FileNotFoundError):
+            for name in os.listdir(self.directory):
+                if name.startswith('wake-') and name.endswith('.json'):
+                    with contextlib.suppress(FileNotFoundError):
+                        os.remove(os.path.join(self.directory, name))
+                        found = True
+        return found
+
     def take_messages(self) -> list[dict[str, Any]]:
         """Every batch left so far, oldest first, each taken once (renamed away before it is read)."""
         taken: list[dict[str, Any]] = []
@@ -89,13 +111,22 @@ class SessionFiles:
         self.write('state', {'step': context.status.step})
 
 
+def _taken(files: SessionFiles) -> tuple[InboxMessage, ...]:
+    """The inbox's messages the harness left, as the session's inbox gives them (each taken once)."""
+    return tuple(InboxMessage(kind=str(item.get('kind', '')), summary=str(item.get('summary', '')),
+                              sender=str(item.get('sender', ''))[:128]) for item in files.take_messages())
+
+
+def waiter(files: SessionFiles) -> Waiter:
+    """How ``wait_for_agents`` looks at the inbox in this server (7.54.00): the batches its harness left, and the
+    Kiro adapter's wake; never a pause (the harness acts on one itself, ending this server)."""
+    return lambda: News(messages=_taken(files), interrupted=files.woken())
+
+
 def _messages(files: SessionFiles, context: AgentContext) -> str:
     """The inbox's messages the harness left for the agent, fenced as data with the session's fence (empty when
     there are none)."""
-    fenced = [context.note(InboxMessage(kind=str(item.get('kind', '')), summary=str(item.get('summary', '')),
-                                        sender=str(item.get('sender', ''))[:128]))
-              for item in files.take_messages()]
-    return ''.join('\n' + text for text in fenced)
+    return ''.join('\n' + context.note(message) for message in _taken(files))
 
 
 def answer(toolbox: ToolBox, files: SessionFiles, request: Mapping[str, Any]) -> dict[str, Any] | None:

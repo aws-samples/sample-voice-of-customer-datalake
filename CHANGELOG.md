@@ -106,6 +106,32 @@ get 7.51.01's tooltips.
   the old `tabs.*` / `sections.*` keys and other dead keys in 9 locales; unused props (`SavedStatus.className`,
   `SideSheet.dismissable`, `NameFields.autoFocusFirst`, `RefusalAlert.className`); `constants/admin.ts` (the batch).
 
+### Fixed
+
+- **The run coordinator waits for its agents** (the batch; the first live engineering run, `01M7QNAR1101DZW2A48J24PSN6`
+  on b-, 2026-11-18: its coordinator posted the classify task, launched the understander, read "classify running",
+  was nudged and called `finish` with the run unfinished, so the run stalled with no live agent). A new coordinator
+  tool, `wait_for_agents` (`runtime/harness/waiting.py`, in the harness's own registry, so the Converse loop, the CLI
+  and Kiro get it alike): it opens a wait on its lease (a one-line progress step with `waiting`, which
+  `board_client.progress` now sends), looks at its inbox every 5 s and at the board each minute, renewing the lease,
+  and returns at the first news (a task done, failed or needing a person, an agent that stopped, a question,
+  steering, a waited task the board shows ended or re-posted), on a pause (checkpointed, the session paused) or after
+  25 minutes ("no news yet: read the flow and the board, then wait again"); it renews the lease, then closes the wait.
+  Its `finish` is refused while an agent still works on a run that can go on (its flow running, or none, and no task
+  failed twice): "agents are still working on …: call wait_for_agents". It is nudged with "Continue with your tools:
+  if agents are working, call wait_for_agents; when the flow has finished, call finish." The coordinator's skill is
+  v6 (Steps, a rule and an example; both bundles and its Kiro config compiled), and the board's `tasks` op and
+  `read_board` name the `agent` on each task. The wake path it needs: a task's end (`task.done`, `task.failed`,
+  `task.needs_human`) and the supervisor's `run.agent_timed_out` and `run.agent_failed` are addressed to the run, so
+  they reached no inbox; they now also go to the conductor's inbox and wake the coordinator (`bus/routing.py`
+  `CONDUCTOR_NOTICES`, `delivery.py`). A delivery to a coordinator whose wait no tick has seen yet gives it the wake
+  grace, which its lease shows (`Supervisor._woken`), so the next tick does not suspend it with its news unread. A
+  pause without news leaves the wait open (a long wait is then held without a session until a message continues it),
+  a pause with news closes it (the CLI's and Kiro's harness too), and a coordinator's continuation closes a wait its
+  last session left open; on Kiro, steering also wakes the tool server's wait. The local fake run's scripted coordinator waits for each agent's `task.done` through the inbox router and the
+  delivery function (12/12, to its pull request).
+  [autonomous-engineering.md](docs/autonomous-engineering.md#the-coordinator-waits-for-its-agents-75400).
+
 ### Upgrade notes
 
 - **No address of before is aliased.** `/admin/access/users`, `/admin/data-sources[/…]`, `/admin/taxonomy/…`,
@@ -119,6 +145,11 @@ get 7.51.01's tooltips.
   they ship sets it. The build arguments are unchanged; push each with a new tag and deploy the digests with
   `-c engineeringImages` ([deployment.md](docs/deployment.md)). Until then sessions run the old runner, where
   repository code's git still exits 128 on the checkout.
+- **Rebuild the four engineering images again for the coordinator's wait** (python, node, rust, java): the harness
+  and the compiled bundle they ship carry `wait_for_agents`, its finish rule and the v6 skill; until then a
+  coordinator runs the old harness and can still finish while its agents work. Deploy VocProcessingStack too: the
+  inbox router and the delivery function route a task's end to the conductor's inbox, and the board's `tasks` op
+  names each task's agent. No IAM, table or stack resource changes.
 
 ## [7.53.00] - 2026-11-17
 

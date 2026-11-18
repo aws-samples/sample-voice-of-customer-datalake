@@ -12,7 +12,9 @@ takes the numbers as a near order, not a log: it re-reads a window behind its cu
 ``inbox`` op: 20 numbers) and keeps each message once by its event id. A marker, ``INBOXEVT#<event_id>``, written in
 the same transaction as the row, makes it once: a redelivery (the bus is at-least-once) writes nothing. The addressee is
 ``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task or relayed steering (7.51.00; every agent of
-that role in the run reads it, and steering wakes the live ones).
+that role in the run reads it, and steering wakes the live ones). A notice to the run the conductor acts on (7.54.00,
+``routing.CONDUCTOR_NOTICES``: a task ended, an agent stopped answering or failed) is the conductor's, and wakes the
+coordinator, so one waiting for its agents reads it.
 Nothing deletes an inbox row or marks it read: the board API's ``inbox`` op reads them for the caller's own run
 only, after an ``inbox_seq`` cursor, and the harness keeps each message once by its event id.
 
@@ -32,6 +34,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from engineering.bus.routing import for_conductor
 from engineering.bus.schema import Message, MessageError, parse
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.interface import RuntimeRefused
@@ -55,7 +58,7 @@ def addressee(message: Message) -> str:
     kind = message.to.kind
     if kind == 'agent':
         return f'agent:{message.to.id}'
-    if kind == 'conductor':
+    if kind == 'conductor' or for_conductor(message):
         return 'conductor'
     if kind == 'role':   # (a posted task, or steering relayed to a role: bus/schema.py ROLE_TYPES)
         return f'role:{message.to.id}'
@@ -121,7 +124,8 @@ def is_addressee(message: Message) -> Callable[[AgentSession], bool]:
     held on its wait must keep its one continuation for the message it waits for; the row is there to read."""
     if message.to.kind == 'agent':
         return lambda session: session.agent_id == message.to.id
-    if message.to.kind == 'conductor':
+    if message.to.kind == 'conductor' or for_conductor(message):
+        # (7.54.00: a task of the run ended, or its agent stopped: news for a coordinator waiting for its agents)
         return lambda session: session.role == 'coordinator'
     if message.type == 'msg.steer' and message.to.kind == 'role':
         # Steering relayed to a role (7.51.00): its live agents are woken to read it at their next turn.

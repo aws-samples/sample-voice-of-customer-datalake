@@ -16,6 +16,7 @@ import pytest
 
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.acp import AcpClient, AcpError
+from engineering.runtime.harness.converse_loop import COORDINATOR_NUDGE
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.kiro import (
     CONTINUE_LOADED,
@@ -154,6 +155,14 @@ def test_a_turn_without_finish_is_nudged_once_then_ends_unfinished(tmp_path):
     assert 'call finish' in prompts[1]
 
 
+def test_the_coordinator_is_nudged_to_wait_for_its_agents_never_to_finish_while_they_work(tmp_path):
+    w = world(tmp_path, role='coordinator')
+    binary, log = _fake(tmp_path, {'turns': [[{'say': 'classify running'}], [{'say': 'still running'}]]})
+    _adapter(binary, w).run(w.session)
+    prompts = [frame['params']['prompt'][0]['text'] for frame in _received(log, 'session/prompt')]
+    assert prompts[1] == COORDINATOR_NUDGE
+
+
 # -- steering -------------------------------------------------------------------------------------------------------
 
 
@@ -178,6 +187,19 @@ def test_steering_is_a_prompt_mid_turn_in_the_steering_fence_and_kiro_goes_on_wi
     assert any(event['kind'] == 'steer' and event['by'] == 'coordinator-1' for event in _events(w))
     # It reached the model with the prompt: done once the model saves notes after it (the CLI's rule).
     assert 'ev-steer-1' in w.session.seen_since_save
+
+
+@pytest.mark.parametrize(('role', 'woken'), [('coordinator', True), ('fixer', False)])
+def test_steering_wakes_a_coordinators_wait_under_way_in_its_tool_server(tmp_path, role: str, woken: bool):
+    # (7.54.00) Its tool server answers one call at a time: a wait_for_agents under way would hold the steered turn's
+    # next call for up to its 25 minutes, so the adapter leaves the server a wake beside the prompt.
+    w = world(tmp_path, role=role)
+    w.inbox.queued = [[], [], [InboxMessage(kind=STEER, summary='keep the signature', event_id='ev-steer-2',
+                                            sender='human:person-1')]]
+    binary, _ = _fake(tmp_path, {'turns': [[{'say': 'waiting'}, {'hold': True}], [_finish()]]})
+    assert _adapter(binary, w).run(w.session) == 'done'
+    session_files = Path(w.home) / '.voc' / 'kiro' / 'session'
+    assert bool(list(session_files.glob('wake-*.json'))) is woken
 
 
 # -- stop (cancel) and resume (load) --------------------------------------------------------------------------------

@@ -206,13 +206,13 @@ class BoardHttp:
         self._own(run_id, task_id)
         self.transport.post({'op': 'renew', 'task_id': task_id, 'epoch': self.epoch})
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-        """Report progress on the task; never a wait yet (no tool puts the agent on one: the supervisor's wait
-        clocks come with it)."""
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        """Report progress on the task; ``waiting`` opens a wait on the lease (7.54.00: the coordinator's
+        ``wait_for_agents``, the supervisor's wait clocks), and a report without it closes the wait."""
         del agent_id
         self._own(run_id, task_id)
         self.transport.post({'op': 'progress', 'task_id': task_id, 'epoch': self.epoch, 'step': step,
-                             'waiting': False})
+                             'waiting': waiting})
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
         """Move the task on; ``result_keys``: the agent's own outputs of this attempt, recorded on the task (the board
@@ -366,7 +366,8 @@ class BoardPlanner:
                 task_id=str(task.get('task_id', '')), role=str(task.get('role', '')), title=str(task.get('title', '')),
                 state=str(task.get('state', '')), attempt=int(task.get('attempt', 1)),
                 step=str(task.get('flow_step') or ''),
-                result_keys=tuple(key for key in outputs if isinstance(key, str)) if isinstance(outputs, list) else ()))
+                result_keys=tuple(key for key in outputs if isinstance(key, str)) if isinstance(outputs, list) else (),
+                agent=str(task.get('agent') or '')[:128]))
         return summaries
 
     def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...],

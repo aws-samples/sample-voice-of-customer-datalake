@@ -11,21 +11,30 @@ the case's check and writes what it shows, the fixer writes the fixed files and 
 the broker. Repository commands run for real in the checkout; the dependency step installs nothing (it would need the
 registries): the test interpreter, with pytest, is the sandbox's here.
 
+The scripted coordinator waits for its agents as a model must (7.54.00): it posts a step's task, launches its agent and
+calls ``wait_for_agents``; the agent's whole session runs while it waits (at the wait's first sleep), and the board's
+events go through the inbox router and the delivery function as the bus takes them, so the agent's ``task.done`` lands
+in the conductor's inbox and the wait returns with it. Its ``finish`` meets the harness's finish rule: it finishes once
+the flow has.
+
 After each step of the flow it evaluates the step's assertions (``params.assert``) on what the step recorded, as the
 board will, and prints them. The run is test support (moto, the runtime's test doubles), loaded only by the runner.
 """
 from __future__ import annotations
 
 import functools
+import itertools
 import json
+import re
 import shutil
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import boto3
 import pytest
@@ -35,19 +44,23 @@ from engineering.board.api import BoardApi
 from engineering.board.inbox import Inbox
 from engineering.board.store import BoardStore
 from engineering.bus.publish import EventBridgePublisher
+from engineering.bus.router import Router
+from engineering.bus.schema import Message
 from engineering.connectors.broker import Broker
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.hosts import Connector, PullRequestRef
 from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import RunRecords, WriteClaims
+from engineering.conversation.store import ConversationStore
 from engineering.flow.ledger import read_gate_record
 from engineering.learning import reactions_broker
 from engineering.orchestration import assertions
 from engineering.orchestration.assertions import Recorded, Result
 from engineering.quality_gate import packs
-from engineering.runtime import handler
+from engineering.runtime import delivery, handler
 from engineering.runtime.harness import gate_tools
 from engineering.runtime.harness import main as harness_main
+from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.interface import CODE_ROLES
 from engineering.runtime.test import conftest as runtime_world
 from engineering.runtime.test import test_engineering_bug_hunt_flow as bug_hunt
@@ -64,6 +77,8 @@ from shared.workflow_engineering import flow_settings, step_assertions
 from shared.workflow_schema import encode_definition
 
 Out = Callable[[str], None]
+#: An agent's whole session, run while the coordinator waits: the errors it was handed.
+Agent = Callable[[], list[str]]
 RUN = bug_hunt.RUN
 BRANCH = f'voc-agent/{RUN}/fix'
 #: The flow's steps whose work this script plays, in order (the flow's own ids).
@@ -215,8 +230,13 @@ class LocalRun:
     patched: pytest.MonkeyPatch
     out: Out
     issue: int | None
+    #: The board's events (its publisher's), and the inbox router they go through as the bus takes them.
+    events: Events
+    router: Router
     results: dict[str, tuple[Result, ...]] = field(default_factory=dict)
     coordinator: Any = None
+    #: The board's events routed so far.
+    routed: int = 0
 
     def tasks(self) -> list[Any]:
         return list(self.world.api.store.tasks('default', RUN))
@@ -264,11 +284,39 @@ class LocalRun:
         self.out(f'  {agent_id} ({role}, {template.label}): {summary}')
         return model.refused()
 
-    def coordinate(self, turns: list[list[dict[str, Any]]]) -> None:
-        """One stretch of the run coordinator's one session (started at its first)."""
+    def deliver(self) -> None:
+        """The board's events since the last call through the inbox router, which hands the delivery function the
+        ones for an inbox (a posted task's, and the conductor's notices: a task done, failed or needing a person)."""
+        for entry in self.events.entries[self.routed:]:
+            self.router.route_event(str(entry['Source']), json.loads(entry['Detail']),
+                                    detail_type=str(entry['DetailType']))
+        self.routed = len(self.events.entries)
+
+    def coordinate(self, turns: list[list[dict[str, Any]]], agent: tuple[str, Agent] | None = None) -> list[str]:
+        """One stretch of the run coordinator's one session (started at its first), on the model of the skill its
+        launch resolved, none of its calls refused. ``agent``: the agent (its id and its session) that runs while the
+        coordinator waits for it, at the wait's first sleep; what each wait brought is printed. The agent's errors."""
         if self.coordinator is None:
             self.coordinator = self.world.coordinator()
-        bug_hunt.coordinate(self.coordinator, turns)
+        session, pending, errors, now = self.coordinator, [agent] if agent else [], [], [0.0]
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds
+            while pending:
+                errors.extend(pending.pop()[1]())
+                self.deliver()
+
+        session.context.sleep, session.context.clock = sleep, lambda: now[0]
+        skill = session.tools.skill
+        model = bug_hunt.ScriptedModel(skill, turns)
+        ConverseAdapter(model, skill.model).run(session)
+        if model.refused():
+            raise FakeRunError(f'the coordinator was refused: {model.refused()}')
+        if agent is not None and pending:
+            raise FakeRunError(f'the coordinator never waited for {agent[0]}')
+        for news in waits(model):
+            self.out(f'  coordinator-1 waited for {agent[0] if agent else "its agents"}: {news}')
+        return errors
 
     def step_done(self, step: str) -> None:
         """The step's state as the conductor says, then its assertions on what it recorded."""
@@ -281,10 +329,27 @@ class LocalRun:
                      + ('' if result.passed or result.on_fail == 'block' else f' [{result.on_fail}]'))
 
 
+#: A message a wait brought, as its DATA block opens (``tools.as_data``: ``message:<kind>``).
+_MESSAGE: Final = re.compile(r'^<<<DATA message:(\S+) ', re.MULTILINE)
+
+
+def waits(model: bug_hunt.ScriptedModel) -> list[str]:
+    """What each ``wait_for_agents`` of the stretch returned: the kinds of the messages it brought, or its first line."""
+    messages = model.requests[-1]['messages'] if model.requests else []
+    found = []
+    for asked, answered in itertools.pairwise(messages):
+        if any(block.get('toolUse', {}).get('name') == 'wait_for_agents' for block in asked['content']):
+            text = next(block['toolResult']['content'][0]['text'] for block in answered['content']
+                        if 'toolResult' in block)
+            kinds = _MESSAGE.findall(text)
+            found.append(f'news ({", ".join(kinds)})' if kinds else text.splitlines()[0])
+    return found
+
+
 def _post(role: str, step: str, task: str, title: str, **extra: str) -> list[list[dict[str, Any]]]:
-    """The coordinator's post of one task for a live step, and its launch."""
+    """The coordinator's post of one task for a live step, its launch, and its wait for the agent."""
     return [[use('post_task', role=role, step=step, title=title, instructions=f'{title}: see the board.', **extra)],
-            [use('launch_agent', task_id=task, role=role, language='python')]]
+            [use('launch_agent', task_id=task, role=role, language='python')], [use('wait_for_agents')]]
 
 
 def _finish(summary: str) -> list[dict[str, Any]]:
@@ -296,35 +361,39 @@ def _hunt(run: LocalRun) -> None:
     finding = {'file': case.source, 'line': case.line, 'severity': 'blocking', 'rule': 'wrong-result',
                'title': str(case.record['title'])[:200], 'evidence': f'{" ".join(case.check[:3])} ... exits 1 on the '
                f'fixture: the case\'s check fails at {case.source}:{case.line}'}
-    run.coordinate([[use('read_flow')], *_post('hunter', 'hunt', 'task-1', f'Hunt in {case.source}')])
-    errors = run.agent('hunter-2', [
-        [use('list_files', path='')], [use('read_file', path=case.source)], [use('run', argv=case.check)],
-        [use('write_findings', package='.', shard='hunt', findings=[finding])],
-        [use('post_subtask', title='Fix: ' + str(case.record['title'])[:180], instructions=str(case.record['task']),
-             paths=[case.source], step='board')],
-        _finish('one bug confirmed by the case\'s check, one fix task posted')])
+    errors = run.coordinate([[use('read_flow')], *_post('hunter', 'hunt', 'task-1', f'Hunt in {case.source}')],
+                            ('hunter-2', lambda: run.agent('hunter-2', [
+                                [use('list_files', path='')], [use('read_file', path=case.source)],
+                                [use('run', argv=case.check)],
+                                [use('write_findings', package='.', shard='hunt', findings=[finding])],
+                                [use('post_subtask', title='Fix: ' + str(case.record['title'])[:180],
+                                     instructions=str(case.record['task']), paths=[case.source], step='board')],
+                                _finish('one bug confirmed by the case\'s check, one fix task posted')])))
     run.out(f'    the hunter\'s check of the bug exited non-zero, as it should: {len(errors)} error result(s)')
     run.step_done('hunt')
 
 
 def _board(run: LocalRun) -> None:
     case = run.case
-    run.coordinate([[use('read_board')], [use('launch_agent', task_id='task-2', role='fixer', language='python')]])
     tests = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider']
-    errors = run.agent('fixer-3', [
-        [use('read_file', path=case.source)],
-        *[[use('write_file', path=path, text=text)] for path, text in case.fixed.items()],
-        [use('run', argv=case.check)], [use('run', argv=tests)], [use('submit_work', summary='the fix and its test')],
-        _finish(f'fixed {case.source} with a test; the case\'s check and the tests pass')])
+    errors = run.coordinate(
+        [[use('read_board')], [use('launch_agent', task_id='task-2', role='fixer', language='python')],
+         [use('wait_for_agents')]],
+        ('fixer-3', lambda: run.agent('fixer-3', [
+            [use('read_file', path=case.source)],
+            *[[use('write_file', path=path, text=text)] for path, text in case.fixed.items()],
+            [use('run', argv=case.check)], [use('run', argv=tests)],
+            [use('submit_work', summary='the fix and its test')],
+            _finish(f'fixed {case.source} with a test; the case\'s check and the tests pass')])))
     if errors:
         raise FakeRunError(f'the fixer was refused: {errors}')
-    run.coordinate(_post('commit-reviewer', 'board', 'task-3', 'Review the fix'))
-    run.agent('commit-reviewer-4', [
-        [use('read_file', path=case.source)],
-        [use('write_findings', package='.', shard='review', findings=[{
-            'file': case.source, 'line': case.line, 'severity': 'nit', 'rule': 'scope',
-            'title': 'The fix is the one line the bug needs', 'evidence': 'only the operator changed'}])],
-        _finish('no blocking finding')])
+    run.coordinate(_post('commit-reviewer', 'board', 'task-3', 'Review the fix'), ('commit-reviewer-4', lambda: run.agent(
+        'commit-reviewer-4', [
+            [use('read_file', path=case.source)],
+            [use('write_findings', package='.', shard='review', findings=[{
+                'file': case.source, 'line': case.line, 'severity': 'nit', 'rule': 'scope',
+                'title': 'The fix is the one line the bug needs', 'evidence': 'only the operator changed'}])],
+            _finish('no blocking finding')])))
     run.coordinate([[use('complete_step', step='board')]])
     run.step_done('board')
 
@@ -336,38 +405,40 @@ def _patch(run: LocalRun) -> str:
 
 def _gate(run: LocalRun) -> str:
     patch = _patch(run)
-    run.coordinate([[use('read_board')], *_post('gate-runner', 'gate', 'task-4', 'Run the gate packs', patch=patch)])
     # ``run_gate`` plans the packs' checks on the sandbox's interpreter ({python}): for a local run, the test
     # interpreter, which has pytest (the dependency step installs nothing here).
     run.patched.setattr(gate_tools.packs, 'plan', functools.partial(packs.plan, python=sys.executable))
-    errors = run.agent('gate-runner-5', [
-        [use('run_gate')], [use('write_gate_record', verdict='GO', packs=['python'])], _finish('every check passed')])
+    errors = run.coordinate(
+        [[use('read_board')], *_post('gate-runner', 'gate', 'task-4', 'Run the gate packs', patch=patch)],
+        ('gate-runner-5', lambda: run.agent('gate-runner-5', [
+            [use('run_gate')], [use('write_gate_record', verdict='GO', packs=['python'])],
+            _finish('every check passed')])))
     if errors:
         raise FakeRunError(f'the gate runner was refused: {errors}')
     [record] = [json.loads(body) for _, key, body in run.objects('gate-runner') if key.endswith('/record.json')]
     for check in record['rounds'][0]['checks']:
         run.out(f'    gate check {check["name"]}: {check["status"]}')
-    run.coordinate(_post('final-go', 'gate', 'task-5', 'The final go', patch=patch))
-    run.agent('final-go-6', [[use('read_file', path=run.case.source)],
-                             [use('write_gate_record', verdict='GO', reasons=['every check passed',
-                                                                              'no blocking finding is open'])],
-                             _finish('GO')])
+    run.coordinate(_post('final-go', 'gate', 'task-5', 'The final go', patch=patch), ('final-go-6', lambda: run.agent(
+        'final-go-6', [[use('read_file', path=run.case.source)],
+                       [use('write_gate_record', verdict='GO', reasons=['every check passed',
+                                                                        'no blocking finding is open'])],
+                       _finish('GO')])))
     run.step_done('gate')
     return str(record['tree_hash'])
 
 
 def _deliver(run: LocalRun, tree: str) -> None:
     patch, title = _patch(run), str(run.case.record['title'])[:200]
-    run.coordinate(_post('committer', 'commit', 'task-6', 'Commit the fix', patch=patch))
-    run.agent('committer-7', [[use('push_commit', branch=BRANCH, patch=patch, tree_hash=tree, message=title)],
-                              _finish('pushed')])
+    run.coordinate(_post('committer', 'commit', 'task-6', 'Commit the fix', patch=patch), ('committer-7', lambda: run.agent(
+        'committer-7', [[use('push_commit', branch=BRANCH, patch=patch, tree_hash=tree, message=title)],
+                        _finish('pushed')])))
     run.step_done('commit')
-    run.coordinate(_post('pr-author', 'pr_author', 'task-7', 'Open the pull request'))
     body = f'{run.case.record["task"]}\n\nTested by the new test; the quality gate said GO.'
     if run.issue is not None:
         body += f'\n\nFixes #{run.issue}'
-    run.agent('pr-author-8', [[use('open_draft_pr', branch=BRANCH, title=title, body=body)],
-                              _finish('the pull request is open')])
+    run.coordinate(_post('pr-author', 'pr_author', 'task-7', 'Open the pull request'), ('pr-author-8', lambda: run.agent(
+        'pr-author-8', [[use('open_draft_pr', branch=BRANCH, title=title, body=body)],
+                        _finish('the pull request is open')])))
     run.step_done('pr_author')
 
 
@@ -384,10 +455,20 @@ def _start(world_dir: Path, case: Case, flow: Mapping[str, Any], patched: pytest
                                denied_is_missing=True)
     counter = iter(range(1, 100))
     launcher = bug_hunt.RuntimeLauncher()
+    events = Events()
     api = BoardApi(BoardStore(client, runtime_world.TABLE, new_id=lambda: f'task-{next(counter)}'),
-                   EventBridgePublisher(Events(), 'voc-engineering', 'voc.engineering/board'),
+                   EventBridgePublisher(events, 'voc-engineering', 'voc.engineering/board'),
                    Inbox(client, runtime_world.TABLE), launcher=launcher,
                    gate_records=lambda key: read_gate_record(workspace, key))
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(runtime_world.TABLE)
+
+    def deliver(message: Message, seq: int) -> None:
+        """The delivery function, handed what the router's Lambda invokes it with."""
+        delivery.deliver({'message': message.to_dict(), 'seq': seq}, table=table, supervisor=handler._supervisor(),
+                         now=int(time.time()))
+
+    # The inbox router on the run's conversation.
+    router = Router(ConversationStore(client, runtime_world.TABLE), deliver=deliver)
     cache, commit = fixture_repository(world_dir, dict(case.files))
     boto3.resource('dynamodb', region_name='us-east-1').Table(bug_hunt.AGGREGATES).put_item(
         Item={**ai_mode_key(bug_hunt.STARTER), 'mode': MODE_AI_DRIVEN})
@@ -399,7 +480,7 @@ def _start(world_dir: Path, case: Case, flow: Mapping[str, Any], patched: pytest
                               writes=WriteClaims(client, runtime_world.TABLE)))
     world = bug_hunt.BugHunt(api, launcher, boto3.client('s3', region_name='us-east-1'), world_dir, cache, commit,
                              host, FunctionUrl(runtime_world.BROKER_URL, broker, AgentSessions(RUN)))
-    return LocalRun(world, host, case, flow, patched, out, issue)
+    return LocalRun(world, host, case, flow, patched, out, issue, events, router)
 
 
 def run_flow(flow: Mapping[str, Any], repo: Path, *, out: Out = print, issue: int | None = None) -> int:

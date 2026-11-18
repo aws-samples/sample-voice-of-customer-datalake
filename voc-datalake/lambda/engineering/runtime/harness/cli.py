@@ -20,8 +20,10 @@ with every built-in tool off instead of Read and Glob):
 
 While it runs, the harness saves a checkpoint each time the agent calls ``save_checkpoint`` (and once more
 before a crash is raised), takes the tool server's step and patches, and takes the inbox: ``save``
-checkpoints, ``pause`` checkpoints, ends the CLI's whole session (its tool server too) and pauses; any other
-message reaches the agent, as data, with its next tool result. The CLI's session is ended on every way out.
+checkpoints, ``pause`` checkpoints, ends the CLI's whole session (its tool server too) and pauses (7.54.00: closing a
+coordinator's ``wait_for_agents`` when news came beside it, ``AgentSession.paused_with``); any other message reaches
+the agent, as data, with its next tool result (or ends its tool server's wait). The CLI's session is ended on every way
+out.
 """
 from __future__ import annotations
 
@@ -165,6 +167,7 @@ class ClaudeCli:
                 # started may still be finishing in the runner, which the checkpoint's own git waits for.
                 self._end(process)
                 sync_notes(session, files, seen, turn)
+                session.paused_with(others)
                 session.checkpoint(turn=turn)
                 return 'paused'
             if others:

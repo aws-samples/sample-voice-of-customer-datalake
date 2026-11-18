@@ -35,6 +35,11 @@ def test_divide_floor_bug_runs_from_the_hunt_to_its_pull_request_with_every_step
     # it passed.
     assert '    gate check py.test@.: pytest: pass' in lines, text
     assert 'flow: start done, hunt done, board done, gate done, commit done, human skipped, pr_author done, pr done' in text
+    # (7.54.00) The coordinator waited for each agent it launched, as a model must: the agent's task.done went
+    # through the inbox router and the delivery function into the conductor's inbox, and ended the wait.
+    agents = ('hunter-2', 'fixer-3', 'commit-reviewer-4', 'gate-runner-5', 'final-go-6', 'committer-7', 'pr-author-8')
+    assert [line for line in lines if line.startswith('  coordinator-1 waited for ')] == [
+        f'  coordinator-1 waited for {agent}: news (task.done)' for agent in agents], text
     # The flow asks for a pull request ready for review, and the broker opened it so.
     assert '    assert pr.state_as_flow: pass (1 of 1 pull requests opened ready for review)' in lines, text
     assert code == 0, text

@@ -491,8 +491,8 @@ def test_a_write_whose_outcome_is_unknown_is_told_as_unknown_never_refused_never
 class FailingBoard(FakeBoard):
     """A board that refuses (or cannot be reached for) every progress report."""
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-        super().progress(run_id, task_id, agent_id, step)
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        super().progress(run_id, task_id, agent_id, step, waiting=waiting)
         raise BoardRefused(503, 'retry')
 
 

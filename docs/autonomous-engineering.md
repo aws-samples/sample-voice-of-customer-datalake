@@ -1301,8 +1301,13 @@ conductor's, after an `inbox_seq`, merged in write order (each with its `convers
 its run, so it never reads another run's. Every read starts 20 below its cursor, a full page's as much as the
 tail's (two deliveries may commit their numbers out of order), and moves the cursor to the last number read; the
 reader keeps each notice once by its event id. A message to the run (a signal's record, run health, an outcome) stays in the
-conversation, where the supervisor, the coordinator and the run view read it. The rule is fixed, never made per run,
-so the bus's rule quota does not limit how many runs work at once. EventBridge is the bus; a push the router could
+conversation, where the supervisor, the coordinator and the run view read it, but for the notices the conductor acts
+on (7.54.00, `routing.CONDUCTOR_NOTICES`): one of the run's tasks done, failed or needing a person (the board's
+`task.done`, `task.failed`, `task.needs_human`) and an agent that stopped answering or failed (the supervisor's
+`run.agent_timed_out`, `run.agent_failed`), about any task but the coordinator's own. Those also go to the conductor's
+inbox and wake the coordinator, which waits for its agents on them ([The coordinator waits for its
+agents](#the-coordinator-waits-for-its-agents-75400)). The rule is fixed, never made per run, so the bus's rule quota
+does not limit how many runs work at once. EventBridge is the bus; a push the router could
 not make ends in `voc-engineering-dlq` after its retries.
 
 **The board.** A run's work is a board of tasks: open → claimed → in progress → in review → done, failed or needs a
@@ -1616,7 +1621,9 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   `post_task` names the step (and the shard); `complete_step` records an agent step of the coordinator's own role
   (the Feature flow's plan) or closes a board; `fan_out` records a map's shards. They go through the board's `flow`
   and `step` ops, the coordinator's alone (a replaced coordinator's session is refused them, as every coordinator
-  op).
+  op). Since `coordinator@6` (7.54.00) it also waits for the agents it launched (`wait_for_agents`), and its `finish`
+  is refused while they still work on a flow that runs ([The coordinator waits for its
+  agents](#the-coordinator-waits-for-its-agents-75400)).
 - **The board's check.** In a run that follows a flow, a post names a live step (`flow_step`), for a role that step
   takes, from a poster it allows: the run coordinator for any live step, another agent only on a board step that
   names it a poster (within the board's own rule of who posts for whom), a person for any live step or for a task of
@@ -2036,7 +2043,7 @@ microVM), from its language's image, with its own sparse checkout from the cache
   regain: `setpriv --no-new-privs --bounding-set=-all`, and the image keeps no setuid or setgid file.
 
 The supervisor ends a finished agent's session at once. An agent on an open wait (its question, a review it asked
-for, a human decision point) keeps its task and is outside every clock: the supervisor holds its session (the runner
+for, a human decision point, the coordinator's `wait_for_agents`: 7.54.00) keeps its task and is outside every clock: the supervisor holds its session (the runner
 stops every command of the agent where it is: no CPU is used, and none billed), wakes it to deliver a run monitor's
 signal or when the wait closes, and for a wait still open after 45 minutes (or once the session nears its 8-hour
 limit) asks it to checkpoint and pause, holds it without a session (`waiting`), and continues it in a new one once the
@@ -2392,10 +2399,11 @@ wait closes.
   event id; a marker, `INBOXEVT#<event_id>`, written in the same transaction, makes a
   redelivery write nothing; a message without its seq is refused), and
   wakes the run's live addressees (a posted task, addressed to a role, wakes nobody: an agent is launched for its
-  task, so none of the role is idle, and one held on its wait keeps its one wake for the message it waits for): a
+  task, so none of the role is idle, and one held on its wait keeps its one wake for the message it waits for; a
+  task's end or an agent's stop is the conductor's too, and wakes the coordinator, 7.54.00): a
   working agent's session suspended for an open wait is resumed with a fresh
   session and kept awake 10 minutes (`wake_grace`, which a later message does not extend) so its harness reads the
-  message and closes the wait, an agent held without a session is continued in a new one (once per wait), and a
+  message and closes the wait (so is one whose wait no tick has seen yet, which its lease says it is on: 7.54.00), an agent held without a session is continued in a new one (once per wait), and a
   booting or pausing one reads its inbox once it runs. The wait's 45-minute hold counts from the wait's start,
   awake or not, so messages cannot keep a session running; only the one continuation a message makes per wait gets
   one grace before the hold applies again, to read the message, starting when its harness starts (a slow checkout
@@ -2791,6 +2799,56 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
   and `_checkpoints` (since 7.52.00 also a Tenets run's draft, `…/_tenets/*`, for `tenets.recorded`); the Agents API `s3:GetObject` on the runs' transcripts, patches, gate records and manifests and
   `s3:ListBucket` held to the transcript and patch prefixes (`lib/stacks/api-engineering-run-reads.ts`). No agent role
   gains anything.
+
+### The coordinator waits for its agents (7.54.00)
+
+The first live engineering run (2026-11-18) stalled at its first step: its coordinator posted the classify task,
+launched the understander, read the board ("classify running") and ended its turn, was nudged ("or call finish if the
+task is done") and called `finish` with the run unfinished. Nothing woke a coordinator that had finished, and the
+understander's `task.done` was addressed to the run, so it reached no inbox at all. Now:
+
+- **`wait_for_agents`** (the coordinator's tool, in the harness's own registry, so the Converse loop, the CLI and Kiro
+  get it alike; `runtime/harness/waiting.py`). It reads the board: the tasks an agent works on (not ended, with its
+  lease's holder or the agent launched for it at its attempt; the board's `tasks` op now names that `agent`, and
+  `read_board` shows it). With none it answers at once and names the tasks posted with no agent. Else it opens a wait
+  on its lease (a progress report with `waiting`, one line: "waiting for 1 task: Understand and classify"), then looks
+  at its inbox every 5 seconds (the Converse loop's `AgentSession.take_messages`; in the CLI's and Kiro's tool server,
+  the batches its harness leaves, the harness being the inbox's one reader) and, every minute, renews the lease and
+  reads the board again. It returns at the first news: a message (a task done, failed or needing a person, an agent
+  that stopped, a question, steering), a waited task the board shows ended or moved on (should a delivery be lost), a
+  pause, or 25 minutes without news ("no news yet: read the flow and the board, then wait again"; under the
+  supervisor's 45-minute hold of a wait, and Kiro's limit on one tool call, a repository command's hour). The
+  messages reach the model as data in the session's fence, steering in its steering block. Before it returns it
+  renews the lease, then closes the wait (a progress report without `waiting`, saying what came).
+- **Suspended and woken.** While the wait is open the supervisor suspends the coordinator's microVM: its harness
+  stops in its sleep. The task's end is now the conductor's notice too (`bus/routing.py` `CONDUCTOR_NOTICES`, above),
+  so the delivery function records it in the conductor's inbox and resumes the coordinator for `wake_grace`; the next
+  look takes the message, and the renewal before the wait closes is taken by the board even though the lease ran out
+  while the session was suspended (the board's holder check passes while a wait is open). A delivery that lands before
+  any tick has seen the wait reads the lease: it is on a wait, so it gets the grace, and the next tick does not suspend
+  it with its news unread. A wait still open after 45 minutes is the supervisor's long-wait pause, as for any agent:
+  the wait sees the pause and checkpoints; without news the wait stays open, so the coordinator is held without a
+  session until a message continues it, and with news it closes, so the continuation starts at once. A coordinator's
+  continuation closes a wait its last session left open first thing (`main.py`), so a Resume after a person's Pause
+  is never suspended on a wait nobody is in. On Kiro, a person's steering is a prompt mid-turn, so the adapter also
+  leaves the tool server a wake (`SessionFiles.wake`): the server answers one call at a time, and a wait under way
+  would hold the steered turn's next call.
+- **The finish rule** (`waiting.finish_refusal`). The coordinator's `finish` is refused while an agent still works on
+  a task of the run and the run can go on: its flow is running (or it follows none) and no task of it failed twice
+  (ended failed or needing a person at its second attempt or later). The answer names the tasks ("finish refused:
+  agents are still working on task-2 (understander-2): call wait_for_agents, …"). It goes through once the flow has
+  finished or stopped at a person, a task failed twice, or no agent works on anything (the task cap refused the next
+  post, say): the skill's "When to stop". No other role's `finish` is checked.
+- **The nudge.** An answer without a tool is followed, for the coordinator, by "Continue with your tools: if agents
+  are working, call wait_for_agents; when the flow has finished, call finish." (`converse_loop.nudge`, the Kiro
+  adapter's too); every other role keeps "Continue with your tools, or call finish if the task is done."
+- **The skill, v6** (`templates/orchestration/agents/coordinator`): its Steps say to call `wait_for_agents` after
+  launching agents and to read the flow and the board again when it returns, and never to finish while the flow is
+  running; an example shows it; its card lists the tool, and both bundles and its Kiro agent config are compiled from
+  it (the harness's shipped `SKILLS` read the bundle, so they are v6 too).
+- **The local fake run** (`orchestration/test/local_fake.py`) plays the coordinator the way a model now must: post,
+  launch, `wait_for_agents`; the agent's session runs while it waits, its board events go through the inbox router and
+  the delivery function, and the wait returns with its `task.done` from the conductor's inbox.
 
 ### Run controls reach the agents (7.51.02)
 

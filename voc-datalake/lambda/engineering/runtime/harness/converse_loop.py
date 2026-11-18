@@ -8,6 +8,10 @@ takes the agent's inbox: ``save`` checkpoints at once, ``pause`` checkpoints and
 paused; past ``max_turns`` in one session, or once a call's input passes ``MAX_INPUT_TOKENS``, it checkpoints
 and pauses too, so a continuation starts with a fresh conversation from its notes. On any error it checkpoints
 before the crash is raised. Tokens in and out are counted per model on the status report.
+
+The run coordinator's ``wait_for_agents`` (7.54.00, ``waiting.py``) takes the same inbox while it waits
+(``AgentSession.news``): a pause that comes then ends the session as paused, as at a turn's start. An answer without a
+tool is nudged once (``nudge``: the coordinator is told to wait while agents work, never to finish then).
 """
 from __future__ import annotations
 
@@ -29,6 +33,14 @@ SYSTEM_PROMPT: Final = (
     'You act only through the tools you are given.'
 )
 NUDGE: Final = 'Continue with your tools, or call finish if the task is done.'
+#: The run coordinator's (7.54.00): the first live run's, nudged with ``NUDGE`` while its agent worked, finished.
+COORDINATOR_NUDGE: Final = ('Continue with your tools: if agents are working, call wait_for_agents; when the flow has '
+                            'finished, call finish.')
+
+
+def nudge(role: str) -> str:
+    """What an answer without a tool is followed by: the coordinator's own nudge, ``NUDGE`` for every other role."""
+    return COORDINATOR_NUDGE if role == 'coordinator' else NUDGE
 
 
 def system_prompt(context: AgentContext, skill: Skill | None) -> str:
@@ -81,6 +93,8 @@ class ConverseAdapter:
 
     def _run(self, session: AgentSession, at: list[int]) -> Ending:
         tools = bedrock_tools(session.tools.specs)
+        # (the wait reads the inbox this loop reads: what it hands out reaches the model with its result)
+        session.context.waiter = session.news
         messages: list[dict[str, Any]] = [{'role': 'user', 'content': [{'text': opening(session)}]}]
         _said(session, 'user', messages[0]['content'])
         nudged = False
@@ -102,20 +116,25 @@ class ConverseAdapter:
                     # Two answers in a row without a tool: the model is done, whether or not it said so.
                     return 'done'
                 nudged = True
-                messages.append({'role': 'user', 'content': [{'text': NUDGE}]})
+                messages.append({'role': 'user', 'content': [{'text': nudge(session.context.role)}]})
                 continue
             nudged = False
-            results, finished = [], False
+            results, finished, paused = [], False, False
             for call in calls:
                 result = session.tools.call(str(call['name']), call.get('input') or {}, str(call.get('toolUseId', '')))
                 if result.checkpoint is not None:
                     session.remember(result.checkpoint)
                     session.checkpoint(turn=turn)
                 finished = finished or result.finished is not None
+                paused = paused or result.paused
                 results.append({'toolResult': {'toolUseId': call['toolUseId'], 'content': [{'text': result.text}],
                                                'status': 'error' if result.error else 'success'}})
             if finished:
                 return 'done'
+            if paused:
+                # (a pause asked while wait_for_agents waited: acted on as at a turn's start)
+                session.checkpoint(turn=turn)
+                return 'paused'
             messages.append({'role': 'user', 'content': results})
             if int(usage.get('inputTokens', 0)) >= MAX_INPUT_TOKENS:
                 # The conversation nears what the model takes: checkpoint, and a continuation starts afresh from

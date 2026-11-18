@@ -55,6 +55,8 @@ class FakeRunner:
 @dataclass
 class FakeBoard:
     progress_seen: list[tuple[str, str, str, str]] = field(default_factory=list)
+    #: Each progress report's ``waiting`` (7.54.00: True opens a wait on the lease), beside ``progress_seen``.
+    waiting_seen: list[bool] = field(default_factory=list)
     briefs_asked: list[tuple[str, str]] = field(default_factory=list)
     heartbeats: list[tuple[str, str, str]] = field(default_factory=list)
     moves: list[tuple[str, str, str]] = field(default_factory=list)
@@ -68,8 +70,9 @@ class FakeBoard:
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         self.heartbeats.append((run_id, task_id, agent_id))
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
         self.progress_seen.append((run_id, task_id, agent_id, step))
+        self.waiting_seen.append(waiting)
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None:
         self.moves.append((run_id, task_id, to_state))

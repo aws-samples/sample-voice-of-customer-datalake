@@ -97,6 +97,30 @@ def test_a_message_to_the_run_is_only_written(client):
     assert (sinks.pushed, len(_rows(client))) == ([], 1)
 
 
+@pytest.mark.parametrize(('kind', 'source', 'sender'), [
+    ('task.done', BOARD, 'system'), ('task.failed', BOARD, 'system'), ('task.needs_human', BOARD, 'system'),
+    ('run.agent_timed_out', 'voc.engineering/supervisor', 'supervisor'),
+    ('run.agent_failed', 'voc.engineering/supervisor', 'supervisor')])
+def test_a_notice_the_conductor_acts_on_is_delivered_too(client, kind: str, source: str, sender: str):
+    # (7.54.00) A task of the run ended, or its agent stopped: the coordinator waiting for its agents is told.
+    sinks = Sinks()
+    notice = message(type=kind, task_id='task-2', **{'from': {'kind': sender, 'id': 'board'},
+                                                     'to': {'kind': 'run', 'id': RUN}})
+    assert _route(sinks.router(client), source, notice).status == 'routed'
+    assert [(m.type, m.to.kind, m.task_id, seq) for m, seq in sinks.pushed] == [(kind, 'run', 'task-2', 1)]
+
+
+@pytest.mark.parametrize('changes', [{'type': 'task.progress', 'task_id': 'task-2'},
+                                     {'type': 'task.done', 'task_id': 'coordinate'},
+                                     {'type': 'task.claimed', 'task_id': 'task-2'}],
+                         ids=['progress', 'the-coordinators-own-task', 'claimed'])
+def test_any_other_board_event_to_the_run_is_only_written(client, changes: dict[str, str]):
+    sinks = Sinks()
+    event = message(**changes, **{'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}})
+    assert _route(sinks.router(client), BOARD, event).status == 'routed'
+    assert sinks.pushed == []
+
+
 def test_the_conversation_keeps_order(client):
     router = Sinks().router(client)
     assert _route(router, AGENT_SOURCE, message()).seq == 1

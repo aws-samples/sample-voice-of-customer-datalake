@@ -14,6 +14,7 @@ too big, the notes and plan are cut until it fits.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import secrets
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from engineering.runtime.checkpoints import assert_storable, is_valid
 from engineering.runtime.harness.board_client import BoardRefused
 from engineering.runtime.harness.ports import PAUSE, SAVE, HarnessPortNotWired, Inbox, InboxMessage, Store
 from engineering.runtime.harness.tools import DIRECTION, AgentContext, ToolBox, snapshot
+from engineering.runtime.harness.waiting import PAUSED_WITH_NEWS, TOOL, News
 from engineering.runtime.harness.workspace import OutsideCheckout
 
 DONE_EXIT_CODE: Final = 0
@@ -131,6 +133,22 @@ class AgentSession:
             self.inbox.done(saves)
             self.checkpoint(turn=-1)
         return others, bool(pauses)
+
+    def news(self) -> News:
+        """One look at the inbox for ``wait_for_agents`` (7.54.00: the Converse loop's waiter): ``take_messages``, so
+        the messages it hands out reach the model with the wait's result, and a save or a pause is acted on as at a
+        turn's start."""
+        messages, pause = self.take_messages()
+        return News(messages=tuple(messages), pause=pause)
+
+    def paused_with(self, others: list[InboxMessage]) -> None:
+        """A pause the CLI's or the Kiro adapter's harness acts on (7.54.00), which may end its tool server's
+        ``wait_for_agents`` (the harness is the inbox's one reader there): with news beside it, the wait is closed, as
+        the Converse loop's own wait closes it, so a long wait's hold continues the coordinator at once to read the news
+        (it stays unread for the continuation). Never raising: the pause is the outcome."""
+        if others and any(spec.name == TOOL for spec in self.tools.specs):
+            with contextlib.suppress(Exception):
+                self.context.progress(PAUSED_WITH_NEWS, waiting=False)
 
     def read_direction(self, named: int | None = None) -> InboxMessage | None:
         """The run's direction read again (7.51.00) when ``named`` (an inbox page's version) is newer than the one the

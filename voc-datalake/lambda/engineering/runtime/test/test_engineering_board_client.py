@@ -60,6 +60,15 @@ def test_the_brief_is_the_holders_claim_and_its_epoch_goes_with_every_lease_call
 
 
 
+def test_a_wait_is_opened_and_closed_on_the_lease_by_the_progress_reports_around_it():
+    # (7.54.00: the coordinator's wait_for_agents; the supervisor's wait clocks read it)
+    board = Board([{}, {}])
+    http = BoardHttp(board, RUN, 'task-1', 3)
+    http.progress(RUN, 'task-1', 'coordinator-1', 'waiting for 1 task: Understand and classify', waiting=True)
+    http.progress(RUN, 'task-1', 'coordinator-1', 'done waiting: 1 message(s) (task.done)')
+    assert [(body['op'], body['waiting']) for body in board.sent] == [('progress', True), ('progress', False)]
+
+
 def test_a_task_just_claimed_is_moved_in_progress_by_its_brief():
     claimed = _claimed()
     claimed['task']['state'] = 'claimed'
@@ -348,10 +357,12 @@ def test_the_saved_cursor_never_passes_the_read_cursor():
 
 def test_the_coordinators_planner_lists_posts_and_launches_through_the_board():
     from engineering.runtime.harness.board_client import BoardPlanner
-    board = Board([{'tasks': [{'task_id': 'task-1', 'role': 'hunter', 'title': 'Find it', 'state': 'open', 'attempt': 1}]},
+    board = Board([{'tasks': [{'task_id': 'task-1', 'role': 'hunter', 'title': 'Find it', 'state': 'open', 'attempt': 1},
+                              {'task_id': 'task-0', 'state': 'in_progress', 'agent': 'hunter-2'}]},
                    {'task': {'task_id': 'task-2'}}, {'agent_id': 'fixer-3', 'status': 'booting'}])
     planner = BoardPlanner(board, RUN)
-    assert [task.task_id for task in planner.tasks(run_id=RUN)] == ['task-1']
+    # (each with the agent on it, '' for none: 7.54.00)
+    assert [(task.task_id, task.agent) for task in planner.tasks(run_id=RUN)] == [('task-1', ''), ('task-0', 'hunter-2')]
     assert planner.post(run_id=RUN, role='fixer', title='Fix it', instructions='Read src.', paths=('src',)) == 'task-2'
     assert planner.launch(run_id=RUN, task_id='task-2', role='fixer', language='python', paths=('src',)) == 'fixer-3'
     assert board.sent == [{'op': 'tasks'},

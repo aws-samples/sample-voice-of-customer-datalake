@@ -159,6 +159,68 @@ def test_a_posted_task_wakes_nobody_and_a_conductors_message_wakes_the_coordinat
     assert set(_deliver(world, _for({'kind': 'conductor', 'id': 'conductor'}), 1101)['woken']) == {'coordinator-0'}
 
 
+def _waiting_coordinator(world: World, *, ticked: bool) -> AgentSession:
+    """The run's coordinator, working, on its ``wait_for_agents`` (its lease says it waits): suspended by the tick that
+    saw the wait (``ticked``), or not seen by any tick yet."""
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code=SLEEP)
+    _until(world, 1000, 'working', agent_id='coordinator-0')
+    lease = f'{RUN}/coordinate'
+    world.board.leases[lease] = replace(world.board.leases[lease], waiting=True)
+    if ticked:
+        world.supervisor.tick(1001)
+    return world.session('coordinator-0')
+
+
+def _ended(task_id: str = 'task-9', kind: str = 'task.done') -> dict[str, Any]:
+    """The board's event for one of the run's tasks that ended (to the run, as the board publishes it)."""
+    return _for({'kind': 'run', 'id': RUN}, type=kind, task_id=task_id, refs=None,
+                **{'from': {'kind': 'system', 'id': 'board'}})
+
+
+def test_a_task_that_ended_is_the_conductors_and_wakes_its_waiting_coordinator(world: World):
+    # (7.54.00) The coordinator waits for its agents with its microVM suspended: the task's end is its news.
+    suspended = _waiting_coordinator(world, ticked=True)
+    assert suspended.suspended
+    answer = _deliver(world, _ended(), 1100)
+    assert answer['woken'] == {'coordinator-0': 'working'}
+    [row] = _inbox(world)
+    assert (str(row['sk']).split('#')[1], row['type'], row['task_id']) == ('conductor', 'task.done', 'task-9')
+    woken = world.session('coordinator-0')
+    assert (woken.suspended, woken.woken_at) == (False, 1100)
+    assert world.runtime.state_of(suspended.vm) == 'running'
+    # Kept awake to read it; its harness then closes the wait (the next tick sees no wait, and holds nothing).
+    world.supervisor.tick(1160)
+    assert world.session('coordinator-0').suspended is False
+    world.board.leases[f'{RUN}/coordinate'] = replace(world.board.leases[f'{RUN}/coordinate'], waiting=False)
+    world.renew(1200, agent_id='coordinator-0', task_id='coordinate')
+    world.supervisor.tick(1200)
+    assert (world.session('coordinator-0').suspended, world.session('coordinator-0').wait_since) == (False, None)
+
+
+def test_a_coordinator_whose_wait_no_tick_saw_yet_is_not_suspended_before_it_reads_the_news(world: World):
+    # The wait opened after the last tick, and the agent's task ended before the next one: without the grace that
+    # tick would suspend the coordinator with its news unread, and nothing would wake it again.
+    _waiting_coordinator(world, ticked=False)
+    assert world.session('coordinator-0').wait_since is None
+    _deliver(world, _ended(), 1010)
+    assert world.session('coordinator-0').woken_at == 1010
+    world.supervisor.tick(1020)
+    assert world.session('coordinator-0').suspended is False
+
+
+@pytest.mark.parametrize('kind', ['task.failed', 'task.needs_human'])
+def test_a_task_that_failed_or_needs_a_person_is_the_conductors_too(world: World, kind: str):
+    _waiting_coordinator(world, ticked=True)
+    assert _deliver(world, _ended(kind=kind), 1100)['woken'] == {'coordinator-0': 'working'}
+    assert [str(row['sk']).split('#')[1] for row in _inbox(world)] == ['conductor']
+
+
+def test_the_coordinators_own_task_ending_is_nobodys_inbox(world: World):
+    with pytest.raises(RuntimeRefused, match='has no inbox'):
+        _deliver(world, _ended(task_id='coordinate'), 1100)
+    assert _inbox(world) == []
+
+
 def test_a_message_for_an_agent_not_on_a_wait_gives_it_no_grace(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, 'working')

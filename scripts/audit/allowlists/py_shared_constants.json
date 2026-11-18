@@ -141,6 +141,10 @@
       "reason": "the board pool's trigger bundle ships review_share_audience.py without workspace_ids.py, so it spells the workspace id rule itself; lambda/shared/test/test_review_share_routing.py holds the two rules equal, value by value"
     },
     {
+      "key": "ENDED|TASK_ENDED::lambda/engineering/flow/conductor.py,lambda/engineering/runtime/harness/waiting.py",
+      "reason": "a board task's ended states (board/model.py FINAL) as the coordinator's wait reads them (runtime/harness/waiting.py, 7.54.00): the harness ships in the engineering images without engineering/flow or engineering/board (test_engineering_images.py SHIPPED), so it keeps its own copy; test_engineering_coordinator_wait.py holds it to the board's FINAL"
+    },
+    {
       "key": "PENDING::lambda/engineering/run_requests.py,lambda/shared/assist_jobs.py",
       "reason": "an engineering run request waiting for an administrator (engineering/run_requests.py, 7.53.00) and an assist job its worker has not claimed yet (shared/assist_jobs.py, voc-jobs): the same word for two lifecycles whose states move apart (a request is confirmed, declined or expired; a job runs, then completes or fails)"
     }

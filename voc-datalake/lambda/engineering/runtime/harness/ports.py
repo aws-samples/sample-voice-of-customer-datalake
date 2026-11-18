@@ -59,14 +59,16 @@ class Direction:
 class Board(Protocol):
     """``brief``: the task's brief (refused when the agent does not hold the task's lease). ``heartbeat``: renew the
     lease (once a minute, the supervisor's crash clock). ``progress``: record progress on the task (the lease's last
-    progress, the supervisor's activity clock). ``move``: move the agent's own task on (``done`` when it finishes, with
-    the keys of the outputs it wrote under its own keys, which the board records on the task for the steps after it)."""
+    progress, the supervisor's activity clock); ``waiting`` (7.54.00, the coordinator's ``wait_for_agents``) opens a
+    wait on the lease, which the supervisor holds outside its clocks (its session suspended), and a report without it
+    closes the wait. ``move``: move the agent's own task on (``done`` when it finishes, with the keys of the outputs it
+    wrote under its own keys, which the board records on the task for the steps after it)."""
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief: ...
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None: ...
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None: ...
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None: ...
 
     def move(self, run_id: str, task_id: str, *, to_state: str, result_keys: tuple[str, ...] = ()) -> None: ...
 
@@ -111,6 +113,9 @@ class TaskSummary:
     step: str = ''
     #: The outputs recorded on it when it finished (a fixer's or builder's: its submitted patch).
     result_keys: tuple[str, ...] = ()
+    #: Who works on it (7.54.00): its lease's holder, else the agent launched for it at its attempt; '' for none (a
+    #: posted task no agent was launched for yet, or a re-posted one).
+    agent: str = ''
 
 
 class Planner(Protocol):
@@ -269,8 +274,9 @@ class PendingHarnessPorts:
     def resume(self, cursor: object) -> None:
         raise self._refuse(f'inbox.resume({str(cursor)[:40]})')
 
-    def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
-        raise self._refuse(f'board.progress({run_id}, {task_id}, {agent_id}): {step[:40]}')
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        raise self._refuse(f'board.progress({run_id}, {task_id}, {agent_id}{", waiting" if waiting else ""}): '
+                           f'{step[:40]}')
 
     def tasks(self, *, run_id: str) -> list[TaskSummary]:
         raise self._refuse(f'board.tasks({run_id})')
