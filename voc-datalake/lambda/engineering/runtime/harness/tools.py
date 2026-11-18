@@ -164,6 +164,7 @@ class AgentContext:
         return self.role in CODE_ROLES
 
     def progress(self, step: str) -> None:
+        step = progress_line(step)
         self.status.at(step)
         self.board.progress(self.run_id, self.task_id, self.agent_id, step)
 
@@ -198,9 +199,24 @@ class AgentContext:
         """Report a host write's outcome (made, or unknown) on the task, never raising: the write is past, so a board
         that refuses or cannot be reached now must not crash the session over it (the next progress report, the
         heartbeat or the finish meets it again). The session's own status always has it."""
+        step = progress_line(step)
         self.status.at(step)
         with contextlib.suppress(Exception):
             self.board.progress(self.run_id, self.task_id, self.agent_id, step)
+
+
+#: The board takes a progress step as one line of 1 to 200 characters (``board/store.py`` ``MAX_LINE``), after redacting
+#: credential shapes, which can lengthen it a little: a step is sent as one line of at most this many.
+PROGRESS_MAX: Final = 180
+
+
+def progress_line(step: str) -> str:
+    """``step`` as the board takes it: whitespace (newlines included) collapsed to single spaces, at most
+    ``PROGRESS_MAX`` characters (cut with an ellipsis), never empty. A model's own report (``report_progress``) or a
+    finish summary may be long or span lines; refused, it ended the session with exit 1 (the first live run's
+    understander, 2026-11-18)."""
+    line = ' '.join(str(step).split()) or 'working'
+    return line if len(line) <= PROGRESS_MAX else line[:PROGRESS_MAX - 1].rstrip() + '…'
 
 
 #: What a DATA block's name keeps of its source (a path, a message kind): one line of plain characters.

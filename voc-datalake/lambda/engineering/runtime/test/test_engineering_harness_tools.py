@@ -278,3 +278,22 @@ def test_the_status_report_counts_tokens_per_model(tmp_path):
     report.add_tokens('model-a', 10, 2)
     report.add_tokens('model-a', 5, 1)
     assert json.loads((tmp_path / '.voc' / 'status.json').read_text())['tokens'] == {'model-a': {'in': 15, 'out': 3}}
+
+
+class TestProgressLine:
+    """A progress step reaches the board as one line it takes (1 to 200 characters): the first live run's
+    understander ended with exit 1 on a long, multi-line report_progress step."""
+
+    def test_a_long_multi_line_step_becomes_one_short_line(self):
+        from engineering.runtime.harness.tools import PROGRESS_MAX, progress_line
+        step = 'read the issue\n\nthen ' + 'the divide function floors the result ' * 20
+        line = progress_line(step)
+        assert '\n' not in line
+        assert len(line) <= PROGRESS_MAX < 200
+        assert line.endswith('…')
+        assert line.startswith('read the issue then the divide function')
+
+    def test_a_short_step_is_kept_and_an_empty_one_is_never_sent_empty(self):
+        from engineering.runtime.harness.tools import progress_line
+        assert progress_line('  ran the gate:  3 checks ') == 'ran the gate: 3 checks'
+        assert progress_line('\n \t') == 'working'
