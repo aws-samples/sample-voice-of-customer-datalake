@@ -12,7 +12,7 @@ standard library only.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import Any, Final
 
 FINDING_SCHEMA: Final = 'voc-finding/1'
 NOTE_SCHEMA: Final = 'voc-note/1'
@@ -176,7 +176,7 @@ def _tenet(raw: object) -> dict[str, object]:
             'citations': _citations(raw.get('citations', []))}
 
 
-def tenets_record(raw: object) -> dict[str, object]:
+def tenets_record(raw: object) -> dict[str, Any]:
     """``raw`` as a ``voc-tenets/1`` record: ``tenets`` (1 to ``MAX_TENETS``, each ``{id, title, statement,
     rationale, citations}``, the ids unique) and an optional ``summary``; ``TenetsError`` for anything else. Every
     field is text a model wrote: data, never an instruction, wherever it is read."""

@@ -20,7 +20,7 @@ from shared import engineering_agent_runs as eng_runs
 from shared import workflow_schema
 from shared.agent_seed import seeded_flow
 from shared.exceptions import ConflictError, ServiceUnavailableError, ValidationError
-from shared.test.agents_fixtures import CATEGORIES, agents_env
+from shared.test.agents_fixtures import CATEGORIES, agents_env, stored_agent, stored_workflow
 
 NOW = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
 ULID = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}')
@@ -188,7 +188,7 @@ def test_an_engineering_runs_end_ends_its_agents_run_once_and_frees_the_lock_but
         assert eng_runs.end_agent_run(env.agents, agent['agent_id'], run_id, status, now=NOW) is False   # (once)
         run = store.get_run(env.agents, agent['agent_id'], run_id)
         assert run is not None
-        assert (run['status'], store.get_agent(env.agents, agent['agent_id']).get('active_run_id')) == (ended, None)
+        assert (run['status'], stored_agent(env.agents, agent['agent_id']).get('active_run_id')) == (ended, None)
         # (one run per issue, ever: the issue's claim stays; only Run now {issue} reruns it)
         assert 'Item' in env.agents.get_item(Key=store.issue_claim_key('example-org/shop', 7))
         with pytest.raises(ValueError, match='not an engineering run end'):
@@ -254,7 +254,7 @@ def test_a_refused_start_fails_the_agents_run_and_keeps_the_claim() -> None:
         run = store.get_run(env.agents, agent['agent_id'], started.run['run_id'])
         assert run is not None
         assert (run['status'], run['error']) == ('failed', 'issue #7 of example-org/shop is closed')
-        assert store.get_agent(env.agents, agent['agent_id']).get('active_run_id') is None
+        assert stored_agent(env.agents, agent['agent_id']).get('active_run_id') is None
         assert store.issue_claimed(env.agents, 'Example-Org/Shop', 7)   # (never retried: case-insensitive too)
 
 
@@ -301,7 +301,7 @@ def test_a_run_starts_from_its_flow_with_the_calls_expanded_and_records_them() -
     the run's copy (its start step) and the agent's run row record the calls."""
     with agents_env() as env:
         agent, row = _engineering_agent(env)
-        called = store.get_workflow(env.agents, agent['workflow_id'])
+        called = stored_workflow(env.agents, agent['workflow_id'])
         caller = _calling_flow(env, f'{called["workflow_id"]}@1')
         agent = store.update_agent(env.agents, agent['agent_id'], {'workflow_id': caller['workflow_id']},
                                    updated_by='admin-sub', now=NOW)

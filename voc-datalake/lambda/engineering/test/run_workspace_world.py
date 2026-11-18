@@ -30,7 +30,7 @@ from engineering.flow.record import flow_item
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.transcript import Transcript
 from engineering.runtime.runs import RunStore
-from engineering.runtime.sessions import AgentSession, SessionStore
+from engineering.runtime.sessions import AgentSession, SessionStore, Status
 from shared.workflow_schema import SCHEMA_V2
 
 BUCKET: Final = 'voc-engineering-workspace'
@@ -109,16 +109,19 @@ def triage_definition() -> dict[str, Any]:
     ], 'loops': []}
 
 
+#: The paging fix's hunk as both of its patches have it: the context and the line it removes.
+_LAST_PAGE_BEFORE: Final = """     if not items:
+         return []
+     start = (len(items) - 1) // size * size
+-    return items[start:start + size + 1]
+"""
+
 PATCH: Final = """diff --git a/src/paging.py b/src/paging.py
 index 3b18e51..a9c4f02 100644
 --- a/src/paging.py
 +++ b/src/paging.py
 @@ -10,7 +10,7 @@ def last_page(items, size):
-     if not items:
-         return []
-     start = (len(items) - 1) // size * size
--    return items[start:start + size + 1]
-+    return items[start:start + size]
+""" + _LAST_PAGE_BEFORE + """+    return items[start:start + size]
 
 
  def pages(items, size):
@@ -162,11 +165,7 @@ index 3b18e51..7d2e9a1 100644
 --- a/src/paging.py
 +++ b/src/paging.py
 @@ -10,7 +10,8 @@ def last_page(items, size):
-     if not items:
-         return []
-     start = (len(items) - 1) // size * size
--    return items[start:start + size + 1]
-+    # (work in progress)
+""" + _LAST_PAGE_BEFORE + """+    # (work in progress)
 +    return items[start:start + size]
 
 
@@ -372,7 +371,7 @@ def _task(task_id: str, role: str, title: str, *, state: str, attempt: int, agen
     return item
 
 
-def _session(agent: str, role: str, task: str, attempt: int, status: str, started: float, seconds: int,
+def _session(agent: str, role: str, task: str, attempt: int, status: Status, started: float, seconds: int,
              tokens: dict[str, dict[str, int]], step: str, *, run_id: str = RUN,
              inspect: dict[str, Any] | None = None) -> AgentSession:
     return AgentSession(run_id=run_id, agent_id=agent, role=role, task_id=task, language='python',
@@ -382,6 +381,15 @@ def _session(agent: str, role: str, task: str, attempt: int, status: str, starte
                         tokens=tokens, inspect={'step': step, 'recent_tools': [], 'heartbeat_age': 20, **(inspect or {})})
 
 
+
+def _ended_with_parent(item: dict[str, Any], ended: str, parent: dict[str, str] | None) -> dict[str, Any]:
+    """A run's row (its META, its runs-list row) with when it ended and the run it was restarted from, when given."""
+    if ended:
+        item['ended_at'] = {'S': ended}
+    if parent:
+        item['parent'] = {'M': {name: {'S': value} for name, value in parent.items()}}
+    return item
+
 def _meta(run_id: str, *, status: str, started: str, ended: str = '', goal: str,
           parent: dict[str, str] | None = None, flow: str = FLOW) -> dict[str, Any]:
     item: dict[str, Any] = {
@@ -390,11 +398,7 @@ def _meta(run_id: str, *, status: str, started: str, ended: str = '', goal: str,
         'connection': {'S': 'conn-storefront'}, 'commit': {'S': COMMIT}, 'default_branch': {'S': 'main'},
         'max_tasks': {'N': '20'}, 'task_count': {'N': '4'}, 'msg_seq': {'N': '0'}, 'max_cost_usd': {'S': '50.0'},
         'budget_usd': {'S': '50.0'}, 'budget_alert': {'N': '0'}}
-    if ended:
-        item['ended_at'] = {'S': ended}
-    if parent:
-        item['parent'] = {'M': {name: {'S': value} for name, value in parent.items()}}
-    return item
+    return _ended_with_parent(item, ended, parent)
 
 
 def _listed(run_id: str, *, started: str, status: str, goal: str, ended: str = '',
@@ -402,11 +406,7 @@ def _listed(run_id: str, *, started: str, status: str, goal: str, ended: str = '
     item: dict[str, Any] = {'pk': {'S': f'WS#default#RUNLIST#{MONTH}'}, 'sk': {'S': f'RUN#{started}#{run_id}'},
                             'run_id': {'S': run_id}, 'flow': {'S': flow}, 'goal': {'S': goal}, 'status': {'S': status},
                             'started_at': {'S': started}}
-    if ended:
-        item['ended_at'] = {'S': ended}
-    if parent:
-        item['parent'] = {'M': {name: {'S': value} for name, value in parent.items()}}
-    return item
+    return _ended_with_parent(item, ended, parent)
 
 
 def _failed_run(client: Any, sessions: SessionStore, put: Any) -> None:

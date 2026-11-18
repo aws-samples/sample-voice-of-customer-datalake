@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -20,7 +20,7 @@ from agents.heartbeat import handler as hb
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
 from shared.agent_seed import seeded_flow
-from shared.test.agents_fixtures import CATEGORIES, agents_env
+from shared.test.agents_fixtures import CATEGORIES, agents_env, stored_agent
 
 NOW = datetime(2026, 11, 16, 9, 30, tzinfo=UTC)
 CREATED = NOW - timedelta(days=3)
@@ -68,7 +68,7 @@ def _feedback_table(resource: Any) -> Any:
 
 
 @contextmanager
-def _env(*, owner_admin: bool = True, start: Start | None = None) -> Iterator[tuple[Any, Any, Start]]:
+def _env(*, owner_admin: bool = True, start: Start | None = None) -> Generator[tuple[Any, Any, Start], None, None]:
     client = start or Start()
     with agents_env() as env:
         feedback = _feedback_table(env.resource)
@@ -107,6 +107,12 @@ def _issue(feedback: Any, number: int, *, at: datetime, labels: tuple[str, ...] 
         'category': category, 'dimensions': {'feedback_type': kind},
         'issue_attributes': {'kind': item_kind, 'repo': repo, 'number': Decimal(number), 'state': state,
                              'labels': list(labels), 'author_association': association}})
+
+
+def _found_number(found: eng_runs.IssueRef | None) -> int:
+    """The number of the issue ``find_issue`` found (one is expected)."""
+    assert found is not None
+    return found.number
 
 
 def _review(feedback: Any, feedback_id: str, *, at: datetime, kind: str = 'bug', category: str = 'shipping') -> None:
@@ -161,7 +167,7 @@ class TestFindIssue:
             _issue(feedback, 10, at=NOW - timedelta(hours=1))
             _issue(feedback, 11, at=NOW - timedelta(days=2))
             env.agents.put_item(Item={**store.issue_claim_key(REPO, 11), 'agent_run_id': 'ar_x'})
-            assert issues.find_issue(feedback, env.agents, agent, ISSUE, CONNECTION, NOW).number == 10
+            assert _found_number(issues.find_issue(feedback, env.agents, agent, ISSUE, CONNECTION, NOW)) == 10
 
     def test_a_gitlab_connection_has_no_github_issues(self) -> None:
         with _env() as (env, feedback, _):
@@ -201,7 +207,7 @@ class TestTick:
             _issue(feedback, 42, at=NOW - timedelta(hours=2))
             assert hb.run_heartbeat(_context(), now=NOW)['outcomes'] == {'owner_not_admin': 1}
             assert (_runs(env, agent), client.sent) == ([], [])
-            assert store.get_agent(env.agents, agent['agent_id'])['last_skip_reason'] == 'owner_not_admin'
+            assert stored_agent(env.agents, agent['agent_id'])['last_skip_reason'] == 'owner_not_admin'
             assert not store.issue_claimed(env.agents, REPO, 42)
 
     def test_a_directory_that_cannot_answer_starts_nothing(self) -> None:
@@ -218,7 +224,7 @@ class TestTick:
             env.agents.put_item(Item={**CONNECTION, 'removed': True})
             _issue(feedback, 42, at=NOW - timedelta(hours=2))
             assert hb.run_heartbeat(_context(), now=NOW)['outcomes'] == {'not_set_up': 1}
-            assert store.get_agent(env.agents, agent['agent_id'])['last_skip_reason'] == 'not_set_up'
+            assert stored_agent(env.agents, agent['agent_id'])['last_skip_reason'] == 'not_set_up'
             assert client.sent == []
 
     def test_a_refused_start_fails_the_run_and_keeps_the_issue_claimed(self) -> None:
@@ -273,7 +279,7 @@ class TestReviewsOfItsKind:
                                           'count': Decimal(3)})
             _review(feedback, 'p', at=NOW - timedelta(hours=1), kind='praise')
             assert hb.run_heartbeat(_context(), now=NOW)['outcomes'] == {'no_bug_reports': 1}
-            stored = store.get_agent(env.agents, agent['agent_id'])
+            stored = stored_agent(env.agents, agent['agent_id'])
             assert (stored['last_skip_reason'], stored['threshold_baseline']) == ('no_bug_reports', {'shipping': 3})
             assert client.sent == []
 
@@ -308,7 +314,7 @@ class TestLockHeal:
             finished = store.get_run(env.agents, agent['agent_id'], run['run_id'])
             assert finished is not None
             assert finished['status'] == ended
-            assert store.get_agent(env.agents, agent['agent_id']).get('active_run_id') is None
+            assert stored_agent(env.agents, agent['agent_id']).get('active_run_id') is None
 
 
 class TestTheOwnersRecheck:

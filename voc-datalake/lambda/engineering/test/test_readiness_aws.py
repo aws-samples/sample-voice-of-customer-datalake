@@ -2,6 +2,7 @@
 failed call is ``ReadFailed`` (a check's ``unknown``), never a pass."""
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -99,7 +100,7 @@ def ports(*, agents: Table | None = None, s3: S3 | None = None, quotas: Quotas |
                              engineering_client=client, engineering_table='voc-engineering', s3=s3 or S3(),
                              workspace_bucket='voc-eng-workspace', quotas=lambda: quota, bedrock=lambda: control,
                              inspect=inspect or (lambda _request: {}), watermarks=watermarks,
-                             **({'clock': clock} if clock else {}))
+                             clock=clock or time.monotonic)
 
 
 AVAILABLE = {'regionAvailability': 'AVAILABLE', 'authorizationStatus': 'AUTHORIZED',
@@ -228,31 +229,27 @@ def test_the_attestation_hard_cap_and_spend_reads_fail_as_read_failed() -> None:
     assert fixed.month_spend_usd('wf_1') == Decimal('7.5')
 
 
+@dataclass
+class ItemClient:
+    """The engineering table's low-level client for one row's reads: every GetItem answers ``item``, each recorded."""
+
+    item: dict[str, Any]
+    asked: list[dict[str, Any]] = field(default_factory=list)
+
+    def get_item(self, **request: Any) -> dict[str, Any]:
+        self.asked.append(request)
+        return {'Item': self.item}
+
+
 def test_the_knowledge_pack_counter_is_read_by_its_key() -> None:
-    @dataclass
-    class Client:
-        asked: list[dict[str, Any]] = field(default_factory=list)
-
-        def get_item(self, **request: Any) -> dict[str, Any]:
-            self.asked.append(request)
-            return {'Item': {'approved_version': {'N': '4'}}}
-
-    client = Client()
+    client = ItemClient({'approved_version': {'N': '4'}})
     assert ports(client=client).knowledge_approved('shop') == 4
     assert client.asked[0]['Key'] == {'pk': {'S': 'WS#default#REPO#shop'}, 'sk': {'S': 'KPACK#=2E'}}
     assert ports(client=client).knowledge_approved('not a connection') == 0
 
 
 def test_the_accepted_tenets_and_the_docs_rendering_are_read_by_their_keys() -> None:
-    @dataclass
-    class Client:
-        asked: list[dict[str, Any]] = field(default_factory=list)
-
-        def get_item(self, **request: Any) -> dict[str, Any]:
-            self.asked.append(request)
-            return {'Item': {'accepted_version': {'N': '2'}, 'version': {'N': '5'}}}
-
-    client = Client()
+    client = ItemClient({'accepted_version': {'N': '2'}, 'version': {'N': '5'}})
     assert ports(client=client).tenets_accepted('shop') == 2
     assert ports(client=client).knowledge_rendering('shop') == 5
     assert [ask['Key']['sk']['S'] for ask in client.asked] == ['TENETS', 'KDOCS']

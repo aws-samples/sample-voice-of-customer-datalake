@@ -28,6 +28,7 @@ and writes the right row, but a mutation run found what they cannot see:
 """
 import json
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import ClassVar
@@ -78,12 +79,15 @@ def _entry(days_old: int, now: datetime | None = None) -> dict:
     return {'resolved_at': ((now or datetime.now(UTC)) - timedelta(days=days_old)).isoformat()}
 
 
-@pytest.fixture
-def table():
+def aggregates_mock() -> Iterator[MagicMock]:
+    """The handler's aggregates table as a MagicMock that stores nothing: a suite's ``table`` fixture."""
     mock = MagicMock()
     mock.get_item.return_value = {}
     with patch.object(settings_handler, 'aggregates_table', mock):
         yield mock
+
+
+table = pytest.fixture(aggregates_mock, name='table')
 
 
 @pytest.fixture

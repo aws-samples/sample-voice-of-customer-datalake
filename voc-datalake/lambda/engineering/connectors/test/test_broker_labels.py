@@ -19,7 +19,7 @@ from engineering.connectors.broker import (
     permitted,
 )
 from engineering.connectors.handler import handle
-from engineering.connectors.hosts import WRITE_UNKNOWN, OutcomeUnknown, WriteClaim
+from engineering.connectors.hosts import WRITE_UNKNOWN, Dial, OutcomeUnknown, WriteClaim, WriteLedger
 from engineering.connectors.identity import AGENT_ROLES, Caller
 from engineering.connectors.test.fakes import (
     ACCOUNT,
@@ -41,9 +41,10 @@ UNDERSTANDER = Caller(role='understander', run_id=RUN, agent_index=1)
 LABELS = ('voc-triage/bug', 'voc-severity/s2')
 
 
-def broker(host: FakeHost | None = None, **kwargs: object) -> tuple[Broker, FakeHost]:
+def broker(host: FakeHost | None = None, *, runs: FakeRuns | None = None, dial: Dial | None = None,
+           writes: WriteLedger | None = None) -> tuple[Broker, FakeHost]:
     host = host or FakeHost()
-    return Broker(connector(host=host, **kwargs)), host   # type: ignore[arg-type]
+    return Broker(connector(host=host, runs=runs, dial=dial, writes=writes)), host
 
 
 def test_the_understander_labels_its_runs_issue_with_the_triage_labels() -> None:

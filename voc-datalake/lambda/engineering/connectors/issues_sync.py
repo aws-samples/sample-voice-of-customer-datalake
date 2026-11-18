@@ -385,7 +385,7 @@ class IssuesFollow:
             logger.warning('engineering issues label not ensured', extra={
                 'connection_id': connection.get('connection_id'), 'kind': refused.kind})
             return 'failed'
-        return 'created' if isinstance(answer, Mapping) and answer.get('created') is True else 'present'
+        return 'created' if answer.get('created') is True else 'present'
 
     def _labels(self, connections: Sequence[Mapping[str, Any]], rows: Mapping[str, Mapping[str, Any]],
                 actor: Actor) -> list[dict[str, str]]:

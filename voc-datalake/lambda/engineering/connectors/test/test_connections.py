@@ -11,7 +11,6 @@ from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives import serialization
@@ -52,6 +51,7 @@ from engineering.connectors.test.app_keys import (
     pem,
     private_key,
 )
+from engineering.connectors.test.connections_aws import connections_aws
 from shared.engineering_agent_runs import connection_row
 
 PREFIX = '/voc/engineering/'
@@ -85,17 +85,11 @@ class Env:
         return self.ssm.get_parameter(Name=f'{PREFIX}{connection_id}', WithDecryption=True)['Parameter']
 
 
+
 @pytest.fixture
 def env() -> Iterator[Env]:
     with mock_aws():
-        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-        table = dynamodb.create_table(
-            TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-            AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                  {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        key_id = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
-        yield Env(table, boto3.client('ssm', region_name='us-east-1'), key_id)
+        yield Env(*connections_aws(TABLE))
 
 
 def save(env: Env, connection_id: str = 'refunds', **change: Any) -> tuple[dict[str, Any], bool]:

@@ -195,6 +195,17 @@ def _paused(tmp_path: Path) -> tuple[World, Path, dict[str, Any]]:
     return w, log, states[-1]
 
 
+
+def _continuing(tmp_path: Path) -> World:
+    """A new process's session continuing the paused one (``_paused``, in ``first``) from its checkpoint, its store
+    holding what the first one saved."""
+    first, _, state = _paused(tmp_path / 'first')
+    w = world(tmp_path / 'second')
+    _transcribed(w)
+    w.store.objects.update(first.store.objects)
+    w.session.restored = state
+    return w
+
 def test_a_pause_cancels_the_turn_ends_kiro_and_saves_its_session_with_the_checkpoint(tmp_path):
     w, log, last = _paused(tmp_path)
     assert _received(log, 'session/cancel') == [{'jsonrpc': '2.0', 'method': 'session/cancel',
@@ -210,11 +221,7 @@ def test_a_pause_cancels_the_turn_ends_kiro_and_saves_its_session_with_the_check
 
 
 def test_a_continuation_loads_the_saved_session_by_its_id_in_a_new_process(tmp_path):
-    first, _, state = _paused(tmp_path / 'first')
-    w = world(tmp_path / 'second')
-    _transcribed(w)
-    w.store.objects.update(first.store.objects)
-    w.session.restored = state
+    w = _continuing(tmp_path)
     binary, log = _fake(tmp_path / 'second', {'turns': [[_finish()]]})
     assert _adapter(binary, w).run(w.session) == 'done'
     assert _received(log, 'session/load')[0]['params']['sessionId'] == 'sess_fake-1'
@@ -229,11 +236,7 @@ def test_a_continuation_loads_the_saved_session_by_its_id_in_a_new_process(tmp_p
 
 
 def test_a_session_kiro_cannot_load_opens_a_new_one_from_the_checkpoints_notes(tmp_path):
-    first, _, state = _paused(tmp_path / 'first')
-    w = world(tmp_path / 'second')
-    _transcribed(w)
-    w.store.objects.update(first.store.objects)
-    w.session.restored = state
+    w = _continuing(tmp_path)
     w.session.notes = 'parser half done'
     binary, log = _fake(tmp_path / 'second', {'turns': [[_finish()]], 'load_session': False})
     assert _adapter(binary, w).run(w.session) == 'done'

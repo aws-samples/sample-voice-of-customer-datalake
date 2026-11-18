@@ -7,12 +7,12 @@
 * ``POST /settings/model/test`` with a GPT model sends the mantle probe (shared/web_search_model_probe.py), never
   the Converse one, and only while the surface is offered.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from handler_events_fixtures import call_route
+from test_settings_handler_mutation import aggregates_mock
 
-import settings_handler
 from settings_handler import lambda_handler
 from shared.model_config import ALLOWED_MODEL_IDS, WEB_SEARCH_MODEL_IDS, WEB_SEARCH_MODELS
 
@@ -21,12 +21,7 @@ SOL = 'openai.gpt-5.6-sol'
 SONNET55 = 'global.anthropic.claude-sonnet-5-5'
 
 
-@pytest.fixture
-def table():
-    mock = MagicMock()
-    mock.get_item.return_value = {}
-    with patch.object(settings_handler, 'aggregates_table', mock):
-        yield mock
+table = pytest.fixture(aggregates_mock, name='table')
 
 
 @pytest.fixture

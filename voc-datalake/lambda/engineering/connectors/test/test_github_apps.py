@@ -13,7 +13,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-import boto3
 import pytest
 from moto import mock_aws
 
@@ -41,6 +40,7 @@ from engineering.connectors.github_apps import (
 )
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.test.app_keys import connection_body, pem, private_key
+from engineering.connectors.test.connections_aws import connections_aws
 from engineering.connectors.transport import Response
 
 PREFIX = '/voc/engineering/'
@@ -143,13 +143,7 @@ class Env:
 @pytest.fixture
 def env() -> Iterator[Env]:
     with mock_aws():
-        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-            AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                  {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        key_id = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
-        yield Env(table, boto3.client('ssm', region_name='us-east-1'), key_id)
+        yield Env(*connections_aws(TABLE))
 
 
 def state_of(url: str) -> str:

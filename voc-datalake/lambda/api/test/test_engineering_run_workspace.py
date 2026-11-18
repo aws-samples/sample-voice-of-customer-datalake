@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import call as _call
-from engineering_run_workspace_fixture import CHILD_ID, FIXTURE, Bus, Lambdas, answers, workspace_api
+from engineering_run_workspace_fixture import CHILD_ID, FIXTURE, Bus, Lambdas, answers, reached
 
 from engineering.test import run_workspace_world as world
 from engineering.thread_items import is_thread_item
@@ -30,10 +29,7 @@ READS = ('/agents/engineering/runs', f'{FIXER}/thread', f'{FIXER}/thread/c5', f'
 ACTIONS = (f'{BASE}/steer', f'{BASE}/restart')
 
 
-@pytest.fixture
-def api() -> Iterator[tuple[Any, Bus, Lambdas]]:
-    with workspace_api() as reached:
-        yield reached
+api = pytest.fixture(reached, name='api')
 
 
 @pytest.mark.usefixtures('api')

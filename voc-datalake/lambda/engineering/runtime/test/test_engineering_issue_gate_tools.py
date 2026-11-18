@@ -11,6 +11,7 @@ from engineering.runtime.harness import role_tools
 from engineering.runtime.harness.issues import COMMENT_HEAD, issue_comment
 from engineering.runtime.outputs import TRIAGE_SCHEMA
 from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, opened, world
+from engineering.runtime.test.test_engineering_role_skills import reviewer_commented
 
 TREE = 'e' * 40
 
@@ -69,9 +70,7 @@ def test_the_understanders_comment_is_each_line_a_code_span_under_the_platforms_
     with pytest.raises(ValueError, match='no line'):
         issue_comment(' \n ')
     # The PR reviewer's comment is on the run's pull request, as written.
-    reviewer = world(tmp_path / 'reviewer', role='pr-reviewer')
-    reviewer.session.tools.call('post_comment', {'number': 7, 'body': 'One blocking finding.'})
-    assert reviewer.broker.writes[0][3] == {'on': 'pull_request', 'number': 7, 'body': 'One blocking finding.'}
+    reviewer_commented(tmp_path)
 
 
 def test_the_understander_labels_its_issue_with_the_allowlist_only(tmp_path: Any) -> None:
@@ -86,26 +85,11 @@ def test_the_understander_labels_its_issue_with_the_allowlist_only(tmp_path: Any
                                 {'number': 1, 'labels': ['voc-triage/bug', 'voc-severity/s2']})]
 
 
-class Listing:
-    """The workspace bucket's run prefix as the agent's role lists and reads it."""
-
-    def __init__(self, store: Any) -> None:
-        self.store = store
-        self.prefixes: list[str] = []
-
-    def list(self, prefix: str, token: str | None = None) -> dict[str, Any]:
-        del token
-        self.prefixes.append(prefix)
-        return {'Contents': [{'Key': key, 'LastModified': f'2026-11-16T10:00:{n:02d}Z'}
-                             for n, key in enumerate(sorted(self.store.objects)) if key.startswith(prefix)]}
-
-
 def _final_go(tmp_path: Any) -> Any:
+    """A final go's session on the tree it judges, and its store (which lists the run's prefix as its role does)."""
     w = world(tmp_path, role='final-go')
     w.session.context.gate_tree = TREE
-    listing = Listing(w.store)
-    w.store.list = listing.list   # type: ignore[attr-defined]
-    return w, listing
+    return w, w.store
 
 
 def test_the_final_go_reads_the_gate_runners_records_of_the_tree_it_judges(tmp_path: Any) -> None:

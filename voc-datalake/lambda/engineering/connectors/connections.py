@@ -756,18 +756,8 @@ class ConnectionStore:
                undo: Callable[[], None] | None = None, extra: Sequence[Mapping[str, Any]] = ()) -> None:
         """The row and its audit row in one transaction, the row conditioned on the version read (``extra``: the
         attestation's void, when the change voids it)."""
-        if before is None:
-            condition: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(sk)'}
-        else:
-            condition = {'ConditionExpression': '#version = :version', 'ExpressionAttributeNames': {'#version': 'version'},
-                         'ExpressionAttributeValues': {':version': before.get('version', 0)}}
         try:
-            self._table.meta.client.transact_write_items(TransactItems=[
-                {'Put': {'TableName': self._table.name, 'Item': dict(item), **condition}},
-                {'Put': {'TableName': self._table.name, 'Item': dict(audit),
-                         'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
-                *(dict(write) for write in extra),
-            ])
+            put_with_audit(self._table, item, before, audit, extra)
         except (ClientError, BotoCoreError) as error:
             if undo is not None:
                 try:
@@ -811,6 +801,21 @@ def audit_row(about: Mapping[str, str], action: str, changes: Mapping[str, Any],
            'changes': dict(changes), 'by': _name(actor.subject), 'by_name': _name(actor.name), 'at': at,
            'version': version}
     return {**row, 'reason': reason} if reason else row
+
+
+def put_with_audit(table: Any, item: Mapping[str, Any], before: Mapping[str, Any] | None, audit: Mapping[str, Any],
+                   extra: Sequence[Mapping[str, Any]] = ()) -> None:
+    """``item`` (a new row when ``before`` is None, else conditioned on the version ``before`` read) and its audit row
+    (``audit_row``) in one transaction, with ``extra``'s writes; botocore's errors raised as they come."""
+    condition: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(sk)'} if before is None else {
+        'ConditionExpression': '#version = :version', 'ExpressionAttributeNames': {'#version': 'version'},
+        'ExpressionAttributeValues': {':version': before.get('version', 0)}}
+    table.meta.client.transact_write_items(TransactItems=[
+        {'Put': {'TableName': table.name, 'Item': dict(item), **condition}},
+        {'Put': {'TableName': table.name, 'Item': dict(audit),
+                 'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
+        *(dict(write) for write in extra),
+    ])
 
 
 def display_name(text: str) -> str:

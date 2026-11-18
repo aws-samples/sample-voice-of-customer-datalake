@@ -53,14 +53,12 @@ loads in a bundle without it (the module off).
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from aws_lambda_powertools.event_handler import Response, content_types
 from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -78,6 +76,8 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.route_answers import json_response as _json
+from shared.route_answers import query_text
 from shared.workflow_engineering import AGENT_REF, CARD_REF, GATE_AGENTS, SCHEMA_V2
 
 __all__ = ['app', 'card_issues']
@@ -90,13 +90,8 @@ _STATUS: Final = {'invalid': ValidationError, 'not_found': NotFoundError, 'confl
 app = Router()
 
 
-def _json(status: int, body: Mapping[str, Any]) -> Response:
-    return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
-
-
 def _query(name: str) -> str | None:
-    value = (app.current_event.query_string_parameters or {}).get(name)
-    return value if isinstance(value, str) else None
+    return query_text(app.current_event, name)
 
 
 def _engineering_on() -> None:

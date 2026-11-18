@@ -25,6 +25,9 @@ class FakePlanner:
     #: The plan the board's ``flow`` op answers (None: a run without a flow), and each step recorded.
     plan: dict[str, Any] | None = None
     recorded: list[dict[str, Any]] = field(default_factory=list)
+    #: The steering relayed (``(to_kind, to_id, text)``) and each direction set, in turn.
+    relayed: list[tuple[str, str, str]] = field(default_factory=list)
+    directions: list[str] = field(default_factory=list)
 
     def tasks(self, *, run_id: str) -> list[TaskSummary]:
         assert run_id
@@ -48,6 +51,16 @@ class FakePlanner:
         self.launched.append({'run_id': run_id, 'task_id': task_id, 'role': role, 'language': language,
                               'paths': paths})
         return f'{role}-1'
+
+    def steer(self, *, run_id: str, to_kind: str, to_id: str, text: str) -> str:
+        del run_id
+        self.relayed.append((to_kind, to_id, text))
+        return 'E-RELAY'
+
+    def set_direction(self, *, run_id: str, text: str) -> int:
+        del run_id
+        self.directions.append(text)
+        return len(self.directions)
 
 
 @dataclass

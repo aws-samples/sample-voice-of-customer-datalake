@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -85,8 +85,8 @@ def _opened(raw: bytes) -> dict[str, Any]:
     result = parsed.get('result') if isinstance(parsed, dict) else None
     pr = result.get('pr') if isinstance(result, dict) else None
     number, url = (pr.get('number'), pr.get('url')) if isinstance(pr, dict) else (None, None)
-    if (not isinstance(result, dict) or not isinstance(number, int) or isinstance(number, bool) or number < 1
-            or not isinstance(url, str) or not _URL.fullmatch(url)):
+    if (not isinstance(result, dict) or not isinstance(pr, dict) or not isinstance(number, int)
+            or isinstance(number, bool) or number < 1 or not isinstance(url, str) or not _URL.fullmatch(url)):
         raise DocsUnavailable('the broker answered no pull request')
     return {'status': 'repeated' if result.get('repeated') is True else 'opened',
             'pr': {'number': number, 'url': url, 'branch': str(pr.get('branch', ''))},
@@ -94,7 +94,7 @@ def _opened(raw: bytes) -> dict[str, Any]:
             'draft': result.get('draft') is True}
 
 
-def publish(event: Mapping[str, Any], broker: BrokerDocs) -> dict[str, Any]:
+def publish(event: Mapping[str, Any], broker: Callable[[Mapping[str, object]], bytes]) -> dict[str, Any]:
     """The action (the module's doc)."""
     args = request_args(event)
     try:

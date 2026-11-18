@@ -2,20 +2,18 @@
 the template ("Template updated")."""
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
 
 import pytest
 
-from engineering.board.test.table import TABLE, engineering_table
+from engineering.board.test.table import TABLE
 from engineering.knowledge.store import Actor
 from engineering.runtime.harness.skills import SKILLS
 from engineering.skills.actions import SkillActions
 from engineering.skills.model import Reason
 from engineering.skills.store import SHARED, SkillForbidden, SkillStore
 from engineering.skills.templates import TemplateSkill
-from engineering.skills.test.fixtures import stricter
+from engineering.skills.test.fixtures import skill_store, stricter
 from engineering.skills.views import SkillViews, template_view
 
 WS = 'default'
@@ -23,10 +21,7 @@ ADMIN = Actor('admin-sub-1', 'person', admin=True)
 FIXER = TemplateSkill('fixer', SKILLS['fixer'].version, SKILLS['fixer'])
 
 
-@pytest.fixture
-def store() -> Iterator[SkillStore]:
-    with engineering_table() as client:
-        yield SkillStore(client, TABLE, now=lambda: datetime(2026, 11, 16, tzinfo=UTC))
+store = pytest.fixture(skill_store, name='store')
 
 
 def test_a_template_seeds_the_shared_skill_once_accepted_and_named_as_a_templates(store: SkillStore) -> None:

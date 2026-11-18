@@ -324,6 +324,13 @@ def _dockerfile(language: str) -> str:
     return (IMAGES / language / 'Dockerfile').read_text()
 
 
+def installed(script: str, language: str) -> tuple[str, str]:
+    """The version and checksum ``language``'s image runs its ``script`` (``install-node.sh``, …) with."""
+    found = re.search(rf'{re.escape(script)} (\S+) (\S+) ', _dockerfile(language))
+    assert found is not None
+    return found.group(1), found.group(2)
+
+
 def _copy_sources(dockerfile: str) -> list[str]:
     """The build-context paths an image's ``COPY`` lines name (continued lines joined; never a ``--from`` stage)."""
     sources: list[str] = []
@@ -406,8 +413,7 @@ def test_each_images_toolchains_are_exactly_its_gate_packs_pinned_never_floating
 
 
 def test_the_python_and_rust_images_install_one_checked_node_tarball():
-    found = {re.search(r'install-node\.sh (\S+) (\S+) ', _dockerfile(language)).groups()  # type: ignore[union-attr]
-             for language in ('python', 'rust')}
+    found = {installed('install-node.sh', language) for language in ('python', 'rust')}
     ((version, sha256),) = found
     assert EXACT.fullmatch(version)
     assert re.fullmatch(r'[0-9a-f]{64}', sha256)

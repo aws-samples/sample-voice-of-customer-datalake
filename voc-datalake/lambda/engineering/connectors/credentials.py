@@ -159,22 +159,27 @@ def _ssm() -> Any:
     return boto3.client('ssm')
 
 
-class AppKeys:
-    """The deployment's GitHub Apps' keys from SSM (``{prefix}_github-app/<app_id>/key``), each kept ``CACHE_SECONDS``
-    in this container: the reader of a connection that references its App's key, and the token function's
-    (``app_tokens.py``)."""
+class _CachedParameters[T]:
+    """SSM parameters under ``prefix`` read through ``client``, each answer kept ``CACHE_SECONDS`` (by ``clock``) in
+    this container."""
 
     def __init__(self, prefix: str, client: Callable[[], Any] = _ssm,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self._prefix = prefix
         self._client = client
         self._clock = clock
-        self._keys: dict[str, tuple[float, rsa.RSAPrivateKey]] = {}
+        self._cache: dict[str, tuple[float, T]] = {}
+
+
+class AppKeys(_CachedParameters[rsa.RSAPrivateKey]):
+    """The deployment's GitHub Apps' keys from SSM (``{prefix}_github-app/<app_id>/key``), each kept ``CACHE_SECONDS``
+    in this container: the reader of a connection that references its App's key, and the token function's
+    (``app_tokens.py``)."""
 
     def get(self, app_id: str) -> rsa.RSAPrivateKey:
         """App ``app_id``'s key; ``NoConnection`` when it cannot be read, ``CredentialUnusable`` when it is not that
         App's (each logged by the App's id and the AWS error code only)."""
-        cached = self._keys.get(app_id)
+        cached = self._cache.get(app_id)
         if cached is not None and self._clock() < cached[0]:
             return cached[1]
         try:
@@ -187,19 +192,16 @@ class AppKeys:
         except CredentialUnusable:
             logger.warning('engineering GitHub App key unusable', extra={'app_id': app_id})
             raise
-        self._keys[app_id] = (self._clock() + CACHE_SECONDS, key)
+        self._cache[app_id] = (self._clock() + CACHE_SECONDS, key)
         return key
 
 
-class ParameterStoreCredentials:
+class ParameterStoreCredentials(_CachedParameters[Credential]):
     """The connections' credentials from SSM, each kept ``CACHE_SECONDS`` in this container."""
 
     def __init__(self, prefix: str, client: Callable[[], Any] = _ssm,
                  clock: Callable[[], float] = time.monotonic) -> None:
-        self._prefix = prefix
-        self._client = client
-        self._clock = clock
-        self._cache: dict[str, tuple[float, Credential]] = {}
+        super().__init__(prefix, client, clock)
         #: The deployment's GitHub Apps' keys a reference names, kept as long.
         self._app_keys = AppKeys(prefix, client, clock)
 

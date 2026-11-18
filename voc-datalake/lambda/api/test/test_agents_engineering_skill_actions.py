@@ -17,12 +17,21 @@ from unittest.mock import patch
 import pytest
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import call as _call
-from engineering_skills_fixtures import CONN, DELEGATED_ADMIN, OTHER, PERSON, WS, engineering_skills, propose_as_coach
+from engineering_skills_fixtures import (
+    CONN,
+    DELEGATED_ADMIN,
+    OTHER,
+    PERSON,
+    WS,
+    SkillsEnv,
+    engineering_skills,
+    propose_as_coach,
+)
 
 from engineering.board.test.table import TABLE
 from engineering.knowledge.store import Actor
 from engineering.skills.model import Reason
-from engineering.skills.store import SHARED, SkillRef, SkillStore
+from engineering.skills.store import SHARED, SkillRef
 from engineering.skills.test.fixtures import content, stricter
 
 VERSIONS = '/agents/engineering/skills/fixer/versions'
@@ -34,15 +43,10 @@ SECRET = 'AKIA' + 'Z' * 16
 
 
 @dataclass
-class Env:
-    client: Any
-    skills: SkillStore
-
+class Env(SkillsEnv):
     def shared(self, proposals: int = 1) -> None:
         """The shared Fixer v1, accepted, and ``proposals`` people's proposals on it (v2, v3, ...)."""
-        first = self.skills.propose_version(WS, SHARED, 'fixer', content(), proposer=PERSON, base=None,
-                                            reason=Reason(comment='The first Fixer skill.'))
-        self.skills.accept_version(WS, SHARED, 'fixer', first.version.version, PERSON)
+        super().shared()
         for n in range(proposals):
             self.skills.propose_version(WS, SHARED, 'fixer', content(stricter().instructions + f'\nRule {n}.'),
                                         proposer=PERSON, base=SkillRef(SHARED, 1), reason=Reason(comment=f'Rule {n}.'))

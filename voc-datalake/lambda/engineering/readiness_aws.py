@@ -327,7 +327,8 @@ def agent_subject(agent: Mapping[str, Any], workflow: Mapping[str, Any] | None, 
     whose way of working its runs follow (the administrator who enabled it, else the one asking: who would enable
     it), by their username."""
     from shared import workflow_schema
-    settings = agent.get('engineering') if isinstance(agent.get('engineering'), Mapping) else {}
+    engineering = agent.get('engineering')
+    settings: Mapping[str, Any] = engineering if isinstance(engineering, Mapping) else {}
     definition = workflow_schema.decode_definition((workflow or {}).get('definition')) or {}
     trigger = next((trigger for trigger in agent.get('triggers') or []
                     if isinstance(trigger, Mapping) and trigger.get('kind') == 'github_issue'), None)
@@ -342,7 +343,8 @@ def agent_subject(agent: Mapping[str, Any], workflow: Mapping[str, Any] | None, 
 
 def template_subject(template: Mapping[str, Any], asker: str, asker_name: str = '') -> Subject:
     """A flow template as readiness reads it, on no connection nor language (``readiness.preview`` names them)."""
-    definition = template.get('definition') if isinstance(template.get('definition'), Mapping) else {}
+    declared = template.get('definition')
+    definition: Mapping[str, Any] = declared if isinstance(declared, Mapping) else {}
     budget = _budget(definition) if 'budget' in definition else _budget({'budget': template.get('budget')})
     return Subject(kind='flow', id=str(template.get('template_id', '')), name=str(template.get('name', '')),
                    definition=definition, person=asker, person_name=asker_name,

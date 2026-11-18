@@ -82,6 +82,7 @@ from engineering.connectors.connections import (
     is_branch_name,
     parse_reason,
     partition_rows,
+    put_with_audit,
 )
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.transport import DEFAULT_RETRY_SECONDS, HttpsTransport, Transport, asked_wait, dig, json_of
@@ -325,7 +326,9 @@ class SetupStates:
             row = self._table.get_item(Key=self._key(raw), ConsistentRead=True).get('Item')
         except (ClientError, BotoCoreError):
             raise ConnectionRefused('unavailable', 'the step could not be checked: try again') from None
-        mine = (row is not None and row.get('subject') == actor.subject and row.get('purpose') == purpose
+        if row is None:
+            raise _invalid(STATE_REFUSED)
+        mine = (row.get('subject') == actor.subject and row.get('purpose') == purpose
                 and int(row.get('expires_at', 0)) > now and row.get('used_at') is not None)
         if mine and isinstance(row.get('outcome'), dict):
             return Claim(row, replay=True)
@@ -554,15 +557,8 @@ class GitHubApps:
                              refusal='the App\'s key could not be removed: remove it again')
 
     def _write(self, item: Mapping[str, Any], before: Mapping[str, Any] | None, audit: Mapping[str, Any]) -> None:
-        condition: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(sk)'} if before is None else {
-            'ConditionExpression': '#version = :version', 'ExpressionAttributeNames': {'#version': 'version'},
-            'ExpressionAttributeValues': {':version': before.get('version', 0)}}
         try:
-            self._table.meta.client.transact_write_items(TransactItems=[
-                {'Put': {'TableName': self._table.name, 'Item': dict(item), **condition}},
-                {'Put': {'TableName': self._table.name, 'Item': dict(audit),
-                         'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
-            ])
+            put_with_audit(self._table, item, before, audit)
         except (ClientError, BotoCoreError) as error:
             logger.warning('engineering GitHub App not recorded',
                            extra={'app_id': item.get('app_id'), 'error_code': error_code(error)})

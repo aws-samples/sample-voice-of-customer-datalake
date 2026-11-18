@@ -53,7 +53,6 @@ imported inside each route.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Callable, Mapping
@@ -62,7 +61,6 @@ from datetime import UTC, datetime
 from functools import cache
 from typing import Any, Final
 
-from aws_lambda_powertools.event_handler import Response, content_types
 from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -80,6 +78,7 @@ from shared.logging import logger, tracer
 from shared.project_access import Caller, claims_from_event, delegated_engineering_allowed, mcp_via
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.route_answers import json_response as _json
 
 __all__ = ['app']
 
@@ -127,13 +126,9 @@ def _engineering_caller(op: str | None = None) -> Caller:
 def _query(name: str) -> str | None:
     params = app.current_event.query_string_parameters or {}
     value = params.get(name)
-    if value is not None and (not isinstance(value, str) or len(value) > MAX_QUERY_TEXT):
+    if value is not None and len(value) > MAX_QUERY_TEXT:
         raise ValidationError(f'{name} is at most {MAX_QUERY_TEXT} characters')
     return value
-
-
-def _json(status: int, body: Mapping[str, Any] | list[Any]) -> Response:
-    return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
 
 
 def _tables(op: str | None = None) -> tuple[str, str]:

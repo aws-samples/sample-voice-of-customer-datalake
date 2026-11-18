@@ -89,7 +89,7 @@ def parse_request(event: object) -> tuple[str, dict[str, Any]]:
     action = event.get('action') if isinstance(event, Mapping) else None
     if not isinstance(event, Mapping) or not isinstance(action, str) or action not in FIELDS:
         raise IssuesConfigRefused(f'this function takes {FOLLOW!r}, {UNFOLLOW!r} or {STATUS!r} only')
-    if set(event) != FIELDS[action]:
+    if frozenset(event) != FIELDS[action]:
         raise IssuesConfigRefused(f'the request is {{{", ".join(sorted(FIELDS[action]))}}}')
     arguments = {key: event[key] for key in sorted(FIELDS[action] - {'action'})}
     for key, value in arguments.items():

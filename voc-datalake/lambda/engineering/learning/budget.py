@@ -11,7 +11,7 @@ cost cap bounds nothing here (its tokens are still counted). A cost record (D5):
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -64,16 +64,22 @@ class LearnBudget:
         at = self.clock()
         run = self.runs.get(run_id)
         where = Where(run_id=run_id, agent_id=LEARN_AGENT, flow=run.flow if run else '', repo=run.repo if run else '')
-        name = self.table.name
-        items = [{'Update': {
-            'TableName': name, 'Key': {'pk': run_pk(run_id), 'sk': LEARN_SPEND_SK},
+        spent_with_ledger(self.table, {
+            'Key': {'pk': run_pk(run_id), 'sk': LEARN_SPEND_SK},
             'UpdateExpression': 'ADD tokens_in :in, tokens_out :out, cost_usd :usd SET updated_at = :at, '
                                 'updated_by = :by, kind = :kind',
             'ExpressionAttributeValues': {':in': tokens_in, ':out': tokens_out, ':usd': usd,
-                                          ':at': at.isoformat(), ':by': WRITER, ':kind': 'learn_spend'}}},
-            *ledger_updates(name, at, where, {model: Usage(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)})]
-        self.table.meta.client.transact_write_items(TransactItems=items)
+                                          ':at': at.isoformat(), ':by': WRITER, ':kind': 'learn_spend'}},
+            at, where, {model: Usage(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)})
         return usd
+
+
+def spent_with_ledger(table: Any, spend_update: Mapping[str, Any], at: datetime, where: Where,
+                      usage: Mapping[str, Usage]) -> None:
+    """``spend_update`` (the ``Update`` of a Learn call's own spend row, without its table) and the spend ledger's
+    rows for ``usage``, in one transaction."""
+    table.meta.client.transact_write_items(TransactItems=[
+        {'Update': {'TableName': table.name, **spend_update}}, *ledger_updates(table.name, at, where, usage)])
 
 
 @dataclass(frozen=True)
@@ -82,7 +88,7 @@ class MeteredCoachModel:
     coach then refuses is counted too."""
 
     model: CoachModel
-    on_reply: Callable[[CoachReply], None]
+    on_reply: Callable[[CoachReply], object]
 
     def __call__(self, system: str, prompt: str) -> CoachReply:
         reply = self.model(system, prompt)

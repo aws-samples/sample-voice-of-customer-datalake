@@ -779,9 +779,9 @@ class BoardStore:
         ended, so nothing is racing it but a last write already under way."""
         closed: list[str] = []
         for task in self.tasks(ws, run_id):
-            current: Task | None = task
+            current = task
             for _ in range(2):   # (a racing write: read again once)
-                if current is None or current.state in FINAL:
+                if current.state in FINAL:
                     break
                 if self._close_one(ws, run_id, current, actor=actor, reason=reason):
                     closed.append(current.task_id)

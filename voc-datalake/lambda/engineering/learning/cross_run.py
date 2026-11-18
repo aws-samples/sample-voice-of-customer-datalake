@@ -62,7 +62,7 @@ from engineering.connectors.identity import WORKSPACE
 from engineering.flow.conductor import FlowError
 from engineering.flow.settings import LearnSettings, learn_settings
 from engineering.knowledge.store import Actor
-from engineering.learning.budget import LEARN_AGENT, WORST_TOKENS_IN, Price
+from engineering.learning.budget import LEARN_AGENT, WORST_TOKENS_IN, Price, spent_with_ledger
 from engineering.learning.cross_run_answer import (
     CROSS_RUN_PROMPT,
     MAX_SKILLS,
@@ -89,7 +89,7 @@ from engineering.quality_gate.text import nonce
 from engineering.runtime.runs import RunStore
 from engineering.skills.model import MadeWith, Reason, SkillError
 from engineering.skills.store import SkillStore
-from engineering.spend import Usage, Where, flow_month_usd, ledger_updates, month_of
+from engineering.spend import Usage, Where, flow_month_usd, month_of
 from shared.aws import is_conditional_check_failure
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODEL_IDS
@@ -178,16 +178,14 @@ class CrossRunBudget:
     def record(self, flow: str, week: str, repo: str, model: str, tokens_in: int, tokens_out: int) -> Decimal:
         """A call's tokens, priced, in the flow's ``SPEND#`` row and the ledger (one transaction); the dollars."""
         usd, at = self.price(model, tokens_in, tokens_out), self.clock()
-        name = self.table.name
         where = Where(run_id=booked_as(flow, week), agent_id=LEARN_AGENT, flow=flow, repo=repo)
-        items = [{'Update': {
-            'TableName': name, 'Key': {'pk': learn_pk(flow), 'sk': f'SPEND#{month_of(at)}'},
+        spent_with_ledger(self.table, {
+            'Key': {'pk': learn_pk(flow), 'sk': f'SPEND#{month_of(at)}'},
             'UpdateExpression': 'ADD tokens_in :in, tokens_out :out, cost_usd :usd, calls :one SET updated_at = :at, '
                                 'updated_by = :by, kind = :kind',
             'ExpressionAttributeValues': {':in': tokens_in, ':out': tokens_out, ':usd': usd, ':one': 1,
-                                          ':at': at.isoformat(), ':by': WRITER, ':kind': 'cross_run_spend'}}},
-            *ledger_updates(name, at, where, {model: Usage(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)})]
-        self.table.meta.client.transact_write_items(TransactItems=items)
+                                          ':at': at.isoformat(), ':by': WRITER, ':kind': 'cross_run_spend'}},
+            at, where, {model: Usage(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)})
         return usd
 
 

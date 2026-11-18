@@ -40,23 +40,23 @@ def test_the_request_is_the_brokers_args_from_the_event() -> None:
 def test_an_event_off_its_shape_is_refused_before_the_broker(change: dict[str, Any]) -> None:
     broker = Broker({})
     with pytest.raises(DocsRefused):
-        publish({**EVENT, **change}, broker)   # type: ignore[arg-type]
+        publish({**EVENT, **change}, broker)
     assert broker.asked == []
 
 
 def test_an_opened_and_a_repeated_pull_request() -> None:
     result = {'pr': PR, 'kind': 'knowledge', 'version': 3, 'digest': DIGEST, 'draft': False, 'repeated': False}
-    assert publish(EVENT, Broker({'result': result})) == {   # type: ignore[arg-type]
+    assert publish(EVENT, Broker({'result': result})) == {
         'status': 'opened', 'pr': PR, 'kind': 'knowledge', 'version': 3, 'digest': DIGEST, 'draft': False}
-    again = publish(EVENT, Broker({'result': {**result, 'repeated': True}}))   # type: ignore[arg-type]
+    again = publish(EVENT, Broker({'result': {**result, 'repeated': True}}))
     assert again['status'] == 'repeated'
 
 
 def test_a_refusal_is_answered_with_its_status_reason_and_code() -> None:
-    refused = publish(EVENT, Broker(BrokerAnswered(409, 'You work Human-driven.', 'human_driven')))  # type: ignore[arg-type]
+    refused = publish(EVENT, Broker(BrokerAnswered(409, 'You work Human-driven.', 'human_driven')))
     assert refused == {'status': 'refused', 'http_status': 409, 'reason': 'You work Human-driven.',
                        'code': 'human_driven'}
-    other = publish(EVENT, Broker(BrokerAnswered(422, 'Not docs.', 'made_up')))   # type: ignore[arg-type]
+    other = publish(EVENT, Broker(BrokerAnswered(422, 'Not docs.', 'made_up')))
     assert other['code'] == ''
 
 
@@ -64,7 +64,7 @@ def test_a_refusal_is_answered_with_its_status_reason_and_code() -> None:
                                     {'error': 'x'}])
 def test_a_broker_out_of_reach_or_off_its_shape_is_not_known(answer: Any) -> None:
     with pytest.raises(DocsUnavailable):
-        publish(EVENT, Broker(answer))   # type: ignore[arg-type]
+        publish(EVENT, Broker(answer))
 
 
 def test_the_start_takes_the_action_as_its_own_role(monkeypatch: pytest.MonkeyPatch) -> None:

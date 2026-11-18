@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from agents_handler_fixtures import ADMIN
 from agents_handler_fixtures import call as _call
-from engineering_run_workspace_fixture import Bus, Lambdas, workspace_api
+from engineering_run_workspace_fixture import Bus, Lambdas, reached
 
 from engineering.test import run_workspace_world as world
 from shared.agents_engineering_run_routes import CROSS_RUN_UNAVAILABLE, MCP_STEER_MARK, RETRO_CHOSEN_SK
@@ -65,10 +64,7 @@ def mcp(op: str | None, **extra: str) -> dict[str, str]:
     return claims
 
 
-@pytest.fixture
-def api() -> Iterator[tuple[Any, Bus, Lambdas]]:
-    with workspace_api() as reached:
-        yield reached
+api = pytest.fixture(reached, name='api')
 
 
 @pytest.mark.usefixtures('api')

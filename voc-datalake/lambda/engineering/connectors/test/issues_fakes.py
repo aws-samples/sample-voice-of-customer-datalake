@@ -10,7 +10,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from engineering.connectors.connections import ConnectionRefused
+from engineering.connectors.connections import ConnectionRefused, Kind
 from engineering.connectors.issues_config import (
     IssuesConfig,
     IssuesConfigRefused,
@@ -99,7 +99,8 @@ class FakeEvents:
         self.state = 'ENABLED'
 
 
-_KINDS = {IssuesConfigRefused: 'invalid', IssuesSettingsFull: 'conflict', IssuesSettingsUnavailable: 'unavailable'}
+_KINDS: dict[type[Exception], Kind] = {IssuesConfigRefused: 'invalid', IssuesSettingsFull: 'conflict',
+                                      IssuesSettingsUnavailable: 'unavailable'}
 
 
 @dataclass

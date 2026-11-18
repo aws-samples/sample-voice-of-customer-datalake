@@ -5,22 +5,16 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Iterator
-from itertools import count
 from typing import Any
 
 import boto3
 import pytest
 from moto import mock_aws
 
-from engineering.board.api import BoardApi
-from engineering.board.inbox import Inbox
 from engineering.board.model import Task
-from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, create_table
-from engineering.board.test.test_board_ops import Board, Launcher, call
-from engineering.board.test.test_flow_ops import COORDINATOR, HUNTER, _finish
-from engineering.board.test.test_progress_repost import Bus
-from engineering.bus.publish import EventBridgePublisher
+from engineering.board.test.test_board_ops import Board, call
+from engineering.board.test.test_flow_ops import COORDINATOR, HUNTER, _finish, board_on
 from engineering.connectors.identity import Caller
 from engineering.flow.assertion_record import recorded, results
 from engineering.flow.test.fixtures import TEMPLATES
@@ -42,13 +36,7 @@ def _board(objects: dict[str, bytes]) -> Board:
     table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
     RunStore(table).start(RUN, caps=RunCaps(max_tasks=20), now=1_700_000_000, flow='wf_bugs', connection='repo-1',
                           commit='a' * 40, actor='admin-1', flow_definition=encode_definition(flow), flow_revision=1)
-    ids = count(1)
-    store = BoardStore(client, TABLE, new_id=lambda: f'task-{next(ids)}')
-    launcher = Launcher()
-    api = BoardApi(store, EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board'),
-                   Inbox(client, TABLE), launcher=launcher, skill=lambda role: f'{role}-skill',
-                   outputs=lambda key, _limit: objects.get(key))
-    return Board(client, store, api, launcher, knowledge=None)
+    return board_on(client, outputs=lambda key, _limit: objects.get(key))
 
 
 @pytest.fixture

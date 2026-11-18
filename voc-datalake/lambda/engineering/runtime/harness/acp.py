@@ -135,7 +135,8 @@ class AcpClient:
     def _handle(self, frame: Mapping[str, Any]) -> None:
         method, ident = frame.get('method'), frame.get('id')
         if isinstance(method, str):
-            params = frame.get('params') if isinstance(frame.get('params'), dict) else {}
+            sent = frame.get('params')
+            params: Mapping[str, Any] = sent if isinstance(sent, dict) else {}
             if ident is None:
                 self._on_notification(Notification(method, params))
             else:

@@ -7,15 +7,13 @@ off, 503 when the table fails.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from agents_handler_fixtures import USER
-from agents_handler_fixtures import api as _api
+from agents_handler_fixtures import USER, engineering_agents
 from agents_handler_fixtures import call as _call
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
@@ -34,12 +32,7 @@ def _blank_with(**steps: str) -> dict[str, Any]:
     return {'steps': {**NOTHING_CHOSEN, **steps}, 'intro': 'unseen', 'revision': 0, 'updated_at': None, 'updated_by': None}
 
 
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[AgentsEnv]:
-    with _api() as agents:
-        monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
-        monkeypatch.setenv('ENGINEERING_TABLE', 'test-engineering')
-        yield agents
+env = pytest.fixture(engineering_agents, name='env')
 
 
 def _history(env: AgentsEnv) -> list[dict[str, Any]]:

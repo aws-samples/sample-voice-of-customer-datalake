@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 from shared import agent_seed, workflow_schema
 from shared import agents_store as store
 from shared.project_access import Caller
-from shared.test.agents_fixtures import CATEGORIES, agents_env
+from shared.test.agents_fixtures import CATEGORIES, agents_env, stored_workflow
 
 ADMIN = Caller(subject='admin-sub', is_admin=True, username='alice')
 
@@ -130,7 +130,7 @@ def test_the_engineering_agents_are_seeded_disabled_with_their_flows_and_a_start
         assert (bug['budget']['max_scheduled_runs_per_day'], bug['scope']) == (
             1, {'all': True, 'categories': [], 'subcategories': []})
         decoded = {name: workflow_schema.decode_definition(
-            store.get_workflow(env.agents, agent['workflow_id'])['definition']) for name, agent in agents.items()}
+            stored_workflow(env.agents, agent['workflow_id'])['definition']) for name, agent in agents.items()}
         flows = {name: flow for name, flow in decoded.items() if flow is not None}
         assert flows.keys() == decoded.keys()
         # Bug hunt and fix alone (Issue triage is its own agent since 7.50.00); Feature from an issue or a PRD; Issue

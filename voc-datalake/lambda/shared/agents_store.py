@@ -405,8 +405,8 @@ def subcategory_names(category: Mapping[str, Any]) -> list[str]:
 def _sources(value: object) -> list[str]:
     """``scope.sources``: the ``source_platform`` ids the agent's reviews must come from (empty: every source)."""
     sources = [] if value is None else value
-    named = isinstance(sources, list) and all(isinstance(each, str) and SOURCE_ID_RE.match(each) for each in sources)
-    if not named or len(sources) > MAX_SCOPE_SOURCES:
+    if (not isinstance(sources, list) or len(sources) > MAX_SCOPE_SOURCES
+            or not all(isinstance(each, str) and SOURCE_ID_RE.match(each) for each in sources)):
         raise ValidationError(f'scope.sources must name at most {MAX_SCOPE_SOURCES} sources by their id (lower case, '
                               'digits, "_" or "-")')
     return list(dict.fromkeys(sources))

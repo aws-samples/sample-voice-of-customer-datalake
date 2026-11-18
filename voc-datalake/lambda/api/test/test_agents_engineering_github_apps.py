@@ -42,16 +42,23 @@ class Env:
     tokens: FakeTokens
 
 
+def engineering_on(monkeypatch: pytest.MonkeyPatch, **more: str) -> None:
+    """The engineering table on moto and the module on: its parameters' prefix and KMS key, the front end and the
+    token function named (and ``more`` of the environment)."""
+    create_table()
+    key = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
+    for name, value in (('ENGINEERING_AGENTS', 'on'), ('ENGINEERING_TABLE', TABLE),
+                        ('ENGINEERING_PARAMETER_PREFIX', PREFIX), ('ENGINEERING_PARAMETER_KEY', key),
+                        ('FRONTEND_URL', FRONTEND), ('ENGINEERING_APP_TOKENS_FUNCTION', 'voc-engineering-app-tokens'),
+                        *more.items()):
+        monkeypatch.setenv(name, value)
+    agents_handler._ssm_client.cache_clear()
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     with _api() as agents:
-        create_table()
-        key = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
-        for name, value in (('ENGINEERING_AGENTS', 'on'), ('ENGINEERING_TABLE', TABLE),
-                            ('ENGINEERING_PARAMETER_PREFIX', PREFIX), ('ENGINEERING_PARAMETER_KEY', key),
-                            ('FRONTEND_URL', FRONTEND), ('ENGINEERING_APP_TOKENS_FUNCTION', 'voc-engineering-app-tokens')):
-            monkeypatch.setenv(name, value)
-        agents_handler._ssm_client.cache_clear()
+        engineering_on(monkeypatch)
         github, tokens = FakeGitHub(), FakeTokens()
         with patch.object(agents_handler, 'get_dynamodb_resource', return_value=agents.resource), \
                 patch.object(github_apps, 'HttpsTransport', lambda **_: github), \

@@ -1,12 +1,8 @@
 """Which skill a launch runs, and the record a session's label names (skills/resolve.py), on the skills store (moto)."""
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import UTC, datetime
-
 import pytest
 
-from engineering.board.test.table import TABLE, engineering_table
 from engineering.knowledge.store import Actor
 from engineering.runtime.harness.skills import SKILLS
 from engineering.skills.model import Reason, SkillError
@@ -19,7 +15,7 @@ from engineering.skills.resolve import (
 )
 from engineering.skills.store import SHARED, SkillConflict, SkillForbidden, SkillNotFound, SkillStore
 from engineering.skills.templates import BundleTemplates
-from engineering.skills.test.fixtures import content, stricter
+from engineering.skills.test.fixtures import content, skill_store, stricter
 
 WS, CONN, OTHER = 'default', 'conn-harbor', 'conn-lantern'
 ADMIN = Actor('admin-sub-1', 'person', admin=True)
@@ -27,10 +23,7 @@ WHY = Reason(comment='A person wrote it.')
 TEMPLATES = BundleTemplates.shipped()
 
 
-@pytest.fixture
-def store() -> Iterator[SkillStore]:
-    with engineering_table() as client:
-        yield SkillStore(client, TABLE, now=lambda: datetime(2026, 11, 16, tzinfo=UTC))
+store = pytest.fixture(skill_store, name='store')
 
 
 def accepted(store: SkillStore, connection: str, text: str = '') -> int:

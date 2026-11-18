@@ -16,15 +16,20 @@ from dataclasses import dataclass
 from typing import Any
 from unittest.mock import patch
 
-import boto3
 import pytest
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
-from test_agents_engineering_github_apps import DELEGATED_ADMIN, FRONTEND, PATH, PREFIX, FakeLambda, create, state_of
+from test_agents_engineering_github_apps import (
+    DELEGATED_ADMIN,
+    PATH,
+    FakeLambda,
+    create,
+    engineering_on,
+    state_of,
+)
 
 import agents_handler
-from engineering.board.test.table import TABLE, create_table
 from engineering.connectors import github_apps
 from engineering.connectors.connections import ConnectionRefused
 from engineering.connectors.issues_sync import APP_KEY, MANAGED_KEY, REPOS_KEY
@@ -57,14 +62,7 @@ class Env:
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     with _api() as agents:
-        create_table()
-        key = boto3.client('kms', region_name='us-east-1').create_key()['KeyMetadata']['Arn']
-        for name, value in (('ENGINEERING_AGENTS', 'on'), ('ENGINEERING_TABLE', TABLE),
-                            ('ENGINEERING_PARAMETER_PREFIX', PREFIX), ('ENGINEERING_PARAMETER_KEY', key),
-                            ('FRONTEND_URL', FRONTEND), ('ENGINEERING_APP_TOKENS_FUNCTION', 'voc-engineering-app-tokens'),
-                            (ISSUES_CONFIG_FUNCTION_ENV, CONFIG_FUNCTION)):
-            monkeypatch.setenv(name, value)
-        agents_handler._ssm_client.cache_clear()
+        engineering_on(monkeypatch, **{ISSUES_CONFIG_FUNCTION_ENV: CONFIG_FUNCTION})
         secrets, events = FakeSecrets(dict(OTHER_PLUGINS)), FakeEvents()
         config = FakeConfigFunction(secrets, events)
         tokens = Tokens(repositories=[listed('example-org/refund-service'), listed('example-org/web')])

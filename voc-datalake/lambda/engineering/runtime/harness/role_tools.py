@@ -39,7 +39,7 @@ from engineering.runtime import outputs
 from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
 from engineering.runtime.harness import gate_tools, issues, tenets_tools
-from engineering.runtime.harness.coordinator import Built, Tool, answered, bounded, listed, optional, post_for
+from engineering.runtime.harness.coordinator import Built, Record, Tool, answered, bounded, listed, optional, post_for
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
     FINDING_FILE,
@@ -287,8 +287,7 @@ def _number(arguments: Mapping[str, Any]) -> int:
 
 def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
     """This module's tools on ``context`` (and the issue's and the gate's: ``issues``, ``gate_tools``)."""
-    outputs = _output_handlers(context, result)
-    record = outputs.pop('_record')
+    outputs, record = _output_handlers(context, result)
     return {**outputs, **_writer_handlers(context, result), **issues.handlers(context, result, record),
             **gate_tools.handlers(context, result), **tenets_tools.handlers(context, result, record)}
 
@@ -300,8 +299,10 @@ def _already_written(error: Exception) -> bool:
     return isinstance(response, Mapping) and response.get('Error', {}).get('Code') == 'PreconditionFailed'
 
 
-def _output_handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
-    """The outputs under the agent's own keys, and the sub-task post."""
+def _output_handlers(context: Built, result: Callable[..., Built]
+                     ) -> tuple[dict[str, Tool], Record]:
+    """The outputs under the agent's own keys, and the sub-task post; and ``record``, the create-only output write
+    (recorded on the task) the issue's and the tenets' tools write through."""
 
     def record(key: str, body: bytes, what: str) -> Built:
         if key in context.result_keys:
@@ -348,7 +349,7 @@ def _output_handlers(context: Built, result: Callable[..., Built]) -> dict[str, 
         return post_for(context, result, arguments, POSTS_FOR[context.role])
 
     return {'write_findings': write_findings, 'write_notes': write_notes, 'write_gate_record': write_gate_record,
-            'post_subtask': answered(post_subtask, result), '_record': record}
+            'post_subtask': answered(post_subtask, result)}, record
 
 
 def submitted_patch(context: Built, key: str) -> str:

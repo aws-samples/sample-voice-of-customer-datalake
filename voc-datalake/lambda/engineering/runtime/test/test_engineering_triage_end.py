@@ -46,8 +46,9 @@ class Workspace:
         return None if body is None else body[:limit]
 
 
-@pytest.fixture
-def client() -> Iterator[Any]:
+def end_tables() -> Iterator[Any]:
+    """Under moto: the engineering table and the agents table (``TABLE``, ``AGENTS``); the low-level client. A
+    suite's ``client`` fixture."""
     with mock_aws():
         dynamodb = boto3.client('dynamodb', region_name='us-east-1')
         for name in (TABLE, AGENTS):
@@ -57,6 +58,9 @@ def client() -> Iterator[Any]:
                                   AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
                                                         {'AttributeName': 'sk', 'AttributeType': 'S'}])
         yield dynamodb
+
+
+client = pytest.fixture(end_tables, name='client')
 
 
 def _meta(client: Any, *, status: str = 'done', issue: bool = True) -> None:
@@ -87,6 +91,13 @@ def _row(client: Any) -> dict[str, Any] | None:
     return client.get_item(TableName=AGENTS, Key={name: {'S': value} for name, value in key.items()}).get('Item')
 
 
+def _written(client: Any) -> dict[str, Any]:
+    """The issue's triage row (one was written)."""
+    row = _row(client)
+    assert row is not None
+    return row
+
+
 def test_the_understanders_triage_becomes_the_issues_trusted_row_once(client: Any) -> None:
     _meta(client)
     _task(client, 'triage-1')
@@ -102,7 +113,7 @@ def test_the_understanders_triage_becomes_the_issues_trusted_row_once(client: An
     assert row['written_at']['S'] == NOW.isoformat()
     # The heartbeat's read of it (shared/agents_store.py).
     assert _copy(client, Workspace({KEY: json.dumps({**TRIAGE, 'kind': 'feature'}).encode()})) == KEPT
-    assert _row(client)['kind']['S'] == 'bug'   # (D1: the first triage stands)
+    assert _written(client)['kind']['S'] == 'bug'   # (D1: the first triage stands)
 
 
 @pytest.mark.parametrize(('status', 'issue', 'outcome'), [
@@ -138,7 +149,7 @@ def test_the_newest_understanders_triage_is_the_one_copied(client: Any) -> None:
     workspace = Workspace({older: json.dumps({**TRIAGE, 'kind': 'feature'}).encode(),
                            KEY: json.dumps(TRIAGE).encode()})
     assert _copy(client, workspace) == WRITTEN
-    assert (_row(client)['kind']['S'], _row(client)['task_id']['S']) == ('bug', 'triage-2')
+    assert (_written(client)['kind']['S'], _written(client)['task_id']['S']) == ('bug', 'triage-2')
 
 
 @pytest.mark.parametrize(('body', 'outcome'), [

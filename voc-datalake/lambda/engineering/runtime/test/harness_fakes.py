@@ -182,12 +182,21 @@ class FakeBroker:
 @dataclass
 class FakeStore:
     objects: dict[str, bytes] = field(default_factory=dict)
+    #: Each prefix listed (``list``), in turn.
+    prefixes: list[str] = field(default_factory=list)
 
     def put(self, key: str, body: bytes) -> None:
         self.objects[key] = body
 
     def get(self, key: str, limit: int) -> bytes:
         return self.objects[key][:limit + 1]
+
+    def list(self, prefix: str, token: str | None = None) -> dict[str, Any]:
+        """The workspace bucket's run prefix as the agent's role lists it (one page, in key order)."""
+        del token
+        self.prefixes.append(prefix)
+        return {'Contents': [{'Key': key, 'LastModified': f'2026-11-16T10:00:{n:02d}Z'}
+                             for n, key in enumerate(sorted(self.objects)) if key.startswith(prefix)]}
 
 
 class FakeBedrock:

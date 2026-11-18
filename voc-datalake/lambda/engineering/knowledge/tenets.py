@@ -157,7 +157,7 @@ class AcceptedTenets:
 def _cancelled(exc: ClientError, index: int) -> bool:
     reasons = exc.response.get('CancellationReasons') or []
     return (exc.response.get('Error', {}).get('Code') == 'TransactionCanceledException' and len(reasons) > index
-            and isinstance(reasons[index], Mapping) and reasons[index].get('Code') == 'ConditionalCheckFailed')
+            and reasons[index].get('Code') == 'ConditionalCheckFailed')
 
 
 def _held_to_the_grant(items: Sequence[Mapping[str, Any]]) -> None:

@@ -105,7 +105,7 @@ def heal(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], now: date
         os.environ.get(ENGINEERING_TABLE_ENV) else None
     if status in LIVE:
         return True
-    if status in ENDS:
+    if status is not None and status in ENDS:
         eng_runs.end_agent_run(table, agent_id, run_id, status, now=now)   # (an end already recorded: a no-op)
         return False
     queued = parse_iso(run.get('started_at'))

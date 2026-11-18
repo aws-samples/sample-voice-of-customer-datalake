@@ -22,7 +22,7 @@ fallback), which the proposal records (D4).
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from typing import Any, Final
@@ -102,6 +102,7 @@ class BedrockCoachModel:
             call_label='the coach\'s Converse call') or {}   # (None only with raise_on_throttle off, never here)
         if answer.get('stopReason') == CUT_AT_CAP:
             raise CoachError(f"the coach's answer ran past its {MAX_ANSWER_TOKENS} tokens: nothing is proposed")
-        usage = answer.get('usage') if isinstance(answer.get('usage'), dict) else {}
+        reported = answer.get('usage')
+        usage: Mapping[str, Any] = reported if isinstance(reported, Mapping) else {}
         return CoachReply(_text(answer), self.model_id, tokens_in=int(usage.get('inputTokens', 0) or 0),
                           tokens_out=int(usage.get('outputTokens', 0) or 0))

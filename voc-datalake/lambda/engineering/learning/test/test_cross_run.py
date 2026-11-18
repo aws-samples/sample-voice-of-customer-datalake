@@ -40,7 +40,7 @@ from engineering.learning.cross_run_input import (
     flows,
     s3_lister,
 )
-from engineering.learning.test.fixtures import SECRET
+from engineering.learning.test.fixtures import SECRET, price
 from engineering.learning.test.test_loop import ADMIN
 from engineering.quality_gate.record import FinalGoRecord, GateRecord, RoundRecord
 from engineering.quality_gate.review import Finding
@@ -140,11 +140,6 @@ class Model:
         return CoachReply(self.replies.pop(0), COACH_MODEL, tokens_in=10_000, tokens_out=2_000)
 
 
-def _price(model: str, tokens_in: int, tokens_out: int) -> Decimal:
-    del model
-    return Decimal(tokens_in) * Decimal('0.000002') + Decimal(tokens_out) * Decimal('0.00001')
-
-
 @dataclass
 class World:
     table: Any
@@ -162,9 +157,17 @@ def _learn(table: Any, s3: Any, model: Model) -> CrossRunLearn:
         lister=s3_lister(s3, BUCKET), reader=RunInputReader(table, workspace.read_text), runs=RunStore(table),
         skills=SkillStore(client, TABLE, now=lambda: AT),
         memory=AgentMemoryStore(client, TABLE, is_user=lambda _user: False, now=lambda: AT),
-        budget=CrossRunBudget(table, _price, clock=lambda: AT),
+        budget=CrossRunBudget(table, price, clock=lambda: AT),
         model_for=lambda _model, on_reply: MeteredCoachModel(model, on_reply), put_once=workspace.put_once,
         cases=CASES, now=lambda: AT, fence=lambda: FENCE)
+
+
+def _aws() -> tuple[Any, Any]:
+    """Under moto: the engineering table and the workspace bucket (the table's resource, S3)."""
+    create_table()
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.create_bucket(Bucket=BUCKET)
+    return boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE), s3
 
 
 @contextmanager
@@ -174,10 +177,7 @@ def flow_world(replies: Sequence[str] = (), budget: str = '100') -> Generator[Wo
     specs = (Spec(1, '2026-11-02'), Spec(2, '2026-11-09'), Spec(3, '2026-11-14'),
              Spec(4, '2026-11-15', status='done', cost='9.00', no_go=False))
     with mock_aws():
-        create_table()
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+        table, s3 = _aws()
         for spec in specs:
             _seed(table, s3, spec, budget=budget)
         model = Model(list(replies) or [answer()])
@@ -235,10 +235,7 @@ def test_the_record_counts_by_rule_and_labels_the_models_text(world: World) -> N
 
 def test_steps_and_calibration_are_nearest_rank_figures() -> None:
     with mock_aws():
-        create_table()
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+        table, s3 = _aws()
         for spec in (Spec(1, cost='1.00'), Spec(2, cost='2.00'), Spec(3, cost='3.00', no_go=False)):
             _seed(table, s3, spec, budget=None)
         reader = RunInputReader(table, WorkspaceStore(s3, BUCKET, denied_is_missing=True).read_text)
@@ -315,10 +312,7 @@ def test_a_refused_answer_writes_nothing_but_the_record_and_its_reason() -> None
 
 def test_no_run_in_the_window_and_learn_off_claim_nothing() -> None:
     with mock_aws():
-        create_table()
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+        table, s3 = _aws()
         learn = _learn(table, s3, Model([]))
         assert learn.run(FLOW).reason == 'no run of the flow in the last 28 days'
         _seed(table, s3, Spec(1), budget=None)

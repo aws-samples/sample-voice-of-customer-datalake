@@ -757,9 +757,11 @@ def result(site: Site, method: str, url: str, started: float, verdict: Verdict, 
     }
 
 
-def _page_text(page: Page, verdict: Verdict) -> dict[str, Any]:
-    """The page's text for the site's web-search rows to be checked against, when it was the page itself."""
-    return {PAGE_TEXT_KEY: page.text} if verdict.outcome in PAGE_TEXT_OUTCOMES else {}
+def _classified(site: Site, page: Page, budget: ModelBudget | None) -> tuple[Verdict, dict[str, Any]]:
+    """The page's verdict, and its text for the site's web-search rows to be checked against when it was the page
+    itself."""
+    verdict = classify(site.url, page, site.max_reviews, budget)
+    return verdict, ({PAGE_TEXT_KEY: page.text} if verdict.outcome in PAGE_TEXT_OUTCOMES else {})
 
 
 def not_run(site: Site, method: str, detail: str, url: str | None = None) -> dict[str, Any]:
@@ -803,8 +805,7 @@ def browser_row(site: Site, run: Run, method: str, browser_id: str) -> dict[str,
     try:
         page = browser_page(checked_url(site.url), browser_id)
         read = Read(page.url, page.status)
-        verdict = classify(site.url, page, site.max_reviews, budget)
-        extra = _page_text(page, verdict)
+        verdict, extra = _classified(site, page, budget)
     except row_errors() as error:
         verdict = Verdict('error', detail=_short(error))
     return result(site, method, site.url, started, verdict, budget=budget, read=read, extra=extra)
@@ -830,8 +831,7 @@ def http_rows(site: Site, run: Run) -> list[dict[str, Any]]:
             fetched = fetch(site.url, HTML_ACCEPT, run.agent, MAX_PAGE_BYTES)
             read = Read(fetched.url, fetched.status)
             page = parse_html(fetched.url, fetched.status, fetched.text)
-            verdict = classify(site.url, page, site.max_reviews, budget)
-            extra = _page_text(page, verdict)
+            verdict, extra = _classified(site, page, budget)
     except row_errors() as error:
         verdict = Verdict('error', detail=_short(error))
     return [result(site, 'http', site.url, started, verdict, budget=budget, read=read, extra=extra)]

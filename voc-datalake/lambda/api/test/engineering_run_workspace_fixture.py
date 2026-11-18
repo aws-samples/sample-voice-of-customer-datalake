@@ -19,12 +19,15 @@ from __future__ import annotations
 import io
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+# (EventBridge as the routes see it: each entry recorded)
+from engineering.board.test.test_progress_repost import Bus
 
 FIXTURE = Path(__file__).resolve().parents[3] / 'frontend' / 'src' / 'test' / 'engineeringRunWorkspace.json'
 #: The ids the actions mint (an event's, a child run's), fixed for the file.
@@ -39,17 +42,6 @@ class _FixedClock(datetime):
     @classmethod
     def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
         return NOW if tz is None else NOW.astimezone(tz)
-
-
-class Bus:
-    """EventBridge as the routes see it: records each entry."""
-
-    def __init__(self) -> None:
-        self.entries: list[dict[str, Any]] = []
-
-    def put_events(self, Entries: list[dict[str, Any]]) -> dict[str, Any]:  # (boto3's keyword)
-        self.entries.extend(Entries)
-        return {'FailedEntryCount': 0, 'Entries': [{'EventId': 'e-1'}]}
 
 
 class Lambdas:
@@ -72,7 +64,7 @@ class Lambdas:
 
 
 @contextmanager
-def workspace_api() -> Iterator[tuple[Any, Bus, Lambdas]]:
+def workspace_api() -> Generator[tuple[Any, Bus, Lambdas], None, None]:
     """The Agents API on moto with the world in it, the module on, its bus and functions faked; the world."""
     from agents_handler_fixtures import api
 
@@ -92,6 +84,12 @@ def workspace_api() -> Iterator[tuple[Any, Bus, Lambdas]]:
         stack.enter_context(patch('engineering.monitor.datetime', _FixedClock))
         stack.enter_context(patch('shared.engineering_agent_runs.new_run_id', return_value=CHILD_ID))
         yield built, bus, lambdas
+
+
+def reached() -> Generator[tuple[Any, Bus, Lambdas], None, None]:
+    """``workspace_api`` as a suite's fixture: ``api = pytest.fixture(reached, name='api')``."""
+    with workspace_api() as world:
+        yield world
 
 
 def _context() -> Any:

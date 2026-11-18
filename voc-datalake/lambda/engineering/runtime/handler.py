@@ -435,6 +435,12 @@ def _stopping_run(run_id: str, mode: str) -> tuple[Run | None, str]:
     return (None if run.status in ENDED and run.status != 'stopped' else run), mode
 
 
+def _ended_as_it_is(run_id: str, mode: str) -> run_stop.Stopped:
+    """A Stop's answer for a run that ended done or failed (``_stopping_run``'s None): its status, nothing closed."""
+    ended = _runs().get(run_id)
+    return run_stop.Stopped(run_id, ended.status if ended is not None else 'done', mode, already=True)
+
+
 def _stop_from_start(run_id: str, actor: str, mode: str) -> run_stop.Stopped:
     """voc-engineering-start's part of a person's Stop of the whole run (``runtime/stop.py``), with its role's reads and
     writes of the run's rows alone (no session, no bus). A Stop now, or a Stop with no agent that has a session, ends
@@ -445,8 +451,7 @@ def _stop_from_start(run_id: str, actor: str, mode: str) -> run_stop.Stopped:
     already stopped has what its Stop left undone done again."""
     run, mode = _stopping_run(run_id, mode)
     if run is None:
-        ended = _runs().get(run_id)
-        return run_stop.Stopped(run_id, ended.status if ended is not None else 'done', mode, already=True)
+        return _ended_as_it_is(run_id, mode)
     sessions = _session_store()
     saving = run_stop.saving_agents(sessions.of_run(run_id))
     if run.status in ENDED or mode == STOP_NOW or not saving:
@@ -494,8 +499,7 @@ def _stop_in_runtime(run_id: str, actor: str, mode: str) -> run_stop.Stopped:
     rule) is the caller's or the next tick's."""
     run, mode = _stopping_run(run_id, mode)
     if run is None:
-        ended = _runs().get(run_id)
-        return run_stop.Stopped(run_id, ended.status if ended is not None else 'done', mode, already=True)
+        return _ended_as_it_is(run_id, mode)
     supervisor, now = _supervisor(), int(clock())
     if run.status in ENDED or mode == STOP_NOW or not run_stop.saving_agents(supervisor.sessions.of_run(run_id)):
         return _stop_here(run_id, actor, mode, now)
@@ -1306,7 +1310,7 @@ def _transcript_excerpts(run: Any, failure: Any) -> tuple[str, ...]:
 
     def listed(prefix: str) -> list[str]:
         answer = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1000)
-        return [str(item['Key']) for item in answer.get('Contents', [])]
+        return [key for item in answer.get('Contents', []) if (key := item.get('Key'))]
 
     try:
         return excerpts(listed, store.read_bytes, run.run_id, failure.attempt.agent, run.commit,
@@ -1730,7 +1734,8 @@ def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
     fanned = {step: shards for step, shards in _fanned(runs, parent_id).items() if step in inherited} if inherited \
         else {}
     at = _iso_now(now)
-    issue = meta.get('issue') if isinstance(meta.get('issue'), Mapping) else {}
+    recorded_issue = meta.get('issue')
+    issue: Mapping[str, Any] = recorded_issue if isinstance(recorded_issue, Mapping) else {}
     origin = {'run_id': parent_id, 'mode': mode, 'by': actor, 'at': at, 'base': base, **({'agents': list(agents)}
                                                                                        if agents else {})}
     runs.start(child_id, caps=parent.caps, now=now, goal=str(meta.get('goal', '')), repo=parent.repo, flow=parent.flow,
@@ -1775,7 +1780,7 @@ def _fanned(runs: RunStore, run_id: str) -> dict[str, tuple[str, ...]]:
     """A run's maps' shards, as its coordinator listed them."""
     from engineering.flow.record import FAN_OUT, STEP_PREFIX
     return {str(row['step']['S']): tuple(item.get('S', '') for item in row.get('shards', {}).get('L', ()))
-            for row in runs._typed_rows(run_id, STEP_PREFIX)
+            for row in runs.typed_rows(run_id, STEP_PREFIX)
             if row.get('record', {}).get('S') == FAN_OUT}
 
 
@@ -1824,7 +1829,7 @@ def _child_and_parent(runs: RunStore, child_id: str) -> tuple[Mapping[str, Any],
 
 def _inherited(runs: RunStore, run_id: str) -> list[str]:
     from engineering.flow.record import INHERITED, STEP_PREFIX
-    return [str(row['step']['S']) for row in runs._typed_rows(run_id, STEP_PREFIX)
+    return [str(row['step']['S']) for row in runs.typed_rows(run_id, STEP_PREFIX)
             if row.get('record', {}).get('S') == INHERITED]
 
 

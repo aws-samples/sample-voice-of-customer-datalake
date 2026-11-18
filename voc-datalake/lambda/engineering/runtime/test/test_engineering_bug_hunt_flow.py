@@ -30,6 +30,7 @@ from engineering.connectors.hosts import (
     CommentTarget,
     Conflict,
     Connector,
+    FileChange,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -56,6 +57,7 @@ from engineering.runtime.test.harness_fakes import FakeBedrock, FakeRunner, use
 from engineering.runtime.test.test_engineering_board_bus import Events
 from engineering.runtime.test.test_engineering_harness_main import _vm_directory, fixture_repository, run_git
 from engineering.runtime.test.test_engineering_inbox_end_to_end import ApiTransport
+from engineering.runtime.test.test_engineering_role_skills import PACK_HEAD, TEST_STEP
 from engineering.skills.store import SkillStore
 from engineering.skills.templates import BundleTemplates
 from engineering.workspace.store import WorkspaceStore
@@ -159,6 +161,18 @@ class GitHost:
     def reactions(self, connection_id: str, number: int, url: str, branch: str) -> PullRequestReactions:
         raise AssertionError(f'no reactions read in this flow ({connection_id}, {number} at {url} on {branch})')
 
+    def head_commit(self, connection_id: str, branch: str) -> str | None:
+        raise AssertionError(f'no branch head read in this flow ({connection_id}, {branch})')
+
+    def issue_state(self, connection_id: str, number: int) -> str | None:
+        raise AssertionError(f'no issue read in this flow ({connection_id}, #{number})')
+
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        raise AssertionError(f'no issue labelled in this flow ({connection_id}, #{number}, {len(labels)} labels)')
+
+    def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
+        raise AssertionError(f'no docs tree in this flow ({connection_id}, {base}, {len(changes)} changes)')
+
 
 @dataclass
 class Attested:
@@ -189,26 +203,7 @@ class GitRunner:
         return runner.run(argv, timeout_seconds=timeout_seconds, repository_code=repository_code, network=network,
                           in_checkout=in_checkout, on_wait=on_wait)
 #: The gate runner's pack in this test: one Python root's unit tests (``run_gate``'s plan).
-MINI_PACK = '''schema = "voc-gate-pack/1"
-id = "mini"
-name = "Mini"
-network = []
-
-[languages.python]
-markers = ["pyproject.toml"]
-extensions = [".py"]
-
-[tools.python]
-version_argv = ["python3", "--version"]
-
-[[steps]]
-id = "py.test"
-language = "python"
-name = "unit tests"
-kind = "test"
-argv = ["python3", "-m", "unittest"]
-timeout_s = 60
-'''
+MINI_PACK = PACK_HEAD + TEST_STEP
 FINDING = {'file': 'slugs.py', 'line': 2, 'severity': 'blocking', 'rule': 'off-by-one',
            'title': 'A slug exactly max_length long loses its last word', 'evidence': 'the length check uses <'}
 

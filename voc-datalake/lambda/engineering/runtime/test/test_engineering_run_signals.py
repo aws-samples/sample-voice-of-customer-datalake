@@ -14,9 +14,9 @@ from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import handler
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.run_signals import AGENT_SIGNALS, RUN_SIGNALS, SIGNAL_ACTION
-from engineering.runtime.runs import RunNotActive, RunStore, run_pk
+from engineering.runtime.runs import RunNotActive, run_pk
 from engineering.runtime.test.conftest import COMMIT, TABLE
-from shared import aws as shared_aws
+from engineering.runtime.test.test_engineering_run_stop import _handed_on, _runs
 
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0SG'
 ADMIN = 'admin-sub'
@@ -25,10 +25,6 @@ COORDINATED = {'action': 'start_run', 'run_id': RUN, 'max_tasks': 5, 'goal': 'fi
                'commit': COMMIT, 'language': 'python', 'actor': ADMIN}
 FIXER_LAUNCH = {'action': 'launch', 'run_id': RUN, 'agent_id': FIXER, 'role': 'fixer', 'task_id': TASK,
                 'language': 'python', 'connection': 'conn-1', 'commit': COMMIT, 'paths': ['src']}
-
-
-def _runs() -> RunStore:
-    return RunStore(boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE))
 
 
 def _board() -> BoardStore:
@@ -41,21 +37,6 @@ def _signal_rows() -> list[dict[str, Any]]:
         KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
         ExpressionAttributeValues={':pk': run_pk(RUN), ':log': 'RUNLOG#'})['Items']
     return [row for row in rows if row.get('kind') == 'signal']
-
-
-def _handed_on(monkeypatch: pytest.MonkeyPatch, *, fails: bool = False) -> list[dict[str, Any]]:
-    """Every invocation the start function hands on to voc-engineering-runtime, kept, not run (``fails``: refused)."""
-    handed: list[dict[str, Any]] = []
-    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
-
-    def invoke(name: str, payload: dict[str, Any]) -> None:
-        if fails:
-            raise RuntimeError('Lambda is unavailable')
-        assert name == 'voc-engineering-runtime'
-        handed.append(payload)
-
-    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', invoke)
-    return handed
 
 
 def _working_fixer(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -148,15 +148,20 @@ def _store_sandbox(agents: Any) -> None:
         'credential_set': True, 'version': 1})
 
 
+def _attested_sandbox(env: tuple[Any, readiness_fakes.ReadyPorts]) -> None:
+    """The sandbox's connection stored, and the one connection whose CI an administrator attested."""
+    agents_env, ports = env
+    _store_sandbox(agents_env.agents)
+    ports.attested_connections = frozenset({'voc-agents-sandbox'})
+
+
 def _statuses(body: dict[str, Any]) -> dict[str, str]:
     return {check['id']: check['status'] for check in body['checks']}
 
 
 def test_a_preview_answers_for_the_selected_connection_and_language(
         lambda_context: Any, env: tuple[Any, readiness_fakes.ReadyPorts]) -> None:
-    agents_env, ports = env
-    _store_sandbox(agents_env.agents)
-    ports.attested_connections = frozenset({'voc-agents-sandbox'})
+    _attested_sandbox(env)
     bug = _bug_fixer(lambda_context)   # (not set up: no connection, no language)
     status, body = _call(lambda_context, 'GET', PATH, query={'automation': bug['agent_id']})
     assert status == 200, body
@@ -179,9 +184,7 @@ def test_a_preview_answers_for_the_selected_connection_and_language(
 
 def test_a_preview_on_a_connection_not_attested_fails_its_ci_attestation(
         lambda_context: Any, env: tuple[Any, readiness_fakes.ReadyPorts]) -> None:
-    agents_env, ports = env
-    _store_sandbox(agents_env.agents)
-    ports.attested_connections = frozenset({'voc-agents-sandbox'})
+    _attested_sandbox(env)
     bug = _bug_fixer(lambda_context)
     _set_up(lambda_context, bug)   # (stored on shop, which is not attested)
     query = {'automation': bug['agent_id']}

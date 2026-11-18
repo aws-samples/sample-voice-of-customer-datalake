@@ -42,13 +42,12 @@ where they are used, since they ship only with the engineering agents on.
 """
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Mapping
 from functools import cache
 from typing import Any, Final
 
-from aws_lambda_powertools.event_handler import Response, content_types
+from aws_lambda_powertools.event_handler import Response
 from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -65,6 +64,7 @@ from shared.logging import logger, tracer
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.route_answers import json_response as _json
 
 __all__ = ['app']
 
@@ -87,10 +87,6 @@ _STATUSES: Final = {'invalid': ValidationError, 'not_found': NotFoundError, 'for
                     'conflict': ConflictError, 'unavailable': ServiceUnavailableError}
 
 app = Router()
-
-
-def _json(status: int, body: Mapping[str, Any]) -> Response:
-    return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
 
 
 def _admin() -> Caller:
@@ -310,19 +306,27 @@ def get_engineering_tenets_version(connection_id: str, version: str):
     return _call(lambda: _tenets_version(store, connection, number))
 
 
+
+def _decided(connection_id: str, version: str, *, accept: bool) -> dict[str, Any]:
+    """An administrator's decision on a tenets version (``TenetsStore.accept`` or ``.reject``, its body
+    ``{expected_accepted, reason?}``), then the version as it stands."""
+    caller = _admin()
+    connection, number = _connection(connection_id), _version(version)
+    reason, expected = _decision(json_object_body(app))
+    store = _tenets()
+    decide = store.accept if accept else store.reject
+    _call(lambda: decide(WS, connection, number, _person(caller), reason, expected_accepted=expected), NOT_SAVED)
+    logger.info(f'engineering: a tenets version {"accepted" if accept else "rejected"}',
+                extra={'connection_id': connection, 'version': number})
+    return _call(lambda: _tenets_version(store, connection, number))
+
 @app.post('/agents/engineering/tenets/<connection_id>/versions/<version>/accept')
 @tracer.capture_method(capture_response=False)
 def accept_engineering_tenets_version(connection_id: str, version: str):
     """``{expected_accepted, reason?}``: an administrator accepts a draft (``TenetsStore.accept``): its TENETS.md
     digest and its ids recorded, the accepted version moved up (never down); accepting the accepted version again
     answers it. 409 when the accepted version is no longer ``expected_accepted`` (the draft was read against another)."""
-    caller = _admin()
-    connection, number = _connection(connection_id), _version(version)
-    reason, expected = _decision(json_object_body(app))
-    store = _tenets()
-    _call(lambda: store.accept(WS, connection, number, _person(caller), reason, expected_accepted=expected), NOT_SAVED)
-    logger.info('engineering: a tenets version accepted', extra={'connection_id': connection, 'version': number})
-    return _call(lambda: _tenets_version(store, connection, number))
+    return _decided(connection_id, version, accept=True)
 
 
 @app.post('/agents/engineering/tenets/<connection_id>/versions/<version>/reject')
@@ -330,13 +334,7 @@ def accept_engineering_tenets_version(connection_id: str, version: str):
 def reject_engineering_tenets_version(connection_id: str, version: str):
     """``{expected_accepted, reason?}``: an administrator rejects a draft; it stays, marked rejected, with its event.
     409 when the accepted version is no longer ``expected_accepted``."""
-    caller = _admin()
-    connection, number = _connection(connection_id), _version(version)
-    reason, expected = _decision(json_object_body(app))
-    store = _tenets()
-    _call(lambda: store.reject(WS, connection, number, _person(caller), reason, expected_accepted=expected), NOT_SAVED)
-    logger.info('engineering: a tenets version rejected', extra={'connection_id': connection, 'version': number})
-    return _call(lambda: _tenets_version(store, connection, number))
+    return _decided(connection_id, version, accept=False)
 
 
 # --- the docs pull request ------------------------------------------------------------------------------------------

@@ -762,7 +762,7 @@ class RunStore:
             if not is_conditional_check_failure(error):
                 raise
 
-    def _typed_rows(self, run_id: str, prefix: str) -> list[dict[str, Any]]:
+    def typed_rows(self, run_id: str, prefix: str) -> list[dict[str, Any]]:
         """The run's rows of a kind, in the low-level shape the board's and the flow's readers take."""
         query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :p)', 'ConsistentRead': True,
                  'ExpressionAttributeValues': {':run': run_pk(run_id), ':p': prefix}}
@@ -797,8 +797,8 @@ class RunStore:
                 self._flow_copies.pop(next(iter(self._flow_copies)))
             self._flow_copies[run_id] = flow
         meta = consistent_item(self._table, meta_key(run_id))
-        tasks = [Task.from_item(item) for item in self._typed_rows(run_id, 'TASK#')]
-        rows = self._typed_rows(run_id, STEP_PREFIX)
+        tasks = [Task.from_item(item) for item in self.typed_rows(run_id, 'TASK#')]
+        rows = self.typed_rows(run_id, STEP_PREFIX)
         recorded = recorded_verdicts(rows)
         verdicts = gate_verdicts(flow, tasks, WORKSPACE, run_id, self._gate_records, recorded)
         plan = conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(_typed(meta) if meta else None),

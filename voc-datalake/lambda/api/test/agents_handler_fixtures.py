@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 import agents_handler
 from shared import agent_seed, workflow_schema
 from shared.test.agents_fixtures import AgentsEnv, agent_body, agents_env
@@ -46,6 +48,16 @@ def api(**env_kwargs: Any) -> Generator[AgentsEnv, None, None]:
     agent_seed._settled.clear()
     with agents_env(**env_kwargs) as env, \
             patch.object(agents_handler, 'get_aggregates_table', return_value=env.aggregates):
+        yield env
+
+
+def engineering_agents(monkeypatch: pytest.MonkeyPatch) -> Generator[AgentsEnv, None, None]:
+    """``api()`` with the engineering agents on, their table named ``test-engineering``: a suite's fixture
+    (``env = pytest.fixture(engineering_agents, name='env')``). Through ``monkeypatch``, so a test's own change of the
+    same variables is undone with it."""
+    with api() as env:
+        monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
+        monkeypatch.setenv('ENGINEERING_TABLE', 'test-engineering')
         yield env
 
 

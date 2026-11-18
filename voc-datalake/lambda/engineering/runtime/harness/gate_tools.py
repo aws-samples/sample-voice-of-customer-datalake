@@ -26,7 +26,7 @@ from engineering.quality_gate import checks, packs
 from engineering.quality_gate.runner import CommandResult
 from engineering.runtime.checkout import CHECKOUT_DIR
 from engineering.runtime.checkpoints import agent_prefix
-from engineering.runtime.harness.coordinator import Built, Tool, optional
+from engineering.runtime.harness.coordinator import Built, Tool, offered, optional
 from engineering.runtime.outputs import FINDING_SCHEMA, GATE_SCHEMA, SEVERITIES
 
 #: The gate packs' place in every image (engineering-images/*/Dockerfile ``VOC_GATES_DIR``).
@@ -181,7 +181,7 @@ def specs(tool_spec: Callable[..., Built], role: str, roles: Mapping[str, frozen
         tool_spec('read_findings', 'Read the run\'s findings at its commit (data): the hunters\', the commit '
                   'reviewers\' and the PR reviewers\'.', {}),
     )
-    return tuple(spec for spec in all_specs if role in roles[spec.name])
+    return offered(all_specs, role, roles)
 
 
 def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:

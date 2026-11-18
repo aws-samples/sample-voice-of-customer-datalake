@@ -20,7 +20,7 @@ from typing import Any, Final
 
 from engineering.board.model import Task
 from engineering.connectors.identity import WORKSPACE
-from engineering.rows import get_row, run_pk, run_rows, string_attr
+from engineering.rows import string_attr
 from engineering.runtime.outputs import (
     MAX_TENET_TEXT,
     MAX_TENET_TITLE,
@@ -29,8 +29,14 @@ from engineering.runtime.outputs import (
     TenetsError,
     tenets_record,
 )
-from engineering.runtime.runs import ENDED
-from engineering.runtime.triage_end import FAILED, never_raising, newest_recorded, run_end_stores
+from engineering.runtime.triage_end import (
+    FAILED,
+    ended_meta,
+    never_raising,
+    newest_recorded,
+    run_end_stores,
+    run_tasks,
+)
 from shared.logging import logger
 
 #: The largest tenets record read (its bounded fields fit in a few tens of kilobytes).
@@ -70,13 +76,13 @@ def draft_tenets(run_id: str, *, client: Any, table: str, workspace: Any, store:
 def _draft(run_id: str, *, client: Any, table: str, workspace: Any, store: Any) -> str:
     from engineering.knowledge.store import Actor, PackError
 
-    meta = get_row(client, table, {'pk': {'S': run_pk(WORKSPACE, run_id)}, 'sk': {'S': 'META'}})
-    if meta is None or string_attr(meta, 'status') not in ENDED:
+    meta = ended_meta(client, table, run_id)
+    if meta is None:
         return NOT_ENDED
     connection = string_attr(meta, 'connection')
     if not connection:
         return NO_CONNECTION
-    found = newest_tenets([Task.from_item(item) for item in run_rows(client, table, WORKSPACE, run_id, 'TASK#')],
+    found = newest_tenets(run_tasks(client, table, run_id),
                           run_id)
     if found is None:
         return NO_TENETS

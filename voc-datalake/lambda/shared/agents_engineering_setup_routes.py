@@ -93,8 +93,8 @@ def setup_view(item: Mapping[str, Any] | None) -> dict[str, Any]:
     intro = item.get('intro')
     view['intro'] = intro if intro in INTROS else 'unseen'
     revision = item.get('revision')   # (a Decimal as DynamoDB answers it)
-    whole = isinstance(revision, int | Decimal) and not isinstance(revision, bool) and revision == int(revision)
-    view['revision'] = int(revision) if whole and revision >= 0 else 0
+    number = revision if isinstance(revision, int | Decimal) and not isinstance(revision, bool) else None
+    view['revision'] = int(number) if number is not None and number == int(number) and number >= 0 else 0
     view['updated_at'] = _text(item.get('updated_at'))
     view['updated_by'] = _text(item.get('updated_by'))
     return view
@@ -135,7 +135,7 @@ def _cancelled_by_condition(exc: ClientError) -> bool:
         return True
     reasons = exc.response.get('CancellationReasons') or []
     return error.get('Code') == 'TransactionCanceledException' and any(
-        isinstance(reason, Mapping) and reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
+        reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
 
 
 def save_setup(table: Any, *, revision: int, steps: Mapping[str, str], intro: str | None, by: str,
@@ -150,7 +150,7 @@ def save_setup(table: Any, *, revision: int, steps: Mapping[str, str], intro: st
     merged = {**current['steps'], **steps}
     saved_intro = intro or current['intro']
     following = revision + 1
-    condition = ({'ConditionExpression': 'attribute_not_exists(pk)'} if revision == 0
+    condition: dict[str, Any] = ({'ConditionExpression': 'attribute_not_exists(pk)'} if revision == 0
                  else {'ConditionExpression': 'revision = :expected', 'ExpressionAttributeValues': {':expected': revision}})
     values = {':steps': merged, ':intro': saved_intro, ':revision': following, ':at': when, ':by': name,
               **condition.get('ExpressionAttributeValues', {})}

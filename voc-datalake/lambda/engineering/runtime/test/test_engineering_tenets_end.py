@@ -4,14 +4,10 @@ is not accepted refused."""
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from engineering.knowledge.store import Actor
 from engineering.knowledge.tenets import TenetsStore
@@ -25,12 +21,12 @@ from engineering.runtime.tenets_end import (
     draft_tenets,
     draft_tenets_at_end,
 )
+from engineering.runtime.test.test_engineering_triage_end import AGENTS, TABLE, Workspace, end_tables
 from engineering.runtime.triage_end import UNACCEPTED_TENET, WRITTEN, copy_triage
 
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0AB'
 SHA = 'a' * 40
 CONN = 'conn-harbor'
-TABLE, AGENTS = 'voc-engineering-test', 'voc-agents-test'
 KEY = f'ws/default/runs/{RUN}/understander-2/commits/{SHA}/_tenets/attempt-1/tenets.json'
 TRIAGE_KEY = f'ws/default/runs/{RUN}/understander-2/commits/{SHA}/_triage/attempt-1/triage.json'
 RECORD = {'summary': 'What the code holds to.', 'tenets': [
@@ -40,26 +36,7 @@ ADMIN = Actor('admin-sub-1', 'person', admin=True)
 NOW = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
 
 
-@dataclass
-class Workspace:
-    objects: dict[str, bytes] = field(default_factory=dict)
-
-    def read_bytes(self, key: str, limit: int) -> bytes | None:
-        body = self.objects.get(key)
-        return None if body is None else body[:limit]
-
-
-@pytest.fixture
-def client() -> Iterator[Any]:
-    with mock_aws():
-        dynamodb = boto3.client('dynamodb', region_name='us-east-1')
-        for name in (TABLE, AGENTS):
-            dynamodb.create_table(TableName=name, BillingMode='PAY_PER_REQUEST',
-                                  KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
-                                             {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-                                  AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                                        {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        yield dynamodb
+client = pytest.fixture(end_tables, name='client')
 
 
 def _meta(client: Any, *, status: str = 'done', connection: str = CONN, issue: bool = False) -> None:

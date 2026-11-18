@@ -272,11 +272,11 @@ def test_a_crashed_coordinators_session_has_failed_before_its_run_goes_to_a_pers
     seen: list[str] = []
     recorded = world.control.needs_human
 
-    def needs_human(run_id: str, reason: str) -> None:
+    def needs_human(run_id: str, reason: str, detail: str = '') -> None:
         seen.append(world.session('coordinator-0').status)
-        recorded(run_id, reason)
+        recorded(run_id, reason, detail)
 
-    world.control.needs_human = needs_human   # type: ignore[method-assign]
+    world.control.needs_human = needs_human
     _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator-0')
     assert seen == ['failed']
 
@@ -286,13 +286,13 @@ def test_a_coordinators_decision_point_that_failed_to_land_is_asked_for_again_on
     world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
     recorded, calls = world.control.needs_human, []
 
-    def flaky(run_id: str, reason: str) -> None:
+    def flaky(run_id: str, reason: str, detail: str = '') -> None:
         calls.append(reason)
         if len(calls) == 1:
             raise RuntimeError('the run table was unavailable')
-        recorded(run_id, reason)
+        recorded(run_id, reason, detail)
 
-    world.control.needs_human = flaky   # type: ignore[method-assign]
+    world.control.needs_human = flaky
     for _ in range(300):   # until the crash continuations are spent and the first ask threw
         world.renew(1000, agent_id='coordinator-0', task_id='coordinate')
         world.supervisor.tick(1000)

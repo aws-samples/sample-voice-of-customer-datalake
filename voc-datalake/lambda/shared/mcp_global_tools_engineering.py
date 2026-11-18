@@ -110,6 +110,10 @@ def _runs_page(payload: object, _args: Mapping[str, Any]) -> dict[str, Any]:
     return {'runs': _each(payload, 'runs', _LISTED_FIELDS), 'next': nxt if isinstance(nxt, str) else None}
 
 
+def _mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
 def _link(value: object) -> dict[str, Any] | None:
     return _picked(value, _LINK_FIELDS) or None if isinstance(value, Mapping) else None
 
@@ -123,10 +127,11 @@ def _lanes(value: object) -> dict[str, list[dict[str, Any]]]:
 
 def _run_view(payload: object, _args: Mapping[str, Any]) -> dict[str, Any]:
     """The run monitor's overview, field by field: what a person follows a run by, and never its words or code."""
-    answer = payload if isinstance(payload, Mapping) else {}
-    run = answer.get('run') if isinstance(answer.get('run'), Mapping) else {}
-    totals = answer.get('totals') if isinstance(answer.get('totals'), Mapping) else {}
-    run_id = run.get('run_id') if isinstance(run.get('run_id'), str) else ''
+    answer: Mapping[str, Any] = payload if isinstance(payload, Mapping) else {}
+    run = _mapping(answer.get('run'))
+    totals = _mapping(answer.get('totals'))
+    named = run.get('run_id')
+    run_id = named if isinstance(named, str) else ''
     return {
         'run': {**_picked(run, _RUN_FIELDS), 'manifest': _picked(run.get('manifest'), _MANIFEST_FIELDS) or None},
         'agents': _each(answer, 'agents', _AGENT_FIELDS),

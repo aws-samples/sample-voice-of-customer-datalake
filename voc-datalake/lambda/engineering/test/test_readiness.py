@@ -75,6 +75,8 @@ class Ports:
     quota: Any = 5000.0
     probe: Any = True
     walls: Any = field(default_factory=lambda: NAMESPACES_SEEN)
+    #: The Kiro key parameter's type (7.53.00; None: not stored).
+    kiro: Any = 'SecureString'
     asked: list[str] = field(default_factory=list)
 
     @staticmethod
@@ -146,6 +148,10 @@ class Ports:
     def sandbox_walls(self, language: str) -> SandboxSeen | None:
         self.asked.append(f'walls {language}')
         return self._answer(self.walls)
+
+    def kiro_key(self, parameter: str) -> str | None:
+        del parameter
+        return self._answer(self.kiro)
 
 
 SETTINGS =Settings(image_languages=frozenset({'python', 'node'}), network=True, build_memory_mib=0,

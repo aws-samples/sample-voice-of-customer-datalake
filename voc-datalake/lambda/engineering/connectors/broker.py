@@ -208,6 +208,16 @@ def _wrote(caller: Caller, operation: str, run: RunRecord, **written: object) ->
                                        'agent': caller.agent_index, 'connection_id': run.connection_id, **written})
 
 
+def _active_run(connector: Connector, caller: Caller) -> RunRecord:
+    """The caller's run, refused unless the broker knows it and it is active."""
+    run = connector.runs.run(caller.run_id)
+    if run is None:
+        raise NotNow('The run is not one the broker knows.')
+    if run.status != ACTIVE:
+        raise NotNow(_NOT_ACTIVE.get(run.status, _ENDED))
+    return run
+
+
 class Broker:
     """The operations, over a configured ``Connector`` (``None``: no connection, every operation refused)."""
 
@@ -219,11 +229,7 @@ class Broker:
             raise NotPermitted(f'The {caller.role} role may not {operation.replace("_", " ")}.')
         if self._connector is None:
             raise NoConnection(NO_CONNECTION)
-        run = self._connector.runs.run(caller.run_id)
-        if run is None:
-            raise NotNow('The run is not one the broker knows.')
-        if run.status != ACTIVE:
-            raise NotNow(_NOT_ACTIVE.get(run.status, _ENDED))
+        run = _active_run(self._connector, caller)
         # The connection's credential must still be for the repository the run started on (connections.py: a stored
         # connection's repository may change once its runs end, and a credential and its row could disagree after a
         # failed save): a run never reads or writes another repository than its own.
@@ -437,11 +443,7 @@ class Broker:
         connector = self._connector
         if connector is None or connector.docs is None:
             raise NoConnection(NO_CONNECTION)
-        run = connector.runs.run(caller.run_id)
-        if run is None:
-            raise NotNow('The run is not one the broker knows.')
-        if run.status != ACTIVE:
-            raise NotNow(_NOT_ACTIVE.get(run.status, _ENDED))
+        run = _active_run(connector, caller)
         accepted = connector.docs.accepted_tenets(run.connection_id)
         return ReadPage(json.dumps(accepted or {'version': None, 'summary': '', 'tenets': []}, sort_keys=True), None)
 

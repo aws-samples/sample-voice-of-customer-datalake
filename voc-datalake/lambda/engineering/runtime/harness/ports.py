@@ -232,6 +232,10 @@ class Store(Protocol):
         """Put one object under the agent's own keys (its role may write nowhere else)."""
         ...
 
+    def get(self, key: str, limit: int) -> bytes:
+        """The object at ``key``, up to ``limit`` + 1 bytes (one more than a caller allows: too large is seen)."""
+        ...
+
 
 class HarnessPortNotWired(RuntimeError):
     """A port the harness is not wired to yet: it refuses rather than guess."""

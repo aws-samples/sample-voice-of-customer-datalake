@@ -9,7 +9,7 @@ import pytest
 
 from shared import agents_store as store
 from shared.exceptions import ValidationError
-from shared.test.agents_fixtures import CATEGORIES, agents_env
+from shared.test.agents_fixtures import CATEGORIES, agents_env, stored_agent
 
 NOW = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
 ENGINEERING = {'connection': 'shop', 'language': 'python', 'feedback_type': 'bug'}
@@ -120,10 +120,10 @@ def test_a_run_and_its_issue_claim_are_one_transaction() -> None:
         store.release_lock(env.agents, agent['agent_id'], run['run_id'], 'completed')
         # Claimed: refused before anything is written (no run, the lock free).
         with pytest.raises(store.IssueClaimed):
-            store.start_run(env.agents, store.get_agent(env.agents, agent['agent_id']), store.RunStart(
+            store.start_run(env.agents, stored_agent(env.agents, agent['agent_id']), store.RunStart(
                 trigger='github_issue', requested_by='heartbeat', workflow_revision=1, issue_claim=claim), now=NOW)
         assert len(store.list_runs(env.agents, agent['agent_id'], limit=10)[0]) == 1
-        assert store.get_agent(env.agents, agent['agent_id']).get('active_run_id') is None
+        assert stored_agent(env.agents, agent['agent_id']).get('active_run_id') is None
 
 
 def test_a_busy_agent_starts_no_run_and_takes_no_claim() -> None:
@@ -154,7 +154,9 @@ def test_an_engineering_run_moves_from_queued_to_running_once() -> None:
         run = store.start_run(env.agents, agent, store.RunStart(trigger='manual', requested_by='a',
                                                                 workflow_revision=1), now=NOW)
         assert run is not None
-        assert store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id'])['status'] == 'running'
+        running = store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id'])
+        assert running is not None
+        assert running['status'] == 'running'
         assert store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id']) is None
         view = store.run_view({**run, 'kind': 'engineering', 'engineering_run_id': 'E', 'issue': {'number': 1},
                                'feedback_count': 3})

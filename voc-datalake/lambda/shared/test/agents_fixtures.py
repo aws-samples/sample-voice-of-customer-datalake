@@ -86,6 +86,22 @@ def agents_env(*, with_state_machine: bool = True) -> Generator[AgentsEnv, None,
         clear_categories_cache()
 
 
+def _present(found: dict[str, Any] | None, what: str) -> dict[str, Any]:
+    if found is None:
+        raise AssertionError(f'{what} is not stored')
+    return found
+
+
+def stored_agent(table: Any, agent_id: str) -> dict[str, Any]:
+    """The agent's stored row (a test's own agent: it is there)."""
+    return _present(agents_store.get_agent(table, agent_id), f'agent {agent_id}')
+
+
+def stored_workflow(table: Any, workflow_id: str) -> dict[str, Any]:
+    """The workflow's stored row (a test's own workflow: it is there)."""
+    return _present(agents_store.get_workflow(table, workflow_id), f'workflow {workflow_id}')
+
+
 def agent_body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         'name': 'Shipping crew', 'description': 'Late parcels',

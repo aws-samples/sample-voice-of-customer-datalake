@@ -61,6 +61,17 @@ def _cached_repository(runtime: LocalAgentRuntime, vm: RuntimeSession) -> str:
     return _run(runtime, vm, 'git', '-C', 'origin', 'rev-parse', 'HEAD').stdout_tail.strip()
 
 
+def _checked_out() -> tuple[LocalAgentRuntime, RuntimeSession, str, str]:
+    """A session with the cached repository's commit checked out, whole: the runtime, the session, the commit and the
+    working tree's path."""
+    runtime = LocalAgentRuntime()
+    vm = runtime.run(SPEC)
+    commit = _cached_repository(runtime, vm)
+    for command in checkout_commands(commit, [], 0, source=f'file://{vm.endpoint}/cache.git'):
+        _run_command(runtime, vm, command)
+    return runtime, vm, commit, os.path.join(vm.endpoint, CHECKOUT_DIR)
+
+
 def test_only_the_tasks_paths_are_checked_out_at_the_commit():
     runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
@@ -80,13 +91,8 @@ def test_only_the_tasks_paths_are_checked_out_at_the_commit():
 
 
 def test_a_repository_planted_in_the_working_tree_is_never_the_agents(tmp_path):
-    runtime = LocalAgentRuntime()
-    vm = runtime.run(SPEC)
-    commit = _cached_repository(runtime, vm)
-    for command in checkout_commands(commit, [], 0, source=f'file://{vm.endpoint}/cache.git'):
-        _run_command(runtime, vm, command)
+    runtime, vm, _commit, checkout = _checked_out()
     # Repository code drops the git file and makes the working tree a bare repository whose config runs a command.
-    checkout = os.path.join(vm.endpoint, CHECKOUT_DIR)
     os.remove(os.path.join(checkout, '.git'))
     _run(runtime, vm, 'git', 'init', '--quiet', '--bare', os.path.join(checkout, 'planted.git'))
     for name in ('HEAD', 'config', 'objects', 'refs'):
@@ -106,12 +112,7 @@ def test_a_git_file_repository_code_changes_or_replaces_never_moves_the_agents_g
     """7.54.00: the working tree's ``.git`` file is the group's to write (repository code's own git follows it), so the
     agent's git never reads it: pointed at a repository of repository code's, or replaced by one, it changes nothing
     of what the agent's commands see."""
-    runtime = LocalAgentRuntime()
-    vm = runtime.run(SPEC)
-    commit = _cached_repository(runtime, vm)
-    for command in checkout_commands(commit, [], 0, source=f'file://{vm.endpoint}/cache.git'):
-        _run_command(runtime, vm, command)
-    checkout = os.path.join(vm.endpoint, CHECKOUT_DIR)
+    runtime, vm, commit, checkout = _checked_out()
     git = ('git', '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c', 'init.defaultBranch=main')
     planted = os.path.join(vm.endpoint, 'planted')
     _run(runtime, vm, *git, 'init', '--quiet', planted)

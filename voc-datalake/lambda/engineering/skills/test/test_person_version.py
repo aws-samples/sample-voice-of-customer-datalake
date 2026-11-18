@@ -41,7 +41,9 @@ def test_the_version_is_the_persons_text_on_the_bases_tools_proposed_and_recorde
     assert (stored.provenance, stored.proposed_by, stored.created_at, stored.reason.comment) == (
         'person', ADMIN.id, AT.isoformat(), 'A failing test first\n\nFixes missed their tests.')
     assert (stored.skill.content.tool_policy, stored.skill.content.model) == (content().tool_policy, content().model)
-    assert skills.head(WS, SHARED, 'fixer').current_version == 1
+    head = skills.head(WS, SHARED, 'fixer')
+    assert head is not None
+    assert head.current_version == 1
 
 
 def test_a_scope_with_no_version_writes_on_the_roles_template(skills: SkillStore) -> None:
@@ -58,4 +60,6 @@ def test_a_moved_base_is_a_conflict_and_an_unchanged_text_is_refused(skills: Ski
             'examples': [{'situation': e.situation, 'action': e.action} for e in content().examples]}
     with pytest.raises(SkillError, match='changes nothing'):
         actions.propose('', 'fixer', same)
-    assert skills.head(WS, SHARED, 'fixer').versions == 1
+    head = skills.head(WS, SHARED, 'fixer')
+    assert head is not None
+    assert head.versions == 1

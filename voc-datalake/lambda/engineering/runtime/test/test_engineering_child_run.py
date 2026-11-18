@@ -18,7 +18,7 @@ from engineering.bus.test.messages import message
 from engineering.conversation.store import ConversationStore
 from engineering.flow.test.fixtures import TEMPLATES
 from engineering.runtime import handler, restart
-from engineering.runtime.checkpoints import artifact_prefix, checkpoint_prefix
+from engineering.runtime.checkpoints import CheckpointReader, artifact_prefix, checkpoint_prefix
 from engineering.runtime.harness import seed
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.runs import runlist_key
@@ -30,6 +30,9 @@ from shared.workflow_schema import encode_definition
 PARENT = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 CHILD = '01JD3R4NZXQ7Y2W8K4M6P9T0EF'
 WS = 'default'
+#: A person's Resume of the parent, as the Agents API asks voc-engineering-start for it.
+RESUME = {'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume', 'base': 'same',
+          'actor': 'admin-2'}
 
 
 def _client() -> Any:
@@ -74,6 +77,13 @@ def _parent(monkeypatch: pytest.MonkeyPatch) -> tuple[BoardStore, str, str]:
     return store, hunt, fix
 
 
+
+def _resumed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The parent resumed (``RESUME``): its child started, the hand-on of its seeding to the runtime dropped."""
+    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda *_: None)
+    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    handler.start_handler(dict(RESUME), None)
+
 def test_a_resume_starts_a_child_with_its_parent_its_inherited_steps_and_its_runs_list_row(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
@@ -81,10 +91,9 @@ def test_a_resume_starts_a_child_with_its_parent_its_inherited_steps_and_its_run
     handed: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda name, payload: handed.append((name, payload)))
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
-    answer = handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
-                                    'base': 'same', 'actor': 'admin-2'}, None)
+    answer = handler.start_handler(dict(RESUME), None)
     assert answer == {'run_id': CHILD, 'parent_run_id': PARENT, 'status': 'active'}
-    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    table: Any = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)   # (its rows as plain dicts)
     meta = table.get_item(Key={'pk': f'WS#default#RUN#{CHILD}', 'sk': 'META'})['Item']
     assert (meta['parent']['run_id'], meta['parent']['mode'], meta['parent']['by'], meta['commit'], meta['goal'],
             meta['connection'], meta['max_tasks']) == (PARENT, 'resume', 'admin-2', COMMIT, 'fix the floors', 'conn-1',
@@ -102,12 +111,13 @@ def test_a_resume_starts_a_child_with_its_parent_its_inherited_steps_and_its_run
     assert child is not None
     listed = table.get_item(Key=runlist_key(CHILD, child.started_at))['Item']
     assert (listed['status'], listed['parent']['run_id'], listed['goal']) == ('active', PARENT, 'fix the floors')
-    parent_listed = table.get_item(Key=runlist_key(PARENT, handler._runs().get(PARENT).started_at))['Item']
+    parent = handler._runs().get(PARENT)
+    assert parent is not None
+    parent_listed = table.get_item(Key=runlist_key(PARENT, parent.started_at))['Item']
     assert (parent_listed['status'], 'ended_at' in parent_listed, parent_listed['cost_usd']) == ('failed', True, 0)
     assert handed == [('voc-engineering-runtime', {'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'})]
     # A retry with the same child id answers the child already there, writing nothing again.
-    assert handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD,
-                                  'mode': 'resume', 'base': 'same', 'actor': 'admin-2'}, None)['run_id'] == CHILD
+    assert handler.start_handler(dict(RESUME), None)['run_id'] == CHILD
     assert len(handed) == 1
 
 
@@ -115,10 +125,7 @@ def test_seeding_writes_each_taken_over_tasks_seed_posts_it_and_launches_the_coo
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     store, _hunt, fix = _parent(monkeypatch)
-    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda *_: None)
-    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
-    handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
-                           'base': 'same', 'actor': 'admin-2'}, None)
+    _resumed(monkeypatch)
     _runtime, started = _recording(monkeypatch)
     answer = handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
     assert (answer['seeded'], answer['skipped']) == ([fix], [])
@@ -152,10 +159,7 @@ def test_a_parents_saved_kiro_session_is_copied_beside_its_seed_for_the_childs_s
                   Body=json.dumps({'position': {'turn': 5, 'task_id': fix, 'kiro': {'session_id': 'sess_parent',
                                                                                     'state': state}},
                                    'plan': [], 'notes': 'on kiro', 'patch': None}))
-    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda *_: None)
-    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
-    handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
-                           'base': 'same', 'actor': 'admin-2'}, None)
+    _resumed(monkeypatch)
     _recording(monkeypatch)
     handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
     record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
@@ -169,8 +173,7 @@ def test_a_live_run_is_restarted_through_its_signals_never_as_a_child(wired: Any
     monkeypatch.setattr(handler, '_hand_on_launch', lambda *_: None)
     handler.start_handler({'action': 'start_run', 'run_id': PARENT, 'max_tasks': 5, 'actor': 'admin-1'}, None)
     with pytest.raises(RuntimeRefused, match='the run is live'):
-        handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
-                               'base': 'same', 'actor': 'admin-2'}, None)
+        handler.start_handler(dict(RESUME), None)
     assert handler._runs().get(CHILD) is None
 
 
@@ -198,16 +201,17 @@ def test_a_history_past_its_bounds_is_learns_summary_charged_to_the_child(aws):
     class Reply:
         text, model_id, tokens_in, tokens_out = 'It floored the divide; the tests are left.', 'model-x', 900, 80
 
-    seeder = restart.Seeder(s3=s3, bucket=WORKSPACE_BUCKET, board=None,  # type: ignore[arg-type]
-                            checkpoints=None,  # type: ignore[arg-type]
+    # (a history reads the parent's transcripts alone: the board and the checkpoints are never asked)
+    board, checkpoints = BoardStore(_client(), TABLE, new_id=new_event_id), CheckpointReader(s3, WORKSPACE_BUCKET)
+    seeder = restart.Seeder(s3=s3, bucket=WORKSPACE_BUCKET, board=board, checkpoints=checkpoints,
                             summarize=lambda *_: Reply(), charge=lambda *a: charged.append(a))
     history = seeder.history(restart.Attempt(PARENT, 'fixer-2', COMMIT, 1), CHILD)
     assert (history['kind'], history['text'], history['tokens']) == ('summary', Reply.text, 980)
     assert charged == [(CHILD, 'model-x', 900, 80)]
     # Under the bounds: the excerpts, no model call.
     s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{prefix}0001.jsonl', Body=events.split('\n', 1)[0].encode())
-    short = restart.Seeder(s3=s3, bucket=WORKSPACE_BUCKET, board=None,  # type: ignore[arg-type]
-                           checkpoints=None, summarize=lambda *_: pytest.fail('no call'))  # type: ignore[arg-type]
+    short = restart.Seeder(s3=s3, bucket=WORKSPACE_BUCKET, board=board, checkpoints=checkpoints,
+                           summarize=lambda *_: pytest.fail('no call'))
     assert short.history(restart.Attempt(PARENT, 'fixer-2', COMMIT, 1), CHILD)['kind'] == 'excerpts'
 
 
@@ -224,8 +228,7 @@ def test_a_resume_on_the_heads_base_takes_the_default_branchs_head_through_the_b
         return 'b' * 40
 
     monkeypatch.setattr(handler, '_head_commit', head)
-    handler.start_handler({'action': 'restart_run', 'run_id': PARENT, 'child_run_id': CHILD, 'mode': 'resume',
-                           'base': 'head', 'actor': 'admin-2'}, None)
+    handler.start_handler({**RESUME, 'base': 'head'}, None)
     child = handler._runs().get(CHILD)
     assert child is not None
     assert (child.commit, asked) == ('b' * 40, [('conn-1', 'example/app', '')])

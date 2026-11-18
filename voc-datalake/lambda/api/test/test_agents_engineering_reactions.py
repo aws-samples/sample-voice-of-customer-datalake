@@ -9,7 +9,8 @@ unknown run, 409 while the run has not ended, 429 when the hour's ask is taken.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
@@ -30,33 +31,42 @@ DELEGATED_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_
                    'cognito:groups': 'admins'}
 
 
+@contextmanager
+def wired(monkeypatch: pytest.MonkeyPatch, engineering: EngineeringRun) -> Generator[EngineeringRun, None, None]:
+    """The module on over ``engineering``: its table and bucket, the start function named, its clients the API's."""
+    monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
+    monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
+    monkeypatch.setenv('ENGINEERING_WORKSPACE_BUCKET', BUCKET)
+    monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
+    with patch('shared.aws.get_dynamodb_client', return_value=engineering.client), \
+            patch('shared.aws.get_s3_client', return_value=engineering.s3):
+        yield engineering
+
+
 @pytest.fixture
 def run(monkeypatch: pytest.MonkeyPatch) -> Iterator[EngineeringRun]:
-    with _api():
-        engineering = engineering_run()
-        monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
-        monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
-        monkeypatch.setenv('ENGINEERING_WORKSPACE_BUCKET', BUCKET)
-        monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
-        with patch('shared.aws.get_dynamodb_client', return_value=engineering.client), \
-                patch('shared.aws.get_s3_client', return_value=engineering.s3):
-            yield engineering
+    with _api(), wired(monkeypatch, engineering_run()) as engineering:
+        yield engineering
 
 
 def _end(engineering: EngineeringRun, status: str = 'done') -> None:
     set_status(engineering.client, status)
 
 
-def _start(monkeypatch: pytest.MonkeyPatch, payload: Any, function_error: str = '') -> LambdaClient:
+def start_answering(monkeypatch: pytest.MonkeyPatch, payload: Any, function_error: str = '') -> LambdaClient:
+    """voc-engineering-start, as the API's client of it, answering ``payload`` (``function_error``: as its error)."""
     client = LambdaClient(payload, function_error)
     monkeypatch.setattr(agents_handler, '_start_client', lambda: client)
     return client
 
 
+
+
+
 def test_an_admin_asks_for_an_ended_runs_reactions_through_the_start_function(
         lambda_context: Any, run: EngineeringRun, monkeypatch: pytest.MonkeyPatch) -> None:
     _end(run)
-    client = _start(monkeypatch, {'run_id': RUN, 'status': 'asked'})
+    client = start_answering(monkeypatch, {'run_id': RUN, 'status': 'asked'})
     assert _call(lambda_context, 'POST', PATH, body={}) == (202, {'reactions': {'status': 'asked'}})
     (request,) = client.requests
     assert (request['FunctionName'], request['InvocationType']) == (START_FUNCTION, 'RequestResponse')
@@ -66,7 +76,7 @@ def test_an_admin_asks_for_an_ended_runs_reactions_through_the_start_function(
 def test_429_once_this_hours_ask_is_taken(lambda_context: Any, run: EngineeringRun,
                                          monkeypatch: pytest.MonkeyPatch) -> None:
     _end(run, 'failed')
-    _start(monkeypatch, {'run_id': RUN, 'status': 'too_soon', 'retry_after': 1200})
+    start_answering(monkeypatch, {'run_id': RUN, 'status': 'too_soon', 'retry_after': 1200})
     status, body = _call(lambda_context, 'POST', PATH, body={})
     assert (status, body['retry_after']) == (429, 1200)
     assert 'this hour already' in body['error']
@@ -76,7 +86,7 @@ def test_429_once_this_hours_ask_is_taken(lambda_context: Any, run: EngineeringR
 def test_409_while_the_run_has_not_ended_and_nothing_is_asked(lambda_context: Any, run: EngineeringRun,
                                                               monkeypatch: pytest.MonkeyPatch, status: str) -> None:
     _end(run, status)
-    client = _start(monkeypatch, {'status': 'asked'})
+    client = start_answering(monkeypatch, {'status': 'asked'})
     assert _call(lambda_context, 'POST', PATH, body={})[0] == 409
     assert client.requests == []
 
@@ -85,7 +95,7 @@ def test_409_while_the_run_has_not_ended_and_nothing_is_asked(lambda_context: An
 @pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN], ids=['plain user', 'MCP credential of an admin'])
 def test_403_for_anyone_but_an_administrator_acting_for_themselves(lambda_context: Any, claims: dict[str, Any],
                                                                    monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _start(monkeypatch, {'status': 'asked'})
+    client = start_answering(monkeypatch, {'status': 'asked'})
     assert _call(lambda_context, 'POST', PATH, body={}, claims=claims)[0] == 403
     assert client.requests == []
 
@@ -107,7 +117,7 @@ def test_the_start_functions_refusal_is_409_and_any_other_failure_503(
         lambda_context: Any, run: EngineeringRun, monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any],
         error: str, status: int) -> None:
     _end(run)
-    _start(monkeypatch, payload, error)
+    start_answering(monkeypatch, payload, error)
     assert _call(lambda_context, 'POST', PATH, body={})[0] == status
 
 
@@ -128,7 +138,7 @@ def test_a_start_function_that_cannot_be_reached_is_503(lambda_context: Any, run
 def test_a_body_is_refused_and_an_unnamed_start_function_is_503(lambda_context: Any, run: EngineeringRun,
                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
     _end(run)
-    _start(monkeypatch, {'status': 'asked'})
+    start_answering(monkeypatch, {'status': 'asked'})
     assert _call(lambda_context, 'POST', PATH, body={'now': True})[0] == 400
     monkeypatch.delenv('ENGINEERING_START_FUNCTION')
     assert _call(lambda_context, 'POST', PATH, body={})[0] == 503

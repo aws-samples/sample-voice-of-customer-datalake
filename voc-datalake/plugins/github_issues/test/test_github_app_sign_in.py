@@ -95,7 +95,7 @@ def test_without_the_token_function_or_its_answer_nothing_is_fetched(monkeypatch
 
 def lambda_client(payload: object, function_error: str | None = None) -> MagicMock:
     client = MagicMock()
-    answer = {"Payload": io.BytesIO(json.dumps(payload).encode())}
+    answer: dict[str, object] = {"Payload": io.BytesIO(json.dumps(payload).encode())}
     if function_error:
         answer["FunctionError"] = function_error
     client.invoke.return_value = answer

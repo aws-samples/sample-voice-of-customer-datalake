@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
 
 from engineering.connectors.identity import AGENT_ROLES
@@ -127,6 +127,13 @@ def _shards(arguments: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 Tool = Callable[[Mapping[str, Any]], Built]
+#: role_tools' create-only output write, recorded on the task: ``(key, body, what) -> result``.
+Record = Callable[[str, bytes, str], Built]
+
+
+def offered(all_specs: Sequence[Built], role: str, roles: Mapping[str, frozenset[str]]) -> tuple[Built, ...]:
+    """The specs of ``all_specs`` that ``role`` may have (``roles``: role_tools.ROLE_TOOLS)."""
+    return tuple(spec for spec in all_specs if role in roles[spec.name])
 
 
 def post_for(context: Built, result: Callable[..., Built], arguments: Mapping[str, Any], role: str,

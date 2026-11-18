@@ -140,9 +140,10 @@ def run_cost(meta: Mapping[str, Any], agents: Sequence[Mapping[str, Any]],
             'cost_cap_usd': usd(cap) if cap is not None and cap.is_finite() and cap > 0 else None}
 
 
-def _plain(value: Mapping[str, Any]) -> Any:
+def _plain(value: Any) -> Any:
+    """A typed attribute value (``{'M': {...}}``, as the low-level client reads it) as plain data."""
     try:
-        return _DESERIALIZE.deserialize(dict(value))
+        return _DESERIALIZE.deserialize(value)
     except (TypeError, ValueError, InvalidOperation):
         return None
 

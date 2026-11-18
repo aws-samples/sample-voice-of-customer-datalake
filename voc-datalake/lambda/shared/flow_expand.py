@@ -331,7 +331,7 @@ def save_issues(definition: Mapping[str, Any], read: ReadRevision, *,
     """What a save of ``definition`` (an engineering flow the rules pass) is refused for, as ``(message, node_id)``:
     a dotted step id (the expansion's), a recorded ``expansion`` (a run's), or a call that cannot be expanded (the
     expansion simulated on the stored flows, as a run's start will make it). Empty for anything else."""
-    if not isinstance(definition, Mapping) or definition.get('schema') != SCHEMA_V2:
+    if definition.get('schema') != SCHEMA_V2:
         return []
     issues: list[tuple[str, str | None]] = [(DOTTED, node['id']) for node in definition['nodes']
                                             if SEPARATOR in node['id']]

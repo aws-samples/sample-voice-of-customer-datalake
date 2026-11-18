@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,9 @@ from engineering.runtime.harness.skills import FIXER, harness_argv
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.restart import _kiro_state
 from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID
+from engineering.runtime.test.test_engineering_harness_main import _ports
+from engineering.runtime.test.test_engineering_images import installed
+from engineering.test.test_readiness import Ports as ReadyPorts
 
 IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
 PARAMETER = '/voc/engineering/_kiro/api-key'
@@ -104,8 +107,7 @@ def test_each_image_installs_the_pinned_kiro_cli_and_ships_the_compiled_configs(
 
 
 def test_every_image_pins_the_same_kiro_archive():
-    pins = {re.search(r'install-kiro\.sh (\S+) (\S+) ', _dockerfile(language)).groups()  # type: ignore[union-attr]
-            for language in sorted(egress.REGISTRY_HOSTS)}
+    pins = {installed('install-kiro.sh', language) for language in sorted(egress.REGISTRY_HOSTS)}
     assert pins == {(KIRO_CLI_VERSION, '187905a1c931fde45ef0e03edd80d201f4f608e1a844d9508d80f558a593d499')}
 
 
@@ -168,15 +170,16 @@ def test_the_sessions_kiro_cli_is_recorded_with_its_walls_and_read_back():
 # -- readiness ---------------------------------------------------------------------------------------------------
 
 
-class _Ports:
-    def __init__(self, kind: Any = 'SecureString', seen: Any = None) -> None:
-        self.kind, self.seen, self.asked = kind, seen, []
+@dataclass
+class _Ports(ReadyPorts):
+    """Readiness's ports, every one ready but the Kiro key's type (``kind``) and the sandbox's walls (``seen``)."""
+
+    kind: Any = 'SecureString'
+    seen: Any = None
 
     def kiro_key(self, parameter: str) -> str | None:
         self.asked.append(parameter)
-        if isinstance(self.kind, Exception):
-            raise self.kind
-        return self.kind
+        return self._answer(self.kind)
 
     def sandbox_walls(self, language: str) -> SandboxSeen | None:
         del language
@@ -329,7 +332,7 @@ def test_the_tool_server_drops_any_kiro_key_from_its_own_environment(monkeypatch
     monkeypatch.setattr(harness_main, 'build_session', build)
     with pytest.raises(SystemExit):
         harness_main.main(['tool-server'], {'KIRO_API_KEY': 'leaked', 'VOC_SESSION_FILES': '/x'}, s3=object(),
-                          ports=object())  # type: ignore[arg-type]
+                          ports=_ports())
     import os
     assert 'KIRO_API_KEY' not in os.environ
     assert 'KIRO_API_KEY' not in seen['env']

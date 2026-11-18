@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from engineering.quality_gate.text import cell
 from engineering.runtime.checkpoints import artifact_prefix
-from engineering.runtime.harness.coordinator import Built, Tool, bounded, listed
+from engineering.runtime.harness.coordinator import Built, Record, Tool, bounded, listed, offered
 from engineering.runtime.harness.tenets_tools import accepted_ids
 from engineering.runtime.outputs import (
     TRIAGE_FILE,
@@ -61,7 +61,7 @@ def issue_comment(body: str) -> str:
 
 
 def specs(tool_spec: Callable[..., Built], role: str, roles: Mapping[str, frozenset[str]]) -> tuple[Built, ...]:
-    """The tools of this module ``role`` may have (``roles``: role_tools.ROLE_TOOLS)."""
+    """The issue tools ``role`` may have (``roles``: role_tools.ROLE_TOOLS)."""
     text = {'type': 'string'}
     items = {'type': 'array', 'items': text}
     issue = {'type': 'integer', 'description': "The issue's number (the run's issue, as your task names it)."}
@@ -82,11 +82,11 @@ def specs(tool_spec: Callable[..., Built], role: str, roles: Mapping[str, frozen
                       'type': 'array', 'items': {'type': 'string', 'enum': sorted(TRIAGE_LABELS)}}},
                   ('number', 'labels')),
     )
-    return tuple(spec for spec in all_specs if role in roles[spec.name])
+    return offered(all_specs, role, roles)
 
 
-def handlers(context: Built, result: Callable[..., Built], record: Callable[[str, bytes, str], Built]) -> dict[str, Tool]:
-    """This module's tools on ``context`` (``record``: role_tools' create-only output write, recorded on the task)."""
+def handlers(context: Built, result: Callable[..., Built], record: Record) -> dict[str, Tool]:
+    """The issue tools on ``context`` (``record``: their outputs' write)."""
 
     def read_issue(arguments: Mapping[str, Any]) -> Built:
         issue = number(arguments)

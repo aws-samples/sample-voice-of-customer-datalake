@@ -111,9 +111,9 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import cache
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
-from aws_lambda_powertools.event_handler import Response, content_types
+from aws_lambda_powertools.event_handler import Response
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import (
@@ -156,9 +156,14 @@ from shared.project_access import Caller
 from shared.project_gate import acts_as_admin, caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 from shared.request_workspace import request_workspace
+from shared.route_answers import json_response as _json
+from shared.route_answers import query_text
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
+
+if TYPE_CHECKING:
+    from engineering.connectors.connections import Kind
 
 AGENT_NOT_FOUND = 'Agent not found'
 RUN_NOT_FOUND = 'Run not found'
@@ -214,14 +219,8 @@ def _aggregates_table() -> Any:
     return table
 
 
-def _json(status: int, body: Mapping[str, Any]) -> Response:
-    return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
-
-
 def _query(name: str) -> str | None:
-    params = app.current_event.query_string_parameters or {}
-    value = params.get(name)
-    return value if isinstance(value, str) else None
+    return query_text(app.current_event, name)
 
 
 def _viewer_scope(caller: Caller) -> CategoryScope:
@@ -782,7 +781,8 @@ SHARED_FLOW = ('other automations run this flow: saving changes each of them fro
 
 def _used_by_automation(agent: Mapping[str, Any]) -> dict[str, Any]:
     """An automation as a workflow's ``used_by`` lists it (7.52.00)."""
-    settings = agent.get('engineering') if isinstance(agent.get('engineering'), Mapping) else {}
+    engineering = agent.get('engineering')
+    settings: Mapping[str, Any] = engineering if isinstance(engineering, Mapping) else {}
     return {'agent_id': str(agent.get('agent_id')), 'name': str(agent.get('name') or agent.get('agent_id')),
             'kind': 'engineering' if store.is_engineering_agent(agent) else 'agents',
             'connection': settings.get('connection'), 'language': settings.get('language')}
@@ -1959,8 +1959,10 @@ def confirm_engineering_run_request(request_id: str):
         said = f'refused: {refused}'
         _requested(lambda: requests.record(request_id, said))
         raise
-    started = json.loads(answer.body) if isinstance(answer.body, str) else {}
-    run = started.get('run') if isinstance(started.get('run'), dict) else {}
+    loaded = json.loads(answer.body) if isinstance(answer.body, str) else None
+    started: dict[str, Any] = loaded if isinstance(loaded, dict) else {}
+    started_run = started.get('run')
+    run: dict[str, Any] = started_run if isinstance(started_run, dict) else {}
     outcome = 'started' if answer.status_code == 202 else 'uncertain'
     _requested(lambda: requests.record(request_id, outcome, run_id=str(run.get('run_id') or ''),
                                        engineering_run_id=str(run.get('engineering_run_id') or started.get('run_id')
@@ -2179,14 +2181,14 @@ def withdraw_engineering_connection_ci(connection_id: str):
 # token function (voc-engineering-app-tokens, invoked by name) reads an installation for it and answers no token here.
 #: The token function's errors (its exception types) and the answer each is: its words for a refusal a person can act
 #: on, a plain "try again" for the rest.
-_APP_TOKENS_REFUSALS = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 'conflict', 'HostBusy': 'unavailable',
-                        'HostError': 'unavailable'}
+_APP_TOKENS_REFUSALS: Final[Mapping[str, Kind]] = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 'conflict',
+                                                   'HostBusy': 'unavailable', 'HostError': 'unavailable'}
 
 
 #: The GitHub Issues settings function's errors (7.50.02, engineering/connectors/issues_config.py): a request off its
 #: shape is this API's 400, settings too large a 409, a failed read or write "try again".
-_ISSUES_CONFIG_REFUSALS = {'IssuesConfigRefused': 'invalid', 'IssuesSettingsFull': 'conflict',
-                           'IssuesSettingsUnavailable': 'unavailable'}
+_ISSUES_CONFIG_REFUSALS: Final[Mapping[str, Kind]] = {
+    'IssuesConfigRefused': 'invalid', 'IssuesSettingsFull': 'conflict', 'IssuesSettingsUnavailable': 'unavailable'}
 
 
 def _issues_follow() -> Any:
@@ -2211,7 +2213,7 @@ def _github_apps() -> tuple[Any, Caller]:
                       webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow()), caller
 
 
-def _invoke_peer(env: str, refusals: Mapping[str, str], request: dict[str, Any], *, what: str, unnamed: str,
+def _invoke_peer(env: str, refusals: Mapping[str, Kind], request: dict[str, Any], *, what: str, unnamed: str,
                  unreadable: str, refused: str) -> dict[str, Any]:
     """``request``'s answer from the function ``env`` names, by a direct invoke, or a ``ConnectionRefused``: its
     errors in ``refusals`` in its words (``invalid`` 400, ``conflict`` 409, ``unavailable`` 503), anything else

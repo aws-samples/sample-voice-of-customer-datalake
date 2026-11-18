@@ -3,7 +3,6 @@ the coordinator's tools relay it and set the run's direction, and refuse anyone 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 
 import pytest
 
@@ -12,6 +11,7 @@ from engineering.runtime.harness.skills import Skill
 from engineering.runtime.harness.tools import ToolBox
 from engineering.runtime.test.conftest import World
 from engineering.runtime.test.harness_fakes import world as harness_world
+from engineering.runtime.test.test_engineering_coordinator import FakePlanner
 from engineering.runtime.test.test_engineering_delivery import SLEEP, _deliver, _for, _inbox, _until
 from engineering.skills.templates import bundled
 
@@ -28,26 +28,10 @@ def test_steering_relayed_to_a_role_is_recorded_for_it_and_wakes_its_live_agents
     assert [str(row['sk']).split('#')[1] for row in _inbox(world)] == ['role:fixer']
 
 
-@dataclass
-class Planner:
-    relayed: list[tuple[str, str, str]] = field(default_factory=list)
-    directions: list[str] = field(default_factory=list)
-
-    def steer(self, *, run_id: str, to_kind: str, to_id: str, text: str) -> str:
-        del run_id
-        self.relayed.append((to_kind, to_id, text))
-        return 'E-RELAY'
-
-    def set_direction(self, *, run_id: str, text: str) -> int:
-        del run_id
-        self.directions.append(text)
-        return len(self.directions)
-
-
-def _coordinator(tmp_path) -> tuple[ToolBox, Planner]:
+def _coordinator(tmp_path) -> tuple[ToolBox, FakePlanner]:
     w = harness_world(tmp_path, role='coordinator')
-    planner = Planner()
-    w.session.context.planner = planner   # type: ignore[assignment]
+    planner = FakePlanner()
+    w.session.context.planner = planner
     template = bundled().skill('coordinator')
     assert template is not None
     assert isinstance(template.skill, Skill)

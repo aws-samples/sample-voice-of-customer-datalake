@@ -30,14 +30,20 @@ class Start(LambdaClient):
         return super().invoke(**request)
 
 
-@pytest.fixture(autouse=True)
-def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, Start]]:
-    """The module on, the start function named, a GitHub, a private GitHub and a GitLab connection (every test's)."""
+def wire_start(monkeypatch: pytest.MonkeyPatch) -> Start:
+    """The module on and voc-engineering-start named, the API's client of it a ``Start``."""
     monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
     monkeypatch.setenv('ENGINEERING_TABLE', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
     client = Start({})
     monkeypatch.setattr(agents_handler, '_start_client', lambda: client)
+    return client
+
+
+@pytest.fixture(autouse=True)
+def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, Start]]:
+    """The module on, the start function named, a GitHub, a private GitHub and a GitLab connection (every test's)."""
+    client = wire_start(monkeypatch)
     with _api() as agents_env:
         # Every readiness check ready (7.50.00: Enable runs the required ones; test_agents_engineering_readiness.py)
         readiness_fakes.use(monkeypatch, readiness_fakes.ReadyPorts(agents=agents_env.agents))
@@ -201,12 +207,19 @@ def test_a_feature_agent_builds_from_an_issue_or_a_prd(lambda_context: Any, env:
                                                                          'document_id': 'prd_1'}, False)
 
 
-def test_a_refused_start_is_409_and_fails_the_agents_run(lambda_context: Any, env: tuple[Any, Start]) -> None:
+def _failing_bug(lambda_context: Any, env: tuple[Any, Start], error_type: str,
+                 message: str) -> tuple[Any, dict[str, Any]]:
+    """The seeded Bug fixer, set up, the start function's answer to its next start ``error_type`` in ``message``."""
     agents_env, client = env
     bug = _seeded(lambda_context)['Bug fixer']
     assert _set_up(lambda_context, bug)[0] == 200
     client.function_error = 'Unhandled'
-    client.payload = {'errorType': 'RuntimeRefused', 'errorMessage': 'issue #7 of example-org/shop is closed'}
+    client.payload = {'errorType': error_type, 'errorMessage': message}
+    return agents_env, bug
+
+
+def test_a_refused_start_is_409_and_fails_the_agents_run(lambda_context: Any, env: tuple[Any, Start]) -> None:
+    agents_env, bug = _failing_bug(lambda_context, env, 'RuntimeRefused', 'issue #7 of example-org/shop is closed')
     status, body = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run", body={'issue': 7})
     assert (status, body['error']) == (409, 'issue #7 of example-org/shop is closed')
     (run,) = store.list_runs(agents_env.agents, bug['agent_id'], limit=5)[0]
@@ -214,11 +227,7 @@ def test_a_refused_start_is_409_and_fails_the_agents_run(lambda_context: Any, en
 
 
 def test_a_start_that_may_have_written_names_the_engineering_run(lambda_context: Any, env: tuple[Any, Start]) -> None:
-    agents_env, client = env
-    bug = _seeded(lambda_context)['Bug fixer']
-    assert _set_up(lambda_context, bug)[0] == 200
-    client.function_error = 'Unhandled'
-    client.payload = {'errorType': 'StartFailed', 'errorMessage': 'run X was started: open its run monitor'}
+    agents_env, bug = _failing_bug(lambda_context, env, 'StartFailed', 'run X was started: open its run monitor')
     status, body = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run")
     (run,) = store.list_runs(agents_env.agents, bug['agent_id'], limit=5)[0]
     assert (status, body['run_id'], run['status']) == (503, run['engineering_run_id'], 'running')

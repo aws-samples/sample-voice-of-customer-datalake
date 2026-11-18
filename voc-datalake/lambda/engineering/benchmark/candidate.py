@@ -32,7 +32,7 @@ from engineering.benchmark.runner import Attempt, CandidateError, CaseView, Repo
 from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.converse_loop import MAX_TURNS, ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
-from engineering.runtime.harness.ports import Direction, InboxMessage, TaskBrief
+from engineering.runtime.harness.ports import Direction, InboxMessage, SkillAnswer, TaskBrief
 from engineering.runtime.harness.skills import Skill, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tools import AgentContext, ToolBox
@@ -103,12 +103,36 @@ class _Ports:
         del run_id, agent_id, branch, title, body
         return {'benchmark': NO_HOST}
 
-    def comment(self, run_id: str, agent_id: str, *, number: int, body: str) -> dict[str, Any]:
-        del run_id, agent_id, number, body
+    def comment(self, run_id: str, agent_id: str, *, number: int, body: str,
+                on: str = 'pull_request') -> dict[str, Any]:
+        del run_id, agent_id, number, body, on
         return {'benchmark': NO_HOST}
 
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        del run_id, agent_id, number, labels
+        return {'benchmark': NO_HOST}
+
+    def read(self, *, kind: str, target: str, cursor: str | None = None) -> dict[str, Any]:
+        """No repository host to read: an empty last page."""
+        del kind, target, cursor
+        return {'content': '', 'next_cursor': None}
+
+    def skill(self, *, run_id: str, role: str) -> SkillAnswer:
+        """Never asked: the candidate gives the session its skill."""
+        raise CandidateError(f'no skill for {run_id}/{role}: the candidate gives it')
+
+    def memory(self, *, run_id: str, task_id: str) -> tuple[str, ...]:
+        """No lessons: a candidate runs on its skill alone."""
+        del run_id, task_id
+        return ()
+
     def put(self, key: str, body: bytes) -> None:
+        """An output the session writes under its own keys (its patch, its findings): kept for the attempt."""
         self.objects[key] = body
+
+    def get(self, key: str, limit: int) -> bytes:
+        """What the session put at ``key`` (nothing else is there)."""
+        return self.objects[key][:limit + 1]
 
     def run(self, argv: Sequence[str], *, timeout_seconds: int, repository_code: bool = True, network: bool = False,
             in_checkout: bool = True, on_wait: Callable[[], None] | None = None) -> dict[str, Any]:

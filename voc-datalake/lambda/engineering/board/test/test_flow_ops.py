@@ -44,12 +44,16 @@ def _board(template: str | None, max_tasks: int = 20, gate_records: Any = None) 
                           flow_definition=encode_definition({**STORED_7_47, **TEMPLATES}[template]) if template
                           else '',
                           flow_revision=3 if template else 0)
+    return board_on(client, gate_records=gate_records)
+
+
+def board_on(client: Any, **options: Any) -> Board:
+    """The board's API on ``client``'s table (its tasks task-1, task-2, ...; a fake launcher), ``options`` its own."""
     ids = count(1)
     store = BoardStore(client, TABLE, new_id=lambda: f'task-{next(ids)}')
     launcher = Launcher()
     api = BoardApi(store, EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board'),
-                   Inbox(client, TABLE), launcher=launcher, skill=lambda role: f'{role}-skill',
-                   gate_records=gate_records)
+                   Inbox(client, TABLE), launcher=launcher, skill=lambda role: f'{role}-skill', **options)
     return Board(client, store, api, launcher, knowledge=None)
 
 

@@ -181,8 +181,8 @@ def compiled_config(role: str, directory: str = KIRO_AGENTS_DIR) -> dict[str, An
         raise KiroNotOffered(f'no compiled Kiro config for the {role} ({type(error).__name__})') from None
     servers = config.get('mcpServers') if isinstance(config, dict) else None
     server = servers.get(SERVER_NAME) if isinstance(servers, dict) else None
-    if (not isinstance(server, dict) or set(servers) != {SERVER_NAME} or server.get('command') != TOOL_SERVER[0]
-            or server.get('args') != list(TOOL_SERVER[1:])):
+    if (not isinstance(servers, dict) or not isinstance(server, dict) or set(servers) != {SERVER_NAME}
+            or server.get('command') != TOOL_SERVER[0] or server.get('args') != list(TOOL_SERVER[1:])):
         raise KiroNotOffered(f'the compiled Kiro config of the {role} names a tool server other than the harness\'s')
     if config.get('tools') != [f'@{SERVER_NAME}']:
         raise KiroNotOffered(f'the compiled Kiro config of the {role} offers Kiro tools beside the platform\'s')

@@ -5,6 +5,7 @@ read of the accepted tenets."""
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -26,6 +27,7 @@ from engineering.connectors.hosts import (
     CI_AGENT_BRANCH_PROTECTED,
     WRITE_CLAIMED,
     WRITE_UNKNOWN,
+    BundleContents,
     CiProtection,
     HostBusy,
     NoConnection,
@@ -118,6 +120,13 @@ class World:
                               docs_writes=self.claims))
 
 
+def _pr(done: Mapping[str, object]) -> Mapping[str, Any]:
+    """The pull request a publish answered."""
+    pr = done['pr']
+    assert isinstance(pr, Mapping)
+    return pr
+
+
 def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_request() -> None:
     world = World()
     done = world.broker.push_approved_docs(START, request())
@@ -130,6 +139,7 @@ def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_requ
     assert tree == ('tree_with', 'conn-1', BASE, KNOWLEDGE.paths())
     push = next(call for call in world.host.calls if call[0] == 'push_bundle')
     contents = push[3]
+    assert isinstance(contents, BundleContents)
     assert (push[2], push[4], push[5]) == ('voc-agent/docs/knowledge-v3', TREE, 'main')
     assert (contents.heads, contents.base, contents.tree_hash, contents.changed_paths) == (
         ('refs/heads/voc-agent/docs/knowledge-v3',), BASE, TREE, KNOWLEDGE.paths())
@@ -140,8 +150,10 @@ def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_requ
     opened = next(call for call in world.host.calls if call[0] == 'open_or_update_draft_pr')
     assert (opened[2], opened[3], opened[6]) == ('voc-agent/docs/knowledge-v3', 'main', TREE)
     assert opened[4] == 'Agent docs: the approved knowledge pack (rendering 3)'
-    assert opened[5].endswith(MERGE_IS_HUMAN)
-    assert '`docs/agents/index.md`' in opened[5]
+    body = opened[5]
+    assert isinstance(body, str)
+    assert body.endswith(MERGE_IS_HUMAN)
+    assert '`docs/agents/index.md`' in body
     assert world.host.drafts == [False]
     assert world.dial.asked == [ADMIN]   # (the requesting administrator's way of working)
     assert world.runs.seen[0].repository == REPOSITORY
@@ -150,9 +162,11 @@ def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_requ
 def test_the_tenets_are_tenets_md_and_a_draft_when_asked() -> None:
     world = World()
     done = world.broker.push_approved_docs(START, request('tenets', draft=True))
-    assert done['pr']['branch'] == 'voc-agent/docs/tenets-v2'
+    assert _pr(done)['branch'] == 'voc-agent/docs/tenets-v2'
     push = next(call for call in world.host.calls if call[0] == 'push_bundle')
-    assert push[3].changed_paths == ('TENETS.md',)
+    contents = push[3]
+    assert isinstance(contents, BundleContents)
+    assert contents.changed_paths == ('TENETS.md',)
     assert world.host.drafts == [True]
 
 
@@ -258,7 +272,7 @@ def test_a_pull_request_whose_open_failed_is_opened_on_a_retry_from_the_branch_p
         world.broker.push_approved_docs(START, request())
     world.host.open_or_update_draft_pr = failing   # type: ignore[method-assign]
     done = world.broker.push_approved_docs(START, request())
-    assert done['pr']['number'] == 7
+    assert _pr(done)['number'] == 7
     assert [call[0] for call in world.host.calls].count('push_bundle') == 1
 
 

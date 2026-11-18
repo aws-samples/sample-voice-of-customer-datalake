@@ -18,6 +18,7 @@ import json
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -171,3 +172,9 @@ def ended_run(*, status: str = 'done', connection: str = CONN) -> Generator[tupl
         s3.create_bucket(Bucket=BUCKET)
         seed(client, s3, status=status, connection=connection)
         yield client, WorkspaceStore(s3, BUCKET, denied_is_missing=True)
+
+
+def price(model: str, tokens_in: int, tokens_out: int) -> Decimal:
+    """A model's price for the Learn budgets' specs: $2 per million tokens in, $10 per million out, whichever model."""
+    del model
+    return Decimal(tokens_in) * Decimal('0.000002') + Decimal(tokens_out) * Decimal('0.00001')

@@ -52,7 +52,9 @@ def test_a_valid_seed_round_trips_bounded():
     assert parsed['parent']['attempt'] == 2
     assert parsed['steering'][0]['text'] == 'Keep it small.'
     long = record(history={'kind': 'summary', 'text': 'x' * 50_000, 'model': 'm', 'tokens': 10})
-    assert len(seed.parse(seed.encode(long, CHILD), CHILD)['history']['text']) == seed.MAX_SUMMARY
+    parsed_long = seed.parse(seed.encode(long, CHILD), CHILD)
+    assert parsed_long is not None
+    assert len(parsed_long['history']['text']) == seed.MAX_SUMMARY
 
 
 @pytest.mark.parametrize('changes', [

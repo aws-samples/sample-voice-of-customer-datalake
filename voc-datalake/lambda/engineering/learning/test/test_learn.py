@@ -18,7 +18,7 @@ from engineering.coach.test.fakes import FENCE, RecordedModel, answer, replying
 from engineering.flow.settings import LearnSettings, learn_settings, memory_settings
 from engineering.learning.budget import LEARN_AGENT, LearnBudget, MeteredCoachModel
 from engineering.learning.loop import with_transcript
-from engineering.learning.test.fixtures import CONN, RUN, WS, ended_run
+from engineering.learning.test.fixtures import CONN, RUN, WS, ended_run, price
 from engineering.learning.test.test_loop import WHY, row, world
 from engineering.learning.transcripts import excerpts, render
 from engineering.runtime.runs import RunStore, meta_key
@@ -122,11 +122,6 @@ def test_a_transcripts_events_become_short_lines_and_a_missing_one_none() -> Non
     assert render({'kind': 'message', 'role': 'user', 'content': []}) == ''
 
 
-def _price(model: str, tokens_in: int, tokens_out: int) -> Decimal:
-    del model
-    return Decimal(tokens_in) * Decimal('0.000002') + Decimal(tokens_out) * Decimal('0.00001')
-
-
 def test_learns_calls_count_in_the_runs_spend_within_its_share_of_the_cost_cap() -> None:
     with ended_run() as (client, _workspace):
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
@@ -135,7 +130,7 @@ def test_learns_calls_count_in_the_runs_spend_within_its_share_of_the_cost_cap()
                           'max_tasks = :tasks, flow = :flow',
                           ExpressionAttributeValues={':cap': Decimal('10'), ':at': 1_763_300_000, ':tasks': 10,
                                                      ':flow': '01JD3R4NZXQ7Y2W8K4M6P9FLOW'})
-        budget = LearnBudget(table, runs, _price)
+        budget = LearnBudget(table, runs, price)
         # The worst case: 40,000 in and 8,000 out = $0.16, within 5% of $10.
         assert budget.allows(RUN, 0.05, 'model-a') == ''
         assert budget.record(RUN, 'model-a', 10_000, 2_000) == Decimal('0.04')

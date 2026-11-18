@@ -128,7 +128,7 @@ def parse_request(event: object) -> tuple[str, dict[str, Any]]:
     if _WORKSPACE_FIELDS & set(event):
         raise AppTokensRefused('a workspace\'s run signs in with its own token: the GitHub Apps are the deployment\'s')
     if action == LABEL_ACTION:
-        if set(event) != _LABEL_FIELDS:
+        if frozenset(event) != _LABEL_FIELDS:
             raise AppTokensRefused('the request is {action, app_id, installation_id, repository, label}')
         if event['label'] != LABEL:
             raise AppTokensRefused(f'the only label this function creates is {LABEL!r}')
@@ -136,11 +136,11 @@ def parse_request(event: object) -> tuple[str, dict[str, Any]]:
                         'installation_id': int(_number(event['installation_id'], 'installation_id')),
                         'repository': _repositories([event['repository']])[0]}
     if action == INSPECT:
-        if set(event) != _INSPECT_FIELDS:
+        if frozenset(event) != _INSPECT_FIELDS:
             raise AppTokensRefused('the request is {action, app_id, installation_id}')
         return action, {'app_id': _number(event['app_id'], 'app_id'),
                         'installation_id': int(_number(event['installation_id'], 'installation_id'))}
-    if set(event) != _ISSUES_FIELDS:
+    if frozenset(event) != _ISSUES_FIELDS:
         raise AppTokensRefused('the request is {action, app_id, repositories}')
     return action, {'app_id': _number(event['app_id'], 'app_id'), 'repositories': _repositories(event['repositories'])}
 

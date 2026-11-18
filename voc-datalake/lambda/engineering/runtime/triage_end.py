@@ -121,14 +121,25 @@ def copy_triage(run_id: str, *, client: Any, table: str, workspace: Any, agents_
                                                          agents_table=agents_table, now=now))
 
 
-def _copy(run_id: str, *, client: Any, table: str, workspace: Any, agents_table: str, now: datetime) -> str:
+def ended_meta(client: Any, table: str, run_id: str) -> dict[str, Any] | None:
+    """The run's META once the run has ended; None before (or with no META)."""
     meta = get_row(client, table, {'pk': {'S': run_pk(WORKSPACE, run_id)}, 'sk': {'S': 'META'}})
-    if meta is None or string_attr(meta, 'status') not in ENDED:
+    return meta if meta is not None and string_attr(meta, 'status') in ENDED else None
+
+
+def run_tasks(client: Any, table: str, run_id: str) -> list[Task]:
+    """The run's board tasks, as its rows have them."""
+    return [Task.from_item(item) for item in run_rows(client, table, WORKSPACE, run_id, 'TASK#')]
+
+
+def _copy(run_id: str, *, client: Any, table: str, workspace: Any, agents_table: str, now: datetime) -> str:
+    meta = ended_meta(client, table, run_id)
+    if meta is None:
         return NOT_ENDED
     issue, repository = issue_of(meta), string_attr(meta, 'repo')
     if issue is None or not repository:
         return NO_ISSUE
-    found = newest_triage([Task.from_item(item) for item in run_rows(client, table, WORKSPACE, run_id, 'TASK#')],
+    found = newest_triage(run_tasks(client, table, run_id),
                           run_id)
     if found is None:
         return NO_TRIAGE

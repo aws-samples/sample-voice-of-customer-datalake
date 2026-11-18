@@ -51,7 +51,9 @@ def test_a_transcript_is_written_under_the_agents_own_keys_redacted_and_in_numbe
     assert transcript.flush() == f'{PREFIX}0002.jsonl'
     # Each chunk is one of the agent's own artifacts (the layout parses it), its events of one schema.
     assert all(parse_agent_key(key) is not None for key in store.objects)
-    assert parse_agent_key(f'{PREFIX}0001.jsonl').kind == 'transcripts'
+    parsed = parse_agent_key(f'{PREFIX}0001.jsonl')
+    assert parsed is not None
+    assert parsed.kind == 'transcripts'
     first, second, end = store.events()
     assert (first['schema'], first['kind'], first['at']) == (SCHEMA, 'tool_result', '2023-11-14T22:13:20.000000Z')
     assert 'hunter2hunter2' not in first['text']

@@ -1,9 +1,13 @@
 """Test support: a fictional Fixer skill and its building blocks."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import replace
+from datetime import UTC, datetime
 
+from engineering.board.test.table import TABLE, engineering_table
 from engineering.skills.model import Example, SkillContent
+from engineering.skills.store import SkillStore
 
 SONNET, HAIKU = 'global.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-haiku-5-5'
 RUN = '01JD0000000000000000000000'
@@ -26,3 +30,10 @@ def stricter(base: SkillContent | None = None) -> SkillContent:
     base = base or content()
     return replace(base, instructions=base.instructions + '\nRun the package\'s whole test suite before you submit.',
                    examples=(*base.examples, LINT))
+
+
+def skill_store() -> Iterator[SkillStore]:
+    """The skills store on the engineering table under moto, its clock at 2026-11-16: a suite's ``store`` fixture
+    (``store = pytest.fixture(skill_store, name='store')``)."""
+    with engineering_table() as client:
+        yield SkillStore(client, TABLE, now=lambda: datetime(2026, 11, 16, tzinfo=UTC))

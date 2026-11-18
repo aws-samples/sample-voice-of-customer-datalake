@@ -18,6 +18,7 @@ from agents.heartbeat.test.test_heartbeat_engineering import (
     _agent,
     _context,
     _env,
+    _found_number,
     _issue,
     _runs,
 )
@@ -90,7 +91,8 @@ class TestFindIssueByStage:
             assert issues.find_issue(feedback, env.agents, agent, REQUIRES_BUG, CONNECTION, NOW, watched) is None
             triaged = {**store.issue_triage_key(REPO, 7), 'kind': 'bug'}
             env.agents.put_item(Item=triaged)
-            assert issues.find_issue(feedback, env.agents, agent, REQUIRES_BUG, CONNECTION, NOW, watched).number == 7
+            found = issues.find_issue(feedback, env.agents, agent, REQUIRES_BUG, CONNECTION, NOW, watched)
+            assert _found_number(found) == 7
 
     def test_with_no_triage_agent_watching_the_act_trigger_keeps_the_feedback_types_rule(self) -> None:
         with _env() as (env, feedback, _):
@@ -98,7 +100,7 @@ class TestFindIssueByStage:
             _issue(feedback, 8, at=NOW - timedelta(hours=2), kind='feature_request')
             _issue(feedback, 9, at=NOW - timedelta(hours=1))
             # (no row is read: the bug issue starts, the feature one never does)
-            assert issues.find_issue(feedback, env.agents, agent, REQUIRES_BUG, CONNECTION, NOW).number == 9
+            assert _found_number(issues.find_issue(feedback, env.agents, agent, REQUIRES_BUG, CONNECTION, NOW)) == 9
 
     def test_a_triage_label_on_github_never_stands_in_for_the_row(self) -> None:
         with _env() as (env, feedback, _):

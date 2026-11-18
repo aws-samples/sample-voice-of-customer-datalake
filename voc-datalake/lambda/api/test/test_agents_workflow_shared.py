@@ -13,12 +13,10 @@ shared/agents_engineering_registry_routes.py).
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from agents_handler_fixtures import USER, create, create_workflow
-from agents_handler_fixtures import api as _api
+from agents_handler_fixtures import USER, create, create_workflow, engineering_agents
 from agents_handler_fixtures import call as _call
 from boto3.dynamodb.conditions import Key
 
@@ -26,13 +24,7 @@ from shared import agents_store as store
 from shared.test.agents_fixtures import AgentsEnv
 from shared.test.test_workflow_engineering import arrow, bug_fix, flow, node
 
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[AgentsEnv]:
-    with _api() as agents:
-        monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
-        monkeypatch.setenv('ENGINEERING_TABLE', 'test-engineering')
-        yield agents
+env = pytest.fixture(engineering_agents, name='env')
 
 
 def _save(lambda_context: Any, workflow: dict, **body: Any) -> tuple[int, dict]:

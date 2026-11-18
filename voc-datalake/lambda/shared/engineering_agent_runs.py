@@ -344,7 +344,7 @@ def _payload(response: Mapping[str, Any], run_id: str) -> dict[str, Any] | None:
 def invoke_start(client: Any, function: str, request: Mapping[str, Any], *, run_id: str | None = None) -> StartAnswer:
     """``request`` sent to ``function`` (a synchronous invoke, never retried by the client) and what came of it.
     ``run_id``: the run the answer must name, when it is not the request's (7.51.00: a restart's child run)."""
-    run_id = run_id or request['run_id']
+    expected: str = run_id or request['run_id']
     try:
         response = client.invoke(FunctionName=function, InvocationType='RequestResponse',
                                  Payload=json.dumps(request).encode())
@@ -354,20 +354,20 @@ def invoke_start(client: Any, function: str, request: Mapping[str, Any], *, run_
         return StartAnswer('unreachable')
     except BotoCoreError:
         # (a read timeout, a connection dropped mid-call: the start may have written the run)
-        logger.warning('engineering: the run\'s start did not answer', extra={'run_id': run_id})
+        logger.warning('engineering: the run\'s start did not answer', extra={'run_id': expected})
         return StartAnswer('uncertain')
-    payload = _payload(response, run_id)
+    payload = _payload(response, expected)
     if payload is None:
         return StartAnswer('uncertain')
     if response.get('FunctionError'):
         error_type, said = payload.get('errorType'), str(payload.get('errorMessage') or '')[:500]
-        logger.warning('engineering: a start failed', extra={'run_id': run_id, 'error_type': error_type})
+        logger.warning('engineering: a start failed', extra={'run_id': expected, 'error_type': error_type})
         if error_type in START_REFUSALS:
             return StartAnswer('refused', said)
         if error_type in START_NOT_WRITTEN:
             return StartAnswer('not_written', said)
         return StartAnswer('uncertain', said if error_type in START_WRITTEN else '')
-    if payload.get('run_id') != run_id:
+    if payload.get('run_id') != expected:
         return StartAnswer('uncertain')
     return StartAnswer('started', payload=payload)
 

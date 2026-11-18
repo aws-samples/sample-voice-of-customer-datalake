@@ -75,7 +75,7 @@ Equivalent mutants (the code has no effect a test can see):
   (the loop stops at the cap's next row first).
 - `broker.py` `push_bundle`: `check_push` without the default branch (`_open_write` refused it already);
   `prose=None` (falsy, as `False`).
-- `runtime/runs.py`: lower-case DynamoDB keywords in `end`, `flag_budget`, `needs_human`, `resume`, `_typed_rows`,
+- `runtime/runs.py`: lower-case DynamoDB keywords in `end`, `flag_budget`, `needs_human`, `resume`, `typed_rows`,
   `listed`, `spend` (case-insensitive keywords); `datetime.fromtimestamp(now, UTC)` as a local time in `hard_capped`,
   `budget_alert`, `alert_sent` (every reader converts it back to the same instant); the `BoardStore` that `start`
   builds only for `coordinate_items`, which reads none of its arguments; `_keep_verdicts`' `newest_final_go` arguments

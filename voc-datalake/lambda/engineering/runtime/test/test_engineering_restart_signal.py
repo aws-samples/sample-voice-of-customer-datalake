@@ -3,6 +3,7 @@ afresh (its task re-posted at the next attempt, the stall path); busy and stale 
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -12,8 +13,8 @@ from engineering.runtime.test.conftest import BUCKET, COMMIT, RUN, World
 from engineering.runtime.test.test_engineering_supervisor import SLEEP, _until
 
 
-def _working(world: World, **launch: object) -> None:
-    world.launch(code=SLEEP, **launch)   # type: ignore[arg-type]
+def _working(world: World, **launch: Any) -> None:
+    world.launch(code=SLEEP, **launch)
     _until(world, 1000, lambda s: s.status == 'working', agent_id=str(launch.get('agent_id', 'fixer-1')))
 
 

@@ -17,6 +17,7 @@ from _shared.test.ingestor_fixtures import breaker_mock, with_mock_circuit_break
 from _shared.test.scoped_secret import scoped_secret
 from _shared.test.sqs_response_fixtures import echo_batch_success
 from _shared.test.workspace_fixtures import SCOPE, WS
+from shared.ws_repo import WorkspaceScope
 
 #: The repo's watermark in the workspace ``WS`` (``WS#{ws}#{plugin}#{key}``, shared/ws_repo.py ``watermark_key``).
 WATERMARK_KEY = f"WS#{WS}#test_source#repo#{REPO}"
@@ -59,10 +60,11 @@ class ObservedIngestor:
 
 @contextmanager
 def ingestor_with(
-    github: FakeGitHub, watermarks: WatermarkTable, *, deadline=None, scope=SCOPE, **secrets: str | None,
+    github: FakeGitHub, watermarks: WatermarkTable, *, deadline=None, scope: WorkspaceScope | None = SCOPE,
+    **secrets: str | None,
 ) -> Generator[ObservedIngestor, None, None]:
-    """The ingestor over *github* and *watermarks*, running in *scope* (``WS``); a secret given as ``ABSENT`` is
-    left out."""
+    """The ingestor over *github* and *watermarks*, running in *scope* (``WS``; None: deployment-wide); a secret
+    given as ``ABSENT`` is left out."""
     sqs = MagicMock()
     sqs.send_message_batch.side_effect = echo_batch_success
     merged: dict[str, str | None] = {"token": "ghp_secret_token", "repos": REPO, **secrets}

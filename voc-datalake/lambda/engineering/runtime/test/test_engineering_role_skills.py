@@ -44,8 +44,9 @@ WRITERS = {'committer': 'push_commit', 'pr-author': 'open_draft_pr', 'pr-reviewe
 #: Haiku; fixing, building, reviewing on Sonnet; the final go on Opus (the coordinator's own record predates it).
 MODELS = {'mapper': skills.HAIKU, 'understander': skills.HAIKU, 'gate-runner': skills.HAIKU, 'final-go': skills.OPUS}
 CODE_RUNNING = {spec.name for spec in CODE_TOOLS} | {'run_gate'}
-#: A gate pack of the tests' own: a Python root's one test step (``run_gate``'s plan), and its setup step.
-PACK = '''schema = "voc-gate-pack/1"
+#: A gate pack of the tests' own (``run_gate``'s plan): a Python root, its setup step and its one test step; the bug
+#: hunt's end-to-end test takes the pack with its test step alone.
+PACK_HEAD = '''schema = "voc-gate-pack/1"
 id = "mini"
 name = "Mini"
 network = []
@@ -56,7 +57,8 @@ extensions = [".py"]
 
 [tools.python]
 version_argv = ["python3", "--version"]
-
+'''
+SETUP_STEP = '''
 [[steps]]
 id = "py.install"
 language = "python"
@@ -64,7 +66,8 @@ name = "install dependencies"
 kind = "setup"
 argv = ["python3", "-m", "pip", "install", "-r", "requirements.txt"]
 timeout_s = 60
-
+'''
+TEST_STEP = '''
 [[steps]]
 id = "py.test"
 language = "python"
@@ -73,6 +76,7 @@ kind = "test"
 argv = ["python3", "-m", "unittest"]
 timeout_s = 60
 '''
+PACK = PACK_HEAD + SETUP_STEP + TEST_STEP
 
 
 def gated(tmp_path: Path, name: str = 'gate') -> Any:
@@ -557,15 +561,21 @@ def test_a_fixers_submitted_patch_is_recorded_on_its_task(tmp_path):
     assert (patch.startswith(w.session.context.patches_prefix), w.board.results[-1]) == (True, (patch,))
 
 
+
+def reviewer_commented(tmp_path: Path) -> Any:
+    """A PR reviewer's session that commented on the run's pull request, its comment there as written."""
+    reviewer = world(tmp_path / 'reviewer', role='pr-reviewer')
+    reviewer.session.tools.call('post_comment', {'number': 7, 'body': 'One blocking finding.'})
+    assert reviewer.broker.writes[0][3] == {'on': 'pull_request', 'number': 7, 'body': 'One blocking finding.'}
+    return reviewer
+
 def test_the_pr_author_opens_a_draft_and_the_pr_reviewer_comments_through_the_broker(tmp_path):
     author = world(tmp_path / 'author', role='pr-author')
     opened = json.loads(author.session.tools.call('open_draft_pr', {'branch': BRANCH, 'title': 'Keep long slugs',
                                                                     'body': 'Fixes the slug cut.'}).text)
     assert (opened['broker']['number'], author.broker.writes[0][0]) == (7, 'open_or_update_draft_pr')
     assert author.session.tools.call('open_draft_pr', {'branch': 'main', 'title': 't', 'body': 'b'}).error
-    reviewer = world(tmp_path / 'reviewer', role='pr-reviewer')
-    reviewer.session.tools.call('post_comment', {'number': 7, 'body': 'One blocking finding.'})
-    assert reviewer.broker.writes[0][3] == {'on': 'pull_request', 'number': 7, 'body': 'One blocking finding.'}
+    reviewer = reviewer_commented(tmp_path)
     for number in (0, '7', True):
         assert reviewer.session.tools.call('post_comment', {'number': number, 'body': 'b'}).error
 

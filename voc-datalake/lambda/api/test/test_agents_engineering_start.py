@@ -23,6 +23,7 @@ from botocore.exceptions import (
     EndpointConnectionError,
     ReadTimeoutError,
 )
+from test_agents_engineering_agents import START_FUNCTION, Start, wire_start
 
 import agents_handler
 from engineering.test.run_fixture import LambdaClient
@@ -30,7 +31,6 @@ from shared import engineering_agent_runs as eng_runs
 from shared.test.test_workflow_engineering import bug_fix
 
 PATH = '/agents/engineering/runs'
-START_FUNCTION = 'voc-engineering-start'
 COMMIT = '0123456789abcdef0123456789abcdef01234567'
 ULID = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}\Z')
 #: An MCP credential an administrator minted: delegated, so never an administrator here.
@@ -38,24 +38,11 @@ DELEGATED_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_
                    'cognito:groups': 'admins'}
 
 
-class Start(LambdaClient):
-    """The start function as the API's client sees it: it answers each request for the run it names."""
-
-    def invoke(self, **request: Any) -> dict[str, Any]:
-        if not self.function_error:
-            self.payload = {'run_id': json.loads(request['Payload'])['run_id'], 'status': 'active'}
-        return super().invoke(**request)
-
-
 @pytest.fixture
 def start(monkeypatch: pytest.MonkeyPatch, lambda_context: Any) -> Iterator[tuple[Start, str]]:
     """The module on, the start function named, three stored connections (one GitLab's), and a saved engineering flow
     with a $49.99 monthly budget."""
-    monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
-    monkeypatch.setenv('ENGINEERING_TABLE', 'voc-engineering')
-    monkeypatch.setenv('ENGINEERING_START_FUNCTION', START_FUNCTION)
-    client = Start({})
-    monkeypatch.setattr(agents_handler, '_start_client', lambda: client)
+    client = wire_start(monkeypatch)
     with _api() as env:
         for connection, repository, host in (('conn-1', 'example-org/shop', 'github'),
                                              ('acme-shop', 'example-org/acme-shop', 'github'),

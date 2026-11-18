@@ -159,7 +159,7 @@ class Cursor:
     tail: bool = False
 
     def encode(self) -> str:
-        raw = {'v': _CURSOR_VERSION, 'k': self.chunk, 'o': self.offset, 's': self.seq}
+        raw: dict[str, int | str] = {'v': _CURSOR_VERSION, 'k': self.chunk, 'o': self.offset, 's': self.seq}
         if self.call:
             raw['p'] = self.call
         if self.tail:
@@ -185,8 +185,9 @@ def decode_cursor(text: str | None) -> Cursor:
         raise CursorError('after is a cursor this thread gave')
     if raw.get('t') == 1:
         return Cursor(tail=True)
-    numbers = [raw.get(name) for name in ('k', 'o', 's')]
-    if not all(type(number) is int and 0 <= number < 10 ** 12 for number in numbers):
+    numbers = [number for number in (raw.get(name) for name in ('k', 'o', 's'))
+               if type(number) is int and 0 <= number < 10 ** 12]
+    if len(numbers) != 3:
         raise CursorError('after is a cursor this thread gave')
     call = raw.get('p', '')
     if not isinstance(call, str) or (call and _REF.fullmatch(call) is None):

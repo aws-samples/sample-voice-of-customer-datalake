@@ -41,14 +41,20 @@ def sent(aws: Any, monkeypatch: pytest.MonkeyPatch) -> Requests:
     return recorded
 
 
+def _started(aws: Any) -> RunStore:
+    """The run started (at most five tasks, at 0), on the runs' store."""
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    return runs
+
+
 def _meta_update(request: dict[str, Any]) -> dict[str, Any]:
     update = request['TransactItems'][0]['Update']
     return {name: update[name] for name in ('UpdateExpression', 'ConditionExpression')}
 
 
 def test_an_end_is_this_exact_update(aws: Any, sent: Requests) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     runs.end(RUN, 'done', now=60)
     assert _meta_update(sent['transact'][-1]) == {
         'UpdateExpression': 'SET #status = :status, ended_at = :ended',
@@ -56,8 +62,7 @@ def test_an_end_is_this_exact_update(aws: Any, sent: Requests) -> None:
 
 
 def test_a_decision_point_is_this_exact_update(aws: Any, sent: Requests) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     runs.needs_human(RUN, 'budget', now=60)
     # (7.51.03: a decision point without a detail clears the plain reason an earlier one left)
     assert _meta_update(sent['transact'][-1]) == {
@@ -67,8 +72,7 @@ def test_a_decision_point_is_this_exact_update(aws: Any, sent: Requests) -> None
 
 
 def test_a_resume_is_this_exact_update(aws: Any, sent: Requests) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     runs.needs_human(RUN, 'budget', now=60)
     runs.resume(RUN, now=120, actor='person-1')
     # (7.51.03: a Resume removes the decision point's plain reason with it)
@@ -78,8 +82,7 @@ def test_a_resume_is_this_exact_update(aws: Any, sent: Requests) -> None:
 
 
 def test_a_resume_at_a_flow_steps_decision_point_holds_it_to_that_point(aws: Any, sent: Requests) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     runs.needs_human(RUN, 'flow:review', now=60)
     runs.resume(RUN, now=120, actor='person-1')
     request = sent['transact'][-1]
@@ -97,8 +100,7 @@ def test_a_resume_of_a_run_never_started_is_refused_in_its_own_words_before_any_
 
 
 def test_the_budget_flag_is_this_exact_conditional_update(aws: Any, sent: Requests) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     runs.flag_budget(RUN, '2026-11', 50)
     (request,) = sent['update']
     assert (request['UpdateExpression'], request['ConditionExpression']) == (
@@ -119,8 +121,7 @@ def test_every_read_is_this_exact_query(aws: Any, sent: Requests) -> None:
 
 def test_a_change_that_always_loses_the_race_raises_the_last_tries_own_error(
         aws: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     raised: list[ClientError] = []
 
     def always_racing(**_request: Any) -> Any:
@@ -140,8 +141,7 @@ def test_a_change_that_always_loses_the_race_raises_the_last_tries_own_error(
 
 
 def test_a_change_that_wins_on_its_last_try_is_made(aws: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs = _started(aws)
     real, tries = aws[1].meta.client.transact_write_items, []
 
     def racing_until_the_last(**request: Any) -> Any:
