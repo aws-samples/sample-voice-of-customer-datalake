@@ -75,8 +75,8 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
-from shared.project_access import Caller, claims_from_event, mcp_via
-from shared.project_gate import caller_from_event, engineering_caller
+from shared.project_access import Caller, claims_from_event, delegated_engineering_allowed, mcp_via
+from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 from shared.route_answers import json_response as _json
 
@@ -110,9 +110,14 @@ def _caller() -> Caller:
 
 
 def _engineering_caller(op: str | None = None) -> Caller:
-    """An administrator acting for themselves, or ``op``'s MCP tool (never an admin: see the module's header;
-    ``project_gate.engineering_caller``)."""
-    return engineering_caller(app.current_event.raw_event, op)
+    """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
+    operation (never an admin: see the module's header); 403 for anyone else."""
+    caller = _caller()
+    if op is not None and caller.delegated and not caller.agent_id and delegated_engineering_allowed(
+            claims_from_event(app.current_event.raw_event), op):
+        return caller
+    require_admin_caller(caller)
+    return caller
 
 
 

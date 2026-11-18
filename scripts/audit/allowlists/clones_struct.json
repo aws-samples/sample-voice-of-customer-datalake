@@ -87,6 +87,14 @@
       ],
       "name": "__init__",
       "reason": "two unrelated time-boxed caches whose constructors only store their settings and an empty dict: the GitHub App keys' and connection credentials' SSM reads (credentials._CachedParameters) and the Radar's brand labels (radar_routing.BrandLabels); nothing to share but the assignments"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/agents_handler.py",
+        "voc-datalake/lambda/shared/agents_engineering_run_routes.py"
+      ],
+      "name": "_engineering_caller",
+      "reason": "each engineering router's own gate helper (an admin acting for themselves, or the MCP tool of one operation), over its own _caller(): test_route_admin_gates follows module-local helpers to the admin gate, so the gate stays in each router where that test can see it"
     }
   ]
 }

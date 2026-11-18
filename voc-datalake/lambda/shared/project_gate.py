@@ -56,18 +56,6 @@ def require_admin_caller(caller: Caller) -> None:
         raise AuthorizationError('Admin access required')
 
 
-def engineering_caller(event: Mapping[str, Any], op: str | None = None) -> Caller:
-    """The caller of an engineering route (the Agents API's, 7.53.00): an administrator acting for themselves, or, for
-    ``op``, the global MCP server's engineering tool of that one operation (never an admin:
-    ``project_access.delegated_engineering_allowed``); 403 for anyone else."""
-    caller = caller_from_event(event)
-    if op is not None and caller.delegated and not caller.agent_id and project_access.delegated_engineering_allowed(
-            project_access.claims_from_event(event), op):
-        return caller
-    require_admin_caller(caller)
-    return caller
-
-
 def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
     """The project's META, projected to what the decision needs, or None.
 
