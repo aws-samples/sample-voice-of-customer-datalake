@@ -147,7 +147,7 @@ export const CLIENT_TOOLS = {
     'draft_prototype_revision',
     'set_prototype_walkthrough',
   ],
-  forms: ['update_feedback_form'],
+  forms: ['update_feedback_form', 'draft_feedback_form'],
   prioritization: [],
   scrapers: ['run_scraper', 'create_scraper', 'update_scraper', 'create_app_connector', 'run_source', 'set_source_enabled', 'import_reviews', 'save_radar_brands', 'run_radar_scan'],
   settings: ['save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access'],

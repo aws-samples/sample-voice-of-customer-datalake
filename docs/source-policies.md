@@ -133,16 +133,18 @@ Customer data is deleted by two paths only, each for a legal obligation and each
 (`lambda/jobs/retention/handler.py`, in VocProcessingStack), which runs an erasure request or a
 source's retention window, and participant erasure (`DELETE /participants/people/{id}`,
 [participants.md](participants.md)), which deletes one person's rows in voc-participants.
-`voc-retention` is the only worker that deletes feedback items, Radar reviews and raw archives.
+`voc-retention` is the only worker that deletes feedback items, Radar reviews and raw archives, and the
+only one that deletes a feedback form's test responses for a legal obligation (an admin or the form's
+creator can also delete them from the form, [feedback-forms.md → Test mode](feedback-forms.md#test-mode)).
 `lib/customer-data-deletes.test.ts` pins, as an exact list, every role that may delete from
 `voc-feedback` or `raw/` (it plus legacy grants that are never used and can only shrink).
 
 | Mode | Trigger | Deletes |
 |---|---|---|
-| `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis` |
-| `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
-| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy → **Delete all data from a source** (the erasure panels, `/admin/privacy/erasure`) | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
-| `erase` in one workspace (since 7.09.00) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below) |
+| `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis`; with the `feedback_form` source's window, also the forms' test responses (`FEEDBACK_FORM_TEST` in `voc-aggregates`, the deployment's and every workspace's) created before the cutoff |
+| `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it). An `email` or `author` erasure (no source, or `feedback_form`) also deletes the forms' test responses (`FEEDBACK_FORM_TEST` in `voc-aggregates`) whose contact email or name it is (by email every workspace's too, by name the deployment's) |
+| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy → **Delete all data from a source** (the erasure panels, `/admin/privacy/erasure`) | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)); for `feedback_form`, the deployment's forms' test responses (`FEEDBACK_FORM_TEST`) too, never a form itself |
+| `erase` in one workspace (since 7.09.00) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below), and (by `email` or `author`) that workspace's forms' test responses |
 
 How it works:
 
@@ -188,14 +190,15 @@ How it works:
   from its lists and gains `erased_evidence: {count, job_id, mode, at}` (`count` adds up across
   runs; `artifacts_marked` on the job). Its text is never rewritten (it belongs to its owner); the
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
-- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `members` and
+- The worker walks its phases in order (`items`, `form_tests` when the run reaches the `feedback_form` source,
+  `radar`, `boards` for an email erasure, `members` and
   `workspace_projects` for an email erasure without a source, `raw` for a whole source, `exports` for an erasure
   that reached a workspace, `lineage`, `workspace_lineage` for a run that deleted a workspace's item) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name. A job shows `legal_basis`,
   `deleted_items`, `deleted_objects`, `deleted_radar_items`, `artifacts_marked`, once above 0
-  `deleted_workspace_items` (Workspace items, below) and, when it kept whole-file uploads, an S3
+  `deleted_workspace_items` (Workspace items, below) and `form_test_responses_deleted` and, when it kept whole-file uploads, an S3
   import's originals folder or (since 7.43.00) a workspace's product documents that hold the address,
   `files_needing_review: {count, keys}` (a folder's key ends in `/`; Administration lists files and folders apart,
   under the import files' label, and leaves out the job row's `more`, which says the 200 keys kept are not all:
@@ -216,6 +219,27 @@ How it works:
 - An `email` erasure is case-insensitive: ingestion stores `metadata.email` and
   `metadata.submitter_email` lower-cased, and the worker matches the lower-cased value as
   well as the value as typed (for items stored before that normalisation).
+- **A feedback form's test responses** (since 7.55.00's AI review). A test link's tagged response is never a
+  feedback item ([feedback-forms.md → Test mode](feedback-forms.md#test-mode)): it is a row of `voc-aggregates` in a
+  partition of its own, shared by every form of its scope (`pk FEEDBACK_FORM_TEST`, a workspace's
+  `WS#{ws}#FEEDBACK_FORM_TEST`; `sk <form_id>#<created_at>#<response_id>`), apart from the forms partition
+  (`FEEDBACK_FORM`, `WS#{ws}#FEEDBACK_FORM`) that holds each form's definition, revisions and funnel rows, so the
+  worker's delete there reaches test responses alone (IAM pins a delete to a partition, never to a sort-key prefix).
+  After `voc-feedback`, a run that reaches the `feedback_form` source reads those rows (a paged Query of each test
+  partition, never a Scan: the `form_tests` phase, `lambda/jobs/retention/form_tests.py`)
+  and deletes the ones it matches, under the same legal basis: the source's retention window (created before the
+  cutoff day); an `email` erasure (the contact answer's email, ignoring case); an `author` erasure (the contact
+  answer's name, exactly); a whole-source erasure of `feedback_form` (all of them). It walks the partitions the same
+  run reaches feedback items in: the deployment's first, then, for a retention window or an `email` erasure, every
+  listed workspace's (the platform's listing, as the workspace phases walk it); an `author` or whole-source erasure
+  stays the deployment's, and an erasure in one workspace walks that workspace's only. An erasure limited to another
+  source, or by `source_id` / `csv_row_id`, never reaches them. Each one first gets a tombstone
+  (`AUDIT#tombstone#feedback_form`, `sk test#<response_id>`, a workspace's `<ws>#test#<response_id>` with its
+  `workspace_id`; `store: form_test`, the form and response ids, no content), and is counted as
+  `form_test_responses_deleted` on the job and audit rows (only when above 0). An erasure that deletes a workspace's
+  test response first closes that workspace's exports, which hold its test responses, and its `exports` phase
+  clears them, as for a deleted item. A test response is never cited by a document or persona, so it never starts a
+  lineage pass.
 - **Feedback boards.** An `email` erasure without a source (or with the source
   `feature_requests`) also reaches `voc-feature-requests`: the person's requests and +1s are
   tombstoned (`AUDIT#tombstone#feature_requests`), their raw copies under
@@ -410,7 +434,8 @@ The request is `POST /settings/erasure` with
   write that succeeds only when there is no lock, it was released, or it was taken more than an hour
   ago. The loser answers **409**. The worker releases the lock when the job completes or fails, by
   setting `released_at` (an UpdateItem that names the job, so a job whose stale lock was taken over
-  never frees its successor's; `voc-retention` holds no delete on `voc-aggregates`). A start whose
+  never frees its successor's; on `voc-aggregates`, `voc-retention` may delete only in the test responses'
+  own partitions, `FEEDBACK_FORM_TEST`, never a lock, job, audit row or anything of a form's own). A start whose
   worker invoke fails releases it at once. Each hand-over keeps it and renews `locked_at`, so a job
   that runs for hours never presents a stale lock. Renewing and releasing are best effort: a failure
   is logged, never fails the run, and an unreleased lock goes stale after an hour.
@@ -430,12 +455,14 @@ What the worker does:
    brand name keeps every plugin's items in one brand partition, and feedback forms use their own
    brand's. Only the attribute tells sources apart.
 2. **Radar reviews.** The same scan over `voc-radar`, for a source that sends its reviews to Radar.
+   For `feedback_form`, the deployment's forms' test responses (`FEEDBACK_FORM_TEST`) go first (see "A feedback form's test responses" above).
 3. **Raw files.** It then deletes every object version and delete marker under `raw/<source>/`,
    1,000 at a time, including archives no item points at any more. The prefix ends in `/`, so
    erasing source `web` never reaches the folder of a source named `web_shop`.
 4. **Lineage.** It marks the personas and documents that cited a deleted review (see above).
 5. **Progress.** While it runs, the job row carries `deleted_items`, `deleted_objects`,
-   `deleted_radar_items`, `artifacts_marked`, `phase` (`items`, `radar`, `raw`, then `lineage`) and
+   `deleted_radar_items`, `artifacts_marked`, `phase` (`items`, `form_tests` for `feedback_form`, `radar`,
+   `raw`, then `lineage`) and
    `progress_at`, refreshed when the counts move and at least every
    minute. `deleted_objects` counts files: the per-item archives, the uploaded files, plus each key
    under the folder that still held a version (a delete marker alone is not counted). It hands over
@@ -484,7 +511,7 @@ other job that deletes feedback and raw items (`voc-workspace-delete`), and only
 ### What erasure does not reach
 
 Retention and erasure delete **feedback items, Radar reviews, their own per-item raw
-archives and the items' kept Silver versions**, the whole-file uploads of an erased source, and the erased ids from the lineage lists of
+archives and the items' kept Silver versions**, a feedback form's matching test responses, the whole-file uploads of an erased source, and the erased ids from the lineage lists of
 workspace artifacts. Copies derived from a review before it was erased stay where they are:
 
 | Copy | Where | What to do |
@@ -498,6 +525,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | A project's product documents (uploads and their extracted text) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge as `files_not_checked` (since 7.43.00 in each workspace: images, other kinds, unreadable text; since 7.48.00 in the deployment's projects too, judged by their extracted text of any kind, and a document with none not checked; on the job row only until 3g-ui shows it in the job view and the erasure panel). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days) |
 | A reviewer's comments, a review link's audience, a project's owner and member addresses in the deployment's own projects, for an erasure by email that finished before 7.48.00 | `voc-projects` (`DCOMMENTS#…`, `DOCSHARE#…`, a project's `META`) | Reached since 7.48.00 (a workspace's since 7.43.00): run such an erasure again (the job kept only the address's hash) |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
+| A form response's contact name, for an erasure by name | `metadata.submitter_name` of the `feedback_form` item in `voc-feedback` (a workspace's too) | An `author` erasure matches `author`, and a form's response carries none: its contact name is `metadata.submitter_name`. Erase the person by email (it matches `metadata.submitter_email`), or by the item's `source_id`. The form's test responses, kept apart, are matched by the contact name as well |
 | A workspace export holding items a daily retention window deleted (an erasure deletes the workspace's exports at once) | `ws/<ws>/exports/…` | It expires by its tag 10 days after it was written; to remove it sooner, delete every version under that export's folder with an admin role |
 | The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → People → the person's editor → Delete), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
 | An old value kept only in a Silver version (an `author` or email a CSV correction or an edit replaced) | `silver/<source>/<feedback_id>/` | A field erasure matches items as they are stored now, so it reaches every kept version of an item that still holds the value, but not a version whose item has moved on. Erase by the item's current value as well, or delete every version under that item's folder with an admin role |
@@ -522,6 +550,6 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
 | Workspaces table | `Scan` (finds the membership rows that hold an erased email); `Query` of the `WORKSPACES` listing only (since 7.43.00: the workspaces an erasure by email walks); `GetItem` of a `META`'s status; `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
 | Raw bucket | `GetObject` of a workspace's `ws/ws_<26 ?>/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*` (since 7.43.00: an erasure by email reads its text documents for the address) and of the deployment's `projects/*/product_docs/extracted/*` (since 7.48.00) only; `DeleteObject` and `DeleteObjectVersion` on `raw/*`, `silver/*` and each workspace's `ws/ws_<26 ?>/raw/*` and `ws/ws_<26 ?>/silver/*` (one workspace id per pattern: IAM's `*` also matches `/`), plus `ListBucketVersions` with those prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source. The workspace prefixes are reached by an erasure by email and a retention window (D5, legal obligations), never by any other erasure (in code). An explicit Deny refuses deletes under `ws/ws_<26 ?>/raw/s3_import/*`: a workspace's S3 import originals are listed for review, never deleted |
-| Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
+| Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); `DeleteItem` in the test responses' partitions only (`dynamodb:LeadingKeys` `FEEDBACK_FORM_TEST` and one workspace id's `WS#<ws>#FEEDBACK_FORM_TEST`: the forms' test responses, which those partitions hold alone), no other delete: never a form's definition, revision or funnel row (`FEEDBACK_FORM`) |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |

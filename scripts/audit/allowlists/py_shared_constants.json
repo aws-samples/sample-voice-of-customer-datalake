@@ -129,8 +129,8 @@
       "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
     },
     {
-      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py",
-      "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
+      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py,lambda/shared/forms_v2_draft.py",
+      "reason": "each feature's own model-surface choice (all three the utility surface today, the feedback form's AI draft since 7.55.00); one may move without the others"
     },
     {
       "key": "ROUTE_WORKSPACE_FIELD|WORKSPACE_FIELD::lambda/shared/review_share_audience.py,lambda/shared/ws_repo.py",
@@ -147,6 +147,18 @@
     {
       "key": "PENDING::lambda/engineering/run_requests.py,lambda/shared/assist_jobs.py",
       "reason": "an engineering run request waiting for an administrator (engineering/run_requests.py, 7.53.00) and an assist job its worker has not claimed yet (shared/assist_jobs.py, voc-jobs): the same word for two lifecycles whose states move apart (a request is confirmed, declined or expired; a job runs, then completes or fails)"
+    },
+    {
+      "key": "FORM_LOOKUP_PREFIX|_FORM_PREFIX::lambda/api/feedback_form_handler.py,lambda/shared/ws_repo.py",
+      "reason": "the same text in two key spaces: a form's own row in its forms partition (FORM#{id}, which the handler's list reads with begins_with) and a workspace form's public-id lookup row in voc-workspaces (ws_repo.py); a change to one must not move the other"
+    },
+    {
+      "key": "FORM_LOCALES|LANGUAGES::lambda/shared/briefing_prefs.py,lambda/shared/forms_v2.py",
+      "reason": "the app's nine locales, held twice on purpose: forms_v2.py imports nothing but the standard library and two pure shared modules (portable to main as is, pinned by test_forms_v2.py), and test_forms_v2.py and test_feedback_form_handler.py hold FORM_LOCALES to frontend/public/locales and supportedLanguages"
+    },
+    {
+      "key": "FEEDBACK_FORM_SOURCE|FORM_DELETE_KIND::lambda/api/feedback_form_handler.py,lambda/shared/feedback_form_raw.py",
+      "reason": "the same word in two vocabularies: the source id every form response is filed under (feedback_form_raw.py, stored on every item) and the kind of a deployment form's AUDIT#delete row (shared/delete_audit.py kinds: persona, document, feedback_form...); one may change without the other"
     }
   ]
 }

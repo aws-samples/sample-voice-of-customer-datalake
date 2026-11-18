@@ -12,6 +12,7 @@ from handler_events_fixtures import call_route
 from moto import mock_aws
 from moto_helpers import pk_sk_table
 
+from shared import forms_v2 as fv2
 from shared.test.source_profile_fixtures import no_source_profiles
 
 _no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
@@ -130,6 +131,23 @@ def _fields_the_widget_reads() -> set[str]:
     return fields
 
 
+#: The public config before 7.55.00 (schema version 1, 7.54.00's `text_question` and `language` included): a widget
+#: still migrates such a config itself, so these are the only version 1 fields it may read.
+V1_PUBLIC_FIELDS = frozenset({
+    'enabled', 'title', 'description', 'question', 'placeholder', 'rating_enabled', 'rating_type', 'rating_max',
+    'submit_button_text', 'success_message', 'theme', 'collect_email', 'collect_name', 'custom_fields',
+    'brand_name', 'text_question', 'language',
+})
+#: A version 2 config field the widget reads that the server does not serve yet, on purpose: an optional hook.
+V2_WIDGET_HOOKS = frozenset({'beacon'})
+
+
+def _fields_the_widget_reads_from(name: str) -> set[str]:
+    """`<name>.<field>` reads in the widget's code lines (comment lines dropped as for `_fields_the_widget_reads`)."""
+    source = '\n'.join(_widget_code_lines(WIDGET_SOURCE.read_text(encoding='utf-8')))
+    return set(re.findall(rf'\b{name}\.([a-z_]+)\b', source))
+
+
 def _form_with_legacy_brand(brand_name: str = 'Acme Classic') -> dict:
     """An enabled form recorded under the brand its deployment carried then.
 
@@ -145,6 +163,8 @@ def _form_with_legacy_brand(brand_name: str = 'Acme Classic') -> dict:
         'name': 'Product Form',
         'enabled': True,
         'brand_name': brand_name,
+        # Answered already: its submit writes no has_responses mark (7.55.00), only the anchor these tests are about.
+        'has_responses': True,
     }
 
 
@@ -303,11 +323,19 @@ class TestValidationLink:
         assert body['forms'][0]['project_id'] == 'proj-1'
         assert body['forms'][0]['document_id'] == 'doc-9'
 
+    @staticmethod
+    def _written(mock_table) -> dict:
+        """The attributes the update wrote, by name."""
+        kwargs = mock_table.update_item.call_args.kwargs
+        names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
+        return {names[key]: values[key.replace('#', ':')] for key in names if key.startswith('#f')}
+
     @patch('feedback_form_handler.aggregates_table')
     def test_update_writes_the_link(
         self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """PUT accepts the link fields — they are in UPDATABLE_FIELDS."""
+        mock_table.get_item.return_value = {'Item': {'form_id': 'form-123', 'name': 'Test Form'}}
         mock_table.update_item.return_value = {
             'Attributes': {
                 'form_id': 'form-123',
@@ -326,9 +354,9 @@ class TestValidationLink:
         )
 
         assert body['form']['project_id'] == 'proj-2'
-        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
-        assert expr_values[':project_id'] == 'proj-2'
-        assert expr_values[':document_id'] == 'doc-7'
+        written = self._written(mock_table)
+        assert written['project_id'] == 'proj-2'
+        assert written['document_id'] == 'doc-7'
 
     @patch('feedback_form_handler.aggregates_table')
     def test_update_can_clear_the_link(
@@ -336,6 +364,7 @@ class TestValidationLink:
     ):
         """Clearing the link (empty strings) reaches DynamoDB rather than being
         dropped as falsy — an admin must be able to unlink a form."""
+        mock_table.get_item.return_value = {'Item': {'form_id': 'form-123', 'project_id': 'p', 'document_id': 'd'}}
         mock_table.update_item.return_value = {
             'Attributes': {'form_id': 'form-123', 'project_id': '', 'document_id': ''}
         }
@@ -349,9 +378,9 @@ class TestValidationLink:
 
         feedback_form_handler.lambda_handler(event, lambda_context)
 
-        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
-        assert expr_values[':project_id'] == ''
-        assert expr_values[':document_id'] == ''
+        written = self._written(mock_table)
+        assert written['project_id'] == ''
+        assert written['document_id'] == ''
 
     def test_item_to_form_declares_every_default_config_field(self, feedback_form_handler):
         """Every DEFAULT_FORM_CONFIG field must also be in the item_to_form
@@ -402,36 +431,31 @@ class TestPublicConfigDoesNotLeakTheLink:
         assert 'doc-secret' not in response['body']
         # And the fields the widget actually renders are still served.
         assert config['enabled'] is True
-        assert config['title'] == 'Rate this concept'
+        assert config['welcome']['title'] == {'en': 'Rate this concept'}
 
     @patch('feedback_form_handler.aggregates_table')
     def test_public_config_serves_every_field_the_widget_reads(
         self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
-        """The narrower public projection must not have dropped a field the
-        embedded widget depends on."""
-        mock_table.get_item.return_value = {
-            'Item': {
-                'form_id': 'form-123',
-                'enabled': True,
-                'theme': {'primary_color': '#3B82F6'},
-                'rating_max': 5,
-            }
-        }
-
+        """Each config version's reads against that version's projection: the widget's version 2 reads (its
+        `served.<field>`) against what this route serves, and its version 1 reads (`c.<field>`, a config from a
+        server before 7.55.00, which the widget migrates itself) against the version 1 projection, pinned below."""
+        mock_table.get_item.return_value = {'Item': {'form_id': 'form-123', 'enabled': True,
+                                                     'theme': {'primary_color': '#3B82F6'}, 'rating_max': 5}}
         _, body = call_route(
             feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/form-123/config',
             path_params={'form_id': 'form-123'},
+            query_params={'test': 'not-a-token'},
         )
-
-        read_by_widget = _fields_the_widget_reads()
-        missing = sorted(read_by_widget - set(body['config']))
-        assert not missing, (
-            f'the widget reads config.{missing} but the public projection no '
-            'longer serves it.'
-        )
+        # `test` answers beside the config when the link carries one; `beacon` is the widget's own optional hook.
+        served = set(body['config']) | {'test'} if 'test' in body else set(body['config'])
+        missing_v2 = sorted(_fields_the_widget_reads_from('served') - served - V2_WIDGET_HOOKS)
+        assert not missing_v2, f'the widget reads served.{missing_v2} but the version 2 config does not serve it.'
+        missing_v1 = sorted(_fields_the_widget_reads() - V1_PUBLIC_FIELDS)
+        assert not missing_v1, (
+            f'the widget reads config.{missing_v1}, which no version 1 config (before 7.55.00) ever served.')
 
 
 class TestValidationLinkBoundary:
@@ -1426,3 +1450,150 @@ class TestDefaultTheme:
         item = feedback_form_handler.build_form_item({'name': 'n', 'theme': {'primary_color': '#3B82F6'}})
         assert item['theme']['primary_color'] == '#3B82F6'
 
+
+
+def _written(mock_table: MagicMock) -> dict:
+    """The attributes an UpdateItem set, by name (the handler writes them as ``#f<n> = :f<n>``)."""
+    kwargs = mock_table.update_item.call_args.kwargs
+    names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
+    return {names[name]: values[name.replace('#', ':')] for name in names if name.startswith('#f')}
+
+
+def _headlines(definition: dict) -> dict:
+    return {question['id']: question['headline'] for question in definition['questions']}
+
+
+class TestTheFollowUpQuestionAndTheFormLanguage:
+    """7.54.00 (a customer pilot) carried into schema version 2: a version 1 form's `text_question` heads the text step
+    of a form with a rating (`question` heads the rating), `question` heads it when the rating is off, and its
+    `language` is the form's primary language. Both are version 1 fields now, migrated on the way in
+    (shared/forms_v2.py ``migrate_v1``): neither is stored or served as such, and the version 2 validator bounds
+    and refuses them as the questions and the language they became."""
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_v1_create_migrates_both(self, mock_table, api_gateway_event, lambda_context, feedback_form_handler):
+        _response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='POST', path='/feedback-forms',
+            body={'name': 'Drop-off', 'question': 'Jak oceniasz?', 'text_question': 'Dlaczego rezygnujesz?',
+                  'language': 'pl'},
+        )
+
+        stored = mock_table.put_item.call_args.kwargs['Item']
+        assert (stored['schema_version'], stored['language'], stored['languages']) == (2, 'pl', ['pl'])
+        assert _headlines(stored) == {'q_rating': {'pl': 'Jak oceniasz?'}, 'q_text': {'pl': 'Dlaczego rezygnujesz?'}}
+        assert 'text_question' not in stored
+        assert _headlines(body['form']) == _headlines(stored)
+
+    def test_without_a_rating_the_question_heads_the_text_step(self, feedback_form_handler):
+        item = feedback_form_handler.build_form_item(
+            {'rating_enabled': False, 'question': 'Co zmienić?', 'text_question': 'unused', 'language': 'pl'})
+        assert _headlines(item) == {'q_text': {'pl': 'Co zmienić?'}}
+
+    def test_an_empty_follow_up_question_is_the_localized_tell_us_more(self, feedback_form_handler):
+        item = feedback_form_handler.build_form_item({'question': 'Jak?', 'text_question': '', 'language': 'pl'})
+        assert _headlines(item)['q_text'] == {'pl': fv2.TELL_US_MORE['pl']}
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_v1_update_of_a_v1_form_writes_it_back_as_v2(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler,
+    ):
+        mock_table.get_item.return_value = {'Item': {
+            'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123', 'form_id': 'form-123', 'rating_enabled': True,
+            'question': 'Wie war es?', 'text_question': 'Warum?'}}
+        mock_table.update_item.return_value = {'Attributes': {'form_id': 'form-123'}}
+
+        response, _body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='PUT', path='/feedback-forms/form-123', path_params={'form_id': 'form-123'},
+            body={'text_question': 'Was sollen wir ändern?', 'language': 'de'},
+        )
+
+        assert response['statusCode'] == 200
+        written = _written(mock_table)
+        assert (written['schema_version'], written['language']) == (2, 'de')
+        assert _headlines(written) == {'q_rating': {'de': 'Wie war es?'}, 'q_text': {'de': 'Was sollen wir ändern?'}}
+        removed = mock_table.update_item.call_args.kwargs['UpdateExpression'].split(' REMOVE ')[1]
+        names = mock_table.update_item.call_args.kwargs['ExpressionAttributeNames']
+        assert {names[name.strip()] for name in removed.split(',')} == {'rating_enabled', 'question', 'text_question'}
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_on_a_v2_form_the_follow_up_question_is_refused_and_nothing_is_written(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler,
+    ):
+        stored = feedback_form_handler.build_form_item({'question': 'Q?'}, form_id='form-123')
+        mock_table.get_item.return_value = {'Item': stored}
+
+        response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='PUT', path='/feedback-forms/form-123', path_params={'form_id': 'form-123'},
+            body={'text_question': 'Why?'},
+        )
+
+        assert (response['statusCode'], body['error']) == (
+            400, 'text_question is a version 1 field and this form uses questions: edit questions')
+        mock_table.update_item.assert_not_called()
+
+    @pytest.mark.parametrize('language', fv2.FORM_LOCALES)
+    def test_every_app_locale_is_a_form_language(self, language, feedback_form_handler):
+        assert feedback_form_handler.build_form_item({'language': language})['language'] == language
+
+    @pytest.mark.parametrize('bad', ['', 'xx', 'pl-PL', 'PL', None, 7])
+    def test_a_v1_language_the_app_does_not_have_is_the_deployments(self, bad, feedback_form_handler):
+        """D15: '' (7.54.00's "the visitor's browser") and anything else unknown become the deployment's language,
+        which the author confirms in the builder (`language_assumed` on a stored version 1 form)."""
+        item = feedback_form_handler.build_form_item({'language': bad})
+        assert item['language'] == feedback_form_handler.DEFAULT_FORM_LANGUAGE
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_v2_language_the_app_does_not_have_is_refused_by_name(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler,
+    ):
+        definition = fv2.migrate_v1(dict(fv2.V1_DEFAULTS), 'en')
+        response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='POST', path='/feedback-forms', body={'name': 'n', **definition, 'language': 'pl-PL'},
+        )
+
+        assert (response['statusCode'], body['error']) == (
+            400, 'language must be one of: en, es, fr, de, pt, ja, zh, ko, pl')
+        mock_table.put_item.assert_not_called()
+
+    def test_the_follow_up_question_has_the_headline_bound(self, feedback_form_handler):
+        at_limit = 'q' * fv2.HEADLINE_CHARS
+        assert fv2.HEADLINE_CHARS == 500
+        item = feedback_form_handler.build_form_item({'text_question': at_limit, 'language': 'pl'})
+        assert _headlines(item)['q_text'] == {'pl': at_limit}
+
+        with pytest.raises(feedback_form_handler.ValidationError) as refused:
+            feedback_form_handler.build_form_item({'text_question': 'q' * 501, 'language': 'pl'})
+        assert str(refused.value) == 'questions[1].headline.pl must be at most 500 characters'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_public_config_serves_a_stored_v1_form_migrated(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler,
+    ):
+        mock_table.get_item.return_value = {'Item': {
+            'form_id': 'form-123', 'enabled': True, 'rating_enabled': True, 'question': 'Jak oceniasz?',
+            'text_question': 'Dlaczego?', 'language': 'pl',
+        }}
+
+        _, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/feedback-forms/form-123/config', path_params={'form_id': 'form-123'},
+        )
+
+        config = body['config']
+        assert (config['schema_version'], config['language'], config['language_assumed']) == (2, 'pl', False)
+        assert _headlines(config) == {'q_rating': {'pl': 'Jak oceniasz?'}, 'q_text': {'pl': 'Dlaczego?'}}
+        assert 'text_question' not in config
+
+    def test_the_languages_are_the_apps_locales(self):
+        """FORM_LOCALES is the frontend's `supportedLanguages`, in its order, which the widget's STRINGS and the
+        builder's language list follow (feedbackWidget.test.ts pins the widget side)."""
+        path = Path(__file__).resolve().parents[3] / 'frontend' / 'src' / 'i18n' / 'languages.ts'
+        if not path.is_file():
+            pytest.skip('frontend/src/i18n/languages.ts not present in this tree')
+        declared = re.search(r'supportedLanguages = \[([^\]]*)\]', path.read_text(encoding='utf-8'))
+        assert declared, 'supportedLanguages not found in languages.ts: renamed or reformatted?'
+        assert re.findall(r"'([a-z]+)'", declared.group(1)) == list(fv2.FORM_LOCALES)

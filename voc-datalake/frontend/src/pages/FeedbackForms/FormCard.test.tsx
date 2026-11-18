@@ -1,14 +1,14 @@
 /**
- * Regression test for issue #171: FormCard crashed the whole /feedback-forms
- * route with "Cannot read properties of undefined (reading 'primary_color')"
- * when a form record arrived without a theme. The list normalizes at its
- * query boundary, but FormCard must stay render-safe standalone.
+ * The forms list card (UX §14.2): the name as a link, the Live / Off switch (refusing in words to publish a form
+ * with problems), "Test link on", the summary and responses lines, Results, and ⋯ (Preview never the counting live
+ * link, Duplicate as an unsaved copy, QR, Delete). It stays render-safe on sparse and v1 records (issue #171).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
-import { createQueryWrapper } from './feedback-forms-fixtures'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 const mockGetFeedbackFormStats = vi.fn<(...args: unknown[]) => unknown>()
 
@@ -18,287 +18,139 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
-vi.mock('./SubmissionsModal', () => ({
-  default: () => <div data-testid="submissions-modal" />,
-}))
-
 import FormCard from './FormCard'
-import { defaultFormConfig } from './formTemplates'
+import { normalizeFeedbackForms } from './formSchema'
+import { readHandoff } from './builder/newFormHandoff'
 import type { FeedbackForm } from '../../api/types'
+import { defined } from '../../test/defined'
 
-function buildForm(): FeedbackForm {
-  return {
-    ...defaultFormConfig,
-    form_id: 'form_1',
-    name: 'Website Feedback',
-    enabled: true,
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-  }
+const V2 = {
+  form_id: 'form_1', name: 'Website Feedback', enabled: true, schema_version: 2, revision: 2,
+  language: 'en', languages: ['en', 'pl'],
+  welcome: { enabled: false, title: {} },
+  questions: [
+    { id: 'q_rating', type: 'rating', headline: { en: 'How was it?' }, required: true, scale: 'star', range: 5 },
+    { id: 'q_text', type: 'open_text', headline: { en: 'Tell us more' }, required: false, long: true, input_type: 'text' },
+  ],
+  hidden_fields: [], endings: [{ id: 'end_thanks', title: { en: 'Thanks' } }],
+  settings: { test: { link_enabled: true, record: 'tag' } },
 }
 
-const noop = () => {}
+function record(raw: Record<string, unknown> = {}): FeedbackForm {
+  return defined(normalizeFeedbackForms([{ ...V2, ...raw }])[0], 'form')
+}
 
-function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com', statsRefreshing = false) {
+function Where() {
+  const location = useLocation()
+  return <output data-testid="where" data-name={readHandoff(location.state)?.form.name ?? ''}>{location.pathname}</output>
+}
+
+function renderCard(form: FeedbackForm, handlers: { onToggle?: () => void; onDelete?: () => void; apiEndpoint?: string; statsRefreshing?: boolean } = {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} statsRefreshing={statsRefreshing} />,
-    { wrapper: createQueryWrapper() },
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/feedback-forms']}>
+        <FormCard form={form} onToggle={handlers.onToggle ?? vi.fn()} onDelete={handlers.onDelete ?? vi.fn()}
+          apiEndpoint={handlers.apiEndpoint ?? 'https://api.example.com'} statsRefreshing={handlers.statsRefreshing ?? false} />
+        <Where />
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
-describe('FormCard (issue #171)', () => {
+async function pick(item: string) {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'More actions for Website Feedback' }))
+  await user.click(screen.getByRole('menuitem', { name: item }))
+}
+
+describe('FormCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetFeedbackFormStats.mockResolvedValue({
-      success: true,
-      form_id: 'form_1',
-      stats: { total_submissions: 3, avg_rating: 4.5, rating_count: 2 },
-    })
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: 4.1, rating_count: 2 } })
   })
 
-  // Wave 4: the Theme tile read as an empty value (a swatch, no words).
-  it('says the theme in words beside its swatch', () => {
-    renderCard(buildForm())
-    expect(screen.getByText('Default colours')).toBeInTheDocument()
+  it('names the form as a link to it, with its questions, languages and responses', async () => {
+    renderCard(record())
+    expect(screen.getByRole('link', { name: 'Website Feedback' })).toHaveAttribute('href', '/feedback-forms/form_1')
+    expect(screen.getByText('2 questions · English, Polski')).toBeInTheDocument()
+    expect(await screen.findByText('3 responses')).toBeInTheDocument()
   })
 
-  it('shows the form colour as a swatch, never its hex code', () => {
-    renderCard(buildForm())
-
-    expect(screen.getByText('Website Feedback')).toBeInTheDocument()
-    expect(screen.queryByText(defaultFormConfig.theme.primary_color)).not.toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Form colour' })).toHaveStyle({ backgroundColor: defaultFormConfig.theme.primary_color })
+  it('says one response, not one responses', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 1, avg_rating: null, rating_count: 0 } })
+    renderCard(record())
+    expect(await screen.findByText('1 response')).toBeInTheDocument()
   })
 
-  it('says Live or Off on a labelled switch and toggles the form', async () => {
+  it('shows a placeholder, never a count, while the stats are being read', () => {
+    mockGetFeedbackFormStats.mockReturnValue(new Promise(vi.fn()))
+    renderCard(record())
+    expect(screen.getByText('Reading the responses…').closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText(/responses?$/)).not.toBeInTheDocument()
+  })
+
+  it('marks Test link on, and the average of its first rating', async () => {
+    renderCard(record())
+    expect(screen.getByText('Test link on')).toBeInTheDocument()
+    expect(await screen.findByText('Average 4.1 of 5')).toBeInTheDocument()
+  })
+
+  it('says Live or Off on a labelled switch and turns the form off', async () => {
     const onToggle = vi.fn()
-    render(<FormCard form={buildForm()} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" statsRefreshing={false} />,
-      { wrapper: createQueryWrapper() })
-
-    const live = screen.getByRole('switch', { name: 'Live' })
-    expect(live).toBeChecked()
-    await userEvent.click(live)
+    renderCard(record(), { onToggle })
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Live' }))
     expect(onToggle).toHaveBeenCalledWith('form_1', false)
   })
 
-  it('names the category with its label, not its id', () => {
-    renderCard({ ...buildForm(), category: 'software_firmware', subcategory: 'boot_loop' })
-
-    expect(screen.getByText('Software firmware / Boot loop')).toBeInTheDocument()
+  it('refuses in words to publish a form with problems, with the way to them', async () => {
+    const onToggle = vi.fn()
+    renderCard(record({ enabled: false, questions: [{ id: 'q_text', type: 'open_text', headline: {}, required: true, long: true, input_type: 'text' }] }), { onToggle })
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Off' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Fix 1 problem before publishing.')
+    expect(within(screen.getByRole('alert')).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/feedback-forms/form_1/questions')
+    expect(onToggle).not.toHaveBeenCalled()
   })
 
-  // 5.34.00 live finding: "1 Submissions".
-  it('says one Submission and three Submissions', async () => {
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 1, avg_rating: 4, rating_count: 1 } })
-    renderCard(buildForm())
-    expect(await screen.findByText('Submission')).toBeInTheDocument()
-    expect(screen.queryByText('Submissions')).not.toBeInTheDocument()
+  it('opens Results', () => {
+    renderCard(record())
+    expect(screen.getByRole('link', { name: 'Results' })).toHaveAttribute('href', '/feedback-forms/form_1/results')
   })
 
-  // 5.34.00 live finding: the cards said "0" for ~5 s while their counts were still being read.
-  it('shows busy placeholders, never a count, while the stats are being read', () => {
-    mockGetFeedbackFormStats.mockReturnValue(new Promise(() => {}))
-    renderCard(buildForm())
-    const figure = screen.getByText('Submissions').closest('[aria-busy]')
-    expect(figure).toHaveAttribute('aria-busy', 'true')
-    expect(figure).not.toHaveTextContent(/\d/)
-    expect(screen.queryByText('0')).not.toBeInTheDocument()
+  it('previews in the full-screen preview that never submits, not the live link', async () => {
+    renderCard(record())
+    await pick('Preview')
+    expect(screen.getByTestId('where')).toHaveTextContent('/feedback-forms/form_1/preview')
   })
 
-  it('shows placeholders while the page re-reads the list, instead of the cached count', async () => {
-    renderCard(buildForm(), 'https://api.example.com', true)
-    expect(await screen.findByText('Submissions')).toBeInTheDocument()
-    expect(screen.getByText('Submissions').closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true')
+  it('duplicates as an unsaved copy in the builder', async () => {
+    renderCard(record())
+    await pick('Duplicate')
+    expect(screen.getByTestId('where')).toHaveTextContent('/feedback-forms/new/questions')
+    expect(screen.getByTestId('where')).toHaveAttribute('data-name', 'Website Feedback (copy)')
   })
 
-  it('explains why View submissions is off when there are none, and keeps it focusable', async () => {
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
-    renderCard(buildForm())
-
-    const hint = 'No submissions yet — share the form to collect some.'
-    const view = await screen.findByRole('button', { name: 'View Submissions', description: hint })
-    expect(view).toHaveAttribute('aria-disabled', 'true')
-    expect(view).toBeEnabled()
-    await userEvent.setup().click(view)
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  it('opens a scannable QR from its menu', async () => {
+    renderCard(record())
+    await pick('QR code')
+    expect(screen.getByRole('img', { name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }) })).toBeInTheDocument()
   })
 
-  // U12: these icon-only controls carried hardcoded English titles, so they read
-  // the same in every locale. They now take translated aria-labels — the
-  // accessible name is what assistive tech actually announces.
-  it('gives every icon-only card action an accessible name', () => {
-    renderCard({ ...buildForm(), enabled: true })
-
-    // Resolve through the same i18n instance the component uses, so these stay
-    // correct whether the harness echoes keys or returns real strings.
-    const { t } = i18n
-    expect(screen.getByRole('button', { name: t('feedbackForms:card.editForm') })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: t('feedbackForms:card.deleteForm') })).toBeInTheDocument()
-  })
-
-  // Resolving through i18n.t alone cannot catch a WRONG key path: the harness
-  // echoes the key, so component and expectation agree even when the key does
-  // not exist. This asserts against the real en catalogue instead, which is what
-  // caught these labels rendering as raw keys in the deployed build.
-  it('uses key paths that actually exist in the en catalogue', async () => {
-    const en = (await import('../../../public/locales/en/feedbackForms.json')).default
-    const card: Readonly<Record<string, string>> = en.card
-
-    for (const key of ['editForm', 'deleteForm', 'live', 'off']) {
-      expect(card[key], `feedbackForms:card.${key} missing from en catalogue`).toBeTruthy()
-    }
+  it('asks the page to delete it', async () => {
+    const onDelete = vi.fn()
+    renderCard(record(), { onDelete })
+    await pick('Delete…')
+    expect(onDelete).toHaveBeenCalledWith('form_1')
   })
 
   it('marks the form a prototype build created as prototype pins', () => {
-    renderCard({ ...buildForm(), form_type: 'prototype_pin' })
+    renderCard(record({ form_type: 'prototype_pin' }))
     expect(screen.getByText('Prototype pins')).toBeInTheDocument()
   })
 
-  it('does not mark an ordinary form', () => {
-    renderCard(buildForm())
-    expect(screen.queryByText('Prototype pins')).toBeNull()
-  })
-
-  it('says Off on the switch of a disabled form', () => {
-    renderCard({ ...buildForm(), enabled: false })
-
-    expect(screen.getByRole('switch', { name: 'Off' })).not.toBeChecked()
-    expect(screen.queryByRole('switch', { name: 'Live' })).not.toBeInTheDocument()
-  })
-
-  it('still prints the public URL a customer pastes into their own page', async () => {
-    const user = userEvent.setup()
-    renderCard(buildForm())
-
-    await user.click(screen.getByText('Show Embed Code'))
-
-    expect(screen.getByText('https://api.example.com/feedback-forms/form_1/iframe')).toBeInTheDocument()
-  })
-
-  it('opens a scannable QR from the card without expanding the embed disclosure', async () => {
-    const user = userEvent.setup()
-    renderCard(buildForm())
-
-    // The whole point of the change: a facilitator reaches the QR without going
-    // through a developer-facing disclosure about iframe snippets.
-    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
-
-    expect(screen.getByRole('dialog')).toHaveAccessibleName(i18n.t('components:formQrCode.title'))
-    expect(screen.getByRole('img', {
-      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
-    })).toBeInTheDocument()
-  })
-
-  it('keeps the QR out of the card until it is asked for, then dismisses on Escape', async () => {
-    const user = userEvent.setup()
-    renderCard(buildForm())
-
-    const qrName = i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' })
-    expect(screen.queryByRole('img', { name: qrName })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
-    expect(screen.getByRole('img', { name: qrName })).toBeInTheDocument()
-
-    await user.keyboard('{Escape}')
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('offers exactly one QR affordance, not one per disclosure state', async () => {
-    const user = userEvent.setup()
-    renderCard(buildForm())
-
-    await user.click(screen.getByText('Show Embed Code'))
-
-    // The embed section used to render its own inline QR. Two entry points to the
-    // same artifact is the state this change exists to end, and it is invisible in
-    // review because both of them work.
-    expect(screen.getAllByRole('button', { name: i18n.t('components:formQrCode.show') })).toHaveLength(1)
-    expect(screen.queryByRole('img', {
-      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
-    })).not.toBeInTheDocument()
-  })
-
-  it('escapes a double quote in the form name so the embed snippet stays well formed', async () => {
-    const user = userEvent.setup()
-    renderCard({ ...buildForm(), name: 'The "Best" Form & Co' })
-
-    await user.click(screen.getByText('Show Embed Code'))
-
-    // The snippet is pasted verbatim into the customer's own page: a raw quote
-    // closes title=" early and hands them broken markup to debug.
-    const snippet = screen.getByText((_, node) => node?.tagName === 'CODE' && node.textContent.includes('<iframe'))
-    expect(snippet.textContent).toContain('title="The &quot;Best&quot; Form &amp; Co"')
-    expect(snippet.textContent).not.toContain('title="The "Best"')
-  })
-
-  it('offers no link or snippet when the endpoint cannot address the form', async () => {
-    const user = userEvent.setup()
-    // Reachable with a non-absolute endpoint: the page gate only checks for a
-    // non-empty string, so '/api' or a scheme-less paste arrives here.
-    renderCard(buildForm(), '/api')
-
-    await user.click(screen.getByText('Show Embed Code'))
-
-    expect(screen.getByText(i18n.t('feedbackForms:configureApiFirst'))).toBeInTheDocument()
-    expect(screen.queryByText(/feedback-forms\/form_1\/iframe/)).not.toBeInTheDocument()
-  })
-
-  it('says why there is no QR when the endpoint cannot address the form', async () => {
-    const user = userEvent.setup()
-    renderCard(buildForm(), '/api')
-
-    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
-
-    // The dialog opens and explains itself rather than presenting a symbol that
-    // scans perfectly and opens nothing — a room pointing phones at a dead QR
-    // gets no error message.
-    expect(screen.getByText(i18n.t('components:formQrCode.unavailable'))).toBeInTheDocument()
-    expect(screen.queryByRole('img', {
-      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
-    })).not.toBeInTheDocument()
-  })
-
-  it('survives a runtime record without a theme (the #171 crash)', () => {
-    const form = buildForm()
-    // The wire can deliver records persisted before the theme field existed;
-    // static types say theme is required, runtime reality disagrees.
-    Reflect.deleteProperty(form, 'theme')
-
-    renderCard(form)
-
-    expect(screen.getByText('Website Feedback')).toBeInTheDocument()
-    // Falls back to the default theme swatch instead of crashing.
-    expect(screen.getByRole('img', { name: 'Form colour' })).toHaveStyle({ backgroundColor: defaultFormConfig.theme.primary_color })
-  })
-})
-
-describe('FormCard: a disabled form says what that means (E2E F6)', () => {
-  const NOTICE = 'This form is off. Its link and embed show “Feedback form unavailable.” until you enable it.'
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
-  })
-
-  it('explains the disabled state and enables the form in one click', async () => {
-    const onToggle = vi.fn()
-    render(
-      <FormCard form={{ ...buildForm(), enabled: false }} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" statsRefreshing={false} />,
-      { wrapper: createQueryWrapper() },
-    )
-
-    expect(screen.getByRole('note')).toHaveTextContent(NOTICE)
-    await userEvent.click(screen.getByRole('button', { name: 'Enable now' }))
-
-    expect(onToggle).toHaveBeenCalledWith('form_1', true)
-  })
-
-  it('shows no notice on an enabled form', () => {
-    renderCard({ ...buildForm(), enabled: true })
-
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Enable now' })).not.toBeInTheDocument()
+  it('reads a v1 record as its migrated questions (issue #171: a sparse one too)', () => {
+    renderCard(defined(normalizeFeedbackForms([{ form_id: 'form_1', name: 'Website Feedback', enabled: true, rating_enabled: true, question: 'How was it?' }])[0], 'form'))
+    expect(screen.getByText(/^2 questions · /)).toBeInTheDocument()
+    expect(screen.queryByText('Test link on')).not.toBeInTheDocument()
   })
 })

@@ -62,12 +62,15 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   'pages/Agents/RunWorkspace/runsFilters.ts': { kind: 'filter', keys: ['flow', 'status'], reason: 'the Runs list\'s flow and status filters (7.51.00; its month through spendView.ts): they combine freely; a run and its agent are the path' },
   'pages/Agents/RunWorkspace/RunsView.tsx': { kind: 'filter', keys: [], reason: 'writes the Runs filters runsFilters.ts reads' },
   'pages/Settings/adminPaths.ts': { kind: 'filter', keys: ['scope'], reason: 'the Data sources scope switch (this workspace or the deployment); the tab, card and source are the path' },
+  'pages/FeedbackForms/results/resultFilters.ts': { kind: 'filter', keys: ['range', 'lang', 'ending'], reason: 'a form\'s Results filters (7.55.00: the window, language, ending and one `hf.<id>` per hidden field) so a view can be shared; the form, its Results tab and Responses are the path' },
+  'pages/FeedbackForms/results/ResultsTab.tsx': { kind: 'filter', keys: [], reason: 'reads and writes the Results filters through resultFilters.ts' },
   // The review modal.
   'hooks/useReviewModal.ts': { kind: 'overlay', keys: ['review', 'reviewBrand'], reason: 'one review over whatever page is open; Back closes it' },
   // Prefilled forms.
   'pages/Connect/Connect.tsx': { kind: 'prefill', keys: ['project'], reason: 'the token form\'s initial project pin (the project header\'s "Connect MCP")' },
   'pages/ProjectDetail/decisions/decisionDraft.ts': { kind: 'prefill', keys: ['newDecision', 'title', 'verdict', 'rationale', 'feedback'], via: 'name', reason: 'a decision draft from a deep link, read once and dropped' },
   'pages/ProjectDetail/decisions/DecisionsTab.tsx': { kind: 'prefill', keys: [], reason: 'drops the decision prefill once read (decisionDraft.ts)' },
+  'pages/FeedbackForms/builder/builderPaths.ts': { kind: 'prefill', keys: ['template'], reason: 'the form picker\'s chosen template (7.55.00, `/feedback-forms/new?template=<id>`), what the new form starts from; not a path segment, because `/feedback-forms/new/<tab>` is the unsaved form\'s builder' },
   // External callbacks.
   'api/oauthRedirect.ts': { kind: 'callback', keys: ['redirect_uri'], reason: 'the MCP OAuth authorize request the consent page approves' },
   'pages/OAuthConsent/OAuthConsent.tsx': { kind: 'callback', keys: [], reason: 'the OAuth authorize request, passed whole to the API (docs/mcp.md)' },

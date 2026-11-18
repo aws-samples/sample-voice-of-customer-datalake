@@ -6,9 +6,8 @@
  * control existed. Every select therefore has a "not linked" option, and
  * clearing the project clears the document with it.
  *
- * Extracted into its own module rather than added inline to `FeedbackForms.tsx`:
- * that file is already at the repo's `max-lines` ceiling and `FormEditor` at its
- * complexity ceiling.
+ * Its own module, used by the builder's Settings tab (tabs/SettingsTab.tsx), so
+ * the tab stays a list of its sections.
  *
  * @module pages/FeedbackForms/ValidationLinkPicker
  */

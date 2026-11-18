@@ -24,6 +24,8 @@
  * - `categories` — the categories the `save_categories` card shows right now, as the person edited them, and the
  *   fingerprint of the stored categories it read; the executor adds exactly that set, or refuses when the stored
  *   categories changed since (or the set was not valid yet).
+ * - `feedbackFormDraft` — the form the `draft_feedback_form` card shows right now, as the person edited it (its
+ *   name, the questions left out, the addresses removed); the executor creates exactly that form, Off.
  *
  * The record reaches previews through {@link ShownContext} and executors
  * through the execution context (see {@link shownOf}) — the shared
@@ -37,6 +39,7 @@ import { getDaysFromRange } from '../../api/baseUrl'
 import { useConfigStore } from '../../store/configStore'
 import type { WriteToolExecutionContext } from '../types'
 import type { SaveCategoriesArgs } from './categorySchemas'
+import type { FormV2 } from '../../pages/FeedbackForms/model/formsV2'
 
 export interface JobEnvironment {
   days: number
@@ -66,6 +69,8 @@ export interface ShownRecord {
   knowledgeRefresh?: KnowledgeRefreshShown
   /** Set by the save_categories preview: the edited set it shows and the stored categories it read. */
   categories?: CategoriesShown
+  /** Set by the draft_feedback_form preview: the form it shows, once it can be created. */
+  feedbackFormDraft?: { readonly form: FormV2 }
 }
 
 /** What a save_categories card shows: the stored categories' fingerprint, and the edited set once it is valid. */
@@ -151,6 +156,17 @@ function holdNothing(): void {
 /** Record what the knowledge refresh card's Approve does right now (undefined: nothing yet). */
 export function recordKnowledgeRefresh(shown: ShownRecord, what: KnowledgeRefreshShown | undefined): void {
   shown.knowledgeRefresh = what
+}
+
+/**
+ * Lets a preview decline its card with a reason (the draft_feedback_form card's "Open in builder": the person edits
+ * the form there instead, so the assistant is told it was not created). Outside a card there is nothing to decline.
+ */
+export const ApprovalDeclineContext = createContext<((reason: string) => void) | null>(null)
+
+/** Record the form the draft_feedback_form card shows right now (undefined: none that can be created yet). */
+export function recordFeedbackFormDraft(shown: ShownRecord, form: FormV2 | undefined): void {
+  shown.feedbackFormDraft = form === undefined ? undefined : { form }
 }
 
 /** Record the categories the save_categories card shows right now (undefined: none to save yet). */

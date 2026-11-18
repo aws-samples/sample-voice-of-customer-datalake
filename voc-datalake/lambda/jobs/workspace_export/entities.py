@@ -9,7 +9,8 @@ workspace layer (shared/ws_repo.py):
   the day after the export started;
 * from voc-aggregates (``ws_table``): ``plugin_configs`` (``WS#{ws}#PLUGIN_CONFIG``), ``plugin_config_history``
   (``#PLUGIN_CONFIG#HISTORY``: every list a save replaced, who saved it and who replaced it), ``feedback_forms``
-  (``#FEEDBACK_FORM``), ``import_runs`` (each run's detail row ``#IMPORT_RUN#{run}``, found from its summary in
+  (``#FEEDBACK_FORM``), ``feedback_form_tests`` (``#FEEDBACK_FORM_TEST``, the forms' tagged test responses, written
+  last), ``import_runs`` (each run's detail row ``#IMPORT_RUN#{run}``, found from its summary in
   ``#IMPORT_RUN``; the summary itself when the detail is gone) and ``erasure_jobs`` (``#JOB#erasure``, ``er_…`` rows,
   without ``value_hash``);
 * from voc-workspaces (``control_query``): ``workspace`` (``WS#{ws}`` / ``META``), ``members`` (its ``MEMBER#``
@@ -44,6 +45,7 @@ from jobs.workspace_export.projects import DELETED_DURING, UNCLASSIFIED, Project
 from jobs.workspace_export.projects import ENTITIES as PROJECT_ENTITIES
 from shared.dynamo_values import as_count, plain
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, parse_iso_date
+from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import DETAIL_SK, LIST_PK
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
 from shared.metric_keys import DAILY_TOTAL_PK, metric_partition
@@ -67,7 +69,8 @@ __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'man
 #: reads 0), one that was before it writes it. A checkpoint from before phases were named is read by the 4b order.
 #: The project entities (7.39.00) come last, after the memory's.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
-                   'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES, *PROJECT_ENTITIES)
+                   'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES, *PROJECT_ENTITIES,
+                   'feedback_form_tests')
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
@@ -326,6 +329,8 @@ _AGGREGATE_PARTITIONS: Final = {
     'plugin_configs': lambda scope: (plugin_config_pk(scope), None, {}),
     'plugin_config_history': lambda scope: (plugin_config_history_pk(scope), None, {}),
     'feedback_forms': lambda scope: (scope.key(FEEDBACK_FORM_PK), None, {}),
+    # The forms' tagged test responses (7.55.00's AI review: their own partition beside the forms one).
+    'feedback_form_tests': lambda scope: (scope.key(TEST_RESPONSES_PK), None, {}),
     'erasure_jobs': _erasure_jobs,
 }
 #: A control-plane entity: its partition (``control_query``), sort condition and values.

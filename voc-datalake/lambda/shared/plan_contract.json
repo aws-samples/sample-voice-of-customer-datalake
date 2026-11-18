@@ -191,7 +191,8 @@
     "draft_prototype_revision",
     "set_prototype_walkthrough",
     "propose_knowledge_refresh",
-    "save_categories"
+    "save_categories",
+    "draft_feedback_form"
   ],
   "free_text_fields": {
     "create_project": [

@@ -67,8 +67,16 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
     'VocApiStack/FeedbackFormLambdaRole': {
-      scope: ['FEEDBACK_FORM', 'WS#ws_??????????????????????????#FEEDBACK_FORM'],
-      why: 'DELETE /feedback-forms/{id} (the config row, the deployment\'s or one workspace\'s)',
+      scope: ['FEEDBACK_FORM', 'WS#ws_??????????????????????????#FEEDBACK_FORM',
+        'FEEDBACK_FORM_TEST', 'WS#ws_??????????????????????????#FEEDBACK_FORM_TEST'],
+      why: 'DELETE /feedback-forms/{id} (the form\'s rows) and DELETE …/responses?test=true (its test responses), '
+        + 'the deployment\'s or one workspace\'s',
+    },
+    [RETENTION_ROLE]: {
+      // Their own partitions only: never a form's definition, revision or funnel row (the forms partitions).
+      scope: ['FEEDBACK_FORM_TEST', 'WS#ws_??????????????????????????#FEEDBACK_FORM_TEST'],
+      why: 'erasure requests and the feedback_form retention window reach the forms\' test responses (the '
+        + 'deployment\'s or one workspace\'s)',
     },
     [PROJECTS_API]: {
       scope: ['PRIORITIZATION', 'VOTING_SESSION_ROW'],

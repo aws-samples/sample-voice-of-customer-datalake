@@ -1,66 +1,25 @@
 /**
- * The public widget (lambda/api/static/feedback-widget.js), run in jsdom (E2E F6).
+ * The public widget (lambda/api/static/feedback-widget.js), run in jsdom: its no-HTML rule, its colours, its
+ * states (unavailable, failed to load, sending, refused, changed), the `dimensions` option, and a version 1 config
+ * (one cached from before 7.55), which it migrates by the contract's rules and answers with the version 1 body.
  *
- * axe flagged a serious colour-contrast failure on its start button: the label
- * was always white, and the old default primary (#3B82F6) gives 3.68:1. The
- * default is now the Kiro accent, and the label picks whichever of white / Kiro
- * strong text reads better on the fill, so a customer's own colour is kept.
+ * axe once flagged a serious colour-contrast failure on the start button: the label was always white, and the old
+ * default primary (#3B82F6) gives 3.68:1. The default is the Kiro accent, and the label picks whichever of white
+ * or Kiro strong text reads better on the fill, so a customer's own colour is kept (E2E F6).
  */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
 import { waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { supportedLanguages } from '../../i18n/languages'
+import {
+  WIDGET_SOURCE, backButton, calls, clickNext, clickStart, en, errorText, form, heading, expectHeading,
+  nextButton, noticeText, pickByKey, renderWidget, resetWidgetPage, screen, submissions, submitted, typeText,
+} from '../../test/feedbackWidgetHarness'
+import { WIDGET_START_LABEL, widgetLanguage } from './test/widgetLanguage'
 
-const WIDGET_SOURCE = readFileSync(resolve(__dirname, '../../../../lambda/api/static/feedback-widget.js'), 'utf8')
+afterEach(resetWidgetPage)
 
-/**
- * `value` as a JavaScript literal safe to inline in a `<script>`: JSON, with the
- * two sequences JSON leaves as-is but a script body cannot contain escaped —
- * `</` (would close the script element) and U+2028 / U+2029 (line terminators
- * in JS, plain characters in JSON).
- */
-function jsLiteral(value: unknown): string {
-  return JSON.stringify(value)
-    .replace(/<\//g, '<\\/')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
-}
-
-/** What the stubbed API says when it refuses a submission (`data-submit="refuse"`). */
-const REFUSAL_REASON = 'Feedback text must be at most 5000 characters'
-
-/**
- * Run the widget against a `/config` answering `config`, the way the iframe page does.
- * `initOptions` is merged into the `init` call (e.g. the `dimensions` embed option).
- */
-async function renderWidget(config: Record<string, unknown>, initOptions: Record<string, unknown> = {}): Promise<HTMLElement> {
-  document.body.innerHTML = '<main id="voc-feedback-form"></main>'
-  // The <script> runs in the jsdom window's own realm, which is not the test's
-  // `globalThis`, so its `fetch` stub is defined inside the script itself. A GET
-  // answers the config the way the API does. The DOM is shared, so a POST (the
-  // submission) records its body on `<body data-posted>` for the test to read and
-  // is answered per `<body data-submit>`: `refuse` is the API's 400 envelope,
-  // `reject` a network failure, anything else a success.
-  const answer = jsLiteral({ success: true, config })
-  const refusal = jsLiteral({ success: false, error: REFUSAL_REASON })
-  const fetchStub = [
-    'window.fetch = function (url, init) {',
-    `  if (!(init && init.body)) return Promise.resolve({ json: function () { return Promise.resolve(${answer}); } });`,
-    '  document.body.dataset.posted = init.body;',
-    "  if (document.body.dataset.submit === 'reject') return Promise.reject(new TypeError('Failed to fetch'));",
-    `  var result = document.body.dataset.submit === 'refuse' ? ${refusal} : { success: true };`,
-    '  return Promise.resolve({ json: function () { return Promise.resolve(result); } });',
-    '};',
-  ].join('\n')
-  const init = jsLiteral({ container: '#voc-feedback-form', apiEndpoint: 'https://api.example.com', formId: 'f1', ...initOptions })
-  const script = document.createElement('script')
-  script.textContent = `${fetchStub}\n${WIDGET_SOURCE}\nVoCFeedbackForm.init(${init});`
-  document.body.appendChild(script)
-  const container = document.querySelector<HTMLElement>('#voc-feedback-form')
-  if (container === null) throw new Error('no container')
-  await waitFor(() => expect(container.textContent).not.toBe(''))
-  return container
-}
+/** A version 1 config: a welcome title, no rating, one text question. */
+const BASE = { enabled: true, title: 'How likely are you to recommend us?', description: 'One question.', rating_enabled: false }
 
 function startButton(container: HTMLElement): HTMLElement {
   const button = container.querySelector<HTMLElement>('.voc-start')
@@ -68,61 +27,54 @@ function startButton(container: HTMLElement): HTMLElement {
   return button
 }
 
-const BASE = { enabled: true, title: 'How likely are you to recommend us?', description: 'One question.', rating_enabled: false }
-
-/** Answer the one text question and press Next, which submits; resolves once the POST left. */
-async function submitText(container: HTMLElement): Promise<unknown> {
-  startButton(container).click()
-  const textarea = container.querySelector('textarea')
-  if (textarea === null) throw new Error('no text step')
-  textarea.value = 'Checkout keeps failing'
-  textarea.dispatchEvent(new Event('input'))
-  container.querySelector<HTMLElement>('[aria-label="Next question"]')?.click()
-  await waitFor(() => expect(document.body.dataset.posted).toBeDefined())
-  return JSON.parse(document.body.dataset.posted ?? '{}')
+/** Start a version 1 form, answer its text question and press Next (which submits); resolves with the body. */
+async function submitText(container: HTMLElement): Promise<Record<string, unknown>> {
+  clickStart(container)
+  typeText(container, 'Checkout keeps failing')
+  clickNext(container)
+  return submitted()
 }
 
-/** The inline submit-failure notice (an alert region, hidden until a submission fails). */
-function submitNotice(container: HTMLElement): HTMLElement {
-  const notice = container.querySelector<HTMLElement>('.voc-submit-error[role="alert"]')
-  if (notice === null) throw new Error('no submit notice')
-  return notice
+const TEXT = { id: 'q_text', type: 'open_text', headline: en('What happened?'), required: true, long: true }
+const PICK = {
+  id: 'q_pick', type: 'single_select', headline: en('Why?'), required: true,
+  options: [{ code: 'price', label: en('Price') }, { code: 'bugs', label: en('Bugs') }],
 }
-
-/**
- * Title of the slide the visitor is on. Every slide is in the DOM at once (the
- * thank-you copy included), so `textContent` of the container says nothing about
- * progress; the one shown is faded in (`opacity: 1`).
- */
-function visibleSlideTitle(container: HTMLElement): string | undefined {
-  return [...container.querySelectorAll<HTMLElement>('[data-index]')]
-    .find((slide) => slide.style.opacity === '1')?.querySelector('h1, h2')?.textContent
-}
-
-afterEach(() => {
-  document.body.innerHTML = ''
-  delete document.body.dataset.posted
-  delete document.body.dataset.submit
-})
 
 describe('the widget never renders dynamic text as HTML', () => {
-  // Source pin behind the 3.14.02 removal of the unused `esc` helper: that helper
-  // was dead because every string from the form config or the visitor reaches
-  // the page through `textContent`. Keep it that way — a future
-  // `el.innerHTML = config.title` is how a form author (or a poisoned config)
-  // would get script into a customer's site.
+  // A future `el.innerHTML = config.title` is how a form author (or a poisoned config) would get script into a
+  // customer's site: every string from the config or the respondent goes through textContent.
   it('assigns innerHTML only constant markup, and dynamic strings via textContent', () => {
-    // The right-hand side is captured as one single-quoted literal (entities such
-    // as `&rarr;` contain `;`, so "up to the semicolon" would cut a literal short).
     const assignments = [...WIDGET_SOURCE.matchAll(/\.innerHTML\s*=\s*('(?:[^'\\]|\\.)*'|[^;\n]+)/g)].map((m) => m[1]?.trim() ?? '')
-    expect(assignments.length).toBeGreaterThan(0)
     const nonLiteral = assignments.filter((rhs) => !/^'(?:[^'\\]|\\.)*'$/.test(rhs))
+
+    expect(assignments.length).toBeGreaterThan(0)
     expect(nonLiteral).toStrictEqual([])
     expect((WIDGET_SOURCE.match(/\.textContent\s*=/g) ?? []).length).toBeGreaterThan(10)
   })
 
-  it('has no insertAdjacentHTML, outerHTML write, document.write or eval-like call', () => {
-    expect(WIDGET_SOURCE).not.toMatch(/insertAdjacentHTML|\.outerHTML\s*=|document\.write|new Function\(|\beval\(/)
+  it('has no insertAdjacentHTML, outerHTML write, document.write or eval-like call, and never a browser alert', () => {
+    expect(WIDGET_SOURCE).not.toMatch(/insertAdjacentHTML|\.outerHTML\s*=|document\.write|new Function\(|\beval\(|\balert\(/)
+  })
+
+  it('shows markup in a headline and an option as text', async () => {
+    const markup = '<img src=x onerror="document.body.dataset.pwned=1">'
+    const container = await renderWidget(form([{ ...PICK, headline: en(markup), options: [{ code: 'a', label: en(markup) }] }]))
+
+    expect(heading(container)).toBe(markup)
+    expect(container.querySelector('img')).toBeNull()
+    expect(document.body.dataset.pwned).toBeUndefined()
+  })
+
+  it.each([
+    ['javascript:', 'javascript:alert(1)'], ['http', 'http://example.com/more'], ['data:', 'data:text/html,hi'],
+    ['credentials', 'https://user:pw@example.com/'], ['a space', 'https://example.com/a b'],
+  ])('renders no link for a %s address (https only)', async (_case, url) => {
+    const container = await renderWidget(form([
+      { id: 'q_info', type: 'statement', headline: en('Read this'), required: false, cta: { label: en('More'), url } },
+    ]))
+
+    expect(container.querySelector('a')).toBeNull()
   })
 })
 
@@ -158,7 +110,7 @@ describe('feedback widget colours', () => {
   it('falls back to the defaults for a stored colour that is not a hex value, so no CSS reaches the page', async () => {
     const injected = 'red;position:fixed;inset:0;z-index:2147483647'
     const container = await renderWidget({
-      ...BASE, theme: { primary_color: injected, background_color: injected, text_color: 'rgb(0,0,0)' },
+      ...BASE, theme: { primary_color: injected, background_color: injected, text_color: 'rgb(0,0,0)', border_radius: injected },
     })
 
     expect({
@@ -166,6 +118,7 @@ describe('feedback widget colours', () => {
       background: container.style.background, color: container.style.color,
     }).toStrictEqual({ position: 'relative', zIndex: '', background: 'rgb(255, 255, 255)', color: 'rgb(25, 22, 29)' })
     expect(startButton(container).style.background).toBe('rgb(142, 72, 255)')
+    expect(startButton(container).style.borderRadius).toBe('8px')
   })
 })
 
@@ -173,15 +126,26 @@ describe('feedback widget states', () => {
   it('announces a disabled form as a status message', async () => {
     const container = await renderWidget({ ...BASE, enabled: false })
 
-    const status = container.querySelector('[role="status"]')
-    expect(status?.textContent).toBe('Feedback form unavailable.')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Feedback form unavailable.')
   })
 
-  it('names its icon-only arrow buttons', async () => {
+  it("says the form couldn't load when the config route can't be reached", async () => {
+    document.body.dataset.configMode = 'reject'
     const container = await renderWidget(BASE)
 
-    expect(container.querySelector('button[aria-label="Previous question"]')).not.toBeNull()
-    expect(container.querySelector('button[aria-label="Next question"]')).not.toBeNull()
+    expect(container.querySelector('[role="status"]')?.textContent)
+      .toBe("Couldn't load this form. Check your connection and reload the page.")
+  })
+
+  it('labels its Back and Next buttons, each at least 48 px tall, and hides Back on the first question', async () => {
+    const container = await renderWidget(form([TEXT, PICK]))
+    typeText(container, 'Slow')
+    clickNext(container)
+
+    expect([backButton(container).textContent, nextButton(container).textContent]).toStrictEqual(['Back', 'Submit'])
+    expect([backButton(container).style.minHeight, nextButton(container).style.minHeight]).toStrictEqual(['48px', '48px'])
+    backButton(container).click()
+    expect(backButton(container).hidden).toBe(true)
   })
 })
 
@@ -189,127 +153,234 @@ describe('feedback widget dimensions embed option', () => {
   it('sends the embed dimensions (plain string values only) for the server to merge under the form defaults', async () => {
     const container = await renderWidget(BASE, { dimensions: { user_type: 'partner', nested: { x: 1 } } })
     const posted = await submitText(container)
+
     // The server lets the form's own dimension_defaults win per key (docs/feedback-forms.md).
     expect(posted).toHaveProperty('dimensions', { user_type: 'partner' })
     expect(posted).toHaveProperty('text', 'Checkout keeps failing')
   })
 
   it('sends no dimensions without the option', async () => {
-    const posted = await submitText(await renderWidget(BASE))
-    expect(posted).not.toHaveProperty('dimensions')
+    expect(await submitText(await renderWidget(BASE))).not.toHaveProperty('dimensions')
   })
 })
 
-describe('feedback widget rating buttons', () => {
-  // Characterisation of the one helper that builds all three rating kinds
-  // (3.14.04): `data-value` drives the posted rating, `data-label` the hover hint
-  // (absent for numeric, so the hint falls back to "Click to rate"), and the
-  // visible text is the face, the number or the star.
-  const RATING = { ...BASE, rating_enabled: true, question: 'How was it?' }
+describe('sending the answers', () => {
+  it('says "Sending…" on a Next that cannot be pressed twice', async () => {
+    const container = await renderWidget(form([TEXT]))
+    typeText(container, 'Slow')
+    clickNext(container)
+    clickNext(container)
 
-  /** `[data-value, data-label, text]` of every rating button, in DOM order. */
-  function ratingButtons(container: HTMLElement): Array<[string | undefined, string | undefined, string]> {
-    return [...container.querySelectorAll<HTMLElement>('.voc-rating-btn')]
-      .map((button) => [button.dataset.value, button.dataset.label, button.textContent])
-  }
-
-  it('renders stars 1..rating_max, each labelled for the hover hint', async () => {
-    const buttons = ratingButtons(await renderWidget({ ...RATING, rating_type: 'stars', rating_max: 3 }))
-
-    expect(buttons).toStrictEqual([['1', 'Poor', '\u2605'], ['2', 'Fair', '\u2605'], ['3', 'Good', '\u2605']])
+    expect([nextButton(container).textContent, nextButton(container).disabled]).toStrictEqual(['Sending…', true])
+    await expectHeading(container, 'Thanks!')
+    expect(submissions()).toHaveLength(1)
   })
 
-  it('gives a star past the five named labels an empty label, never the string "undefined"', async () => {
-    const buttons = ratingButtons(await renderWidget({ ...RATING, rating_type: 'stars', rating_max: 6 }))
-
-    expect(buttons.map(([, label]) => label)).toStrictEqual(['Poor', 'Fair', 'Good', 'Great', 'Excellent', ''])
-  })
-
-  it('renders numeric 1..10 whatever rating_max says, with no label attribute at all', async () => {
-    const buttons = ratingButtons(await renderWidget({ ...RATING, rating_type: 'numeric', rating_max: 5 }))
-
-    expect(buttons.map(([value]) => value)).toStrictEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
-    expect(buttons.map(([value, , text]) => text === value)).not.toContain(false)
-    expect(buttons.map(([, label]) => label)).toStrictEqual(Array.from({ length: 10 }))
-  })
-
-  it('renders five faces labelled Terrible to Amazing', async () => {
-    const buttons = ratingButtons(await renderWidget({ ...RATING, rating_type: 'emoji' }))
-
-    expect(buttons.map(([value, label]) => `${value}:${label}`)).toStrictEqual(['1:Terrible', '2:Bad', '3:Okay', '4:Good', '5:Amazing'])
-    expect(buttons.map(([, , text]) => text.length > 0)).not.toContain(false)
-  })
-
-  // 5.34.00 live finding: the face and star buttons had no accessible name (a glyph only).
-  it('names every face, star and number button by its value on the scale, inside a named group', async () => {
-    const names = async (config: Record<string, unknown>) => {
-      const container = await renderWidget({ ...RATING, ...config })
-      expect(container.querySelector('.voc-rating-container')?.getAttribute('aria-label')).toBe('How was it?')
-      return [...container.querySelectorAll('.voc-rating-btn')].map((button) => button.getAttribute('aria-label'))
-    }
-    expect(await names({ rating_type: 'emoji' })).toStrictEqual(
-      ['Terrible (1 of 5)', 'Bad (2 of 5)', 'Okay (3 of 5)', 'Good (4 of 5)', 'Amazing (5 of 5)'])
-    expect(await names({ rating_type: 'stars', rating_max: 6 })).toStrictEqual(
-      ['1 star of 6: Poor', '2 stars of 6: Fair', '3 stars of 6: Good', '4 stars of 6: Great', '5 stars of 6: Excellent', '6 stars of 6'])
-    expect((await names({ rating_type: 'numeric' })).at(-1)).toBe('10 of 10')
-  })
-
-  it('marks the chosen rating as pressed', async () => {
-    const container = await renderWidget({ ...RATING, rating_type: 'emoji' })
-    const okay = container.querySelector<HTMLButtonElement>('.voc-rating-btn[data-value="3"]')
-    okay?.click()
-    expect([...container.querySelectorAll('.voc-rating-btn')].map((button) => button.getAttribute('aria-pressed')))
-      .toStrictEqual(['false', 'false', 'true', 'false', 'false'])
-  })
-})
-
-describe('feedback widget submit failures', () => {
-  // 3.15.00: a failed submission is told inline, in an alert region beside the
-  // arrows, instead of a browser alert() that blocked the page and vanished on
-  // close. The visitor's typed feedback stays in the form and Next retries.
-
-  /** Render, answer the question and submit against a stub in `mode`; resolves once the notice is up. */
-  async function submitAgainst(mode: 'refuse' | 'reject'): Promise<HTMLElement> {
-    const container = await renderWidget(BASE)
-    document.body.dataset.submit = mode
-    await submitText(container)
-    await waitFor(() => expect(submitNotice(container).style.display).toBe('block'))
-    return container
-  }
-
-  it('never opens a browser alert', () => {
-    expect(WIDGET_SOURCE).not.toMatch(/\balert\(/)
-  })
-
-  it("shows the API's own reason when it refuses the submission, and keeps the visitor on the question", async () => {
-    const container = await submitAgainst('refuse')
-
-    expect(submitNotice(container).textContent).toBe(REFUSAL_REASON)
-    expect(container.querySelector('textarea')?.value).toBe('Checkout keeps failing')
-    expect(visibleSlideTitle(container)).toBe('Tell us more')
-  })
-
-  it('falls back to a generic retry line when the request itself fails', async () => {
-    const container = await submitAgainst('reject')
-
-    expect(submitNotice(container).textContent).toBe('Failed to submit. Please try again.')
-  })
-
-  it('clears the notice and reaches the thank-you step when a retry succeeds', async () => {
-    const container = await submitAgainst('reject')
-
+  it('keeps the answers when the network fails, and Try again sends them', async () => {
+    const container = await renderWidget(form([TEXT]))
+    document.body.dataset.submit = 'reject'
+    typeText(container, 'Slow')
+    clickNext(container)
+    await waitFor(() => expect(noticeText(container)).toBe("Couldn't send your answers. Check your connection and try again."))
     delete document.body.dataset.submit
-    container.querySelector<HTMLElement>('[aria-label="Next question"]')?.click()
 
-    await waitFor(() => expect(visibleSlideTitle(container)).toBe('Thank you!'))
-    expect(submitNotice(container).style.display).toBe('none')
-    expect(submitNotice(container).textContent).toBe('')
+    container.querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
+
+    await expectHeading(container, 'Thanks!')
+    expect(submissions().map((body) => body.answers)).toStrictEqual([{ q_text: 'Slow' }, { q_text: 'Slow' }])
   })
 
-  it('is hidden until something goes wrong', async () => {
-    const container = await renderWidget(BASE)
+  it("goes back to the question the server refused, in the respondent's words, never the server's English", async () => {
+    const container = await renderWidget(form([{ ...TEXT, long: false, input_type: 'email', required: false }, PICK]))
+    document.body.dataset.submitStatus = '400'
+    document.body.dataset.submitBody = JSON.stringify({
+      success: false, error: 'answers.q_text must be an email address', code: 'answer_invalid', question_id: 'q_text',
+    })
+    typeText(container, 'a@b.co')
+    clickNext(container)
+    pickByKey(container, 'Price')
+    clickNext(container)
 
-    expect(submitNotice(container).style.display).toBe('none')
-    expect(submitNotice(container).textContent).toBe('')
+    await expectHeading(container, 'What happened?')
+    expect([noticeText(container), errorText(container)]).toStrictEqual(["Some answers couldn't be accepted.", '✕ Enter a valid email address.'])
+    expect(container.textContent).not.toContain('must be an email address')
+  })
+
+  it('says the form changed while answering (409), and Reload loads it again', async () => {
+    const container = await renderWidget(form([TEXT]))
+    document.body.dataset.submitStatus = '409'
+    typeText(container, 'Slow')
+    clickNext(container)
+    await waitFor(() => expect(noticeText(container)).toBe('This form was updated while you were answering. Reload to answer the latest version.'))
+
+    container.querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
+
+    await waitFor(() => expect(calls().filter((call) => call.method === 'GET')).toHaveLength(2))
+    await expectHeading(container, 'What happened?')
+  })
+
+  it('says a test link no longer works when the server refuses its token (403)', async () => {
+    const container = await renderWidget(form([TEXT]), { test: 'tk_old' })
+    document.body.dataset.submitStatus = '403'
+    typeText(container, 'Slow')
+    clickNext(container)
+
+    await waitFor(() => expect(container.querySelector('[role="status"]')?.textContent).toBe('This test link no longer works.'))
+  })
+})
+
+describe('the question each step shows (a customer pilot, 7.54.00), from a version 1 config', () => {
+  // The pilot's Polish form had no rating, and its Question never appeared: the text step always read the hard-coded
+  // English "Tell us more". A version 1 config is migrated in the widget by the contract's rules.
+  it('titles the text step with the question when the form has no rating', async () => {
+    const container = await renderWidget({ ...BASE, question: 'Dlaczego rezygnujesz?' })
+    clickStart(container)
+
+    expect(heading(container)).toBe('Dlaczego rezygnujesz?')
+    expect(screen(container).querySelector('textarea')).not.toBeNull()
+  })
+
+  it('keeps the question for the rating when there is one, and titles the text step with the follow-up', async () => {
+    const container = await renderWidget({
+      ...BASE, rating_enabled: true, rating_type: 'stars', question: 'How was it?', text_question: 'What should we change?',
+    })
+    clickStart(container)
+    const rating = heading(container)
+    pickByKey(container, '4 of 5')
+    clickNext(container)
+
+    expect([rating, heading(container)]).toStrictEqual(['How was it?', 'What should we change?'])
+  })
+
+  it.each([
+    ['no follow-up (a form saved before it existed)', {}],
+    ['an empty follow-up', { text_question: '' }],
+    ['a blank follow-up', { text_question: '   ' }],
+  ])('says "Tell us more" after the rating with %s', async (_case, followUp) => {
+    const container = await renderWidget({ ...BASE, rating_enabled: true, question: 'How was it?', ...followUp })
+    clickStart(container)
+    pickByKey(container, '3 of 5')
+    clickNext(container)
+
+    expect(heading(container)).toBe('Tell us more')
+  })
+
+  it('says "Tell us more" for a form with neither a rating nor a question', async () => {
+    const container = await renderWidget(BASE)
+    clickStart(container)
+
+    expect(heading(container)).toBe('Tell us more')
+  })
+
+  it('ignores the follow-up of a form without a rating', async () => {
+    const container = await renderWidget({ ...BASE, question: 'What happened?', text_question: 'Left over from a rating' })
+    clickStart(container)
+
+    expect(heading(container)).toBe('What happened?')
+  })
+
+  it("keeps the form's own thank-you message in its language", async () => {
+    const container = await renderWidget({ ...BASE, language: 'pl', success_message: 'Dzięki!' })
+    await submitText(container)
+
+    await expectHeading(container, 'Dzięki!')
+  })
+})
+
+describe('a version 1 config answered with the version 1 body', () => {
+  const FULL = {
+    ...BASE, rating_enabled: true, rating_type: 'stars', rating_max: 6, question: 'How was it?', placeholder: 'Tell us…',
+    collect_name: true, collect_email: true, success_message: 'Thanks a lot',
+  }
+
+  it('asks the rating (its exact maximum), the text and the contact step, and sends text, rating, name and email', async () => {
+    const container = await renderWidget(FULL)
+    clickStart(container)
+    const stars = screen(container).querySelectorAll('input[type="radio"]').length
+    pickByKey(container, '6 of 6')
+    clickNext(container)
+    typeText(container, 'Great')
+    clickNext(container)
+    typeText(container, 'Ana', 'input[autocomplete="name"]')
+    typeText(container, 'ana@example.com', 'input[autocomplete="email"]')
+    clickNext(container)
+
+    expect(stars).toBe(6)
+    expect(await submitted()).toStrictEqual({
+      text: 'Great', rating: 6, name: 'Ana', email: 'ana@example.com', page_url: 'http://localhost:3000/',
+    })
+  })
+
+  it('draws the numeric rating 1 to 10 and the emoji rating as five faces', async () => {
+    const numeric = await renderWidget({ ...FULL, rating_type: 'numeric' })
+    clickStart(numeric)
+    const cells = [...screen(numeric).querySelectorAll<HTMLInputElement>('input[type="radio"]')].map((input) => input.value)
+    const faces = await renderWidget({ ...FULL, rating_type: 'emoji' })
+    clickStart(faces)
+
+    expect(cells).toStrictEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+    expect(screen(faces).querySelectorAll('svg')).toHaveLength(5)
+  })
+
+  it('shows the placeholder, and the submit button text on the last question', async () => {
+    const container = await renderWidget({ ...BASE, placeholder: 'Tell us…', submit_button_text: 'Send it' })
+    clickStart(container)
+
+    expect(screen(container).querySelector('textarea')?.placeholder).toBe('Tell us…')
+    expect(nextButton(container).textContent).toBe('Send it')
+  })
+
+  it('shows the widget\'s own "Submit" for the untouched default button text, which the old widget never showed', async () => {
+    const container = await renderWidget({ ...BASE, language: 'pl', submit_button_text: 'Submit Feedback' })
+    clickStart(container)
+
+    expect(nextButton(container).textContent).toBe('Wyślij')
+  })
+
+  it('requires the name and email it collects', async () => {
+    const container = await renderWidget({ ...BASE, collect_email: true })
+    clickStart(container)
+    typeText(container, 'Great')
+    clickNext(container)
+    clickNext(container)
+
+    const email = screen(container).querySelector<HTMLInputElement>('input[autocomplete="email"]')
+
+    expect(errorText(container)).toBe('✕ Type an answer to continue.')
+    expect([email?.getAttribute('aria-required'), email?.getAttribute('aria-invalid')]).toStrictEqual(['true', 'true'])
+    expect(email?.labels?.[0]?.textContent).toBe('Email Required')
+  })
+})
+
+describe("the widget's own words on a version 1 form", () => {
+  it('speaks Polish on a Polish form, whatever the browser says, and says so on the container', async () => {
+    document.body.dataset.browserLanguage = 'en-GB'
+    const container = await renderWidget({ ...BASE, language: 'pl' })
+    clickStart(container)
+
+    expect([heading(container), nextButton(container).textContent]).toStrictEqual(['Powiedz nam więcej', 'Wyślij'])
+    expect(container.getAttribute('lang')).toBe('pl')
+  })
+
+  it("speaks the browser's language when the form names none, and claims no language for the author's copy", async () => {
+    document.body.dataset.browserLanguage = 'de-AT'
+    const container = await renderWidget(BASE)
+    clickStart(container)
+
+    expect(heading(container)).toBe('Erzählen Sie uns mehr')
+    expect(container.hasAttribute('lang')).toBe(false)
+  })
+
+  it.each(supportedLanguages)('starts with the label the editor preview shows for %s', async (language) => {
+    expect(startButton(await renderWidget({ ...BASE, language })).textContent).toBe(WIDGET_START_LABEL[language])
+  })
+
+  it.each([
+    ['pl', 'en-US'], ['', 'pl-PL'], ['', 'de_AT'], ['', 'xx'], ['tlh', 'ja-JP'], ['', ''], ['ZH', ''],
+  ])('picks its language as the editor preview does (form %j, browser %j)', async (language, browser) => {
+    document.body.dataset.browserLanguage = browser
+    const shown = startButton(await renderWidget({ ...BASE, language })).textContent
+
+    expect(shown).toBe(WIDGET_START_LABEL[widgetLanguage(language, browser)])
   })
 })

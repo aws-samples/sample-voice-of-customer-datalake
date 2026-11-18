@@ -11,6 +11,7 @@ import { WALKTHROUGH_LIMITS } from '../../api/prototypeWalkthroughSchema'
 import { Tooltip } from '../Tooltip/Tooltip'
 import type { WalkthroughStep } from '../../api/prototypeWalkthroughSchema'
 import type { EditorStep } from './walkthroughSteps'
+import { moveOnArrowKeys } from '../../lib/reorderKeys'
 
 interface WalkthroughStepCardProps {
   readonly step: EditorStep
@@ -40,11 +41,7 @@ export default function WalkthroughStepCard({
   const titleId = useId()
   const bodyId = useId()
   const number = index + 1
-  const onKey = (e: KeyboardEvent<HTMLLIElement>) => {
-    if (!e.altKey || !e.shiftKey) return
-    if (e.key === 'ArrowUp' && index > 0) { e.preventDefault(); onMove(index - 1) }
-    if (e.key === 'ArrowDown' && index < total - 1) { e.preventDefault(); onMove(index + 1) }
-  }
+  const onKey = (e: KeyboardEvent<HTMLLIElement>) => { moveOnArrowKeys(e, index, total, onMove) }
   const allowDrop = (e: DragEvent<HTMLLIElement>) => { e.preventDefault() }
   return (
     <li className="card p-3 space-y-2 min-w-0" draggable onDragStart={onDragStart} onDragOver={allowDrop}

@@ -51,11 +51,35 @@ const openAssistant = async (p: Page): Promise<void> => {
   await p.getByRole('button', { name: 'Open assistant' }).click()
   await expect(p.getByRole('textbox', { name: 'Message the assistant' })).toBeVisible()
 }
+/** The template picker's Blank form, unsaved in the forms builder (nothing is saved). */
+const openBlankForm = async (p: Page): Promise<void> => {
+  await p.getByRole('button', { name: /^Blank form\b/ }).click()
+  await p.getByRole('button', { name: 'Use this template', exact: true }).click()
+  await expect(p.getByRole('tablist', { name: 'Form builder sections' })).toBeVisible()
+}
+/** A row's opener in the builder's Results › Responses (results/ResponsesTable.tsx). */
+const responseOpener = (p: Page): Locator => p.getByRole('button', { name: /^Open the response from / }).first()
+/** How many listed forms are tried for one with a response (the mock's first v2 form with responses is the 6th). */
+const FORMS_TRIED_FOR_A_RESPONSE = 8
+/**
+ * Results › Responses of the first listed form that has a response, from the list's Results links. Read only: the
+ * builder's Results tab GETs the form, its results and its responses (the test token, a POST, is read only by the
+ * Test, Share and Hidden fields tabs).
+ */
+const openFirstResponses = async (p: Page): Promise<void> => {
+  const links = await p.locator('main').getByRole('link', { name: 'Results', exact: true })
+    .evaluateAll((els) => els.map((el) => el.getAttribute('href') ?? '').filter((href) => href !== ''))
+  for (const href of links.slice(0, FORMS_TRIED_FOR_A_RESPONSE)) {
+    await gotoAndSettle(p, `${href}/responses`)
+    if (await responseOpener(p).isVisible()) return
+  }
+}
 
 const CASES: readonly OverlayCase[] = [
   { step: 'create-project', path: '/projects', trigger: byName(/^(New Project|Create Project)$/) },
-  { step: 'form-template-wizard', path: '/feedback-forms', trigger: byName(/^(Create Form|Create Your First Form)$/) },
-  { step: 'form-submissions', path: '/feedback-forms', trigger: byName(/^(View )?Submissions$/) },
+  // The forms builder (7.55.00): "Improve with AI" over an unsaved Blank form, and a response's side sheet in Results.
+  { step: 'form-improve-sheet', path: '/feedback-forms/new', prepare: openBlankForm, trigger: byName('Improve with AI') },
+  { step: 'form-response-sheet', path: '/feedback-forms', prepare: openFirstResponses, trigger: responseOpener },
   { step: 'source-template-selector', path: '/scrapers', trigger: byName('New source') },
   { step: 'create-agent', path: '/agents', adminOnly: true, trigger: byName('New agent') },
   // People: the first person's editor sheet, then its "Change access…" (the Category access dialog over the sheet).

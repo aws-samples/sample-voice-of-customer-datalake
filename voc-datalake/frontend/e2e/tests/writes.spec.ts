@@ -1,8 +1,9 @@
 /**
  * Safe WRITE flows, admin only, on e2e-owned data only (every name starts
  * `e2e-<run id>`): project create -> tabs/modals -> one assistant message ->
- * delete; feedback form create -> submissions modal -> public widget GETs ->
- * delete; scraper analyze-url (https://example.com) -> save as "Manual only"
+ * delete; feedback form create (template picker -> Blank form -> builder -> Save)
+ * -> its Results -> Live -> public widget GETs -> delete; scraper analyze-url
+ * (https://example.com) -> save as "Manual only"
  * (never scheduled, never run) -> delete. Each created id goes to the ledger
  * first so cleanup.spec.ts can remove it whatever fails here.
  */
@@ -13,7 +14,7 @@ import { apiCall, stringField } from '../lib/api'
 import { isRecord } from '../lib/guards'
 import path from 'node:path'
 import { E2E_PREFIX, RUN_ID, SCREENS_DIR, apiUrl } from '../lib/env'
-import { isApi, jsonOf, runStep, settle, site } from '../lib/fixtures'
+import { escapeRegExp, isApi, jsonOf, runStep, settle, site } from '../lib/fixtures'
 import { readLedger, recordCreated } from '../lib/ledger'
 import { analyzeManualScraper } from '../lib/scrapers'
 import { chooseProjectAction } from '../lib/projects'
@@ -60,9 +61,7 @@ const state = {
 const DIALOG = {
   createProject: 'Create New Project',
   deleteProject: 'Delete Project',
-  formTemplates: 'Create New Form',
-  // Continue on the template step swaps the wizard for the editor, a dialog of its own.
-  formEditor: 'Create New Feedback Form',
+  // The forms list's delete confirm (feedbackForms.json deleteConfirmTitle); the builder is a page, not a dialog.
   deleteForm: 'Delete Form',
   manualImport: 'Manual Import',
   scraperEditor: 'New Scraper',
@@ -92,6 +91,10 @@ async function deleteViaCard(page: Page, name: string, buttonName: string, confi
   await dialog(page, confirm).getByRole('button', { name: 'Delete', exact: true }).click()
   return (await deleted).status()
 }
+
+/** The forms list card whose title links to the form named `name` (FormCard.tsx). */
+const formCard = (page: Page, name: string): Locator =>
+  page.locator('.card').filter({ has: page.getByRole('link', { name, exact: true }) })
 
 async function step(page: Page, name: string, action: (r: StepRecorder) => Promise<void>, audit = true): Promise<void> {
   const { record, problems } = await runStep({ page, role: 'admin', theme: 'dark', step: name, audit, action })
@@ -294,44 +297,59 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     })
   })
 
-  test('feedback form: create, submissions, public widget, delete', async ({ page }) => {
+  test('feedback form: create, results, public widget, delete', async ({ page }) => {
     await step(page, 'write-form-create', async (r) => {
       await page.goto(site('/feedback-forms'), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
-      await page.getByRole('button', { name: /^(Create Form|Create Your First Form)$/ }).first().click()
-      const templates = dialog(page, DIALOG.formTemplates)
-      await templates.getByRole('button', { name: /NPS Survey/ }).first().click()
-      await templates.getByRole('button', { name: 'Continue' }).click()
-      const editor = dialog(page, DIALOG.formEditor)
-      await editor.getByLabel('Form Name (Internal)').fill(NAME.form)
+      // The header's New form (an empty list repeats it in its empty state) opens the template picker.
+      await page.getByRole('button', { name: 'New form', exact: true }).first().click()
+      await expect(page).toHaveURL(/\/feedback-forms\/new$/)
+      await page.getByRole('button', { name: /^Blank form\b/ }).click()
+      await page.getByRole('button', { name: 'Use this template', exact: true }).click()
+      // The unsaved form in the builder: renamed in its header, then Save (the first save is the create, made Off).
+      await page.getByRole('button', { name: 'Rename the form', exact: true }).click()
+      const nameField = page.getByRole('textbox', { name: 'Form name (internal)' })
+      await nameField.fill(NAME.form)
+      await nameField.press('Enter')
+      await expect(page.getByRole('heading', { level: 1, name: NAME.form })).toBeVisible()
       const created = page.waitForResponse((res) => isApi(res, 'POST', /\/feedback-forms$/))
-      await editor.getByRole('button', { name: 'Create Form', exact: true }).click()
+      await page.locator('main').getByRole('button', { name: 'Save', exact: true }).click()
       const response = await created
       const { id } = await createdEntity(response, 'form', 'form_id', 'id')
       r.note(`POST /feedback-forms -> ${response.status()} id=${id ?? '?'}`)
       expect(response.status()).toBeLessThan(300)
       expect(id).toBeTruthy()
       if (id !== undefined) recordCreated('feedback-form', id, NAME.form)
+      // The first save puts the form's id in the address in place of `new` (builder/FormBuilderPage.tsx).
+      await expect(page).toHaveURL(new RegExp(`/feedback-forms/${escapeRegExp(encodeURIComponent(id ?? ''))}/`))
       await settle(page)
     })
     test.skip(state.formId === undefined, 'no form')
-    const card = page.locator('.card').filter({ hasText: NAME.form }).last()
-    await step(page, 'write-form-submissions-button', async (r) => {
-      // A new form has 0 submissions, so the button is disabled by design (FormCard.tsx:78).
-      const button = card.getByRole('button', { name: 'View Submissions' })
-      await expect(button).toBeDisabled()
-      r.note('View Submissions disabled on a 0-submission form (expected)')
+    await step(page, 'write-form-results', async (r) => {
+      await page.goto(site('/feedback-forms'), { waitUntil: 'domcontentloaded' })
+      await settle(page, 500)
+      // The card's Results opens the builder on its Results tab; a new form has no responses yet.
+      await formCard(page, NAME.form).getByRole('link', { name: 'Results', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/feedback-forms/${escapeRegExp(encodeURIComponent(state.formId ?? ''))}/results$`))
+      const tabs = page.getByRole('tablist', { name: 'Form builder sections' })
+      await expect(tabs.getByRole('tab', { name: /^Results\b/ })).toHaveAttribute('aria-selected', 'true')
+      await expect(page.locator('main').getByRole('heading', { name: 'No responses yet' })).toBeVisible()
+      r.note('Results opened from the card: "No responses yet" on a new form (expected)')
     })
     await step(page, 'public-widget-iframe', async (r) => {
       const formId = state.formId ?? ''
-      // New forms are created disabled (formTemplates.ts `enabled: false`); the
-      // widget renders only an enabled form, so enable THIS e2e form from its card's
-      // disabled notice (FormCard.tsx DisabledNotice: "Enable now").
+      // New forms are created Off (feedbackFormsV2Api.createForm `enabled: false`); the widget
+      // renders only a Live form, so turn THIS e2e form on with its card's Live / Off switch.
       await page.goto(site('/feedback-forms'), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
+      const card = formCard(page, NAME.form)
       const enabled = page.waitForResponse((res) => isApi(res, 'PUT', /\/feedback-forms\/[^/]+$/))
-      await page.locator('.card').filter({ hasText: NAME.form }).last().getByRole('button', { name: 'Enable now', exact: true }).click()
-      r.note(`PUT /feedback-forms/{id} (enable e2e form) -> ${(await enabled).status()}`)
+      // The switch is a visually hidden checkbox under its track (components/Switch): toggled from the keyboard.
+      await card.getByRole('switch', { name: 'Off', exact: true }).press('Space')
+      const enableStatus = (await enabled).status()
+      r.note(`PUT /feedback-forms/{id} (enable e2e form) -> ${enableStatus}`)
+      expect(enableStatus).toBeLessThan(300)
+      await expect(card.getByRole('switch', { name: 'Live', exact: true })).toBeChecked()
       // Unauthenticated, exactly as an embedding site calls them. No submit: a
       // submission would enter the real feedback table, which has no delete route.
       const configRes = await e2eFetch(`${apiUrl()}/feedback-forms/${formId}/config`)
@@ -346,7 +364,15 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     await step(page, 'write-form-delete', async (r) => {
       await page.goto(site('/feedback-forms'), { waitUntil: 'domcontentloaded' })
       await settle(page)
-      const status = await deleteViaCard(page, NAME.form, 'Delete form', DIALOG.deleteForm, /\/feedback-forms\/[^/]+$/)
+      // The card's ⋯ menu (card.actions) → Delete… → the list's confirm.
+      const actions = `More actions for ${NAME.form}`
+      await formCard(page, NAME.form).getByRole('button', { name: actions, exact: true }).click()
+      await page.getByRole('menu', { name: actions, exact: true }).getByRole('menuitem', { name: 'Delete…', exact: true }).click()
+      const confirm = dialog(page, DIALOG.deleteForm)
+      await expect(confirm).toBeVisible()
+      const deleted = page.waitForResponse((res) => isApi(res, 'DELETE', /\/feedback-forms\/[^/]+$/))
+      await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
+      const status = (await deleted).status()
       r.note(`DELETE /feedback-forms/{id} -> ${status}`)
       expect(status).toBeLessThan(300)
     })

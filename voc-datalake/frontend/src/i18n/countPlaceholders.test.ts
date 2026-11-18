@@ -29,6 +29,7 @@ const COUNT_PARAMS = new Set([
 
 const ORDINAL = 'a position, revision or version number, not a count — an identifier is not grouped'
 const PRE_FORMATTED = 'the call site passes an already formatted string'
+const SCALE_POINT = 'an end of a rating scale (0 to 10), written as the scale buttons write it, not a count'
 
 /** `namespace:key` (plural suffix dropped) → the count-named placeholders it deliberately keeps bare. */
 const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: string }>> = {
@@ -82,6 +83,13 @@ const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: stri
   'settings:shared.charCount': { params: ['max'], why: PRE_FORMATTED },
   'scrapers:manualImport.exceedsMax': { params: ['max'], why: PRE_FORMATTED },
   'scrapers:manualImport.draftDropped': { params: ['max'], why: PRE_FORMATTED },
+  // A form question's place in the builder's "2 of 5" (the total stays a formatted count).
+  'feedbackForms:questionList.position': { params: ['n'], why: ORDINAL },
+  'feedbackForms:card.average': { params: ['max'], why: SCALE_POINT },
+  'feedbackForms:results.scale.averageOf': { params: ['max'], why: SCALE_POINT },
+  'feedbackForms:problems.outsideScale': { params: ['min', 'max'], why: SCALE_POINT },
+  'feedbackForms:questionList.meta.range': { params: ['min', 'max'], why: SCALE_POINT },
+  'feedbackForms:results.reachCard.answeredBy': { params: ['total'], why: PRE_FORMATTED },
 }
 
 /** Every `[namespace:key, value]` string of one locale, plural suffix dropped from the key. */

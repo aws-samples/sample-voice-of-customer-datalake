@@ -41,8 +41,8 @@
       "reason": "Helper of the DocTypeField* compile-time pins."
     },
     {
-      "key": "frontend:src/api/types.ts#FeedbackFormConfig",
-      "reason": "Public widget wire shape pinned by test_widget_config_type_lockstep.py."
+      "key": "frontend:src/api/feedbackFormsV2Types.ts#*",
+      "reason": "Public widget wire shape (FeedbackFormConfig, schema version 2 since 7.55.00, and the file-local types it is made of) pinned by test_widget_config_type_lockstep.py and feedbackFormTypes.test.ts, which read it as text."
     },
     {
       "key": "frontend:src/api/projectsApi.ts#GenerateDocument*",

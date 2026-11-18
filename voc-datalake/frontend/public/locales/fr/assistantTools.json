@@ -41,7 +41,9 @@
     "openRadar": "Ouvrir Radar",
     "openRadarSettings": "Ouvrir Administration → Sources de données → Radar",
     "openCategories": "Ouvrir Administration → Catégories",
-    "openWorkspaceCategories": "Ouvrir Réglages de l’espace de travail → Catégories"
+    "openWorkspaceCategories": "Ouvrir Réglages de l’espace de travail → Catégories",
+    "approveCreate": "Approuver et créer",
+    "openForm": "Ouvrir le formulaire dans l’éditeur"
   },
   "preview": {
     "participants": {
@@ -406,6 +408,50 @@
       "replaces_many": "Remplace les {{count, number}} d’étapes enregistrées.",
       "replaces_other": "Remplace les {{count, number}} étapes enregistrées.",
       "note": "Enregistrer crée une nouvelle version du prototype ; les personnes qui l’ouvrent voient les étapes."
+    },
+    "feedbackFormDraft": {
+      "label": "Le formulaire rédigé",
+      "name": "Nom",
+      "nameMissing": "Donnez un nom au formulaire.",
+      "channel": {
+        "link": "Lien",
+        "embed": "Intégré",
+        "in_app": "Dans l’app"
+      },
+      "questions": "Questions",
+      "leaveOut": "Retirer la question {{number}}",
+      "lastQuestion": "Un formulaire a besoin d’au moins une question : la dernière ne peut pas être retirée.",
+      "leftOut": "La question {{number}} est retirée.",
+      "endings": "Fins",
+      "hiddenFields": "Champs cachés",
+      "fromAi": "De l’IA",
+      "warning": "Avertissement",
+      "addresses": "Adresses suggérées par l’IA",
+      "checkedAddress": "J’ai vérifié cette adresse",
+      "remove": "Retirer",
+      "removeAddress": "Retirer l’adresse {{url}}",
+      "createsOff": "Approuver le crée désactivé : rien n’est public tant que vous ne le publiez pas.",
+      "notAllowed": "Seuls les éditeurs et les administrateurs peuvent créer des formulaires. Vous pouvez quand même le refuser.",
+      "openInBuilder": "Ouvrir dans l’éditeur",
+      "notAForm": "Le brouillon n’est pas un formulaire que cette app sait lire.",
+      "questionCount_one": "{{count, number}} question",
+      "questionCount_many": "{{count, number}} questions",
+      "questionCount_other": "{{count, number}} questions",
+      "endingCount_one": "{{count, number}} fin",
+      "endingCount_many": "{{count, number}} fins",
+      "endingCount_other": "{{count, number}} fins",
+      "hiddenCount_one": "{{count, number}} champ caché",
+      "hiddenCount_many": "{{count, number}} champs cachés",
+      "hiddenCount_other": "{{count, number}} champs cachés",
+      "options_one": "{{count, number}} option",
+      "options_many": "{{count, number}} options",
+      "options_other": "{{count, number}} options",
+      "rules_one": "{{count, number}} règle",
+      "rules_many": "{{count, number}} règles",
+      "rules_other": "{{count, number}} règles",
+      "rulesDropped_one": "La règle de {{questions}} qui y menait est retirée aussi.",
+      "rulesDropped_many": "Les {{count, number}} règles de {{questions}} qui y menaient sont retirées aussi.",
+      "rulesDropped_other": "Les {{count, number}} règles de {{questions}} qui y menaient sont retirées aussi."
     }
   },
   "tools": {
@@ -614,6 +660,10 @@
     "set_prototype_walkthrough": {
       "title": "Enregistrer une visite guidée du prototype",
       "titleRemove": "Retirer la visite guidée du prototype"
+    },
+    "draft_feedback_form": {
+      "title": "Créer un formulaire d’avis",
+      "titleWith": "Créer le formulaire d’avis « {{name}} »"
     }
   }
 }

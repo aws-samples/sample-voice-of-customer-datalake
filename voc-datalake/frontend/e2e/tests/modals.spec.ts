@@ -42,7 +42,8 @@ const SESSIONS_TITLE = 'Past conversations'
  */
 const DIALOG = {
   createProject: 'Create New Project',
-  formTemplates: 'Create New Form',
+  // The forms builder's side sheet (ai/ImproveSheet.tsx, feedbackForms.json ai.improve.title).
+  formImprove: 'Improve with AI',
   addSource: ADD_SOURCE_DIALOG,
   // ScraperEditor.tsx: "New Scraper" for a new one, "Edit Scraper" when editing.
   scraperEditor: 'New Scraper',
@@ -79,6 +80,16 @@ async function openCategoryAccess(page: Page): Promise<Locator> {
   return clickAndDialog(page, page.getByRole('button', { name: 'Change access…' }), DIALOG.categoryAccess)
 }
 
+/**
+ * The template picker's Blank form, unsaved in the builder, then its "Improve with AI" sheet. Nothing is saved, and
+ * the sheet sends nothing until its Draft changes is pressed.
+ */
+async function openImproveSheet(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: /^Blank form\b/ }).click()
+  await page.getByRole('button', { name: 'Use this template', exact: true }).click()
+  return clickAndDialog(page, page.getByRole('button', { name: 'Improve with AI', exact: true }), DIALOG.formImprove)
+}
+
 /** "New source" -> a tile of "Add a data source"; the selector closes and the tile's own dialog opens. */
 async function openSourceTile(page: Page, tile: RegExp, name: DialogName): Promise<Locator> {
   const selector = await openSourceMenu(page)
@@ -90,7 +101,7 @@ async function openSourceTile(page: Page, tile: RegExp, name: DialogName): Promi
 
 const CASES: readonly ModalCase[] = [
   { step: 'modal-create-project', path: '/projects', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^(New Project|Create Project)$/ }).first(), DIALOG.createProject) },
-  { step: 'modal-form-template-wizard', path: '/feedback-forms', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^(Create Form|Create Your First Form)$/ }).first(), DIALOG.formTemplates) },
+  { step: 'modal-form-improve-sheet', path: '/feedback-forms/new', open: openImproveSheet },
   { step: 'modal-source-template-selector', path: '/scrapers', open: (p) => clickAndDialog(p, p.getByRole('button', { name: NEW_SOURCE, exact: true }), DIALOG.addSource) },
   // Scrapers and imports are admin-only (sourceMenu.ts adminOnly): a user's tiles are disabled,
   // checked by 'modal-source-admin-tiles' below.

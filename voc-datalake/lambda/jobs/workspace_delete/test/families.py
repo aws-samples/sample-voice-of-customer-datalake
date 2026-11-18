@@ -7,6 +7,7 @@ seeds one row of each family a sweep or KEPT names and checks the delete removes
 from typing import Final
 
 from jobs.workspace_delete.sweeps import WORK_PARTITION, WORKSPACE_SETTINGS_KINDS
+from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import LIST_PK
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.ws_repo import WATERMARK_DIRECTORY
@@ -33,7 +34,7 @@ FAMILIES: Final = {
     'cursor_key': 'memory', 'import_key': 'memory',
     'plugin_config_pk': 'plugin_configs', 'plugin_config_key': 'plugin_configs',
     'plugin_config_history_pk': 'plugin_configs', 'plugin_config_history_key': 'plugin_configs',
-    FEEDBACK_FORM_PK: 'feedback_forms', LIST_PK: 'import_runs',
+    FEEDBACK_FORM_PK: 'feedback_forms', TEST_RESPONSES_PK: 'feedback_forms', LIST_PK: 'import_runs',
     'watermark_key': 'watermarks', 'watermark_directory_key': 'watermarks', WATERMARK_DIRECTORY: 'watermarks',
     'delete_work_pk': WORK_PARTITION,
     's3_key': 'objects', 's3_prefix': 'objects', 'exports_prefix': 'objects',

@@ -142,6 +142,9 @@ export interface VocApiStackProps extends VocStackProps {
 
   // Config
   brandName: string;
+  /** The deployment's primary language (`-c primaryLanguage`, default `en`): a version 1 feedback form without a
+   * language is migrated to it (lambda/api/feedback_form_handler.py PRIMARY_LANGUAGE, docs/feedback-forms.md). */
+  primaryLanguage?: string;
   enabledSources: string[];  // Plugin IDs enabled in pluginStatus
 }
 

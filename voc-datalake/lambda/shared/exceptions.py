@@ -21,12 +21,16 @@ class ApiError(Exception):
         code: A machine-readable word the answer's body carries beside ``success`` and ``error``
             (e.g. ``'addressed_some_full'``), so a client tells refusals apart without reading the
             English ``error``; None (the default) adds nothing
+        details: Further machine-readable fields the body carries beside ``code`` (e.g. a refused answer's
+            ``question_id``, a rate limit's ``retry_after``); never ``success``, ``error`` or ``code``
     """
     status_code: int = 500
 
-    def __init__(self, message: str, *, code: str | None = None):
+    def __init__(self, message: str, *, code: str | None = None, details: dict[str, object] | None = None):
         self.message = message
         self.code = code
+        self.details = {key: value for key, value in (details or {}).items()
+                        if key not in {'success', 'error', 'code', 'message'}}
         super().__init__(message)
 
 

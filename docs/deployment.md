@@ -1193,7 +1193,7 @@ unauthenticated route, so the full CRS applies there. The exceptions a legitimat
 | `POST /webhooks/{plugin}` | the five body rules | a GitHub issue payload is over 8 KB and carries HTML, paths and URLs; the handler checks the HMAC signature first |
 | `GET /oauth/authorize` | `GenericRFI_QUERYARGUMENTS` | the loopback `redirect_uri` |
 | `POST /oauth/register`, `POST /oauth/token` | `GenericRFI_BODY` | the loopback `redirect_uris` / `redirect_uri` in the body |
-| every other public route (`/feedback-forms/{id}/config` and `/iframe`, `/voting-sessions/{id}/config`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
+| every other public route (`/feedback-forms/{id}/config`, `/iframe` and `POST …/events`, `/voting-sessions/{id}/config`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
 
 Cognito- and MCP-token-authorized routes keep all seven exceptions. The route list is
 `PUBLIC_API_ROUTES` in `voc-datalake/lib/utils/waf-crs-scope.ts`; `lib/waf-public-routes.test.ts` fails when an

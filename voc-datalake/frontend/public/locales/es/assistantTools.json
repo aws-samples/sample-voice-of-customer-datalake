@@ -41,7 +41,9 @@
     "openRadar": "Abrir Radar",
     "openRadarSettings": "Abrir Administración → Fuentes de datos → Radar",
     "openCategories": "Abrir Administración → Categorías",
-    "openWorkspaceCategories": "Abrir Configuración del espacio de trabajo → Categorías"
+    "openWorkspaceCategories": "Abrir Configuración del espacio de trabajo → Categorías",
+    "approveCreate": "Aprobar y crear",
+    "openForm": "Abrir el formulario en el editor"
   },
   "preview": {
     "participants": {
@@ -406,6 +408,50 @@
       "replaces_many": "Sustituye los {{count, number}} de pasos guardados.",
       "replaces_other": "Sustituye los {{count, number}} pasos guardados.",
       "note": "Guardar crea una nueva versión del prototipo; quienes lo abran verán los pasos."
+    },
+    "feedbackFormDraft": {
+      "label": "El formulario redactado",
+      "name": "Nombre",
+      "nameMissing": "Ponle un nombre al formulario.",
+      "channel": {
+        "link": "Enlace",
+        "embed": "Insertado",
+        "in_app": "En la app"
+      },
+      "questions": "Preguntas",
+      "leaveOut": "Quitar la pregunta {{number}}",
+      "lastQuestion": "Un formulario necesita al menos una pregunta, así que la última no se puede quitar.",
+      "leftOut": "Se ha quitado la pregunta {{number}}.",
+      "endings": "Finales",
+      "hiddenFields": "Campos ocultos",
+      "fromAi": "De la IA",
+      "warning": "Aviso",
+      "addresses": "Direcciones que sugirió la IA",
+      "checkedAddress": "He comprobado esta dirección",
+      "remove": "Quitar",
+      "removeAddress": "Quitar la dirección {{url}}",
+      "createsOff": "Al aprobar se crea desactivado: nada es público hasta que lo publiques.",
+      "notAllowed": "Solo los editores y los administradores pueden crear formularios. Aun así puedes rechazarlo.",
+      "openInBuilder": "Abrir en el editor",
+      "notAForm": "El borrador no es un formulario que esta app pueda leer.",
+      "questionCount_one": "{{count, number}} pregunta",
+      "questionCount_many": "{{count, number}} preguntas",
+      "questionCount_other": "{{count, number}} preguntas",
+      "endingCount_one": "{{count, number}} final",
+      "endingCount_many": "{{count, number}} finales",
+      "endingCount_other": "{{count, number}} finales",
+      "hiddenCount_one": "{{count, number}} campo oculto",
+      "hiddenCount_many": "{{count, number}} campos ocultos",
+      "hiddenCount_other": "{{count, number}} campos ocultos",
+      "options_one": "{{count, number}} opción",
+      "options_many": "{{count, number}} opciones",
+      "options_other": "{{count, number}} opciones",
+      "rules_one": "{{count, number}} regla",
+      "rules_many": "{{count, number}} reglas",
+      "rules_other": "{{count, number}} reglas",
+      "rulesDropped_one": "También se quita la regla de {{questions}} que llevaba a ella.",
+      "rulesDropped_many": "También se quitan las {{count, number}} reglas de {{questions}} que llevaban a ella.",
+      "rulesDropped_other": "También se quitan las {{count, number}} reglas de {{questions}} que llevaban a ella."
     }
   },
   "tools": {
@@ -614,6 +660,10 @@
     "set_prototype_walkthrough": {
       "title": "Guardar un recorrido del prototipo",
       "titleRemove": "Quitar el recorrido del prototipo"
+    },
+    "draft_feedback_form": {
+      "title": "Crear un formulario de opinión",
+      "titleWith": "Crear el formulario de opinión «{{name}}»"
     }
   }
 }

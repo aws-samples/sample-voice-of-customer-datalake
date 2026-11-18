@@ -41,7 +41,9 @@
     "openRadar": "Abrir Radar",
     "openRadarSettings": "Abrir Administração → Fontes de dados → Radar",
     "openCategories": "Abrir Administração → Categorias",
-    "openWorkspaceCategories": "Abrir Configurações do espaço de trabalho → Categorias"
+    "openWorkspaceCategories": "Abrir Configurações do espaço de trabalho → Categorias",
+    "approveCreate": "Aprovar e criar",
+    "openForm": "Abrir o formulário no editor"
   },
   "preview": {
     "participants": {
@@ -406,6 +408,50 @@
       "replaces_many": "Substitui as {{count, number}} de etapas salvas.",
       "replaces_other": "Substitui as {{count, number}} etapas salvas.",
       "note": "Salvar cria uma nova versão do protótipo; quem abrir verá os passos."
+    },
+    "feedbackFormDraft": {
+      "label": "O formulário redigido",
+      "name": "Nome",
+      "nameMissing": "Dê um nome ao formulário.",
+      "channel": {
+        "link": "Link",
+        "embed": "Incorporado",
+        "in_app": "No app"
+      },
+      "questions": "Perguntas",
+      "leaveOut": "Remover a pergunta {{number}}",
+      "lastQuestion": "Um formulário precisa de pelo menos uma pergunta, por isso a última não pode ser removida.",
+      "leftOut": "A pergunta {{number}} foi removida.",
+      "endings": "Finais",
+      "hiddenFields": "Campos ocultos",
+      "fromAi": "Da IA",
+      "warning": "Aviso",
+      "addresses": "Endereços sugeridos pela IA",
+      "checkedAddress": "Verifiquei este endereço",
+      "remove": "Remover",
+      "removeAddress": "Remover o endereço {{url}}",
+      "createsOff": "Aprovar cria o formulário desativado: nada fica público até você publicá-lo.",
+      "notAllowed": "Somente editores e administradores podem criar formulários. Você ainda pode recusar.",
+      "openInBuilder": "Abrir no editor",
+      "notAForm": "O rascunho não é um formulário que este app consiga ler.",
+      "questionCount_one": "{{count, number}} pergunta",
+      "questionCount_many": "{{count, number}} perguntas",
+      "questionCount_other": "{{count, number}} perguntas",
+      "endingCount_one": "{{count, number}} final",
+      "endingCount_many": "{{count, number}} finais",
+      "endingCount_other": "{{count, number}} finais",
+      "hiddenCount_one": "{{count, number}} campo oculto",
+      "hiddenCount_many": "{{count, number}} campos ocultos",
+      "hiddenCount_other": "{{count, number}} campos ocultos",
+      "options_one": "{{count, number}} opção",
+      "options_many": "{{count, number}} opções",
+      "options_other": "{{count, number}} opções",
+      "rules_one": "{{count, number}} regra",
+      "rules_many": "{{count, number}} regras",
+      "rules_other": "{{count, number}} regras",
+      "rulesDropped_one": "A regra em {{questions}} que levava a ela também é removida.",
+      "rulesDropped_many": "As {{count, number}} regras em {{questions}} que levavam a ela também são removidas.",
+      "rulesDropped_other": "As {{count, number}} regras em {{questions}} que levavam a ela também são removidas."
     }
   },
   "tools": {
@@ -614,6 +660,10 @@
     "set_prototype_walkthrough": {
       "title": "Salvar um tour guiado do protótipo",
       "titleRemove": "Remover o tour guiado do protótipo"
+    },
+    "draft_feedback_form": {
+      "title": "Criar um formulário de opinião",
+      "titleWith": "Criar o formulário de opinião “{{name}}”"
     }
   }
 }

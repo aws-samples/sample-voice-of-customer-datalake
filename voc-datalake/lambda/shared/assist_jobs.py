@@ -66,7 +66,14 @@ from shared.scoped_keys import scoped_pk
 from shared.tables import get_jobs_table
 from shared.workspace_config import get_scoped_item
 from shared.workspace_routing import workspace_payload
-from shared.ws_repo import OutOfScopeError, WorkspaceScope, event_scope, is_workspace_key, optional_scope
+from shared.ws_repo import (
+    OutOfScopeError,
+    WorkspaceScope,
+    event_scope,
+    is_workspace_key,
+    message_scope,
+    optional_scope,
+)
 
 if TYPE_CHECKING:
     from shared.workspace import WorkspaceContext
@@ -115,10 +122,15 @@ def is_assist_event(event: object) -> bool:
 
 @dataclass(frozen=True)
 class Work:
-    """One assist kind: the function that does it and the message shown when it fails unexpectedly."""
+    """One assist kind: the function that does it and the message shown when it fails unexpectedly.
+
+    ``per_workspace``: the work reads nothing but its job's ``config`` (since 7.55.00: a feedback form's AI draft,
+    shared/forms_v2_draft.py), so it also runs for a workspace's job, its Bedrock calls counted to that workspace
+    (shared/ws_repo.py ``message_scope``). Every other kind still refuses one (``ASSIST_WORK_STORE``)."""
 
     run: Callable[[dict], dict]
     failure_message: str
+    per_workspace: bool = False
 
 
 def _now() -> datetime:
@@ -289,9 +301,14 @@ def _refusal(event: Mapping[str, Any], pk: str) -> str | None:
     return None if own else OutOfScopeError.__name__
 
 
-def _run_work(work: Work, row: Mapping[str, Any], *, workspace: WorkspaceScope | None) -> dict:
-    """The registered work on the row's config; refused (``NotPerWorkspaceError``) in a workspace."""
-    require_deployment(workspace, ASSIST_WORK_STORE)
+def _run_work(work: Work, row: Mapping[str, Any], event: Mapping[str, Any], *,
+              workspace: WorkspaceScope | None) -> dict:
+    """The registered work on the row's config; refused (``NotPerWorkspaceError``) in a workspace unless the kind is
+    ``per_workspace``, whose model calls are then counted to the event's workspace."""
+    if not work.per_workspace:
+        require_deployment(workspace, ASSIST_WORK_STORE)
+    else:
+        message_scope(event)
     return work.run(dict(row.get('config') or {}))
 
 
@@ -331,7 +348,7 @@ def run(event: Mapping[str, Any], registry: Mapping[str, Work]) -> dict[str, Any
         _notify(pk, row, FAILED, workspace=workspace)
         return {'status': FAILED}
     try:
-        result = _run_work(work, row, workspace=workspace)
+        result = _run_work(work, row, event, workspace=workspace)
     except Exception as exc:  # noqa: BLE001 - the worker never raises; _failure_text logs the traceback
         _finish(pk, job_id, FAILED, error=_failure_text(exc, job_type, work), workspace=workspace)
         _notify(pk, row, FAILED, workspace=workspace)

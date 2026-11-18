@@ -148,6 +148,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # The deployment's start theme (Administration → Brand & appearance): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
+    # A form's test link (7.55.00): issuing or rotating its token. A token opens the form while it is Off, so only an
+    # admin of the workspace (acting as themselves), else of the deployment (`_require_test_link_admin` ->
+    # require_settings_admin), after the workspace write check. (Its test responses' delete is OPEN_BY_DECISION below:
+    # an admin or the form's creator.)
+    'feedback_form_handler.py': frozenset({'POST /feedback-forms/<form_id>/test-link'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
     'company_personas_routes.py': frozenset({
         'POST /company-personas/generate', 'POST /company-personas/import',
@@ -343,6 +348,18 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
     _open("public widget route: the embeddable form posts from the customer site (throttled); a workspace's form by "
           'its lookup row (PUBLIC_BY_LOOKUP below)',
           'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/submit'),
+    _open("public widget route (7.55.00's AI review, round 2): the embeddable form's funnel beacons, on their own "
+          'throttle so they never spend the submit limit; counts only, the same form checks and lookup as submit',
+          'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/events'),
+    _open('AI form drafts (7.55.00, owner decision D12: not gated by the way of working; owner decision 2026-11-18: '
+          'any signed-in workspace editor may draft): whoever manages forms (with '
+          "X-Workspace-Id the workspace's editors and admins), 20 per person per hour; nothing is saved (served by the "
+          'settings API, beside its assist twin, since the AI review\'s round 1)',
+          'forms_v2_draft_routes.py', 'POST /settings/form-drafts'),
+    _open("a form's test responses (7.55.00, owner decision 2026-11-18): kept until an admin (of the workspace, else of "
+          "the deployment) or the form's creator deletes them, anyone else a 403 (checked in the handler: "
+          '_may_delete_test_responses, after the workspace write check)',
+          'feedback_form_handler.py', 'DELETE /feedback-forms/<form_id>/responses'),
     _open("caller's own data: a user mints and revokes only their own global MCP tokens",
           'mcp_tokens_handler.py', 'POST /connect/tokens', 'DELETE /connect/tokens/<token_id>'),
     _open("caller's own data: a person approves an MCP OAuth sign-in for themselves (grant keyed by their own "
@@ -762,9 +779,14 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
     # The signed-in form routes: any member reads; create, update and delete are for the workspace's editors and
     # admins (`_request_scope(write=True)`, a viewer 403). The module's public routes are in PUBLIC_BY_LOOKUP.
     'feedback_form_handler.py': frozenset({
-        'GET /feedback-forms', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
+        'GET /feedback-forms', 'GET /feedback-forms/<form_id>', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
         'DELETE /feedback-forms/<form_id>', 'GET /feedback-forms/<form_id>/submissions',
         'GET /feedback-forms/<form_id>/stats',
+        # Schema version 2 (7.55.00): the results and responses (editors and admins: `_request_scope(write=True)`
+        # though they read), the test link (admins too) and the test responses' delete (admins or the form's creator
+        # too). The AI draft and its poll are the settings API's (shared/forms_v2_draft_routes.py).
+        'GET /feedback-forms/<form_id>/results', 'GET /feedback-forms/<form_id>/responses',
+        'DELETE /feedback-forms/<form_id>/responses', 'POST /feedback-forms/<form_id>/test-link',
     }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
@@ -779,6 +801,7 @@ PUBLIC_BY_LOOKUP: dict[str, tuple[str, frozenset[str]]] = {
     'feedback_form_handler.py': ('_public_form', frozenset({
         'GET /feedback-forms/<form_id>/config', 'GET /feedback-forms/<form_id>/iframe',
         'POST /feedback-forms/<form_id>/submit',
+        'POST /feedback-forms/<form_id>/events',
     })),
 }
 #: The writes of a per-route module, which resolve the role from the table and need an editor or admin there.

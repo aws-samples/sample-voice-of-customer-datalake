@@ -453,6 +453,7 @@ def _exception_answer(status_code: int | None, log_level: str, label: str,
         body: dict[str, Any] = {'success': False, 'error': ex.message}
         if ex.code is not None:
             body['code'] = ex.code
+        body.update(getattr(ex, 'details', None) or {})
         if both_keys:
             body['message'] = ex.message
         return Response(

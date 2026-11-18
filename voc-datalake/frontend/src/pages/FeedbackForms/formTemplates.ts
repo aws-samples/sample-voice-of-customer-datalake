@@ -1,165 +1,109 @@
 /**
- * Form templates for common CX research types
+ * @fileoverview The twelve templates (UX §2.4), grouped by goal, and the form each one makes in a language.
+ *
+ * Each template is a real v2 flow (`templates/*Templates.ts`: ids, types, codes, display, shuffle, min and max,
+ * logic, endings, hidden fields) whose copy is in the catalogue under `templates.<id>.…` in the nine locales. A form
+ * made from one has every text in the "Create in" language, the default theme, no category, and is Off and unsaved
+ * until its first Save (UX §2.1). Adding a language later fills each text still equal to the template's from that
+ * language's catalogue (`fillFromTemplate`, UX §8).
+ *
+ * @module pages/FeedbackForms/formTemplates
  */
-import { Gauge, Star, MessageSquare, ClipboardList, ThumbsUp, FileText } from 'lucide-react'
-import type { FeedbackForm } from '../../api/types'
-import { KIRO_LIGHT_HEX } from '../../theme/printPalette'
+import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, Question, Welcome } from './model/formsV2'
+import { DEFAULT_THEME } from './model/formsV2'
+import { textIn, textOf } from './model/i18nText'
+import { translatableTexts } from './model/translatable'
+import type { TemplateFlow } from './templates/templateKit'
+import { LOYALTY_TEMPLATES } from './templates/loyaltyTemplates'
+import { DROPOFF_TEMPLATES } from './templates/dropoffTemplates'
+import { BLANK_TEMPLATES, ONBOARDING_TEMPLATES, PRODUCT_TEMPLATES } from './templates/productTemplates'
 
-export type FormTemplate = {
-  id: string
-  name: string
-  description: string
-  icon: React.ElementType
-  config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
+/** Every template in the picker's order: Loyalty, Drop-offs, Product, Onboarding, Blank. */
+export const FORM_TEMPLATES: readonly TemplateFlow[] = [
+  ...LOYALTY_TEMPLATES, ...DROPOFF_TEMPLATES, ...PRODUCT_TEMPLATES, ...ONBOARDING_TEMPLATES, ...BLANK_TEMPLATES,
+]
+
+export const templateById = (id: string): TemplateFlow | undefined => FORM_TEMPLATES.find((flow) => flow.id === id)
+
+/** A catalogue lookup in one language: the text of a `feedbackForms` key, or undefined when the key has none. */
+export type CopyLookup = (key: string) => string | undefined
+
+function filled(lookup: CopyLookup, key: string, language: FormLanguage): I18nText | undefined {
+  const value = lookup(key)
+  return value === undefined || value === '' ? undefined : textOf(language, value)
 }
 
-type TemplateConfig = FormTemplate['config']
+type TextOf = (key: string) => I18nText | undefined
 
-/** The per-template copy: everything a template says that its siblings do not. */
-type TemplateCopy = Omit<
-  TemplateConfig,
-  'theme' | 'collect_email' | 'collect_name' | 'custom_fields' | 'category' | 'subcategory'
->
-
-/**
- * Assemble a template config from its copy plus the two theme values that vary
- * (accent colour and corner radius). Every other field is identical across the
- * built-in templates. Returns a fresh object each call so no two templates share
- * a `custom_fields` array.
- */
-function templateConfig(copy: TemplateCopy, primaryColor: string, borderRadius: string): TemplateConfig {
+function choiceCopy(question: ChoiceQuestion, text: TextOf): ChoiceQuestion {
   return {
-    ...copy,
-    // Kiro Light palette (E2E F6). Each primary keeps a white label at AA
-    // (≥ 4.5:1); the customer can still set any colour in the editor.
-    theme: { primary_color: primaryColor, background_color: KIRO_LIGHT_HEX.bg, text_color: KIRO_LIGHT_HEX.textStrong, border_radius: borderRadius },
-    collect_email: false,
-    collect_name: false,
-    custom_fields: [],
-    category: '',
-    subcategory: '',
+    ...question,
+    options: question.options.map((option) => ({ ...option, label: text(`options.${option.code}`) ?? {} })),
+    other: { ...question.other, label: text('other'), placeholder: text('otherPlaceholder') },
+    none: { ...question.none, label: text('none') },
   }
 }
 
-export const formTemplates: FormTemplate[] = [
-  {
-    id: 'nps',
-    name: 'NPS Survey',
-    description: 'Net Promoter Score - measure customer loyalty with the classic 0-10 scale',
-    icon: Gauge,
-    config: templateConfig({
-      name: 'NPS Survey',
-      enabled: false,
-      title: 'How likely are you to recommend us?',
-      description: 'On a scale of 0-10, how likely are you to recommend our product/service to a friend or colleague?',
-      question: 'What is the primary reason for your score?',
-      placeholder: 'Tell us more about your experience...',
-      rating_enabled: true,
-      rating_type: 'numeric',
-      rating_max: 10,
-      submit_button_text: 'Submit',
-      success_message: 'Thank you for your feedback! Your response helps us improve.',
-    }, KIRO_LIGHT_HEX.accent, '12px'),
-  },
-  {
-    id: 'csat',
-    name: 'CSAT Survey',
-    description: 'Customer Satisfaction - quick satisfaction rating after interactions',
-    icon: ThumbsUp,
-    config: templateConfig({
-      name: 'CSAT Survey',
-      enabled: false,
-      title: 'How satisfied are you?',
-      description: 'Please rate your satisfaction with your recent experience.',
-      question: 'What could we do better?',
-      placeholder: 'Share any additional feedback...',
-      rating_enabled: true,
-      rating_type: 'emoji',
-      rating_max: 5,
-      submit_button_text: 'Submit Feedback',
-      success_message: 'Thanks for rating your experience!',
-    }, KIRO_LIGHT_HEX.ok, '8px'),
-  },
-  {
-    id: 'product-feedback',
-    name: 'Product Feedback',
-    description: 'Collect detailed product feedback with star ratings',
-    icon: Star,
-    config: templateConfig({
-      name: 'Product Feedback',
-      enabled: false,
-      title: 'Share Your Product Feedback',
-      description: 'Help us improve by sharing your thoughts on our product.',
-      question: 'What do you think about our product?',
-      placeholder: 'Tell us what you like, dislike, or would like to see improved...',
-      rating_enabled: true,
-      rating_type: 'stars',
-      rating_max: 5,
-      submit_button_text: 'Submit Feedback',
-      success_message: 'Thank you! Your feedback helps us build better products.',
-    }, KIRO_LIGHT_HEX.warn, '8px'),
-  },
-  {
-    id: 'general-feedback',
-    name: 'General Feedback',
-    description: 'Open-ended feedback form for any purpose',
-    icon: MessageSquare,
-    config: templateConfig({
-      name: 'General Feedback',
-      enabled: false,
-      title: 'We\'d Love Your Feedback',
-      description: 'Your opinion matters to us. Share your thoughts, suggestions, or concerns.',
-      question: 'What would you like to tell us?',
-      placeholder: 'Type your feedback here...',
-      rating_enabled: false,
-      rating_type: 'stars',
-      rating_max: 5,
-      submit_button_text: 'Send Feedback',
-      success_message: 'Thank you for sharing your thoughts with us!',
-    }, KIRO_LIGHT_HEX.aim, '8px'),
-  },
-  {
-    id: 'experience-survey',
-    name: 'Experience Survey',
-    description: 'Multi-question survey about customer experience',
-    icon: ClipboardList,
-    config: templateConfig({
-      name: 'Experience Survey',
-      enabled: false,
-      title: 'Tell Us About Your Experience',
-      description: 'Help us understand your journey with us better.',
-      question: 'How would you describe your overall experience?',
-      placeholder: 'Share details about what went well and what could be improved...',
-      rating_enabled: true,
-      rating_type: 'stars',
-      rating_max: 5,
-      submit_button_text: 'Complete Survey',
-      success_message: 'Survey completed! Thank you for your valuable input.',
-    }, KIRO_LIGHT_HEX.info, '10px'),
-  },
-  {
-    id: 'blank',
-    name: 'Blank Form',
-    description: 'Start from scratch with a blank template',
-    icon: FileText,
-    config: templateConfig({
-      name: 'New Feedback Form',
-      enabled: false,
-      title: 'Share Your Feedback',
-      description: 'We value your opinion. Please share your experience with us.',
-      question: 'How was your experience?',
-      placeholder: 'Tell us about your experience...',
-      rating_enabled: true,
-      rating_type: 'stars',
-      rating_max: 5,
-      submit_button_text: 'Submit Feedback',
-      success_message: 'Thank you for your feedback!',
-    }, KIRO_LIGHT_HEX.accent, '8px'),
-  },
-]
-
-const blankTemplate = formTemplates.find(t => t.id === 'blank')
-if (!blankTemplate) {
-  throw new Error('Blank template not found in formTemplates')
+function questionCopy(question: Question, prefix: string, language: FormLanguage, lookup: CopyLookup): Question {
+  const text: TextOf = (key) => filled(lookup, `${prefix}.${key}`, language)
+  const required = (key: string): I18nText => text(key) ?? {}
+  const base = { ...question, headline: required('headline'), subheader: text('subheader'), button_label: text('button') }
+  switch (base.type) {
+    case 'single_select': case 'multi_select': return choiceCopy(base, text)
+    case 'open_text': return { ...base, placeholder: text('placeholder') }
+    case 'rating': case 'nps': case 'csat': case 'ces': return { ...base, lower_label: text('lower'), upper_label: text('upper') }
+    case 'consent': return { ...base, label: required('label') }
+    case 'statement': case 'contact_info': return base
+  }
 }
-export const defaultFormConfig = blankTemplate.config
+
+function welcomeCopy(flow: TemplateFlow, language: FormLanguage, lookup: CopyLookup): Welcome {
+  const text = (key: string) => filled(lookup, `templates.${flow.id}.welcome.${key}`, language)
+  if (!flow.welcome) return { enabled: false, title: {} }
+  return { enabled: true, title: text('title') ?? {}, description: text('description'), button_label: text('button') }
+}
+
+function endingCopy(flow: TemplateFlow, id: string, language: FormLanguage, lookup: CopyLookup): Ending {
+  const text = (key: string) => filled(lookup, `templates.${flow.id}.endings.${id}.${key}`, language)
+  return { id, title: text('title') ?? {}, description: text('description') }
+}
+
+/** The form a template makes in `language` (its copy from `lookup`, that language's catalogue). */
+export function templateForm(flow: TemplateFlow, language: FormLanguage, lookup: CopyLookup): FormV2 {
+  return {
+    schema_version: 2,
+    name: lookup(`templates.${flow.id}.name`) ?? flow.id,
+    enabled: false,
+    language,
+    languages: [language],
+    welcome: welcomeCopy(flow, language, lookup),
+    questions: flow.questions.map((question) => questionCopy(question, `templates.${flow.id}.q.${question.id}`, language, lookup)),
+    hidden_fields: flow.hidden.map((field) => {
+      const label = field.labelled === true ? lookup(`templates.${flow.id}.hidden.${field.id}`) : undefined
+      return label === undefined ? { id: field.id } : { id: field.id, label }
+    }),
+    endings: flow.endings.map((id) => endingCopy(flow, id, language, lookup)),
+    settings: { test: { link_enabled: false, record: 'tag' } },
+    theme: { ...DEFAULT_THEME },
+    category: '', subcategory: '', project_id: '', document_id: '',
+    custom_fields: [], dimension_defaults: {}, tags: [],
+  }
+}
+
+/**
+ * Fill `language` in `form` from the template's catalogue wherever the primary text still equals the template's
+ * (UX §8): returns the form and the keys of the texts it filled (shown "From template" until edited).
+ */
+export function fillFromTemplate(form: FormV2, flow: TemplateFlow, language: FormLanguage, primaryLookup: CopyLookup, lookup: CopyLookup): { form: FormV2; filled: string[] } {
+  const original = new Map(translatableTexts(templateForm(flow, form.language, primaryLookup)).map((entry) => [entry.key, textIn(entry.text, form.language)]))
+  const translated = new Map(translatableTexts(templateForm(flow, language, lookup)).map((entry) => [entry.key, textIn(entry.text, language)]))
+  const keys: string[] = []
+  const next = translatableTexts(form).reduce((current, entry) => {
+    const primary = textIn(entry.text, form.language)
+    const value = translated.get(entry.key) ?? ''
+    if (primary === '' || value === '' || original.get(entry.key) !== primary || textIn(entry.text, language) !== '') return current
+    keys.push(entry.key)
+    return entry.write(current, language, value)
+  }, form)
+  return { form: next, filled: keys }
+}

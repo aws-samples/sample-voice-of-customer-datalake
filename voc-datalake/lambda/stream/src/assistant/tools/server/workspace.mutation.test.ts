@@ -60,7 +60,8 @@ describe('the workspace tool set', () => {
   it('describes each tool to the model', () => {
     const tools = createWorkspaceServerTools(fakeDeps());
     expect(Object.fromEntries(tools.map((tool) => [tool.name, tool.spec.toolSpec?.description]))).toStrictEqual({
-      list_feedback_forms: 'All embeddable feedback forms with their settings (enabled, title, question, rating, linked project).',
+      list_feedback_forms: 'All embeddable feedback forms: their settings (enabled, language, labels, linked project) and questions '
+        + '(id, type, headline, option codes), endings, hidden fields and test link.',
       get_feedback_form_stats: 'Submission count, average rating and rating count of one feedback form.',
       get_feedback_form_submissions: 'The newest submissions of one feedback form (text, rating, sentiment, category).',
       get_prioritization: 'The prioritization board: the workspace\u2019s scoring metrics (scoring_metrics: name, share of the composite, '
@@ -100,13 +101,41 @@ describe('the workspace tool set', () => {
 
 describe('forms tools', () => {
   it('list_feedback_forms GETs every form as the caller and keeps the allowlisted fields', async () => {
-    const forms = [{ form_id: 'f1', name: 'NPS', enabled: true, secret: 'x', title: 't'.repeat(301) }, 'not a record'];
+    const forms = [{ form_id: 'f1', name: 'n'.repeat(301), enabled: true, secret: 'x', title: 'v1 only' }, 'not a record'];
     const { calls, result, subs } = await runTool('list_feedback_forms', 'GET /feedback-forms', { forms });
     expect(calls).toStrictEqual([{ fn: 'feedbackForms', path: '/feedback-forms', resource: '/feedback-forms', method: 'GET' }]);
     expect(subs).toStrictEqual(['user-sub']);
     expect(result).toStrictEqual({
-      content: JSON.stringify({ count: 1, forms: [{ form_id: 'f1', name: 'NPS', enabled: true, title: `${'t'.repeat(300)}…` }] }),
+      content: JSON.stringify({ count: 1, forms: [{ form_id: 'f1', name: `${'n'.repeat(300)}…`, enabled: true, questions: [], endings: [] }] }),
     });
+  });
+
+  it('list_feedback_forms summarises a version 2 definition in its primary language, without routing or tokens', async () => {
+    const form = {
+      form_id: 'f2', name: 'Old UI', enabled: false, revision: 3, language: 'pl', languages: ['pl', 'en'], has_responses: true,
+      welcome: { enabled: true, title: { pl: 'Witaj', en: 'Hello' } },
+      questions: [
+        { id: 'q_why', type: 'single_select', headline: { en: 'Why?', pl: 'Dlaczego?' }, required: true,
+          options: [{ code: 'slow', label: { pl: 'Wolno' }, category: { category: 'performance' } }],
+          logic: [{ when: { op: 'equals', value: 'slow' }, then: { jump_to: 'end_bye' } }] },
+        { id: 'q_more', type: 'open_text', headline: { en: 'm'.repeat(201) }, required: false },
+      ],
+      hidden_fields: [{ id: 'user_id', label: 'User' }],
+      endings: [{ id: 'end_bye', title: { pl: 'Dzięki' } }],
+      settings: { test: { link_enabled: true, record: 'drop', token_issued: true, token: 'never-listed' } },
+    };
+    const { result } = await runTool('list_feedback_forms', 'GET /feedback-forms', { forms: [form] });
+    expect(JSON.parse(result.content)).toStrictEqual({ count: 1, forms: [{
+      form_id: 'f2', name: 'Old UI', enabled: false, revision: 3, language: 'pl', languages: ['pl', 'en'], has_responses: true,
+      welcome_title: 'Witaj',
+      questions: [
+        { id: 'q_why', type: 'single_select', headline: 'Dlaczego?', required: true, options: ['slow'], rules: 1 },
+        { id: 'q_more', type: 'open_text', headline: `${'m'.repeat(200)}…`, required: false },
+      ],
+      endings: [{ id: 'end_bye', title: 'Dzięki' }],
+      hidden_fields: ['user_id'],
+      test_link: { link_enabled: true, record: 'drop' },
+    }] });
   });
 
   it('get_feedback_form_stats reads one form and wraps its stats', async () => {

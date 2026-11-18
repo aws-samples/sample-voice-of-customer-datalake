@@ -5,7 +5,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared.delete_audit import actor_from_event, record_delete
+from shared.delete_audit import actor_from_event, record_delete, record_delete_first
 from shared.test.moto_tables import create_pk_sk_table
 
 
@@ -37,6 +37,30 @@ class TestActorFromEvent:
         assert actor_from_event(board_token, admin=False) == {'sub': 'b-1', 'kind': 'user'}
         assert actor_from_event(_event(sub='u-1'), admin=True) == {'sub': 'u-1', 'kind': 'admin'}
         assert actor_from_event(_event(sub='agent:a'), admin=True)['kind'] == 'agent'
+
+
+class TestRecordDeleteFirst:
+    """A delete recorded before it runs that may happen again later (a deployment form's test responses): a row each
+    time, with its count, and a failure raises so the delete does not go ahead."""
+
+    def test_each_call_writes_a_new_row_with_its_count(self):
+        with mock_aws():
+            table = create_pk_sk_table('aggregates')
+            for count in (2, 1):
+                record_delete_first(table, kind='feedback_form_test_responses', target={'form_id': 'f1'},
+                                    actor={'sub': 'u-1', 'kind': 'user'}, count=count)
+            rows = table.scan()['Items']
+        # Two rows, one per delete (their order within one second is the uuid's, so it is not compared).
+        assert sorted((str(row['kind']), str(row['count'])) for row in rows) == [
+            ('feedback_form_test_responses', '1'), ('feedback_form_test_responses', '2')]
+        assert all(row['target'] == {'form_id': 'f1'} for row in rows)
+        assert all(str(row['sk']).startswith(f"{row['deleted_at']}#") and 'ttl' not in row for row in rows)
+
+    def test_a_failure_raises(self):
+        table = MagicMock()
+        table.put_item.side_effect = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'x'}}, 'PutItem')
+        with pytest.raises(ClientError, match='AccessDenied'):
+            record_delete_first(table, kind='k', target={'id': 'x'}, actor=None, count=1)
 
 
 class TestRecordDelete:

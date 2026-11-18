@@ -146,8 +146,10 @@ class TestAnErasureInOneWorkspace:
         walk = handler.Walk(handler._tables(), worker_context, {}, run,
                             lambda store: retention.erase_filter('email', 'x', None, store), None,
                             handler._lambda_clock(worker_context))
-        # 7.43.00: by email, the addresses in its own projects too, and its projects' lineage marks.
-        assert handler._phases(walk) == [handler.PHASE_ITEMS, handler.PHASE_WORKSPACE_PROJECTS, handler.PHASE_EXPORTS,
+        # 7.43.00: by email, the addresses in its own projects too, and its projects' lineage marks; 7.55.00's AI
+        # review: its own forms' test responses (form_tests.py).
+        assert handler._phases(walk) == [handler.PHASE_ITEMS, handler.PHASE_FORM_TESTS,
+                                         handler.PHASE_WORKSPACE_PROJECTS, handler.PHASE_EXPORTS,
                                          handler.PHASE_WORKSPACE_LINEAGE]
 
     def test_its_workspaces_exports_close_at_the_start_before_any_item_is_read(self, aws, worker_context):

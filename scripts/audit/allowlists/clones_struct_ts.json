@@ -79,6 +79,14 @@
         "voc-datalake/frontend/src/pages/Agents/Knowledge/TenetsReview.tsx"
       ],
       "reason": "the two knowledge reviews read their overview the same way through the shared pieces (knowledgeReads.useKnowledgeRead, components/LoadFailed/ReadPending); what matches is those calls and the empty line, each over its own read, words and view"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/FeedbackForms/picker/TemplatePicker.tsx",
+        "voc-datalake/frontend/src/pages/FeedbackForms/tabs/LanguagesTab.tsx",
+        "voc-datalake/frontend/src/pages/Home/brief/BriefSettings.tsx"
+      ],
+      "reason": "the same labelled-select markup over different data and events: the template picker's Create in language (a visible label, every language, the current one selected), the Languages tab's Add language (a screen-reader label, an empty first option, only the languages the form lacks, nothing selected) and the brief's delivery hour (a number, a disabled state); one component would be a props table as long as each"
     }
   ]
 }

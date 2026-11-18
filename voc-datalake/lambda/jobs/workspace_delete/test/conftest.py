@@ -301,6 +301,7 @@ def seed_workspace(world: World, ws: str, *, status: str) -> None:
         {'pk': f'{p}PLUGIN_CONFIG', 'sk': 'webscraper', 'configs': '[{"id": "s1", "url": "https://example.com"}]'},
         {'pk': f'{p}PLUGIN_CONFIG#HISTORY', 'sk': 'webscraper#2026-10-01T00:00:00#a1', 'configs': '[{"id": "s0"}]'},
         {'pk': f'{p}FEEDBACK_FORM', 'sk': 'FORM#ff_1', 'form_id': 'ff_1', 'name': 'Checkout survey'},
+        {'pk': f'{p}FEEDBACK_FORM_TEST', 'sk': 'ff_1#2026-11-01T10:00:00+00:00#r1', 'form_id': 'ff_1', 'is_test': True},
         {'pk': f'{p}IMPORT_RUN', 'sk': '2026-11-01T10:00:00+00:00#run1', 'run_id': 'run1'},
         {'pk': f'{p}IMPORT_RUN#run1', 'sk': 'RUN', 'run_id': 'run1', 'errors': ['row 3: empty']},
         {'pk': f'{p}JOB#erasure', 'sk': 'er_0123456789ab', 'status': 'completed', 'value_hash': 'f' * 64},

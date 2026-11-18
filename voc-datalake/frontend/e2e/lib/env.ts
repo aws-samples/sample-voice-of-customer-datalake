@@ -67,6 +67,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'prototype-incorporate',
   // The guided walkthrough (part 1): starts once, replays, the editor saves a version (mock only).
   'prototype-walkthrough',
+  // 7.55.00: Feedback Forms v2, the owner's test plan (the viewer's permission steps are production only).
+  'feedback-forms-v2',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

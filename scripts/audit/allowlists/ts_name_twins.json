@@ -6,6 +6,8 @@
     { "key": "frontend:draftProblem", "reason": "the dimensions and the source-profiles editors each validate their own draft shape" },
     { "key": "frontend:toDraft", "reason": "per-editor wire -> draft converters (dimensions, source profiles, inbox caps, Radar brands), each over its own type" },
     { "key": "frontend:toWire", "reason": "per-editor draft -> wire converters (dimensions, source profiles), each over its own type" },
-    { "key": "frontend:runAgent", "reason": "the AG-UI client's run of the assistant (agui/client.ts) vs the approval executor of the run_agent tool (agentExecutors.ts)" }
+    { "key": "frontend:runAgent", "reason": "the AG-UI client's run of the assistant (agui/client.ts) vs the approval executor of the run_agent tool (agentExecutors.ts)" },
+    { "key": "frontend:fetchApi", "reason": "the app's transport (api/client.ts) vs the forms builder's (api/feedbackFormsV2Api.ts, 7.55.00), which hands a 401 to the first and keeps a refusal's errors, retry_after and stale revision on a FormsApiError; the name stays because scripts/check-mock-coverage.mjs reads every fetchApi(...) call site by it" },
+    { "key": "frontend:useDraft", "reason": "two editors' own contexts: the company context's text draft (pages/Company) and the forms builder's form draft (pages/FeedbackForms/builder/formDraftContext.ts, 7.55.00)" }
   ]
 }

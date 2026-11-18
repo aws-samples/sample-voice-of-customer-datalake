@@ -28,6 +28,10 @@ A run walks its PHASES in order, each paged and time-budgeted:
    upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``); a job that names a
    workspace reaches that workspace's items only, and walks no other phase but its projects (by email), its exports
    and its projects' lineage marks;
+   then ``form_tests`` — a feedback form's test responses (voc-aggregates, their own test partitions: the deployment's
+   ``FEEDBACK_FORM_TEST`` and, as for items, the workspaces' ``WS#{ws}#FEEDBACK_FORM_TEST``), when the run reaches the
+   ``feedback_form`` source: its retention window, an erasure by email or name, or its whole-source erasure
+   (``form_tests.py``, since 7.55.00's AI review); a job that names a workspace walks that workspace's only;
    then (after the boards and memberships below, before the raw sweep's successor, lineage) ``exports`` — an erasure
    only, once it deleted any workspace's item or de-identified one of its memberships: that workspace's exports, a
    derived copy (``exports.py``): its export jobs marked ``erased``, its open export upload aborted, every version
@@ -75,7 +79,7 @@ from typing import Any, Final, NoReturn
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, exports, lineage, members, project_people, workspaces
+from jobs.retention import boards, exports, form_tests, lineage, members, project_people, workspaces
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
     MODE_ERASE,
@@ -123,6 +127,7 @@ JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
+PHASE_FORM_TESTS: Final = 'form_tests'
 PHASE_EXPORTS: Final = 'exports'
 PHASE_RADAR: Final = 'radar'
 PHASE_BOARDS: Final = 'boards'
@@ -527,6 +532,16 @@ def _erase_from_members(walk: Walk, cursor: dict | None) -> dict | None:
                         eraser.tombstones, eraser.erase)
 
 
+def _erase_form_tests(walk: Walk, cursor: dict | None) -> dict | None:
+    """Tombstone, then delete, every test response of a feedback form the run matches, partition by partition
+    (``form_tests.py``); nothing, not even a read, for a run that reaches none."""
+    matches = form_tests.row_matcher(walk.run, str(walk.event.get('value') or ''))
+    if matches is None:
+        return None
+    eraser = form_tests.FormTestEraser(walk.run, walk.tables, matches, walk.clock, members.STORE_MEMBERS)
+    return _step_walk(walk, PHASE_FORM_TESTS, cursor, eraser.step)
+
+
 def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
     """The exports of every workspace the erasure reached: marked erased, open uploads aborted, every version of
     their objects deleted (exports.py, TENETS.md D5). Each step is idempotent, so a hand-over resumes with none."""
@@ -579,8 +594,10 @@ def _phases(walk: Walk) -> list[str]:
 
     A job that names a workspace walks the item scan, (an erasure by email) that workspace's projects, its exports
     and its projects' lineage marks only: Radar, the feedback boards and the workspace memberships are the
-    deployment's (not keyed by workspace), and there is no whole-source sweep."""
-    phases = [PHASE_ITEMS]
+    deployment's (not keyed by workspace), and there is no whole-source sweep. A form's test responses follow the
+    items in every run (their phase ends at once for a run that reaches none of them; a workspace's job walks its own
+    test partition only)."""
+    phases = [PHASE_ITEMS, PHASE_FORM_TESTS]
     # The exports of every workspace the item scan, the memberships or the projects reached, after them (decided when
     # it is reached: exports.py), so an export started between them is swept too; before the lineage passes. Each
     # such workspace's exports were already closed (locked, marked erased) when the run first met it: no link
@@ -609,7 +626,8 @@ def _phases(walk: Walk) -> list[str]:
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
     """Whether the run deleted or de-identified anything the deployment's artifacts may cite (a workspace's item
-    is cited by its own workspace's artifacts only: the ``workspace_lineage`` phase's)."""
+    is cited by its own workspace's artifacts only: the ``workspace_lineage`` phase's; a form's test responses are
+    never cited, so they never count here)."""
     deployment_items = run['deleted_items'] - int(run.get(WORKSPACE_ITEM_COUNTER) or 0)
     return deployment_items + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
 
@@ -639,6 +657,7 @@ def _walk_phases(walk: Walk) -> dict | None:
 
 _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
+    PHASE_FORM_TESTS: _erase_form_tests,
     PHASE_EXPORTS: _erase_exports,
     PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
     PHASE_BOARDS: _erase_from_boards,

@@ -75,7 +75,7 @@ function warningKeyFor(
 // No `defaultValue`s, matching the rest of this feature: the test harness loads the
 // real `en` catalogue, so a key that is missing or has moved renders its raw path
 // and fails a test. A `defaultValue` hides exactly that, which is how buttons once
-// shipped announcing `editForm` to assistive tech.
+// shipped announcing a raw key name to assistive tech.
 const WARNING_MESSAGE = {
   prd: 'documents.prototype.confirmPrdOnly',
   prfaq: 'documents.prototype.confirmPrfaqOnly',

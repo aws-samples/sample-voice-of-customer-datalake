@@ -27,6 +27,8 @@ interface ActionBarProps {
   onDecline: (reason?: string) => void
   /** `plan`: the buttons of a plan proposal. */
   variant?: 'tool' | 'plan'
+  /** The tool's own Approve label (an `assistantTools` key), e.g. "Approve and create". */
+  approveLabelKey?: string
 }
 
 /** The declined outcome's reason for a plan's Change: the model revises and proposes again. */
@@ -87,7 +89,7 @@ export function ActionBar(props: Readonly<ActionBarProps>) {
         disabled={!canApprove}
         className={clsx('btn btn-sm', destructive ? 'btn-danger-solid' : 'btn-primary')}
       >
-        {t(approveLabelKey(variant, destructive))}
+        {t(props.approveLabelKey ?? approveLabelKey(variant, destructive))}
       </button>
     </div>
   )

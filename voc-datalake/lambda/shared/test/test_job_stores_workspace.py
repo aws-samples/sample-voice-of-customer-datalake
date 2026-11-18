@@ -278,6 +278,28 @@ def test_an_assist_in_a_workspace_is_written_and_invoked_there_and_runs_nothing(
         assist_jobs.get(pk, started['job_id'], workspace=other)
 
 
+@pytest.mark.usefixtures('table')
+def test_a_per_workspace_assist_runs_in_its_workspace_and_counts_its_model_calls_there():
+    """7.55.00: a kind that reads only its job's config (a feedback form's AI draft) opts in (``per_workspace``): it
+    runs for a workspace's job, its Bedrock calls counted to that workspace (shared/usage_meter.py)."""
+    from shared import usage_meter
+    pk = assist_jobs.owner_pk('sub-1', workspace=CONTEXT_A)
+    with patch.object(assist_jobs, 'invoke_lambda_async') as invoke:
+        started = assist_jobs.start(pk, 'assist_form_draft', {'text': 'x'}, worker_function='worker',
+                                    initiated_by='sub-1', workspace=CONTEXT_A)
+    seen: list[str] = []
+
+    def work(config: dict) -> dict:
+        seen.append(usage_meter.current_attribution())
+        return {'success': True, 'echo': config['text']}
+    with patch.object(assist_jobs.realtime, 'publish'):
+        outcome = assist_jobs.run(invoke.call_args.args[1], {
+            'assist_form_draft': assist_jobs.Work(work, 'The draft failed.', per_workspace=True)})
+    assert outcome == {'status': 'completed'}
+    assert seen == [WS_A]
+    assert assist_jobs.get(pk, started['job_id'], workspace=CONTEXT_A)['result'] == {'success': True, 'echo': 'x'}
+
+
 def test_an_assist_event_naming_no_workspace_is_ignored(table):
     assert assist_jobs.run({'pk': 'ASSIST#sub-1', 'job_id': 'job_1', WORKSPACE_FIELD: 'nope'}, {}) == {
         'status': 'ignored'}

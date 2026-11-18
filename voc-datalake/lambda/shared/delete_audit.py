@@ -9,14 +9,16 @@ real, and it is RECORDED in the table that held the artifact:
   ``sk '{kind}#{id}'`` instead, so it has exactly one row;
 - ``kind`` (what was deleted, e.g. ``persona``), ``target`` (ids only, never content),
   ``actor`` (``{sub, kind}``; kind is ``user | admin | agent | mcp | plan | system``,
-  never an email), ``reason`` (optional), ``deleted_at``.
+  never an email), ``reason`` (optional), ``count`` (optional: how many rows one delete removes, e.g. a form's
+  test responses), ``deleted_at``.
 
 The row carries no ``ttl``: an audit trail never expires. It is written with
 ``attribute_not_exists(pk)`` so an existing row is never overwritten.
 
 Recording a delete never fails the delete: ``record_delete`` logs a warning (the kind
 only), counts the ``DeleteRecordFailures`` metric (namespace ``VoC``) so a missing record is visible, and
-returns.
+returns. ``record_delete_once`` and ``record_delete_first`` are the strict pair: their record is written BEFORE the
+delete and raises when it cannot be, so nothing is deleted without its row.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ from shared.project_access import (
 from shared.silver_provenance import SYSTEM_ACTOR
 from shared.timestamps import now_iso
 
-__all__ = ['actor_from_event', 'record_delete', 'record_delete_once']
+__all__ = ['actor_from_event', 'record_delete', 'record_delete_first', 'record_delete_once']
 
 AUDIT_PK: Final = 'AUDIT#delete'
 #: Each target id / actor field / reason is cut to this many characters.
@@ -97,8 +99,25 @@ def record_delete_once(
     return True
 
 
+def record_delete_first(
+    table: Any,
+    *,
+    kind: str,
+    target: Mapping[str, str],
+    actor: Mapping[str, str] | None,
+    count: int,
+    reason: str | None = None,
+) -> None:
+    """The ``AUDIT#delete`` row of a delete that is recorded BEFORE it runs and may happen again later (a form's test
+    responses, since 7.55.00: each delete is its own event): a new row each time (``sk`` ``{iso}#{uuid4 hex}``, as
+    ``record_delete``), with ``count``, the rows the delete is about to remove. Unlike ``record_delete`` it RAISES on
+    any failure: the caller deletes nothing without its record."""
+    _put_record(table, lambda now: f'{now}#{uuid.uuid4().hex}', kind=kind, target=target, actor=actor, reason=reason,
+                count=count)
+
+
 def _put_record(table: Any, sort_key: Callable[[str], str], *, kind: str, target: Mapping[str, str],
-                actor: Mapping[str, str] | None, reason: str | None) -> None:
+                actor: Mapping[str, str] | None, reason: str | None, count: int | None = None) -> None:
     """One ``AUDIT#delete`` row (``sort_key`` given the time), put only if its key is new; errors propagate."""
     now = now_iso()
     item: dict[str, Any] = {
@@ -111,6 +130,8 @@ def _put_record(table: Any, sort_key: Callable[[str], str], *, kind: str, target
     }
     if reason:
         item['reason'] = reason[:_MAX_TEXT]
+    if count is not None:
+        item['count'] = count
     table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
 
 

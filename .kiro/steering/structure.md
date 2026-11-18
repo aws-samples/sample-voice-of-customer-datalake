@@ -390,6 +390,8 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | PUT | `/settings/categories` | Save category configuration — admin-only (with `X-Workspace-Id` the workspace's admins, `require_settings_admin`, onto its own row; without it the deployment's `admins`); categories carry `product` + `owners` |
 | POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
+| POST | `/settings/form-drafts` | Start a feedback form's AI draft `{description, language, channel, base_form?, instruction?}` → 202 assist job (any signed-in user; with `X-Workspace-Id` the workspace's editors and admins, the job its own; 20 per person per hour). Served here, not by the forms Lambda (it serves the public widget routes) — docs/feedback-forms.md "AI drafts" |
+| GET | `/settings/form-drafts/{job_id}` | Poll one of the caller's AI drafts, in the scope it was started in (404 otherwise; the job notice wakes it) |
 | POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days \| date_from/date_to, date_basis?, sources?, categories?, include_manual?}` (≤ 50 sources / categories; a source slice is a Scan filtered on `source_platform`) or resume one `{resume: <job_id>}` (a `partial` job, from its cursor, one resumer at a time; a failed or cancelled resumer hands it back) (admin) → 202 `{job}`, 409 if one is active or the job is not resumable, 404 unknown job (docs/categories.md). With `X-Workspace-Id` (since 7.13.00): the workspace's own job (`require_settings_admin`: its admins, never a delegated caller; the one 404 for a non-member), its row and lock in `WS#{ws}#JOB#category_reprocess`, one per workspace, replaying its reviews only with its own categories and dimensions; without it the deployment's, as before |
 | GET | `/settings/categories/reprocess` | Latest reprocess job (`resumable`, `resumed_from` / `resumed_by`, `config`, `raw_fallback_sources`; the `resume_from` cursor stays server-side; a cancelled / failed resumer also names `resumable_job_id`). With `X-Workspace-Id` the workspace's own latest job, for its admins |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel a reprocess job (with `X-Workspace-Id` only one of that workspace's: another workspace's id is the 404 of an unknown one) |
@@ -452,7 +454,7 @@ password resets, user flags → Administration → Privacy & access → Users. N
 
 ### Feedback Forms (feedback_form_handler.py)
 
-Every route requires Cognito **except** the three marked public, which the
+Every route requires Cognito **except** the four marked public, which the
 embeddable widget calls from the customer's own site.
 
 | Method | Path | Auth | Description |
@@ -465,9 +467,10 @@ embeddable widget calls from the customer's own site.
 | GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
+| POST | `/feedback-forms/{id}/events` | **public** | The widget's funnel beacons (`opened`, `left`), apart from submit |
 | GET | `/feedback-forms/{id}/iframe` | **public** | Iframe embed variant |
 
-> **Rate limits on the three public routes** are stage method settings in
+> **Rate limits on the four public routes** are stage method settings in
 > `api-gateway.ts`, and are EXTERNALLY OBSERVABLE to anyone embedding the widget:
 >
 > <!-- LOCKSTEPPED against the stack by `the public feedback-form routes` in
@@ -481,12 +484,13 @@ embeddable widget calls from the customer's own site.
 > |---|---|---|
 > | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
 > | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
+> | `POST /events` | **100 rps / 200** | The widget's funnel beacons, at most two per visit: page-view demand, one or two `UpdateItem`s each, never a model call; a 429 costs one funnel count |
 >
 > The method-setting keys spell the variable `{form_id}` — the resource is created
 > as `addResource('{form_id}')`, so that is the path to look for in the template,
 > even though the table above uses `{id}` for brevity like the rest of this file.
 >
-> These four numbers are PINNED against the synthesized template by a lockstep case
+> These six numbers are PINNED against the synthesized template by a lockstep case
 > in `api-stack.test.ts`, so tuning them in `api-stack.ts` without updating this
 > table fails the CDK suite. The stack is the source of truth.
 >
@@ -495,7 +499,8 @@ embeddable widget calls from the customer's own site.
 > and not per client. 100 rps is therefore the aggregate widget page-view rate a
 > deployment supports.
 >
-> Above it, **each of the three fails differently and none names the limit**, so a
+> Above it, **each of the first three fails differently and none names the limit**
+> (a throttled `POST /events` beacon only costs a funnel count), so a
 > busy embed is fixed by raising the number rather than widget-side: `GET /config`
 > renders a flat "Failed to load form." with no retry (the gateway 429 carries the
 > deployment's frontend origin, `*` only in dev, so the widget cannot read it
@@ -516,7 +521,7 @@ embeddable widget calls from the customer's own site.
 > proxy without `defaultMethodOptions` defaults to `AuthorizationType: NONE`,
 > which is how form update/delete and submission reads were once public.
 > `api-stack.test.ts` asserts the handler and stack stay in step, and that only
-> the three public routes are unauthenticated.
+> the four public routes are unauthenticated.
 
 > ⚠️ **"Cognito" above means authenticated, NOT authorized.** These routes check
 > that the caller has a valid token; they do not check *which* forms the caller

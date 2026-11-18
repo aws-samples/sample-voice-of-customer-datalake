@@ -394,7 +394,7 @@ class TestConductorTables:
             'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
             'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants',
             'draft_prototype_revision', 'set_prototype_walkthrough',
-            'propose_knowledge_refresh', 'save_categories',
+            'propose_knowledge_refresh', 'save_categories', 'draft_feedback_form',
         }) == CARD_ONLY_WRITE_TOOLS
 
     def test_admin_read_packs(self):

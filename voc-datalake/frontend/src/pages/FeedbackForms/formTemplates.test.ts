@@ -1,46 +1,82 @@
-/**
- * Built-in templates start on the Kiro Light palette, and the widget's white
- * button label passes WCAG AA on every one of them (E2E F6).
- */
 import { describe, expect, it } from 'vitest'
-import { KIRO_LIGHT_HEX } from '../../theme/printPalette'
-import { defaultFormConfig, formTemplates } from './formTemplates'
-import { normalizeFeedbackForms } from './formSchema'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { FORM_TEMPLATES, templateById, templateForm } from './formTemplates'
+import type { CopyLookup } from './formTemplates'
+import { TEMPLATE_GROUPS } from './templates/templateKit'
+import { blockingProblems, validateForm } from './model/validateForm'
+import { formPaths, minutesToAnswer } from './model/paths'
+import { FORM_LANGUAGES } from './model/formsV2'
+import type { FormLanguage } from './model/formsV2'
+import { isRecord } from '../../lib/typeGuards'
 
-function luminance(hex: string): number {
-  const linear = [1, 3, 5].map((i) => {
-    const channel = Number.parseInt(hex.slice(i, i + 2), 16) / 255
-    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0)
+const LOCALES = join(__dirname, '..', '..', '..', 'public', 'locales')
+
+function catalogue(language: FormLanguage): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(readFileSync(join(LOCALES, language, 'feedbackForms.json'), 'utf8'))
+  return isRecord(parsed) ? parsed : {}
 }
 
-const contrastWithWhite = (hex: string) => 1.05 / (luminance(hex) + 0.05)
-const PALETTE: readonly string[] = Object.values(KIRO_LIGHT_HEX)
+/** A lookup into one locale's catalogue file (the real copy the picker resolves). */
+function lookupIn(language: FormLanguage): CopyLookup {
+  const root = catalogue(language)
+  return (key) => {
+    const value = key.split('.').reduce<unknown>((node, part) => (isRecord(node) ? node[part] : undefined), root)
+    return typeof value === 'string' ? value : undefined
+  }
+}
 
-describe.each(formTemplates.map((template) => [template.id, template.config.theme] as const))('template %s', (_id, theme) => {
-  it('uses Kiro Light colours only', () => {
-    expect([theme.primary_color, theme.background_color, theme.text_color].every((hex) => PALETTE.includes(hex))).toBe(true)
+/** Every leaf key under `templates` in one locale, sorted. */
+function templateKeys(language: FormLanguage): string[] {
+  const walk = (node: unknown, path: string): string[] => (isRecord(node)
+    ? Object.entries(node).flatMap(([key, value]) => walk(value, `${path}.${key}`))
+    : [path])
+  return walk(catalogue(language)['templates'], 'templates').sort((a, b) => a.localeCompare(b))
+}
+
+describe('the twelve templates', () => {
+  it('are twelve, each in one of the five goals, Blank last', () => {
+    expect(FORM_TEMPLATES).toHaveLength(12)
+    expect(new Set(FORM_TEMPLATES.map((flow) => flow.group))).toStrictEqual(new Set(TEMPLATE_GROUPS))
+    expect(FORM_TEMPLATES.at(-1)?.id).toBe('blank')
   })
 
-  it('keeps a white button label at AA (>= 4.5:1)', () => {
-    expect(contrastWithWhite(theme.primary_color)).toBeGreaterThanOrEqual(4.5)
-  })
-})
-
-describe('the default form theme (E2E F7: no off-palette swatch)', () => {
-  it('is the Kiro accent, not the old Tailwind blue #3b82f6', () => {
-    expect(defaultFormConfig.theme.primary_color).toBe(KIRO_LIGHT_HEX.accent)
-    expect(defaultFormConfig.theme.primary_color.toLowerCase()).not.toBe('#3b82f6')
+  it.each(FORM_TEMPLATES.map((flow) => [flow.id]))('%s makes a form with no problem that blocks a save', (id) => {
+    const flow = templateById(id)
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    expect(form === null ? ['missing'] : blockingProblems(validateForm(form))).toStrictEqual([])
   })
 
-  it('is what a stored form without a theme renders with', () => {
-    const [form] = normalizeFeedbackForms([{ form_id: 'f1', name: 'legacy' }])
-    expect(form?.theme.primary_color).toBe(KIRO_LIGHT_HEX.accent)
+  it.each(FORM_TEMPLATES.map((flow) => [flow.id]))('every path of %s reaches an ending, and every question is on one', (id) => {
+    const flow = templateById(id)
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    const paths = form === null ? null : formPaths(form)
+    expect(paths === null ? [] : [...paths.questionWays.values()].filter((ways) => ways === 0)).toStrictEqual([])
+    expect(paths?.total ?? 0).toBeGreaterThan(0)
   })
 
-  it('leaves a stored colour alone, even the old default', () => {
-    const [form] = normalizeFeedbackForms([{ form_id: 'f1', name: 'old', theme: { primary_color: '#3B82F6' } }])
-    expect(form?.theme.primary_color).toBe('#3B82F6')
+  it('writes every text in the language it is created in, and option codes as English slugs', () => {
+    const flow = templateById('old_ui')
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    const why = form?.questions[0]
+    expect(why?.headline).toStrictEqual({ en: 'What made you switch back to the old interface?' })
+    expect(why?.type === 'multi_select' ? why.options.map((option) => option.code) : []).toContain('missing_function')
+    expect(form?.hidden_fields).toStrictEqual([
+      { id: 'user_id', label: 'User' }, { id: 'app_version', label: 'App version' }, { id: 'screen', label: 'Screen where they switched' },
+    ])
+  })
+
+  it('reads the NPS flow as the spec writes it: detractors and promoters each get their own follow-up', () => {
+    const flow = templateById('nps')
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    expect(form?.questions[0]?.logic?.map((rule) => [rule.when.op, rule.when.value, rule.then.jump_to])).toStrictEqual([
+      ['lte', 6, 'q_detractor_reason'], ['gte', 9, 'q_promoter_value'],
+    ])
+    expect(form === null ? 0 : formPaths(form).endingWays.get('end_contact')).toBe(3)
+    expect(form === null ? 0 : minutesToAnswer(form)).toBe(1)
+  })
+
+  it.each(FORM_LANGUAGES.filter((language) => language !== 'en').map((language) => [language]))('has every template key in %s', (language) => {
+    expect(templateKeys(language)).toStrictEqual(templateKeys('en'))
   })
 })

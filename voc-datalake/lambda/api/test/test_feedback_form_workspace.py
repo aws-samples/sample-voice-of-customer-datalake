@@ -44,6 +44,20 @@ QUEUE = 'https://sqs.example.com/queue'
 NOT_FOUND = {'success': False, 'error': 'Form not found'}
 
 
+def wire_form_handler(stack: ExitStack, tables: dict[str, Any], queue: str = QUEUE) -> dict[str, Any]:
+    """The forms handler on ``tables`` (moto's ``aggregates``, ``feedback`` and ``workspaces``) for the life of
+    ``stack``: its workspace resolver reads ``workspaces`` (nobody is a platform admin) and its queue is a double.
+    ``tables`` with ``sqs``, the double: a test module's world (test_feedback_form_v2.py's too)."""
+    sqs = MagicMock()
+    resolver = RequestWorkspace(table=lambda: tables['workspaces'], confirm_platform_admin=lambda _event: False)
+    for target, value in (('aggregates_table', tables['aggregates']), ('feedback_table', tables['feedback']),
+                          ('sqs', sqs), ('_workspace', resolver), ('PROCESSING_QUEUE_URL', queue),
+                          ('BRAND_NAME', 'Acme')):
+        stack.enter_context(patch.object(h, target, value))
+    stack.enter_context(patch.object(h, 'get_workspaces_table', return_value=tables['workspaces']))
+    return {**tables, 'sqs': sqs}
+
+
 def _form(pk: str, form_id: str, title: str) -> dict:
     return {'pk': pk, 'sk': f'FORM#{form_id}', 'form_id': form_id, 'name': title, 'title': title, 'enabled': True,
             'brand_name': 'Acme', 'created_at': '2026-11-01T00:00:00+00:00', 'updated_at': '2026-11-01T00:00:00+00:00'}
@@ -62,13 +76,7 @@ def world() -> Iterator[dict[str, Any]]:
             aggregates.put_item(Item=_form(f'WS#{ws}#FEEDBACK_FORM', form_id, f'Form of {ws[-2:]}'))
             workspaces.put_item(Item={'pk': f'FORM#{form_id}', 'sk': 'META', 'workspace_id': ws, 'created_at': 'x'})
         aggregates.put_item(Item=_form('FEEDBACK_FORM', LEGACY, 'Deployment form'))
-        sqs = MagicMock()
-        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
-        for target, value in (('aggregates_table', aggregates), ('feedback_table', feedback), ('sqs', sqs),
-                              ('_workspace', resolver), ('PROCESSING_QUEUE_URL', QUEUE), ('BRAND_NAME', 'Acme')):
-            stack.enter_context(patch.object(h, target, value))
-        stack.enter_context(patch.object(h, 'get_workspaces_table', return_value=workspaces))
-        yield {'aggregates': aggregates, 'feedback': feedback, 'workspaces': workspaces, 'sqs': sqs}
+        yield wire_form_handler(stack, {'aggregates': aggregates, 'feedback': feedback, 'workspaces': workspaces})
 
 
 def _call(lambda_context: Any, method: str, path: str, *, claims: dict | None = None, ws: str | None = None,
@@ -165,7 +173,7 @@ class TestSignedInRoutesInAWorkspace:
     def test_an_editor_updates_and_deletes_its_own_form(self, world, lambda_context):
         status, body = _call(lambda_context, 'PUT', f'/feedback-forms/{FORM_A}', claims=EDITOR, ws=WS_A,
                              body={'title': 'New title'}, form_id=FORM_A)
-        assert (status, body['form']['title']) == (200, 'New title')
+        assert (status, body['form']['welcome']['title']) == (200, {'en': 'New title'})
 
         status, _ = _call(lambda_context, 'DELETE', f'/feedback-forms/{FORM_A}', claims=EDITOR, ws=WS_A,
                           form_id=FORM_A)
@@ -222,7 +230,9 @@ class TestSignedInRoutesInAWorkspace:
         _, submissions = _call(lambda_context, 'GET', f'/feedback-forms/{FORM_A}/submissions', claims=VIEWER,
                                ws=WS_A, form_id=FORM_A)
 
-        assert stats['stats'] == {'total_submissions': 2, 'avg_rating': 3.0, 'rating_count': 2}
+        assert stats['stats'] == {'total_submissions': 2, 'avg_rating': 3.0, 'rating_count': 2,
+                                  'headline': {'question_id': 'q_rating', 'type': 'rating', 'value': 3.0,
+                                               'count': 2, 'scale_max': 5}}
         assert sorted(item['feedback_id'] for item in submissions['submissions']) == ['1', '2']
 
     def test_the_list_batch_stats_read_the_workspaces_partition(self, world, lambda_context):
@@ -235,7 +245,9 @@ class TestSignedInRoutesInAWorkspace:
         event['queryStringParameters'] = {'include': 'stats'}
         body = json.loads(h.lambda_handler(event, lambda_context)['body'])
 
-        assert body['stats'] == {FORM_A: {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1}}
+        assert body['stats'] == {FORM_A: {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1,
+                                          'headline': {'question_id': 'q_rating', 'type': 'rating',
+                                                       'value': 5.0, 'count': 1, 'scale_max': 5}}}
 
     def test_a_form_that_cannot_be_written_releases_its_lookup_row(self, world, lambda_context):
         def refuse(*_args: Any, **_kwargs: Any) -> None:
@@ -254,7 +266,7 @@ class TestThePublicRoutes:
     def test_a_workspaces_form_serves_its_own_config_whatever_header_is_sent(self, lambda_context):
         status, body = _call(lambda_context, 'GET', f'/feedback-forms/{FORM_A}/config', ws=WS_B, form_id=FORM_A)
 
-        assert (status, body['config']['title']) == (200, 'Form of D8')
+        assert (status, body['config']['welcome']['title']) == (200, {'en': 'Form of D8'})
 
     def test_a_submission_is_queued_with_the_lookup_rows_workspace_never_the_requests(self, world, lambda_context):
         body = {'text': 'Checkout is slow', 'workspace_id': WS_B}

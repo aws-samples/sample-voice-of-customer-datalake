@@ -17,6 +17,8 @@ import { handleSourceRoutes } from './mock-sources.js';
 import { handleImportHistoryRoutes } from './mock-import-history.js';
 import { handleWebReviewMethodRoutes } from './mock-web-review-methods.js';
 import { handleFormRoutes } from './mock-forms.js';
+import { SEED_FORMS as FORMS_V2_SEEDS, seedStats as formsV2SeedStats } from './mock-forms-seeds.js';
+import { listedForm } from './mock-forms-v2.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
 import { handleAppearanceRoutes } from './mock-appearance.js';
 import { handleBriefingRoutes } from './mock-briefing.js';
@@ -481,8 +483,12 @@ const mockFeedbackForms = [
     created_at: new Date().toISOString(),
     project_id: 'proj_1', document_id: 'prfaq_1',
   },
+  // Forms v2 (7.55.00, mock-forms-seeds.js): a Live Polish form with test responses, an Off NPS form, and a v1 form
+  // whose language is '' (the builder migrates it). Copied, so the routes' edits never touch the seed module.
+  ...JSON.parse(JSON.stringify(FORMS_V2_SEEDS)),
 ];
 const mockFormStats = {
+  ...formsV2SeedStats(),
   form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
   form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
   form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
@@ -622,11 +628,13 @@ const mockScraperRuns = {
 const handlers = {
   // Feedback Forms list
   // `?include=stats` adds every form's card stats (handler list_forms, E2E F11).
+  // A v2 form is listed as the handler's item_to_form lists it (never its test token: mock-forms-v2.js listedForm).
   'GET /feedback-forms': (body, query) => {
-    if (!(query instanceof URLSearchParams) || query.get('include') !== 'stats') return { forms: mockFeedbackForms };
+    const forms = mockFeedbackForms.map(listedForm);
+    if (!(query instanceof URLSearchParams) || query.get('include') !== 'stats') return { forms };
     const zero = { total_submissions: 0, avg_rating: null, rating_count: 0 };
     const stats = Object.fromEntries(mockFeedbackForms.map((form) => [form.form_id, mockFormStats[form.form_id] ?? zero]));
-    return { success: true, forms: mockFeedbackForms, stats };
+    return { success: true, forms, stats };
   },
 
   // Sources status. With ?run_status=<source> returns the persisted last-run

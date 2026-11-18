@@ -86,7 +86,7 @@ the first source in this list that supplies a value wins:
 
 | Order | Origin | Where the value comes from |
 |---|---|---|
-| 1 | `source` | The ingested message: a CSV column mapped to `dimension:<key>`, a JSON upload's `dimensions`, a form embed's `dimensions` option. Then, for keys still unset, the message's `metadata` (and `metadata.custom_fields`) entries whose key equals a configured dimension key and whose value is allowed — so an unmapped CSV column named `product` feeds the `product` dimension. Explicit `dimensions` win over metadata |
+| 1 | `source` | The ingested message: a CSV column mapped to `dimension:<key>`, a JSON upload's `dimensions`, a form embed's `dimensions` option. Then, for keys still unset, the message's `metadata` (then `metadata.custom_fields`, then a feedback form's hidden fields, `metadata.form_hidden`: [feedback-forms.md](feedback-forms.md#hidden-fields)) entries whose key equals a configured dimension key and whose value is allowed — so an unmapped CSV column named `product` feeds the `product` dimension. Explicit `dimensions` win over metadata |
 | 2 | `profile` | The source profile's `dimension_defaults` (see [source-policies.md](source-policies.md)) |
 | 3 | `category` | The category's `product`, when a dimension keyed `product` exists and that value is allowed |
 | 4 | `ai` | The model's output, only for dimensions with `infer: true` |

@@ -53,6 +53,7 @@ from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, met
 from shared.engagement_config import PARTICIPANTS_TABLE_ENV
 from shared.erasure_jobs import WORKSPACE_LOCK_SK
 from shared.export_jobs import mark_erased
+from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import LIST_PK
 from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX, FEEDBACK_BY_DATE_INDEX
 from shared.logging import logger
@@ -751,9 +752,12 @@ OWNER_LISTS: Final = {
 
 
 def _note_forms(ctx: Context, batch: Batch) -> int:
-    """Each form's id, for its ``FORM#{id}`` lookup row in voc-workspaces (the control rows' sweep)."""
+    """Each form's id, for its ``FORM#{id}`` lookup row in voc-workspaces (the control rows' sweep): from the form rows
+    (``FORM#{id}``) only. A form's own rows beside it (schema version 2, 7.55.00: ``FORMREV#``, ``FORMFUNNEL#``,
+    ``FORMSESSION#``, and its test responses ``{id}#…`` in the test partition) name the same form, and the AI drafts'
+    hourly counters (``FORMDRAFT#``) name none."""
     note(ctx, 'form', (str(row.get('form_id') or str(row.get('sk') or '').removeprefix('FORM#'))
-                       for row in batch.rows))
+                       for row in batch.rows if str(row.get('sk') or '').startswith('FORM#')))
     return 0
 
 
@@ -1150,7 +1154,9 @@ PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
     'logs': _logs,
     'scraper_runs': _scraper_runs,
     'plugin_configs': lambda ctx: [plugin_config_pk(ctx.scope), plugin_config_history_pk(ctx.scope)],
-    'feedback_forms': lambda ctx: [ctx.scope.key(FEEDBACK_FORM_PK)],
+    # The forms partition and, beside it, the forms' test responses (7.55.00's AI review: their own partition, so
+    # voc-retention's delete names it alone, shared/form_test_responses.py).
+    'feedback_forms': lambda ctx: [ctx.scope.key(FEEDBACK_FORM_PK), ctx.scope.key(TEST_RESPONSES_PK)],
     'erasure_jobs': lambda ctx: [erasure_job_pk(ctx.scope)],
     # A workspace's category reprocess jobs and their LOCK (7.13.00, shared/reprocess_jobs.py).
     'reprocess_jobs': lambda ctx: [reprocess_job_pk(ctx.scope)],

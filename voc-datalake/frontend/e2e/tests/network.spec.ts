@@ -5,7 +5,8 @@
  *
  * For /projects, /feedback-forms and /agents:
  * - slow 3G (Chromium emulation, after the shell loaded): the loading state
- *   shows, then the list; no error, no error boundary;
+ *   shows, then the list; no error, no error boundary (under E2E_MOCK the forms
+ *   page's code is loaded first, through its template picker: `warmCode`);
  * - the list request dropped (`route.abort`): an error state — never the
  *   "nothing here yet" empty state (components/LoadFailed on every list page) —
  *   then the page recovers on Try again once the network is back;
@@ -44,6 +45,12 @@ interface ListScreen {
   loaded: (page: Page) => Locator
   /** Brings the page back once the network is: Try again, or (no retry button) navigating away and back. */
   recover: (page: Page) => Promise<void>
+  /**
+   * E2E_MOCK only, before slow 3G: loads the page's code without its list. The Vite dev server serves the forms
+   * pages (7.55.00) as ~200 separate modules, a waterfall slow 3G does not finish in SLOW_LOAD_MS; a deployment
+   * serves them as one chunk.
+   */
+  warmCode?: (page: Page) => Promise<void>
 }
 
 const LOAD_FAILED = 'This could not be loaded. Check your connection and try again.'
@@ -70,8 +77,15 @@ const SCREENS: readonly ListScreen[] = [
     name: 'feedback-forms', path: '/feedback-forms', api: '/feedback-forms',
     loading: (p) => main(p).getByRole('status', { name: 'Loading...' }),
     error: (p) => failedAlert(p, LOAD_FAILED),
-    loaded: (p) => main(p).getByRole('button', { name: 'Edit form' }).or(main(p).getByText('No feedback forms yet')),
+    // A form card's ⋯ menu (feedbackForms.json card.actions), or the empty state's title.
+    loaded: (p) => main(p).getByRole('button', { name: /^More actions for / }).or(main(p).getByText('No feedback forms yet')),
     recover: tryAgain,
+    // The template picker is the same page module and reads no list.
+    warmCode: async (p) => {
+      await navigateInApp(p, '/feedback-forms/new')
+      await expect(main(p).getByRole('heading', { level: 1, name: 'New form' })).toBeVisible({ timeout: 30_000 })
+      await navigateInApp(p, NEUTRAL_PAGE)
+    },
   },
   {
     name: 'agents', path: '/agents', api: '/agents',
@@ -118,6 +132,7 @@ test.describe('bad networks', () => {
       test.skip(screen.name === 'agents' && roleOf(testInfo) !== 'admin', 'one role is enough for /agents')
       const crashes = watchCrashes(page)
       await openShell(page)
+      if (MOCK && screen.warmCode !== undefined) await screen.warmCode(page)
       const lift = await emulateSlow3g(page)
       try {
         await navigateInApp(page, screen.path)

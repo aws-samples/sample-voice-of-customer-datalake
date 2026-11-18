@@ -23,6 +23,7 @@ describe('pageContextFromLocation', () => {
     // The query names no tab (no old `?tab=` link is read): the project's own path is its Overview.
     ['/projects/p1', '?tab=personas', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'overview' }],
     ['/feedback-forms', '', { kind: 'feedback-forms', path: '/feedback-forms' }],
+    ['/feedback-forms/fd_1/questions', '', { kind: 'feedback-forms', path: '/feedback-forms/fd_1/questions' }],
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],
     ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows', tab: 'workflows' }],
     ['/agents/workflows/wf_1', '', { kind: 'agents', path: '/agents/workflows/wf_1' }],

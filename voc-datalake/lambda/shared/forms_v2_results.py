@@ -1,0 +1,321 @@
+"""A version 2 form's results and responses (``GET /feedback-forms/{id}/results`` and ``…/responses``,
+docs/feedback-forms.md "Results"): per question of the current revision, what its responses answered.
+
+Each response is a ``ResultRow``: its answers, the questions its logic path showed, its ending, language, revision,
+hidden values and time. Rows come from the form's feedback items (``metadata.form_answers``, ``form_path``,
+``form_ending_id``…; a version 1 item's ``rating`` and text through ``legacy_row``) and, with ``include_test``, from
+its tagged test responses. A question id is stable across revisions, so a row of an older revision counts towards the
+same question; a value that no longer fits the question's current type is left out, an answer to a question the
+current revision no longer has is counted under ``removed_questions``, and a choice code it no longer offers under
+the question's ``removed_options``.
+
+Per question: ``shown`` (the responses whose path showed it), ``answered``, ``skipped``, ``not_shown`` (the logic
+jumped past it) and ``drop_off_rate`` (skipped / shown), plus by type: counts per option code with the latest "Other"
+texts, a histogram, NPS / CSAT / CES scores, and the open-text count with the latest answers. Contact details are
+counted, never returned here. ``funnel`` (``funnel_counts``, from the daily counter rows) adds how many opened the
+form and, of those who left without submitting, at which question. Pure.
+"""
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Final
+
+from shared.forms_v2 import (
+    CES,
+    CONSENT,
+    CONTACT,
+    CSAT,
+    MULTI,
+    NONE_CODE,
+    NPS,
+    OPEN_TEXT,
+    OTHER_CODE,
+    RATING,
+    SCALE_TYPES,
+    SELECT_TYPES,
+    SINGLE,
+    V1_RATING_ID,
+    V1_TEXT_ID,
+    question_bounds,
+    text_in,
+)
+
+__all__ = ['LEFT_COUNTER_PREFIX', 'ResultRow', 'filter_rows', 'funnel_counts', 'headline', 'legacy_row',
+           'tally_results']
+
+#: Open-text and "Other" answers returned per question, newest first.
+LATEST_ANSWERS: Final = 10
+
+
+@dataclass(frozen=True)
+class ResultRow:
+    """One response as the results read it (``response_id``: the feedback item's id, or a test response's)."""
+
+    answers: Mapping[str, Any]
+    path: Sequence[str]
+    ending_id: str | None
+    created_at: str
+    is_test: bool = False
+    hidden: Mapping[str, Any] = field(default_factory=dict)
+    response_id: str = ''
+    language: str | None = None
+    revision: int | None = None
+    sentiment: str | None = None
+    session: str | None = None
+
+
+def legacy_row(definition: Mapping[str, Any], rating: object, text: object, created_at: str,
+               **extra: Any) -> ResultRow | None:
+    """A version 1 submission (a ``rating`` and a text, no ``form_answers``) as a row of its migrated questions, when
+    the form still has them (``q_rating``, ``q_text``); None when it has neither."""
+    questions = {question.get('id'): question.get('type') for question in definition.get('questions') or []}
+    answers: dict[str, Any] = {}
+    if questions.get(V1_RATING_ID) == RATING and isinstance(rating, int | float) and not isinstance(rating, bool):
+        answers[V1_RATING_ID] = int(rating)
+    if questions.get(V1_TEXT_ID) == OPEN_TEXT and isinstance(text, str) and text.strip():
+        answers[V1_TEXT_ID] = text.strip()
+    if not answers:
+        return None
+    path = [qid for qid in (V1_RATING_ID, V1_TEXT_ID) if qid in questions]
+    return ResultRow(answers, path, None, created_at, **extra)
+
+
+def filter_rows(rows: Iterable[ResultRow], *, date_from: str = '', date_to: str = '', language: str = '',
+                ending: str = '', hidden: Mapping[str, str] | None = None) -> list[ResultRow]:
+    """The rows a Results view keeps: answered from ``date_from`` to ``date_to`` (ISO dates or times, inclusive; a
+    date ``date_to`` covers its whole day), in ``language``, reaching ``ending``, with each ``hidden`` value."""
+    wanted = dict(hidden or {})
+
+    def keep(row: ResultRow) -> bool:
+        day = row.created_at[:len(date_to)] if date_to else ''
+        return ((not date_from or row.created_at >= date_from) and (not date_to or day <= date_to)
+                and (not language or row.language == language) and (not ending or row.ending_id == ending)
+                and all(str(row.hidden.get(key, '')) == value for key, value in wanted.items()))
+    return [row for row in rows if keep(row)]
+
+
+def _fitting(question: Mapping[str, Any], value: object) -> object:
+    """``value`` when it fits the question's current type, else None (an older revision's other shape)."""
+    kind = question['type']
+    if value is None:
+        return None
+    if kind in SCALE_TYPES:
+        low, high = question_bounds(question) or (0, 0)
+        fits = isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+    elif kind in SELECT_TYPES:
+        fits = isinstance(value, Mapping) and ('code' in value or 'codes' in value or 'other' in value)
+    elif kind == OPEN_TEXT:
+        fits = isinstance(value, str) and bool(value)
+    elif kind == CONSENT:
+        fits = value is True
+    else:
+        fits = kind == CONTACT and isinstance(value, Mapping) and bool(value)
+    return value if fits else None
+
+
+def _count_keys(question: Mapping[str, Any], value: Any) -> list[str]:
+    if question['type'] in SCALE_TYPES:
+        return [str(value)]
+    if question['type'] in SELECT_TYPES:
+        codes = list(value.get('codes') or []) + ([value['code']] if 'code' in value else [])
+        return codes + ([OTHER_CODE] if value.get('other') else [])
+    return []
+
+
+@dataclass
+class _Tally:
+    question: Mapping[str, Any]
+    shown: int = 0
+    answered: int = 0
+    counts: dict[str, int] = field(default_factory=dict)
+    latest: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    other_latest: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+
+    def add(self, row: ResultRow) -> None:
+        qid = self.question['id']
+        if qid in row.path or qid in row.answers:
+            self.shown += 1
+        value = _fitting(self.question, row.answers.get(qid))
+        if value is None:
+            return
+        self.answered += 1
+        for key in _count_keys(self.question, value):
+            self.counts[key] = self.counts.get(key, 0) + 1
+        entry = {'response_id': row.response_id, 'created_at': row.created_at, 'is_test': row.is_test}
+        if row.sentiment:
+            entry['sentiment'] = row.sentiment
+        if self.question['type'] == OPEN_TEXT:
+            self.latest.append((row.created_at, {'value': str(value), **entry}))
+        elif isinstance(value, Mapping) and isinstance(value.get('other'), str):
+            self.other_latest.append((row.created_at, {'value': value['other'], **entry}))
+
+
+def _newest(entries: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [entry for _at, entry in sorted(entries, key=lambda pair: pair[0], reverse=True)[:LATEST_ANSWERS]]
+
+
+def _ratio(part: int, whole: int) -> float:
+    return round(part / whole, 4) if whole else 0.0
+
+
+def _percent(part: int, whole: int) -> float:
+    return round(100 * part / whole, 1) if whole else 0.0
+
+
+def _scores(kind: str, histogram: Mapping[str, int]) -> dict[str, Any]:
+    """The NPS (promoters 9-10 minus detractors 0-6, in points), CSAT (% of 4-5) or CES (% of 5-7) of a histogram."""
+    total = sum(histogram.values())
+    if kind == NPS:
+        promoters = histogram.get('9', 0) + histogram.get('10', 0)
+        detractors = sum(histogram.get(str(v), 0) for v in range(7))
+        return {'nps': {'score': round(_percent(promoters, total) - _percent(detractors, total), 1),
+                        'promoters': promoters, 'passives': total - promoters - detractors,
+                        'detractors': detractors}}
+    if kind == CSAT:
+        satisfied = histogram.get('4', 0) + histogram.get('5', 0)
+        return {'csat': {'score': _percent(satisfied, total), 'satisfied': satisfied}}
+    if kind == CES:
+        easy = sum(histogram.get(str(v), 0) for v in (5, 6, 7))
+        return {'ces': {'score': _percent(easy, total), 'easy': easy}}
+    return {}
+
+
+def _scale_result(question: Mapping[str, Any], counts: Mapping[str, int]) -> dict[str, Any]:
+    low, high = question_bounds(question) or (0, 0)
+    histogram = {str(value): counts.get(str(value), 0) for value in range(low, high + 1)}
+    total = sum(histogram.values())
+    average = round(sum(int(k) * n for k, n in histogram.items()) / total, 2) if total else None
+    return {'histogram': histogram, 'average': average, 'scale_max': high, **_scores(question['type'], histogram)}
+
+
+def _select_result(question: Mapping[str, Any], tally: _Tally) -> dict[str, Any]:
+    offered = [option['code'] for option in question.get('options') or []]
+    out: dict[str, Any] = {'options': {code: tally.counts.get(code, 0) for code in offered}}
+    if (question.get('other') or {}).get('enabled') or tally.counts.get(OTHER_CODE):
+        out['other'] = tally.counts.get(OTHER_CODE, 0)
+        out['other_latest'] = _newest(tally.other_latest)
+    if question['type'] == MULTI and ((question.get('none') or {}).get('enabled') or tally.counts.get(NONE_CODE)):
+        out['none'] = tally.counts.get(NONE_CODE, 0)
+    removed = {code: n for code, n in tally.counts.items() if code not in offered and code not in {OTHER_CODE,
+                                                                                                    NONE_CODE}}
+    if removed:
+        out['removed_options'] = removed
+    return out
+
+
+def _question_result(question: Mapping[str, Any], tally: _Tally, primary: str, responses: int) -> dict[str, Any]:
+    skipped = max(tally.shown - tally.answered, 0)
+    out: dict[str, Any] = {
+        'id': question['id'], 'type': question['type'],
+        'headline': text_in(question.get('headline'), primary, primary),
+        'shown': tally.shown, 'answered': tally.answered, 'skipped': skipped,
+        'not_shown': max(responses - tally.shown, 0), 'drop_off_rate': _ratio(skipped, tally.shown),
+    }
+    kind = question['type']
+    if kind in SCALE_TYPES:
+        out.update(_scale_result(question, tally.counts))
+    elif kind in (SINGLE, MULTI):
+        out.update(_select_result(question, tally))
+    elif kind == OPEN_TEXT:
+        out.update({'count': tally.answered, 'latest': _newest(tally.latest)})
+    elif kind == CONSENT:
+        out['accepted'] = tally.answered
+    elif kind == CONTACT:
+        out['contacts'] = tally.answered
+    return out
+
+
+def _removed_questions(questions: Sequence[Mapping[str, Any]], rows: Sequence[ResultRow]) -> list[dict[str, Any]]:
+    """Answers to question ids the current revision no longer has: id and count (their text is in the snapshots)."""
+    current = {question['id'] for question in questions}
+    counts: dict[str, int] = {}
+    for row in rows:
+        for qid in row.answers:
+            if qid not in current:
+                counts[qid] = counts.get(qid, 0) + 1
+    return [{'id': qid, 'answered': n} for qid, n in sorted(counts.items())]
+
+
+#: A day row's ``left`` counter per question: ``left:{question_id}`` (lambda/api/feedback_form_handler.py writes it).
+LEFT_COUNTER_PREFIX = 'left:'
+
+
+def _count(value: object) -> int:
+    return int(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0
+
+
+def funnel_counts(daily: Iterable[Mapping[str, Any]], *, include_test: bool) -> dict[str, Any]:
+    """The widget's signals, summed over the form's daily counter rows: ``opened``, and ``left`` per question (the
+    furthest question of each visit that left without submitting; the handler moves a visit's count when it goes
+    further and takes it back when it submits). A question whose total is not above 0 is left out. A test row
+    (``is_test``) counts only when ``include_test``."""
+    opened, by_question = 0, {}
+    for row in daily:
+        if row.get('is_test') and not include_test:
+            continue
+        opened += _count(row.get('opened'))
+        for name, value in row.items():
+            if name.startswith(LEFT_COUNTER_PREFIX) and len(name) > len(LEFT_COUNTER_PREFIX):
+                question_id = name[len(LEFT_COUNTER_PREFIX):]
+                by_question[question_id] = by_question.get(question_id, 0) + _count(value)
+    return {'opened': opened, 'left': {qid: n for qid, n in by_question.items() if n > 0}}
+
+
+def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow],
+                  funnel: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """``{responses, test_responses, last_response_at, questions, endings, hidden, removed_questions, funnel?}``."""
+    primary = str(definition.get('language') or 'en')
+    questions = [question for question in definition.get('questions') or [] if isinstance(question, Mapping)]
+    tallies = [_Tally(question) for question in questions]
+    endings = {ending['id']: 0 for ending in definition.get('endings') or []}
+    hidden = {hidden['id']: 0 for hidden in definition.get('hidden_fields') or []}
+    kept = list(rows)
+    for row in kept:
+        for tally in tallies:
+            tally.add(row)
+        if row.ending_id in endings:
+            endings[str(row.ending_id)] += 1
+        for hid in row.hidden:
+            if hid in hidden:
+                hidden[hid] += 1
+    out: dict[str, Any] = {
+        'responses': len(kept), 'test_responses': sum(row.is_test for row in kept),
+        'last_response_at': max((row.created_at for row in kept), default=None),
+        'questions': [_question_result(q, t, primary, len(kept)) for q, t in zip(questions, tallies, strict=True)],
+        'endings': endings, 'hidden': hidden, 'removed_questions': _removed_questions(questions, kept),
+    }
+    if funnel is not None:
+        out['funnel'] = {**funnel, 'completed': len(kept)}
+    return out
+
+
+# ── The forms list's headline figure ───────────────────────────────────────────────────────────────────────────
+
+def _measuring_question(definition: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    return next((q for q in definition.get('questions') or [] if isinstance(q, Mapping) and q.get('type') in
+                 (NPS, CSAT, CES, RATING)), None)
+
+
+def headline(definition: Mapping[str, Any]) -> Callable[[Iterable[ResultRow]], dict[str, Any] | None]:
+    """The form card's headline figure over rows: its first measuring question's NPS score, CSAT %, or average
+    (rating, CES), with the count it is over; None for a form with no such question or no answer to it."""
+    question = _measuring_question(definition)
+
+    def figure(rows: Iterable[ResultRow]) -> dict[str, Any] | None:
+        if question is None:
+            return None
+        counts: dict[str, int] = {}
+        for row in rows:
+            value = _fitting(question, row.answers.get(question['id']))
+            if value is not None:
+                counts[str(value)] = counts.get(str(value), 0) + 1
+        total = sum(counts.values())
+        if not total:
+            return None
+        result = _scale_result(question, counts)
+        kind = question['type']
+        value = result[kind]['score'] if kind in (NPS, CSAT) else result['average']
+        return {'question_id': question['id'], 'type': kind, 'value': value, 'count': total,
+                'scale_max': result['scale_max']}
+    return figure

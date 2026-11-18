@@ -4,7 +4,8 @@
  *
  * Audit, tombstone and delete-record rows live under partition keys that start with `AUDIT#`, in the tables that
  * hold them ({@link AuditRowTables}): voc-aggregates (`AUDIT#retention`, `AUDIT#tombstone#<source>`, written by
- * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API; `AUDIT#platform-admins`,
+ * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API, and for a deployment
+ * feedback form, written by the feedback forms API (7.55.00); `AUDIT#platform-admins`,
  * a grant or revoke of the platform-admins group, written by the users API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
@@ -92,6 +93,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // The settings API (and its assist twin, same role): the AUDIT#delete row of an archived design reference's copies.
   { table: 'aggregatesTable', rolePathSuffix: '/SettingsLambdaRole', partitionKey: 'AUDIT#delete' },
   // The users API: a grant or revoke of the platform-admins group (AUDIT#platform-admins, lambda/api/users_handler.py).
+  // The feedback forms (7.55.00): a deployment form's delete (AUDIT#delete, lambda/api/feedback_form_handler.py through
+  // shared/delete_audit.py record_delete_once; a workspace form's goes to voc-workspaces, below).
+  { table: 'aggregatesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#delete' },
   { table: 'aggregatesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#platform-admins' },
   // Project, persona, document, revision, product doc and comment deletes (the projects API and its assist twin);
   // a replace regeneration's removed personas (the persona generator).

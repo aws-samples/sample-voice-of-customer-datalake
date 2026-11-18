@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from boto3.dynamodb.conditions import Key
 
-from jobs.retention import handler, members
+from jobs.retention import form_tests, handler, members
 from shared.digests import sha256_hex
 
 JOB_ID = 'er_00000000abcd'
@@ -109,7 +109,10 @@ def test_a_row_removed_since_the_scan_is_not_counted(aws, worker_context):
 def test_the_member_pass_hands_over_with_its_cursor(aws, worker_context, invoke_mock):
     _seed(aws)
     event = _job(aws, 'email', 'jane@example.com')
-    with patch.object(members, 'PAGE_SIZE', 1), patch.object(handler, 'has_time_left', side_effect=[True] * 3 + [False]):
+    # The clock's answers are counted for the member pass: the forms' test responses (none here, form_tests.py, its
+    # own suite) are left out so their walk of the listing reads none of them.
+    with patch.object(members, 'PAGE_SIZE', 1), patch.object(handler, 'has_time_left', side_effect=[True] * 3 + [False]), \
+            patch.object(form_tests, 'row_matcher', return_value=None):
         assert handler.handle_event(event, worker_context)['status'] == 'continued'
     payload = invoke_mock.call_args.args[1]
     assert payload['phase'] == 'members'

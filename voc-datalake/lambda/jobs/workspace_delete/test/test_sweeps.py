@@ -269,7 +269,7 @@ class TestCounters:
     ('logs', ['LOGS#validation#webscraper', 'LOGS#processing#feedback_form']),
     ('scraper_runs', ['SCRAPER_RUN#s1', 'SCRAPER_RUN#s0']),
     ('plugin_configs', ['PLUGIN_CONFIG', 'PLUGIN_CONFIG#HISTORY']),
-    ('feedback_forms', ['FEEDBACK_FORM']),
+    ('feedback_forms', ['FEEDBACK_FORM', 'FEEDBACK_FORM_TEST']),
     ('import_runs', ['IMPORT_RUN', 'IMPORT_RUN#run1']),
     ('erasure_jobs', ['JOB#erasure']),
     ('web_review_methods', ['WEB_REVIEWS#METHODS']),
@@ -329,6 +329,24 @@ class TestTheOwnerListKind:
 def test_the_forms_sweep_lists_each_form_for_its_lookup_row(seeded):
     run(seeded, 'feedback_forms')
     assert list(inventory(_delete(seeded).ctx, 'form')) == ['ff_1']
+
+
+def test_a_forms_own_rows_and_the_draft_counters_go_with_the_partition_and_name_no_other_form(seeded):
+    """Schema version 2 (7.55.00): a form's revision snapshots, funnel counters and visit rows, and the AI drafts'
+    hourly counters, live in the forms partition, and its test responses in the test partition beside it, so the
+    sweep deletes both; only the FORM# rows name a form."""
+    partition, tests = f'WS#{WS}#FEEDBACK_FORM', f'WS#{WS}#FEEDBACK_FORM_TEST'
+    for pk, sk, extra in ((partition, 'FORMREV#ff_1#000001', {'form_id': 'ff_1'}),
+                          (partition, 'FORMFUNNEL#ff_1#2026-11-17', {'form_id': 'ff_1'}),
+                          (partition, 'FORMSESSION#ff_1#0123456789abcdef01234567', {'form_id': 'ff_1'}),
+                          (partition, 'FORMDRAFT#sub-1#2026-11-17T10', {}),
+                          (tests, 'ff_1#2026-11-17T10:00:00+00:00#r1', {'form_id': 'ff_1'})):
+        seeded.aggregates.put_item(Item={'pk': pk, 'sk': sk, **extra})
+    run(seeded, 'feedback_forms')
+    assert list(inventory(_delete(seeded).ctx, 'form')) == ['ff_1']
+    for pk in (partition, tests):
+        assert seeded.aggregates.query(KeyConditionExpression='pk = :p',
+                                       ExpressionAttributeValues={':p': pk})['Items'] == []
 
 
 class TestWatermarks:

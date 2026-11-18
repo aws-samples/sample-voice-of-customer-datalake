@@ -142,19 +142,10 @@ class TestANewFormIsStoredWithTheDocumentedDefaults:
     @pytest.mark.parametrize(('field', 'value'), [
         ('name', 'New Feedback Form'),
         ('enabled', False),
-        ('title', 'Share Your Feedback'),
-        ('description', 'We value your opinion.'),
-        ('question', 'How was your experience?'),
-        ('placeholder', 'Tell us about your experience...'),
-        ('rating_enabled', True),
-        ('rating_type', 'stars'),
-        ('rating_max', 5),
-        ('submit_button_text', 'Submit Feedback'),
-        ('success_message', 'Thank you for your feedback!'),
+        ('schema_version', 2),
+        ('revision', 1),
         ('theme', {'primary_color': '#8e48ff', 'background_color': '#ffffff',
                    'text_color': '#19161d', 'border_radius': '8px'}),
-        ('collect_email', False),
-        ('collect_name', False),
         ('custom_fields', []),
         ('category', ''),
         ('subcategory', ''),
@@ -166,6 +157,27 @@ class TestANewFormIsStoredWithTheDocumentedDefaults:
         assert response['statusCode'] == 200
         assert payload['form'][field] == value
         assert table.put_item.call_args.kwargs['Item'][field] == value
+
+    def test_an_empty_body_is_the_version_1_defaults_migrated(self, table, api_gateway_event, lambda_context):
+        _, payload = _route(api_gateway_event, lambda_context, 'POST', '/feedback-forms', body={})
+        stored = table.put_item.call_args.kwargs['Item']
+        definition = {key: stored[key] for key in ('language', 'languages', 'welcome', 'questions', 'hidden_fields',
+                                                  'endings')}
+        assert definition == {
+            'language': 'en', 'languages': ['en'],
+            'welcome': {'enabled': True, 'title': {'en': 'Share Your Feedback'},
+                        'description': {'en': 'We value your opinion.'}},
+            'questions': [
+                {'id': 'q_rating', 'type': 'rating', 'headline': {'en': 'How was your experience?'},
+                 'required': True, 'scale': 'star', 'range': 5},
+                {'id': 'q_text', 'type': 'open_text', 'headline': {'en': 'Tell us more'}, 'required': True,
+                 'long': True, 'input_type': 'text', 'placeholder': {'en': 'Tell us about your experience...'}},
+            ],
+            'hidden_fields': [], 'endings': [{'id': 'end_thanks', 'title': {'en': 'Thank you for your feedback!'}}],
+        }
+        assert not set(h.fv2.V1_FIELDS) & set(stored)
+        assert stored['settings'] == {'test': {'link_enabled': False, 'record': 'tag'}}
+        assert payload['form']['questions'] == definition['questions']
 
     def test_a_dashboard_created_form_is_a_standard_one(self, table, api_gateway_event, lambda_context):
         _, payload = _route(api_gateway_event, lambda_context, 'POST', '/feedback-forms', body={})
@@ -261,7 +273,8 @@ class TestEveryRefusalNamesItsCause:
 
 @pytest.mark.usefixtures('sqs')
 class TestTheAnchorTellsItsOutcomeApart:
-    FORM: ClassVar[dict] = {'form_id': FORM_ID, 'enabled': True, 'brand_name': ''}
+    # Answered already: its submit writes no has_responses mark (7.55.00), only the anchor this class is about.
+    FORM: ClassVar[dict] = {'form_id': FORM_ID, 'enabled': True, 'brand_name': '', 'has_responses': True}
 
     def _submit_under_brand(self, table, api_gateway_event, lambda_context):
         table.get_item.return_value = {'Item': dict(self.FORM)}
@@ -334,26 +347,47 @@ TRACED_ROUTES = ('list_forms', 'create_form', 'update_form', 'delete_form',
                  'get_form_config_by_id', 'submit_form_feedback', 'get_form_iframe',
                  'get_form_submissions', 'get_form_stats')
 FORM_KEY = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{FORM_ID}'}
-WIDGET_FIELDS = ('enabled', 'title', 'description', 'question', 'placeholder', 'rating_enabled', 'rating_type',
-                 'rating_max', 'submit_button_text', 'success_message', 'theme', 'collect_email', 'collect_name',
-                 'custom_fields', 'brand_name')
-FORM_ONLY_FIELDS = ('form_id', 'name', 'category', 'subcategory', 'project_id', 'document_id', 'form_type',
-                    'created_at', 'updated_at', 'dimension_defaults', 'tags')
-EMPTY_FORM = {
-    'form_id': '', 'name': '', 'enabled': False, 'title': '', 'description': '', 'question': '',
-    'placeholder': '', 'rating_enabled': True, 'rating_type': 'stars', 'rating_max': 5,
-    'submit_button_text': '', 'success_message': '', 'theme': {}, 'collect_email': False,
-    'collect_name': False, 'custom_fields': [], 'category': '', 'subcategory': '', 'project_id': '',
-    'document_id': '', 'form_type': 'standard', 'brand_name': '', 'created_at': '', 'updated_at': '',
-    'dimension_defaults': {}, 'tags': [],
+#: A sparse version 1 record ({}) as version 2: its rating and text steps, the default ending.
+EMPTY_DEFINITION = {
+    'language': 'en', 'languages': ['en'], 'welcome': {'enabled': False},
+    'questions': [
+        {'id': 'q_rating', 'type': 'rating', 'headline': {'en': 'How was your experience?'}, 'required': True,
+         'scale': 'star', 'range': 5},
+        {'id': 'q_text', 'type': 'open_text', 'headline': {'en': 'Tell us more'}, 'required': True, 'long': True,
+         'input_type': 'text'},
+    ],
+    'hidden_fields': [], 'endings': [{'id': 'end_thanks', 'title': {'en': 'Thank you!'}}],
 }
-
-
-def _distinct_item(fields: tuple[str, ...]) -> dict:
-    """A stored record with a value no default could produce in every field."""
-    item: dict = {field: f'stored-{field}' for field in fields}
-    item['rating_max'] = 7
-    return item
+EMPTY_WIDGET = {'enabled': False, 'schema_version': 2, 'revision': 1, **EMPTY_DEFINITION, 'language_assumed': True,
+                'theme': {}}
+WIDGET_FIELDS = tuple(EMPTY_WIDGET)
+EMPTY_FORM = {
+    'form_id': '', 'name': '', **EMPTY_WIDGET,
+    'settings': {'test': {'link_enabled': False, 'record': 'tag', 'token_issued': False}},
+    'custom_fields': [], 'category': '', 'subcategory': '', 'project_id': '', 'document_id': '',
+    'dimension_defaults': {}, 'tags': [], 'form_type': 'standard', 'brand_name': '', 'created_at': '',
+    'updated_at': '', 'updated_by': '',
+    # Never answered; and a record without schema_version 2 is a version 1 one, served migrated.
+    'has_responses': False, 'migrated_from': 1,
+}
+#: A stored version 2 record with a value no default could produce in every field.
+V2_ITEM = {
+    'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{FORM_ID}', 'form_id': FORM_ID, 'name': 'Internal name', 'enabled': True,
+    'schema_version': 2, 'revision': 4, 'language': 'pl', 'languages': ['pl', 'en'],
+    'welcome': {'enabled': True, 'title': {'pl': 'Witaj', 'en': 'Hello'}},
+    'questions': [{'id': 'q_reason', 'type': 'single_select', 'headline': {'pl': 'Dlaczego?'}, 'required': True,
+                   'options': [{'code': 'price', 'label': {'pl': 'Cena'},
+                                'category': {'category': 'pricing', 'subcategory': 'too_high'}}],
+                   'other': {'enabled': False}, 'shuffle': 'none', 'display': 'auto'}],
+    'hidden_fields': [{'id': 'user_id', 'label': 'User'}],
+    'endings': [{'id': 'end_bye', 'title': {'pl': 'Dzięki'}}],
+    'theme': {'primary_color': '#123456'},
+    'settings': {'test': {'link_enabled': True, 'record': 'drop', 'token': 'secret-token',
+                          'token_issued_at': '2026-11-17T10:00:00+00:00'}},
+    'custom_fields': [{'id': 'c'}], 'category': 'cat', 'subcategory': 'sub', 'project_id': 'proj-1',
+    'document_id': 'doc-1', 'dimension_defaults': {'product': 'app'}, 'tags': ['vip'], 'form_type': 'standard',
+    'brand_name': 'Acme', 'created_at': 'c-at', 'updated_at': 'u-at', 'updated_by': 'sub-1', 'has_responses': True,
+}
 
 
 @pytest.fixture
@@ -380,18 +414,31 @@ class TestEveryRouteIsTraced:
 class TestTheProjectionsDefaultEveryAbsentField:
     def test_an_empty_record_reads_as_the_documented_blanks(self):
         assert h.item_to_form({}) == EMPTY_FORM
-        assert h.item_to_widget_config({}) == {field: EMPTY_FORM[field] for field in WIDGET_FIELDS}
+        assert h.item_to_widget_config({}) == EMPTY_WIDGET
 
     def test_every_stored_field_is_read_from_its_own_key(self):
-        item = _distinct_item(WIDGET_FIELDS + FORM_ONLY_FIELDS)
-        assert h.item_to_form({**item, 'pk': 'FEEDBACK_FORM'}) == item
-        assert h.item_to_widget_config(item) == {field: item[field] for field in WIDGET_FIELDS}
+        public_question = {**V2_ITEM['questions'][0], 'options': [{'code': 'price', 'label': {'pl': 'Cena'}}]}
+        assert h.item_to_widget_config(V2_ITEM) == {
+            'enabled': True, 'schema_version': 2, 'revision': 4, 'language': 'pl', 'languages': ['pl', 'en'],
+            'welcome': V2_ITEM['welcome'], 'questions': [public_question], 'hidden_fields': [{'id': 'user_id'}],
+            'endings': V2_ITEM['endings'], 'language_assumed': False, 'theme': {'primary_color': '#123456'},
+        }
+        form = h.item_to_form(V2_ITEM)
+        assert form == {
+            **h.item_to_widget_config(V2_ITEM), 'form_id': FORM_ID, 'name': 'Internal name',
+            'questions': V2_ITEM['questions'], 'hidden_fields': V2_ITEM['hidden_fields'],
+            'settings': {'test': {'link_enabled': True, 'record': 'drop', 'token_issued': True,
+                                  'token_issued_at': '2026-11-17T10:00:00+00:00'}},
+            **{key: V2_ITEM[key] for key in ('custom_fields', 'category', 'subcategory', 'project_id', 'document_id',
+                                             'dimension_defaults', 'tags', 'form_type', 'brand_name', 'created_at',
+                                             'updated_at', 'updated_by', 'has_responses')},
+        }
+        assert 'secret-token' not in json.dumps(form)
 
-    @pytest.mark.parametrize('field', ['enabled', 'rating_enabled', 'collect_email', 'collect_name'])
-    def test_a_stored_boolean_wins_over_its_default(self, field):
+    def test_a_stored_boolean_wins_over_its_default(self):
         for value in (True, False):
-            assert h.item_to_form({field: value})[field] is value
-            assert h.item_to_widget_config({field: value})[field] is value
+            assert h.item_to_form({'enabled': value})['enabled'] is value
+            assert h.item_to_widget_config({'enabled': value})['enabled'] is value
 
     def test_a_blank_form_type_reads_as_standard(self):
         assert h.item_to_form({'form_type': ''})['form_type'] == 'standard'
@@ -453,8 +500,10 @@ class TestListingForms:
                            'forms': [h.item_to_form(self.FORMS[i]) for i in (2, 0, 1)]}
         # Strongly consistent: a form deleted a moment ago must not come back in the list.
         # One partition query through shared/scoped_query.py: boto3's `Key('pk').eq('FEEDBACK_FORM')`.
-        table.query.assert_called_once_with(KeyConditionExpression=Key('pk').eq('FEEDBACK_FORM'),
-                                            ConsistentRead=True)
+        # Only the FORM# rows: revision snapshots and test responses (FORMREV#, FORMTEST#) sort after them.
+        table.query.assert_called_once_with(
+            KeyConditionExpression=Key('pk').eq('FEEDBACK_FORM') & Key('sk').begins_with('FORM#'),
+            ConsistentRead=True)
 
     def test_no_items_key_is_no_forms(self, table, api_gateway_event, lambda_context):
         table.query.return_value = {}
@@ -473,7 +522,9 @@ class TestListingForms:
         feedback.query.side_effect = [{'Items': [{'source_channel': 'form_a', 'rating': 4}]}]
         _, payload = self._list(api_gateway_event, lambda_context, {'include': 'stats'})
         assert payload == {'success': True, 'forms': [h.item_to_form({'form_id': 'a', 'brand_name': 'Acme'})],
-                           'stats': {'a': {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1}}}
+                           'stats': {'a': {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1,
+                                           'headline': {'question_id': 'q_rating', 'type': 'rating', 'value': 4.0,
+                                                        'count': 1, 'scale_max': 5}}}}
 
     def test_a_failed_stats_read_still_lists_the_forms(self, table, feedback, logger, metrics,
                                                        api_gateway_event, lambda_context):
@@ -485,6 +536,15 @@ class TestListingForms:
                            'stats_error': 'Failed to fetch form stats'}
         metrics.add_metric.assert_called_once_with(name='FeedbackFormStatsReadFailed', unit='Count', value=1)
         logger.exception.assert_called_once_with('Error fetching stats for the form list: slow')
+
+
+LIST_PROJECTION = ('feedback_id, rating, category, source_platform, source_channel, metadata, '
+                   'source_created_at')
+
+
+def _rating_headline(average: float, count: int = 1) -> dict:
+    """The card figure of a migrated version 1 form: its rating question's average."""
+    return {'question_id': 'q_rating', 'type': 'rating', 'value': average, 'count': count, 'scale_max': 5}
 
 
 class TestTheListStatsReadEachPartitionOnce:
@@ -509,21 +569,21 @@ class TestTheListStatsReadEachPartitionOnce:
                  {'form_id': 'c', 'brand_name': 'Beta'}, {'form_id': ''}, {'form_id': 7}, {}]
         stats = self._stats(forms)
         assert stats == {
-            'a': {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1},
-            'b': {'total_submissions': 1, 'avg_rating': None, 'rating_count': 0},
-            'c': {'total_submissions': 1, 'avg_rating': 3.0, 'rating_count': 1},
+            'a': {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1, 'headline': _rating_headline(5.0)},
+            'b': {'total_submissions': 1, 'avg_rating': None, 'rating_count': 0, 'headline': None},
+            'c': {'total_submissions': 1, 'avg_rating': 3.0, 'rating_count': 1, 'headline': _rating_headline(3.0)},
         }
         acme = {'KeyConditionExpression': Key('pk').eq('SOURCE#Acme'),
                 'FilterExpression': 'source_channel IN (:sc0, :sc1)',
                 'ExpressionAttributeValues': {':sc0': 'form_a', ':sc1': 'form_b'},
-                'ProjectionExpression': 'feedback_id, rating, category, source_platform, source_channel'}
+                'ProjectionExpression': LIST_PROJECTION}
         assert [c.kwargs for c in feedback.query.call_args_list] == [
             acme,
             {**acme, 'ExclusiveStartKey': {'k': 1}},
             {'KeyConditionExpression': Key('pk').eq('SOURCE#Beta'),
              'FilterExpression': 'source_channel IN (:sc0)',
              'ExpressionAttributeValues': {':sc0': 'form_c'},
-             'ProjectionExpression': 'feedback_id, rating, category, source_platform, source_channel'},
+             'ProjectionExpression': LIST_PROJECTION},
         ]
 
     def test_a_source_restricted_caller_counts_only_visible_submissions(self, feedback):
@@ -534,12 +594,13 @@ class TestTheListStatsReadEachPartitionOnce:
         ]}]
         with patch.object(h, 'app'), patch.object(h, 'scope_for_event', return_value=NO_TICKETS):
             stats = h._stats_for_forms([{'form_id': 'a', 'brand_name': 'Acme'}])
-        assert stats == {'a': {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1}}
+        assert stats == {'a': {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1,
+                               'headline': _rating_headline(5.0)}}
 
     def test_a_row_without_a_channel_counts_for_no_form_whatever_its_id(self, feedback):
         feedback.query.side_effect = [{'Items': [{'rating': 1}]}]
         stats = self._stats([{'form_id': 'XXXX', 'brand_name': 'Acme'}])
-        assert stats == {'XXXX': {'total_submissions': 0, 'avg_rating': None, 'rating_count': 0}}
+        assert stats == {'XXXX': {'total_submissions': 0, 'avg_rating': None, 'rating_count': 0, 'headline': None}}
 
     def test_an_in_list_holds_at_most_a_hundred_operands(self, feedback):
         feedback.query.side_effect = [{'Items': []}, {'Items': []}]
@@ -559,11 +620,10 @@ class TestTheCrudRoutesNameEveryOutcome:
         assert payload == {'success': True, 'form': h.item_to_form(table.put_item.call_args.kwargs['Item'])}
 
     def test_a_stored_form_is_listed_whole(self, table, api_gateway_event, lambda_context):
-        item = _distinct_item(WIDGET_FIELDS + FORM_ONLY_FIELDS)
-        table.query.return_value = {'Items': [item]}
+        table.query.return_value = {'Items': [dict(V2_ITEM)]}
         response, payload = _route(api_gateway_event, lambda_context, 'GET', '/feedback-forms')
         assert response['statusCode'] == 200
-        assert payload == {'success': True, 'forms': [item]}
+        assert payload == {'success': True, 'forms': [h.item_to_form(V2_ITEM)]}
 
     @pytest.mark.parametrize(('method', 'path', 'body', 'call', 'message', 'log'), [
         ('POST', '/feedback-forms', {'name': 'N'}, 'put_item', 'Failed to create form', 'Error creating form: boom'),
@@ -576,6 +636,8 @@ class TestTheCrudRoutesNameEveryOutcome:
     ])
     def test_a_failed_write_or_read_is_a_named_500(self, table, logger, api_gateway_event, lambda_context,
                                                    method, path, body, call, message, log):
+        table.get_item.return_value = {'Item': {'form_id': FORM_ID}}
+        table.query.return_value = {'Items': []}
         getattr(table, call).side_effect = RuntimeError('boom')
         response, payload = _route(api_gateway_event, lambda_context, method, path,
                                    path_params={'form_id': FORM_ID}, body=body)
@@ -592,13 +654,15 @@ class TestTheCrudRoutesNameEveryOutcome:
         table.get_item.assert_called_once_with(Key=FORM_KEY)
 
     def test_the_public_config_is_the_widget_projection(self, table, api_gateway_event, lambda_context):
-        item = _distinct_item(WIDGET_FIELDS + FORM_ONLY_FIELDS)
-        table.get_item.return_value = {'Item': item}
-        _, payload = _route(api_gateway_event, lambda_context, 'GET', f'/feedback-forms/{FORM_ID}/config',
-                            path_params={'form_id': FORM_ID})
-        assert payload == {'success': True, 'config': h.item_to_widget_config(item)}
+        table.get_item.return_value = {'Item': dict(V2_ITEM)}
+        response, payload = _route(api_gateway_event, lambda_context, 'GET', f'/feedback-forms/{FORM_ID}/config',
+                                   path_params={'form_id': FORM_ID})
+        assert payload == {'success': True, 'config': h.item_to_widget_config(V2_ITEM)}
+        for private in ('Internal name', 'secret-token', 'pricing', 'proj-1', 'doc-1', 'sub-1', 'User'):
+            assert private not in response['body']
 
     def test_a_delete_removes_the_forms_key_and_says_so(self, table, logger, api_gateway_event, lambda_context):
+        table.query.return_value = {'Items': []}
         response, payload = _route(api_gateway_event, lambda_context, 'DELETE', f'/feedback-forms/{FORM_ID}',
                                    path_params={'form_id': FORM_ID})
         assert (response['statusCode'], payload) == (200, {'success': True})
@@ -611,43 +675,58 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         return _route(api_gateway_event, lambda_context, 'PUT', f'/feedback-forms/{FORM_ID}',
                       path_params={'form_id': FORM_ID}, body=body)
 
-    def test_the_expression_names_each_sent_field_then_the_timestamp(self, table, api_gateway_event, lambda_context):
+    def test_the_expression_sets_each_sent_field_conditional_on_the_revision_read(
+            self, table, api_gateway_event, lambda_context):
+        table.get_item.return_value = {'Item': dict(V2_ITEM)}
         table.update_item.return_value = {'Attributes': {'form_id': FORM_ID, 'name': 'N'}}
         before = datetime.now(UTC)
         response, payload = self._put(api_gateway_event, lambda_context,
-                                      {'enabled': True, 'name': 'N', 'brand_name': 'ignored'})
+                                      {'enabled': False, 'name': 'N', 'brand_name': 'ignored', 'revision': 99})
         after = datetime.now(UTC)
         assert response['statusCode'] == 200
         assert payload == {'success': True, 'form': h.item_to_form({'form_id': FORM_ID, 'name': 'N'})}
         kwargs = table.update_item.call_args.kwargs
-        stamp = kwargs['ExpressionAttributeValues'][':updated_at']
-        assert before <= datetime.fromisoformat(stamp) <= after
-        assert kwargs == {
-            'Key': FORM_KEY,
-            'UpdateExpression': 'SET #name = :name, #enabled = :enabled, #updated_at = :updated_at',
-            'ExpressionAttributeNames': {'#updated_at': 'updated_at', '#name': 'name', '#enabled': 'enabled'},
-            'ExpressionAttributeValues': {':updated_at': stamp, ':name': 'N', ':enabled': True},
-            'ReturnValues': 'ALL_NEW',
-            # Never an upsert: a form that is not there is a 404, not a new stub row.
-            'ConditionExpression': 'attribute_exists(sk)',
-        }
+        names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
+        sets = {names[f'#f{i}']: values[f':f{i}'] for i in range(len(values) - 1)}
+        assert before <= datetime.fromisoformat(sets.pop('updated_at')) <= after
+        # The definition is written back as read (no change, so no new revision and no snapshot).
+        assert sets == {'name': 'N', 'enabled': False, 'schema_version': 2, 'revision': 4, 'updated_by': 'test-user-id',
+                        **{key: V2_ITEM[key] for key in h.fv2.DEFINITION_FIELDS}}
+        assert kwargs['ConditionExpression'] == 'attribute_exists(sk) AND #revision = :expected'
+        assert (names['#revision'], values[':expected']) == ('revision', 4)
+        assert ' REMOVE ' not in kwargs['UpdateExpression']
+        assert kwargs['Key'] == FORM_KEY
+        assert kwargs['ReturnValues'] == 'ALL_NEW'
+        table.put_item.assert_not_called()
 
     def test_an_update_of_a_form_that_is_not_there_is_a_404(self, table, api_gateway_event, lambda_context):
-        table.update_item.side_effect = ClientError({'Error': {'Code': 'ConditionalCheckFailedException'}},
-                                                   'UpdateItem')
+        table.get_item.return_value = {}
         response, payload = self._put(api_gateway_event, lambda_context, {'title': 'T'})
         assert (response['statusCode'], payload['error']) == (404, 'Form not found')
+        table.update_item.assert_not_called()
+
+    def test_a_form_deleted_meanwhile_is_a_404_and_one_saved_meanwhile_a_409(self, table, api_gateway_event,
+                                                                            lambda_context):
+        table.update_item.side_effect = _conditional_check_failed()
+        table.get_item.side_effect = [{'Item': dict(V2_ITEM)}, {}]
+        response, _ = self._put(api_gateway_event, lambda_context, {'name': 'N'})
+        assert response['statusCode'] == 404
+        table.get_item.side_effect = [{'Item': dict(V2_ITEM)}, {'Item': dict(V2_ITEM)}]
+        response, payload = self._put(api_gateway_event, lambda_context, {'name': 'N'})
+        assert (response['statusCode'], payload['code']) == (409, 'revision_conflict')
 
     def test_an_update_answer_without_attributes_is_a_blank_form(self, table, api_gateway_event, lambda_context):
+        table.get_item.return_value = {'Item': {'form_id': FORM_ID}}
         table.update_item.return_value = {}
         _, payload = self._put(api_gateway_event, lambda_context, {'title': 'T'})
         assert payload == {'success': True, 'form': EMPTY_FORM}
 
-    @pytest.mark.parametrize('body', [None, {'brand_name': 'x'}])
+    @pytest.mark.parametrize('body', [None, {'brand_name': 'x'}, {'revision': 3}])
     def test_nothing_updatable_is_refused_by_name(self, table, api_gateway_event, lambda_context, body):
         response, payload = self._put(api_gateway_event, lambda_context, body)
         assert response['statusCode'] == 400
         assert payload == {'success': False, 'error': 'No fields to update'}
+        table.get_item.assert_not_called()
         table.update_item.assert_not_called()
 
 
@@ -745,7 +824,7 @@ class TestASubmissionIsQueuedWithItsForm:
         table.get_item.return_value = {'Item': form}
         response, payload = _submit(api_gateway_event, lambda_context, {'text': 'ok'})
         assert response['statusCode'] == 400
-        assert payload == {'success': False, 'error': 'This form is not enabled'}
+        assert payload == {'success': False, 'error': 'This form is not enabled', 'code': 'form_off'}
 
     @pytest.mark.usefixtures('sqs')
     def test_a_body_that_is_not_an_object_is_refused_by_name(self, table, api_gateway_event, lambda_context):
@@ -805,7 +884,8 @@ class TestTheIframePage:
         assert '<body>\n  <main id="voc-feedback-form"></main>\n  <script>\n  WIDGET();\n' in body
         options = ('{"container": "#voc-feedback-form", "apiEndpoint": "https://api.example/prod", '
                    f'"formId": "{FORM_ID}", "configEndpoint": "/feedback-forms/{FORM_ID}/config", '
-                   f'"submitEndpoint": "/feedback-forms/{FORM_ID}/submit"}}')
+                   f'"submitEndpoint": "/feedback-forms/{FORM_ID}/submit", '
+                   f'"eventsEndpoint": "/feedback-forms/{FORM_ID}/events"}}')
         assert f'  VoCFeedbackForm.init({options});\n  </script>\n</body>\n</html>' in body
         assert body.endswith('</html>')
 
@@ -939,8 +1019,9 @@ class TestTheStatsRoute:
         feedback.query.side_effect = [{'Items': [{'rating': 5}], 'LastEvaluatedKey': {'k': 1}}, {'Items': [{}]}]
         _, payload = self._get(table, api_gateway_event, lambda_context)
         assert payload == {'success': True, 'form_id': FORM_ID,
-                           'stats': {'total_submissions': 2, 'avg_rating': 5.0, 'rating_count': 1}}
-        projection = 'feedback_id, rating, category, source_platform'
+                           'stats': {'total_submissions': 2, 'avg_rating': 5.0, 'rating_count': 1,
+                                     'headline': _rating_headline(5.0)}}
+        projection = 'feedback_id, rating, category, source_platform, metadata, source_created_at'
         assert [c.kwargs for c in feedback.query.call_args_list] == [
             _query(ProjectionExpression=projection),
             _query(ProjectionExpression=projection, ExclusiveStartKey={'k': 1})]
@@ -951,7 +1032,8 @@ class TestTheStatsRoute:
                                                  {'rating': 1, 'source_platform': 'support_tickets'}]}]
         with patch.object(h, 'scope_for_event', return_value=NO_TICKETS):
             _, payload = self._get(table, api_gateway_event, lambda_context)
-        assert payload['stats'] == {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1}
+        assert payload['stats'] == {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1,
+                                    'headline': _rating_headline(4.0)}
 
     def test_a_failed_query_is_counted_logged_and_named(self, table, feedback, logger, metrics,
                                                          api_gateway_event, lambda_context):
@@ -994,15 +1076,16 @@ class TestEveryBoundAcceptsItsLimit:
 
     def test_every_editable_field_can_be_updated(self, table, api_gateway_event, lambda_context):
         table.update_item.return_value = {'Attributes': {}}
-        body: dict[str, object] = {field: f'v-{field}' for field in EMPTY_FORM if field not in NOT_UPDATABLE}
-        # The two label fields are validated (against an empty dimensions config here).
-        table.get_item.return_value = {}
-        # The theme is a checked object too (shared/form_theme.py).
+        body: dict[str, object] = {field: f'v-{field}' for field in h.UPDATABLE_FIELDS}
+        # The two label fields are validated (against an empty dimensions config here), the theme too.
         body.update(dimension_defaults={}, tags=['t'], theme={'primary_color': '#8e48ff'})
+        table.get_item.side_effect = lambda **kwargs: {'Item': dict(V2_ITEM)} if kwargs['Key'] == FORM_KEY else {}
         _route(api_gateway_event, lambda_context, 'PUT', f'/feedback-forms/{FORM_ID}',
                path_params={'form_id': FORM_ID}, body=body)
-        names = table.update_item.call_args.kwargs['ExpressionAttributeNames']
-        assert names == {'#updated_at': 'updated_at', **{f'#{field}': field for field in body}}
+        kwargs = table.update_item.call_args.kwargs
+        written = {kwargs['ExpressionAttributeNames'][name]: kwargs['ExpressionAttributeValues'][name.replace('#', ':')]
+                   for name in kwargs['ExpressionAttributeNames'] if name.startswith('#f')}
+        assert {field: written[field] for field in body} == body
 
     @pytest.mark.parametrize(('form_id', 'status'), [('a' * 64, 200), ('a' * 65, 404)])
     def test_a_form_id_is_at_most_64_characters(self, table, api_gateway_event, lambda_context, form_id, status):
@@ -1011,9 +1094,9 @@ class TestEveryBoundAcceptsItsLimit:
                              path_params={'form_id': form_id})
         assert response['statusCode'] == status
 
-    @pytest.mark.parametrize(('stored', 'served'), [(1, 1), (0, 1), (10, 10), (11, 10)])
-    def test_a_stored_rating_max_is_clamped_to_one_through_ten(self, stored, served):
-        assert h._rating_max({'rating_max': stored}) == served
+    @pytest.mark.parametrize(('stored', 'served'), [(1, 3), (0, 3), (10, 10), (11, 10), (6, 7)])
+    def test_a_stored_rating_max_migrates_to_the_next_range_the_schema_has(self, stored, served):
+        assert h.fv2.migrate_v1({'rating_max': stored})['questions'][0]['range'] == served
 
     @pytest.mark.parametrize('body', [
         {'text': 'x' * 10_000},

@@ -7,7 +7,7 @@ import type { AssistantRunContext, ServerToolDefinition } from '../../types.js';
 import type { ApiCall } from '../internal-api.js';
 import type { ToolDeps } from '../deps.js';
 import { isRecord } from '../../../lib/is-record.js';
-import { jsonResult, pick } from '../format.js';
+import { clip, jsonResult, pick } from '../format.js';
 import { idProperty, idSchema, parseToolInput, toolSpec } from '../spec.js';
 import { recordsAt, toFeedbackSources } from './feedback-shape.js';
 import { getSettingsRoute, seg, serverTool } from './common.js';
@@ -22,11 +22,53 @@ const formIdInput = z.object({ form_id: idSchema }).strict();
 const submissionsInput = z.object({ form_id: idSchema, limit: z.number().int().min(1).max(50).optional() }).strict();
 const scraperIdInput = z.object({ scraper_id: idSchema }).strict();
 
+/**
+ * A form's own fields the model reads. `GET /feedback-forms` answers schema version 2 since 7.55.00 (a version 1 form
+ * served migrated, its 7.54.00 `text_question` and `language` then the text question's headline and the primary
+ * language), so its definition is summarised by `formDefinition` rather than passed on: never the option routing, a
+ * test token (the API never lists one) or a whole translation set.
+ */
 const FORM_FIELDS = [
-  'form_id', 'name', 'enabled', 'title', 'description', 'question', 'placeholder', 'rating_enabled', 'rating_type',
-  'rating_max', 'submit_button_text', 'success_message', 'collect_email', 'collect_name', 'category', 'subcategory',
-  'project_id', 'document_id', 'created_at', 'updated_at',
+  'form_id', 'name', 'enabled', 'revision', 'language', 'languages', 'language_assumed', 'has_responses',
+  'category', 'subcategory', 'project_id', 'document_id', 'dimension_defaults', 'tags', 'created_at', 'updated_at',
 ] as const;
+const FORM_TEXT_CHARS = 200;
+const FORM_OPTION_CODES = 20;
+
+/** An I18nText in the form's primary language (else its first text), clipped; undefined when it has none. */
+function primaryText(value: unknown, primary: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const text = typeof value[primary] === 'string' ? value[primary] : Object.values(value).find((v) => typeof v === 'string');
+  return typeof text === 'string' && text !== '' ? clip(text, FORM_TEXT_CHARS) : undefined;
+}
+
+const recordsIn = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
+
+/** The definition as the model needs it to talk about a form: what each question asks and how, its endings, the ids
+ * of its hidden fields, the welcome title and the test link's state. */
+function formDefinition(form: Record<string, unknown>): Record<string, unknown> {
+  const primary = typeof form['language'] === 'string' ? form['language'] : 'en';
+  const welcome = isRecord(form['welcome']) && form['welcome']['enabled'] === true ? primaryText(form['welcome']['title'], primary) : undefined;
+  const questions = recordsIn(form['questions']).map((question) => {
+    const codes = recordsIn(question['options']).map((option) => option['code']).filter((code) => typeof code === 'string');
+    const rules = Array.isArray(question['logic']) ? question['logic'].length : 0;
+    return {
+      id: question['id'], type: question['type'], headline: primaryText(question['headline'], primary),
+      required: question['required'] === true,
+      ...(codes.length > 0 ? { options: codes.slice(0, FORM_OPTION_CODES) } : {}),
+      ...(rules > 0 ? { rules } : {}),
+    };
+  });
+  const endings = recordsIn(form['endings']).map((ending) => ({ id: ending['id'], title: primaryText(ending['title'], primary) }));
+  const hidden = recordsIn(form['hidden_fields']).map((field) => field['id']).filter((id) => typeof id === 'string');
+  const settings = isRecord(form['settings']) && isRecord(form['settings']['test']) ? form['settings']['test'] : null;
+  return {
+    ...(welcome === undefined ? {} : { welcome_title: welcome }),
+    questions, endings,
+    ...(hidden.length > 0 ? { hidden_fields: hidden } : {}),
+    ...(settings === null ? {} : { test_link: { link_enabled: settings['link_enabled'] === true, record: settings['record'] } }),
+  };
+}
 
 const SUBMISSION_FIELDS = [
   'feedback_id', 'original_text', 'rating', 'sentiment_label', 'sentiment_score', 'category', 'created_at', 'persona_name',
@@ -75,12 +117,13 @@ function getter(deps: ToolDeps): Invoke {
 function formsTools(get: Invoke): ServerToolDefinition[] {
   const list = serverTool('list_feedback_forms', 'forms', toolSpec(
     'list_feedback_forms',
-    'All embeddable feedback forms with their settings (enabled, title, question, rating, linked project).',
+    'All embeddable feedback forms: their settings (enabled, language, labels, linked project) and questions '
+      + '(id, type, headline, option codes), endings, hidden fields and test link.',
     {},
   ), async (input, ctx) => {
     parseToolInput(noInput, input);
     const forms = recordsAt(await get({ fn: 'feedbackForms', path: '/feedback-forms', resource: '/feedback-forms' }, ctx), 'forms');
-    return { content: jsonResult({ count: forms.length, forms: forms.map((form) => pick(form, FORM_FIELDS, 300)) }) };
+    return { content: jsonResult({ count: forms.length, forms: forms.map((form) => ({ ...pick(form, FORM_FIELDS, 300), ...formDefinition(form) })) }) };
   });
 
   const stats = serverTool('get_feedback_form_stats', 'forms', toolSpec(

@@ -151,10 +151,13 @@ MALFORMED_ID_COUNTER: Final = 'project_ids_malformed'
 # The product documents an erasure by email could not judge (an image, a kind it does not read, text it could not
 # read or not extracted yet), each listed under ``files_not_checked`` (jobs/retention/project_people.py).
 DOCS_NOT_CHECKED_COUNTER: Final = 'product_docs_not_checked'
+# A feedback form's test responses a run deleted (the deployment's and the workspaces' forms partitions, never feedback
+# items: jobs/retention/form_tests.py, since 7.55.00's AI review).
+FORM_TEST_COUNTER: Final = 'form_test_responses_deleted'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
                                     EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
-                                    DOCS_NOT_CHECKED_COUNTER)
+                                    DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

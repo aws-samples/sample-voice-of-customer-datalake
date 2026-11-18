@@ -53,6 +53,7 @@ are listed there with their reason).
 | `E2E_AUTH_DIR` (optional) | Saved sessions (default `$E2E_OUT/.auth`, or `e2e/.auth` without `E2E_OUT`) |
 | `E2E_KEEP_AUTH=1` (optional) | Keep the saved sessions after the run (default: the cleanup deletes the run's own `.auth` folder) |
 | `E2E_SCREENS` (optional) | Screenshot directory (default `$E2E_OUT/screens`) |
+| `E2E_SHOTS` (optional) | `feedback-forms-v2.spec.ts`'s full-page screenshot of every screen and state, `<nnn>-<step>.png` in the order taken (default `$E2E_SCREENS/feedback-forms-v2`) |
 | `E2E_TRACK` (optional) | QA track tag (`s1`…). Run ids become `<track>-<epoch ms>`; the opt-in leftover sweep then reaches only `e2e-<track>-…` names |
 | `E2E_RAW_BUCKET` (optional) | The raw-data bucket for the s3 avatar sweep proof; default: the `RawDataBucketName` output of `E2E_CORE_STACK` (default `VocCoreStack`), read with a read-only `describe-stacks`. Without either, s3 step 12 still deletes the project but skips the S3 proof and says why |
 | `E2E_CORE_STACK` (optional) | The core stack name for that lookup (`<prefix>-VocCoreStack` for a prefixed deployment) |
@@ -121,7 +122,7 @@ Each model call sees the whole conversation, so the assistant specs never contin
      server-side snooze. It writes only the caller's own `/settings/my-onboarding` and restores the state it found.
    - `writes.spec.ts`: admin only, and only on `e2e-<run id>-*` data.
      - Create a project, open its modals, send one assistant message, then delete it in the UI.
-     - Create a feedback form, check the public `config` and `iframe` routes, then delete it. It does **not** submit, because the feedback table has no delete route.
+     - Create a feedback form in the forms builder (7.55.00: New form → the Blank form template → Use this template → Rename the form → Save, the `POST`), open its Results from its card, turn it Live with the card's switch, check the public `config` and `iframe` routes, then delete it from the card's "More actions for <name>" menu. It does **not** submit, because the feedback table has no delete route.
      - Run scraper `analyze-url` on https://example.com, save it as "Manual only" so it is never scheduled or run, then delete it.
    - `projects-mcp-removed.spec.ts`: both roles, on one public `e2e-<run id>-mcp-removed` project (made through the admin API, ledger-recorded). Checks that there is no Export / MCP tab, that `/projects/<id>/mcp` is rewritten to Overview, and that the header's **Connect via MCP** opens `/connect?project=<id>` showing `/mcp/global`. As admin it also checks that the per-project token routes and `GET /projects/{id}/autoseed`, retired in 3.00.00, answer 404.
    - `workflow-custom-arrows.spec.ts`: both roles, read-only (`POST /workflows/validate` stores nothing). A `pass` / `fail` arrow out of a custom step is refused with the error pinned to that step; the plain arrow validates.
@@ -311,7 +312,7 @@ These run in the default production run (both roles; writes are admin-only and e
 
 - `prioritization.spec.ts`: the board, and the public `/vote/:sessionId` in a fresh context with no session (an unknown id says so; its submit is a 404). The room vote end to end (any open vote of the row closed first, open on the board after its confirm, a phone ballot, close, refusal with a 409, then a capped session refusing the next device with a 429) runs on the mock only, because ballots have no TTL and no delete route.
 - `account.spec.ts`: the caller's own "My objectives & KPIs" (`/settings/my-context`) saved through the UI, then the original objectives put back (also in `afterAll`) and proven equal. Also checks that Company's **My objectives** link opens that same section (`/account/objectives`).
-- `in-page-tabs.spec.ts`: the 4 FormEditor tabs (Cancel at the end, nothing is written) and the 3 Admin logs sub-tabs, which must show no text block longer than 200 characters (2.12, no customer data).
+- `in-page-tabs.spec.ts`: the forms builder's 8 tabs on an unsaved Blank form (left through its back link with Discard, nothing is written) and the 3 Admin logs sub-tabs, which must show no text block longer than 200 characters (2.12, no customer data).
 - `i18n-smoke.spec.ts`: 9 locales × 5 screens, with the language set through `voc-language`. Checks `<html lang>`, that no raw key is on screen (it matches exact English key paths and `ns:key` references), and that nothing overflows horizontally.
 - `network.spec.ts`: slow 3G (CDP), a dropped list request (`route.abort`) and `context.setOffline` on /projects, /feedback-forms and /agents, followed by recovery. It also cuts `/chat/stream` after the first answer bytes (`lib/network.ts`), then reloads: the page shows "Still generating…" and then the server's answer.
 - `concurrency.spec.ts`: two tabs on one user.
@@ -325,7 +326,24 @@ These run in the default production run (both roles; writes are admin-only and e
 - `assistant-notifications.spec.ts`: `Notification` is replaced by a recorder and the tab is made to look hidden. A reply notifies only while the tab is hidden, and the notification uses generic words.
 - `flows-matrix.spec.ts`: the main flows in dark and light, and the project flow at 390 px with no horizontal overflow.
 - `prototype-enlarge.spec.ts`: Escape inside a prototype frame rewritten with `document.open()` closes the Enlarge overlay and returns focus to the button (#386: since 5.35 the prototype's pin widget forwards Escape out of the opaque-origin frame; the mock prototype carries the real widget, and production skips a prototype built earlier). It also opens the tester pins panel. Production is read-only here: it uses an existing prototype or skips.
-- `design-screens.spec.ts` "F7": no app-coloured solid background off the Kiro palette, and no `rgb(59, 130, 246)`, on 5 screens in both themes (`offPaletteFills` in `lib/design.ts`). Inline user colours, such as a customer's form theme, are only annotated.
+- `design-screens.spec.ts` "F7": no app-coloured solid background off the Kiro palette, and no `rgb(59, 130, 246)`, on 5 screens in both themes (`offPaletteFills` in `lib/design.ts`). Inline user colours, such as a customer's form theme, are only annotated, except on a new form's theme (the forms builder's Settings tab, judged within the builder).
+
+## Feedback Forms v2 (7.55.00, production and the local dev mock)
+
+`feedback-forms-v2.spec.ts` is the owner's test plan for the form builder ([docs/feedback-forms.md](../../../docs/feedback-forms.md)), as the admin, with the e2e viewer in its own context for the permission steps. Run it alone after a deploy, with the env file sourced:
+
+```bash
+cd voc-datalake/frontend/e2e
+E2E_SHOTS=/tmp/forms-shots npx playwright test -c playwright.config.ts --project=admin tests/feedback-forms-v2.spec.ts
+```
+
+1. Create: four templates (NPS, Cancellation / churn, Switching back to the old interface, Bug report), each saved; Describe your form (the AI draft opens unsaved and nothing is saved; a second draft is stopped with Stop → "Stop drafting?", and nothing opens once its job ends); Blank.
+2. The builder, on the Blank form: every tab; one question of each of the ten types (a single choice with Other shown as a dropdown, a multiple choice with Other, None, chips and 1 to 2 answers); a second ending, a logic jump to it from the NPS question, a hidden field and Polish; Save; a stale save from a second page gets the 409 banner (Compare, then Reload theirs).
+3. Test mode: the test link, opened with `hf_<id>=` and `lang=`, every question answered (by keyboard, so no pick moves on by itself) at 1280 and at 390 px under the TEST strip; the two test responses are on the Test tab and `response_count` stays 0.
+4. Live: Publish, three real responses (one takes the logic jump; the first open answer of each starts with `=`, `+` or `@`), polled until the API lists them (a deployment processes them first), then Results per question, the Drop-off funnel, the Responses table, and the CSV: labels and ids as two header rows, one row per response, no cell starting with a formula character.
+5. Deleting test responses: the e2e viewer on the admin's form is a 403 `test_responses_admin_or_creator` with words that say who may, and its Test tab offers no Delete all; on a form the viewer creates (its API create is in the ledger, the admin issues its test link) the viewer deletes as the creator and the admin as an admin; the admin then deletes on its own form, the real responses untouched.
+
+Every form is e2e-named, in the ledger and deleted in `afterAll`. On the dev mock the viewer's steps skip, the funnel check skips (the mock counts no open for a new form), and the second draft carries the mock's `#slow` marker (`mock-forms-draft.js`), so Stop meets a draft still being written.
 
 ## 5.35 coverage specs (production and the local dev mock)
 

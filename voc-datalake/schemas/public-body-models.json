@@ -3,13 +3,87 @@
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "FeedbackFormSubmission",
     "type": "object",
-    "required": [
-      "text"
-    ],
     "properties": {
       "text": {
         "type": "string",
         "minLength": 1
+      },
+      "answers": {
+        "type": "object",
+        "maxProperties": 30,
+        "patternProperties": {
+          "^q_[a-z0-9_]{1,40}$": {}
+        },
+        "additionalProperties": false
+      },
+      "hidden": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "maxProperties": 20,
+        "patternProperties": {
+          "^[a-z][a-z0-9_]{0,39}$": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "form_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 1
+      },
+      "language": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "en",
+          "es",
+          "fr",
+          "de",
+          "pt",
+          "ja",
+          "zh",
+          "ko",
+          "pl",
+          null
+        ]
+      },
+      "ending_id": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 44
+      },
+      "session": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[A-Za-z0-9_-]{8,64}$"
+      },
+      "form_id": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 64
+      },
+      "test": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 64
       },
       "rating": {
         "type": [
@@ -67,6 +141,53 @@
           "null"
         ],
         "maxProperties": 10
+      }
+    }
+  },
+  "FeedbackFormEvent": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "FeedbackFormEvent",
+    "type": "object",
+    "required": [
+      "event"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "type": "object",
+        "required": [
+          "kind",
+          "session"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "left",
+              "opened"
+            ]
+          },
+          "question_id": {
+            "type": "string",
+            "pattern": "^q_[a-z0-9_]{1,40}$"
+          },
+          "session": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "test": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 64
       }
     }
   },

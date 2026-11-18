@@ -167,12 +167,12 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // fail closed: a new handler route is unreachable until it is wired here,
   // rather than silently inheriting a catch-all's (absent) authorization.
   //
-  // Only the three routes the embeddable widget needs stay public — verified
-  // against lambda/api/static/feedback-widget.js (config + submit) plus the
-  // /iframe embed variant, which a browser navigates to directly. Keep this
+  // Only the four routes the embeddable widget needs stay public — verified
+  // against lambda/api/static/feedback-widget.js (config, submit and the events
+  // beacons) plus the /iframe embed variant, which a browser navigates to directly. Keep this
   // list and lambda/api/feedback_form_handler.py in step: every route the
   // handler registers needs a method here, and api-stack.test.ts asserts that
-  // only these three are unauthenticated.
+  // only these four are unauthenticated.
   //
   // Do NOT reintroduce a {proxy+} here to avoid the two-step upgrade it costs
   // on already-deployed environments: {form_id} and {proxy+} cannot coexist as
@@ -181,6 +181,12 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   const feedbackFormsResource = cors(api.root.addResource('feedback-forms'));
   feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
   feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
+  // A form's AI draft is not under /feedback-forms (since 7.55.00's AI review, round 1): POST /settings/form-drafts and
+  // GET /settings/form-drafts/{job_id} ride the settings proxy above (lambda/shared/forms_v2_draft_routes.py), whose
+  // role owns the assist job rows and the twin that runs the draft. Not the forms Lambda: it also serves the three
+  // public widget routes below, so its role holds no worker invoke and no jobs-table action (TENETS.md tenet 6). A
+  // static /feedback-forms/draft resource (main's shape) would cost five resources and take the performance-tier synth
+  // past the 425 gate (api-engagement-budget.test.ts); the settings proxy costs none.
 
   // `skipFeedbackFormItemRoutes` — the one-shot flag for upgrading an
   // environment that still has the old /feedback-forms/{proxy+}. Read above the
@@ -211,10 +217,21 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     );
   } else {
     const feedbackFormItem = cors(feedbackFormsResource.addResource('{form_id}'));
+    // GET: one form (7.55.00, the builder's read).
+    feedbackFormItem.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
     feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
     cors(feedbackFormItem.addResource('submissions')).addMethod('GET', feedbackFormIntegration, authMethodOptions);
     cors(feedbackFormItem.addResource('stats')).addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    // Schema version 2 (7.55.00, docs/feedback-forms.md): the signed-in results (GET …/results), responses (GET
+    // …/responses, DELETE …/responses?test=true) and test link (POST …/test-link) ride ONE Cognito proxy UNDER the
+    // item serving only GET, POST and DELETE (the paragraph above forbids a SIBLING {proxy+} of {form_id}; a child has
+    // static siblings only). Five resources (the {proxy+} with its three methods and its CORS preflight) where explicit
+    // routes cost ten: the stack is at its resource ceiling (api-engagement-budget.test.ts).
+    // Every verb is Cognito-authorized, like every route here but the three below.
+    proxyServing(feedbackFormItem, {
+      GET: feedbackFormIntegration, POST: feedbackFormIntegration, DELETE: feedbackFormIntegration,
+    });
 
     // Intentionally unauthenticated: the widget runs on the customer's own site.
     //
@@ -235,6 +252,10 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
       cors(feedbackFormItem.addResource('config')).addMethod('GET', feedbackFormIntegration),
       cors(feedbackFormItem.addResource('submit')).addMethod('POST', feedbackFormIntegration,
         publicBodyValidation(api, 'FeedbackFormSubmission')),
+      // The widget's funnel beacons (`opened`, `left`; 7.55.00's AI review, round 2): their own route, throttle and
+      // model, so a beacon never spends the submit route's limit, which is for responses only.
+      cors(feedbackFormItem.addResource('events')).addMethod('POST', feedbackFormIntegration,
+        publicBodyValidation(api, 'FeedbackFormEvent')),
       cors(feedbackFormItem.addResource('iframe')).addMethod('GET', feedbackFormIntegration),
     ];
     for (const publicMethod of publicFeedbackFormMethods) {

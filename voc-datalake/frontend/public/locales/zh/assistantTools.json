@@ -41,7 +41,9 @@
     "openRadar": "打开 Radar",
     "openRadarSettings": "打开 管理 → 数据来源 → 雷达",
     "openCategories": "打开 管理 → 分类",
-    "openWorkspaceCategories": "打开工作区设置中的分类"
+    "openWorkspaceCategories": "打开工作区设置中的分类",
+    "approveCreate": "批准并创建",
+    "openForm": "在编辑器中打开表单"
   },
   "preview": {
     "participants": {
@@ -394,6 +396,44 @@
       "replaces_one": "替换已保存的 {{count, number}} 个步骤。",
       "replaces_other": "替换已保存的 {{count, number}} 个步骤。",
       "note": "保存会生成原型的新版本；打开它的人会看到这些步骤。"
+    },
+    "feedbackFormDraft": {
+      "label": "起草的反馈表单",
+      "name": "名称",
+      "nameMissing": "请为表单命名。",
+      "channel": {
+        "link": "链接",
+        "embed": "嵌入",
+        "in_app": "应用内"
+      },
+      "questions": "问题",
+      "leaveOut": "去掉问题 {{number}}",
+      "lastQuestion": "表单至少需要一个问题，因此最后一个问题不能去掉。",
+      "leftOut": "已去掉问题 {{number}}。",
+      "endings": "结束页",
+      "hiddenFields": "隐藏字段",
+      "fromAi": "来自 AI",
+      "warning": "警告",
+      "addresses": "AI 建议的地址",
+      "checkedAddress": "我已核实此地址",
+      "remove": "移除",
+      "removeAddress": "移除地址 {{url}}",
+      "createsOff": "批准后会以关闭状态创建：在你发布之前不会公开。",
+      "notAllowed": "只有编辑者和管理员可以创建表单。你仍然可以拒绝。",
+      "openInBuilder": "在编辑器中打开",
+      "notAForm": "此草稿不是本应用能读取的表单。",
+      "questionCount_one": "{{count, number}} 个问题",
+      "questionCount_other": "{{count, number}} 个问题",
+      "endingCount_one": "{{count, number}} 个结束页",
+      "endingCount_other": "{{count, number}} 个结束页",
+      "hiddenCount_one": "{{count, number}} 个隐藏字段",
+      "hiddenCount_other": "{{count, number}} 个隐藏字段",
+      "options_one": "{{count, number}} 个选项",
+      "options_other": "{{count, number}} 个选项",
+      "rules_one": "{{count, number}} 条规则",
+      "rules_other": "{{count, number}} 条规则",
+      "rulesDropped_one": "{{questions}} 中指向它的 {{count, number}} 条规则也会一并去掉。",
+      "rulesDropped_other": "{{questions}} 中指向它的 {{count, number}} 条规则也会一并去掉。"
     }
   },
   "tools": {
@@ -597,6 +637,10 @@
     "set_prototype_walkthrough": {
       "title": "保存原型导览",
       "titleRemove": "移除原型的导览"
+    },
+    "draft_feedback_form": {
+      "title": "创建反馈表单",
+      "titleWith": "创建反馈表单“{{name}}”"
     }
   }
 }

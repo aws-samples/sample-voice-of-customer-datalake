@@ -41,7 +41,14 @@ PHASE_2: dict[str, frozenset[str]] = {
         'GET /feedback-forms/<form_id>/submissions',
         'POST /feedback-forms',
         'POST /feedback-forms/<form_id>/submit',
+        'POST /feedback-forms/<form_id>/events',
         'PUT /feedback-forms/<form_id>',
+        # Schema version 2 (7.55.00): resolve X-Workspace-Id like the routes above (`_request_scope`).
+        'DELETE /feedback-forms/<form_id>/responses',
+        'GET /feedback-forms/<form_id>',
+        'GET /feedback-forms/<form_id>/responses',
+        'GET /feedback-forms/<form_id>/results',
+        'POST /feedback-forms/<form_id>/test-link',
     }),
     # Credentials move to the workspace secret.
     'integrations_handler.py': frozenset({

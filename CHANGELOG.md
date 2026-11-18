@@ -17,6 +17,225 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.55.00] - 2026-11-18
+
+Feedback Forms become a form builder. A form is now a flow of questions (schema version 2): a welcome screen, 1 to
+30 questions of ten types, logic that jumps forward to a later question or to one of up to five endings, hidden
+fields the link or the app fills in, and its texts in any of the app's nine languages. It has a test link whose
+responses never count, per-question results with a drop-off funnel, twelve templates, and an AI that drafts a form
+from a description, in the builder and from the assistant. A form saved before keeps working: it is migrated when
+it is read and written back as version 2 on its next save. The release also carries a customer pilot's fix: a form
+without a rating shows its Question.
+
+### Added
+
+- **Schema version 2** (`lambda/shared/forms_v2.py`, the one definition; docs/feedback-forms.md):
+  - `language` (the primary) and `languages`; every text is an I18nText `{"<locale>": "…"}`, the primary's required,
+    the others falling back to it;
+  - `welcome`, `questions` (1–30), `hidden_fields` (at most 20), `endings` (1–5), `settings.test`;
+  - the question types `open_text` (short or long, text / email / number / phone / url, max characters),
+    `single_select` and `multi_select` (1–50 options with stable codes, Other, an exclusive None of these, shuffle,
+    list / dropdown / chips, min and max), `rating` (stars, numbers or faces, 3–10), `nps`, `csat`, `ces`,
+    `statement` (an optional https button), `consent` and `contact_info` (name, email, phone, company);
+  - **logic**: per question, rules `{when: {op, value?}, then: {jump_to}}`, the first that matches wins; the ops are
+    checked per type, a jump only goes forward (no loops) and its target must exist;
+  - **revisions**: a save that changes the definition is a new `revision`; the replaced one is kept as a snapshot
+    (`FORMREV#…`), so a respondent who opened the form before an edit is checked against what they saw; a question
+    id is never reused (`400 question_id_reused`); a save names the revision it read (`expected_revision`) and a stale
+    one is a `409 revision_conflict` with who saved it and when; the other fields (name, enabled, theme, routing,
+    links, labels, dimension defaults, tags, test settings) still change in place without a revision (a recorded
+    TENETS.md D1 gap);
+  - **the lock of an answered form**: once a form `has_responses`, a save that drops a question id, or an option code
+    from a question it keeps (a rename is a drop plus an add), must name each one in `removes` (`{questions, options:
+    {question_id: [codes]}}`), or it is a `409 answers_locked` naming them and nothing is written. A named removal is
+    kept as the builder keeps it (the id retires, the answers stay in Results as removed), and the builder sends
+    `removes` itself; in a workspace as deployment-wide;
+  - each option may carry its own category routing (never published): the first answered option that maps one
+    files the response; otherwise the form's routing applies.
+- **The public form** (`lambda/api/static/feedback-widget.js`, still one dependency-free file): one question per
+  screen with the welcome card, every type, logic, several endings, labelled Back and Next, a sticky bar on phones and
+  progress over the longest path left; hidden fields from the link (`hf_<id>=`) or the SDK (`setHiddenFields`); the
+  respondent's language from `lang=` or the SDK, then the browser, then the form's (D4), with the widget's own words
+  in nine languages and the page's `lang` and title following the form; keys handled only inside the form, never on
+  the host page; a refused answer explained in the respondent's language, back at its question. `init` returns a
+  handle (`setHiddenFields`, and for the editor's preview `update`, `goTo`, `restart`, `setLanguage`, `destroy`).
+- **Responses v2** (`lambda/shared/forms_v2_responses.py`): `{answers, hidden?, form_revision?, language?,
+  ending_id?, session?, test?, page_url?, …}`, checked answer by answer against the revision answered (type,
+  required, range, codes, characters, min and max, the logic path; unknown keys refused) with a refusal `code` and
+  the `question_id` to go back to (`answer_invalid`, `answer_required`, `selection_count`, `hidden_unknown`, …;
+  `form_changed` is a 409, `form_off` a 400). The item's text is the open answers under their headlines; the
+  structured answers, hidden values, path, revision and language go into its metadata (`form_answers`, `form_hidden`,
+  `form_path`, `form_revision`, `form_language`); a hidden value whose id is a dimension's key and whose value is one
+  of its values fills that dimension (D5).
+- **Test mode** (D2): `POST /feedback-forms/{id}/test-link` (admins) issues or rotates a test token, the only answer
+  that carries it; the test link (`…/iframe?test=<token>`) works while the form is Off and shows a TEST strip;
+  `record: tag` keeps its responses apart from the form, in their own partition (`FEEDBACK_FORM_TEST`, a workspace's
+  `WS#{ws}#FEEDBACK_FORM_TEST`), as `is_test` (never queued, so never processed, counted, in NPS or on a dashboard),
+  `drop` checks them and keeps nothing; `GET …/config?test=` answers `test: {valid, record}`.
+  **Test responses are kept until an admin or the form's creator deletes them** (the owner's decision):
+  `DELETE /feedback-forms/{id}/responses?test=true` is for an admin of the workspace (else of the deployment) or the
+  person who created the form, a `403 test_responses_admin_or_creator` for anyone else; `GET /feedback-forms/{id}`
+  answers `can_delete_test_responses`, and the Test tab offers Delete all to those people only (the others read who
+  can). Every such delete is recorded first (TENETS.md D4): a workspace form's in `AUDIT#WS#{ws}`, a deployment
+  form's as an `AUDIT#delete` row (`shared/delete_audit.py` `record_delete_first`), kind
+  `feedback_form_test_responses`, the form id, the caller, `count` and the time; a row that cannot be written deletes
+  nothing. A tagged test response keeps its contact answer's email (lower-cased) and name, so `voc-retention` reaches
+  it: an erasure by email or by name, a whole-source erasure of `feedback_form` and that source's retention period
+  delete test responses too, each with a tombstone first, in the scopes they reach feedback items in (by email and by
+  the retention period every workspace's forms too; a workspace's own erasure, its own; an erasure that deletes a
+  workspace's test response clears that workspace's exports, which hold them as `feedback_form_tests`;
+  [docs/source-policies.md](docs/source-policies.md)). They are kept unredacted (a recorded TENETS.md D5 gap).
+- **Results** (`lambda/shared/forms_v2_results.py`): `GET /feedback-forms/{id}/results` per question of the current
+  revision (shown, answered, skipped, not shown; option counts with the latest Other texts, histograms, NPS, CSAT and
+  CES scores, the latest open answers), the endings and hidden fields, answers to removed questions and options, and
+  a **drop-off funnel** (D6) `{opened, left: {question_id: n}, completed}`: the widget sends one `opened` beacon per
+  page load (`{event: {kind: 'opened', session, revision?}}`), and a respondent who leaves without submitting sends
+  one `left` beacon (`{event: {kind: 'left', question_id, session}}`), both by `sendBeacon` on their own public
+  route, `POST /feedback-forms/{id}/events`, never an answer. The public config read never writes. The funnel's
+  record is one counter row per form per day (`opened`, `left:{question_id}`), kept without expiry (TENETS.md D2) and
+  going with the form's delete (the test link's with its test responses'); a visit's own row, which moves its `left`
+  to the furthest question and takes it back when the visit submits, expires after 7 days. `GET …/responses` pages
+  the responses (filters: dates, language, ending,
+  `hidden.<id>`; `include_test=false|true|only`) and `format=csv` exports them (labels and ids as two header rows, no
+  spreadsheet formula in any cell, the header's headlines included: they are the author's text). The form list's
+  card shows a headline figure (NPS, CSAT % or the average).
+- **AI drafts** (`lambda/shared/forms_v2_draft.py`): `POST /settings/form-drafts` `{description, language, channel,
+  base_form?, instruction?}` starts an assist job run by the settings API's assist worker (the deployment's model on
+  the `utility` surface, metered like every AI feature). Both draft routes are the settings API's
+  (`lambda/shared/forms_v2_draft_routes.py`, on its own `/settings/{proxy+}`), not the forms Lambda's, workspace-scoped
+  as before (with `X-Workspace-Id` the job, its hourly counter and its model calls are the workspace's). The browser
+  reads `GET /settings/form-drafts/{job_id}` when the worker's `job` notice arrives, polling as the fallback (1.5 s
+  without push, 10 s with it, 3 minutes at most). The
+  person's text travels as data; the server makes the ids and codes itself and drops every address that is not https;
+  the answer must pass the same validator (one repair with its errors, then `invalid_draft`); `no_model` when the
+  deployment has none. Any signed-in editor of a workspace may draft (and its admins; deployment-wide any signed-in
+  user: the owner's decision); 20 drafts per person per hour (`429 rate_limited` with `retry_after`); not gated by the
+  way of working (D12). It never saves. While a draft generates, **Stop** (in the picker and in Improve with AI)
+  asks "Stop drafting?" and, confirmed, stops the poll at once and drops the draft (the server's job finishes on its
+  own: an assist job has no cancel, and nobody reads its result).
+- **The builder** (`frontend/src/pages/FeedbackForms`): a picker with "Describe your form" and twelve templates
+  grouped by goal (Loyalty: NPS, CSAT after support, CES; Drop-offs: cancellation, switching back to the old UI,
+  checkout or signup abandonment; Product: product-market fit, feature request, feature satisfaction, bug report;
+  Onboarding: segmentation; Blank), their copy in nine languages; a builder page at `/feedback-forms/<id>/<tab>` with
+  Questions, Flow, Languages, Hidden fields, Test, Share, Results and Settings; the choice editor (paste options,
+  routing per option), the logic editor with its problems, the hidden fields with their snippets, translations side by
+  side, Save, Publish, Update live form and Turn off, the stale-save banner (Compare, Reload, Save mine), and a live
+  preview that runs the real widget in the page, never sending anything. "Improve with AI" redrafts the open form from
+  an instruction and shows the changes to apply; an AI draft opens unsaved with its notes and the addresses to confirm.
+  Option codes and question ids lock once the form has a real response.
+- **The assistant's `draft_feedback_form`** (the `forms` pack, any caller): a whole version 2 form on an approval card
+  the person edits (its name, a question left out, the suggested addresses checked) before Approve creates it Off, or
+  "Open in builder". Card-only, never a plan step.
+- `GET /feedback-forms/{id}`: one form with `response_count`; the record says `has_responses` (marked once, by the
+  first real response) and `migrated_from: 1` while it is still stored as version 1.
+- **Every form delete is recorded** (the owner's decision): a workspace form's in `AUDIT#WS#{ws}` (kind `form_deleted`,
+  as before) and now a deployment form's too, as the deployment's other deletes (`shared/delete_audit.py`
+  `record_delete_once`: `AUDIT#delete` / `feedback_form#{form_id}` in voc-aggregates, the form id, the actor and the
+  time, one row per form); written first, so a delete whose record fails deletes nothing.
+
+### Changed
+
+- **Version 1 forms** are served migrated (D15): their rating becomes a `rating` question headed by the Question, the
+  text step an `open_text` question headed by the follow-up question when the rating is on and by the Question when it
+  is off, `collect_name` / `collect_email` a `contact_info` question, `success_message` the first ending; a form
+  without a language gets the deployment's (`-c primaryLanguage`), which the builder asks its author to confirm. The
+  first save writes it back as version 2, keeping the version 1 fields in revision 1's snapshot. A version 1 widget's
+  body (`text`, `rating`, …) is still accepted.
+- The editor (FormEditor, its panels, the template wizard and the submissions dialog) is replaced by the builder; the
+  list's cards link into it.
+- **The assistant's `update_feedback_form`** takes only what every form takes: `enabled`, `name`, `dimension_defaults`,
+  `tags`, and `title` / `description` (the welcome screen), `success_message` (the first ending) and
+  `submit_button_text` (the last question's button) in the primary language. `question`, `placeholder`, the rating and
+  `collect_*` fields, which a version 2 form refuses, are gone from it; questions and logic change in the builder.
+  `list_feedback_forms` reads each form's language, revision, questions (id, type, headline, option codes, rules),
+  endings, hidden field ids and test link state.
+- The API Gateway model of `POST …/submit` (`FeedbackFormSubmission`) no longer requires `text`: it bounds the
+  version 2 body, and the submit takes responses only (a beacon there is `400 submission_invalid`). The beacons'
+  route has its own strict model, `FeedbackFormEvent` (`schemas/public-body-models.json` regenerated).
+- The processor drops a message marked `is_test` before validation (`TestResponseDropped`) and the aggregator skips
+  one, so a test response that reached the queue anyway is never counted; a workspace's delete takes a form's lookup
+  row from its form rows only, not from the new rows beside them.
+- Results of Feedback Forms: no funnel is shown when the beacon counted no open for the view (Reach instead).
+
+### Fixed
+
+- **A form without a rating shows its Question** (a customer pilot): the widget showed "Tell us more" instead. A
+  form with a rating gets an optional follow-up question for the text step (7.54.00's `text_question`, now the
+  `open_text` question's headline).
+- **The widget speaks the form's language**: its own words (Start, Next, the errors, Thank you) follow the form,
+  in the app's nine locales, instead of the visitor's browser.
+- Found in the review rounds of the release (they never shipped): a test token with a non-ASCII character
+  (`?test=é` on the public config or submit) is a wrong token, never a 500 (the token is compared on its UTF-8
+  bytes); a plain save of a version 1 form (the list card's Enable) validates its migration before writing it back
+  as version 2, never stores it unchecked; the builder's stale-save banner never prints a Cognito sub as a name: it
+  says "You saved this form at 14:02, in another tab or window." when the saver is the person, else "Someone else
+  saved this form while you were editing it." (`builder.conflict.messageSelf`, 9 locales).
+
+### Removed
+
+- The version 1 editor: `FormEditor.tsx`, `FormEditorPanels.tsx`, `TemplateWizard.tsx`, `SubmissionsModal.tsx` and
+  their specs; the SPA's `api.createFeedbackForm` and `api.getFeedbackFormSubmissions` (the builder creates through
+  the v2 client; `GET …/submissions` stays for the assistant's `get_feedback_form_submissions`) with their parser;
+  `FormStatsFigures`' `panel` variant (its one user was the submissions dialog).
+
+### IAM
+
+- The Feedback Form API's role, which serves the public routes, gains no AI access: no `lambda:InvokeFunction`, no
+  jobs-table action and no model grant (pinned in `lib/stacks/api-stack-feedback-forms-v2.test.ts`). The AI draft runs
+  entirely on the settings API, whose role already owns the assist job rows of every scope, its assist worker, the
+  Bedrock grant and `UpdateItem` on voc-aggregates (the draft's hourly counter in a forms partition): no grant changes
+  there. The forms role's key-scoped `DeleteItem` now covers the forms partitions (`FEEDBACK_FORM`, one workspace
+  id's `WS#{ws}#FEEDBACK_FORM`: a form, its snapshots and funnel counters) and the test responses' own partitions
+  beside them (`FEEDBACK_FORM_TEST`, `WS#{ws}#FEEDBACK_FORM_TEST`). No other grant changes.
+- New routes on the Feedback Form API, all Cognito-authorized but one: `GET` on `/feedback-forms/{form_id}` (one
+  form) and one `{proxy+}` under it for `GET`/`POST`/`DELETE` (results, responses, CSV, test responses, test link);
+  and one new unauthenticated route, `POST /feedback-forms/{id}/events`, the widget's funnel beacons, public like
+  `submit` (the widget runs on customers' sites) with the same form checks and lookup (a disabled form takes none
+  without its valid test token; a workspace's form by its lookup row, its rows written in that workspace), its own
+  throttle (sized for page views, like the widget's reads; docs/feedback-forms.md), its own strict model and the same
+  WAF scope as the widget's reads, so a beacon never spends the submit route's limit, which stays for real responses.
+  It writes counters only: never an answer, a hidden value, an address or a user agent. The AI draft's two routes ride
+  the settings API's existing `/settings/{proxy+}` (Cognito-authorized). The public config read never writes; the test
+  token rides the existing submit. The stack's resource ceiling goes from 415 to 425 (`api-engagement-budget.test.ts`:
+  the performance-tier synth is at the 425 gate, which is unchanged).
+- `voc-retention` gains `DeleteItem` on voc-aggregates, key-scoped to the test responses' own partitions
+  (`FEEDBACK_FORM_TEST` and one workspace id's `WS#{ws}#FEEDBACK_FORM_TEST`, for an erasure or a retention period); it
+  cannot delete a form, a revision, a funnel counter or any other row there (pinned in
+  `processing-stack-retention.test.ts` and `customer-data-deletes.test.ts`).
+- The Feedback Form API's environment adds `PRIMARY_LANGUAGE`.
+- The audit-row guard (`lib/utils/audit-row-guard.ts`) names the Feedback Form API's role the writer of `AUDIT#delete`
+  in voc-aggregates (a deployment form's delete record and its test responses' delete record; its existing `PutItem`
+  there writes them): it may put that partition only, and change or remove no audit row.
+
+### Upgrade notes
+
+- Deploy VocApiStack and VocProcessingStack (the retention worker's new grant), then the frontend. No table, index or
+  data migration: a version 1 form is migrated when it is read and written as version 2 when someone saves it; its
+  responses keep counting under the migrated questions.
+- A version 1 form whose texts exceed version 2's limits (a question over 500 characters, for one) keeps being
+  served, but its next save, the list's Enable switch included, answers `400` with the field and the rule: shorten
+  it in the builder first.
+- **Embeds keep working.** Forms embedded or linked before 7.55.00 load the new widget from the API (the iframe page
+  and `feedback-widget.js` are served by it); a cached widget that still sends a version 1 body is accepted.
+- `has_responses` is marked by the first real response from this release on; a form answered only before reads it
+  from its stored responses (`GET /feedback-forms/{id}` counts them), so the builder locks its codes and ids as soon
+  as it is opened, and the server's lock (`answers_locked`) holds from its next real response.
+- Test links are for administrators: only an admin (of the workspace, else of the deployment) issues, rotates or
+  reads the token (Test tab, or `POST …/test-link`), so an editor's Test and Share tabs show no test link. Test
+  responses are deleted by an admin or the form's creator only; a form created before 7.55.00 has no recorded creator,
+  so its admins only.
+- From this release a deployment form's delete leaves an `AUDIT#delete` row in voc-aggregates (deletes before it left
+  none; a workspace form's delete was already recorded).
+- Stop on an AI draft ends the browser's wait only; the job runs to its end on the settings assist worker and its
+  Bedrock call is billed as before.
+- The funnel counts from this release on: a view whose dates start before it shows Reach. Its two beacons have their
+  own route and rate limit, apart from real responses ([docs/feedback-forms.md](docs/feedback-forms.md#the-funnel));
+  a throttled beacon costs one funnel count and nothing the visitor sees.
+- The assistant's `update_feedback_form` no longer offers the version 1 fields; an old conversation that proposes them
+  gets the card's "invalid request".
+- The widget's start word in Polish stays "Rozpocznij", and its de/es/fr/pt/ja/zh/ko words were written without a
+  translator: they are worth a review.
+
 ## [7.54.00] - 2026-11-17
 
 Administration is redesigned around what an administrator comes to do: it opens on a **home** with search and **Needs

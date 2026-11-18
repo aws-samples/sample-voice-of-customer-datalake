@@ -41,7 +41,9 @@
     "openRadar": "Radar öffnen",
     "openRadarSettings": "Administration → Datenquellen → Radar öffnen",
     "openCategories": "Administration → Kategorien öffnen",
-    "openWorkspaceCategories": "Einstellungen des Arbeitsbereichs → Kategorien öffnen"
+    "openWorkspaceCategories": "Einstellungen des Arbeitsbereichs → Kategorien öffnen",
+    "approveCreate": "Genehmigen und erstellen",
+    "openForm": "Formular im Editor öffnen"
   },
   "preview": {
     "participants": {
@@ -394,6 +396,44 @@
       "replaces_one": "Ersetzt den {{count, number}} gespeicherten Schritt.",
       "replaces_other": "Ersetzt die {{count, number}} gespeicherten Schritte.",
       "note": "Speichern erstellt eine neue Version des Prototyps; Betrachtende sehen die Schritte, wenn sie ihn öffnen."
+    },
+    "feedbackFormDraft": {
+      "label": "Das entworfene Feedback-Formular",
+      "name": "Name",
+      "nameMissing": "Gib dem Formular einen Namen.",
+      "channel": {
+        "link": "Link",
+        "embed": "Eingebettet",
+        "in_app": "In der App"
+      },
+      "questions": "Fragen",
+      "leaveOut": "Frage {{number}} weglassen",
+      "lastQuestion": "Ein Formular braucht mindestens eine Frage, daher kann die letzte nicht weggelassen werden.",
+      "leftOut": "Frage {{number}} wird weggelassen.",
+      "endings": "Abschlüsse",
+      "hiddenFields": "Versteckte Felder",
+      "fromAi": "Von der KI",
+      "warning": "Warnung",
+      "addresses": "Von der KI vorgeschlagene Adressen",
+      "checkedAddress": "Ich habe diese Adresse geprüft",
+      "remove": "Entfernen",
+      "removeAddress": "Adresse {{url}} entfernen",
+      "createsOff": "Genehmigen erstellt es ausgeschaltet: Nichts ist öffentlich, bis du es veröffentlichst.",
+      "notAllowed": "Nur Bearbeiter und Administratoren können Formulare erstellen. Ablehnen kannst du trotzdem.",
+      "openInBuilder": "Im Editor öffnen",
+      "notAForm": "Der Entwurf ist kein Formular, das diese App lesen kann.",
+      "questionCount_one": "{{count, number}} Frage",
+      "questionCount_other": "{{count, number}} Fragen",
+      "endingCount_one": "{{count, number}} Abschluss",
+      "endingCount_other": "{{count, number}} Abschlüsse",
+      "hiddenCount_one": "{{count, number}} verstecktes Feld",
+      "hiddenCount_other": "{{count, number}} versteckte Felder",
+      "options_one": "{{count, number}} Option",
+      "options_other": "{{count, number}} Optionen",
+      "rules_one": "{{count, number}} Regel",
+      "rules_other": "{{count, number}} Regeln",
+      "rulesDropped_one": "Die Regel in {{questions}}, die dorthin führte, fällt ebenfalls weg.",
+      "rulesDropped_other": "Die {{count, number}} Regeln in {{questions}}, die dorthin führten, fallen ebenfalls weg."
     }
   },
   "tools": {
@@ -597,6 +637,10 @@
     "set_prototype_walkthrough": {
       "title": "Einen Rundgang für den Prototyp speichern",
       "titleRemove": "Den Rundgang des Prototyps entfernen"
+    },
+    "draft_feedback_form": {
+      "title": "Ein Feedback-Formular erstellen",
+      "titleWith": "Das Feedback-Formular „{{name}}“ erstellen"
     }
   }
 }

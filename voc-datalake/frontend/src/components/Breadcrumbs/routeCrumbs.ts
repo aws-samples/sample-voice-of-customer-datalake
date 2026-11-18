@@ -154,7 +154,9 @@ export function trailSegments(pathname: string): string[] {
     const record = second !== undefined && second !== 'insights' && second !== 'requests'
     return segments.slice(0, record ? 2 : 1)
   }
-  if (TAB_PATH_PAGES.has(first)) return segments.slice(0, 1)
+  // A form's builder, the picker and the preview (`/feedback-forms/<id|new>/<tab>/…`) name the form in their own
+  // header, with a link back to the list: the trail ends at Feedback Forms.
+  if (TAB_PATH_PAGES.has(first) || first === 'feedback-forms') return segments.slice(0, 1)
   return first === 'agents' ? agentsTrail(segments) : segments
 }
 

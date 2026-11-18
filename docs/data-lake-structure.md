@@ -211,7 +211,8 @@ such as every source or persona counter. Common key families include:
 | `JOB#erasure` / `er_<hex>`, `AUDIT#retention` | Erasure jobs and the retention audit trail |
 | `AUDIT#platform-admins` / `<iso>#<random>` | Every grant and revoke of the `platform-admins` group (kept, no TTL; written only by the users API, [multi-workspace.md](multi-workspace.md#control-plane)) |
 | `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL); a workspace's message (since 7.00.00, [multi-workspace.md](multi-workspace.md)) logs under `WS#<ws>#LOGS#validation#<source>` and `WS#<ws>#LOGS#processing#<source>`, which `GET /logs/*` does not read yet |
-| `FEEDBACK_FORM` | Feedback-form configuration and statistics |
+| `FEEDBACK_FORM` | Feedback-form configuration and statistics: each form (`FORM#<id>`), its revision snapshots (`FORMREV#`), its daily funnel counters (`FORMFUNNEL#`, kept) and per-visit dedupe rows (`FORMSESSION#`, 7-day TTL), and the AI drafts' hourly counters (`FORMDRAFT#`, 2-day TTL); a workspace's `WS#<ws>#FEEDBACK_FORM` ([feedback-forms.md](feedback-forms.md)) |
+| `FEEDBACK_FORM_TEST` / `<form id>#<created_at>#<response id>` | The forms' tagged test responses, apart from the forms so voc-retention's delete reaches them alone ([source-policies.md](source-policies.md)); a workspace's `WS#<ws>#FEEDBACK_FORM_TEST` |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor (`WS#<ws>#SOURCE_RUN#<source>` for a run in a workspace) |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state (`WS#<ws>#SCRAPER_RUN#<scraper id>` in a workspace) |
 | `WEB_REVIEWS#METHODS` / `<domain>` | Which method reads each review site, learned by the web_reviews plugin's `auto` runs (no review content; [web-reviews.md](web-reviews.md#learning-which-method-works)); a workspace's own `WS#<ws>#WEB_REVIEWS#METHODS`, swept by its hard delete, not exported |

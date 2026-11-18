@@ -251,6 +251,15 @@ class TestEveryErrorHandlerAnswersItsStatusBodyAndLogLine:
         assert result['statusCode'] == 409
         assert json.loads(result['body']) == {'success': False, 'error': 'it broke', 'code': 'some_code'}
 
+    def test_an_errors_details_are_added_beside_its_code_but_never_over_the_envelope(self):
+        error = ValidationError('refused', code='answer_invalid',
+                                details={'question_id': 'q_a', 'success': True, 'error': 'x', 'code': 'y'})
+        app = _app_with_route('/fail', _raising(error))
+        with patch('shared.api.logger'):
+            result = _resolve(app, '/fail')
+        assert json.loads(result['body']) == {'success': False, 'error': 'refused', 'code': 'answer_invalid',
+                                              'question_id': 'q_a'}
+
     def test_payload_too_large_answers_both_keys_as_a_warning(self):
         app = _app_with_route('/big', _raising(PayloadTooLargeError('too big')))
         with patch('shared.api.logger') as logger:

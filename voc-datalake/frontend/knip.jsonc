@@ -9,6 +9,9 @@
   "entry": [
     "index.html!",
     "src/components/Document/edit/editor/noCollaboration.ts!",
+    // FeedbackFormConfig, the public widget's wire shape (schema version 2 since 7.55.00): nothing imports it; it is
+    // read as text by lambda/api/test/test_widget_config_type_lockstep.py and feedbackFormTypes.test.ts.
+    "src/api/feedbackFormsV2Types.ts!",
     "scripts/fix-i18n.mjs",
     "scripts/i18n-check.test.mjs",
     "scripts/set-nested.test.mjs",
@@ -23,7 +26,8 @@
     "scripts/mock-users.test.mjs",
     "scripts/mock-workspaces.test.mjs",
     "scripts/mock-document-revise.test.mjs",
-    "scripts/mock-prototype-feedback.test.mjs"
+    "scripts/mock-prototype-feedback.test.mjs",
+    "scripts/mock-forms-events.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",
@@ -39,8 +43,7 @@
   // Each entry is an export nothing imports ON PURPOSE. Do not add one without its reason.
   "ignoreIssues": {
     // DocTypeField* are compile-time pins: exported only so noUnusedLocals cannot delete them, and
-    // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
-    // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
+    // lambda/api/test/test_doc_type_lockstep.py pins their exact text.
     "src/api/types.ts": ["types"],
     // Test seams of the approval layer: listWriteTools is compared against the stream Lambda's
     // contract by registry.test.ts; resetExecutions resets the module-private zustand store between

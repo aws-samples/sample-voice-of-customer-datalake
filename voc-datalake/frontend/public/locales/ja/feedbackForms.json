@@ -1,86 +1,337 @@
 {
+  "newForm": "新しいフォーム",
+  "migration": {
+    "tellUsMore": "詳しく教えてください",
+    "contactHeadline": "ご連絡先を教えてください"
+  },
+  "types": {
+    "single_select": {
+      "name": "単一選択",
+      "hint": "選択肢から1つを選びます（理由など）"
+    },
+    "multi_select": {
+      "name": "複数選択",
+      "hint": "複数の選択肢を選びます"
+    },
+    "open_text": {
+      "name": "テキスト",
+      "hint": "短文または長文で入力する回答",
+      "short": "短いテキスト",
+      "long": "長いテキスト"
+    },
+    "rating": {
+      "name": "評価",
+      "hint": "星、数字、顔で3〜10段階"
+    },
+    "nps": {
+      "name": "NPS",
+      "hint": "0〜10：人に勧める可能性"
+    },
+    "csat": {
+      "name": "CSAT",
+      "hint": "1〜5の顔：満足度"
+    },
+    "ces": {
+      "name": "CES",
+      "hint": "1〜7：手軽さ"
+    },
+    "statement": {
+      "name": "説明文",
+      "hint": "読んでもらうテキスト。リンクボタンも追加できます"
+    },
+    "consent": {
+      "name": "同意",
+      "hint": "回答者がオンにするチェックボックス"
+    },
+    "contact_info": {
+      "name": "連絡先情報",
+      "hint": "名前、メール、電話番号、会社"
+    },
+    "groups": {
+      "ask": "質問する",
+      "measure": "測定する",
+      "other": "その他"
+    },
+    "ending": "終了画面",
+    "welcome": "ウェルカムカード"
+  },
+  "problems": {
+    "count_one": "{{count, number}}件の問題",
+    "count_other": "{{count, number}}件の問題",
+    "warnings_one": "{{count, number}}件の警告",
+    "warnings_other": "{{count, number}}件の警告",
+    "goTo": "移動",
+    "listLabel": "このフォームの問題",
+    "where": {
+      "question": "Q{{number}}",
+      "ending": "終了画面「{{title}}」",
+      "welcome": "ウェルカムカード",
+      "hidden": "非表示フィールド {{id}}",
+      "language": "{{language}}",
+      "form": "フォーム"
+    },
+    "otherProblems": "その他の問題",
+    "noQuestions": "フォームには質問が1つ以上必要です。",
+    "tooManyQuestions": "フォームに入れられる質問は30問までです。",
+    "noEndings": "フォームには終了画面が1つ以上必要です。",
+    "tooManyEndings": "フォームの終了画面は5つまでです。",
+    "tooManyHidden": "フォームの非表示フィールドは20個までです。",
+    "headlineEmpty": "質問文を入力してください。",
+    "optionEmpty": "選択肢{{number}}にテキストがありません。",
+    "endingTitleEmpty": "終了画面のタイトルを入力してください。",
+    "welcomeTitleEmpty": "ウェルカム画面にはタイトルが必要です。",
+    "consentLabelEmpty": "チェックボックスのテキストを入力してください。",
+    "duplicateQuestionId": "別の質問でID {{id}} が使われています。",
+    "invalidQuestionId": "質問IDは q_ で始め、小文字の英字、数字、_ を使います。",
+    "duplicateEndingId": "別の終了画面でID {{id}} が使われています。",
+    "invalidEndingId": "終了画面IDは end_ で始め、小文字の英字、数字、_ を使います。",
+    "duplicateHiddenId": "このフォームですでに使われています。",
+    "invalidHiddenId": "英字で始め、小文字の英字、数字、_ を使ってください。",
+    "duplicateCode": "2つの選択肢でコード {{code}} が使われています。",
+    "reservedCode": "このコードは「その他」と「該当なし」の行用に予約されています。",
+    "invalidCode": "コードには小文字の英字、数字、_ を40文字まで使えます。",
+    "noOptions": "選択肢を1つ以上追加してください。",
+    "tooManyOptions": "1つの質問の選択肢は50個までです。",
+    "minOverMax": "「最少」を「最多」より大きくすることはできません。",
+    "maxOverChoices": "「最多」を選択肢の数（{{count, number}}）より大きくすることはできません。",
+    "minOverChoices": "「最少」を選択肢の数（{{count, number}}）より大きくすることはできません。",
+    "buttonUrl": "アドレスは https:// で始まる必要があります",
+    "buttonLabelEmpty": "ボタンのラベルを入力してください。",
+    "ctaUrl": "アドレスは https:// で始まる必要があります",
+    "contactNoField": "項目を1つ以上表示してください。",
+    "contactTwice": "連絡先情報の質問は1つのフォームに1つだけです。",
+    "maxCharsRange": "上限は1〜5,000文字です。",
+    "facesRange": "顔は3〜5段階です。",
+    "aiAddress": "AIが提案したアドレスを確認するか、削除してください。",
+    "missingTranslations_one": "{{language}}に未翻訳のテキストが{{count, number}}件あります。{{language}}の回答者には{{primary}}で表示されます。",
+    "missingTranslations_other": "{{language}}に未翻訳のテキストが{{count, number}}件あります。{{language}}の回答者には{{primary}}で表示されます。",
+    "unreachableQuestion": "この質問に到達する経路がありません。上にあるすべてのルールがこの質問を飛ばしています。",
+    "unreachableEnding": "ここで終わるルールがありません。",
+    "chipsLong": "チップは短いラベル向けです。長いラベルは折り返されます。",
+    "dropdownFew": "リストではすべての選択肢が一度に表示されますが、ドロップダウンでは隠れてしまいます。",
+    "noCategory": "フィードバックをカテゴリに分類する選択肢がなく、フォームにもカテゴリがありません。「設定 › カテゴリルーティング」で設定してください。",
+    "targetMissingQuestion": "このルールの移動先の質問は削除されています。移動先を選んでください。",
+    "targetMissingEnding": "このルールの移動先の終了画面は削除されています。別の終了画面を選んでください。",
+    "targetBackwards": "ジャンプは先にしか進めませんが、質問{{number}}は現在この質問より上にあります。その質問を下に移動するか、別の移動先を選んでください。",
+    "noValueOption": "選択肢を選んでください。",
+    "noValueNumber": "数値を選んでください。",
+    "optionRemoved": "「{{code}}」は選択肢ではなくなりました。別の選択肢を選ぶか、このルールを削除してください。",
+    "outsideScale": "{{value}}はこの質問のスケール（{{min}}〜{{max}}）の範囲外です。",
+    "opInvalid": "この質問ではその比較はできません。別の条件を選んでください。",
+    "skippedOnRequired": "この質問は必須のためスキップされることはなく、このルールは実行されません。",
+    "ruleNeverRuns": "このルールは実行されません。このルールが一致する回答には、すべてルール{{number}}が先に一致します。",
+    "whereAnyway": "ルールがなくても、フォームはここに進みます。"
+  },
+  "logic": {
+    "ops": {
+      "equals": "次と等しい",
+      "not_equals": "次と等しくない",
+      "includesAnySingle": "次のいずれか",
+      "includesAnyMulti": "次のいずれかを含む",
+      "includes_all": "次をすべて含む",
+      "lt": "次より小さい",
+      "lte": "次以下",
+      "gt": "次より大きい",
+      "gte": "次以上",
+      "submitted": "入力された",
+      "skipped": "スキップされた",
+      "accepted": "同意済み",
+      "notAccepted": "未同意"
+    },
+    "values": {
+      "other": "その他（自由回答）",
+      "none": "該当なし",
+      "quoted": "「{{text}}」",
+      "separator": "、"
+    },
+    "target": {
+      "question": "{{number}} · {{headline}}",
+      "ending": "終了画面：{{title}}",
+      "missing": "削除された質問または終了画面",
+      "next": "次の質問",
+      "nextNumbered": "次の質問：{{number}} · {{headline}}",
+      "defaultEnding": "終了：{{title}}"
+    },
+    "sentence": {
+      "rule": "回答が{{condition}}の場合 → {{target}}",
+      "otherwise": "それ以外の場合 → {{target}}"
+    },
+    "ifTheAnswer": "回答が",
+    "goTo": "→ 移動先",
+    "otherwise": "それ以外の場合",
+    "thenGoTo": "次の移動先",
+    "firstWins": "最初に一致したルールが適用されます",
+    "rulesLabel": "ルール",
+    "addRule": "ルールを追加",
+    "moved": "ルール{{from}}を{{total, number}}件中{{to}}番目に移動しました。",
+    "controls": {
+      "operator": "ルール{{number}}：条件",
+      "value": "ルール{{number}}：値",
+      "goTo": "ルール{{number}}：移動先"
+    },
+    "actions": {
+      "label": "ルール{{number}}のその他の操作",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "duplicate": "複製",
+      "delete": "削除",
+      "first": "すでに最初のルールです。",
+      "last": "すでに最後のルールです。"
+    },
+    "chooseNumber": "数値を選択…",
+    "chooseOption": "選択肢を選択…",
+    "chooseOptions": "選択肢を選択（複数可）…",
+    "addOption": "選択肢を追加…",
+    "removedOption": "「{{code}}」（選択肢ではなくなりました）",
+    "removeValue": "{{option}}を削除",
+    "numberWithLabel": "{{value}} — {{label}}",
+    "groups": {
+      "next": "次の質問",
+      "later": "後続の質問",
+      "endings": "終了画面"
+    }
+  },
+  "builder": {
+    "back": "フィードバックフォーム",
+    "loading": "フォームを読み込み中…",
+    "loadFailed": "このフォームを読み込めませんでした。",
+    "name": {
+      "label": "フォーム名（内部用）",
+      "rename": "フォーム名を変更",
+      "untitled": "無題のフォーム"
+    },
+    "state": {
+      "live": "公開中",
+      "off": "オフ",
+      "testOn": "テストリンク オン",
+      "notSaved": "未保存"
+    },
+    "save": {
+      "unsaved": "未保存の変更があります",
+      "saving": "保存中…",
+      "saved": "保存済み",
+      "fixToSave_one": "保存するには{{count, number}}件の問題を修正してください。",
+      "fixToSave_other": "保存するには{{count, number}}件の問題を修正してください。",
+      "save": "保存",
+      "publish": "公開",
+      "update": "公開中のフォームを更新",
+      "failed": "保存できませんでした：{{reason}}。",
+      "failedGeneric": "保存できませんでした。接続を確認して、もう一度お試しください。",
+      "retry": "再試行"
+    },
+    "published": "公開しました。今後、回答者にはこのバージョンが表示されます。",
+    "firstSave": "保存しました。このフォームはオフです。公開するまで、リンクには「フィードバックフォームは利用できません。」と表示されます。",
+    "aiSaved": "保存しました。AI下書きがあなたのフォームになりました。",
+    "turnedOff": "オフにしました。リンクには「フィードバックフォームは利用できません。」と表示されます。テストリンクは引き続き使えます。",
+    "menu": {
+      "label": "フォームのその他の操作",
+      "improve": "AIで改善…",
+      "discard": "変更を破棄",
+      "duplicate": "フォームを複製",
+      "preview": "全画面でプレビュー",
+      "turnOff": "オフにする",
+      "delete": "フォームを削除…",
+      "saveFirst": "先にフォームを保存してください。",
+      "nothingToDiscard": "未保存の変更はありません。"
+    },
+    "copyName": "{{name}}（コピー）",
+    "confirmRemoval": {
+      "title": "公開中のフォームを更新しますか？",
+      "message": "削除される項目：{{list}}。これらへの回答は結果に残ります。",
+      "confirm": "公開中のフォームを更新",
+      "question": "質問「{{text}}」",
+      "option": "選択肢「{{text}}」",
+      "ending": "終了画面「{{text}}」"
+    },
+    "confirmAiPublish": {
+      "title": "このAI下書きを公開しますか？",
+      "message": "回答者にはこのままの内容が表示されます。先に質問、選択肢、終了画面を確認してください。",
+      "confirm": "公開"
+    },
+    "confirmDiscard": {
+      "title": "変更を破棄しますか？",
+      "message": "フォームは最後に保存した状態に戻ります。",
+      "messageNew": "フォームは開いたときの状態に戻ります。何も保存されていません。",
+      "confirm": "変更を破棄"
+    },
+    "confirmDelete": {
+      "title": "フォームを削除しますか？",
+      "message": "「{{name}}」を削除しますか？リンクは使えなくなります。この操作は元に戻せません。",
+      "messageResponses_one": "「{{name}}」と{{count, number}}件の回答を削除しますか？リンクは使えなくなります。この操作は元に戻せません。",
+      "messageResponses_other": "「{{name}}」と{{count, number}}件の回答を削除しますか？リンクは使えなくなります。この操作は元に戻せません。",
+      "confirm": "フォームを削除"
+    },
+    "conflict": {
+      "messageAnonymous": "編集中に、別のユーザーがこのフォームを保存しました。",
+      "messageSelf": "別のタブまたはウィンドウで、{{time}} にこのフォームを保存しました。",
+      "explain": "今保存すると相手のバージョンが上書きされます。比較するか、相手のバージョンを再読み込みするか、自分のバージョンで上書きしてください。",
+      "compare": "比較",
+      "reload": "相手のバージョンを再読み込み",
+      "saveMine": "自分のバージョンを保存",
+      "compareTitle": "相手のバージョンと自分のバージョン",
+      "compareDescription": "自分のバージョンを保存した場合に、相手のバージョンから変わる内容です。",
+      "noDifferences": "質問、終了画面、非表示フィールド、言語に違いはありません。",
+      "readFailed": "相手のバージョンを読み込めませんでした。もう一度お試しください。",
+      "added": "自分のバージョンで追加",
+      "removed": "自分のバージョンで削除",
+      "changed": "自分のバージョンで変更",
+      "close": "閉じる"
+    },
+    "migrated": "このフォームは新しいビルダーを使うようになりました。評価とテキストボックスは質問1と質問2になっています。保存すると新しい形式で保存されます。回答者に表示される質問は変わりません。",
+    "tabs": {
+      "label": "フォームビルダーのセクション",
+      "questions": "質問",
+      "flow": "フロー",
+      "languages": "言語",
+      "hidden-fields": "非表示フィールド",
+      "test": "テスト",
+      "share": "共有",
+      "results": "結果",
+      "settings": "設定",
+      "withProblems_one": "{{count, number}}件の問題",
+      "withProblems_other": "{{count, number}}件の問題",
+      "withMissing_one": "未翻訳{{count, number}}件",
+      "withMissing_other": "未翻訳{{count, number}}件"
+    },
+    "shortcut": "Ctrl+S または ⌘+S で保存します。"
+  },
+  "previewFrame": {
+    "loading": "プレビューを読み込み中…",
+    "unavailable": "プレビューを開始できません。フォームウィジェットが読み込まれませんでした。ページを再読み込みして、もう一度お試しください。"
+  },
   "card": {
-    "avgRating": "平均評価",
-    "category": "カテゴリ：",
-    "collects": "収集項目",
-    "copy": "コピー",
-    "deleteForm": "フォームを削除",
-    "directLink": "直接リンク",
-    "prototypePins": "プロトタイプのピン",
-    "editForm": "フォームを編集",
-    "hideEmbedCode": "埋め込みコードを非表示",
-    "iframeEmbed": "iFrame埋め込み",
-    "preview": "プレビュー",
-    "ratingAndText": "評価とテキスト",
-    "ratingType": "評価タイプ",
-    "showEmbedCode": "埋め込みコードを表示",
-    "submissions_one": "送信数",
-    "submissions_other": "送信数",
-    "themeLabel": "テーマ",
-    "themeDefault": "既定の色",
-    "themeCustom": "カスタムカラー",
-    "viewSubmissions": "送信を表示",
-    "collectsName": "名前",
-    "collectsEmail": "メールアドレス",
-    "disabledNotice": "このフォームは無効です。有効にするまで、リンクと埋め込みには「Feedback form unavailable.」と表示されます。",
     "live": "公開中",
     "off": "オフ",
-    "noSubmissionsYet": "まだ回答はありません。フォームを共有して回答を集めましょう。",
-    "themeSwatch": "フォームの色"
+    "prototypePins": "プロトタイプのピン",
+    "testLinkOn": "テストリンク オン",
+    "summary_one": "{{count, number}}問 · {{languages}}",
+    "summary_other": "{{count, number}}問 · {{languages}}",
+    "responses_one": "{{formatted}}件の回答",
+    "responses_other": "{{formatted}}件の回答",
+    "reading": "回答を読み込み中…",
+    "average": "平均 {{average}}（{{max}}点中）",
+    "results": "結果",
+    "actions": "{{name}}のその他の操作",
+    "edit": "編集",
+    "copyLink": "リンクをコピー",
+    "qr": "QRコード",
+    "qrTitle": "QRコード",
+    "preview": "プレビュー",
+    "duplicate": "複製",
+    "delete": "削除…",
+    "copyName": "{{name}}（コピー）",
+    "cannotRead": "このフォームを読み取れませんでした。",
+    "unnamed": "無題のフォーム",
+    "fixFirst_one": "公開する前に{{count, number}}件の問題を修正してください。",
+    "fixFirst_other": "公開する前に{{count, number}}件の問題を修正してください。",
+    "open": "開く"
   },
   "configureApiFirst": "フィードバックフォームを管理するには、「管理 → ブランドと外観」でAPIエンドポイントを構成してください。",
-  "createForm": "フォームを作成",
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このフォームを削除してもよろしいですか？この操作は元に戻せません。",
   "deleteConfirmMessageNamed": "フォーム「{{name}}」を削除しますか？この操作は元に戻せません。",
   "deleteConfirmTitle": "フォームを削除",
   "editor": {
-    "backgroundColor": "背景色",
-    "borderRadius": "角丸",
-    "cancel": "キャンセル",
-    "categoryHint": "カテゴリは「管理 → カテゴリ」で構成されます",
-    "categoryLabel": "カテゴリ",
-    "categoryRoutingDescription": "このフォームにカテゴリを割り当てます。このフォームから送信されたすべてのフィードバックは、選択したカテゴリで自動的にタグ付けされます。",
-    "categoryRoutingTitle": "カテゴリルーティング",
-    "collectEmail": "メールを収集",
-    "collectName": "名前を収集",
-    "createForm": "フォームを作成",
-    "createTitle": "新しいフィードバックフォームを作成",
-    "creating": "作成中...",
-    "description": "説明",
-    "editTitle": "フィードバックフォームを編集",
-    "enableRating": "評価を有効化",
-    "formName": "フォーム名（内部用）",
-    "formNamePlaceholder": "例：ウェブサイトフッターフォーム",
-    "formTitle": "フォームタイトル",
-    "placeholderText": "プレースホルダーテキスト",
-    "preview": "プレビュー",
-    "previewLabel": "プレビュー：",
-    "previewTagged": "このフォームからのフィードバックは次のようにタグ付けされます：",
-    "primaryColor": "プライマリカラー",
-    "question": "質問",
-    "ratingEmoji": "絵文字",
-    "ratingNumeric": "数値 (1-10)",
-    "ratingStars": "星",
-    "saveChanges": "変更を保存",
-    "saving": "保存中...",
-    "selectCategory": "-- カテゴリを選択 --",
-    "selectSubcategory": "-- サブカテゴリを選択 --",
-    "startButton": "開始 →",
-    "subcategoryLabel": "サブカテゴリ（オプション）",
-    "submitButtonText": "送信ボタンテキスト",
-    "successMessage": "成功メッセージ",
-    "tabs": {
-      "category": "カテゴリ",
-      "categoryRouting": "カテゴリルーティング",
-      "formSettings": "フォーム設定",
-      "settings": "設定",
-      "theme": "テーマ",
-      "validates": "リンク先プロジェクト",
-      "validatesShort": "プロジェクト",
-      "label": "フォームエディターのセクション"
-    },
-    "textColor": "テキスト色",
     "validationDescription": "このフォームがどのプロジェクトの、どのPRDまたはPR/FAQについてフィードバックを集めるのかを任意で記録できます。収集した評価は優先順位付けページの該当ドキュメントの横に表示されます。ウェブサイトのアンケートなど単独のフォームでは両方を空のままにしてください。",
     "validationDocumentHint": "プロジェクト全体のままにすると、ドキュメントを再生成してもリンクが維持されます。",
     "validationDocumentLabel": "ドキュメント（任意）",
@@ -94,60 +345,1545 @@
     "validationUnknownProject": "リンク済みプロジェクト（現在利用できません）",
     "validationUnverifiedDocument": "リンク済みドキュメント（確認できません）",
     "validationUnverifiedProject": "リンク済みプロジェクト（確認できません）",
-    "validationWholeProject": "-- プロジェクト全体 --",
-    "dimensionsHint": "すべての送信にこの値が付きます。埋め込みごとに dimensions オプションでページ単位の値を設定できます。例:",
-    "dimensionsDevHint": "開発者向け: 埋め込みコードでページごとに設定"
+    "validationWholeProject": "-- プロジェクト全体 --"
   },
   "empty": {
-    "createButton": "最初のフォームを作成",
-    "description": "最初のフォームを作成して顧客フィードバックの収集を開始しましょう。",
-    "title": "フィードバックフォームがまだありません"
+    "title": "フィードバックフォームがまだありません",
+    "description": "最初のフォームを作成して顧客フィードバックの収集を開始しましょう。"
   },
   "infoBanner": {
-    "item1": "さまざまな目的（ウェブサイト、アプリ、サポートなど）のフォームを作成",
-    "item2": "各フォームには独自のURLと埋め込みコードがあります",
-    "item3": "カテゴリを割り当ててフィードバックを自動ルーティング",
-    "item4": "すべての送信はAIエンリッチメント（感情、ペルソナなど）を通過",
-    "title": "フィードバックフォームの仕組み"
-  },
-  "submissions": {
-    "avgRating": "平均評価",
-    "close": "閉じる",
-    "failedToLoad": "送信の読み込みに失敗しました",
-    "noRating": "評価なし",
-    "noSubmissions": "まだ送信がありません",
-    "noSubmissionsHint": "ユーザーがこのフォームからフィードバックを送信すると、ここに表示されます。",
-    "rated": "評価済み",
-    "title": "フォーム送信",
-    "totalSubmissions": "総送信数"
+    "title": "フィードバックフォームの仕組み",
+    "item1": "フォームごとに専用のリンク、埋め込みコード、テストリンクがあります。",
+    "item2": "回答はAIエンリッチメント（感情、ペルソナなど）で処理されます。テスト回答は処理されません。"
   },
   "subtitle": "埋め込み可能なフォームを作成して顧客フィードバックを収集",
   "title": "フィードバックフォーム",
-  "wizard": {
-    "anonymous": "匿名",
-    "anonymousDesc": "PII収集なし",
-    "cancel": "キャンセル",
-    "contactInfoDescription": "回答者から収集する個人情報を選択してください。",
-    "contactInfoTitle": "連絡先情報の収集",
-    "continue": "続行",
-    "emailOnly": "メールのみ",
-    "emailOnlyDesc": "メールを収集",
-    "nameAndEmail": "名前とメール",
-    "nameAndEmailDesc": "完全な連絡先情報",
-    "nameOnly": "名前のみ",
-    "nameOnlyDesc": "名前を収集",
-    "selectedTemplate": "選択済み：{{name}}",
-    "selectPrompt": "続行するにはテンプレートを選択してください",
-    "subtitle": "テンプレートを選択して開始",
-    "title": "新しいフォームを作成"
-  },
-  "createdDisabled": {
-    "dismiss": "閉じる",
-    "enable": "今すぐ有効にする",
-    "message": "「{{name}}」を作成しました。現在は無効のため、有効にするまでリンクを開いた人には「Feedback form unavailable.」と表示されます。"
-  },
   "systemForms": {
     "title": "システムフォーム（{{n, number}}）",
     "description": "作成したプロトタイプごとに自動で作られ、テスターのピンを集めます。共有や編集は不要です。"
+  },
+  "templates": {
+    "nps": {
+      "name": "ネットプロモータースコア",
+      "purpose": "0〜10のスケールでロイヤルティを測定し、批判者と推奨者にそれぞれ異なる追加質問をします。",
+      "q": {
+        "q_nps": {
+          "headline": "当社を友人や同僚にすすめる可能性はどのくらいありますか？",
+          "lower": "まったくすすめない",
+          "upper": "ぜひすすめたい"
+        },
+        "q_passive_improve": {
+          "headline": "どうすれば、当社をもっとすすめたいと思っていただけますか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_detractor_reason": {
+          "headline": "このスコアを付けた主な理由は何ですか？",
+          "other": "その他",
+          "otherPlaceholder": "内容を教えてください",
+          "options": {
+            "price": "価格が高すぎる",
+            "missing_features": "必要な機能が足りない",
+            "hard_to_use": "使いにくい",
+            "reliability": "不具合や停止がある",
+            "support": "サポートで問題が解決しなかった"
+          }
+        },
+        "q_detractor_fix": {
+          "headline": "まず何を改善すべきだと思いますか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_promoter_value": {
+          "headline": "最も評価している点は何ですか？",
+          "other": "その他",
+          "options": {
+            "ease": "使いやすい",
+            "features": "機能",
+            "reliability": "安定して使える",
+            "support": "サポートチーム",
+            "value": "価格に見合う価値がある"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "ご回答について、後ほどご連絡してもよろしいですか？",
+          "label": "はい、フィードバックについて連絡を受けることに同意します。"
+        },
+        "q_contact": {
+          "headline": "ご連絡先を教えてください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました！",
+          "description": "いただいたフィードバックは、次に何を改善するかを決めるために役立てます。"
+        },
+        "end_contact": {
+          "title": "ありがとうございました。ご連絡する場合があります",
+          "description": "ご回答について確認したいことがあれば、担当者からメールでご連絡します。"
+        }
+      }
+    },
+    "csat_support": {
+      "name": "サポート満足度（CSAT）",
+      "purpose": "サポートのやり取りが終わった時点で評価してもらい、評価が低い場合は何が問題だったかを把握します。",
+      "q": {
+        "q_csat": {
+          "headline": "今回のサポートにどのくらい満足していますか？",
+          "lower": "非常に不満",
+          "upper": "非常に満足"
+        },
+        "q_what_wrong": {
+          "headline": "どのような問題がありましたか？",
+          "other": "その他",
+          "options": {
+            "slow": "回答が得られるまでに時間がかかりすぎた",
+            "not_solved": "問題が解決しなかった",
+            "unclear": "回答がわかりにくかった",
+            "passed_around": "担当者が次々に変わった",
+            "tone": "対応が親切ではなかった"
+          }
+        },
+        "q_resolved": {
+          "headline": "問題は解決しましたか？",
+          "options": {
+            "yes": "はい",
+            "partly": "一部解決した",
+            "no": "いいえ"
+          }
+        },
+        "q_comment": {
+          "headline": "今回のやり取りについて、ほかにお伝えいただきたいことはありますか？",
+          "placeholder": "コメントを入力してください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "フィードバックをありがとうございました",
+          "description": "サポートチームがより良いサポートを提供するために役立てます。"
+        }
+      }
+    },
+    "ces": {
+      "name": "カスタマーエフォートスコア（CES）",
+      "purpose": "タスクを終えた直後に、どのくらい簡単だったか、何が妨げになったかを尋ねます。",
+      "q": {
+        "q_ces": {
+          "headline": "本日、目的のことをどのくらい簡単に済ませられましたか？",
+          "lower": "非常に難しかった",
+          "upper": "非常に簡単だった"
+        },
+        "q_obstacle": {
+          "headline": "何が難しかったですか？",
+          "other": "その他",
+          "options": {
+            "start": "どこから始めればよいかわからなかった",
+            "steps": "手順が多すぎた",
+            "labels": "表示や説明がわかりにくかった",
+            "errors": "エラーが出た、または動かない部分があった",
+            "slow": "読み込みを待たされた"
+          }
+        },
+        "q_easier": {
+          "headline": "どこか1つを変えるとしたら、何を変えればもっと簡単になりますか？",
+          "placeholder": "アイデアを入力してください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました",
+          "description": "すべての回答に目を通しています。"
+        }
+      }
+    },
+    "churn": {
+      "name": "解約・離脱",
+      "purpose": "顧客が解約する理由を把握し、理由ごとに適切な追加質問をします。",
+      "q": {
+        "q_reason": {
+          "headline": "解約される主な理由は何ですか？",
+          "other": "別の理由",
+          "otherPlaceholder": "理由を教えてください",
+          "options": {
+            "too_expensive": "自分には高すぎる",
+            "missing_features": "必要な機能がない",
+            "hard_to_use": "使いにくい",
+            "switching_product": "別の製品に乗り換える",
+            "not_needed": "もう必要なくなった",
+            "technical_issues": "不具合やパフォーマンスの問題がある"
+          }
+        },
+        "q_price": {
+          "headline": "何があれば、引き続きご利用いただけましたか？",
+          "other": "その他",
+          "otherPlaceholder": "内容を教えてください",
+          "options": {
+            "lower_price": "もっと安い価格",
+            "smaller_plan": "機能を絞った小さなプラン",
+            "annual_discount": "年払いの割引",
+            "pause": "サブスクリプションを一時停止できること"
+          }
+        },
+        "q_missing_feature": {
+          "headline": "どの機能が足りませんでしたか？",
+          "placeholder": "例：Excelへのエクスポート"
+        },
+        "q_hard_part": {
+          "headline": "特に使いにくかったのはどこですか？",
+          "placeholder": "難しく感じた箇所を教えてください"
+        },
+        "q_competitor": {
+          "headline": "どの製品に乗り換えますか？また、その製品のどこが優れていますか？"
+        },
+        "q_technical": {
+          "headline": "どのような問題がありましたか？覚えていることがあれば、原因の特定に役立ちます。"
+        },
+        "q_follow_up_ok": {
+          "headline": "後ほどご連絡してもよろしいですか？",
+          "label": "はい、回答について連絡を受けることに同意します。"
+        },
+        "q_contact": {
+          "headline": "ご連絡先を教えてください"
+        }
+      },
+      "endings": {
+        "end_bye": {
+          "title": "お聞かせいただきありがとうございました",
+          "description": "ご利用いただけなくなるのは残念です。いただいた回答は製品チームに直接届けられます。"
+        },
+        "end_contact": {
+          "title": "ありがとうございました。後ほどご連絡します",
+          "description": "回答について、担当者からメールでご連絡する場合があります。"
+        }
+      }
+    },
+    "old_ui": {
+      "name": "旧インターフェースへの切り替え",
+      "purpose": "リニューアルした画面から旧画面に戻す人に、戻したその時点で理由を尋ねます。",
+      "q": {
+        "q_why": {
+          "headline": "旧インターフェースに戻したのはなぜですか？",
+          "other": "その他",
+          "otherPlaceholder": "内容を教えてください",
+          "options": {
+            "cant_find": "必要なものが見つからない",
+            "slower_work": "作業に時間がかかる",
+            "missing_function": "使っている機能がない",
+            "errors": "動かない部分がある、またはエラーが出る",
+            "slow_loading": "読み込みが遅すぎる",
+            "layout": "画面のレイアウトが見づらい",
+            "prefer_known": "慣れたレイアウトのほうがよく、新しく覚える時間がない"
+          }
+        },
+        "q_missing_function": {
+          "headline": "どの機能がありませんか？",
+          "subheader": "旧インターフェースでは、どこでその機能を使っていましたか？",
+          "placeholder": "例：販売管理での請求書の一括転記"
+        },
+        "q_task": {
+          "headline": "今、どの作業をしていますか？",
+          "placeholder": "例：在庫レポート"
+        },
+        "q_return": {
+          "headline": "新しいインターフェースをもう一度使ってみようと思いますか？",
+          "options": {
+            "yes_soon": "はい、近いうちに",
+            "when_fixed": "はい、伝えた点が改善されたら",
+            "not_sure": "わからない",
+            "no": "いいえ、旧インターフェースを使い続けます"
+          }
+        },
+        "q_comment": {
+          "headline": "ほかにチームに伝えたいことはありますか？",
+          "placeholder": "コメントを入力してください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました",
+          "description": "いただいた回答は、新しいインターフェースを開発しているチームに直接届けられます。"
+        }
+      },
+      "hidden": {
+        "user_id": "ユーザー",
+        "app_version": "アプリのバージョン",
+        "screen": "切り替えた画面"
+      }
+    },
+    "abandonment": {
+      "name": "購入・登録の離脱",
+      "purpose": "購入手続きや登録を完了する前にやめてしまう理由を把握します。",
+      "q": {
+        "q_stopped": {
+          "headline": "最後まで完了しなかった理由は何ですか？",
+          "other": "その他",
+          "options": {
+            "price": "合計金額が予想より高かった",
+            "payment": "使いたい支払い方法がなかった",
+            "account": "アカウントを作りたくなかった",
+            "too_long": "時間がかかりすぎた",
+            "trust": "安全かどうか不安だった",
+            "technical": "うまく動かない部分があった",
+            "just_looking": "見ていただけだった"
+          }
+        },
+        "q_payment": {
+          "headline": "どの支払い方法を使う予定でしたか？",
+          "other": "その他の方法",
+          "options": {
+            "card": "クレジットカードまたはデビットカード",
+            "bank_transfer": "銀行振込",
+            "paypal": "PayPal",
+            "wallet": "Apple Pay または Google Pay",
+            "invoice": "請求書による後払い"
+          }
+        },
+        "q_technical": {
+          "headline": "何が起きましたか？",
+          "subheader": "エラーメッセージや、どの手順の途中だったかを教えていただくと、原因の特定に役立ちます。"
+        },
+        "q_come_back": {
+          "headline": "後で戻って、手続きを完了する予定はありますか？",
+          "options": {
+            "yes": "はい",
+            "maybe": "たぶん",
+            "no": "いいえ"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございます。参考になります",
+          "description": "いただいた回答をもとに、どなたにとってもより早く済むよう改善します。"
+        }
+      }
+    },
+    "pmf": {
+      "name": "プロダクトマーケットフィット",
+      "purpose": "「非常に残念」テスト：製品が使えなくなったら困るユーザーがどのくらいいるのか、その理由は何かを把握します。",
+      "q": {
+        "q_disappointment": {
+          "headline": "この製品が使えなくなったら、どう感じますか？",
+          "options": {
+            "very": "非常に残念",
+            "somewhat": "やや残念",
+            "not": "残念ではない"
+          }
+        },
+        "q_main_benefit": {
+          "headline": "この製品から得ている一番のメリットは何ですか？"
+        },
+        "q_ideal_user": {
+          "headline": "この製品が最も役立つのは、どのような人だと思いますか？",
+          "placeholder": "例：中規模企業の経理チーム"
+        },
+        "q_improve": {
+          "headline": "あなたにとってより良い製品にするには、どう改善すればよいですか？"
+        },
+        "q_role": {
+          "headline": "あなたの役割に最も近いものはどれですか？",
+          "other": "その他",
+          "options": {
+            "manager": "マネージャーまたはチームリーダー",
+            "specialist": "専門職",
+            "executive": "経営者または役員",
+            "it": "IT担当者または管理者",
+            "consultant": "コンサルタントまたはパートナー"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました",
+          "description": "いただいた回答は、次に何を開発するかを決めるために役立てます。"
+        }
+      }
+    },
+    "feature_request": {
+      "name": "機能リクエスト・ご意見箱",
+      "purpose": "常設のご意見箱：アイデア、問題、良かった点を受け付け、それぞれに専用の追加質問をします。",
+      "q": {
+        "q_kind": {
+          "headline": "どのような内容をお寄せいただけますか？",
+          "options": {
+            "idea": "アイデア",
+            "problem": "問題",
+            "praise": "良かった点",
+            "question": "質問"
+          }
+        },
+        "q_idea": {
+          "headline": "製品にどのようなことをしてほしいですか？",
+          "placeholder": "考えている機能や変更内容を説明してください"
+        },
+        "q_idea_importance": {
+          "headline": "あなたの業務にとって、どのくらい重要ですか？",
+          "options": {
+            "nice": "あると便利",
+            "important": "重要",
+            "blocking": "これがないと業務ができない"
+          }
+        },
+        "q_problem": {
+          "headline": "どのような問題がありましたか？",
+          "subheader": "行った操作、期待した結果、実際に起きたことを教えてください。"
+        },
+        "q_praise": {
+          "headline": "どんなところが気に入っていますか？"
+        },
+        "q_question": {
+          "headline": "どのようなご質問ですか？"
+        },
+        "q_follow_up_ok": {
+          "headline": "後ほどご連絡してもよろしいですか？",
+          "label": "はい、この件について連絡を受けることに同意します。"
+        },
+        "q_contact": {
+          "headline": "ご連絡先を教えてください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "お寄せいただきありがとうございます",
+          "description": "製品チームに直接届けられます。"
+        },
+        "end_contact": {
+          "title": "ありがとうございます。ご連絡する場合があります",
+          "description": "お聞きしたいことやお伝えしたい回答がある場合は、メールでご連絡します。"
+        }
+      }
+    },
+    "feature_satisfaction": {
+      "name": "機能の満足度",
+      "purpose": "実際に使った後で特定の機能を評価してもらい、改善につながる点を把握します。",
+      "q": {
+        "q_rating": {
+          "headline": "この機能にどのくらい満足していますか？",
+          "lower": "まったく満足していない",
+          "upper": "非常に満足"
+        },
+        "q_better": {
+          "headline": "どうすればもっと良くなりますか？",
+          "other": "その他",
+          "options": {
+            "faster": "もっと速くしてほしい",
+            "clearer": "もっとわかりやすくしてほしい",
+            "more_options": "選べる設定を増やしてほしい",
+            "fewer_steps": "手順を減らしてほしい",
+            "fix": "動かない部分を直してほしい"
+          }
+        },
+        "q_frequency": {
+          "headline": "どのくらいの頻度で使っていますか？",
+          "options": {
+            "daily": "毎日",
+            "weekly": "毎週",
+            "monthly": "毎月",
+            "rarely": "それ以下",
+            "first_time": "今回が初めて"
+          }
+        },
+        "q_comment": {
+          "headline": "この機能について、ほかに何かありますか？"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました",
+          "description": "いただいた評価は、この機能を担当するチームに届けられます。"
+        }
+      }
+    },
+    "bug_report": {
+      "name": "バグ報告",
+      "purpose": "チームが再現に必要な情報とあわせて、問題を報告してもらいます。",
+      "q": {
+        "q_what_happened": {
+          "headline": "どのような問題がありましたか？",
+          "placeholder": "何が起きたかを説明してください"
+        },
+        "q_steps": {
+          "headline": "直前に何をしていましたか？",
+          "placeholder": "1. …を開いた  2. …をクリックした"
+        },
+        "q_expected": {
+          "headline": "本来はどうなると思っていましたか？"
+        },
+        "q_frequency": {
+          "headline": "どのくらいの頻度で起きますか？",
+          "options": {
+            "every_time": "毎回",
+            "sometimes": "ときどき",
+            "once": "1回だけ"
+          }
+        },
+        "q_impact": {
+          "headline": "業務にどのくらい影響がありますか？",
+          "options": {
+            "blocked": "作業を続けられない",
+            "workaround": "回避する方法を見つけた",
+            "minor": "少し不便な程度"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "詳しい情報が必要な場合、ご連絡してもよろしいですか？",
+          "label": "はい、この報告について連絡を受けることに同意します。"
+        },
+        "q_contact": {
+          "headline": "ご連絡先を教えてください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ご報告ありがとうございます",
+          "description": "いただいた報告は、問題を修正するチームに直接届けられます。"
+        },
+        "end_contact": {
+          "title": "ありがとうございます。ご連絡する場合があります",
+          "description": "詳しい情報が必要な場合は、メールでご連絡します。"
+        }
+      }
+    },
+    "onboarding": {
+      "name": "オンボーディングのセグメント分け",
+      "purpose": "新しいユーザーにどんな人で何をしに来たのかを尋ね、最初のステップをその人に合わせます。",
+      "welcome": {
+        "title": "ようこそ！",
+        "description": "4つの簡単な質問にお答えいただくと、最初に必要なものからご案内します。",
+        "button": "始める"
+      },
+      "q": {
+        "q_role": {
+          "headline": "あなたの役割を教えてください",
+          "other": "その他",
+          "options": {
+            "management": "経営・管理職",
+            "finance": "財務・経理",
+            "sales": "営業",
+            "operations": "業務・物流",
+            "it": "IT・システム管理"
+          }
+        },
+        "q_company_size": {
+          "headline": "あなたの会社の従業員数は何人ですか？",
+          "options": {
+            "size_1": "自分だけ",
+            "size_2_10": "2〜10人",
+            "size_11_50": "11〜50人",
+            "size_51_250": "51〜250人",
+            "size_251_1000": "251〜1,000人",
+            "size_1000_plus": "1,000人超"
+          }
+        },
+        "q_first_goal": {
+          "headline": "最初に何をしたいですか？",
+          "none": "まだ決めていない",
+          "options": {
+            "import": "データをインポートする",
+            "invite": "チームを招待する",
+            "reports": "レポートを設定する",
+            "connect": "別のツールと連携する",
+            "explore": "いろいろ見てみる"
+          }
+        },
+        "q_experience": {
+          "headline": "これまでに同じような製品を使ったことはありますか？",
+          "options": {
+            "daily": "はい、毎日使っている",
+            "some": "はい、少しだけ",
+            "no": "いいえ、今回が初めて"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "準備が整いました",
+          "description": "回答に合わせて、最初のステップをご案内します。"
+        },
+        "end_newcomer": {
+          "title": "ようこそ",
+          "description": "まずは基本からご案内します。"
+        }
+      },
+      "tips": {
+        "end_newcomer": "スタートガイドへのボタンを追加しましょう。"
+      }
+    },
+    "blank": {
+      "name": "空白のフォーム",
+      "purpose": "自由回答の質問が1つだけ。あとは自分で作成します。",
+      "q": {
+        "q_feedback": {
+          "headline": "ご意見をお聞かせください",
+          "placeholder": "ここに回答を入力してください…"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました！",
+          "description": "すべてのメッセージに目を通しています。"
+        }
+      }
+    }
+  },
+  "picker": {
+    "title": "新しいフォーム",
+    "subtitle": "内容を説明するとAIが下書きを作成します。テンプレートから始めることもできます。質問はすべて後から変更できます。",
+    "createIn": "作成する言語",
+    "railLabel": "開始方法",
+    "goalsLabel": "目的",
+    "describeIt": "説明して作成",
+    "groups": {
+      "all": "すべて",
+      "loyalty": "ロイヤルティ",
+      "dropoffs": "離脱",
+      "product": "製品",
+      "onboarding": "オンボーディング",
+      "blank": "空白"
+    },
+    "runs": {
+      "link": "リンク",
+      "embed": "埋め込み",
+      "in_app": "アプリ内"
+    },
+    "minutes_one": "約{{count, number}}分",
+    "minutes_other": "約{{count, number}}分",
+    "moreTypes": "+{{count, number}}件",
+    "use": "このテンプレートを使う",
+    "empty": "テンプレートを選ぶか、フォームの内容を説明すると、ここに表示されます。",
+    "backToList": "テンプレート",
+    "preview": {
+      "label": "プレビュー",
+      "questions": "質問",
+      "rules_one": "ルール{{count, number}}件",
+      "rules_other": "ルール{{count, number}}件",
+      "endings_one": "終了画面{{count, number}}件",
+      "endings_other": "終了画面{{count, number}}件",
+      "device": "プレビューのサイズ",
+      "phone": "スマートフォン",
+      "desktop": "デスクトップ",
+      "restart": "最初から",
+      "loading": "この言語でテンプレートを読み込み中…",
+      "frameTitle": "フォームのプレビュー、{{device}}サイズ、{{language}}",
+      "nothingSent": "プレビュー · 何も送信されません"
+    },
+    "stopDraft": {
+      "title": "下書きの作成を中止しますか？",
+      "message": "AIがまだフォームの下書きを作成しています。代わりにこのテンプレートを使いますか？下書きは破棄されます。",
+      "confirm": "このテンプレートを使う"
+    }
+  },
+  "describe": {
+    "kicker": "フォームを説明",
+    "title": "フォームの内容を説明",
+    "nothingSaved": "保存するまで、何も保存されません。",
+    "hint": "誰に向けたフォームか、何を知りたいか、どんな回答の選択肢を用意したいかを書いてください。",
+    "count": "{{n, number}} / {{max, number}}",
+    "tooShort": "先にフォームの内容を説明してください。",
+    "try": "例を試す",
+    "examples": {
+      "oldUi": {
+        "chip": "旧UIに戻すユーザー…",
+        "text": "旧UIに戻すアプリユーザーに、あらかじめ用意した理由の中からその理由を尋ねる。"
+      },
+      "nps": {
+        "chip": "モバイルアプリ向けの短いNPS…",
+        "text": "モバイルアプリ向けの短いNPSアンケート。不満のある顧客には追加の質問をする。"
+      },
+      "support": {
+        "chip": "サポートチケットの後…",
+        "text": "サポートチケットがクローズされた後、顧客の満足度と、問題が解決したかどうかを尋ねる。"
+      },
+      "churn": {
+        "chip": "解約する顧客…",
+        "text": "解約する顧客に、離れる理由と、連絡してもよいかどうかを尋ねる。"
+      }
+    },
+    "replaceAsk": "説明を置き換えますか？",
+    "replace": "置き換える",
+    "keepMine": "自分の説明を残す",
+    "language": "言語",
+    "runs": "配信方法",
+    "runsHint": {
+      "link": "ウェルカム画面から始めることができます。",
+      "embed": "ページ内に表示されます。ウェルカム画面はありません。",
+      "in_app": "短く、ウェルカム画面なし。アプリ用の非表示フィールド付き。"
+    },
+    "draft": "下書きを作成",
+    "draftingButton": "作成中…",
+    "draftingStatus": "フォームの下書きを作成しています… 通常10〜30秒かかります。",
+    "drafting": "作成中…",
+    "waitReason": "{{minutes}}分後にもう一度下書きを作成できます。",
+    "privacy": "説明はこのワークスペースのAIモデルに送信されます。個人データは貼り付けないでください。"
+  },
+  "ai": {
+    "refusal": {
+      "role": "AIでフォームの下書きを作成できるのは、編集者と管理者だけです。",
+      "aiMode": "人が主導：AIがフォームを作成することはありません。テンプレートから始めるか、アシスタントにコーチしてもらってください。",
+      "coachPrompt": "フィードバックフォームを書くので、コーチしてください。私が何を知りたいのかを尋ね、質問文と回答の選択肢の言い回しを手伝ってください。",
+      "coachMe": "コーチしてもらう",
+      "changeInPeople": "「管理 → ユーザー」で変更",
+      "askAdminMode": "管理者が変更できます。",
+      "noModel": "このワークスペースではAIによる下書き作成が設定されていません。使用できるAIモデルがありません。",
+      "openAiModels": "「管理 → AIモデル」を開く",
+      "askAdminModel": "管理者に設定を依頼してください。",
+      "spendCap": "このワークスペースの今月のAI予算を使い切りました。",
+      "rateLimited": "AIの利用上限に達しました。{{minutes}}分後にもう一度お試しください。",
+      "rateLimitOver": "AIの利用制限が解除されました。もう一度下書きを作成できます。",
+      "invalid": "AIはこの内容から有効なフォームを作成できませんでした。",
+      "invalidHint": "2回試しました。質問と回答をもっとわかりやすく説明するか、テンプレートから始めてください。",
+      "details": "詳細",
+      "tryAgain": "再試行",
+      "noAnswer": "AIから応答がありませんでした。しばらくしてから、もう一度お試しください。",
+      "other": "AIはこのフォームの下書きを作成できませんでした：{{message}}"
+    },
+    "banner": {
+      "label": "AI下書き",
+      "draft": "AI下書き：公開前に確認してください。まだ何も保存されていません。",
+      "improve": "AIで変更しました：保存前に確認してください。",
+      "notes": "メモ（{{count, number}}）",
+      "discard": "下書きを破棄",
+      "undo": "AIの変更を元に戻す",
+      "goTo": "移動",
+      "discardConfirm": {
+        "title": "AI下書きを破棄しますか？",
+        "message": "何も保存されていません。",
+        "confirm": "下書きを破棄"
+      },
+      "addresses": {
+        "label": "AIが提案したアドレス",
+        "suggested": "AIによる提案",
+        "confirm": "アドレスを確認",
+        "remove": "削除"
+      }
+    },
+    "improve": {
+      "title": "AIで改善",
+      "description": "変更内容を指示してください。すべての変更は適用前に確認できます。何も保存されません。",
+      "instruction": "指示",
+      "try": "例を試す",
+      "examples": {
+        "translations": "英語の翻訳を追加",
+        "shorter": "すべての質問を短くする",
+        "contact": "最後に連絡先の質問を追加",
+        "hidden": "モバイルアプリ用の非表示フィールドを追加",
+        "dropdown": "質問1をドロップダウンにする",
+        "question": "質問{{number}}を改善"
+      },
+      "scope": "変更対象：質問、ロジック、終了画面、非表示フィールド、言語。設定、テーマ、ルーティングはそのまま残ります。",
+      "reads": "未保存の編集も含め、現在の状態のフォームを読み取ります（{{questions}} · {{endings}}）。",
+      "questionsCount_one": "{{count, number}}問",
+      "questionsCount_other": "{{count, number}}問",
+      "endingsCount_one": "終了画面{{count, number}}件",
+      "endingsCount_other": "終了画面{{count, number}}件",
+      "cancel": "キャンセル",
+      "draft": "変更案を作成",
+      "drafting": "変更案を作成しています… 通常10〜30秒かかります。",
+      "emptyInstruction": "先に変更内容を入力してください。",
+      "nothing": "AIは何も変更しませんでした。変更したい内容をもっと詳しく書いてみてください。",
+      "back": "戻る",
+      "applied_one": "AIによる変更を{{count, number}}件適用しました。確認してから保存してください。",
+      "applied_other": "AIによる変更を{{count, number}}件適用しました。確認してから保存してください。"
+    },
+    "diff": {
+      "title": "AIによる変更",
+      "count_one": "{{count, number}}件の変更",
+      "count_other": "{{count, number}}件の変更",
+      "acceptAll": "すべて承認",
+      "rejectAll": "すべて却下",
+      "fromAi": "AIによる変更",
+      "ignored": "無視された変更：{{areas}}。",
+      "ignoredAreas": {
+        "name": "名前",
+        "theme": "テーマ",
+        "routing": "カテゴリルーティング",
+        "project": "リンク先プロジェクト",
+        "test": "テスト設定",
+        "tags": "タグ",
+        "dimensions": "ディメンションの既定値"
+      },
+      "kinds": {
+        "added": "追加",
+        "removed": "削除",
+        "changed": "変更"
+      },
+      "apply": "適用：{{what}}の{{kind}}",
+      "what": {
+        "question": "質問{{number}}",
+        "ending": "終了画面「{{title}}」",
+        "hidden": "非表示フィールド {{id}}",
+        "language": "言語 {{language}}",
+        "welcome": "ウェルカムカード"
+      },
+      "languageTexts_one": "テキスト{{count, number}}件",
+      "languageTexts_other": "テキスト{{count, number}}件",
+      "welcome": "ウェルカムカード",
+      "hidden": "非表示フィールド {{id}}",
+      "expand": "変更内容を表示",
+      "collapse": "変更内容を非表示",
+      "notApplied": "未適用",
+      "notAppliedWith": "あわせて適用されないもの：{{questions}}のルール。",
+      "keptWith": "あわせて残るもの：ここに移動する{{questions}}のルール。",
+      "checkAddress": "このアドレスを確認しました",
+      "addressWaits": "アドレスを確認するまで適用されません。",
+      "applyCount_one": "{{count, number}}件の変更を適用",
+      "applyCount_other": "{{count, number}}件の変更を適用",
+      "invalid": "これらの変更をまとめて適用すると、フォームに問題が残ります：{{problem}}",
+      "noneSelected": "適用する変更を1つ以上選んでください。",
+      "before": "変更前",
+      "after": "変更後",
+      "ruleAdded": "追加されたルール：{{sentence}}",
+      "ruleRemoved": "削除されたルール：{{sentence}}",
+      "fields": {
+        "headline": "質問",
+        "subheader": "説明",
+        "required": "必須",
+        "type": "種類",
+        "options": "選択肢",
+        "other": "その他",
+        "none": "該当なし",
+        "shuffle": "順序",
+        "display": "表示形式",
+        "min": "最少",
+        "max": "最多",
+        "long": "長さ",
+        "input_type": "回答の種類",
+        "placeholder": "プレースホルダー",
+        "max_chars": "文字数の上限",
+        "scale": "スケール",
+        "range": "段階",
+        "lower_label": "低い側",
+        "upper_label": "高い側",
+        "label": "テキスト",
+        "cta": "リンクボタン",
+        "fields": "項目",
+        "button_label": "ボタンのラベル",
+        "title": "タイトル",
+        "description": "説明",
+        "button": "ボタン",
+        "enabled": "表示",
+        "logic": "ロジック"
+      },
+      "values": {
+        "yes": "はい",
+        "no": "いいえ",
+        "empty": "—"
+      }
+    },
+    "stop": {
+      "button": "停止",
+      "title": "下書きの作成を中止しますか？",
+      "message": "AIはフォームの下書きの作成を中止し、それまでに書いた内容は破棄されます。何も保存されていません。",
+      "confirm": "作成を中止",
+      "keep": "作成を続ける"
+    }
+  },
+  "questionList": {
+    "title": "質問（{{count, number}}）",
+    "label": "質問",
+    "improve": "AIで改善",
+    "welcomeOn": "ウェルカムカード · オン",
+    "welcomeOff": "ウェルカムカード · オフ",
+    "add": "質問を追加",
+    "addHere": "ここに質問を追加",
+    "typeMenu": "質問の種類",
+    "contactOnce": "このフォームに追加済み",
+    "limit": "フォームに入れられる質問は30問までです。",
+    "lastQuestion": "フォームには質問が1つ以上必要です。",
+    "cardName": "質問{{number}}（全{{total, number}}問）",
+    "cardMenu": "質問{{number}}のその他の操作",
+    "duplicate": "複製",
+    "moveUp": "上へ移動",
+    "moveDown": "下へ移動",
+    "alreadyFirst": "すでに先頭です。",
+    "alreadyLast": "すでに末尾です。",
+    "changeType": "種類を変更…",
+    "delete": "削除…",
+    "deleteTitle": "この質問を削除しますか？",
+    "deleteConfirm": "削除",
+    "deleteRules_one": "{{count, number}}件のルールがこの質問に移動します。このルールは削除され、該当する回答者は次の質問に進みます。",
+    "deleteRules_other": "{{count, number}}件のルールがこの質問に移動します。これらのルールは削除され、該当する回答者は次の質問に進みます。",
+    "deleteAnswers": "この質問への回答は、結果の「削除された質問」に残ります。",
+    "deleted": "質問を削除しました。",
+    "undo": "元に戻す",
+    "moved": "「{{headline}}」を{{total, number}}問中{{position}}番目に移動しました。",
+    "rules_one": "ルール{{count, number}}件",
+    "rules_other": "ルール{{count, number}}件",
+    "languageMissing": "{{language}}が未翻訳",
+    "languagesMissing": "{{count, number}}言語が未翻訳",
+    "problem": "問題",
+    "ai": "AI",
+    "gone": "このカードはもうフォームにありません。",
+    "back": "質問",
+    "position": "{{n}} / {{total, number}}",
+    "previous": "前の質問",
+    "next": "次の質問",
+    "meta": {
+      "options_one": "選択肢{{count, number}}個",
+      "options_other": "選択肢{{count, number}}個",
+      "other": "その他",
+      "none": "該当なし",
+      "required": "必須",
+      "optional": "任意",
+      "upTo": "最大{{count, number}}文字",
+      "range": "{{min}}〜{{max}}",
+      "scale": {
+        "star": "星 {{range}}",
+        "number": "数字 {{range}}",
+        "smiley": "顔 {{range}}"
+      },
+      "textOnly": "テキストのみ",
+      "linkButton": "リンクボタン付き"
+    }
+  },
+  "question": {
+    "headline": "質問",
+    "newQuestion": "新しい質問",
+    "description": "説明",
+    "required": "必須",
+    "requiredScaleHint": "回答者はスキップできません。",
+    "logic_one": "ロジック · ルール{{count, number}}件",
+    "logic_other": "ロジック · ルール{{count, number}}件",
+    "advanced": "詳細設定",
+    "id": "質問ID",
+    "idLocked": "回答はこのIDで保存されるため、回答が集まった後は変更できません。",
+    "buttonLabel": "ボタンのラベル",
+    "buttonLabelPlaceholder": "次へ",
+    "duplicate": "質問{{number}}を複製",
+    "translationMissing_one": "メイン言語は{{primary}}です。この質問には{{language}}の未翻訳テキストが{{count, number}}件あります。",
+    "translationMissing_other": "メイン言語は{{primary}}です。この質問には{{language}}の未翻訳テキストが{{count, number}}件あります。",
+    "translate": "翻訳"
+  },
+  "typeChange": {
+    "label": "質問{{number}}：種類",
+    "none": "種類を変更するには、その種類の質問を新しく追加して、この質問を削除してください。",
+    "confirmTitle": "質問の種類を変更しますか？",
+    "confirmMessage": "この変更で次の設定が失われます：{{lost}}。",
+    "confirm": "種類を変更",
+    "lost": {
+      "none": "「該当なし」の行",
+      "minMax": "「最少」と「最多」",
+      "includesAll": "すべての選択肢を条件とするルール",
+      "rulesOutsideScale": "新しいスケールの範囲外にあるルール"
+    }
+  },
+  "choice": {
+    "options": "選択肢",
+    "view": "選択肢の表示",
+    "labels": "ラベル",
+    "pasteList": "リストを貼り付け",
+    "optionN": "選択肢{{number}}",
+    "optionMenu": "選択肢{{number}}のその他の操作",
+    "codeOf": "選択肢{{number}}のコード",
+    "codeLocked": "回答はこのコードで保存されるため、回答が集まった後は変更できません。代わりにラベルを変更してください。",
+    "goesTo": "移動先：{{target}}",
+    "lastOption": "選択式の質問には選択肢が1つ以上必要です。",
+    "addOption": "選択肢を追加",
+    "count": "{{n, number}} / {{max, number}}",
+    "pasteAsOptions_one": "{{count, number}}行を{{count, number}}個の選択肢として貼り付けますか？",
+    "pasteAsOptions_other": "{{count, number}}行を{{count, number}}個の選択肢として貼り付けますか？",
+    "addAsOptions": "選択肢として追加",
+    "keepAsOne": "1つのまま残す",
+    "paste": {
+      "label": "1行に1つずつ入力します。各行が選択肢になり、コードはテキストから作成されます。",
+      "options_one": "選択肢{{count, number}}個",
+      "options_other": "選択肢{{count, number}}個",
+      "duplicates_one": "重複{{count, number}}件をスキップ",
+      "duplicates_other": "重複{{count, number}}件をスキップ",
+      "blanks_one": "空行{{count, number}}行を無視",
+      "blanks_other": "空行{{count, number}}行を無視",
+      "add_one": "選択肢を{{count, number}}個追加",
+      "add_other": "選択肢を{{count, number}}個追加",
+      "replace": "すべて置き換え…",
+      "cancel": "キャンセル",
+      "replaceTitle": "すべての選択肢を置き換えますか？",
+      "replaceMessage": "このフォームには回答があります。置き換える選択肢への回答は、削除された選択肢として結果に残ります。",
+      "replaceConfirm": "すべて置き換え"
+    },
+    "other": "テキストボックス付きの「その他」",
+    "otherLabel": "ラベル",
+    "otherDefault": "その他",
+    "otherPlaceholder": "プレースホルダー",
+    "otherPlaceholderDefault": "具体的にご記入ください",
+    "none": "「該当なし」",
+    "noneHint": "排他的：選ぶと他の選択が解除されます。複数選択のみ。",
+    "noneLabel": "「該当なし」のラベル",
+    "order": "順序",
+    "orderHint": "「その他」と「該当なし」は常に最後に表示されます。",
+    "shuffle": {
+      "none": "表示順どおり",
+      "all": "シャッフル",
+      "except_last": "シャッフル（最後の選択肢は固定）"
+    },
+    "showAs": "表示形式",
+    "display": {
+      "auto": "自動",
+      "list": "リスト",
+      "dropdown": "ドロップダウン",
+      "chips": "チップ"
+    },
+    "autoList_one": "自動の場合、ここではリストで表示されます：選択肢{{count, number}}個。",
+    "autoList_other": "自動の場合、ここではリストで表示されます：選択肢{{count, number}}個。",
+    "autoDropdown_one": "自動の場合、ここではドロップダウンで表示されます：選択肢{{count, number}}個。",
+    "autoDropdown_other": "自動の場合、ここではドロップダウンで表示されます：選択肢{{count, number}}個。",
+    "answers": "回答数",
+    "atLeast": "最少",
+    "atMost": "最多",
+    "minMaxHint": "「最少」が空欄の場合、必須の質問では1、任意の質問では0になります。「最多」が空欄の場合は上限なしです。",
+    "respondentsSee": "回答者には「{{count, number}}個まで選択」と表示されます。",
+    "showCodes": "コードを表示",
+    "showCodesHint": "コードは、回答の保存や、ルールで選択肢を指定するときに使われます。",
+    "routing": {
+      "title": "ルーティング",
+      "option": "選択肢",
+      "category": "カテゴリ",
+      "goTo": "移動先",
+      "formDefault": "— フォームの既定",
+      "notConfigured": "{{name}}（現在は未設定）",
+      "categoryOf": "「{{option}}」のカテゴリ",
+      "goToOf": "「{{option}}」の後の移動先",
+      "otherwise": "それ以外の場合：{{target}}",
+      "otherRow": "{{label}}（その他）",
+      "setByRule": "ロジックのルールで設定済み",
+      "editInLogic": "ロジックで編集",
+      "precedence": "この質問のフィードバックは、カテゴリが割り当てられた最初の選択肢のカテゴリに分類されます。ない場合はフォームのカテゴリ（設定 › カテゴリルーティング）に分類されます。",
+      "firstRuleWins": "選ばれた複数の選択肢にジャンプがある場合は、ロジックの最初のルールが適用されます。"
+    }
+  },
+  "scale": {
+    "scale": "スケール",
+    "scales": {
+      "star": "星",
+      "number": "数字",
+      "smiley": "顔"
+    },
+    "points": "段階",
+    "facesRange": "顔は3〜5段階です。",
+    "lowEnd": "低い側のラベル",
+    "highEnd": "高い側のラベル",
+    "fixed": {
+      "nps": "0〜10（固定）。",
+      "csat": "1〜5の顔（固定）。4と5が「満足」に数えられます。",
+      "ces": "1〜7（固定）。5〜7が「簡単」に数えられます。"
+    },
+    "npsGroups": "0〜6 批判者 · 7〜8 中立者 · 9〜10 推奨者",
+    "npsHelper": {
+      "button": "批判者と推奨者に別々の質問をする",
+      "detractor": "このスコアを付けた主な理由は何ですか？",
+      "promoter": "最も評価している点は何ですか？",
+      "done": "追加の質問を2つ追加しました。批判者と推奨者にそれぞれ専用の質問が表示されます。"
+    }
+  },
+  "text": {
+    "length": "長さ",
+    "short": "短い",
+    "long": "長い",
+    "answerType": "回答の種類",
+    "inputTypes": {
+      "text": "テキスト",
+      "email": "メールアドレス",
+      "number": "数値",
+      "phone": "電話番号",
+      "url": "ウェブアドレス"
+    },
+    "placeholder": "プレースホルダー",
+    "placeholderHint": "ボックス内に表示されるヒントで、ラベルの代わりにはなりません。回答者には常にその上の質問が表示されます。",
+    "limit": "上限（文字数）",
+    "limitHint": "1〜5,000。空欄の場合は5,000です。"
+  },
+  "statement": {
+    "text": "テキスト",
+    "addButton": "リンクボタンを追加",
+    "hint": "「次へ」で先に進めます。リンクは新しいタブで開きます。",
+    "buttonLabel": "ボタンのラベル",
+    "buttonLabelPlaceholder": "詳細を見る",
+    "address": "アドレス",
+    "addressHint": "アドレスは https:// で始まる必要があります"
+  },
+  "consent": {
+    "checkboxText": "チェックボックスのテキスト",
+    "placeholder": "はい、フィードバックについて連絡を受けることに同意します。",
+    "hint": "任意の同意でチェックを付けなかった場合は、「いいえ」と回答したことになります。",
+    "mustTick": "続行するにはチェックが必要"
+  },
+  "contact": {
+    "field": "項目",
+    "show": "表示",
+    "required": "必須",
+    "fields": {
+      "name": "名前",
+      "email": "メールアドレス",
+      "phone": "電話番号",
+      "company": "会社"
+    },
+    "showField": "{{field}}を表示",
+    "requireField": "{{field}}を必須にする",
+    "personalData": "この質問は個人データを収集します。回答者がここまで進んだ場合にのみ表示され、回答と一緒に保存されます。"
+  },
+  "welcome": {
+    "show": "ウェルカム画面を表示",
+    "hint": "アプリ内のフォームではオフのままにしてください。開いた理由は回答者がすでに知っています。",
+    "title": "タイトル",
+    "description": "説明",
+    "buttonLabel": "ボタンのラベル",
+    "buttonDefault": "開始"
+  },
+  "endings": {
+    "heading": "終了画面",
+    "label": "終了画面",
+    "default": "既定",
+    "untitled": "無題の終了画面",
+    "cardMenu": "終了画面「{{title}}」のその他の操作",
+    "add": "終了画面を追加",
+    "newTitle": "ありがとうございました",
+    "limit": "フォームの終了画面は5つまでです。",
+    "lastEnding": "フォームには終了画面が1つ以上必要です。",
+    "deleteTitle": "この終了画面を削除しますか？",
+    "deleteRules_one": "{{count, number}}件のルールがここで終わります。このルールは削除され、該当する回答者には既定の終了画面が表示されます。",
+    "deleteRules_other": "{{count, number}}件のルールがここで終わります。これらのルールは削除され、該当する回答者には既定の終了画面が表示されます。",
+    "nowDefault": "「{{title}}」が既定の終了画面になりました。",
+    "moved": "「{{title}}」を{{total, number}}件中{{position}}番目に移動しました。",
+    "title": "タイトル",
+    "description": "説明",
+    "addButton": "ボタンを追加",
+    "buttonLabel": "ボタンのラベル",
+    "reachedBy": "到達条件：",
+    "reachedFrom": "{{number}} {{condition}}",
+    "otherwise": "それ以外の場合",
+    "endOfQuestions": "質問の最後（既定）",
+    "id": "終了画面ID",
+    "idLocked": "回答はこのIDとともに保存されるため、回答が集まった後は変更できません。"
+  },
+  "preview": {
+    "label": "プレビュー",
+    "deviceLabel": "プレビューのサイズ",
+    "phone": "スマートフォン",
+    "desktop": "デスクトップ",
+    "device": {
+      "phone": "スマートフォンサイズ",
+      "desktop": "デスクトップサイズ"
+    },
+    "language": "プレビューの言語",
+    "languageMissing": "{{language}}（未翻訳{{count, number}}件、{{primary}}で表示）",
+    "frameTitle": "フォームのプレビュー、{{size}}、{{language}}",
+    "nothingSent": "プレビュー · 何も送信されません",
+    "restart": "最初から",
+    "startHere": "ここから開始",
+    "fullScreen": "全画面",
+    "show": "プレビュー",
+    "hide": "プレビューを非表示",
+    "backToBuilder": "ビルダーに戻る",
+    "loading": "フォームを読み込み中…"
+  },
+  "flow": {
+    "title": "フロー",
+    "questions_one": "{{count, number}}問",
+    "questions_other": "{{count, number}}問",
+    "endings_one": "終了画面{{count, number}}件",
+    "endings_other": "終了画面{{count, number}}件",
+    "paths_one": "経路{{count, number}}件",
+    "paths_other": "経路{{count, number}}件",
+    "lengths": "最短{{min, number}}問、最長{{max, number}}問",
+    "expandAll": "すべて展開",
+    "collapseAll": "すべて折りたたむ",
+    "start": "開始",
+    "end": "終了",
+    "welcomeOn": "ウェルカムカード オン → 1",
+    "welcomeOff": "ウェルカムカード オフ → 1",
+    "questionsLabel": "質問とルール",
+    "endingsLabel": "終了画面",
+    "default": "既定",
+    "reachedBy_one": "{{count, number}}件の経路で到達",
+    "reachedBy_other": "{{count, number}}件の経路で到達",
+    "unreachable": "この質問に到達する経路はありません",
+    "ai": "AI",
+    "noRules": "全員が質問に順番に回答します。一部の人を別の場所に進ませるには、質問にルールを追加してください。",
+    "thenGoTo": "次の移動先 → {{target}}",
+    "meta": {
+      "required": "必須",
+      "optional": "任意",
+      "options_one": "選択肢{{count, number}}個",
+      "options_other": "選択肢{{count, number}}個",
+      "other": "その他"
+    }
+  },
+  "hidden": {
+    "title": "非表示フィールド",
+    "intro": "アプリやリンクから回答ごとに渡される値です。回答者には表示されません。",
+    "addField": "フィールドを追加",
+    "limit": "フォームの非表示フィールドは20個までです。",
+    "emptyTitle": "非表示フィールドはありません",
+    "empty": "フィールドを追加すると、ユーザーIDやアプリのバージョンなどの値をアプリから受け取れます。",
+    "count": "{{n, number}} / {{max, number}} · 値はテキストで最大200文字です。それより長い値は切り詰められます。",
+    "columns": {
+      "id": "ID",
+      "label": "ラベル",
+      "filledBy": "入力元",
+      "inResults": "結果での扱い",
+      "actions": "操作"
+    },
+    "filledBy": "リンク · SDK",
+    "inResults": "フィルターと列",
+    "inResultsDimension": "フィルター、列、ディメンション {{name}}*",
+    "actions": "{{id}}のその他の操作",
+    "rename": "名前を変更",
+    "delete": "削除…",
+    "deleteConfirm": "削除",
+    "deleteTitle": "「{{id}}」を削除しますか？",
+    "deleteMessage": "すでに受け取った値は結果に残ります。",
+    "locked": "回答はこのIDで保存されています。",
+    "cancel": "キャンセル",
+    "add": "追加",
+    "done": "完了",
+    "useThem": "使い方",
+    "kindLabel": "値の送信元",
+    "modeLabel": "公開リンクまたはテストリンク",
+    "kinds": {
+      "link": "リンク",
+      "script": "スクリプト埋め込み",
+      "sdk": "アプリ内SDK",
+      "webview": "モバイルWebView"
+    },
+    "modes": {
+      "live": "公開",
+      "test": "テスト"
+    },
+    "codeLabel": "{{kind}}のコード",
+    "testShown": "これはテストリンクです。回答は「テスト」として記録され、集計されません。",
+    "testOff": "先に「テスト」でテストリンクをオンにしてください。",
+    "openTest": "「テスト」を開く",
+    "saveFirst": "リンクを取得するには、フォームを保存してください。",
+    "save": "保存",
+    "noEndpoint": "このフォームのリンクを取得するには、「管理 → ブランドと外観」でAPIエンドポイントを設定してください。",
+    "notes": {
+      "replace": "各 {…} を、URLエンコードした値に置き換えてください。不明な hf_ パラメーターは無視されます。",
+      "sdk": "質問の対象となる操作をユーザーが行ったときに呼び出してください（例：旧インターフェースへの切り替え）。",
+      "webview": "このアドレスをWebViewで開いてください。テストビルドでは、テストリンクを使ってください（上の「公開 | テスト」）。",
+      "ids": "個人データではなくIDを渡してください。user_id にはメールアドレスではなく社内IDを指定します。"
+    }
+  },
+  "languages": {
+    "title": "言語",
+    "add": "言語を追加",
+    "addOption": "+ 言語を追加…",
+    "primary": "メイン言語",
+    "primaryHint": "すべてのテキストを最初に書く言語です。",
+    "change": "変更…",
+    "changeLabel": "別の言語をメイン言語にする",
+    "changeNone": "先に言語を追加してください。",
+    "makePrimary": "{{language}}をメイン言語にする",
+    "completeFirst": "先に翻訳を完了してください",
+    "listLabel": "フォームの言語",
+    "primaryBadge": "メイン",
+    "texts_one": "テキスト{{count, number}}件",
+    "texts_other": "テキスト{{count, number}}件",
+    "complete": "完了",
+    "missingCount_one": "未翻訳{{count, number}}件",
+    "missingCount_other": "未翻訳{{count, number}}件",
+    "doneOf": "{{done, number}} / {{total, number}}",
+    "translate": "翻訳",
+    "actions": "{{language}}のその他の操作",
+    "remove": "言語を削除…",
+    "removeConfirm": "削除",
+    "removeTitle": "{{language}}を削除しますか？",
+    "removeMessage_one": "{{count, number}}件の翻訳が削除され、{{language}}の回答者には{{primary}}で表示されます。",
+    "removeMessage_other": "{{count, number}}件の翻訳が削除され、{{language}}の回答者には{{primary}}で表示されます。",
+    "filled_one": "テンプレートからテキストを{{count, number}}件入力しました。公開前に確認してください。",
+    "filled_other": "テンプレートからテキストを{{count, number}}件入力しました。公開前に確認してください。",
+    "emptyTitle": "1言語のみ",
+    "empty": "このフォームは{{language}}のみです。別の言語でも提供するには、言語を追加してください。",
+    "respondents": "回答者に表示される言語：リンクの lang= またはSDKの言語、なければブラウザの言語、それもなければ{{primary}}。",
+    "fallback": "未翻訳のテキストは{{primary}}で表示されます。ウィジェット自体の文言（「次へ」「戻る」「3つまで選択」など）は常に翻訳されます。",
+    "back": "言語",
+    "viewTitle": "{{language}}（{{code}}） · {{done, number}} / {{total, number}}",
+    "onlyMissing": "未翻訳のみ",
+    "search": "テキストを検索…",
+    "nothingShown": "一致するテキストはありません。",
+    "missing": "未翻訳",
+    "fromTemplate": "テンプレートから",
+    "targetQuestion": "{{language}}：質問{{number}}の{{field}}",
+    "targetWelcome": "{{language}}：ウェルカムカードの{{field}}",
+    "targetEnding": "{{language}}：終了画面「{{title}}」の{{field}}",
+    "fields": {
+      "headline": "質問",
+      "subheader": "説明",
+      "placeholder": "プレースホルダー",
+      "buttonLabel": "ボタンのラベル",
+      "option": "選択肢{{number}}",
+      "otherLabel": "「その他」のラベル",
+      "otherPlaceholder": "「その他」のプレースホルダー",
+      "noneLabel": "「該当なし」のラベル",
+      "lowerLabel": "低い側のラベル",
+      "upperLabel": "高い側のラベル",
+      "consentLabel": "チェックボックスのテキスト",
+      "ctaLabel": "リンクボタン",
+      "welcomeTitle": "タイトル",
+      "welcomeDescription": "説明",
+      "welcomeButton": "ボタンのラベル",
+      "endingTitle": "タイトル",
+      "endingDescription": "説明",
+      "endingButton": "ボタンのラベル"
+    },
+    "confirm": {
+      "text": "このフォームは、フォームに言語を設定できるようになる前に作成されました。",
+      "writtenIn": "作成時の言語",
+      "saving": "保存すると設定されます。"
+    }
+  },
+  "test": {
+    "title": "テストリンク",
+    "subtitle": "テストリンクを使うと、フォームがオフの間でもフォームを開けます。その回答は集計されません。",
+    "linkSwitch": "テストリンク",
+    "linkOnHint": "オン：下のリンクが使えます。フォームがオフの間も使えます。",
+    "linkOffHint": "テストリンクは使えなくなります。もう一度オンにすると、同じリンクを再び使えます。",
+    "linkOff": "テストリンクはオフです。オンにすると、回答を集計せずにアプリからフォームを試せます。",
+    "linkLabel": "テストリンク",
+    "linkMenu": "テストリンクのその他の操作",
+    "copyWithHidden": "非表示フィールド付きでコピー",
+    "reset": "テストリンクをリセット…",
+    "resetTitle": "テストリンクをリセットしますか？",
+    "resetMessage": "現在のテストリンクは、どこで共有したかにかかわらず、すぐに使えなくなります。新しいリンクに置き換わります。",
+    "resetConfirm": "テストリンクをリセット",
+    "resetFailed": "テストリンクをリセットできませんでした。しばらくしてから、もう一度お試しください。",
+    "noToken": "このフォームにはまだテストリンクがありません。",
+    "makeLink": "テストリンクを作成",
+    "qrTitle": "テストリンクのQRコード",
+    "recordTitle": "テスト回答の扱い",
+    "keep": "「テスト」として保存する",
+    "keepHint": "テスト回答として保存されます。テスト回答を含めた場合にのみ、下と結果に表示されます。指標、NPS、ダッシュボード、優先順位付けの根拠、AI処理には一切含まれません。",
+    "checkOnly": "チェックのみ（何も保存しない）",
+    "checkOnlyHint": "各回答を本番の回答と同じようにチェックしてから破棄します。自動テストや負荷テスト向けです。",
+    "testersSee": "テスターに表示される内容：",
+    "bannerKeep": "フォームのすべての画面に「テスト · 回答は集計されません」という帯が表示されます。",
+    "bannerDrop": "フォームのすべての画面に「テスト · 何も保存されません」という帯が表示されます。",
+    "previewNote": "プレビューでは何も送信されません。実際の動作を試すには、テストリンクを使ってください。",
+    "recentTitle": "最近のテスト回答",
+    "refreshes": "10秒ごとに更新",
+    "deleteAll": "すべて削除…",
+    "deleteTitle": "すべてのテスト回答を削除しますか？",
+    "deleteMessage": "このフォームのテスト回答がすべて削除されます。本番の回答には影響しません。この操作は元に戻せません。",
+    "deleteConfirm": "テスト回答を削除",
+    "noneYet": "まだテスト回答はありません。テストリンクを開くか、スマートフォンでQRコードを読み取って、回答を送信してみてください。",
+    "checkOnlyEmpty": "「チェックのみ」では何も保存されないため、ここに表示するものはありません。テスト回答を表示するには「保存する」に切り替えてください。",
+    "emptyValue": "空",
+    "open": "開く",
+    "openResponse": "{{time}}のテスト回答を開く",
+    "keptUntilDeleted": "テスト回答は、管理者またはフォームの作成者が削除するまで保持されます。"
+  },
+  "share": {
+    "title": "共有",
+    "mode": "公開リンクまたはテストリンクを表示",
+    "live": "公開",
+    "test": "テスト",
+    "offBanner": "このフォームはオフです。リンクには「フィードバックフォームは利用できません。」と表示されます。",
+    "publish": "公開",
+    "testWhileOff": "テストリンクを表示しています。フォームがオフの間も使えます。",
+    "testOff": "先に「テスト」でテストリンクをオンにしてください。",
+    "openTest": "「テスト」を開く",
+    "testNotice": "これはテストリンクです。回答は「テスト」として記録され、集計されません。",
+    "link": "リンク",
+    "liveHint": "このリンクからの回答は集計されます。",
+    "open": "開く",
+    "newTab": "（新しいタブで開きます）",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "qr": "QR",
+    "qrTitle": "QRコード",
+    "withHidden": "非表示フィールド付き：",
+    "toHidden": "「非表示フィールド」を参照",
+    "iframe": "埋め込み（iframe）",
+    "script": "スクリプト埋め込み",
+    "inApp": "アプリ内：",
+    "inAppHint": "Webアプリでは言語と非表示フィールドを指定してスクリプト埋め込みを呼び出し、モバイルアプリではリンクをWebViewで開きます。",
+    "saveFirstTitle": "まだリンクはありません",
+    "saveFirst": "リンクを取得するには、フォームを保存してください。",
+    "save": "保存"
+  },
+  "results": {
+    "summary": "概要",
+    "responsesView": "回答",
+    "view": "結果の表示",
+    "loading": "結果を読み込み中…",
+    "csv": "CSVをエクスポート",
+    "csvFailed": "回答をエクスポートできませんでした。",
+    "includeTest": "テスト回答を含める",
+    "including_one": "テスト回答{{formatted}}件を含みます。これらの数値は実際の結果ではありません。",
+    "including_other": "テスト回答{{formatted}}件を含みます。これらの数値は実際の結果ではありません。",
+    "onlyTestTitle": "まだ本番の回答はありません",
+    "onlyTest_one": "テスト回答{{count, number}}件は非表示です。",
+    "onlyTest_other": "テスト回答{{count, number}}件は非表示です。",
+    "noneTitle": "まだ回答はありません",
+    "none": "フォームを共有するか、テストリンクで試してください。",
+    "openShare": "「共有」を開く",
+    "noMatchTitle": "表示する回答がありません",
+    "noMatch": "このフィルターに一致する回答はありません。",
+    "clearFilters": "フィルターをクリア",
+    "test": "テスト",
+    "other": "その他",
+    "otherAnswer": "{{label}}：「{{text}}」",
+    "accepted": "同意済み",
+    "notAccepted": "未同意",
+    "openInFeedback": "フィードバックで開く",
+    "reach": "回答 {{answered}} · スキップ {{skipped}} · 非表示 {{hidden}}（ロジック）",
+    "changed": "{{date}}に変更：それ以前の回答では別の選択肢が使われています",
+    "endings": "終了画面",
+    "defaultEnding": "既定",
+    "removedQuestions": "削除された質問（{{count, number}}）",
+    "removedAnswered_one": "{{formatted}}件の回答",
+    "removedAnswered_other": "{{formatted}}件の回答",
+    "statementNone": "表示する回答はありません。",
+    "statementShown_one": "{{count, number}}人に表示されました。",
+    "statementShown_other": "{{count, number}}人に表示されました。",
+    "consent": "表示された{{saw}}人のうち{{accepted}}人が同意しました（{{percent}}）。",
+    "contact": "{{left}}人が連絡先を入力 · メールアドレス{{emails}}件 · 電話番号{{phones}}件",
+    "contactHint": "連絡先の内容は「回答」で確認できます。",
+    "figures": {
+      "responses": "回答数",
+      "completion": "完了率",
+      "ofOpened": "開いた人の{{percent}}",
+      "last": "最新の回答"
+    },
+    "filters": {
+      "range": "期間",
+      "days7": "過去7日間",
+      "days30": "過去30日間",
+      "days90": "過去90日間",
+      "all": "全期間",
+      "language": "言語",
+      "allLanguages": "すべての言語",
+      "ending": "終了画面",
+      "allEndings": "すべての終了画面",
+      "add": "フィルター：非表示フィールド",
+      "addLabel": "非表示フィールドで絞り込む",
+      "field": "非表示フィールド",
+      "value": "値",
+      "apply": "フィルターを追加",
+      "cancel": "キャンセル",
+      "remove": "フィルター {{field}} = {{value}} を削除"
+    },
+    "choice": {
+      "sortByCount": "件数順に並べ替え",
+      "optionsLabel": "選択肢別の回答",
+      "removed": "{{label}}（削除済み）",
+      "showOther_one": "{{count, number}}件の回答を表示",
+      "showOther_other": "{{count, number}}件の回答を表示",
+      "hideOther": "回答を非表示",
+      "multiNote": "複数選択できるため、割合の合計は100%を超えます。",
+      "multiNoteMax_one": "{{count, number}}個まで選択できるため、割合の合計は100%を超えます。",
+      "multiNoteMax_other": "{{count, number}}個まで選択できるため、割合の合計は100%を超えます。"
+    },
+    "scale": {
+      "average": "平均",
+      "averageOf": "{{average}}（{{max}}点中）",
+      "distribution": "スコア別の回答",
+      "pointLabel": "{{score}} · {{label}}",
+      "npsScore": "NPS",
+      "groups": "NPSグループ",
+      "detractors": "批判者（0〜6）",
+      "passives": "中立者（7〜8）",
+      "promoters": "推奨者（9〜10）",
+      "satisfied": "満足（4または5）",
+      "easy": "簡単（5〜7）"
+    },
+    "text": {
+      "latest": "最新の回答",
+      "none": "まだ回答はありません。",
+      "noMatch": "一致する回答はありません。",
+      "analysing": "分析中…",
+      "open": "開く",
+      "search": "回答を検索…",
+      "showAll_one": "「回答」で{{count, number}}件を表示",
+      "showAll_other": "「回答」で{{count, number}}件すべてを表示"
+    },
+    "funnel": {
+      "title": "離脱",
+      "opened": "開いた",
+      "started": "開始した",
+      "completed": "完了した",
+      "ofOpened": "開いた人の{{percent}}",
+      "largestDrop": "最大の離脱"
+    },
+    "reachCard": {
+      "title": "到達",
+      "answeredBy": "完了した回答{{total}}件のうち{{answered}}件で回答あり",
+      "note": "途中でやめた人数を把握するには表示のトラッキングが必要ですが、まだ収集していません。"
+    },
+    "responses": {
+      "title": "回答なし",
+      "none": "このフィルターに一致する回答はありません。",
+      "caption": "回答（新しい順）",
+      "time": "日時",
+      "answers": "回答",
+      "language": "言語",
+      "ending": "終了画面",
+      "hidden": "非表示フィールド",
+      "openColumn": "開く",
+      "open": "{{time}}の回答を開く",
+      "more": "さらに読み込む"
+    },
+    "sheet": {
+      "title": "{{time}}の回答",
+      "answers": "回答",
+      "question": "{{number}} · {{headline}}",
+      "notAnswered": "未回答：スキップされたか、この回答者の経路にありませんでした。",
+      "time": "日時",
+      "language": "言語",
+      "ending": "終了画面",
+      "revisionLabel": "フォームのバージョン",
+      "revision": "バージョン{{number}}で回答",
+      "previous": "前へ",
+      "next": "次へ"
+    },
+    "contactLeft_one": "{{count, number}}人が連絡先を入力しました",
+    "contactLeft_other": "{{count, number}}人が連絡先を入力しました"
+  },
+  "settings": {
+    "sectionsLabel": "設定のセクション",
+    "sections": {
+      "general": "一般",
+      "routing": "カテゴリルーティング",
+      "project": "リンク先プロジェクト",
+      "theme": "テーマ",
+      "danger": "危険な操作"
+    },
+    "general": {
+      "name": "内部名",
+      "nameHint": "チームだけに表示されます。回答者には質問が表示されます。",
+      "primary": "メイン言語：",
+      "toLanguages": "言語",
+      "languageHint": "回答は、回答に使われた言語とともに保存されます。"
+    },
+    "routing": {
+      "category": "フォームのカテゴリ",
+      "subcategory": "サブカテゴリ（任意）",
+      "none": "— カテゴリなし",
+      "noSubcategory": "— サブカテゴリなし",
+      "notConfigured": "{{name}}（現在は未設定）",
+      "categoryHint": "カテゴリは「管理 → カテゴリ」で構成します。",
+      "taggedAs": "このフォームの回答は次のように分類されます：",
+      "perOption": "選択肢ごとのルーティング",
+      "noChoices": "このフォームには選択式の質問がないため、すべての回答はフォームのカテゴリに分類されます。",
+      "mapped_one": "{{count, number}}個中{{mapped}}個の選択肢を割り当て済み",
+      "mapped_other": "{{count, number}}個中{{mapped}}個の選択肢を割り当て済み",
+      "edit": "編集",
+      "editQuestion": "質問{{number}}のルーティングを編集",
+      "precedence": "回答は、カテゴリが割り当てられた選択肢のうち最初に回答されたもののカテゴリに分類されます。ない場合はフォームのカテゴリに分類されます。",
+      "dimensionsHint": "すべての回答にこれらの値が付きます。埋め込みでは dimensions オプションでページごとに値を設定できます。"
+    },
+    "theme": {
+      "primary": "プライマリカラー",
+      "background": "背景色",
+      "text": "テキスト色",
+      "radius": "角の丸み",
+      "lowContrast": "この背景上のテキストのコントラスト比は{{ratio}}:1で、4.5:1を下回っています。多くの人にとって読みにくくなります。"
+    },
+    "danger": {
+      "hint": "フォームを削除すると、フォームとそのリンクが削除されます。回答は「フィードバック」に残ります。",
+      "delete": "フォームを削除…",
+      "confirmTitle": "このフォームを削除しますか？",
+      "confirmMessage_one": "「{{name}}」を削除しますか？このフォームには{{count, number}}件の回答があります。リンクは使えなくなります。この操作は元に戻せません。",
+      "confirmMessage_other": "「{{name}}」を削除しますか？このフォームには{{count, number}}件の回答があります。リンクは使えなくなります。この操作は元に戻せません。",
+      "confirm": "フォームを削除",
+      "failed": "フォームを削除できませんでした。しばらくしてから、もう一度お試しください。",
+      "unnamed": "このフォーム"
+    }
   }
 }

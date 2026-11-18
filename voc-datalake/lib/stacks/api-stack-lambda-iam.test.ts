@@ -336,11 +336,12 @@ describe('FeedbackFormLambdaRole routes a workspace\'s forms', () => {
     expect(attached).toContain(JSON.stringify({ Ref: policies[0] }));
   });
 
-  it('deletes only the deployment\'s and one workspace\'s form config rows in aggregates', () => {
+  it('deletes only the deployment\'s and one workspace\'s form rows and test responses in aggregates', () => {
     const deletes = policyStatementsOf(apiTemplate(), role)
       .filter((s) => s.actions.includes('dynamodb:DeleteItem') && s.resource.includes('Aggregates'));
     expect(deletes.map((s) => s.condition)).toStrictEqual([{ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
-      'FEEDBACK_FORM', `WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`] } }]);
+      'FEEDBACK_FORM', `WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`,
+      'FEEDBACK_FORM_TEST', `WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM_TEST`] } }]);
   });
 });
 

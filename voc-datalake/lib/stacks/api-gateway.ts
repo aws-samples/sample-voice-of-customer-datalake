@@ -217,7 +217,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // two things that are declared far apart: whether the `{form_id}` item
   // resources are created at all (see /feedback-forms/* below, which is where
   // the flag is explained in full) and whether this stage carries method
-  // settings for the three public routes under them.
+  // settings for the four public routes under them.
   // Read ONCE into a const — the value is compared twice, not fetched twice.
   // `true` and `'true'` are the accepted spellings ('TRUE', '1', 'yes' are
   // "off"); "off" means "deploy the routes", so a typo fails loudly on the
@@ -332,7 +332,26 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     throttlingBurstLimit: 200,
   };
 
-  // The three public feedback-form methods, keyed as
+  /** 100 rps / burst 200 for the widget's funnel beacons, `POST …/events` (7.55.00).
+   *
+   *  Their own route and pair so a beacon never spends the submit route's 20 rps,
+   *  which is for real responses only (the AI review's round 2: an `opened` per page
+   *  load on `submit` let a busy embed throttle real answers). Sized like the reads,
+   *  from the same demand: the widget sends at most two per visit (an `opened` on
+   *  every page load it shows, a `left` for a visitor who started and left), so it is
+   *  a third party's page-view rate this stack cannot bound. NOT shared with the reads'
+   *  constant: the two can be tuned apart.
+   *
+   *  Cost is what allows the generous number: a beacon is one or two UpdateItems on
+   *  voc-aggregates (a day's counters, a visit's 7-day dedupe row), never a queue
+   *  message or a model call. A 429 costs one funnel count and nothing the visitor
+   *  sees: the widget sends beacons with navigator.sendBeacon and ignores the answer. */
+  const publicWidgetBeaconThrottle: apigateway.MethodDeploymentOptions = {
+    throttlingRateLimit: 100,
+    throttlingBurstLimit: 200,
+  };
+
+  // The four public feedback-form methods, keyed as
   // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
   // the `{form_id}` subtree is not created, and a method setting naming a path
   // that does not exist is not an error — API Gateway simply never applies it —
@@ -345,6 +364,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
       '/feedback-forms/{form_id}/config/GET': publicWidgetReadThrottle,
       '/feedback-forms/{form_id}/submit/POST': publicRouteThrottle,
       '/feedback-forms/{form_id}/iframe/GET': publicWidgetReadThrottle,
+      '/feedback-forms/{form_id}/events/POST': publicWidgetBeaconThrottle,
     };
 
   /** 10 rps / burst 20 for each enabled plugin's webhook receiver

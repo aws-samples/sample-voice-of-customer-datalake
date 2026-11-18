@@ -126,7 +126,8 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'get_prototype_outline and the PRD / PR/FAQ, then propose set_prototype_walkthrough; the card previews them.',
   ].join('\n'),
   forms: '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; '
-    + 'update_feedback_form changes settings.',
+    + 'update_feedback_form changes settings; draft_feedback_form drafts a new form (questions and logic change in '
+    + 'the form builder).',
   prioritization: '- Prioritization board: get_prioritization (rows, the user\u2019s own scores, team aggregates); '
     + 'name projects with list_projects.',
   scrapers: [

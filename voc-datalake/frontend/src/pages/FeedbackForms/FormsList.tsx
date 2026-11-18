@@ -27,7 +27,6 @@ function FormCards({ forms, handlers }: Readonly<{ forms: readonly FeedbackForm[
         <FormCard
           key={form.form_id}
           form={form}
-          onEdit={handlers.onEdit}
           onDelete={handlers.onDelete}
           onToggle={handlers.onToggle}
           apiEndpoint={handlers.apiEndpoint}
@@ -63,6 +62,7 @@ export default function FormsListContent({
   /** The list read failed and nothing is cached: say so, never "no forms yet". */
   loadFailed: { retry: () => void; retrying: boolean } | null
   forms: readonly FeedbackForm[] | undefined
+  /** The empty state's action: the template picker. */
   onCreateNew: () => void
 }>) {
   const { t } = useTranslation('feedbackForms')
@@ -84,7 +84,7 @@ export default function FormsListContent({
       {own.length > 0
         ? <FormCards forms={own} handlers={handlers} />
         : <Notice variant="empty" icon={ClipboardList} title={t('empty.title')} text={t('empty.description')}
-            action={{ label: t('empty.createButton'), icon: Plus, emphasis: 'primary', onClick: onCreateNew }} />}
+            action={{ label: t('newForm'), icon: Plus, emphasis: 'primary', onClick: onCreateNew }} />}
       <SystemForms forms={system} handlers={handlers} />
     </div>
   )

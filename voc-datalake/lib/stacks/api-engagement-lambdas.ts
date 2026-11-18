@@ -95,7 +95,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     feedbackTable, aggregatesTable, projectsTable, conversationsTable, kmsKey, userPool, processingQueueUrl,
-    processingQueueArn, brandName, participantsTable, rawDataBucket,
+    processingQueueArn, brandName, participantsTable, rawDataBucket, primaryLanguage,
   } = ctx.props;
 
   // Logs API — also runs alerting (Settings → Logs → Alerts): it creates and
@@ -182,17 +182,30 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   // Feedback Form API
   const feedbackFormRole = ctx.role('FeedbackFormLambdaRole');
-  // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes the FEEDBACK_FORM / FORM#<id>
-  // config row (a workspace's: WS#{one id}#FEEDBACK_FORM / FORM#<id>), the only delete.
+  // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes, in the FEEDBACK_FORM partition
+  // (a workspace's: WS#{one id}#FEEDBACK_FORM), the form's config row FORM#<id> and the rows that belong to it
+  // (schema version 2, 7.55.00): its revision snapshots FORMREV#<id>#* and daily funnel counters FORMFUNNEL#<id>#*;
+  // and its test responses, which live in their own partition beside it, FEEDBACK_FORM_TEST (a workspace's:
+  // WS#{one id}#FEEDBACK_FORM_TEST; <id>#*: the one voc-retention may delete in, retention-worker.ts). DELETE
+  // …/responses?test=true deletes the test ones alone. The funnel's visit rows (FORMSESSION#) expire by ttl. No other
+  // delete. The PutItem also writes a deployment form's delete record and its test responses' (AUDIT#delete, before
+  // the delete; the audit-row guard names this role that partition's writer, lib/utils/audit-row-guard.ts); a
+  // workspace form's go in voc-workspaces' AUDIT#WS#* (the workspace-resolution policy below).
   grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
   grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], [
-    'FEEDBACK_FORM', `WS#${WORKSPACE_ID_PATTERN}#FEEDBACK_FORM`]);
+    'FEEDBACK_FORM', `WS#${WORKSPACE_ID_PATTERN}#FEEDBACK_FORM`,
+    'FEEDBACK_FORM_TEST', `WS#${WORKSPACE_ID_PATTERN}#FEEDBACK_FORM_TEST`]);
   const formRoutingEnv = grantFormRouting(ctx, feedbackFormRole);
   feedbackTable.grantReadData(feedbackFormRole);
   kmsKey.grantEncryptDecrypt(feedbackFormRole);
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // A submission gets its source's PII policy before it is queued.
   feedbackFormRole.addToPolicy(piiDetectionStatement());
+  // No AI: this role also serves the four unauthenticated widget routes, so it holds no lambda:InvokeFunction, no
+  // jobs-table action and no model grant (TENETS.md tenet 6, least privilege; pinned by
+  // api-stack-feedback-forms-v2.test.ts). A form's AI draft (POST /settings/form-drafts, GET
+  // /settings/form-drafts/{job_id}) is the SETTINGS API's (lambda/shared/forms_v2_draft_routes.py, api-routes.ts),
+  // whose role already owns the assist job rows, its assist twin and the Bedrock grant.
   // The submission as the widget sent it (lambda/shared/feedback_form_raw.py): write-once, under the
   // feedback_form source's own prefix only (the source id is fixed, not per form). No read, no delete.
   rawDataBucket.grantPut(feedbackFormRole, 'raw/feedback_form/*');
@@ -222,6 +235,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       PROCESSING_QUEUE_URL: processingQueueUrl,
       PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
+      // The language a version 1 form without one is migrated to (D15), as the processor gets it.
+      PRIMARY_LANGUAGE: primaryLanguage ?? 'en',
       // X-Workspace-Id on the signed-in routes, and a workspace form's FORM#{id} lookup row (voc-workspaces).
       ...formRoutingEnv,
       // The raw copy of each submission and its connector-version (lambda/shared/feedback_form_raw.py).
@@ -229,8 +244,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       APP_VERSION: appVersion(),
       ...PII_REDACTION_ENV,
       // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather
-      // than `allowedOrigin`. The three public routes below
-      // (/feedback-forms/{form_id}/config, /submit, /iframe) are fetched by
+      // than `allowedOrigin`. The four public routes below
+      // (/feedback-forms/{form_id}/config, /submit, /events, /iframe) are fetched by
       // lambda/api/static/feedback-widget.js running on the CUSTOMER's own site,
       // so the Origin the browser sends is a domain this stack has never heard
       // of and cannot enumerate. Any single value here would break every embed.
@@ -265,7 +280,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       //    itself. The paragraph above is why that is safe rather than why it
       //    is tidy: the honest shape is two variables (ALLOWED_ORIGIN = the
       //    site origin, plus a PUBLIC_ALLOWED_ORIGIN = '*' returned only on the
-      //    three widget responses), which is a feedback_form_handler.py change
+      //    four widget responses), which is a feedback_form_handler.py change
       //    and therefore a follow-up, not part of a CDK-only change.
       ALLOWED_ORIGIN: '*',
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',

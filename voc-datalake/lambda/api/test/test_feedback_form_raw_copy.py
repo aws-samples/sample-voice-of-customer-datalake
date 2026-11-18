@@ -135,3 +135,26 @@ def test_a_failed_raw_write_still_queues_the_submission(
 
     assert record['text'] == 'The checkout is slow'
     assert record.get('s3_raw_uri') is None
+
+
+def test_a_v2_response_is_kept_as_checked_and_a_v1_bodys_response_field_never(
+    raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
+):
+    """Schema version 2 (7.55.00): the copy holds the response as checked against its revision (its answers, hidden
+    values, path, ending, language and revision) and the item's text; a version 1 body's own `response` field is an
+    extra like any other and is never kept."""
+    form = {'Item': {'form_id': 'deadbeef', 'enabled': True, 'question': 'How was it?', 'rating_enabled': False}}
+    body = {'answers': {'q_text': ' Slow '}, 'page_url': 'https://shop/x'}
+    _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(), body=body, form=form)
+    [key] = _objects(raw_s3)
+    submission = json.loads(raw_s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['submission']
+    assert submission == {
+        'text': 'How was it?\nSlow', 'page_url': 'https://shop/x',
+        'response': {'form_revision': 1, 'language': 'en', 'answers': {'q_text': 'Slow'}, 'hidden': {},
+                     'ending_id': 'end_thanks', 'path': ['q_text']},
+    }
+    raw_s3.delete_object(Bucket=BUCKET, Key=key)
+    _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(),
+            body={**BODY, 'response': {'answers': 'x' * 1000}})
+    [key] = _objects(raw_s3)
+    assert 'response' not in json.loads(raw_s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['submission']

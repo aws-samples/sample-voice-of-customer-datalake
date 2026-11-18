@@ -24,7 +24,7 @@ import { DetailsDisclosure } from './previews/FieldDiff'
 import { getWriteTool } from './registry'
 import { useApprovalFlow, useExecutionContext } from './useApprovalFlow'
 import { useExpiry } from './useExpiry'
-import { ApprovalHoldContext, ShownContext, createShownRecord } from './shown'
+import { ApprovalDeclineContext, ApprovalHoldContext, ShownContext, createShownRecord } from './shown'
 import type { ShownRecord } from './shown'
 import { checkArgs, isApprovable, isDestructive } from './approvalGate'
 import type { ArgsCheck } from './approvalGate'
@@ -105,6 +105,11 @@ interface PendingBodyProps {
   actionsRef: RefObject<HTMLDivElement | null>
 }
 
+/** How the action bar reads for this tool: a plan's buttons, or the tool's own Approve label when it has one. */
+function actionBarLook(toolName: string, definition: WriteToolDefinition | undefined) {
+  return { variant: toolName === PLAN_PROPOSAL_TOOL ? 'plan' as const : 'tool' as const, approveLabelKey: definition?.approveLabelKey }
+}
+
 function PendingBody({ props, shown, titleId, title, definition, check, expiry, flow, phase, actionsRef }: Readonly<PendingBodyProps>) {
   const { t } = useTranslation('assistantTools')
   // `shown` carries what this card displayed (job window/language, brand base) to the executor.
@@ -128,7 +133,9 @@ function PendingBody({ props, shown, titleId, title, definition, check, expiry, 
       <InterruptMessage message={interrupt.message} />
       <div className="max-h-96 overflow-auto">
         <ApprovalHoldContext.Provider value={setHeld}>
-          <PreviewSection definition={definition} check={check} page={page} toolName={props.toolCall.name} />
+          <ApprovalDeclineContext.Provider value={flow.decline}>
+            <PreviewSection definition={definition} check={check} page={page} toolName={props.toolCall.name} />
+          </ApprovalDeclineContext.Provider>
         </ApprovalHoldContext.Provider>
       </div>
       {adminBlocked && <p className="text-[12px] text-warn">{t('card.adminOnly')}</p>}
@@ -144,7 +151,7 @@ function PendingBody({ props, shown, titleId, title, definition, check, expiry, 
           onStartDecline={flow.startDecline}
           onCancelDecline={flow.cancelDecline}
           onDecline={flow.decline}
-          variant={props.toolCall.name === PLAN_PROPOSAL_TOOL ? 'plan' : 'tool'}
+          {...actionBarLook(props.toolCall.name, definition)}
         />
       </div>
     </>
@@ -203,7 +210,8 @@ export default function ApprovalCard(props: Readonly<ApprovalCardProps>) {
       {state.phase === 'resolved' ? (
         <>
           <h3 id={titleId} className="sr-only">{title}</h3>
-          <ResolvedState title={title} outcome={state.outcome} link={definition?.resultLink?.(toolCall.args)} />
+          <ResolvedState title={title} outcome={state.outcome}
+            link={definition?.resultLink?.(toolCall.args, state.outcome.status === 'executed' ? state.outcome.data : undefined)} />
         </>
       ) : (
         <ShownContext.Provider value={shown}>

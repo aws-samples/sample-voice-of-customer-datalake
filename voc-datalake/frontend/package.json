@@ -1,13 +1,13 @@
 {
   "name": "voc-analytics-frontend",
   "private": true,
-  "version": "7.54.0",
+  "version": "7.55.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "prebuild": "cd .. && npm run generate:manifests && npm run generate:menu",
     "build": "tsc -b && vite build",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --max-warnings 0",
     "preview": "vite preview",
     "mock": "node mock-server.js",
     "check:mock": "node scripts/check-mock-coverage.mjs",

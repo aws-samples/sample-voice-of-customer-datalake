@@ -107,6 +107,8 @@ def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
         f'WS#{WS}#PLUGIN_CONFIG#HISTORY', '[]', 'sub-ada', 'sub-ada')
     assert json.loads(files['manifest.json'])['entities']['plugin_config_history']['count'] == 1
     assert [row['form_id'] for row in _jsonl(files, 'feedback_forms')] == ['ff_1']
+    # The forms' tagged test responses, from their own partition beside the forms one (7.55.00's AI review).
+    assert [row['response_id'] for row in _jsonl(files, 'feedback_form_tests')] == ['r1']
     # Each run's detail row (its errors too), the summary where the detail is gone.
     runs = _jsonl(files, 'import_runs')
     assert [(run['run_id'], run.get('errors')) for run in runs] == [('run1', ['row 3: empty']), ('run2', None)]
@@ -615,7 +617,8 @@ def test_a_checkpoint_names_its_phase(world):
 
 
 @pytest.mark.parametrize(('old', 'written'), [
-    (8, {'plugin_config_history', 'memory_company', 'memory_imports', 'memory_events'}),  # 4b's last entity
+    # 4b's last entity, then the ones after it (the forms' test responses since 7.55.00's AI review, written last).
+    (8, {'plugin_config_history', 'memory_company', 'memory_imports', 'memory_events', 'feedback_form_tests'}),
     (9, set()),  # 4b's objects: on with them, no memory entity skipped into halfway
     (10, set()),  # 4b's completion
 ])

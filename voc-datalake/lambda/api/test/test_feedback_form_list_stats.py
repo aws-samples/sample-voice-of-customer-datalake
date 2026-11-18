@@ -60,11 +60,16 @@ def test_every_form_gets_the_single_form_routes_numbers(
     assert response['statusCode'] == 200
     assert [f['form_id'] for f in body['forms']] == ['form_a', 'form_b', 'form_c', 'form_d']
     assert body['stats'] == {
-        'form_a': {'total_submissions': 2, 'avg_rating': 4.0, 'rating_count': 2},
-        'form_b': {'total_submissions': 1, 'avg_rating': None, 'rating_count': 0},
-        'form_c': {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1},
-        'form_d': {'total_submissions': 0, 'avg_rating': None, 'rating_count': 0},
+        'form_a': {'total_submissions': 2, 'avg_rating': 4.0, 'rating_count': 2, 'headline': _rating(4.0, 2)},
+        'form_b': {'total_submissions': 1, 'avg_rating': None, 'rating_count': 0, 'headline': None},
+        'form_c': {'total_submissions': 1, 'avg_rating': 4.0, 'rating_count': 1, 'headline': _rating(4.0, 1)},
+        'form_d': {'total_submissions': 0, 'avg_rating': None, 'rating_count': 0, 'headline': None},
     }
+
+
+def _rating(average: float, count: int) -> dict:
+    """A migrated version 1 form's card figure: its rating question's average (shared/forms_v2_results.py)."""
+    return {'question_id': 'q_rating', 'type': 'rating', 'value': average, 'count': count, 'scale_max': 5}
 
 
 @pytest.mark.usefixtures('tables')

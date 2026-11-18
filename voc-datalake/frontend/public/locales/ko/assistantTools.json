@@ -41,7 +41,9 @@
     "openRadar": "Radar 열기",
     "openRadarSettings": "관리 → 데이터 소스 → 레이더 열기",
     "openCategories": "관리 → 카테고리 열기",
-    "openWorkspaceCategories": "워크스페이스 설정의 카테고리 열기"
+    "openWorkspaceCategories": "워크스페이스 설정의 카테고리 열기",
+    "approveCreate": "승인하고 만들기",
+    "openForm": "빌더에서 양식 열기"
   },
   "preview": {
     "participants": {
@@ -394,6 +396,44 @@
       "replaces_one": "저장된 단계 {{count, number}}개를 대체합니다.",
       "replaces_other": "저장된 단계 {{count, number}}개를 대체합니다.",
       "note": "저장하면 프로토타입의 새 버전이 만들어지고, 여는 사람에게 단계가 표시됩니다."
+    },
+    "feedbackFormDraft": {
+      "label": "초안으로 작성된 피드백 양식",
+      "name": "이름",
+      "nameMissing": "양식 이름을 입력하세요.",
+      "channel": {
+        "link": "링크",
+        "embed": "임베드",
+        "in_app": "앱 내"
+      },
+      "questions": "질문",
+      "leaveOut": "질문 {{number}} 빼기",
+      "lastQuestion": "양식에는 질문이 하나 이상 있어야 하므로 마지막 질문은 뺄 수 없습니다.",
+      "leftOut": "질문 {{number}}을(를) 뺐습니다.",
+      "endings": "종료 화면",
+      "hiddenFields": "숨김 필드",
+      "fromAi": "AI가 남긴 메모",
+      "warning": "경고",
+      "addresses": "AI가 제안한 주소",
+      "checkedAddress": "이 주소를 확인했습니다",
+      "remove": "제거",
+      "removeAddress": "주소 {{url}} 제거",
+      "createsOff": "승인하면 꺼진 상태로 만들어집니다. 게시하기 전까지는 공개되지 않습니다.",
+      "notAllowed": "편집자와 관리자만 양식을 만들 수 있습니다. 거절은 할 수 있습니다.",
+      "openInBuilder": "빌더에서 열기",
+      "notAForm": "이 초안은 이 앱이 읽을 수 있는 양식이 아닙니다.",
+      "questionCount_one": "질문 {{count, number}}개",
+      "questionCount_other": "질문 {{count, number}}개",
+      "endingCount_one": "종료 화면 {{count, number}}개",
+      "endingCount_other": "종료 화면 {{count, number}}개",
+      "hiddenCount_one": "숨김 필드 {{count, number}}개",
+      "hiddenCount_other": "숨김 필드 {{count, number}}개",
+      "options_one": "선택지 {{count, number}}개",
+      "options_other": "선택지 {{count, number}}개",
+      "rules_one": "규칙 {{count, number}}개",
+      "rules_other": "규칙 {{count, number}}개",
+      "rulesDropped_one": "{{questions}}에서 이 질문으로 가던 규칙 {{count, number}}개도 함께 빠집니다.",
+      "rulesDropped_other": "{{questions}}에서 이 질문으로 가던 규칙 {{count, number}}개도 함께 빠집니다."
     }
   },
   "tools": {
@@ -597,6 +637,10 @@
     "set_prototype_walkthrough": {
       "title": "프로토타입 둘러보기 저장",
       "titleRemove": "프로토타입 둘러보기 삭제"
+    },
+    "draft_feedback_form": {
+      "title": "피드백 양식 만들기",
+      "titleWith": "피드백 양식 “{{name}}” 만들기"
     }
   }
 }

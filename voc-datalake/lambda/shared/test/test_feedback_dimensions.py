@@ -60,6 +60,16 @@ class TestResolveItemDimensions:
         assert dims == {'product': 'Web', 'user_type': 'partner'}
         assert sources == {'product': 'source', 'user_type': 'source'}
 
+    def test_a_forms_hidden_field_named_like_a_dimension_files_it_when_its_value_is_allowed(self):
+        """Schema version 2 (D5): ``metadata.form_hidden`` is a source layer after the metadata and custom fields; the
+        form's own defaults and the embed's ``dimensions`` (the message) still win."""
+        dims, sources = resolve_item_dimensions(
+            CONFIG, metadata={'form_hidden': {'product': 'web', 'user_type': 'vip', 'app_version': '5.0'}})
+        assert (dims, sources) == ({'product': 'Web'}, {'product': 'source'})
+        dims, _ = resolve_item_dimensions(CONFIG, message={'product': 'App'},
+                                          metadata={'form_hidden': {'product': 'Web', 'user_type': 'partner'}})
+        assert dims == {'product': 'App', 'user_type': 'partner'}
+
     def test_explicit_dimensions_beat_metadata_and_a_disallowed_metadata_value_falls_through(self):
         dims, sources = resolve_item_dimensions(
             CONFIG, message={'product': 'App'}, metadata={'product': 'Web', 'user_type': 'vip'},

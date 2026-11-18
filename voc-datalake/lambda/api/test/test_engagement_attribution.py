@@ -110,10 +110,11 @@ def test_the_iframe_page_hands_the_link_token_to_the_widget(lambda_context):
         response = feedback_form_handler.lambda_handler(
             event('GET', '/feedback-forms/form-1/iframe', claims=None, query={'r': 'QueryTokenQ7'}), lambda_context)
     html = response['body']
-    assert "new URLSearchParams(window.location.search).get('r')" in html
+    assert "var params = new URLSearchParams(window.location.search);" in html
+    assert "VoCFeedbackForm.participantToken = params.get('r');" in html
     assert 'history.replaceState(null' in html
     # The token itself is never rendered into the page by the server.
     assert 'QueryTokenQ7' not in html
     widget = feedback_form_handler.get_widget_js()
-    assert 'payload.participant_token = this.participantToken' in widget
-    assert 'participantToken(window.VoCFeedbackForm.participantToken)' in widget
+    assert 'if (this.participantToken) body.participant_token = this.participantToken;' in widget
+    assert 'participantToken: participantToken((window.VoCFeedbackForm || {}).participantToken)' in widget

@@ -25,6 +25,17 @@ const SRC = resolve(__dirname, '..')
  */
 const PENDING: Readonly<Record<string, string>> = {}
 
+/**
+ * Spec support that spells a banned form on purpose, by file and rule. Not the app's formatting: the entry
+ * stays only while the file still has it (the last test).
+ */
+const ALLOWED: Readonly<Record<string, { readonly rule: string; readonly reason: string }>> = {
+  'test/feedbackWidgetHarness.ts': {
+    rule: 'en-US literal',
+    reason: 'the widget specs\' harness stubs the browser\'s language (navigator.language) as en-US, the browser default the widget falls back from (7.55.00, D4)',
+  },
+}
+
 const RULES: ReadonlyArray<readonly [name: string, pattern: RegExp]> = [
   ['en-US literal', /['"`]en-US['"`]/u],
   ['locale-less toLocale*String()', /\.toLocale(?:Date|Time)?String\(\s*\)/u],
@@ -62,7 +73,7 @@ function violationsOf(file: string): string[] {
   const text = code(readFileSync(join(SRC, file), 'utf8'))
   const exempt = file === 'utils/dateUtils.ts'
   return RULES
-    .filter(([name, pattern]) => pattern.test(text) && !(exempt && name.startsWith('date-fns')))
+    .filter(([name, pattern]) => pattern.test(text) && !(exempt && name.startsWith('date-fns')) && ALLOWED[file]?.rule !== name)
     .map(([name]) => `${file}: ${name}`)
 }
 
@@ -88,6 +99,15 @@ describe('locale-aware formatting contract', () => {
     ]
     expect(samples.map((sample) => RULES.filter(([, pattern]) => pattern.test(sample)).length)).toStrictEqual([1, 1, 1, 1])
     expect(RULES.some(([, pattern]) => pattern.test('Intl.DateTimeFormat().resolvedOptions().timeZone'))).toBe(false)
+  })
+
+  it('an ALLOWED file still spells what it is allowed (remove the entry once it does not)', () => {
+    const spells = (file: string, rule: string) => RULES.some(([name, pattern]) =>
+      name === rule && pattern.test(code(readFileSync(join(SRC, file), 'utf8'))))
+    const stillSpelled = Object.entries(ALLOWED)
+      .filter(([file, { rule }]) => files.includes(file) && spells(file, rule))
+      .map(([file]) => file)
+    expect(stillSpelled).toStrictEqual(Object.keys(ALLOWED))
   })
 
   it('a PENDING file still breaks a rule (remove it from the list once it is fixed)', () => {

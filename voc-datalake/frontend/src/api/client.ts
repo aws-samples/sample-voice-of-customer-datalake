@@ -70,7 +70,7 @@ import { z } from 'zod'
 import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
 import { cursorFieldsOf } from './feedbackPagination'
 import { normalizeGithubMetrics } from './githubMetricsSchema'
-import { normalizeFormStatsMap, parseFormStatsResponse, parseFormSubmissionsResponse } from './feedbackFormStatsSchema'
+import { normalizeFormStatsMap, parseFormStatsResponse } from './feedbackFormStatsSchema'
 import { normalizeModelCapacity, normalizeModelTestResult } from './modelTestSchema'
 import { normalizeImageModelCapacity, normalizeImageModelInfo } from './imageModelSchema'
 import { normalizeWebSearchModels, readSurfaceAllowlist } from './modelSettingsSchema'
@@ -587,9 +587,6 @@ export const api = {
       stats: normalizeFormStatsMap(isRecord(raw) ? raw['stats'] : undefined),
     })),
   
-  createFeedbackForm: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) =>
-    fetchApi<{ success: boolean; form: FeedbackForm }>('/feedback-forms', post(form)),
-  
   updateFeedbackForm: (formId: string, form: Partial<FeedbackForm>) =>
     fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`, put(form)),
   
@@ -598,12 +595,6 @@ export const api = {
 
   getFeedbackFormStats: (formId: string) =>
     fetchApi<unknown>(`/feedback-forms/${formId}/stats`).then(parseFormStatsResponse),
-
-  getFeedbackFormSubmissions: (formId: string, limit?: number) => {
-    const params = new URLSearchParams()
-    if (limit) params.set('limit', String(limit))
-    return fetchApi<unknown>(`/feedback-forms/${formId}/submissions?${params}`).then(parseFormSubmissionsResponse)
-  },
 
   ...userAdminEndpoints(fetchApi),
 

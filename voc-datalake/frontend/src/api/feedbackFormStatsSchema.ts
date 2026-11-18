@@ -9,14 +9,13 @@
  * its own stats, as before), and a missing or malformed map is `null` — which is
  * also what an older API or a failed stats read (`stats_error`) produces.
  *
- * The single-form reads (`/feedback-forms/{id}/stats` and `/submissions`) parse
- * their `stats` with the same schema: a malformed object reads as `null` (the
+ * The single-form read (`/feedback-forms/{id}/stats`) parses
+ * its `stats` with the same schema: a malformed object reads as `null` (the
  * figures then show an em dash), never as an asserted shape.
  *
  * @module api/feedbackFormStatsSchema
  */
 import { z } from 'zod'
-import { lenientText, parsedList } from './schemaList'
 
 const FormStatsSchema = z.object({
   total_submissions: z.number().int().nonnegative(),
@@ -52,30 +51,4 @@ export interface FormStatsResponse {
 export function parseFormStatsResponse(raw: unknown): FormStatsResponse {
   const body = z.object({ stats: z.unknown() }).safeParse(raw)
   return { stats: body.success ? parsedStats(body.data.stats) : null }
-}
-
-const SubmissionSchema = z.object({
-  feedback_id: z.string().min(1),
-  original_text: lenientText,
-  rating: z.number().nullable().catch(null),
-  sentiment_label: lenientText,
-  category: lenientText,
-  created_at: lenientText,
-  persona_name: lenientText,
-})
-
-type FormSubmission = z.infer<typeof SubmissionSchema>
-
-/** `GET /feedback-forms/{id}/submissions`, validated: a malformed row costs only itself. */
-export interface FormSubmissionsResponse {
-  readonly stats: FormStats | null
-  readonly submissions: readonly FormSubmission[]
-}
-
-const submissionList = parsedList(SubmissionSchema)
-
-export function parseFormSubmissionsResponse(raw: unknown): FormSubmissionsResponse {
-  const body = z.object({ stats: z.unknown(), submissions: z.unknown() }).partial().safeParse(raw)
-  const data = body.success ? body.data : {}
-  return { stats: parsedStats(data.stats), submissions: submissionList.parse(data.submissions) }
 }

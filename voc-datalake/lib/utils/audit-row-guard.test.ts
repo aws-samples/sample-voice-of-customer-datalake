@@ -23,7 +23,7 @@ const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['
 /** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`, the
  *  users API only `AUDIT#platform-admins`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
-  AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
+  AggregatesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
     'VocProcessingStack/RetentionWorkerRetentionRole',
     // A workspace's hard delete: its tombstones (AUDIT#tombstone#* only, the one-partition Deny below).
     'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
@@ -122,6 +122,19 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
       'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
       'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+  });
+
+  it('the feedback forms put only a deployment form\'s AUDIT#delete in voc-aggregates and AUDIT#WS#* in voc-workspaces', () => {
+    const limits = (byRole.get('VocApiStack/FeedbackFormLambdaRole') ?? [])
+      .filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
+      .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
+      .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
+    expect(limits).toStrictEqual([
+      { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } } },
+      { tables: ['WorkspacesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } } },
+    ]);
   });
 
   it('the workspace delete puts only its tombstones in voc-aggregates and its completed rows in voc-workspaces', () => {

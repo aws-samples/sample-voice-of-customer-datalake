@@ -41,7 +41,9 @@
     "openRadar": "Open Radar",
     "openRadarSettings": "Open Administration → Data sources → Radar",
     "openCategories": "Open Administration → Categories",
-    "openWorkspaceCategories": "Open Workspace settings → Categories"
+    "openWorkspaceCategories": "Open Workspace settings → Categories",
+    "approveCreate": "Approve and create",
+    "openForm": "Open the form in the builder"
   },
   "preview": {
     "participants": {
@@ -394,6 +396,44 @@
       "replaces_one": "Replaces the {{count, number}} saved step.",
       "replaces_other": "Replaces the {{count, number}} saved steps.",
       "note": "Saving writes a new version of the prototype; viewers see the steps when they open it."
+    },
+    "feedbackFormDraft": {
+      "label": "The drafted feedback form",
+      "name": "Name",
+      "nameMissing": "Give the form a name.",
+      "channel": {
+        "link": "Link",
+        "embed": "Embed",
+        "in_app": "In-app"
+      },
+      "questions": "Questions",
+      "leaveOut": "Leave out question {{number}}",
+      "lastQuestion": "A form needs at least one question, so the last one can't be left out.",
+      "leftOut": "Question {{number}} is left out.",
+      "endings": "Endings",
+      "hiddenFields": "Hidden fields",
+      "fromAi": "From the AI",
+      "warning": "Warning",
+      "addresses": "Addresses the AI suggested",
+      "checkedAddress": "I've checked this address",
+      "remove": "Remove",
+      "removeAddress": "Remove the address {{url}}",
+      "createsOff": "Approve creates it Off: nothing is public until you publish it.",
+      "notAllowed": "Only editors and administrators can create forms. You can still decline it.",
+      "openInBuilder": "Open in builder",
+      "notAForm": "The draft isn't a form this app can read.",
+      "questionCount_one": "{{count, number}} question",
+      "questionCount_other": "{{count, number}} questions",
+      "endingCount_one": "{{count, number}} ending",
+      "endingCount_other": "{{count, number}} endings",
+      "hiddenCount_one": "{{count, number}} hidden field",
+      "hiddenCount_other": "{{count, number}} hidden fields",
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "rules_one": "{{count, number}} rule",
+      "rules_other": "{{count, number}} rules",
+      "rulesDropped_one": "The rule on {{questions}} that went to it is dropped too.",
+      "rulesDropped_other": "The {{count, number}} rules on {{questions}} that went to it are dropped too."
     }
   },
   "tools": {
@@ -597,6 +637,10 @@
     "set_prototype_walkthrough": {
       "title": "Save a prototype walkthrough",
       "titleRemove": "Remove the prototype's walkthrough"
+    },
+    "draft_feedback_form": {
+      "title": "Create a feedback form",
+      "titleWith": "Create the feedback form “{{name}}”"
     }
   }
 }

@@ -97,9 +97,12 @@ describe('the workspace tools advertise their exact schema and pack', () => {
   it('update_feedback_form', () => {
     expect(tool('update_feedback_form').pack).toBe('forms');
     expectSpec(tool('update_feedback_form'), {
-      description: 'Change settings of an embeddable feedback form. Allowed keys in `updates`: enabled, name, title, '
-        + 'description, question, placeholder, submit_button_text, success_message, rating_enabled, rating_type '
-        + '(stars|numeric|emoji), collect_email, collect_name. Enabling a form makes it accept public submissions.',
+      description: 'Change settings of an embeddable feedback form. Allowed keys in `updates`: enabled, name, title and '
+        + 'description (its welcome screen, in the form\u2019s primary language; an empty title turns the screen off), '
+        + 'success_message (the first ending\u2019s title), submit_button_text (the last question\u2019s button), '
+        + 'dimension_defaults, tags. Enabling a form makes it accept public submissions. Questions, logic, endings, '
+        + 'languages and hidden fields change only in the form builder (its Improve with AI redrafts a form); '
+        + 'draft_feedback_form drafts a new form.',
       properties: {
         form_id: idProp('Feedback form id.'),
         updates: { type: 'object', description: 'Settings to change (see the allowed keys).' },

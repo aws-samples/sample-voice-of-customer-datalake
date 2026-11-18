@@ -26,6 +26,7 @@ from shared.company_context import my_context_key, put_my_context
 from shared.conversations import conversant_key, conversation_partition
 from shared.document_comments import put_thread, thread_item, user_author
 from shared.document_share import create_share
+from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import LIST_PK
 from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
@@ -263,6 +264,7 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'plugin_config_history_key': lambda w: _put(w, 'aggregates', {
         **plugin_config_history_key(SCOPE, 'webscraper', '2026-09-01T00:00:00', 'b2'), 'configs': '[]'}),
     FEEDBACK_FORM_PK: lambda w: _aggregate(w, SCOPE.key(FEEDBACK_FORM_PK), 'FORM#ff_fam', form_id='ff_fam'),
+    TEST_RESPONSES_PK: lambda w: _aggregate(w, SCOPE.key(TEST_RESPONSES_PK), 'ff_fam#t#r1', form_id='ff_fam'),
     LIST_PK: lambda w: _aggregate(w, SCOPE.key(LIST_PK), '2026-11-02T00:00:00+00:00#runfam', run_id='runfam'),
     'watermark_key': _watermark,
     'watermark_directory_key': lambda w: _put(w, 'aggregates', watermark_directory_key(SCOPE, 'app_reviews_ios', 'fam')),

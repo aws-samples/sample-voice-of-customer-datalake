@@ -16,7 +16,7 @@ vi.mock('../store/configStore', () => import('@test/api-mocks').then(m => m.conf
 
 import { api } from './client'
 import { scrapersApi } from './scrapersApi'
-import type { FeedbackForm, ScraperConfig } from './types'
+import type { ScraperConfig } from './types'
 
 const API = 'https://api.example.com'
 const OK = { success: true }
@@ -47,25 +47,6 @@ const SCRAPER: ScraperConfig = {
   pagination: { enabled: false, param: 'page', max_pages: 1, start: 1 },
 }
 
-const NEW_FORM: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> = {
-  name: 'New Form',
-  enabled: true,
-  category: '',
-  subcategory: '',
-  title: 'Tell us',
-  description: '',
-  question: 'How was it?',
-  placeholder: '',
-  rating_enabled: false,
-  rating_type: 'stars',
-  rating_max: 5,
-  submit_button_text: 'Send',
-  success_message: 'Thanks',
-  theme: { primary_color: '#000000', background_color: '#ffffff', text_color: '#000000', border_radius: '4px' },
-  collect_email: false,
-  collect_name: false,
-  custom_fields: [],
-}
 
 const BRAND_SETTINGS = {
   brand_name: 'Updated Brand',
@@ -134,7 +115,6 @@ const SETTINGS_CASES: EndpointCase[] = [
 
 const FORMS_AND_USERS_CASES: EndpointCase[] = [
   { name: 'getFeedbackForms', call: () => api.getFeedbackForms(), response: { success: true, forms: [{ form_id: 'f1', name: 'Form 1' }] }, url: `${API}/feedback-forms`, returnsResponse: true },
-  { name: 'createFeedbackForm', call: () => api.createFeedbackForm(NEW_FORM), response: { success: true, form: { ...NEW_FORM, form_id: 'f1' } }, url: `${API}/feedback-forms`, init: post(NEW_FORM) },
   { name: 'updateFeedbackForm', call: () => api.updateFeedbackForm('f1', { name: 'Updated Form' }), response: { success: true, form: { form_id: 'f1', name: 'Updated Form' } }, url: `${API}/feedback-forms/f1`, init: put({ name: 'Updated Form' }) },
   { name: 'deleteFeedbackForm', call: () => api.deleteFeedbackForm('f1'), response: OK, url: `${API}/feedback-forms/f1`, init: DELETE },
   { name: 'getUsers', call: () => api.getUsers(), response: { success: true, users: [{ username: 'user1', email: 'user1@example.com' }] }, url: `${API}/users`, returnsResponse: true },

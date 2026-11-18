@@ -154,7 +154,9 @@ export const routes: RouteObject[] = [
       // Its tab: /data-explorer/raw (/data-explorer too) or /data-explorer/processed (DataExplorer/dataExplorerPaths.ts).
       { path: 'data-explorer/*', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
-      { path: 'feedback-forms', ...page(<FeedbackForms />) },
+      // The list, the picker (/feedback-forms/new), a form's builder and its full-screen preview are paths the page
+      // reads itself (FeedbackForms/builder/builderPaths.ts): /feedback-forms/<id|new>/<tab>[/…], /<id>/preview.
+      { path: 'feedback-forms/*', ...page(<FeedbackForms />) },
       // Its tabs: /participants/lists|people|asks (Participants/participantsPaths.ts).
       { path: 'participants/*', ...page(<Participants />) },
       // Feedback boards (FeatureRequests/boardContext.ts): the list, its Insights tab, a request known only by its id

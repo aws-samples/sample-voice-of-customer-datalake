@@ -44,7 +44,9 @@ _FIRST_TAGS = (
 )
 # The Prototype builder's blocks: the outline (6.14.00) and the walkthrough draft's source (6.17.00).
 _PROTOTYPE_TAGS = ('prototype_outline', 'walkthrough_source')
-EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS)
+# A feedback form's AI draft (7.55.00, shared/forms_v2_draft.py): the person's request and their current form.
+_FORM_DRAFT_TAGS = ('form_brief', 'current_form')
+EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS, *_FORM_DRAFT_TAGS)
 
 class TestEveryDataBlockTagIsFenced:
     def test_the_tag_tuple_is_exactly_this_in_this_order(self):

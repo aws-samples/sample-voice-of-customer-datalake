@@ -50,8 +50,6 @@ voc-datalake/frontend/src/pages/DataExplorer/DataExplorer.tsx 59.03   # 49/83
 voc-datalake/frontend/src/pages/FeatureRequests/BoardPage.tsx 57.14   # 4/7
 voc-datalake/frontend/src/pages/FeatureRequests/RequestDetailModal.tsx 68.75   # 33/48
 voc-datalake/frontend/src/pages/FeedbackForms/FormCard.tsx 77.77   # 28/36
-voc-datalake/frontend/src/pages/FeedbackForms/FormEditorPanels.tsx 57.89   # 22/38
-voc-datalake/frontend/src/pages/FeedbackForms/TemplateWizard.tsx 55.55   # 10/18
 voc-datalake/frontend/src/pages/Login/Login.tsx 69.81   # 74/106
 voc-datalake/frontend/src/pages/Participants/ParticipantBadges.tsx 76.19   # 16/21
 voc-datalake/frontend/src/pages/Participants/PersonSearch.tsx 70.00   # 7/10

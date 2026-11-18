@@ -274,8 +274,37 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(settings_handler, 'invoke_lambda_async', invoke))
         for row in _reprocess_jobs():
             aggregates.put_item(Item=row)
+        # A feedback form's AI draft (shared/forms_v2_draft_routes.py, on this Lambda since 7.55.00's AI review): an
+        # assist job of the deployment and of each workspace, each in its starter's own partition of voc-jobs.
+        jobs = pk_sk_table('jobs')
+        stack.enter_context(patch('shared.assist_jobs.get_jobs_table', return_value=jobs))
+        assist = stack.enter_context(patch('shared.assist_jobs.invoke_lambda_async'))
+        stack.enter_context(patch.dict('os.environ', {'ASSIST_WORKER_FUNCTION': 'voc-settings-assist'}))
+        for row in _draft_jobs():
+            jobs.put_item(Item=row)
 
-        yield World(call=_caller(settings_handler, lambda_context), doubles={'cognito': cognito, 'lambda': invoke})
+        yield World(call=_caller(settings_handler, lambda_context),
+                    doubles={'cognito': cognito, 'lambda': invoke, 'assist': assist})
+
+
+#: A form draft's job id of each workspace, and one in none (shared/assist_jobs.py ``job_`` + 16 hex).
+DRAFT_JOB_A = 'job_00000000000000a1'
+DRAFT_JOB_B = 'job_00000000000000b1'
+_DRAFT_JOB_IDS = {'A': {'job_id': DRAFT_JOB_A}, 'B': {'job_id': DRAFT_JOB_B},
+                  UNKNOWN: {'job_id': 'job_00000000000000ff'}}
+
+
+def _draft_jobs() -> list[dict[str, Any]]:
+    """A finished form draft of the deployment (``ASSIST#sub-ada``, A's id) and of each workspace
+    (``WS#{ws}#ASSIST#{its admin's sub}``), each result carrying its own scope's words."""
+    def row(pk: str, job_id: str, mark: str) -> dict[str, Any]:
+        return {'pk': pk, 'sk': f'JOB#{job_id}', 'job_id': job_id, 'job_type': 'assist_form_draft', 'status': 'completed',
+                'created_at': '2026-11-18T00:00:00+00:00', 'updated_at': '2026-11-18T00:01:00+00:00',
+                'result': {'success': True, 'form': {'name': f'{mark} survey'}}}
+
+    return [row('ASSIST#sub-ada', DRAFT_JOB_A, 'before_workspaces'),
+            row(f'WS#{WS_A}#ASSIST#sub-ada', DRAFT_JOB_A, A_MARK),
+            row(f'WS#{WS_B}#ASSIST#{BEA["sub"]}', DRAFT_JOB_B, B_MARK)]
 
 
 #: A category reprocess job id of each workspace, and one in none (shared/reprocess_jobs.py ``rp_`` + 12 hex).
@@ -505,6 +534,8 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'memory_handler.py': memory_world,
     'mcp_oauth_consent_routes.py': tokens_world,
     'agents_handler.py': agents_world,
+    # Included by the settings handler (a feedback form's AI draft, 7.55.00).
+    'forms_v2_draft_routes.py': settings_world,
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
@@ -673,6 +704,17 @@ CASES: dict[tuple[str, str], RouteCase] = {
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('settings_handler.py', 'POST /settings/categories/reprocess/<job_id>/cancel'): RouteCase(
         ids=_REPROCESS_JOB_IDS, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    # A feedback form's AI draft (7.55.00's AI review, round 1: served by the settings API): the workspace's own job,
+    # started and polled by its editors and admins; without the header the deployment's, for any signed-in user.
+    ('forms_v2_draft_routes.py', 'POST /settings/form-drafts'): RouteCase(
+        no_ids='the job is new, the workspace is the header: check 1 (B finished a draft; A starts its own)',
+        body={'description': 'Ask riders why they return', 'language': 'en', 'channel': 'link'}, ok_status=202,
+        literals={'Ask riders why they return': 'a description the person typed, not a row of a workspace',
+                  'en': 'a form language, the same in every workspace',
+                  'link': 'a channel, the same words in every workspace'},
+        without_a_workspace=_AS_BEFORE),
+    ('forms_v2_draft_routes.py', 'GET /settings/form-drafts/<job_id>'): RouteCase(
+        ids=_DRAFT_JOB_IDS, without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/sources'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',
         without_a_workspace=_AS_BEFORE),

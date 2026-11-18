@@ -64,6 +64,29 @@
  *
  * Phase 4a (a workspace's export) spends none here: its routes ride `/me/{proxy+}` and the workspaces API's
  * existing integration, and the job is VocProcessingStack's (workspace-export-worker.ts), invoked by name.
+ *
+ * 7.55.00 (Feedback Forms schema version 2, docs/feedback-forms.md) spends 7: GET and POST on `/feedback-forms/{form_id}`
+ * (one form, the builder's read; the AI draft's start, `/feedback-forms/draft`) and one Cognito `{proxy+}` under the
+ * item with GET, POST, DELETE and its CORS preflight (the results, responses, test link and draft poll), through the
+ * forms Lambda's existing integration and invoke permission. Explicit routes would have spent 17. The draft runs on
+ * the settings API's existing assist twin, so no function, role or log group is added. The performance-tier synth
+ * goes 415 → 422: the ceiling is 422, and the 425 gate is unchanged.
+ *
+ * 7.55.00's AI review, round 1 (TENETS.md tenet 6) gives one back: the AI draft leaves the forms Lambda, whose role
+ * also serves the public widget routes, for the SETTINGS Lambda, as `POST /settings/form-drafts` and `GET
+ * /settings/form-drafts/{job_id}` on the settings API's existing `/settings/{proxy+}` (no new resource, method or invoke
+ * permission), and the item's POST that started a draft is gone (−1). Main's shape for the same move, a static
+ * `/feedback-forms/draft` resource beside `{form_id}` with POST and a `{job_id}` child with GET, each with its CORS
+ * preflight, would have spent 6 (+5 net: 427, over the 425 gate). The performance-tier synth goes 422 → 421: the
+ * ceiling is 421, and the 425 gate is unchanged.
+ *
+ * 7.55.00's AI review, round 2 (tenet 1) spends 4: the widget's funnel beacons get their own public route, `POST
+ * /feedback-forms/{form_id}/events` (its resource, its POST and CORS preflight, and its strict request model
+ * `FeedbackFormEvent`), through the forms Lambda's existing integration and invoke permission, so a beacon never
+ * spends the submit route's throttle. The performance-tier synth goes 421 → 425: the ceiling is 425, AT the gate
+ * (api-stack-snapstart.test.ts, 500 less its 75 of headroom), which is unchanged. The next resource this stack adds
+ * must first give one back (the strict model is the cheapest to fold: the submit's lenient one would then bound the
+ * beacons, as it did before).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -76,9 +99,11 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
  * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404; + 5 for `/platform`
  * (6.09.00): 409; + 3 for the members routes' methods on `/me/{proxy+}` (6.10.00): 412; + 1 for the workspace-resolution
- * policy (6.18.00): 413; + 2 for a workspace's webhook endpoint (7.06.00): 415.
+ * policy (6.18.00): 413; + 2 for a workspace's webhook endpoint (7.06.00): 415; + 6 for the forms' v2 routes
+ * (7.55.00) and 1 for its single-form GET: 422; − 1 for the item's POST, the AI draft now on the settings proxy
+ * (7.55.00's AI review): 421; + 4 for the beacons' own route and model (its round 2): 425, the gate itself.
  */
-const ENGAGEMENT_RELEASE_CEILING = 415;
+const ENGAGEMENT_RELEASE_CEILING = 425;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

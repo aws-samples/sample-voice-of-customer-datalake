@@ -34,6 +34,8 @@ from shared import (
     design_logo,
     design_references,
     extracted_design,
+    forms_v2_draft,
+    forms_v2_draft_routes,
     image_model_quota,
     image_model_status,
     model_agreements,
@@ -221,6 +223,12 @@ app = create_api_resolver()
 # The deployment's start theme (shared/appearance_routes.py); reads the table at call time.
 appearance_routes.bind_aggregates_table(lambda: aggregates_table)
 app.include_router(appearance_routes.app)
+# A feedback form's AI draft, POST /settings/form-drafts and GET /settings/form-drafts/{job_id}
+# (shared/forms_v2_draft_routes.py, workspace-scoped like the form routes): served here, beside the job rows and the
+# twin this role already owns, so the forms Lambda, which also serves the public widget routes, holds no worker invoke
+# and no jobs-table action.
+forms_v2_draft_routes.bind_aggregates_table(lambda: aggregates_table)
+app.include_router(forms_v2_draft_routes.app)
 
 
 def _configured_table():
@@ -952,6 +960,10 @@ def generate_categories_work(config: dict) -> dict:
 
 ASSIST_WORK: Final = {  # job_type → the work the settings worker (ASSIST_WORKER_FUNCTION) runs
     CATEGORIES_JOB: assist_jobs.Work(generate_categories_work, CATEGORIES_FAILURE),
+    # A feedback form's AI draft (7.55.00): started by POST /settings/form-drafts (shared/forms_v2_draft_routes.py, on
+    # this Lambda), run here, on the twin that already holds the Bedrock grant; it reads only its request, so it runs
+    # in a workspace too.
+    forms_v2_draft.DRAFT_JOB: assist_jobs.Work(forms_v2_draft.run_job, forms_v2_draft.DRAFT_FAILURE, per_workspace=True),
 }
 
 

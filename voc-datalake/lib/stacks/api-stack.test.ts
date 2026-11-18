@@ -51,12 +51,13 @@ const COGNITO = { authorizationType: 'COGNITO_USER_POOLS', hasAuthorizerId: true
 describe('VocApiStack authorization invariant', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
     // The COUNT as well as the contents, and here rather than in one of the
-    // per-feature describes below: six is the number a change to either public
+    // per-feature describes below: seven is the number a change to either public
     // set has to argue past, so it belongs with the invariant itself instead of
     // being restated once per feature that touches those routes. A throttle, a
     // CORS value or a rewired resource tree is not an authorization change — this
     // is the single guard that says so for all of them.
-    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(6);
+    // Seven since 7.55.00: the widget's funnel beacons got their own route (POST …/events, its own throttle).
+    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(7);
     // Nine: the MCP OAuth discovery documents (4) and facade (5), INTENTIONALLY_PUBLIC_OAUTH_ROUTES.
     expect(INTENTIONALLY_PUBLIC_OAUTH_ROUTES).toHaveLength(9);
     expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(EVERY_PUBLIC_ROUTE);
@@ -277,9 +278,15 @@ describe('stack and callers stay in step', () => {
   // `/iframe` is recovered only from that module's DOCBLOCK, which names the literal
   // path. Deleting a comment line there reduced this to checking
   // `/feedback-forms/{form_id}` while staying green.
+  //
+  // The API client's path is `…/stats` since 7.55.00: the SPA no longer reads
+  // `…/submissions` (the v1 submissions dialog is gone; the route stays for the
+  // assistant's get_feedback_form_submissions), and the builder's v2 requests are
+  // api/feedbackFormsV2Api.ts's, under the item's `{proxy+}`
+  // (api-stack-feedback-forms-v2.test.ts).
   it.each([
     ['the API client', join('frontend', 'src', 'api', 'client.ts'),
-      '/feedback-forms/{form_id}/submissions'],
+      '/feedback-forms/{form_id}/stats'],
     ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js'),
       '/feedback-forms/{form_id}/config'],
     ['the embed URL builder', join('frontend', 'src', 'api', 'feedbackFormUrls.ts'),

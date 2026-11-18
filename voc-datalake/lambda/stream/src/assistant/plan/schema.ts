@@ -106,12 +106,13 @@ export const PLAN_CONTROL_TOOLS = ['propose_plan', 'cancel_plan'] as const;
  * engineering run, which only an administrator's Approve on its own card may do (owner decision: never pre-approved,
  * never started by a plan), and its executor re-checks the Understand flow the card showed. `save_categories` saves
  * the categories as the person edited them on its card, against the stored ones the card read (docs/categories.md).
+ * `draft_feedback_form` creates the form the person edited on its card, Off (docs/feedback-forms.md, "AI drafts").
  * They stay ordinary chat writes.
  */
 export const CARD_ONLY_WRITE_TOOLS = [
   'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
   'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants', 'draft_prototype_revision',
-  'set_prototype_walkthrough', 'propose_knowledge_refresh', 'save_categories',
+  'set_prototype_walkthrough', 'propose_knowledge_refresh', 'save_categories', 'draft_feedback_form',
 ] as const;
 const NOT_A_PLAN_WRITE: ReadonlySet<string> = new Set([...PLAN_CONTROL_TOOLS, ...CARD_ONLY_WRITE_TOOLS]);
 

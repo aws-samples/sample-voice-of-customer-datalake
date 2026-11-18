@@ -586,6 +586,8 @@ class TestRound1:
         sent: list[tuple[str, list[str], object]] = []
 
         def record(params: dict[str, Any], **_kwargs: Any) -> None:
+            if params.get('TableName') != aws['projects'].name:
+                return  # the tables share one client: voc-aggregates' Queries (a form's test responses) are not these
             names = params.get('ExpressionAttributeNames') or {}
             partition = (params.get('ExpressionAttributeValues') or {}).get(':p') or ''
             projection = params.get('ProjectionExpression')

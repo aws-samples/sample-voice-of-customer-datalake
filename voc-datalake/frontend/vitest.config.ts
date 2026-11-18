@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { canvasAlias } from './canvasResolve.ts'
 import { changelogPlugin } from './changelogPlugin.ts'
-import { streamResolve } from './streamSource.ts'
+import { streamFsAllow, streamResolve } from './streamSource.ts'
 import react from '@vitejs/plugin-react'
 import { availableParallelism } from 'node:os'
 import path from 'path'
@@ -56,6 +56,9 @@ export default defineConfig({
       ],
     },
   },
+  // The files outside the SPA root it imports as assets, as the dev server allows them (vite.config.ts): the forms
+  // builder's preview imports the public widget with `?url` (pages/FeedbackForms/preview/widgetScript.ts).
+  server: { fs: { allow: streamFsAllow } },
   resolve: {
     // The modules shared with the assistant stream Lambda (streamSource.ts).
     dedupe: streamResolve.dedupe,

@@ -452,19 +452,6 @@
   },
   {
     "file": "api/client.ts",
-    "method": "POST",
-    "call": "'/feedback-forms'",
-    "probes": [
-      {
-        "path": "/feedback-forms",
-        "body": {
-          "name": "Probe form"
-        }
-      }
-    ]
-  },
-  {
-    "file": "api/client.ts",
     "method": "GET",
     "call": "'/integrations/status'",
     "probes": [
@@ -1229,6 +1216,244 @@
     ]
   },
   {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "formPath(formId)",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_old_ui"
+      },
+      {
+        "path": "/feedback-forms/fv1_legacy"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "POST",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms",
+        "body": {
+          "schema_version": 2,
+          "name": "Probe form",
+          "language": "en",
+          "languages": [
+            "en"
+          ],
+          "welcome": {
+            "enabled": false,
+            "title": {}
+          },
+          "questions": [
+            {
+              "id": "q_feedback",
+              "type": "open_text",
+              "headline": {
+                "en": "What would you like to tell us?"
+              },
+              "required": true,
+              "long": true,
+              "input_type": "text"
+            }
+          ],
+          "hidden_fields": [],
+          "endings": [
+            {
+              "id": "end_thanks",
+              "title": {
+                "en": "Thank you!"
+              }
+            }
+          ],
+          "settings": {
+            "test": {
+              "link_enabled": false,
+              "record": "tag"
+            }
+          },
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "PUT",
+    "call": "formPath(formId)",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_nps",
+        "body": {
+          "schema_version": 2,
+          "name": "Mobile app NPS",
+          "language": "en",
+          "languages": [
+            "en"
+          ],
+          "welcome": {
+            "enabled": false,
+            "title": {}
+          },
+          "questions": [
+            {
+              "id": "q_feedback",
+              "type": "open_text",
+              "headline": {
+                "en": "What would you like to tell us?"
+              },
+              "required": true,
+              "long": true,
+              "input_type": "text"
+            }
+          ],
+          "hidden_fields": [],
+          "endings": [
+            {
+              "id": "end_thanks",
+              "title": {
+                "en": "Thank you!"
+              }
+            }
+          ],
+          "settings": {
+            "test": {
+              "link_enabled": false,
+              "record": "tag"
+            }
+          },
+          "expected_revision": 0
+        }
+      },
+      {
+        "path": "/feedback-forms/fv2_nps",
+        "body": {
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "POST",
+    "call": "`${formPath(formId)}/test-link`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_nps/test-link",
+        "body": {
+          "rotate": true
+        }
+      },
+      {
+        "path": "/feedback-forms/fv2_old_ui/test-link",
+        "body": {
+          "link_enabled": true,
+          "record": "tag"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "DELETE",
+    "call": "`${formPath(formId)}/responses?test=true`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_nps/responses?test=true"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${formPath(formId)}/results?${filterQuery(filters)}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_old_ui/results?include_test=false"
+      },
+      {
+        "path": "/feedback-forms/fv2_old_ui/results?include_test=true&language=pl"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${formPath(formId)}/responses?${query.toString()}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_old_ui/responses?limit=20&include_test=false"
+      },
+      {
+        "path": "/feedback-forms/fv2_old_ui/responses?limit=20&include_test=only"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, { format: 'csv' })}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_old_ui/responses?format=csv&include_test=false"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "POST",
+    "call": "'/settings/form-drafts'",
+    "probes": [
+      {
+        "path": "/settings/form-drafts",
+        "body": {
+          "description": "Ask app users who switch back to the old UI why.",
+          "language": "pl",
+          "channel": "in_app"
+        }
+      },
+      {
+        "path": "/settings/form-drafts",
+        "body": {
+          "description": "An NPS form #rate",
+          "language": "en",
+          "channel": "link"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${formPath(formId)}/stats`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_old_ui/stats"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`/settings/form-drafts/${encodeURIComponent(jobId)}`",
+    "probes": [
+      {
+        "path": "/settings/form-drafts/job_probe"
+      }
+    ]
+  },
+  {
     "file": "api/githubAppsApi.ts",
     "method": "GET",
     "call": "APPS_PATH",
@@ -1876,16 +2101,6 @@
     "probes": [
       {
         "path": "/feedback-forms/form_1/stats"
-      }
-    ]
-  },
-  {
-    "file": "api/client.ts",
-    "method": "GET",
-    "call": "`/feedback-forms/${formId}/submissions?${params}`",
-    "probes": [
-      {
-        "path": "/feedback-forms/form_1/submissions?limit=20"
       }
     ]
   },

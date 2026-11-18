@@ -59,7 +59,7 @@ const PROJECT = [
 ];
 
 const SINGLE_LINE_PACKS = [
-  '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; update_feedback_form changes settings.',
+  '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; update_feedback_form changes settings; draft_feedback_form drafts a new form (questions and logic change in the form builder).',
   '- Prioritization board: get_prioritization (rows, the user’s own scores, team aggregates); name projects with list_projects.',
   '- Scrapers: list_scrapers, get_scraper_status; run_scraper starts one (admins).',
   '- Data sources (admins): run_source imports an app-review, GitHub Issues, S3, synthetic or web-reviews source now and returns an execution_id; get_source_run reports that run. find_app_store_app finds an app’s App Store id / Google Play package name for create_app_connector — show the chosen id to the user.',

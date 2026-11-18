@@ -6,9 +6,9 @@
  * the edit and the editor open, and the next close asks again.
  *
  * Covers PersonaEditModal, ScraperEditor and the People editor sheet's name (UserNameSection, under a data router:
- * closing the sheet is a move to `/admin/people`, which the router's blocker holds). FormEditor runs the contract in
- * its own spec; a new project document has no dialog since 7.38.00: it opens blank on its canvas, whose guard is the
- * canvas's own.
+ * closing the sheet is a move to `/admin/people`, which the router's blocker holds). The feedback form builder, a
+ * page since 7.55.00, runs the contract in its own spec (FormBuilderPage.unsavedGuard.test.tsx); a new project
+ * document has no dialog since 7.38.00: it opens blank on its canvas, whose guard is the canvas's own.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'

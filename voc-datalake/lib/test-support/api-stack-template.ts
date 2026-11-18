@@ -55,6 +55,7 @@ export const INTENTIONALLY_PUBLIC_ROUTES = [
   'GET /feedback-forms/{form_id}/config',
   'GET /feedback-forms/{form_id}/iframe',
   'GET /voting-sessions/{session_id}/config',
+  'POST /feedback-forms/{form_id}/events',
   'POST /feedback-forms/{form_id}/submit',
   'POST /unsubscribe',
   'POST /voting-sessions/{session_id}/submit',
@@ -67,7 +68,7 @@ export const INTENTIONALLY_PUBLIC_ROUTES = [
  *  and only counts at /mcp/global when that person CONSENTED (Cognito-authenticated) beforehand.
  *
  *  THE SAME REVIEW GATE as INTENTIONALLY_PUBLIC_ROUTES: a new entry is somebody choosing to publish
- *  a route. Kept apart from that list so its "six" keeps meaning the widget, ballot and unsubscribe. */
+ *  a route. Kept apart from that list so its "seven" keeps meaning the widget, ballot and unsubscribe. */
 export const INTENTIONALLY_PUBLIC_OAUTH_ROUTES = [
   'GET /.well-known/oauth-authorization-server',
   'GET /.well-known/oauth-protected-resource',

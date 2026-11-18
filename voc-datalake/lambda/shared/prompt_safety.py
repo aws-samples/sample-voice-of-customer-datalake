@@ -49,6 +49,9 @@ DATA_BLOCK_TAGS = (
     'prototype_outline',
     # The PRD / PR/FAQ text a walkthrough draft is written from (shared/prototype_walkthrough_draft.py).
     'walkthrough_source',
+    # A feedback form's AI draft (shared/forms_v2_draft.py): what the person asked for, and the form they have now.
+    'form_brief',
+    'current_form',
 )
 
 _TAG_RE = re.compile(

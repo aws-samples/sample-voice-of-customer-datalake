@@ -19,11 +19,11 @@ const FORMS = [
   { form_id: 'form_2', name: 'Checkout Survey', enabled: true, title: 'Checkout' },
 ]
 
-/** The Submissions figure on the card that shows `name`. */
-async function submissionsOn(name: string): Promise<string | null> {
-  const card = (await screen.findByText(name)).closest('.card')
+/** The responses line on the card that shows `name`. */
+async function responsesOn(name: string): Promise<string | null> {
+  const card = (await screen.findByRole('link', { name })).closest('.card')
   if (!(card instanceof HTMLElement)) throw new Error(`no card for ${name}`)
-  return within(card).getByText('Submissions').previousElementSibling?.textContent ?? null
+  return (await within(card).findByText(/responses?$/)).textContent
 }
 
 describe('FeedbackForms: card stats come with the list', () => {
@@ -44,8 +44,8 @@ describe('FeedbackForms: card stats come with the list', () => {
 
     render(<FeedbackForms />, { wrapper: createFormsWrapper() })
 
-    expect(await submissionsOn('Website Feedback')).toBe('12')
-    expect(await submissionsOn('Checkout Survey')).toBe('3')
+    expect(await responsesOn('Website Feedback')).toBe('12 responses')
+    expect(await responsesOn('Checkout Survey')).toBe('3 responses')
     expect(getFeedbackForms).toHaveBeenCalledTimes(1)
     expect(getFeedbackFormStats).not.toHaveBeenCalled()
   })
@@ -55,7 +55,7 @@ describe('FeedbackForms: card stats come with the list', () => {
 
     render(<FeedbackForms />, { wrapper: createFormsWrapper() })
 
-    await screen.findByText('Website Feedback')
+    await screen.findByRole('link', { name: 'Website Feedback' })
     await vi.waitFor(() => expect(getFeedbackFormStats).toHaveBeenCalledTimes(2))
   })
 })

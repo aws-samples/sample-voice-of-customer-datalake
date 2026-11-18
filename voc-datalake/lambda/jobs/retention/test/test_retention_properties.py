@@ -165,11 +165,12 @@ def test_a_run_walks_the_documented_phases(mode, field, source, workspace, store
     # projects table may mark a workspace's artifacts (decided when reached). 7.48.00: the deployment's job walks the
     # deployment's own projects first, so the phase runs without voc-workspaces too.
     walks_projects = by_email and not source and projects
+    # A form's test responses follow the items in every run (their phase decides what it reaches: form_tests.py).
     if workspace:
-        expected = ['items', *(['workspace_projects'] if walks_projects else []), *(['exports'] if erase else []),
-                    *(['workspace_lineage'] if projects else [])]
+        expected = ['items', 'form_tests', *(['workspace_projects'] if walks_projects else []),
+                    *(['exports'] if erase else []), *(['workspace_lineage'] if projects else [])]
     else:
-        expected = ['items', *(['radar'] if STORE_RADAR in stores else []),
+        expected = ['items', 'form_tests', *(['radar'] if STORE_RADAR in stores else []),
                     *(['boards'] if STORE_BOARDS in stores and by_email and source in (None, BOARDS_SOURCE)
                       else []),
                     *(['members'] if STORE_MEMBERS in stores and by_email and not source else []),
