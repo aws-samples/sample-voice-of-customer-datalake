@@ -11,7 +11,7 @@ repository gets `typescript` alone and a Rust-only one `rust` alone. A flow stor
 
 | Pack | Language | Steps (in kind order, per root; each only when the repository uses the tool) |
 |---|---|---|
-| [`python`](python/manifest.toml) | Python (a marker, or test files alone at the root) | `pip install` of `requirements(-dev).txt` (wheels only, from PyPI; pytest alone for a root without a marker); `ruff check`, `ruff format --check`, vulture, every test asserts, pyright (npm's or PyPI's), mypy, pytest (no test collected fails) |
+| [`python`](python/manifest.toml) | Python (a marker, or test files alone at the root) | the gate's own virtual environment (`py.venv`), then `pip install` of `requirements(-dev).txt` into it (wheels only, from PyPI; pytest alone for a root without a marker); `ruff check`, `ruff format --check`, vulture, every test asserts, pyright (npm's or PyPI's), mypy, pytest (no test collected fails), each on that environment's interpreter |
 | [`typescript`](typescript/manifest.toml) | TypeScript | `npm ci` / `pnpm install --frozen-lockfile` (no install scripts); eslint, knip, jscpd, tsc (each program), `npm test` or `vitest run` |
 | [`rust`](rust/manifest.toml) | Rust | `cargo fetch` (`--locked` with a lock file); `cargo fmt --check`, `cargo clippy -D warnings`, the file-length check, `cargo test` (offline; at least one test must run) |
 | [`java`](java/manifest.toml) | Java | `mvn dependency:go-offline`; `mvn --offline verify` (at least one test must run); `gradle check --offline` (`buildHealth` where the build has it); every test class ran |
@@ -43,8 +43,19 @@ instead of setting the gates up in one:
   first put back to HEAD (`git reset --hard`, `git clean -ffdx`, as the agent), so nothing planted in it or written
   by an earlier round's code reaches the step with network; `LocalRunner` also gives each setup command a fresh
   HOME. pip runs isolated (`-I`, `--isolated`), pnpm without the repository's pnpmfile, cargo without its rustc
-  wrappers. What lives outside the checkout (the interpreter's site-packages, a cache) is the sandbox's to keep
-  clean between commands. The image's Maven and Gradle run, not the
+  wrappers. What lives outside the checkout (a cache, the gate's virtual environments) is the sandbox's to keep
+  clean between commands.
+- **Its own environment, never the image's.** Repository code cannot write the image's system locations, so no
+  step installs there (7.54.00: the first live run's `pip install` into the image's site-packages failed with
+  `Errno 13` and stopped the gate). The python pack makes a virtual environment per root (`py.venv`: `{base_python}
+  -I -m venv --clear {venv}`, its pip the standard library's own, which reaches no registry; a setup step, since the
+  runner gives the dependency step its registries only before any other repository code), outside the checkout
+  (the gate hashes the checkout's tree) and writable by repository code (the images: `/home/code/.voc-gate/venvs`,
+  `gate_tools.IMAGE_VENVS`); `{python}` is that environment's interpreter, so the dependency step installs into it
+  and every later step runs against it. npm installs into the checkout's `node_modules` and its cache, cargo, Maven
+  and Gradle into their homes under `/opt/voc/cache` (the images' `CARGO_HOME`, `-Dmaven.repo.local`,
+  `GRADLE_USER_HOME`), all writable by repository code. A local plan with no environment (`plan(python=...)`, the
+  local fake run) runs `{python}` as the interpreter it was given and skips `py.venv`. The image's Maven and Gradle run, not the
   repository's wrappers, which download a build tool from an address the repository chooses. Gradle has no fetch
   that runs no build script, so it runs offline against the image's cache and fails on a dependency the cache lacks.
   What the flags cannot stop (an index option, a URL or a local path inside a requirements file, a git dependency
@@ -53,7 +64,8 @@ instead of setting the gates up in one:
   `pyproject.toml` gets no dependency step: installing it would build it.
 - **Repository code never runs as the gate.** The checks run through the runtime's sandbox runner (a separate OS
   user, no credential, no network); the gate's own git command runs through the agent's runner, with hooks, file-system monitor,
-  pager, external diff and every config but its own off. `{python}` is the sandbox's interpreter, never the gate's.
+  pager, external diff and every config but its own off. `{base_python}` is the sandbox's interpreter, never the
+  gate's, and `{python}` the gate's virtual environment's, which repository code made.
   `LocalRunner` (the tests, a local run on a repository you trust) scrubs the environment to a short allowlist and
   gives every command a throwaway HOME.
 - **A gate that looked at nothing fails.** `expect_output` (a test runner that ran no test; watched over the whole
@@ -103,7 +115,15 @@ argv = ["make", "test"]
 ```
 
 A step fails on an exit code other than 0, a timeout, a missing tool, or a sign that it checked nothing; a failing
-`setup` step stops the rest of the plan; an unknown key is refused when the pack loads. Adding a language is adding
+`setup` step stops the rest of the plan; an unknown key is refused when the pack loads. `{venv}` is a root's
+virtual environment, `{base_python}` the sandbox's interpreter (7.54.00).
+
+When no check judged the code, the gate STOPS rather than says NO-GO, with one of its own reasons (`packs.STOPS`,
+the bundle's `gates.stops`): `setup_failed` (a setup step failed, so nothing ran after it), `nothing_checked` (the
+packs planned no check) or `tool_missing` (every check that did not pass found its tool missing). The gate runner's
+record is STOPPED with that reason (the harness takes it from `run_gate`, never the model), and its task goes to a
+person: a stopped gate is never a reason to revise the change. Only a NO-GO, a check that failed on the code, starts
+a revision round. Adding a language is adding
 a pack: a directory with its `manifest.toml` and two fixtures under [`test/fixtures/`](test/fixtures/README.md).
 The packs need no scripts of their own today: every step is one command of the repository's toolchain.
 

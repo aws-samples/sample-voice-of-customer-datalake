@@ -5,6 +5,7 @@ what it recorded."""
 from __future__ import annotations
 
 from engineering.orchestration import __main__ as cli
+from engineering.orchestration import runner
 from engineering.orchestration.schema import ROOT
 from engineering.orchestration.test import local_fake
 
@@ -40,7 +41,32 @@ def test_divide_floor_bug_runs_from_the_hunt_to_its_pull_request_with_every_step
     agents = ('hunter-2', 'fixer-3', 'commit-reviewer-4', 'gate-runner-5', 'final-go-6', 'committer-7', 'pr-author-8')
     assert [line for line in lines if line.startswith('  coordinator-1 waited for ')] == [
         f'  coordinator-1 waited for {agent}: news (task.done)' for agent in agents], text
+    # (7.54.00) The commit reviewer read the fixer's submitted patch, and its checkout holds the fixed file.
+    assert any(line.startswith('    the commit reviewer read the submitted patch task-2-') and line.endswith(
+        '(1 page(s)); its checkout has the fixed calculator/ops.py: yes') for line in lines), text
+    assert len([line for line in lines if line.startswith('    assert ') and line.split(': ', 1)[1].startswith(
+        'pass')]) == 12, text
     # The flow asks for a pull request ready for review, and the broker opened it so.
     assert '    assert pr.state_as_flow: pass (1 of 1 pull requests opened ready for review)' in lines, text
     assert code == 0, text
     assert lines[-1] == 'result: reached its pull request; every blocking assertion passed'
+
+
+def test_a_review_that_cannot_read_its_patch_holds_the_board_at_a_person_and_fails_review_no_blocking() -> None:
+    # (7.54.00: the first live run's commit reviewer could not read the fixer's patch, reviewed the unchanged files,
+    # wrote nothing, and its board step passed on zero findings, 01M7QXJN02WSFMG92VWWZ00NKB)
+    lines: list[str] = []
+    code = local_fake.run_flow(runner._flow('bug-hunt-and-fix', ROOT), DIVIDE.resolve(), out=lines.append,
+                               unreadable_review=True)
+    text = '\n'.join(lines)
+    assert code == 1, text
+    assert ("    the commit reviewer's read_patch: read_patch refused: the submitted patch task-9-00000000.diff could "
+            'not be read (NoSuchKey): write_review could_not_review, saying so') in lines, text
+    assert '  coordinator-1 waited for commit-reviewer-4: news (task.needs_human)' in lines, text
+    assert '    the board is blocked: a task on the board ended without being done: a person decides' in lines, text
+    assert 'step board: blocked' in lines, text
+    assert ('    assert review.no_blocking: FAIL (the commit-reviewer could not review 1 of 1 change(s): the submitted '
+            'patch could not be read)') in lines, text
+    assert 'gate-runner' not in text, text
+    assert lines[-1] == ('result: did not reach its pull request; 1 blocking assertion(s) failed: '
+                         'board: review.no_blocking'), text

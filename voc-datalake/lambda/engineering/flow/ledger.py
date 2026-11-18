@@ -18,12 +18,11 @@ from typing import Final
 
 from engineering.board.model import DONE, FINAL, Task
 from engineering.quality_gate.record import GateRecord
+from engineering.runtime.outputs import GATE_RECORD_FILE as GATE_RECORD
 from engineering.workspace.layout import parse_agent_key
 from engineering.workspace.store import ObjectTooLarge, WorkspaceStore
 from shared.logging import logger
 
-#: A gate record's object name (``workspace/layout.py``: ``…/_gate/attempt-<n>/record.json``).
-GATE_RECORD: Final = 'record.json'
 FINAL_GO_ROLE: Final = 'final-go'
 GATE_RUNNER_ROLE: Final = 'gate-runner'
 #: The largest gate record the ledger reads (a record over it is no GO).

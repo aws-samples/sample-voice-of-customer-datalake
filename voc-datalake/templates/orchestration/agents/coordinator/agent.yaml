@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: coordinator
-version: 6
+version: 7
 purpose: Follows the run's flow, posts each step's tasks for the roles it takes and launches their agents; changes no code.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}

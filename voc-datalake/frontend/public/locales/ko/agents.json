@@ -2504,7 +2504,7 @@
         "pr_state_as_flow": "모든 풀 리퀘스트가 흐름에 지정된 상태(검토 준비 또는 초안)로 열림",
         "push_tree_is_judged_tree": "모든 푸시가 최종 승인이 판정한 트리와 같음",
         "review_commented": "풀 리퀘스트에 리뷰 댓글이 게시됨",
-        "review_no_blocking": "“by”로 지정한 역할이 차단 발견 사항을 작성하지 않음",
+        "review_no_blocking": "“by”로 지정한 역할이 차단 발견 사항을 작성하지 않음(리뷰어: 수행할 수 있었던 리뷰를 기록함)",
         "tasks_posted": "해당 역할에 작업이 min개 이상 게시됨",
         "tenets_recorded": "원칙 1~30개로 된 원칙 기록이 저장됨",
         "triage_commented": "분류 결과가 실행의 이슈에 댓글로 게시됨",

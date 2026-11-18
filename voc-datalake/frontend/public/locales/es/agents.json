@@ -2523,7 +2523,7 @@
         "pr_state_as_flow": "Cada pull request se abrió como indica el flujo (listo o borrador)",
         "push_tree_is_judged_tree": "Cada push es el árbol que juzgó el visto bueno final",
         "review_commented": "Se publicó un comentario de revisión en el pull request",
-        "review_no_blocking": "El rol indicado en «by» no escribió ningún hallazgo bloqueante",
+        "review_no_blocking": "El rol indicado en «by» no escribió ningún hallazgo bloqueante (un revisor: y registró una revisión que pudo hacer)",
         "tasks_posted": "Se publicaron al menos min tareas para el rol",
         "tenets_recorded": "Se registró un conjunto de 1 a 30 principios",
         "triage_commented": "El triaje se comentó en el issue de la ejecución",

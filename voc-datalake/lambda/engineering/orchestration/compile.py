@@ -59,6 +59,7 @@ from engineering.quality_gate.packs import (
     OWN_GATE_FILE,
     OWN_GATE_TIMEOUT_S,
     SETUP_FAILED,
+    STOPS,
     TIMED_OUT,
     Condition,
     Step,
@@ -344,7 +345,7 @@ def _gates(root: Path) -> dict[str, Any]:
                        'briefs': [brief['id'] for brief in briefs if pack.id in brief['packs']]} for pack in packs],
             'aliases': {alias: list(packs_of) for alias, packs_of in ALIASES.items()},
             'own_gate': {'file': OWN_GATE_FILE, 'argv': list(OWN_GATE_ARGV), 'timeout_s': OWN_GATE_TIMEOUT_S},
-            'messages': dict(GATE_MESSAGES), 'briefs': briefs}
+            'messages': dict(GATE_MESSAGES), 'stops': dict(STOPS), 'briefs': briefs}
 
 
 #: What the gate record says of a check that did not pass, by what happened (the gate's own words, packs.py, which

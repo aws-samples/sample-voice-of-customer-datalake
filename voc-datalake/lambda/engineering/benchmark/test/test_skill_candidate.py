@@ -43,12 +43,15 @@ def scripted_fix(case_id: str, scratch: Path) -> list[list[dict[str, Any]]]:
 
 
 def scripted_review(case_id: str) -> list[list[dict[str, Any]]]:
-    """A model that reports every finding the review case expects, then finishes."""
+    """A model that reports every finding the review case expects, records its verdict (7.54.00: a reviewer finishes
+    once it has), then finishes."""
     check = CASES[case_id].check
     assert isinstance(check, ReviewCheck)
     found = [{'file': f.file, 'line': f.first_line, 'severity': 'blocking', 'rule': f.rule, 'title': f.label}
              for f in check.findings]
-    return [[use('write_findings', package='.', shard='review', findings=found)], [use('finish', summary='3 found')]]
+    return [[use('write_findings', package='.', shard='review', findings=found)],
+            [use('write_review', verdict='request_changes', reasons=['3 blocking findings'])],
+            [use('finish', summary='3 found')]]
 
 
 def candidate(skill: Skill, turns: dict[str, list[list[dict[str, Any]]]]) -> SkillCandidate:

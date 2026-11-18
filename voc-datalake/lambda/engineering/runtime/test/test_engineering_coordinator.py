@@ -89,10 +89,12 @@ def test_the_coordinators_skill_is_a_versioned_record_the_skills_store_can_keep(
     assert Skill.from_record(json.loads(json.dumps(record))) == COORDINATOR
     # (the coach is the one role with no skill: it is not launched as an agent)
     assert (skill_label(COORDINATOR.name, COORDINATOR.version), SKILLS.get('coordinator'), SKILLS.get('coach')) == (
-        'coordinator@6', COORDINATOR, None)
+        'coordinator@7', COORDINATOR, None)
     # Version 2 follows the run's flow: its tools to read the plan and record the steps it does itself; version 3
     # reads the run's issue (7.50.00); version 5 relays a person's steering (7.51.00); version 6 waits for its agents
-    # (7.54.00). Since 7.53.00 the shipped record is the compiled bundle's, so it is the template's version.
+    # (7.54.00); version 7 names the submitted patch on a commit reviewer's task and leaves a stopped gate or a review
+    # that could not review to a person (7.54.00). Since 7.53.00 the shipped record is the compiled bundle's, so it is
+    # the template's version.
     assert {'read_flow', 'complete_step', 'fan_out', 'read_issue', 'wait_for_agents'} <= set(COORDINATOR.tool_policy)
     assert 'After you launch agents, call `wait_for_agents`' in COORDINATOR.instructions
     assert 'Never finish while the flow is running' in COORDINATOR.instructions

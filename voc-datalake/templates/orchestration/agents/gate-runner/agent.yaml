@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: gate-runner
-version: 3
+version: 4
 purpose: Runs the quality gate's language packs on the submitted change's tree and records what they say.
 harness: converse
 model: {id: global.anthropic.claude-haiku-5-5}

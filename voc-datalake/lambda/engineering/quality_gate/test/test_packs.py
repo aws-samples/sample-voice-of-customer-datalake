@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from engineering.quality_gate.packs import (
+    NO_VENV,
     PackError,
     RepoView,
     default_packs_dir,
@@ -16,6 +17,7 @@ from engineering.quality_gate.packs import (
     load_packs,
     parse_pack,
     plan,
+    venv_dir,
 )
 from engineering.quality_gate.test.gate_fakes import FIXTURES, PACKS_DIR, repo_of
 
@@ -182,6 +184,36 @@ class TestPlanning:
         gate_plan = _plan({'ruff.toml': '', 'a.py': '', 'requirements.txt': ''}, python='/py')
         assert [c.argv[0] for c in gate_plan.checks] == ['/py', '/py']
         assert {t.name: t.version_argv for t in gate_plan.needs.tools}['python'] == ('/py', '--version')
+
+    def test_the_python_pack_runs_in_a_virtual_environment_of_the_gates_own_when_the_plan_has_one(self):
+        # (7.54.00: repository code cannot write the image's site-packages, Errno 13 in the first live run)
+        files = {'requirements-dev.txt': 'pytest==8.4.2\n', 'calc.py': '', 'test_calc.py': '', 'pkg/pyproject.toml': '',
+                 'pkg/m.py': '', 'pkg/test_m.py': ''}
+        gate_plan = _plan(files, python='/usr/local/bin/python3', venvs='/home/code/.voc-gate/venvs')
+        by_key = {c.key: c for c in gate_plan.checks}
+        venv, inner = venv_dir('/home/code/.voc-gate/venvs', ''), venv_dir('/home/code/.voc-gate/venvs', 'pkg')
+        assert venv != inner
+        assert venv.startswith('/home/code/.voc-gate/venvs/')
+        # (each root's environment before any install: the setup steps run first, in the manifest's order)
+        assert [c.key for c in gate_plan.checks if c.kind == 'setup'] == ['py.venv@.', 'py.venv@pkg', 'py.install@.']
+        assert by_key['py.venv@.'].argv == ('/usr/local/bin/python3', '-I', '-m', 'venv', '--clear', venv)
+        assert by_key['py.install@.'].argv[:5] == (f'{venv}/bin/python', '-I', '-m', 'pip', 'install')
+        assert {'--isolated', '--only-binary=:all:', 'https://pypi.org/simple'} <= set(by_key['py.install@.'].argv)
+        assert by_key['py.test@.'].argv[0] == f'{venv}/bin/python'
+        assert by_key['py.test@pkg'].argv[0] == f'{inner}/bin/python'
+        # The tools' versions are the sandbox interpreter's (the same Python the environment is made from).
+        assert {t.name: t.version_argv for t in gate_plan.needs.tools}['python'] == ('/usr/local/bin/python3',
+                                                                                   '--version')
+
+    def test_without_an_environment_the_gate_runs_on_the_interpreter_it_was_given_and_makes_none(self):
+        gate_plan = _plan({'requirements-dev.txt': '', 'calc.py': '', 'test_calc.py': ''}, python='/py')
+        assert 'py.venv@.' not in [c.key for c in gate_plan.checks]
+        assert dict(gate_plan.skipped)['py.venv@.'] == NO_VENV
+        assert [c.argv[0] for c in gate_plan.checks] == ['/py', '/py']
+
+    def test_no_step_but_the_python_packs_takes_the_environment(self):
+        gate_plan = _plan({'package.json': '{"scripts": {"test": "t"}}', 'a.ts': ''}, venvs='/v')
+        assert all('/v' not in ' '.join(c.argv) for c in gate_plan.checks)
 
     def test_the_test_step_looks_for_tests_by_glob(self):
         assert 'py.test@.' in _keys({'pyproject.toml': '', 'test_a.py': ''})

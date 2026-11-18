@@ -9,13 +9,25 @@ as a checkout), so a large repository is never read whole.
 
 A step runs only where the repository has adopted its tool (``when_any``): the gate checks a change against the
 repository's own rules, never against rules the team never chose.
+
+7.54.00: a pack installs into an environment of the gate's own, never into the image's system locations, which
+repository code cannot write (the first live run's ``pip install`` refused on the image's site-packages: Errno 13).
+A manifest's ``{venv}`` is a root's virtual environment under the plan's ``venvs`` directory (writable by repository
+code, outside the checkout, whose tree the gate hashes), made by a setup step with ``{base_python}``, the sandbox's
+interpreter (a part of the dependency step: the runner gives the registries to that step only before any other
+repository code runs, and ``venv`` reaches none); ``{python}`` is then that environment's interpreter, so the dependency
+step installs into it and every later step runs against what it installed. Without ``venvs`` (a local plan on an
+interpreter that has its tools) ``{python}`` is the interpreter given, and a step naming ``{venv}`` does not run.
+``STOPS`` are the gate's own reasons for a STOPPED record, when no check judged the code.
 """
 from __future__ import annotations
 
 import dataclasses
 import fnmatch
+import hashlib
 import json
 import os
+import posixpath
 import re
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
@@ -36,11 +48,26 @@ SKIP_DIRS = frozenset({'.git', 'node_modules', 'target', 'build', 'dist', '.venv
                        '.gradle', '.mvn', '.tox', '.mypy_cache', '.ruff_cache', 'coverage'})
 _ID = re.compile(r'[a-z][a-z0-9-]{0,39}(?:\.[a-z][a-z0-9-]{0,39})?\Z')
 NO_CODES: frozenset[int] = frozenset()
-#: The one placeholder a manifest may use: the sandbox's interpreter.
+#: The placeholders a manifest may use, each a whole argument: the gate's interpreter (a root's virtual environment's
+#: once the plan has ``venvs``, else the sandbox's), the sandbox's interpreter itself, and the root's environment.
 PYTHON = '{python}'
+BASE_PYTHON = '{base_python}'
+VENV = '{venv}'
 PACK_KEYS = frozenset({'schema', 'id', 'name', 'network', 'image', 'languages', 'tools', 'steps'})
 STEP_KEYS = frozenset({'id', 'language', 'name', 'kind', 'argv', 'timeout_s', 'when_any', 'prefer',
                        'empty_exit_codes', 'expect_output'})
+#: The pack whose steps run in the gate's virtual environment (its ``{python}``, its ``{venv}``).
+PYTHON_PACK = 'python'
+#: Why a plan without ``venvs`` leaves out a step that names ``{venv}``.
+NO_VENV = 'no virtual environment for the gate here: it runs on the interpreter it was given'
+#: The gate's own reasons for a STOPPED record (7.54.00, ``checks.stop_reason``): no check judged the code, so a stop
+#: is a person's to look at, never a reason to revise the change (a NO-GO is: a check failed on the code).
+SETUP_STOP, NOTHING_STOP, TOOLS_STOP = 'setup_failed', 'nothing_checked', 'tool_missing'
+STOPS: dict[str, str] = {
+    SETUP_STOP: 'a setup step (the dependency step) failed, so no check ran on the code',
+    NOTHING_STOP: 'the packs planned no check for the repository, so nothing judged the code',
+    TOOLS_STOP: "every check that did not pass found its tool missing: the gate's environment, not the code",
+}
 
 
 class PackError(ValueError):
@@ -494,19 +521,30 @@ def _resolve(step: Step, repo: RepoView, root: str) -> tuple[str, ...]:
     return step.argv
 
 
-def _with_python(argv: tuple[str, ...], python: str) -> tuple[str, ...]:
-    return tuple(python if arg == PYTHON else arg for arg in argv)
+def _with_python(argv: tuple[str, ...], python: str, venv: str = '') -> tuple[str, ...]:
+    """``argv`` with its placeholders put in: ``{python}`` the gate's interpreter (``venv``'s when there is one),
+    ``{base_python}`` the sandbox's, ``{venv}`` the environment."""
+    words = {PYTHON: posixpath.join(venv, 'bin', 'python') if venv else python, BASE_PYTHON: python, VENV: venv}
+    return tuple(words.get(arg, arg) for arg in argv)
+
+
+def venv_dir(venvs: str, root: str) -> str:
+    """A root's virtual environment under ``venvs`` (one directory per root, named by its path's digest: a root's
+    path may hold any character a directory name may not)."""
+    return posixpath.join(venvs, hashlib.sha256((root or '.').encode()).hexdigest()[:16])
 
 
 def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequence[str] | None = None,
-         python: str = 'python3') -> GatePlan:
+         python: str = 'python3', venvs: str = '') -> GatePlan:
     """The ordered checks for the detected packs.
 
     ``changed_paths`` limits the checks to the roots the change touches (a round's first pass); ``None`` checks
     every root. A repository a pack covers that has ``OWN_GATE_FILE`` runs that instead of every pack step but the
     dependency steps (``setup``), which run first so the own gate finds its dependencies offline.
     A step id two packs both declare runs once per root. ``python`` is
-    the sandbox's interpreter, put where a manifest says ``{python}``.
+    the sandbox's interpreter, put where a manifest says ``{base_python}``; ``venvs`` (7.54.00) the directory of the
+    gate's virtual environments, one per root (``{venv}``), whose interpreter a manifest's ``{python}`` then is (none:
+    ``{python}`` is ``python``, and a step naming ``{venv}`` does not run).
     """
     empty = GatePlan(
         checks=(), packs=tuple(d.pack.id for d in detections),
@@ -527,7 +565,7 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
                 key = f'{step.id}@{root or "."}'
                 if key in checks or key in skipped:
                     continue
-                planned = _plan_step(detection.pack, step, repo, root, python, key)
+                planned = _plan_step(detection.pack, step, repo, root, python, key, venvs)
                 if isinstance(planned, str):
                     skipped[key] = planned
                 elif _affected(root, all_roots, changed_paths):
@@ -545,14 +583,18 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
     return dataclasses.replace(empty, checks=tuple(ordered), skipped=tuple(skipped.items()))
 
 
-def _plan_step(pack: Pack, step: Step, repo: RepoView, root: str, python: str, key: str) -> PlannedCheck | str:
+def _plan_step(pack: Pack, step: Step, repo: RepoView, root: str, python: str, key: str,
+               venvs: str = '') -> PlannedCheck | str:
     """The step's check for ``root``, or why it does not apply there."""
     if step.when_any and not any(cond.holds(repo, root) for cond in step.when_any):
         return 'the repository does not use this tool'
     argv = _resolve(step, repo, root)
     if not argv:
         return 'the repository has no script for it'
+    if VENV in argv and not venvs:
+        return NO_VENV
+    venv = venv_dir(venvs, root) if venvs and pack.id == PYTHON_PACK else ''
     return PlannedCheck(key=key, pack_id=pack.id, step_id=step.id, name=step.name, kind=step.kind,
-                        language=step.language, root=root, argv=_with_python(argv, python),
+                        language=step.language, root=root, argv=_with_python(argv, python, venv),
                         timeout_s=step.timeout_s, empty_exit_codes=step.empty_exit_codes,
                         expect_output=step.expect_output)

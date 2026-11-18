@@ -306,7 +306,9 @@ describe('cdk-nag acknowledgements', () => {
       // finding of its one acknowledgement); the pass's read of the manifests shares the run's end's finding.
       // 137 -> 138 (7.53.00, counted on the integrated batch): the runtime's read of the Kiro harness's saved sessions
       // (`…/_kiro/*`), which a child run's seed copies: one more finding of the patches' and sessions' acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 138, used: 138 });
+      // 138 -> 139 (7.54.00): the board's read of the reviewers' verdicts (`…/_review/*`) for review.no_blocking: one
+      // more finding of its recorded outputs' acknowledgement (engineering-bus.ts).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 139, used: 139 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

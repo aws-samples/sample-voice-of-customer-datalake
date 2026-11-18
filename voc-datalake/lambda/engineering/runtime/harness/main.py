@@ -24,7 +24,9 @@ not apply reaches the model as data, never a crash); every session reads the run
 beside the heartbeat.
 
 7.54.00: the tool server's ``wait_for_agents`` takes the batches its harness leaves (``tool_server.waiter``), and a
-coordinator's continuation first closes the wait its last session may have left open (``CONTINUING``).
+coordinator's continuation first closes the wait its last session may have left open (``CONTINUING``). A reviewer's
+checkout has the submitted patch its task names applied before the session starts, and a patch reader's tool server is
+handed that patch's key (``PATCH_KEY_ENV``) for ``read_patch`` (``review_tools.py``).
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
+from engineering.quality_gate.packs import STOPS
 from engineering.quality_gate.text import nonce
 from engineering.runtime.checkout import repo_git, share_working_tree
 from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, SHA, agent_prefix, artifact_prefix, is_valid
@@ -65,6 +68,7 @@ from engineering.runtime.harness.ports import (
     Planner,
     TaskBrief,
 )
+from engineering.runtime.harness.review_tools import show_submitted_patch
 from engineering.runtime.harness.role_tools import GATE_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.seed import MAX_SEED_BYTES, SeedError, check_seed_key
@@ -76,12 +80,16 @@ from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, Agent
 from engineering.runtime.harness.transcript import FLUSH_SECONDS, Transcript
 from engineering.runtime.harness.workspace import Workspace
 from engineering.runtime.interface import check_id
+from engineering.runtime.outputs import PATCH_READERS, is_submitted_patch
 
 CHECKOUT_ROOT: Final = '/work/repo'
 #: The tree a gate's harness hashed, handed to the CLI's tool server (which shares its checkout) in its environment.
 GATE_TREE_ENV: Final = 'VOC_GATE_TREE'
 #: The session's fence, handed to the CLI's tool server the same way, so one session fences with one nonce.
 FENCE_ENV: Final = 'VOC_FENCE'
+#: The submitted patch a patch reader's task names (7.54.00: ``read_patch``), handed to the CLI's tool server the same
+#: way (it reads no brief), taken only as a submitted patch of the session's run at its commit.
+PATCH_KEY_ENV: Final = 'VOC_PATCH_KEY'
 _FENCE: Final = re.compile(r'[0-9a-f]{16}\Z')
 HEARTBEAT_SECONDS: Final = 60.0
 #: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
@@ -143,7 +151,8 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
     saved = _saved_brief(restored, task_id)
     context = AgentContext(
         run_id=run_id, agent_id=agent_id, task_id=check_id('task_id', task_id), role=env['VOC_ROLE'],
-        brief=saved or (ports.board.brief(run_id=run_id, task_id=task_id) if restore else TaskBrief(task_id, '', '')),
+        brief=saved or (ports.board.brief(run_id=run_id, task_id=task_id) if restore
+                        else TaskBrief(task_id, '', '', patch=_handed_patch(env, run_id, commit))),
         workspace=Workspace(checkout), runner=runner,
         board=ports.board, broker=ports.broker, store=store, status=StatusReport(home),
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
@@ -166,6 +175,10 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         # shares the checkout the harness set up and takes the tree the harness hashed (``VOC_GATE_TREE``).
         tree = env.get(GATE_TREE_ENV, '')
         context.gate_tree = judge_submitted_patch(context, store) if restore else tree if SHA.fullmatch(tree) else ''
+    elif restore:
+        # A reviewer's checkout has the submitted patch its task names applied (7.54.00), so read_file shows the changed
+        # files; one that cannot be applied is said to the model, never a crash (the CLI's tool server shares it).
+        show_submitted_patch(context)
     if restored is not None:
         _restore(session, store, *restored)
     elif restore and context.brief.seed_key:
@@ -176,6 +189,13 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         # names a newer version (``AgentSession.read_direction``).
         session.read_direction()
     return session
+
+
+def _handed_patch(env: Mapping[str, str], run_id: str, commit: str) -> str:
+    """The submitted patch the harness handed its tool server (``PATCH_KEY_ENV``), '' for none or one that is not a
+    submitted patch of the run at its commit."""
+    key = env.get(PATCH_KEY_ENV, '')
+    return key if is_submitted_patch(key, run_id, commit) else ''
 
 
 #: The tail of git's words a seed's conflict hands the model at most.
@@ -319,6 +339,9 @@ def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, 
             if isinstance(packs, list) else ()
         context.gate_tool_versions = {str(tool)[:64]: version[:200] for tool, version in list(versions.items())[:20]
                                       if isinstance(version, str)} if isinstance(versions, dict) else {}
+    # (7.54.00: the gate's own stop, a code of its vocabulary; kept also when run_gate planned no check at all)
+    stop = gate.get('stop') if isinstance(gate, dict) else None
+    context.gate_stop = stop if isinstance(stop, str) and stop in STOPS else ''
     tree = state.get('patch')
     if isinstance(tree, str) and tree.startswith(context.patches_prefix) and context.runs_code:
         session.patch = tree
@@ -402,7 +425,7 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
 #: What the tool server a CLI or kiro-cli starts gets of the harness's environment (its ids, its session, its fence).
 TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
                    'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
-                   'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                   PATCH_KEY_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
 #: Beside them, for kiro-cli's tool server: the agent's proxy (its boto3 reaches S3, the board and the broker through
 #: it, as the harness's own does).
 KIRO_TOOL_ENV: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'AWS_SDK_LOAD_CONFIG')
@@ -483,10 +506,13 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         _start_flusher(session, stop)
         _started(session, args)
         _begun(session)
-        # The tool server's tree is the one this harness hashed, never one the session's start named.
-        tool_env = {name: value for name, value in env.items() if name not in (GATE_TREE_ENV, FENCE_ENV)}
+        # The tool server's tree is the one this harness hashed, and its patch the one this harness's brief names,
+        # never one the session's start named.
+        tool_env = {name: value for name, value in env.items() if name not in (GATE_TREE_ENV, FENCE_ENV, PATCH_KEY_ENV)}
         if session.context.gate_tree:
             tool_env[GATE_TREE_ENV] = session.context.gate_tree
+        if session.context.role in PATCH_READERS and session.context.brief.patch:
+            tool_env[PATCH_KEY_ENV] = session.context.brief.patch
         tool_env[FENCE_ENV] = session.context.fence
         ending = adapter_for(args, tool_env, bedrock or _bedrock).run(session)
         if ending == 'done':

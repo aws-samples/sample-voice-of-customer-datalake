@@ -2523,7 +2523,7 @@
         "pr_state_as_flow": "Cada pull request foi aberto como o fluxo indica (pronto ou rascunho)",
         "push_tree_is_judged_tree": "Cada push é a árvore que a aprovação final julgou",
         "review_commented": "Um comentário de revisão foi publicado no pull request",
-        "review_no_blocking": "O papel indicado em “by” não escreveu nenhuma descoberta bloqueante",
+        "review_no_blocking": "O papel indicado em “by” não escreveu nenhuma descoberta bloqueante (um revisor: e registrou uma revisão que conseguiu fazer)",
         "tasks_posted": "Pelo menos min tarefas foram publicadas para o papel",
         "tenets_recorded": "Um registro de 1 a 30 princípios foi gravado",
         "triage_commented": "A triagem foi comentada na issue da execução",

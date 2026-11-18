@@ -22,6 +22,13 @@ FINDING = {'file': 'calculator/ops.py', 'line': 20, 'severity': 'blocking', 'evi
 TENET = {'id': 'T1', 'title': 'Fail closed', 'statement': 'A check that cannot run refuses.', 'citations': ['a.py:1']}
 
 
+def _review(verdict: str, by: str = 'commit-reviewer', reason: str = 'read the whole patch') -> dict[str, Any]:
+    return {'schema': 'voc-review/1', 'verdict': verdict, 'reasons': [reason], 'by': by}
+
+
+APPROVED = _review('approve')
+
+
 def _record(by: str, verdict: str, tree: str = TREE, checks: int = 1) -> dict[str, Any]:
     return {'by': by, 'verdict': verdict, 'tree_hash': tree,
             'rounds': [{'checks': [{'name': 'pytest', 'status': 'pass'}] * checks}]}
@@ -49,8 +56,9 @@ def test_the_vocabulary_is_the_same_in_the_evaluator_the_schema_and_the_servers_
     ('patch.touches_tests', Recorded(patches=(FIX,)), Recorded(patches=(FIX.split('diff --git a/tests', maxsplit=1)[0],)), {}),
     ('patch.no_ci_changes', Recorded(patches=(FIX,)), Recorded(patches=(FIX, CI)), {}),
     ('patch.max_lines', Recorded(patches=(FIX,)), Recorded(patches=(FIX,)), {'max': 3}),
-    ('review.no_blocking', Recorded(findings=({**FINDING, 'by': 'commit-reviewer', 'severity': 'nit'},)),
-     Recorded(findings=({**FINDING, 'by': 'commit-reviewer'},)), {'by': 'commit-reviewer'}),
+    ('review.no_blocking', Recorded(findings=({**FINDING, 'by': 'commit-reviewer', 'severity': 'nit'},),
+                                    reviews=(APPROVED,)),
+     Recorded(findings=({**FINDING, 'by': 'commit-reviewer'},), reviews=(APPROVED,)), {'by': 'commit-reviewer'}),
     ('gate.pack_checks_ran', Recorded(gate_records=(_record('gate-runner', 'GO'),)),
      Recorded(gate_records=(_record('gate-runner', 'GO', checks=0),)), {}),
     ('gate.passed', Recorded(gate_records=(_record('gate-runner', 'GO'), _record('final-go', 'GO'))),
@@ -81,6 +89,34 @@ def test_each_check_passes_on_what_it_asks_and_fails_on_anything_else(check: str
     failed, why = _check(check, bad, **args)
     assert not failed
     assert why
+
+
+@pytest.mark.parametrize(('reviews', 'detail'), [
+    ((), ('the commit-reviewer recorded no review: a review that did not happen is no pass (0 blocking finding(s) by '
+          'the commit-reviewer)')),
+    ((_review('could_not_review', reason='the submitted patch could not be read'),),
+     'the commit-reviewer could not review 1 of 1 change(s): the submitted patch could not be read'),
+    ((APPROVED, _review('could_not_review', reason='the patch is empty')),
+     'the commit-reviewer could not review 1 of 2 change(s): the patch is empty'),
+    (({'schema': 'voc-review/1', 'verdict': 'lgtm', 'by': 'commit-reviewer'},),
+     'the commit-reviewer could not review 1 of 1 change(s): its record is unreadable'),
+    ((APPROVED, _review('request_changes')), '0 blocking finding(s) by the commit-reviewer; 1 of 2 review(s) approved'),
+    ((_review('approve', by='pr-reviewer'),), ('the commit-reviewer recorded no review: a review that did not happen '
+                                               'is no pass (0 blocking finding(s) by the commit-reviewer)')),
+])
+def test_a_reviewer_that_recorded_no_review_or_could_not_review_is_no_pass(reviews: tuple[dict[str, Any], ...],
+                                                                            detail: str) -> None:
+    # (7.54.00: the first live run's commit reviewer could not read the patch, wrote no finding, and its board step
+    # passed on zero findings, 01M7QXJN02WSFMG92VWWZ00NKB)
+    assert _check('review.no_blocking', Recorded(reviews=reviews), by='commit-reviewer') == (False, detail)
+    assert _check('review.no_blocking', Recorded(reviews=(APPROVED,)), by='commit-reviewer') == (
+        True, '0 blocking finding(s) by the commit-reviewer; 1 of 1 review(s) approved')
+
+
+def test_a_role_that_writes_no_review_is_held_to_its_findings_alone() -> None:
+    assert _check('review.no_blocking', Recorded(), by='hunter') == (True, '0 blocking finding(s) by the hunter')
+    assert _check('review.no_blocking', Recorded(findings=(FINDING,)), by='hunter') == (
+        False, '1 blocking finding(s) by the hunter')
 
 
 def test_the_edge_cases_pass_or_fail_as_their_details_say() -> None:

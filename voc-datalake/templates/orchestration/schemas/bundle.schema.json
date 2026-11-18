@@ -22,7 +22,7 @@
     "automations": {"type": "array", "items": {"$ref": "#/$defs/automation"}},
     "gates": {
       "type": "object", "additionalProperties": false,
-      "required": ["packs", "aliases", "own_gate", "messages", "briefs"],
+      "required": ["packs", "aliases", "own_gate", "messages", "stops", "briefs"],
       "properties": {
         "packs": {"type": "array", "items": {
           "type": "object", "additionalProperties": false,
@@ -55,6 +55,11 @@
                      "properties": {"missing_tool": {"type": "string"}, "timeout": {"type": "string"},
                                     "empty_exit": {"type": "string"}, "empty_output": {"type": "string"},
                                     "fail": {"type": "string"}, "setup_failed": {"type": "string"}}},
+        "stops": {"description": "7.54.00: the gate's own reasons for a STOPPED record (quality_gate/packs.py STOPS), each with what it means: no check judged the code, so a person decides and no revision starts.",
+                  "type": "object", "additionalProperties": false,
+                  "required": ["setup_failed", "nothing_checked", "tool_missing"],
+                  "properties": {"setup_failed": {"type": "string"}, "nothing_checked": {"type": "string"},
+                                 "tool_missing": {"type": "string"}}},
         "briefs": {"description": "The owner's quality-gate briefs (gates/briefs/<id>.md), each the source of truth for its packs (7.52.00).",
                    "type": "array", "items": {
           "type": "object", "additionalProperties": false, "required": ["id", "path", "packs", "digest", "bytes", "text"],

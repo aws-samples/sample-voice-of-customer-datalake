@@ -976,11 +976,11 @@ The tools are exactly what each job needs, and a role is never offered one beyon
 | Fixer | `read_issue`, `write_file`, `run`, `install_dependencies`, `submit_work` | Sonnet 5.5 |
 | Feature builder | `write_file`, `run`, `install_dependencies`, `submit_work`, `post_subtask` (a sub-build) | Sonnet 5.5 |
 | Committer | `read_issue`, `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
-| Commit reviewer | `write_findings` | Sonnet 5.5 |
+| Commit reviewer | `read_patch` (7.54.00: the submitted patch its task names, as data, in pages; the harness applied it to its checkout, so `read_file` shows the changed files), `write_findings`, `write_review` (a `voc-review/1` verdict: `approve`, `request_changes` or `could_not_review`) | Sonnet 5.5 |
 | Gate runner | `run_gate` (7.50.00: the packs detect the checkout's languages, plan their checks and run each one in the sandbox), `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks `run_gate` saw end, its plan's packs and, since 7.52.00, the versions `run_gate` found of their tools, `tool_versions`; a GO only after `run_gate`, never a final go) | Haiku 5.5 |
 | PR author | `read_issue`, `open_draft_pr` (the broker's pull request: ready for review, or a draft when the run's flow says `pr: draft`) | Sonnet 5.5 |
-| PR reviewer | `write_findings`, `post_comment` (on the run's pull request) | Sonnet 5.5 |
-| Final go | `read_gate_record` (the gate runners' records of the tree it judges), `read_findings` (the run's findings at its commit), `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
+| PR reviewer | `read_patch` (when its task names a submitted patch), `write_findings`, `post_comment` (on the run's pull request), `write_review` (the run's record of its verdict, never the host's) | Sonnet 5.5 |
+| Final go | `read_patch` (the submitted patch it judges, 7.54.00), `read_gate_record` (the gate runners' records of the tree it judges), `read_findings` (the run's findings at its commit), `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
 
 The writers (committer, PR author, PR reviewer, and the understander on its issue) run no repository code: each gets
 its broker writes and no code tool. The coordinator reads the run's issue too (`read_issue`). An output is written once under the agent's own keys, in the workspace's layout (its shapes, from the schema
@@ -993,6 +993,26 @@ the commands it saw it run and how they exited (a GO only when there is one and 
 has no final go), the final go's section names its own session's agent and model, and the record's tree is the one
 the harness hashed; every record it builds reads back through the readers' strict `GateRecord.from_dict` (a test
 holds them together, as the module does not ship in the images).
+
+**A review reads the patch it reviews, and a review that could not review is no pass** (7.54.00). The first live
+run's commit reviewer was handed the fixer's patch key in its task's text only; `read_file` reads the checkout, so it
+was refused, the reviewer read the unchanged files and wrote nothing, and the board step passed `review.no_blocking`
+on zero findings (01M7QXJN02WSFMG92VWWZ00NKB). Now:
+
+- A commit reviewer's task names the submitted patch (`post_task`'s `patch`, required for that role and taken for a
+  PR reviewer too). The harness applies it to the reviewer's checkout before its first turn (`review_tools.
+  show_submitted_patch`, the harness's own git; one that does not apply is told to the model, never a crash) and
+  answers it with `read_patch`: the diff as data, in pages of at most 40 000 characters cut at line ends, the first
+  listing the changed files. A task that names none, a key that is no submitted patch of the run, or an object that
+  cannot be read is a refusal that says so. A CLI's or Kiro's tool server is handed the key (`VOC_PATCH_KEY`).
+- The reviewer records its verdict with `write_review` (`voc-review/1`, `…/_review/attempt-<n>/review.json`): an
+  `approve` or `request_changes` only once that session read every page of the patch, a request for changes only with
+  a blocking finding written and an approval with none; `could_not_review` always. Its `finish` waits for a verdict,
+  and a `could_not_review` ends its task needing a person (the board step blocks, so the coordinator cannot close it
+  and go on to the gate), its reason on the task's progress.
+- `review.no_blocking` with a reviewer as `by` fails when that reviewer recorded no review, when one says
+  `could_not_review` (or is unreadable), or when one requests changes, besides any blocking finding; the board reads
+  the verdicts beside the findings (its `ReadRecordedOutputs` grant on `_review/*`).
 
 The gate judges the patch the committer pushes, end to end:
 
@@ -1021,6 +1041,14 @@ The gate judges the patch the committer pushes, end to end:
    write a NO-GO. A gate
    session's checkpoints save its working tree as a patch on that tree, and its continuation applies the submitted
    patch again (hashed again) before it puts them back.
+3a. A gate runner whose gate STOPPED (7.54.00: `run_gate` says when no check judged the code: `setup_failed`, a
+   setup step failed; `nothing_checked`, the packs planned nothing; `tool_missing`, only tools were missing; the
+   bundle's `gates.stops`) writes a STOPPED record with that reason (the harness's, never the model's; a NO-GO is
+   refused then), and its `finish` sends the task to a person: a stopped gate says nothing about the code, so it is
+   never a reason to revise the fix. Only a NO-GO, a check that failed on the code, starts a revision round. The
+   python pack installs into a virtual environment of the gate's own (`py.venv`, under `/home/code/.voc-gate/venvs`
+   in the images), never into the image's site-packages, which repository code cannot write (the first live run's
+   gate stopped on `Errno 13` there).
 4. The committer pushes that submitted patch with the tree. The broker refuses unless the GO ledger's rule gives a GO
    for exactly that tree (`has_go`: it reads the final go's and the gate runner's gate records), rebuilds the patch's commit on the host's copy of the run's commit, and moves the
    branch only when the rebuilt tree is that tree (the host's client checks it). So a push lands only the patch the
@@ -1623,7 +1651,9 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   and `step` ops, the coordinator's alone (a replaced coordinator's session is refused them, as every coordinator
   op). Since `coordinator@6` (7.54.00) it also waits for the agents it launched (`wait_for_agents`), and its `finish`
   is refused while they still work on a flow that runs ([The coordinator waits for its
-  agents](#the-coordinator-waits-for-its-agents-75400)).
+  agents](#the-coordinator-waits-for-its-agents-75400)). `coordinator@7` (7.54.00) names the submitted patch on a
+  commit reviewer's task (`post_task` refuses one without it), and leaves a task that ended at a person (a review that
+  could not review, a gate that stopped) to the person: only a NO-GO or a blocking finding starts a revision.
 - **The board's check.** In a run that follows a flow, a post names a live step (`flow_step`), for a role that step
   takes, from a poster it allows: the run coordinator for any live step, another agent only on a board step that
   names it a poster (within the board's own rule of who posts for whom), a person for any live step or for a task of

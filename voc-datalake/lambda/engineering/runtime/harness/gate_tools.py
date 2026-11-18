@@ -1,10 +1,12 @@
 """The quality gate's tools in the harness (7.50.00): the deterministic gate and what the final go reads.
 
 - ``run_gate`` (the gate runner): the packs (``VOC_GATES_DIR``, ``/opt/voc/gates`` in the images) detect the
-  checkout's languages and plan their checks (``quality_gate/packs.plan``), and ``quality_gate/checks.run_plan`` runs
-  each one through the sandbox's runner (``SandboxRunner``: repository code as ``code``, the dependency step alone with
-  the registries); the harness records each check as it ended (``AgentContext.checks``) and the packs, which the gate
-  record takes, so a GO is the packs' and never a free-form command's or the model's word.
+  checkout's languages and plan their checks (``quality_gate/packs.plan``; 7.54.00: the python pack in a virtual
+  environment of the gate's own, ``IMAGE_VENVS``), and ``quality_gate/checks.run_plan`` runs each one through the
+  sandbox's runner (``SandboxRunner``: repository code as ``code``, the dependency step alone with the registries);
+  the harness records each check as it ended (``AgentContext.checks``), the packs and (7.54.00) the gate's own stop
+  when no check judged the code (``AgentContext.gate_stop``), which the gate record takes, so a GO or a STOPPED is the
+  packs' and never a free-form command's or the model's word.
 - ``read_gate_record`` (the final go): the gate runners' records of the run at the task's commit (one by its key, or
   every one of the tree the final go judges), as data.
 - ``read_findings`` (the final go): the run's ``voc-finding/1`` shards at the task's commit (the hunters', the commit
@@ -50,6 +52,10 @@ _SHARD_KEY: Final = re.compile(r'ws/default/runs/(?P<run>[A-Za-z0-9_-]{1,64})/(?
 
 #: Where every image puts the gate packs (engineering-images/*/Dockerfile).
 IMAGE_GATES: Final = Path('/opt/voc/gates')
+#: Where the gate's virtual environments go in the images (7.54.00, the python pack's ``{venv}``): under the home of
+#: the `code` user (unit_runner.CODE_HOME), which repository code writes, outside the checkout, whose tree the gate
+#: hashes; never the image's site-packages, which it cannot write (the first live run's Errno 13).
+IMAGE_VENVS: Final = '/home/code/.voc-gate/venvs'
 
 
 def gates_dir(configured: str) -> Path:
@@ -58,6 +64,14 @@ def gates_dir(configured: str) -> Path:
     if configured:
         return Path(configured)
     return IMAGE_GATES if IMAGE_GATES.is_dir() else packs.default_packs_dir()
+
+
+def gate_venvs(configured: str) -> str:
+    """The gate's virtual environments' directory: the session's, else the image's (``IMAGE_VENVS``), else none (a
+    local run, on an interpreter that has its tools: ``{python}`` is that one)."""
+    if configured:
+        return configured
+    return IMAGE_VENVS if IMAGE_GATES.is_dir() else ''
 
 
 class SandboxRunner:
@@ -85,18 +99,25 @@ class SandboxRunner:
 
 def run_gate(context: Built) -> dict[str, Any]:
     """The deterministic gate on the checkout (the tree the harness applied the task's patch to and hashed): every
-    planned check, recorded on the session as it ended; the packs and the plan's outcome."""
+    planned check, recorded on the session as it ended; the packs, the plan's outcome and, when no check judged the
+    code (7.54.00), the gate's stop. The Python pack installs into a virtual environment of the gate's own
+    (``IMAGE_VENVS``, writable by repository code and outside the checkout), and its later steps run that environment's
+    interpreter."""
     loaded = packs.load_packs(gates_dir(context.gates_dir))
     repo = packs.RepoView.from_dir(Path(context.workspace.root))
-    plan = packs.plan(packs.detect(loaded, repo), repo)
+    plan = packs.plan(packs.detect(loaded, repo), repo, venvs=gate_venvs(context.gate_venvs))
     ran = checks.run_plan(plan, SandboxRunner(context.runner, lambda: context.progress('the gate is still running')))
     context.checks = [{'name': f'{result.key}: {result.name}'[:200], 'status': 'pass' if not result.blocking
                        else 'fail'} for result in ran.results][:100]
     context.gate_packs = tuple(plan.packs)
     context.gate_ran = bool(plan.checks)
     context.gate_tool_versions = dict(ran.tool_versions)
-    context.progress(f'ran the gate: {len(ran.results)} checks, {len(ran.failures)} failed')
+    context.gate_stop = stop = checks.stop_reason(plan, ran)
+    context.progress(f'ran the gate: {len(ran.results)} checks, {len(ran.failures)} failed'
+                     + (f'; it stopped ({stop})' if stop else ''))
     return {'packs': list(plan.packs), 'passed': ran.passed and bool(plan.checks),
+            # (7.54.00: the gate's own stop, when no check judged the code: the record is STOPPED with it, never NO-GO)
+            'stopped': ({'stop_reason': stop, 'means': packs.STOPS[stop]} if stop else None),
             'own_gate': plan.own_gate, 'tool_versions': dict(ran.tool_versions),
             'skipped': [{'check': key, 'why': why} for key, why in plan.skipped][:50],
             'checks': [{**result.summary(), 'output': result.output[-MAX_CHECK_OUTPUT:]} for result in ran.results]}

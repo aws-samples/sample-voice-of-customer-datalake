@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: final-go
-version: 3
+version: 4
 purpose: The quality gate's last word, by an agent that neither wrote nor reviewed the change - GO or NO-GO with its reasons.
 harness: converse
 model: {id: global.anthropic.claude-opus-5-5}
@@ -11,8 +11,8 @@ inputs:
   - {name: checkout, from: checkout, required: true}
 outputs:
   - {name: verdict, schema: voc-gate-record/1, recorded_on: task}
-tools: [read_file, list_files, write_gate_record, read_gate_record, read_findings, report_progress, save_checkpoint,
-        finish]
+tools: [read_file, list_files, write_gate_record, read_gate_record, read_findings, read_patch, report_progress,
+        save_checkpoint, finish]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [repository, board, command_output], fence: nonce}

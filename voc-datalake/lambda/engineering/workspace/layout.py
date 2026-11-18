@@ -5,7 +5,7 @@
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package>/attempt-<n>/<shard>.jsonl   findings (voc-finding/1 lines)
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<kind>/attempt-<n>/<name>             gate outputs, logs, patches, checkpoints,
                                                                                     transcripts, a triage (7.50.00),
-                                                                                    tenets (7.52.00)
+                                                                                    tenets (7.52.00), a review (7.54.00)
     ws/<ws>/runs/<run>/_manifest/v<nnnn>.json                                      the run's manifest (the runtime's)
     ws/<ws>/transcripts-index/<flow>/<yyyy-mm-dd>/<run>.json                       a run's entry, by flow and day
     ws/<ws>/reports/<run>/<level>/<subject>/v<nnnn>.json (+ .md)                    commit, PR and goal reports
@@ -31,7 +31,8 @@ from engineering.runtime.checkpoints import SHA
 from engineering.runtime.outputs import encode_package as harness_encode_package
 
 #: The kinds of non-finding artifact an agent writes under a commit.
-ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage', 'tenets', 'kiro'})
+ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints', 'transcripts', 'triage', 'tenets', 'kiro',
+                       'review'})
 REPORT_LEVELS = frozenset({'commit', 'pr', 'goal'})
 _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
 #: A package segment: plain characters and ``=XX`` escapes, not beginning with ``_`` (escaped as ``=5F``).

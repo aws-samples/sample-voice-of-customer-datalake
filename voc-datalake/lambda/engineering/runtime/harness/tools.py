@@ -11,6 +11,9 @@
   writes to the repository host.
 - ``finish``: the task is done; its summary is the task's last progress. The run coordinator's is refused while
   its agents still work on the run (7.54.00: ``waiting.finish_refusal``), which it waits for with ``wait_for_agents``.
+  A reviewer's is refused until it recorded its review, and a task whose own record says it could not do its job (a
+  review that could not review, a gate that stopped) goes to a person instead of done (7.54.00,
+  ``review_tools.ending``).
 
 The agents that run no repository code (the writers, the reviewers, the coordinator) get no ``run``,
 ``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: every
@@ -36,7 +39,7 @@ from typing import Any, Final, Protocol
 
 from engineering.quality_gate.text import REDACTED, data_block, nonce, redact
 from engineering.runtime.checkout import repo_git
-from engineering.runtime.harness import coordinator, role_tools
+from engineering.runtime.harness import coordinator, review_tools, role_tools
 from engineering.runtime.harness.ports import (
     OUTCOME_UNKNOWN,
     Board,
@@ -148,11 +151,22 @@ class AgentContext:
     platform_rules: str = ''
     #: Where the gate packs are (``VOC_GATES_DIR``: ``/opt/voc/gates`` in the images; '' for the repository's own).
     gates_dir: str = ''
+    #: Where the gate's virtual environments go (7.54.00): '' for the image's (``gate_tools.IMAGE_VENVS``), or none
+    #: outside an image.
+    gate_venvs: str = ''
     #: The deterministic gate's run in this session (``run_gate``): its packs, and whether it planned any check; and
     #: (7.52.00) the versions it recorded of its packs' tools, which the gate runner's record keeps.
     gate_packs: tuple[str, ...] = ()
     gate_ran: bool = False
     gate_tool_versions: dict[str, str] = field(default_factory=dict)
+    #: Why that run says the gate stopped (7.54.00, ``quality_gate.packs.STOPS``: a setup step failed, nothing was
+    #: planned, only tools were missing), '' when its checks judged the code: a STOPPED record's ``stop_reason``.
+    gate_stop: str = ''
+    #: The submitted patch as this session read it (7.54.00, ``review_tools``): its pages, the ones ``read_patch``
+    #: answered, and why it could not be put on a reviewer's checkout ('' when it was, or the task names none).
+    patch_pages: int = 0
+    patch_pages_read: set[int] = field(default_factory=set)
+    patch_unapplied: str = ''
     #: The run's direction as this session last read it (7.51.00: the coordinator's ``set_direction``, a version and its
     #: text; 0 for none), read again when an inbox page says a newer one, and at each continuation.
     direction_version: int = 0
@@ -456,11 +470,16 @@ class ToolBox:
             refusal = finish_refusal(self.context)
             if refusal is not None:
                 return ToolResult(refusal, error=True)
+        # (7.54.00: a reviewer finishes once it recorded its review; a task whose own record says it could not do its
+        # job, a review that could not review or a gate that stopped, goes to a person, never done)
+        state, why = review_tools.ending(self.context)
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
-        self.context.progress(f'finished: {summary[:480]}')
-        self.context.board.move(self.context.run_id, self.context.task_id, to_state='done',
+        self.context.progress(f'finished: {summary[:480]}' if state == 'done' else f'{why}: a person decides')
+        self.context.board.move(self.context.run_id, self.context.task_id, to_state=state,
                                 result_keys=tuple(self.context.result_keys))
         self.context.finished = True
+        if state != 'done':
+            return ToolResult(f'finished: {why}, so your task goes to a person', finished=summary)
         return ToolResult('finished', finished=summary)
 
     def _write(self, arguments: Mapping[str, Any]) -> ToolResult:

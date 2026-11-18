@@ -350,11 +350,14 @@ def test_the_gate_runners_checks_are_the_ones_the_harness_saw_and_a_go_needs_the
     # A free-form command is no gate (7.53.00: the shipped skill is the template's, whose gate runner may run one):
     # it answers its own exit, and only run_gate's checks reach a record.
     assert tools.call('run', {'argv': ['true']}).text.startswith('exit code 0')
-    # A failed check: no GO, whatever the model says; its record is NO-GO, or STOPPED with why.
+    # A check that failed on the code (the pack's test, with no setup step): no GO, whatever the model says; its
+    # record is NO-GO, or STOPPED with why.
     failing = gated(tmp_path, 'failing')
+    (Path(failing.session.context.gates_dir) / 'mini' / 'manifest.toml').write_text(PACK_HEAD + TEST_STEP)
     failing.session.context.gate_tree = failing.runner.tree = TREE
     failing.runner.run_exit = 1
-    assert failing.session.tools.call('run_gate', {}).error
+    red = failing.session.tools.call('run_gate', {})
+    assert (red.error, json.loads(red.text.split('\n', 1)[1].rsplit('\n', 1)[0])['stopped']) == (True, None)
     assert failing.session.tools.call('write_gate_record', {'verdict': 'GO'}).error
     for wrong in ({'verdict': 'STOPPED'}, {'verdict': 'NO-GO', 'stop_reason': 'tool_missing'},
                   {'verdict': 'NO-GO', 'packs': ['../x']}, {'verdict': 'MAYBE'}):
@@ -364,6 +367,24 @@ def test_the_gate_runners_checks_are_the_ones_the_harness_saw_and_a_go_needs_the
     assert (_record(failing, stopped).verdict, _record(failing, stopped).stop_reason) == ('STOPPED', 'tool_missing')
     assert (_record(failing, stopped).rounds[0].checks[0]['status'], _record(failing, stopped).tree_hash) == (
         'fail', TREE)
+    # (7.54.00) A setup step that failed: no check ran on the code, so the gate stopped. Its record is STOPPED with the
+    # gate's own reason, never a NO-GO that would send the fix back to be revised (the first live run's gate runner).
+    unset = gated(tmp_path, 'unset')
+    unset.session.context.gate_tree = unset.runner.tree = TREE
+    unset.runner.run_exit = 1
+    stop = unset.session.tools.call('run_gate', {})
+    assert json.loads(stop.text.split('\n', 1)[1].rsplit('\n', 1)[0])['stopped'] == {
+        'stop_reason': 'setup_failed', 'means': 'a setup step (the dependency step) failed, so no check ran on the code'}
+    assert unset.session.context.gate_stop == 'setup_failed'
+    for wrong in ({'verdict': 'NO-GO'}, {'verdict': 'GO'}, {'verdict': 'STOPPED', 'stop_reason': 'tool_missing'}):
+        refused = unset.session.tools.call('write_gate_record', wrong)
+        assert (refused.error, 'write STOPPED, its stop_reason setup_failed' in refused.text) == (True, True), wrong
+    halted = json.loads(unset.session.tools.call('write_gate_record', {'verdict': 'STOPPED'}).text)['key']
+    assert (_record(unset, halted).verdict, _record(unset, halted).stop_reason) == ('STOPPED', 'setup_failed')
+    assert [check['status'] for check in _record(unset, halted).rounds[0].checks] == ['fail', 'fail']
+    # Its finish sends the task to a person: a stopped gate is never a reason to revise the code.
+    unset.session.tools.call('finish', {'summary': 'the dependency step failed'})
+    assert (unset.board.moves[-1][2], unset.board.results[-1]) == ('needs_human', (halted,))
     # Every check passed, but the task named no submitted patch: no tree was judged, so no GO.
     unjudged = gated(tmp_path, 'unjudged')
     unjudged.session.tools.call('run_gate', {})

@@ -73,8 +73,8 @@ BRANCH = f'voc-agent/{RUN}/fix-slug'
 SLUGS = 'def slugify(text, max_length):\n    words, slug = text.lower().split(), ""\n'
 FIXED = SLUGS.replace('""', '""  # <= max_length')
 #: The agents whose session runs on real git (a checkout of the fixture repository): the fixer, whose submitted patch
-#: is the change, and the gate's two, which judge it.
-ON_GIT = ('fixer', 'gate-runner', 'final-go')
+#: is the change, the commit reviewer, which reviews it on its checkout (7.54.00), and the gate's two, which judge it.
+ON_GIT = ('fixer', 'commit-reviewer', 'gate-runner', 'final-go')
 #: The person who started the run (a person's subject), whose way of working the broker's dial reads: AI-driven.
 STARTER = 'person-sub-1'
 #: The aggregates table's stand-in, where the people's ways of working are.
@@ -419,6 +419,20 @@ def _done(summary: str) -> list[dict[str, Any]]:
     return [use('finish', summary=summary)]
 
 
+def _reviewed(flow: BugHunt, patch: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The commit reviewer's session (7.54.00): it reads the submitted patch its task names with read_patch, finds it
+    applied to its checkout (the fixed file), writes a nit and approves."""
+    flow.run_agent('commit-reviewer-4', [
+        [use('read_patch')], [use('read_file', path='slugs.py')],
+        [use('write_findings', package='.', shard='review', findings=[{**FINDING, 'severity': 'nit'}])],
+        [use('write_review', verdict='approve', reasons=['the <= fix and its test'])],
+        _done('no blocking finding')], monkeypatch)
+    assert flow.read('commit-reviewer-4', 'slugs.py') == [FIXED]
+    [diff] = flow.results('commit-reviewer-4', 'The submitted patch ')
+    assert diff.startswith(f'The submitted patch {patch.rsplit("/", 1)[1]}: page 1 of 1.')
+    assert 'slugs.py (+' in diff
+
+
 def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_request(
         bug_hunt: BugHunt, monkeypatch: pytest.MonkeyPatch):
     flow = bug_hunt
@@ -447,11 +461,10 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     assert patch.startswith(f'ws/default/runs/{RUN}/fixer-3/commits/{COMMIT}/_patches/attempt-1/task-2-')
     assert [json.loads(text)['broker'][:10] for text in flow.results('fixer-3', '{"patch"')] == ['submitted:']
     assert flow.broker_calls() == []
-    coordinate(coordinator, _post_and_launch('commit-reviewer', 'board', 'task-3', 'Review the slug fix'))
-    flow.run_agent('commit-reviewer-4', [
-        [use('read_file', path='slugs.py')],
-        [use('write_findings', package='.', shard='review', findings=[{**FINDING, 'severity': 'nit'}])],
-        _done('no blocking finding')], monkeypatch)
+    # The commit reviewer's task names the same patch (7.54.00): its harness answers it with read_patch and applies it
+    # to the reviewer's checkout, so the reviewer reads the change and the fixed file, and its review approves it.
+    coordinate(coordinator, _post_and_launch('commit-reviewer', 'board', 'task-3', 'Review the slug fix', patch=patch))
+    _reviewed(flow, patch, monkeypatch)
     # Nothing is committed before the gate: the template's commit step comes after its GO, and the broker's own
     # checks refuse a push asked for early (no GO in the ledger for the fixed tree) or by a fixer (its role).
     tree = _fixed_tree(flow)
@@ -522,8 +535,11 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     # that branch's tree.
     tasks = {task.task_id: task for task in flow.api.store.tasks('default', RUN)}
     assert all(task.state == 'done' for task in tasks.values())
-    assert [len(tasks[t].result_keys) for t in ('task-1', 'task-2', 'task-3', 'task-4', 'task-5')] == [1] * 5
+    # (the commit reviewer's two: its findings and, 7.54.00, its review's verdict)
+    assert [len(tasks[t].result_keys) for t in ('task-1', 'task-2', 'task-3', 'task-4', 'task-5')] == [1, 1, 2, 1, 1]
     assert tasks['task-2'].result_keys == (patch,)
+    review = next(key for key in tasks['task-3'].result_keys if key.endswith('/_review/attempt-1/review.json'))
+    assert json.loads(flow.s3.get_object(Bucket=WORKSPACE_BUCKET, Key=review)['Body'].read())['verdict'] == 'approve'
     assert flow.host.writes == [('push_bundle', BRANCH, tree), ('open_or_update_draft_pr', BRANCH, tree)]
     assert flow.broker_calls() == [(f'{RUN}.9', 'push_bundle', 409), (f'{RUN}.3', 'push_bundle', 403),
                                    (f'{RUN}.7', 'push_bundle', 200), (f'{RUN}.8', 'open_or_update_draft_pr', 200)]

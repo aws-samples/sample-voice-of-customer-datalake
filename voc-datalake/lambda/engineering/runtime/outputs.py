@@ -17,6 +17,8 @@ from typing import Any, Final
 FINDING_SCHEMA: Final = 'voc-finding/1'
 NOTE_SCHEMA: Final = 'voc-note/1'
 GATE_SCHEMA: Final = 'voc-gate-record/1'
+#: A gate record's object name under its ``_gate/attempt-<n>/`` (the harness writes it, the GO ledger reads it).
+GATE_RECORD_FILE: Final = 'record.json'
 SEVERITIES: Final = ('blocking', 'should_fix', 'nit')
 #: The seven documents of a knowledge pack, in the order they are rendered (docs/autonomous-engineering.md's table).
 NOTE_KINDS: Final = ('architecture', 'convention', 'review-guide', 'test-strategy', 'ci', 'glossary', 'how-we-work')
@@ -35,11 +37,26 @@ STOP_REASON: Final = re.compile(r'[a-z_]{0,40}\Z')
 SUBMITTED_PATCH: Final = re.compile(r'ws/default/runs/(?P<run>[A-Za-z0-9_-]{1,64})/(?:fixer|builder)-[0-9]{1,3}/'
                                     r'commits/(?P<commit>[0-9a-f]{40}|[0-9a-f]{64})/_patches/attempt-[1-9][0-9]{0,3}/'
                                     r'(?P<name>[A-Za-z0-9][A-Za-z0-9_.-]{0,122}\.diff)\Z')
-#: The roles whose task names a submitted patch: the gate's (which judge it) and the committer (which pushes it); a
-#: child run never seeds one of their tasks (runtime/restart.py: they are posted again on the child's own patch).
-PATCH_ROLES: Final = frozenset({'gate-runner', 'final-go', 'committer'})
+#: The roles whose task names a submitted patch: the gate's (which judge it), the reviewers (7.54.00: which review it)
+#: and the committer (which pushes it); a child run never seeds one of their tasks (runtime/restart.py: they are posted
+#: again on the child's own patch).
+PATCH_ROLES: Final = frozenset({'gate-runner', 'final-go', 'committer', 'commit-reviewer', 'pr-reviewer'})
+#: The roles that judge a submitted patch without running code (7.54.00): the harness's ``read_patch`` answers them its
+#: text, and the reviewers' checkout has it applied (harness/review_tools.py; the final go's is the gate's tree).
+PATCH_READERS: Final = frozenset({'commit-reviewer', 'pr-reviewer', 'final-go'})
 #: The largest submitted patch the broker reads, and so the largest the gate judges.
 MAX_SUBMITTED_PATCH_BYTES: Final = 6 * 1024 * 1024
+
+#: A reviewer's verdict (7.54.00, ``write_review``): ``voc-review/1``, under its own keys
+#: (``ws/<ws>/runs/<run>/<agent>/commits/<sha>/_review/attempt-<n>/review.json``), which a board's ``review.no_blocking``
+#: reads (orchestration/assertions.py): a reviewer that recorded none, or could not review, is never a pass.
+REVIEW_SCHEMA: Final = 'voc-review/1'
+REVIEW_FILE: Final = 'review.json'
+REVIEW_ROLES: Final = frozenset({'commit-reviewer', 'pr-reviewer'})
+APPROVE, REQUEST_CHANGES, COULD_NOT_REVIEW = 'approve', 'request_changes', 'could_not_review'
+REVIEW_VERDICTS: Final = (APPROVE, REQUEST_CHANGES, COULD_NOT_REVIEW)
+MAX_REVIEW_REASONS: Final = 10
+MAX_REVIEW_REASON: Final = 400
 _PLAIN: Final = re.compile(rb'[A-Za-z0-9_-]')
 
 
@@ -49,6 +66,16 @@ def is_submitted_patch(key: str, run_id: str, commit: str) -> bool:
     match = SUBMITTED_PATCH.fullmatch(key)
     return (match is not None and match.group('run') == run_id and match.group('commit') == commit
             and not match.group('name').startswith('checkpoint-'))
+
+
+def review_verdict(record: object) -> tuple[str, str]:
+    """A ``voc-review/1`` record's verdict and its first reason (``('', '')`` for anything off its shape): what the
+    finish and a board's ``review.no_blocking`` read of it."""
+    if not isinstance(record, dict) or record.get('schema') != REVIEW_SCHEMA or record.get('verdict') not in REVIEW_VERDICTS:
+        return '', ''
+    reasons = record.get('reasons')
+    first = reasons[0] if isinstance(reasons, list) and reasons and isinstance(reasons[0], str) else ''
+    return str(record['verdict']), first[:MAX_REVIEW_REASON]
 
 
 def encode_package(package: str) -> str:

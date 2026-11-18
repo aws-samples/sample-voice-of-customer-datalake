@@ -249,19 +249,21 @@ class LocalRun:
 
     def recorded(self) -> Recorded:
         """What the run has recorded so far, as the assertions read it."""
-        findings, patches, gates = [], [], []
+        findings, patches, gates, reviews = [], [], [], []
         for role, key, body in self.objects('hunter', 'commit-reviewer', 'fixer', 'gate-runner', 'final-go'):
             if '/_patches/' in key:
                 patches.append(body.decode())
             elif key.endswith('/record.json'):
                 gates.append({**json.loads(body), 'by': role})
+            elif '/_review/' in key:
+                reviews.append({**json.loads(body), 'by': role})
             elif key.endswith('.jsonl'):
                 findings += [{**json.loads(line), 'by': role} for line in body.decode().splitlines() if line]
         posted = tuple((task.role, task.posted_by.rsplit('-', 1)[0]) for task in self.tasks() if task.posted_by)
         pushes = tuple({'branch': branch, 'tree': tree} for op, branch, tree in self.host.writes if op == 'push_bundle')
         return Recorded(findings=tuple(findings), posted=posted, patches=tuple(patches), gate_records=tuple(gates),
-                        pushes=pushes, pull_requests=tuple(self.host.pull_requests), issue=self.issue,
-                        pr_setting=str(flow_settings(self.flow['definition'])['pr']))
+                        pushes=pushes, pull_requests=tuple(self.host.pull_requests), reviews=tuple(reviews),
+                        issue=self.issue, pr_setting=str(flow_settings(self.flow['definition'])['pr']))
 
     def agent(self, agent_id: str, turns: list[list[dict[str, Any]]]) -> list[str]:
         """``agent_id``'s whole session through the harness's entry on its real checkout; the errors it was handed."""
@@ -373,7 +375,7 @@ def _hunt(run: LocalRun) -> None:
     run.step_done('hunt')
 
 
-def _board(run: LocalRun) -> None:
+def _fix(run: LocalRun) -> None:
     case = run.case
     tests = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider']
     errors = run.coordinate(
@@ -387,14 +389,63 @@ def _board(run: LocalRun) -> None:
             _finish(f'fixed {case.source} with a test; the case\'s check and the tests pass')])))
     if errors:
         raise FakeRunError(f'the fixer was refused: {errors}')
-    run.coordinate(_post('commit-reviewer', 'board', 'task-3', 'Review the fix'), ('commit-reviewer-4', lambda: run.agent(
-        'commit-reviewer-4', [
-            [use('read_file', path=case.source)],
-            [use('write_findings', package='.', shard='review', findings=[{
-                'file': case.source, 'line': case.line, 'severity': 'nit', 'rule': 'scope',
-                'title': 'The fix is the one line the bug needs', 'evidence': 'only the operator changed'}])],
-            _finish('no blocking finding')])))
+
+
+#: The first line of a ``read_patch`` answer (7.54.00): the patch's name and its pages.
+_PATCH_READ: Final = re.compile(r'^The submitted patch (\S+): page 1 of (\d+)\.$', re.MULTILINE)
+
+
+def _said(run: LocalRun, agent_id: str) -> str:
+    """Every tool result ``agent_id``'s session handed its model, in turn."""
+    messages = run.world.models[agent_id].requests[-1]['messages']
+    return '\n'.join(block['toolResult']['content'][0]['text'] for message in messages
+                     for block in message['content'] if 'toolResult' in block)
+
+
+def _board(run: LocalRun) -> None:
+    """The fix, then its review (7.54.00): the commit reviewer's task names the fixer's submitted patch, which it
+    reads with ``read_patch`` and finds applied to its checkout (``read_file`` answers the fixed file), and its review
+    approves it."""
+    case = run.case
+    _fix(run)
+    errors = run.coordinate(_post('commit-reviewer', 'board', 'task-3', 'Review the fix', patch=_patch(run)),
+                            ('commit-reviewer-4', lambda: run.agent('commit-reviewer-4', [
+                                [use('read_patch', page=1)], [use('read_file', path=case.source)],
+                                [use('write_findings', package='.', shard='review', findings=[{
+                                    'file': case.source, 'line': case.line, 'severity': 'nit', 'rule': 'scope',
+                                    'title': 'The fix is the one line the bug needs',
+                                    'evidence': 'only the operator changed'}])],
+                                [use('write_review', verdict='approve',
+                                     reasons=['the fix is the one line the bug needs, and its test fails without it'])],
+                                _finish('approved: no blocking finding')])))
+    if errors:
+        raise FakeRunError(f'the commit reviewer was refused: {errors}')
+    said = _said(run, 'commit-reviewer-4')
+    found = _PATCH_READ.search(said)
+    fixed = case.fixed[case.source].splitlines()[case.line - 1].strip()
+    run.out(f'    the commit reviewer read the submitted patch {found[1] if found else "(none)"} '
+            f'({found[2] if found else 0} page(s)); its checkout has the fixed {case.source}: '
+            f'{"yes" if fixed and fixed in said else "no"}')
     run.coordinate([[use('complete_step', step='board')]])
+    run.step_done('board')
+
+
+def _unreadable_review(run: LocalRun) -> None:
+    """The fix, then a review whose patch cannot be read (7.54.00: its task names a submitted patch's key with no
+    object): the reviewer says it could not review, its task goes to a person, the board does not close, and the
+    board's ``review.no_blocking`` fails, never passing on zero findings."""
+    _fix(run)
+    missing = f'{_patch(run).rsplit("/", 1)[0]}/task-9-00000000.diff'
+    run.coordinate(_post('commit-reviewer', 'board', 'task-3', 'Review the fix', patch=missing),
+                   ('commit-reviewer-4', lambda: run.agent('commit-reviewer-4', [
+                       [use('read_patch')],
+                       [use('write_review', verdict='could_not_review',
+                            reasons=['the submitted patch could not be read'])],
+                       _finish('could not review: the patch could not be read')])))
+    refused = [line for line in _said(run, 'commit-reviewer-4').splitlines() if line.startswith('read_patch refused')]
+    run.out(f'    the commit reviewer\'s read_patch: {refused[0] if refused else "answered"}')
+    board = next(step for step in run.world.plan()['steps'] if step['step'] == 'board')
+    run.out(f'    the board is {board["status"]}: {board.get("reason", "")}')
     run.step_done('board')
 
 
@@ -483,9 +534,11 @@ def _start(world_dir: Path, case: Case, flow: Mapping[str, Any], patched: pytest
     return LocalRun(world, host, case, flow, patched, out, issue, events, router)
 
 
-def run_flow(flow: Mapping[str, Any], repo: Path, *, out: Out = print, issue: int | None = None) -> int:
+def run_flow(flow: Mapping[str, Any], repo: Path, *, out: Out = print, issue: int | None = None,
+             unreadable_review: bool = False) -> int:
     """The compiled Bug hunt and fix ``flow`` on ``repo`` (an eval case's fixture), end to end on scripted models:
-    0 when it reached its pull request with every blocking assertion passed, 1 otherwise."""
+    0 when it reached its pull request with every blocking assertion passed, 1 otherwise. ``unreadable_review``
+    (7.54.00, a test's): the commit reviewer's patch cannot be read, so the run stops at the board, at a person."""
     case = load_case(repo)
     out(f'local run of {flow["template_id"]} v{flow["version"]} on {case.directory.name} (scripted models acting out '
         'its known fix; each agent runs its role\'s bundled template, as the runtime resolves it)')
@@ -493,9 +546,13 @@ def run_flow(flow: Mapping[str, Any], repo: Path, *, out: Out = print, issue: in
         (Path(scratch) / 'home').mkdir()
         run = _start(Path(scratch) / 'world', case, flow, patched, out, issue)
         _hunt(run)
-        _board(run)
-        _deliver(run, _gate(run))
-        run.coordinate([[use('read_flow')], _finish('the flow reached its pull request')])
+        if unreadable_review:
+            _unreadable_review(run)
+        else:
+            _board(run)
+            _deliver(run, _gate(run))
+        run.coordinate([[use('read_flow')], _finish('the flow stopped at a person' if unreadable_review
+                                                    else 'the flow reached its pull request')])
         statuses = bug_hunt.statuses(run.world.plan())
         run.out(f'flow: {", ".join(f"{step} {state}" for step, state in statuses.items())}')
         learn = flow_settings(flow['definition'])['learn']

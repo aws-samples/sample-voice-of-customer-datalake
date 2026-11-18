@@ -2504,7 +2504,7 @@
         "pr_state_as_flow": "每个拉取请求都按流程规定的状态开启（可供审阅或草稿）",
         "push_tree_is_judged_tree": "每次推送的树都与最终批准评判的树一致",
         "review_commented": "已在拉取请求上发布评审评论",
-        "review_no_blocking": "“by”指定的角色没有写出阻塞问题",
+        "review_no_blocking": "“by”指定的角色没有写出阻塞问题（审阅者：且记录了能完成的审阅）",
         "tasks_posted": "已为该角色发布至少 min 个任务",
         "tenets_recorded": "已记录一份包含 1 到 30 条原则的原则记录",
         "triage_commented": "分诊结果已评论到本次运行的 issue 上",

@@ -131,6 +131,43 @@ get 7.51.01's tooltips.
   last session left open; on Kiro, steering also wakes the tool server's wait. The local fake run's scripted coordinator waits for each agent's `task.done` through the inbox router and the
   delivery function (12/12, to its pull request).
   [autonomous-engineering.md](docs/autonomous-engineering.md#the-coordinator-waits-for-its-agents-75400).
+- **Reviewers read the submitted patch, and a review that could not review is not a pass** (the batch; the live run
+  `01M7QXJN02WSFMG92VWWZ00NKB` on b-, 2026-11-18: its commit reviewer's task named the fixer's patch key in its text
+  only, `read_file` refused it as no file of the checkout, the reviewer read the unchanged files, finished "neither an
+  approval nor a rejection" with no finding, and the board step passed `review.no_blocking` on zero findings). The
+  roles that judge a submitted patch without running code (commit reviewer, PR reviewer, final go) get `read_patch`
+  (`runtime/harness/review_tools.py`): the patch the task names, read through the agent's own role, as data, in pages
+  of at most 40 000 characters cut at line ends, the first listing the changed files; a task that names none, a key that
+  is no submitted patch of the run or an object that cannot be read is a refusal that says so. A reviewer's checkout
+  has that patch applied before its first turn (the harness's own git; one that does not apply is told to the model),
+  so `read_file` shows the changed files too, and a CLI's or Kiro's tool server is handed the key (`VOC_PATCH_KEY`).
+  The coordinator's `post_task` takes `patch` for the reviewers and requires it for a commit reviewer. The reviewers
+  record a verdict with `write_review` (`voc-review/1` under `_review/`: `approve` or `request_changes` only after
+  every page was read, a request for changes with a blocking finding, an approval with none; `could_not_review`
+  always); their `finish` waits for one, and `could_not_review` ends the task needing a person, so the board step
+  blocks instead of closing. `review.no_blocking` with a reviewer as `by` fails on no review record, a
+  `could_not_review` (or unreadable) one or a request for changes; the board reads `_review/*` for it (its
+  `ReadRecordedOutputs` grant). Skills: commit reviewer v3, PR reviewer v3, final go v4 (pending, promote-pending),
+  coordinator v7; both bundles and the Kiro configs compiled. The local fake run's reviewer reads the patch through
+  `read_patch` and finds the fixed file in its checkout (12/12, to its pull request); a fake run whose reviewer cannot
+  read its patch stops at the board, at a person, with `review.no_blocking` failing.
+  [autonomous-engineering.md](docs/autonomous-engineering.md#the-agent-catalog).
+- **The gate installs into its own environment, and a stopped gate goes to a person** (the batch; the same run: its
+  gate runner's `py.install` ran `pip install` into the image's `/usr/local/lib/python3.12/site-packages`, which
+  repository code (`code`, in its own user namespace) cannot write, exited 1 with `Errno 13`, pytest was not run, the
+  gate STOPPED, and the coordinator posted "Revise the divide fix after the gate" for a new fixer). The python pack
+  makes a virtual environment per root first (`py.venv`: `{base_python} -I -m venv --clear {venv}`, a setup step,
+  its pip the standard library's own), under `/home/code/.voc-gate/venvs` in the images (`gate_tools.IMAGE_VENVS`,
+  outside the checkout), and `{python}` is that environment's interpreter, so the install (still `-I`, `--isolated`,
+  wheels only, PyPI, the one step with the registries) lands there and every later step runs against it
+  (`quality_gate/packs.py` `{venv}`, `{base_python}`; a local plan without one keeps the interpreter it was given). The
+  node, rust and java packs already write only code-writable places (the checkout, `/opt/voc/cache`). Shown in the
+  python image (local tag, `--network none`, the namespace walls, a local wheel index): the old command fails as
+  `code` with `Errno 13`; `py.venv`, `py.install` and pytest pass. When no check judged the code, `run_gate` says the
+  gate stopped with its own reason (`setup_failed`, `nothing_checked`, `tool_missing`: `packs.STOPS`, the bundle's
+  `gates.stops`); the gate runner's record is then STOPPED with that reason (a NO-GO refused), and its `finish` ends
+  the task needing a person. Only a NO-GO starts a revision round (gate runner v4, coordinator v7).
+  [gates/README.md](voc-datalake/templates/orchestration/gates/README.md).
 
 ### Upgrade notes
 
@@ -150,6 +187,13 @@ get 7.51.01's tooltips.
   coordinator runs the old harness and can still finish while its agents work. Deploy VocProcessingStack too: the
   inbox router and the delivery function route a task's end to the conductor's inbox, and the board's `tasks` op
   names each task's agent. No IAM, table or stack resource changes.
+- **Rebuild the four engineering images once more for the reviewers and the gate** (python, node, rust, java): the
+  harness, the gate packs and the compiled bundle they ship carry `read_patch`, `write_review`, the reviewer's applied
+  checkout, the gate's own virtual environment and its stops. Until then a reviewer still cannot read its patch, a
+  python gate still installs into the image's site-packages, and a stopped gate is still finished as done. Deploy
+  VocProcessingStack too: the board reads the reviewers' verdicts (`ReadRecordedOutputs` gains
+  `ws/default/runs/*/*/commits/*/_review/*`, read only), and its `review.no_blocking` fails a board whose reviewer
+  recorded none.
 
 ## [7.53.00] - 2026-11-17
 

@@ -32,6 +32,8 @@ MAX_TITLE: Final = 200
 MAX_INSTRUCTIONS: Final = 8_000
 #: The image languages (lambda/engineering/runtime/egress.py REGISTRY_HOSTS; the launch checks it again).
 LANGUAGES: Final = frozenset({'java', 'node', 'python', 'rust'})
+#: The role whose task must name a submitted patch (7.54.00): the commit reviewer's whole job is one.
+REVIEWS_A_PATCH: Final = 'commit-reviewer'
 
 
 #: A step id of the run's flow (shared/workflow_schema.py: at most 64 characters); a map's shard is a repository path.
@@ -60,9 +62,10 @@ def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
         tool_spec('post_task', 'Post one task for one role of a ready step, with instructions a person could follow.',
                   {'role': role, 'title': text, 'instructions': text, 'paths': paths, 'step': step,
                    'shard': {'type': 'string', 'description': 'For a step after a map: the shard the task works on.'},
-                   'patch': {'type': 'string', 'description': 'For a gate runner\'s, a final go\'s or the '
-                             'committer\'s task: the key of the patch a fixer or builder submitted (read_board '
-                             'lists it among that task\'s outputs), the one the gate judges.'}},
+                   'patch': {'type': 'string', 'description': 'For a commit reviewer\'s (required), a PR '
+                             'reviewer\'s, a gate runner\'s, a final go\'s or the committer\'s task: the key of the '
+                             'patch a fixer or builder submitted (read_board lists it among that task\'s outputs), the '
+                             'one it reviews, judges or pushes.'}},
                   ('role', 'title', 'instructions')),
         tool_spec('launch_agent', 'Launch one agent for a task you posted, in the run\'s repository at its commit.',
                   {'task_id': text, 'role': role, 'language': {'type': 'string', 'enum': sorted(LANGUAGES)},
@@ -226,6 +229,11 @@ def handlers(context: Built, result: Callable[..., Built],
         if patch and (role not in PATCH_ROLES or not is_submitted_patch(patch, context.run_id, context.commit)):
             raise ValueError(f'patch is for a task of {", ".join(sorted(PATCH_ROLES))} only: the key of a patch a '
                              'fixer or builder of this run submitted (read_board lists it among its outputs)')
+        if role == REVIEWS_A_PATCH and not patch:
+            # (7.54.00: a commit reviewer reviews one submitted patch, which its harness reads and applies for it; a
+            # task naming it only in its text left the first live run's reviewer reading the unchanged files)
+            raise ValueError('a commit reviewer\'s task names the patch it reviews: patch is the key of the patch a '
+                             'fixer or builder submitted (read_board lists it among that task\'s outputs)')
         return post_for(context, result, arguments, role, check_sparse_path(shard) if shard else '', patch)
 
     def launch_agent(arguments: Mapping[str, Any]) -> Built:

@@ -96,6 +96,27 @@ def test_a_tenets_draft_the_step_recorded_is_read_for_tenets_recorded() -> None:
         {'check': 'tenets.recorded', 'status': 'pass', 'detail': '1 tenet(s) drafted', 'on_fail': 'block'}]
 
 
+def test_a_board_whose_reviewer_could_not_review_or_recorded_none_fails_review_no_blocking() -> None:
+    # (7.54.00: the first live run's board step passed on a review that never read the patch, 01M7QXJN02WSFMG92VWWZ00NKB)
+    key = f'ws/default/runs/{RUN}/commit-reviewer-4/commits/{"a" * 40}/_review/attempt-1/review.json'
+    check = [{'check': 'review.no_blocking', 'args': {'by': 'commit-reviewer'}}]
+
+    def board_with(*keys: str, verdict: str = 'could_not_review', body: bytes | None = None) -> list[dict[str, str]]:
+        review = {'schema': 'voc-review/1', 'verdict': verdict, 'reasons': ['the submitted patch could not be read']}
+        task = Task(task_id='task-3', role='commit-reviewer', state='needs_human', title='Review', spec='{}',
+                    spec_hash='', depth=0, priority=0, attempt=1, result_keys=keys,
+                    launched_agent='commit-reviewer-4', flow_step='board')
+        return results(check, recorded('board', [task], lambda wanted, _limit: (
+            body if body is not None else json.dumps(review).encode()) if wanted == key else None, [], issue=None,
+            pr_setting='ready'))
+
+    assert board_with(key) == [{'check': 'review.no_blocking', 'status': 'fail', 'on_fail': 'block', 'detail': (
+        'the commit-reviewer could not review 1 of 1 change(s): the submitted patch could not be read')}]
+    assert board_with()[0]['detail'].startswith('the commit-reviewer recorded no review: a review that did not happen')
+    assert board_with(key, body=b'not json')[0]['status'] == 'fail'
+    assert board_with(key, verdict='approve')[0]['status'] == 'pass'
+
+
 def test_a_check_whose_input_the_board_does_not_keep_is_recorded_unread() -> None:
     listed = results([{'check': 'pr.links_issue'}, {'check': 'patch.submitted'}], Recorded())
     assert [(item['check'], item['status']) for item in listed] == [('pr.links_issue', 'unread'),

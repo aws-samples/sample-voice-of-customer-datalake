@@ -258,6 +258,47 @@ def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_acros
     assert json.loads(s3.get_object(Bucket=BUCKET, Key=record)['Body'].read())['tree_hash'] == fixed
 
 
+def test_a_reviewers_session_starts_on_its_checkout_with_the_submitted_patch_applied_and_reads_it(aws, tmp_path,
+                                                                                                  monkeypatch):
+    # (7.54.00: the first live run's commit reviewer could not read the fixer's patch, 01M7QXJN02WSFMG92VWWZ00NKB)
+    s3, _ = aws
+    cache, commit = fixture_repository(tmp_path)
+    fixer = build_session(_env(tmp_path), s3=s3, ports=_ports(), runner=_vm_directory(tmp_path / 'vm-f', cache, commit),
+                          checkout=str(tmp_path / 'vm-f/work/repo'))
+    (tmp_path / 'vm-f/work/repo/src/parse.py').write_text('new\n')
+    submitted = json.loads(fixer.tools.call('submit_work', {'summary': 'the fix'}).text)['patch']
+    env = _env(tmp_path, VOC_ROLE='commit-reviewer', VOC_AGENT_ID='commit-reviewer-4', VOC_TASK_ID='task-3')
+    reviewer = build_session(env, s3=s3, ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(),
+                                                     broker=FakeBroker()),
+                             runner=_vm_directory(tmp_path / 'vm-r', cache, commit),
+                             checkout=str(tmp_path / 'vm-r/work/repo'))
+    # Before the model's first turn, the checkout holds the change (real git), and the diff reads as data.
+    assert ((tmp_path / 'vm-r/work/repo/src/parse.py').read_text(), reviewer.context.patch_unapplied) == ('new\n', '')
+    read = reviewer.tools.call('read_patch', {})
+    assert not read.error
+    assert '-old\n+new' in read.text
+    assert 'src/parse.py (+1 -1)' in read.text
+    # Its CLI's tool server is handed that patch's key (the tool server reads no brief), and only that one.
+    handed: list[dict[str, str]] = []
+
+    def adapter(args: Any, tool_env: dict[str, str], bedrock: Any) -> Any:
+        del args
+        handed.append(dict(tool_env))
+        return harness_main.ConverseAdapter(bedrock(), 'model-a')
+
+    monkeypatch.setattr(harness_main, 'adapter_for', adapter)
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], {**env, 'VOC_PATCH_KEY': 'planted'}, s3=s3,
+         ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(), broker=FakeBroker()),
+         runner=_vm_directory(tmp_path / 'vm-r2', cache, commit), bedrock=lambda: FakeBedrock([
+             [use('read_patch')], [use('write_review', verdict='approve', reasons=['the one-line fix'])],
+             [use('finish', summary='approved')]]))
+    assert handed[0]['VOC_PATCH_KEY'] == submitted
+    server = build_session({**env, 'VOC_PATCH_KEY': submitted}, s3=s3, ports=_ports(), runner=FakeRunner(),
+                           checkout=str(tmp_path / 'vm-r/work/repo'), restore=False)
+    assert server.context.brief.patch == submitted
+    assert not server.tools.call('read_patch', {}).error
+
+
 def test_on_aws_today_a_fixers_submit_work_stops_its_session_at_the_broker_not_wired_yet(aws, tmp_path):
     s3, _ = aws
     # The ports main wires on AWS: the board's URL, and the broker still pending.

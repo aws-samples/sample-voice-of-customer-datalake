@@ -15,8 +15,11 @@ from engineering.quality_gate.packs import (
     EMPTY_OUTPUT,
     FAILED,
     MISSING_TOOL,
+    NOTHING_STOP,
     SETUP_FAILED,
+    SETUP_STOP,
     TIMED_OUT,
+    TOOLS_STOP,
     GatePlan,
     PlannedCheck,
     Tool,
@@ -109,6 +112,18 @@ def run_plan(plan: GatePlan, runner: CommandRunner) -> GateRun:
         if check.kind == 'setup' and status != 'pass':
             setup_failed = check.name
     return GateRun(results=tuple(results), tool_versions=tool_versions(plan.needs.tools, runner))
+
+
+def stop_reason(plan: GatePlan, ran: GateRun) -> str:
+    """The gate's own reason to stop (7.54.00, ``packs.STOPS``), '' when its checks judged the code: a setup step
+    that failed (nothing ran after it), a plan with no check, or failures that are all missing tools."""
+    if not plan.checks:
+        return NOTHING_STOP
+    if any(result.kind == 'setup' and result.blocking for result in ran.results):
+        return SETUP_STOP
+    if ran.failures and all(result.status == 'missing_tool' for result in ran.failures):
+        return TOOLS_STOP
+    return ''
 
 
 def tool_versions(tools: tuple[Tool, ...], runner: CommandRunner) -> dict[str, str]:

@@ -26,8 +26,9 @@ from engineering.runtime.tokens import TokenNotStorable
 #: The artifact kinds the runtime and the harness write, and a commit as the workspace's layout spells it (its one
 #: home: workspace/layout.py takes it from here, since the images ship this module without layout.py and the bus
 #: schema it imports); a test holds every key built here to ``layout.parse_agent_key``.
-#: (7.53.00: ``kiro``, the Kiro adapter's saved ACP session, which a continuation's ``session/load`` restores.)
-KINDS: Final = frozenset({'checkpoints', 'patches', 'gate', 'transcripts', 'triage', 'tenets', 'kiro'})
+#: (7.53.00: ``kiro``, the Kiro adapter's saved ACP session, which a continuation's ``session/load`` restores; 7.54.00:
+#: ``review``, a reviewer's ``voc-review/1`` verdict.)
+KINDS: Final = frozenset({'checkpoints', 'patches', 'gate', 'transcripts', 'triage', 'tenets', 'kiro', 'review'})
 SHA: Final = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 MAX_CHECKPOINT_BYTES: Final = 256 * 1024
 #: Newest checkpoints tried, newest first, before a continuation starts afresh.

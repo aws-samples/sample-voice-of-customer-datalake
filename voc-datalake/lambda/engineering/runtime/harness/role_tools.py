@@ -19,7 +19,8 @@ these and the tools its skill names, whatever a record says.
   GO and the write rules first (the understander's comment and labels are on its issue: no dial, 7.50.00);
 - the issue's tools (``issues.py``: ``read_issue``, ``write_triage``, ``label_issue``) and the gate's
   (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00;
-- the tenets' (``tenets_tools.py``: ``read_tenets``, ``write_tenets``), 7.52.00.
+- the tenets' (``tenets_tools.py``: ``read_tenets``, ``write_tenets``), 7.52.00;
+- the submitted patch's and the reviewers' (``review_tools.py``: ``read_patch``, ``write_review``), 7.54.00.
 
 Every output is written once (the workspace's puts are create-only) and its key is recorded on the task when the agent
 finishes (``AgentContext.result_keys``), so the steps after it read what the board recorded, never a listing. The
@@ -35,10 +36,11 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
 
+from engineering.quality_gate.packs import STOPS
 from engineering.runtime import outputs
 from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
-from engineering.runtime.harness import gate_tools, issues, tenets_tools
+from engineering.runtime.harness import gate_tools, issues, review_tools, tenets_tools
 from engineering.runtime.harness.coordinator import Built, Record, Tool, answered, bounded, listed, optional, post_for
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
@@ -74,6 +76,8 @@ ROLE_TOOLS: Final[Mapping[str, frozenset[str]]] = {
     # (7.52.00: the accepted tenets a triage may cite, and the Tenets flow's draft of them)
     'read_tenets': frozenset({'understander'}),
     'write_tenets': frozenset({'understander'}),
+    # (7.54.00: the submitted patch read by the roles that judge it without running code, and a reviewer's verdict)
+    **review_tools.TOOL_ROLES,
 }
 #: The one role each poster posts for (board/api.py ``POSTERS``, but the coordinator's, which posts with post_task).
 POSTS_FOR: Final[Mapping[str, str]] = {'hunter': 'fixer', 'builder': 'builder'}
@@ -180,6 +184,15 @@ def _verdict(context: Built, arguments: Mapping[str, Any]) -> tuple[str, str, li
                                  'reasons': _reasons(arguments)}
     if verdict not in GATE_VERDICTS:
         raise ValueError(f'the verdict is one of {", ".join(sorted(GATE_VERDICTS))}')
+    if context.gate_stop:
+        # (7.54.00: a gate whose setup failed, that planned nothing or found only missing tools judged no code: it is
+        # STOPPED, with the gate's own reason, never a NO-GO that would send the fix back to be revised)
+        stop = optional(arguments, 'stop_reason', 40)
+        if verdict != 'STOPPED' or stop not in ('', context.gate_stop):
+            raise ValueError(f'the gate stopped ({context.gate_stop}: {STOPS[context.gate_stop]}), so no check judged '
+                             f'the code: write STOPPED, its stop_reason {context.gate_stop}')
+        return 'STOPPED', context.gate_stop, [{'number': 1, 'checks': [dict(check) for check in context.checks],
+                                               'reviewed': False, 'complete': True, 'finding_ids': []}], None
     if verdict == 'GO' and not context.gate_ran:
         raise ValueError('a GO is the gate\'s: run run_gate first (its checks are the ones a GO needs)')
     checks = [dict(check) for check in context.checks]
@@ -268,7 +281,7 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
     )
     return (*(spec for spec in all_specs if role in ROLE_TOOLS[spec.name]),
             *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS),
-            *tenets_tools.specs(tool_spec, role, ROLE_TOOLS))
+            *tenets_tools.specs(tool_spec, role, ROLE_TOOLS), *review_tools.specs(tool_spec, role))
 
 
 def _branch(context: Built, arguments: Mapping[str, Any]) -> str:
@@ -289,7 +302,8 @@ def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
     """This module's tools on ``context`` (and the issue's and the gate's: ``issues``, ``gate_tools``)."""
     outputs, record = _output_handlers(context, result)
     return {**outputs, **_writer_handlers(context, result), **issues.handlers(context, result, record),
-            **gate_tools.handlers(context, result), **tenets_tools.handlers(context, result, record)}
+            **gate_tools.handlers(context, result), **tenets_tools.handlers(context, result, record),
+            **review_tools.handlers(context, result, record)}
 
 
 def _already_written(error: Exception) -> bool:
@@ -342,7 +356,8 @@ def _output_handlers(context: Built, result: Callable[..., Built]
 
     def write_gate_record(arguments: Mapping[str, Any]) -> Built:
         body = gate_record(context, arguments)
-        key = f'{artifact_prefix(context.run_id, context.agent_id, context.commit, context.attempt, "gate")}record.json'
+        key = (f'{artifact_prefix(context.run_id, context.agent_id, context.commit, context.attempt, "gate")}'
+               f'{outputs.GATE_RECORD_FILE}')
         return record(key, body, 'the gate record')
 
     def post_subtask(arguments: Mapping[str, Any]) -> Built:

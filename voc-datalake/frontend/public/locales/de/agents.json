@@ -2504,7 +2504,7 @@
         "pr_state_as_flow": "Jeder Pull Request wurde so geöffnet, wie der Ablauf es vorgibt (bereit oder Entwurf)",
         "push_tree_is_judged_tree": "Jeder Push ist genau der Tree, den die Endfreigabe beurteilt hat",
         "review_commented": "Im Pull Request wurde ein Review-Kommentar veröffentlicht",
-        "review_no_blocking": "Die mit „by“ benannte Rolle hat keinen blockierenden Befund geschrieben",
+        "review_no_blocking": "Die mit „by“ benannte Rolle hat keinen blockierenden Befund geschrieben (ein Reviewer: und eine Prüfung festgehalten, die er durchführen konnte)",
         "tasks_posted": "Für die Rolle wurden mindestens min Aufgaben eingestellt",
         "tenets_recorded": "Ein Grundsätze-Datensatz mit 1 bis 30 Grundsätzen wurde erfasst",
         "triage_commented": "Die Triage wurde als Kommentar im Issue des Laufs veröffentlicht",

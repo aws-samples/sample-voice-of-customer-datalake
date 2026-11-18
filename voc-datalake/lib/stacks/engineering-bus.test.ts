@@ -408,9 +408,9 @@ describe('the engineering bus', () => {
     const on = template('on');
     const statements = statementsOf(on, functionId(on, 'voc-engineering-board'));
     const outputs = JSON.stringify(statements.find((statement) => statement.Sid === 'ReadRecordedOutputs')?.Resource);
-    // (7.52.00: and a Tenets run's draft, for tenets.recorded)
-    expect(['/_patches/*', '/_triage/*', '/attempt-*/*.jsonl', '/_tenets/*'].map((keys) => outputs.includes(keys)))
-      .toStrictEqual([true, true, true, true]);
+    // (7.52.00: and a Tenets run's draft, for tenets.recorded; 7.54.00: a reviewer's verdict, for review.no_blocking)
+    expect(['/_patches/*', '/_triage/*', '/attempt-*/*.jsonl', '/_tenets/*', '/_review/*']
+      .map((keys) => outputs.includes(keys))).toStrictEqual([true, true, true, true, true]);
     const denied = statements.find((statement) => statement.Sid === 'NoTranscriptsOrCheckpoints');
     expect([denied?.Effect, JSON.stringify(denied?.Resource).includes('/_transcripts/*'),
       JSON.stringify(denied?.Resource).includes('/_checkpoints/*')]).toStrictEqual(['Deny', true, true]);

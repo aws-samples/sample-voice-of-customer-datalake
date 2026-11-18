@@ -3,12 +3,14 @@ runners' records, the run's findings), each for its roles only, each result fenc
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from engineering.runtime.harness import role_tools
+from engineering.runtime import unit_runner
+from engineering.runtime.harness import gate_tools, role_tools
 from engineering.runtime.harness.issues import COMMENT_HEAD, issue_comment
+from engineering.runtime.harness.main import _restore
 from engineering.runtime.outputs import TRIAGE_SCHEMA
 from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, opened, world
 from engineering.runtime.test.test_engineering_role_skills import reviewer_commented
@@ -130,3 +132,29 @@ def test_the_final_go_reads_the_runs_findings_at_its_commit(tmp_path: Any) -> No
     assert (found['by'], found['severity'], found['title']) == ('commit-reviewer-5', 'blocking', 'floors')
     w.store.objects.clear()
     assert w.session.tools.call('read_findings', {}).text == 'no finding at this commit'
+
+
+def test_the_gates_virtual_environments_are_under_the_code_users_home_in_an_image_and_none_elsewhere(
+        tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    # (7.54.00: repository code cannot write the image's site-packages; the python pack installs into its own)
+    assert gate_tools.gate_venvs('/v') == '/v'
+    monkeypatch.setattr(gate_tools, 'IMAGE_GATES', tmp_path / 'absent')
+    assert gate_tools.gate_venvs('') == ''
+    monkeypatch.setattr(gate_tools, 'IMAGE_GATES', tmp_path)
+    assert gate_tools.gate_venvs('') == gate_tools.IMAGE_VENVS
+    assert gate_tools.IMAGE_VENVS.startswith(f'{unit_runner.CODE_HOME}/')
+
+
+@pytest.mark.parametrize('stop', ['setup_failed', 'nothing_checked'])
+def test_a_continuation_of_a_stopped_gate_keeps_its_stop(tmp_path: Any, stop: str) -> None:
+    w = world(tmp_path, role='gate-runner')
+    w.session.context.gate_stop = stop
+    key = w.session.checkpoint(turn=1, clean=True)
+    state = json.loads(w.store.objects[key])
+    assert state['position']['gate']['stop'] == stop
+    again = world(tmp_path / 'again', role='gate-runner')
+    _restore(again.session, cast(Any, again.store), key.rsplit('/', 1)[1], state)
+    assert again.session.context.gate_stop == stop
+    planted = {**state, 'position': {**state['position'], 'gate': {**state['position']['gate'], 'stop': 'planted'}}}
+    _restore(again.session, cast(Any, again.store), key.rsplit('/', 1)[1], planted)
+    assert again.session.context.gate_stop == ''

@@ -3,7 +3,11 @@
 # the rest. Setup steps are the dependency step: they fetch only what the requirement files name, run no build or
 # install script (wheels only), and every later step runs offline. What it runs follows the owner's brief
 # (briefs/python-ts.md; briefs/RECONCILIATION.md lists every difference).
-# {python} is the sandbox's interpreter (the image's python3), never the gate's own.
+# 7.54.00: everything installs into a virtual environment of the gate's own, one per root ({venv}: outside the
+# checkout, writable by repository code), never into the image's site-packages, which repository code cannot write.
+# {base_python} is the sandbox's interpreter (the image's python3), which makes it; {python} is then that
+# environment's interpreter, so the dependency step installs into it and every later step runs against what it
+# installed. (A local plan with no environment runs {python} as the interpreter it was given, and skips py.venv.)
 schema = "voc-gate-pack/1"
 id = "python"
 name = "Python"
@@ -23,6 +27,18 @@ root_globs = ["test_*.py", "tests/test_*.py"]
 [tools.python]
 version_argv = ["{python}", "--version"]
 
+# The gate's own environment for the root: the standard library's venv with its bundled pip (ensurepip: it reaches
+# no registry), made again from nothing each time (`--clear`); `-I` so nothing the repository holds is imported. A
+# setup step, so a part of the dependency step: the runner takes the registries' step only before any other
+# repository code, and this one must come before the install.
+[[steps]]
+id = "py.venv"
+language = "python"
+name = "make the gate's virtual environment"
+kind = "setup"
+argv = ["{base_python}", "-I", "-m", "venv", "--clear", "{venv}"]
+timeout_s = 300
+
 [[steps]]
 id = "py.install"
 language = "python"
@@ -30,8 +46,8 @@ name = "install dependencies"
 kind = "setup"
 argv = []
 timeout_s = 1200
-# Wheels only (no setup.py runs), from PyPI, with pip's own configuration ignored; `-I` so a pip.py the
-# repository holds is never the pip that runs.
+# Into the gate's environment ({python} is its interpreter). Wheels only (no setup.py runs), from PyPI, with pip's
+# own configuration ignored; `-I` so a pip.py the repository holds is never the pip that runs.
 [[steps.prefer]]
 when = [{ file = "requirements-dev.txt" }]
 argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",

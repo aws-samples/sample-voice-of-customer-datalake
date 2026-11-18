@@ -2587,7 +2587,7 @@
         "pr_state_as_flow": "Każdy pull request otwarto tak, jak określa przepływ (gotowy lub szkic)",
         "push_tree_is_judged_tree": "Każde wypchnięcie to drzewo ocenione przez ostateczną zgodę",
         "review_commented": "W pull requeście opublikowano komentarz z przeglądu",
-        "review_no_blocking": "Rola wskazana w „by” nie zapisała żadnego blokującego ustalenia",
+        "review_no_blocking": "Rola wskazana w „by” nie zapisała żadnego blokującego ustalenia (recenzent: i zapisał przegląd, który mógł wykonać)",
         "tasks_posted": "Dla roli opublikowano co najmniej min zadań",
         "tenets_recorded": "Zapisano zestaw od 1 do 30 zasad",
         "triage_commented": "Wynik triażu skomentowano w zgłoszeniu przebiegu",

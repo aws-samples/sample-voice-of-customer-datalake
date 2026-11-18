@@ -3,7 +3,8 @@
 A flow template's step carries ``assert: [{check, args?, on_fail?}]`` (``templates/orchestration/flows/*.yaml``,
 compiled onto the voc-workflow/2 step's ``params.assert``). Each check reads the step's recorded outputs (a
 ``Recorded``: its tasks, the findings and notes written under the agents' keys, the submitted patches, the gate
-records, the broker's host writes, the triage record, the tenets record) and answers pass or fail with one line of detail. No check
+records, the broker's host writes, the triage record, the tenets record, the reviewers' verdicts) and answers pass or fail
+with one line of detail. No check
 reads a model's prose, a summary or a finish: an agent saying it did something is not the record of it.
 
 ``on_fail`` says what a failure means: ``block`` (the default: the step does not pass and the run goes to a person),
@@ -18,7 +19,15 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from engineering.connectors.write_policy import path_refusals
-from engineering.runtime.outputs import TENETS_SCHEMA, TenetsError, tenets_record
+from engineering.runtime.outputs import (
+    COULD_NOT_REVIEW,
+    REQUEST_CHANGES,
+    REVIEW_ROLES,
+    TENETS_SCHEMA,
+    TenetsError,
+    review_verdict,
+    tenets_record,
+)
 from shared.workflow_engineering import ASSERTION_ON_FAIL as ON_FAIL
 
 DEFAULT_ON_FAIL: Final = 'block'
@@ -35,7 +44,7 @@ SEVERITY: Final = re.compile(r'S[1-4]\Z')
 class Recorded:
     """What one step recorded, as the board and the workspace hold it (every field read back, never typed by a model).
 
-    ``findings`` and ``gate_records`` carry the writer's role as ``by``; ``posted`` is ``(for_role, by_role)`` per task
+    ``findings``, ``gate_records`` and ``reviews`` carry the writer's role as ``by``; ``posted`` is ``(for_role, by_role)`` per task
     posted during the step; ``patches`` the submitted patches' text; ``pushes`` ``{branch, tree}`` and
     ``pull_requests`` ``{branch, tree, draft, body}`` the broker's host writes; ``comments`` ``{on, number, body}``;
     ``proposals`` the Learn step's coach proposals, each with its ``expected_case``.
@@ -53,6 +62,8 @@ class Recorded:
     triage: Mapping[str, Any] | None = None
     #: The understander's ``voc-tenets/1`` record (7.52.00, the Tenets flow's ``write_tenets``), None for none.
     tenets: Mapping[str, Any] | None = None
+    #: The reviewers' ``voc-review/1`` records (7.54.00, ``write_review``), each with its writer's role as ``by``.
+    reviews: tuple[Mapping[str, Any], ...] = ()
     proposals: tuple[Mapping[str, Any], ...] = ()
     #: The run's issue number (None: the run has none) and the flow's ``pr`` setting.
     issue: int | None = None
@@ -142,9 +153,24 @@ def _max_lines(recorded: Recorded, args: Mapping[str, Any]) -> Verdict:
 
 
 def _no_blocking(recorded: Recorded, args: Mapping[str, Any]) -> Verdict:
+    """No blocking finding by ``by``; and for a reviewer (7.54.00, ``outputs.REVIEW_ROLES``) a recorded review, none
+    of them ``could_not_review`` or ``request_changes``: zero findings from a review that never happened, or that
+    could not read the change, is no pass (the first live run's commit reviewer, 01M7QXJN02WSFMG92VWWZ00NKB)."""
     by = str(args['by'])
     blocking = [f for f in recorded.findings if f.get('by') == by and f.get('severity') == 'blocking']
-    return not blocking, f'{len(blocking)} blocking finding(s) by the {by}'
+    counted = f'{len(blocking)} blocking finding(s) by the {by}'
+    if by not in REVIEW_ROLES:
+        return not blocking, counted
+    verdicts = [review_verdict(dict(review)) for review in recorded.reviews if review.get('by') == by]
+    if not verdicts:
+        return False, f'the {by} recorded no review: a review that did not happen is no pass ({counted})'
+    unreviewed = [reason for verdict, reason in verdicts if verdict in ('', COULD_NOT_REVIEW)]
+    if unreviewed:
+        return False, (f'the {by} could not review {len(unreviewed)} of {len(verdicts)} change(s): '
+                       f'{unreviewed[0] or "its record is unreadable"}')
+    changes = sum(verdict == REQUEST_CHANGES for verdict, _reason in verdicts)
+    return not blocking and not changes, (f'{counted}; {len(verdicts) - changes} of {len(verdicts)} review(s) '
+                                          'approved')
 
 
 def _record(recorded: Recorded, role: str) -> Mapping[str, Any] | None:
@@ -262,7 +288,8 @@ VOCABULARY: Final[Mapping[str, Check]] = {
     'pr.state_as_flow': Check('every pull request opened ready or as a draft, as the flow\'s pr says', (), _pr_state),
     'push.tree_is_judged_tree': Check('every push is the tree the final go\'s GO names', (), _judged_tree),
     'review.commented': Check('a review comment was posted on the pull request', (), _review_commented),
-    'review.no_blocking': Check('the role named by "by" wrote no blocking finding', ('by',), _no_blocking),
+    'review.no_blocking': Check('the role named by "by" wrote no blocking finding (a reviewer: and recorded its '
+                                'review, never one that could not review)', ('by',), _no_blocking),
     'tasks.posted': Check('at least min tasks were posted for role', ('role', 'min'), _tasks_posted),
     'tenets.recorded': Check('a voc-tenets/1 record of 1-30 tenets, each with an id, a title and a statement', (),
                              _tenets_recorded),

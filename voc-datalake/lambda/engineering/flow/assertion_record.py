@@ -9,7 +9,8 @@ is one more than the people's decisions on it (a person's Resume at its decision
 
 What a check reads is what the board reads back, never what a model said: the step's tasks and the tasks its agents
 posted, the outputs its tasks recorded (their result keys, read through ``read``: the findings' and notes' lines, the
-submitted patches, the gate records, a triage, a tenets draft (7.52.00); never a transcript or a checkpoint), the broker's done writes of the run
+submitted patches, the gate records, a triage, a tenets draft (7.52.00), a reviewer's verdict (7.54.00); never a
+transcript or a checkpoint), the broker's done writes of the run
 (its pushes, pull requests and labels: ``WS#<ws>#WRITES#<run>``), the run's issue and the flow's ``pr``. A check whose
 input the board does not keep (a pull request's body and draft state, a comment, a coach proposal) is recorded
 ``unread``, never guessed. A record is the record only: the conductor does not block on it yet; the run workspace's
@@ -28,6 +29,7 @@ from engineering.flow.conductor import DONE, Plan
 from engineering.orchestration.assertions import Recorded, evaluate, problems
 from engineering.rows import run_pk, string_attr
 from engineering.run_links import writes_pk
+from engineering.runtime.outputs import REVIEW_FILE
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import query_all
 from shared.logging import logger
@@ -57,6 +59,15 @@ def _lines(body: bytes) -> list[dict[str, Any]]:
         if isinstance(line, dict):
             found.append(line)
     return found
+
+
+def _object(body: bytes) -> dict[str, Any]:
+    """A record's JSON object; an empty one for a body that is not (a reviewer's unreadable verdict is no pass)."""
+    try:
+        found = json.loads(body)
+    except ValueError:
+        return {}
+    return found if isinstance(found, dict) else {}
 
 
 def _writes(client: Any, table: str, ws: str, run_id: str) -> list[dict[str, Any]]:
@@ -90,6 +101,7 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
     gates: list[Mapping[str, Any]] = []
     triage: Mapping[str, Any] | None = None
     tenets: Mapping[str, Any] | None = None
+    reviews: list[Mapping[str, Any]] = []
     for task in mine:
         for key in task.result_keys:
             if '/_transcripts/' in key or '/_checkpoints/' in key:
@@ -105,6 +117,8 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
                 triage = json.loads(body)
             elif '/_tenets/' in key:
                 tenets = json.loads(body)
+            elif '/_review/' in key and key.endswith(f'/{REVIEW_FILE}'):
+                reviews.append({**_object(body), 'by': task.role})
             elif key.endswith('.jsonl'):
                 for line in _lines(body):
                     (notes if str(line.get('schema', '')).startswith('voc-note/') else findings).append(
@@ -116,7 +130,7 @@ def recorded(step: str, tasks: Sequence[Task], read: Read, writes: Iterable[Mapp
     labels = tuple(str(label) for w in done if w['op'] == 'label_issue' for label in w.get('labels', ()))
     return Recorded(findings=tuple(findings), notes=tuple(notes), posted=posted, patches=tuple(patches),
                     gate_records=tuple(gates), pushes=pushes, pull_requests=pulls, labels=labels, triage=triage,
-                    tenets=tenets, issue=issue, pr_setting=pr_setting)
+                    tenets=tenets, reviews=tuple(reviews), issue=issue, pr_setting=pr_setting)
 
 
 def results(assertions: Sequence[Mapping[str, Any]], seen: Recorded) -> list[dict[str, str]]:

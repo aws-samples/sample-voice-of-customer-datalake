@@ -13,10 +13,11 @@ from engineering.quality_gate.checks import (
     judge,
     reset_checkout,
     run_plan,
+    stop_reason,
     tool_versions,
     tree_hash,
 )
-from engineering.quality_gate.packs import GatePlan, Needs, Tool
+from engineering.quality_gate.packs import STOPS, GatePlan, Needs, Tool
 from engineering.quality_gate.runner import CommandResult, LocalRunner
 from engineering.quality_gate.test.gate_fakes import TREE, TREE_ARGV, ScriptedRunner, check, one_check_plan
 
@@ -72,6 +73,29 @@ class TestRunPlan:
         assert [(r.status, r.reason) for r in run.results] == [
             ('fail', 'exit 1'), ('fail', 'not run: setup step "npm ci" failed')]
         assert runner.ran(['make', 'test']) == 0
+
+
+class TestStopReason:
+    """7.54.00: the gate's own reason to stop when no check judged the code (a stop goes to a person; only a NO-GO,
+    a check that failed on the code, starts a revision round)."""
+
+    def test_a_failed_setup_an_empty_plan_and_only_missing_tools_stop_the_gate(self):
+        setup = check('pip install', ('pip', 'install'), kind='setup')
+        plan = one_check_plan(setup, check())
+        assert stop_reason(plan, run_plan(plan, ScriptedRunner({('pip', 'install'): [_result(1)]}))) == 'setup_failed'
+        empty = GatePlan(checks=(), packs=('python',))
+        assert stop_reason(empty, run_plan(empty, ScriptedRunner())) == 'nothing_checked'
+        missing = ScriptedRunner({('make', 'test'): [_result(None, missing=True)]})
+        assert stop_reason(one_check_plan(), run_plan(one_check_plan(), missing)) == 'tool_missing'
+        assert set(STOPS) == {'setup_failed', 'nothing_checked', 'tool_missing'}
+
+    def test_a_check_that_failed_on_the_code_or_a_green_gate_is_no_stop(self):
+        assert stop_reason(one_check_plan(), run_plan(one_check_plan(), ScriptedRunner({
+            ('make', 'test'): [_result(1)]}))) == ''
+        assert stop_reason(one_check_plan(), run_plan(one_check_plan(), ScriptedRunner())) == ''
+        mixed = one_check_plan(check(), check('lint', ('make', 'lint'), kind='lint'))
+        assert stop_reason(mixed, run_plan(mixed, ScriptedRunner({('make', 'test'): [_result(1)], ('make', 'lint'): [
+            _result(None, missing=True)]}))) == ''
 
 
 class TestToolVersions:

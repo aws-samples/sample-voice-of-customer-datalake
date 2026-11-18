@@ -20,6 +20,7 @@ import time
 from typing import Any, Final
 
 from engineering.runtime.harness.interface import AgentSession, Ending
+from engineering.runtime.harness.review_tools import opening_parts
 from engineering.runtime.harness.skills import SKILLS, Skill, platform_rules
 from engineering.runtime.harness.tools import AgentContext, bedrock_tools
 
@@ -66,6 +67,8 @@ def opening(session: AgentSession) -> str:
                        '(check what is there before you go on). Why:'),
                       data('patch_refused', session.patch_refused)]
     parts += session.seed_parts()
+    # (7.54.00: the submitted patch a reviewer's or a final go's task names, and how to read it)
+    parts += opening_parts(session.context)
     direction = session.context.direction_note()
     if direction:
         parts += ['', "The run's direction, as the orchestrator set it:", direction]

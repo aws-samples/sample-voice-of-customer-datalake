@@ -183,7 +183,8 @@ class AgentSession:
                                     # and whether the gate's own run made them (run_gate: its packs).
                                     'checks': list(context.checks),
                                     'gate': {'ran': context.gate_ran, 'packs': list(context.gate_packs),
-                                             'tool_versions': dict(context.gate_tool_versions)},
+                                             'tool_versions': dict(context.gate_tool_versions),
+                                             'stop': context.gate_stop},
                                     # The brief, so a continuation needs no claim of a task it holds already.
                                     'brief': {'title': context.brief.title[:500],
                                               'instructions': context.brief.instructions[:MAX_BRIEF],

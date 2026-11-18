@@ -2450,7 +2450,7 @@
         "pr_state_as_flow": "Every pull request opened as the flow says (ready or draft)",
         "push_tree_is_judged_tree": "Every push is the tree the final go judged",
         "review_commented": "A review comment was posted on the pull request",
-        "review_no_blocking": "The role named by \"by\" wrote no blocking finding",
+        "review_no_blocking": "The role named by \"by\" wrote no blocking finding (a reviewer: and recorded a review it could do)",
         "tasks_posted": "At least min tasks were posted for the role",
         "tenets_recorded": "A tenets record of 1 to 30 tenets was recorded",
         "triage_commented": "The triage was commented on the run's issue",
