@@ -16,7 +16,7 @@
  */
 import '@xyflow/react/dist/style.css'
 import './workflowCanvas.css'
-import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, applyNodeChanges, useReactFlow } from '@xyflow/react'
 import { useTranslation } from 'react-i18next'
 import { isEngineeringFlow } from '../../api/workflowsApi'
@@ -236,9 +236,16 @@ function CanvasInner({
     emit(connect(definition, connection.source, connection.target, verdict ?? 'auto'))
   }, [definition, emit])
 
+  // React Flow sends the selection again whenever its onSelectionChange changes (its SelectionListener's effect). A
+  // host's handlers made anew each render (a run's lane opens its session) would then re-apply the same selection on
+  // every render, forever: React Flow is handed one stable handler that calls the host's latest ones.
+  const handlers = useRef({ onSelect, onSelectionChange })
+  useLayoutEffect(() => {
+    handlers.current = { onSelect, onSelectionChange }
+  })
   const handleSelection = useCallback(({ nodes: picked, edges: pickedEdges }: OnSelectionChangeParams) => {
     const ids = picked.map((n) => n.id)
-    onSelectionChange?.({
+    handlers.current.onSelectionChange?.({
       nodeIds: ids.filter(isStepId),
       edgeIds: pickedEdges.map((e) => e.id),
       loopIndexes: ids.flatMap((id) => {
@@ -246,9 +253,9 @@ function CanvasInner({
         return index === null ? [] : [index]
       }),
     })
-    onSelect?.(singleOf(picked, pickedEdges), { keyboard: keyboard.current })
+    handlers.current.onSelect?.(singleOf(picked, pickedEdges), { keyboard: keyboard.current })
     keyboard.current = false
-  }, [onSelect, onSelectionChange])
+  }, [])
 
   const onKeyDown = useCallback((event: KeyboardEvent) => {
     if (event.key !== 'Escape') return
