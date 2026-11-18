@@ -15,7 +15,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from engineering.runtime import egress, unit_runner
+from engineering.runtime import checkout, egress, unit_runner
 from engineering.runtime.interface import AgentSpec, Command, ExecResult, RuntimeRefused, RuntimeSession
 from engineering.runtime.test.local_runtime import LocalAgentRuntime, close_sockets
 from engineering.runtime.unit_runner import (
@@ -28,6 +28,7 @@ from engineering.runtime.unit_runner import (
     EgressProxy,
     Runner,
     client,
+    code_git_env,
     command_env,
     main,
     sandboxed_argv,
@@ -737,6 +738,38 @@ def test_commands_see_only_the_passed_environment_and_only_repository_code_the_t
     assert command_env(source, repository_code=False) == {'PATH': '/bin', 'HOME': '/h'}
     assert command_env(source, repository_code=True) == {'PATH': '/bin', 'HOME': '/h',
                                                          'RUSTUP_HOME': '/opt/voc/cache/rustup'}
+
+
+def test_repository_codes_git_may_read_exactly_the_images_checkout_and_its_git_directory():
+    # The image's paths (the entry point's --workdir /work, checkout.py's names): two exact directories, no wildcard.
+    assert code_git_env('/work') == {
+        'GIT_CONFIG_COUNT': '2',
+        'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': '/work/repo',
+        'GIT_CONFIG_KEY_1': 'safe.directory', 'GIT_CONFIG_VALUE_1': '/work/repo.git',
+        'GIT_OPTIONAL_LOCKS': '0'}
+    assert (checkout.CHECKOUT_DIR, checkout.GIT_DIR) == (unit_runner.CHECKOUT_DIR, unit_runner.GIT_DIR)
+
+
+#: Every git variable a command sees, as JSON.
+SHOW_GIT_ENV = "import json, os; print(json.dumps({k: v for k, v in os.environ.items() if k.startswith('GIT_')}))"
+
+
+def test_only_repository_code_is_told_the_checkout_is_safe_and_the_runners_values_win(
+        tmp_path, monkeypatch: pytest.MonkeyPatch):
+    # Whatever git configuration the runner's own environment holds (keys before ours, a count past them, the other
+    # command-line channel, a git directory), none of it reaches a command: only the runner's two keys do.
+    for name, value in {'GIT_CONFIG_COUNT': '3', 'GIT_CONFIG_KEY_0': 'core.fsmonitor', 'GIT_CONFIG_VALUE_0': 'touch x',
+                        'GIT_CONFIG_KEY_2': 'safe.directory', 'GIT_CONFIG_VALUE_2': '*',
+                        'GIT_CONFIG_PARAMETERS': "'safe.directory'='*'", 'GIT_DIR': '/opt/elsewhere.git'}.items():
+        monkeypatch.setenv(name, value)
+    runner = _runner(tmp_path)
+    show = [sys.executable, '-c', SHOW_GIT_ENV]
+    agent = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'repository_code': False}))
+    step = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'network': True}))
+    code = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10}))
+    # The agent's own commands: none (its git names its directory and work tree, checkout.repo_git).
+    assert json.loads(agent['stdout_tail']) == {}
+    assert json.loads(step['stdout_tail']) == json.loads(code['stdout_tail']) == code_git_env(str(tmp_path))
 
 
 def test_the_agents_own_commands_get_its_ids_and_bucket_and_repository_code_none_of_them(

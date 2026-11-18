@@ -82,6 +82,21 @@ get 7.51.01's tooltips.
   `aria-disabled`, saying why in their tooltip and description, translated (`common:adminOnly`; the English
   `ADMIN_ONLY_TITLE` constant is gone): the Enabled switch, Save to Secrets Manager, the breaker's Reset and the
   validation logs' Clear. The native-title ratchet holds 9 titles in 7 files (the flow canvas and the document editor).
+- **Repository code may run read-only git on its checkout** (the batch, the owner's choice; `unit_runner.code_git_env`):
+  a repository's gate script, its tests and tools like setuptools-scm can run `git status`, `diff`, `ls-files`, `log`
+  and `describe` on `/work/repo` as `code`, where every git command exited 128 ("detected dubious ownership": the
+  checkout is the agent's, found in 7.51.03). Repository-code commands only, never the agent's own, get
+  `GIT_CONFIG_COUNT=2` with `safe.directory` set to exactly `/work/repo` and `/work/repo.git` (never a wildcard),
+  which git reads as protected command-line configuration, and `GIT_OPTIONAL_LOCKS=0`; the runner's values win (a
+  command's environment holds no other `GIT_*` variable, and an `/exec` call carries none). The git directory stays
+  closed to `code` (a commit, an add, a ref, a tag or `git config` fails with "Permission denied"), the agent's git
+  still names its git directory and work tree (a `.git` file `code` changes or replaces moves only `code`'s own git),
+  and a repository below the working tree stays refused. `CHECKOUT_DIR` and `GIT_DIR` move to `unit_runner`
+  (`checkout.py` imports them). Proof: the python image built locally, run with `--network none` and no
+  credentials, through its own runner behind the namespace walls: as `code` the five commands exit 0 (128 without
+  the runner's keys) and the five writes fail; as `unit` the checkout and the agent's commands exit 0; a nested
+  repository is refused; `test_engineering_namespaces.py` 11 passed as root (6 passed, 5 skipped as `unit`).
+  [autonomous-engineering.md](docs/autonomous-engineering.md#runtime-one-agentcore-session-per-agent).
 
 ### Removed
 
@@ -100,6 +115,10 @@ get 7.51.01's tooltips.
   the 7.51.0x–7.53.00 notes below say: VocProcessingStack, then VocApiStack, then the frontend).
 - The e2e specs that name Administration's places (inventory, surfaces, boards, workspace admin, modals, …) are updated
   but were not run here (they need a deployment).
+- **Rebuild the four engineering images** (python, node, rust, java) for repository code's read-only git: the runner
+  they ship sets it. The build arguments are unchanged; push each with a new tag and deploy the digests with
+  `-c engineeringImages` ([deployment.md](docs/deployment.md)). Until then sessions run the old runner, where
+  repository code's git still exits 128 on the checkout.
 
 ## [7.53.00] - 2026-11-17
 

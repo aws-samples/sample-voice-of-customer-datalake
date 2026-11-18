@@ -101,6 +101,38 @@ def test_a_repository_planted_in_the_working_tree_is_never_the_agents(tmp_path):
     assert not marker.exists()
 
 
+@pytest.mark.parametrize('how', ['git-file-changed', 'git-directory-planted'])
+def test_a_git_file_repository_code_changes_or_replaces_never_moves_the_agents_git(how):
+    """7.54.00: the working tree's ``.git`` file is the group's to write (repository code's own git follows it), so the
+    agent's git never reads it: pointed at a repository of repository code's, or replaced by one, it changes nothing
+    of what the agent's commands see."""
+    runtime = LocalAgentRuntime()
+    vm = runtime.run(SPEC)
+    commit = _cached_repository(runtime, vm)
+    for command in checkout_commands(commit, [], 0, source=f'file://{vm.endpoint}/cache.git'):
+        _run_command(runtime, vm, command)
+    checkout = os.path.join(vm.endpoint, CHECKOUT_DIR)
+    git = ('git', '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c', 'init.defaultBranch=main')
+    planted = os.path.join(vm.endpoint, 'planted')
+    _run(runtime, vm, *git, 'init', '--quiet', planted)
+    with open(os.path.join(planted, 'other.txt'), 'w') as stream:
+        stream.write('not the task\'s\n')
+    _run(runtime, vm, *git, '-C', planted, 'add', '.')
+    _run(runtime, vm, *git, '-C', planted, 'commit', '--quiet', '-m', 'planted')
+    other = _run(runtime, vm, 'git', '-C', planted, 'rev-parse', 'HEAD').stdout_tail.strip()
+    if how == 'git-file-changed':
+        with open(os.path.join(checkout, '.git'), 'w') as stream:
+            stream.write(f'gitdir: {planted}/.git\n')
+    else:
+        os.remove(os.path.join(checkout, '.git'))
+        os.rename(os.path.join(planted, '.git'), os.path.join(checkout, '.git'))
+    # Repository code's own git now follows what it planted; the agent's reads its own git directory still.
+    assert _run(runtime, vm, 'git', '-C', CHECKOUT_DIR, 'rev-parse', 'HEAD').stdout_tail.strip() == other
+    assert _run(runtime, vm, *repo_git('rev-parse', 'HEAD')).stdout_tail.strip() == commit
+    assert _run(runtime, vm, *repo_git('ls-files')).stdout_tail.split() == ['README.md', 'docs/guide.md',
+                                                                             'src/app.py', 'src/dangling', 'src/up']
+
+
 def test_every_git_command_runs_as_the_agent_with_hooks_pagers_helpers_and_system_config_off():
     clone, *git_commands, share, lock = checkout_commands(COMMIT, ['src', 'lib/core'], 1)
     assert f'--separate-git-dir={GIT_DIR}' in clone.argv

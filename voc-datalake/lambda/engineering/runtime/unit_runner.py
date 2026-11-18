@@ -161,6 +161,11 @@ CODE_HOME: Final = '/home/code'
 #: writable by `code` (the checkout opens only the working tree to the group, checkout.py).
 CODE_UMASK: Final = 0o002
 AGENT_UMASK: Final = 0o022
+#: The checkout, in the runner's working directory (``/work`` in the images; ``checkout.py`` clones it there): its
+#: working tree, and its git directory beside it, never inside it, where repository code could rename it and plant a
+#: repository (and its config) of its own. ``code_git_env`` names exactly these two to repository code's git.
+CHECKOUT_DIR: Final = 'repo'
+GIT_DIR: Final = 'repo.git'
 #: The environment a command gets: no credential of the runner's own (AWS_*, tokens) reaches a build.
 PASSED_ENV: Final = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'JAVA_HOME')
 #: The toolchain homes, in the code-owned /opt/voc/cache: repository code's only. An agent's own command never
@@ -223,6 +228,31 @@ def command_env(source: dict[str, str], *, repository_code: bool) -> dict[str, s
     """The variables of ``source`` a command may see (``PASSED_ENV``, and ``TOOLCHAIN_ENV`` for repository code)."""
     names = (*PASSED_ENV, *TOOLCHAIN_ENV) if repository_code else PASSED_ENV
     return {name: source[name] for name in names if name in source}
+
+
+def code_git_env(workdir: str) -> dict[str, str]:
+    """What repository code's git is told (7.54.00): it may read the checkout (``git status``, ``diff``, ``ls-files``,
+    ``log``: a gate script's, setuptools-scm's), never write it.
+
+    Git refuses a repository its user does not own ("detected dubious ownership"), and the checkout is the agent's
+    (``unit``'s; ``code``, in a user namespace of its own, sees it as the overflow uid's). Exactly the checkout's
+    working tree and its git directory in ``workdir`` are named safe (``safe.directory``, never a wildcard or a prefix:
+    a repository planted below the working tree stays refused), through the environment, which git reads as
+    command-line configuration: the protected kind, which a repository's own config cannot set.
+    ``GIT_OPTIONAL_LOCKS=0`` keeps ``git status`` from trying to refresh the index, which it cannot write. The git
+    directory stays closed to ``code`` (``unit``'s, not group-writable): a commit, a ref or its config is refused. The
+    agent's own git is untouched: it gets none of this, and names its git directory and work tree
+    (``checkout.repo_git``), never reading the working tree's ``.git`` file, which repository code can change.
+
+    The runner's values win, and nothing comes before them: a command's environment is ``command_env``'s named
+    variables (never a ``GIT_*`` one, so no ``GIT_CONFIG_PARAMETERS`` or other keys) and then these, and an ``/exec``
+    body carries no environment at all, so ``GIT_CONFIG_COUNT`` counts these two keys only. What repository code then
+    sets for its own children changes only what its own git trusts, never what the git directory lets it write.
+    """
+    return {'GIT_CONFIG_COUNT': '2',
+            'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': os.path.join(workdir, CHECKOUT_DIR),
+            'GIT_CONFIG_KEY_1': 'safe.directory', 'GIT_CONFIG_VALUE_1': os.path.join(workdir, GIT_DIR),
+            'GIT_OPTIONAL_LOCKS': '0'}
 
 
 @dataclass(frozen=True)
@@ -523,10 +553,12 @@ class Runner:
                 'AWS_CONFIG_FILE': os.path.join(self.secrets_dir, 'aws-config'), 'AWS_SDK_LOAD_CONFIG': '1'}
 
     def _code_env(self, *, network: bool = False) -> dict[str, str]:
-        """What repository code gets beyond PASSED_ENV: its own home in the image (never root's or the agent's), and
-        for the dependency step its own egress proxy (its only way to the registries; never the agent's)."""
+        """What repository code gets beyond PASSED_ENV: its own home in the image (never root's or the agent's), its
+        git's read of the checkout (``code_git_env``), and for the dependency step its own egress proxy (its only way
+        to the registries; never the agent's)."""
         home = {'HOME': CODE_HOME} if self.sandbox else {}
-        return {**home, **(CODE_PROXY_ENV if network and self.code_proxy is not None else {})}
+        proxy = CODE_PROXY_ENV if network and self.code_proxy is not None else {}
+        return {**home, **code_git_env(self.workdir), **proxy}
 
     def begin(self, body: dict[str, Any]) -> dict[str, Any]:
         """The session's ``start``: the agent's ids (``AGENT_ENV`` only, plain values), its own egress allowlist

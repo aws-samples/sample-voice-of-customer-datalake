@@ -15,7 +15,9 @@ monitor, pagers, external diff tools, credential helpers, terminal prompts and t
 nothing the repository planted runs as the agent. The git directory lives beside the working tree
 (``/work/repo.git``, the agent's: ``/work`` is not group-writable), is made read-only to the ``work`` group,
 and every agent git command names it (``repo_git``), so repository code (the ``code`` user) can change the
-working tree but neither the git directory nor which one the agent's git reads.
+working tree but neither the git directory nor which one the agent's git reads. Repository code's own git may read the
+checkout (7.54.00: the runner names exactly these two directories safe for it, ``unit_runner.code_git_env``), and
+still writes nothing in the git directory.
 """
 from __future__ import annotations
 
@@ -25,15 +27,16 @@ from collections.abc import Sequence
 from typing import Final
 
 from engineering.runtime.interface import Command, RuntimeRefused
-from engineering.runtime.unit_runner import MOUNT_POINT
+from engineering.runtime.unit_runner import CHECKOUT_DIR, GIT_DIR, MOUNT_POINT
+
+# CHECKOUT_DIR and GIT_DIR, the working tree and its git directory relative to the agent's working directory (``/work``
+# in the images), are the runner's names, which it also names safe to repository code's git (``code_git_env``).
 
 #: The cache's entries as the session sees them: ``<commit>/g<N>/repo.git`` under the mounted connection prefix
 #: (``engineering/connectors/cache_layout.py``).
 CACHE_ROOT: Final = f'file://{MOUNT_POINT}'
 #: The largest cache generation (14 days each: far past any clock this code will run under).
 MAX_GENERATION: Final = 99_999
-#: Relative to the agent's working directory (``/work`` in the images).
-CHECKOUT_DIR: Final = 'repo'
 CLONE_TIMEOUT_SECONDS: Final = 30 * 60
 MAX_SPARSE_PATHS: Final = 200
 COMMIT_RE: Final = re.compile(r'^[0-9a-f]{40}([0-9a-f]{24})?\Z')
@@ -55,9 +58,6 @@ GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', 
 #: ``chmod`` from the system's own directories only (never the agent's PATH, which may hold a directory the `code` user
 #: can write): ``/usr/bin/chmod`` in the images (Debian), ``/bin/chmod`` on macOS, where the tests run the commands too.
 CHMOD: Final = shutil.which('chmod', path='/usr/bin:/bin') or '/usr/bin/chmod'
-#: The checkout's git directory: beside the working tree in /work (the agent's, not writable by the group), never
-#: inside it, where repository code could rename it and plant a repository (and its config) of its own.
-GIT_DIR: Final = 'repo.git'
 
 
 def repo_git(*args: str) -> tuple[str, ...]:

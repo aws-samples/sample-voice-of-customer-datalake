@@ -6,10 +6,14 @@ unprivileged user namespaces) every test is skipped, saying why. The image's too
 (util-linux's unshare and setpriv, iproute2's ip): a host without them skips too.
 
 Each test runs the wrapper as this test's own user: the drop to ``unit`` or ``code`` before it is root's, and is
-pinned by the argv tests (test_engineering_local_runtime.py) and the walls' harness (test_engineering_walls.py).
+pinned by the argv tests (test_engineering_local_runtime.py) and the walls' harness (test_engineering_walls.py). The
+checkout's tests of both users (7.54.00: repository code's read-only git) drive the runner itself, as root drops each
+command to its user in the image: they need root and the image's users, and skip elsewhere.
 """
+import grp
 import json
 import os
+import pwd
 import shutil
 import socket
 import socketserver
@@ -17,7 +21,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -252,3 +258,164 @@ def test_the_agents_checkout_refuses_a_cache_another_uid_owns_as_dubious(tmp_pat
     ran = _as_agent(clone.argv, work)
     assert ran.returncode == 128
     assert 'detected dubious ownership' in ran.stderr
+
+
+def _why_not_as_the_image() -> str:
+    """Why the runner cannot drop commands to the image's two users here ('' when it can)."""
+    if os.geteuid() != 0:
+        return 'the runner drops each command to `unit` or `code`, which needs root (as the image\'s entry point is)'
+    try:
+        for user in ('unit', 'code'):
+            pwd.getpwnam(user)
+        grp.getgrnam('work')
+    except KeyError:
+        return 'the image\'s users (`unit` and `code`, in the group `work`) are not on this host'
+    return ''
+
+
+AS_THE_IMAGE = _why_not_as_the_image()
+
+
+@dataclass(frozen=True)
+class ImageCheckout:
+    """A runner as the image's (sandbox on, the namespace walls), its working directory and the commit checked out."""
+
+    runner: unit_runner.Runner
+    work: Path
+    commit: str
+
+    def run(self, argv: tuple[str, ...], *, repository_code: bool) -> dict:
+        """``argv`` through the runner, as ``code`` (repository code) or ``unit`` (the agent): its result."""
+        exec_id = self.runner.start({'argv': list(argv), 'timeout_seconds': 120, 'repository_code': repository_code})
+        deadline = time.monotonic() + 120
+        while (result := self.runner.poll(exec_id)) is None:
+            assert time.monotonic() < deadline, argv
+            time.sleep(0.05)
+        return result
+
+    def code(self, *argv: str) -> dict:
+        return self.run(argv, repository_code=True)
+
+    def agent(self, *argv: str) -> dict:
+        return self.run(argv, repository_code=False)
+
+
+def _own(path: str | Path, user: str) -> None:
+    os.lchown(path, pwd.getpwnam(user).pw_uid, grp.getgrnam('work').gr_gid)
+
+
+@pytest.fixture
+def image_checkout() -> Iterator[ImageCheckout]:
+    """The image's layout in a directory of its own: a working directory like ``/work`` (``unit``'s, group ``work``, not
+    group-writable), the cache's entry as its mount shows it (``unit``'s, 7.51.03), a runner over them behind the
+    namespace walls, and the agent's checkout of ``pkg`` made through it, every step exiting 0."""
+    if AS_THE_IMAGE:
+        pytest.skip(AS_THE_IMAGE)
+    base = Path(tempfile.mkdtemp(prefix='voc-checkout-', dir='/tmp'))
+    runner: unit_runner.Runner | None = None
+    try:
+        os.chmod(base, 0o755)  # noqa: S103 - traversable by both users, as / is: only its subdirectories are theirs
+        entry, commit = _cache_entry(base)
+        for root, directories, files in os.walk(base / 'cache'):
+            for name in (root, *(os.path.join(root, found) for found in (*directories, *files))):
+                _own(name, 'unit')
+        work, home = base / 'work', base / 'unit-home'
+        work.mkdir()
+        home.mkdir(mode=0o700)
+        for made in (work, home):
+            _own(made, 'unit')
+        os.chmod(work, 0o2755)  # noqa: S103 - the image's /work (install-base.sh): never the group's to write
+        (base / 'secrets').mkdir()
+        runner = unit_runner.Runner(
+            str(work), sandbox=True, secrets_dir=str(base / 'secrets'), agent_home=str(home),
+            egress_namespaces=True, code_namespaces=True, hardlink_guard='protected_hardlinks',
+            namespaces=unit_runner.Namespaces(socket_dir=str(base / 'sockets'), forwarder=FORWARDER))
+        assert (runner.walls()['egress'], runner.walls()['code']) == ('namespaces', 'namespaces')
+        session = ImageCheckout(runner, work, commit)
+        for command in checkout.checkout_commands(commit, ['pkg'], 1, source=f'file://{entry}'):
+            ran = session.run(command.argv, repository_code=command.repository_code)
+            assert ran['exit_code'] == 0, ran['stderr_tail']
+        yield session
+    finally:
+        if runner is not None:
+            runner.kill_all()
+        shutil.rmtree(base, ignore_errors=True)
+
+
+IDENTITY = ('-c', 'user.name=Example', '-c', 'user.email=dev@example.org')
+
+
+def test_repository_codes_git_reads_the_checkout_and_writes_nothing_in_its_git_directory(image_checkout: ImageCheckout):
+    """7.54.00: as ``code`` (in a user namespace of its own, where the checkout is the overflow uid's), git's read-only
+    commands work on the agent's checkout, from its root or below it, and without the runner's keys they are refused
+    (7.51.03's finding); every write in the git directory fails, and the agent's own commands see none of them."""
+    session = image_checkout
+    git_dir = session.work / unit_runner.GIT_DIR
+    config = (git_dir / 'config').read_bytes()
+    changed = session.code(sys.executable, '-c', "open('repo/pkg/divide.py', 'a').write('# changed\\n')")
+    assert changed['exit_code'] == 0, changed['stderr_tail']
+    status = session.code(GIT, '-C', 'repo', 'status', '--porcelain')
+    diff = session.code(GIT, '-C', 'repo', 'diff')
+    listed = session.code(GIT, '-C', 'repo', 'ls-files')
+    last = session.code(GIT, '-C', 'repo', 'log', '-1', '--format=%H')
+    below = session.code(GIT, '-C', 'repo/pkg', 'rev-parse', '--show-toplevel')
+    for ran in (status, diff, listed, last, below):
+        assert (ran['exit_code'], ran['stderr_tail']) == (0, ''), ran
+    assert status['stdout_tail'].splitlines() == [' M pkg/divide.py']
+    assert '+# changed' in diff['stdout_tail'].splitlines()
+    assert 'pkg/divide.py' in listed['stdout_tail'].split()
+    assert last['stdout_tail'].strip() == session.commit
+    assert below['stdout_tail'].strip() == str(session.work / unit_runner.CHECKOUT_DIR)
+    # Without the runner's keys git refuses the checkout, as it did before 7.54.00.
+    unnamed = session.code('/usr/bin/env', '-u', 'GIT_CONFIG_COUNT', GIT, '-C', 'repo', 'status')
+    assert (unnamed['exit_code'], 'detected dubious ownership' in unnamed['stderr_tail']) == (128, True), unnamed
+    # Every write in the git directory is refused: the index (a commit, an add), a ref, the config.
+    for write in (('commit', '--quiet', '--all', '-m', 'planted'), ('add', 'pkg/divide.py'),
+                  ('update-ref', 'refs/heads/planted', 'HEAD'), ('config', 'core.fsmonitor', 'touch /tmp/ran')):
+        ran = session.code(GIT, '-C', 'repo', *IDENTITY, *write)
+        assert (ran['exit_code'] != 0, 'Permission denied' in ran['stderr_tail']) == (True, True), (write, ran)
+    assert (git_dir / 'config').read_bytes() == config
+    assert not (git_dir / 'refs' / 'heads' / 'planted').exists()
+    # The agent's own commands pass, and see the file repository code changed and nothing of what it tried.
+    head = session.agent(*checkout.repo_git('rev-parse', 'HEAD'))
+    seen = session.agent(*checkout.repo_git('status', '--porcelain'))
+    assert (head['exit_code'], head['stdout_tail'].strip()) == (0, session.commit), head
+    assert (seen['exit_code'], seen['stdout_tail'].splitlines()) == (0, [' M pkg/divide.py']), seen
+
+
+def test_a_repository_planted_below_the_checkout_stays_refused_to_repository_codes_git(image_checkout: ImageCheckout):
+    """``safe.directory`` names the checkout's two directories exactly, never a prefix: a repository the agent made
+    below the working tree, or one repository code made in a directory of the checkout's (the agent's), is refused."""
+    session = image_checkout
+    made = session.agent(GIT, 'init', '--quiet', 'repo/pkg/nested')
+    assert made['exit_code'] == 0, made['stderr_tail']
+    nested = session.code(GIT, '-C', 'repo/pkg/nested', 'status')
+    assert (nested['exit_code'], 'detected dubious ownership' in nested['stderr_tail']) == (128, True), nested
+    planted = session.code(GIT, 'init', '--quiet', 'repo/pkg')
+    assert planted['exit_code'] == 0, planted['stderr_tail']
+    inside = session.code(GIT, '-C', 'repo/pkg', 'status')
+    assert (inside['exit_code'], 'detected dubious ownership' in inside['stderr_tail']) == (128, True), inside
+
+
+@pytest.mark.parametrize('how', ['git-file-changed', 'git-directory-planted'])
+def test_a_git_file_repository_code_changes_never_moves_the_agents_git(image_checkout: ImageCheckout, how: str):
+    """The working tree's ``.git`` file is the group's to write: repository code's own git follows what it put there,
+    and the agent's never reads it (``checkout.repo_git`` names its git directory and work tree)."""
+    session = image_checkout
+    planted = session.work / unit_runner.CHECKOUT_DIR / 'planted'
+    for argv in ((GIT, 'init', '--quiet', 'repo/planted'),
+                 (GIT, '-C', 'repo/planted', *IDENTITY, 'commit', '--quiet', '--allow-empty', '-m', 'planted')):
+        ran = session.code(*argv)
+        assert ran['exit_code'] == 0, ran['stderr_tail']
+    if how == 'git-file-changed':
+        move = f"open('repo/.git', 'w').write('gitdir: {planted}/.git\\n')"
+    else:
+        move = "import os; os.remove('repo/.git'); os.rename('repo/planted/.git', 'repo/.git')"
+    moved = session.code(sys.executable, '-c', move)
+    assert moved['exit_code'] == 0, moved['stderr_tail']
+    own = session.code(GIT, '-C', 'repo', 'rev-parse', 'HEAD')
+    assert (own['exit_code'], own['stdout_tail'].strip() != session.commit) == (0, True), own
+    for argv in (('rev-parse', 'HEAD'), ('log', '-1', '--format=%H'), ('ls-files', 'pkg')):
+        ran = session.agent(*checkout.repo_git(*argv))
+        assert ran['exit_code'] == 0, ran['stderr_tail']
+        assert ran['stdout_tail'].strip() == ('pkg/divide.py' if argv[0] == 'ls-files' else session.commit)

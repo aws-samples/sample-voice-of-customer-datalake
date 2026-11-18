@@ -2148,6 +2148,33 @@ wait closes.
   included, lands inside the working tree), so repository code can change the working tree but neither the git
   directory nor which one the agent's git reads: a `.git` or a repository it plants in the working tree, with
   its config and filters, is never the agent's.
+- **Repository code's read-only git (7.54.00).** Repository code (as `code`) may run git's read-only commands on the
+  checkout, from the working tree's root or below it: `git status`, `diff`, `ls-files`, `log`, `describe`, as a
+  repository's own gate script or setuptools-scm does. Git refuses a repository its user does not own ("detected
+  dubious ownership"), and the checkout is the agent's (`unit`'s; in `code`'s own user namespace it shows as the
+  overflow uid's), so before 7.54.00 every such command exited 128 (found in 7.51.03). The runner gives
+  repository-code commands, the dependency step included, and never the agent's own, `GIT_CONFIG_COUNT=2` with
+  `safe.directory` set to exactly `/work/repo` and `/work/repo.git` (`unit_runner.code_git_env`: the runner's
+  `CHECKOUT_DIR` and `GIT_DIR`, which `checkout.py` uses too, in its working directory; never a wildcard or a prefix),
+  which git reads as command-line configuration, the protected kind a repository's own config cannot set, and
+  `GIT_OPTIONAL_LOCKS=0`, so `git status` never tries to refresh the index. The runner's values win and nothing comes
+  before them: a command's environment is the runner's named variables (`PASSED_ENV`, `TOOLCHAIN_ENV`: never a `GIT_*`
+  one, so no `GIT_CONFIG_PARAMETERS` and no other keys) and then these, and an `/exec` call carries no environment, so
+  `GIT_CONFIG_COUNT` counts these two keys only; what repository code sets for its own children changes only what its
+  own git trusts. What does not change:
+  - the git directory stays closed to `code` (the agent's, not group-writable, what git writes there 0644 whatever
+    the umask): a commit, an `add`, a ref, a tag or `git config` fails with "Permission denied";
+  - the agent's git: it gets none of these variables, and `repo_git` names `--git-dir` and `--work-tree`, so it never
+    reads the working tree's `.git` file, which `code` can write; pointed at a repository of `code`'s, or replaced by
+    one, it moves only `code`'s own git;
+  - a repository below the working tree (one the agent made at `/work/repo/pkg/nested`, or a `.git` that `code` makes
+    in a directory of the checkout's) is still refused to `code` as "dubious ownership".
+
+  It opens nothing that was closed: `code` could already read the git directory (its files are world-readable, and
+  git given an explicit `--git-dir` skips the ownership check); its file modes were the wall and still are.
+  Pinned by `test_engineering_local_runtime.py` (the variables, the runner's winning, none for the agent),
+  `test_engineering_checkout.py` (a `.git` file changed or replaced) and, run in the image as root,
+  `test_engineering_namespaces.py` (as `code` and `unit` through the runner behind the namespace walls).
 - **The checkout cache (7.05.00).** Its writer is `voc-engineering-cache`
   (`voc-datalake/lambda/engineering/connectors/cache.py`, the layout in `cache_layout.py`; CDK in
   `lib/stacks/engineering-cache.ts`), trusted code that runs no repository code, a container-image Lambda
