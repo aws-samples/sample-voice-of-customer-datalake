@@ -14,6 +14,7 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { FlowInspector } from '../../../components/WorkflowEditor/FlowInspector'
 import { useDollars } from './useDollars'
+import { useModelChoiceText } from '../modelChoiceText'
 import { GateTab } from './GateTab'
 import { laneLabel, laneState } from './runLanes'
 import { runPhase } from './agentStatus'
@@ -40,13 +41,14 @@ function LaneRow({ lane, agent, state, onOpen }: Readonly<{
   const dollars = useDollars()
   const cost = agent?.cost_usd ?? null
   const skill = agent?.skill_label ?? null
+  const model = useModelChoiceText()
   const opened = lane.agent
   return (
     <li className="flex flex-wrap items-center gap-2 text-[13px]">
       <span className="min-w-0 flex-1 truncate font-medium text-text-strong">{laneLabel(lane)}</span>
       <span className={LANE_TONE[state] ?? 'badge badge-muted'}>{t(`run.laneStates.${state}`)}</span>
       {cost !== null && <span className="text-[12px] text-muted">{dollars(cost)}</span>}
-      {skill !== null && <span className="w-full text-[12px] text-muted">{t('inspector.run.ran', { skill, model: agent?.model ?? '' })}</span>}
+      {skill !== null && <span className="w-full text-[12px] text-muted">{t('inspector.run.ran', { skill, model: agent === undefined ? '—' : model.agent(agent) ?? '—' })}</span>}
       {opened !== null && (
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpen(opened)}>{t('runWorkspace.flow.openSession')}</button>
       )}

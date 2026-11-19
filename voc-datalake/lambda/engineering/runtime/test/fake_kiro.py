@@ -13,7 +13,9 @@ completion; ``finish: true`` writes the tool server's ``finished`` file, ``notes
 (a ``tool_call`` and a permission request with Kiro's four options, its outcome logged), ``fs`` (an ``fs/read_text_file``
 request the client never offered), ``hold`` (until a cancel or the next prompt: ``cancelled``), ``stop`` (the stop
 reason, ``end_turn`` by default), ``exit`` (ends the process mid-turn); ``refuse_mode`` (answers another agent);
-``load_session`` (false: no ``loadSession`` capability). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
+``load_session`` (false: no ``loadSession`` capability); 7.58.00: ``model`` (the session's model at the start),
+``models`` (the ones the account offers), ``model_groups`` (listed in a group), ``model_refuse`` (an error for a model
+set) and ``model_answer`` (another model said to be current). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
 """
 from __future__ import annotations
 
@@ -25,6 +27,8 @@ import threading
 from typing import Any
 
 SESSIONS = os.path.join('.kiro', 'sessions', 'ws')
+#: The models a scenario's account offers unless it names its own (``models``), as kiro-cli 3.4.0 lists some of them.
+DEFAULT_MODELS = ['auto', 'claude-opus-5.5', 'claude-sonnet-5.5', 'claude-haiku-5.5', 'claude-sonnet-4.5']
 
 
 class Fake:
@@ -36,6 +40,8 @@ class Fake:
         self.next_id = 1000
         self.home = os.environ['HOME']
         self.session_id = ''
+        self.mode = ''
+        self.model = str(scenario.get('model', 'claude-sonnet-4.5'))
         self.configs: dict[str, dict[str, Any]] = {}
         agents = os.path.join(self.home, '.kiro', 'agents')
         for name in sorted(os.listdir(agents)) if os.path.isdir(agents) else []:
@@ -70,6 +76,37 @@ class Fake:
 
     def error(self, ident: Any, message: str, code: int = -32603) -> None:
         self.send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': code, 'message': message}})
+
+    def options(self) -> dict[str, Any]:
+        """The session's config options as kiro-cli answers ``set_config_option``: the mode, and the model with the
+        ones the account offers (7.58.00, ``models``; grouped as ACP allows when ``model_groups``)."""
+        offered = [{'value': value, 'name': value} for value in self.scenario.get('models', DEFAULT_MODELS)]
+        listed: list[dict[str, Any]] = ([{'group': 'claude', 'name': 'Claude', 'options': offered}]
+                                        if self.scenario.get('model_groups') else offered)
+        return {'configOptions': [{'id': 'mode', 'currentValue': self.mode},
+                                  {'id': 'model', 'currentValue': self.model, 'options': listed}]}
+
+    def set_option(self, ident: Any, params: dict[str, Any]) -> None:
+        """``set_config_option``: the mode (a ``.kiro/agents`` agent; ``refuse_mode`` answers another), or the model."""
+        wanted = params.get('value')
+        if params.get('configId') == 'model':
+            self.set_model(ident, str(wanted))
+            return
+        self.mode = 'vibe' if self.scenario.get('refuse_mode') or wanted not in self.configs else str(wanted)
+        self.answer(ident, self.options())
+
+    def set_model(self, ident: Any, wanted: str) -> None:
+        """``set_config_option {configId: model}`` (7.58.00): ``model_refuse`` answers an error, ``model_answer`` says
+        another model is current; else a model the account offers becomes the session's, one it does not is ignored
+        (the current one stays, as kiro-cli keeps its model when it cannot set another)."""
+        if self.scenario.get('model_refuse'):
+            self.error(ident, str(self.scenario['model_refuse']))
+            return
+        if self.scenario.get('model_answer'):
+            self.model = str(self.scenario['model_answer'])
+        elif wanted in self.scenario.get('models', DEFAULT_MODELS):
+            self.model = wanted
+        self.answer(ident, self.options())
 
     def store(self, kind: str, text: str) -> None:
         folder = os.path.join(self.home, SESSIONS, self.session_id)
@@ -109,10 +146,7 @@ class Fake:
             elif method == 'session/load':
                 self.load(ident, params)
             elif method == 'session/set_config_option':
-                wanted = params.get('value')
-                current = 'vibe' if self.scenario.get('refuse_mode') or wanted not in self.configs else wanted
-                self.answer(ident, {'configOptions': [{'id': 'mode', 'currentValue': current},
-                                                      {'id': 'model', 'currentValue': 'claude-sonnet-4.5'}]})
+                self.set_option(ident, params)
             elif method == 'session/prompt':
                 ended = self.prompt(ident, params, pending)
                 if ended == 'exit':

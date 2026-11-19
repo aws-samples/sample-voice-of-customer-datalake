@@ -1,6 +1,6 @@
 /**
  * @fileoverview The inspector's Cost tab (7.51.00): what the open agent used (its cost at its tokens' prices, its
- * model, skill, attempt and commit), its session as the supervisor keeps it (step, MicroVM, heartbeat, last progress,
+ * model with its harness (7.58.00), skill, attempt and commit), its session as the supervisor keeps it (step, MicroVM, heartbeat, last progress,
  * start, MicroVM time and tokens per model: the run monitor's agent card), and every agent of the run beside it,
  * costliest first, from the overview.
  *
@@ -9,6 +9,7 @@
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { AgentFacts } from '../EngineeringRunPanels'
+import { useModelChoiceText } from '../modelChoiceText'
 import type { EngineeringAgent } from '../../../api/engineeringRunsApi'
 
 function useCostText(): (value: number | null) => string {
@@ -17,12 +18,18 @@ function useCostText(): (value: number | null) => string {
   return (value) => (value === null ? '—' : format.format(value))
 }
 
+/** (7.58.00) Its model in words and harness, then the id its launch asked for ("Opus 5.5 · Kiro (claude-opus-5.5)"). */
+function modelFact(said: string | null, agent: EngineeringAgent): string {
+  return said === null || agent.model === null ? '—' : `${said} (${agent.model})`
+}
+
 function AgentUse({ agent, readAt }: Readonly<{ agent: EngineeringAgent; readAt: number }>) {
   const { t } = useTranslation('agents')
   const usd = useCostText()
+  const model = useModelChoiceText()
   const facts: [string, string][] = [
     [t('runWorkspace.cost.cost'), usd(agent.cost_usd)],
-    [t('runWorkspace.cost.model'), agent.model ?? '—'],
+    [t('runWorkspace.cost.model'), modelFact(model.agent(agent), agent)],
     [t('runWorkspace.cost.skill'), agent.skill_label ?? '—'],
     [t('runWorkspace.cost.attempt'), String(agent.attempt)],
     [t('runWorkspace.cost.commit'), agent.commit === null ? '—' : agent.commit.slice(0, 12)],

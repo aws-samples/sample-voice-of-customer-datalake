@@ -496,7 +496,11 @@
     },
     "laneAttempt": "{{role}} · próba {{n, number}}",
     "stoppedHere": "Zatrzymano tutaj",
-    "stoppedHereAs": "Zatrzymano tutaj: {{state}}"
+    "stoppedHereAs": "Zatrzymano tutaj: {{state}}",
+    "model": {
+      "label": "Model dla tego przebiegu",
+      "default": "Własny model każdej roli"
+    }
   },
   "editor": {
     "methodology": {
@@ -732,6 +736,7 @@
     },
     "budget": "Jego miesięczny budżet to budżet przepływu: {{amount}}.",
     "noBudget": "Przepływ nie ma miesięcznego budżetu.",
+    "modelNote": "Start przebiegu zapisuje jego model; wznowienie lub ponowne uruchomienie przebiegu go zachowuje.",
     "submit": "Uruchom przebieg",
     "openRun": "Otwórz przebieg",
     "mayHaveStarted": "Przebieg mógł zostać uruchomiony: sprawdź listę przebiegów, zanim uruchomisz kolejny.",
@@ -2327,7 +2332,8 @@
       "child": {
         "resume": "Wznowiony jako przebieg",
         "restart": "Uruchomiony ponownie jako przebieg"
-      }
+      },
+      "model": "Model dla tego przebiegu: {{model}} (każda rola)"
     },
     "inspector": {
       "label": "Inspektor",
@@ -2951,6 +2957,25 @@
         "capShape": "Limit to liczba całkowita większa od 0.",
         "capOver": "Limit jest najwyżej taki jak w szablonie."
       }
+    },
+    "model": {
+      "title": "Model",
+      "label": "Model, na którym działa ta rola",
+      "default": "Domyślny model roli ({{model}})",
+      "roleDefault": "domyślny model roli",
+      "runsKiro": "To wdrożenie uruchamia rolę w Kiro: działa na {{model}} ({{id}}).",
+      "runsKiroAuto": "To wdrożenie uruchamia rolę w Kiro: Kiro wybiera jej model dla każdego zadania.",
+      "kiroStops": "Jeśli Kiro nie może użyć tego modelu na tym koncie, krok zatrzymuje się dla osoby i mówi dlaczego.",
+      "runsNative": "To wdrożenie uruchamia rolę na natywnym harnessie (Amazon Bedrock): działa na {{model}} ({{id}}).",
+      "nextRun": "Start przebiegu zapisuje modele, więc zmiana obowiązuje od następnego przebiegu; przebieg uruchomiony z własnym modelem uruchamia na nim każdą rolę.",
+      "changed": "Zmienione przez {{who}}, {{at}}.",
+      "template": "Jej szablon wskazuje {{model}}.",
+      "save": "Zapisz model",
+      "saved": "Zapisano.",
+      "failed": "Nie udało się zapisać modelu. Spróbuj ponownie.",
+      "refused": "Nie zapisano: {{message}}",
+      "madeCard": "Działa na modelu swojej roli: {{model}}.",
+      "chosen": "model: {{model}}"
     }
   },
   "gates": {
@@ -3114,6 +3139,39 @@
       "statement": "treść",
       "rationale": "uzasadnienie",
       "citations": "cytaty"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "natywny",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (tylko Kiro)",
+      "opus": "Opus 5.5 (Kiro i natywny)",
+      "sonnet": "Sonnet 5.5 (Kiro i natywny)",
+      "haiku": "Haiku 5.5 (Kiro i natywny)",
+      "other": "Inny model…"
+    },
+    "notes": {
+      "auto": "Kiro wybiera model dla każdego zadania. Tylko Kiro: na natywnym harnessie działa domyślny model roli.",
+      "named": "{{model}} na obu harnessach: {{kiro}} w Kiro, {{bedrock}} na natywnym harnessie (Amazon Bedrock).",
+      "other": "Wpisany identyfikator modelu, użyty bez zmian na harnessie, na którym działa rola."
+    },
+    "other": {
+      "label": "Identyfikator modelu",
+      "hint": {
+        "kiro": "Identyfikator modelu Kiro, tak jak wypisuje je `kiro-cli chat --list-models` (np. claude-sonnet-5.5).",
+        "native": "Identyfikator modelu lub profilu wnioskowania Bedrock, który to wdrożenie udostępnia (np. global.anthropic.claude-sonnet-5-5).",
+        "any": "Dla ról w Kiro identyfikator modelu Kiro, tak jak wypisuje je `kiro-cli chat --list-models` (np. claude-sonnet-5.5); dla ról na natywnym harnessie identyfikator modelu Bedrock, który to wdrożenie udostępnia (np. global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Wpisz identyfikator modelu.",
+      "format": "Identyfikator modelu zaczyna się od litery lub cyfry i zawiera tylko litery, cyfry oraz . _ : / - (najwyżej 128 znaków, bez spacji i bez adresu URL).",
+      "notEnabled": "{{id}} nie jest udostępniony w tym wdrożeniu. Administrator dodaje go przez -c engineeringModelPrices (docs/deployment.md)."
     }
   }
 }

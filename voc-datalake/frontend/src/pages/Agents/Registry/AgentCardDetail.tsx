@@ -3,7 +3,7 @@
  * definition list (CardFacts.tsx: its skill version and provenance, a newer template, its model, tools, caps, inputs
  * and outputs, scorecard and spend), a made card's versions and who made each, and its role's source as the
  * repository holds it (CardSource.tsx, gap S: SKILL.md and agent.yaml in the code view, read only). A role's card
- * offers **Create from a skill** on that role.
+ * offers **Create from a skill** on that role, and (7.58.00) the model its role runs on (RoleModelSetting.tsx).
  *
  * @module pages/Agents/Registry/AgentCardDetail
  */
@@ -18,6 +18,7 @@ import { useConfigStore } from '../../../store/configStore'
 import { useSkillFormats } from '../skillFormats'
 import { CardFacts } from './CardFacts'
 import { CardSource } from './CardSource'
+import { RoleModelSetting } from './RoleModelSetting'
 import { useCardTitle } from './cardTitle'
 import { REGISTRY_PATH } from './registryPaths'
 import type { RegistryCard, RegistryCardDetail } from '../../../api/engineeringRegistryApi'
@@ -70,6 +71,7 @@ export function AgentCardDetail({ cardId, connection, search, onCreate }: Readon
       {read.data !== undefined && (
         <>
           <CardFacts card={read.data.card} />
+          <RoleModelSetting card={read.data.card} enabled={read.data.bedrockEnabled} />
           <CardVersions detail={read.data} />
           <CardSource role={read.data.card.base_role} skill={read.data.card.launchable} />
         </>

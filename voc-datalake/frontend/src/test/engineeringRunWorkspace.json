@@ -172,6 +172,10 @@
     "learn_cost_usd": 0.0,
     "cost_cap_usd": 50.0,
     "parent": null,
+    "models": {
+     "choice": null,
+     "roles": {}
+    },
     "manifest": null
    },
    "agents": [
@@ -202,6 +206,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": null,
      "model": "model-large",
+     "harness": "native",
+     "model_choice": null,
      "card": null,
      "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
@@ -235,6 +241,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": "final-go@v1",
      "model": "model-large",
+     "harness": "native",
+     "model_choice": null,
      "card": null,
      "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
@@ -268,6 +276,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": "fixer@v3",
      "model": "model-medium",
+     "harness": "native",
+     "model_choice": null,
      "card": "fixer-careful",
      "card_version": 2,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
@@ -301,6 +311,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": null,
      "model": "model-small",
+     "harness": "native",
+     "model_choice": null,
      "card": null,
      "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",
@@ -407,6 +419,10 @@
     "learn_cost_usd": 0.0,
     "cost_cap_usd": 50.0,
     "parent": null,
+    "models": {
+     "choice": null,
+     "roles": {}
+    },
     "manifest": {
      "key": "ws/default/runs/01JDA0B1C2D3E4F5G6H7J8K9M0/_manifest/v0001.json",
      "version": 1,
@@ -476,6 +492,10 @@
      "mode": "resume",
      "by": "admin-sub",
      "at": "2026-11-17T08:00:00.000000Z"
+    },
+    "models": {
+     "choice": null,
+     "roles": {}
     },
     "manifest": null
    },
@@ -616,6 +636,10 @@
     "learn_cost_usd": 0.0,
     "cost_cap_usd": 50.0,
     "parent": null,
+    "models": {
+     "choice": null,
+     "roles": {}
+    },
     "manifest": null
    },
    "agents": [
@@ -640,6 +664,8 @@
      "commit": "0123456789abcdef0123456789abcdef01234567",
      "skill_label": null,
      "model": "model-large",
+     "harness": "native",
+     "model_choice": null,
      "card": null,
      "card_version": null,
      "transcript_cursor": "eyJ0IjoxLCJ2IjoxfQ",

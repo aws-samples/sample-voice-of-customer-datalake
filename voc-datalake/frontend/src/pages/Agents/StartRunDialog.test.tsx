@@ -152,3 +152,42 @@ describe('the Start a run dialog', () => {
     expect([onClose.mock.calls.length, starts().length]).toStrictEqual([2, 0])
   })
 })
+
+describe('the Start a run dialog\'s model for this run (7.58.00)', () => {
+  const started = () => ({ run: { run_id: RUN_ID, status: 'active' } })
+
+  it('starts on each role\'s own model unless one is chosen for every role, as Run now', async () => {
+    const start = vi.fn((_body: unknown) => started())
+    const { router, dialog } = renderDialog(start)
+    const field = within(dialog).getByLabelText('Model for this run')
+    expect(field).toHaveDisplayValue('Each role\'s own model')
+    expect(within(dialog).getByText('The run\'s start records its model; a Resume or a Restart of the run keeps it.'))
+      .toBeInTheDocument()
+    await fill(dialog, {})
+    await userEvent.selectOptions(field, 'opus')
+    await submit(dialog)
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/agents/engineering/${RUN_ID}`))
+    expect(start.mock.calls).toStrictEqual([[{ workflow_id: 'wf_1', connection: 'conn-storefront', commit: COMMIT,
+      language: 'python', goal: 'Fix the paging bugs', model: 'opus' }]])
+  })
+
+  it('shows the model id field only for Other model…, and holds the start until the id has its shape', async () => {
+    const start = vi.fn((_body: unknown) => started())
+    const { dialog } = renderDialog(start)
+    const hidden = within(dialog).queryByLabelText('Model ID')
+    await fill(dialog, {})
+    await userEvent.selectOptions(within(dialog).getByLabelText('Model for this run'), 'other')
+    const id = within(dialog).getByLabelText('Model ID')
+    await submit(dialog)
+    const sentWithNoId = starts().length
+    await userEvent.type(id, 'https://example.com/model')
+    const marked = id.getAttribute('aria-invalid')
+    await submit(dialog)
+    expect([hidden, sentWithNoId, marked, starts().length]).toStrictEqual([null, 0, 'true', 0])
+    await userEvent.clear(id)
+    await userEvent.type(id, 'claude-sonnet-4.5')
+    await submit(dialog)
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+    expect(start.mock.calls[0]?.[0]).toMatchObject({ model: 'claude-sonnet-4.5' })
+  })
+})

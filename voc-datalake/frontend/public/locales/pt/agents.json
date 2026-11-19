@@ -460,7 +460,11 @@
     },
     "laneAttempt": "{{role}} · tentativa {{n, number}}",
     "stoppedHere": "Parou aqui",
-    "stoppedHereAs": "Parou aqui: {{state}}"
+    "stoppedHereAs": "Parou aqui: {{state}}",
+    "model": {
+      "label": "Modelo desta execução",
+      "default": "O modelo próprio de cada papel"
+    }
   },
   "editor": {
     "methodology": {
@@ -849,6 +853,7 @@
     },
     "budget": "O orçamento mensal é o do fluxo: {{amount}}.",
     "noBudget": "O fluxo não tem orçamento mensal.",
+    "modelNote": "O início da execução regista o seu modelo; retomar ou reiniciar a execução mantém-no.",
     "submit": "Iniciar a execução",
     "openRun": "Abrir a execução",
     "mayHaveStarted": "A execução pode ter sido iniciada: confira a lista de execuções antes de iniciar outra.",
@@ -2265,7 +2270,8 @@
       "child": {
         "resume": "Retomada como a execução",
         "restart": "Reiniciada como a execução"
-      }
+      },
+      "model": "Modelo desta execução: {{model}} (todos os papéis)"
     },
     "inspector": {
       "label": "Inspetor",
@@ -2879,6 +2885,25 @@
         "capShape": "Um limite é um número inteiro maior do que 0.",
         "capOver": "Um limite é no máximo o do modelo."
       }
+    },
+    "model": {
+      "title": "Modelo",
+      "label": "O modelo em que este papel roda",
+      "default": "Padrão do papel ({{model}})",
+      "roleDefault": "o padrão do papel",
+      "runsKiro": "Esta implantação roda o papel no Kiro: ele roda em {{model}} ({{id}}).",
+      "runsKiroAuto": "Esta implantação roda o papel no Kiro: o Kiro escolhe o modelo dele a cada tarefa.",
+      "kiroStops": "Se o Kiro não puder usar esse modelo nesta conta, a etapa para para uma pessoa e diz o motivo.",
+      "runsNative": "Esta implantação roda o papel no harness nativo (Amazon Bedrock): ele roda em {{model}} ({{id}}).",
+      "nextRun": "O início de uma execução registra os modelos, então uma mudança vale a partir da próxima execução; uma execução iniciada com um modelo próprio roda todos os papéis nele.",
+      "changed": "Alterado por {{who}}, {{at}}.",
+      "template": "Seu template indica {{model}}.",
+      "save": "Salvar modelo",
+      "saved": "Salvo.",
+      "failed": "Não foi possível salvar o modelo. Tente de novo.",
+      "refused": "Não salvo: {{message}}",
+      "madeCard": "Roda no modelo do seu papel: {{model}}.",
+      "chosen": "modelo: {{model}}"
     }
   },
   "gates": {
@@ -3042,6 +3067,39 @@
       "statement": "enunciado",
       "rationale": "justificação",
       "citations": "citações"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "nativo",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (só Kiro)",
+      "opus": "Opus 5.5 (Kiro e nativo)",
+      "sonnet": "Sonnet 5.5 (Kiro e nativo)",
+      "haiku": "Haiku 5.5 (Kiro e nativo)",
+      "other": "Outro modelo…"
+    },
+    "notes": {
+      "auto": "O Kiro escolhe o modelo a cada tarefa. Só Kiro: no harness nativo roda o modelo padrão do papel.",
+      "named": "{{model}} nos dois harnesses: {{kiro}} no Kiro, {{bedrock}} no harness nativo (Amazon Bedrock).",
+      "other": "Um ID de modelo que você digita, usado como está no harness em que o papel roda."
+    },
+    "other": {
+      "label": "ID do modelo",
+      "hint": {
+        "kiro": "Um ID de modelo do Kiro, como `kiro-cli chat --list-models` os lista (ex.: claude-sonnet-5.5).",
+        "native": "Um ID de modelo ou de perfil de inferência do Bedrock que esta implantação habilita (ex.: global.anthropic.claude-sonnet-5-5).",
+        "any": "Para papéis no Kiro, um ID de modelo do Kiro como `kiro-cli chat --list-models` os lista (ex.: claude-sonnet-5.5); para papéis no harness nativo, um ID de modelo do Bedrock que esta implantação habilita (ex.: global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Digite um ID de modelo.",
+      "format": "Um ID de modelo começa com uma letra ou um dígito e contém só letras, dígitos e . _ : / - (no máximo 128 caracteres, sem espaços nem URL).",
+      "notEnabled": "{{id}} não está habilitado nesta implantação. Um administrador o adiciona com -c engineeringModelPrices (docs/deployment.md)."
     }
   }
 }

@@ -65,6 +65,7 @@ from engineering.orchestration.compile import (
     LAMBDA_COPY,
     LEARN_CARD,
     Sources,
+    card_kiro_model,
     compile_bundle,
     eval_cases,
     gate_briefs,
@@ -461,6 +462,9 @@ def _kiro_config_problems(where: str, config: Mapping[str, Any], card: Mapping[s
     if _tool_server(config) != list(TOOL_SERVER):
         found.append(f"{where}: its one tool server is the harness's, {SERVER_NAME}: {' '.join(TOOL_SERVER)} "
                      '(cli.TOOL_SERVER)')
+    model = card_kiro_model(card)
+    if config.get('model') != model:
+        found.append(f"{where}: its model is Kiro's name for its card's, {model or '(none: Kiro has no name for it)'}")
     return found
 
 

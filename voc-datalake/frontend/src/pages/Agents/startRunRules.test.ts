@@ -117,4 +117,14 @@ describe('startRunRequest', () => {
     expect(startRunIssues({ ...FORM, issue: ` ${String(MAX_ISSUE_NUMBER)} ` })).toStrictEqual({})
     expect(startRunRequest('wf_1', { ...FORM, issue: ' 42 ' }).issue).toBe(42)
   })
+
+  it('sends the run\'s model only when one was chosen (7.58.00)', () => {
+    expect(startRunRequest('wf_1', FORM, 'opus').model).toBe('opus')
+    expect('model' in startRunRequest('wf_1', FORM, null)).toBe(false)
+    expect('model' in startRunRequest('wf_1', FORM)).toBe(false)
+  })
+
+  it('takes the model as the server does (agents_handler.py _START_OPTIONAL)', () => {
+    expect(read('lambda/api/agents_handler.py')).toMatch(/_START_OPTIONAL = frozenset\(\{'issue', 'model'\}\)/)
+  })
 })

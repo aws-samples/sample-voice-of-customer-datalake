@@ -1,7 +1,8 @@
 /**
  * @fileoverview "Start a run" of a saved engineering flow (`POST /agents/engineering/runs`, administrators): the
  * repository connection, the commit the run starts from, the repository's language, the run's goal and, optionally, the
- * number of the issue it starts from (recorded as given), checked as
+ * number of the issue it starts from (recorded as given) and (7.58.00) one model for every role of the run
+ * (ModelChoiceField.tsx, as Run now's; the run's META records it, a Resume or a Restart keeps it), checked as
  * the server checks them, before anything is sent. The flow's monthly budget is the stored flow's,
  * never set here. On success the run monitor opens on the new run; a refusal (no image for the language, the hard cap
  * with nothing left of the month, a launch still under way) is said in the server's words.
@@ -18,6 +19,8 @@ import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
 import { engineeringRunsApi } from '../../api/engineeringRunsApi'
 import { useActionError } from './engineeringRunText'
+import { ModelChoiceField } from './ModelChoiceField'
+import { draftOf, modelChoiceOf, modelIssue } from './modelChoice'
 import { engineeringRunPagePath, flowRunsPath } from './workflowPaths'
 import { MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRequest } from './startRunRules'
 import type { RunLanguage, StartRunForm, StartRunIssues } from './startRunRules'
@@ -55,9 +58,11 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
   const titleId = useId()
   const [form, setForm] = useState<Required<StartRunForm>>({ connection: '', commit: '', language: 'python', goal: '', issue: '' })
   const [issues, setIssues] = useState<StartRunIssues>({})
+  // (7.58.00: one model for every role of the run, or each role's own; an other id must have its shape first)
+  const [model, setModel] = useState(() => draftOf(null))
   const fields = useRef<Partial<Record<TextKey, HTMLInputElement | HTMLTextAreaElement | null>>>({})
   const start = useMutation({
-    mutationFn: () => engineeringRunsApi.start(startRunRequest(workflow.workflow_id, form)),
+    mutationFn: () => engineeringRunsApi.start(startRunRequest(workflow.workflow_id, form, modelChoiceOf(model))),
     onSuccess: ({ runId }) => { void navigate(engineeringRunPagePath(runId)) },
   })
   const change = (field: keyof StartRunForm) => (value: string) => {
@@ -73,6 +78,7 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
       fields.current[first]?.focus()
       return
     }
+    if (modelIssue(model) !== null) return   // (the model field says what is wrong with it)
     start.mutate()
   }
   const issueText = (field: TextKey) => {
@@ -110,6 +116,9 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
             inputRef={(element) => { fields.current.goal = element }} onChange={change('goal')} />
           <StartRunTextField field="issue" value={form.issue} issue={issueText('issue')}
             inputRef={(element) => { fields.current.issue = element }} onChange={change('issue')} />
+          <ModelChoiceField label={t('run.model.label')} defaultLabel={t('run.model.default')} draft={model} onChange={setModel}
+            harness="any" disabled={start.isPending} />
+          <p className="text-[12px] text-muted">{t('startRun.modelNote')}</p>
           <p className="text-[12px] text-muted">
             {budget === null ? t('startRun.noBudget') : t('startRun.budget', { amount: budget })}
           </p>

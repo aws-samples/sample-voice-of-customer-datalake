@@ -63,6 +63,9 @@ class AgentSession:
     patch_refused: str | None = None
     #: The task's finish ran in another process (the CLI's tool server): the session ended done by it.
     finished_elsewhere: bool = False
+    #: Why the adapter ended the session before its model ran (7.58.00: Kiro did not take the model the launch chose):
+    #: the task goes to a person in these words (``main._finished``); '' for none.
+    stopped_for: str = ''
     #: The messages last handed out and not yet known to have reached the model (``shown``).
     handed: list[InboxMessage] = field(default_factory=list)
     #: The ids of messages the model has had since it last saved its notes: done once it saves them (a

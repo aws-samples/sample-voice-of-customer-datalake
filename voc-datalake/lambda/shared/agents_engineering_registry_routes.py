@@ -1,9 +1,10 @@
 """The Registry, the quality gates, the assertions, a flow's expansion and an automation's pause (7.52.00; included by
 ``api/agents_handler.py``).
 
-    GET  /agents/engineering/registry?connection=&month=        -> {month, connection, cards: [...]}
-    GET  /agents/engineering/registry/<card>?connection=&month= -> {card, versions, events}
+    GET  /agents/engineering/registry?connection=&month=        -> {month, connection, cards: [...], bedrock_enabled}
+    GET  /agents/engineering/registry/<card>?connection=&month= -> {card, versions, events, bedrock_enabled}
     POST /agents/engineering/registry/cards                      -> 201 {card}
+    PUT  /agents/engineering/registry/<role>/model               -> {role, model_choice, updated_at, updated_by}
     GET  /agents/engineering/gates?connection=                   -> {packs, aliases, own_gate, briefs, runners, ...}
     GET  /agents/engineering/gates/briefs/<id>                   -> {id, path, packs, digest, bytes, text}
     GET  /agents/engineering/assertions                          -> {checks, on_fail, default_on_fail, max, roles}
@@ -24,6 +25,12 @@
   model?, caps?, expected_version?}``): its id ``<role>-<slug>``, its model and tools its skill version's (an allowed
   model, tools the role may have), its caps at most the template's; written with its log row in one transaction.
   Its ``node`` is the agent step the Flows palette drops: ``{role, skill_version, model, card}``.
+- **A role's model** (7.58.00, engineering/model_choices.py): every card says its role's model choice in this
+  deployment (``model_choice``, the Registry's; ``template_model_choice``, its template card's; who changed it and
+  when) and the harness the role runs on (``runs_on``: ``native`` or ``kiro``), and the listing the Bedrock models the
+  native harness may run here (``bedrock_enabled``: granted and priced). ``PUT …/registry/<role>/model`` sets it
+  (``{model}``: ``auto``, ``opus``, ``sonnet``, ``haiku``, another model id, or null for the role's default), with its
+  history row (engineering/settings.py ``ROLE_MODELS_KEY``).
 - **The quality gates**: the gate packs' steps (each with its messages and its vacuous-pass rule in words), the
   tools whose versions a gate records, image pins and the owner's briefs, from the orchestration bundle (``gates``),
   with the gate's stop reasons (a code, a text key and the words) and who runs a gate that names nobody
@@ -151,9 +158,11 @@ def _connections() -> list[str]:
                   if row.get('removed') is not True and isinstance(row.get('connection_id'), str))
 
 
-def _role_cards(connection: str, month: str, roles: set[str] | None = None) -> list[dict[str, Any]]:
+def _role_cards(connection: str, month: str, roles: set[str] | None = None,
+                stored: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """Every role's card (a template card whose id is its role, for each role of the bundle: ``roles`` only, when
-    given) for ``connection``'s scope; for the shared scope, with what each stored connection runs of it."""
+    given) for ``connection``'s scope; for the shared scope, with what each stored connection runs of it. Since
+    7.58.00 each says its role's model choice and the harness it runs on (``_with_model``)."""
     from engineering.registry.views import RegistryViews
 
     bundle = engineering_templates.bundle()
@@ -161,9 +170,38 @@ def _role_cards(connection: str, month: str, roles: set[str] | None = None) -> l
     spend = _spend(month)
     views = RegistryViews(*_engineering_client())
     connections = [] if connection else _connections()
-    return [views.role_card(template, connection=connection, gate_packs=packs, spend=spend, month=month,
-                            connections=connections)
+    stored = _role_models() if stored is None else stored
+    return [_with_model(views.role_card(template, connection=connection, gate_packs=packs, spend=spend, month=month,
+                                        connections=connections), stored)
             for template in bundle['agents'] if roles is None or template['id'] in roles]
+
+
+def _role_models() -> Mapping[str, Any]:
+    """Each role's model choice as the Registry holds it (7.58.00: voc-agents' settings row, engineering/settings.py)."""
+    from engineering.settings import read_role_models
+
+    return read_role_models(_agents_table())
+
+
+def _template_choices() -> dict[str, str]:
+    """Each role's template card's model choice (the bundle's ``model_choice``), only the cards that name one."""
+    return {str(template['id']): str(template['model_choice']) for template in engineering_templates.bundle()['agents']
+            if isinstance(template.get('model_choice'), str) and template['model_choice']}
+
+
+def _with_model(card: dict[str, Any], stored: Mapping[str, Any]) -> dict[str, Any]:
+    """A card with its role's model choice (7.58.00, engineering/model_choices.py ``card_fields``: a made card shows its
+    base role's)."""
+    from engineering.model_choices import card_fields
+
+    role = str(card.get('base_role') or card.get('id', ''))
+    return {**card, **card_fields(role, stored, _template_choices().get(role, ''), os.environ)}
+
+
+def _enabled_models() -> list[str]:
+    from engineering.model_choices import enabled_models
+
+    return enabled_models(os.environ)
 
 
 @app.get('/agents/engineering/registry')
@@ -180,8 +218,10 @@ def get_engineering_registry():
 
     def read() -> dict[str, Any]:
         bundle = engineering_templates.bundle()
-        made = [with_skills(card, bundle) for card in RegistryViews(*_engineering_client()).cards()]
-        return {'month': month, 'connection': connection, 'cards': _role_cards(connection, month) + made}
+        stored = _role_models()
+        made = [_with_model(with_skills(card, bundle), stored) for card in RegistryViews(*_engineering_client()).cards()]
+        return {'month': month, 'connection': connection, 'cards': _role_cards(connection, month, stored=stored) + made,
+                'bedrock_enabled': _enabled_models()}
     return _answered(read, 'the Registry could not be read: retry')
 
 
@@ -199,16 +239,54 @@ def get_engineering_registry_card(card: str):
     roles = {template['id'] for template in engineering_templates.bundle()['agents']}
     if card in roles:
         connection, month = _connection(), _month()
-        return _answered(lambda: {'card': _role_cards(connection, month, {card})[0], 'versions': [], 'events': []},
+        return _answered(lambda: {'card': _role_cards(connection, month, {card})[0], 'versions': [], 'events': [],
+                                  'bedrock_enabled': _enabled_models()},
                          'the Registry could not be read: retry')
     if not CARD_ID.fullmatch(card):
         raise NotFoundError(f'the Registry has no card {card[:64]}')
 
     def read() -> dict[str, Any]:
         found, bundle = RegistryViews(*_engineering_client()).card(card), engineering_templates.bundle()
-        return {**found, 'card': with_skills(found['card'], bundle),
-                'versions': [with_skills(version, bundle) for version in found['versions']]}
+        return {**found, 'card': _with_model(with_skills(found['card'], bundle), _role_models()),
+                'versions': [with_skills(version, bundle) for version in found['versions']],
+                'bedrock_enabled': _enabled_models()}
     return _answered(read, 'the Registry could not be read: retry')
+
+
+@app.put('/agents/engineering/registry/<role>/model')
+@tracer.capture_method(capture_response=False)
+def put_engineering_role_model(role: str):
+    """``{model: <choice> | null}`` → ``{role, model_choice, updated_at, updated_by}`` (7.58.00): an administrator sets
+    the model a launchable role runs on in this deployment (``auto``, ``opus``, ``sonnet``, ``haiku`` or another model
+    id; null: its default again), saved with its history row; a run's start records it and its launches apply it.
+    404 for no launchable role; 400 for a choice off its shape, or (the role on the native harness) a Bedrock model
+    this deployment does not grant and price (engineering/model_choices.py)."""
+    _engineering_on()
+    caller = caller_from_event(app.current_event.raw_event)
+    require_admin_caller(caller)
+    from engineering.model_choices import check
+    from engineering.runtime.harness.model_choice import ModelChoiceError
+    from engineering.settings import save_role_model
+
+    launchable = {template['id'] for template in engineering_templates.bundle()['agents']
+                  if template.get('skill') is not None}
+    if role not in launchable:
+        raise NotFoundError(f'the Registry has no launchable role {role[:64]}')
+    body = json_object_body(app)
+    if set(body) != {'model'}:
+        raise ValidationError('the body is {model: auto | opus | sonnet | haiku | <a model id> | null}')
+    try:
+        choice = check(body['model'], [role], os.environ)
+    except ModelChoiceError as refused:
+        raise ValidationError(str(refused)) from None
+    try:
+        saved = save_role_model(_agents_table(), role=role, choice=choice, by=caller.username or caller.subject,
+                                at=datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: a role\'s model could not be saved')
+        raise ServiceUnavailableError('the role\'s model could not be saved: retry') from exc
+    logger.info('engineering: a role\'s model chosen', extra={'role': role, 'model_choice': choice or None})
+    return {'role': role, **saved.view()}
 
 
 @app.post('/agents/engineering/registry/cards')
@@ -255,7 +333,9 @@ def create_engineering_registry_card():
 
     record = _answered(make, 'the card could not be made: retry')
     logger.info('engineering: a Registry card made', extra={'card': record['id'], 'version': record['version']})
-    return _json(201, {'card': with_skills(card_view(record), engineering_templates.bundle())})
+    made = with_skills(card_view(record), engineering_templates.bundle())
+    return _json(201, {'card': _answered(lambda: _with_model(made, _role_models()),
+                                         'the card was made, but could not be read back: read the Registry')})
 
 
 def _newest_gate_record(connection: str) -> dict[str, Any] | None:

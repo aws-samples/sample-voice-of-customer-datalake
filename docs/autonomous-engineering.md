@@ -1755,7 +1755,7 @@ Feature flow, and the commit reviewer flags one that does.
 
 **How a flow starts.** *Built* (6.25.00): an administrator acting for themselves starts a run of a saved engineering
 flow, from the flow's page in the web app (**Start a run**, where `features.engineering` is on) or with
-`POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal, issue?}` (no MCP tool: admin work,
+`POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal, issue?, model?}` (no MCP tool: admin work,
 TENETS.md's tenet 4 row). The Agents API checks each field (a saved `voc-workflow/2` flow; a connection's short id; a
 full commit id of 40 hexadecimal characters; a language with a session image; a goal on one line of at most 500
 characters, credential-shaped text redacted; since 7.09.00 an optional `issue`, the number of the issue the run
@@ -3260,7 +3260,7 @@ harness's own user and network namespace (7.50.03's walls hold for it: its one w
 
 | Control | ACP | Notes |
 | --- | --- | --- |
-| The brief | `initialize` (no `fs`, no `terminal` capability), `session/new {cwd: <home>/work, mcpServers: []}`, `session/set_config_option {configId: mode, value: <role>}`, `session/prompt` with the opening | Refused (a crash) unless Kiro answers that the mode is the role: on any other agent its prompt and rules would not apply. |
+| The brief | `initialize` (no `fs`, no `terminal` capability), `session/new {cwd: <home>/work, mcpServers: []}`, `session/set_config_option {configId: mode, value: <role>}`, since 7.58.00 `session/set_config_option {configId: model, value: <Kiro model>}`, `session/prompt` with the opening | Refused (a crash) unless Kiro answers that the mode is the role: on any other agent its prompt and rules would not apply. The model is the launch's choice, else Kiro's name for the skill's; unless Kiro answers that it is the session's model (`auto`: any), the step ends for a person, never on another model ([Choosing the model](#choosing-the-model-75800)). |
 | Steering: 7.51's `relay_steering` and the run's direction | a `session/prompt` sent mid-turn, its text the session's `<<<STEERING …>>>` blocks below the platform rules | Kiro cancels the running turn (`cancelled`) and goes on with the new prompt, keeping its context (the spike; the fake pins it). Each `steer` event is in the transcript; the message is seen once the prompt is taken, and done once the model saves notes after it (the CLI's rule). |
 | Other inbox messages (answers, notices) | none: they wait for the tool server's next result, as data | As the CLI adapter's. |
 | A person's Stop, a Shut down, a save-and-stop (`signal.pause`) | `session/cancel`, the turn's `cancelled` waited for (30 s), kiro-cli ended, then the checkpoint, exit 75 | A Stop now is still `StopRuntimeSession`. |
@@ -3333,9 +3333,11 @@ kiro-cli and its whole process group (its tool server too) are ended on every wa
 **Readiness (`kiro`).** Advice, as `sandbox`: not needed unless a role of the flow runs on Kiro; then it fails while
 the key is not stored as a SecureString, and while the language's last session had no kiro-cli or another version, and
 is unknown until a session of the image has started (Enable is not refused: a first session is what records the image).
+Since 7.58.00 it names each Kiro role's model and says Kiro checks it when the step's session starts.
 
-**What it does not do yet, and what it costs.** A session's tokens are not counted (Kiro bills its own credits; a
-`usage_update`, when Kiro sends one, is recorded). The code and issue text an agent reads go to the Kiro service.
+**What it does not do yet, and what it costs.** A session's tokens are not counted (Kiro bills its own credits, at a
+rate that differs per model: [Choosing the model](#choosing-the-model-75800); a `usage_update`, when Kiro sends one,
+is recorded). The code and issue text an agent reads go to the Kiro service.
 kiro-cli runs as the agent user, so it could read what the harness can (as the CLI adapter's `claude`): it is offered
 no tool that reads, at a pinned and checked version. **Still needs a live run**: a session on AgentCore Runtime
 starting kiro-cli behind the namespaces, its proxy and the NAT; the key read through SSM with the agent's session;
@@ -3352,7 +3354,9 @@ and every image ships them: the Kiro harness writes each session's agent from it
 They are in Kiro's v3 universal format (one engine reads `tools` and `allowedTools`, the other `permissions.rules`;
 each file has both).
 
-- **What a config holds.** `name` is the role and `description` its card's purpose. `prompt` is the platform rules
+- **What a config holds.** `name` is the role and `description` its card's purpose. Since 7.58.00 `model` is the
+  Kiro model of its card's (its model choice's, else Kiro's name for its `model.id`: `kiro_pin.kiro_model`), so the
+  agent pins it before the session sets it; a session's copy names the session's own. `prompt` is the platform rules
   and then the role's skill, as the harness builds its system prompt, without the session's fence line (a nonce each
   session draws).
 - **Its tools are its card's, all of them the platform's.** `tools` is `["@voc"]`, the harness's tool server, started
@@ -3366,7 +3370,8 @@ each file has both).
 
 **The validator.** It refuses a config that does not parse, that offers anything but `@voc`, allows without asking
 anything beyond its card's tools (an `allowedTools` entry, or an allow rule other than `mcp` on them), or a tool server
-other than the harness's, or whose prompt does not start with the platform rules. When kiro-cli is on `PATH` and the
+other than the harness's, or whose prompt does not start with the platform rules, or (7.58.00) whose `model` is not
+its card's Kiro model. When kiro-cli is on `PATH` and the
 developer's Kiro API key is in `~/.config/voc-kiro/api-key`, it also runs `kiro-cli agent validate --path <file>` on
 each config. kiro-cli runs in a temporary home of its own, with the key as `KIRO_API_KEY`, and the key is never
 printed. Without kiro-cli or the key the validator says it skipped that check: kiro-cli is never required.
@@ -4078,7 +4083,7 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `dial` | yes | the STORED way of working of the person the runs follow (the enabling administrator, else the one asking), against the flow's `requires.dial`; nothing saved fails as "Not set yet: choose AI-assisted or AI-driven for <name>" (7.50.02: a run pushes nothing, whatever the documents' default), a saved Human-driven as Human-driven; the check names the person and each way of working by its name (Human-driven, AI-assisted, AI-driven) | Administration → People, the person's editor (`/admin/people/<username>`); in the Set up dialog, **Set my way of working to AI-driven** (the caller's own) |
 | `budget` | yes | the flow's monthly budget | the flow's Workflow tab |
 | `hard_cap` | | the hard cap's setting and this month's spend of the flow (`warn` while it is off) | Agents → Spend |
-| `bedrock_models` | yes | Bedrock access (`GetFoundationModelAvailability`) of every model the flow's roles run on (their cards' models, a step's own `model`, Learn's) | Model access in the Bedrock console |
+| `bedrock_models` | yes | Bedrock access (`GetFoundationModelAvailability`) of every model the flow's roles run on (their cards' models, since 7.58.00 their model choices' on the native harness, a step's own `model`, Learn's); a chosen model the deployment does not grant and price fails ([Choosing the model](#choosing-the-model-75800)) | Model access in the Bedrock console; another model in Agents → Registry, or its price (`-c engineeringModelPrices`) |
 | `agentcore_quota` | | AgentCore's "Active Session Workloads per Account" (`L-3E5722B2`) against `-c engineeringMaxSessions` | a quota increase, or a lower setting |
 | `memory_setting` | | `-c engineeringBuildMemoryMiB`: 8192 fails in a region whose CloudFormation does not take a runtime's resource configuration | deploy with `0` |
 | `network` | | `-c engineeringAgentNetwork` | name the sessions' private subnets |
@@ -4107,6 +4112,67 @@ for the other agents, the deployment default is set per surface in Administratio
 in its **Models** tab; the engineering agents add the surfaces `eng_mapper`, `eng_worker`, `eng_reviewer`,
 `eng_planner` and `eng_coordinator`. A model not yet in the deployment's Bedrock allowlist is added to it, with its IAM
 ARN, in the change that first uses it.
+
+### Choosing the model (7.58.00)
+
+*Built.* Each role runs on one model in a deployment, on either harness, and a run may name one for all its roles.
+
+**The choices** (`lambda/engineering/runtime/harness/model_choice.py`, `kiro_pin.py`):
+
+| Choice | On Kiro | On the native harness (Bedrock) |
+|---|---|---|
+| Auto | `auto`: Kiro chooses per task | the role's default (its card's `model.id`) |
+| Opus 5.5 | `claude-opus-5.5` | `global.anthropic.claude-opus-5-5` |
+| Sonnet 5.5 | `claude-sonnet-5.5` | `global.anthropic.claude-sonnet-5-5` |
+| Haiku 5.5 | `claude-haiku-5.5` | `global.anthropic.claude-haiku-5-5` |
+| Other model… | the id as typed (a Claude Bedrock id becomes Kiro's name for it) | the id as typed, only if this deployment grants and prices it |
+
+An "Other" id is letters, digits and `._:/-`, at most 128 characters, with no space and no `//` (never a URL), checked
+in the card's schema, the API and the app. A Kiro id is any id Kiro's model service takes, as `kiro-cli chat
+--list-models` lists them; which ones an account offers depends on the account, and Kiro says so only to a session.
+
+**Where a choice lives, and which one a launch takes.** In this order, the first that names one:
+
+1. the run's (**Model for this run** in Run now and in a flow's **Start a run**, `POST /agents/engineering/runs`
+   `model`: one model for every role; recorded on the run's `META` as `model_choice`, and kept by a Resume or a
+   Restart, which is a child run);
+2. the role's in this deployment (Agents → Registry → the role's card → **Model**, an administrator's,
+   `PUT /agents/engineering/registry/<role>/model`; one `SETTINGS#engineering` / `ROLE_MODELS` row in `voc-agents`
+   with a create-only history row per change, read at each run's first start and recorded on its `META` as
+   `role_models`, so a run keeps the models it started with);
+3. the role's card in the templates (`agents/<role>/agent.yaml` `model.choice`, one of the four named choices, or
+   `model.other`, another id; never both; the bundle carries it as the agent's `model_choice`). No shipped card names
+   one.
+
+With none, a native session runs its skill's model (`model.id`, as before), and a Kiro session runs Kiro's name for it
+(`global.anthropic.claude-sonnet-5-5` is `claude-sonnet-5.5`). The launch puts the model on its argv (`--model` on
+the native harness, `--kiro-model` on Kiro: `runtime/harness_switch.py` `with_model`) and on the agent's session row
+(`model`, and `model_choice` when one applied), which the run page shows for each step, with its harness.
+
+**Least privilege on Bedrock.** The native harness runs only a model the deployment both grants (the agents' roles
+get the Claude allowlist, `shared/model_config.py` `ALLOWED_MODEL_IDS`, `lib/utils/claude-model-grant.ts`) and
+prices (`caps.DEFAULT_TOKEN_PRICES` and `-c engineeringModelPrices`), so the cost caps can count it and no grant is
+widened for it. A choice outside that set is refused when it is saved (the Agents API reads the same price setting,
+`ENGINEERING_MODEL_PRICES`), at the run's start (before anything is written) and at each launch, saying "‹id› isn't
+enabled in this deployment. An admin adds it with -c engineeringModelPrices (docs/deployment.md)." Adding a price
+for a model the allowlist does not hold does not grant it: that is a release's change.
+
+**On Kiro, never another model.** A Kiro session always asks for its model: it is in the session's agent config and
+the compiled ones (`model`), and after the mode the harness sets it (`session/set_config_option {configId: model}`)
+and checks Kiro's answer. If Kiro refuses it, does not offer it on the account or answers another model, the step
+ends for a person (its task to `needs_human`, the run coordinator's as a crash) with "Kiro could not use ‹wanted›
+for the ‹role› (it answered ‹current or none›). Choose another model in the role's setup or for this run.", and a
+model Kiro has no name for stops the step before kiro-cli starts ("‹id› has no Kiro name; choose a Kiro model for
+this role."); `auto` takes whichever model Kiro picks. The owner's rule: nobody pays for a model they did not pick.
+
+**Readiness.** `bedrock_models` checks the models the native roles' choices name (and fails, as a required check,
+on one the deployment does not grant and price); `kiro` names each Kiro role's model and says Kiro checks it when
+the step's session starts (readiness reads no Kiro session, so it cannot see what the account offers).
+
+**Spend.** Unchanged: a native session's tokens are priced per model; a Kiro session's tokens are not counted (Kiro
+bills its own credits, and each model's credit rate differs: `kiro-cli chat --list-models` shows its
+`rate_multiplier`, on kiro-cli 3.4.0 for instance 0.06 for `claude-haiku-5.5`, 1.3 for `claude-sonnet-5.5` and 2.0
+for `claude-opus-5.5`; an account's may differ), so the spend ledger shows its session time only.
 
 ## Trust and safety
 

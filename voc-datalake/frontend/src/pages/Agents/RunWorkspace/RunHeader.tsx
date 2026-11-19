@@ -2,7 +2,8 @@
  * @fileoverview The run workspace's header (7.51.00): the run monitor's (goal, status, repository, times, issue and
  * pull request, MicroVM time and tokens, the flow's budget), with the budget this run used against its cap (its
  * tokens at their prices, Learn's apart), what an ended run's manifest recorded, and the runs it was restarted from
- * and as (a child run is a new run of an ended one: D51-3), and the run's control bar.
+ * and as (a child run is a new run of an ended one: D51-3), (7.58.00) the model a person chose for every role of this
+ * run when they started it, and the run's control bar.
  *
  * @module pages/Agents/RunWorkspace/RunHeader
  */
@@ -13,6 +14,7 @@ import { EngineeringRunHeader } from '../EngineeringRunHeader'
 import { shareTone, budgetShare } from '../spendView'
 import { runWorkspacePath } from './runWorkspacePaths'
 import { useDollars } from './useDollars'
+import { useModelChoiceText } from '../modelChoiceText'
 import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 
@@ -79,10 +81,20 @@ function RunLineage({ overview }: Readonly<{ overview: EngineeringOverview }>) {
   )
 }
 
+/** The model chosen for every role of this run at its start (7.58.00); nothing when each role ran its own. */
+function RunModel({ run }: Readonly<{ run: EngineeringOverview['run'] }>) {
+  const { t } = useTranslation('agents')
+  const text = useModelChoiceText()
+  const { choice } = run.models
+  if (choice === null) return null
+  return <p className="text-[13px] text-muted">{t('runWorkspace.header.model', { model: text.choice(choice) })}</p>
+}
+
 /** The header, with the run's control bar (RunControlBar.tsx) at its foot. */
 export function RunHeader({ overview, controls }: Readonly<{ overview: EngineeringOverview; controls: ReactNode }>) {
   return (
     <EngineeringRunHeader overview={overview}>
+      <RunModel run={overview.run} />
       <RunCost run={overview.run} />
       <RunLineage overview={overview} />
       {controls}

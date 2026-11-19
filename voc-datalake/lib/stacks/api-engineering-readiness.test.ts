@@ -86,4 +86,14 @@ describe('the readiness checks\' grants on the agents API', { timeout: SYNTH_TIM
       namedEnv.ENGINEERING_MAX_SESSIONS]).toStrictEqual(['python', 'vpc', '8192', '200']);
     expect(cdk.Stack.of(named).region).toBe('us-east-1');
   });
+
+  it('name the models\' prices, which a model choice is checked against, with no Bedrock grant for them (7.58.00)', () => {
+    expect(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_MODEL_PRICES).toBe('{}');
+    const prices = '{"global.anthropic.claude-opus-5":{"input":"1","output":"2"}}';
+    const priced = TemplateOf.fromStack(buildApiStack({ engineeringAgents: true, engineeringModelPrices: prices }));
+    expect(JSON.parse(String(serviceEnvironment(priced, 'voc-agents-api').ENGINEERING_MODEL_PRICES))).toStrictEqual(
+      JSON.parse(prices));
+    // (pricing a model grants nothing: the role's statements are the same with or without the price)
+    expect(statements(priced)).toStrictEqual(statements(on()));
+  });
 });

@@ -4,7 +4,7 @@
  * publish are read strictly; a role's card names no version, a made card its own.
  */
 import { describe, it, expect } from 'vitest'
-import { parseCardDetail, parseGates, parseRegistry, parseTemplateSource } from './engineeringRegistryApi'
+import { parseCardDetail, parseGates, parseRegistry, parseSavedModel, parseTemplateSource } from './engineeringRegistryApi'
 import { parseKnowledge, parseKnowledgeVersion, parsePreview, parsePublished, parseTenets, isPublishRefusal } from './engineeringKnowledgeApi'
 
 describe('the Registry\'s answers', () => {
@@ -19,6 +19,18 @@ describe('the Registry\'s answers', () => {
     const made = { kind: 'card', id: 'fixer-careful', version: 2, skill: { version: 3 } }
     expect(parseCardDetail({ card: made, versions: [made], events: [{ version: 2, event: 'created', by: 'a', at: 't' }] }).versions
       .map((version) => [version.id, version.version])).toStrictEqual([['fixer-careful', 2]])
+  })
+
+  it('read a card\'s model choice, its harness and the enabled models (7.58.00), each missing one as none', () => {
+    const role = { kind: 'role', id: 'builder', skill: {}, model_choice: 'claude-opus-5.5', runs_on: 'kiro',
+      model_choice_updated_by: 'admin', model_choice_updated_at: '2026-11-19T09:00:00Z' }
+    const detail = parseCardDetail({ card: role, versions: [], bedrock_enabled: ['global.anthropic.claude-opus-5-5', 7] })
+    expect([detail.card.model_choice, detail.card.runs_on, detail.card.model_choice_updated_by, detail.card.template_model_choice,
+      detail.bedrockEnabled]).toStrictEqual(['claude-opus-5.5', 'kiro', 'admin', null, []])
+    const [sparse] = parseRegistry({ cards: [{ kind: 'role', id: 'fixer', skill: {}, runs_on: 'elsewhere' }] })
+    expect([sparse?.model_choice, sparse?.runs_on, parseCardDetail({ card: role }).bedrockEnabled]).toStrictEqual([null, 'native', []])
+    expect(parseSavedModel({ role: 'builder', model_choice: null, updated_at: 't', updated_by: 'a' }).model_choice).toBeNull()
+    expect(() => parseSavedModel({ model_choice: 'opus' })).toThrow('The answer to saving the model was unreadable')
   })
 
   it('read the quality gates with their packs, and a template\'s source only with its text', () => {

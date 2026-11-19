@@ -411,7 +411,9 @@ export const isActiveRun = (run: Pick<AgentRun, 'status'>) => ACTIVE_RUN_STATUSE
 export const isEngineeringAgent = (agent: Pick<Agent, 'engineering'>): boolean => agent.engineering !== null
 
 /** What an engineering agent's Run now starts from: an issue of its repository, or a project's PRD (a feature agent). */
-export type RunNowBody = { issue: number } | { prd: { project_id: string; document_id: string } }
+/** What a Run now sends an engineering agent: its issue or PRD, and (7.58.00) the run's model, one for every role
+ * (pages/Agents/modelChoice.ts; left out: each role's own). */
+export type RunNowBody = ({ issue?: number } | { prd: { project_id: string; document_id: string } }) & { model?: string }
 
 // ── REST ─────────────────────────────────────────────────────────────────────
 

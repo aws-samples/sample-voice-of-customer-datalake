@@ -24,6 +24,7 @@ import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { useEngineeringConversation } from '../useEngineeringRun'
+import { useModelChoiceText } from '../modelChoiceText'
 import { startsGroup, withoutThinking } from './threadModel'
 import { useThinkingShown } from './useShowThinking'
 import { foldRepeats } from './supervisorLines'
@@ -75,7 +76,8 @@ interface Props {
  */
 function SessionHeader({ agent, orchestrator, tools }: Readonly<Pick<Props, 'agent' | 'orchestrator' | 'tools'>>) {
   const { t } = useTranslation('agents')
-  const facts = [agent.model, agent.skill_label].filter((fact): fact is string => fact !== null && fact !== '')
+  const model = useModelChoiceText()
+  const facts = [model.agent(agent), agent.skill_label].filter((fact): fact is string => fact !== null && fact !== '')
   const name = orchestrator ? t('runWorkspace.orchestrator') : agent.agent
   return (
     <div className="border-b border-border px-3 py-2">

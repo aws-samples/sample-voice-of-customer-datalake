@@ -460,7 +460,11 @@
     },
     "laneAttempt": "{{role}} · tentative {{n, number}}",
     "stoppedHere": "Arrêté ici",
-    "stoppedHereAs": "Arrêté ici : {{state}}"
+    "stoppedHereAs": "Arrêté ici : {{state}}",
+    "model": {
+      "label": "Modèle pour cette exécution",
+      "default": "Le modèle propre à chaque rôle"
+    }
   },
   "editor": {
     "methodology": {
@@ -849,6 +853,7 @@
     },
     "budget": "Son budget mensuel est celui du flux : {{amount}}.",
     "noBudget": "Le flux n’a pas de budget mensuel.",
+    "modelNote": "Le lancement de l’exécution enregistre son modèle ; une reprise ou un redémarrage de l’exécution le conserve.",
     "submit": "Lancer l’exécution",
     "openRun": "Ouvrir l’exécution",
     "mayHaveStarted": "L’exécution a peut-être été lancée : consultez la liste des exécutions avant d’en lancer une autre.",
@@ -2265,7 +2270,8 @@
       "child": {
         "resume": "Reprise dans l’exécution",
         "restart": "Relancée dans l’exécution"
-      }
+      },
+      "model": "Modèle pour cette exécution : {{model}} (chaque rôle)"
     },
     "inspector": {
       "label": "Inspecteur",
@@ -2879,6 +2885,25 @@
         "capShape": "Une limite est un nombre entier supérieur à 0.",
         "capOver": "Une limite est au plus celle du modèle."
       }
+    },
+    "model": {
+      "title": "Modèle",
+      "label": "Le modèle sur lequel ce rôle s’exécute",
+      "default": "Modèle par défaut du rôle ({{model}})",
+      "roleDefault": "le modèle par défaut du rôle",
+      "runsKiro": "Ce déploiement exécute le rôle sur Kiro : il s’exécute sur {{model}} ({{id}}).",
+      "runsKiroAuto": "Ce déploiement exécute le rôle sur Kiro : Kiro choisit son modèle à chaque tâche.",
+      "kiroStops": "Si Kiro ne peut pas utiliser ce modèle sur ce compte, l’étape s’arrête pour une personne, en le disant.",
+      "runsNative": "Ce déploiement exécute le rôle sur le harness natif (Amazon Bedrock) : il s’exécute sur {{model}} ({{id}}).",
+      "nextRun": "Le démarrage d’une exécution enregistre les modèles : un changement s’applique donc à partir de l’exécution suivante ; une exécution démarrée avec son propre modèle exécute chaque rôle sur celui-ci.",
+      "changed": "Modifié par {{who}}, {{at}}.",
+      "template": "Son gabarit indique {{model}}.",
+      "save": "Enregistrer le modèle",
+      "saved": "Enregistré.",
+      "failed": "Le modèle n’a pas pu être enregistré. Réessayez.",
+      "refused": "Non enregistré : {{message}}",
+      "madeCard": "Utilise le modèle de son rôle : {{model}}.",
+      "chosen": "modèle : {{model}}"
     }
   },
   "gates": {
@@ -3042,6 +3067,39 @@
       "statement": "énoncé",
       "rationale": "justification",
       "citations": "citations"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "natif",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (Kiro seulement)",
+      "opus": "Opus 5.5 (Kiro et natif)",
+      "sonnet": "Sonnet 5.5 (Kiro et natif)",
+      "haiku": "Haiku 5.5 (Kiro et natif)",
+      "other": "Autre modèle…"
+    },
+    "notes": {
+      "auto": "Kiro choisit le modèle à chaque tâche. Kiro seulement : sur le harness natif, c’est le modèle par défaut du rôle qui s’exécute.",
+      "named": "{{model}} sur les deux harness : {{kiro}} sur Kiro, {{bedrock}} sur le harness natif (Amazon Bedrock).",
+      "other": "Un identifiant de modèle que vous saisissez, utilisé tel quel sur le harness où le rôle s’exécute."
+    },
+    "other": {
+      "label": "Identifiant du modèle",
+      "hint": {
+        "kiro": "Un identifiant de modèle Kiro, tel que `kiro-cli chat --list-models` les liste (p. ex. claude-sonnet-5.5).",
+        "native": "Un identifiant de modèle ou de profil d’inférence Bedrock que ce déploiement active (p. ex. global.anthropic.claude-sonnet-5-5).",
+        "any": "Pour les rôles sur Kiro, un identifiant de modèle Kiro tel que `kiro-cli chat --list-models` les liste (p. ex. claude-sonnet-5.5) ; pour les rôles sur le harness natif, un identifiant de modèle Bedrock que ce déploiement active (p. ex. global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Saisissez un identifiant de modèle.",
+      "format": "Un identifiant de modèle commence par une lettre ou un chiffre et ne contient que des lettres, des chiffres et . _ : / - (128 caractères au plus, sans espace ni URL).",
+      "notEnabled": "{{id}} n’est pas activé dans ce déploiement. Un administrateur l’ajoute avec -c engineeringModelPrices (docs/deployment.md)."
     }
   }
 }

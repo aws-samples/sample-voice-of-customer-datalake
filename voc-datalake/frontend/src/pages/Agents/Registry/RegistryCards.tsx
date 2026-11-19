@@ -1,7 +1,8 @@
 /**
  * @fileoverview Registry → Agents: the scope's cards (`GET …/registry?connection=`), the roles' own first (every role
  * of the bundle has one, whose id is the role), then the cards made from a skill. Each says what it runs: its skill
- * (the template, or the store's version with its status), its model, and in `badge-info` when its template is newer
+ * (the template, or the store's version with its status), its model and (7.58.00) the model chosen for its role, and in
+ * `badge-info` when its template is newer
  * than the scope's versions; each opens its page. No made card yet: "No agent cards yet." with Create from a skill.
  *
  * @module pages/Agents/Registry/RegistryCards
@@ -10,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layers } from 'lucide-react'
 import Notice from '../../../components/Notice/Notice'
+import { useModelChoiceText } from '../modelChoiceText'
 import { useCardTitle } from './cardTitle'
 import { registryCardPath } from './registryPaths'
 import type { RegistryCard } from '../../../api/engineeringRegistryApi'
@@ -34,6 +36,7 @@ export function SkillLine({ card }: Readonly<{ card: RegistryCard }>) {
 function CardItem({ card, search }: Readonly<{ card: RegistryCard; search: string }>) {
   const { t } = useTranslation('agents')
   const title = useCardTitle()
+  const text = useModelChoiceText()
   return (
     <li className="card flex flex-col gap-2 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -49,6 +52,7 @@ function CardItem({ card, search }: Readonly<{ card: RegistryCard; search: strin
       <p className="text-sm text-text break-words [overflow-wrap:anywhere]">{card.purpose}</p>
       <p className="text-[12px] text-muted break-words [overflow-wrap:anywhere]">
         <SkillLine card={card} />{card.model === '' ? null : <> · <span className="font-mono">{card.model}</span></>}
+        {card.model_choice !== null && <> · {t('registry.model.chosen', { model: text.choice(card.model_choice) })}</>}
       </p>
     </li>
   )

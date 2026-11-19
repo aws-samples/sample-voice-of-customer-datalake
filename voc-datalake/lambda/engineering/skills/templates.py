@@ -3,7 +3,8 @@ launch resolves a skill from (``resolve.py``), labelled ``<role>@template-<versi
 harness puts around every skill.
 
 One interface, ``Templates`` (``skill``: a role's template; ``platform_rules``: the rules' text), one loader,
-``bundled()``, whose ``card_models`` also names the model each role's card names (readiness). The templates are
+``bundled()``, whose ``card_models`` also names the model each role's card names (readiness), and ``choice`` (7.58.00)
+the model choice a card names, if any (a launch's last fallback: ``runtime/harness/model_choice.py``). The templates are
 compiled from ``voc-datalake/templates/orchestration/`` into its ``bundle.json`` (``voc-orchestration-bundle/1``),
 which every Lambda that stages ``lambda/`` ships byte for byte as ``orchestration_bundle.json`` in its ``shared``
 package (the first of ``BUNDLE_PATHS``). The parts read here::
@@ -22,12 +23,13 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from typing import Any, Final, Protocol
 
 from engineering.connectors.identity import AGENT_ROLES
+from engineering.runtime.harness.model_choice import ModelChoiceError, checked
 from engineering.runtime.harness.skills import SKILLS, Skill, SkillError
 
 _LAMBDA: Final = Path(__file__).resolve().parents[2]
@@ -84,9 +86,17 @@ class BundleTemplates:
 
     skills: Mapping[str, TemplateSkill]
     rules: str = ''
+    #: (7.58.00) Each role's card's model choice (its ``model.choice`` or ``model.other``: ``model_choice.py``), only
+    #: the roles whose card names one.
+    choices: Mapping[str, str] = field(default_factory=dict)
 
     def skill(self, role: str) -> TemplateSkill | None:
         return self.skills.get(role)
+
+    def choice(self, role: str) -> str:
+        """The model choice the role's card names ('' for none: the card's ``model.id``, on Kiro by Kiro's name for
+        it)."""
+        return self.choices.get(role, '')
 
     def card_models(self) -> Mapping[str, str]:
         """The model each role's card names: what a run of the role calls (readiness checks Bedrock for each)."""
@@ -108,12 +118,19 @@ class BundleTemplates:
         if bundle.get('schema') != BUNDLE_SCHEMA or not isinstance(agents, list):
             raise SkillError(f'not a {BUNDLE_SCHEMA} bundle with its agents')
         skills: dict[str, TemplateSkill] = {}
+        choices: dict[str, str] = {}
         for entry in agents:
             role = entry.get('id') if isinstance(entry, Mapping) else None
             if role not in AGENT_ROLES or role in skills:
                 raise SkillError('each of the bundle\'s agents is one agent role, once')
             if entry.get('skill') is None:
                 continue   # (the coach's card: Learn's, never launched)
+            try:
+                choice = checked(entry.get('model_choice'))
+            except ModelChoiceError as error:
+                raise SkillError(f'the bundle\'s {role} template names a model off its shape: {error}') from None
+            if choice:
+                choices[str(role)] = choice
             version = entry.get('version')
             if isinstance(version, bool) or not isinstance(version, int) or not 0 < version < 1_000_000:
                 raise SkillError(f'the bundle\'s {role} template has no version')
@@ -125,7 +142,7 @@ class BundleTemplates:
         text = rules.get('text') if isinstance(rules, Mapping) else None
         if not isinstance(text, str) or not 0 < len(text) <= MAX_RULES:
             raise SkillError('the bundle has no platform rules')
-        return cls(skills, text)
+        return cls(skills, text, choices)
 
 
 def load(paths: tuple[Path, ...] = BUNDLE_PATHS) -> BundleTemplates:

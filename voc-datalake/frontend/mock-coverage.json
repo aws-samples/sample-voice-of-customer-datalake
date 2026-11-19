@@ -5976,6 +5976,19 @@
   },
   {
     "file": "api/engineeringRegistryApi.ts",
+    "method": "PUT",
+    "call": "modelPath(role)",
+    "probes": [
+      {
+        "path": "/agents/engineering/registry/fixer/model",
+        "body": {
+          "model": "sonnet"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRegistryApi.ts",
     "method": "GET",
     "call": "gatesPath(connection)",
     "probes": [

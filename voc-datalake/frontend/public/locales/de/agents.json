@@ -447,7 +447,11 @@
     },
     "laneAttempt": "{{role}} · Versuch {{n, number}}",
     "stoppedHere": "Hier gestoppt",
-    "stoppedHereAs": "Hier gestoppt: {{state}}"
+    "stoppedHereAs": "Hier gestoppt: {{state}}",
+    "model": {
+      "label": "Modell für diesen Lauf",
+      "default": "Das eigene Modell jeder Rolle"
+    }
   },
   "editor": {
     "methodology": {
@@ -832,6 +836,7 @@
     },
     "budget": "Sein Monatsbudget ist das des Ablaufs: {{amount}}.",
     "noBudget": "Der Ablauf hat kein Monatsbudget.",
+    "modelNote": "Der Start des Laufs hält sein Modell fest; Fortsetzen oder Neustarten des Laufs behält es bei.",
     "submit": "Lauf starten",
     "openRun": "Lauf öffnen",
     "mayHaveStarted": "Der Lauf wurde vielleicht gestartet: Prüfen Sie die Liste der Läufe, bevor Sie einen weiteren starten.",
@@ -2246,7 +2251,8 @@
       "child": {
         "resume": "Fortgesetzt als Lauf",
         "restart": "Neu gestartet als Lauf"
-      }
+      },
+      "model": "Modell für diesen Lauf: {{model}} (jede Rolle)"
     },
     "inspector": {
       "label": "Inspektor",
@@ -2860,6 +2866,25 @@
         "capShape": "Ein Limit ist eine ganze Zahl über 0.",
         "capOver": "Ein Limit ist höchstens das der Vorlage."
       }
+    },
+    "model": {
+      "title": "Modell",
+      "label": "Das Modell, auf dem diese Rolle läuft",
+      "default": "Standard der Rolle ({{model}})",
+      "roleDefault": "der Standard der Rolle",
+      "runsKiro": "Diese Bereitstellung führt die Rolle auf Kiro aus: Sie läuft auf {{model}} ({{id}}).",
+      "runsKiroAuto": "Diese Bereitstellung führt die Rolle auf Kiro aus: Kiro wählt ihr Modell je Aufgabe.",
+      "kiroStops": "Kann Kiro dieses Modell auf diesem Konto nicht verwenden, hält der Schritt für eine Person an und sagt es.",
+      "runsNative": "Diese Bereitstellung führt die Rolle auf dem nativen Harness (Amazon Bedrock) aus: Sie läuft auf {{model}} ({{id}}).",
+      "nextRun": "Der Start eines Laufs hält die Modelle fest, eine Änderung gilt also ab dem nächsten Lauf; ein Lauf, der mit einem eigenen Modell gestartet wird, führt jede Rolle darauf aus.",
+      "changed": "Geändert von {{who}}, {{at}}.",
+      "template": "Die Vorlage nennt {{model}}.",
+      "save": "Modell speichern",
+      "saved": "Gespeichert.",
+      "failed": "Das Modell konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+      "refused": "Nicht gespeichert: {{message}}",
+      "madeCard": "Läuft auf dem Modell seiner Rolle: {{model}}.",
+      "chosen": "Modell: {{model}}"
     }
   },
   "gates": {
@@ -3023,6 +3048,39 @@
       "statement": "Aussage",
       "rationale": "Begründung",
       "citations": "Zitate"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "nativ",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (nur Kiro)",
+      "opus": "Opus 5.5 (Kiro und nativ)",
+      "sonnet": "Sonnet 5.5 (Kiro und nativ)",
+      "haiku": "Haiku 5.5 (Kiro und nativ)",
+      "other": "Anderes Modell…"
+    },
+    "notes": {
+      "auto": "Kiro wählt das Modell je Aufgabe. Nur Kiro: Auf dem nativen Harness läuft das Standardmodell der Rolle.",
+      "named": "{{model}} auf beiden Harnesses: {{kiro}} auf Kiro, {{bedrock}} auf dem nativen Harness (Amazon Bedrock).",
+      "other": "Eine Modell-ID, die Sie eingeben, unverändert auf dem Harness verwendet, auf dem die Rolle läuft."
+    },
+    "other": {
+      "label": "Modell-ID",
+      "hint": {
+        "kiro": "Eine Kiro-Modell-ID, wie `kiro-cli chat --list-models` sie auflistet (z. B. claude-sonnet-5.5).",
+        "native": "Eine Bedrock-Modell- oder Inferenzprofil-ID, die diese Bereitstellung freigibt (z. B. global.anthropic.claude-sonnet-5-5).",
+        "any": "Für Rollen auf Kiro eine Kiro-Modell-ID, wie `kiro-cli chat --list-models` sie auflistet (z. B. claude-sonnet-5.5); für Rollen auf dem nativen Harness eine Bedrock-Modell-ID, die diese Bereitstellung freigibt (z. B. global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Geben Sie eine Modell-ID ein.",
+      "format": "Eine Modell-ID beginnt mit einem Buchstaben oder einer Ziffer und enthält nur Buchstaben, Ziffern und . _ : / - (höchstens 128 Zeichen, keine Leerzeichen, keine URL).",
+      "notEnabled": "{{id}} ist in dieser Bereitstellung nicht freigegeben. Ein Admin fügt es mit -c engineeringModelPrices hinzu (docs/deployment.md)."
     }
   }
 }

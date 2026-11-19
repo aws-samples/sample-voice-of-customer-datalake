@@ -193,6 +193,40 @@ def test_a_run_started_from_no_issue_sends_neither_an_issue_nor_a_host(lambda_co
     assert {'issue', 'host'} & set(_sent(client)) == set()
 
 
+@pytest.mark.parametrize('model', ['opus', 'auto', 'global.anthropic.claude-haiku-5-5'])
+def test_a_run_may_name_one_model_for_every_role(lambda_context: Any, start: tuple[Start, str], model: str) -> None:
+    # (7.58.00: the start's model_choice, which the run's META records, its launches apply and a Resume keeps)
+    client, workflow_id = start
+    assert _call(lambda_context, 'POST', PATH, body=_body(workflow_id, model=model))[0] == 202
+    assert _sent(client)['model_choice'] == model
+
+
+def test_a_run_naming_no_model_sends_none(lambda_context: Any, start: tuple[Start, str]) -> None:
+    client, workflow_id = start
+    assert _call(lambda_context, 'POST', PATH, body=_body(workflow_id, model=None))[0] == 202
+    assert 'model_choice' not in _sent(client)
+
+
+@pytest.mark.parametrize(('model', 'said'), [
+    ('claude sonnet', 'a model is auto, opus, sonnet or haiku'),
+    ('https://example.com/model', 'a model is auto, opus, sonnet or haiku'),
+    ('global.anthropic.claude-opus-5', "global.anthropic.claude-opus-5 isn't enabled in this deployment"),
+])
+def test_a_model_off_its_shape_or_not_enabled_is_400_and_nothing_is_started(
+        lambda_context: Any, start: tuple[Start, str], model: str, said: str) -> None:
+    client, workflow_id = start
+    status, body = _call(lambda_context, 'POST', PATH, body=_body(workflow_id, model=model))
+    assert (status, said in body['error'], client.requests) == (400, True, [])
+
+
+def test_a_kiro_id_starts_where_every_role_runs_on_kiro(lambda_context: Any, start: tuple[Start, str],
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    client, workflow_id = start
+    monkeypatch.setenv('ENGINEERING_HARNESS', 'kiro')
+    assert _call(lambda_context, 'POST', PATH, body=_body(workflow_id, model='claude-sonnet-4.5'))[0] == 202
+    assert _sent(client)['model_choice'] == 'claude-sonnet-4.5'
+
+
 def test_a_missing_field_is_400(lambda_context: Any, start: tuple[Start, str]) -> None:
     client, workflow_id = start
     body = _body(workflow_id)

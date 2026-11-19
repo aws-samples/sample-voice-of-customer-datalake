@@ -21,10 +21,12 @@ export interface NodeChip { readonly text: string; readonly tone: 'muted' | 'inf
 /** Chips shown on a node at most; the rest fold into "+N". */
 const MAX_CHIPS = 3
 
-const FAMILY = /claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?!\d)/i
+const FAMILY = /claude-(opus|sonnet|haiku|fable)-(\d+)(?:[-.](\d{1,2}))?(?!\d)/i
 
-/** A model id's short name ("Sonnet 5.5" for `global.anthropic.claude-sonnet-5-5`); the id's last part otherwise. */
+/** A model id's short name ("Sonnet 5.5" for Bedrock's `global.anthropic.claude-sonnet-5-5` and Kiro's
+ * `claude-sonnet-5.5`, 7.58.00; "Auto" for Kiro's `auto`); the id's last part otherwise. */
 export function modelShortName(id: string): string {
+  if (id === 'auto') return 'Auto'
   const match = FAMILY.exec(id)
   if (match === null) return id.split(/[.:/]/).filter(Boolean).at(-1) ?? id
   const [, family = '', major = '', minor] = match

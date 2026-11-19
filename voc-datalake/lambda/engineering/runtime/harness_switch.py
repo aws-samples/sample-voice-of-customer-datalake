@@ -15,7 +15,8 @@ from collections.abc import Mapping, Sequence
 from typing import Final
 
 from engineering.connectors.identity import AGENT_ROLES
-from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CLI_VERSION
+from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CLI_VERSION, kiro_model
+from engineering.runtime.harness.model_choice import bedrock_model, not_enabled
 from engineering.runtime.interface import RuntimeRefused
 
 HARNESS_ENV: Final = 'ENGINEERING_HARNESS'
@@ -46,10 +47,10 @@ def is_kiro(argv: Sequence[str]) -> bool:
     return any(argv[index] == '--adapter' and argv[index + 1] == KIRO for index in range(len(argv) - 1))
 
 
-def harness_for(argv: Sequence[str], role: str, env: Mapping[str, str]) -> tuple[str, ...]:
+def harness_for(argv: Sequence[str], role: str, env: Mapping[str, str], model: str = '') -> tuple[str, ...]:
     """The argv a launch of ``role`` runs: its skill's as it is, or (the role on Kiro) the same with ``--adapter kiro``,
-    the pinned kiro-cli and the key's parameter. Refused when the role is on Kiro without a key parameter, or with an
-    argv that names no adapter."""
+    the pinned kiro-cli, the key's parameter and (7.58.00) ``--kiro-model`` when the launch chose one. Refused when the
+    role is on Kiro without a key parameter, or with an argv that names no adapter."""
     if role not in kiro_roles(env.get(HARNESS_ENV)):
         return tuple(argv)
     parameter = env.get(KEY_PARAMETER_ENV, '')
@@ -59,4 +60,49 @@ def harness_for(argv: Sequence[str], role: str, env: Mapping[str, str]) -> tuple
         raise RuntimeRefused(f'the {role}\'s harness names no adapter to run on Kiro')
     at = list(argv).index('--adapter')
     return (*argv[:at], '--adapter', KIRO, *argv[at + 2:], '--kiro-version', KIRO_CLI_VERSION,
-            '--kiro-key-parameter', parameter)
+            '--kiro-key-parameter', parameter, *(('--kiro-model', model) if model else ()))
+
+
+# -- the model a launch runs (7.58.00) -------------------------------------------------------------------------------
+
+#: The deployment's model prices (``-c engineeringModelPrices`` over ``caps.DEFAULT_TOKEN_PRICES``), the runtime's and
+#: the Agents API's environment.
+MODEL_PRICES_ENV: Final = 'ENGINEERING_MODEL_PRICES'
+
+
+def native_models(env: Mapping[str, str]) -> frozenset[str]:
+    """The Bedrock models the native harness may run here: the ones the agents' roles are granted (the Claude
+    allowlist, ``shared/model_config.py`` ``ALLOWED_MODEL_IDS``, in lockstep with the stacks' grant) that the
+    deployment also prices (``caps.model_prices``), so no model is run that the cost caps cannot price, and no grant is
+    widened for one."""
+    from engineering.runtime.caps import model_prices
+    from shared.model_config import ALLOWED_MODEL_IDS
+    return frozenset(ALLOWED_MODEL_IDS) & frozenset(model_prices(env.get(MODEL_PRICES_ENV)).prices)
+
+
+def argv_model(argv: Sequence[str]) -> str:
+    """The ``--model`` an argv names ('' for none)."""
+    items = list(argv)
+    return items[items.index('--model') + 1] if '--model' in items[:-1] else ''
+
+
+def with_model(argv: Sequence[str], role: str, env: Mapping[str, str], choice: str) -> tuple[tuple[str, ...], str]:
+    """A launch's argv with the model ``choice`` applied (``model_choice.py``), and the model it asks for: on Kiro,
+    ``harness_for`` with the choice's Kiro model (``kiro_pin.kiro_model``; no choice: none, and the session asks for
+    Kiro's name for the skill's model, or stops when Kiro has none: ``harness/kiro.py``); on the native harness, the
+    skill's argv with ``--model`` the choice's Bedrock model, refused (``RuntimeRefused``) unless the deployment grants
+    and prices it (``native_models``). No choice: the argv as before 7.58.00."""
+    default = argv_model(argv)
+    if role in kiro_roles(env.get(HARNESS_ENV)):
+        chosen = (kiro_model(choice, chosen=True) or '') if choice else ''
+        return harness_for(argv, role, env, chosen), chosen or kiro_model(default) or default
+    model = bedrock_model(choice, default)
+    if model == default:
+        return tuple(argv), default
+    if model not in native_models(env):
+        raise RuntimeRefused(not_enabled(model))
+    if not default:
+        raise RuntimeRefused(f'the {role}\'s harness names no model to replace with {model}')
+    items = list(argv)
+    items[items.index('--model') + 1] = model
+    return tuple(items), model

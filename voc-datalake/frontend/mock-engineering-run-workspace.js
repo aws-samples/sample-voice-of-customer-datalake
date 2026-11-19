@@ -64,14 +64,16 @@ export function workspaceOverview(agents) {
   const status = new Map(agents.map((agent) => [agent.agent, agent.status]));
   const lanes = Object.fromEntries(Object.entries(fixture.lanes).map(([step, lane]) =>
     [step, lane.map((entry) => ({ ...entry, status: status.get(entry.agent) ?? entry.status }))]));
-  const pick = ({ cost_usd, learn_cost_usd, cost_cap_usd, parent, manifest }) => ({ cost_usd, learn_cost_usd, cost_cap_usd, parent, manifest });
+  // (7.58.00: the run's models as its start recorded them; none in a fixture from before)
+  const pick = ({ cost_usd, learn_cost_usd, cost_cap_usd, parent, manifest, models }) => ({ cost_usd, learn_cost_usd, cost_cap_usd,
+    parent, manifest, models: models ?? { choice: null, roles: {} } });
   return {
     run: pick(fixture.run),
     agents: agents.map((agent) => {
       const known = extras.get(agent.agent);
       return { cost_usd: known?.cost_usd ?? 0, attempt: known?.attempt ?? 1, commit: known?.commit ?? null,
         skill_label: known?.skill_label ?? null, model: known?.model ?? null, transcript_cursor: known?.transcript_cursor ?? null,
-        ...agent };
+        harness: known?.harness ?? 'native', model_choice: known?.model_choice ?? null, ...agent };
     }),
     lanes, gates: fixture.gates, children: fixture.children,
   };

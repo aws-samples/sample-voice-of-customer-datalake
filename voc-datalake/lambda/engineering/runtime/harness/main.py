@@ -1,10 +1,11 @@
 """The harness's entry point in the image: ``/usr/bin/python3 -I /opt/voc/harness.py <command> ...``.
 
 - ``run --adapter converse|cli|kiro --model <model id> [--cli claude --cli-binary <path> --cli-version <v>]
-  [--kiro-version <v> --kiro-key-parameter <name>]``: run the agent's session (its skill picks the model and the
-  converse or cli adapter; a deployment that runs the role on Kiro, ``-c engineeringHarness``, has its launch name
-  ``kiro``: runtime/harness_switch.py; the launch request carries this argv) and exit with the runtime's code: 0 done,
-  75 paused after its checkpoint, 1 (Python's, on anything raised) a crash.
+  [--kiro-version <v> --kiro-key-parameter <name> [--kiro-model <id>]]``: run the agent's session (its skill picks the
+  model and the converse or cli adapter, and since 7.58.00 its run or its role may choose another model; a deployment
+  that runs the role on Kiro, ``-c engineeringHarness``, has its launch name ``kiro``: runtime/harness_switch.py; the
+  launch request carries this argv) and exit with the runtime's code: 0 done, 75 paused after its checkpoint, 1
+  (Python's, on anything raised) a crash.
 - ``tool-server``: the platform's tools for a CLI (``tool_server``), started by that CLI.
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
@@ -100,6 +101,8 @@ STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person d
 COORDINATOR_STOPPED: Final = 'Stopped without finishing the run: continued as a crash.'
 #: A coordinator continuation's first progress report, which closes a wait its last session left open (7.54.00).
 CONTINUING: Final = 'continuing from the checkpoint'
+#: The most of an adapter's reason for ending a session before its model ran that the task's progress says (7.58.00).
+MAX_STOPPED: Final = 500
 
 
 class S3Store:
@@ -437,7 +440,7 @@ def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Calla
     if args.adapter == 'kiro':
         return KiroAcp(binary=args.kiro_binary, version=args.kiro_version, agent_home=env['HOME'], environment=env,
                        tool_env={name: env[name] for name in (*TOOL_ENV, *KIRO_TOOL_ENV) if name in env},
-                       key=ssm_key(args.kiro_key_parameter, env['AWS_REGION']))
+                       key=ssm_key(args.kiro_key_parameter, env['AWS_REGION']), model=args.kiro_model)
     choose_cli(args.cli)
     tool_env = {name: env[name] for name in TOOL_ENV if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
@@ -457,6 +460,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument('--kiro-binary', default=KIRO_BINARY)
     run.add_argument('--kiro-version', default='')
     run.add_argument('--kiro-key-parameter', default='')
+    # (7.58.00) The Kiro model the launch chose (runtime/harness_switch.py): '' for none, Kiro's name for --model.
+    run.add_argument('--kiro-model', default='')
     commands.add_parser('tool-server')
     return parser
 
@@ -467,8 +472,8 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
     env = dict(os.environ) if env is None else env
     if args.command == 'run':
         # The model the session runs on, as its argv names it (a final go's record names it; the CLI's tool server
-        # reads it from its environment).
-        env = {**env, 'VOC_MODEL': args.model}
+        # reads it from its environment): on Kiro, the Kiro model its launch chose (7.58.00), when it chose one.
+        env = {**env, 'VOC_MODEL': session_model(args)}
     ports = ports or default_ports(env)
     if s3 is None:
         import boto3
@@ -528,13 +533,18 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
     return DONE_EXIT_CODE if ending == 'done' else PAUSED_EXIT_CODE
 
 
+def session_model(args: argparse.Namespace) -> str:
+    """The model a session runs on: ``--model``, or on Kiro the ``--kiro-model`` its launch chose (7.58.00)."""
+    return args.kiro_model if args.adapter == 'kiro' and args.kiro_model else args.model
+
+
 def _started(session: AgentSession, args: argparse.Namespace) -> None:
     """The transcript's first event: who runs what, on which model and harness."""
     context = session.context
     if context.transcript is not None:
         context.transcript.record('session', run=context.run_id, agent=context.agent_id, role=context.role,
                                   task=context.task_id, attempt=context.attempt, commit=context.commit,
-                                  model=args.model, adapter=args.adapter, skill=context.skill_label,
+                                  model=session_model(args), adapter=args.adapter, skill=context.skill_label,
                                   continuation=session.restored is not None,
                                   tools=[spec.name for spec in session.tools.specs])
 
@@ -574,6 +584,14 @@ def _finished(session: AgentSession) -> None:
     continues it from its checkpoint, and after the crashes it allows sends the run to a person, whose Resume
     replaces it (the task still held, so it can be re-posted)."""
     context = session.context
+    if session.stopped_for:
+        # (7.58.00) The adapter ended it before its model ran (Kiro did not take the model the launch chose): the
+        # task goes to a person in its words; the coordinator's is a crash, as below, saying why.
+        context.board.progress(context.run_id, context.task_id, context.agent_id, session.stopped_for[:MAX_STOPPED])
+        if context.role == COORDINATOR_ROLE:
+            raise CoordinatorStopped(session.stopped_for[:MAX_STOPPED])
+        context.board.move(context.run_id, context.task_id, to_state='needs_human')
+        return
     if context.finished or session.finished_elsewhere:
         return
     if context.role == COORDINATOR_ROLE:

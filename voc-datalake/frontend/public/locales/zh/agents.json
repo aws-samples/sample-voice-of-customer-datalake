@@ -447,7 +447,11 @@
     },
     "laneAttempt": "{{role}} · 第 {{n, number}} 次尝试",
     "stoppedHere": "在此停止",
-    "stoppedHereAs": "在此停止：{{state}}"
+    "stoppedHereAs": "在此停止：{{state}}",
+    "model": {
+      "label": "此次运行的模型",
+      "default": "每个角色自己的模型"
+    }
   },
   "editor": {
     "methodology": {
@@ -832,6 +836,7 @@
     },
     "budget": "其月度预算即流程的预算：{{amount}}。",
     "noBudget": "该流程没有月度预算。",
+    "modelNote": "运行开始时会记录其模型；恢复或重新启动该运行时会保留该模型。",
     "submit": "开始运行",
     "openRun": "打开运行",
     "mayHaveStarted": "运行可能已经开始：在开始另一个运行之前，请先查看运行列表。",
@@ -2246,7 +2251,8 @@
       "child": {
         "resume": "继续为运行",
         "restart": "重新开始为运行"
-      }
+      },
+      "model": "此次运行的模型：{{model}}（所有角色）"
     },
     "inspector": {
       "label": "检查器",
@@ -2860,6 +2866,25 @@
         "capShape": "上限是大于 0 的整数。",
         "capOver": "上限不能超过模板的值。"
       }
+    },
+    "model": {
+      "title": "模型",
+      "label": "此角色运行的模型",
+      "default": "角色默认（{{model}}）",
+      "roleDefault": "角色默认",
+      "runsKiro": "此部署在 Kiro 上运行该角色：运行在 {{model}}（{{id}}）上。",
+      "runsKiroAuto": "此部署在 Kiro 上运行该角色：Kiro 按任务选择其模型。",
+      "kiroStops": "如果 Kiro 无法在此账户上使用该模型，该步骤会停下并说明原因，交由人工处理。",
+      "runsNative": "此部署在原生 Harness（Amazon Bedrock）上运行该角色：运行在 {{model}}（{{id}}）上。",
+      "nextRun": "运行开始时会记录模型，因此更改从下一次运行起生效；以自己的模型启动的运行，所有角色都在该模型上运行。",
+      "changed": "由 {{who}} 于 {{at}} 更改。",
+      "template": "其模板指定 {{model}}。",
+      "save": "保存模型",
+      "saved": "已保存。",
+      "failed": "无法保存模型。请重试。",
+      "refused": "未保存：{{message}}",
+      "madeCard": "运行其角色的模型：{{model}}。",
+      "chosen": "模型：{{model}}"
     }
   },
   "gates": {
@@ -3023,6 +3048,39 @@
       "statement": "陈述",
       "rationale": "理由",
       "citations": "引用"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "原生",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto（仅 Kiro）",
+      "opus": "Opus 5.5（Kiro 和原生）",
+      "sonnet": "Sonnet 5.5（Kiro 和原生）",
+      "haiku": "Haiku 5.5（Kiro 和原生）",
+      "other": "其他模型…"
+    },
+    "notes": {
+      "auto": "Kiro 按任务选择模型。仅 Kiro：在原生 Harness 上运行该角色的默认模型。",
+      "named": "两种 Harness 上均为 {{model}}：Kiro 上为 {{kiro}}，原生 Harness（Amazon Bedrock）上为 {{bedrock}}。",
+      "other": "你输入的模型 ID，在该角色运行的 Harness 上按原样使用。"
+    },
+    "other": {
+      "label": "模型 ID",
+      "hint": {
+        "kiro": "Kiro 模型 ID，即 `kiro-cli chat --list-models` 列出的 ID（例如 claude-sonnet-5.5）。",
+        "native": "此部署启用的 Bedrock 模型或推理配置文件 ID（例如 global.anthropic.claude-sonnet-5-5）。",
+        "any": "Kiro 上的角色填 Kiro 模型 ID，即 `kiro-cli chat --list-models` 列出的 ID（例如 claude-sonnet-5.5）；原生 Harness 上的角色填此部署启用的 Bedrock 模型 ID（例如 global.anthropic.claude-sonnet-5-5）。"
+      }
+    },
+    "issues": {
+      "empty": "请输入模型 ID。",
+      "format": "模型 ID 以字母或数字开头，只包含字母、数字和 . _ : / -（最多 128 个字符，不含空格，不能是 URL）。",
+      "notEnabled": "{{id}} 未在此部署中启用。管理员可通过 -c engineeringModelPrices 添加（docs/deployment.md）。"
     }
   }
 }

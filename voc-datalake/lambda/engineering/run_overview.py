@@ -3,7 +3,9 @@
 - Per agent, from its session row (``AGENT#<agent>``): its cost so far (``cost_usd``: its session time and, since
   7.50.00, its tokens at their prices, with the brokers' metering), the attempt and commit it works on, its skill's
   label and its model, since 7.52.00 the Registry card its step was made from (``card``, ``card_version``: None for a
-  role's own step), and ``transcript_cursor``: the cursor that opens its thread at its transcript's end
+  role's own step), since 7.58.00 its harness (``native`` or ``kiro``) and the model choice its launch applied
+  (``model_choice``; the run's own are ``models``), and ``transcript_cursor``: the cursor that opens its thread at its
+  transcript's end
   (views_thread.TAIL; None for an agent with no transcript to read); and (7.51.04) why it last failed, as the
   supervisor's inspection data holds it: ``last_exit`` (its failed command's exit code, whether it timed out, how long
   it ran and its stderr's tail; never its stdout) and ``last_failure`` (the supervisor's own words: "the boot took too
@@ -36,6 +38,7 @@ from boto3.dynamodb.types import TypeDeserializer
 from engineering.board.model import PERSON_PREFIX, Task
 from engineering.rows import amount_attr, string_attr
 from engineering.run_objects import RunObjects
+from engineering.runtime.harness_switch import is_kiro
 from engineering.runtime.manifest import MAX_VERSIONS, manifest_key
 from engineering.runtime.sessions import AgentSession
 from engineering.views_thread import TAIL, Subject, display
@@ -63,6 +66,9 @@ def agent_extras(run_id: str, session: AgentSession, row: Mapping[str, Any] | No
     return {'cost_usd': usd(amount_attr(row, 'cost_usd')), 'attempt': session.task_attempt,
             'commit': session.commit or None, 'skill_label': string_attr(row, 'skill_version') or None,
             'model': string_attr(row, 'model') or None,
+            # (7.58.00) The harness it runs on, and the model choice its launch applied (None: its role's default).
+            'harness': 'kiro' if is_kiro(session.harness) else 'native',
+            'model_choice': string_attr(row, 'model_choice') or None,
             # (7.52.00) The Registry card its step was made from, as its launch recorded it (None: a role's own step).
             'card': string_attr(row, 'card') or None,
             'card_version': int(version) if version.isdigit() and version[0] != '0' else None,
@@ -159,6 +165,15 @@ def parent(meta: Mapping[str, Any]) -> dict[str, Any] | None:
     if not isinstance(raw, Mapping) or not _text(raw, 'run_id'):
         return None
     return {name: _text(raw, name) for name in ('run_id', 'mode', 'by', 'at')}
+
+
+def models(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """(7.58.00) The models its start chose: ``choice``, one model for every role (None: each role's own), and
+    ``roles``, each role's choice as the Registry held it then (runtime/runs.py)."""
+    raw = _plain(meta['role_models']) if isinstance(meta.get('role_models'), Mapping) else None
+    roles = {str(role): value for role, value in raw.items() if isinstance(value, str) and value} \
+        if isinstance(raw, Mapping) else {}
+    return {'choice': string_attr(meta, 'model_choice') or None, 'roles': dict(sorted(roles.items()))}
 
 
 def children(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

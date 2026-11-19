@@ -13,7 +13,8 @@
  *   for the `kiro` check's one call, filtered to the Kiro key's exact name: its type and metadata, never its value (no
  *   `ssm:GetParameter`, no KMS grant).
  *
- * No write anywhere else, no delete, no read of a run's objects. Returns the checks' environment.
+ * No write anywhere else, no delete, no read of a run's objects. Returns the checks' environment (7.58.00: with the
+ * models' prices, `ENGINEERING_MODEL_PRICES`, which a model choice is checked against: no grant).
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -23,7 +24,7 @@ import { bedrockAgreementSuppressions } from '../utils/nag-suppressions';
 import type { ApiStackContext } from './api-context';
 import { ENGINEERING_WORKSPACE_READINESS_KEYS } from './core-buckets';
 import {
-  agentNetworkConfigured, buildMemoryMiB, maxSessions, runtimeLanguages,
+  agentNetworkConfigured, buildMemoryMiB, maxSessions, modelPrices, runtimeLanguages,
 } from './engineering-agentcore';
 import { engineeringParameterPrefix } from './engineering-broker';
 import { engineeringHarness, kiroKeyParameterName } from './engineering-kiro';
@@ -87,5 +88,8 @@ export function grantEngineeringReadiness(ctx: ApiStackContext, role: iam.Role):
     ENGINEERING_BUILD_MEMORY_MIB: String(buildMemoryMiB(stack)),
     ENGINEERING_MAX_SESSIONS: String(maxSessions(stack)),
     ENGINEERING_WATERMARKS_TABLE: watermarks,
+    // 7.58.00: the models' prices (-c engineeringModelPrices, as the runtime has them), so a role's or a run's model
+    // choice is refused when it is saved unless the deployment grants and prices it (engineering/model_choices.py).
+    ENGINEERING_MODEL_PRICES: JSON.stringify(modelPrices(stack)),
   };
 }

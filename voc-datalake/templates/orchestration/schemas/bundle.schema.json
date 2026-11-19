@@ -174,6 +174,8 @@
         "purpose": {"type": "string"},
         "harness": {"enum": ["converse", "cli", "learn"]},
         "model": {"type": "string"},
+        "model_choice": {"description": "7.58.00: the card's model choice (its model.choice or model.other), only when it names one: in the digest only then.",
+                         "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"},
         "tools": {"type": "array", "items": {"type": "string"}},
         "pending_tools": {"type": "array", "items": {"type": "string"}},
         "broker_ops": {"type": "array", "items": {"type": "string"}},

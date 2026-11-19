@@ -25,7 +25,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.readiness import ReadFailed, SandboxSeen, Settings, Subject, flow_requires
 from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION
-from engineering.runtime.harness_switch import HARNESS_ENV, KEY_PARAMETER_ENV, kiro_roles
+from engineering.runtime.harness_switch import HARNESS_ENV, KEY_PARAMETER_ENV, kiro_roles, native_models
 from engineering.runtime.interface import RuntimeRefused
 
 #: AgentCore Runtime's "Active Session Workloads per Account" (its service code is bedrock-agentcore; 5,000 in
@@ -54,8 +54,10 @@ def _failed(what: str, error: Exception) -> ReadFailed:
     return ReadFailed(f'{what}: {code or type(error).__name__}')
 
 
-def settings_from_environment(card_models: Mapping[str, str], region: str) -> Settings:
-    """The deployment's settings the checks read, from the Agents API's environment."""
+def settings_from_environment(card_models: Mapping[str, str], region: str,
+                              model_choices: Mapping[str, str] | None = None) -> Settings:
+    """The deployment's settings the checks read, from the Agents API's environment; ``model_choices`` (7.58.00): each
+    role's model choice, the Registry's over its card's."""
     raw_mib = os.environ.get(BUILD_MEMORY_ENV, '0').strip() or '0'
     raw_sessions = os.environ.get(MAX_SESSIONS_ENV, '').strip()
     return Settings(
@@ -65,7 +67,18 @@ def settings_from_environment(card_models: Mapping[str, str], region: str) -> Se
         region=region,
         max_sessions=int(raw_sessions) if raw_sessions.isdigit() else DEFAULT_MAX_SESSIONS,
         card_models=dict(card_models), kiro_roles=_kiro_roles(os.environ.get(HARNESS_ENV)),
-        kiro_key_parameter=os.environ.get(KEY_PARAMETER_ENV, ''), kiro_version=KIRO_CLI_VERSION)
+        kiro_key_parameter=os.environ.get(KEY_PARAMETER_ENV, ''), kiro_version=KIRO_CLI_VERSION,
+        model_choices=dict(model_choices or {}), native_models=enabled_native_models())
+
+
+def enabled_native_models() -> frozenset[str]:
+    """(7.58.00) The Bedrock models the native harness may run here (``harness_switch.native_models``: granted and
+    priced, from ``ENGINEERING_MODEL_PRICES``); none known for a price setting off its shape (the stack refuses one at
+    synth)."""
+    try:
+        return native_models(os.environ)
+    except RuntimeRefused:
+        return frozenset()
 
 
 def _kiro_roles(value: str | None) -> frozenset[str]:

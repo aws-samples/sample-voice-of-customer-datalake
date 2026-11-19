@@ -186,7 +186,7 @@ function sessionRates(scope: Construct): Record<string, string> {
  * 2026-11-16), so a run's cost cap and its flow's budget bound model spend. `{}` by default: the defaults. A model
  * with no price is priced at the dearest listed (caps.py TokenPrices), never left out.
  */
-function modelPrices(scope: Construct): Record<string, Record<string, string>> {
+export function modelPrices(scope: Construct): Record<string, Record<string, string>> {
   const usage = `Use -c ${MODEL_PRICES_CONTEXT}='{"global.anthropic.claude-sonnet-5-5":{"input":"2","output":"10"}}' (USD per million tokens, 0 to ${MAX_USD_PER_MILLION_TOKENS}, at most 12 digits after the point; input and output, optionally cacheRead and cacheWrite).`;
   const value = jsonContext(scope, MODEL_PRICES_CONTEXT, {}, usage);
   if (!isRecord(value)) throw new Error(`${MODEL_PRICES_CONTEXT} must be a JSON object. ${usage}`);

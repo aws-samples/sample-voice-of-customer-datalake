@@ -440,6 +440,8 @@ class RunMonitor:
                     # (7.51.00) Its cost against its cap, the run it was restarted from, an ended run's manifest.
                     **run_overview.run_cost(meta, agents, self._get(run_id, 'LEARN#spend')),
                     'parent': run_overview.parent(meta),
+                    # (7.58.00) The models its start chose: one for every role, and the roles' own.
+                    'models': run_overview.models(meta),
                     'manifest': run_overview.manifest(self.objects, run_id) if ended else None},
             'agents': agents,
             # (7.51.00) Each flow step's tasks and their agents (the canvas's lanes), each gate's verdict as the board

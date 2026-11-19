@@ -97,6 +97,10 @@ const AgentSchema = z.object({
   /** (7.52.00, gap L) The Registry card it ran and its version, from its session row; null for a role's own card. */
   card: maybeText.optional().transform((card) => card ?? null),
   card_version: maybeCount.optional().transform((version) => version ?? null),
+  /** (7.58.00) The harness it runs on, and the model choice its launch applied (pages/Agents/modelChoice.ts; null for
+   *  none: its skill's model, on Kiro by Kiro's name for it). */
+  harness: z.enum(['native', 'kiro']).catch('native'),
+  model_choice: maybeText.optional().transform((choice) => choice ?? null),
 })
 export type EngineeringAgent = z.output<typeof AgentSchema>
 
@@ -161,6 +165,13 @@ const LaneSchema = z.object({
 export type RunLane = z.output<typeof LaneSchema>
 export type RunPullRequestLink = NonNullable<z.output<typeof PullRequestLinkSchema>>
 
+/** (7.58.00) The run's models as its start recorded them: its own choice for every role (null: each role's own) and
+ * each role's choice then. */
+const RunModelsSchema = z.object({
+  choice: maybeText,
+  roles: z.record(z.string(), z.string()).catch({}),
+}).catch({ choice: null, roles: {} })
+
 /** A person's Stop of the whole run (7.50.03): how it was asked and when; null for none. */
 const RunStopSchema = z.object({
   mode: z.enum(['stop', 'stop_now']).catch('stop'),
@@ -194,6 +205,7 @@ const OverviewSchema = z.object({
     /** (7.52.00, gap I) The calls its start expanded (`<call>.<child>` steps of the flat copy): each call step, the
      *  flow it ran and that flow's revision; [] when the flow calls nothing. */
     expansion: expansionRecords,
+    models: RunModelsSchema.optional().transform((models) => models ?? { choice: null, roles: {} }),
   }),
   agents: eachOf(AgentSchema),
   /** (7.51.02) What reaches the run from here, each false when unsaid: steering and answers (the stack names the
@@ -343,6 +355,8 @@ export interface StartRunRequest {
   goal: string
   /** The number of the issue the run starts from (left out for none). */
   issue?: number
+  /** (7.58.00) One model for every role of the run (pages/Agents/modelChoice.ts; left out: each role's own). */
+  model?: string
 }
 
 /** The run the server started: the monitor opens it. */

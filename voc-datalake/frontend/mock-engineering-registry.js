@@ -5,6 +5,12 @@
 //   GET  /agents/engineering/registry?connection=          {month, connection, cards}: every role's card, then the made ones
 //   GET  /agents/engineering/registry/<card>?connection=   {card, versions, events}; 404 for none
 //   POST /agents/engineering/registry/cards                {from_skill, slug, purpose, title?, caps?} → 201 {card}
+//   PUT  /agents/engineering/registry/<role>/model         7.58.00: {model} (null: the role's default) → {role, model_choice,
+//                                                          updated_at, updated_by}; 400 for an id off its shape, or (a
+//                                                          role on the native harness) one this deployment does not enable
+// 7.58.00: each card says the model chosen for its role (`model_choice`, who and when), its template's own and the harness
+// its role runs on here (`runs_on`: the builder on Kiro, the others native), and both reads name the Bedrock models the
+// deployment grants and prices (`bedrock_enabled`).
 //   GET  /agents/engineering/gates?connection=             the packs (steps with their messages and vacuous-pass rule),
 //                                                          the briefs WITHOUT their text (gap N), the stops, the defaults
 //   GET  /agents/engineering/gates/briefs/<id>             one brief with its text; 404 for none
@@ -27,6 +33,17 @@ const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const CARD_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const GATE_ROLES = new Set(['gate-runner', 'final-go']);
 const month = () => new Date().toISOString().slice(0, 7);
+/** 7.58.00: the Bedrock models the deployment grants and prices, the roles it runs on Kiro, and each role's choice. */
+const BEDROCK_ENABLED = ['global.anthropic.claude-haiku-5-5', 'global.anthropic.claude-opus-5-5', 'global.anthropic.claude-sonnet-5-5'];
+const KIRO_ROLES = new Set(['builder']);
+const NAMED_MODELS = new Set(['auto', 'opus', 'sonnet', 'haiku']);
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+const CHOICES = { fixer: { model_choice: 'opus', updated_at: new Date(Date.now() - 2 * 86_400_000).toISOString(), updated_by: 'admin-demo' } };
+const roleModelFields = (role, template) => ({
+  model_choice: CHOICES[role]?.model_choice ?? null, model_choice_updated_at: CHOICES[role]?.updated_at ?? null,
+  model_choice_updated_by: CHOICES[role]?.updated_by ?? null, template_model_choice: template?.model_choice ?? null,
+  runs_on: KIRO_ROLES.has(role) ? 'kiro' : 'native',
+});
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
 
 /** The skill a scope runs of a role (the fixer's shared v3 and storefront's v1; the template elsewhere). */
@@ -64,6 +81,7 @@ function roleCard(template, connection) {
       cost_usd: 2.46, since: daysAgo(14), until: daysAgo(0) },
     spend: { month: month(), usd: template.id === 'fixer' ? 3.2 : 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 },
     node: launchable ? { type: 'agent', data: { title: template.id, params: { role: template.id, skill_version: 'latest' } } } : null,
+    ...roleModelFields(template.id, template),
   };
 }
 
@@ -87,19 +105,21 @@ function madeRecord({ id, version, role, title, purpose, skillVersion, connectio
 }
 
 const cardView = (record) => ({ kind: 'card', ...record, node: { type: 'agent', data: { title: record.title, params: {
-  role: record.base_role, skill_version: `v${record.skill.version}`, model: record.model, card: `${record.id}@v${record.version}` } } } });
+  role: record.base_role, skill_version: `v${record.skill.version}`, model: record.model, card: `${record.id}@v${record.version}` } } },
+  ...roleModelFields(record.base_role, BUNDLE.agents.find((agent) => agent.id === record.base_role)) });
 
 function registry(connection) {
   const cards = BUNDLE.agents.map((template) => roleCard(template, connection));
-  return [200, { month: month(), connection, cards: [...cards, ...Object.values(MADE).map((versions) => cardView(versions.at(-1)))] }];
+  return [200, { month: month(), connection, bedrock_enabled: BEDROCK_ENABLED,
+    cards: [...cards, ...Object.values(MADE).map((versions) => cardView(versions.at(-1)))] }];
 }
 
 function card(id, connection) {
   const template = BUNDLE.agents.find((agent) => agent.id === id);
-  if (template) return [200, { card: roleCard(template, connection), versions: [], events: [] }];
+  if (template) return [200, { card: roleCard(template, connection), versions: [], events: [], bedrock_enabled: BEDROCK_ENABLED }];
   const versions = MADE[id];
   if (!versions) return [404, { error: `the Registry has no card ${id.slice(0, 64)}` }];
-  return [200, { card: cardView(versions.at(-1)), versions: [...versions].reverse().map(cardView),
+  return [200, { card: cardView(versions.at(-1)), versions: [...versions].reverse().map(cardView), bedrock_enabled: BEDROCK_ENABLED,
     events: [...versions].reverse().map((record) => ({ version: record.version, event: 'created', by: record.created_by, at: record.created_at })) }];
 }
 
@@ -126,6 +146,27 @@ function create(body) {
     skillVersion: skill.version, connection: skill.connection ?? '', caps: body.caps ?? {}, by: 'admin-demo', at: new Date().toISOString() });
   MADE[id] = [...(versions ?? []), record];
   return [201, { card: cardView(record) }];
+}
+
+/** 7.58.00: a launchable role's model choice for the deployment (null: back to its default), checked as the server does. */
+function setModel(role, body) {
+  const template = BUNDLE.agents.find((agent) => agent.id === role && agent.skill);
+  if (!template) return [404, { error: `no launchable role ${role.slice(0, 64)}` }];
+  const model = body?.model;
+  if (body === null || typeof body !== 'object' || Object.keys(body).some((key) => key !== 'model') || (model !== null && typeof model !== 'string')) {
+    return [400, { error: 'the body is {model: <a model choice> | null}' }];
+  }
+  const choice = typeof model === 'string' ? model.trim() : null;
+  if (choice !== null && (!MODEL_ID.test(choice) || choice.includes('//'))) {
+    return [400, { error: 'model is auto, opus, sonnet, haiku or a model id (a letter or digit, then letters, digits and ._:/-, at most 128)' }];
+  }
+  if (choice !== null && !NAMED_MODELS.has(choice) && !KIRO_ROLES.has(role) && !BEDROCK_ENABLED.includes(choice)) {
+    return [400, { error: `${choice} isn't enabled in this deployment. An admin adds it with -c engineeringModelPrices (docs/deployment.md).` }];
+  }
+  const at = new Date().toISOString();
+  if (choice === null) delete CHOICES[role];
+  else CHOICES[role] = { model_choice: choice, updated_at: at, updated_by: 'admin-demo' };
+  return [200, { role, model_choice: choice, updated_at: at, updated_by: 'admin-demo' }];
 }
 
 /** A step's vacuous-pass rule in words (views.py looked_at_nothing). */
@@ -230,8 +271,17 @@ function read(path, connection, params) {
   return null;
 }
 
+const MODEL_PATH = /^\/agents\/engineering\/registry\/([^/]+)\/model$/;
+
 export function handleEngineeringRegistryRoutes(req, res, url, send, shared) {
   const path = url.pathname;
+  const modelMatch = MODEL_PATH.exec(path);
+  if (modelMatch) {
+    if (req.method !== 'PUT') send(405, { message: 'Method not allowed' });
+    else if (!isAdmin()) send(403, { message: 'Admin access required' });
+    else shared.collectJson(req, res, (body) => send(...setModel(decodeURIComponent(modelMatch[1]), body ?? null)));
+    return true;
+  }
   const creating = path === '/agents/engineering/registry/cards';
   const known = creating || [REGISTRY_PATH, CARD_PATH, GATES_PATH, BRIEF_PATH, SOURCE_PATH, LIBRARY_PATH, LIBRARY_FILE_PATH]
     .some((pattern) => pattern.test(path));

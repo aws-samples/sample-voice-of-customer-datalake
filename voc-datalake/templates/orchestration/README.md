@@ -34,6 +34,11 @@ images/<language>/Dockerfile       7.56.00: the agent images AgentCore runs (com
   - The card's `tools` is the tool policy, a subset of what the harness offers the role (`role_specs`). A tool the
     skill names that the harness does not offer yet goes in `pending_tools`, and a broker write it needs in
     `pending_broker_ops`.
+  - The card's `model` (7.58.00): `id`, the Bedrock model the skill was written for and the role's default on the
+    native harness; and optionally the role's model choice for both harnesses, `choice` (`auto`, `opus`, `sonnet` or
+    `haiku`) or `other` (another model id), never both. A card with neither runs `id` on the native harness and Kiro's
+    name for it on Kiro. A deployment's Registry and a run may choose another ([docs/autonomous-engineering.md,
+    Choosing the model](../../../docs/autonomous-engineering.md#choosing-the-model-75800)).
   - Everything in SKILL.md above `## Examples` becomes the skill record's instructions. Each `### <name>` example,
     `**When:** ... **Do:** ...`, becomes one `{situation, action}`.
   - Issue and repository text is data; the platform rules say so for every skill, so a skill does not repeat them.
@@ -159,6 +164,8 @@ other). The Kiro harness (7.53.00, `lambda/engineering/runtime/harness/kiro.py`)
 role's: every image ships the folder at `/opt/voc/orchestration/kiro-agents/`. The compiler writes them from each card
 and skill (`compile.py` `kiro_agent`). Do not edit them.
 
+- `model` (7.58.00) is the Kiro model of the card's: its `model.choice` or `model.other` (Editing, above), else Kiro's name for
+  its `model.id` (`kiro_pin.kiro_model`: `global.anthropic.claude-sonnet-5-5` is `claude-sonnet-5.5`).
 - `name` is the role and `description` its card's `purpose`. `prompt` is `_shared/PLATFORM_RULES.md` and then the
   role's compiled skill (its instructions, then its examples), then (7.56.00) the list of its library skills when it
   has `read_skill`, as the harness builds its system prompt. The session's

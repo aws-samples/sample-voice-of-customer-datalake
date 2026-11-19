@@ -290,6 +290,8 @@ class StartPlan:
     feedback: Feedback | None = None
     prd: Mapping[str, str] | None = None
     via: Mapping[str, str] | None = None
+    #: (7.58.00) One model for every role of the run (engineering/model_choices.py, checked), '' for each role's own.
+    model_choice: str = ''
 
 
 def start_request(plan: StartPlan) -> dict[str, Any]:
@@ -298,8 +300,9 @@ def start_request(plan: StartPlan) -> dict[str, Any]:
     flow has one), the hard cap forced on (``hard_cap``: the run is capped at what is left of the flow's month even
     when the administrators' hard cap is off), the commit resolved by the start (the head of the connection's default
     branch, through the broker), and what the run started from (``issue``, ``feedback``, ``prd``) and by whom
-    (``actor``, ``via``: the agent and its run, recorded on the run's first ``RUNLOG#`` row, D4). A flow read with its
-    calls left in is refused (409): the runtime runs only a flat flow."""
+    (``actor``, ``via``: the agent and its run, recorded on the run's first ``RUNLOG#`` row, D4), and (7.58.00) the
+    model a Run now chose for every role (``model_choice``, only when it chose one). A flow read with its calls left in
+    is refused (409): the runtime runs only a flat flow."""
     if plan.flow.calls:
         raise ConflictError(UNEXPANDED)
     request: dict[str, Any] = {
@@ -317,6 +320,8 @@ def start_request(plan: StartPlan) -> dict[str, Any]:
         request['prd'] = dict(plan.prd)
     if plan.via is not None:
         request['via'] = dict(plan.via)
+    if plan.model_choice:
+        request['model_choice'] = plan.model_choice
     return request
 
 
@@ -440,6 +445,8 @@ class AgentStart:
     counts_against_daily_cap: bool = False
     daily_cap: int = 0
     extra_agent_sets: Mapping[str, Any] | None = None
+    #: (7.58.00) A Run now's model for every role of the run ('' for each role's own): the start's ``model_choice``.
+    model_choice: str = ''
 
 
 @dataclass(frozen=True)
@@ -499,7 +506,8 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
                      connection_id=str(settings.get('connection')), connection=connection,
                      language=str(settings.get('language')), goal=goal, actor=start.actor,
                      issue=None if start.issue is None else start.issue.number, feedback=start.feedback,
-                     prd=start.prd, via={'agent_id': agent['agent_id'], 'agent_run_id': run_id, 'trigger': start.trigger})
+                     prd=start.prd, via={'agent_id': agent['agent_id'], 'agent_run_id': run_id, 'trigger': start.trigger},
+                     model_choice=start.model_choice)
     answer = invoke_start(client, function, start_request(plan))
     if answer.outcome in ('started', 'uncertain'):
         store.mark_engineering_running(table, agent['agent_id'], run_id)

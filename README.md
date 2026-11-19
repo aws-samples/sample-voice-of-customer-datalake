@@ -52,12 +52,14 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **Ways of working with AI**: per person, Human-driven, AI-assisted or AI-driven writing of PR/FAQs and PRDs, enforced by the API ([Ways of working](docs/ways-of-working.md))
 - **Decisions and prioritization**: decision records per project, and Prioritization rows scored on your team's metrics with individual or room votes ([Prioritization](docs/prioritization.md))
 - **Autonomous agents**: agents watch a feedback scope and, when a trigger fires, run a workflow from research to a reviewed prototype, with human decision points ([Autonomous Agents](docs/autonomous-agents.md))
+- **Autonomous engineering**: engineering agents (builder, fixer, reviewers, gate runner, coach and more) turn an issue into a reviewed pull request on your repository, or on any public repository through a fork. They run in AgentCore sandboxes, on the native harness or Kiro, on the model you choose per role or per run, behind quality gates and a person's go ([Autonomous Engineering](docs/autonomous-engineering.md))
 - **Memory and company context**: company and personal memory learned from conversations and agent runs, plus the company vision, objectives and design system that ground every output ([Memory](docs/memory.md), [Company Context](docs/company-context.md))
 
 ### Extend
 
 - **MCP server**: one endpoint, `/mcp/global`, for Kiro, Claude Code, Cursor and other MCP clients, with OAuth sign-in or personal expiring tokens that act as their owner ([MCP](docs/mcp.md))
 - **Your own plugins**: copy the template, then edit a manifest and a handler ([Getting Started with Plugins](docs/getting-started-plugins.md))
+- **Agent orchestration templates**: the engineering agents' cards, skills (a library of 30), flows, quality gates, automations, eval cases and agent images, as files you edit and check with `npm run orchestration:validate` ([Orchestration templates](voc-datalake/templates/orchestration/README.md))
 - **Project export and import** between deployments ([Moving projects](docs/project-export.md))
 
 ### Operate
@@ -249,6 +251,9 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant |
 | [Assistant Chat Scope](docs/assistant-chat-scope.md) | The `/chat` filter panel and the filter floor the assistant's feedback tools cannot read past |
 | [Autonomous Agents](docs/autonomous-agents.md) | Agents, triggers, workflows, runs, decisions and plans |
+| [Autonomous Engineering](docs/autonomous-engineering.md) | Engineering agents from an issue to a reviewed pull request: connections, runtime, harnesses (native, Kiro), models, gates, learning |
+| [Orchestration templates](voc-datalake/templates/orchestration/README.md) | The agents' cards, skills, flows, gates, automations, eval cases and images as files, and how to validate and compile them |
+| [Skills library](voc-datalake/templates/orchestration/README.md#the-skills-library-75600) | The 30 skills the engineering agents read on demand, who uses which, and how to add one |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, recall, retention |
 | [Company Context](docs/company-context.md) | Company vision, personal objectives and the design system |
 | [Participants](docs/participants.md) | Lists of people to ask for feedback, emailed asks, unsubscribe, attribution, erasure |

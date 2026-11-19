@@ -28,7 +28,11 @@ edit here. Kiro's own tools are never offered:
 The ACP mapping (docs/autonomous-engineering.md, "The Kiro harness (7.53.00)"):
 
 - the brief = ``session/new`` then ``session/set_config_option {configId: mode, value: <role>}`` (refused unless Kiro
-  says the mode is the role: its prompt and rules would not apply) then ``session/prompt`` with ``converse_loop.opening``;
+  says the mode is the role: its prompt and rules would not apply), then (7.58.00) the session's model, the one its
+  launch chose or else Kiro's name for its skill's (``session/set_config_option {configId: model, value: <Kiro model
+  id>}``: unless Kiro answers that it is the model, ``auto`` taking any, the step ends for a person, saying why, and no
+  other model runs; a model with no Kiro name ends it before kiro-cli starts), then ``session/prompt`` with
+  ``converse_loop.opening``;
 - steering (7.51's ``relay_steering`` and the run's direction, from the inbox) = a ``session/prompt`` sent mid-turn, in
   the session's ``<<<STEERING …>>>`` fence below the platform rules: Kiro cancels the running turn (``cancelled``) and
   goes on with it, keeping its context; for the run coordinator a wake for its tool server too (7.54.00), so a
@@ -66,7 +70,7 @@ from engineering.runtime.harness.acp import AcpClient, AcpError, AcpTimeout, Not
 from engineering.runtime.harness.cli import PATH, TOOL_SERVER, sync_notes
 from engineering.runtime.harness.converse_loop import nudge, opening, system_prompt
 from engineering.runtime.harness.interface import AgentSession, Ending
-from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE
+from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CHOICES, kiro_model
 from engineering.runtime.harness.seed import seed_prefix
 from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 from engineering.runtime.harness.tools import DIRECTION, MAX_RUN_SECONDS, STEER
@@ -123,6 +127,12 @@ PROXY_VARIABLES: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy')
 
 class KiroNotOffered(RuntimeError):
     """kiro-cli missing, not the pinned version, its key not readable, or no compiled config for the role."""
+
+
+class ModelRefused(RuntimeError):
+    """Kiro cannot run the session's model (7.58.00): it refused it, does not offer it on the account, answered another,
+    or the model has no Kiro name. Never a crash (a continuation would meet it again), and never another model (the
+    owner's rule: nobody pays for a model they did not pick): the step ends for a person, in these words."""
 
 
 class StateRefused(ValueError):
@@ -186,15 +196,20 @@ def compiled_config(role: str, directory: str = KIRO_AGENTS_DIR) -> dict[str, An
     return config
 
 
-def session_agent(session: AgentSession, base: Mapping[str, Any], server_env: Mapping[str, str]) -> dict[str, Any]:
+def session_agent(session: AgentSession, base: Mapping[str, Any], server_env: Mapping[str, str],
+                  chosen: str = '') -> dict[str, Any]:
     """The agent's config for this session: the role's compiled one, with the session's prompt (its fence and the skill
     the board served) and exactly the session's tools (``ToolBox.specs``), each allowed without asking; nothing of
-    Kiro's own. A key named ``KIRO_API_KEY`` in the server's environment is blanked, so the tool server never holds the
-    key kiro-cli has."""
+    Kiro's own. Its ``model`` is the Kiro model the launch chose (7.58.00, ``chosen``: ``--kiro-model``), else Kiro's
+    name for the session's model (``kiro_pin.kiro_model``), so Kiro runs the model the skill names, never its own
+    default (``auto``); none for a model Kiro has no name for. A key named ``KIRO_API_KEY`` in the server's environment
+    is blanked, so the tool server never holds the key kiro-cli has."""
     context, names = session.context, sorted(spec.name for spec in session.tools.specs)
+    model = chosen or kiro_model(context.model)
     return {
         'name': context.role,
         'description': str(base.get('description', ''))[:500],
+        **({'model': model} if model else {}),
         'prompt': system_prompt(context, session.tools.skill),
         'tools': [f'@{SERVER_NAME}'],
         'allowedTools': [f'@{SERVER_NAME}/{name}' for name in names],
@@ -339,10 +354,12 @@ MAX_HELD_CHUNKS: Final = 16 * 1024
 
 class KiroAcp:
     """``Adapter`` on kiro-cli over ACP, at ``version`` exactly. ``key`` reads the API key (``ssm_key``);
-    ``environment`` is the harness's own (its proxy), ``tool_env`` the tool server's (as the CLI adapter's)."""
+    ``environment`` is the harness's own (its proxy), ``tool_env`` the tool server's (as the CLI adapter's); ``model``
+    (7.58.00, ``--kiro-model``) the Kiro model the launch chose ('' for none: Kiro's name for the skill's model)."""
 
     def __init__(self, *, binary: str, version: str, agent_home: str, environment: Mapping[str, str],
-                 tool_env: Mapping[str, str], key: Callable[[], str], configs_dir: str = KIRO_AGENTS_DIR,
+                 tool_env: Mapping[str, str], key: Callable[[], str], model: str = '',
+                 configs_dir: str = KIRO_AGENTS_DIR,
                  run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
                  popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
                  killpg: Callable[[int, int], None] = os.killpg,
@@ -354,6 +371,7 @@ class KiroAcp:
         self.environment = dict(environment)
         self.tool_env = dict(tool_env)
         self.key = key
+        self.model = model
         self.configs = configs_dir
         self.run_command = run
         self.popen = popen
@@ -383,6 +401,13 @@ class KiroAcp:
         state = _KiroRun(self, session, compiled_config(session.context.role, self.configs))
         try:
             return state.run()
+        except ModelRefused as refused:
+            # (7.58.00) Not a crash: the step ends for a person, in these words, and no other model runs.
+            state.end()
+            session.stopped_for = str(refused)
+            state.record('model_refused', model=self.model, reason=str(refused))
+            session.context.status.at(str(refused))
+            return 'done'
         except Exception:
             # Whatever failed (the protocol, a port, a tool's crash): kiro-cli is ended and the work saved first.
             state.end()
@@ -427,6 +452,8 @@ class _KiroRun:
         self.replayed = 0
         #: Whether the restored session is a child run's seed's (the parent's), not this agent's own checkpoint's.
         self.from_seed = False
+        #: The model this session runs on Kiro (7.58.00, ``wanted_model``): '' for a session given none.
+        self.wanted = ''
 
     # -- the process ----------------------------------------------------------------------------------------------
 
@@ -439,7 +466,7 @@ class _KiroRun:
                        os.path.join(self.home, 'run'), self.files.directory):
             os.makedirs(folder, mode=0o700, exist_ok=True)
         server_env = {**self.adapter.tool_env, 'VOC_SESSION_FILES': self.files.directory}
-        config = session_agent(self.session, self.base, server_env)
+        config = session_agent(self.session, self.base, server_env, self.wanted)
         with open(os.path.join(self.home, '.kiro', 'agents', f'{self.context.role}.json'), 'w') as stream:
             json.dump(config, stream)
         return self.restore()
@@ -618,7 +645,8 @@ class _KiroRun:
 
     def open(self, restored: tuple[str, str] | None) -> bool:
         """``initialize``, then the saved session loaded (True) or a new one, then the role's agent selected (refused
-        unless Kiro says it is: on any other agent the role's prompt and rules would not apply)."""
+        unless Kiro says it is: on any other agent the role's prompt and rules would not apply), then the launch's
+        model (``choose_model``)."""
         timeouts = self.adapter.timeouts
         capabilities = self.acp.initialize(timeouts['initialize']).get('agentCapabilities')
         loaded = False
@@ -643,10 +671,44 @@ class _KiroRun:
             'sessionId': self.session_id, 'configId': 'mode', 'value': self.context.role}), timeouts['mode'])
         if _current(mode, 'mode') != self.context.role:
             raise AcpError(f'kiro-cli did not select the {self.context.role} agent')
-        model = _current(mode, 'model')
+        model = self.choose_model(self.wanted) if self.wanted else _current(mode, 'model')
         self.context.status.at(f'kiro session {"loaded" if loaded else "started"}' + (f' on {model}' if model else ''))
         self.session.checkpoint_extra = self.save_state
         return loaded
+
+    def wanted_model(self) -> str:
+        """The model this session runs on Kiro (7.58.00): the one its launch chose (``--kiro-model``), else Kiro's name
+        for the skill's model (``kiro_pin.kiro_model``); ``ModelRefused`` for a model Kiro has no name for, never
+        Kiro's default instead. '' for a session given no model at all."""
+        wanted = self.adapter.model or kiro_model(self.context.model) or ''
+        if not wanted and self.context.model:
+            raise ModelRefused(f'{self.context.model} has no Kiro name; choose a Kiro model for this role.')
+        return wanted
+
+    def choose_model(self, wanted: str) -> str:
+        """``session/set_config_option {configId: model}``: what Kiro answers is the session's model now (recorded,
+        ``acp_model``: what was asked, what Kiro answered, the models it offered when it listed them). Kiro refusing it,
+        not offering it on this account or answering another ends the step for a person (``ModelRefused``, after the
+        ``kiro_model`` record of what was wanted and what Kiro has); ``auto`` takes whichever model Kiro picks."""
+        words, offered, current = '', [], ''
+        try:
+            answer = self.acp.wait(self.acp.request('session/set_config_option', {
+                'sessionId': self.session_id, 'configId': 'model', 'value': wanted}), self.adapter.timeouts['mode'])
+        except AcpTimeout:
+            raise
+        except AcpError as refused:
+            # (Kiro's own words, after the client's "the agent refused request <n>: ")
+            words = (str(refused).partition(': ')[2] or str(refused))[:200]
+        else:
+            current, offered = _current(answer, 'model'), _offered(answer, 'model')
+        self.record('acp_model', wanted=wanted, current=current, offered=offered, **({'refused': words} if words else {}))
+        if not words and (current == wanted or wanted == KIRO_CHOICES['auto']):
+            return current
+        self.record('kiro_model', wanted=wanted, current=current or 'none')
+        why = (f'it answered {current or "none"}' + (f': {words}' if words else '')
+               + (f'; Kiro does not offer {wanted} on this account' if offered and wanted not in offered else ''))
+        raise ModelRefused(f'Kiro could not use {wanted} for the {self.context.role} ({why}). Choose another model in '
+                           "the role's setup or for this run.")
 
     def load(self, session_id: str) -> tuple[bool, str]:
         """``session/load`` of the restored session (its history replayed, counted, not recorded again): whether it
@@ -676,6 +738,8 @@ class _KiroRun:
         return ident
 
     def run(self) -> Ending:
+        # (7.58.00: the session's model first, so one with no Kiro name never opens a Kiro session)
+        self.wanted = self.wanted_model()
         restored = self.prepare()
         self.start()
         if self.open(restored):
@@ -833,6 +897,27 @@ def _current(answer: Mapping[str, Any], option: str) -> str:
         if isinstance(options, list) else None
     value = found.get('currentValue') if found is not None else None
     return value if isinstance(value, str) else ''
+
+
+#: The most model ids a session's record keeps of what Kiro offered.
+MAX_OFFERED: Final = 50
+
+
+def _offered(answer: Mapping[str, Any], option: str) -> list[str]:
+    """A ``set_config_option`` answer's values of ``option`` (its ``options``, flat or in groups), at most
+    ``MAX_OFFERED`` of them; [] when it lists none."""
+    options = answer.get('configOptions')
+    found = next((item for item in options if isinstance(item, Mapping) and item.get('id') == option), None) \
+        if isinstance(options, list) else None
+    listed = found.get('options') if found is not None else None
+    values: list[str] = []
+    for item in listed if isinstance(listed, list) else []:
+        nested = item.get('options') if isinstance(item, Mapping) else None
+        for entry in nested if isinstance(nested, list) else [item]:
+            value = entry.get('value') if isinstance(entry, Mapping) else None
+            if isinstance(value, str) and value and value[:128] not in values:
+                values.append(value[:128])
+    return values[:MAX_OFFERED]
 
 
 def _tool_text(update: Mapping[str, Any]) -> str:

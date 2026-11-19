@@ -33,6 +33,8 @@ from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any, Final, Literal, Protocol
 
+from engineering.runtime.harness.kiro_pin import kiro_model
+from engineering.runtime.harness.model_choice import bedrock_model, not_enabled
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
 from shared.dynamo_values import string_list as _texts
 from shared.workflow_engineering import PUSHING_ROLES
@@ -155,6 +157,17 @@ class Settings:
     kiro_roles: frozenset[str] = frozenset()
     kiro_key_parameter: str = ''
     kiro_version: str = ''
+    #: (7.58.00) Each role's model choice (the Registry's, else its card's: runtime/harness/model_choice.py), only the
+    #: roles that have one, and the Bedrock models the native harness may run here (granted and priced:
+    #: runtime/harness_switch.py ``native_models``; empty when not known).
+    model_choices: Mapping[str, str] = field(default_factory=dict)
+    native_models: frozenset[str] = frozenset()
+
+    def run_models(self) -> dict[str, str]:
+        """The model each role's session asks Bedrock for: its card's, or on the native harness its model choice's
+        (``auto``: the card's); a role on Kiro keeps its card's, as before 7.58.00."""
+        return {role: bedrock_model(self.model_choices.get(role, ''), card) if role not in self.kiro_roles else card
+                for role, card in self.card_models.items()}
 
 
 class ReadinessPorts(Protocol):
@@ -330,9 +343,10 @@ def flow_requires(definition: Mapping[str, Any], declared: object = None) -> dic
 
 def flow_models(definition: Mapping[str, Any], card_models: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
     """Every model the flow's runs call, each with the roles that call it: each role's card model (its agent steps,
-    its boards' posters and claimers, a quality gate's runner and final go, the run's coordinator), or a step's own
-    ``model`` (an agent's, a gate's ``final_go_model``), and Learn's (``learn.model`` while Learn is on). A role with
-    no card model is left out (none is launched)."""
+    its boards' posters and claimers, a quality gate's runner and final go, the run's coordinator; since 7.58.00 the
+    caller's ``Settings.run_models``, its model choice's on the native harness), or a step's own ``model`` (an
+    agent's, a gate's ``final_go_model``), and Learn's (``learn.model`` while Learn is on). A role with no card model
+    is left out (none is launched)."""
     by_model: dict[str, set[str]] = {}
 
     def add(role: str, model: object = None) -> None:
@@ -743,11 +757,26 @@ def _hard_cap(ctx: _Context) -> Check:
                  COST_DOCS)
 
 
+def _chosen_native(ctx: _Context) -> list[tuple[str, str, bool]]:
+    """(7.58.00) Each of the flow's roles on the native harness with a model choice: (role, its Bedrock model, whether
+    the deployment grants and prices it); a model this deployment's settings do not say counts as enabled."""
+    settings = ctx.settings
+    roles = sorted((flow_roles(ctx.subject.definition) & set(settings.model_choices)) - settings.kiro_roles)
+    models = settings.run_models()
+    return [(role, models[role], not settings.native_models or models[role] in settings.native_models)
+            for role in roles if models.get(role)]
+
+
 def _bedrock_models(ctx: _Context) -> Check:
-    models = flow_models(ctx.subject.definition, ctx.settings.card_models)
+    models = flow_models(ctx.subject.definition, ctx.settings.run_models())
     if not models:
         return Check('bedrock_models', 'fail', 'The flow names no role with a model.', 'Add the flow\'s steps.',
                      MODELS_DOCS)
+    chosen = _chosen_native(ctx)
+    refused = [f'The {role}: {not_enabled(model)}' for role, model, ok in chosen if not ok]
+    if refused:
+        return Check('bedrock_models', 'fail', ' '.join(refused),
+                     'Choose another model for the role (Agents → Registry), or have an admin price it.', MODELS_DOCS)
     try:
         answered = ctx.ports.models_access(list(models))
     except ReadFailed:
@@ -762,7 +791,8 @@ def _bedrock_models(ctx: _Context) -> Check:
         return Check('bedrock_models', 'fail', f'Not available: {"; ".join(missing)}.', fix, MODELS_DOCS)
     if unread:
         return Check('bedrock_models', 'unknown', f'Not read: {", ".join(unread)}.', fix, MODELS_DOCS)
-    return Check('bedrock_models', 'pass', f'Available: {", ".join(models)}.', '', MODELS_DOCS)
+    picked = f' Chosen: {", ".join(f"{role} {model} (enabled)" for role, model, _ok in chosen)}.' if chosen else ''
+    return Check('bedrock_models', 'pass', f'Available: {", ".join(models)}.{picked}', '', MODELS_DOCS)
 
 
 def _agentcore_quota(ctx: _Context) -> Check:
@@ -855,7 +885,23 @@ def _kiro(ctx: _Context) -> Check:
     if not on_kiro or ctx.subject.requires.get('image') is False:
         return _not_needed('kiro', 'this deployment runs the flow\'s agents on the native harness', KIRO_DOCS)
     roles = ', '.join(on_kiro)
-    return _kiro_key(ctx, roles) or _kiro_image(ctx, roles)
+    found = _kiro_key(ctx, roles) or _kiro_image(ctx, roles)
+    return replace(found, detail=f'{found.detail} {_kiro_models(ctx, on_kiro)}')
+
+
+def _kiro_models(ctx: _Context, on_kiro: list[str]) -> str:
+    """(7.58.00) The model each of the flow's roles on Kiro asks for (its choice's, else Kiro's name for its card's), and
+    when it is checked: Kiro answers which models an account offers only to a session, so readiness cannot see them;
+    each session sets its model before its first prompt, and a model Kiro cannot use stops that step for a person."""
+    named = ', '.join(_kiro_named(ctx.settings, role) for role in on_kiro)
+    return (f'Models on Kiro: {named}. Kiro checks each when the step\'s session starts: a model it cannot use on this '
+            'account stops that step for a person.')
+
+
+def _kiro_named(settings: Settings, role: str) -> str:
+    choice, card = settings.model_choices.get(role, ''), settings.card_models.get(role, '')
+    model = kiro_model(choice, chosen=True) if choice else kiro_model(card)
+    return f'{role} {model}' if model else f'{role} none ({card or "no model"} has no Kiro name: choose a Kiro model)'
 
 
 def _kiro_key(ctx: _Context, roles: str) -> Check | None:

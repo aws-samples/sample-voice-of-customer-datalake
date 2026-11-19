@@ -447,7 +447,11 @@
     },
     "laneAttempt": "{{role}} · 시도 {{n, number}}",
     "stoppedHere": "여기서 중지됨",
-    "stoppedHereAs": "여기서 중지됨: {{state}}"
+    "stoppedHereAs": "여기서 중지됨: {{state}}",
+    "model": {
+      "label": "이 실행의 모델",
+      "default": "각 역할 자체의 모델"
+    }
   },
   "editor": {
     "methodology": {
@@ -832,6 +836,7 @@
     },
     "budget": "월 예산은 흐름의 예산입니다: {{amount}}.",
     "noBudget": "이 흐름에는 월 예산이 없습니다.",
+    "modelNote": "실행을 시작할 때 모델이 기록되며, 실행을 재개하거나 다시 시작해도 유지됩니다.",
     "submit": "실행 시작",
     "openRun": "실행 열기",
     "mayHaveStarted": "실행이 시작되었을 수 있습니다. 다른 실행을 시작하기 전에 실행 목록을 확인하세요.",
@@ -2246,7 +2251,8 @@
       "child": {
         "resume": "재개 후속 실행",
         "restart": "재시작 후속 실행"
-      }
+      },
+      "model": "이 실행의 모델: {{model}}(모든 역할)"
     },
     "inspector": {
       "label": "인스펙터",
@@ -2860,6 +2866,25 @@
         "capShape": "한도는 0보다 큰 정수입니다.",
         "capOver": "한도는 템플릿 값 이하입니다."
       }
+    },
+    "model": {
+      "title": "모델",
+      "label": "이 역할이 실행되는 모델",
+      "default": "역할 기본값({{model}})",
+      "roleDefault": "역할 기본값",
+      "runsKiro": "이 배포는 이 역할을 Kiro에서 실행합니다: {{model}}({{id}})에서 실행됩니다.",
+      "runsKiroAuto": "이 배포는 이 역할을 Kiro에서 실행합니다: Kiro가 작업마다 모델을 고릅니다.",
+      "kiroStops": "Kiro가 이 계정에서 그 모델을 사용할 수 없으면 단계가 그 이유를 알리고 사람의 결정을 위해 멈춥니다.",
+      "runsNative": "이 배포는 이 역할을 네이티브 하네스(Amazon Bedrock)에서 실행합니다: {{model}}({{id}})에서 실행됩니다.",
+      "nextRun": "실행이 시작될 때 모델이 기록되므로 변경 사항은 다음 실행부터 적용됩니다. 자체 모델로 시작한 실행은 모든 역할을 그 모델로 실행합니다.",
+      "changed": "{{who}}님이 {{at}}에 변경함.",
+      "template": "템플릿은 {{model}}을(를) 지정합니다.",
+      "save": "모델 저장",
+      "saved": "저장했습니다.",
+      "failed": "모델을 저장하지 못했습니다. 다시 시도하세요.",
+      "refused": "저장되지 않음: {{message}}",
+      "madeCard": "역할의 모델로 실행됩니다: {{model}}.",
+      "chosen": "모델: {{model}}"
     }
   },
   "gates": {
@@ -3023,6 +3048,39 @@
       "statement": "내용",
       "rationale": "근거",
       "citations": "인용"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "네이티브",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (Kiro 전용)",
+      "opus": "Opus 5.5 (Kiro 및 네이티브)",
+      "sonnet": "Sonnet 5.5 (Kiro 및 네이티브)",
+      "haiku": "Haiku 5.5 (Kiro 및 네이티브)",
+      "other": "다른 모델…"
+    },
+    "notes": {
+      "auto": "Kiro가 작업마다 모델을 고릅니다. Kiro 전용: 네이티브 하네스에서는 역할의 기본 모델이 실행됩니다.",
+      "named": "두 하네스 모두에서 {{model}}: Kiro에서는 {{kiro}}, 네이티브 하네스(Amazon Bedrock)에서는 {{bedrock}}.",
+      "other": "입력한 모델 ID를 역할이 실행되는 하네스에서 그대로 사용합니다."
+    },
+    "other": {
+      "label": "모델 ID",
+      "hint": {
+        "kiro": "`kiro-cli chat --list-models`가 나열하는 Kiro 모델 ID(예: claude-sonnet-5.5).",
+        "native": "이 배포가 사용하도록 설정한 Bedrock 모델 또는 추론 프로필 ID(예: global.anthropic.claude-sonnet-5-5).",
+        "any": "Kiro의 역할에는 `kiro-cli chat --list-models`가 나열하는 Kiro 모델 ID(예: claude-sonnet-5.5), 네이티브 하네스의 역할에는 이 배포가 사용하도록 설정한 Bedrock 모델 ID(예: global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "모델 ID를 입력하세요.",
+      "format": "모델 ID는 문자나 숫자로 시작하고 문자, 숫자와 . _ : / -만 포함합니다(최대 128자, 공백과 URL 불가).",
+      "notEnabled": "{{id}}은(는) 이 배포에서 사용하도록 설정되어 있지 않습니다. 관리자가 -c engineeringModelPrices로 추가합니다(docs/deployment.md)."
     }
   }
 }

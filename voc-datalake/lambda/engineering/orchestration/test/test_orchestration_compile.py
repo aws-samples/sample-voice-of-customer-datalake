@@ -206,9 +206,11 @@ def test_one_kiro_agent_config_per_launchable_role_none_for_the_coach_committed_
 
 def test_the_fixers_kiro_config_offers_only_the_platforms_tool_server_each_card_tool_allowed() -> None:
     fixer = KIRO['fixer']
-    assert list(fixer) == ['name', 'description', 'prompt', 'tools', 'allowedTools', 'mcpServers', 'resources',
+    assert list(fixer) == ['name', 'description', 'model', 'prompt', 'tools', 'allowedTools', 'mcpServers', 'resources',
                            'permissions']
     assert (fixer['name'], fixer['description']) == ('fixer', SOURCES.cards['fixer']['purpose'])
+    # (7.58.00: Kiro's name for its card's model, so Kiro runs it, never its own default)
+    assert fixer['model'] == 'claude-sonnet-5.5'
     # (7.53.00: no Kiro builtin at all: a read, a write and a command are the platform's, through its tool server)
     assert fixer['tools'] == ['@voc'] == list(KIRO_TOOLS)
     assert fixer['allowedTools'] == ['@voc/read_file', '@voc/list_files', '@voc/write_file', '@voc/run',

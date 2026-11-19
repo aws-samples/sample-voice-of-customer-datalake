@@ -17,9 +17,16 @@
     "harness": {"description": "converse or cli: a launchable role. learn: the built-in Learn step's card (coach/).",
                 "enum": ["converse", "cli", "learn"]},
     "model": {
+      "description": "id: the model the skill was written and measured for, and the role's default on the native harness. 7.58.00: optionally the role's model choice for both harnesses (runtime/harness/model_choice.py), either a named one (choice) or another model id (other), never both; a card with neither runs id (on Kiro by Kiro's name for it, kiro_pin.kiro_model).",
       "type": "object", "additionalProperties": false, "required": ["id"],
       "properties": {"id": {"description": "A model of shared/model_config.py ALLOWED_MODEL_IDS.",
-                            "type": "string", "minLength": 1, "maxLength": 128}}
+                            "type": "string", "minLength": 1, "maxLength": 128},
+                     "choice": {"description": "auto (Kiro chooses per task; on the native harness the role's default, id), opus, sonnet or haiku (Claude 5.5: claude-<name>-5.5 on Kiro, global.anthropic.claude-<name>-5-5 on Bedrock).",
+                                "enum": ["auto", "opus", "sonnet", "haiku"]},
+                     "other": {"description": "Another model id, used as it is on the role's harness: a Kiro model id (checked by Kiro when the session starts), or a Bedrock model or inference profile id the deployment grants and prices (checked at the run's start). Letters, digits and ._:/-, at most 128 characters, no URL.",
+                               "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+                               "not": {"pattern": "//"}}},
+      "not": {"required": ["choice", "other"]}
     },
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
     "outputs": {"type": "array", "items": {"$ref": "#/$defs/output"}},

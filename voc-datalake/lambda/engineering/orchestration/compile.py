@@ -79,6 +79,7 @@ from engineering.quality_gate.packs import (
     load_packs,
 )
 from engineering.runtime.harness.cli import TOOL_SERVER
+from engineering.runtime.harness.kiro_pin import kiro_model
 from engineering.runtime.harness.library_tools import with_library
 from engineering.runtime.harness.skills import Example, Skill, skill_record
 from engineering.runtime.harness.tool_server import SERVER_NAME
@@ -166,6 +167,9 @@ def _agent(card: Mapping[str, Any], skill: SkillText | None) -> dict[str, Any]:
     # (7.56.00: the library skills the card names; in the digest only when it names any, so a card without skills keeps
     # the digest its template version always had)
     skills = list(card.get('skills', []))
+    # (7.58.00: the card's model choice, beside its model; likewise only when it names one)
+    choice = {'model_choice': card_choice(card)} if card_choice(card) else {}
+    fields.update(choice)
     digested = {**fields, **({'skills': skills} if skills else {})}
     # (7.52.00: every tool the role may have, for a Registry card's check; outside the digest, which is the template's)
     allowed = sorted(spec.name for spec in role_specs(str(card['id'])))
@@ -488,9 +492,12 @@ def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str,
     """The role's Kiro agent config (v3 universal: ``tools`` and ``allowedTools`` for one engine, ``permissions`` for
     the other): the harness's tool server alone, each of the card's tools allowed without asking (an ``mcp`` allow
     rule, its match sorted, as ``kiro-cli agent upgrade`` derives it from ``allowedTools``), and nothing else allowed.
-    No ``kiroUpgrade`` marker: it is machine-specific (scripts/ai-review/agent-guard.mjs)."""
+    No ``kiroUpgrade`` marker: it is machine-specific (scripts/ai-review/agent-guard.mjs).
+    Its ``model`` (7.58.00) is the Kiro model of the card's (``card_kiro_model``), so the agent pins it before the
+    session sets it."""
     platform = kiro_tools(card)
-    return {'name': card['id'], 'description': card['purpose'],
+    model = card_kiro_model(card)
+    return {'name': card['id'], 'description': card['purpose'], **({'model': model} if model else {}),
             'prompt': kiro_prompt(platform_rules, skill_of(card, skill), library),
             'tools': list(KIRO_TOOLS),
             'allowedTools': [f'@{SERVER_NAME}/{tool}' for tool in platform],
@@ -498,6 +505,21 @@ def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str,
             'resources': [],
             'permissions': {'rules': [{'capability': 'mcp', 'match': sorted(f'{SERVER_NAME}/{tool}' for tool in platform),
                                        'effect': 'allow'}]}}
+
+
+def card_kiro_model(card: Mapping[str, Any]) -> str | None:
+    """The model a card's role runs on Kiro (``kiro_pin.kiro_model``): its model choice's, else Kiro's name for its
+    ``model.id``; None when Kiro has no name for it."""
+    choice = card_choice(card)
+    return kiro_model(choice, chosen=True) if choice else kiro_model(str(card['model']['id']))
+
+
+def card_choice(card: Mapping[str, Any]) -> str:
+    """A card's model choice (7.58.00): its ``model.choice`` or ``model.other`` (the schema allows one at most), ''
+    for none."""
+    model = card.get('model')
+    found = (model.get('choice') or model.get('other')) if isinstance(model, Mapping) else None
+    return str(found) if isinstance(found, str) else ''
 
 
 def kiro_files(sources: Sources) -> dict[str, str]:

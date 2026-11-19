@@ -123,6 +123,23 @@ def test_the_overview_shows_the_runs_flow_budget_and_its_flag(run, fields: dict[
     assert view['run']['budget'] == budget
 
 
+def test_the_overview_shows_the_models_the_runs_start_chose_and_each_agents_choice(run) -> None:
+    client, monitor, _, _, _ = run
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET model_choice = :m, role_models = :r',
+                       ExpressionAttributeValues={':m': {'S': 'opus'}, ':r': {'M': {
+                           'fixer': {'S': 'haiku'}, 'hunter': {'S': 'claude-sonnet-5.5'}, 'odd': {'N': '1'}}}})
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'AGENT#fixer-1'}},
+                       UpdateExpression='SET model = :m, model_choice = :c',
+                       ExpressionAttributeValues={':m': {'S': 'global.anthropic.claude-opus-5-5'}, ':c': {'S': 'opus'}})
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert view['run']['models'] == {'choice': 'opus', 'roles': {'fixer': 'haiku', 'hunter': 'claude-sonnet-5.5'}}
+    fixer = next(agent for agent in view['agents'] if agent['agent'] == 'fixer-1')
+    assert (fixer['model'], fixer['model_choice'], fixer['harness']) == ('global.anthropic.claude-opus-5-5', 'opus',
+                                                                         'native')
+
+
 def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(run) -> None:
     _, monitor, _, _, _ = run
     view = monitor.overview(RUN)
@@ -138,6 +155,8 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'stop': None,   # (nobody stopped it)
                            # (7.51.00: no session row priced yet, no cap, no parent; a live run has no manifest)
                            'cost_usd': 0.0, 'learn_cost_usd': 0.0, 'cost_cap_usd': None, 'parent': None,
+                           # (7.58.00: its start chose no model for every role, and no role had its own)
+                           'models': {'choice': None, 'roles': {}},
                            'manifest': None}
     coordinator, fixer = view['agents']
     assert fixer == {
@@ -147,6 +166,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
         'microvm_seconds': 300, 'tokens': [{'model': 'model-a', 'input_tokens': 1000, 'output_tokens': 200}],
         # (7.51.00: its session row's cost and labels, none written here; its attempt, commit and thread's tail)
         'cost_usd': 0.0, 'attempt': 1, 'commit': 'a' * 40, 'skill_label': None, 'model': None,
+        'harness': 'native', 'model_choice': None,   # (7.58.00: its own harness, no model chosen)
         'card': None, 'card_version': None,   # (7.52.00: a role's own step, made from no Registry card)
         'transcript_cursor': TAIL, 'last_exit': None, 'last_failure': None}   # (7.51.04: it has not failed)
     assert (view['lanes'], view['gates'], view['children']) == ({}, {}, [])

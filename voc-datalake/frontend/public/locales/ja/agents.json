@@ -447,7 +447,11 @@
     },
     "laneAttempt": "{{role}} · 試行 {{n, number}}",
     "stoppedHere": "ここで停止",
-    "stoppedHereAs": "ここで停止: {{state}}"
+    "stoppedHereAs": "ここで停止: {{state}}",
+    "model": {
+      "label": "この実行のモデル",
+      "default": "各ロール自身のモデル"
+    }
   },
   "editor": {
     "methodology": {
@@ -832,6 +836,7 @@
     },
     "budget": "月間予算はフローのものです：{{amount}}。",
     "noBudget": "このフローには月間予算がありません。",
+    "modelNote": "実行の開始時にモデルが記録され、実行の再開や再起動でもそのまま使われます。",
     "submit": "実行を開始",
     "openRun": "実行を開く",
     "mayHaveStarted": "実行が開始された可能性があります。別の実行を開始する前に、実行の一覧を確認してください。",
@@ -2246,7 +2251,8 @@
       "child": {
         "resume": "再開先の実行",
         "restart": "やり直し先の実行"
-      }
+      },
+      "model": "この実行のモデル: {{model}}（すべてのロール）"
     },
     "inspector": {
       "label": "インスペクター",
@@ -2860,6 +2866,25 @@
         "capShape": "上限は 0 より大きい整数です。",
         "capOver": "上限はテンプレートの値以下です。"
       }
+    },
+    "model": {
+      "title": "モデル",
+      "label": "このロールが動くモデル",
+      "default": "ロールの既定（{{model}}）",
+      "roleDefault": "ロールの既定",
+      "runsKiro": "このデプロイはこのロールを Kiro で動かします: {{model}}（{{id}}）で動きます。",
+      "runsKiroAuto": "このデプロイはこのロールを Kiro で動かします: Kiro がタスクごとにモデルを選びます。",
+      "kiroStops": "Kiro がこのアカウントでそのモデルを使えない場合、ステップはその旨を示して担当者の判断を待ちます。",
+      "runsNative": "このデプロイはこのロールをネイティブハーネス（Amazon Bedrock）で動かします: {{model}}（{{id}}）で動きます。",
+      "nextRun": "実行の開始時にモデルが記録されるため、変更は次の実行から適用されます。独自のモデルで開始した実行では、すべてのロールがそのモデルで動きます。",
+      "changed": "{{who}} が {{at}} に変更しました。",
+      "template": "テンプレートは {{model}} を指定しています。",
+      "save": "モデルを保存",
+      "saved": "保存しました。",
+      "failed": "モデルを保存できませんでした。もう一度お試しください。",
+      "refused": "保存されませんでした: {{message}}",
+      "madeCard": "ロールのモデルで動きます: {{model}}。",
+      "chosen": "モデル: {{model}}"
     }
   },
   "gates": {
@@ -3023,6 +3048,39 @@
       "statement": "内容",
       "rationale": "根拠",
       "citations": "引用"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "ネイティブ",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto（Kiro のみ）",
+      "opus": "Opus 5.5（Kiro とネイティブ）",
+      "sonnet": "Sonnet 5.5（Kiro とネイティブ）",
+      "haiku": "Haiku 5.5（Kiro とネイティブ）",
+      "other": "その他のモデル…"
+    },
+    "notes": {
+      "auto": "Kiro がタスクごとにモデルを選びます。Kiro のみ: ネイティブハーネスではロールの既定のモデルが動きます。",
+      "named": "両方のハーネスで {{model}}: Kiro では {{kiro}}、ネイティブハーネス（Amazon Bedrock）では {{bedrock}}。",
+      "other": "入力したモデル ID を、ロールが動くハーネスでそのまま使います。"
+    },
+    "other": {
+      "label": "モデル ID",
+      "hint": {
+        "kiro": "Kiro のモデル ID（`kiro-cli chat --list-models` が一覧表示するもの。例: claude-sonnet-5.5）。",
+        "native": "このデプロイが有効にしている Bedrock のモデル ID または推論プロファイル ID（例: global.anthropic.claude-sonnet-5-5）。",
+        "any": "Kiro 上のロールには Kiro のモデル ID（`kiro-cli chat --list-models` が一覧表示するもの。例: claude-sonnet-5.5）、ネイティブハーネス上のロールにはこのデプロイが有効にしている Bedrock のモデル ID（例: global.anthropic.claude-sonnet-5-5）。"
+      }
+    },
+    "issues": {
+      "empty": "モデル ID を入力してください。",
+      "format": "モデル ID は英字か数字で始まり、英字、数字と . _ : / - だけを含みます（128 文字以内、空白と URL は不可）。",
+      "notEnabled": "{{id}} はこのデプロイで有効になっていません。管理者が -c engineeringModelPrices で追加します（docs/deployment.md）。"
     }
   }
 }

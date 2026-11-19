@@ -90,11 +90,13 @@ export function startOutcomeOf(error: unknown): StartOutcome | null {
 }
 
 /** The request for a form with no issues: trimmed, the commit in lower case, the goal on one line, the issue's
- * number only when one was given. */
-export function startRunRequest(workflowId: string, form: StartRunForm): StartRunRequest {
+ * number only when one was given, and (7.58.00) the run's model only when one was chosen (modelChoice.ts
+ * `modelChoiceOf`: null for each role's own). */
+export function startRunRequest(workflowId: string, form: StartRunForm, model: string | null = null): StartRunRequest {
   const issue = issueNumber(form.issue)
   return {
     workflow_id: workflowId, connection: form.connection.trim(), commit: form.commit.trim().toLowerCase(),
     language: form.language, goal: oneLine(form.goal), ...(issue === null ? {} : { issue }),
+    ...(model === null || model === '' ? {} : { model }),
   }
 }

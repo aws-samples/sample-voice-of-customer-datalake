@@ -38,7 +38,7 @@ import re
 import secrets
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
@@ -186,6 +186,10 @@ class Run:
     stop_requested_at: int = 0
     stop_mode: str = ''
     stop_requested_by: str = ''
+    #: (7.58.00) The model its start chose for every role ('' for none: each role's own), and each role's choice as the
+    #: Registry held it at the start (``harness/model_choice.py``): what its launches apply.
+    model_choice: str = ''
+    role_models: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def stopping(self) -> bool:
@@ -248,6 +252,13 @@ def _actor(actor: str) -> str:
     """Who made a change, as recorded: its printable characters, at most ``MAX_ACTOR``; ``UNATTRIBUTED`` for none. Never
     refused: a stop never fails over its audit label."""
     return ''.join(char for char in actor if char.isprintable())[:MAX_ACTOR] or UNATTRIBUTED
+
+
+def _role_models(raw: object) -> dict[str, str]:
+    """META's ``role_models`` (7.58.00) as written: each role's choice, text only ({} for none)."""
+    if not isinstance(raw, Mapping):
+        return {}
+    return {str(role): value for role, value in raw.items() if isinstance(value, str) and value}
 
 
 def transaction_conflict(error: ClientError) -> bool:
@@ -418,7 +429,8 @@ class RunStore:
               default_branch: str = '', issue: int = 0, host: str = '', issue_verified: bool = False,
               issue_repo: str = '',
               origin: RunOrigin | None = None, parent: Mapping[str, Any] | None = None,
-              extra: tuple[Mapping[str, Any], ...] = (), coordinator_seed: str = '') -> None:
+              extra: tuple[Mapping[str, Any], ...] = (), coordinator_seed: str = '', model_choice: str = '',
+              role_models: Mapping[str, str] | None = None) -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -436,7 +448,9 @@ class RunStore:
         ``RUNLOG#`` row (D4) and its ``feedback`` and ``prd`` on META. A child run (7.51.00, ``runtime/restart.py``):
         ``parent`` (``{run_id, mode, by, at}``) on META and its list row, ``extra`` (the parent's ``CHILD#`` row, the
         inherited steps' rows) create-only in the same transaction, and ``coordinator_seed`` the seed its coordinate
-        task names. Every start writes its runs list row (``runlist_key``) in the transaction too."""
+        task names. Every start writes its runs list row (``runlist_key``) in the transaction too. ``model_choice`` and
+        ``role_models`` (7.58.00, checked by the caller: ``harness/model_choice.py``): the model chosen for every role
+        of the run, and each role's choice the Registry held, on META as given (none: nothing written)."""
         if connection:
             check_id('connection', connection)
         issue_item = _issue_item(issue, host, issue_repo or repo, issue_verified)
@@ -467,7 +481,8 @@ class RunStore:
                     'budget_usd': None if budget_usd is None else str(budget_usd), 'issue': issue_item,
                     # (7.57.00: a fork run's issue is its upstream's, run_links.py issue_of)
                     'issue_repo': issue_repo if issue_item is not None and issue_repo else None,
-                    'feedback': origin.feedback, 'prd': origin.prd, 'parent': dict(parent) if parent else None}
+                    'feedback': origin.feedback, 'prd': origin.prd, 'parent': dict(parent) if parent else None,
+                    'model_choice': model_choice or None, 'role_models': dict(role_models) if role_models else None}
         meta.update({key: value for key, value in optional.items() if value is not None})
         listed: dict[str, Any] = {**runlist_key(run_id, now), 'kind': 'run_list', 'run_id': run_id, 'flow': _text(flow),
                                   'goal': _text(goal)[:MAX_LIST_GOAL], 'status': 'active', 'started_at': _iso(now)}
@@ -678,7 +693,8 @@ class RunStore:
                    needs_human_at=int(item.get('needs_human_at', 0)),
                    learn_swept_at=int(item.get('learn_swept_at', 0)),
                    stop_requested_at=int(item.get('stop_requested_at', 0)),
-                   stop_mode=str(item.get('stop_mode', '')), stop_requested_by=str(item.get('stop_requested_by', '')))
+                   stop_mode=str(item.get('stop_mode', '')), stop_requested_by=str(item.get('stop_requested_by', '')),
+                   model_choice=str(item.get('model_choice', '')), role_models=_role_models(item.get('role_models')))
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its

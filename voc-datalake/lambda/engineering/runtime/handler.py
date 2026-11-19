@@ -111,9 +111,10 @@ from typing import TYPE_CHECKING, Any, Final, TypeGuard
 from aws_lambda_powertools.metrics import MetricUnit
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering import readiness
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError, BoardStore
 from engineering.connectors.cache_layout import FSCK_REJECTED, NO_COMMIT
-from engineering.connectors.identity import WORKSPACE
+from engineering.connectors.identity import AGENT_ROLES, WORKSPACE
 from engineering.flow.conductor import FlowError
 from engineering.flow.settings import LearnSettings, learn_settings
 from engineering.runtime import caps, egress, harness_switch, run_signals
@@ -131,6 +132,7 @@ from engineering.runtime.checkout_cache import (
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
 from engineering.runtime.docs_publish import ACTION as DOCS_PUBLISH_ACTION
+from engineering.runtime.harness import model_choice
 from engineering.runtime.harness.skills import harness_argv
 from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, RuntimeSession, check_run_id
 from engineering.runtime.launcher import Launcher
@@ -694,6 +696,19 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
                           'skill_version': str(event.get('skill_version', ''))[:200]}
 
 
+def _launch_model(argv: tuple[str, ...], labels: dict[str, str], role: str,
+                  run: Run) -> tuple[tuple[str, ...], dict[str, str]]:
+    """The launch's argv on its harness and model (7.58.00, ``harness_switch.with_model``): the run's choice for every
+    role, else the role's as the run's start recorded it, else its template card's; none, as before. Its labels say the
+    model it asks for (on Kiro without a choice, Kiro's name for its skill's model; its Bedrock id when Kiro has none,
+    and that session stops) and the choice applied (``model_choice``, none without one)."""
+    choice = model_choice.chosen(run.model_choice, run.role_models.get(role, ''), bundled().choice(role))
+    argv, model = harness_switch.with_model(argv, role, os.environ, choice)
+    if choice:
+        return argv, {**labels, 'model': model, 'model_choice': choice}
+    return argv, ({**labels, 'model': model} if harness_switch.is_kiro(argv) else labels)
+
+
 def _image_languages() -> frozenset[str]:
     """The languages this deployment has an agent runtime for (``ENGINEERING_AGENT_RUNTIMES``, the runtime's own)."""
     return frozenset(json.loads(os.environ.get('ENGINEERING_AGENT_RUNTIMES', '{}')))
@@ -847,6 +862,8 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
     definition = event.get('flow_definition', '')
     if not isinstance(definition, str):
         raise RuntimeRefused('flow_definition is the stored flow\'s definition, as its JSON text')
+    # (7.58.00: the model chosen for every role, and the roles' own choices as the Registry holds them now)
+    model, role_models = _start_models(event, definition) if first else ('', {})
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=_goal(event),
                    repo=str(event.get('repo', '')), default_branch=str(event.get('default_branch', '')),
@@ -857,7 +874,7 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
                    flow_revision=_optional_number(event, 'flow_revision', int) or 0,
                    issue=issue, host=str(event.get('host', '')), issue_verified=verified,
                    issue_repo=str(event.get('issue_repo', '')),
-                   origin=RunOrigin.of(event))
+                   origin=RunOrigin.of(event), model_choice=model, role_models=role_models)
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:
@@ -876,6 +893,50 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
         _to_person(run_id, str(event.get('actor') or ''))
         raise
     return {'run_id': run_id, 'status': status}
+
+
+def _role_model_choices() -> dict[str, str]:
+    """Each role's model choice as the Registry holds it (7.58.00, voc-agents' settings row: the hard cap's partition,
+    ENGINEERING_SETTINGS_TABLE), read at a first start; {} for a deployment that names no settings table. A read that
+    fails refuses the start, saying so (nothing is written yet: retry)."""
+    table = os.environ.get('ENGINEERING_SETTINGS_TABLE')
+    if not table:
+        return {}
+    from engineering.settings import read_role_models
+    from shared.aws import get_dynamodb_resource
+    try:
+        found = read_role_models(get_dynamodb_resource().Table(table))
+    except (ClientError, BotoCoreError) as error:
+        logger.exception('engineering runtime: the roles\' model choices could not be read')
+        raise StartReadFailed('the roles\' models could not be read: start the run again') from error
+    return {role: model.choice for role, model in found.items() if role in AGENT_ROLES}
+
+
+def _start_models(event: Mapping[str, Any], definition: str) -> tuple[str, dict[str, str]]:
+    """A first start's models (7.58.00, ``harness/model_choice.py``): the start's ``model_choice`` (one model for every
+    role, checked), and the roles' own choices (``_role_model_choices``); refused before anything is written when a
+    role of the flow would run on the native harness on a model this deployment does not grant and price
+    (``harness_switch.native_models``): never a launch that cannot run, never a wider grant."""
+    try:
+        choice = model_choice.checked(event.get('model_choice'))
+    except model_choice.ModelChoiceError as error:
+        raise RuntimeRefused(str(error)) from error
+    roles = _role_model_choices()
+    try:
+        parsed = json.loads(definition) if definition else None
+    except ValueError:
+        parsed = None   # (the start refuses a definition off its shape, in its own words)
+    launched = readiness.flow_roles(parsed) if isinstance(parsed, Mapping) else AGENT_ROLES
+    native = (launched & harness_switch.KIRO_ROLES) - harness_switch.kiro_roles(
+        os.environ.get(harness_switch.HARNESS_ENV))
+    templates = bundled()
+    enabled = harness_switch.native_models(os.environ)
+    for role in sorted(native):
+        chosen = model_choice.chosen(choice, roles.get(role, ''), templates.choice(role))
+        model = model_choice.bedrock_model(chosen, '')
+        if model and model not in enabled:
+            raise RuntimeRefused(f'the {role} runs on the native harness: {model_choice.not_enabled(model)}')
+    return choice, roles
 
 
 def _goal(event: Mapping[str, Any]) -> str:
@@ -1594,8 +1655,6 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
                                             int(clock())):
         raise SessionBusy(f'a launch of {event.get("agent_id", "")} is under way: ask again in a few minutes')
     harness, labels = _harness(event)
-    # (7.53.00: the deployment's switch, -c engineeringHarness: the role on Kiro over ACP, or its skill's own adapter)
-    harness = harness_switch.harness_for(harness, str(event.get('role', '')), os.environ)
     paths = event.get('paths', [])
     if not _strings(paths):
         raise RuntimeRefused('paths must be a list of repository paths')
@@ -1604,6 +1663,9 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     run = _runs().get(str(event.get('run_id', '')))
     if run is None or run.status != 'active':
         raise RunNotActive('agents are launched only for an active run')
+    # (7.53.00: the deployment's switch, -c engineeringHarness: the role on Kiro over ACP, or its skill's own adapter;
+    # 7.58.00: on the model the run or the role chose)
+    harness, labels = _launch_model(harness, labels, str(event.get('role', '')), run)
     # The agent clones its commit from the cache: none is launched before the commit has a usable entry, and the
     # generation found is the one its checkout clones (its session row keeps it).
     generation = _launch_generation(run, str(event.get('connection', '')), commit, str(event.get('role', '')))
@@ -1747,7 +1809,9 @@ def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
                host=str(issue.get('host', '')), issue_verified=bool(issue.get('verified')), parent=origin,
                extra=restart.child_rows(parent_id, child_id, mode=mode, actor=actor, at=at, inherited=inherited,
                                         fanned=fanned),
-               coordinator_seed=seed_key_of(child_id))
+               coordinator_seed=seed_key_of(child_id),
+               # (7.58.00: the parent's models, as its start chose them: a Resume or Restart runs on them)
+               model_choice=parent.model_choice, role_models=parent.role_models)
     try:
         _switch(True)
         from shared.aws import invoke_lambda_async

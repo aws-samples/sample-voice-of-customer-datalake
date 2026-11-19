@@ -17,6 +17,66 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.58.00] - 2026-11-19
+
+**Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (Auto,
+Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for a whole run from Run now or a flow's Start a run
+([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)). Only with
+`-c engineeringAgents=true`; every change is an administrator's, behind Cognito.
+
+### Added
+
+- **The choice** (`runtime/harness/model_choice.py`, `kiro_pin.kiro_model`): `auto` (Kiro picks per task; on the
+  native harness the role's default), `opus`, `sonnet`, `haiku` (`claude-<name>-5.5` on Kiro,
+  `global.anthropic.claude-<name>-5-5` on Bedrock), or another model id (letters, digits and `._:/-`, at most 128
+  characters, no space, no URL), checked in the card's schema, the API and the app.
+- **On a role's card**: `agents/<role>/agent.yaml` `model.choice` (one of the four, the schema's enum) or `model.other`
+  (an id), never both; a card with neither runs as before. The bundle carries it as the agent's `model_choice`. No
+  shipped card names one.
+- **In the Registry**: a role's card has a **Model** select (each option says where it works, Auto "Kiro only";
+  "Other model…" shows its id field, with a Kiro or a Bedrock hint by the role's harness) and says what the role runs
+  on here; `PUT /agents/engineering/registry/<role>/model` saves it (`{model}`, null for the default) in one
+  `SETTINGS#engineering` / `ROLE_MODELS` row of `voc-agents`, with a create-only history row per change. Every card
+  answers `model_choice`, `template_model_choice`, who changed it and when, and `runs_on` (`native` or `kiro`); the
+  listing answers `bedrock_enabled`.
+- **Model for this run** in Run now (`POST /agents/<id>/run` `{model}`) and in a flow's **Start a run**
+  (`POST /agents/engineering/runs` `{model}`, the same field and checks): one model for every role. A run's start
+  records it and the roles' own choices on its `META` (`model_choice`, `role_models`), a Resume or a Restart keeps them,
+  each launch applies them (the run's, else the role's, else its card's), and the session row says the model asked for
+  and the choice applied; the run page shows the run's model and each step's model with its harness.
+- **Kiro sets its model and checks it**: after the mode, `session/set_config_option {configId: model}` with the
+  launch's model (`--kiro-model`), else Kiro's name for the skill's, which the session's agent config and the compiled
+  `kiro-agents/*.json` (`model`) pin too. Unless Kiro answers that it is the session's model (`auto`: any), the step
+  ends for a person: "Kiro could not use ‹wanted› for the ‹role› (it answered ‹current or none›). Choose another model
+  in the role's setup or for this run." Never another model: nobody pays for a model they did not pick.
+- **Readiness**: `bedrock_models` checks the native roles' chosen models, and fails on one the deployment does not
+  grant and price; `kiro` names each Kiro role's model and says Kiro checks it when the step's session starts.
+
+### Changed
+
+- **Least privilege on Bedrock**: the native harness runs a chosen model only if the deployment grants it (the
+  agents' Claude allowlist) and prices it (`DEFAULT_TOKEN_PRICES`, `-c engineeringModelPrices`); else it is refused
+  when it is saved, at the run's start and at the launch: "‹id› isn't enabled in this deployment. An admin adds it
+  with -c engineeringModelPrices (docs/deployment.md)." No grant is widened. The Agents API's environment gains
+  `ENGINEERING_MODEL_PRICES`.
+- A Kiro session with no choice runs Kiro's name for its skill's model, not the account's default; one whose model
+  Kiro has no name for stops before kiro-cli starts ("‹id› has no Kiro name; choose a Kiro model for this role.").
+- Spend is unchanged: Kiro sessions bill Kiro credits (their rate differs per model, `kiro-cli chat --list-models`
+  `rate_multiplier`), so the ledger counts their session time only.
+- The root README explains Autonomous engineering and the agent orchestration templates and links their docs; the
+  monitor's overview test names 7.57.00's `upstream_pull_request`.
+
+### Removed
+
+- The root `templates/` folder: its one file pointed to `voc-datalake/templates/orchestration/README.md`, which the
+  root README now links.
+
+### Upgrade notes
+
+- Nothing to do: a role with no choice runs its card's model, on Kiro by Kiro's name for it. On a Kiro account that
+  does not offer that model, its steps now stop for a person, saying so: choose a model it offers for the role (Agents
+  → Registry) or for the run.
+
 ## [7.57.00] - 2026-11-19
 
 The engineering agents work on **any public GitHub repository**, not only the deployment's own: read only, or, to

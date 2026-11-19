@@ -3787,6 +3787,10 @@ function startMockEngineeringRun(agent, body) {
   if (!engineeringSetUp(agent)) return [409, { success: false, error: NOT_SET_UP }];
   if (activeRunOf(agent.agent_id)) return [409, { success: false, error: 'This agent already has a run in progress' }];
   const issue = Number.isInteger(body?.issue) && body.issue > 0 ? body.issue : null;
+  // (7.58.00: the run's model for every role, as the API checks its shape; left out, each role runs its own)
+  if (body?.model !== undefined && (typeof body.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(body.model) || body.model.includes('//'))) {
+    return [400, { success: false, error: 'model is auto, opus, sonnet, haiku or a model id (a letter or digit, then letters, digits and ._:/-, at most 128)' }];
+  }
   const prd = isPlainObject(body?.prd) ? { project_id: String(body.prd.project_id), document_id: String(body.prd.document_id) } : null;
   if (prd && agent.engineering.feedback_type !== 'feature_request') {
     return [400, { success: false, error: 'a PRD is built by a feature agent (engineering.feedback_type feature_request)' }];

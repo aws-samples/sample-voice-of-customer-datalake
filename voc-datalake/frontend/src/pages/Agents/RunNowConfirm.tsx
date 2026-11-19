@@ -4,7 +4,9 @@
  * workflow, the feedback in its scope and the run's model-call ceiling. An
  * engineering agent's (7.47.00) starts an engineering run on its repository,
  * optionally from an issue (a feature agent needs one: a PRD starts it from
- * the PRD's page), which reruns that issue even when it has started a run.
+ * the PRD's page), which reruns that issue even when it has started a run,
+ * and (7.58.00) on one model for every role of the run, or each role's own
+ * (ModelChoiceField.tsx: an other id must have its shape before it starts).
  *
  * @module pages/Agents/RunNowConfirm
  */
@@ -15,6 +17,8 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { ScopeSummary } from './AgentBadges'
+import { ModelChoiceField } from './ModelChoiceField'
+import { modelChoiceOf, draftOf, modelIssue } from './modelChoice'
 import { typedIssue } from './startRunRules'
 import type { ReactNode } from 'react'
 import type { Agent, RunNowBody } from '../../api/agentsApi'
@@ -45,6 +49,13 @@ function IssueField({ required, value, onChange }: Readonly<{ required: boolean;
   )
 }
 
+/** An engineering agent's Run now body: its issue when one was typed, the run's model when one was chosen; none for
+ * neither. */
+function runNowBody(issue: number | null | undefined, chosen: string | null): RunNowBody | undefined {
+  const body: RunNowBody = { ...(typeof issue === 'number' ? { issue } : {}), ...(chosen === null ? {} : { model: chosen }) }
+  return Object.keys(body).length > 0 ? body : undefined
+}
+
 /** The confirmation's question: an engineering agent's (bug or feature), else the model-call ceiling. */
 function useMessage(agent: Agent): string {
   const { t } = useTranslation('agents')
@@ -58,13 +69,14 @@ export function RunNowConfirm({ agent, starting, onConfirm, onCancel }: Readonly
   const { t } = useTranslation('agents')
   const workflowId = agent.workflow_id ?? DEFAULT_WORKFLOW_ID
   const [issueText, setIssueText] = useState('')
+  const [model, setModel] = useState(() => draftOf(null))
   // The same cache entry the run detail and the Workflow tab read.
   const { data: workflow, isError } = useQuery({ queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId) })
   const message = useMessage(agent)
   const engineering = agent.engineering !== null
   const feature = agent.engineering?.feedback_type === 'feature_request'
   const issue = typedIssue(issueText)
-  const blocked = engineering && (issue === undefined || (feature && issue === null))
+  const blocked = engineering && (issue === undefined || (feature && issue === null) || modelIssue(model) !== null)
   return (
     <ConfirmModal
       isOpen
@@ -75,7 +87,7 @@ export function RunNowConfirm({ agent, starting, onConfirm, onCancel }: Readonly
       variant="info"
       isLoading={starting}
       confirmDisabled={blocked}
-      onConfirm={() => onConfirm(typeof issue === 'number' && engineering ? { issue } : undefined)}
+      onConfirm={() => onConfirm(engineering ? runNowBody(issue, modelChoiceOf(model)) : undefined)}
       onCancel={onCancel}
     >
       <dl className="mt-3 space-y-1 text-sm">
@@ -84,6 +96,12 @@ export function RunNowConfirm({ agent, starting, onConfirm, onCancel }: Readonly
         <Fact label={t('run.confirmScope')}><ScopeSummary scope={agent.scope} /></Fact>
       </dl>
       {engineering && <IssueField required={feature} value={issueText} onChange={setIssueText} />}
+      {engineering && (
+        <div className="mt-3">
+          <ModelChoiceField label={t('run.model.label')} defaultLabel={t('run.model.default')} draft={model} onChange={setModel} harness="any"
+            disabled={starting} />
+        </div>
+      )}
     </ConfirmModal>
   )
 }

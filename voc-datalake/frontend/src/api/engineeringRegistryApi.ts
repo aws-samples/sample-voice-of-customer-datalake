@@ -7,6 +7,10 @@
  *   from a skill (`kind: 'card'`, its base role's library skills);
  * - `GET …/registry/<card>?connection=` → `{card, versions, events}`, read as its card and versions (a role's card has
  *   neither);
+ * - 7.58.00: each card's model choice (its role's, deployment-wide: `model_choice`, who set it and when; the template's
+ *   own, `template_model_choice`) and the harness its role runs on here (`runs_on`), and beside the cards the Bedrock
+ *   models the deployment grants and prices (`bedrock_enabled`); `PUT …/registry/<role>/model` `{model}` sets a role's
+ *   choice (null: back to its default), 400 in the server's words for an id off its shape or one not enabled;
  * - `POST …/registry/cards` `{from_skill: {role, connection?, version}, slug, purpose, title?, model?, caps?,
  *   expected_version?}` → 201 `{card}`; 400 a bad body, 404 no such skill version, 409 a proposal, a bad model or tool,
  *   a slug taken or a stale `expected_version`, each in the server's words;
@@ -25,7 +29,7 @@
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { eachOf, parseEach } from './lenientFields'
-import { post } from './requestKit'
+import { post, put } from './requestKit'
 import { isRecord } from '../lib/typeGuards'
 
 const text = z.string().catch('')
@@ -90,6 +94,15 @@ const CardSchema = z.object({
   heads_by_connection: z.record(z.string(), HeadSchema).catch({}),
   created_by: text,
   created_at: text,
+  /** (7.58.00) The model its role runs on, as an administrator chose it for the deployment (pages/Agents/modelChoice.ts:
+   *  `auto`, `opus`, `sonnet`, `haiku` or another id), null for the role's default; who chose it and when. */
+  model_choice: maybeText,
+  model_choice_updated_at: maybeText,
+  model_choice_updated_by: maybeText,
+  /** (7.58.00) The template card's own choice (null for every shipped card). */
+  template_model_choice: maybeText,
+  /** (7.58.00) The harness this deployment runs its role on (`-c engineeringHarness`). */
+  runs_on: z.enum(['native', 'kiro']).catch('native'),
 })
 export type RegistryCard = z.output<typeof CardSchema>
 
@@ -97,7 +110,21 @@ export interface RegistryCardDetail {
   card: RegistryCard
   /** A made card's versions, newest first (none for a role's card). */
   versions: RegistryCard[]
+  /** (7.58.00) The Bedrock models this deployment grants and prices: what a native role may run on. */
+  bedrockEnabled: string[]
 }
+
+/** (7.58.00) A role's model choice as saved. */
+export interface SavedModelChoice {
+  role: string
+  model_choice: string | null
+  updated_at: string | null
+  updated_by: string | null
+}
+
+const SavedModelSchema = z.object({
+  role: z.string().min(1), model_choice: maybeText, updated_at: maybeText, updated_by: maybeText,
+})
 
 const StepSchema = z.object({
   id: z.string(),
@@ -184,7 +211,13 @@ export function parseCardDetail(raw: unknown): RegistryCardDetail {
   const card = CardSchema.safeParse(isRecord(raw) ? raw.card : undefined)
   if (!card.success) throw new Error('The Registry card answer was unreadable')
   const record = isRecord(raw) ? raw : {}
-  return { card: card.data, versions: parseEach(CardSchema, record.versions) }
+  return { card: card.data, versions: parseEach(CardSchema, record.versions), bedrockEnabled: names.parse(record.bedrock_enabled) }
+}
+
+export function parseSavedModel(raw: unknown): SavedModelChoice {
+  const parsed = SavedModelSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('The answer to saving the model was unreadable')
+  return parsed.data
 }
 
 export function parseGates(raw: unknown): QualityGates {
@@ -222,6 +255,7 @@ const scoped = (connection: string) => (connection === '' ? '' : `?${new URLSear
 const cardsListPath = (connection: string) => `/agents/engineering/registry${scoped(connection)}`
 const cardPath = (card: string, connection: string) =>
   `/agents/engineering/registry/${encodeURIComponent(card)}${scoped(connection)}`
+const modelPath = (role: string) => `/agents/engineering/registry/${encodeURIComponent(role)}/model`
 const gatesPath = (connection: string) => `/agents/engineering/gates${scoped(connection)}`
 const briefPath = (brief: string) => `/agents/engineering/gates/briefs/${encodeURIComponent(brief)}`
 const sourcePath = (kind: SourceKind, id: string) =>
@@ -244,6 +278,9 @@ export const engineeringRegistryApi = {
     parseCardDetail(await fetchApi<unknown>(cardPath(card, connection))),
   create: async (body: CreateCardBody): Promise<RegistryCard> =>
     parseCreatedCard(await fetchApi<unknown>('/agents/engineering/registry/cards', post(body))),
+  /** (7.58.00) A role's model choice for the deployment (null: back to the role's default). */
+  setModel: async (role: string, model: string | null): Promise<SavedModelChoice> =>
+    parseSavedModel(await fetchApi<unknown>(modelPath(role), put({ model }))),
   gates: async (connection: string): Promise<QualityGates> =>
     parseGates(await fetchApi<unknown>(gatesPath(connection))),
   brief: async (brief: string): Promise<GateBriefText> =>

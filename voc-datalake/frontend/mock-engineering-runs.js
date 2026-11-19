@@ -21,7 +21,7 @@
 //                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
-//   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal}: admin; a run's start, answered
+//   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal, issue?, model?}: admin; a run's start, answered
 //                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules)
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
 //   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
@@ -846,9 +846,14 @@ function startRun(body) {
   // (`issue`, optional since 7.09.00: a whole number from 1, as the server takes it)
   const issueOk = fields.issue === undefined
     || (Number.isInteger(fields.issue) && fields.issue >= 1 && fields.issue <= 2147483647);
-  const wellFormed = Object.keys(fields).every((key) => START_FIELDS.includes(key) || key === 'issue')
+  // (`model`, optional since 7.58.00: one model for every role of the run, of the shape the server takes)
+  const modelOk = fields.model === undefined || fields.model === null
+    || (typeof fields.model === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(fields.model.trim())
+      && !fields.model.includes('//'));
+  const wellFormed = Object.keys(fields).every((key) => START_FIELDS.includes(key) || key === 'issue' || key === 'model')
     && START_FIELDS.every((key) => typeof fields[key] === 'string') && issueOk;
-  if (!wellFormed) return [400, { message: 'the body is {workflow_id, connection, commit, language, goal, issue?}, each a string but issue' }];
+  if (!wellFormed) return [400, { message: 'the body is {workflow_id, connection, commit, language, goal, issue?, model?}, each a string but issue' }];
+  if (!modelOk) return [400, { message: 'a model is auto, opus, sonnet or haiku, or a model id (letters, digits and ._:/-, at most 128 characters, no spaces, no URL)' }];
   const failed = START_CHECKS.find(([passes]) => !passes(fields));
   if (failed) return [400, { message: failed[1] }];
   // 202, as the server: the run is written and its coordinator's launch is under way.

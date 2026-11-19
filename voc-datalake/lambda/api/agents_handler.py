@@ -582,6 +582,21 @@ def _run_prd(body: Mapping[str, Any]) -> dict[str, str] | None:
             'document_id': validated_row_id(raw['document_id'], field='document_id')}
 
 
+def _run_model(body: Mapping[str, Any]) -> str:
+    """The optional ``model`` of a Run now (7.58.00): one model for every role of the run (engineering/model_choices.py:
+    ``auto``, ``opus``, ``sonnet``, ``haiku`` or another model id), '' for each role's own; 400 for one off its shape,
+    or a Bedrock model this deployment does not grant and price while a role runs on the native harness. The run's
+    start checks it again."""
+    from engineering.model_choices import check
+    from engineering.runtime.harness.model_choice import ModelChoiceError
+    from engineering.runtime.harness_switch import KIRO_ROLES
+
+    try:
+        return check(body.get('model'), KIRO_ROLES, os.environ)
+    except ModelChoiceError as refused:
+        raise ValidationError(str(refused)) from None
+
+
 def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: int | None,
                           prd: Mapping[str, str] | None, stage: str = store.ISSUE_STAGE_ACT) -> str:
     """What a Run now asks of an engineering agent: the issue (its triage, for a triage agent), the PRD (a feature
@@ -599,7 +614,8 @@ def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: i
 
 
 def _run_engineering_agent(table: Any, agent: dict, caller: Caller, body: Mapping[str, Any] | None = None) -> Response:
-    """Run now of an engineering agent (7.47.00): ``{issue?} | {prd?}`` → 202 ``{run}``. An administrator acting for
+    """Run now of an engineering agent (7.47.00): ``{issue?} | {prd?}``, and since 7.58.00 ``model?`` (one model for every
+    role of the run: ``_run_model``) → 202 ``{run}``. An administrator acting for
     themselves only (a delegated credential gets 403), as the person the run's pushes follow; 404 while the module is
     off; 409 until the agent is set up, or while it has a run in progress. A run of an issue reruns it (the one way to:
     a trigger starts an issue once, ever). The start's refusal is 409 in its words, a start known not written 503; one
@@ -611,20 +627,21 @@ def _run_engineering_agent(table: Any, agent: dict, caller: Caller, body: Mappin
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
     body = json_object_body(app) if body is None else body
-    if not set(body) <= {'issue', 'prd'} or {'issue', 'prd'} <= set(body):
-        raise ValidationError('the body is {issue?: number} or {prd?: {project_id, document_id}}, or none')
+    if not set(body) <= {'issue', 'prd', 'model'} or {'issue', 'prd'} <= set(body):
+        raise ValidationError('the body is {issue?: number} or {prd?: {project_id, document_id}}, with model?, or none')
     settings = agent['engineering']
     row = eng_runs.connection_row(table, settings['connection']) if settings.get('connection') else None
     if row is None or not settings.get('language'):
         raise ConflictError(NOT_SET_UP)
-    issue, prd = _start_issue(body), _run_prd(body)
+    issue, prd, model = _start_issue(body), _run_prd(body), _run_model(body)
     repository, stage = str(row.get('repository', '')), _issue_stage(agent)
     started = eng_runs.start_agent_run(
         table, agent, _find_workflow(agent.get('workflow_id')), row,
         eng_runs.AgentStart(trigger=store.TRIGGER_MANUAL, requested_by=caller.subject, actor=caller.subject,
                             sentence=_engineering_sentence(settings, repository, issue, prd, stage), prd=prd,
                             claim=False, stage=stage,
-                            issue=None if issue is None else eng_runs.IssueRef(repository, issue)),
+                            issue=None if issue is None else eng_runs.IssueRef(repository, issue),
+                            model_choice=model),
         client=_start_client(), function=function, now=store.utc_now())
     if started.run is None or started.answer is None:
         raise ConflictError('This agent already has a run in progress')
@@ -1733,11 +1750,21 @@ def _readiness_ssm_client() -> Any:
 
 
 def _readiness_settings() -> Any:
-    """The deployment's settings the checks read: its environment, and each role's card model (the templates)."""
+    """The deployment's settings the checks read: its environment, each role's card model (the templates), and since
+    7.58.00 each role's model choice (the Registry's over its card's; one the row cannot say is left out, logged)."""
+    from engineering.model_choices import deployment_choices
     from engineering.readiness_aws import settings_from_environment
+    from engineering.settings import read_role_models
     from engineering.skills.templates import bundled
 
-    return settings_from_environment(bundled().card_models(), os.environ.get('AWS_REGION', ''))
+    templates = bundled()
+    try:
+        stored = read_role_models(_agents_table())
+    except (ClientError, BotoCoreError):
+        logger.exception('engineering readiness: the roles\' model choices could not be read')
+        stored = {}
+    return settings_from_environment(templates.card_models(), os.environ.get('AWS_REGION', ''),
+                                     deployment_choices(stored, templates.choices))
 
 
 def _readiness(subject: Any, *, required_only: bool = False, ports: Any = None) -> Any:
@@ -2528,8 +2555,9 @@ def delete_engineering_github_authorization(app_id: str):
 #: start's wait, which an engineering agent's runs use too).
 MAX_RUN_GOAL = eng_runs.MAX_RUN_GOAL
 _START_FIELDS = frozenset({'workflow_id', 'connection', 'commit', 'language', 'goal'})
-#: The start's optional fields: the issue the run starts from (a number, ``_start_issue``).
-_START_OPTIONAL = frozenset({'issue'})
+#: The start's optional fields: the issue the run starts from (a number, ``_start_issue``), and (7.58.00) one model for
+#: every role of the run (``_run_model``).
+_START_OPTIONAL = frozenset({'issue', 'model'})
 _RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 
 
@@ -2562,8 +2590,8 @@ def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
 
     strings = all(isinstance(body.get(name), str) for name in _START_FIELDS)
     if not set(body) <= _START_FIELDS | _START_OPTIONAL or not strings:
-        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string, and '
-                              'an optional issue number')
+        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string, an '
+                              'optional issue number and an optional model')
     fields = {name: str(body[name]).strip() for name in _START_FIELDS}
     try:
         check_id('connection', fields['connection'])
@@ -2622,8 +2650,9 @@ def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
 @app.post('/agents/engineering/runs')
 @tracer.capture_method
 def start_engineering_run():
-    """``{workflow_id, connection, commit, language, goal, issue?}`` → 202 ``{run: {run_id, status, workflow_id,
-    started_by}}`` (``issue``, 7.09.00: the number of the issue the run starts from, recorded as given):
+    """``{workflow_id, connection, commit, language, goal, issue?, model?}`` → 202 ``{run: {run_id, status, workflow_id,
+    started_by}}`` (``issue``, 7.09.00: the number of the issue the run starts from, recorded as given; ``model``,
+    7.58.00: one model for every role of the run, ``_run_model``, the start's ``model_choice``):
     an administrator acting for themselves (a delegated credential gets 403) starts a saved engineering flow (404 while
     the module is off). The run's id is minted here; its flow's budget is the stored workflow's, its caps the
     deployment's; the runtime records who started it and when (META's ``started_by``, its ``RUNLOG#`` row: D4). 202:
@@ -2635,7 +2664,7 @@ def start_engineering_run():
     if not function:
         raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
     raw = json_object_body(app)
-    fields, issue = _start_body(raw), _start_issue(raw)
+    fields, issue, model = _start_body(raw), _start_issue(raw), _run_model(raw)
     flow = _stored_flow(fields['workflow_id'])
     request: dict[str, Any] = {
         'action': 'start_run', 'run_id': eng_runs.new_run_id(), 'flow': fields['workflow_id'],
@@ -2648,6 +2677,8 @@ def start_engineering_run():
     }
     if flow.budget_usd is not None:
         request['budget_usd'] = flow.budget_usd
+    if model:   # (7.58.00: the run's META records it, its launches apply it, a Resume or Restart keeps it)
+        request['model_choice'] = model
     try:
         answer = _invoke_start(function, request)
     except _MayHaveStarted as unsure:

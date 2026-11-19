@@ -460,7 +460,11 @@
     },
     "laneAttempt": "{{role}} · intento {{n, number}}",
     "stoppedHere": "Se detuvo aquí",
-    "stoppedHereAs": "Se detuvo aquí: {{state}}"
+    "stoppedHereAs": "Se detuvo aquí: {{state}}",
+    "model": {
+      "label": "Modelo para esta ejecución",
+      "default": "El modelo propio de cada rol"
+    }
   },
   "editor": {
     "methodology": {
@@ -849,6 +853,7 @@
     },
     "budget": "Su presupuesto mensual es el del flujo: {{amount}}.",
     "noBudget": "El flujo no tiene presupuesto mensual.",
+    "modelNote": "El inicio de la ejecución registra su modelo; reanudarla o reiniciarla lo conserva.",
     "submit": "Iniciar la ejecución",
     "openRun": "Abrir la ejecución",
     "mayHaveStarted": "Puede que la ejecución se haya iniciado: revisa la lista de ejecuciones antes de iniciar otra.",
@@ -2265,7 +2270,8 @@
       "child": {
         "resume": "Reanudada como la ejecución",
         "restart": "Reiniciada como la ejecución"
-      }
+      },
+      "model": "Modelo para esta ejecución: {{model}} (todos los roles)"
     },
     "inspector": {
       "label": "Inspector",
@@ -2879,6 +2885,25 @@
         "capShape": "Un límite es un número entero mayor que 0.",
         "capOver": "Un límite es como máximo el de la plantilla."
       }
+    },
+    "model": {
+      "title": "Modelo",
+      "label": "El modelo con el que se ejecuta este rol",
+      "default": "Predeterminado del rol ({{model}})",
+      "roleDefault": "el predeterminado del rol",
+      "runsKiro": "Esta implementación ejecuta el rol en Kiro: se ejecuta con {{model}} ({{id}}).",
+      "runsKiroAuto": "Esta implementación ejecuta el rol en Kiro: Kiro elige su modelo para cada tarea.",
+      "kiroStops": "Si Kiro no puede usar ese modelo en esta cuenta, el paso se detiene para una persona y lo indica.",
+      "runsNative": "Esta implementación ejecuta el rol en el harness nativo (Amazon Bedrock): se ejecuta con {{model}} ({{id}}).",
+      "nextRun": "El inicio de una ejecución registra los modelos, así que un cambio se aplica desde la próxima ejecución; una ejecución iniciada con un modelo propio ejecuta todos los roles con él.",
+      "changed": "Cambiado por {{who}}, {{at}}.",
+      "template": "Su plantilla indica {{model}}.",
+      "save": "Guardar modelo",
+      "saved": "Guardado.",
+      "failed": "No se pudo guardar el modelo. Inténtalo de nuevo.",
+      "refused": "No guardado: {{message}}",
+      "madeCard": "Usa el modelo de su rol: {{model}}.",
+      "chosen": "modelo: {{model}}"
     }
   },
   "gates": {
@@ -3042,6 +3067,39 @@
       "statement": "enunciado",
       "rationale": "justificación",
       "citations": "citas"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "nativo",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (solo Kiro)",
+      "opus": "Opus 5.5 (Kiro y nativo)",
+      "sonnet": "Sonnet 5.5 (Kiro y nativo)",
+      "haiku": "Haiku 5.5 (Kiro y nativo)",
+      "other": "Otro modelo…"
+    },
+    "notes": {
+      "auto": "Kiro elige el modelo para cada tarea. Solo Kiro: en el harness nativo se ejecuta el modelo predeterminado del rol.",
+      "named": "{{model}} en ambos harness: {{kiro}} en Kiro, {{bedrock}} en el harness nativo (Amazon Bedrock).",
+      "other": "Un ID de modelo que escribes, usado tal cual en el harness donde se ejecuta el rol."
+    },
+    "other": {
+      "label": "ID del modelo",
+      "hint": {
+        "kiro": "Un ID de modelo de Kiro, tal como los lista `kiro-cli chat --list-models` (p. ej., claude-sonnet-5.5).",
+        "native": "Un ID de modelo o de perfil de inferencia de Bedrock que esta implementación habilita (p. ej., global.anthropic.claude-sonnet-5-5).",
+        "any": "Para los roles en Kiro, un ID de modelo de Kiro tal como los lista `kiro-cli chat --list-models` (p. ej., claude-sonnet-5.5); para los roles en el harness nativo, un ID de modelo de Bedrock que esta implementación habilita (p. ej., global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Escribe un ID de modelo.",
+      "format": "Un ID de modelo empieza por una letra o un dígito y solo contiene letras, dígitos y . _ : / - (como máximo 128 caracteres, sin espacios ni URL).",
+      "notEnabled": "{{id}} no está habilitado en esta implementación. Un administrador lo añade con -c engineeringModelPrices (docs/deployment.md)."
     }
   }
 }

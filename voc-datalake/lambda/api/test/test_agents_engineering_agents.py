@@ -207,6 +207,46 @@ def test_a_feature_agent_builds_from_an_issue_or_a_prd(lambda_context: Any, env:
                                                                          'document_id': 'prd_1'}, False)
 
 
+@pytest.mark.parametrize(('model', 'sent'), [('opus', 'opus'), ('global.anthropic.claude-haiku-5-5',
+                                                                 'global.anthropic.claude-haiku-5-5'), (None, None)])
+def test_run_now_may_choose_one_model_for_every_role_of_the_run(lambda_context: Any, env: tuple[Any, Start],
+                                                                model: str | None, sent: str | None) -> None:
+    # (7.58.00: the start's model_choice, which the run's META records and its launches apply)
+    _, client = env
+    bug = _seeded(lambda_context)['Bug fixer']
+    assert _set_up(lambda_context, bug)[0] == 200
+    body = {'issue': 7, **({'model': model} if model is not None else {})}
+    status, answer = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run", body=body)
+    assert status == 202, answer
+    assert json.loads(client.requests[-1]['Payload']).get('model_choice') == sent
+
+
+@pytest.mark.parametrize(('model', 'said'), [
+    ('claude sonnet', 'a model is auto, opus, sonnet or haiku'),
+    ('global.anthropic.claude-opus-5', ("global.anthropic.claude-opus-5 isn't enabled in this deployment. An admin "
+                                        'adds it with -c engineeringModelPrices (docs/deployment.md).')),
+])
+def test_run_now_refuses_a_model_off_its_shape_or_not_enabled_before_any_start(
+        lambda_context: Any, env: tuple[Any, Start], model: str, said: str) -> None:
+    _, client = env
+    bug = _seeded(lambda_context)['Bug fixer']
+    assert _set_up(lambda_context, bug)[0] == 200
+    status, body = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run", body={'issue': 7, 'model': model})
+    assert (status, said in body['error'], client.requests) == (400, True, [])
+
+
+def test_run_now_on_kiro_takes_any_kiro_id(lambda_context: Any, env: tuple[Any, Start],
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    _, client = env
+    monkeypatch.setenv('ENGINEERING_HARNESS', 'kiro')
+    bug = _seeded(lambda_context)['Bug fixer']
+    assert _set_up(lambda_context, bug)[0] == 200
+    status, body = _call(lambda_context, 'POST', f"/agents/{bug['agent_id']}/run",
+                         body={'issue': 7, 'model': 'claude-sonnet-4.5'})
+    assert status == 202, body
+    assert json.loads(client.requests[-1]['Payload'])['model_choice'] == 'claude-sonnet-4.5'
+
+
 def _failing_bug(lambda_context: Any, env: tuple[Any, Start], error_type: str,
                  message: str) -> tuple[Any, dict[str, Any]]:
     """The seeded Bug fixer, set up, the start function's answer to its next start ``error_type`` in ``message``."""

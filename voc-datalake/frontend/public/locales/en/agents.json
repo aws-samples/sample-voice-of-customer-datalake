@@ -447,7 +447,11 @@
     },
     "laneAttempt": "{{role}} · attempt {{n, number}}",
     "stoppedHere": "Stopped here",
-    "stoppedHereAs": "Stopped here: {{state}}"
+    "stoppedHereAs": "Stopped here: {{state}}",
+    "model": {
+      "label": "Model for this run",
+      "default": "Each role's own model"
+    }
   },
   "editor": {
     "methodology": {
@@ -675,6 +679,7 @@
     },
     "budget": "Its monthly budget is the flow’s: {{amount}}.",
     "noBudget": "The flow has no monthly budget.",
+    "modelNote": "The run's start records its model; a Resume or a Restart of the run keeps it.",
     "submit": "Start the run",
     "openRun": "Open the run",
     "mayHaveStarted": "The run may have been started: check the runs list before you start another.",
@@ -2192,7 +2197,8 @@
       "child": {
         "resume": "Resumed as run",
         "restart": "Restarted as run"
-      }
+      },
+      "model": "Model for this run: {{model}} (every role)"
     },
     "inspector": {
       "label": "Inspector",
@@ -2806,6 +2812,25 @@
         "capShape": "A cap is a whole number above 0.",
         "capOver": "A cap is at most the template's."
       }
+    },
+    "model": {
+      "title": "Model",
+      "label": "The model this role runs on",
+      "default": "Role's default ({{model}})",
+      "roleDefault": "the role's default",
+      "runsKiro": "This deployment runs the role on Kiro: it runs on {{model}} ({{id}}).",
+      "runsKiroAuto": "This deployment runs the role on Kiro: Kiro chooses its model per task.",
+      "kiroStops": "If Kiro cannot use that model on this account, the step stops for a person, saying so.",
+      "runsNative": "This deployment runs the role on the native harness (Amazon Bedrock): it runs on {{model}} ({{id}}).",
+      "nextRun": "A run's start records the models, so a change applies from the next run; a run started with a model of its own runs every role on it.",
+      "changed": "Changed by {{who}}, {{at}}.",
+      "template": "Its template names {{model}}.",
+      "save": "Save model",
+      "saved": "Saved.",
+      "failed": "The model could not be saved. Try again.",
+      "refused": "Not saved: {{message}}",
+      "madeCard": "Runs its role's model: {{model}}.",
+      "chosen": "model: {{model}}"
     }
   },
   "gates": {
@@ -2969,6 +2994,39 @@
       "statement": "statement",
       "rationale": "rationale",
       "citations": "citations"
+    }
+  },
+  "modelChoice": {
+    "auto": "Auto",
+    "onHarness": "{{model}} · {{harness}}",
+    "harness": {
+      "native": "native",
+      "kiro": "Kiro"
+    },
+    "options": {
+      "auto": "Auto (Kiro only)",
+      "opus": "Opus 5.5 (Kiro and native)",
+      "sonnet": "Sonnet 5.5 (Kiro and native)",
+      "haiku": "Haiku 5.5 (Kiro and native)",
+      "other": "Other model…"
+    },
+    "notes": {
+      "auto": "Kiro chooses the model per task. Kiro only: on the native harness the role's default model runs.",
+      "named": "{{model}} on both harnesses: {{kiro}} on Kiro, {{bedrock}} on the native harness (Amazon Bedrock).",
+      "other": "A model ID you type, used as it is on the harness the role runs on."
+    },
+    "other": {
+      "label": "Model ID",
+      "hint": {
+        "kiro": "A Kiro model ID, as `kiro-cli chat --list-models` lists them (e.g. claude-sonnet-5.5).",
+        "native": "A Bedrock model or inference profile ID this deployment enables (e.g. global.anthropic.claude-sonnet-5-5).",
+        "any": "For roles on Kiro, a Kiro model ID as `kiro-cli chat --list-models` lists them (e.g. claude-sonnet-5.5); for roles on the native harness, a Bedrock model ID this deployment enables (e.g. global.anthropic.claude-sonnet-5-5)."
+      }
+    },
+    "issues": {
+      "empty": "Type a model ID.",
+      "format": "A model ID starts with a letter or a digit and holds only letters, digits and . _ : / - (at most 128 characters, no spaces, no URL).",
+      "notEnabled": "{{id}} isn't enabled in this deployment. An admin adds it with -c engineeringModelPrices (docs/deployment.md)."
     }
   }
 }
