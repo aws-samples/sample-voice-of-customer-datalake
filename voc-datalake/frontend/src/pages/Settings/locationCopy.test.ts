@@ -4,7 +4,8 @@
  * namespace starts with a tab label of that locale and, when the tab has
  * cards a path names and the path goes on, one of those cards' labels. No
  * string points to the retired "<Settings> → …" page. Third-party UI paths
- * (Figma / GitHub token steps in `settings:integrationGuide`) are not ours.
+ * (Figma / GitHub token steps in `settings:integrationGuide`, and the GitHub
+ * App's own settings in THIRD_PARTY_KEYS) are not ours.
  */
 import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
@@ -18,6 +19,11 @@ const LOCALES_DIR = path.join(__dirname, '../../../public/locales')
 const LOCALES = fs.readdirSync(LOCALES_DIR).filter((name) => fs.statSync(path.join(LOCALES_DIR, name)).isDirectory())
 const SEPARATOR = String.raw`\s*(?:→|->|>)\s*`
 const THIRD_PARTY_PREFIX = 'settings:integrationGuide.'
+/** Single strings that walk GitHub's own settings (7.57.00: "On GitHub: Settings → …"), not ours. */
+const THIRD_PARTY_KEYS: ReadonlySet<string> = new Set([
+  'agents:connections.authorization.clientHint', // GitHub → Developer settings → the App → a new client secret
+  'agents:connections.authorization.removeMessage', // GitHub → Applications → Authorized GitHub Apps (revoking it there)
+])
 
 const commonSchema = z.object({ nav: z.object({ admin: z.string() }) })
 
@@ -48,7 +54,7 @@ function localeStrings(locale: string): [string, string][] {
     .filter((file) => file.endsWith('.json'))
     .map((file) => file.replace(/\.json$/, ''))
     .flatMap((ns) => leaves(readJson(locale, ns), `${ns}:`))
-    .filter(([key]) => !key.startsWith(THIRD_PARTY_PREFIX))
+    .filter(([key]) => !key.startsWith(THIRD_PARTY_PREFIX) && !THIRD_PARTY_KEYS.has(key))
 }
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)

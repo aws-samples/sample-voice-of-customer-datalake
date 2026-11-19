@@ -8,19 +8,9 @@ import { render, screen } from '@testing-library/react'
 import { blankForm } from '../test/blankForm'
 import { frameSize } from './frameSize'
 import PreviewFrame from './PreviewFrame'
+import { widget } from '../test/widgetScriptStub'
 
-const widget = vi.hoisted(() => ({
-  handle: { update: vi.fn(), goTo: vi.fn(), restart: vi.fn(), setLanguage: vi.fn(), setScheme: vi.fn(), destroy: vi.fn() },
-  startPreview: vi.fn(),
-}))
-
-vi.mock('./widgetScript', () => ({
-  loadWidget: () => Promise.resolve({ init: vi.fn() }),
-  startPreview: (...args: unknown[]) => {
-    widget.startPreview(...args)
-    return widget.handle
-  },
-}))
+vi.mock('./widgetScript', () => import('../test/widgetScriptStub'))
 
 const FORM = blankForm('en')
 

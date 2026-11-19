@@ -33,7 +33,6 @@ ROOT: Final = Path(__file__).resolve().parents[3] / 'templates' / 'orchestration
 SCHEMA_NAMES: Final = ('agent-card', 'assertion', 'automation', 'bundle', 'flow', 'library-skill', 'skill-frontmatter')
 #: The skills library's folder (7.56.00): ``skills/<name>/SKILL.md`` and its ``references/<file>.md``.
 LIBRARY: Final = 'skills'
-REFERENCES: Final = 'references'
 #: A SKILL.md's sections, in this order; everything above ``Examples`` is the record's instructions.
 REQUIRED_SECTIONS: Final = ('Role', 'Reads', 'Writes', 'Steps', 'Rules', 'When to stop', 'Examples')
 EXAMPLES: Final = 'Examples'

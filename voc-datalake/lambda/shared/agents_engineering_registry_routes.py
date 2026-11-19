@@ -69,10 +69,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store as store
 from shared import engineering_templates, flow_expand
+from shared.agents_store import require_agents_table as _agents_table
 from shared.engineering_agent_runs import CONNECTION_ROW_PREFIX, CONNECTIONS_PARTITION, revision_reader
 from shared.engineering_agents import ENGINEERING_TABLE_ENV, engineering_agents_on
+from shared.engineering_agents import engineering_client_and_table as _engineering_client
+from shared.engineering_agents import require_engineering_on as _engineering_on
 from shared.exceptions import (
-    ConfigurationError,
     ConflictError,
     NotFoundError,
     ServiceUnavailableError,
@@ -95,28 +97,6 @@ _STATUS: Final = {'invalid': ValidationError, 'not_found': NotFoundError, 'confl
 app = Router()
 
 
-def _query(name: str) -> str | None:
-    return query_text(app.current_event, name)
-
-
-def _engineering_on() -> None:
-    """404 while the engineering agents are off (the caller is checked after)."""
-    if not (engineering_agents_on() and os.environ.get(ENGINEERING_TABLE_ENV)):
-        raise NotFoundError('The engineering agents are not on in this deployment')
-
-
-def _agents_table() -> Any:
-    table = store.get_agents_table()
-    if table is None:
-        raise ConfigurationError('Agents table not configured')
-    return table
-
-
-def _engineering_client() -> tuple[Any, str]:
-    from shared.aws import get_dynamodb_client
-    return get_dynamodb_client(), os.environ[ENGINEERING_TABLE_ENV]
-
-
 def _answered[T](read: Callable[[], T], failed: str) -> T:
     """``read()``, a card's or a skill's refusal answered with its status, a failed call with 503 (``failed``)."""
     from engineering.registry.cards import CardError
@@ -132,7 +112,7 @@ def _answered[T](read: Callable[[], T], failed: str) -> T:
 
 
 def _connection() -> str:
-    connection = _query('connection') or ''
+    connection = query_text(app.current_event, 'connection') or ''
     from engineering.connectors.connections import CONNECTION_ID
 
     if connection and not CONNECTION_ID.fullmatch(connection):
@@ -143,7 +123,7 @@ def _connection() -> str:
 def _month() -> str:
     from engineering.spend import check_query, month_of
 
-    month = _query('month') or month_of(datetime.now(UTC))
+    month = query_text(app.current_event, 'month') or month_of(datetime.now(UTC))
     try:
         check_query(month, 'agent')
     except ValueError as exc:
@@ -361,7 +341,7 @@ def get_engineering_library_skill(name: str):
     from engineering.orchestration.bundle import REFERENCE_PATH
     from engineering.registry.library import SKILL_NAME, library_file
 
-    reference = _query('reference') or ''
+    reference = query_text(app.current_event, 'reference') or ''
     if not SKILL_NAME.fullmatch(name):
         raise ValidationError('name is a library skill\'s name (lowercase letters, digits and dashes)')
     if reference and not REFERENCE_PATH.fullmatch(reference):
@@ -394,7 +374,7 @@ def get_expanded_workflow(workflow_id: str):
     workflow = store.get_workflow(table, workflow_id) if store.is_workflow_id(workflow_id) else None
     if workflow is None:
         raise NotFoundError('Workflow not found')
-    raw = _query('revision')
+    raw = query_text(app.current_event, 'revision')
     if raw is not None and not (_DIGITS.fullmatch(raw) and int(raw) >= 1):
         raise ValidationError(f'revision is a whole number from 1 to {store.MAX_REVISION}')
     revision = int(raw) if raw is not None else int(store.plain(workflow.get('revision')) or 1)

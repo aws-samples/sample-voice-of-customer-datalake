@@ -60,7 +60,7 @@ def signed_handshake_headers(stream_url: str, region: str, credentials: Any) -> 
     return dict(request.headers.items())
 
 
-def _region() -> str:
+def aws_region() -> str:
     return os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
 
 
@@ -104,7 +104,7 @@ def browser_session(
     credentials: Any = None,
 ) -> Generator[CdpConnection, None, None]:
     """A connected CDP session on a fresh browser session; saved into its profile (if any), then stopped, on exit."""
-    region = _region()
+    region = aws_region()
     browser, profile = browser_identifier(), browser_profile()
     try:
         # An SDK without the service raises UnknownServiceError, a BotoCoreError, here.

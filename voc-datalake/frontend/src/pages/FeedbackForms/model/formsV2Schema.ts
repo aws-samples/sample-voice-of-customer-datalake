@@ -23,6 +23,27 @@ const text = z.record(z.string(), z.unknown()).catch({}).transform((raw): I18nTe
 const optionalText = text.optional().catch(undefined)
 const bool = (fallback: boolean) => z.boolean().catch(fallback)
 
+/** A form's routing and the project or document it validates, the same in every schema version: '' when unset. */
+export const FORM_ROUTING = {
+  category: z.string().catch(''),
+  subcategory: z.string().catch(''),
+  project_id: z.string().catch(''),
+  document_id: z.string().catch(''),
+}
+/** A form's kind: absent on an ordinary form (older records have none). */
+export const FORM_TYPE = z.enum(['standard', 'prototype_pin']).optional().catch(undefined)
+/**
+ * What a v2 form keeps as its v1 had it (model/migrateV1.ts): the routing, the linked project, custom fields,
+ * dimension defaults, tags and kind.
+ */
+export const KEPT_FIELDS = {
+  ...FORM_ROUTING,
+  custom_fields: z.array(z.unknown()).catch([]),
+  dimension_defaults: z.record(z.string(), z.string()).catch({}),
+  tags: z.array(z.string()).catch([]),
+  form_type: FORM_TYPE,
+}
+
 const ruleValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).optional().catch(undefined)
 const rule = z.object({
   when: z.object({ op: z.enum(RULE_OPS), value: ruleValue }),
@@ -165,14 +186,7 @@ const formV2 = z.object({
       .catch({ link_enabled: false, record: 'tag' }),
   }).catch({ test: { link_enabled: false, record: 'tag' } }),
   theme,
-  category: z.string().catch(''),
-  subcategory: z.string().catch(''),
-  project_id: z.string().catch(''),
-  document_id: z.string().catch(''),
-  custom_fields: z.array(z.unknown()).catch([]),
-  dimension_defaults: z.record(z.string(), z.string()).catch({}),
-  tags: z.array(z.string()).catch([]),
-  form_type: z.enum(['standard', 'prototype_pin']).optional().catch(undefined),
+  ...KEPT_FIELDS,
 })
 
 /** A v2 form's content as the editor holds it; null when `raw` is not an object at all. */

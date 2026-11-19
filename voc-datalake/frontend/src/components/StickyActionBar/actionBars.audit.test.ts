@@ -77,6 +77,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   GitHubAppPanel: 'Create the App on GitHub ends a two-field choice inside the Connect GitHub card, the page\'s one card while nothing is connected (it posts to github.com at once, nothing left unsaved)',
   DialFix: 'Set to AI-driven confirms one inline readiness fix inside the Set up dialog (it saves the caller\'s way of working at once, nothing left unsaved); the dialog\'s own save row is its footer',
   GitHubAppCreated: 'Install on GitHub is a link to github.com in the page\'s one card, under what was created; nothing to save',
+  ContributeCard: 'Install the App on your fork is step 2\'s own action inside the Contribute card\'s steps (7.57.00: it opens the dialog, whose footer holds Continue), beside its status; nothing left unsaved',
+  EngineeringRunLinks: 'Open the pull request on ‹upstream› is a link to GitHub\'s compare page in the run\'s outcome line (7.57.00), where the person clicks Create; nothing to save',
   SkillActions: 'Accept is one of a version\'s actions beside its status; it opens an approval card, whose footer holds the confirmation',
   SkillTemplateUpdate: 'Adopt as a proposal sits in the role\'s Template updated card, under the diff it adopts; it acts at once (a proposal an administrator accepts later), no form to save',
   SetupGuideEntry: 'Start the setup guide is the first visit\'s choice in the Engineering group\'s card on Automations, saved at once; nothing left unsaved',

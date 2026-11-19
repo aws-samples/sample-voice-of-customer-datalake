@@ -22,13 +22,15 @@ from urllib.parse import urlsplit
 
 from shared import form_theme
 from shared.dynamo_values import plain  # fv2.plain: DynamoDB's Decimals back into ints and floats, at any depth
+
+# _v1_text(item, field): a version 1 text as the version 1 widget rendered it, trimmed; '' when absent or not a string.
+from shared.dynamo_values import trimmed_text as _v1_text
 from shared.exceptions import ValidationError
 
 __all__ = [
     'DEFINITION_FIELDS',
     'FORM_LOCALES',
     'SCHEMA_VERSION',
-    'THEME_UNREADABLE',
     'definition_of',
     'is_v2',
     'language_assumed',
@@ -38,7 +40,6 @@ __all__ = [
     'question_bounds',
     'revision_of',
     'test_settings_of',
-    'theme_publish_problems',
     'validate_definition',
     'validate_publishable',
     'validate_test_settings',
@@ -235,12 +236,6 @@ def _v1_language(item: Mapping[str, Any], default_locale: str) -> str:
     if language in FORM_LOCALES:
         return str(language)
     return default_locale if default_locale in FORM_LOCALES else DEFAULT_LOCALE
-
-
-def _v1_text(item: Mapping[str, Any], field: str) -> str:
-    """A version 1 text as the version 1 widget rendered it: '' when absent or not a string."""
-    value = item.get(field)
-    return value.strip() if isinstance(value, str) else ''
 
 
 def _i18n(locale: str, text: str) -> dict[str, str]:

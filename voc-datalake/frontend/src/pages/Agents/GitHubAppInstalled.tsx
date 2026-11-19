@@ -18,13 +18,11 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
 import { engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { issuesSourceKeys } from '../../api/issuesSourceApi'
 import { IssuesFollowLines } from './ConnectionIssues'
-import { useConnectionError } from './connectionText'
-import { GitHubReturnFrame } from './GitHubReturnFrame'
+import { GitHubReturnFrame, ReturnProgress } from './GitHubReturnFrame'
 import { useSingleRequest, useTakenQuery } from './githubCallback'
 import type { Installation, InstallationReturn, SkipReason } from '../../api/githubAppsApi'
 import type { RequestOutcome } from './githubCallback'
@@ -91,22 +89,11 @@ function Saved({ installation }: Readonly<{ installation: Installation }>) {
 
 function Outcome({ held, outcome }: Readonly<{ held: Held | null; outcome: RequestOutcome<Installation> }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
   if (held === 'approval') return <p role="status" className="text-sm text-text">{t('connections.githubReturn.approval')}</p>
-  switch (outcome.kind) {
-    case 'idle':
-      return <p className="text-sm text-text">{t('connections.githubReturn.noState')}</p>
-    case 'pending':
-      return (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 size={14} className="animate-spin" aria-hidden="true" /> {t('connections.githubReturn.installing')}
-        </p>
-      )
-    case 'failed':
-      return <p role="alert" className="text-sm text-danger">{errorText(outcome.error)}</p>
-    case 'done':
-      return <Saved installation={outcome.answer} />
+  if (outcome.kind !== 'done') {
+    return <ReturnProgress outcome={outcome} idle={t('connections.githubReturn.noState')} pending={t('connections.githubReturn.installing')} />
   }
+  return <Saved installation={outcome.answer} />
 }
 
 export default function GitHubAppInstalled() {

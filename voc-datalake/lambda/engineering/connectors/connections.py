@@ -154,8 +154,14 @@ class ConnectionRefused(Exception):
         self.kind: Kind = kind
 
 
-def _invalid(message: str) -> ConnectionRefused:
+def invalid_request(message: str) -> ConnectionRefused:
+    """A request refused for its shape (the route's 400), ``message`` saying why."""
     return ConnectionRefused('invalid', message)
+
+
+def utc_iso(moment: datetime) -> str:
+    """``moment`` in UTC, ISO 8601: the connections' rows' and audit rows' times."""
+    return moment.astimezone(UTC).isoformat()
 
 
 @dataclass(frozen=True)
@@ -243,7 +249,7 @@ class Actor:
 
 def check_connection_id(connection_id: str) -> str:
     if not CONNECTION_ID.fullmatch(connection_id):
-        raise _invalid('the connection id is 1 to 63 lower-case letters, digits or "-", starting with a letter or digit')
+        raise invalid_request('the connection id is 1 to 63 lower-case letters, digits or "-", starting with a letter or digit')
     return connection_id
 
 
@@ -258,12 +264,12 @@ def is_branch_name(branch: str) -> bool:
 def _repository(value: object, host: str = 'github') -> str:
     if host == 'gitlab':
         if not isinstance(value, str) or not is_project_path(value):
-            raise _invalid('repository is the GitLab project\'s path, as its address shows it (group/project, or '
+            raise invalid_request('repository is the GitLab project\'s path, as its address shows it (group/project, or '
                            'group/subgroup/project)')
         return value
     match = REPOSITORY.fullmatch(value) if isinstance(value, str) else None
     if match is None or match.group('name') in {'.', '..'}:
-        raise _invalid('repository is the GitHub repository as owner/name')
+        raise invalid_request('repository is the GitHub repository as owner/name')
     return match.group(0)
 
 
@@ -277,7 +283,7 @@ def _project_token(value: object) -> ProjectToken:
     """A GitLab project access token's shape (``glpat-`` and its body), or a refusal that never quotes it."""
     token = value.get('token') if isinstance(value, dict) and set(value) == {'token'} else None
     if not isinstance(token, str) or not TOKEN.fullmatch(token.strip()):
-        raise _invalid('credential is {token}: the GitLab project access token (glpat-…), pasted whole')
+        raise invalid_request('credential is {token}: the GitLab project access token (glpat-…), pasted whole')
     return ProjectToken(token=token.strip())
 
 
@@ -290,18 +296,18 @@ def github_number(value: object) -> str | None:
 def _digits(value: object, name: str) -> str:
     text = github_number(value)
     if text is None:
-        raise _invalid(f'{name} is the GitHub App\'s number (digits only, as its settings page shows it)')
+        raise invalid_request(f'{name} is the GitHub App\'s number (digits only, as its settings page shows it)')
     return text
 
 
 def _private_key(value: object) -> str:
     """The key, its line ends made ``\\n``, or a refusal that never quotes it."""
     if not isinstance(value, str) or not value.strip():
-        raise _invalid('private_key is the GitHub App\'s private key (the .pem file\'s whole text)')
+        raise invalid_request('private_key is the GitHub App\'s private key (the .pem file\'s whole text)')
     key = value.replace('\r\n', '\n').strip() + '\n'
     pem = _PEM.fullmatch(key.rstrip('\n'))
     if pem is None or not _rsa_der(pem.group(0), pkcs1=bool(pem.group(1))):
-        raise _invalid('private_key is an unencrypted RSA private key in PEM (the .pem file GitHub generates for '
+        raise invalid_request('private_key is an unencrypted RSA private key in PEM (the .pem file GitHub generates for '
                        'the App, pasted whole)')
     return key
 
@@ -325,7 +331,7 @@ def _rsa_der(pem: str, *, pkcs1: bool) -> bool:
 
 def _credential(value: object) -> AppCredential:
     if not isinstance(value, dict) or frozenset(value) != _CREDENTIAL_FIELDS:
-        raise _invalid('credential is {app_id, installation_id, private_key}: the GitHub App\'s')
+        raise invalid_request('credential is {app_id, installation_id, private_key}: the GitHub App\'s')
     return AppCredential(app_id=_digits(value['app_id'], 'app_id'),
                          installation_id=int(_digits(value['installation_id'], 'installation_id')),
                          private_key=_private_key(value['private_key']))
@@ -337,25 +343,25 @@ def parse_reason(value: object) -> str:
     if value is None:
         return ''
     if not isinstance(value, str):
-        raise _invalid(f'reason is text: why the change is made, at most {MAX_REASON} characters')
+        raise invalid_request(f'reason is text: why the change is made, at most {MAX_REASON} characters')
     from engineering.quality_gate.text import redact
 
     text = ' '.join(''.join(char if char.isprintable() else ' ' for char in redact(value)).split())
     if len(text) > MAX_REASON:
-        raise _invalid(f'reason is at most {MAX_REASON} characters')
+        raise invalid_request(f'reason is at most {MAX_REASON} characters')
     return text
 
 
 def parse_request(body: Mapping[str, object]) -> ConnectionRequest:
     """A save's body, each field checked (``ConnectionRefused('invalid')`` naming the field, never its value)."""
     if not set(body) <= _FIELDS or not {'host', 'repository', 'default_branch'} <= set(body):
-        raise _invalid('the body is {host, repository, default_branch, credential?, reason?}')
+        raise invalid_request('the body is {host, repository, default_branch, credential?, reason?}')
     host = body['host']
     if host not in HOSTS:
-        raise _invalid('host is github or gitlab (gitlab.com)')
+        raise invalid_request('host is github or gitlab (gitlab.com)')
     branch = body['default_branch']
     if not isinstance(branch, str) or not is_branch_name(branch):
-        raise _invalid('default_branch is a branch name git accepts (letters, digits, ".", "_", "-" and "/", at most '
+        raise invalid_request('default_branch is a branch name git accepts (letters, digits, ".", "_", "-" and "/", at most '
                        '255), not an agent\'s voc-agent/ branch')
     credential = body.get('credential')
     parsed = None if credential is None else (_project_token(credential) if host == 'gitlab' else _credential(credential))
@@ -379,22 +385,22 @@ def parse_attestation(body: Mapping[str, object]) -> AttestationRequest:
     (``attestations.POINTS``), the repository and the connection's version the administrator reviewed, and their
     reason; ``ConnectionRefused('invalid')`` naming what is off, never echoing a value."""
     if not set(body) <= {'points', 'repository', 'version', 'reason'} or not {'points', 'repository', 'version'} <= set(body):
-        raise _invalid('the body is {points, repository, version, reason?}: the setup guide\'s points confirmed for '
+        raise invalid_request('the body is {points, repository, version, reason?}: the setup guide\'s points confirmed for '
                        'the repository and the connection version reviewed')
     repository, version = body['repository'], body['version']
     if not isinstance(repository, str) or not is_repository(repository):
-        raise _invalid('repository is the connection\'s repository (owner/name, or a GitLab project\'s path), as the '
+        raise invalid_request('repository is the connection\'s repository (owner/name, or a GitLab project\'s path), as the '
                        'attestation reviewed it')
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-        raise _invalid('version is the connection\'s version the attestation reviewed (a positive whole number)')
+        raise invalid_request('version is the connection\'s version the attestation reviewed (a positive whole number)')
     points = body['points']
     if not isinstance(points, list) or not all(isinstance(point, str) for point in points):
-        raise _invalid('points is the list of the setup guide\'s points confirmed, each by its id')
+        raise invalid_request('points is the list of the setup guide\'s points confirmed, each by its id')
     if not set(points) <= set(POINTS):
-        raise _invalid(f'points names a point the setup guide does not have (its points: {", ".join(POINTS)})')
+        raise invalid_request(f'points names a point the setup guide does not have (its points: {", ".join(POINTS)})')
     missing = [point for point in POINTS if point not in points]
     if missing:
-        raise _invalid(f'every point of the setup guide is confirmed: not yet {", ".join(missing)}')
+        raise invalid_request(f'every point of the setup guide is confirmed: not yet {", ".join(missing)}')
     return AttestationRequest(points=POINTS, repository=repository, version=version,
                               reason=parse_reason(body.get('reason')))
 
@@ -441,7 +447,7 @@ def parameter_value(repository: str, credential: AppCredential) -> str:
     value = json.dumps({'app_id': credential.app_id, 'installation_id': credential.installation_id,
                         'repository': repository, 'private_key': credential.private_key})
     if len(value.encode()) > MAX_PARAMETER_BYTES:
-        raise _invalid('private_key is larger than a credential holds (4 KB with the rest): use the App\'s own '
+        raise invalid_request('private_key is larger than a credential holds (4 KB with the rest): use the App\'s own '
                        '2048-bit key')
     return value
 
@@ -632,11 +638,11 @@ class ConnectionStore:
             raise ConnectionRefused('conflict', OTHER_KIND.format(kind=kind_of(earlier).replace('_', ' ')))
         if before is None or earlier.get('removed') is True:
             if request.credential is None:
-                raise _invalid('credential is needed to add a connection')
+                raise invalid_request('credential is needed to add a connection')
             if sum(1 for item in self._rows() if item.get('removed') is not True) >= MAX_CONNECTIONS:
                 raise ConnectionRefused('conflict', f'at most {MAX_CONNECTIONS} connections: remove one to add another')
         elif request.credential is None and (earlier.get('credential_set') is not True or _moved(earlier, request)):
-            raise _invalid('credential is needed again: the stored one holds the host and repository it was saved with')
+            raise invalid_request('credential is needed again: the stored one holds the host and repository it was saved with')
         if before is not None and _moved(earlier, request):
             runs = self._live_runs(connection_id)
             if runs:

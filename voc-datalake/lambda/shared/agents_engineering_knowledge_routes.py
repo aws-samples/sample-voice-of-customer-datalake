@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
-from functools import cache
 from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response
@@ -52,7 +51,9 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.agents_store import get_agents_table
-from shared.engineering_agents import ENGINEERING_TABLE_ENV, engineering_agents_on
+from shared.engineering_agent_runs import start_client as _start_client
+from shared.engineering_agents import engineering_client_and_table as _client_and_table
+from shared.engineering_agents import require_engineering_on
 from shared.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -91,8 +92,7 @@ app = Router()
 
 def _admin() -> Caller:
     """404 while the engineering agents are off, then 403 for anyone but an administrator acting for themselves."""
-    if not (engineering_agents_on() and os.environ.get(ENGINEERING_TABLE_ENV)):
-        raise NotFoundError('The engineering agents are not on in this deployment')
+    require_engineering_on()
     caller = caller_from_event(app.current_event.raw_event)
     require_admin_caller(caller)
     return caller
@@ -149,11 +149,6 @@ def _call[T](call: Callable[[], T], failed: str = 'the knowledge store could not
         raise ServiceUnavailableError(failed) from exc
 
 
-def _client_and_table() -> tuple[Any, str]:
-    from shared.aws import get_dynamodb_client
-    return get_dynamodb_client(), os.environ[ENGINEERING_TABLE_ENV]
-
-
 def _packs() -> Any:
     """The knowledge store on this role's clients (no ListBucket: a missing object reads as denied, taken as
     missing)."""
@@ -205,8 +200,7 @@ def _decision(body: Mapping[str, Any]) -> tuple[str, int]:
 
 def pack_overview(client: Any, table: str, connection: str) -> list[dict[str, Any]]:
     """Each package of the connection with a pack: its approved version, its versions (oldest first, summaries)."""
-    from engineering.knowledge.store import PackVersion
-    from engineering.knowledge.tenets import repo_pk
+    from engineering.knowledge.store import PackVersion, repo_pk
     from engineering.rows import partition_rows
     from engineering.workspace.layout import encode_package
     rows = partition_rows(client, table, repo_pk(WS, connection), 'KPACK#', max_items=MAX_PACK_ROWS)
@@ -397,16 +391,6 @@ def _publish_body(body: Mapping[str, Any]) -> tuple[str, str, str]:
     if pr is not None and pr not in PR_STATES:
         raise ValidationError('pr is ready or draft')
     return kind, digest, str(pr or flow_pr(kind))
-
-
-@cache
-def _start_client() -> Any:
-    import boto3
-    from botocore.config import Config
-
-    from shared.engineering_agent_runs import START_READ_TIMEOUT_SECONDS
-    return boto3.client('lambda', config=Config(read_timeout=START_READ_TIMEOUT_SECONDS, connect_timeout=5,
-                                                retries={'total_max_attempts': 1}))
 
 
 def _refused(answer: Mapping[str, Any]) -> Response:

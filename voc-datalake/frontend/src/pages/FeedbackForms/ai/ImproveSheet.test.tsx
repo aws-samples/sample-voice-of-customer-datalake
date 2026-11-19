@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { DraftAnswer, DraftRequest } from '../../../api/feedbackFormsV2Api'
 import type { FormV2, Question } from '../model/formsV2'
 import { renderWithDraft, sampleForm } from '../test/draftHarness'
+import { draftUntilAborted } from '../test/draftUntilAborted'
 import ImproveSheet from './ImproveSheet'
 
 const draftForm = vi.hoisted(() => vi.fn<(request: DraftRequest, signal?: AbortSignal) => Promise<DraftAnswer>>())
@@ -47,10 +48,7 @@ beforeEach(() => {
 describe('ImproveSheet', () => {
   it('shows Stop while the AI drafts, and Stop drafting ends it without a proposal', async () => {
     const signals: AbortSignal[] = []
-    draftForm.mockImplementation((_request, signal) => new Promise((_resolve, reject) => {
-      if (signal !== undefined) signals.push(signal)
-      signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
-    }))
+    draftForm.mockImplementation(draftUntilAborted(signals))
     const user = userEvent.setup()
     renderWithDraft(<ImproveSheet isOpen onClose={vi.fn<() => void>()} />, current())
     await user.type(screen.getByRole('textbox', { name: 'Instruction' }), 'Add a price follow-up')

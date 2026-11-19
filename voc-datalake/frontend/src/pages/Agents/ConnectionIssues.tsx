@@ -26,7 +26,7 @@ import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
 import { isPublicRead } from '../../api/engineeringConnectionsApi'
 import { deploymentSourcePath } from '../Settings/adminPaths'
-import { useConnectionError } from './connectionText'
+import { ConnectionChangeError } from './ConnectionChangeError'
 import { issuesOf, viaApp } from './connectionStatus'
 import type { ConnectionIssues as Issues, IssuesFollow, IssuesSkipReason, IssuesSourceView } from '../../api/issuesSourceApi'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
@@ -107,7 +107,6 @@ export function IssuesCell({ connection, view }: Readonly<{
   connection: EngineeringConnection; view: IssuesSourceView | undefined
 }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
   const queryClient = useQueryClient()
   const reasonId = useId()
   const change = useMutation({
@@ -131,7 +130,7 @@ export function IssuesCell({ connection, view }: Readonly<{
       {!issues.reading && (
         <ReasonLine issues={issues} id={reasonId} busy={change.isPending} onReadNow={() => { change.mutate(true) }} />
       )}
-      {change.isError && <p role="alert" className="text-[12px] text-danger">{errorText(change.error)}</p>}
+      <ConnectionChangeError change={change} />
     </div>
   )
 }

@@ -35,6 +35,7 @@ from uuid import uuid4
 
 from botocore.exceptions import ClientError
 
+from shared.aws import is_conditional_check_failure as _conditional_failure
 from shared.digests import sha256_hex
 from shared.exceptions import ConflictError, ServiceError, ValidationError
 from shared.ingest_tables import table_view
@@ -950,10 +951,6 @@ def _release_legacy_migration(
                 'error_code': error.response.get('Error', {}).get('Code', 'Unknown'),
             },
         )
-
-
-def _conditional_failure(error: ClientError) -> bool:
-    return error.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
 
 
 def versioned_document_id(

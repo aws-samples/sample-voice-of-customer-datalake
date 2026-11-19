@@ -1,6 +1,6 @@
 /**
  * @fileoverview The parts the Test and Share tabs show a form address with (UX §9): the address in a read-only mono
- * field with Copy (it announces "Copied") and QR, and the new-form state ("Save the form to get its links.", with why
+ * field with Copy (it announces "Copied") and QR, Open (in a new tab), and the new-form state ("Save the form to get its links.", with why
  * Save is off while problems block it).
  *
  * @module pages/FeedbackForms/tabs/linkParts
@@ -10,11 +10,20 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { Check, Copy, Link2, Loader2, Save } from 'lucide-react'
+import { NewTabLink } from '../../../components/NewTabLink/NewTabLink'
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard'
 import { useBuilderUi } from '../builder/builderUi'
 import { useDraft } from '../builder/formDraftContext'
 import { goToProblem, openProblemsList } from '../builder/problemText'
 import { QrButton } from './QrDialog'
+
+/** Open the form at `url` in a new tab (said to a screen reader): the commonest thing done with a form's link. */
+export function OpenLink({ url }: Readonly<{ url: string }>) {
+  const { t } = useTranslation('feedbackForms')
+  return (
+    <NewTabLink href={url} className="btn btn-secondary btn-sm" iconSize={14} newTab={t('share.newTab')}>{t('share.open')}</NewTabLink>
+  )
+}
 
 /** An address in a read-only mono field, with Copy, QR and the caller's own actions after them. */
 export function LinkField({ label, url, qrTitle, formName, hint, children }: Readonly<{

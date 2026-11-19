@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from shared import mcp_global_tokens as gt
+from shared.dynamo_values import mapping_or_empty as _mapping
 from shared.engineering_agents import RUN_STATUSES
 from shared.mcp_global_kit import (
     DOMAIN_AGENTS,
@@ -107,10 +108,6 @@ def _each(payload: object, key: str, fields: tuple[str, ...]) -> list[dict[str, 
 def _runs_page(payload: object, _args: Mapping[str, Any]) -> dict[str, Any]:
     nxt = payload.get('next') if isinstance(payload, Mapping) else None
     return {'runs': _each(payload, 'runs', _LISTED_FIELDS), 'next': nxt if isinstance(nxt, str) else None}
-
-
-def _mapping(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _link(value: object) -> dict[str, Any] | None:

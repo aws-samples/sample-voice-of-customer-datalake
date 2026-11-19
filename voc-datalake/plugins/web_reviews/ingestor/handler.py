@@ -29,7 +29,6 @@ Lambda has too little time left for it. Every item carries ``method_used``, and 
 target, the step that read it and every step tried with its outcome (``cascade.read_row``). See docs/web-reviews.md.
 """
 
-import os
 import time
 from collections import deque
 from collections.abc import Callable, Generator
@@ -38,7 +37,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 
 import boto3
-from agentcore_browser import BrowserUnavailableError, browser_session, session_seconds
+from agentcore_browser import BrowserUnavailableError, aws_region, browser_session, session_seconds
 from botocore.exceptions import BotoCoreError, ClientError
 from cascade import BLOCKED, MAX_RUN_READS, NOT_OFFERED, SKIPPED_TIME, Cascade, StepReport, read_row
 from cdp_client import BrowserConnectionClosed, CdpError
@@ -132,10 +131,6 @@ def _model_completion(prompt: str, system_prompt: str) -> str:
         prompt=prompt, system_prompt=system_prompt, max_tokens=LLM_MAX_TOKENS, temperature=None,
         surface=LLM_SURFACE, step_name='web_reviews', max_continuations=0,
     )
-
-
-def _region() -> str:
-    return os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
 
 
 class WebReviewsIngestor(BaseIngestor):
@@ -436,7 +431,7 @@ class WebReviewsIngestor(BaseIngestor):
         """*target* read by the web search surface's model (Administration -> AI models; its own pick, else
         Luna), stepping down the surface's chain when a model cannot serve (shared/model_config.py)."""
         chain = fallback_chain(get_active_model_id(WEB_SEARCH_SURFACE), WEB_SEARCH_SURFACE)
-        return read_with_fallback(target.url, chain, max_reviews, region=_region(),
+        return read_with_fallback(target.url, chain, max_reviews, region=aws_region(),
                                   credentials=boto3.Session().get_credentials())
 
     def _out_of_reviews_or_time(self, target: WebTarget, step: str, report: bool) -> StepReport | None:
@@ -502,7 +497,7 @@ class WebReviewsIngestor(BaseIngestor):
     def _snippet_step(self, cascade: Cascade) -> Generator[dict, None, StepReport]:
         """An ``auto`` target's last step: the reviews in AgentCore Web Search's snippets of its page, as excerpts."""
         target = cascade.target
-        region = _region()
+        region = aws_region()
         if region not in SEARCH_REGIONS:
             return StepReport(STEP_AGENTCORE_WEB_SEARCH, NOT_OFFERED)
         skipped = self._out_of_reviews_or_time(target, STEP_AGENTCORE_WEB_SEARCH, report=False)

@@ -75,7 +75,7 @@ SHORT_BODY: Final = ('The full description is on the run in VoC: use "Copy the d
 _DESCRIPTION_HEADING: Final = re.compile(r'\b(description|summary|what|changes?|motivation|overview|about)\b',
                                          re.IGNORECASE)
 _ISSUE_HEADING: Final = re.compile(r'\b(issues?|related|fix(es)?|closes|tickets?|links?)\b', re.IGNORECASE)
-_HEADING: Final = re.compile(r'^\s{0,3}#{1,6}\s+(?P<text>.+?)\s*#*\s*$')
+_HEADING: Final = re.compile(r'^\s{0,3}#{1,6}\s+(?P<text>.+?)\s*#*\s*\Z')
 _COMMENT: Final = re.compile(r'<!--.*?-->', re.DOTALL)
 _DCO: Final = re.compile(r'signed-off-by|\bDCO\b|developer certificate of origin', re.IGNORECASE)
 _ISSUE_FIRST: Final = re.compile(r'(open|file|create|raise)\s+an?\s+issue\s+(first|before)|'

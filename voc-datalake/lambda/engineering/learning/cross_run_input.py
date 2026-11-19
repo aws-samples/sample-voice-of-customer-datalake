@@ -53,6 +53,7 @@ from engineering.runtime.manifest import MANIFEST_SCHEMA, NO_FLOW, manifest_key
 from engineering.runtime.runs import run_pk
 from engineering.thread_items import one_line
 from engineering.workspace.layout import parse_agent_key
+from shared.dynamo_values import json_count as _whole
 from shared.logging import logger
 
 #: The transcripts' index (runtime/manifest.py), whose first level is the flows.
@@ -185,10 +186,6 @@ def _amount(value: object) -> Decimal:
     except (ArithmeticError, ValueError):
         return Decimal(0)
     return found if found.is_finite() and found >= 0 else Decimal(0)
-
-
-def _whole(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 @dataclass(frozen=True)

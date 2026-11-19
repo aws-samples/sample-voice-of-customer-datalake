@@ -45,6 +45,7 @@
     "github": "GitHub",
     "githubAppCreated": "App 생성됨",
     "githubAppInstalled": "App 설치됨",
+    "githubAppAuthorized": "App 승인됨",
     "setupGuide": "구성 가이드",
     "runs": "실행"
   },

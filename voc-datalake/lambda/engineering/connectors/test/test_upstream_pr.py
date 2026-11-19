@@ -198,15 +198,21 @@ def test_the_upstream_pull_request_is_only_a_forks() -> None:
 # --- the one-click link: always, once the safety checks pass -----------------------------------------------------
 
 
-def _linked(broker: Broker, upstream: FakeUpstream, ledger: FakeUpstreamLedger) -> dict[str, object]:
-    """The fork's pull request made, the upstream one left to the person's click: its record's view."""
+def _not_opened(broker: Broker, upstream: FakeUpstream, state: str) -> dict[str, object]:
+    """The fork's pull request made, the upstream one not opened (``state``): what the PR operation answered of it."""
     ref = broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, TITLE, BODY)
     assert ref.number == 7
     assert upstream.opened == []
     assert ref.upstream is not None
-    assert ref.upstream['state'] == 'link'
-    assert ledger.records[RUN].view() == {name: ref.upstream[name] for name in ledger.records[RUN].view()}
+    assert ref.upstream['state'] == state
     return ref.upstream
+
+
+def _linked(broker: Broker, upstream: FakeUpstream, ledger: FakeUpstreamLedger) -> dict[str, object]:
+    """The fork's pull request made, the upstream one left to the person's click: its record's view."""
+    found = _not_opened(broker, upstream, 'link')
+    assert ledger.records[RUN].view() == {name: found[name] for name in ledger.records[RUN].view()}
+    return found
 
 
 def test_without_an_authorization_the_run_ends_with_the_one_click_link() -> None:
@@ -290,15 +296,10 @@ def test_a_body_too_long_for_the_link_is_shortened_and_kept_whole_for_copying() 
 
 def _refused(broker: Broker, upstream: FakeUpstream, ledger: FakeUpstreamLedger) -> str:
     """The fork's pull request made, the upstream one refused, with no link: its reason, as the run's record keeps it."""
-    ref = broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, TITLE, BODY)
-    assert ref.number == 7
-    assert upstream.opened == []
-    assert ref.upstream is not None
-    assert ref.upstream['state'] == 'refused'
-    assert ledger.records[RUN].state == 'refused'
-    assert ledger.records[RUN].compare_url is None
-    assert ledger.records[RUN].reason == ref.upstream['reason']
-    return str(ref.upstream['reason'])
+    found = _not_opened(broker, upstream, 'refused')
+    record = ledger.records[RUN]
+    assert (record.state, record.compare_url, record.reason) == ('refused', None, found['reason'])
+    return str(found['reason'])
 
 
 @pytest.mark.parametrize(('facts', 'said'), [

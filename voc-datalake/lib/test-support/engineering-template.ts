@@ -29,17 +29,39 @@ export const AGENT_ROLE_NAME_PATTERN_JOIN = {
 
 /** Synthesizes the Processing stack once per context (in the suite's beforeAll); returns the getter. */
 export function processingSynths<K extends string>(contexts: Readonly<Record<K, Record<string, unknown>>>): (key: K) => Template {
+  return synthesizedOnce(Object.entries<Record<string, unknown>>(contexts)
+    .map(([key, context]) => [key, () => synthProcessingTemplate({ context })]));
+}
+
+/** Each template synthesized once, from its factory, in the suite's beforeAll; returns the getter. */
+export function templatesOnce<K extends string>(factories: Readonly<Record<K, () => Template>>): (key: K) => Template {
+  return synthesizedOnce(Object.entries<() => Template>(factories));
+}
+
+/** The templates of `factories` synthesized in the suite's beforeAll, and the getter of one by its key. */
+function synthesizedOnce<K extends string>(factories: ReadonlyArray<readonly [string, () => Template]>): (key: K) => Template {
   const synthesized = new Map<string, Template>();
   beforeAll(() => {
-    for (const [key, context] of Object.entries<Record<string, unknown>>(contexts)) {
-      synthesized.set(key, synthProcessingTemplate({ context }));
-    }
-  }, SYNTH_TIMEOUT_MS);
+    for (const [key, synth] of factories) synthesized.set(key, synth());
+  }, SYNTH_TIMEOUT_MS * factories.length);
   return (key) => {
     const template = synthesized.get(key);
     if (!template) throw new Error(`${key} was not synthesized`);
     return template;
   };
+}
+
+/** The logical ids of the functions whose physical name holds `name`. */
+export function functionIds(template: Template, name: string): string[] {
+  return Object.entries(template.findResources('AWS::Lambda::Function'))
+    .filter(([, resource]) => JSON.stringify(resource.Properties?.FunctionName ?? '').includes(name))
+    .map(([id]) => id);
+}
+
+/** The resource-based permissions (`AWS::Lambda::Permission`) that name the function `fnId`. */
+export function permissionsNaming(template: Template, fnId: string): unknown[] {
+  return Object.values(template.findResources('AWS::Lambda::Permission'))
+    .filter((permission) => JSON.stringify(permission.Properties).includes(fnId));
 }
 
 /** The logical id of the role of the function `fnId`. */

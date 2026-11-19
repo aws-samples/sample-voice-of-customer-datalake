@@ -11,11 +11,10 @@
  * @module pages/Agents/GitHubAppCreated
  */
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
-import { useConnectionError } from './connectionText'
-import { GitHubReturnFrame } from './GitHubReturnFrame'
+import { GitHubReturnFrame, ReturnProgress } from './GitHubReturnFrame'
 import { leavingForGitHub } from './githubReturn'
 import { useCodeExchange } from './githubCallback'
 import type { CreatedApp } from '../../api/githubAppsApi'
@@ -26,28 +25,17 @@ const CREATED_QUERY = ['code', 'state'] as const
 
 function Created({ outcome }: Readonly<{ outcome: RequestOutcome<CreatedApp> }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
-  switch (outcome.kind) {
-    case 'idle':
-      return <p className="text-sm text-text">{t('connections.githubReturn.noCode')}</p>
-    case 'pending':
-      return (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 size={14} className="animate-spin" aria-hidden="true" /> {t('connections.githubReturn.creating')}
-        </p>
-      )
-    case 'failed':
-      return <p role="alert" className="text-sm text-danger">{errorText(outcome.error)}</p>
-    case 'done':
-      return (
-        <>
-          <p role="status" className="text-sm text-text">{t('connections.githubReturn.createdBody', { slug: outcome.answer.app.slug })}</p>
-          <a href={outcome.answer.installUrl} onClick={leavingForGitHub} className="btn btn-primary inline-flex items-center gap-1.5">
-            <ExternalLink size={14} aria-hidden="true" /> {t('connections.githubReturn.installOnGitHub')}
-          </a>
-        </>
-      )
+  if (outcome.kind !== 'done') {
+    return <ReturnProgress outcome={outcome} idle={t('connections.githubReturn.noCode')} pending={t('connections.githubReturn.creating')} />
   }
+  return (
+    <>
+      <p role="status" className="text-sm text-text">{t('connections.githubReturn.createdBody', { slug: outcome.answer.app.slug })}</p>
+      <a href={outcome.answer.installUrl} onClick={leavingForGitHub} className="btn btn-primary inline-flex items-center gap-1.5">
+        <ExternalLink size={14} aria-hidden="true" /> {t('connections.githubReturn.installOnGitHub')}
+      </a>
+    </>
+  )
 }
 
 export default function GitHubAppCreated() {

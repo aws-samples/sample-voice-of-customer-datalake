@@ -32,7 +32,8 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from engineering.connectors.identity import WORKSPACE
-from engineering.rows import string_attr
+from engineering.rows import KindedError, string_attr
+from shared.aws import is_conditional_check_failure
 
 PK: Final = f'WS#{WORKSPACE}#RUNREQ#queue'
 SK_PREFIX: Final = 'REQ#'
@@ -51,12 +52,8 @@ MAX_NOTE: Final = 500
 MAX_OUTCOME: Final = 300
 
 
-class RequestError(Exception):
+class RequestError(KindedError):
     """A request refused: ``kind`` is ``invalid``, ``not_found``, ``conflict`` or ``cap``; the message says why."""
-
-    def __init__(self, kind: str, message: str):
-        super().__init__(message)
-        self.kind = kind
 
 
 @dataclass(frozen=True)
@@ -77,10 +74,6 @@ def _key(request_id: str) -> dict[str, Any]:
 
 def _stamp(at: datetime) -> str:
     return at.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def _conditional_failure(exc: ClientError) -> bool:
-    return exc.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
 
 
 def _same_run_now(row: Mapping[str, Any], wanted: NewRequest) -> bool:
@@ -152,7 +145,7 @@ class RunRequests:
         try:
             self.client.put_item(TableName=self.table, Item=item, ConditionExpression='attribute_not_exists(pk)')
         except ClientError as exc:
-            if _conditional_failure(exc):
+            if is_conditional_check_failure(exc):
                 raise RequestError('conflict', 'a request with this id exists: ask again') from exc
             raise
         return self.view(item)
@@ -173,7 +166,7 @@ class RunRequests:
                 ExpressionAttributeValues={':status': {'S': status}, ':by': {'S': by}, ':now': {'S': now},
                                            ':pending': {'S': PENDING}})
         except ClientError as exc:
-            if not _conditional_failure(exc):
+            if not is_conditional_check_failure(exc):
                 raise
             found = self.get(request_id)
             if found is None:

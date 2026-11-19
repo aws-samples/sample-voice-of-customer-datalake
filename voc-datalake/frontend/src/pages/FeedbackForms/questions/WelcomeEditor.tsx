@@ -4,7 +4,6 @@
  *
  * @module pages/FeedbackForms/questions/WelcomeEditor
  */
-import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DoorOpen } from 'lucide-react'
 import SwitchField from '../../../components/SwitchField/SwitchField'
@@ -13,14 +12,13 @@ import { problemsAt } from '../model/validateForm'
 import { useDraft } from '../builder/formDraftContext'
 import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
-import { takeFocusRequest } from './focusRequest'
+import { useRequestedFocus } from './focusRequest'
 
 export default function WelcomeEditor() {
   const { t } = useTranslation('feedbackForms')
   const draft = useDraft()
   const { welcome, language: lng } = draft.form
-  const title = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
-  useEffect(() => { if (takeFocusRequest('welcome')) title.current?.focus() }, [])
+  const title = useRequestedFocus<HTMLInputElement & HTMLTextAreaElement>('welcome')
   const set = (patch: Partial<typeof welcome>) => draft.update((form) => ({ ...form, welcome: { ...form.welcome, ...patch } }))
   return (
     <div className="space-y-3">

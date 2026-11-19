@@ -5,7 +5,7 @@
  */
 import { History, LogOut, ShoppingCart } from 'lucide-react'
 import type { TemplateFlow } from './templateKit'
-import { consent, contact, multi, openText, otherwise, single, jumpWhen } from './templateKit'
+import { followUp, jumpWhen, multi, openText, otherwise, single } from './templateKit'
 
 const churn: TemplateFlow = {
   id: 'churn', group: 'dropoffs', icon: LogOut, runs: ['in_app', 'link'], welcome: false,
@@ -25,8 +25,7 @@ const churn: TemplateFlow = {
     openText('q_hard_part', { logic: otherwise('q_follow_up_ok') }),
     openText('q_competitor', { long: false, required: false, logic: otherwise('q_follow_up_ok', true) }),
     openText('q_technical'),
-    consent('q_follow_up_ok', [jumpWhen('equals', false, 'end_bye')]),
-    contact('q_contact', ['name', 'email'], ['email'], otherwise('end_contact')),
+    ...followUp(['name', 'email'], 'end_bye'),
   ],
   endings: ['end_bye', 'end_contact'],
 }

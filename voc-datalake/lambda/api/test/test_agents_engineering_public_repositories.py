@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import boto3
 import pytest
-from agents_handler_fixtures import ADMIN, USER
+from agents_handler_fixtures import ADMIN, USER, route_statuses
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from test_agents_engineering_github_apps import DELEGATED_ADMIN, create, engineering_on, state_of
@@ -111,18 +111,16 @@ ROUTES = (('GET', '/agents/engineering/public-repositories'), ('POST', '/agents/
 @pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN], ids=['plain user', 'MCP credential of an admin'])
 def test_every_route_is_an_administrators_acting_for_themselves(lambda_context: Any, tokens: PublicTokens,
                                                                 claims: dict[str, Any]) -> None:
-    for method, path in ROUTES:
-        assert _call(lambda_context, method, path, body={}, claims=claims)[0] == 403, (method, path)
+    assert route_statuses(lambda_context, ROUTES, claims) == dict.fromkeys(ROUTES, 403)
     assert tokens.calls == []
 
 
 @pytest.mark.usefixtures('tokens')
 @pytest.mark.parametrize('claims', [ADMIN, USER], ids=['admin', 'plain user'])
-def test_every_route_is_404_while_the_module_is_off(lambda_context: Any, monkeypatch: pytest.MonkeyPatch,
-                                                    claims: dict[str, Any]) -> None:
+def test_every_public_repository_route_is_404_while_the_module_is_off(lambda_context: Any, claims: dict[str, Any],
+                                                                      monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('ENGINEERING_AGENTS')
-    for method, path in ROUTES:
-        assert _call(lambda_context, method, path, body={}, claims=claims)[0] == 404, (method, path)
+    assert route_statuses(lambda_context, ROUTES, claims) == dict.fromkeys(ROUTES, 404)
 
 
 @pytest.mark.usefixtures('tokens')

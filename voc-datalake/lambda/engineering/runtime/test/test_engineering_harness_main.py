@@ -210,14 +210,18 @@ def fixture_repository(tmp_path: Path, files: dict[str, str] | None = None) -> t
     return cache, run_git('-C', str(origin), 'rev-parse', 'HEAD')
 
 
-def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_across_a_continuation(aws, tmp_path):
-    s3, _ = aws
-    cache, commit = fixture_repository(tmp_path)
-    # The fixer's change, submitted as a patch on the run's commit (real git).
+def _fixers_patch(s3: Any, tmp_path: Path, cache: Path, commit: str) -> str:
+    """The fixer's change to ``src/parse.py``, submitted as a patch on the run's commit (real git): its key."""
     fixer = build_session(_env(tmp_path), s3=s3, ports=_ports(), runner=_vm_directory(tmp_path / 'vm-f', cache, commit),
                           checkout=str(tmp_path / 'vm-f/work/repo'))
     (tmp_path / 'vm-f/work/repo/src/parse.py').write_text('new\n')
-    submitted = json.loads(fixer.tools.call('submit_work', {'summary': 'the fix'}).text)['patch']
+    return json.loads(fixer.tools.call('submit_work', {'summary': 'the fix'}).text)['patch']
+
+
+def test_a_gate_checks_the_submitted_patch_and_records_the_tree_git_hashed_across_a_continuation(aws, tmp_path):
+    s3, _ = aws
+    cache, commit = fixture_repository(tmp_path)
+    submitted = _fixers_patch(s3, tmp_path, cache, commit)
     # The tree of the fixed commit, as git hashes it in the fixer's own checkout.
     fixed = run_git(f'--git-dir={tmp_path}/vm-f/work/repo.git', 'write-tree')
     env = _env(tmp_path, VOC_ROLE='gate-runner', VOC_AGENT_ID='gate-runner-2', VOC_TASK_ID='task-4')
@@ -263,10 +267,7 @@ def test_a_reviewers_session_starts_on_its_checkout_with_the_submitted_patch_app
     # (7.54.00: the first live run's commit reviewer could not read the fixer's patch, 01M7QXJN02WSFMG92VWWZ00NKB)
     s3, _ = aws
     cache, commit = fixture_repository(tmp_path)
-    fixer = build_session(_env(tmp_path), s3=s3, ports=_ports(), runner=_vm_directory(tmp_path / 'vm-f', cache, commit),
-                          checkout=str(tmp_path / 'vm-f/work/repo'))
-    (tmp_path / 'vm-f/work/repo/src/parse.py').write_text('new\n')
-    submitted = json.loads(fixer.tools.call('submit_work', {'summary': 'the fix'}).text)['patch']
+    submitted = _fixers_patch(s3, tmp_path, cache, commit)
     env = _env(tmp_path, VOC_ROLE='commit-reviewer', VOC_AGENT_ID='commit-reviewer-4', VOC_TASK_ID='task-3')
     reviewer = build_session(env, s3=s3, ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(),
                                                      broker=FakeBroker()),

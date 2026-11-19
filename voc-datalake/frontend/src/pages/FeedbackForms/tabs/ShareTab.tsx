@@ -9,7 +9,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, FlaskConical, PowerOff, Radio } from 'lucide-react'
+import { FlaskConical, PowerOff, Radio } from 'lucide-react'
 import CodeView from '../../../components/Document/text/CodeView'
 import Notice from '../../../components/Notice/Notice'
 import { useConfigStore } from '../../../store/configStore'
@@ -19,7 +19,7 @@ import { PublishFlow } from '../builder/SaveButtons'
 import Segmented from '../ui/Segmented'
 import { formLink, iframeSnippet, scriptEmbedSnippet, widgetScriptUrl } from './snippets'
 import type { SnippetInput } from './snippets'
-import { LinkField, SaveFirstNotice } from './linkParts'
+import { LinkField, OpenLink, SaveFirstNotice } from './linkParts'
 import { useTestToken } from './testToken'
 
 type Mode = 'live' | 'test'
@@ -78,11 +78,7 @@ function Snippets({ input, live }: Readonly<{ input: SnippetInput; live: boolean
     <div className="space-y-5">
       <LinkField label={t('share.link')} url={link} qrTitle={live ? t('share.qrTitle') : t('test.qrTitle')} formName={input.formName}
         hint={live ? t('share.liveHint') : undefined}>
-        {link !== null && (
-          <a href={link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
-            {t('share.open')}<ExternalLink size={14} aria-hidden="true" /><span className="sr-only">{t('share.newTab')}</span>
-          </a>
-        )}
+        {link !== null && <OpenLink url={link} />}
       </LinkField>
       <p className="text-[12px] text-muted">
         {t('share.withHidden')}{' '}

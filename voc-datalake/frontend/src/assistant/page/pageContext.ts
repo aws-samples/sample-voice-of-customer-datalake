@@ -66,6 +66,7 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // context (the query is the page's alone, taken and removed from the address at once).
   { route: 'agents/connections/github/created', kind: 'agents' },
   { route: 'agents/connections/github/installed', kind: 'agents' },
+  { route: 'agents/connections/github/authorized', kind: 'agents' },
   // The list's views (agentsPaths.ts), BEFORE `agents/:id/*`, or a view's name reads as an agent id.
   { route: 'agents/runs/*', kind: 'agents' },
   { route: 'agents/workflows/*', kind: 'agents' },

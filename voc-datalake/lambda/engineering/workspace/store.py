@@ -35,7 +35,8 @@ class ObjectTooLarge(ValueError):
     """An object over what its reader takes whole (``read_bytes``)."""
 
 
-def _code(exc: ClientError) -> object:
+def client_error_code(exc: ClientError) -> object:
+    """The AWS error code of ``exc`` (None when its response has none)."""
     response: Mapping[str, Any] = exc.response
     return response.get('Error', {}).get('Code')
 
@@ -57,7 +58,7 @@ class WorkspaceStore:
         try:
             answer = self.s3.get_object(Bucket=self.bucket, Key=key, Range=f'bytes=0-{limit - 1}')
         except ClientError as exc:
-            code = _code(exc)
+            code = client_error_code(exc)
             if code in self.missing:
                 if code in DENIED_CODES:
                     # Most likely a missing key, but a KMS or policy denial reads the same: logged and counted, so
@@ -103,9 +104,9 @@ class WorkspaceStore:
                 self.s3.put_object(Bucket=self.bucket, Key=key, Body=body.encode(), ContentType=content_type,
                                    IfNoneMatch='*')
             except ClientError as exc:
-                if _code(exc) in _EXISTS:
+                if client_error_code(exc) in _EXISTS:
                     return False
-                if _code(exc) not in _IN_FLIGHT or tries == WRITE_TRIES:
+                if client_error_code(exc) not in _IN_FLIGHT or tries == WRITE_TRIES:
                     raise
                 self.sleep(WRITE_BACKOFF_S * tries)
                 continue

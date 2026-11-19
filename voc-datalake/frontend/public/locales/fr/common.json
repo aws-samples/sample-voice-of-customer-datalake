@@ -45,6 +45,7 @@
     "github": "GitHub",
     "githubAppCreated": "App créée",
     "githubAppInstalled": "App installée",
+    "githubAppAuthorized": "App autorisée",
     "setupGuide": "Guide de configuration",
     "runs": "Exécutions"
   },

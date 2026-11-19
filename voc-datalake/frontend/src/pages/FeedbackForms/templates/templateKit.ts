@@ -76,12 +76,12 @@ export function rating(id: string, scale: RatingQuestion['scale'], range: Rating
   return { id, type: 'rating', headline: {}, required: true, scale, range, logic }
 }
 
-export function consent(id: string, logic?: readonly Rule[]): ConsentQuestion {
+function consent(id: string, logic?: readonly Rule[]): ConsentQuestion {
   return { id, type: 'consent', headline: {}, required: false, label: {}, logic }
 }
 
 /** A contact question with the given fields shown; `required` lists the shown ones that are required. */
-export function contact(id: string, shown: readonly ContactField[], required: readonly ContactField[], logic?: readonly Rule[]): ContactQuestion {
+function contact(id: string, shown: readonly ContactField[], required: readonly ContactField[], logic?: readonly Rule[]): ContactQuestion {
   const field = (name: ContactField) => ({ show: shown.includes(name), required: required.includes(name) })
   return {
     id, type: 'contact_info', headline: {}, required: true, logic,
@@ -91,6 +91,14 @@ export function contact(id: string, shown: readonly ContactField[], required: re
 
 /** If the answer [op] [value] → `to`. */
 export const jumpWhen = (op: Rule['when']['op'], value: RuleValue, to: string): Rule => ({ when: { op, value }, then: { jump_to: to } })
+
+/**
+ * A flow's last two questions when it offers a follow-up: may we contact you (no: on to `declined`, its plain ending),
+ * then the contact details (`shown`, the email required), which end at `end_contact`.
+ */
+export function followUp(shown: readonly ContactField[] = ['name', 'email'], declined = 'end_thanks'): [ConsentQuestion, ContactQuestion] {
+  return [consent('q_follow_up_ok', [jumpWhen('equals', false, declined)]), contact('q_contact', shown, ['email'], otherwise('end_contact'))]
+}
 
 /** "Otherwise → `to`" as stored (UX §5.3): `submitted` for a required question, plus `skipped` for an optional one. */
 export function otherwise(to: string, optional = false): Rule[] {

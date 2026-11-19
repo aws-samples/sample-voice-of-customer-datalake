@@ -17,7 +17,7 @@
 import { z } from 'zod'
 import type { ContactQuestion, FormLanguage, FormV2, Question, RatingQuestion, RatingRange } from './formsV2'
 import { RATING_RANGES, isFormLanguage } from './formsV2'
-import { themeSchema } from './formsV2Schema'
+import { KEPT_FIELDS, themeSchema } from './formsV2Schema'
 import { textOf } from './i18nText'
 
 const v1 = z.object({
@@ -42,17 +42,7 @@ const v1 = z.object({
  * What a form keeps from v1 unchanged: the theme (its 7.55.01 fields filled with their defaults, as a v2 form's are),
  * the routing, the linked project, dimension defaults and tags.
  */
-const keptFields = z.object({
-  theme: themeSchema,
-  category: z.string().catch(''),
-  subcategory: z.string().catch(''),
-  project_id: z.string().catch(''),
-  document_id: z.string().catch(''),
-  custom_fields: z.array(z.unknown()).catch([]),
-  dimension_defaults: z.record(z.string(), z.string()).catch({}),
-  tags: z.array(z.string()).catch([]),
-  form_type: z.enum(['standard', 'prototype_pin']).optional().catch(undefined),
-})
+const keptFields = z.object({ theme: themeSchema, ...KEPT_FIELDS })
 
 const SCALES = { stars: 'star', numeric: 'number', emoji: 'smiley' } as const
 

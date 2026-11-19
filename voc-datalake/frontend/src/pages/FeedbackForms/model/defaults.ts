@@ -8,9 +8,9 @@
  * @module pages/FeedbackForms/model/defaults
  */
 import type {
-  ChoiceQuestion, Ending, FormLanguage, Question, QuestionType, Rule, ScoreQuestion,
+  ChoiceQuestion, Ending, FormLanguage, FormV2, Question, QuestionType, Rule, ScoreQuestion,
 } from './formsV2'
-import { isChoice, isScale } from './formsV2'
+import { DEFAULT_THEME, isChoice, isScale } from './formsV2'
 import { scaleOf } from './rules'
 import { textOf } from './i18nText'
 
@@ -32,6 +32,20 @@ export function newQuestion(type: QuestionType, id: string): Question {
     case 'consent': return { ...base, type, required: false, label: {} }
     case 'contact_info':
       return { ...base, type, fields: { name: { show: true, required: false }, email: { show: true, required: true }, phone: NO_FIELD, company: NO_FIELD } }
+  }
+}
+
+/**
+ * A new form's settings and kept fields: no test link (responses tagged when one is made), the default theme, and no
+ * routing, linked project, custom field, dimension default or tag.
+ */
+export function unsetFormFields(): Pick<FormV2, 'settings' | 'theme' | 'category' | 'subcategory' | 'project_id'
+  | 'document_id' | 'custom_fields' | 'dimension_defaults' | 'tags'> {
+  return {
+    settings: { test: { link_enabled: false, record: 'tag' } },
+    theme: { ...DEFAULT_THEME },
+    category: '', subcategory: '', project_id: '', document_id: '',
+    custom_fields: [], dimension_defaults: {}, tags: [],
   }
 }
 

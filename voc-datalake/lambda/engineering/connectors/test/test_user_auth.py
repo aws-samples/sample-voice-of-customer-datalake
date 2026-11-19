@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -15,6 +14,10 @@ import pytest
 from moto import mock_aws
 
 from engineering.connectors.hosts import OwnerUnauthorized
+
+# (github.com's token endpoint or api.github.com's user read: one answer per call, in order)
+from engineering.connectors.test.scripted_hosts import ScriptedHost as FakeHost
+from engineering.connectors.test.scripted_hosts import answer
 from engineering.connectors.transport import Response
 from engineering.connectors.user_auth import (
     AuthorizationRefused,
@@ -36,22 +39,6 @@ ACCESS = 'ghu_accessTokenForTests000000000001'
 REFRESH = 'ghr_refreshTokenForTests00000000001'
 NOW = 1_800_000_000.0
 REDIRECT = 'https://voc.example.com/agents/connections/github/authorized'
-
-
-def answer(status: int = 200, data: object = None) -> Response:
-    return Response(status=status, headers={}, body=json.dumps(data).encode())
-
-
-@dataclass
-class FakeHost:
-    """github.com's token endpoint or api.github.com's user read: one answer per call, in order."""
-
-    answers: list[Response] = field(default_factory=list)
-    sent: list[tuple[str, str, dict[str, str], bytes | None]] = field(default_factory=list)
-
-    def request(self, method: str, path: str, headers: Any, body: bytes | None) -> Response:
-        self.sent.append((method, path, dict(headers), body))
-        return self.answers.pop(0)
 
 
 def tokens_answer(access: str = ACCESS, refresh: str = REFRESH) -> Response:

@@ -15,7 +15,7 @@ import { GitFork } from 'lucide-react'
 import clsx from 'clsx'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
-import { useConnectionError } from './connectionText'
+import { ConnectionChangeError } from './ConnectionChangeError'
 import type { ConnectionList, EngineeringConnection, ForkFacts } from '../../api/engineeringConnectionsApi'
 
 const TRACK = 'switch peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50'
@@ -29,7 +29,6 @@ export function ForkBadge({ fork }: Readonly<{ fork: ForkFacts }>) {
 /** The owner's switch: AI-assisted runs open the upstream pull request too. */
 function AssistedSwitch({ connection, fork }: Readonly<{ connection: EngineeringConnection; fork: ForkFacts }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
   const queryClient = useQueryClient()
   const hintId = useId()
   const change = useMutation({
@@ -55,7 +54,7 @@ function AssistedSwitch({ connection, fork }: Readonly<{ connection: Engineering
       {!fork.owned_by_me && (
         <p id={hintId} className="text-[12px] text-muted">{t('connections.fork.ownerOnly', { owner: fork.owner })}</p>
       )}
-      {change.isError && <p role="alert" className="text-[12px] text-danger">{errorText(change.error)}</p>}
+      <ConnectionChangeError change={change} />
     </div>
   )
 }

@@ -11,7 +11,7 @@
  *
  * @module pages/FeedbackForms/questions/TypePicker
  */
-import { createElement, useId, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { createElement, useId, useImperativeHandle, useRef } from 'react'
 import type { KeyboardEvent, Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -19,8 +19,7 @@ import clsx from 'clsx'
 import { Plus } from 'lucide-react'
 import { useMenuButton } from '../../../components/ProfileMenu/useMenuButton'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
-import { useCloseOnViewportChange } from '../../../hooks/useCloseOnViewportChange'
-import { placeFixedMenu, tabTargetFrom } from '../../../utils/fixedMenu'
+import { usePortalMenu } from '../../../hooks/usePortalMenu'
 import type { QuestionType } from '../model/formsV2'
 import { TYPE_ICONS } from '../ui/typeIcons'
 
@@ -90,32 +89,18 @@ export default function TypePicker({ label, variant = 'secondary', hasContact, d
   handle?: Ref<TypePickerHandle>
 }>) {
   const { t } = useTranslation('feedbackForms')
-  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
+  const menu = useMenuButton()
+  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = menu
   const menuId = useId()
   const typeAhead = useTypeAhead()
   useImperativeHandle(handle, () => ({ open: () => { if (!open && !disabled) toggle() } }), [open, disabled, toggle])
-  useCloseOnViewportChange(open, close, menuRef)
-  useLayoutEffect(() => {
-    const menu = menuRef.current
-    const button = buttonRef.current
-    if (open && menu !== null && button !== null) placeFixedMenu(menu, button.getBoundingClientRect(), 'start')
-  }, [open, menuRef, buttonRef])
+  const onKeyDown = usePortalMenu(menu, 'start', (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!typeAhead(event, menuRef.current)) onMenuKeyDown(event)
+  })
   const pick = (type: QuestionType) => {
     if (type === 'contact_info' && hasContact) return
     close(true)
     onPick(type)
-  }
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const opener = buttonRef.current
-    // (the menu sits at the end of the page: Tab goes on from the trigger, as if the menu were still beside it)
-    if (event.key === 'Tab' && opener !== null) {
-      event.preventDefault()
-      close()
-      tabTargetFrom(opener, event.shiftKey).focus()
-      return
-    }
-    if (typeAhead(event, menuRef.current)) return
-    onMenuKeyDown(event)
   }
   const iconOnly = variant === 'insert'
   const trigger = (

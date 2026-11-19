@@ -50,6 +50,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+# claim_text(claims, key): the trimmed string claim ``key``, or '' for an absent or non-string one.
+from shared.dynamo_values import trimmed_text as claim_text
 from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
 
 if TYPE_CHECKING:
@@ -212,12 +214,6 @@ class ProjectAccess:
             'can_edit': self.can_edit,
             'can_manage': self.can_manage,
         }
-
-
-def claim_text(claims: Mapping[str, Any], key: str) -> str:
-    """The trimmed string claim ``key``, or ``''`` for an absent or non-string one."""
-    value = claims.get(key)
-    return value.strip() if isinstance(value, str) else ''
 
 
 def claims_from_event(event: Mapping[str, Any]) -> Mapping[str, Any]:

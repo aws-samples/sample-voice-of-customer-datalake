@@ -45,7 +45,6 @@ upstream's, which the upstream's own public connection reads.
 """
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -66,8 +65,11 @@ from engineering.connectors.connections import (
     display_name,
     partition_rows,
 )
+from engineering.connectors.connections import utc_iso as _iso
 from shared.github_metrics import GITHUB_SOURCE
 from shared.github_rest import GITHUB_NUMBER, parse_repo
+from shared.github_rest import setting_app_id as _app_id
+from shared.github_rest import setting_entries as _entries
 from shared.logging import logger
 from shared.model_fallback import error_code
 
@@ -96,23 +98,11 @@ _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 SignIn = Literal['app', 'token', 'none']
 
 
-def _entries(value: object) -> list[str]:
-    """A stored list's entries: one per line or comma-separated, stripped (github_config.py ``_split``)."""
-    if not isinstance(value, str):
-        return []
-    return [part.strip() for part in re.split(r'[\n,]', value) if part.strip()]
-
-
 def repository_of(entry: str) -> str | None:
     """``owner/name`` of a stored entry, as the ingestor reads it (shared/github_rest.py ``parse_repo``, which
     plugins/_shared/github_config.py reads it with): a GitHub URL by its first two path segments, else exactly
     ``owner/name``; None for anything else."""
     return parse_repo(entry)
-
-
-def _app_id(value: object) -> str | None:
-    text = value.strip() if isinstance(value, str) else ''
-    return text if GITHUB_NUMBER.fullmatch(text) else None
 
 
 @dataclass(frozen=True)
@@ -222,10 +212,6 @@ def merged(secrets: Mapping[str, Any], changes: Mapping[str, str]) -> dict[str, 
     return {**secrets, **changes}
 
 
-def _code(error: Exception) -> str:
-    return error_code(error) if isinstance(error, ClientError) else type(error).__name__
-
-
 # --- the function's answer -----------------------------------------------------------------------------------------------
 
 
@@ -290,10 +276,6 @@ def follow_stored(issues: IssuesFollow | None, app_id: str, connections: Any, ac
     return issues.follow_app(app_id, stored, actor)
 
 
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(UTC).isoformat()
-
-
 def _id(connection: Mapping[str, Any]) -> str:
     return str(connection.get('connection_id', ''))
 
@@ -342,7 +324,7 @@ class IssuesFollow:
             self._table.put_item(Item=row)
         except _AWS_ERRORS as error:
             logger.warning('engineering issues row not written',
-                           extra={'connection_id': connection_id, 'error_code': _code(error)})
+                           extra={'connection_id': connection_id, 'error_code': error_code(error)})
             raise ConnectionRefused('unavailable', 'the connection\'s issues setting could not be saved: try again') \
                 from None
         return row
@@ -354,7 +336,7 @@ class IssuesFollow:
             self._table.put_item(Item=row, ConditionExpression='attribute_not_exists(sk)')
         except _AWS_ERRORS as error:
             logger.warning('engineering issues audit row not written', extra={'action': action,
-                                                                              'error_code': _code(error)})
+                                                                              'error_code': error_code(error)})
 
     # --- the function ---------------------------------------------------------------------------------------------------
 

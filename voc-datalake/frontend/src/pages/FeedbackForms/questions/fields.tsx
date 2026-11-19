@@ -10,23 +10,20 @@ import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { AlertTriangle, CircleX } from 'lucide-react'
 import type { FormProblem } from '../model/validateForm'
+import ProblemLines from '../ui/ProblemLines'
 
 /** The problems of one field, as the problems list words them. */
 export function FieldProblems({ id, problems }: Readonly<{ id: string; problems: readonly FormProblem[] }>) {
   const { t } = useTranslation('feedbackForms')
-  if (problems.length === 0) return null
   return (
-    <ul id={id} className="mt-1 space-y-0.5">
-      {problems.map((problem) => (
-        <li key={`${problem.code}-${JSON.stringify(problem.params)}`}
-          className={clsx('flex items-start gap-1 text-[12px]', problem.severity === 'error' ? 'text-danger' : 'text-text')}>
-          {problem.severity === 'error'
-            ? <CircleX size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
-            : <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />}
-          <span>{t(`problems.${problem.code}`, problem.params)}</span>
-        </li>
-      ))}
-    </ul>
+    <ProblemLines id={id} lines={problems.map((problem) => ({
+      key: `${problem.code}-${JSON.stringify(problem.params)}`,
+      className: problem.severity === 'error' ? 'gap-1 text-danger' : 'gap-1 text-text',
+      icon: problem.severity === 'error'
+        ? <CircleX size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+        : <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />,
+      text: t(`problems.${problem.code}`, problem.params),
+    }))} />
   )
 }
 

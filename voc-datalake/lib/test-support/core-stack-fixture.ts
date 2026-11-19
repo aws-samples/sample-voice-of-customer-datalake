@@ -4,6 +4,7 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
+import { z } from 'zod';
 import { VocCoreStack } from '../stacks/core-stack';
 import { applyAppAspects } from '../utils/app-aspects';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
@@ -31,3 +32,11 @@ export function buildCoreStack(context: Record<string, unknown> = {}, deployment
 export function synthCoreTemplate(context: Record<string, unknown> = {}, deploymentPrefix?: string): Template {
   return Template.fromStack(buildCoreStack(context, deploymentPrefix));
 }
+
+/** A CloudFront cache behaviour as the frontend distribution synthesizes it: its path, origin and trusted key groups
+ * (a suite `.extend`s it with the fields it reads). */
+export const CacheBehaviorSchema = z.object({
+  PathPattern: z.string(),
+  TargetOriginId: z.string(),
+  TrustedKeyGroups: z.array(z.unknown()).optional(),
+});

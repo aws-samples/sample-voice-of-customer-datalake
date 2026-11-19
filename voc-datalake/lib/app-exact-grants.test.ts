@@ -32,8 +32,10 @@ const resourcesOf = (stack: string) => TemplateResourcesSchema.parse(RESULT.temp
 const actionsOf = grantActions;
 const listOf = (resource: unknown): unknown[] => (Array.isArray(resource) ? resource : [resource]);
 
+// Every identity policy: a role's inline ones, and the customer-managed ones (CDK moves the statements past IAM's
+// inline size limit into `<role>OverflowPolicy<n>`, an AWS::IAM::ManagedPolicy).
 const STATEMENTS: Located[] = RESULT.stackNames.flatMap((stack) => Object.entries(resourcesOf(stack))
-  .filter(([, resource]) => resource.Type === 'AWS::IAM::Policy')
+  .filter(([, resource]) => resource.Type === 'AWS::IAM::Policy' || resource.Type === 'AWS::IAM::ManagedPolicy')
   .flatMap(([id, resource]) => DocumentSchema.parse(resource.Properties.PolicyDocument).Statement
     .map((statement) => ({ stack, id, statement }))));
 
@@ -42,6 +44,13 @@ function policy(stack: string, prefix: string): Statement[] {
   const ids = new Set(STATEMENTS.filter((s) => s.stack === stack && s.id.startsWith(prefix)).map((s) => s.id));
   expect([...ids]).toHaveLength(1);
   return STATEMENTS.filter((s) => ids.has(s.id)).map((s) => s.statement);
+}
+
+/** The statements of `role`'s default policy and of those CDK split off it when it grew past IAM's size limit
+ * (`<role>OverflowPolicy<n>`), in that order. */
+function roleStatements(stack: string, role: string): Statement[] {
+  const own = new RegExp(`^${role}(?:DefaultPolicy|OverflowPolicy\\d+)[0-9A-F]{8}$`);
+  return STATEMENTS.filter((s) => s.stack === stack && own.test(s.id)).map((s) => s.statement);
 }
 
 /** Export name → the index names of the VocCoreStack table it exports. */
@@ -99,7 +108,7 @@ describe('exact grants over the app', () => {
   });
 
   it('the retention Lambda: explicit version deletes and listing, a read of workspace product documents, and a Deny on workspace import originals', () => {
-    const s3 = policy('VocProcessingStack', 'RetentionWorkerRetentionRoleDefaultPolicy')
+    const s3 = roleStatements('VocProcessingStack', 'RetentionWorkerRetentionRole')
       .filter((statement) => actionsOf(statement).some((action) => action.startsWith('s3:')))
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
     expect(s3).toStrictEqual([

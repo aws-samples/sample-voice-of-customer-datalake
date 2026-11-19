@@ -8,17 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { synthCoreTemplate } from '../test-support/core-stack-fixture';
+import { CacheBehaviorSchema, synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt, recordAt } from '../test-support/guards';
 import { PROTOTYPE_DRAFT_CSP } from '../utils/prototype-csp';
 
 const DRAFTS = '/prototypes/*/drafts/*';
 const LIVE = '/prototypes/*';
 
-const BehaviorSchema = z.object({
-  PathPattern: z.string(),
-  TargetOriginId: z.string(),
-  TrustedKeyGroups: z.array(z.unknown()).optional(),
+const BehaviorSchema = CacheBehaviorSchema.extend({
   CachePolicyId: z.unknown().optional(),
   ResponseHeadersPolicyId: z.unknown().optional(),
   AllowedMethods: z.array(z.string()).optional(),

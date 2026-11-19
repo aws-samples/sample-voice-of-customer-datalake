@@ -44,6 +44,7 @@ from engineering.connectors.connections import (
     partition_rows,
     write_audited,
 )
+from engineering.connectors.connections import utc_iso as _iso
 from engineering.connectors.github_apps import AUTHORIZE, GitHubApps, parse_app_id, parse_conversion, parse_workspace
 from engineering.connectors.user_auth_paths import (
     AUTHORIZED_PATH,
@@ -54,7 +55,7 @@ from engineering.connectors.user_auth_paths import (
     subject_hash,
     user_parameter,
 )
-from shared.dynamo_values import plain
+from shared.dynamo_values import plain, text_or_none
 from shared.logging import logger
 from shared.model_fallback import error_code
 
@@ -71,22 +72,15 @@ _recorded: Final = functools.partial(write_audited, logged='engineering GitHub u
                                      failed='the authorization could not be recorded: authorize again')
 
 
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(UTC).isoformat()
-
-
 def _key(app_id: str, owner: str) -> dict[str, str]:
     return {'pk': PARTITION, 'sk': f'{ROW_PREFIX}{app_id}#{owner}'}
 
 
 def authorization_view(item: Mapping[str, Any]) -> dict[str, Any]:
     """A person's authorization as the API answers it: never a token."""
-    def text(name: str) -> str | None:
-        value = item.get(name)
-        return value if isinstance(value, str) and value else None
-
     return {'app_id': str(item.get('app_id', '')), 'login': str(item.get('login', '')),
-            'authorized_at': text('authorized_at'), 'refresh_expires_at': text('refresh_expires_at')}
+            'authorized_at': text_or_none(item.get('authorized_at')),
+            'refresh_expires_at': text_or_none(item.get('refresh_expires_at'))}
 
 
 class UserAuthorizations:

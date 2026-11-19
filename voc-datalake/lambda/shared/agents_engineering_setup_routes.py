@@ -24,7 +24,6 @@ Kept in ``shared/`` because an API bundle ships ``api/<handler>.py`` and ``share
 """
 from __future__ import annotations
 
-import os
 import secrets
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -34,12 +33,11 @@ from typing import Any, Final
 from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.agents_store import get_agents_table
-from shared.engineering_agents import ENGINEERING_TABLE_ENV, engineering_agents_on
+from shared.agents_store import require_agents_table as _table
+from shared.dynamo_values import text_or_none as _text
+from shared.engineering_agents import require_engineering_on as _engineering_on
 from shared.exceptions import (
-    ConfigurationError,
     ConflictError,
-    NotFoundError,
     ServiceUnavailableError,
     ValidationError,
 )
@@ -72,10 +70,6 @@ app = Router()
 def _blank() -> dict[str, Any]:
     return {'steps': dict.fromkeys(STEP_IDS, 'pending'), 'intro': 'unseen', 'revision': 0,
             'updated_at': None, 'updated_by': None}
-
-
-def _text(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None
 
 
 def setup_view(item: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -174,19 +168,6 @@ def save_setup(table: Any, *, revision: int, steps: Mapping[str, str], intro: st
             raise ConflictError(CHANGED) from None
         raise
     return {'steps': merged, 'intro': saved_intro, 'revision': following, 'updated_at': when, 'updated_by': name}
-
-
-def _engineering_on() -> None:
-    """404 while the engineering agents are off (the caller is checked after)."""
-    if not (engineering_agents_on() and os.environ.get(ENGINEERING_TABLE_ENV)):
-        raise NotFoundError('The engineering agents are not on in this deployment')
-
-
-def _table() -> Any:
-    table = get_agents_table()
-    if table is None:
-        raise ConfigurationError('Agents table not configured')
-    return table
 
 
 @app.get('/agents/engineering/setup')

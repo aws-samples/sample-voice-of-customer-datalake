@@ -39,8 +39,9 @@ from engineering.knowledge.store import (
     PackStore,
     PackUnavailable,
     PackVersion,
+    repo_key,
 )
-from engineering.knowledge.tenets import TenetsStore, repo_pk
+from engineering.knowledge.tenets import TenetsStore
 from engineering.rows import create_only, get_row
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
@@ -96,11 +97,8 @@ class KnowledgeDocs:
 
     packs: PackStore
 
-    def _key(self, ws: str, connection: str, sk: str) -> dict[str, Any]:
-        return {'pk': {'S': repo_pk(ws, connection)}, 'sk': {'S': sk}}
-
     def recorded(self, ws: str, connection: str) -> RecordedRendering | None:
-        item = get_row(self.packs.client, self.packs.table, self._key(ws, connection, COUNTER))
+        item = get_row(self.packs.client, self.packs.table, repo_key(ws, connection, COUNTER))
         return None if item is None or not _number(item.get('version')) else RecordedRendering.from_item(item)
 
     def _pack_json(self, ws: str, connection: str, package: str, version: int, *, approved: bool) -> dict[str, Any]:
@@ -163,12 +161,12 @@ class KnowledgeDocs:
                   'packages': {'M': {name: {'N': str(value)} for name, value in sorted(versions.items())}},
                   'source': {'S': f'{package}@v{version}'}, 'approved_by': {'S': approver.id},
                   'approved_at': {'S': at}}
-        counter = {'Put': {'TableName': self.packs.table, 'Item': {**self._key(ws, connection, COUNTER), **fields},
+        counter = {'Put': {'TableName': self.packs.table, 'Item': {**repo_key(ws, connection, COUNTER), **fields},
                            'ConditionExpression': ('attribute_not_exists(pk)' if previous is None else '#v = :prev'),
                            **({} if previous is None else {
                                'ExpressionAttributeNames': {'#v': 'version'},
                                'ExpressionAttributeValues': {':prev': {'N': str(previous.version)}}})}}
-        log = create_only({**self._key(ws, connection, f'{LOG_PREFIX}{number:06d}'), **fields}, self.packs.table)
+        log = create_only({**repo_key(ws, connection, f'{LOG_PREFIX}{number:06d}'), **fields}, self.packs.table)
         approved = self.packs.approve(ws, connection, package, version, approver, rendering_digest=rendering.digest,
                                       also=(counter, log))
         return approved, RecordedRendering.from_item(fields)

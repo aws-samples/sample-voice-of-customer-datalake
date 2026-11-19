@@ -30,6 +30,7 @@ import os
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import cache
 from typing import Any, Final, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, EndpointConnectionError
@@ -342,6 +343,17 @@ def _payload(response: Mapping[str, Any], run_id: str) -> dict[str, Any] | None:
         logger.warning('engineering: the start\'s answer could not be read', extra={'run_id': run_id})
         return None
     return payload if isinstance(payload, dict) else None
+
+
+@cache
+def start_client() -> Any:
+    """The Lambda client for the start function (built once per container): it waits ``START_READ_TIMEOUT_SECONDS``
+    and never retries by itself."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client('lambda', config=Config(read_timeout=START_READ_TIMEOUT_SECONDS, connect_timeout=5,
+                                                retries={'total_max_attempts': 1}))
 
 
 def invoke_start(client: Any, function: str, request: Mapping[str, Any], *, run_id: str | None = None) -> StartAnswer:

@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from shared.dynamo_paging import iter_query
+from shared.dynamo_values import text_or_none as _optional_text
 from shared.engagement_config import feature_requests_table
 from shared.feature_boards_store import SEEDED_BOARD_ID, list_boards
 from shared.feature_requests_store import REQUESTS_PARTITION, board_id_of, supporters_of
@@ -55,10 +56,6 @@ class _Filters:
 def _plain_text(value: object) -> str:
     """A stored string, '' for anything else."""
     return _optional_text(value) or ''
-
-
-def _optional_text(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
 
 
 def _folded(values: Sequence[str] | None) -> frozenset[str] | None:

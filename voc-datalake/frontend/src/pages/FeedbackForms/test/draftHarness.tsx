@@ -8,10 +8,10 @@
  * @module pages/FeedbackForms/test/draftHarness
  */
 import type { ReactNode } from 'react'
-import { render } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { vi } from 'vitest'
+import { expect, vi } from 'vitest'
 import type { FormV2, LoadedForm, StoredFormMeta } from '../model/formsV2'
 import type { FormDraft } from '../builder/formDraftContext'
 import type { BuilderUi } from '../builder/builderUi'
@@ -85,4 +85,10 @@ export function renderWithDraft(node: ReactNode, form: FormV2 = sampleForm(), op
     </QueryClientProvider>,
   )
   return { ...rendered, probe, go, openImprove, onCreated, leave }
+}
+
+/** Edit the draft once the provider gave it (rename it), so its save shows: Save, or Update live form. */
+export async function renameDraft(harness: Pick<DraftHarness, 'probe'>): Promise<void> {
+  await waitFor(() => { expect(harness.probe.current).not.toBeNull() })
+  harness.probe.current?.update((form) => ({ ...form, name: 'Renamed' }))
 }

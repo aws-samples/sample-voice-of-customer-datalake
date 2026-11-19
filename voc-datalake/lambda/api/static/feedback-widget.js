@@ -1972,11 +1972,14 @@
    * A choice: the real checkbox or radio, visually hidden but focused, toggled and announced as usual (so Space and
    * the arrow keys keep their native behaviour), and the box the widget draws beside it (`box`: a square, round for
    * a radio). No native box at all, so neither a page's forms reset nor the platform decides how a choice looks:
-   * the same in Safari, Chrome and Firefox. `chip`: no box, the chip itself shows the choice.
+   * the same in Safari, Chrome and Firefox. `chip`: no box, the chip itself shows the choice. `label`: the row's
+   * label (`voc-opt`), which the caller fills.
    */
   Widget.prototype.choiceEntry = function(type, chip) {
     var self = this;
-    var entry = { input: el('input', SR_ONLY), box: null, mark: null, radio: type === 'radio', focused: false };
+    var entry = { input: el('input', SR_ONLY), label: el('label', ''), box: null, mark: null, radio: type === 'radio',
+      focused: false };
+    entry.label.className = 'voc-opt';
     entry.input.type = type;
     if (!chip) {
       entry.box = el('span', '');
@@ -2059,9 +2062,8 @@
       if (otherBox) otherBox.hidden = !s.other;
     };
     rows.forEach(function(row, i) {
-      var label = el('label', '');
-      label.className = 'voc-opt';
       var entry = self.choiceEntry(multi ? 'checkbox' : 'radio', chips);
+      var label = entry.label;
       var input = entry.input;
       input.name = self.id('q' + ctx.index);
       input.value = row.kind === 'option' ? row.code : '#' + row.kind;
@@ -2082,7 +2084,6 @@
       label.appendChild(words);
       group.appendChild(label);
       entry.row = row;
-      entry.label = label;
       entry.paint = function() { paint(entry); };
       inputs.push(entry);
       if (row.kind === 'other' && otherBox && !chips) group.appendChild(otherBox);
@@ -2183,9 +2184,8 @@
       if (otherBox) otherBox.hidden = !s.other;
     };
     rows.forEach(function(row, i) {
-      var label = el('label', '');
-      label.className = 'voc-opt';
       var entry = self.choiceEntry('checkbox', false);
+      var label = entry.label;
       var input = entry.input;
       input.value = row.kind === 'option' ? row.code : '#' + row.kind;
       input.id = self.id('q' + ctx.index + '-' + i);
@@ -2200,7 +2200,6 @@
       label.appendChild(self.setText(el('span', 'flex:1 1 auto;' + self.ink()), row.i18n, row.label));
       list.appendChild(label);
       entry.row = row;
-      entry.label = label;
       entry.filtered = false;
       entry.paint = function() { paint(entry); };
       entries.push(entry);
@@ -2383,9 +2382,8 @@
 
   Widget.prototype.buildConsent = function(ctx) {
     var self = this, q = ctx.q, s = this.stateOf(q);
-    var label = el('label', '');
-    label.className = 'voc-opt';
     var entry = this.choiceEntry('checkbox', false);
+    var label = entry.label;
     var box = entry.input;
     box.id = this.id('i' + ctx.index);
     box.checked = s.checked;

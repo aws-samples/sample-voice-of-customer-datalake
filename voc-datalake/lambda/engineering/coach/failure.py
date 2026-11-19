@@ -10,7 +10,6 @@ A record over a bound is refused, never cut: the caller chooses what to keep.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Final
 
@@ -19,6 +18,7 @@ from engineering.connectors.identity import AGENT_ROLES, WORKSPACE
 from engineering.quality_gate.text import redact
 from engineering.skills.model import FAILURE_KINDS
 from engineering.workspace.layout import CONNECTION
+from shared.dynamo_values import matches_text as _matches
 
 MAX_TASK: Final = 4_000
 MAX_EXCERPTS: Final = 12
@@ -116,10 +116,6 @@ class Failure:
 # their annotations say (these take ``object`` for that).
 def _whole(value: object, most: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= most
-
-
-def _matches(value: object, pattern: re.Pattern[str]) -> bool:
-    return isinstance(value, str) and pattern.match(value) is not None
 
 
 def _is(value: object, kind: type) -> bool:

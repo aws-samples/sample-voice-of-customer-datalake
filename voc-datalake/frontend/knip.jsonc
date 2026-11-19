@@ -37,6 +37,8 @@
     "!src/**/*.{spec,test}.{ts,tsx}!",
     "!src/**/*-fixtures.{ts,tsx}!",
     "!src/test/**!",
+    // The form builder's own test support (its harnesses, fakes and stubs, 7.55.00): specs import it, production never.
+    "!src/pages/FeedbackForms/test/**!",
     "scripts/**/*.{js,mjs,ts}"
   ],
   // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).

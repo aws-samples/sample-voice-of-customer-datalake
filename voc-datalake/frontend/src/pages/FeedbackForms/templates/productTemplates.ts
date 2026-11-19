@@ -4,7 +4,7 @@
  */
 import { Bug, FileText, Lightbulb, Rocket, Star, Target } from 'lucide-react'
 import type { TemplateFlow } from './templateKit'
-import { consent, contact, multi, openText, otherwise, rating, single, jumpWhen } from './templateKit'
+import { followUp, jumpWhen, multi, openText, otherwise, rating, single } from './templateKit'
 
 const pmf: TemplateFlow = {
   id: 'pmf', group: 'product', icon: Target, runs: ['in_app', 'link'], welcome: false,
@@ -32,8 +32,7 @@ const featureRequest: TemplateFlow = {
     openText('q_problem', { logic: otherwise('q_follow_up_ok') }),
     openText('q_praise', { logic: otherwise('q_follow_up_ok') }),
     openText('q_question'),
-    consent('q_follow_up_ok', [jumpWhen('equals', false, 'end_thanks')]),
-    contact('q_contact', ['name', 'email'], ['email'], otherwise('end_contact')),
+    ...followUp(),
   ],
   endings: ['end_thanks', 'end_contact'],
 }
@@ -59,8 +58,7 @@ const bugReport: TemplateFlow = {
     openText('q_expected', { required: false }),
     single('q_frequency', ['every_time', 'sometimes', 'once'], { display: 'chips' }),
     single('q_impact', ['blocked', 'workaround', 'minor'], { display: 'list' }),
-    consent('q_follow_up_ok', [jumpWhen('equals', false, 'end_thanks')]),
-    contact('q_contact', ['email'], ['email'], otherwise('end_contact')),
+    ...followUp(['email']),
   ],
   endings: ['end_thanks', 'end_contact'],
 }

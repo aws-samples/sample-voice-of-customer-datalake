@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from shared.dynamo_values import text_or_none as _text
+
 #: The hard cap's one row (voc-agents).
 SETTINGS_KEY: Final = {'pk': 'SETTINGS#engineering', 'sk': 'HARD_CAP'}
 #: Who an unnamed change is recorded as (never a blank in the history).
@@ -56,7 +58,3 @@ def save_hard_cap(table: Any, *, on: bool, by: str, at: datetime) -> HardCap:
                  'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
     ])
     return HardCap(on=on, updated_at=when, updated_by=name)
-
-
-def _text(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None

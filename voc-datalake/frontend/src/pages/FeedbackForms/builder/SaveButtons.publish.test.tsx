@@ -21,7 +21,7 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
 })
 
 import { FormsApiError } from '../../../api/feedbackFormsV2Api'
-import { STORED_META, renderWithDraft, sampleForm } from '../test/draftHarness'
+import { STORED_META, renameDraft, renderWithDraft, sampleForm } from '../test/draftHarness'
 import SaveButtons from './SaveButtons'
 import { THEME_UNREADABLE } from './useFormDraft'
 
@@ -34,12 +34,6 @@ function renderButtons(form: FormV2) {
   return { ...harness, user: userEvent.setup() }
 }
 
-/** Rename the draft, so Save (or Update live form) shows. */
-async function edit(harness: ReturnType<typeof renderButtons>) {
-  await waitFor(() => { expect(harness.probe.current).not.toBeNull() })
-  harness.probe.current?.update((form) => ({ ...form, name: 'Renamed' }))
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
   api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form)))
@@ -48,7 +42,7 @@ beforeEach(() => {
 describe('an unreadable theme', () => {
   it('blocks Publish with the reason, and never Save', async () => {
     const harness = renderButtons(GREY)
-    await edit(harness)
+    await renameDraft(harness)
     const publish = await screen.findByRole('button', { name: 'Publish' })
     expect(publish).toHaveAttribute('aria-disabled', 'true')
     await harness.user.click(publish)
@@ -59,7 +53,7 @@ describe('an unreadable theme', () => {
 
   it('only warns on a live form kept on its own unreadable theme: Update live form goes through', async () => {
     const harness = renderButtons({ ...GREY, enabled: true })
-    await edit(harness)
+    await renameDraft(harness)
     const update = await screen.findByRole('button', { name: 'Update live form' })
     expect(update).not.toHaveAttribute('aria-disabled', 'true')
     expect(harness.probe.current?.errors).toStrictEqual([])
@@ -113,7 +107,7 @@ describe('an incomplete language (F17)', () => {
 
   it('asks before updating a live form too', async () => {
     const harness = renderButtons({ ...BILINGUAL, enabled: true })
-    await edit(harness)
+    await renameDraft(harness)
     await harness.user.click(await screen.findByRole('button', { name: 'Update live form' }))
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Update the live form with missing translations?')

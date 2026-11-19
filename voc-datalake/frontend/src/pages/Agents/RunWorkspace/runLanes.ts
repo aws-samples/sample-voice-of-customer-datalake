@@ -39,7 +39,7 @@ export const LANE_OFFSET = 32
 export const LANES_PER_LINE = 3
 /** Between two stages of a row, and between two rows (the arrows and the "You are here" tag live there). */
 const STAGE_GAP = 56
-export const ROW_GAP = 80
+const ROW_GAP = 80
 /** What a run card of these kinds may grow by before it is measured: its chips on a second line (and a team's avatars). */
 const RUN_GROWTH: Readonly<Partial<Record<NodeKind, number>>> = { agent: 32, team: 40, call: 32, gate: 8 }
 /** The longest lane label shown (planModel's MAX_LABEL). */

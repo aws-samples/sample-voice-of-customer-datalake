@@ -66,6 +66,11 @@ export function en(text: string): Record<string, string> {
   return { en: text }
 }
 
+/** An optional one-line open text question headed `title` (plus `extra`). */
+export function openText(id: string, title: string, extra: Record<string, unknown> = {}): Question {
+  return { id, type: 'open_text', headline: en(title), required: false, long: false, input_type: 'text', ...extra }
+}
+
 function stubs(answer: unknown): string {
   return [
     "Object.defineProperty(navigator, 'language', { configurable: true, get: function () { var d = document.body.dataset; return 'browserLanguage' in d ? d.browserLanguage : 'en-US'; } });",

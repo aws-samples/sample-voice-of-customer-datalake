@@ -7,7 +7,7 @@
  *
  * @module pages/FeedbackForms/questions/QuestionEditor
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SwitchField from '../../../components/SwitchField/SwitchField'
 import CollapsibleSection from '../../../components/CollapsibleSection/CollapsibleSection'
@@ -18,12 +18,11 @@ import { isValidQuestionId } from '../model/codes'
 import { questionIds, renameQuestionId, updateQuestion } from '../model/mutations'
 import { splitOtherwise } from '../model/rules'
 import { problemsAt } from '../model/validateForm'
-import { useDraft } from '../builder/formDraftContext'
-import { useBuilderUi } from '../builder/builderUi'
 import LogicSection from '../logic/LogicSection'
 import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
-import { takeFocusRequest } from './focusRequest'
+import { useRequestedFocus } from './focusRequest'
+import { useEditorDraft } from './useEditorDraft'
 import EditorHeader from './EditorHeader'
 import ChoiceEditor from './ChoiceEditor'
 import ScaleEditor from './ScaleEditor'
@@ -54,17 +53,13 @@ function requiredHint(t: (key: string) => string, question: Question): string | 
 
 export default function QuestionEditor({ question, index }: Readonly<{ question: Question; index: number }>) {
   const { t } = useTranslation('feedbackForms')
-  const draft = useDraft()
-  const { go } = useBuilderUi()
-  const { form } = draft
-  const lng = form.language
-  const headline = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  const { draft, go, form, lng } = useEditorDraft()
+  const headline = useRequestedFocus<HTMLInputElement & HTMLTextAreaElement>(question.id)
   const logic = splitOtherwise(question)
   const ruleCount = logic.rules.length + (logic.otherwise === null ? 0 : 1)
   const [logicOpen, setLogicOpen] = useState(ruleCount > 0)
   const [advanced, setAdvanced] = useState(false)
   const [showCodes, setShowCodes] = useState(false)
-  useEffect(() => { if (takeFocusRequest(question.id)) headline.current?.focus() }, [question.id])
   const problems = problemsAt(draft.problems, 'question', question.id)
   const replace = (next: Question) => draft.update((current) => updateQuestion(current, question.id, () => next))
   const checkId = (id: string) => {

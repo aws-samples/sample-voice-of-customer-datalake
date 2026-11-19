@@ -31,6 +31,7 @@ from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.interface import check_id
 from engineering.runtime.runs import Run
 from engineering.spend import keyable
+from shared.dynamo_values import as_text as _text
 
 MANIFEST_SCHEMA: Final = 'voc-run-manifest/1'
 INDEX_SCHEMA: Final = 'voc-transcripts-index/1'
@@ -50,11 +51,6 @@ def manifest_key(run_id: str, version: int) -> str:
 
 def index_key(flow: str, day: str, run_id: str) -> str:
     return f'ws/default/transcripts-index/{flow if keyable(flow) else NO_FLOW}/{day}/{check_id("run_id", run_id)}.json'
-
-
-def _text(item: Mapping[str, Any], name: str) -> str:
-    value = item.get(name)
-    return value if isinstance(value, str) else ''
 
 
 def _number(item: Mapping[str, Any], name: str) -> int:

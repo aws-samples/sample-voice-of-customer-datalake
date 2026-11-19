@@ -7,22 +7,18 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  backButton, choice, clickNext, en, errorText, form, heading, nextButton, pickByKey, pickByPointer, press, pressIn,
-  focused, renderWidget, resetWidgetPage, screen, submissions, typeText, widgetRoot,
+  backButton, choice, clickNext, en, errorText, form, heading, nextButton, openText, pickByKey, pickByPointer, press,
+  pressIn, focused, renderWidget, resetWidgetPage, screen, submissions, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
 afterEach(resetWidgetPage)
 
-function open(id: string, title: string, extra: Record<string, unknown> = {}): Question {
-  return { id, type: 'open_text', headline: en(title), required: false, long: false, input_type: 'text', ...extra }
-}
-
 const PICK: Question = {
   id: 'q_pick', type: 'single_select', headline: en('Why?'), required: true,
   options: [{ code: 'price', label: en('Price') }, { code: 'bugs', label: en('Bugs') }],
 }
-const THREE = form([open('q_a', 'First'), open('q_b', 'Second'), open('q_c', 'Third')])
+const THREE = form([openText('q_a', 'First'), openText('q_b', 'Second'), openText('q_c', 'Third')])
 
 describe('keys belong to the form, never to the page around it', () => {
   it("does nothing on a host page's Enter and arrow keys", async () => {
@@ -43,7 +39,7 @@ describe('keys belong to the form, never to the page around it', () => {
   })
 
   it('keeps Enter as a new line in long text, and goes Next on Ctrl+Enter or ⌘+Enter', async () => {
-    const container = await renderWidget(form([open('q_a', 'First', { long: true }), open('q_b', 'Second', { long: true }), open('q_c', 'Third')]))
+    const container = await renderWidget(form([openText('q_a', 'First', { long: true }), openText('q_b', 'Second', { long: true }), openText('q_c', 'Third')]))
     const plain = pressIn(container, 'textarea', 'Enter')
     pressIn(container, 'textarea', 'Enter', { ctrlKey: true })
     const second = heading(container)
@@ -67,7 +63,7 @@ describe('keys belong to the form, never to the page around it', () => {
   })
 
   it('goes Next on Enter on a choice screen (and asks for an answer first)', async () => {
-    const container = await renderWidget(form([PICK, open('q_b', 'Second')]))
+    const container = await renderWidget(form([PICK, openText('q_b', 'Second')]))
     press(choice(container, 'Price'), 'Enter')
     const asked = errorText(container)
     pickByKey(container, 'Bugs')
@@ -85,14 +81,14 @@ describe('keys belong to the form, never to the page around it', () => {
 
 describe('auto-advance (WCAG 3.2.2)', () => {
   it('moves on after a single choice picked with a pointer', async () => {
-    const container = await renderWidget(form([PICK, open('q_b', 'Second')]))
+    const container = await renderWidget(form([PICK, openText('q_b', 'Second')]))
     pickByPointer(container, 'Price')
 
     await waitFor(() => expect(heading(container)).toBe('Second'))
   })
 
   it('never moves on after a pick from the keyboard (arrow keys walk the radios)', async () => {
-    const container = await renderWidget(form([PICK, open('q_b', 'Second')]))
+    const container = await renderWidget(form([PICK, openText('q_b', 'Second')]))
     pickByKey(container, 'Price')
     await new Promise((done) => { setTimeout(done, 400) })
 
@@ -100,7 +96,7 @@ describe('auto-advance (WCAG 3.2.2)', () => {
   })
 
   it('never moves on when Other is picked', async () => {
-    const container = await renderWidget(form([{ ...PICK, other: { enabled: true } }, open('q_b', 'Second')]))
+    const container = await renderWidget(form([{ ...PICK, other: { enabled: true } }, openText('q_b', 'Second')]))
     pickByPointer(container, 'Other')
     await new Promise((done) => { setTimeout(done, 400) })
 
@@ -110,7 +106,7 @@ describe('auto-advance (WCAG 3.2.2)', () => {
 
 describe('one screen at a time', () => {
   it('keeps only the screen on show in the page, so nothing hidden can be tabbed to', async () => {
-    const container = await renderWidget(form([PICK, open('q_b', 'Second')]))
+    const container = await renderWidget(form([PICK, openText('q_b', 'Second')]))
     pickByKey(container, 'Price')
     clickNext(container)
     const inputs = [...widgetRoot(container).querySelectorAll('input, textarea, select')]
@@ -150,7 +146,7 @@ describe('structure for screen readers', () => {
   })
 
   it('shows the rarer of "Required" and "Optional" under the headline', async () => {
-    const container = await renderWidget(form([PICK, open('q_b', 'Second'), { ...PICK, id: 'q_again' }]))
+    const container = await renderWidget(form([PICK, openText('q_b', 'Second'), { ...PICK, id: 'q_again' }]))
     const onRequired = screen(container).querySelector('fieldset')?.textContent
     pickByKey(container, 'Price')
     clickNext(container)
@@ -168,7 +164,7 @@ describe('focus', () => {
   })
 
   it('moves focus to the field on a text screen and to the heading on any other', async () => {
-    const container = await renderWidget(form([open('q_a', 'First'), PICK]))
+    const container = await renderWidget(form([openText('q_a', 'First'), PICK]))
     clickNext(container)
     const onChoice = focused(container) === screen(container).querySelector('h2')
     backButton(container).click()
@@ -178,7 +174,7 @@ describe('focus', () => {
   })
 
   it("moves focus to the ending's title", async () => {
-    const container = await renderWidget(form([open('q_a', 'First')]))
+    const container = await renderWidget(form([openText('q_a', 'First')]))
     clickNext(container)
 
     await waitFor(() => expect(focused(container)?.textContent).toBe('Thanks!'))
@@ -205,7 +201,7 @@ describe('targets and motion', () => {
       "document.body.__vocWide = function () { if (widthWas) Object.defineProperty(HTMLElement.prototype, 'clientWidth', widthWas); else delete HTMLElement.prototype.clientWidth; };"
     const eight = Array.from({ length: 8 }, (_, i) => ({ code: `o${i}`, label: en(`Option ${i}`) }))
     try {
-      const container = await renderWidget(form([{ ...PICK, display: 'list', options: eight }, open('q_b', 'Second')]), {}, { beforeInit: narrow })
+      const container = await renderWidget(form([{ ...PICK, display: 'list', options: eight }, openText('q_b', 'Second')]), {}, { beforeInit: narrow })
       const bar = nextButton(container).closest<HTMLElement>('.voc-nav-bar')
 
       expect([bar?.style.position, bar?.style.bottom, bar?.parentElement === screen(container)]).toStrictEqual(['sticky', '0px', true])
@@ -239,7 +235,7 @@ describe('targets and motion', () => {
 
   it('reads "Ctrl+Enter" under a long text', async () => {
     document.body.dataset.media = 'fine'
-    const container = await renderWidget(form([open('q_a', 'First', { long: true })]))
+    const container = await renderWidget(form([openText('q_a', 'First', { long: true })]))
     typeText(container, 'x', 'textarea')
 
     expect(widgetRoot(container).querySelector('.voc-enter-hint')?.textContent).toBe('Ctrl+Enter to continue (⌘+Enter on a Mac)')

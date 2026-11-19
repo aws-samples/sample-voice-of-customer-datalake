@@ -55,6 +55,19 @@ function renderConnections(routes: Record<string, RouteHandler> = {}, connection
   renderWithQueryClient(<TestRouter><EngineeringConnections /></TestRouter>, createTestQueryClient())
 }
 
+/** GitHub's authorization page for App 271828, as the server answers it. */
+const AUTHORIZE_PAGE = 'https://github.com/login/oauth/authorize?client_id=Iv23li&state=a1'
+
+/** The connections page before the person authorized App 271828 (Authorize as me answers GitHub's page): where the tab goes. */
+function renderUnauthorized(connections: unknown[], apps: unknown[]) {
+  const assign = stubLocationAssign('/agents/connections')
+  renderConnections({
+    [AUTHORIZATIONS]: () => ({ authorizations: [] }),
+    'POST /agents/engineering/github-apps/271828/authorize': () => ({ authorize_url: AUTHORIZE_PAGE, expires_at: 'later' }),
+  }, connections, apps)
+  return assign
+}
+
 async function search(text = 'lint') {
   const picker = within(await screen.findByRole('region', { name: 'Add a public repository' }))
   await userEvent.type(picker.getByLabelText('Repository'), text)
@@ -202,16 +215,11 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
   })
 
   it('offers Authorize as me for the fork\'s App at step 3, optional until the person authorized it', async () => {
-    const assign = stubLocationAssign('/agents/connections')
-    const page = 'https://github.com/login/oauth/authorize?client_id=Iv23li&state=a1'
-    renderConnections({
-      [AUTHORIZATIONS]: () => ({ authorizations: [] }),
-      'POST /agents/engineering/github-apps/271828/authorize': () => ({ authorize_url: page, expires_at: 'later' }),
-    }, [publicRead(), forkOf()], [OAUTH_APP])
+    const assign = renderUnauthorized([publicRead(), forkOf()], [OAUTH_APP])
     const card = await cardOf()
     const step3 = within(card.getByTestId('contribute-step-3'))
     await userEvent.click(await step3.findByRole('button', { name: 'Authorize as me voc-agents-3f9a2c' }))
-    await waitFor(() => { expect(assign).toHaveBeenCalledWith(page) })
+    await waitFor(() => { expect(assign).toHaveBeenCalledWith(AUTHORIZE_PAGE) })
     expect(statuses()[2]).toStrictEqual(['3. Optional: open pull requests for you', 'Optional'])
   })
 
@@ -295,14 +303,9 @@ describe('a fork connection', () => {
 
 describe('the person\'s authorization of an App', () => {
   it('offers Authorize as me, which opens GitHub\'s authorization page in this tab', async () => {
-    const assign = stubLocationAssign('/agents/connections')
-    const page = 'https://github.com/login/oauth/authorize?client_id=Iv23li&state=a1'
-    renderConnections({
-      [AUTHORIZATIONS]: () => ({ authorizations: [] }),
-      'POST /agents/engineering/github-apps/271828/authorize': () => ({ authorize_url: page, expires_at: 'later' }),
-    }, [forkOf()], [githubApp({ oauth: true, client_id: 'Iv23li', connections: ['lint-kit-fork'] })])
+    const assign = renderUnauthorized([forkOf()], [githubApp({ oauth: true, client_id: 'Iv23li', connections: ['lint-kit-fork'] })])
     await userEvent.click(await screen.findByRole('button', { name: 'Authorize as me voc-agents-3f9a2c' }))
-    await waitFor(() => { expect(assign).toHaveBeenCalledWith(page) })
+    await waitFor(() => { expect(assign).toHaveBeenCalledWith(AUTHORIZE_PAGE) })
   })
 
   it('says who it is authorized as, and removes it after a confirmation', async () => {

@@ -16,7 +16,7 @@ const KEY_PREFIX = 'voc-thread-thinking:'
 const keyOf = (sub: string): string => `${KEY_PREFIX}${sub === '' ? 'anonymous' : sub}`
 
 /** The stored choice of `sub` ('on' / 'off'), null for none (or a record that is not one, or no storage). */
-export function storedThinking(sub: string): boolean | null {
+function storedThinking(sub: string): boolean | null {
   try {
     const raw = window.localStorage.getItem(keyOf(sub))
     if (raw === 'on') return true

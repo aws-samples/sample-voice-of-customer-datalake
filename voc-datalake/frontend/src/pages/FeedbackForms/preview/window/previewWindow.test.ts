@@ -8,19 +8,9 @@ import { FakeBroadcastChannel, listen } from '../../test/fakeBroadcastChannel'
 import { readPreviewMessage } from '../previewChannel'
 import { bootPreviewWindow, presetOfViewport } from './previewWindow'
 import { fill, windowLanguage } from './windowWords'
+import { widget } from '../../test/widgetScriptStub'
 
-const widget = vi.hoisted(() => ({
-  handle: { update: vi.fn(), goTo: vi.fn(), restart: vi.fn(), setLanguage: vi.fn(), setScheme: vi.fn(), destroy: vi.fn() },
-  startPreview: vi.fn(),
-}))
-
-vi.mock('../widgetScript', () => ({
-  loadWidget: () => Promise.resolve({ init: vi.fn() }),
-  startPreview: (...args: unknown[]) => {
-    widget.startPreview(...args)
-    return widget.handle
-  },
-}))
+vi.mock('../widgetScript', () => import('../../test/widgetScriptStub'))
 
 /** The app's catalogs as the window reads them: Polski has some of its words, English the rest. */
 const CATALOGS: Readonly<Record<string, unknown>> = {

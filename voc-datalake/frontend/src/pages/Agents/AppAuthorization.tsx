@@ -31,7 +31,7 @@ import { leavingForGitHub } from './githubReturn'
 import type { GitHubApp, GitHubAppList } from '../../api/githubAppsApi'
 
 /** Where GitHub sends a person back from an App's authorization (routes.tsx; the server's manifest `callback_urls`). */
-export const AUTHORIZED_PATH = '/agents/connections/github/authorized'
+const AUTHORIZED_PATH = '/agents/connections/github/authorized'
 /** The longest client secret the form takes. */
 const MAX_SECRET_CHARS = 200
 

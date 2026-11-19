@@ -11,7 +11,9 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import { policyStatementsOf, serviceEnvironment, synthApiTemplate } from '../test-support/api-stack-template';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
-import { functionStatements, functionUrlAuthTypes, processingSynths } from '../test-support/engineering-template';
+import {
+  functionIds, functionStatements, functionUrlAuthTypes, permissionsNaming, processingSynths,
+} from '../test-support/engineering-template';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
@@ -23,13 +25,6 @@ const ARN = (resource: string) => ({
 const KEYS = ARN('voc/engineering/_github-app/*/key');
 const WEBHOOK_SECRETS = ARN('voc/engineering/_github-app/*/webhook');
 const TOKEN_FUNCTION = 'voc-engineering-app-tokens';
-
-/** The logical ids of the functions whose physical name holds `name`. */
-function functionIds(template: Template, name: string): string[] {
-  return Object.entries(template.findResources('AWS::Lambda::Function'))
-    .filter(([, resource]) => JSON.stringify(resource.Properties?.FunctionName ?? '').includes(name))
-    .map(([id]) => id);
-}
 
 /** The logical id of the one function whose environment says it is `source`'s (SOURCE_PLATFORM). */
 function sourceFunctionId(template: Template, source: string): string {
@@ -69,9 +64,7 @@ describe('the token function (VocProcessingStack)', () => {
 
   it('grants nobody a way in by resource policy: only roles an IAM policy names may invoke it', () => {
     const on = template('on');
-    const permissions = Object.values(on.findResources('AWS::Lambda::Permission'))
-      .filter((permission) => JSON.stringify(permission.Properties).includes(tokensId(on)));
-    expect(permissions).toStrictEqual([]);
+    expect(permissionsNaming(on, tokensId(on))).toStrictEqual([]);
   });
 
   it('holds its log writes, the Apps\' keys and their decrypt through SSM for them alone, and nothing else', () => {

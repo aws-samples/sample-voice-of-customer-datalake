@@ -90,7 +90,7 @@ export type CiAttestation = z.output<typeof CiAttestationSchema>
  * whose run ends with a pull request on the upstream, opened as the fork connection's owner. A kind the page does not
  * know reads as `repository`.
  */
-export const CONNECTION_KINDS = ['repository', 'public_read', 'fork'] as const
+const CONNECTION_KINDS = ['repository', 'public_read', 'fork'] as const
 
 /** A public repository's facts as the read-only connection recorded them; null for any other kind. */
 const PublicFactsSchema = z.object({
@@ -234,7 +234,7 @@ function parseAttestation(raw: unknown): RecordedAttestation {
 }
 
 /** Where a fork goes (7.57.00): the person's own account (the default), or an organization they administer. */
-export type ForkDestination = { account: 'user' } | { account: 'organization'; org: string }
+type ForkDestination = { account: 'user' } | { account: 'organization'; org: string }
 
 /** Contributing, step 2: the destination, the licence acknowledged (its SPDX id), the App, the workspace. */
 export type ForkRequest = ForkDestination & { licence: string; app_id?: string; workspace?: string }

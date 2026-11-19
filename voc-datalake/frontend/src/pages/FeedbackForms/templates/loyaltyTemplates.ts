@@ -4,7 +4,7 @@
  */
 import { Gauge, SlidersHorizontal, Smile } from 'lucide-react'
 import type { TemplateFlow } from './templateKit'
-import { consent, contact, multi, openText, otherwise, score, single, jumpWhen } from './templateKit'
+import { followUp, jumpWhen, multi, openText, otherwise, score, single } from './templateKit'
 
 const nps: TemplateFlow = {
   id: 'nps', group: 'loyalty', icon: Gauge, runs: ['in_app', 'link', 'embed'], welcome: false,
@@ -15,8 +15,7 @@ const nps: TemplateFlow = {
     single('q_detractor_reason', ['price', 'missing_features', 'hard_to_use', 'reliability', 'support'], { display: 'list', shuffle: 'all', other: true }),
     openText('q_detractor_fix', { required: false, logic: otherwise('q_follow_up_ok', true) }),
     multi('q_promoter_value', ['ease', 'features', 'reliability', 'support', 'value'], { display: 'list', max: 2, other: true }),
-    consent('q_follow_up_ok', [jumpWhen('equals', false, 'end_thanks')]),
-    contact('q_contact', ['name', 'email'], ['email'], otherwise('end_contact')),
+    ...followUp(),
   ],
   endings: ['end_thanks', 'end_contact'],
 }

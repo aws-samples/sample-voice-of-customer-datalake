@@ -11,7 +11,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, FlaskConical, RotateCcw } from 'lucide-react'
+import { FlaskConical, RotateCcw } from 'lucide-react'
 import SwitchField from '../../../components/SwitchField/SwitchField'
 import RadioCard from '../../../components/RadioCard/RadioCard'
 import ConfirmModal from '../../../components/ConfirmModal/ConfirmModal'
@@ -25,7 +25,7 @@ import type { TestRecord } from '../model/formsV2'
 import ActionsMenu from '../ui/ActionsMenu'
 import { formLink } from './snippets'
 import type { SnippetInput } from './snippets'
-import { LinkField, SaveFirstNotice } from './linkParts'
+import { LinkField, OpenLink, SaveFirstNotice } from './linkParts'
 import { testTokenKey, useTestToken } from './testToken'
 import RecentTestResponses from './RecentTestResponses'
 
@@ -78,11 +78,7 @@ function TestLink({ snippet }: Readonly<{ snippet: SnippetInput }>) {
     <>
       <LinkField label={t('test.linkLabel')} url={link} qrTitle={t('test.qrTitle')} formName={snippet.formName}>
         {/* (opening the test link is the commonest thing done here: beside Copy and QR, not in ⋯) */}
-        {link !== null && (
-          <a href={link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
-            {t('share.open')}<ExternalLink size={14} aria-hidden="true" /><span className="sr-only">{t('share.newTab')}</span>
-          </a>
-        )}
+        {link !== null && <OpenLink url={link} />}
         <ActionsMenu label={t('test.linkMenu')} items={[
           { label: t('test.copyWithHidden'), onSelect: () => { if (withHidden !== null) copy(withHidden, 'hidden') } },
           { label: t('test.reset'), icon: RotateCcw, onSelect: () => setConfirming(true) },

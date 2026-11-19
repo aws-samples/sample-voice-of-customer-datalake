@@ -52,8 +52,10 @@ export function useAiDraftRequest(): AiDraftRequest {
       return own.signal.aborted ? null : answer
     } catch (error) {
       if (!isAbort(error, own.signal)) {
-        setNow(Date.now())
-        setRefusal(aiRefusalOf(error))
+        // (one instant for both: a limit's end dated a millisecond after `now` would show one minute more)
+        const at = Date.now()
+        setNow(at)
+        setRefusal(aiRefusalOf(error, at))
       }
       return null
     } finally {

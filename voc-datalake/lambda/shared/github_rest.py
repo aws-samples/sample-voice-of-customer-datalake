@@ -25,6 +25,21 @@ GITHUB_REPOSITORY: Final = re.compile(r'^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,1
 GITHUB_URL: Final = re.compile(r'^(?:https?://)?(?:www\.)?github\.com/(?P<path>[^?#]*)', re.IGNORECASE)
 
 
+def setting_entries(value: object) -> list[str]:
+    """A stored list setting's entries (the github_issues source's ``repos``, its labels): one per line or
+    comma-separated, stripped, the empty ones dropped; [] for anything but a string."""
+    if not isinstance(value, str):
+        return []
+    return [part.strip() for part in re.split(r'[\n,]', value) if part.strip()]
+
+
+def setting_app_id(value: object) -> str | None:
+    """A GitHub App's id as a setting holds it (the github_issues source's ``github_app_id``), or None for anything
+    else (unset, ``none``, a typo)."""
+    text = value.strip() if isinstance(value, str) else ''
+    return text if GITHUB_NUMBER.fullmatch(text) else None
+
+
 def parse_repo(candidate: str) -> str | None:
     """``owner/name`` from what a user pasted, or None when it names no GitHub repository.
 

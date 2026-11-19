@@ -9,16 +9,14 @@
  *
  * @module pages/FeedbackForms/ui/ActionsMenu
  */
-import { useId, useLayoutEffect } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useId } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useMenuButton } from '../../../components/ProfileMenu/useMenuButton'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
-import { useCloseOnViewportChange } from '../../../hooks/useCloseOnViewportChange'
-import { placeFixedMenu, tabTargetFrom } from '../../../utils/fixedMenu'
+import { usePortalMenu } from '../../../hooks/usePortalMenu'
 
 export interface MenuAction {
   readonly label: string
@@ -36,29 +34,14 @@ export default function ActionsMenu({ label, items, className }: Readonly<{
   items: readonly (MenuAction | null)[]
   className?: string
 }>) {
-  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
+  const menu = useMenuButton()
+  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = menu
   const menuId = useId()
-  useCloseOnViewportChange(open, close, menuRef)
-  useLayoutEffect(() => {
-    const menu = menuRef.current
-    const button = buttonRef.current
-    if (open && menu !== null && button !== null) placeFixedMenu(menu, button.getBoundingClientRect(), 'end')
-  }, [open, menuRef, buttonRef])
+  const onKeyDown = usePortalMenu(menu, 'end', onMenuKeyDown)
   const pick = (item: MenuAction) => {
     if (item.disabledReason !== undefined) return
     close(true)
     item.onSelect()
-  }
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const opener = buttonRef.current
-    // (the menu sits at the end of the page: Tab goes on from the trigger, as if the menu were still beside it)
-    if (event.key === 'Tab' && opener !== null) {
-      event.preventDefault()
-      close()
-      tabTargetFrom(opener, event.shiftKey).focus()
-      return
-    }
-    onMenuKeyDown(event)
   }
   return (
     <div className={clsx('relative', className)}>

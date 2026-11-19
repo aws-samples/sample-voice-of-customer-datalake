@@ -45,6 +45,7 @@
     "github": "GitHub",
     "githubAppCreated": "App 作成済み",
     "githubAppInstalled": "App インストール済み",
+    "githubAppAuthorized": "App 承認済み",
     "setupGuide": "セットアップガイド",
     "runs": "実行"
   },

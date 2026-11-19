@@ -237,12 +237,15 @@ def test_a_cli_or_kiro_pause_with_news_closes_the_tool_servers_wait_and_only_the
 
 def test_a_pause_whose_close_is_refused_still_pauses(tmp_path):
     w, _, lease, _ = _coordinator(tmp_path)
+    asked: list[object] = []
 
-    def refuse(*_args: Any, **_kwargs: Any) -> None:
+    def refuse(*args: Any, **_kwargs: Any) -> None:
+        asked.append(args)
         raise BoardRefused(503, 'retry')
 
     lease.progress = refuse  # type: ignore[method-assign]
     w.session.paused_with([DONE])   # (never raising: the pause is the outcome)
+    assert len(asked) == 1   # (the wait's close was asked, once, and its refusal swallowed)
 
 
 def test_an_inbox_that_refuses_a_look_closes_the_wait_first(tmp_path):

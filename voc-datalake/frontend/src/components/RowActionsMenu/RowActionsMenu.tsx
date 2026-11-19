@@ -17,13 +17,12 @@
  *
  * @module components/RowActionsMenu
  */
-import { useId, useLayoutEffect } from 'react'
+import { useId } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import { menuButtonParts, useMenuButton } from '../ProfileMenu/useMenuButton'
-import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
-import { placeFixedMenu, tabTargetFrom } from '../../utils/fixedMenu'
+import { usePortalMenu } from '../../hooks/usePortalMenu'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { tidyEntries } from './rowMenuEntries'
 import type { KeyboardEvent, ReactNode } from 'react'
@@ -60,25 +59,10 @@ export function RowActionsMenu({ label, entries, className, face }: Readonly<{
   // (the trigger's native `title` is the header menus'; here the Tooltip names it: rule 16)
   const trigger = { ...parts.trigger, title: undefined }
   const { list } = parts
-  const { open, close, buttonRef, menuRef } = menu
-  useCloseOnViewportChange(open, close, menuRef)
-  useLayoutEffect(() => {
-    const element = menuRef.current
-    const button = buttonRef.current
-    if (open && element !== null && button !== null) placeFixedMenu(element, button.getBoundingClientRect(), 'end')
-  }, [open, menuRef, buttonRef])
+  const { open, close } = menu
+  const onKeyDown = usePortalMenu(menu, 'end', (event: KeyboardEvent<HTMLDivElement>) => { list.onKeyDown?.(event) })
   const shown = tidyEntries(entries)
   if (shown.length === 0) return null
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const opener = buttonRef.current
-    if (event.key === 'Tab' && opener !== null) {
-      event.preventDefault()
-      close()
-      tabTargetFrom(opener, event.shiftKey).focus()
-      return
-    }
-    list.onKeyDown?.(event)
-  }
   const choose = (entry: RowMenuAction) => {
     close(true)
     entry.onSelect()

@@ -5,7 +5,7 @@
  *
  * @module pages/FeedbackForms/questions/EndingEditor
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Flag, Lightbulb } from 'lucide-react'
@@ -18,11 +18,10 @@ import { endingIds, renameEndingId, updateEnding } from '../model/mutations'
 import { arrivalsAt } from '../model/paths'
 import { problemsAt } from '../model/validateForm'
 import { conditionText } from '../logic/ruleSentence'
-import { useDraft } from '../builder/formDraftContext'
-import { useBuilderUi } from '../builder/builderUi'
 import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
-import { takeFocusRequest } from './focusRequest'
+import { useRequestedFocus } from './focusRequest'
+import { useEditorDraft } from './useEditorDraft'
 import IdField from './IdField'
 
 /** "7 is not accepted", "the end of the questions (default)": each way a respondent reaches `ending`. */
@@ -39,13 +38,9 @@ function reachedBy(t: TFunction<'feedbackForms'>, form: FormV2, ending: Ending):
 
 export default function EndingEditor({ ending }: Readonly<{ ending: Ending }>) {
   const { t } = useTranslation('feedbackForms')
-  const draft = useDraft()
-  const { go } = useBuilderUi()
-  const { form } = draft
-  const lng = form.language
-  const title = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  const { draft, go, form, lng } = useEditorDraft()
+  const title = useRequestedFocus<HTMLInputElement & HTMLTextAreaElement>(ending.id)
   const [advanced, setAdvanced] = useState(false)
-  useEffect(() => { if (takeFocusRequest(ending.id)) title.current?.focus() }, [ending.id])
   const problems = problemsAt(draft.problems, 'ending', ending.id)
   const set = (fn: (e: Ending) => Ending) => draft.update((current) => updateEnding(current, ending.id, fn))
   const { button } = ending

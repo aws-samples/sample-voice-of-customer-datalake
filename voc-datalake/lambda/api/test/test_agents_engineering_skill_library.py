@@ -11,11 +11,9 @@ from typing import Any
 import pytest
 from agents_handler_fixtures import USER
 from agents_handler_fixtures import call as _call
-from engineering_skills_fixtures import DELEGATED_ADMIN, PERSON, WS, engineering_skills
+from engineering_skills_fixtures import DELEGATED_ADMIN, SkillsEnv, engineering_skills
 
-from engineering.skills.model import Reason
-from engineering.skills.store import SHARED, SkillStore
-from engineering.skills.test.fixtures import content
+from engineering.skills.store import SkillStore
 from shared import engineering_templates
 
 LIBRARY = '/agents/engineering/skill-library'
@@ -25,10 +23,8 @@ REGISTRY = '/agents/engineering/registry'
 @pytest.fixture
 def skills(monkeypatch: pytest.MonkeyPatch) -> Iterator[SkillStore]:
     """The tables on moto with the module on, and the shared Fixer skill's v1 (a version without read_skill)."""
-    with engineering_skills(monkeypatch) as (_client, store):
-        proposed = store.propose_version(WS, SHARED, 'fixer', content(), proposer=PERSON,
-                                         reason=Reason(comment='The first Fixer skill.'), base=None)
-        store.accept_version(WS, SHARED, 'fixer', proposed.version.version, PERSON)
+    with engineering_skills(monkeypatch) as (client, store):
+        SkillsEnv(client, store).shared()
         yield store
 
 

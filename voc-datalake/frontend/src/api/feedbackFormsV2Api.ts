@@ -38,6 +38,7 @@ import i18n from 'i18next'
 import { fetchApi as appFetchApi } from './client'
 import { getAuthHeaders, getBaseUrl } from './baseUrl'
 import { post, put, del } from './requestKit'
+import { UPDATED_STAMP } from './schemaList'
 import { ApiError, AuthError } from '../lib/errors'
 import { parseFormV2, toWireForm } from '../pages/FeedbackForms/model/formsV2Schema'
 import { migrateV1Form } from '../pages/FeedbackForms/model/migrateV1'
@@ -94,8 +95,7 @@ const errorBody = z.object({
   })),
   retry_after: z.coerce.number().nonnegative().optional().catch(undefined),
   revision: z.number().int().optional().catch(undefined),
-  updated_by: z.string().optional().catch(undefined),
-  updated_at: z.string().optional().catch(undefined),
+  ...UPDATED_STAMP,
 })
 
 type ErrorBody = z.infer<typeof errorBody>

@@ -5,16 +5,15 @@
  * API's writes (never a read), and the negative pins: no other role of any stack reaches the user authorizations' path,
  * and the connections' grant (the broker's and the checkout cache writer's) never matches it.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
 
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import { policyStatementsOf, serviceEnvironment, synthApiTemplate } from '../test-support/api-stack-template';
 import {
-  functionRoleId, functionStatements, functionUrlAuthTypes, processingSynths,
+  functionIds, functionRoleId, functionStatements, functionUrlAuthTypes, permissionsNaming, processingSynths, templatesOnce,
 } from '../test-support/engineering-template';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
-import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
 import { engineeringParameterPrefix } from './engineering-broker';
 import { engineeringUserAuthPrefix } from './engineering-user-auth-parameters';
@@ -29,13 +28,6 @@ const USER_AUTH_FUNCTION = 'voc-engineering-user-auth';
 /** What every grant on the path names (a resource, or a kms condition's PARAMETER_ARN). */
 const PATH = 'engineering-user-auth';
 const VIA_SSM = { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' };
-
-/** The logical ids of the functions whose physical name holds `name`. */
-function functionIds(template: Template, name: string): string[] {
-  return Object.entries(template.findResources('AWS::Lambda::Function'))
-    .filter(([, resource]) => JSON.stringify(resource.Properties?.FunctionName ?? '').includes(name))
-    .map(([id]) => id);
-}
 
 function oneFunctionId(template: Template, name: string): string {
   const ids = functionIds(template, name);
@@ -86,10 +78,7 @@ describe('the code exchange (VocProcessingStack)', () => {
 
   it('grants nobody a way in by resource policy: only roles an IAM policy names may invoke it', () => {
     const on = template('on');
-    const id = oneFunctionId(on, USER_AUTH_FUNCTION);
-    const permissions = Object.values(on.findResources('AWS::Lambda::Permission'))
-      .filter((permission) => JSON.stringify(permission.Properties).includes(id));
-    expect(permissions).toStrictEqual([]);
+    expect(permissionsNaming(on, oneFunctionId(on, USER_AUTH_FUNCTION))).toStrictEqual([]);
   });
 
   it('holds its log writes, a read of the Apps\' OAuth clients and a put of the people\'s tokens, and nothing else', () => {
@@ -171,13 +160,11 @@ describe('the broker\'s user authorizations (VocProcessingStack)', () => {
 });
 
 describe('the Agents API and the other stacks (VocApiStack, VocIngestionStack)', () => {
-  const synths = new Map<string, Template>();
-  beforeAll(() => {
-    synths.set('off', synthApiTemplate({}, ['github_issues']));
-    synths.set('on', synthApiTemplate({ engineeringAgents: true }, ['github_issues']));
-    synths.set('ingestion', synthIngestionTemplate(['github_issues'], { engineeringAgents: true }));
-  }, SYNTH_TIMEOUT_MS * 3);
-  const api = (key: string): Template => synths.get(key) ?? synthApiTemplate();
+  const api = templatesOnce({
+    off: () => synthApiTemplate({}, ['github_issues']),
+    on: () => synthApiTemplate({ engineeringAgents: true }, ['github_issues']),
+    ingestion: () => synthIngestionTemplate(['github_issues'], { engineeringAgents: true }),
+  });
   const agentsStatements = () => policyStatementsOf(api('on'), 'AgentsLambdaRole');
 
   it('lets the Agents API invoke the code exchange by its name, and names it and the path', () => {

@@ -153,7 +153,7 @@ def patch_body(context: Built, key: str) -> bytes:
     return body
 
 
-def _git(context: Built, *argv: str) -> Mapping[str, Any]:
+def harness_git(context: Built, *argv: str) -> Mapping[str, Any]:
     """The harness's own git on the checkout (never repository code)."""
     return context.runner.run(repo_git(*argv), timeout_seconds=600, repository_code=False, in_checkout=False)
 
@@ -177,8 +177,8 @@ def show_submitted_patch(context: Built) -> None:
         stream.write(body)
     # (the index's file times first, as the gate's apply does: the checkout opened its files to the group after git
     # wrote them, and ``apply --index`` takes a file whose times changed for one that changed)
-    _git(context, 'update-index', '-q', '--refresh')
-    applied = _git(context, 'apply', '--index', '--binary', local)
+    harness_git(context, 'update-index', '-q', '--refresh')
+    applied = harness_git(context, 'apply', '--index', '--binary', local)
     if applied.get('exit_code') != 0:
         context.patch_unapplied = (f'git apply exited {applied.get("exit_code")}: '
                                    f'{str(applied.get("stderr_tail", "")).strip()[-MAX_UNAPPLIED:]}')

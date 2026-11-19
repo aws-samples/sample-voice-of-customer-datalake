@@ -44,6 +44,7 @@ from engineering.learning.retrospective import HostReaction
 from engineering.rows import amount_attr, get_row, put_once, run_pk, string_attr
 from engineering.run_links import HOSTS, valid_number
 from shared.aws import is_conditional_check_failure
+from shared.dynamo_values import json_count as _count
 
 #: A read's row, and an administrator's hand trigger's (not under ``REACTIONS#``, so ``latest`` never reads one).
 READ_PREFIX: Final = 'REACTIONS#'
@@ -62,10 +63,6 @@ def _utc_now() -> datetime:
 def _object_id(value: object) -> str:
     text = value.lower() if isinstance(value, str) else ''
     return text if len(text) in (40, 64) and set(text) <= _OBJECT_ID_CHARS else ''
-
-
-def _count(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def _item(raw: object) -> dict[str, str] | None:

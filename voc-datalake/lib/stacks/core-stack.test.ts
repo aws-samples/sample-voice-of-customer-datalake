@@ -14,7 +14,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_EXPIRATION_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
 import { SCRATCH_EXPIRATION_DAYS } from './core-buckets';
-import { buildCoreStack, synthCoreTemplate } from '../test-support/core-stack-fixture';
+import { buildCoreStack, CacheBehaviorSchema, synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt, recordAt, valueAt } from '../test-support/guards';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
 import { acknowledgementCovering, acknowledgementsOn } from '../utils/nag-ack';
@@ -567,14 +567,9 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
   // (core-cdn-widget.test.ts has its headers). The one exception, and it may only read what the login page reads.
   const PUBLIC_PATHS = ['/widget/*'];
 
-  const BehaviorSchema = z.object({
-    PathPattern: z.string(),
-    TargetOriginId: z.string(),
-    TrustedKeyGroups: z.array(z.unknown()).optional(),
-  });
   const DistributionConfigSchema = z.object({
     DefaultCacheBehavior: z.object({ TargetOriginId: z.string() }),
-    CacheBehaviors: z.array(BehaviorSchema),
+    CacheBehaviors: z.array(CacheBehaviorSchema),
     CustomErrorResponses: z.array(z.object({
       ErrorCode: z.number(),
       ResponseCode: z.number().optional(),

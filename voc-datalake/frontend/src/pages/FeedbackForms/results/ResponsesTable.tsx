@@ -27,18 +27,34 @@ const responsesKey = (formId: string, filters: ResultsFilters) => ['feedback-for
 /** The first page has no cursor. */
 const FIRST_PAGE: string | null = null
 
-function Row({ form, response, onOpen }: Readonly<{ form: FormV2; response: FormResponse; onOpen: () => void }>) {
+/** What a response's row and its card both say: when it came, its hidden values, and its Open button's name. */
+function useResponseFacts(form: FormV2, response: FormResponse) {
   const { t, i18n } = useTranslation('feedbackForms')
   const time = formatDateTime(response.submitted_at, i18n.language, '—', 'short')
   const hidden = hiddenValues(form, response).filter((field) => field.value !== '').map((field) => `${field.id} ${field.value}`).join(' · ')
   const open = t('results.responses.open', { time })
+  return { t, time, hidden, open }
+}
+
+/** A test response's badge. */
+function TestBadge() {
+  const { t } = useTranslation('feedbackForms')
+  return (
+    <span className="badge badge-info inline-flex flex-shrink-0 items-center gap-1">
+      <FlaskConical size={12} aria-hidden="true" />{t('results.test')}
+    </span>
+  )
+}
+
+function Row({ form, response, onOpen }: Readonly<{ form: FormV2; response: FormResponse; onOpen: () => void }>) {
+  const { t, time, hidden, open } = useResponseFacts(form, response)
   return (
     <tr className="border-b border-border last:border-0">
       <td className="whitespace-nowrap py-2 pr-3 text-[12px] tabular-nums text-text">{time}</td>
       <td className="max-w-[24rem] py-2 pr-3 text-sm text-text">
         <span className="flex items-center gap-2">
           <TruncatedText as="span" className="line-clamp-2 min-w-0" text={responseSummary(t, form, response)} />
-          {response.is_test && <span className="badge badge-info inline-flex flex-shrink-0 items-center gap-1"><FlaskConical size={12} aria-hidden="true" />{t('results.test')}</span>}
+          {response.is_test && <TestBadge />}
         </span>
       </td>
       <td className="py-2 pr-3 text-[12px] text-text">{response.language === '' ? '—' : response.language}</td>
@@ -55,16 +71,13 @@ function Row({ form, response, onOpen }: Readonly<{ form: FormV2; response: Form
 
 /** Below md, one response as a card: time · ending · language, then the first answers and the hidden values. */
 function ResponseCard({ form, response, onOpen }: Readonly<{ form: FormV2; response: FormResponse; onOpen: () => void }>) {
-  const { t, i18n } = useTranslation('feedbackForms')
-  const time = formatDateTime(response.submitted_at, i18n.language, '—', 'short')
-  const hidden = hiddenValues(form, response).filter((field) => field.value !== '').map((field) => `${field.id} ${field.value}`).join(' · ')
-  const open = t('results.responses.open', { time })
+  const { t, time, hidden, open } = useResponseFacts(form, response)
   const meta = [time, response.ending_id === '' ? '' : endingTitle(form, response.ending_id), response.language].filter((part) => part !== '')
   return (
     <li className="card space-y-1.5 p-3">
       <div className="flex items-start gap-2">
         <p className="min-w-0 flex-1 break-words text-[12px] tabular-nums text-muted">{meta.join(' · ')}</p>
-        {response.is_test && <span className="badge badge-info inline-flex flex-shrink-0 items-center gap-1"><FlaskConical size={12} aria-hidden="true" />{t('results.test')}</span>}
+        {response.is_test && <TestBadge />}
         <Tooltip kind="label" content={open}>
           <button type="button" className="icon-btn -my-1 flex-shrink-0" aria-label={open} onClick={onOpen}><ChevronRight size={16} aria-hidden="true" /></button>
         </Tooltip>

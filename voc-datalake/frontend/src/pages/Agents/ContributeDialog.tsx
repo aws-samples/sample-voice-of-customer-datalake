@@ -27,7 +27,7 @@ import { PAGE_WORKSPACE } from '../../workspace/workspacePath'
 import { ConnectionFormModal } from './ConnectionModals'
 import { useContributionHeld } from './connectionText'
 import { leavingForGitHub } from './githubReturn'
-import { AccountRadios } from './AccountRadios'
+import { AccountRadios, OrganizationField } from './AccountRadios'
 import type { EngineeringConnection, ForkRequest } from '../../api/engineeringConnectionsApi'
 import type { GitHubApp } from '../../api/githubAppsApi'
 
@@ -44,21 +44,13 @@ function DestinationFields({ account, org, orgInvalid, onAccount, onOrg }: Reado
   account: Account; org: string; orgInvalid: boolean; onAccount: (account: Account) => void; onOrg: (org: string) => void
 }>) {
   const { t } = useTranslation('agents')
-  const orgId = useId()
   const name = useId()
   return (
     <>
       <AccountRadios legend={t('connections.contribute.destination')} name={name} account={account} onAccount={onAccount}
         labels={{ user: t('connections.contribute.myAccount'), organization: t('connections.contribute.organization') }} />
       {account === 'organization' && (
-        <div className="space-y-1">
-          <label htmlFor={orgId} className="block text-sm font-medium text-text">{t('connections.githubApp.orgLabel')}</label>
-          <input id={orgId} className="input font-mono" value={org} autoComplete="off" spellCheck={false} aria-invalid={orgInvalid}
-            onChange={(event) => { onOrg(event.target.value) }} />
-          <p className={orgInvalid ? 'text-[12px] text-danger' : 'text-[12px] text-muted'}>
-            {orgInvalid ? t('connections.githubApp.orgInvalid') : t('connections.contribute.orgHint')}
-          </p>
-        </div>
+        <OrganizationField org={org} invalid={orgInvalid} hint={t('connections.contribute.orgHint')} onOrg={onOrg} />
       )}
     </>
   )

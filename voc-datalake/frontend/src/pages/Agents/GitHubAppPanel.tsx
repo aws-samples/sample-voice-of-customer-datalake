@@ -21,7 +21,7 @@ import { ORGANIZATION_LOGIN, githubAppsApi } from '../../api/githubAppsApi'
 import { useConnectionError } from './connectionText'
 import { leavingForGitHub } from './githubReturn'
 import { PAGE_WORKSPACE } from '../../workspace/workspacePath'
-import { AccountRadios } from './AccountRadios'
+import { AccountRadios, OrganizationField } from './AccountRadios'
 import type { ManifestForm, ManifestRequest } from '../../api/githubAppsApi'
 
 type Account = ManifestRequest['account']
@@ -50,7 +50,7 @@ function ManifestPost({ form }: Readonly<{ form: ManifestForm }>) {
 export function CreateApp({ full, emphasis }: Readonly<{ full: boolean; emphasis: 'primary' | 'secondary' }>) {
   const { t } = useTranslation('agents')
   const errorText = useConnectionError()
-  const orgId = useId()
+  const radiosId = useId()
   const [account, setAccount] = useState<Account>('user')
   const [org, setOrg] = useState('')
   const [orgInvalid, setOrgInvalid] = useState(false)
@@ -68,18 +68,11 @@ export function CreateApp({ full, emphasis }: Readonly<{ full: boolean; emphasis
   return (
     <>
       <form className="space-y-3" noValidate onSubmit={(event) => { event.preventDefault(); if (!busy) create() }}>
-      <AccountRadios legend={t('connections.githubApp.accountLegend')} name={`github-app-account-${orgId}`}
+      <AccountRadios legend={t('connections.githubApp.accountLegend')} name={`github-app-account-${radiosId}`}
         labels={{ user: t('connections.githubApp.accountUser'), organization: t('connections.githubApp.accountOrganization') }}
         account={account} onAccount={setAccount} />
       {account === 'organization' && (
-        <div className="space-y-1">
-          <label htmlFor={orgId} className="block text-sm font-medium text-text">{t('connections.githubApp.orgLabel')}</label>
-          <input id={orgId} className="input font-mono" value={org} autoComplete="off" spellCheck={false}
-            aria-invalid={orgInvalid} onChange={(event) => { setOrg(event.target.value) }} />
-          <p className={orgInvalid ? 'text-[12px] text-danger' : 'text-[12px] text-muted'}>
-            {orgInvalid ? t('connections.githubApp.orgInvalid') : t('connections.githubApp.orgHint')}
-          </p>
-        </div>
+        <OrganizationField org={org} invalid={orgInvalid} hint={t('connections.githubApp.orgHint')} onOrg={setOrg} />
       )}
       <button type="submit" className={clsx('btn', emphasis === 'primary' ? 'btn-primary' : 'btn-secondary btn-sm')}
         disabled={full} aria-disabled={busy}>

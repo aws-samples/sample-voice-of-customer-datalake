@@ -41,6 +41,7 @@ from engineering.connectors.github_apps import (
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.test.app_keys import connection_body, pem, private_key
 from engineering.connectors.test.connections_aws import connections_aws
+from engineering.connectors.test.scripted_hosts import ScriptedHost, answer
 from engineering.connectors.transport import Response
 
 PREFIX = '/voc/engineering/'
@@ -57,10 +58,6 @@ CLIENT_SECRET = 'client-secret-' + 'c' * 30
 WEBHOOK_SECRET = 'webhook-secret-' + 'w' * 30
 
 
-def answer(status: int, data: object = None) -> Response:
-    return Response(status=status, headers={}, body=json.dumps(data).encode())
-
-
 def conversion(**change: Any) -> dict[str, Any]:
     """GitHub's answer to the code (``POST /app-manifests/<code>/conversions``), with ``change``."""
     return {'id': int(APP_ID), 'slug': SLUG, 'node_id': 'A_kw', 'name': 'VoC Autonomous Agent a1b2',
@@ -70,18 +67,10 @@ def conversion(**change: Any) -> dict[str, Any]:
 
 
 @dataclass
-class FakeGitHub:
+class FakeGitHub(ScriptedHost):
     """GitHub's conversion endpoint: the answers in turn (an exception is raised), every request recorded."""
 
     answers: list[Response | Exception] = field(default_factory=lambda: [answer(201, conversion())])
-    sent: list[tuple[str, str, dict[str, str], bytes | None]] = field(default_factory=list)
-
-    def request(self, method: str, path: str, headers: Any, body: bytes | None) -> Response:
-        self.sent.append((method, path, dict(headers), body))
-        found = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
-        if isinstance(found, Exception):
-            raise found
-        return found
 
 
 def listed(name: str, *, private: bool = True, archived: bool = False, branch: str = 'main') -> dict[str, Any]:

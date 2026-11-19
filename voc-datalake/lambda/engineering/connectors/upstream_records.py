@@ -31,6 +31,7 @@ from engineering.connectors.hosts import UPSTREAM_OPENED, Unavailable, UpstreamR
 from engineering.connectors.identity import WORKSPACE
 from engineering.rows import string_attr
 from engineering.run_links import UPSTREAM_OP, UPSTREAM_SK, upstream_view, writes_pk
+from shared.aws import is_conditional_check_failure
 
 #: The most upstream pull requests a deployment opens a UTC day, and on one upstream repository.
 DAILY_CAP: Final = 10
@@ -45,10 +46,6 @@ _UNREADABLE: Final = 'The upstream pull requests\' records could not be read; re
 def caps_partition(day: str, upstream: str = '') -> str:
     """A day's caps partition: the deployment's, or one upstream's (``owner/name``, in lower case)."""
     return writes_pk(WORKSPACE, f'{CAPS_PREFIX}{day}' + (f'#{upstream.lower()}' if upstream else ''))
-
-
-def _conflict(error: ClientError) -> bool:
-    return error.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
 
 
 class UpstreamRecords:
@@ -95,7 +92,7 @@ class UpstreamRecords:
                                            ':result': {'S': json.dumps(record.view(), sort_keys=True)},
                                            ':now': {'N': now}, ':opened': {'S': UPSTREAM_OPENED}})
         except ClientError as exc:
-            if _conflict(exc):
+            if is_conditional_check_failure(exc):
                 return   # (opened already: it stands)
             raise Unavailable("The run's upstream pull request could not be recorded.") from exc
         except BotoCoreError as exc:
@@ -137,7 +134,7 @@ class UpstreamRecords:
                     Item={'pk': {'S': partition}, 'sk': {'S': f'{CAP_PREFIX}{n:03d}'}, 'state': {'S': 'claimed'},
                           'op': {'S': SLOT_OP}, 'at': {'N': now}, 'result': {'S': json.dumps(facts, sort_keys=True)}})
             except ClientError as exc:
-                if _conflict(exc):
+                if is_conditional_check_failure(exc):
                     continue
                 raise Unavailable(_UNREADABLE) from exc
             except BotoCoreError as exc:

@@ -144,9 +144,13 @@ def transact_or_refuse(client: Any, items: list[dict[str, Any]], refused: Except
         raise refused from exc
 
 
-class Refused(Exception):
-    """An operation refused; ``kind`` names why, and its caller answers the status that goes with it."""
+class KindedError(Exception):
+    """An error with a ``kind`` beside its message: why, which its caller answers the status of."""
 
     def __init__(self, kind: str, message: str) -> None:
         super().__init__(message)
         self.kind = kind
+
+
+class Refused(KindedError):
+    """An operation refused; ``kind`` names why, and its caller answers the status that goes with it."""

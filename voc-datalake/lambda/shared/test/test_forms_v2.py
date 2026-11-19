@@ -435,7 +435,7 @@ class TestPublishing:
         assert fv2.theme_publish_problems({**dark, 'mode': 'light'}) == []
 
     def test_a_form_that_stays_off_is_always_saved(self):
-        fv2.validate_publishable(self.GREY, live=False)
+        assert fv2.validate_publishable(self.GREY, live=False) == []   # (no refusal, and no warning)
 
     def test_a_live_form_kept_on_its_unreadable_theme_is_a_warning_and_a_change_or_publish_a_refusal(self):
         assert fv2.validate_publishable(self.GREY, live=True, was_live=True, theme_changed=False) == ['theme_unreadable']
@@ -454,9 +454,9 @@ class TestPublishing:
 
 def test_the_module_imports_nothing_but_the_standard_library_and_three_pure_shared_modules():
     """Pure (portable to main as is): no AWS client; of shared, only the exceptions, dynamo_values' ``plain`` and
-    form_theme (the theme's contrast rules), all standard library only."""
+    ``trimmed_text`` and form_theme (the theme's contrast rules), all standard library only."""
     source = Path(fv2.__file__).read_text(encoding='utf-8')
     imports = [line.split('  #')[0] for line in source.splitlines() if line.startswith(('import ', 'from '))]
     assert [line for line in imports if 'shared' in line] == [
         'from shared import form_theme', 'from shared.dynamo_values import plain',
-        'from shared.exceptions import ValidationError']
+        'from shared.dynamo_values import trimmed_text as _v1_text', 'from shared.exceptions import ValidationError']

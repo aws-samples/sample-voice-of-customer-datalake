@@ -27,10 +27,10 @@ const QUESTION_TYPES = [
 ] as const;
 const OPS = ['equals', 'not_equals', 'includes_any', 'includes_all', 'lt', 'lte', 'gt', 'gte', 'submitted', 'skipped'] as const;
 
-export const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/;
-export const ENDING_ID = /^end_[a-z0-9_]{1,40}$/;
-export const OPTION_CODE = /^[a-z0-9_]{1,40}$/;
-export const HIDDEN_ID = /^[a-z][a-z0-9_]{0,39}$/;
+const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/;
+const ENDING_ID = /^end_[a-z0-9_]{1,40}$/;
+const OPTION_CODE = /^[a-z0-9_]{1,40}$/;
+const HIDDEN_ID = /^[a-z][a-z0-9_]{0,39}$/;
 
 const locale = z.enum(FORM_LOCALES);
 const i18n = (max: number) => z.partialRecord(locale, z.string().max(max));

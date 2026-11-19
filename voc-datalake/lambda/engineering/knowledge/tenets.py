@@ -35,14 +35,22 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
-from engineering.bus.schema import WS
 from engineering.knowledge.render_docs import RenderError, render_tenets
-from engineering.knowledge.store import Actor, PackConflict, PackError, PackForbidden, PackNotFound, PackUnavailable
+from engineering.knowledge.store import (
+    Actor,
+    PackConflict,
+    PackError,
+    PackForbidden,
+    PackNotFound,
+    PackUnavailable,
+    repo_key,
+    repo_pk,
+)
 from engineering.rows import create_only, get_row, partition_rows
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
 from engineering.runtime.outputs import TenetsError, tenets_record
-from engineering.workspace.layout import CONNECTION, ID
+from engineering.workspace.layout import ID
 
 DRAFT, ACCEPTED, REJECTED = 'draft', 'accepted', 'rejected'
 COUNTER: Final = 'TENETS'
@@ -57,15 +65,6 @@ DRAFT_ATTRIBUTES: Final = ('pk', 'sk', 'versions', 'version', 'status', 'record'
 DRAFT_TRIES: Final = 3
 MAX_REASON: Final = 500
 MAX_VERSIONS: Final = 1_000
-
-
-def repo_pk(ws: str, connection: str) -> str:
-    """The connection's partition (the knowledge store's too)."""
-    if not CONNECTION.fullmatch(connection):
-        raise PackError('not a connection id')
-    if not WS.fullmatch(ws):
-        raise PackError('not a workspace id')
-    return f'WS#{ws}#REPO#{connection}'
 
 
 def _utc_now() -> datetime:
@@ -198,11 +197,8 @@ class TenetsStore:
     table: str
     now: Callable[[], datetime] = _utc_now
 
-    def _key(self, ws: str, connection: str, sk: str) -> dict[str, Any]:
-        return {'pk': {'S': repo_pk(ws, connection)}, 'sk': {'S': sk}}
-
     def head(self, ws: str, connection: str) -> TenetsHead:
-        return TenetsHead.from_item(get_row(self.client, self.table, self._key(ws, connection, COUNTER)))
+        return TenetsHead.from_item(get_row(self.client, self.table, repo_key(ws, connection, COUNTER)))
 
     def accepted_ids(self, ws: str, connection: str) -> frozenset[str]:
         """The tenet ids of the accepted version (empty: none accepted), as its acceptance recorded them."""
@@ -211,7 +207,7 @@ class TenetsStore:
     def version(self, ws: str, connection: str, version: int) -> TenetsVersion:
         if not 0 < version < 1_000_000:
             raise PackNotFound('no such version')
-        item = get_row(self.client, self.table, self._key(ws, connection, f'{VERSION_PREFIX}{version:06d}'))
+        item = get_row(self.client, self.table, repo_key(ws, connection, f'{VERSION_PREFIX}{version:06d}'))
         if item is None:
             raise PackNotFound('no such version')
         return TenetsVersion.from_item(item)
@@ -257,12 +253,12 @@ class TenetsStore:
         for _ in range(DRAFT_TRIES):
             head = self.head(ws, connection)
             version, at = head.versions + 1, self.now().isoformat()
-            item = {**self._key(ws, connection, f'{VERSION_PREFIX}{version:06d}'), 'version': {'N': str(version)},
+            item = {**repo_key(ws, connection, f'{VERSION_PREFIX}{version:06d}'), 'version': {'N': str(version)},
                     'status': {'S': DRAFT}, 'record': {'S': json.dumps(checked, sort_keys=True)},
                     'author': {'S': author.id}, 'author_kind': {'S': author.kind}, 'run_id': {'S': run_id},
                     'base_version': {'N': str(head.accepted_version)}, 'created_at': {'S': at}}
             items = [
-                {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, COUNTER),
+                {'Update': {'TableName': self.table, 'Key': repo_key(ws, connection, COUNTER),
                             'UpdateExpression': 'SET versions = :v',
                             'ConditionExpression': ('attribute_not_exists(versions)' if not head.versions
                                                     else 'versions = :prev'),
@@ -270,12 +266,12 @@ class TenetsStore:
                                                           **({':prev': {'N': str(head.versions)}}
                                                              if head.versions else {})}}},
                 create_only(item, self.table),
-                create_only({**self._key(ws, connection, f'{LOG_PREFIX}{version:06d}#drafted'),
+                create_only({**repo_key(ws, connection, f'{LOG_PREFIX}{version:06d}#drafted'),
                              'version': {'N': str(version)}, 'event': {'S': 'drafted'}, 'by': {'S': author.id},
                              'at': {'S': at}, 'run_id': {'S': run_id}}, self.table),
             ]
             if run_id:
-                items.append(create_only({**self._key(ws, connection, f'{RUN_PREFIX}{run_id}'),
+                items.append(create_only({**repo_key(ws, connection, f'{RUN_PREFIX}{run_id}'),
                                           'version': {'N': str(version)}, 'at': {'S': at}}, self.table))
             _held_to_the_grant(items)
             try:
@@ -303,11 +299,11 @@ class TenetsStore:
             update += ', rendering_digest = :digest'
             values[':digest'] = {'S': digest}
         items = [
-            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'{VERSION_PREFIX}{version:06d}'),
+            {'Update': {'TableName': self.table, 'Key': repo_key(ws, connection, f'{VERSION_PREFIX}{version:06d}'),
                         'UpdateExpression': update, 'ConditionExpression': '#s = :draft',
                         'ExpressionAttributeNames': {'#s': 'status'}, 'ExpressionAttributeValues': values}},
             *more,
-            create_only({**self._key(ws, connection, f'{LOG_PREFIX}{version:06d}#{event}'),
+            create_only({**repo_key(ws, connection, f'{LOG_PREFIX}{version:06d}#{event}'),
                          'version': {'N': str(version)}, 'event': {'S': event}, 'by': {'S': by.id},
                          'at': {'S': at}, 'reason': {'S': reason}}, self.table),
         ]
@@ -340,7 +336,7 @@ class TenetsStore:
             raise PackError(str(exc)) from exc
         at = self.now().isoformat()
         counter = {'Update': {
-            'TableName': self.table, 'Key': self._key(ws, connection, COUNTER),
+            'TableName': self.table, 'Key': repo_key(ws, connection, COUNTER),
             'UpdateExpression': ('SET accepted_version = :v, accepted_digest = :d, accepted_ids = :ids, '
                                  'accepted_by = :by, accepted_at = :at'),
             'ConditionExpression': _counter_condition(expected_accepted),

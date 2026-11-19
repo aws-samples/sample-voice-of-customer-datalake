@@ -769,7 +769,7 @@ def save_brand_settings():
     if FORM_THEME_FIELD in body:
         settings[FORM_THEME_FIELD] = theme
     try:
-        _update_brand_row(context, {**sets, 'updated_at': now_iso()}, body, theme)
+        _update_brand_row(aggregates_table, context, {**sets, 'updated_at': now_iso()}, body, theme)
         if not theme_only:
             bump_config_version(aggregates_table)
     except Exception as e:
@@ -801,10 +801,10 @@ def _stored_form_theme(item: dict[str, Any]) -> dict[str, Any] | None:
     return form_theme.with_defaults(stored) if isinstance(stored, dict) else None
 
 
-def _update_brand_row(context: WorkspaceContext | None, sets: dict[str, Any], body: dict[str, Any],
+def _update_brand_row(table: Any, context: WorkspaceContext | None, sets: dict[str, Any], body: dict[str, Any],
                       theme: dict[str, Any] | None) -> None:
-    """One UpdateItem of the brand row: ``sets``, and ``form_theme`` set (or removed, for a null) when the body names
-    it; every other attribute stays."""
+    """One UpdateItem of the brand row in ``table`` (the aggregates table, checked by the caller): ``sets``, and
+    ``form_theme`` set (or removed, for a null) when the body names it; every other attribute stays."""
     names = {f'#f{i}': name for i, name in enumerate(sets)}
     values: dict[str, Any] = {f':f{i}': value for i, value in enumerate(sets.values())}
     expression = 'SET ' + ', '.join(f'#f{i} = :f{i}' for i in range(len(sets)))
@@ -815,8 +815,8 @@ def _update_brand_row(context: WorkspaceContext | None, sets: dict[str, Any], bo
         else:
             values[':theme'] = theme
             expression += ', #theme = :theme'
-    aggregates_table.update_item(Key=_brand_key(context), UpdateExpression=expression,
-                                 ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    table.update_item(Key=_brand_key(context), UpdateExpression=expression, ExpressionAttributeNames=names,
+                      ExpressionAttributeValues=values)
 
 
 def _brand_key(context: WorkspaceContext | None) -> dict[str, str]:

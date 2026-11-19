@@ -6,6 +6,7 @@ import { FormsApiError } from '../../../api/feedbackFormsV2Api'
 import type { DraftAnswer, DraftRequest } from '../../../api/feedbackFormsV2Api'
 import { renderPicker } from '../test/pickerHarness'
 import { sampleForm } from '../test/draftHarness'
+import { draftUntilAborted } from '../test/draftUntilAborted'
 
 const draftForm = vi.hoisted(() => vi.fn<(request: DraftRequest, signal?: AbortSignal) => Promise<DraftAnswer>>())
 
@@ -57,10 +58,18 @@ describe('drafting a form from a description, when the AI can\'t help (UX §12.4
   })
 
   it('holds Draft it for the rest of a rate limit, and says for how long', async () => {
-    draftForm.mockRejectedValue(refusal(429, 'rate_limited', { retryAfterSeconds: 240 }))
-    await describeAndDraft()
-    expect(await screen.findByText("You've reached the AI limit for now. Try again in 4 min.")).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Draft it' })).toHaveAttribute('aria-disabled', 'true')
+    // The clock stands still (only Date is faked: the typing and the queries keep their real timers), so the minutes
+    // left are exactly the limit's, however slowly the machine runs the test.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-19T10:00:00Z'))
+    try {
+      draftForm.mockRejectedValue(refusal(429, 'rate_limited', { retryAfterSeconds: 240 }))
+      await describeAndDraft()
+      expect(await screen.findByText("You've reached the AI limit for now. Try again in 4 min.")).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Draft it' })).toHaveAttribute('aria-disabled', 'true')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('lists the validator\'s errors when the AI\'s form stayed invalid, and can try again', async () => {
@@ -94,10 +103,7 @@ describe('drafting a form from a description', () => {
 
   it('shows Stop while it drafts, and Stop asks before it ends the draft', async () => {
     const signals: AbortSignal[] = []
-    draftForm.mockImplementation((_request, signal) => new Promise((_resolve, reject) => {
-      if (signal !== undefined) signals.push(signal)
-      signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
-    }))
+    draftForm.mockImplementation(draftUntilAborted(signals))
     const user = await describeAndDraft()
     // (said by the button and the preview card only: the status line under Describe repeated them; Runs waits)
     const runs = within(screen.getByRole('group', { name: 'Runs' })).getAllByRole('button').map((choice) => choice.getAttribute('aria-disabled'))

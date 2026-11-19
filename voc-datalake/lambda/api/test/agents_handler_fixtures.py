@@ -9,7 +9,7 @@ and the handler call cannot drift apart between the two files.
 from __future__ import annotations
 
 import json
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
@@ -65,6 +65,11 @@ def call(lambda_context: Any, method: str, path: str, **kwargs: Any) -> tuple[in
     """One handler call; the status code and the decoded JSON body."""
     response = agents_handler.lambda_handler(event(method, path, **kwargs), lambda_context)
     return response['statusCode'], json.loads(response['body'])
+
+
+def route_statuses(lambda_context: Any, routes: Iterable[tuple[str, str]], claims: dict) -> dict[tuple[str, str], int]:
+    """Each of ``routes`` (method, path) and the status it answers ``claims``, with an empty body."""
+    return {(method, path): call(lambda_context, method, path, body={}, claims=claims)[0] for method, path in routes}
 
 
 def create(lambda_context: Any, **overrides: Any) -> dict:

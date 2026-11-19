@@ -144,11 +144,14 @@ from shared import (
 )
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
+from shared.agents_store import require_agents_table as _agents_table
 from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
 from shared.category_gate import read_categories_config, scope_for_caller
+from shared.engineering_agent_runs import start_client as _start_client
 from shared.engineering_agents import engineering_agents_on
+from shared.engineering_agents import require_engineering_on as _engineering_on
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -213,13 +216,6 @@ def _require_run_permission(caller: Caller) -> None:
     ):
         return
     require_admin_caller(caller)
-
-
-def _agents_table() -> Any:
-    table = store.get_agents_table()
-    if table is None:
-        raise ConfigurationError('Agents table not configured')
-    return table
 
 
 def _aggregates_table() -> Any:
@@ -1646,12 +1642,6 @@ def get_engineering_spend():
     return spend.view()
 
 
-def _engineering_on() -> None:
-    """404 while the engineering agents are off (the caller is checked after)."""
-    if not (engineering_agents_on() and os.environ.get('ENGINEERING_TABLE')):
-        raise NotFoundError('The engineering agents are not on in this deployment')
-
-
 @app.get('/agents/engineering/settings')
 @tracer.capture_method
 def get_engineering_settings():
@@ -2595,17 +2585,6 @@ def _stored_flow(workflow_id: str) -> eng_runs.StoredFlow:
     (7.52.00, shared/flow_expand.py): 400 for an id that names no saved workflow or an agents workflow, 409 for a
     stored budget off its rule or a call that cannot be expanded."""
     return eng_runs.stored_flow(_find_workflow(workflow_id), eng_runs.revision_reader(_agents_table()))
-
-
-@cache
-def _start_client() -> Any:
-    """The Lambda client for the start (built once per container): it waits ``START_READ_TIMEOUT_SECONDS`` and never
-    retries by itself."""
-    import boto3
-    from botocore.config import Config
-
-    return boto3.client('lambda', config=Config(read_timeout=eng_runs.START_READ_TIMEOUT_SECONDS, connect_timeout=5,
-                                                retries={'total_max_attempts': 1}))
 
 
 class _MayHaveStarted(ServiceUnavailableError):

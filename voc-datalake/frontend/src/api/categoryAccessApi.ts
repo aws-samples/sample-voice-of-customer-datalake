@@ -22,6 +22,7 @@ import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { nonBlankStringList } from './lenientFields'
+import { UPDATED_STAMP } from './schemaList'
 
 /** The stored wildcard for "every category". */
 const ALL_CATEGORIES = '*'
@@ -76,8 +77,7 @@ const UserGrantSchema = z.looseObject({
   categories: z.array(z.unknown()).optional().catch(undefined),
   // null (nothing stored) and absent both read as the default rule.
   sources: z.array(z.unknown()).nullish().catch(undefined),
-  updated_by: z.string().optional().catch(undefined),
-  updated_at: z.string().optional().catch(undefined),
+  ...UPDATED_STAMP,
 })
 
 export interface UserCategoryGrant extends CategoryScope {

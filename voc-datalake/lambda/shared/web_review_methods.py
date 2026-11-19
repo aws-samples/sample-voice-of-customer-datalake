@@ -40,6 +40,7 @@ from decimal import Decimal
 from typing import Any, Final
 from urllib.parse import urlparse
 
+from shared.dynamo_values import text_or_none as _text
 from shared.web_review_targets import METHOD_BEDROCK_WEB_SEARCH, METHOD_BROWSER
 from shared.ws_repo import WorkspaceScope
 
@@ -204,10 +205,6 @@ def _count(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int | float | Decimal):
         return 0
     return max(int(value), 0)
-
-
-def _text(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
 
 
 def _stats(value: object) -> StepStats | None:

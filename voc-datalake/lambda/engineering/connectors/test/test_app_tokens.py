@@ -32,15 +32,12 @@ from engineering.connectors.app_tokens import (
 from engineering.connectors.credentials import CACHE_SECONDS
 from engineering.connectors.hosts import HostError
 from engineering.connectors.test.app_keys import pem
+from engineering.connectors.test.scripted_hosts import answer
 from engineering.connectors.transport import Response
 
 PREFIX = '/voc/engineering/'
 APP_ID = '4242'
 NOW = 1_800_000_000.0
-
-
-def answer(status: int = 200, data: object = None) -> Response:
-    return Response(status=status, headers={}, body=json.dumps(data).encode())
 
 
 @dataclass

@@ -36,6 +36,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, Final, Literal
 
+from shared.dynamo_values import matches_text as _is_colour
 from shared.exceptions import ValidationError
 
 COLOR_FIELDS: Final = ('primary_color', 'background_color', 'text_color')
@@ -77,10 +78,6 @@ def _closed(value: Mapping[str, Any], allowed: frozenset[str] | tuple[str, ...],
     unknown = sorted(str(key) for key in set(value) - set(allowed))
     if unknown:
         raise ValidationError(f'{where} has unknown fields: {", ".join(key[:40] for key in unknown[:5])}')
-
-
-def _is_colour(value: object, pattern: re.Pattern[str]) -> bool:
-    return isinstance(value, str) and pattern.match(value) is not None
 
 
 def _check_colours(value: Mapping[str, Any], where: str, pattern: re.Pattern[str]) -> None:

@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import boto3
 import pytest
-from agents_handler_fixtures import ADMIN, USER
+from agents_handler_fixtures import ADMIN, USER, route_statuses
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 
@@ -146,13 +146,13 @@ def test_every_route_is_an_administrators_acting_for_themselves(lambda_context: 
 
 @pytest.mark.usefixtures('env')
 @pytest.mark.parametrize('claims', [ADMIN, USER], ids=['admin', 'plain user'])
-def test_every_route_is_404_while_the_module_is_off(lambda_context: Any, monkeypatch: pytest.MonkeyPatch,
-                                                    claims: dict[str, Any]) -> None:
+def test_every_app_route_is_404_while_the_module_is_off(lambda_context: Any, monkeypatch: pytest.MonkeyPatch,
+                                                        claims: dict[str, Any]) -> None:
     monkeypatch.delenv('ENGINEERING_AGENTS')
-    for method, path in (('GET', PATH), ('POST', f'{PATH}/manifest'), ('POST', f'{PATH}/conversions'),
-                         ('POST', f'{PATH}/installations'), ('POST', f'{PATH}/{APP_ID}/install'),
-                         ('POST', f'{PATH}/{APP_ID}/check'), ('DELETE', f'{PATH}/{APP_ID}')):
-        assert _call(lambda_context, method, path, body={}, claims=claims)[0] == 404, (method, path)
+    routes = (('GET', PATH), ('POST', f'{PATH}/manifest'), ('POST', f'{PATH}/conversions'),
+              ('POST', f'{PATH}/installations'), ('POST', f'{PATH}/{APP_ID}/install'), ('POST', f'{PATH}/{APP_ID}/check'),
+              ('DELETE', f'{PATH}/{APP_ID}'))
+    assert route_statuses(lambda_context, routes, claims) == dict.fromkeys(routes, 404)
 
 
 def test_without_the_apps_address_a_manifest_is_503(lambda_context: Any, env: Env,

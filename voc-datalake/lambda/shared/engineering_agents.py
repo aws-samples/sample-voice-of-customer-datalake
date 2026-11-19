@@ -8,7 +8,9 @@ server, whose tokens never act as an admin, has no engineering tool.
 from __future__ import annotations
 
 import os
-from typing import Final
+from typing import Any, Final
+
+from shared.exceptions import NotFoundError
 
 ENGINEERING_AGENTS_ENV: Final = 'ENGINEERING_AGENTS'
 #: The GitHub Apps' token function's name (7.45.00, voc-engineering-app-tokens): the Agents API's, for an installation's
@@ -30,3 +32,16 @@ RUN_STATUSES: Final = ('active', 'needs_human', 'done', 'failed', 'stopped')
 
 def engineering_agents_on() -> bool:
     return os.environ.get(ENGINEERING_AGENTS_ENV) == 'on'
+
+
+def require_engineering_on() -> None:
+    """404 while the engineering agents are off, or on without their table (the caller is checked after)."""
+    if not (engineering_agents_on() and os.environ.get(ENGINEERING_TABLE_ENV)):
+        raise NotFoundError('The engineering agents are not on in this deployment')
+
+
+def engineering_client_and_table() -> tuple[Any, str]:
+    """A low-level DynamoDB client and voc-engineering's name (a route's, once ``require_engineering_on`` held)."""
+    from shared.aws import get_dynamodb_client
+
+    return get_dynamodb_client(), os.environ[ENGINEERING_TABLE_ENV]

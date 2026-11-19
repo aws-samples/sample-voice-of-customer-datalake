@@ -19,6 +19,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from engineering.workspace.store import DENIED_CODES, MISSING_CODES
+from engineering.workspace.store import client_error_code as _code
 from shared.logging import logger, metrics
 from shared.ops_alerts import ENGINEERING_DENIED_READS_METRIC
 
@@ -47,11 +48,6 @@ class Read:
     def end(self) -> int:
         """The offset just past the bytes read."""
         return self.start + len(self.body)
-
-
-def _code(error: ClientError) -> object:
-    response: Mapping[str, Any] = error.response
-    return response.get('Error', {}).get('Code')
 
 
 def _iso(value: object) -> str:

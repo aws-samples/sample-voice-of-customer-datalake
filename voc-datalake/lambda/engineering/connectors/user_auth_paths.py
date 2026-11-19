@@ -5,11 +5,11 @@ path, so no reader of the connections reads them. Names only, and the JSON a cli
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from typing import Final
 
+from shared.digests import sha256_hex
 from shared.plan_canonical import FINGERPRINT_RE
 
 #: The env var with the user-auth parameters' prefix (the function's, the broker's and the Agents API's).
@@ -29,7 +29,7 @@ SUBJECT_HASH: Final = FINGERPRINT_RE
 
 def subject_hash(subject: str) -> str:
     """A person's key in the user-auth parameters: the sha256 of their subject (never the subject itself)."""
-    return hashlib.sha256(subject.encode()).hexdigest()
+    return sha256_hex(subject)
 
 
 def client_parameter(prefix: str, app_id: str) -> str:

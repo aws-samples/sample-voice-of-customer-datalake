@@ -34,6 +34,7 @@ from decimal import Decimal
 from typing import Any, Final, Literal, Protocol
 
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
+from shared.dynamo_values import string_list as _texts
 from shared.workflow_engineering import PUSHING_ROLES
 
 Status = Literal['pass', 'fail', 'warn', 'unknown']
@@ -293,10 +294,6 @@ def _params(node: Mapping[str, Any]) -> Mapping[str, Any]:
 def _nodes(definition: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     nodes = definition.get('nodes')
     return [node for node in nodes if isinstance(node, Mapping)] if isinstance(nodes, list) else []
-
-
-def _texts(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 def start_params(definition: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -20,11 +20,12 @@ writes every manifest field there):
   App: the token, and the repository webhook's secret, as before.
 """
 
-import re
 from dataclasses import dataclass
 from datetime import date
 
-from shared.github_rest import GITHUB_NUMBER, parse_repo
+from shared.github_rest import parse_repo
+from shared.github_rest import setting_app_id as _app_id
+from shared.github_rest import setting_entries as _split
 
 __all__ = ["GitHubSourceConfig"]
 
@@ -34,18 +35,6 @@ AUTHOR_ASSOCIATIONS = frozenset({
     "OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR",
     "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE",
 })
-
-
-def _split(value: object) -> list[str]:
-    if not isinstance(value, str):
-        return []
-    return [part.strip() for part in re.split(r"[\n,]", value) if part.strip()]
-
-
-def _app_id(value: object) -> str | None:
-    """A GitHub App's id, or None for anything else (unset, ``none``, a typo)."""
-    text = value.strip() if isinstance(value, str) else ""
-    return text if GITHUB_NUMBER.fullmatch(text) else None
 
 
 def _created_after(value: object) -> str | None:

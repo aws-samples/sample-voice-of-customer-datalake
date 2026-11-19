@@ -58,7 +58,6 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import cache
 from typing import Any, Final
 
 from aws_lambda_powertools.event_handler.api_gateway import Router
@@ -67,6 +66,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared import engineering_agent_runs as eng_runs
 from shared.agents_store import get_agents_table
 from shared.api import validate_int
+from shared.engineering_agent_runs import start_client as _start_client
 from shared.engineering_agents import RUN_STATUSES, engineering_agents_on
 from shared.exceptions import (
     ConflictError,
@@ -494,17 +494,6 @@ def parse_restart(body: Mapping[str, Any]) -> Restart:
     if body.get('confirm') is not True:
         raise ValidationError('a restart starts a new run of this one: send confirm: true')
     return Restart(str(mode), tuple(dict.fromkeys(agents or ())), str(base))
-
-
-@cache
-def _start_client() -> Any:
-    """The Lambda client for the start function (built once per container): it waits
-    ``START_READ_TIMEOUT_SECONDS`` and never retries by itself."""
-    import boto3
-    from botocore.config import Config
-
-    return boto3.client('lambda', config=Config(read_timeout=eng_runs.START_READ_TIMEOUT_SECONDS, connect_timeout=5,
-                                                retries={'total_max_attempts': 1}))
 
 
 @app.post('/agents/engineering/<run_id>/restart')

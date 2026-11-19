@@ -35,18 +35,56 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/engineering/connectors/cache.py",
-        "voc-datalake/lambda/engineering/connectors/hosts.py",
-        "voc-datalake/lambda/engineering/runtime/ports.py"
+        "voc-datalake/lambda/engineering/board/api.py",
+        "voc-datalake/lambda/engineering/readiness.py"
       ],
-      "reason": "typing.Protocol method stubs (a signature and `...`, no body): the engineering broker's host, run-record and GO-ledger ports, the checkout cache writer's store, and the runtime's board, bus and run-control ports declare different operations that only share the empty shape"
+      "name": "installation_repositories",
+      "reason": "typing.Protocol method stubs of one argument (a signature and `...`, no body): readiness's ports (the App installation's repositories, the host's branch rules, a fork's parent) and the board API's launcher declare different operations that only share the empty shape"
     },
     {
       "files": [
         "voc-datalake/lambda/engineering/connectors/cache.py",
+        "voc-datalake/lambda/engineering/connectors/hosts.py",
+        "voc-datalake/lambda/engineering/runtime/manifest.py",
+        "voc-datalake/lambda/engineering/skills/resolve.py"
+      ],
+      "name": "ci_protection",
+      "reason": "typing.Protocol method stubs of three arguments: the broker's host (branch rules, a file at a commit) and write-claim ports, the checkout cache writer's store, the manifest's writer and the skills' resolver declare different operations that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/cache.py",
+        "voc-datalake/lambda/engineering/runtime/harness/ports.py",
+        "voc-datalake/lambda/engineering/runtime/harness/transcript.py"
+      ],
+      "name": "create",
+      "reason": "typing.Protocol method stubs of a key and a body: the checkout cache writer's create-only store and the harness's workspace and transcript stores declare different writes that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/hosts.py",
+        "voc-datalake/lambda/engineering/readiness.py",
+        "voc-datalake/lambda/engineering/runtime/ports.py"
+      ],
+      "name": "head_commit",
+      "reason": "typing.Protocol method stubs of two text arguments: the broker's host, GO-ledger, write-claim, run-record, docs, upstream and owner-token ports, readiness's attestation and user-authorization ports and the runtime's lease port declare different operations that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/hosts.py",
+        "voc-datalake/lambda/engineering/runtime/harness/ports.py",
+        "voc-datalake/lambda/engineering/runtime/ports.py"
+      ],
+      "name": "issue_state",
+      "reason": "typing.Protocol method stubs of a text and a number: the broker's host (an issue's state) and upstream (the fork's pull request) ports, the harness's workspace read and the runtime's budget alert declare different operations that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/readiness.py",
         "voc-datalake/lambda/engineering/runtime/harness/ports.py"
       ],
-      "reason": "typing.Protocol method stubs with a docstring and `...`: the checkout cache writer's create-only store and the harness's workspace port declare different operations that only share the documented empty shape"
+      "name": "models_access",
+      "reason": "typing.Protocol method stubs of one list argument: readiness's model-access port and the harness's inbox acknowledgement declare different operations that only share the empty shape"
     }
   ]
 }

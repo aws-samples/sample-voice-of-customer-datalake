@@ -6,9 +6,9 @@
  */
 import { createElement } from 'react'
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
 import { AlertTriangle, CircleX, Info } from 'lucide-react'
 import type { RuleProblem } from '../model/ruleProblems'
+import ProblemLines from '../ui/ProblemLines'
 
 const TONES = {
   error: { Icon: CircleX, className: 'text-danger' },
@@ -18,18 +18,14 @@ const TONES = {
 
 export default function RuleProblemList({ problems, id }: Readonly<{ problems: readonly RuleProblem[]; id?: string }>) {
   const { t } = useTranslation('feedbackForms')
-  if (problems.length === 0) return null
   return (
-    <ul id={id} className="mt-1 space-y-0.5">
-      {problems.map((problem) => {
-        const { Icon, className } = TONES[problem.severity]
-        return (
-          <li key={`${problem.code}-${String(problem.ruleIndex)}`} className={clsx('flex items-start gap-1.5 text-[12px]', className)}>
-            {createElement(Icon, { size: 13, className: 'mt-0.5 shrink-0', 'aria-hidden': true })}
-            <span>{t(`problems.${problem.code}`, problem.params)}</span>
-          </li>
-        )
-      })}
-    </ul>
+    <ProblemLines id={id} lines={problems.map((problem) => {
+      const { Icon, className } = TONES[problem.severity]
+      return {
+        key: `${problem.code}-${String(problem.ruleIndex)}`, className: `gap-1.5 ${className}`,
+        icon: createElement(Icon, { size: 13, className: 'mt-0.5 shrink-0', 'aria-hidden': true }),
+        text: t(`problems.${problem.code}`, problem.params),
+      }
+    })} />
   )
 }

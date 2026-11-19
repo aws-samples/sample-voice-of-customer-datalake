@@ -10,7 +10,7 @@
  * @module pages/FeedbackForms/formTemplates
  */
 import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, Question, Welcome } from './model/formsV2'
-import { DEFAULT_THEME } from './model/formsV2'
+import { unsetFormFields } from './model/defaults'
 import { textIn, textOf } from './model/i18nText'
 import { translatableTexts } from './model/translatable'
 import type { TemplateFlow } from './templates/templateKit'
@@ -83,10 +83,7 @@ export function templateForm(flow: TemplateFlow, language: FormLanguage, lookup:
       return label === undefined ? { id: field.id } : { id: field.id, label }
     }),
     endings: flow.endings.map((id) => endingCopy(flow, id, language, lookup)),
-    settings: { test: { link_enabled: false, record: 'tag' } },
-    theme: { ...DEFAULT_THEME },
-    category: '', subcategory: '', project_id: '', document_id: '',
-    custom_fields: [], dimension_defaults: {}, tags: [],
+    ...unsetFormFields(),
   }
 }
 

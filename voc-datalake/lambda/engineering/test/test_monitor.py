@@ -133,6 +133,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)
                            'expansion': [],   # (7.52.00: no flow, so no call expanded)
                            'issue': None, 'pull_request': None,   # (started from no issue, no pull request yet)
+                           'upstream_pull_request': None,   # (7.57.00: not a fork's run)
                            'waiting_at': '', 'waiting_detail': None,   # (at no person's decision point)
                            'stop': None,   # (nobody stopped it)
                            # (7.51.00: no session row priced yet, no cap, no parent; a live run has no manifest)

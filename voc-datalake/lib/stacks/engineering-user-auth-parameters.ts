@@ -25,7 +25,7 @@ import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 const ENGINEERING_USER_AUTH_PATH = 'voc/engineering-user-auth/';
 
 /** Which of the path's parameters a grant names. */
-export type UserAuthParameters = 'clients' | 'apps' | 'users';
+type UserAuthParameters = 'clients' | 'apps' | 'users';
 
 const RESOURCE_NAMES: Readonly<Record<UserAuthParameters, string>> = {
   // An App's OAuth client alone (the readers').
@@ -45,7 +45,7 @@ export function engineeringUserAuthPrefix(deploymentPrefix: string | undefined):
 }
 
 /** The ARN pattern of `which` of the path's parameters in `stack`'s account and region. */
-export function userAuthParameterArns(stack: cdk.Stack, deploymentPrefix: string | undefined,
+function userAuthParameterArns(stack: cdk.Stack, deploymentPrefix: string | undefined,
   which: UserAuthParameters): string {
   return stack.formatArn({
     service: 'ssm', resource: 'parameter', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
@@ -54,7 +54,7 @@ export function userAuthParameterArns(stack: cdk.Stack, deploymentPrefix: string
 }
 
 /** `kms:ViaService` SSM and `PARAMETER_ARN` one of `parameters`: the stack's key used by SSM for those parameters alone. */
-export function viaSsmFor(stack: cdk.Stack, parameters: string[]): Record<string, Record<string, unknown>> {
+function viaSsmFor(stack: cdk.Stack, parameters: string[]): Record<string, Record<string, unknown>> {
   return {
     StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
     StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters.length === 1 ? parameters[0] : parameters },

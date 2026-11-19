@@ -75,3 +75,24 @@ condition = "AND"
 paths = ['''^voc-datalake/lib/stacks/cdn-signing-keys\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''-----BEGIN PRIVATE KEY-----/\)''']
+
+[[allowlists]]
+description = """Fixed hex fixture standing in for a GitHub App's OAuth client secret in the user-authorization
+tests (7.57.00): no real client has it."""
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+  '''^voc-datalake/lambda/api/test/test_agents_engineering_public_repositories\.py$''',
+  '''^voc-datalake/lambda/engineering/connectors/test/test_public_workflow\.py$''',
+  '''^voc-datalake/lambda/engineering/connectors/test/test_user_auth\.py$''',
+]
+regexTarget = "match"
+regexes = ['''CLIENT_SECRET = .0123456789abcdef0123456789abcdef01234567.''']
+
+[[allowlists]]
+description = "A Kiro API key's stand-in in the Kiro harness's tests (7.53.00): no real key has that text."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^voc-datalake/lambda/engineering/runtime/test/test_engineering_kiro_harness\.py$''']
+regexTarget = "match"
+regexes = ['''KEY = .kiro-test-key-0123456789.''']

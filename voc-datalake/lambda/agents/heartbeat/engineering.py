@@ -22,13 +22,13 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache
 from typing import Any, Final
 
 from agents import plan_identity
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
 from shared.aws import get_dynamodb_resource
+from shared.engineering_agent_runs import start_client
 from shared.engineering_agents import ENGINEERING_TABLE_ENV, engineering_agents_on
 from shared.exceptions import ConflictError, ValidationError
 from shared.logging import logger
@@ -116,15 +116,6 @@ def heal(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], now: date
     logger.warning('Engineering agent run without its engineering run failed', extra={'agent_id': agent_id,
                                                                                        'run_id': run_id})
     return False
-
-
-@cache
-def start_client() -> Any:
-    """The Lambda client for the start: it waits ``START_READ_TIMEOUT_SECONDS`` and never retries by itself."""
-    import boto3
-    from botocore.config import Config
-    return boto3.client('lambda', config=Config(read_timeout=eng_runs.START_READ_TIMEOUT_SECONDS, connect_timeout=5,
-                                                retries={'total_max_attempts': 1}))
 
 
 def start(table: Any, agent: Mapping[str, Any], prepared: Ready, start_with: eng_runs.AgentStart,

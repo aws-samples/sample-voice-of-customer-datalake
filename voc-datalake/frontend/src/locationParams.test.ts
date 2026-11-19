@@ -41,8 +41,8 @@ interface Allowed {
   readonly kind: Kind
   /** Every key the module reads by name (a literal or a constant of the module); [] when it reads by a list. */
   readonly keys: readonly string[]
-  /** A helper's parameter the module reads its keys through (its callers pass the literal keys listed). */
-  readonly via?: string
+  /** The helpers' parameters the module reads its keys through (their callers pass the literal keys listed). */
+  readonly via?: string | readonly string[]
   readonly reason: string
 }
 
@@ -74,14 +74,14 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   // External callbacks.
   'api/oauthRedirect.ts': { kind: 'callback', keys: ['redirect_uri'], reason: 'the MCP OAuth authorize request the consent page approves' },
   'pages/OAuthConsent/OAuthConsent.tsx': { kind: 'callback', keys: [], reason: 'the OAuth authorize request, passed whole to the API (docs/mcp.md)' },
-  'pages/Agents/githubCallback.ts': { kind: 'callback', keys: [], reason: 'takes GitHub\'s return query once and removes it from the address' },
-  'pages/Agents/GitHubAppCreated.tsx': { kind: 'callback', keys: ['code', 'state'], reason: 'GitHub\'s manifest return (`redirect_url`): `?code=&state=`' },
+  'pages/Agents/githubCallback.ts': { kind: 'callback', keys: ['code', 'state'], via: ['name', 'skipOn'], reason: 'takes GitHub\'s return query once and removes it from the address (the names its pages pass): `?code=&state=` of the manifest return (`redirect_url`) and of the user authorization\'s (7.57.00), and the declined answer the authorization page names (`skipOn`, `error`)' },
   'pages/Agents/GitHubAppInstalled.tsx': { kind: 'callback', keys: ['installation_id', 'setup_action', 'state'], reason: 'GitHub\'s installation return (`setup_url`)' },
   'pages/Board/BoardLogin.tsx': { kind: 'callback', keys: ['email', 'code'], reason: 'the emailed board sign-in link, read once and removed' },
   'pages/Board/signInLink.ts': { kind: 'callback', keys: [], reason: 'strips the emailed sign-in link\'s `email` and `code`' },
   'pages/Unsubscribe/Unsubscribe.tsx': { kind: 'callback', keys: ['t'], reason: 'the emailed one-click unsubscribe token' },
   // Not the app's address.
   'components/prototypeLinkLifetime.ts': { kind: 'other-url', keys: ['Expires'], reason: 'a CloudFront signed URL\'s own expiry' },
+  'pages/FeedbackForms/preview/previewChannel.ts': { kind: 'other-url', keys: ['p', 's', 'tab', 'ui'], reason: 'the form preview window\'s own page (`/form-preview.html`, not the app\'s router, 7.55.01): its hash holds the session, the language, the size preset and whether it opened as a tab' },
   // What the assistant is told is on screen.
   'assistant/page/pageContext.ts': { kind: 'filter', keys: [], reason: 'the assistant\'s page context: the filters on screen (PAGE_FILTERS), read by their list' },
 }
@@ -173,13 +173,14 @@ describe('where a person is lives in the path, not the query', () => {
   it('reads every key by a name the scan can read (a list reader, keys: [], and a helper\'s `via` aside)', () => {
     // A key read through an imported constant or a loop variable would pass the key checks unseen.
     const unread = READERS.flatMap(({ file, unresolved }) => ((ALLOWED[file]?.keys.length ?? 0) > 0 ? unresolved : [])
-      .filter((argument) => argument !== ALLOWED[file]?.via)
+      .filter((argument) => ![ALLOWED[file]?.via ?? []].flat().includes(argument))
       .map((argument) => `${file}: ${argument}`))
     expect(unread).toStrictEqual([])
   })
 
-  it('reads no location key anywhere', () => {
-    const misplaced = Object.entries(ALLOWED).flatMap(([file, { kind, keys }]) => keys
+  it('reads no location key anywhere in the app\'s address', () => {
+    // (an `other-url` is not the app's address: its keys say nothing about where a person is in the app)
+    const misplaced = Object.entries(ALLOWED).filter(([, { kind }]) => kind !== 'other-url').flatMap(([file, { kind, keys }]) => keys
       .filter((key) => LOCATION_KEYS.has(key))
       .map((key) => `${file}: ${key} (${kind})`))
     expect(misplaced).toStrictEqual([])

@@ -32,6 +32,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.dynamo_values import as_count
+from shared.dynamo_values import string_list as _messages
 from shared.feedback_cursor import TABLE_KEY_FIELDS, decode_key_cursor, encode_key_cursor
 from shared.ingest_tables import DeploymentTable
 from shared.logging import logger
@@ -221,10 +222,6 @@ def actor_from_event(raw_event: object) -> tuple[str, str]:
 
 
 _TEXT_FIELDS: Final = ('run_id', 'method', 'source', 'source_id', 'actor', 'actor_email', 'started_at', 'finished_at', 'status')
-
-
-def _messages(value: object) -> list[str]:
-    return [m for m in value if isinstance(m, str)] if isinstance(value, list) else []
 
 
 def _texts(item: Mapping[str, Any], names: Iterable[str]) -> dict[str, str]:

@@ -5,7 +5,7 @@
  *
  * @module pages/FeedbackForms/questions/EditorHeader
  */
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, Copy, Trash2 } from 'lucide-react'
 import ConfirmModal from '../../../components/ConfirmModal/ConfirmModal'
@@ -19,15 +19,14 @@ import { useDraft } from '../builder/formDraftContext'
 import ActionsMenu from '../ui/ActionsMenu'
 import TypeChip from '../ui/TypeChip'
 import { typeNameKey } from '../ui/typeIcons'
-import { takeFocusRequest } from './focusRequest'
+import { useRequestedFocus } from './focusRequest'
 import { useListActions } from './useListActions'
 
 function TypeSelect({ question, index, onConvert }: Readonly<{ question: Question; index: number; onConvert: (type: QuestionType) => void }>) {
   const { t } = useTranslation('feedbackForms')
   const id = useId()
-  const select = useRef<HTMLSelectElement>(null)
+  const select = useRequestedFocus<HTMLSelectElement>(`type:${question.id}`)
   const types = convertibleTypes(question)
-  useEffect(() => { if (takeFocusRequest(`type:${question.id}`)) select.current?.focus() }, [question.id])
   if (types.length === 0) {
     return (
       <span className="flex flex-wrap items-center gap-2">

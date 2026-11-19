@@ -36,7 +36,8 @@ const PLUGINS = '/me/workspaces/current/plugins'
 const BRAND = '/settings/brand'
 const EXPORT = '/me/workspaces/current/export'
 const NOT_DOWNLOADABLE = 'No export can be downloaded: the newest is not completed, or its 7 days are over. Start a new export'
-const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [] }
+// (7.55.01: the workspace's form brand, `form_theme`, null until one is saved: settings_handler.py)
+const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [], form_theme: null }
 
 /** The mock's workspaces by slug, as `GET /me/workspaces` lists them. */
 async function mine() {

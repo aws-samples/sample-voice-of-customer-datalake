@@ -13,10 +13,8 @@
  * @module pages/Agents/GitHubAppAuthorized
  */
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
-import { useConnectionError } from './connectionText'
-import { GitHubReturnFrame } from './GitHubReturnFrame'
+import { GitHubReturnFrame, ReturnProgress } from './GitHubReturnFrame'
 import { useCodeExchange } from './githubCallback'
 import type { GitHubAuthorization } from '../../api/githubAppsApi'
 import type { RequestOutcome } from './githubCallback'
@@ -26,29 +24,19 @@ const AUTHORIZED_QUERY = ['code', 'state', 'error', 'error_description', 'error_
 
 function Authorized({ declined, outcome }: Readonly<{ declined: boolean; outcome: RequestOutcome<GitHubAuthorization> }>) {
   const { t } = useTranslation('agents')
-  const errorText = useConnectionError()
   if (declined) return <p role="status" className="text-sm text-text">{t('connections.githubReturn.authorizeDeclined')}</p>
-  switch (outcome.kind) {
-    case 'idle':
-      return <p className="text-sm text-text">{t('connections.githubReturn.noAuthorizeCode')}</p>
-    case 'pending':
-      return (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 size={14} className="animate-spin" aria-hidden="true" /> {t('connections.githubReturn.authorizing')}
-        </p>
-      )
-    case 'failed':
-      return <p role="alert" className="text-sm text-danger">{errorText(outcome.error)}</p>
-    case 'done':
-      return (
-        <>
-          <p role="status" className="text-sm font-semibold text-text-strong">
-            {t('connections.githubReturn.authorizedBody', { login: outcome.answer.login })}
-          </p>
-          <p className="text-sm text-text">{t('connections.githubReturn.authorizedUse')}</p>
-        </>
-      )
+  if (outcome.kind !== 'done') {
+    return <ReturnProgress outcome={outcome} idle={t('connections.githubReturn.noAuthorizeCode')}
+      pending={t('connections.githubReturn.authorizing')} />
   }
+  return (
+    <>
+      <p role="status" className="text-sm font-semibold text-text-strong">
+        {t('connections.githubReturn.authorizedBody', { login: outcome.answer.login })}
+      </p>
+      <p className="text-sm text-text">{t('connections.githubReturn.authorizedUse')}</p>
+    </>
+  )
 }
 
 /** The code's exchange (the server keeps the token), and the query it makes stale: the caller's authorizations. */

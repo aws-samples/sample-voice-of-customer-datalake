@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from agents_handler_fixtures import USER
 from agents_handler_fixtures import call as _call
-from engineering_skills_fixtures import CONN, DELEGATED_ADMIN, OTHER, PERSON, WS, engineering_skills
+from engineering_skills_fixtures import CONN, DELEGATED_ADMIN, OTHER, PERSON, WS, SkillsEnv, engineering_skills
 
 from engineering.board.test.table import TABLE
 from engineering.skills.model import Reason
@@ -38,10 +38,8 @@ MONTH = '2026-11'
 @pytest.fixture
 def skills(monkeypatch: pytest.MonkeyPatch) -> Iterator[SkillStore]:
     """The tables on moto with the module on, and the shared Fixer skill's v1, accepted."""
-    with engineering_skills(monkeypatch) as (_client, store):
-        proposed = store.propose_version(WS, SHARED, 'fixer', content(), proposer=PERSON,
-                                         reason=Reason(comment='The first Fixer skill.'), base=None)
-        store.accept_version(WS, SHARED, 'fixer', proposed.version.version, PERSON)
+    with engineering_skills(monkeypatch) as (client, store):
+        SkillsEnv(client, store).shared()
         yield store
 
 

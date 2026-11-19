@@ -7,15 +7,14 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-import boto3
 import pytest
 from moto import mock_aws
 
+from engineering.board.test.table import TABLE, create_table
 from engineering.connectors.hosts import UpstreamRecord
 from engineering.connectors.upstream_records import UpstreamRecords, caps_partition
 from engineering.run_links import run_upstream
 
-TABLE = 'voc-engineering'
 RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2W'
 UPSTREAM = 'upstream-org/refund-service'
 #: What the broker's grant lets it write (engineering-broker.ts BROKER_CLAIM_ATTRIBUTES).
@@ -25,13 +24,7 @@ CLAIM_ATTRIBUTES = {'pk', 'sk', 'state', 'op', 'at', 'result', 'closed_at'}
 @pytest.fixture
 def client() -> Iterator[Any]:
     with mock_aws():
-        dynamodb = boto3.client('dynamodb', region_name='us-east-1')
-        dynamodb.create_table(TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-                              KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
-                                         {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-                              AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                                    {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        yield dynamodb
+        yield create_table()
 
 
 def every_item(client: Any) -> list[dict[str, Any]]:

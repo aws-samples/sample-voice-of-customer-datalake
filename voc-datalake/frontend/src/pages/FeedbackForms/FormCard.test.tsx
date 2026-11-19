@@ -46,6 +46,20 @@ function Where() {
   return <output data-testid="where" data-name={readHandoff(location.state)?.form.name ?? ''}>{location.pathname}</output>
 }
 
+/** The card's stats: three responses and no figure (no rating, no headline), plus `extra`. */
+function threeResponses(extra: Record<string, unknown> = {}) {
+  mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
+    total_submissions: 3, avg_rating: null, rating_count: 0, headline: null, ...extra,
+  } })
+}
+
+/** The card with only its three responses said (no time, no channel): rendered once they show. */
+async function renderPlainCard() {
+  threeResponses()
+  renderCard(record())
+  await screen.findByText('3 responses')
+}
+
 function renderCard(form: FeedbackForm, handlers: { onToggle?: () => void; onDelete?: () => void; apiEndpoint?: string; statsRefreshing?: boolean } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -114,38 +128,27 @@ describe('FormCard', () => {
 
   it('says when the last response came, and nothing when the stats carry no time', async () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000 - 60_000).toISOString()
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
-      total_submissions: 3, avg_rating: null, rating_count: 0, headline: null, last_response_at: twoHoursAgo,
-    } })
+    threeResponses({ last_response_at: twoHoursAgo })
     const { unmount } = renderCard(record())
     expect(await screen.findByText(/^Last response: /)).toHaveTextContent(/2 hr\. ago|Yesterday/)
     unmount()
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
-    renderCard(record())
-    await screen.findByText('3 responses')
+    await renderPlainCard()
     expect(screen.queryByText(/^Last response: /)).not.toBeInTheDocument()
   })
 
   it('names the ways the form was answered in the last 30 days, and nothing without one', async () => {
     const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
-      total_submissions: 3, avg_rating: null, rating_count: 0, headline: null, last_response_at: daysAgo(1),
-      channels: { iframe: daysAgo(2), link: daysAgo(40), script: daysAgo(1) },
-    } })
+    threeResponses({ last_response_at: daysAgo(1), channels: { iframe: daysAgo(2), link: daysAgo(40), script: daysAgo(1) } })
     const { unmount } = renderCard(record())
     const chips = await screen.findByRole('list', { name: 'Answered through' })
     expect(within(chips).getAllByRole('listitem').map((chip) => chip.textContent)).toStrictEqual(['Website script', 'Embedded'])
     unmount()
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
-    renderCard(record())
-    await screen.findByText('3 responses')
+    await renderPlainCard()
     expect(screen.queryByRole('list', { name: 'Answered through' })).not.toBeInTheDocument()
   })
 
   it('shows no figure when the form has no measuring answer yet', async () => {
-    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
-    renderCard(record())
-    await screen.findByText('3 responses')
+    await renderPlainCard()
     expect(screen.queryByText(/ \/ 5$/)).not.toBeInTheDocument()
   })
 

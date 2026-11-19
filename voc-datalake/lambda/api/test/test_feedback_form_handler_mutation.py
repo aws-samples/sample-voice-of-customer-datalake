@@ -38,6 +38,7 @@ from module_reload_fixtures import env_reloader
 import feedback_form_handler as h
 from shared.category_access import UNRESTRICTED, CategoryScope
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError
+from shared.form_theme import default_theme
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 from shared.test.source_profile_fixtures import no_source_profiles
 
@@ -48,12 +49,14 @@ _no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 
 FORM_ID = 'deadbeef'
 QUEUE = 'https://sqs.us-east-1.amazonaws.com/123456789012/forms'
-#: A theme read without one: every field, its defaults (shared/form_theme.py ``with_defaults``).
-DEFAULT_THEME_READ = {
-    'primary_color': '#8e48ff', 'background_color': '#ffffff', 'text_color': '#19161d', 'border_radius': '8px',
-    'mode': 'light', 'dark': {'primary_color': '#bd8fff', 'background_color': '#19161d', 'text_color': '#f2f1f4'},
-    'font': 'system', 'text_size': 'default',
-}
+#: A theme read without one: every field, its defaults (shared/form_theme.py ``with_defaults``; their values are
+#: pinned by shared/test/test_form_theme.py).
+DEFAULT_THEME_READ = default_theme()
+#: A version 1 form's rating and text steps as version 2 reads them (a text step without its placeholder).
+V1_RATING = {'id': 'q_rating', 'type': 'rating', 'headline': {'en': 'How was your experience?'}, 'required': True,
+             'scale': 'star', 'range': 5}
+V1_TEXT = {'id': 'q_text', 'type': 'open_text', 'headline': {'en': 'Tell us more'}, 'required': True, 'long': True,
+           'input_type': 'text'}
 
 
 def _route(api_gateway_event, lambda_context, method: str, path: str, **kwargs) -> tuple[dict, dict]:
@@ -172,12 +175,7 @@ class TestANewFormIsStoredWithTheDocumentedDefaults:
             'language': 'en', 'languages': ['en'],
             'welcome': {'enabled': True, 'title': {'en': 'Share Your Feedback'},
                         'description': {'en': 'We value your opinion.'}},
-            'questions': [
-                {'id': 'q_rating', 'type': 'rating', 'headline': {'en': 'How was your experience?'},
-                 'required': True, 'scale': 'star', 'range': 5},
-                {'id': 'q_text', 'type': 'open_text', 'headline': {'en': 'Tell us more'}, 'required': True,
-                 'long': True, 'input_type': 'text', 'placeholder': {'en': 'Tell us about your experience...'}},
-            ],
+            'questions': [V1_RATING, {**V1_TEXT, 'placeholder': {'en': 'Tell us about your experience...'}}],
             'hidden_fields': [], 'endings': [{'id': 'end_thanks', 'title': {'en': 'Thank you for your feedback!'}}],
         }
         assert not set(h.fv2.V1_FIELDS) & set(stored)
@@ -355,17 +353,11 @@ FORM_KEY = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{FORM_ID}'}
 #: A sparse version 1 record ({}) as version 2: its rating and text steps, the default ending.
 EMPTY_DEFINITION = {
     'language': 'en', 'languages': ['en'], 'welcome': {'enabled': False},
-    'questions': [
-        {'id': 'q_rating', 'type': 'rating', 'headline': {'en': 'How was your experience?'}, 'required': True,
-         'scale': 'star', 'range': 5},
-        {'id': 'q_text', 'type': 'open_text', 'headline': {'en': 'Tell us more'}, 'required': True, 'long': True,
-         'input_type': 'text'},
-    ],
+    'questions': [V1_RATING, V1_TEXT],
     'hidden_fields': [], 'endings': [{'id': 'end_thanks', 'title': {'en': 'Thank you!'}}],
 }
 EMPTY_WIDGET = {'enabled': False, 'schema_version': 2, 'revision': 1, **EMPTY_DEFINITION, 'language_assumed': True,
                 'theme': DEFAULT_THEME_READ}
-WIDGET_FIELDS = tuple(EMPTY_WIDGET)
 EMPTY_FORM = {
     'form_id': '', 'name': '', **EMPTY_WIDGET,
     'settings': {'test': {'link_enabled': False, 'record': 'tag', 'token_issued': False}},
@@ -1196,9 +1188,6 @@ class TestTheStatsRoute:
         assert (response['statusCode'], payload) == (500, {'success': False,
                                                             'error': 'Feedback table not configured'})
         table.get_item.assert_not_called()
-
-
-NOT_UPDATABLE = ('form_id', 'form_type', 'brand_name', 'created_at', 'updated_at')
 
 
 class TestEveryBoundAcceptsItsLimit:

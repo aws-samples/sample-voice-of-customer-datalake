@@ -31,3 +31,9 @@ export const lenientText = z.string().catch('')
 
 /** A non-empty string field, or undefined when absent / empty / wrong-typed. */
 export const optionalText = z.string().min(1).optional().catch(undefined)
+
+/** Who last wrote a stored record and when, as the server stamps it: each undefined when absent or wrong-typed. */
+export const UPDATED_STAMP = {
+  updated_by: z.string().optional().catch(undefined),
+  updated_at: z.string().optional().catch(undefined),
+}

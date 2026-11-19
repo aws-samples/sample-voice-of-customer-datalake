@@ -10,7 +10,8 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { engineeringParameterPrefix } from './engineering-broker';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
-  AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements, functionUrlAuthTypes, processingSynths,
+  AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements, functionUrlAuthTypes, permissionsNaming,
+  processingSynths,
 } from '../test-support/engineering-template';
 import { byCodeUnit } from '../utils/compare';
 
@@ -68,10 +69,7 @@ describe('the engineering broker', () => {
 
   it('grants nobody a way in: no resource-based permission on the broker', () => {
     const on = template('on');
-    const id = brokerId(on);
-    const permissions = Object.values(on.findResources('AWS::Lambda::Permission'))
-      .filter((permission) => JSON.stringify(permission.Properties).includes(id));
-    expect(permissions).toStrictEqual([]);
+    expect(permissionsNaming(on, brokerId(on))).toStrictEqual([]);
   });
 
   it('holds its log writes, the connections\' parameters, the run records\' reads and their key, and nothing else', () => {

@@ -39,10 +39,12 @@ from typing import Any, Final
 
 from engineering.quality_gate.packs import STOPS
 from engineering.runtime import outputs
-from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
+from engineering.runtime.checkout import check_sparse_path, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
 from engineering.runtime.harness import gate_tools, issues, library_tools, review_tools, tenets_tools
 from engineering.runtime.harness.coordinator import Built, Record, Tool, answered, bounded, listed, optional, post_for
+from engineering.runtime.harness.review_tools import harness_git
+from engineering.runtime.harness.transcript import already_written
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
     FINDING_FILE,
@@ -310,13 +312,6 @@ def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
             **review_tools.handlers(context, result, record), **library_tools.handlers(context, result)}
 
 
-def _already_written(error: Exception) -> bool:
-    """S3's answer to a create-only put of a key that exists (``If-None-Match``): the output was written before, by
-    this agent's own earlier session (its keys are its own), so it is there, as it was written then."""
-    response = getattr(error, 'response', None)
-    return isinstance(response, Mapping) and response.get('Error', {}).get('Code') == 'PreconditionFailed'
-
-
 def _output_handlers(context: Built, result: Callable[..., Built]
                      ) -> tuple[dict[str, Tool], Record]:
     """The outputs under the agent's own keys, and the sub-task post; and ``record``, the create-only output write
@@ -330,7 +325,7 @@ def _output_handlers(context: Built, result: Callable[..., Built]
         try:
             context.store.put(key, body)
         except Exception as error:
-            if not _already_written(error):
+            if not already_written(error):
                 raise
             # A continuation writing again what its crashed session wrote (and never got to record): kept as it is,
             # and recorded on the task like any output; the task's progress says so, and the model is told when
@@ -408,10 +403,6 @@ class PatchNotJudged(RuntimeError):
     would refuse, or one that does not apply to the checkout): the session stops before anything runs, a crash."""
 
 
-def _git(context: Built, *argv: str) -> Mapping[str, Any]:
-    return context.runner.run(repo_git(*argv), timeout_seconds=600, repository_code=False, in_checkout=False)
-
-
 def checkout_tree(context: Built) -> str:
     """The tree of the checkout as it is now, every change taken (``git add --all``, then ``git write-tree``), by the
     harness's own git; under the snapshot's lock (``tools.snapshot``: a CLI's tool server shares the index).
@@ -419,8 +410,8 @@ def checkout_tree(context: Built) -> str:
     os.makedirs(context.patch_dir, mode=0o700, exist_ok=True)
     with open(os.path.join(context.patch_dir, '.snapshot.lock'), 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        added = _git(context, 'add', '--all')
-        hashed = _git(context, 'write-tree')
+        added = harness_git(context, 'add', '--all')
+        hashed = harness_git(context, 'write-tree')
     lines = str(hashed.get('stdout_tail', '')).split()
     tree = lines[-1] if lines else ''
     if added.get('exit_code') != 0 or hashed.get('exit_code') != 0 or not SHA.fullmatch(tree):
@@ -453,8 +444,8 @@ def judge_submitted_patch(context: Built, store: Built) -> str:
     # The index's file times first: the checkout opened its files to the group after git wrote them (a new ctime),
     # and ``apply --index`` takes a file whose times changed for one that changed. A file that does differ still
     # differs, and the apply refuses it.
-    _git(context, 'update-index', '-q', '--refresh')
-    applied = _git(context, 'apply', '--index', '--binary', local)
+    harness_git(context, 'update-index', '-q', '--refresh')
+    applied = harness_git(context, 'apply', '--index', '--binary', local)
     if applied.get('exit_code') != 0:
         raise PatchNotJudged(f'the submitted patch {key} does not apply to the run\'s commit '
                              f'({str(applied.get("stderr_tail", "")).strip()[-300:]})')

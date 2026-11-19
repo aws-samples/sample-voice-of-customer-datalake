@@ -7,6 +7,7 @@ so every caller's output for the values it can receive is unchanged.
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from types import MappingProxyType
 
@@ -15,7 +16,16 @@ from boto3.dynamodb.types import Binary
 
 from agents import store as runtime_store
 from shared import agents_store, briefing_store, memory_store, prototype_pins
-from shared.dynamo_values import as_text, plain
+from shared.dynamo_values import (
+    as_text,
+    json_count,
+    mapping_or_empty,
+    matches_text,
+    plain,
+    string_list,
+    text_or_none,
+    trimmed_text,
+)
 
 
 class TestTheSharedRule:
@@ -114,3 +124,38 @@ class TestBriefingStore:
 ], ids=['text', 'empty', 'missing', 'number', 'none'])
 def test_as_text_is_a_string_attribute_or_empty(item, expected):
     assert as_text(item, 'title') == expected
+
+
+@pytest.mark.parametrize(('value', 'count'), [
+    (3, 3), (0, 0), (-1, 0), (True, 0), (Decimal('2'), 0), ('4', 0), (None, 0),
+], ids=['count', 'zero', 'negative', 'bool', 'decimal', 'text', 'none'])
+def test_json_count_is_a_non_negative_int_or_zero(value, count):
+    assert json_count(value) == count
+
+
+@pytest.mark.parametrize(('value', 'expected'), [
+    ('casey', 'casey'), ('', None), (None, None), (7, None),
+], ids=['text', 'empty', 'none', 'number'])
+def test_text_or_none_is_a_non_empty_string_or_none(value, expected):
+    assert text_or_none(value) == expected
+
+
+@pytest.mark.parametrize(('item', 'expected'), [
+    ({'name': '  Casey  '}, 'Casey'), ({'name': ''}, ''), ({}, ''), ({'name': 3}, ''),
+], ids=['trimmed', 'empty', 'missing', 'number'])
+def test_trimmed_text_is_a_trimmed_string_attribute_or_empty(item, expected):
+    assert trimmed_text(item, 'name') == expected
+
+
+def test_mapping_or_empty_and_string_list_keep_only_their_type():
+    assert mapping_or_empty({'a': 1}) == {'a': 1}
+    assert mapping_or_empty(['a']) == {}
+    assert string_list(['a', 1, None, 'b']) == ['a', 'b']
+    assert string_list('ab') == []
+
+
+@pytest.mark.parametrize(('value', 'expected'), [
+    ('#8e48ff', True), ('8e48ff', False), (None, False), (8, False),
+], ids=['match', 'no-match', 'none', 'number'])
+def test_matches_text_is_a_string_the_pattern_matches_at_its_start(value, expected):
+    assert matches_text(value, re.compile(r'#[0-9a-f]{6}')) is expected

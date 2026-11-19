@@ -18,7 +18,7 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
 
 import { FormsApiError } from '../../../api/feedbackFormsV2Api'
 import { useAuthStore } from '../../../store/authStore'
-import { STORED_META, renderWithDraft, sampleForm } from '../test/draftHarness'
+import { STORED_META, renameDraft, renderWithDraft, sampleForm } from '../test/draftHarness'
 import SaveButtons from './SaveButtons'
 import ConflictBanner from './ConflictBanner'
 
@@ -35,17 +35,11 @@ function renderBuilder(form: FormV2 = sampleForm(), isNew = false, meta: Partial
   return renderWithDraft(<><SaveButtons withShortcut /><ConflictBanner /></>, form, { isNew, meta })
 }
 
-/** Edit the draft (rename it), so Save shows. */
-async function editDraft(harness: ReturnType<typeof renderBuilder>) {
-  await waitFor(() => { expect(harness.probe.current).not.toBeNull() })
-  harness.probe.current?.update((form) => ({ ...form, name: 'Renamed' }))
-}
-
 /** The builder on the sample form, the draft edited, Save pressed: its harness. */
 async function editAndSave(): Promise<ReturnType<typeof renderBuilder>> {
   const user = userEvent.setup()
   const harness = renderBuilder()
-  await editDraft(harness)
+  await renameDraft(harness)
   await user.click(await screen.findByRole('button', { name: 'Save' }))
   return harness
 }
@@ -84,7 +78,7 @@ describe('saving the draft', () => {
     api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form, 4)))
     const user = userEvent.setup()
     const harness = renderBuilder(sampleForm(), false, { response_count: 12, has_responses: true, can_delete_test_responses: true })
-    await editDraft(harness)
+    await renameDraft(harness)
     await user.click(await screen.findByRole('button', { name: 'Save' }))
     await waitFor(() => { expect(harness.probe.current?.meta?.revision).toBe(4) })
     expect(harness.probe.current?.meta).toMatchObject({ response_count: 12, has_responses: true, can_delete_test_responses: true })
@@ -128,7 +122,7 @@ describe('a stale save (409, D7)', () => {
   async function saveIntoConflict() {
     const user = userEvent.setup()
     const harness = renderBuilder()
-    await editDraft(harness)
+    await renameDraft(harness)
     await user.click(await screen.findByRole('button', { name: 'Save' }))
     const banner = await screen.findByRole('alert')
     return { user, harness, banner }

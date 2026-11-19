@@ -112,10 +112,6 @@ def answer(secrets: Mapping[str, Any], schedule: bool | None) -> dict[str, Any]:
             'sign_in': state.signs_in, 'token_set': state.token, 'schedule_enabled': schedule}
 
 
-def _code(error: Exception) -> str:
-    return error_code(error) if isinstance(error, ClientError) else type(error).__name__
-
-
 class IssuesConfig:
     """The three actions over the shared secret ``secret_id`` (Secrets Manager through ``secrets``) and the schedule
     rule ``rule`` (EventBridge through ``events``)."""
@@ -136,7 +132,7 @@ class IssuesConfig:
             found = self._secrets().get_secret_value(SecretId=self._secret_id, VersionStage=stage)
             secrets = json.loads(found.get('SecretString') or '{}')
         except (*_AWS_ERRORS, ValueError) as error:
-            logger.warning('engineering issues settings not read', extra={'stage': stage, 'error_code': _code(error)})
+            logger.warning('engineering issues settings not read', extra={'stage': stage, 'error_code': error_code(error)})
             raise IssuesSettingsUnavailable('the GitHub Issues source could not be read: try again') from None
         if not isinstance(secrets, dict):
             raise IssuesSettingsUnavailable('the GitHub Issues source\'s settings are not a JSON object')
@@ -151,7 +147,7 @@ class IssuesConfig:
             self._secrets().put_secret_value(SecretId=self._secret_id, SecretString=payload,
                                              ClientRequestToken=self._request_token())
         except _AWS_ERRORS as error:
-            logger.warning('engineering issues settings not written', extra={'error_code': _code(error)})
+            logger.warning('engineering issues settings not written', extra={'error_code': error_code(error)})
             raise IssuesSettingsUnavailable('the GitHub Issues source could not be saved: try again') from None
 
     def _apply(self, change: Callable[[SourceState], Plan]) -> tuple[dict[str, Any], Plan]:
@@ -186,7 +182,7 @@ class IssuesConfig:
         try:
             state = self._events().describe_rule(Name=self._rule).get('State')
         except _AWS_ERRORS as error:
-            logger.warning('engineering issues schedule not read', extra={'error_code': _code(error)})
+            logger.warning('engineering issues schedule not read', extra={'error_code': error_code(error)})
             return None
         return state == 'ENABLED' if isinstance(state, str) else None
 
@@ -194,7 +190,7 @@ class IssuesConfig:
         try:
             self._events().enable_rule(Name=self._rule)
         except _AWS_ERRORS as error:
-            logger.warning('engineering issues schedule not enabled', extra={'error_code': _code(error)})
+            logger.warning('engineering issues schedule not enabled', extra={'error_code': error_code(error)})
             return False
         return True
 

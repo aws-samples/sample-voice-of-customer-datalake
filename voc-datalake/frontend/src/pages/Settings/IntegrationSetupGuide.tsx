@@ -11,8 +11,9 @@ import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ExternalLink, LifeBuoy } from 'lucide-react'
+import { ChevronDown, LifeBuoy } from 'lucide-react'
 import clsx from 'clsx'
+import { NewTabLink } from '../../components/NewTabLink/NewTabLink'
 import { companyTabPath } from '../Company/companyPaths'
 import { INTEGRATION_GUIDES } from './integrationGuides'
 import type { IntegrationGuide } from './integrationGuides'
@@ -46,11 +47,10 @@ function GuideSection({ title, children }: Readonly<{ title: string; children: R
 function ExternalGuideLink({ href, label }: Readonly<{ href: string; label: string }>) {
   const { t } = useTranslation('settings')
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 link focus-ring rounded-sm">
+    <NewTabLink href={href} className="inline-flex items-center gap-1 link focus-ring rounded-sm" iconSize={12}
+      newTab={`(${t('integrationGuide.newTab')})`}>
       {label}
-      <ExternalLink size={12} aria-hidden="true" />
-      <span className="sr-only">({t('integrationGuide.newTab')})</span>
-    </a>
+    </NewTabLink>
   )
 }
 

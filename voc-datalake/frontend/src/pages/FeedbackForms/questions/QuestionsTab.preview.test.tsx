@@ -25,6 +25,14 @@ function renderTab() {
 
 const preview = () => screen.queryByRole('complementary', { name: 'Preview' })
 
+/** The tab while this browser tab's preview window has its channel: `say` is the window telling the builder. */
+function renderTabWithWindow(): (action: 'alive' | 'closed') => void {
+  window.sessionStorage.setItem('voc-form-preview-session:f_test', SESSION)
+  renderTab()
+  const previewWindow = listen(`voc-form-preview:${SESSION}`)
+  return (action) => { act(() => { previewWindow.channel.postMessage({ type: 'voc-form-preview', action }) }) }
+}
+
 beforeEach(() => {
   // (from xl: every width query matches)
   vi.stubGlobal('matchMedia', (query: string) => ({
@@ -62,23 +70,18 @@ describe('the in-pane preview from xl', () => {
   })
 
   it('collapses while the preview window is open, and comes back when it closes', () => {
-    window.sessionStorage.setItem('voc-form-preview-session:f_test', SESSION)
-    renderTab()
-    const previewWindow = listen(`voc-form-preview:${SESSION}`)
+    const say = renderTabWithWindow()
     expect(preview()).toBeInTheDocument()
-    act(() => { previewWindow.channel.postMessage({ type: 'voc-form-preview', action: 'alive' }) })
+    say('alive')
     expect(preview()).not.toBeInTheDocument()
     expect(screen.getByText('The preview is open in its window.')).toBeInTheDocument()
-    act(() => { previewWindow.channel.postMessage({ type: 'voc-form-preview', action: 'closed' }) })
+    say('closed')
     expect(preview()).toBeInTheDocument()
   })
 
   it('takes a window that went silent (its tab killed) as closed', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
-    window.sessionStorage.setItem('voc-form-preview-session:f_test', SESSION)
-    renderTab()
-    const previewWindow = listen(`voc-form-preview:${SESSION}`)
-    act(() => { previewWindow.channel.postMessage({ type: 'voc-form-preview', action: 'alive' }) })
+    renderTabWithWindow()('alive')
     expect(preview()).not.toBeInTheDocument()
     act(() => { vi.advanceTimersByTime(7500) })
     expect(preview()).toBeInTheDocument()
@@ -86,16 +89,12 @@ describe('the in-pane preview from xl', () => {
   })
 
   it('shows beside an open window when asked, until the next window', async () => {
-    window.sessionStorage.setItem('voc-form-preview-session:f_test', SESSION)
     const user = userEvent.setup()
-    renderTab()
-    const previewWindow = listen(`voc-form-preview:${SESSION}`)
-    act(() => { previewWindow.channel.postMessage({ type: 'voc-form-preview', action: 'alive' }) })
+    const say = renderTabWithWindow()
+    say('alive')
     await user.click(screen.getByRole('button', { name: 'Show preview' }))
     expect(preview()).toBeInTheDocument()
-    act(() => {
-      previewWindow.channel.postMessage({ type: 'voc-form-preview', action: 'closed' })
-    })
+    say('closed')
     expect(preview()).toBeInTheDocument()
   })
 })

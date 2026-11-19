@@ -153,10 +153,7 @@ def test_a_private_or_missing_repository_does_not_connect_as_public(env: Env) ->
 
 
 def test_a_read_only_connection_takes_no_attestation_and_keeps_its_kind(env: Env) -> None:
-    tokens = PublicTokens()
-    own_repository(env, tokens)
-    _, public, _ = wired(env, tokens)
-    connection, _, _ = public.connect({'repository': UPSTREAM}, ADMIN)
+    _, _, connection = _public(env, PublicTokens())
     store = env.connections()
     with pytest.raises(ConnectionRefused, match='read-only connection'):
         store.attest(connection['connection_id'], parse_attestation({
@@ -171,6 +168,8 @@ def test_a_read_only_connection_takes_no_attestation_and_keeps_its_kind(env: Env
 
 
 def _public(env: Env, tokens: PublicTokens) -> tuple[GitHubApps, Forks, dict[str, Any]]:
+    """The deployment's App on its own repository, and the upstream connected read only: the Apps, the forks and the
+    connection."""
     own_repository(env, tokens)
     apps, public, forks = wired(env, tokens)
     connection, _, _ = public.connect({'repository': UPSTREAM}, ADMIN)
@@ -325,9 +324,7 @@ def test_a_public_connection_gets_no_label(env: Env) -> None:
     from engineering.connectors.issues_sync import IssuesFollow, app_of
 
     tokens = PublicTokens()
-    own_repository(env, tokens)
-    _, public, _ = wired(env, tokens)
-    connection, _, _ = public.connect({'repository': UPSTREAM}, ADMIN)
+    _, _, connection = _public(env, tokens)
     assert app_of(connection) == ('4242', 777)   # (its issues followed, read with the App's read-only token)
     follow = IssuesFollow(None, env.table, tokens)
     assert follow._labels([connection], {}, ADMIN) == []

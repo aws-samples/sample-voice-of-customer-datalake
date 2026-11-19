@@ -83,8 +83,9 @@ def scrubbed(value: Any) -> Any:
     return _cut(redact(str(value)))
 
 
-def _taken(error: Exception) -> bool:
-    """S3's answer to a create-only put of a key that exists (``If-None-Match``)."""
+def already_written(error: Exception) -> bool:
+    """S3's answer to a create-only put of a key that exists (``If-None-Match``): written before, by an earlier
+    session of the same agent (its keys are its own), so it is there as it was written then."""
     response = getattr(error, 'response', None)
     return isinstance(response, Mapping) and response.get('Error', {}).get('Code') == 'PreconditionFailed'
 
@@ -149,7 +150,7 @@ class Transcript:
                 try:
                     self._store.put(key, body)
                 except Exception as error:
-                    if not _taken(error):
+                    if not already_written(error):
                         raise
                     self._chunk += 1   # (written by an earlier session of this attempt, or the CLI's tool server)
                     continue

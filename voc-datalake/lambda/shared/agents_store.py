@@ -53,7 +53,7 @@ from shared.aws import (
 from shared.category_access import CategoryScope, item_category
 from shared.dynamo_paging import query_all
 from shared.dynamo_values import plain
-from shared.exceptions import ConflictError, NotFoundError, ServiceError, ValidationError
+from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceError, ValidationError
 from shared.indexes import AGENTS_LISTING_INDEX
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODEL_IDS
@@ -256,6 +256,14 @@ def get_agents_table() -> Any:
     if name not in _table_cache:
         _table_cache[name] = get_dynamodb_resource().Table(name)
     return _table_cache[name]
+
+
+def require_agents_table() -> Any:
+    """The ``voc-agents`` table resource; ConfigurationError when ``AGENTS_TABLE`` is unset (a route's 500)."""
+    table = get_agents_table()
+    if table is None:
+        raise ConfigurationError('Agents table not configured')
+    return table
 
 
 def _service_error(what: str, exc: Exception) -> ServiceError:

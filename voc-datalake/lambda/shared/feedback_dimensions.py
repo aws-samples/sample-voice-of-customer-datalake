@@ -29,6 +29,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Final
 
 from shared.dimension_config import MAX_TAGS, allowed_values, resolve_dimensions, validate_tags
+from shared.dynamo_values import mapping_or_empty as _as_mapping
 
 __all__ = [
     'apply_dimension_edit',
@@ -87,10 +88,6 @@ def _resolve_layers(
                 dimensions[key], provenance[key] = value, source
                 break
     return dimensions, provenance
-
-
-def _as_mapping(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def category_product(categories_config: Iterable[Mapping[str, Any]], category: object) -> str | None:

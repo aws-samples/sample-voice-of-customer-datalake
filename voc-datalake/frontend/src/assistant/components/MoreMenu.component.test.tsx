@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '@test/test-utils'
+import { expectTabLeavesTheMenu } from '@test/keyboard'
 import { openTooltip } from '@test/tooltip'
 import MoreMenu from './MoreMenu'
 import type { MoreMenuItem } from './MoreMenu'
@@ -107,9 +108,7 @@ describe('MoreMenu', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     expect(screen.getByRole('menuitem', { name: 'Export' })).toHaveFocus()
-    await user.keyboard('{Tab}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Next control' })).toHaveFocus()
+    await expectTabLeavesTheMenu(user, 'Next control')
   })
 
   it('a click outside the menu closes it', async () => {

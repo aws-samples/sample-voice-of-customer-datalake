@@ -65,6 +65,11 @@ function writtenBy(statements: Statement[]): string[] {
 /** What {@link denied} answers when the role has no statement with that sid. */
 const NO_STATEMENT: Statement = { Action: [], Resource: undefined };
 const denied = (statements: Statement[], sid: string): Statement => statements.find((s) => s.Sid === sid) ?? NO_STATEMENT;
+/** `role`'s limits of its audit rows to their own partitions: the guarded tables each names, and its condition. */
+const partitionLimits = (role: string) => (byRole.get(role) ?? [])
+  .filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
+  .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
+  .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
 
 describe('audit rows (AUDIT#*) across every stack', () => {
   const writers = [...byRole].filter(([, statements]) => writtenBy(statements).length > 0);
@@ -125,11 +130,7 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it('the feedback forms put only a deployment form\'s AUDIT#delete in voc-aggregates and AUDIT#WS#* in voc-workspaces', () => {
-    const limits = (byRole.get('VocApiStack/FeedbackFormLambdaRole') ?? [])
-      .filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
-      .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
-      .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
-    expect(limits).toStrictEqual([
+    expect(partitionLimits('VocApiStack/FeedbackFormLambdaRole')).toStrictEqual([
       { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
         'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } } },
       { tables: ['WorkspacesTable'], condition: { ...AUDIT_CONDITION,
@@ -138,17 +139,14 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it('the workspace delete puts only its tombstones in voc-aggregates and its completed rows in voc-workspaces', () => {
-    const statements = byRole.get('VocProcessingStack/WorkspaceDeleteWorkerDeleteRole') ?? [];
-    const limits = statements.filter((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID))
-      .map((s) => ({ tables: tablesOf(s), condition: s.Condition }))
-      .sort((a, b) => byCodeUnit(a.tables.join(), b.tables.join()));
-    expect(limits).toStrictEqual([
+    expect(partitionLimits('VocProcessingStack/WorkspaceDeleteWorkerDeleteRole')).toStrictEqual([
       { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
         'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#*'] } } },
       { tables: ['WorkspacesTable'], condition: { ...AUDIT_CONDITION,
         'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#workspace-deletes'] } } },
     ]);
     // Its batch deletes, on WS#{one id}#* only, never reach an audit row: the change-Deny holds them too.
+    const statements = byRole.get('VocProcessingStack/WorkspaceDeleteWorkerDeleteRole') ?? [];
     expect(actionsOf(denied(statements, AUDIT_DENY_CHANGE_SID)).sort(byCodeUnit))
       .toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
   });

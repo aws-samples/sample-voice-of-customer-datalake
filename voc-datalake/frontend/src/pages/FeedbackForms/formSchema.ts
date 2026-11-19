@@ -20,6 +20,7 @@ import { OptionalStringMapSchema, OptionalTagsSchema } from '../../api/dimension
 import { toOptionalFiniteNumber } from '../../api/lenientFields'
 import { supportedLanguages } from '../../i18n/languages'
 import { DEFAULT_THEME } from './model/formsV2'
+import { FORM_ROUTING, FORM_TYPE } from './model/formsV2Schema'
 
 /**
  * The v1 defaults a sparse record's fields fall back to (the old Blank template's, 7.54.00). v1 records are read
@@ -112,19 +113,16 @@ const FeedbackFormSchema = z.looseObject({
   collect_email: z.boolean().catch(V1_FORM_DEFAULTS.collect_email),
   collect_name: z.boolean().catch(V1_FORM_DEFAULTS.collect_name),
   custom_fields: customFieldsSchema,
-  category: z.string().catch(''),
-  subcategory: z.string().catch(''),
-  // Optional link to the project/document this form validates. Defaults to ''
+  // The routing, and the optional link to the project/document this form validates. Defaults to ''
   // like every other absent string field, so a record persisted before the
   // link existed — or one that deliberately validates nothing — normalizes to
   // "unlinked" rather than being dropped. Declaring both fields explicitly
   // (rather than relying on the loose object's passthrough) is what makes a
   // stored link survive the edit round-trip with a known type: the editor
   // reads them off a normalized record and writes them straight back.
-  project_id: z.string().catch(''),
-  document_id: z.string().catch(''),
+  ...FORM_ROUTING,
   // Older records have no type and stay that way (absent = an ordinary form).
-  form_type: z.enum(['standard', 'prototype_pin']).optional().catch(undefined),
+  form_type: FORM_TYPE,
   // Stamped on every submission (an embed's `dimensions` option wins per key).
   dimension_defaults: OptionalStringMapSchema,
   tags: OptionalTagsSchema,

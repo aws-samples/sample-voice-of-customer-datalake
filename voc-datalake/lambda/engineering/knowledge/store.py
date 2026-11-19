@@ -146,12 +146,18 @@ class ApprovedPack:
     documents: Mapping[str, str]
 
 
-def _pk(ws: str, connection: str) -> str:
+def repo_pk(ws: str, connection: str) -> str:
+    """The connection's partition (the knowledge packs', the tenets' and the docs' records)."""
     if not CONNECTION.fullmatch(connection):
         raise PackError('not a connection id')
     if not WS.fullmatch(ws):
         raise PackError('not a workspace id')
     return f'WS#{ws}#REPO#{connection}'
+
+
+def repo_key(ws: str, connection: str, sk: str) -> dict[str, Any]:
+    """The low-level key of the connection's row ``sk``."""
+    return {'pk': {'S': repo_pk(ws, connection)}, 'sk': {'S': sk}}
 
 
 def _segment(package: str) -> str:
@@ -173,9 +179,6 @@ class PackStore:
     workspace: WorkspaceStore
     now: Callable[[], datetime] = _utc_now
 
-    def _key(self, ws: str, connection: str, sk: str) -> dict[str, Any]:
-        return {'pk': {'S': _pk(ws, connection)}, 'sk': {'S': sk}}
-
     def publish(self, ws: str, connection: str, pack: Pack, *, author: Actor, reason: Literal['refresh', 'edit'],
                 built_from: str, base_version: int = 0) -> PackVersion:
         """``pack`` as the package's next version, a draft. ``built_from``: the full sha the refresh read."""
@@ -185,7 +188,7 @@ class PackStore:
             raise PackForbidden('only an administrator edits a knowledge pack')
         segment = _segment(pack.package)
         counted = self.client.update_item(
-            TableName=self.table, Key=self._key(ws, connection, f'KPACK#{segment}'), UpdateExpression='ADD versions :one',
+            TableName=self.table, Key=repo_key(ws, connection, f'KPACK#{segment}'), UpdateExpression='ADD versions :one',
             ExpressionAttributeValues={':one': {'N': '1'}}, ReturnValues='UPDATED_NEW')
         version = int(counted['Attributes']['versions']['N'])
         objects = [(PACK_OBJECT, json.dumps(to_json(pack), sort_keys=True, indent=1), 'application/json')]
@@ -195,7 +198,7 @@ class PackStore:
             if not self.workspace.put_once(key, body, content_type):
                 raise PackConflict(f'{key} already exists: the version counter is behind the bucket')
         at = self.now().isoformat()
-        item = {**self._key(ws, connection, f'KPACK#{segment}#{version:06d}'),
+        item = {**repo_key(ws, connection, f'KPACK#{segment}#{version:06d}'),
                 'package': {'S': pack.package}, 'version': {'N': str(version)}, 'status': {'S': DRAFT},
                 'author': {'S': author.id}, 'author_kind': {'S': author.kind}, 'reason': {'S': reason},
                 'built_from': {'S': built_from}, 'base_version': {'N': str(base_version)}, 'created_at': {'S': at},
@@ -209,18 +212,18 @@ class PackStore:
         return PackVersion.from_item(item)
 
     def version(self, ws: str, connection: str, package: str, version: int) -> PackVersion:
-        item = get_row(self.client, self.table, self._key(ws, connection, f'KPACK#{_segment(package)}#{version:06d}'))
+        item = get_row(self.client, self.table, repo_key(ws, connection, f'KPACK#{_segment(package)}#{version:06d}'))
         if item is None:
             raise PackNotFound('no such version')
         return PackVersion.from_item(item)
 
     def versions(self, ws: str, connection: str, package: str) -> list[PackVersion]:
         """Every version of the package, oldest first (D1: none is ever replaced)."""
-        items = partition_rows(self.client, self.table, _pk(ws, connection), f'KPACK#{_segment(package)}#')
+        items = partition_rows(self.client, self.table, repo_pk(ws, connection), f'KPACK#{_segment(package)}#')
         return [PackVersion.from_item(item) for item in items]
 
     def _approved_version(self, ws: str, connection: str, package: str) -> int:
-        counter = get_row(self.client, self.table, self._key(ws, connection, f'KPACK#{_segment(package)}')) or {}
+        counter = get_row(self.client, self.table, repo_key(ws, connection, f'KPACK#{_segment(package)}')) or {}
         return int(counter.get('approved_version', {}).get('N', '0'))
 
     def approved_version(self, ws: str, connection: str, package: str) -> int:
@@ -253,18 +256,18 @@ class PackStore:
             update += ', rendering_digest = :digest'
             values[':digest'] = {'S': rendering_digest}
         items: list[Mapping[str, Any]] = [
-            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}#{version:06d}'),
+            {'Update': {'TableName': self.table, 'Key': repo_key(ws, connection, f'KPACK#{segment}#{version:06d}'),
                         'UpdateExpression': update,
                         'ConditionExpression': '#s = :draft', 'ExpressionAttributeNames': {'#s': 'status'},
                         'ExpressionAttributeValues': values}},
-            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, f'KPACK#{segment}'),
+            {'Update': {'TableName': self.table, 'Key': repo_key(ws, connection, f'KPACK#{segment}'),
                         'UpdateExpression': 'SET approved_version = :v',
                         'ConditionExpression': 'attribute_not_exists(approved_version) OR '
                                                '(approved_version < :v AND approved_version <= :base)',
                         'ExpressionAttributeValues': {':v': {'N': str(version)},
                                                       ':base': {'N': str(current.base_version)}}}},
             {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': {
-                **self._key(ws, connection, f'KPACKLOG#{segment}#{version:06d}#approved'),
+                **repo_key(ws, connection, f'KPACKLOG#{segment}#{version:06d}#approved'),
                 'by': {'S': approver.id}, 'at': {'S': at}, 'version': {'N': str(version)}, **digest}}},
             *also,
         ]

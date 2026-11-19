@@ -92,6 +92,15 @@ person's. Merging it stays the upstream maintainers'
   comment on and label nothing on it, and the fork's pull request names no issue.
 - The App manifest gains `callback_urls`; an App row and view gain `oauth` and `client_id` (not a secret).
 - The Issues source's `issues_token` reads an uncovered public repository through the App (before, it was skipped).
+- **The signing layer goes only to the functions that sign** (`SIGNING_LAYER_FUNCTION_IDS`,
+  `lib/utils/dependency-layers.ts`): the projects API and its assist worker (and the MCP endpoint, which verifies). The
+  persona generator, the persona importer and the document generator drop it (16.8 MB unzipped each): they write
+  avatars and prototype HTML to S3 and never build a CDN URL (the projects API signs them per request), and none of
+  them has a CDN or signing variable. They had it because `py_layers` judged each function with the lazy imports of
+  the functions analysed before it: `scripts/audit/py_graph.py` kept a live function's `from shared.cloudfront_signing
+  import sign_url` in the parse cache every bundle shares, so a later bundle that loaded `shared/avatar.py` or
+  `shared/prototypes.py` followed it as if it ran at import time, and the result depended on the order the functions
+  were analysed. A lazy import now belongs to the run that reached it (`scripts/audit/test_py_graph.py`).
 
 ### Security
 

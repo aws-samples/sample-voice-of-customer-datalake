@@ -59,7 +59,6 @@ last connection went) keeps the slug it was made with (docs/autonomous-engineeri
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import secrets
@@ -94,6 +93,8 @@ from engineering.connectors.connections import (
     partition_rows,
     write_audited,
 )
+from engineering.connectors.connections import invalid_request as _invalid
+from engineering.connectors.connections import utc_iso as _iso
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.issues_sync import follow_stored
 from engineering.connectors.transport import DEFAULT_RETRY_SECONDS, HttpsTransport, Transport, asked_wait, dig, json_of
@@ -108,7 +109,8 @@ from engineering.connectors.user_auth_paths import (
     client_parameter,
     client_value,
 )
-from shared.dynamo_values import plain
+from shared.digests import sha256_hex
+from shared.dynamo_values import plain, text_or_none
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 from shared.logging import logger
 from shared.model_fallback import error_code
@@ -188,18 +190,6 @@ class Claim:
 
     row: Mapping[str, Any]
     replay: bool = False
-
-
-def _invalid(message: str) -> ConnectionRefused:
-    return ConnectionRefused('invalid', message)
-
-
-def _state_hash(raw: str) -> str:
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(UTC).isoformat()
 
 
 def app_name(suffix: str) -> str:
@@ -316,7 +306,7 @@ class SetupStates:
 
     @staticmethod
     def _key(raw: str) -> dict[str, str]:
-        return {'pk': SETUP_PARTITION, 'sk': f'{STATE_PREFIX}{_state_hash(raw)}'}
+        return {'pk': SETUP_PARTITION, 'sk': f'{STATE_PREFIX}{sha256_hex(raw)}'}
 
     def mint(self, purpose: str, actor: Actor, **facts: object) -> tuple[str, str]:
         """A new state for ``purpose`` and ``actor`` (``facts``: the account, the org, the App): (it, when it expires)."""
@@ -392,16 +382,13 @@ class SetupStates:
 
 def app_view(item: Mapping[str, Any], connections: Sequence[str]) -> dict[str, Any]:
     """A stored App as the API answers it (never a secret): its facts and the connections that use it."""
-    def text(name: str) -> str | None:
-        value = item.get(name)
-        return value if isinstance(value, str) and value else None
-
     return {'app_id': str(item.get('app_id', '')), 'slug': str(item.get('slug', '')), 'owner': str(item.get('owner', '')),
             'owner_type': str(item.get('owner_type', '')), 'html_url': str(item.get('html_url', '')),
             'webhook': item.get('webhook') is True, 'connections': sorted(connections),
-            'created_at': text('created_at'), 'created_by': text('created_by'), 'version': int(item.get('version', 0)),
+            'version': int(item.get('version', 0)),
+            'created_at': text_or_none(item.get('created_at')), 'created_by': text_or_none(item.get('created_by')),
             # (7.57.00: whether its OAuth client is stored, for the user authorization, and its id: not a secret)
-            'oauth': item.get('oauth') is True, 'client_id': text('client_id')}
+            'oauth': item.get('oauth') is True, 'client_id': text_or_none(item.get('client_id'))}
 
 
 def connection_id_for(repository: str, taken: set[str]) -> str:

@@ -95,6 +95,9 @@ ignore_names = [
     # shared/ingest_schemas.py MessageMetadata: a feedback form response's pydantic fields (7.55.00), validated by
     # name; the processor and the results read them from the item's metadata by key.
     "form_answers", "form_hidden", "form_path", "form_revision", "form_session",
+    # shared/ingest_schemas.py MessageMetadata: the widget's channel (7.55.01), the same kind of pydantic field, validated
+    # by name; the forms list's channels read it from the item's metadata by key.
+    "form_channel",
     # aggregator/handler.py `_RefusalReport` / `_UpdateRequest`: TypedDict fields, read by key.
     "ConditionExpression", "ReturnValuesOnConditionCheckFailure", "UpdateExpression",
     "ExpressionAttributeNames", "ExpressionAttributeValues",
