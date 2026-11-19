@@ -17,7 +17,15 @@ Each check answers a list of problems (``<file>: <what is wrong>``); the command
   ``shared.workflow_schema`` and kept as written;
 - every automation names a flow there is, a budget above 0 for an engineering one, and every readiness check its
   flow and triggers need;
-- no placeholder is left in a source (``TODO``, ``TBD``, ``FIXME``, ``XXX``, ``<LIKE_THIS>``);
+- the skills library (7.56.00, ``skills/<name>/``): each skill's front matter follows ``library-skill`` (its
+  description, source, licence and what was adapted) and names its directory; it holds its SKILL.md and
+  ``references/<file>.md`` only, each within what ``read_skill`` answers (``library_tools.MAX_CHARS``); every
+  ``references/<file>.md`` it names is its own, every "the `<name>` skill" it names is the library's, no other relative
+  link; no Amazon-internal host or system is named (the repository is public: ``INTERNAL_HOSTS``, ``INTERNAL_NAMES``);
+  some card names it, every skill a card names exists, and a launchable card names skills exactly when its tools (or
+  pending tools) have ``read_skill``;
+- no placeholder is left in a source (``TODO``, ``TBD``, ``FIXME``, ``XXX``, ``<LIKE_THIS>``; the library aside, whose
+  skills discuss such markers);
 - ``bundle.json`` and its Lambda copy are exactly the compile's output;
 - each Kiro agent config (``kiro-agents/<role>.json``), compiled and committed, parses; it offers the platform's
   tool server alone (``tools`` is ``["@voc"]``: no Kiro builtin, no ``subagent``, no ``@builtin``); what it allows
@@ -49,6 +57,7 @@ from engineering.connectors.broker import permitted
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.orchestration import assertions
 from engineering.orchestration.assertions import SEVERITY, TRIAGE_KINDS
+from engineering.orchestration.bundle import MAX_LEARN_SKILLS_CHARS, READ_SKILL, REFERENCE_PATH, skill_body
 from engineering.orchestration.compile import (
     BUILTIN_FLOWS,
     KIRO_DIR,
@@ -68,9 +77,19 @@ from engineering.orchestration.compile import (
     requires_triage,
     skill_ref,
 )
-from engineering.orchestration.schema import EXAMPLES, REQUIRED_SECTIONS, ROOT, TemplateError, errors, relative, schema
+from engineering.orchestration.schema import (
+    EXAMPLES,
+    LIBRARY,
+    REQUIRED_SECTIONS,
+    ROOT,
+    TemplateError,
+    errors,
+    relative,
+    schema,
+)
 from engineering.quality_gate.packs import PackError, load_packs
 from engineering.runtime.harness.cli import TOOL_SERVER
+from engineering.runtime.harness.library_tools import MAX_CHARS
 from engineering.runtime.harness.skills import SkillError
 from engineering.runtime.harness.tool_server import SERVER_NAME
 from engineering.runtime.harness.tools import role_specs
@@ -86,6 +105,16 @@ PLACEHOLDER_GLOBS: Final = ('README.md', '_shared/*.md', 'agents/*/*', 'flows/*.
                             'gates/*/manifest.toml', 'gates/README.md', 'gates/briefs/RECONCILIATION.md',
                             'evals/README.md', 'evals/*/cases/*/case.json')
 _TOOL_NAME: Final = re.compile(r'`([a-z][a-z_]+)`')
+#: 7.56.00, the skills library: another library skill, as a skill names it ("the `tdd` skill"); a Markdown link.
+_SKILL_MENTION: Final = re.compile(r'the `([a-z][a-z0-9-]{1,40})` skill')
+_LINK: Final = re.compile(r'\]\(([^)\s]+)\)')
+_URL: Final = re.compile(r'https?://([^/\s)>\]"\'`]+)', re.IGNORECASE)
+#: What a library skill must not name, the repository being public: the hosts of Amazon's internal sites (any host
+#: under amazon.com but AWS's public ones, a2z.com, amazon.dev, aws.dev) and its internal systems' names.
+INTERNAL_HOSTS: Final = ('a2z.com', 'amazon.dev', 'aws.dev', 'amazon.com')
+PUBLIC_HOSTS: Final = ('aws.amazon.com',)
+INTERNAL_NAMES: Final = re.compile(r'\b(?:brazil|midway|isengard|taskei|quip|phonetool|builderhub|palisade|mwinit|'
+                                   r'amzn)\b', re.IGNORECASE)
 
 Problems = list[str]
 
@@ -99,6 +128,8 @@ def _schema_problems(sources: Sources) -> Problems:
               for error in errors('flow', flow, sources.root)]
     found += [f'automations/{name}.yaml: {error}' for name, automation in sources.automations.items()
               for error in errors('automation', automation, sources.root)]
+    found += [f'{LIBRARY}/{name}/SKILL.md front matter: {error}' for name, skill in sources.library.items()
+              for error in errors('library-skill', dict(skill.front_matter), sources.root)]
     listed = schema('assertion', sources.root)['properties']['check']['enum']
     if sorted(listed) != sorted(assertions.VOCABULARY):
         found.append('schemas/assertion.schema.json: its check enum is not assertions.VOCABULARY')
@@ -160,6 +191,75 @@ def _card_problems(sources: Sources) -> Problems:
         found += [f'{where}: no eval case {case}' for case in card['evals'] if case not in cases]
     found += [f'agents/{role}/agent.yaml: model {card["model"]["id"]} is not in ALLOWED_MODEL_IDS'
               for role, card in sources.cards.items() if card['model']['id'] not in ALLOWED_MODEL_IDS]
+    return found
+
+
+def _card_skill_problems(sources: Sources) -> Problems:
+    """7.56.00: every library skill a card names exists, and a launchable card names skills exactly when its tools (or
+    pending tools) have ``read_skill``, the tool that reads them (Learn's card names the coach's, with no tool)."""
+    found = []
+    for role, card in sources.cards.items():
+        where, skills = f'agents/{role}/agent.yaml', list(card.get('skills', []))
+        found += [f'{where}: no library skill {name} ({LIBRARY}/{name}/)' for name in skills if name not in sources.library]
+        if card.get('harness') == 'learn':
+            # (the coach's prompt carries its skills' bodies whole: coach/prompt.py, within a call's worst case)
+            size = sum(len(skill_body(sources.library[name].text)) for name in skills if name in sources.library)
+            if size > MAX_LEARN_SKILLS_CHARS:
+                found.append(f"{where}: its skills' SKILL.md bodies are {size} characters, over the "
+                             f"{MAX_LEARN_SKILLS_CHARS} the coach's prompt carries")
+            continue
+        reads = READ_SKILL in card['tools'] or READ_SKILL in card.get('pending_tools', [])
+        if skills and not reads:
+            found.append(f'{where}: a role with skills has {READ_SKILL} among its tools, which reads them')
+        if reads and not skills:
+            found.append(f'{where}: {READ_SKILL} reads the library skills its card names, and it names none')
+    return found
+
+
+def internal_mentions(text: str) -> list[tuple[int, str]]:
+    """Each line of ``text`` (numbered from 1) that names an Amazon-internal host or system, with what it names."""
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        hosts = [host.lower().rstrip('.') for host in _URL.findall(line)]
+        hits = [host for host in hosts if any(host == name or host.endswith(f'.{name}') for name in INTERNAL_HOSTS)
+                and not any(host == name or host.endswith(f'.{name}') for name in PUBLIC_HOSTS)]
+        hits += [match.group(0) for match in INTERNAL_NAMES.finditer(line)]
+        found += [(number, hit) for hit in hits]
+    return found
+
+
+def _library_file_problems(at: str, text: str, references: set[str], names: set[str]) -> Problems:
+    """One file of a library skill: within ``read_skill``'s cap, every reference it names the skill's, every skill it
+    names the library's, no relative link but to a reference, and no internal host or system."""
+    found = [f'{at}: {len(text)} characters, over the {MAX_CHARS} read_skill answers'] if len(text) > MAX_CHARS else []
+    found += [f'{at}: names {path}, which the skill does not have'
+              for path in sorted(set(REFERENCE_PATH.findall(text)) - references)]
+    found += [f'{at}: names the `{other}` skill, which the library does not have'
+              for other in sorted(set(_SKILL_MENTION.findall(text)) - names)]
+    found += [f'{at}: links {link}: a skill names a file of its own as references/<file>.md, nothing else relative'
+              for link in _LINK.findall(text) if not link.startswith(('http://', 'https://', 'mailto:', '#'))
+              and not REFERENCE_PATH.fullmatch(link)]
+    found += [f'{at}:{number}: names an internal host or system ({hit}): the repository is public'
+              for number, hit in internal_mentions(text)]
+    return found
+
+
+def _library_problems(sources: Sources) -> Problems:
+    """7.56.00, the skills library (``skills/<name>/``): each skill's front matter names its directory, it holds its
+    SKILL.md and ``references/<file>.md`` only, each file passes ``_library_file_problems``, and some card names it."""
+    found = []
+    names = set(sources.library)
+    used = {name for card in sources.cards.values() for name in card.get('skills', [])}
+    for name, skill in sources.library.items():
+        where = f'{LIBRARY}/{name}'
+        if skill.front_matter.get('name') != name:
+            found.append(f"{where}/SKILL.md: its name is its directory's, {name}")
+        found += [f'{path}: a library skill holds its SKILL.md and references/<file>.md only' for path in skill.stray]
+        references = {path for path, _text in skill.references}
+        for path, text in [('SKILL.md', skill.text), *skill.references]:
+            found += _library_file_problems(f'{where}/{path}', text, references, names)
+        if name not in used:
+            found.append(f'{where}: no card names it (skills in agents/<role>/agent.yaml)')
     return found
 
 
@@ -467,6 +567,7 @@ def problems(root: Path = ROOT, *, drift: bool = True) -> Problems:
     except PackError as error:
         return [f'gates: {error}']
     found += _skill_problems(sources) + _card_problems(sources) + _flow_problems(sources, packs)
+    found += _card_skill_problems(sources) + _library_problems(sources)
     found += _automation_problems(sources) + _eval_problems(root) + _placeholder_problems(root)
     found += brief_problems(root, packs)
     if found:

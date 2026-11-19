@@ -20,6 +20,7 @@ import time
 from typing import Any, Final
 
 from engineering.runtime.harness.interface import AgentSession, Ending
+from engineering.runtime.harness.library_tools import own, with_library
 from engineering.runtime.harness.review_tools import opening_parts
 from engineering.runtime.harness.skills import SKILLS, Skill, platform_rules
 from engineering.runtime.harness.tools import AgentContext, bedrock_tools
@@ -57,10 +58,14 @@ def model_request_fields(model_id: str) -> dict[str, Any]:
 def system_prompt(context: AgentContext, skill: Skill | None) -> str:
     """The platform's rules with the session's fence (the bundle's, as the board served them with the skill, else
     the harness's own: no skill version can drop them), then the skill's instructions and examples (``skill``: the
-    version the session runs, else the role's shipped one), or the platform's own for a role without a skill."""
+    version the session runs, else the role's shipped one), or the platform's own for a role without a skill; then
+    (7.56.00) the role's library skills by name and description, when the skill's tools have ``read_skill``
+    (``library_tools.with_library``, as the compiled Kiro config's prompt)."""
     skill = skill or SKILLS.get(context.role)
     rules = platform_rules(context.fence, context.platform_rules)
-    return f'{rules}\n\n{SYSTEM_PROMPT if skill is None else skill.system_prompt()}'
+    if skill is None:
+        return f'{rules}\n\n{SYSTEM_PROMPT}'
+    return with_library(f'{rules}\n\n{skill.system_prompt()}', skill.tool_policy, own(context.role))
 
 
 def opening(session: AgentSession) -> str:

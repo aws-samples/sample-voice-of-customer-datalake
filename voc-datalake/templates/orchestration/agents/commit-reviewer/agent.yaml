@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: commit-reviewer
-version: 3
+version: 4
 purpose: Reviews one submitted change against the repository's review guide before the quality gate; scope creep is blocking.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -12,7 +12,9 @@ inputs:
 outputs:
   - {name: findings, schema: voc-finding/1, recorded_on: task}
   - {name: verdict, schema: voc-review/1, recorded_on: task}
-tools: [read_file, list_files, write_findings, read_patch, write_review, report_progress, save_checkpoint, finish]
+tools: [read_file, list_files, write_findings, read_patch, write_review, read_skill, report_progress, save_checkpoint,
+        finish]
+skills: [code-review, anti-slop, security-audit, aws-security, red-team, verification-before-completion]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [repository, knowledge, board], fence: nonce}

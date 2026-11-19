@@ -31,7 +31,7 @@ from engineering.runtime.checkpoints import agent_prefix
 from engineering.runtime.harness.coordinator import Built, Tool, offered, optional
 from engineering.runtime.outputs import FINDING_SCHEMA, GATE_SCHEMA, SEVERITIES
 
-#: The gate packs' place in every image (engineering-images/*/Dockerfile ``VOC_GATES_DIR``).
+#: The gate packs' place in every image (templates/orchestration/images/*/Dockerfile ``VOC_GATES_DIR``).
 GATES_DIR_ENV: Final = 'VOC_GATES_DIR'
 #: What a missing tool exits with (the shell's "command not found").
 NOT_FOUND_EXIT: Final = 127
@@ -50,7 +50,7 @@ _SHARD_KEY: Final = re.compile(r'ws/default/runs/(?P<run>[A-Za-z0-9_-]{1,64})/(?
                                r'attempt-[1-9][0-9]{0,3}/[A-Za-z0-9][A-Za-z0-9_.-]{0,121}\.jsonl\Z')
 
 
-#: Where every image puts the gate packs (engineering-images/*/Dockerfile).
+#: Where every image puts the gate packs (templates/orchestration/images/*/Dockerfile).
 IMAGE_GATES: Final = Path('/opt/voc/gates')
 #: Where the gate's virtual environments go in the images (7.54.00, the python pack's ``{venv}``): under the home of
 #: the `code` user (unit_runner.CODE_HOME), which repository code writes, outside the checkout, whose tree the gate

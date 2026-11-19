@@ -13,6 +13,9 @@
  * of the query (`?connection=`), so a view can be shared and Back returns from a version to the history, and from a
  * role to the scope's roles. The sheets are this page's, over the history.
  *
+ * Beside the roles, the **Library** (7.56.00, `/agents/skills/library`, SkillLibrary.tsx): the default skills the
+ * release ships for the roles to read, the same in every scope, so it has no scope picker.
+ *
  * @module pages/Agents/EngineeringSkills
  */
 import { useState } from 'react'
@@ -24,7 +27,10 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { engineeringSkillsApi, engineeringSkillsKeys } from '../../api/engineeringSkillsApi'
 import { useConfigStore } from '../../store/configStore'
 import { usePlaceNavigate } from '../../utils/pathPlace'
+import PressedChoices from '../../components/PressedChoices/PressedChoices'
 import { agentsPath, readAgentsAddress } from './agentsPaths'
+import { libraryPath, readLibraryPlace } from './skillLibraryPaths'
+import { SkillLibrary } from './SkillLibrary'
 import { skillsViewOf } from './skillsView'
 import { ScopePicker } from './ScopePicker'
 import { SkillHistory } from './SkillHistory'
@@ -110,11 +116,16 @@ function RolePanel({ view, role, onView }: Readonly<{ view: SkillsView; role: Sk
   )
 }
 
+/** The tab's two views: the scope's roles, or the library. */
+type SkillsPart = 'roles' | 'library'
+const PARTS: readonly SkillsPart[] = ['roles', 'library']
+
 export function EngineeringSkills() {
   const { t } = useTranslation('agents')
   const location = useLocation()
   const read = readAgentsAddress(location)
   const search = read?.replaceWith?.search ?? location.search
+  const library = readLibraryPlace(location.pathname)
   const view = skillsViewOf(read?.place ?? { role: null, version: null }, new URLSearchParams(search))
   const move = usePlaceNavigate()
   const change = (next: Partial<SkillsView>) => {
@@ -125,15 +136,26 @@ export function EngineeringSkills() {
     const query = params.toString()
     move({ pathname: agentsPath({ view: 'skills', role, version }), search: query === '' ? '' : `?${query}` })
   }
+  const show = (part: SkillsPart) => {
+    if (part === 'library') move({ pathname: libraryPath(), search: '' })
+    else change({ role: null, version: null })
+  }
   return (
     <section className="space-y-4">
-      <p className="text-sm text-muted max-w-prose">{t('skills.hint')}</p>
-      <ScopePicker connection={view.connection} label={t('skills.scope')} sharedLabel={t('skills.shared')}
-        onChange={(connection) => change({ connection, role: null, version: null })} />
-      {view.role === null
-        ? <ScopeRoles connection={view.connection} onOpen={(role) => change({ role, version: null })}
-          onReview={(role, version) => change({ role, version })} />
-        : <RolePanel key={`${view.connection}-${view.role}`} view={view} role={view.role} onView={change} />}
+      <PressedChoices label={t('skills.library.views')} choices={PARTS} value={library === null ? 'roles' : 'library'}
+        onChange={show} display={(part) => t(`skills.library.view.${part}`)} className="tabs-track w-fit"
+        pressedClassName="tab tab-active" idleClassName="tab" />
+      {library !== null ? <SkillLibrary place={library} /> : (
+        <>
+          <p className="text-sm text-muted max-w-prose">{t('skills.hint')}</p>
+          <ScopePicker connection={view.connection} label={t('skills.scope')} sharedLabel={t('skills.shared')}
+            onChange={(connection) => change({ connection, role: null, version: null })} />
+          {view.role === null
+            ? <ScopeRoles connection={view.connection} onOpen={(role) => change({ role, version: null })}
+              onReview={(role, version) => change({ role, version })} />
+            : <RolePanel key={`${view.connection}-${view.role}`} view={view} role={view.role} onView={change} />}
+        </>
+      )}
     </section>
   )
 }

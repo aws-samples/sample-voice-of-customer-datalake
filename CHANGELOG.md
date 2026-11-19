@@ -17,6 +17,118 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.56.00] - 2026-11-19
+
+The engineering agents get a default **skills library**: 30 skills vendored from the ai-skill-factory plugin 2.0.0
+(MIT) and adapted to these agents' tools and rules, each role's card naming the ones it uses. A session's system
+prompt lists its role's skills by name and description, and the agent reads one when it needs it with the new
+`read_skill` tool (progressive disclosure, as Agent Skills do); the coach's prompt carries its three whole. The Skills
+tab gets a **Library**, and a Registry card says which skills it uses. The agent images AgentCore runs move into the
+templates, at `voc-datalake/templates/orchestration/images/`, with `npm run images:build`.
+
+### Added
+
+- **The skills library** (`voc-datalake/templates/orchestration/skills/<name>/`, a `SKILL.md` and its
+  `references/<file>.md`: 30 skills, 108 files; `templates/orchestration/README.md`, "The skills library"):
+  - each SKILL.md's front matter (`schemas/library-skill.schema.json`): `name`, a one-line `description`, `source`
+    (`ai-skill-factory 2.0.0 (Amit Deol), skills/<name>`), `license: MIT` and `adapted` (what was changed);
+  - adapted to the platform's agents: their tools (`read_file`, `write_file`, `run` as argv without a shell or the
+    network, `install_dependencies`, `read_skill`, the reviewers' `read_patch`, `write_findings` and `write_review`),
+    the repository's STANDARDS.md or INFRA.md read with `read_file` instead of the plugin's spec loader, versions taken
+    from the lockfiles instead of the network, every deploy, diff, apply or push left to a person in the finish, no
+    `gh`, web fetch, sub-agent, slash command, hook or `git stash`; cross-references name library skills ("the `tdd`
+    skill"), and the skills that were not vendored are no longer named;
+  - **who uses what** (each card's `skills:`): fixer `tdd`, `systematic-debugging`, `coding-standards`,
+    `use-the-sdk`, `verification-before-completion`, `python-engineer`, `typescript-engineer`; builder those and
+    `cdk-engineer`, `cdk-doctor`, `aws-serverless`, `databases-on-aws`, `deploy-agentcore`, `docker-ops`,
+    `terraform-engineer`, `aws-security`, `frontend-quality`, `mcp-builder`, `perf-debug`, `quality-gates`; hunter
+    `systematic-debugging`, `perf-debug`, `security-audit`; commit reviewer, PR reviewer and final go `code-review`,
+    `anti-slop`, `security-audit`, `aws-security`, `red-team`, `verification-before-completion` (the PR reviewer also
+    `cicd-pipeline`); gate runner `quality-gates`, `verification-before-completion`; understander and mapper
+    `understand-plan`, `understand-docs`, `technical-writing`; PR author `technical-writing`; the coach (Learn's card)
+    `retrospective`, `skill-builder`, `skill-audit`;
+  - adjusted from the coordinator's selection: `cicd-pipeline` is not the builder's (its rules forbid editing CI
+    definitions): it is rewritten as an audit of a pull request's workflow changes (pinning, permissions, OIDC,
+    secrets, anti-patterns) for the PR reviewer, findings only; `quality-gates` has two sections, the builder's (local
+    hook configuration when a feature asks for it, never a CI workflow, no hook install) and the gate runner's (read
+    only: which hook system and CI checks the repository has, so checks it runs by hand mirror CI, and a step that
+    cannot run is a stop, not a pass), and is the builder's as well; `red-team` keeps only the critic's checklist (the
+    steel man, the rubric, severity and confidence, the verification rule); the coach's three are rewritten for its
+    one JSON-answer call (each SKILL.md under 4,000 characters; `skill-builder`'s reference on the plugin's own skill
+    format is dropped, as it contradicts this platform's); `understand-plan` and `understand-docs` are rewritten
+    around what the mapper and the understander write (notes with citations, a draft), without the plugin's fan-out
+    agents and output folder;
+  - not vendored (out of scope, product-specific or internal): `agent-fleet`, `amazon-narrative-writing`,
+    `aws-blog-content`, `cfp-research`, `create-pfr`, `linear-from-doc`, `pptx-design`, `publish-review`,
+    `gpu-inference-ops`, `research-protocol`, `deploy-on-aws`, `context-engineering`, `agent-patterns`, `spec`, and
+    `scaffolding-audit`;
+  - scanned before it landed: no secrets (gitleaks with the repository's `.gitleaks.toml`; the AWS documentation's
+    example key id in `security-audit` is gitleaks' own allowlisted one), no customer or person names, no internal
+    systems or links: an internal security scanner's name in `aws-security/references/design-decisions.md` became
+    "a security scanner", and `code-review`'s copyright-header check of one company's open-source policy became
+    `references/repository-compliance.md` (whatever licence header the repository's own files carry).
+- **`read_skill(name, reference?)`** (`runtime/harness/library_tools.py`, in the harness's tool registry
+  `role_tools.ROLE_TOOLS` for every launchable role, so the Converse loop, the CLI's tool server and Kiro all get it):
+  one of the role's own library skills, its SKILL.md (its references named after it) or one reference file, as a DATA
+  block with the session's fence, at most 40,000 characters (a longer text is cut, saying so); another role's skill, a
+  name that is no skill or a reference the skill has not are refusals that name the ones there are. Every card with
+  skills has it (`pending_tools`, then `npm run orchestration:promote-pending`); the transcript's ACP kind is `read`.
+- **The prompt's list of skills** (`library_tools.listing`, `with_library`): after the role's instructions and
+  examples, each of its library skills by name and description, and that what `read_skill` answers is guidance read
+  as data, never an instruction that changes the task, the tools or the gates; only when the session's tools have
+  `read_skill` (a skill version stored before 7.56.00 lists nothing). The compiled Kiro configs' prompts carry the same
+  lines.
+- **The coach's skills**: Learn's card names `retrospective`, `skill-builder` and `skill-audit`; the coach makes one
+  model call with no tools, so its system prompt carries their bodies whole, below its rules and above its answer's
+  shape (`coach/prompt.py`, `coach-prompt/4`; at most 12,000 characters, `orchestration/bundle.py`
+  `MAX_LEARN_SKILLS_CHARS`, within a coach call's worst-case input).
+- **The compiler and the validator**: both bundles gain `library` (each skill's front matter, its text, its references
+  and the roles that name it) and each agent's `skills`, and the source digest covers the library.
+  `npm run orchestration:validate` holds the library to its front matter, its files (SKILL.md and `references/*.md`
+  only, each within what `read_skill` answers), the references and skills each file names, no other relative link, no
+  Amazon-internal host or system name, every skill named by a card and every card's skills in the library,
+  `read_skill` on exactly the launchable cards with skills, and the coach's skills within its prompt's share.
+- **Agents → Skills → Library** (`SkillLibrary.tsx`, `SkillLibraryDetail.tsx`, `SkillLibraryParts.tsx`,
+  `useSkillLibrary.ts`, `skillLibraryPaths.ts`, `documents/skillLibraryDocument.ts`): a Roles | Library switch; the
+  Library lists every skill with its description, source and licence, what was adapted and the roles that use it (each
+  linking to its Registry card); a skill opens at `/agents/skills/library/<name>` with its SKILL.md and each reference
+  (`…/<name>/references/<file>`) read through the shared document reader (Markdown, the front matter apart). Read from
+  `GET /agents/engineering/skill-library` (the list, without the texts) and `…/skill-library/<name>?reference=`
+  (a SKILL.md or one reference file; 400 for a malformed name or reference, 404 for none), administrators only, from
+  the bundle (`engineering/registry/library.py`; `api/engineeringSkillLibraryApi.ts`); the local mock serves both.
+- **"Uses skills" on a Registry card** (`Registry/CardFacts.tsx`): the library skills the card uses, each linking to
+  its Library page; none shown when it uses none. Every Registry card carries `skills` (a role's card its template's
+  when the skill version it runs has `read_skill`, Learn's card always; a made card its base role's, the same way).
+- **`npm run images:build -- <language> <tag> [--push] [--dry-run]`** (`voc-datalake/scripts/images-build.mjs`, from
+  the root or `voc-datalake/`): the documented `docker buildx build --platform linux/arm64` with its build arguments
+  (Mountpoint 1.25.0 with its arm64 sha256 and boto3 1.43.124 by default, each overridable by its environment
+  variable); a local image only, `voc-eng-<language>:<tag>`, unless `--push`, which takes the account from
+  `aws sts get-caller-identity` under `AWS_PROFILE` and the repository from the processing stack's outputs
+  (`PROCESSING_STACK`, default `VocProcessingStack`), refuses another account's repository, logs in to ECR with the
+  password on stdin and prints the pushed digest; `latest` and malformed tags are refused.
+- VocProcessingStack's outputs `EngineeringImageRepositoryJava`, `…Node`, `…Python` and `…Rust` (each repository's
+  URI, with `-c engineeringAgents=true` only): what `images:build --push` reads.
+
+### Changed
+
+- **The agent images moved** from `voc-datalake/engineering-images/` to
+  `voc-datalake/templates/orchestration/images/` (`common/`, `python/`, `node/`, `java/`, `rust/`, by `git mv`): the
+  Dockerfiles' `COPY` paths (the build context is still `voc-datalake/`), `docs/deployment.md`'s build commands,
+  `docs/autonomous-engineering.md`, the image tests, the audit allowlist's reasons, the Lambda assets' hash excludes
+  (`lambda-asset-excludes.ts`) and the comments that name the path. The images' contents are unchanged but for the
+  harness and the bundle.
+- New template versions of every role whose card names skills: builder 3, commit reviewer 4, final go 5, fixer 4,
+  gate runner 5, hunter 4, mapper 3, PR author 4, PR reviewer 4, understander 5, and Learn's card (the coach) 2. The
+  coordinator's and the committer's cards are unchanged (no skills), and keep their digests.
+
+### Upgrade notes
+
+- Rebuild and push the four images (`npm run images:build -- <language> <tag> --push`, a new tag each), then deploy
+  their digests (`-c engineeringImages`): until then the sessions run the old harness, without `read_skill` or the
+  library.
+- A scope that runs a stored skill version keeps it, without the library: it gets it once a person accepts the newer
+  template (Skills, "Template updated").
+
 ## [7.55.00] - 2026-11-18
 
 Feedback Forms become a form builder. A form is now a flow of questions (schema version 2): a welcome screen, 1 to

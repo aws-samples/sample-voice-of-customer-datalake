@@ -9,7 +9,7 @@
 import { ApiError, AuthError, ConfigError, serverReason } from '../../lib/errors'
 import type { StartRunRequest } from '../../api/engineeringRunsApi'
 
-/** The languages with an agent image (engineering-images/, `runtime/egress.py` REGISTRY_HOSTS). */
+/** The languages with an agent image (templates/orchestration/images/, `runtime/egress.py` REGISTRY_HOSTS). */
 export const RUN_LANGUAGES = ['java', 'node', 'python', 'rust'] as const
 export type RunLanguage = (typeof RUN_LANGUAGES)[number]
 /** The longest goal (shared/engineering_agent_runs.py MAX_RUN_GOAL): longer is refused, never cut. */

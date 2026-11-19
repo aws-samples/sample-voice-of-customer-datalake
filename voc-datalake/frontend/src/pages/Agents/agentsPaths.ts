@@ -3,7 +3,8 @@
  *
  * - Agent orchestration's tabs (7.52.00 C1), in their order: Automations `/agents`, Runs `/agents/runs` (7.51.00, the
  *   engineering runs), Skills `/agents/skills` (a role's history `/agents/skills/<role>`, one version
- *   `/agents/skills/<role>/versions/<n>`: 7.52.00 C3, was `/v/<n>`, a pre-release change), Spend `/agents/spend`, Flows
+ *   `/agents/skills/<role>/versions/<n>`: 7.52.00 C3, was `/v/<n>`, a pre-release change; its Library
+ *   `/agents/skills/library[/…]`, 7.56.00, whose places are skillLibraryPaths.ts'), Spend `/agents/spend`, Flows
  *   `/agents/workflows`, Registry `/agents/registry` (its own places under it are its page's: 7.52.00 C3) and
  *   Connections `/agents/connections` (the paths of before are kept, D52-1; none is aliased);
  * - one agent's tabs: `/agents/<id>/<tab>` (`/agents/<id>` is Settings);
@@ -48,6 +49,9 @@ export interface AgentsPlace {
 }
 
 const LIST: AgentsPlace = { view: 'agents', role: null, version: null }
+/** The Skills tab's Library (7.56.00): `/agents/skills/library`, every place under it its own (skillLibraryPaths.ts);
+ * no role is named `library` (lambda/engineering/connectors/identity.py AGENT_ROLES). */
+export const LIBRARY_SEGMENT = 'library'
 const VERSION_SEGMENT = 'versions'
 const POSITIVE_INTEGER = /^[1-9]\d{0,5}$/
 
@@ -68,6 +72,7 @@ export function agentsPath(place: Pick<AgentsPlace, 'view'> & Partial<AgentsPlac
 function skillsPlace(rest: readonly string[]): { readonly place: AgentsPlace; readonly own: boolean } {
   const [role, marker, number, ...extra] = rest
   if (role === undefined) return { place: { ...LIST, view: 'skills' }, own: true }
+  if (role === LIBRARY_SEGMENT) return { place: { ...LIST, view: 'skills', role }, own: true }
   const versioned = marker === VERSION_SEGMENT && number !== undefined && POSITIVE_INTEGER.test(number)
   const place: AgentsPlace = { view: 'skills', role, version: versioned ? Number(number) : null }
   return { place, own: extra.length === 0 && (marker === undefined || versioned) }

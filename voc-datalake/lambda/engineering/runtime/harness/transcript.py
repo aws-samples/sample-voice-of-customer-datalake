@@ -48,7 +48,7 @@ MAX_CHUNK: Final = 9_999
 TOOL_KINDS: Final = {
     'read_file': 'read', 'list_files': 'read', 'read_board': 'read', 'read_flow': 'read', 'read_gate_record': 'read',
     'read_findings': 'read', 'read_knowledge': 'fetch', 'read_issue': 'fetch', 'write_file': 'edit', 'run': 'execute',
-    'install_dependencies': 'execute', 'run_gate': 'execute',
+    'install_dependencies': 'execute', 'run_gate': 'execute', 'read_skill': 'read',
 }
 #: A tool call's statuses as ACP names them (``tool_call_update``'s ``status``).
 TOOL_STATUSES: Final = ('pending', 'in_progress', 'completed', 'failed')

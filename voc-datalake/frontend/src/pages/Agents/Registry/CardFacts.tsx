@@ -2,8 +2,9 @@
  * @fileoverview A Registry card's facts, read only (part 5 "From the card"; §6.4 [52] step 6): a definition list in
  * body text, never disabled inputs. Its skill version and where it came from (the template's in `badge-info`, the
  * coach's in `aim`; "Update available" when the template is newer), linking to that version's document in Skills; its
- * model, tools, harness and caps; what it reads and writes; its gate packs; its scorecard on a connection and the
- * month's spend; and for a card made from a skill, who made it and when.
+ * model, tools, harness and caps; the library skills its role uses (7.56.00), each linking to its page in Skills →
+ * Library; what it reads and writes; its gate packs; its scorecard on a connection and the month's spend; and for a
+ * card made from a skill, who made it and when.
  *
  * @module pages/Agents/Registry/CardFacts
  */
@@ -11,6 +12,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { isSkillRole } from '../../../api/engineeringSkillsApi'
 import { agentsPath } from '../agentsPaths'
+import { libraryPath } from '../skillLibraryPaths'
 import { useSkillFormats } from '../skillFormats'
 import { SkillLine } from './RegistryCards'
 import type { TFunction } from 'i18next'
@@ -63,6 +65,21 @@ function SkillFact({ card }: Readonly<{ card: RegistryCard }>) {
   )
 }
 
+/** The library skills the card's role uses, each linking to its page in Skills → Library; nothing for none. */
+function SkillsFact({ skills }: Readonly<{ skills: readonly string[] }>) {
+  const { t } = useTranslation('agents')
+  if (skills.length === 0) return null
+  return (
+    <Fact term={t('registry.card.usesSkills')}>
+      <ul aria-label={t('registry.card.usesSkills')} className="flex flex-wrap gap-x-2 gap-y-1">
+        {skills.map((name) => (
+          <li key={name}><Link to={libraryPath({ skill: name })} className="link font-mono">{name}</Link></li>
+        ))}
+      </ul>
+    </Fact>
+  )
+}
+
 /** "bug (from hunter.post_subtask, required)", "patch (submitted_patch, recorded on task)". */
 function ioText(io: CardIo, t: TFunction<'agents'>): string {
   const parts = [
@@ -111,6 +128,7 @@ export function CardFacts({ card }: Readonly<{ card: RegistryCard }>) {
       <SkillFact card={card} />
       <Fact term={t('registry.card.model')}><span className="font-mono">{card.model}</span></Fact>
       <Fact term={t('registry.card.tools')}><span className="font-mono">{card.tools.join(', ')}</span></Fact>
+      <SkillsFact skills={card.skills} />
       <Fact term={t('registry.card.harness')}><span className="font-mono">{card.harness}</span></Fact>
       <Fact term={t('registry.card.caps')}>
         {caps.length === 0 ? <span className="text-muted">—</span>

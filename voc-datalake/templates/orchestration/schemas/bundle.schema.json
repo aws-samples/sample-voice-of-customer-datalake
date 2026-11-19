@@ -6,7 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "note", "source_digest", "platform_rules", "agents", "flows", "automations", "gates", "evals",
-               "sources"],
+               "sources", "library"],
   "properties": {
     "schema": {"const": "voc-orchestration-bundle/1"},
     "note": {"type": "string"},
@@ -79,6 +79,27 @@
                  "enum": ["bug", "feature", "review", "triage"]}
       }
     }},
+    "library": {
+      "description": "7.56.00: the skills library (skills/<name>/), by name: each skill's front matter, its SKILL.md (text, front matter included), its reference files, and the roles whose cards name it (in role order). The harness's read_skill answers from it; the app's Skills → Library reads it (GET /agents/engineering/skill-library).",
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "description", "source", "license", "adapted", "path", "digest", "bytes", "text", "roles",
+                     "references"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$"}, "description": {"type": "string"},
+          "source": {"type": "string"}, "license": {"type": "string"}, "adapted": {"type": "string"},
+          "path": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}, "bytes": {"type": "integer"},
+          "text": {"type": "string", "minLength": 1},
+          "roles": {"type": "array", "items": {"type": "string"}},
+          "references": {"type": "array", "items": {
+            "type": "object", "additionalProperties": false, "required": ["path", "digest", "bytes", "text"],
+            "properties": {"path": {"type": "string", "pattern": "^references/[A-Za-z0-9][A-Za-z0-9_.-]*\\.md$"},
+                           "digest": {"$ref": "#/$defs/digest"}, "bytes": {"type": "integer"},
+                           "text": {"type": "string", "minLength": 1}}
+          }}
+        }
+      }
+    },
     "sources": {
       "description": "7.52.00: each template's source text as the repository holds it, for the app's read-only source view (GET /agents/engineering/templates/<kind>/<id>/source): a role's SKILL.md (kind skill) and agent.yaml (card), a flow's YAML (flow). A gate brief's text is gates.briefs'.",
       "type": "array", "items": {
@@ -140,7 +161,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["id", "version", "label", "digest", "purpose", "harness", "model", "tools", "pending_tools",
                    "broker_ops", "pending_broker_ops", "caps", "trust", "inputs", "outputs", "evals", "allowed_tools",
-                   "skill"],
+                   "skills", "skill"],
       "properties": {
         "allowed_tools": {"description": "Every tool the role may have (role_specs), whatever a skill names: a Registry card's tools are a subset of these (7.52.00). Not in the digest.",
                           "type": "array", "items": {"type": "string"}},
@@ -162,6 +183,8 @@
         "inputs": {"type": "array"},
         "outputs": {"type": "array"},
         "evals": {"type": "array", "items": {"type": "string"}},
+        "skills": {"description": "7.56.00: the library skills the card names (the bundle's library), [] for none.",
+                   "type": "array", "items": {"type": "string"}},
         "skill": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/skill_record"}]}
       }
     },

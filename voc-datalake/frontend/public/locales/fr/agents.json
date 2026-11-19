@@ -1324,6 +1324,29 @@
     "rolesFailed": "Les compétences n’ont pas pu être chargées. Réessayez dans un instant.",
     "emptyShared": "Aucune compétence partagée n’a encore de version. Les agents utilisent les compétences livrées avec cette version du produit.",
     "emptyConnection": "Cette connexion n’a pas de versions de compétence propres. Ses agents utilisent les compétences partagées.",
+    "library": {
+      "views": "Afficher",
+      "view": {
+        "roles": "Rôles",
+        "library": "Bibliothèque"
+      },
+      "hint": "Les compétences par défaut que cette version fournit aux agents d’ingénierie. Le prompt de chaque rôle liste les compétences que nomme sa carte, et l’agent en lit une avec read_skill quand elle convient à son étape. La bibliothèque est la même dans chaque périmètre.",
+      "loading": "Chargement de la bibliothèque…",
+      "failed": "La bibliothèque de compétences n’a pas pu être chargée. Réessayez dans un instant.",
+      "empty": "Cette version ne fournit aucune compétence de bibliothèque.",
+      "listLabel": "Compétences de la bibliothèque",
+      "open": "Ouvrir la compétence {{name}}",
+      "sourceLine": "Provenance : {{source}} · licence {{license}}",
+      "adaptedLine": "Adaptée : {{adapted}}",
+      "usedBy": "Utilisée par",
+      "usedByNone": "Aucun rôle ne l’utilise",
+      "back": "Toutes les compétences de la bibliothèque",
+      "missing": "La bibliothèque n’a pas de compétence {{name}}. Revenez à la bibliothèque et choisissez-en une autre.",
+      "files": "Fichiers",
+      "filesLabel": "Fichier à lire",
+      "fileMissing": "Cette compétence n’a pas de fichier {{file}}. Choisissez un autre de ses fichiers.",
+      "fileFailed": "Le fichier n’a pas pu être chargé. Réessayez dans un instant."
+    },
     "backToRoles": "Tous les rôles",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2680,6 +2703,7 @@
       "fromTemplate": "Issue du modèle v{{version}}",
       "model": "Modèle",
       "tools": "Outils",
+      "usesSkills": "Compétences utilisées",
       "harness": "Harness",
       "caps": "Limites",
       "inputs": "Lit",

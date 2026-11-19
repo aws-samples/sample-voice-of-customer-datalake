@@ -1827,7 +1827,7 @@ raw tool output.
 ## Runtime: one AgentCore session per agent
 
 *Partly built, not yet run against AWS* (voc-datalake/lambda/engineering/runtime, the images in
-voc-datalake/engineering-images, the stacks in voc-datalake/lib/stacks/engineering-runtime.ts and
+voc-datalake/templates/orchestration/images, the stacks in voc-datalake/lib/stacks/engineering-runtime.ts and
 engineering-agentcore.ts; deployed only with `-c engineeringAgents=true`; the harness inside each session is built
 too: it reaches the board and its inbox through the board API, and the broker through an interface that refuses until
 it is wired, below; the supervisor's own board and bus are wired).
@@ -1900,8 +1900,8 @@ filesystem resources"; a V2 runtime restores a snapshot taken at the first healt
 capabilities, `/proc/sys`, user namespaces, FUSE and seccomp are the probe's alone, and a change of the service's could
 change them. So the entry point assumes none of them: it checks at every start, and the runner reports what held.
 
-**The walls, whichever the container supports (7.50.03).** The entry point's `walls.sh` (engineering-images/common)
-tries the egress firewall first (iptables owner rules, as before 7.50.03, for a container where root has
+**The walls, whichever the container supports (7.50.03).** The entry point's `walls.sh`
+(templates/orchestration/images/common) tries the egress firewall first (iptables owner rules, as before 7.50.03, for a container where root has
 CAP_NET_ADMIN), and otherwise checks, for each of `unit` and `code`, the chain the runner will use: drop to the user,
 make a user and network namespace of its own, bring its loopback up, find no other interface up, drop every
 capability. It passes the runner `--egress-firewall --code-firewall`, or `--egress-namespaces` and
@@ -2739,6 +2739,42 @@ reaches the model as `<redacted>`.
 - `read_gate_record` and `read_findings` (final go): the gate runners' records of the tree it judges, and the run's
   findings at its commit, read through its role's own run prefix (`ReadCacheAndRun`, `ListRun`), as data.
 
+### The skills library (7.56.00)
+
+The roles share a library of skills, `voc-datalake/templates/orchestration/skills/<name>/` (a `SKILL.md` and its
+`references/<file>.md`): guidance for a kind of step, such as writing the failing test first, debugging from the
+evidence, a review's checklist, CDK or a knowledge doc. Each role's card names the ones it uses (`skills:`), and the
+compile puts the library and each card's list in the bundle (`library`, `agents[].skills`), which every image and Lambda
+ships ([templates/orchestration/README.md](../voc-datalake/templates/orchestration/README.md#the-skills-library-75600):
+who uses what, how to add a skill).
+
+- **Listed in the prompt.** After the role's own instructions and examples, the system prompt lists each of its library
+  skills by name and one-line description (`runtime/harness/library_tools.py` `listing`, from `converse_loop.
+  system_prompt`, which the CLI and Kiro adapters use too; the compiled Kiro configs carry the same lines). Only a
+  session whose tools have `read_skill` gets the list: a skill version stored before 7.56.00 does not, so it runs as
+  before until a person accepts the newer template (Skills, "Template updated").
+- **`read_skill(name, reference?)`** (every launchable role whose card names skills; the harness's tool registry,
+  `role_tools.ROLE_TOOLS`, so the Converse loop, the CLI's tool server and Kiro all get it): one of the role's own
+  skills, its SKILL.md or one of its reference files, as a DATA block with the session's fence, at most 40,000
+  characters (a longer text is cut, saying so; `orchestration:validate` holds every library file under it). Another
+  role's skill, a name that is no skill, or a reference the skill does not have, is a refusal that names the ones there
+  are. What a skill says is guidance for the task, read as data: it never changes the task, the tools, the gates or the
+  platform rules, and the listing says so.
+- **The coach.** Learn's card names `retrospective`, `skill-builder` and `skill-audit`. The coach makes one model call
+  with no tools, so its system prompt carries their bodies whole, below its rules and above its answer's shape
+  (`coach/prompt.py`, `coach-prompt/4`; at most 12,000 characters, within a coach call's worst-case input).
+- **In the app.** Agents → Skills → Library lists every skill with its description, source and licence, what was adapted
+  and the roles that use it, and reads its SKILL.md and references in the document reader
+  (`GET /agents/engineering/skill-library`, `…/skill-library/<name>?reference=references/<file>.md`, administrators
+  only, read from the bundle); a Registry card says which skills it uses ("Uses skills": its template's, when the skill
+  version it runs has `read_skill`).
+
+The first library (7.56.00) is 30 skills vendored from the ai-skill-factory plugin 2.0.0 (MIT,
+[THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md)): each SKILL.md names its source, its licence and what was
+adapted for these agents (their tools; no deploy, push, `gh`, web fetch, sub-agent or slash command; never an edit of CI
+definitions). `orchestration:validate` holds the library to its front matter, its files, references that resolve, and
+no Amazon-internal host or system name (the repository is public).
+
 ### Transcripts and the run's manifest (7.50.00)
 
 Each session writes its whole transcript under its own create-only keys, which its role alone may write (the agent
@@ -3077,8 +3113,8 @@ and partitions' management hosts and telemetry were refused, and the session wor
 needs that region's two hosts (a code change). The sessions' NAT, and any egress firewall in front of it, must admit
 them.
 
-**The image.** Every image installs kiro-cli 3.4.0 (`engineering-images/common/install-kiro.sh`: the musl build for
-arm64 from `https://prod.download.cli.kiro.dev/stable/3.4.0/`, checked against the sha256 Kiro publishes in its release
+**The image.** Every image installs kiro-cli 3.4.0 (`templates/orchestration/images/common/install-kiro.sh`: the musl
+build for arm64 from `https://prod.download.cli.kiro.dev/stable/3.4.0/`, checked against the sha256 Kiro publishes in its release
 index; one binary, root's, at `/usr/local/bin/kiro-cli`; its version in `/opt/voc/kiro/VERSION`), so a switch needs no
 other image. The runner reports it (`walls`' `kiro_cli`), the runtime records it with the language's walls
 (`WS#default#SANDBOX`), and the harness refuses a kiro-cli that is not the pinned version.

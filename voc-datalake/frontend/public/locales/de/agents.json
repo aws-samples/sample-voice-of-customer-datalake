@@ -1306,6 +1306,29 @@
     "rolesFailed": "Die Skills konnten nicht geladen werden. Versuchen Sie es gleich noch einmal.",
     "emptyShared": "Noch kein gemeinsamer Skill hat eine Version. Die Agenten nutzen die mit diesem Release ausgelieferten Skills.",
     "emptyConnection": "Diese Verbindung hat keine eigenen Skill-Versionen. Ihre Agenten nutzen die gemeinsamen Skills.",
+    "library": {
+      "views": "Anzeigen",
+      "view": {
+        "roles": "Rollen",
+        "library": "Bibliothek"
+      },
+      "hint": "Die Standard-Skills, die dieses Release für die Engineering-Agents mitbringt. Der Prompt jeder Rolle listet die Skills auf, die ihre Karte nennt, und der Agent liest einen mit read_skill, wenn er zu seinem Schritt passt. Die Bibliothek ist in jedem Bereich dieselbe.",
+      "loading": "Bibliothek wird geladen…",
+      "failed": "Die Skill-Bibliothek konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.",
+      "empty": "Dieses Release bringt keine Bibliotheks-Skills mit.",
+      "listLabel": "Bibliotheks-Skills",
+      "open": "Skill {{name}} öffnen",
+      "sourceLine": "Aus {{source}} · Lizenz {{license}}",
+      "adaptedLine": "Angepasst: {{adapted}}",
+      "usedBy": "Verwendet von",
+      "usedByNone": "Keine Rolle verwendet ihn",
+      "back": "Alle Bibliotheks-Skills",
+      "missing": "Die Bibliothek hat keinen Skill {{name}}. Gehen Sie zurück zur Bibliothek und wählen Sie einen anderen.",
+      "files": "Dateien",
+      "filesLabel": "Zu lesende Datei",
+      "fileMissing": "Dieser Skill hat keine Datei {{file}}. Wählen Sie eine andere seiner Dateien.",
+      "fileFailed": "Die Datei konnte nicht geladen werden. Versuchen Sie es gleich noch einmal."
+    },
     "backToRoles": "Alle Rollen",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2661,6 +2684,7 @@
       "fromTemplate": "Aus der Vorlage v{{version}}",
       "model": "Modell",
       "tools": "Werkzeuge",
+      "usesSkills": "Verwendet Skills",
       "harness": "Harness",
       "caps": "Limits",
       "inputs": "Liest",

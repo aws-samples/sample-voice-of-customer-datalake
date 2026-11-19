@@ -13,10 +13,12 @@ from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.harness import runner_client
 from engineering.runtime.interface import ROLES, SESSION_LIFE_SECONDS
 
-IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
+#: voc-datalake/, the images' build context; the images are its templates/orchestration/images (7.56.00).
+DATALAKE = Path(__file__).resolve().parents[4]
+IMAGES = DATALAKE / 'templates' / 'orchestration' / 'images'
 
 
-RUNTIME = IMAGES.parent / 'lambda' / 'engineering' / 'runtime'
+RUNTIME = DATALAKE / 'lambda' / 'engineering' / 'runtime'
 #: What the images run with their system python3 (3.11 on the Debian 12 based ones): the runner and the harness.
 SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'checkpoints.py', 'outputs.py',
                    'unit_runner.py')
@@ -106,7 +108,7 @@ def test_each_image_ships_the_harness_and_pins_boto3(language):
     connectors = ' '.join(f'lambda/engineering/connectors/{name}' for name in SHIPPED_CONNECTORS)
     assert f'COPY {connectors} /opt/voc/engineering/connectors/' in dockerfile
     assert 'COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harness/' in dockerfile
-    assert 'COPY engineering-images/common/harness.py /opt/voc/harness.py' in dockerfile
+    assert 'COPY templates/orchestration/images/common/harness.py /opt/voc/harness.py' in dockerfile
     assert 'ARG BOTO3_VERSION' in dockerfile
     assert '"$MOUNTPOINT_VERSION" "$MOUNTPOINT_SHA256" "$BOTO3_VERSION"' in dockerfile
 
@@ -129,7 +131,7 @@ def test_each_image_installs_the_shared_base_and_starts_through_the_shared_entry
     assert 'COPY lambda/engineering/runtime/unit_runner.py /opt/voc/unit_runner.py' in dockerfile
     assert 'ENTRYPOINT ["sh", "/opt/voc/entrypoint.sh"]' in dockerfile
     for hook in ('ready.sh', 'validate.sh'):
-        assert f'engineering-images/{language}/{hook}' in dockerfile
+        assert f'templates/orchestration/images/{language}/{hook}' in dockerfile
         assert (IMAGES / language / hook).read_text().startswith('#!/bin/sh\n')
 
 
@@ -206,8 +208,8 @@ def test_the_namespace_probe_is_the_runners_own_chain():
 
 @pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
 def test_each_image_ships_the_walls_script_beside_its_entry_point(language):
-    assert ('COPY engineering-images/common/entrypoint.sh engineering-images/common/walls.sh /opt/voc/'
-            in (IMAGES / language / 'Dockerfile').read_text())
+    assert ('COPY templates/orchestration/images/common/entrypoint.sh templates/orchestration/images/common/walls.sh '
+            '/opt/voc/' in (IMAGES / language / 'Dockerfile').read_text())
     assert unit_runner.RUNNER_PATH == '/opt/voc/unit_runner.py'
 
 
@@ -238,21 +240,21 @@ def test_every_hook_runs_from_a_directory_no_repository_can_write(language):
 
 
 def test_the_stack_has_an_execution_role_for_exactly_the_runtimes_agent_roles():
-    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
+    stack = (DATALAKE / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
     listed = re.search(r'const AGENT_ROLES = \[(.*?)\];', stack, re.DOTALL)
     assert listed is not None
     assert set(re.findall(r"'([a-z-]+)'", listed.group(1))) == set(ROLES)
 
 
 def test_the_stack_takes_an_image_for_exactly_the_languages_with_an_image():
-    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
+    stack = (DATALAKE / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
     listed = re.search(r'const IMAGE_LANGUAGES = \[(.*?)\];', stack, re.DOTALL)
     assert listed is not None
     assert set(re.findall(r"'([a-z]+)'", listed.group(1))) == set(REGISTRY_HOSTS)
 
 
 def test_the_stack_and_the_runtime_agree_on_the_rates_the_idle_timeout_and_the_session_life():
-    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
+    stack = (DATALAKE / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
     rates = re.search(r'DEFAULT_RATES: Readonly<Record<string, string>> = \{(.*?)\};', stack, re.DOTALL)
     assert rates is not None
     assert dict(re.findall(r"(\w+): '([0-9.]+)'", rates.group(1))) == caps.DEFAULT_RATES
@@ -284,7 +286,7 @@ def test_each_toolchain_is_pointed_at_the_dependency_steps_own_proxy():
     # Maven reads no HTTPS_PROXY: the Java image gives `code` settings that name the dependency step's proxy.
     dockerfile = (IMAGES / 'java' / 'Dockerfile').read_text()
     settings = (IMAGES / 'java' / 'maven-settings.xml').read_text()
-    assert 'COPY engineering-images/java/maven-settings.xml /home/code/.m2/settings.xml' in dockerfile
+    assert 'COPY templates/orchestration/images/java/maven-settings.xml /home/code/.m2/settings.xml' in dockerfile
     assert ('<host>127.0.0.1</host>' in settings, f'<port>{unit_runner.CODE_PROXY_PORT}</port>' in settings) == (
         True, True)
     # Node's fetch reads the proxy variables only when asked; pip, npm and cargo read them.
@@ -341,16 +343,16 @@ def _copy_sources(dockerfile: str) -> list[str]:
 
 
 def _in_context(source: str) -> bool:
-    return any(IMAGES.parent.glob(source.rstrip('/'))) if '*' in source else (IMAGES.parent / source).exists()
+    return any(DATALAKE.glob(source.rstrip('/'))) if '*' in source else (DATALAKE / source).exists()
 
 
 def _pack_images() -> dict[str, dict[str, str]]:
     """Each gate pack's ``[image]`` (toolchain to version): its manifest under templates/orchestration/gates once item A
     moves the packs there, else the committed bundle's gates (the same manifests, compiled)."""
-    manifests = sorted((IMAGES.parent / 'templates' / 'orchestration' / 'gates').glob('*/manifest.toml'))
+    manifests = sorted((DATALAKE / 'templates' / 'orchestration' / 'gates').glob('*/manifest.toml'))
     if manifests:
         return {path.parent.name: dict(tomllib.loads(path.read_text()).get('image', {})) for path in manifests}
-    bundle = json.loads((IMAGES.parent / 'templates' / 'orchestration' / 'bundle.json').read_text())
+    bundle = json.loads((DATALAKE / 'templates' / 'orchestration' / 'bundle.json').read_text())
     return {pack['id']: dict(pack['image']) for pack in bundle['gates']['packs']}
 
 

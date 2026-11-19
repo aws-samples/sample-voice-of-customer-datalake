@@ -65,7 +65,7 @@ def test_a_copy_passes_and_a_stale_or_missing_bundle_is_drift(copy: Path) -> Non
     ('agents/hunter/SKILL.md', 'name: hunter', 'name: Hunter', r'SKILL.md front matter: name'),
     # SKILL.md
     ('agents/fixer/SKILL.md', '## Rules', '## Constraints', r'its sections are Role, Reads'),
-    ('agents/fixer/SKILL.md', 'voc-template-version: 3', 'voc-template-version: 9', r"card's version 3"),
+    ('agents/fixer/SKILL.md', 'voc-template-version: 4', 'voc-template-version: 9', r"card's version 4"),
     ('agents/committer/SKILL.md', 'Push with `push_commit`', 'Push with `submit_work`',
      r'names tools its card does not list: submit_work'),
     ('agents/mapper/SKILL.md', '**When:** The shard holds', 'When: The shard holds', r'is "\*\*When:\*\* \.\.\. \*\*Do:'),

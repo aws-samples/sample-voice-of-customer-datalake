@@ -1,6 +1,6 @@
 """Runs an agent's commands: in the local fake, and as the runner inside each toolchain image.
 
-Standard library only, so the images copy this one file (engineering-images/*/Dockerfile) and run it as
+Standard library only, so the images copy this one file (templates/orchestration/images/*/Dockerfile) and run it as
 their entry point: the container of an AgentCore Runtime session (each session its own microVM). On port 8080 it
 answers what the service calls, behind the service's own IAM authentication:
 
@@ -35,8 +35,8 @@ held inside one call's 3,600 seconds):
   scrubbed.
 
 Egress: the agent (user ``unit``) and the dependency step (``code`` with network) reach nothing but the runner and its
-egress proxy, behind whichever wall the container supports (the entry point chooses, ``engineering-images/common/
-walls.sh``):
+egress proxy, behind whichever wall the container supports (the entry point chooses,
+``templates/orchestration/images/common/walls.sh``):
 
 - **the firewall** (``--egress-firewall``, ``--code-firewall``): iptables owner rules, first in OUTPUT, keep each user
   to its ports on the container's loopback. It needs CAP_NET_ADMIN, which AgentCore Runtime does not give (2026-11-17).
@@ -122,8 +122,8 @@ PROXY_IDLE_SECONDS: Final = 15 * 60
 MAX_PROXY_HEADER_BYTES: Final = 8 * 1024
 MASK: Final = '[masked]'
 MOUNT_POINT: Final = '/mnt/voc-cache'
-#: The tools root runs, by absolute path (engineering-images/common/install-base.sh installs them): never looked up
-#: on a PATH, which may hold a directory the `code` user can write (a toolchain's bin directory).
+#: The tools root runs, by absolute path (templates/orchestration/images/common/install-base.sh installs them): never
+#: looked up on a PATH, which may hold a directory the `code` user can write (a toolchain's bin directory).
 MOUNT_S3: Final = '/usr/bin/mount-s3'
 SETPRIV: Final = '/usr/bin/setpriv'
 UNSHARE: Final = '/usr/bin/unshare'
@@ -135,8 +135,8 @@ PYTHON: Final = '/usr/bin/python3'
 RUNNER_PATH: Final = '/opt/voc/unit_runner.py'
 #: The namespaces' Unix sockets (``Namespaces``): a root-owned directory of their own, made at the session's start.
 SOCKET_DIR: Final = '/run/voc-net'
-#: The kiro-cli version the image installed (7.53.00, engineering-images/common/install-kiro.sh writes it, root-owned,
-#: after the archive's sha256 matched): what ``walls`` reports as ``kiro_cli`` ('' for an image without it).
+#: The kiro-cli version the image installed (7.53.00, templates/orchestration/images/common/install-kiro.sh writes it,
+#: root-owned, after the archive's sha256 matched): what ``walls`` reports as ``kiro_cli`` ('' for an image without it).
 KIRO_VERSION_FILE: Final = '/opt/voc/kiro/VERSION'
 KIRO_VERSION_RE: Final = re.compile(r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}\Z')
 
@@ -155,7 +155,7 @@ EGRESS_WALLS: Final = ('iptables', 'namespaces')
 HARDLINK_GUARDS: Final = ('own_device', 'protected_hardlinks')
 #: What a bare ``--hardlink-guard`` says: one holds, unnamed (an entry point from before 7.50.03).
 DECLARED_GUARD: Final = 'declared'
-#: The `code` user's home (engineering-images/common/install-base.sh).
+#: The `code` user's home (templates/orchestration/images/common/install-base.sh).
 CODE_HOME: Final = '/home/code'
 #: Repository code shares the checkout's working tree with the group `work`; nothing the agent writes is ever
 #: writable by `code` (the checkout opens only the working tree to the group, checkout.py).
@@ -1272,7 +1272,7 @@ def _forward_main(argv: list[str]) -> int:
 
 
 def main(argv: list[str]) -> ThreadingHTTPServer:
-    """The image's runner, from its entry point's arguments (engineering-images/common/entrypoint.sh)."""
+    """The image's runner, from its entry point's arguments (templates/orchestration/images/common/entrypoint.sh)."""
     args, runner = build(argv)
     if args.sandbox:
         threading.Thread(target=_watch_lapse, args=(runner,), daemon=True).start()

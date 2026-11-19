@@ -59,6 +59,7 @@
     "cdk:bootstrap": "npm run cdk --prefix voc-datalake -- bootstrap",
     "deploy:infra": "bash voc-datalake/scripts/cdk-deploy.sh --all --require-approval never",
     "deploy:frontend": "npm run deploy:frontend --prefix voc-datalake/frontend",
+    "images:build": "node voc-datalake/scripts/images-build.mjs",
     "deploy:all": "npm run check && npm run deploy:infra && npm run deploy:frontend",
     "destroy": "npm run cdk --prefix voc-datalake -- destroy --all"
   },

@@ -10,7 +10,7 @@ import pytest
 from engineering.runtime.egress import REGISTRY_HOSTS
 
 BUNDLE = Path(__file__).resolve().parents[4] / 'templates' / 'orchestration' / 'bundle.json'
-#: The gate packs each image carries the toolchains of (engineering-images/*/Dockerfile).
+#: The gate packs each image carries the toolchains of (templates/orchestration/images/*/Dockerfile).
 IMAGE_PACKS = {'python': ('python', 'typescript'), 'node': ('typescript',), 'rust': ('rust', 'typescript'),
                'java': ('java',)}
 

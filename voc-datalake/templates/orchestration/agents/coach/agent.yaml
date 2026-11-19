@@ -3,7 +3,7 @@
 # skill proposals, each naming the eval case it should gain on (the benchmark gate, then an administrator's accept).
 schema: voc-agent-card/1
 id: coach
-version: 1
+version: 2
 purpose: Learns from a finished run - its retrospective, the roles' lessons and the coach's skill proposals, each naming its eval case.
 harness: learn
 model: {id: global.anthropic.claude-opus-5-5}
@@ -16,6 +16,7 @@ outputs:
   - {name: lessons, kind: lesson_draft, recorded_on: skills}
   - {name: proposals, kind: skill_proposal, recorded_on: skills}
 tools: []
+skills: [retrospective, skill-builder, skill-audit]
 broker_ops: []
 caps: {}
 trust: {untrusted: [transcripts, board, repository, command_output], fence: nonce}

@@ -28,7 +28,9 @@ from engineering.test.test_readiness import Ports as ReadyPorts
 
 FIXER = SKILLS['fixer']
 
-IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
+#: voc-datalake/; the images are its templates/orchestration/images (7.56.00).
+DATALAKE = Path(__file__).resolve().parents[4]
+IMAGES = DATALAKE / 'templates' / 'orchestration' / 'images'
 PARAMETER = '/voc/engineering/_kiro/api-key'
 KIRO_ENV = {harness_switch.HARNESS_ENV: 'kiro', harness_switch.KEY_PARAMETER_ENV: PARAMETER}
 
@@ -342,7 +344,7 @@ def test_the_tool_server_drops_any_kiro_key_from_its_own_environment(monkeypatch
 
 
 def test_the_compiled_configs_are_what_the_harness_reads():
-    configs = sorted(path.stem for path in (IMAGES.parent / 'templates' / 'orchestration' / 'kiro-agents').glob('*.json'))
+    configs = sorted(path.stem for path in (DATALAKE / 'templates' / 'orchestration' / 'kiro-agents').glob('*.json'))
     assert configs == sorted(harness_switch.KIRO_ROLES)
-    assert json.loads((IMAGES.parent / 'templates' / 'orchestration' / 'kiro-agents' / 'fixer.json').read_text())[
+    assert json.loads((DATALAKE / 'templates' / 'orchestration' / 'kiro-agents' / 'fixer.json').read_text())[
         'tools'] == ['@voc']

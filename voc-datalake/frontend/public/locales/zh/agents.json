@@ -1306,6 +1306,29 @@
     "rolesFailed": "无法加载技能。请稍后重试。",
     "emptyShared": "还没有任何共享技能有版本。智能体使用本次发布附带的技能。",
     "emptyConnection": "此连接没有自有的技能版本。其智能体使用共享技能。",
+    "library": {
+      "views": "显示",
+      "view": {
+        "roles": "角色",
+        "library": "库"
+      },
+      "hint": "本版本为工程代理提供的默认技能。每个角色的提示词会列出其卡片指定的技能，代理在技能适合当前步骤时用 read_skill 读取。技能库在每个范围中都相同。",
+      "loading": "正在加载技能库…",
+      "failed": "无法加载技能库。请稍后重试。",
+      "empty": "本版本没有提供技能库中的技能。",
+      "listLabel": "技能库中的技能",
+      "open": "打开技能 {{name}}",
+      "sourceLine": "来源 {{source}} · 许可证 {{license}}",
+      "adaptedLine": "改动：{{adapted}}",
+      "usedBy": "使用它的角色",
+      "usedByNone": "没有角色使用它",
+      "back": "技能库中的所有技能",
+      "missing": "技能库中没有技能 {{name}}。请返回技能库并选择其他技能。",
+      "files": "文件",
+      "filesLabel": "要阅读的文件",
+      "fileMissing": "此技能没有文件 {{file}}。请选择它的其他文件。",
+      "fileFailed": "无法加载该文件。请稍后重试。"
+    },
     "backToRoles": "所有角色",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2661,6 +2684,7 @@
       "fromTemplate": "来自模板 v{{version}}",
       "model": "模型",
       "tools": "工具",
+      "usesSkills": "使用的技能",
       "harness": "Harness",
       "caps": "上限",
       "inputs": "读取",

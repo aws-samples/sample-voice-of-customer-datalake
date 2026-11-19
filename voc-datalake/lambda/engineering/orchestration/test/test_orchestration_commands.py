@@ -83,30 +83,33 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
     shutil.copytree(ROOT, root)
     write(render(compile_bundle(load(root))), root)
     assert promote.promote(root) == ()   # (every card's pending tools and broker operations are promoted already)
-    # Two cards as they were before the platform offered what they had pending (7.50.00's promotion undone).
+    # Two cards as they were before the platform offered what they had pending (the fixer's 7.56.00 promotion of
+    # read_skill and the understander's 7.50.00 one undone).
     _replace(root / 'agents' / 'fixer' / 'agent.yaml', {
-        'submit_work, read_issue, report_progress,': 'submit_work, report_progress,',
-        'broker_ops: [read]\n': 'pending_tools: [read_issue]\nbroker_ops: [read]\n'})
+        'submit_work, read_issue, read_skill,\n': 'submit_work, read_issue,\n',
+        'broker_ops: [read]\n': 'pending_tools: [read_skill]\nbroker_ops: [read]\n'})
     _replace(root / 'agents' / 'understander' / 'agent.yaml', {
         ('tools: [read_file, list_files, read_issue, write_triage, post_comment, label_issue, read_tenets, '
-         'write_tenets,\n        report_progress, save_checkpoint, finish]\nbroker_ops: [read, post_comment, '
+         'write_tenets,\n        read_skill, report_progress, save_checkpoint, finish]\n'
+         'skills: [understand-plan, understand-docs, technical-writing]\nbroker_ops: [read, post_comment, '
          'label_issue]\n'): (
-            'tools: [read_file, list_files, read_tenets, write_tenets, report_progress, save_checkpoint, finish]\n'
-            'pending_tools: [read_issue, write_triage, post_comment, label_issue]\n'
+            'tools: [read_file, list_files, read_tenets, write_tenets, read_skill, report_progress, save_checkpoint, '
+            'finish]\npending_tools: [read_issue, write_triage, post_comment, label_issue]\n'
+            'skills: [understand-plan, understand-docs, technical-writing]\n'
             'broker_ops: [read, post_comment]\npending_broker_ops: [label_issue]\n')})
-    # The harness offers the fixer its read_issue but not yet the understander its four tools; the broker grants the
+    # The harness offers the fixer its read_skill but not yet the understander its four tools; the broker grants the
     # understander label_issue.
     triage = {'read_issue', 'write_triage', 'post_comment', 'label_issue'}
     monkeypatch.setattr(promote, 'role_specs', lambda role: tuple(
         spec for spec in tools.role_specs(role) if role != 'understander' or spec.name not in triage))
     moved = promote.promote(root)
     assert [str(item) for item in moved] == [
-        'fixer: tool read_issue (template version 3 -> 4)',
-        'understander: broker op label_issue (template version 4 -> 5)']
+        'fixer: tool read_skill (template version 4 -> 5)',
+        'understander: broker op label_issue (template version 5 -> 6)']
     fixer = read_yaml(root / 'agents' / 'fixer' / 'agent.yaml', root)
     assert (fixer['version'], fixer['tools'][-4:], 'pending_tools' in fixer) == (
-        4, ['read_issue', 'report_progress', 'save_checkpoint', 'finish'], False)
-    assert 'voc-template-version: 4' in (root / 'agents' / 'fixer' / 'SKILL.md').read_text(encoding='utf-8')
+        5, ['read_skill', 'report_progress', 'save_checkpoint', 'finish'], False)
+    assert 'voc-template-version: 5' in (root / 'agents' / 'fixer' / 'SKILL.md').read_text(encoding='utf-8')
     understander = read_yaml(root / 'agents' / 'understander' / 'agent.yaml', root)
     assert (understander['broker_ops'], 'pending_broker_ops' in understander) == (
         ['read', 'post_comment', 'label_issue'], False)
@@ -117,7 +120,7 @@ def test_promote_pending_moves_what_the_platform_now_offers_bumps_the_version_an
         encoding='utf-8')
     kiro = (root / 'kiro-agents' / 'fixer.json').read_text(encoding='utf-8')
     assert kiro == kiro_files(load(root))['fixer.json']
-    assert '@voc/read_issue' in json.loads(kiro)['allowedTools']
+    assert '@voc/read_skill' in json.loads(kiro)['allowedTools']
 
 
 def test_a_flow_list_wraps_under_its_first_value_and_a_key_can_go() -> None:
@@ -141,11 +144,11 @@ def test_a_dry_run_prints_the_flow_its_resolved_skills_and_the_gate_plan() -> No
     assert code == 0
     assert lines[0] == 'flow bug-hunt-and-fix v3: Bug hunt and fix'
     assert json.loads(lines[1])['schema'] == 'voc-workflow/2'
-    assert ('  board.fixer: fixer@latest -> fixer@template-3 (the template), global.anthropic.claude-sonnet-5-5, '
+    assert ('  board.fixer: fixer@latest -> fixer@template-4 (the template), global.anthropic.claude-sonnet-5-5, '
             'converse; tools read_file') in text
     # (every tool the cards had pending is the harness's now: the fixer's read_issue, the gate runner's run_gate)
-    assert 'submit_work, read_issue, report_progress' in text
-    assert 'write_gate_record, run_gate, report_progress' in text
+    assert 'submit_work, read_issue, read_skill, report_progress' in text
+    assert 'write_gate_record, run_gate, read_skill, report_progress' in text
     assert '; pending ' not in text
     assert f'gate plan on {DIVIDE}: packs python' in text
     assert '  [setup] py.install@.: ' in text

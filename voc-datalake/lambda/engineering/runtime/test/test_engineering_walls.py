@@ -1,6 +1,7 @@
-"""The image's walls (engineering-images/common/walls.sh, 7.50.03): its decision tree, walked with stub tools, and the
-runner each outcome makes (unit_runner.build): the firewall where iptables works, else the namespaces where each user
-can make its own, else nothing, and the runner then fails closed; the hard-link guard read, never written.
+"""The image's walls (templates/orchestration/images/common/walls.sh, 7.50.03): its decision tree, walked with stub
+tools, and the runner each outcome makes (unit_runner.build): the firewall where iptables works, else the namespaces
+where each user can make its own, else nothing, and the runner then fails closed; the hard-link guard read, never
+written.
 
 walls.sh names its tools in plain assignments at its top; the harness copies the script with only those lines
 pointing at stubs (in a directory of the test's own), and runs it with the system's /bin/sh.
@@ -19,7 +20,7 @@ import pytest
 from engineering.runtime import unit_runner
 from engineering.runtime.test.local_runtime import close_sockets
 
-WALLS = Path(__file__).resolve().parents[4] / 'engineering-images' / 'common' / 'walls.sh'
+WALLS = Path(__file__).resolve().parents[4] / 'templates' / 'orchestration' / 'images' / 'common' / 'walls.sh'
 #: A stub that logs its argv (one line per call, in $LOG) and answers as its scenario says.
 LOGGING = 'printf "%s\\n" "$(basename "$0") $*" >> "$LOG"\n'
 

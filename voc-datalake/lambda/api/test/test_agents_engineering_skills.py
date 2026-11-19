@@ -211,10 +211,10 @@ def test_by_default_the_scorecards_show_the_shipped_versions_only_never_the_stor
     _proposals(env, 6)   # (shared versions 1-7 in the store: their numbers are never offered as scorecards)
     env.score('fixer@2', '01JD0000000000000000000010', done=3)
     status, body = _call(lambda_context, 'GET', SCORES, query={'connection': CONN})
-    # (fixer ships as version 3 since 7.53.00, the compiled bundle's: the shipped one and the ones before it)
-    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [3, 2, 1], 'shipped', False)
+    # (fixer ships as version 4 since 7.56.00, the compiled bundle's: the shipped one and the ones before it)
+    assert (status, body['versions'], body['source'], body['scope_known']) == (200, [4, 3, 2, 1], 'shipped', False)
     assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [
-        (3, 'shipped', 0), (2, 'shipped', 1), (1, 'shipped', 0)]
+        (4, 'shipped', 0), (3, 'shipped', 0), (2, 'shipped', 1), (1, 'shipped', 0)]
     coordinator = _call(lambda_context, 'GET', '/agents/engineering/scorecards/coordinator', query={'connection': CONN})[1]
     # (it ships as version 7 since 7.54.00: the shipped one and the ones before it, at most DEFAULT_COMPARED)
     assert coordinator['versions'] == [7, 6, 5, 4, 3]

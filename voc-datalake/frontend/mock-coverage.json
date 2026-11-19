@@ -5902,6 +5902,29 @@
     ]
   },
   {
+    "file": "api/engineeringSkillLibraryApi.ts",
+    "method": "GET",
+    "call": "LIBRARY_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/skill-library"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSkillLibraryApi.ts",
+    "method": "GET",
+    "call": "filePath(name, reference)",
+    "probes": [
+      {
+        "path": "/agents/engineering/skill-library/tdd"
+      },
+      {
+        "path": "/agents/engineering/skill-library/tdd?reference=references%2Fsources.md"
+      }
+    ]
+  },
+  {
     "file": "api/engineeringKnowledgeApi.ts",
     "method": "GET",
     "call": "knowledgePath(connection)",

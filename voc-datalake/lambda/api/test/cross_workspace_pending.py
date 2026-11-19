@@ -257,6 +257,8 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/gates/briefs/<brief_id>',
         'GET /agents/engineering/registry',
         'GET /agents/engineering/registry/<card>',
+        'GET /agents/engineering/skill-library',
+        'GET /agents/engineering/skill-library/<name>',
         'GET /agents/engineering/templates/<kind>/<template_id>/source',
         'GET /workflows/<workflow_id>/expanded',
         'POST /agents/<agent_id>/pause',

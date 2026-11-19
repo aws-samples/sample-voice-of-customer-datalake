@@ -1324,6 +1324,29 @@
     "rolesFailed": "No se pudieron cargar las habilidades. Inténtalo de nuevo en un momento.",
     "emptyShared": "Ninguna habilidad compartida tiene versión todavía. Los agentes usan las habilidades incluidas en esta versión del producto.",
     "emptyConnection": "Esta conexión no tiene versiones de habilidad propias. Sus agentes usan las habilidades compartidas.",
+    "library": {
+      "views": "Mostrar",
+      "view": {
+        "roles": "Roles",
+        "library": "Biblioteca"
+      },
+      "hint": "Las habilidades predeterminadas que esta versión incluye para los agentes de ingeniería. El prompt de cada rol enumera las habilidades que nombra su tarjeta, y el agente lee una con read_skill cuando encaja con su paso. La biblioteca es la misma en todos los ámbitos.",
+      "loading": "Cargando la biblioteca…",
+      "failed": "No se pudo cargar la biblioteca de habilidades. Inténtalo de nuevo en un momento.",
+      "empty": "Esta versión no incluye habilidades de biblioteca.",
+      "listLabel": "Habilidades de la biblioteca",
+      "open": "Abrir la habilidad {{name}}",
+      "sourceLine": "De {{source}} · licencia {{license}}",
+      "adaptedLine": "Adaptada: {{adapted}}",
+      "usedBy": "La usa",
+      "usedByNone": "Ningún rol la usa",
+      "back": "Todas las habilidades de la biblioteca",
+      "missing": "La biblioteca no tiene la habilidad {{name}}. Vuelve a la biblioteca y elige otra.",
+      "files": "Archivos",
+      "filesLabel": "Archivo que leer",
+      "fileMissing": "Esta habilidad no tiene el archivo {{file}}. Elige otro de sus archivos.",
+      "fileFailed": "No se pudo cargar el archivo. Inténtalo de nuevo en un momento."
+    },
     "backToRoles": "Todos los roles",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2680,6 +2703,7 @@
       "fromTemplate": "De la plantilla v{{version}}",
       "model": "Modelo",
       "tools": "Herramientas",
+      "usesSkills": "Usa habilidades",
       "harness": "Harness",
       "caps": "Límites",
       "inputs": "Lee",

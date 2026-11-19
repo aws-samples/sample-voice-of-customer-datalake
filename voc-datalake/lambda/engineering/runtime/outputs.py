@@ -1,6 +1,6 @@
 """The shapes of an agent's outputs, in one home the harness and the readers share.
 
-The harness ships alone in the agents' images (engineering-images: no reader's module goes with it), and its
+The harness ships alone in the agents' images (templates/orchestration/images: no reader's module goes with it), and its
 ``role_tools`` write these outputs; the readers take the same values from here: a ``voc-finding/1`` line
 (workspace/findings.py), a ``voc-note/1`` line (knowledge/notes.py), a ``voc-gate-record/1`` record and its verdicts
 and severities (quality_gate/record.py, review.py), a package path as one workspace key segment

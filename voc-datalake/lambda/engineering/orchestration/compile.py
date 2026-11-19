@@ -22,6 +22,10 @@ What it makes of each source (``schema.py`` reads them):
   tools and its steps (every field of the manifest's), and ``gates.briefs`` the owner's briefs
   (``gates/briefs/<id>.md``: the packs each is the source of truth for, its text and its digest), with the
   repository's own gate (``own_gate``): what the Registry's Quality gates view shows, from the Lambdas' copy.
+- ``skills/<name>/`` (7.56.00, the skills library): ``library``, by name, each skill's front matter, its SKILL.md's
+  text, its ``references/<file>.md`` and the roles whose cards name it (``library_entry``); each agent's ``skills``
+  (its card's, in the digest only when it names any). A Kiro config's prompt lists the role's skills when its tools
+  have ``read_skill``, as the harness's system prompt does (``library_tools.with_library``).
 - ``sources`` (7.52.00): each template's source text, a role's ``SKILL.md`` and ``agent.yaml`` and each flow's YAML,
   with its path, digest and template version (``template_sources``): the app's read-only source view.
 
@@ -43,12 +47,21 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
 from engineering.orchestration.bundle import SCHEMA as BUNDLE_SCHEMA
-from engineering.orchestration.schema import ROOT, SkillText, read_skill, read_yaml, relative
+from engineering.orchestration.schema import (
+    LIBRARY,
+    ROOT,
+    LibrarySkill,
+    SkillText,
+    read_library_skill,
+    read_skill,
+    read_yaml,
+    relative,
+)
 from engineering.quality_gate.packs import (
     ALIASES,
     EMPTY_EXIT,
@@ -66,6 +79,7 @@ from engineering.quality_gate.packs import (
     load_packs,
 )
 from engineering.runtime.harness.cli import TOOL_SERVER
+from engineering.runtime.harness.library_tools import with_library
 from engineering.runtime.harness.skills import Example, Skill, skill_record
 from engineering.runtime.harness.tool_server import SERVER_NAME
 from engineering.runtime.harness.tools import role_specs
@@ -86,14 +100,15 @@ TERMINAL: Final = frozenset({'stop_at_pr', 'end'})
 #: The files a bundle is compiled from (its source digest covers them).
 SOURCE_GLOBS: Final = ('_shared/*.md', 'agents/*/agent.yaml', 'agents/*/SKILL.md', 'automations/*.yaml',
                        'evals/*/cases/*/case.json', 'flows/*.yaml', 'gates/*/manifest.toml', 'gates/briefs/*.md',
-                       'schemas/*.schema.json')
+                       'schemas/*.schema.json', f'{LIBRARY}/*/SKILL.md', f'{LIBRARY}/*/references/*.md')
 #: The briefs' folder also holds the notes that reconcile each pack with its brief: not a brief.
 BRIEF_NOTES: Final = 'RECONCILIATION'
 
 
 @dataclass(frozen=True)
 class Sources:
-    """Every source, read: the cards and skills by role, the flows and automations by id, the platform rules."""
+    """Every source, read: the cards and skills by role, the flows and automations by id, the platform rules and
+    (7.56.00) the skills library by name."""
 
     root: Path
     cards: Mapping[str, Mapping[str, Any]]
@@ -101,6 +116,7 @@ class Sources:
     flows: Mapping[str, Mapping[str, Any]]
     automations: Mapping[str, Mapping[str, Any]]
     platform_rules: str
+    library: Mapping[str, LibrarySkill] = field(default_factory=dict)
 
 
 def _by_id(paths: Iterable[Path], root: Path) -> dict[str, Mapping[str, Any]]:
@@ -111,10 +127,12 @@ def load(root: Path = ROOT) -> Sources:
     roles = sorted(path.name for path in (root / 'agents').iterdir() if path.is_dir())
     skills = {role: read_skill(root / 'agents' / role / 'SKILL.md', root)
               for role in roles if (root / 'agents' / role / 'SKILL.md').is_file()}
+    folders = sorted(path for path in (root / LIBRARY).glob('*') if path.is_dir()) if (root / LIBRARY).is_dir() else []
     return Sources(root=root, cards={role: read_yaml(root / 'agents' / role / 'agent.yaml', root) for role in roles},
                    skills=skills, flows=_by_id((root / 'flows').glob('*.yaml'), root),
                    automations=_by_id((root / 'automations').glob('*.yaml'), root),
-                   platform_rules=(root / '_shared' / 'PLATFORM_RULES.md').read_text(encoding='utf-8'))
+                   platform_rules=(root / '_shared' / 'PLATFORM_RULES.md').read_text(encoding='utf-8'),
+                   library={folder.name: read_library_skill(folder, root) for folder in folders})
 
 
 def digest(value: object) -> str:
@@ -145,10 +163,29 @@ def _agent(card: Mapping[str, Any], skill: SkillText | None) -> dict[str, Any]:
               'broker_ops': list(card['broker_ops']), 'pending_broker_ops': list(card.get('pending_broker_ops', [])),
               'caps': dict(card['caps']), 'trust': dict(card['trust']), 'inputs': list(card['inputs']),
               'outputs': list(card['outputs']), 'evals': list(card['evals'])}
+    # (7.56.00: the library skills the card names; in the digest only when it names any, so a card without skills keeps
+    # the digest its template version always had)
+    skills = list(card.get('skills', []))
+    digested = {**fields, **({'skills': skills} if skills else {})}
     # (7.52.00: every tool the role may have, for a Registry card's check; outside the digest, which is the template's)
     allowed = sorted(spec.name for spec in role_specs(str(card['id'])))
     return {'id': card['id'], 'version': card['version'], 'label': f'{card["id"]}@template-{card["version"]}',
-            'digest': digest({'card': fields, 'skill': record}), **fields, 'allowed_tools': allowed, 'skill': record}
+            'digest': digest({'card': digested, 'skill': record}), **fields, 'skills': skills,
+            'allowed_tools': allowed, 'skill': record}
+
+
+def library_entry(skill: LibrarySkill, cards: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """A library skill as the bundle carries it (7.56.00): its front matter, its SKILL.md's text (front matter
+    included), its reference files, and the roles whose cards name it, in the catalog's order."""
+    def text_of(text: str) -> dict[str, Any]:
+        raw = text.encode()
+        return {'digest': digest(raw), 'bytes': len(raw), 'text': text}
+
+    head = skill.front_matter
+    return {'name': skill.name, **{key: str(head[key]) for key in ('description', 'source', 'license', 'adapted')},
+            'path': f'{LIBRARY}/{skill.name}/SKILL.md', **text_of(skill.text),
+            'roles': [role for role in role_order(cards) if skill.name in cards[role].get('skills', [])],
+            'references': [{'path': path, **text_of(text)} for path, text in skill.references]}
 
 
 def role_order(roles: Iterable[str]) -> list[str]:
@@ -365,6 +402,8 @@ def compile_bundle(sources: Sources) -> dict[str, Any]:
         + [_flow(template, cases) for flow_id, template in sources.flows.items() if flow_id not in FLOW_ORDER],
         'automations': [_automation(sources.automations[name]) for name in sorted(sources.automations)],
         'gates': _gates(sources.root), 'evals': cases, 'sources': template_sources(sources),
+        # (7.56.00: the skills library, by name)
+        'library': [library_entry(sources.library[name], sources.cards) for name in sorted(sources.library)],
     }
 
 
@@ -431,20 +470,28 @@ def kiro_tools(card: Mapping[str, Any]) -> list[str]:
     return [str(tool) for tool in card['tools']]
 
 
-def kiro_prompt(platform_rules: str, skill: Skill) -> str:
-    """The platform rules, then the skill's instructions and examples: the harness's system prompt
+def kiro_prompt(platform_rules: str, skill: Skill, library: Sequence[Mapping[str, Any]] = ()) -> str:
+    """The platform rules, then the skill's instructions and examples, then (7.56.00) the role's library skills by
+    name and description when its tools have ``read_skill``: the harness's system prompt
     (``converse_loop.system_prompt``) without the session's fence line, which only a session has."""
-    return f'{platform_rules.strip()}\n\n{skill.system_prompt()}'
+    return with_library(f'{platform_rules.strip()}\n\n{skill.system_prompt()}', skill.tool_policy, library)
 
 
-def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str) -> dict[str, Any]:
+def role_library(card: Mapping[str, Any], library: Mapping[str, LibrarySkill]) -> list[dict[str, str]]:
+    """The library skills ``card`` names, in its order, each its name and description (what the prompt lists)."""
+    return [{'name': name, 'description': str(library[name].front_matter.get('description', ''))}
+            for name in card.get('skills', []) if name in library]
+
+
+def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str,
+               library: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
     """The role's Kiro agent config (v3 universal: ``tools`` and ``allowedTools`` for one engine, ``permissions`` for
     the other): the harness's tool server alone, each of the card's tools allowed without asking (an ``mcp`` allow
     rule, its match sorted, as ``kiro-cli agent upgrade`` derives it from ``allowedTools``), and nothing else allowed.
     No ``kiroUpgrade`` marker: it is machine-specific (scripts/ai-review/agent-guard.mjs)."""
     platform = kiro_tools(card)
     return {'name': card['id'], 'description': card['purpose'],
-            'prompt': kiro_prompt(platform_rules, skill_of(card, skill)),
+            'prompt': kiro_prompt(platform_rules, skill_of(card, skill), library),
             'tools': list(KIRO_TOOLS),
             'allowedTools': [f'@{SERVER_NAME}/{tool}' for tool in platform],
             'mcpServers': {SERVER_NAME: {'command': TOOL_SERVER[0], 'args': list(TOOL_SERVER[1:])}},
@@ -455,7 +502,8 @@ def kiro_agent(card: Mapping[str, Any], skill: SkillText, platform_rules: str) -
 
 def kiro_files(sources: Sources) -> dict[str, str]:
     """Every launchable role's Kiro agent config, rendered, by file name (the coach is never launched: none)."""
-    return {f'{role}.json': json.dumps(kiro_agent(sources.cards[role], sources.skills[role], sources.platform_rules),
+    return {f'{role}.json': json.dumps(kiro_agent(sources.cards[role], sources.skills[role], sources.platform_rules,
+                                                  role_library(sources.cards[role], sources.library)),
                                        indent=2, ensure_ascii=False) + '\n'
             for role in role_order(sources.cards)
             if sources.cards[role]['harness'] != 'learn' and role in sources.skills}

@@ -3,9 +3,10 @@
 ``voc-datalake/templates/orchestration/`` (its README) holds, per role, ``agents/<role>/agent.yaml`` (a
 ``voc-agent-card/1``) and ``SKILL.md`` (the Agent Skills format: front matter, then the sections ``REQUIRED_SECTIONS``
 in order); ``flows/<id>.yaml`` (``voc-flow-template/1``); ``automations/<id>.yaml`` (``voc-automation/1``); the gate
-packs under ``gates/``; the eval cases under ``evals/<flow>/cases/<case>/``; and ``_shared/PLATFORM_RULES.md``. The
-schemas are ``schemas/*.schema.json`` (draft 2020-12), each with a ``urn:voc-orchestration:<name>`` id so one can
-refer to another.
+packs under ``gates/``; the eval cases under ``evals/<flow>/cases/<case>/``; the skills library (7.56.00,
+``skills/<name>/SKILL.md`` and its ``references/<file>.md``: ``read_library_skill``); and
+``_shared/PLATFORM_RULES.md``. The schemas are ``schemas/*.schema.json`` (draft 2020-12), each with a
+``urn:voc-orchestration:<name>`` id so one can refer to another.
 
 The YAML is read with PyYAML's safe loader, refusing a key given twice (a silent override is how a template drifts
 from what its author meant). This module is the compiler's and the validator's (a development step: ``npm run
@@ -25,9 +26,14 @@ import yaml
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+from engineering.orchestration.bundle import REFERENCE_PATH
+
 #: voc-datalake/templates/orchestration (this file is voc-datalake/lambda/engineering/orchestration/schema.py).
 ROOT: Final = Path(__file__).resolve().parents[3] / 'templates' / 'orchestration'
-SCHEMA_NAMES: Final = ('agent-card', 'assertion', 'automation', 'bundle', 'flow', 'skill-frontmatter')
+SCHEMA_NAMES: Final = ('agent-card', 'assertion', 'automation', 'bundle', 'flow', 'library-skill', 'skill-frontmatter')
+#: The skills library's folder (7.56.00): ``skills/<name>/SKILL.md`` and its ``references/<file>.md``.
+LIBRARY: Final = 'skills'
+REFERENCES: Final = 'references'
 #: A SKILL.md's sections, in this order; everything above ``Examples`` is the record's instructions.
 REQUIRED_SECTIONS: Final = ('Role', 'Reads', 'Writes', 'Steps', 'Rules', 'When to stop', 'Examples')
 EXAMPLES: Final = 'Examples'
@@ -94,8 +100,8 @@ def _examples(text: str, where: str) -> tuple[tuple[str, str, str], ...]:
     return tuple(found)
 
 
-def read_skill(path: Path, root: Path = ROOT) -> SkillText:
-    """A role's SKILL.md: front matter (YAML), sections by their ``## `` headings, the examples under Examples."""
+def _front_matter(path: Path, root: Path) -> tuple[Mapping[str, Any], str]:
+    """A SKILL.md's front matter (YAML between two ``---`` lines, {} when it is not a mapping) and its body."""
     where = relative(path, root)
     match = _FRONT_MATTER.match(path.read_text(encoding='utf-8'))
     if match is None:
@@ -104,14 +110,46 @@ def read_skill(path: Path, root: Path = ROOT) -> SkillText:
         head = yaml.load(match['head'], Loader=_StrictLoader)  # noqa: S506 - a SafeLoader subclass
     except yaml.YAMLError as error:
         raise TemplateError(f'{where}: its front matter is not readable YAML ({error})') from error
-    body = match['body']
+    return (head if isinstance(head, Mapping) else {}), match['body']
+
+
+@dataclass(frozen=True)
+class LibrarySkill:
+    """A library skill (7.56.00, ``skills/<name>/``): its front matter, its SKILL.md's whole text, its reference files
+    (``references/<file>.md`` and text, by path) and any other file its folder holds (``stray``: none may)."""
+
+    name: str
+    front_matter: Mapping[str, Any]
+    text: str
+    references: tuple[tuple[str, str], ...]
+    stray: tuple[str, ...]
+
+
+def read_library_skill(folder: Path, root: Path = ROOT) -> LibrarySkill:
+    """``skills/<name>/`` read: SKILL.md (front matter and text) and each ``references/*.md``, by path."""
+    skill_file = folder / 'SKILL.md'
+    head, _body = _front_matter(skill_file, root)
+    files = sorted(path for path in folder.rglob('*') if path.is_file())
+    references = tuple((path.relative_to(folder).as_posix(), path.read_text(encoding='utf-8')) for path in files
+                       if REFERENCE_PATH.fullmatch(path.relative_to(folder).as_posix()))
+    known = {'SKILL.md', *(name for name, _text in references)}
+    return LibrarySkill(name=folder.name, front_matter=head, text=skill_file.read_text(encoding='utf-8'),
+                        references=references,
+                        stray=tuple(relative(path, root) for path in files
+                                    if path.relative_to(folder).as_posix() not in known))
+
+
+def read_skill(path: Path, root: Path = ROOT) -> SkillText:
+    """A role's SKILL.md: front matter (YAML), sections by their ``## `` headings, the examples under Examples."""
+    where = relative(path, root)
+    head, body = _front_matter(path, root)
     starts = list(_SECTION.finditer(body))
     sections = tuple((start['title'].strip(), body[start.end():end].strip())
                      for start, end in zip(starts, [s.start() for s in starts[1:]] + [len(body)], strict=True))
     titles = [title for title, _ in sections]
     examples_at = next((s.start() for s in starts if s['title'].strip() == EXAMPLES), len(body))
     examples = dict(sections).get(EXAMPLES, '')
-    return SkillText(front_matter=head if isinstance(head, Mapping) else {}, sections=sections,
+    return SkillText(front_matter=head, sections=sections,
                      instructions=body[:examples_at].strip(),
                      examples=_examples(examples, where) if EXAMPLES in titles else ())
 

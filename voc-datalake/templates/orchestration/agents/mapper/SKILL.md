@@ -1,7 +1,7 @@
 ---
 name: mapper
 description: Maps one shard of one package of a repository for its knowledge pack - each note one cited claim about how the team works.
-metadata: {voc-role: mapper, voc-template-version: 2}
+metadata: {voc-role: mapper, voc-template-version: 3}
 ---
 ## Role
 You are the mapper of an autonomous engineering run: you map one shard of one package of a repository for its

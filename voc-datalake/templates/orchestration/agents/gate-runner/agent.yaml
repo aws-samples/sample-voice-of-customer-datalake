@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: gate-runner
-version: 4
+version: 5
 purpose: Runs the quality gate's language packs on the submitted change's tree and records what they say.
 harness: converse
 model: {id: global.anthropic.claude-haiku-5-5}
@@ -10,8 +10,9 @@ inputs:
   - {name: checkout, from: checkout, required: true}
 outputs:
   - {name: gate_record, schema: voc-gate-record/1, recorded_on: task}
-tools: [read_file, list_files, run, install_dependencies, write_gate_record, run_gate, report_progress, save_checkpoint,
-        finish]
+tools: [read_file, list_files, run, install_dependencies, write_gate_record, run_gate, read_skill, report_progress,
+        save_checkpoint, finish]
+skills: [quality-gates, verification-before-completion]
 broker_ops: [read]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [repository, command_output], fence: nonce}

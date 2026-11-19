@@ -2,8 +2,10 @@
  * The engineering agents' sessions on Amazon Bedrock AgentCore Runtime, platform version V2 (VocProcessingStack, with
  * `-c engineeringAgents=true` only): docs/autonomous-engineering.md → Runtime.
  *
- * - One ECR repository per language image (engineering-images/), made with the flag: nothing runs from them until a
- *   deployment names a pushed image (`-c engineeringImages`). They bill only for the images stored in them.
+ * - One ECR repository per language image (templates/orchestration/images/), made with the flag: nothing runs from
+ *   them until a deployment names a pushed image (`-c engineeringImages`). They bill only for the images stored in
+ *   them. Each repository's URI is a stack output (`EngineeringImageRepository<Language>`, 7.56.00), which
+ *   `npm run images:build -- <language> <tag> --push` reads.
  * - Per language with an image, an AgentCore runtime of every agent's size (AgentCore's default: 2 vCPU and 8 GB,
  *   billed per second for the CPU used and the memory), and, with `-c engineeringBuildMemoryMiB=8192`, a build runtime
  *   for the roles that build and test (`-c engineeringBuildRoles`, the gate runner by default) whose resource
@@ -44,7 +46,8 @@ import { agentCoreTrust } from '../utils/agentcore-trust';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { agentCoreName } from '../utils/naming';
 
-/** The languages with an image (engineering-images/; runtime/egress.py REGISTRY_HOSTS: a Python test keeps them equal). */
+/** The languages with an image (templates/orchestration/images/; runtime/egress.py REGISTRY_HOSTS: a Python test keeps
+ *  them equal). */
 const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
 /** `-c engineeringImages='{"python":"<tag or sha256:digest>",…}'`: the pushed image per language; `{}` by default. */
 const IMAGES_CONTEXT = 'engineeringImages';
@@ -271,7 +274,7 @@ export class EngineeringAgentCore extends Construct {
   constructor(scope: Construct, id: string, props: AgentCoreProps) {
     super(scope, id);
     for (const language of IMAGE_LANGUAGES) {
-      this.repositories.set(language, new ecr.Repository(this, `${capitalize(language)}Images`, {
+      const repository = new ecr.Repository(this, `${capitalize(language)}Images`, {
         repositoryName: props.uniqueName(`voc-eng-${language}`),
         imageScanOnPush: true,
         imageTagMutability: ecr.TagMutability.IMMUTABLE,
@@ -281,7 +284,13 @@ export class EngineeringAgentCore extends Construct {
           tagStatus: ecr.TagStatus.UNTAGGED, maxImageCount: KEPT_IMAGES,
           description: `Expire untagged images past the newest ${KEPT_IMAGES}; tagged ones are kept`,
         }],
-      }));
+      });
+      this.repositories.set(language, repository);
+      // (7.56.00: where `npm run images:build -- <language> <tag> --push` pushes; on the stack, so its key is this name)
+      new cdk.CfnOutput(cdk.Stack.of(this), `EngineeringImageRepository${capitalize(language)}`, {
+        value: repository.repositoryUri,
+        description: `The ${language} engineering agent image's repository (npm run images:build -- ${language} <tag> --push)`,
+      });
     }
     const languages = runtimeLanguages(this);
     const network = agentNetwork(this);

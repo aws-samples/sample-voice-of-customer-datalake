@@ -1252,6 +1252,29 @@
     "rolesFailed": "The skills could not be loaded. Try again in a moment.",
     "emptyShared": "No shared skill has a version yet. The agents run the skills shipped with this release.",
     "emptyConnection": "This connection has no skill versions of its own. Its agents use the shared skills.",
+    "library": {
+      "views": "Show",
+      "view": {
+        "roles": "Roles",
+        "library": "Library"
+      },
+      "hint": "The default skills this release ships for the engineering agents. Each role’s prompt lists the skills its card names, and the agent reads one with read_skill when it fits its step. The library is the same in every scope.",
+      "loading": "Loading the library…",
+      "failed": "The skills library could not be loaded. Try again in a moment.",
+      "empty": "This release ships no library skills.",
+      "listLabel": "Library skills",
+      "open": "Open the skill {{name}}",
+      "sourceLine": "From {{source}} · licence {{license}}",
+      "adaptedLine": "Adapted: {{adapted}}",
+      "usedBy": "Used by",
+      "usedByNone": "No role uses it",
+      "back": "All library skills",
+      "missing": "The library has no skill {{name}}. Go back to the library and pick another.",
+      "files": "Files",
+      "filesLabel": "File to read",
+      "fileMissing": "This skill has no file {{file}}. Pick another of its files.",
+      "fileFailed": "The file could not be loaded. Try again in a moment."
+    },
     "backToRoles": "All roles",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2607,6 +2630,7 @@
       "fromTemplate": "From the template v{{version}}",
       "model": "Model",
       "tools": "Tools",
+      "usesSkills": "Uses skills",
       "harness": "Harness",
       "caps": "Caps",
       "inputs": "Reads",

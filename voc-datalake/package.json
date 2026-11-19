@@ -16,6 +16,7 @@
     "deploy": "bash scripts/cdk-deploy.sh --all",
     "deploy:api": "bash scripts/cdk-deploy.sh VocApiStack",
     "deploy:frontend": "npm run deploy:frontend --prefix frontend",
+    "images:build": "node scripts/images-build.mjs",
     "destroy": "cdk destroy --all",
     "generate:manifests": "ts-node scripts/generate-manifests.ts",
     "generate:menu": "ts-node scripts/generate-menu-config.ts",

@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: pr-author
-version: 3
+version: 4
 purpose: Writes the pull request's title and description from the run's reports and has the broker open it from the run's branch.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
@@ -10,7 +10,8 @@ inputs:
   - {name: issue, from: broker.read:issue, trust: data}
 outputs:
   - {name: pull_request, kind: pull_request, recorded_on: pull_request}
-tools: [read_file, list_files, open_draft_pr, read_issue, report_progress, save_checkpoint, finish]
+tools: [read_file, list_files, open_draft_pr, read_issue, read_skill, report_progress, save_checkpoint, finish]
+skills: [technical-writing]
 broker_ops: [read, open_or_update_draft_pr]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, board], fence: nonce}

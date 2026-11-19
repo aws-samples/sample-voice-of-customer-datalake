@@ -214,3 +214,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+Engineering agents' skills library (voc-datalake/templates/orchestration/skills, 7.56.00), vendored and adapted from a local copy of the ai-skill-factory Claude Code plugin (no public URL yet; the owner adds it when there is one). Each vendored SKILL.md names its origin in its front matter (`source: ai-skill-factory 2.0.0 (Amit Deol), skills/<name>`, `license: MIT`) and says what was changed (`adapted:`); each skill's `references/sources.md`, where it has one, keeps the upstream's own notes on the public works it draws on:
+ai-skill-factory 2.0.0, AI Skill Factory Contributors (author: Amit Deol) - MIT. Source URL: none published yet. Its licence, word for word:
+
+```
+MIT License
+
+Copyright (c) 2026 AI Skill Factory Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

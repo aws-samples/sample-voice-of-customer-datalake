@@ -84,6 +84,15 @@ describe('the agents\' sessions on AgentCore Runtime (-c engineeringAgents=true)
     expect([IDLE_TIMEOUT_SECONDS, MAX_LIFETIME_SECONDS]).toStrictEqual([3600, 8 * 3600]);
   });
 
+  it('names each language repository\'s URI in a stack output, which `npm run images:build -- … --push` reads', () => {
+    const outputs = bare.findOutputs('*');
+    expect(Object.keys(outputs).filter((key) => key.startsWith('EngineeringImage')).sort(byName)).toStrictEqual([
+      'EngineeringImageRepositoryJava',
+      'EngineeringImageRepositoryNode', 'EngineeringImageRepositoryPython', 'EngineeringImageRepositoryRust']);
+    expect(JSON.stringify(outputs.EngineeringImageRepositoryPython?.Value)).toMatch(/PythonImages/);
+    expect(JSON.stringify(outputs.EngineeringImageRepositoryPython?.Value)).toContain('.dkr.ecr.');
+  });
+
   it('runs the image named for its language, by digest or by tag, from its own repository', () => {
     const uri = (name: string) => JSON.stringify(runtimes(wired).get(name)?.AgentRuntimeArtifact);
     expect(uri('voc_eng_python')).toMatch(new RegExp(`PythonImages.*@${DIGEST}`));

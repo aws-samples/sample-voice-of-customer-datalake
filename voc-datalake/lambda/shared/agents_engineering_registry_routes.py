@@ -8,6 +8,8 @@
     GET  /agents/engineering/gates/briefs/<id>                   -> {id, path, packs, digest, bytes, text}
     GET  /agents/engineering/assertions                          -> {checks, on_fail, default_on_fail, max, roles}
     GET  /agents/engineering/templates/<kind>/<id>/source        -> {kind, id, path, text, digest, template_version}
+    GET  /agents/engineering/skill-library                       -> {skills: [...]} (7.56.00, without their text)
+    GET  /agents/engineering/skill-library/<name>?reference=     -> {name, reference, path, text, digest, bytes}
     GET  /workflows/<workflow_id>/expanded?revision=             -> {workflow_id, revision, definition, expansion, ...}
     POST /agents/<agent_id>/pause, POST /agents/<agent_id>/resume -> {agent}
 
@@ -35,6 +37,9 @@
   field (the rules a save holds them to, shared/workflow_engineering.py, mirrored by the editor).
 - **A template's source** (7.52.00's integration): a role's SKILL.md or agent.yaml, a flow's YAML or a gate brief,
   as the repository holds it, from the bundle (its ``sources``, ``gates.briefs``): the app's read-only source view.
+- **The skills library** (7.56.00): the skills the engineering agents read on demand (``read_skill``), from the bundle
+  (``library``): the list without the texts, then one skill's SKILL.md or one of its reference files
+  (engineering/registry/library.py), for Skills → Library; read only, the repository's as data.
 - **A flow's expansion** (``shared/flow_expand.py``): the flat flow a run of that revision would follow, with its
   calls expanded and recorded; 409 with the refusal (and its step) when a call cannot be expanded.
 - **Pause and resume** (``agents_store.set_paused``): an automation that is on, held: the heartbeat starts no run of
@@ -188,13 +193,15 @@ def get_engineering_registry():
     shared skills by default; the scorecards are a connection's), then the cards made from a skill."""
     _engineering_on()
     require_admin_caller(caller_from_event(app.current_event.raw_event))
+    from engineering.registry.library import with_skills
     from engineering.registry.views import RegistryViews
 
     connection, month = _connection(), _month()
 
     def read() -> dict[str, Any]:
-        cards = _role_cards(connection, month) + RegistryViews(*_engineering_client()).cards()
-        return {'month': month, 'connection': connection, 'cards': cards}
+        bundle = engineering_templates.bundle()
+        made = [with_skills(card, bundle) for card in RegistryViews(*_engineering_client()).cards()]
+        return {'month': month, 'connection': connection, 'cards': _role_cards(connection, month) + made}
     return _answered(read, 'the Registry could not be read: retry')
 
 
@@ -206,6 +213,7 @@ def get_engineering_registry_card(card: str):
     _engineering_on()
     require_admin_caller(caller_from_event(app.current_event.raw_event))
     from engineering.registry.cards import CARD_ID
+    from engineering.registry.library import with_skills
     from engineering.registry.views import RegistryViews
 
     roles = {template['id'] for template in engineering_templates.bundle()['agents']}
@@ -215,7 +223,12 @@ def get_engineering_registry_card(card: str):
                          'the Registry could not be read: retry')
     if not CARD_ID.fullmatch(card):
         raise NotFoundError(f'the Registry has no card {card[:64]}')
-    return _answered(lambda: RegistryViews(*_engineering_client()).card(card), 'the Registry could not be read: retry')
+
+    def read() -> dict[str, Any]:
+        found, bundle = RegistryViews(*_engineering_client()).card(card), engineering_templates.bundle()
+        return {**found, 'card': with_skills(found['card'], bundle),
+                'versions': [with_skills(version, bundle) for version in found['versions']]}
+    return _answered(read, 'the Registry could not be read: retry')
 
 
 @app.post('/agents/engineering/registry/cards')
@@ -237,6 +250,7 @@ def create_engineering_registry_card():
         check_request,
         compose,
     )
+    from engineering.registry.library import with_skills
     from engineering.skills.store import SkillStore
     from shared.model_config import ALLOWED_MODEL_IDS
 
@@ -261,7 +275,7 @@ def create_engineering_registry_card():
 
     record = _answered(make, 'the card could not be made: retry')
     logger.info('engineering: a Registry card made', extra={'card': record['id'], 'version': record['version']})
-    return _json(201, {'card': card_view(record)})
+    return _json(201, {'card': with_skills(card_view(record), engineering_templates.bundle())})
 
 
 def _newest_gate_record(connection: str) -> dict[str, Any] | None:
@@ -322,6 +336,39 @@ def get_engineering_template_source(kind: str, template_id: str):
     found = template_source(engineering_templates.bundle(), kind, template_id)
     if found is None:
         raise NotFoundError(f'no {kind} template {template_id[:64]}')
+    return found
+
+
+@app.get('/agents/engineering/skill-library')
+@tracer.capture_method(capture_response=False)
+def get_engineering_library_tools():
+    """The skills library without its text (7.56.00, Skills → Library): ``{skills: [{name, description, source,
+    license, adapted, path, digest, bytes, roles, references: [{path, digest, bytes}]}]}``."""
+    _engineering_on()
+    require_admin_caller(caller_from_event(app.current_event.raw_event))
+    from engineering.registry.library import library_view
+
+    return library_view(engineering_templates.bundle())
+
+
+@app.get('/agents/engineering/skill-library/<name>')
+@tracer.capture_method(capture_response=False)
+def get_engineering_library_skill(name: str):
+    """One library skill's SKILL.md, or with ``?reference=references/<file>.md`` one of its reference files:
+    ``{name, reference, path, text, digest, bytes}``; 400 for a malformed name or reference, 404 for none."""
+    _engineering_on()
+    require_admin_caller(caller_from_event(app.current_event.raw_event))
+    from engineering.orchestration.bundle import REFERENCE_PATH
+    from engineering.registry.library import SKILL_NAME, library_file
+
+    reference = _query('reference') or ''
+    if not SKILL_NAME.fullmatch(name):
+        raise ValidationError('name is a library skill\'s name (lowercase letters, digits and dashes)')
+    if reference and not REFERENCE_PATH.fullmatch(reference):
+        raise ValidationError('reference is one of the skill\'s reference files, references/<file>.md')
+    found = library_file(engineering_templates.bundle(), name, reference)
+    if found is None:
+        raise NotFoundError(f'no library skill {name}' + (f' reference {reference}' if reference else ''))
     return found
 
 

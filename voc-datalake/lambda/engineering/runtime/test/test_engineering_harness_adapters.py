@@ -12,6 +12,7 @@ from engineering.runtime.checkpoints import is_valid
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, CliNotOffered, choose_cli
 from engineering.runtime.harness.converse_loop import MAX_INPUT_TOKENS, SYSTEM_PROMPT, ConverseAdapter, system_prompt
 from engineering.runtime.harness.interface import PAUSED_EXIT_CODE
+from engineering.runtime.harness.library_tools import listing, own
 from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage
 from engineering.runtime.harness.skills import SKILLS, platform_rules
 from engineering.runtime.harness.tool_server import SessionFiles, answer, serve
@@ -36,10 +37,11 @@ def test_the_converse_loop_runs_the_tools_until_finish_and_counts_tokens(tmp_pat
                            [use('report_progress', 't2', step='found it'), use('finish', 't3', summary='fixed')]])
     assert ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
     first = bedrock.requests[0]
-    # The platform's rules with the session's fence, then the fixer's skill; a role with no skill (the coach) gets
-    # the platform's own after the rules.
+    # The platform's rules with the session's fence, then the fixer's skill and (7.56.00) its library skills' list; a
+    # role with no skill (the coach) gets the platform's own after the rules.
     fence = w.session.context.fence
-    assert first['system'] == [{'text': f'{platform_rules(fence)}\n\n{FIXER.system_prompt()}'}]
+    library = listing(own('fixer'))
+    assert first['system'] == [{'text': f'{platform_rules(fence)}\n\n{FIXER.system_prompt()}\n\n{library}'}]
     w.session.context.role = 'coach'
     assert system_prompt(w.session.context, None) == f'{platform_rules(fence)}\n\n{SYSTEM_PROMPT}'
     # (the bundle's rules, as the board served them, take the place of the harness's own)

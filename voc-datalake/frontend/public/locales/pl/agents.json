@@ -1377,6 +1377,29 @@
     "rolesFailed": "Nie udało się wczytać umiejętności. Spróbuj ponownie za chwilę.",
     "emptyShared": "Żadna wspólna umiejętność nie ma jeszcze wersji. Agenci korzystają z umiejętności dostarczonych z tym wydaniem.",
     "emptyConnection": "To połączenie nie ma własnych wersji umiejętności. Jego agenci korzystają ze wspólnych umiejętności.",
+    "library": {
+      "views": "Pokaż",
+      "view": {
+        "roles": "Role",
+        "library": "Biblioteka"
+      },
+      "hint": "Domyślne umiejętności, które to wydanie dostarcza agentom inżynierskim. Prompt każdej roli wymienia umiejętności wskazane na jej karcie, a agent czyta jedną z nich narzędziem read_skill, gdy pasuje do jego kroku. Biblioteka jest taka sama w każdym zakresie.",
+      "loading": "Wczytywanie biblioteki…",
+      "failed": "Nie udało się wczytać biblioteki umiejętności. Spróbuj ponownie za chwilę.",
+      "empty": "To wydanie nie dostarcza żadnych umiejętności bibliotecznych.",
+      "listLabel": "Umiejętności z biblioteki",
+      "open": "Otwórz umiejętność {{name}}",
+      "sourceLine": "Źródło: {{source}} · licencja {{license}}",
+      "adaptedLine": "Dostosowano: {{adapted}}",
+      "usedBy": "Używana przez",
+      "usedByNone": "Żadna rola jej nie używa",
+      "back": "Wszystkie umiejętności z biblioteki",
+      "missing": "Biblioteka nie ma umiejętności {{name}}. Wróć do biblioteki i wybierz inną.",
+      "files": "Pliki",
+      "filesLabel": "Plik do przeczytania",
+      "fileMissing": "Ta umiejętność nie ma pliku {{file}}. Wybierz inny z jej plików.",
+      "fileFailed": "Nie udało się wczytać pliku. Spróbuj ponownie za chwilę."
+    },
     "backToRoles": "Wszystkie role",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2748,6 +2771,7 @@
       "fromTemplate": "Z szablonu v{{version}}",
       "model": "Model",
       "tools": "Narzędzia",
+      "usesSkills": "Używa umiejętności",
       "harness": "Harness",
       "caps": "Limity",
       "inputs": "Czyta",

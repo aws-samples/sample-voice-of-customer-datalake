@@ -87,9 +87,12 @@ def test_every_launchable_role_has_a_record_the_harness_reads_back_and_the_coach
         assert skill.to_record() == agent['skill']
         assert skill_label(skill.name, skill.version) == f'{role}@{agent["version"]}'
         assert agent['label'] == f'{role}@template-{agent["version"]}'
-        # (7.52.00: the tools the role may have are the role's, not the template's: outside its digest)
-        assert agent['digest'] == digest({'card': {key: agent[key] for key in agent if key not in (
-            'id', 'version', 'label', 'digest', 'skill', 'allowed_tools')}, 'skill': agent['skill']})
+        # (7.52.00: the tools the role may have are the role's, not the template's: outside its digest; 7.56.00: the
+        # library skills it names are in it when it names any)
+        card = {key: agent[key] for key in agent if key not in (
+            'id', 'version', 'label', 'digest', 'skill', 'allowed_tools', 'skills')}
+        card.update({'skills': agent['skills']} if agent['skills'] else {})
+        assert agent['digest'] == digest({'card': card, 'skill': agent['skill']})
         assert agent['allowed_tools'] == sorted(spec.name for spec in role_specs(role))
         assert set(agent['tools']) <= set(agent['allowed_tools'])
 
@@ -210,15 +213,15 @@ def test_the_fixers_kiro_config_offers_only_the_platforms_tool_server_each_card_
     assert fixer['tools'] == ['@voc'] == list(KIRO_TOOLS)
     assert fixer['allowedTools'] == ['@voc/read_file', '@voc/list_files', '@voc/write_file', '@voc/run',
                                      '@voc/install_dependencies', '@voc/submit_work', '@voc/read_issue',
-                                     '@voc/report_progress', '@voc/save_checkpoint', '@voc/finish']
+                                     '@voc/read_skill', '@voc/report_progress', '@voc/save_checkpoint', '@voc/finish']
     assert fixer['mcpServers'] == {'voc': {'command': '/usr/bin/python3',
                                            'args': ['-I', '/opt/voc/harness.py', 'tool-server']}}
     assert fixer['resources'] == []
     # (the mcp match sorted, as `kiro-cli agent upgrade` derives it from allowedTools; no fs_read, no skill allow)
     assert fixer['permissions'] == {'rules': [
         {'capability': 'mcp', 'match': ['voc/finish', 'voc/install_dependencies', 'voc/list_files', 'voc/read_file',
-                                        'voc/read_issue', 'voc/report_progress', 'voc/run', 'voc/save_checkpoint',
-                                        'voc/submit_work', 'voc/write_file'], 'effect': 'allow'}]}
+                                        'voc/read_issue', 'voc/read_skill', 'voc/report_progress', 'voc/run',
+                                        'voc/save_checkpoint', 'voc/submit_work', 'voc/write_file'], 'effect': 'allow'}]}
     assert 'kiroUpgrade' not in fixer
 
 

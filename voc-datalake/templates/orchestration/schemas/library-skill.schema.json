@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:voc-orchestration:library-skill",
+  "title": "A library skill's SKILL.md front matter (skills/<name>/SKILL.md, 7.56.00)",
+  "description": "The skills library: guidance a role reads on demand (read_skill), listed in its system prompt by name and description. name is the skill's directory; source says where it came from (a vendored skill keeps its upstream's attribution, and THIRD-PARTY-LICENSES.md names that upstream with its licence), license its licence, adapted what changed from the source. The body is free Markdown; a skill's other files are references/<file>.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "source", "license", "adapted"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$"},
+    "description": {"description": "One line: what the skill is for and when to read it (the system prompt lists it).",
+                    "type": "string", "minLength": 20, "maxLength": 300, "pattern": "^[^\\n]+$"},
+    "source": {"description": "Where it came from: '<package> <version> (<author>), <path>' for a vendored skill.",
+               "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[^\\n]+$"},
+    "license": {"description": "The licence it is used under (SPDX).", "enum": ["MIT", "MIT-0", "Apache-2.0"]},
+    "adapted": {"description": "What changed from the source, in one line.",
+                "type": "string", "minLength": 1, "maxLength": 600, "pattern": "^[^\\n]+$"}
+  }
+}

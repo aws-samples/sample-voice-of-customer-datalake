@@ -3,8 +3,16 @@ from __future__ import annotations
 
 import re
 
-from engineering.coach.prompt import COACH_PROMPT, PEOPLE_COMMENTS, SYSTEM, build_prompt
+from engineering.coach.prompt import (
+    COACH_PROMPT,
+    COACH_SKILLS_HEAD,
+    PEOPLE_COMMENTS,
+    SYSTEM,
+    build_prompt,
+    coach_skills,
+)
 from engineering.coach.test.fakes import CASES, FENCE, TASK, evidence, failure
+from engineering.orchestration.bundle import MAX_LEARN_SKILLS_CHARS, card_library
 from engineering.quality_gate.text import REDACTED
 from engineering.skills.model import Skill
 from engineering.skills.test.fixtures import FLAKY, INSTRUCTIONS, LINT, content
@@ -50,11 +58,22 @@ def test_the_current_instructions_and_each_examples_parts_are_separate_blocks() 
     assert not [name for name in bare if name.startswith('current-example')]
 
 
-def test_the_prompt_version_is_the_third() -> None:
-    # (7.10.00: the people's comments are the reactions on the host too, and the system prompt says how to read them)
-    assert COACH_PROMPT == 'coach-prompt/3'
+def test_the_prompt_version_is_the_fourth() -> None:
+    # (7.10.00: the people's comments are the reactions on the host too, and the system prompt says how to read them;
+    # 7.56.00: the coach's library skills, below the rules and above the answer's shape)
+    assert COACH_PROMPT == 'coach-prompt/4'
     assert 'current-example-<n>-when and -do' in SYSTEM
     assert PEOPLE_COMMENTS in SYSTEM
+
+
+def test_the_system_prompt_carries_the_coachs_library_skills_whole_below_the_rules() -> None:
+    skills = card_library('coach')
+    assert [name for name, _body in skills] == ['retrospective', 'skill-builder', 'skill-audit']
+    assert SYSTEM.index(PEOPLE_COMMENTS) < SYSTEM.index(COACH_SKILLS_HEAD) < SYSTEM.index('Answer with exactly one JSON')
+    assert all(f'### The {name} skill\n{body}' in SYSTEM for name, body in skills)
+    assert 'license: MIT' not in SYSTEM   # (their bodies, without the front matter)
+    assert coach_skills([]) == ''
+    assert len(coach_skills([('long', 'x' * 20_000)])) <= len(COACH_SKILLS_HEAD) + MAX_LEARN_SKILLS_CHARS + 1
 
 
 def test_a_reaction_that_says_ignore_your_instructions_stays_quoted_data() -> None:

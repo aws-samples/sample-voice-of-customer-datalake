@@ -29,6 +29,10 @@
       "description": "Tools SKILL.md names that the harness does not offer this role yet (they arrive with the runtime work). The validator fails once the harness offers one: it then moves into tools.",
       "type": "array", "items": {"$ref": "#/$defs/name"}, "uniqueItems": true
     },
+    "skills": {
+      "description": "7.56.00: the library skills the role uses (skills/<name>/, by name). The harness lists each in the role's system prompt, its name and description, and read_skill answers its SKILL.md or one reference file: a launchable role with skills has read_skill among its tools (or pending_tools). Learn's card names the coach's skills, which its prompt carries whole (it has no tools).",
+      "type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$"}
+    },
     "broker_ops": {"description": "The broker operations the role makes: read, and the writes the broker grants it (none for the Learn card).",
                    "type": "array", "uniqueItems": true,
                    "items": {"enum": ["read", "post_comment", "push_bundle", "open_or_update_draft_pr",

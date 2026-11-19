@@ -48,6 +48,7 @@ from engineering.runtime.harness.board_client import BoardHttp, BoardKnowledge, 
 from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
+from engineering.runtime.harness.library_tools import own, with_library
 from engineering.runtime.harness.ports import BrokerRefused
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.skills import SKILLS, Skill, harness_argv
@@ -221,10 +222,11 @@ class ScriptedModel(FakeBedrock):
     def converse(self, **request: Any) -> dict[str, Any]:
         assert request['modelId'] == self.skill.model
         # The platform's rules (the harness's own, or the bundle's as the board served them; the session's fence in
-        # them), then the skill's own instructions and examples.
+        # them), then the skill's own instructions and examples, then (7.56.00) its role's library skills' list.
         [system] = request['system']
         assert system['text'].lstrip('# ').startswith('Platform rules')
-        assert system['text'].endswith(f'\n\n{self.skill.system_prompt()}')
+        assert system['text'].endswith(with_library(f'\n\n{self.skill.system_prompt()}', self.skill.tool_policy,
+                                                    own(self.skill.name)))
         assert tuple(tool['toolSpec']['name'] for tool in request['toolConfig']['tools']) == self.skill.tool_policy
         return super().converse(**request)
 

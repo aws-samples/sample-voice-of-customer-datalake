@@ -9,6 +9,11 @@
 //                                                          the briefs WITHOUT their text (gap N), the stops, the defaults
 //   GET  /agents/engineering/gates/briefs/<id>             one brief with its text; 404 for none
 //   GET  /agents/engineering/templates/<kind>/<id>/source  a SKILL.md, agent.yaml, flow YAML or brief (gap S)
+//   GET  /agents/engineering/skill-library                 7.56.00: the library's skills WITHOUT their text
+//   GET  /agents/engineering/skill-library/<name>          its SKILL.md; ?reference=references/<file>.md one of its
+//                                                          references; 404 for none, 400 for a malformed name or file
+// A card names the library skills its role uses (`skills`) when the tools it runs with include read_skill (a skill
+// version from before 7.56.00 has none: []), and Learn's card (harness learn) always.
 // The skill a role card runs: the shared fixer's v3 (as mock-engineering-skills.js holds it), else the template.
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers.
 // Wired into mock-server.js by handleDomainModules, before the engineering runs' routes (which would read
@@ -30,6 +35,9 @@ const HEADS = {
   storefront: { fixer: { version: 1, provenance: 'coach', template_version: 1 } },
 };
 
+/** The library skills a card of `template` running `tools` uses (views.py, cards.py). */
+const skillsFor = (template, tools) => (tools.includes('read_skill') || template.harness === 'learn' ? [...(template.skills ?? [])] : []);
+
 function skillOf(template, connection) {
   const head = HEADS[connection]?.[template.id] ?? (connection === '' ? undefined : HEADS['']?.[template.id]);
   if (!head) {
@@ -48,7 +56,8 @@ function roleCard(template, connection) {
   return {
     kind: 'role', id: template.id, base_role: template.id, title: template.id, purpose: template.purpose, launchable,
     template: { version: template.version, label: template.label, digest: template.digest },
-    skill, model: template.model, tools: [...template.tools], harness: template.harness, broker_ops: [...template.broker_ops],
+    skill, model: template.model, tools: [...template.tools], skills: skillsFor(template, template.tools), harness: template.harness,
+    broker_ops: [...template.broker_ops],
     pending_tools: [...template.pending_tools], gates: GATE_ROLES.has(template.id) ? { packs: BUNDLE.gates.packs.map((p) => p.id) } : null,
     inputs: template.inputs, outputs: template.outputs, caps: { ...template.caps }, trust: { ...template.trust }, evals: [...template.evals],
     scorecard: connection === '' ? null : { label: skill.label, runs: 6, pass_rate: 0.67, tasks_done: 4, tasks_failed: 2, needs_human: 1,
@@ -70,7 +79,8 @@ function madeRecord({ id, version, role, title, purpose, skillVersion, connectio
   return {
     schema: 'voc-registry-card/1', id, version, base_role: role, title, purpose,
     skill: { connection, version: skillVersion, label: `${role}@${connection || 'shared'}/${skillVersion}`, provenance: 'person', template_version: 1 },
-    model: template.model, tools: [...template.tools], harness: template.harness, caps: { ...template.caps, ...caps },
+    model: template.model, tools: [...template.tools], skills: skillsFor(template, template.tools), harness: template.harness,
+    caps: { ...template.caps, ...caps },
     inputs: template.inputs, outputs: template.outputs, trust: { ...template.trust },
     template: { version: template.version, label: template.label, digest: template.digest }, created_by: by, created_at: at,
   };
@@ -170,15 +180,43 @@ function source(kind, id) {
   return found ? [200, { ...found }] : [404, { error: `no ${kind} template ${id.slice(0, 64)}` }];
 }
 
+/** The library skills (7.56.00), as the bundle compiles them (none in a bundle from before). */
+const LIBRARY = BUNDLE.library ?? [];
+const SKILL_NAME = /^[a-z][a-z0-9-]{1,40}$/;
+const REFERENCE = /^references\/[A-Za-z0-9][A-Za-z0-9_.-]{0,80}\.md$/;
+
+function library() {
+  return [200, { skills: LIBRARY.map(({ name, description, source: from, license, adapted, path, digest, bytes, roles, references }) => ({
+    name, description, source: from, license, adapted, path, digest, bytes, roles: [...roles],
+    references: references.map((file) => ({ path: file.path, digest: file.digest, bytes: file.bytes })),
+  })) }];
+}
+
+function libraryFile(name, reference) {
+  if (!SKILL_NAME.test(name)) return [400, { error: 'a library skill is named by 2 to 41 lowercase letters, digits and dashes' }];
+  if (reference !== null && !REFERENCE.test(reference)) return [400, { error: 'reference is one of the skill\'s references/<file>.md' }];
+  const skill = LIBRARY.find((entry) => entry.name === name);
+  if (!skill) return [404, { error: `the library has no skill ${name}` }];
+  if (reference === null) return [200, { name, reference: null, path: skill.path, text: skill.text, digest: skill.digest, bytes: skill.bytes }];
+  const file = skill.references.find((entry) => entry.path === reference);
+  if (!file) return [404, { error: `the skill ${name} has no ${reference}` }];
+  return [200, { name, reference, path: `skills/${name}/${reference}`, text: file.text, digest: file.digest, bytes: file.bytes }];
+}
+
 const REGISTRY_PATH = /^\/agents\/engineering\/registry$/;
 const CARD_PATH = /^\/agents\/engineering\/registry\/([^/]+)$/;
 const GATES_PATH = /^\/agents\/engineering\/gates$/;
 const BRIEF_PATH = /^\/agents\/engineering\/gates\/briefs\/([^/]+)$/;
 const SOURCE_PATH = /^\/agents\/engineering\/templates\/([^/]+)\/([^/]+)\/source$/;
+const LIBRARY_PATH = /^\/agents\/engineering\/skill-library$/;
+const LIBRARY_FILE_PATH = /^\/agents\/engineering\/skill-library\/([^/]+)$/;
 
 /** The GET routes: the answer for the path (null: not this module's). */
-function read(path, connection) {
+function read(path, connection, params) {
   if (REGISTRY_PATH.test(path)) return registry(connection);
+  if (LIBRARY_PATH.test(path)) return library();
+  const fileMatch = LIBRARY_FILE_PATH.exec(path);
+  if (fileMatch) return libraryFile(decodeURIComponent(fileMatch[1]), params.get('reference'));
   if (GATES_PATH.test(path)) return gates(connection);
   const briefMatch = BRIEF_PATH.exec(path);
   if (briefMatch) return brief(decodeURIComponent(briefMatch[1]));
@@ -195,13 +233,14 @@ function read(path, connection) {
 export function handleEngineeringRegistryRoutes(req, res, url, send, shared) {
   const path = url.pathname;
   const creating = path === '/agents/engineering/registry/cards';
-  const known = creating || [REGISTRY_PATH, CARD_PATH, GATES_PATH, BRIEF_PATH, SOURCE_PATH].some((pattern) => pattern.test(path));
+  const known = creating || [REGISTRY_PATH, CARD_PATH, GATES_PATH, BRIEF_PATH, SOURCE_PATH, LIBRARY_PATH, LIBRARY_FILE_PATH]
+    .some((pattern) => pattern.test(path));
   if (!known) return false;
   const connection = url.searchParams.get('connection') ?? '';
   if (req.method !== (creating ? 'POST' : 'GET')) send(405, { message: 'Method not allowed' });
   else if (!isAdmin()) send(403, { message: 'Admin access required' });
   else if (connection !== '' && !CONNECTION.test(connection)) send(400, { error: 'connection is a connection id, or empty for the shared skills' });
   else if (creating) shared.collectJson(req, res, (body) => send(...create(body ?? {})));
-  else send(...read(path, connection));
+  else send(...read(path, connection, url.searchParams));
   return true;
 }

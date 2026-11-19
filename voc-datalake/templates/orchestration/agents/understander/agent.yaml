@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: understander
-version: 4
+version: 5
 purpose: Reads an issue, classifies it (bug, feature or investigation) with a severity, finds the code involved and writes the problem statement and acceptance criteria; in the Tenets flow, drafts the repository's tenets.
 harness: converse
 model: {id: global.anthropic.claude-haiku-5-5}
@@ -17,7 +17,8 @@ outputs:
   - {name: tenets, schema: voc-tenets/1, recorded_on: task}
   - {name: finish, kind: summary, recorded_on: task}
 tools: [read_file, list_files, read_issue, write_triage, post_comment, label_issue, read_tenets, write_tenets,
-        report_progress, save_checkpoint, finish]
+        read_skill, report_progress, save_checkpoint, finish]
+skills: [understand-plan, understand-docs, technical-writing]
 broker_ops: [read, post_comment, label_issue]
 caps: {max_turns: 150, max_input_tokens: 120000}
 trust: {untrusted: [issue, repository, knowledge, memory, tenets], fence: nonce}

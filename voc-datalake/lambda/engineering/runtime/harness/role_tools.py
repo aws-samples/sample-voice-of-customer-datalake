@@ -20,7 +20,8 @@ these and the tools its skill names, whatever a record says.
 - the issue's tools (``issues.py``: ``read_issue``, ``write_triage``, ``label_issue``) and the gate's
   (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00;
 - the tenets' (``tenets_tools.py``: ``read_tenets``, ``write_tenets``), 7.52.00;
-- the submitted patch's and the reviewers' (``review_tools.py``: ``read_patch``, ``write_review``), 7.54.00.
+- the submitted patch's and the reviewers' (``review_tools.py``: ``read_patch``, ``write_review``), 7.54.00;
+- the skills library's (``library_tools.py``: ``read_skill``, the role's own library skills), 7.56.00.
 
 Every output is written once (the workspace's puts are create-only) and its key is recorded on the task when the agent
 finishes (``AgentContext.result_keys``), so the steps after it read what the board recorded, never a listing. The
@@ -40,7 +41,7 @@ from engineering.quality_gate.packs import STOPS
 from engineering.runtime import outputs
 from engineering.runtime.checkout import check_sparse_path, repo_git, share_working_tree
 from engineering.runtime.checkpoints import SHA, agent_prefix, artifact_prefix, check_place
-from engineering.runtime.harness import gate_tools, issues, review_tools, tenets_tools
+from engineering.runtime.harness import gate_tools, issues, library_tools, review_tools, tenets_tools
 from engineering.runtime.harness.coordinator import Built, Record, Tool, answered, bounded, listed, optional, post_for
 from engineering.runtime.outputs import (
     AGENT_BRANCH_PREFIX,
@@ -78,6 +79,8 @@ ROLE_TOOLS: Final[Mapping[str, frozenset[str]]] = {
     'write_tenets': frozenset({'understander'}),
     # (7.54.00: the submitted patch read by the roles that judge it without running code, and a reviewer's verdict)
     **review_tools.TOOL_ROLES,
+    # (7.56.00: the role's own library skills, every launchable role whose card names any)
+    **library_tools.TOOL_ROLES,
 }
 #: The one role each poster posts for (board/api.py ``POSTERS``, but the coordinator's, which posts with post_task).
 POSTS_FOR: Final[Mapping[str, str]] = {'hunter': 'fixer', 'builder': 'builder'}
@@ -281,7 +284,8 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
     )
     return (*(spec for spec in all_specs if role in ROLE_TOOLS[spec.name]),
             *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS),
-            *tenets_tools.specs(tool_spec, role, ROLE_TOOLS), *review_tools.specs(tool_spec, role))
+            *tenets_tools.specs(tool_spec, role, ROLE_TOOLS), *review_tools.specs(tool_spec, role),
+            *library_tools.specs(tool_spec, role))
 
 
 def _branch(context: Built, arguments: Mapping[str, Any]) -> str:
@@ -303,7 +307,7 @@ def handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
     outputs, record = _output_handlers(context, result)
     return {**outputs, **_writer_handlers(context, result), **issues.handlers(context, result, record),
             **gate_tools.handlers(context, result), **tenets_tools.handlers(context, result, record),
-            **review_tools.handlers(context, result, record)}
+            **review_tools.handlers(context, result, record), **library_tools.handlers(context, result)}
 
 
 def _already_written(error: Exception) -> bool:

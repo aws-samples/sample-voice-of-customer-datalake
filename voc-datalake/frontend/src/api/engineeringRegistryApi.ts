@@ -3,7 +3,8 @@
  * engineering agents are on; `lambda/shared/agents_engineering_registry_routes.py`):
  * - `GET /agents/engineering/registry?connection=` → `{month, connection, cards}`: every role's card (`kind: 'role'`,
  *   composed on the server for the scope's skill head: its template, skill, model, tools, gates, inputs and outputs,
- *   caps, scorecard on a connection, the month's spend), then the cards made from a skill (`kind: 'card'`);
+ *   caps, scorecard on a connection, the month's spend, 7.56.00 the library skills its role uses), then the cards made
+ *   from a skill (`kind: 'card'`, its base role's library skills);
  * - `GET …/registry/<card>?connection=` → `{card, versions, events}`, read as its card and versions (a role's card has
  *   neither);
  * - `POST …/registry/cards` `{from_skill: {role, connection?, version}, slug, purpose, title?, model?, caps?,
@@ -77,6 +78,8 @@ const CardSchema = z.object({
   skill: SkillSchema,
   model: text,
   tools: names,
+  /** 7.56.00: the library skills its role uses (engineeringSkillLibraryApi.ts), [] for none. */
+  skills: names,
   harness: text,
   caps: z.record(z.string(), z.number()).catch({}),
   inputs: eachOf(IoSchema),

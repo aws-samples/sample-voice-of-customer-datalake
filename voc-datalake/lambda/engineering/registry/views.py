@@ -26,6 +26,7 @@ from typing import Any, Final
 from engineering.connectors.identity import WORKSPACE
 from engineering.learning.scorecard import ScorecardStore
 from engineering.registry.cards import AgentCardStore, CardError, card_view
+from engineering.registry.library import card_skills
 from engineering.skills.store import SHARED, SkillStore, SkillVersion
 from engineering.skills.views import PAGE, template_view
 from shared.agent_run_decisions import REASON_LOOP_EXHAUSTED, RUN_NEEDS_HUMAN, allowed_actions
@@ -133,6 +134,8 @@ class RegistryViews:
             'skill': {**skill, 'template_newer': bool(newer and newer['newer'])},
             **({'heads_by_connection': heads} if heads is not None else {}),
             'model': model, 'tools': tools, 'harness': template['harness'],
+            # (7.56.00: the library skills it uses, its template's when the skill it runs reads them)
+            'skills': card_skills(template, tools),
             'broker_ops': list(template['broker_ops']), 'pending_tools': list(template['pending_tools']),
             'gates': {'packs': gate_packs} if role in GATE_ROLES else None,
             'inputs': list(template['inputs']), 'outputs': list(template['outputs']), 'caps': dict(template['caps']),

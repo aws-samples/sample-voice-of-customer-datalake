@@ -211,7 +211,8 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
 
   it('keeps the engineering runtime and its images out of the ingestor hashes', () => {
     expect(ignores('lambda/engineering/runtime/handler.py')).toBe(true);
-    expect(ignores('engineering-images/rust/Dockerfile')).toBe(true);
+    expect(ignores('templates/orchestration/images/rust/Dockerfile')).toBe(true);
+    expect(ignores('templates/orchestration/images/common/harness.py')).toBe(true);
   });
 
   it("sibling plugins never churn this plugin's hash; its own tree counts", () => {

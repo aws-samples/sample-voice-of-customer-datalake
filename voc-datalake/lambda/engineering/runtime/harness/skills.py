@@ -169,6 +169,7 @@ def _bundle(path: Path) -> Mapping[str, Any]:
     return load_bundle(path)
 
 
+
 def shipped_skills(path: Path | None = None) -> dict[str, Skill]:
     """Each launchable role's skill as the bundle ships it (its ``voc-skill/1`` record, read as any record is); the coach
     has none (it is never launched)."""
@@ -202,7 +203,7 @@ def platform_rules(fence: str, text: str = '') -> str:
 SKILLS: Final[Mapping[str, Skill]] = shipped_skills()
 
 
-#: The harness's entry in every image (engineering-images/common/harness.py).
+#: The harness's entry in every image (templates/orchestration/images/common/harness.py).
 HARNESS_ENTRY: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run')
 
 

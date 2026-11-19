@@ -1324,6 +1324,29 @@
     "rolesFailed": "Não foi possível carregar as habilidades. Tente novamente daqui a pouco.",
     "emptyShared": "Nenhuma habilidade partilhada tem versão ainda. Os agentes usam as habilidades incluídas nesta versão do produto.",
     "emptyConnection": "Esta conexão não tem versões de habilidade próprias. Os seus agentes usam as habilidades partilhadas.",
+    "library": {
+      "views": "Mostrar",
+      "view": {
+        "roles": "Funções",
+        "library": "Biblioteca"
+      },
+      "hint": "As habilidades padrão que esta versão traz para os agentes de engenharia. O prompt de cada função lista as habilidades que seu cartão nomeia, e o agente lê uma com read_skill quando ela se encaixa na sua etapa. A biblioteca é a mesma em todos os escopos.",
+      "loading": "Carregando a biblioteca…",
+      "failed": "Não foi possível carregar a biblioteca de habilidades. Tente novamente daqui a pouco.",
+      "empty": "Esta versão não traz habilidades de biblioteca.",
+      "listLabel": "Habilidades da biblioteca",
+      "open": "Abrir a habilidade {{name}}",
+      "sourceLine": "De {{source}} · licença {{license}}",
+      "adaptedLine": "Adaptada: {{adapted}}",
+      "usedBy": "Usada por",
+      "usedByNone": "Nenhuma função a usa",
+      "back": "Todas as habilidades da biblioteca",
+      "missing": "A biblioteca não tem a habilidade {{name}}. Volte à biblioteca e escolha outra.",
+      "files": "Arquivos",
+      "filesLabel": "Arquivo a ler",
+      "fileMissing": "Esta habilidade não tem o arquivo {{file}}. Escolha outro dos seus arquivos.",
+      "fileFailed": "Não foi possível carregar o arquivo. Tente novamente daqui a pouco."
+    },
     "backToRoles": "Todas as funções",
     "roleTitle": "{{role}} · {{scope}}",
     "status": {
@@ -2680,6 +2703,7 @@
       "fromTemplate": "Do modelo v{{version}}",
       "model": "Modelo",
       "tools": "Ferramentas",
+      "usesSkills": "Usa habilidades",
       "harness": "Harness",
       "caps": "Limites",
       "inputs": "Lê",

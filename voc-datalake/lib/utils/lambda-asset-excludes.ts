@@ -136,7 +136,8 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/scripts/',
     '/schemas/',
     '/Workshop/',
-    '/engineering-images/',
+    // The agent images (7.56.00: under templates/, beside the orchestration templates they ship).
+    '/templates/orchestration/images/',
     '/plugins/_template/',
     // lambda/: only shared/ ships in ingestor bundles.
     '/lambda/agents/',
