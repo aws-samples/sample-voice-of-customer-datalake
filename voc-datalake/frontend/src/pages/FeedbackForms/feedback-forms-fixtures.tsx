@@ -19,7 +19,6 @@ const apiStub = () => vi.fn<(...args: unknown[]) => unknown>()
 /** One `vi.fn()` per `api.*` member the page and its editor call. */
 export const feedbackFormsApiMocks = {
   getFeedbackForms: apiStub(),
-  createFeedbackForm: apiStub(),
   updateFeedbackForm: apiStub(),
   deleteFeedbackForm: apiStub(),
   getCategories: apiStub(),
@@ -40,7 +39,6 @@ export function clientApiModule() {
         return { forms: record['forms'], stats: record['stats'] ?? null }
       },
       getFeedbackFormStats: (id: string) => feedbackFormsApiMocks.getFeedbackFormStats(id),
-      createFeedbackForm: (form: unknown) => feedbackFormsApiMocks.createFeedbackForm(form),
       updateFeedbackForm: (id: string, form: unknown) => feedbackFormsApiMocks.updateFeedbackForm(id, form),
       deleteFeedbackForm: (id: string) => feedbackFormsApiMocks.deleteFeedbackForm(id),
       getCategories: () => feedbackFormsApiMocks.getCategories(),

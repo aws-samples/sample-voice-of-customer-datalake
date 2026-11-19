@@ -65,8 +65,16 @@
       "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
     },
     {
-      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py",
-      "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
+      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py,lambda/shared/forms_v2_draft.py",
+      "reason": "each feature's own model-surface choice (all three the utility surface today, the feedback form's AI draft since 7.04.00); one may move without the others"
+    },
+    {
+      "key": "FORM_LOCALES|LANGUAGES::lambda/shared/briefing_prefs.py,lambda/shared/forms_v2.py",
+      "reason": "the app's nine locales, held twice on purpose: forms_v2.py imports nothing but the standard library and two pure shared modules (pinned by test_forms_v2.py), and test_forms_v2.py and test_feedback_form_handler.py hold FORM_LOCALES to frontend/public/locales and supportedLanguages"
+    },
+    {
+      "key": "FEEDBACK_FORM_SOURCE|FORM_DELETE_KIND::lambda/api/feedback_form_handler.py,lambda/shared/feedback_form_raw.py",
+      "reason": "the same word in two vocabularies: the source id every form response is filed under (feedback_form_raw.py, stored on every item) and the kind of a form's AUDIT#delete row (shared/delete_audit.py kinds: persona, document, feedback_form...); one may change without the other"
     }
   ]
 }

@@ -916,8 +916,22 @@ def record_handler(record: SQSRecord) -> dict:
     profile = profile_from_payload(raw_record)
     if isinstance(raw_record, dict):
         raw_record.pop(PAYLOAD_KEY, None)
+    # A form's test response (docs/feedback-forms.md "Test mode") is never queued; one that arrives anyway is dropped
+    # here, before validation, enrichment and storage, so no metric, NPS or dashboard can ever count it.
+    if is_test_message(raw_record):
+        logger.warning("Test response dropped: test responses are never processed")
+        count_metric("TestResponseDropped")
+        return {"status": "skipped", "reason": "test response"}
     with model_profile_scope(profile):
         return _process_record(raw_record)
+
+
+def is_test_message(raw_record: object) -> bool:
+    """A message marked ``is_test`` (on the message or in its metadata): a form's test response."""
+    if not isinstance(raw_record, dict):
+        return False
+    metadata = raw_record.get('metadata')
+    return raw_record.get('is_test') is True or (isinstance(metadata, dict) and metadata.get('is_test') is True)
 
 
 def _process_record(raw_record: dict) -> dict:

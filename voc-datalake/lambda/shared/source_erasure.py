@@ -21,8 +21,9 @@ one taken more than ``STALE_AFTER`` ago), so exactly one of two concurrent
 starts wins and the other answers 409. The worker renews ``locked_at`` at each
 hand-over (``refresh_source_lock``), so a job that runs for hours never presents
 a stale lock, and releases it when the job
-completes or fails, by UpdateItem (``released_at``): voc-retention holds no
-delete on voc-aggregates, and a release names its job, so a job whose stale
+completes or fails, by UpdateItem (``released_at``): voc-retention's one delete
+on voc-aggregates is key-scoped to the forms' test responses (``FEEDBACK_FORM_TEST``,
+lib/stacks/retention-worker.ts), never a lock, and a release names its job, so a job whose stale
 lock was taken over never frees its successor's. A job's ``sk`` starts with
 ``er_``, so the job list never shows a lock row.
 

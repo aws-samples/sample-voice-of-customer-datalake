@@ -30,11 +30,12 @@ export const SIGNING_LAYER_DIR = 'lambda/layers/signing-deps';
  * The VocApiStack functions whose live code reaches `shared/cloudfront_signing.py` (persona avatars and
  * prototype URLs: `shared/avatar.py`, `shared/prototypes.py`, `api/projects_handler.py`), as `py_layers`
  * finds them. A function added to or dropped from that set fails the `py_layers` gate step until it
- * is added here or removed.
+ * is added here or removed. The persona generator and importer and the document generator are not among
+ * them: they write avatars and prototype HTML to S3 and never build a CDN URL (the projects API signs them
+ * per request, issue #229; none of the three has a CDN or signing variable). They had the layer only because
+ * py_layers once carried one bundle's lazy imports into the next (scripts/audit/py_graph.py, 7.04.00).
  */
-export const SIGNING_LAYER_FUNCTION_IDS: readonly string[] = [
-  'ProjectsApi', 'ProjectsAssistWorker', 'PersonaGeneratorJob', 'PersonaImporterJob', 'DocumentGeneratorJob',
-];
+export const SIGNING_LAYER_FUNCTION_IDS: readonly string[] = ['ProjectsApi', 'ProjectsAssistWorker'];
 
 /*
  * The same cryptography also VERIFIES RS256 signatures on the global MCP endpoint (`shared/mcp_oauth_jwt.py`,

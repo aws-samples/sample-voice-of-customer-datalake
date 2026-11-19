@@ -18,4 +18,11 @@ export const streamResolve = {
   dedupe: ['zod'],
 }
 
-export const streamFsAllow = ['.', STREAM_SRC]
+/**
+ * The public feedback widget's folder (it holds `feedback-widget.js` alone): the forms builder's preview loads that very
+ * file (pages/FeedbackForms/preview/widgetScript.ts, a `?url` import). The folder, not the file: Vite checks an asset
+ * import's id with its query (`…/feedback-widget.js?url`), which only a folder entry allows.
+ */
+const FEEDBACK_WIDGET_DIR = fileURLToPath(new URL('../lambda/api/static', import.meta.url))
+
+export const streamFsAllow = ['.', STREAM_SRC, FEEDBACK_WIDGET_DIR]

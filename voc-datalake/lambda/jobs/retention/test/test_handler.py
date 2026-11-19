@@ -3,7 +3,7 @@ import pytest
 from boto3.dynamodb.conditions import Key
 
 from jobs.retention import handler
-from jobs.retention.test.conftest import BUCKET, days_ago
+from jobs.retention.test.conftest import BUCKET, days_ago, save_source_profiles
 from shared.digests import sha256_hex
 
 JOB_ID = 'er_0123456789ab'
@@ -30,16 +30,12 @@ def _versions(aws, key: str) -> int:
     return len(page.get('Versions', [])) + len(page.get('DeleteMarkers', []))
 
 
-def _profiles(aws, *profiles: dict) -> None:
-    aws['aggregates'].put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': list(profiles)})
-
-
 def _audit(aws) -> list[dict]:
     return aws['aggregates'].query(KeyConditionExpression=Key('pk').eq('AUDIT#retention'))['Items']
 
 
 def test_retention_deletes_only_old_items_of_retained_sources_and_every_raw_version(aws, worker_context):
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30}, {'id': 'web'})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30}, {'id': 'web'})
     old_key = _seed(aws, 'old', 'tickets', days_ago(31))
     _seed(aws, 'fresh', 'tickets', days_ago(29))
     _seed(aws, 'web_old', 'web', days_ago(400))
@@ -54,7 +50,7 @@ def test_retention_deletes_only_old_items_of_retained_sources_and_every_raw_vers
 @pytest.mark.parametrize('referenced', ['legacy', 'newest'])
 def test_retention_deletes_both_raw_layouts_of_an_item_with_every_version(aws, worker_context, referenced):
     """A legacy `{stem}.json` and every version under `{stem}/` go, whichever the item references."""
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30})
     legacy = _seed(aws, 'old', 'tickets', days_ago(31))
     folder = legacy.removesuffix('.json') + '/'
     versions = [f'{folder}0123456789abcdef.json', f'{folder}fedcba9876543210.json']
@@ -75,7 +71,7 @@ def test_retention_deletes_both_raw_layouts_of_an_item_with_every_version(aws, w
 
 
 def test_retention_with_no_retained_source_deletes_nothing_but_audits(aws, worker_context):
-    _profiles(aws, {'id': 'web'})
+    save_source_profiles(aws, {'id': 'web'})
     _seed(aws, 'a', 'web', days_ago(4000))
     assert handler.handle_event({}, worker_context)['deleted_items'] == 0
     assert _ids(aws) == {'a'}
@@ -91,7 +87,7 @@ def test_unreadable_profiles_fail_the_run_without_deleting(aws, worker_context):
 
 
 def test_whole_upload_and_foreign_archives_are_never_deleted(aws, worker_context):
-    _profiles(aws, {'id': 'manual_import', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'manual_import', 'retention_days': 30})
     aws['s3'].put_object(Bucket=BUCKET, Key='raw/csv_upload/2026/01/01/job.csv', Body=b'x')
     aws['feedback'].put_item(Item={
         'pk': 'SOURCE#manual_import', 'sk': 'FEEDBACK#c1', 'feedback_id': 'c1', 'source_id': 'row1',
@@ -176,7 +172,7 @@ def test_an_unknown_mode_is_ignored(aws, worker_context):
 
 
 def test_a_low_budget_hands_over_with_the_cursor_and_counters(aws, worker_context, invoke_mock) -> None:
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30})
     for n in range(3):
         _seed(aws, f'old{n}', 'tickets', days_ago(60), archive=False)
     budget = iter([900_000, 0])
@@ -200,7 +196,7 @@ def test_a_runaway_chain_stops(aws, worker_context):
 
 
 def test_a_second_run_is_a_no_op(aws, worker_context):
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30})
     _seed(aws, 'old', 'tickets', days_ago(60))
     handler.handle_event({}, worker_context)
     assert handler.handle_event({}, worker_context)['deleted_items'] == 0
@@ -213,7 +209,7 @@ def _data_version(aws) -> int:
 
 def test_a_run_that_deleted_bumps_data_version_once(aws, worker_context):
     """docs/caching.md: cached reads move on after deletes, once per run, not per item."""
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30})
     _seed(aws, 'old1', 'tickets', days_ago(40), archive=False)
     _seed(aws, 'old2', 'tickets', days_ago(41), archive=False)
     assert handler.handle_event({'mode': 'retention'}, worker_context)['deleted_items'] == 2
@@ -221,7 +217,7 @@ def test_a_run_that_deleted_bumps_data_version_once(aws, worker_context):
 
 
 def test_a_run_that_deleted_nothing_bumps_nothing(aws, worker_context):
-    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    save_source_profiles(aws, {'id': 'tickets', 'retention_days': 30})
     _seed(aws, 'fresh', 'tickets', days_ago(1), archive=False)
     assert handler.handle_event({'mode': 'retention'}, worker_context)['deleted_items'] == 0
     assert _data_version(aws) == 0

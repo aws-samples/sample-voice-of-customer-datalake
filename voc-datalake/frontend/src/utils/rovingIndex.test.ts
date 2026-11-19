@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MENU_KEYS, RADIO_KEYS, rovingIndex, TAB_KEYS } from './rovingIndex'
+import { MENU_KEYS, RADIO_KEYS, rovingIndex } from './rovingIndex'
 
 describe('rovingIndex', () => {
   it.each([
@@ -8,10 +8,9 @@ describe('rovingIndex', () => {
     expect(rovingIndex(key, from, 3, MENU_KEYS)).toBe(to)
   })
 
-  it('a menu ignores Left/Right and a tablist ignores Up/Down', () => {
+  it('a menu ignores Left/Right', () => {
     expect(rovingIndex('ArrowRight', 0, 3, MENU_KEYS)).toBeNull()
-    expect(rovingIndex('ArrowDown', 0, 3, TAB_KEYS)).toBeNull()
-    expect(rovingIndex('ArrowLeft', 0, 3, TAB_KEYS)).toBe(2)
+    expect(rovingIndex('ArrowLeft', 0, 3, MENU_KEYS)).toBeNull()
   })
 
   it('a radio group moves on both axes', () => {

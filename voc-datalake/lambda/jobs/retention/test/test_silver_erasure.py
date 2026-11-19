@@ -6,8 +6,7 @@ them (every object version), and a whole-source erasure sweeps what is left unde
 """
 
 from jobs.retention import handler
-from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
-from shared.digests import sha256_hex
+from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback, queue_erasure_job
 from shared.retention import silver_source_prefix
 
 JOB_ID = 'er_00000000beef'
@@ -21,10 +20,7 @@ def _kept_version(aws, source: str, feedback_id: str, name: str = '20260101T0000
 
 
 def _job(aws, field: str, value: str, source: str | None = None) -> dict:
-    aws['aggregates'].put_item(Item={
-        'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': 'queued', 'field': field,
-        'value_hash': sha256_hex(value), 'legal_basis': BASIS, **({'source': source} if source else {})})
-    return {'mode': 'erase', 'job_id': JOB_ID, 'value': value}
+    return queue_erasure_job(aws, JOB_ID, field, value, source, legal_basis=BASIS)
 
 
 def _versions(aws) -> set[str]:

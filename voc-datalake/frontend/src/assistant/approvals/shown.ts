@@ -18,6 +18,8 @@
  *   diffed against.
  * - `radarBrandsBase` — the same for the stored Radar brand list the
  *   `save_radar_brands` diff was computed against.
+ * - `feedbackFormDraft` — the form the `draft_feedback_form` card shows right now, as the person edited it (its
+ *   name, the questions left out, the addresses removed); the executor creates exactly that form, Off.
  *
  * The record reaches previews through {@link ShownContext} and executors
  * through the execution context (see {@link shownOf}) — the shared
@@ -30,6 +32,7 @@ import i18n from 'i18next'
 import { getDaysFromRange } from '../../api/baseUrl'
 import { useConfigStore } from '../../store/configStore'
 import type { WriteToolExecutionContext } from '../types'
+import type { FormV2 } from '../../pages/FeedbackForms/model/formsV2'
 
 export interface JobEnvironment {
   days: number
@@ -55,6 +58,8 @@ export interface ShownRecord {
   accessBase?: string
   /** Set by the save_radar_brands preview: `radarListFingerprint` of the stored list it diffed against. */
   radarBrandsBase?: string
+  /** Set by the draft_feedback_form preview: the form it shows, once it can be created. */
+  feedbackFormDraft?: { readonly form: FormV2 }
 }
 
 /** Raised when the state an approval was shown against has changed; its message reaches the model. */
@@ -112,6 +117,27 @@ export function recordRadarBrandsBase(shown: ShownRecord, fingerprint: string | 
 }
 
 export const ShownContext = createContext<ShownRecord | null>(null)
+
+/**
+ * Lets a preview decline its card with a reason (the draft_feedback_form card's "Open in builder": the person edits
+ * the form there instead, so the assistant is told it was not created). Outside a card there is nothing to decline.
+ */
+export const ApprovalDeclineContext = createContext<((reason: string) => void) | null>(null)
+
+/**
+ * Lets a preview hold Approve until the card has what it needs (the draft_feedback_form card: a name, and every
+ * address the AI suggested checked or removed). A preview that never calls it holds nothing.
+ */
+export const ApprovalHoldContext = createContext<(held: boolean) => void>(holdNothing)
+
+function holdNothing(): void {
+  // (outside a card there is no Approve to hold)
+}
+
+/** Record the form the draft_feedback_form card shows right now (undefined: none that can be created yet). */
+export function recordFeedbackFormDraft(shown: ShownRecord, form: FormV2 | undefined): void {
+  shown.feedbackFormDraft = form === undefined ? undefined : { form }
+}
 
 /** The card's shown record, when the execution came from a card. */
 export function shownOf(ctx: WriteToolExecutionContext): ShownRecord | undefined {

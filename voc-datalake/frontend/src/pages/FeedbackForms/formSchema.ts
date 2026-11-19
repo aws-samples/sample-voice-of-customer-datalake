@@ -17,25 +17,41 @@
 import { z } from 'zod'
 import type { FeedbackForm } from '../../api/types'
 import { OptionalStringMapSchema, OptionalTagsSchema } from '../../api/dimensionsSchema'
-import { defaultFormConfig } from './formTemplates'
 import { toOptionalFiniteNumber } from '../../api/lenientFields'
+import { supportedLanguages } from '../../i18n/languages'
+import { DEFAULT_THEME } from './model/formsV2'
+import { ROUTING_AND_LINK } from './model/keptFields'
+
+/**
+ * The v1 defaults a sparse record's fields fall back to (the old Blank template's). v1 records are read
+ * here for the list and Prioritization; the builder reads them as v2 (model/migrateV1.ts).
+ */
+export const V1_FORM_DEFAULTS = {
+  title: 'Share Your Feedback',
+  description: 'We value your opinion. Please share your experience with us.',
+  question: 'How was your experience?',
+  placeholder: 'Tell us about your experience...',
+  rating_enabled: true,
+  rating_type: 'stars',
+  rating_max: 5,
+  submit_button_text: 'Submit Feedback',
+  success_message: 'Thank you for your feedback!',
+  theme: DEFAULT_THEME,
+  collect_email: false,
+  collect_name: false,
+} as const
 
 // Per-field catches deep-merge a PARTIAL theme (set colors survive, missing
 // ones default); the object-level catch covers theme: null/absent wholesale.
 // Loose: unknown theme keys survive edit round-trips (see form schema note).
 const themeSchema = z
   .looseObject({
-    primary_color: z.string().catch(defaultFormConfig.theme.primary_color),
-    background_color: z.string().catch(defaultFormConfig.theme.background_color),
-    text_color: z.string().catch(defaultFormConfig.theme.text_color),
-    border_radius: z.string().catch(defaultFormConfig.theme.border_radius),
+    primary_color: z.string().catch(V1_FORM_DEFAULTS.theme.primary_color),
+    background_color: z.string().catch(V1_FORM_DEFAULTS.theme.background_color),
+    text_color: z.string().catch(V1_FORM_DEFAULTS.theme.text_color),
+    border_radius: z.string().catch(V1_FORM_DEFAULTS.theme.border_radius),
   })
-  .catch(() => ({ ...defaultFormConfig.theme }))
-
-/** A form's theme, render-safe: a missing theme or colour falls back to the default. */
-export function normalizeFormTheme(raw: unknown): FeedbackForm['theme'] {
-  return themeSchema.parse(raw)
-}
+  .catch(() => ({ ...V1_FORM_DEFAULTS.theme }))
 
 const customFieldSchema = z.looseObject({
   id: z.string().catch(''),
@@ -80,30 +96,31 @@ const FeedbackFormSchema = z.looseObject({
   form_id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),
-  title: z.string().catch(defaultFormConfig.title),
-  description: z.string().catch(defaultFormConfig.description),
-  question: z.string().catch(defaultFormConfig.question),
-  placeholder: z.string().catch(defaultFormConfig.placeholder),
-  rating_enabled: z.boolean().catch(defaultFormConfig.rating_enabled),
-  rating_type: z.enum(['stars', 'numeric', 'emoji']).catch(defaultFormConfig.rating_type),
-  rating_max: z.preprocess(toOptionalFiniteNumber, z.number().catch(defaultFormConfig.rating_max)),
-  submit_button_text: z.string().catch(defaultFormConfig.submit_button_text),
-  success_message: z.string().catch(defaultFormConfig.success_message),
+  title: z.string().catch(V1_FORM_DEFAULTS.title),
+  description: z.string().catch(V1_FORM_DEFAULTS.description),
+  question: z.string().catch(V1_FORM_DEFAULTS.question),
+  // Forms stored before 7.04.00 have neither: '' is "Tell us more" and the visitor's browser language,
+  // which is how the widget rendered them before.
+  text_question: z.string().catch(''),
+  language: z.enum(['', ...supportedLanguages]).catch(''),
+  placeholder: z.string().catch(V1_FORM_DEFAULTS.placeholder),
+  rating_enabled: z.boolean().catch(V1_FORM_DEFAULTS.rating_enabled),
+  rating_type: z.enum(['stars', 'numeric', 'emoji']).catch(V1_FORM_DEFAULTS.rating_type),
+  rating_max: z.preprocess(toOptionalFiniteNumber, z.number().catch(V1_FORM_DEFAULTS.rating_max)),
+  submit_button_text: z.string().catch(V1_FORM_DEFAULTS.submit_button_text),
+  success_message: z.string().catch(V1_FORM_DEFAULTS.success_message),
   theme: themeSchema,
-  collect_email: z.boolean().catch(defaultFormConfig.collect_email),
-  collect_name: z.boolean().catch(defaultFormConfig.collect_name),
+  collect_email: z.boolean().catch(V1_FORM_DEFAULTS.collect_email),
+  collect_name: z.boolean().catch(V1_FORM_DEFAULTS.collect_name),
   custom_fields: customFieldsSchema,
-  category: z.string().catch(''),
-  subcategory: z.string().catch(''),
-  // Optional link to the project/document this form validates. Defaults to ''
+  // The routing, and the optional link to the project/document this form validates. Defaults to ''
   // like every other absent string field, so a record persisted before the
   // link existed — or one that deliberately validates nothing — normalizes to
   // "unlinked" rather than being dropped. Declaring both fields explicitly
   // (rather than relying on the loose object's passthrough) is what makes a
   // stored link survive the edit round-trip with a known type: the editor
   // reads them off a normalized record and writes them straight back.
-  project_id: z.string().catch(''),
-  document_id: z.string().catch(''),
+  ...ROUTING_AND_LINK,
   // Older records have no type and stay that way (absent = an ordinary form).
   form_type: z.enum(['standard', 'prototype_pin']).optional().catch(undefined),
   // Stamped on every submission (an embed's `dimensions` option wins per key).

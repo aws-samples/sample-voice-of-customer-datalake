@@ -10,6 +10,7 @@ import type { MethodologyBlock } from './methodologySchema'
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
 import type { UsefulnessBand } from './feedbackFacets'
+import type { SupportedLanguage } from '../i18n/languages'
 
 export interface FeedbackItem {
   feedback_id: string
@@ -665,18 +666,21 @@ export interface S3ImportFile {
 }
 
 /**
- * Shared form configuration fields used by both FeedbackFormConfig and FeedbackForm.
+ * The version 1 form fields (before 7.04.00): the API now answers schema version 2 and migrates a version 1 form on
+ * read; the builder reads it through api/feedbackFormsV2Api.ts. Kept for the list's switch and the validation link.
  *
- * Only fields safe to publish belong here: FeedbackFormConfig extends this and
- * is the body of the UNAUTHENTICATED widget config route. Internal identifiers
- * — the project_id/document_id a form validates, for instance — go on
- * FeedbackForm instead. `feedbackFormTypes.test.ts` asserts that boundary over
- * this declaration.
+ * Internal identifiers — the project_id/document_id a form validates, for instance — go on FeedbackForm, never on
+ * the public `FeedbackFormConfig`. `feedbackFormTypes.test.ts` asserts that boundary over these declarations.
  */
 interface FeedbackFormFields {
   title: string
   description: string
+  /** The rating's question when `rating_enabled`; otherwise the text step's. */
   question: string
+  /** The text step's question when `rating_enabled` ('' = the widget's "Tell us more"). Absent on older forms. */
+  text_question?: string
+  /** The language of the widget's own words; '' (or absent, on older forms) = the visitor's browser language. */
+  language?: SupportedLanguage | ''
   placeholder: string
   rating_enabled: boolean
   rating_type: 'stars' | 'numeric' | 'emoji'
@@ -699,10 +703,7 @@ interface FeedbackFormFields {
   }>
 }
 
-export interface FeedbackFormConfig extends FeedbackFormFields {
-  enabled: boolean
-  brand_name: string
-}
+// The public widget config of a version 2 form (7.04.00), pinned against the handler: feedbackFormsV2Types.ts.
 
 export interface FeedbackForm extends FeedbackFormFields {
   form_id: string

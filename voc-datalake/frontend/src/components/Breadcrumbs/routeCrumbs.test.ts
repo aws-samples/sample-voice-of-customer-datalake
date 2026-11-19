@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
-import { buildCrumbs, RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
+import { buildCrumbs, RECORD_CRUMBS, SEGMENT_CRUMBS, trailSegments } from './routeCrumbs'
 
 // The real `t`, so a table entry pointing at a key the catalogue lacks fails here
 // rather than rendering the key path in the header. The instance is the one
@@ -106,5 +106,17 @@ describe('label keys', () => {
     expect(resolved).not.toBe(missing)
     expect(resolved).not.toContain('breadcrumbs.')
     expect(resolved.trim()).not.toBe('')
+  })
+})
+
+describe('trailSegments', () => {
+  it('keeps every segment of an ordinary path', () => {
+    expect(trailSegments('/projects/proj_1/documents')).toStrictEqual(['projects', 'proj_1', 'documents'])
+  })
+
+  it('ends a form builder, the picker and the preview at Feedback Forms (they name the form in their own header)', () => {
+    expect(trailSegments('/feedback-forms/abc12345/questions')).toStrictEqual(['feedback-forms'])
+    expect(trailSegments('/feedback-forms/new')).toStrictEqual(['feedback-forms'])
+    expect(trailSegments('/feedback-forms')).toStrictEqual(['feedback-forms'])
   })
 })

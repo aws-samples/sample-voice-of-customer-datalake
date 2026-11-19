@@ -476,6 +476,24 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+  /* Quiet link: a title that is the link of a whole card (the forms list's card title, a stretched link) and never
+     sits in running text. It reads as the heading it is (`--text-strong`, no accent) and underlines on hover and on
+     keyboard focus. WCAG 1.4.1 asks a cue besides colour of a link AMONG words; a card title has no words around it
+     to tell it from, so `link` stays the rule for every link in a sentence. */
+  .link-quiet {
+    color: var(--text-strong);
+    text-decoration-line: none;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    border-radius: var(--radius-sm);
+    overflow-wrap: break-word;
+    max-width: 100%;
+  }
+  .link-quiet:hover, .link-quiet:focus-visible { text-decoration-line: underline; }
+  .link-quiet:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 
   /* Badge tones (KiroCrew Badge: ok | err | warn | muted | aim + accent/info).
      A badge keeps its one-line width when it fits (`flex: none`), but is never
@@ -531,6 +549,21 @@
   .tab-active, .tab[aria-selected="true"] {
     @apply border-border bg-card text-accent-text shadow-sm hover:text-accent-text;
   }
+  /* A strip of tabs that scrolls sideways (7.04.00, the form builder's tabs on a phone, IconTabs `scrollLabels`): the
+     side that is cut fades (`data-cut-start` / `data-cut-end`, set as it scrolls), and its scroll buttons sit beside it. */
+  .tab-strip {
+    /* (the padding keeps a tab's focus ring inside what the strip clips; the scroll padding keeps a tab scrolled
+       into view clear of the fade) */
+    @apply overflow-x-auto overscroll-x-contain p-0.5;
+    scroll-padding-inline: 1.75rem;
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }
+  .tab-strip[data-cut-start="true"] { mask-image: linear-gradient(to right, transparent, black 1.5rem); }
+  .tab-strip[data-cut-end="true"] { mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent); }
+  .tab-strip[data-cut-start="true"][data-cut-end="true"] {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+  }
 
   /* --- Dialog: KiroCrew ui/dialog.tsx ---------------------------------- */
   .dialog-overlay { @apply fixed inset-0 z-50 bg-overlay backdrop-blur-md animate-fade-in; }
@@ -583,12 +616,15 @@
   .menu-label { @apply px-3 py-1.5 text-[0.75rem] font-semibold text-muted; }
   .menu-separator { @apply mx-1 my-1 h-px bg-border; }
 
-  /* --- Switch: KiroCrew Toggle (ui.tsx) -------------------------------- */
+  /* --- Switch: KiroCrew Toggle (ui.tsx) --------------------------------
+   * The off track is `--border` (1.27:1 on the light card), so it also draws the `--control-border` edge every
+   * control has (3:1, WCAG 1.4.11): an inset ring, which keeps the knob's 2px inset. On, the accent fill is the edge. */
   .switch {
     @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-border transition-colors
       disabled:cursor-not-allowed disabled:opacity-40;
+    box-shadow: inset 0 0 0 1px var(--control-border);
   }
-  .switch[aria-checked="true"], .switch-on { @apply bg-accent; }
+  .switch[aria-checked="true"], .switch-on { @apply bg-accent; box-shadow: none; }
   .switch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .switch-knob {
     @apply pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform;

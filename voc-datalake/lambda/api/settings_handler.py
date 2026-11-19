@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -35,6 +36,9 @@ from shared import (
     design_logo,
     design_references,
     extracted_design,
+    form_theme,
+    forms_v2_draft,
+    forms_v2_draft_routes,
     image_model_quota,
     image_model_status,
     model_agreements,
@@ -134,6 +138,11 @@ RETENTION_FUNCTION = os.environ.get("RETENTION_FUNCTION", "")
 
 SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
+#: The brand's own fields: what every AI surface reads (a full brand PUT writes them all).
+BRAND_FIELDS: Final = ('brand_name', 'brand_handles', 'hashtags', 'urls_to_track')
+#: The deployment's feedback-form brand (7.04.00, the forms builder's "Your brand" preset): a theme checked by
+#: shared/form_theme.py, on the same row; a new form starts on it. A PUT naming only it changes only it.
+FORM_THEME_FIELD: Final = 'form_theme'
 RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
 RESOLVED_PROBLEMS_SK = "config"
 
@@ -163,6 +172,11 @@ app = create_api_resolver()
 # The workspace's start theme (shared/appearance_routes.py); reads the table at call time.
 appearance_routes.bind_aggregates_table(lambda: aggregates_table)
 app.include_router(appearance_routes.app)
+# A feedback form's AI draft, POST /feedback-forms/draft and GET /feedback-forms/draft/{job_id}
+# (shared/forms_v2_draft_routes.py): served here, beside the job rows and the twin this role already owns, so the
+# forms Lambda, which also serves the public widget routes, holds no worker invoke and no jobs-table action.
+forms_v2_draft_routes.bind_aggregates_table(lambda: aggregates_table)
+app.include_router(forms_v2_draft_routes.app)
 
 
 def _configured_table():
@@ -605,9 +619,8 @@ def get_brand_settings():
         response = aggregates_table.get_item(Key={'pk': SETTINGS_PK, 'sk': SETTINGS_SK})
         item = response.get('Item')
         if not item:
-            return {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
-        result = {'brand_name': item.get('brand_name', ''), 'brand_handles': item.get('brand_handles', []),
-                  'hashtags': item.get('hashtags', []), 'urls_to_track': item.get('urls_to_track', [])}
+            return {**{name: _brand_value({}, name) for name in BRAND_FIELDS}, FORM_THEME_FIELD: None}
+        result = {**{name: _brand_value(item, name) for name in BRAND_FIELDS}, FORM_THEME_FIELD: _stored_form_theme(item)}
     except ConfigurationError:
         raise
     except Exception as e:
@@ -626,22 +639,71 @@ def save_brand_settings():
     configuration every AI surface reads, so only admins may change them
     (#242). The gate runs before the body is
     parsed or anything is written. GET /settings/brand stays open.
+
+    The row also holds the deployment's feedback-form brand (``form_theme``,
+    the forms builder's "Your brand"): a body naming only ``form_theme`` sets
+    just that (null removes it); a full brand save writes the brand's own
+    fields and keeps the stored ``form_theme`` unless it names one. Both are
+    one UpdateItem, so neither save can undo the other.
     """
     require_admin(app.current_event.raw_event)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     body = json_object_body(app)
+    theme = _form_theme_of(body)
+    theme_only = set(body) == {FORM_THEME_FIELD}
+    sets: dict[str, Any] = {} if theme_only else {name: _brand_value(body, name) for name in BRAND_FIELDS}
+    settings = dict(sets)
+    if FORM_THEME_FIELD in body:
+        settings[FORM_THEME_FIELD] = theme
     try:
-        item = {'pk': SETTINGS_PK, 'sk': SETTINGS_SK, 'brand_name': body.get('brand_name', ''),
-                'brand_handles': body.get('brand_handles', []), 'hashtags': body.get('hashtags', []),
-                'urls_to_track': body.get('urls_to_track', []), 'updated_at': now_iso()}
-        aggregates_table.put_item(Item=item)
-        bump_config_version(aggregates_table)
+        _update_brand_row(aggregates_table, {**sets, 'updated_at': now_iso()}, body, theme)
+        if not theme_only:
+            bump_config_version(aggregates_table)
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
         raise ServiceError('Failed to save brand settings') from e
     else:
-        return {'success': True, 'message': 'Brand settings saved', 'settings': {k: item[k] for k in ['brand_name', 'brand_handles', 'hashtags', 'urls_to_track']}}
+        return {'success': True, 'message': 'Brand settings saved', 'settings': settings}
+
+
+def _brand_value(source: Mapping[str, Any], name: str) -> Any:
+    """One of the brand's own fields from a row or a body: its value, else its empty one ('' for the name, [] for the
+    handles, hashtags and tracked URLs)."""
+    return source.get(name, '' if name == 'brand_name' else [])
+
+
+def _form_theme_of(body: dict[str, Any]) -> dict[str, Any] | None:
+    """A brand body's ``form_theme``: checked as a form's theme is (shared/form_theme.py) and stored whole (every
+    field, its defaults filled), or None (absent, or null to remove it)."""
+    theme = body.get(FORM_THEME_FIELD)
+    if theme is None:
+        return None
+    form_theme.check_theme(theme, FORM_THEME_FIELD)
+    return form_theme.with_defaults(theme)
+
+
+def _stored_form_theme(item: dict[str, Any]) -> dict[str, Any] | None:
+    """The brand row's form theme as the builder reads it (every field), or None when none was saved."""
+    stored = item.get(FORM_THEME_FIELD)
+    return form_theme.with_defaults(stored) if isinstance(stored, dict) else None
+
+
+def _update_brand_row(table: Any, sets: dict[str, Any], body: dict[str, Any], theme: dict[str, Any] | None) -> None:
+    """One UpdateItem of the brand row in ``table`` (the aggregates table): ``sets``, and ``form_theme`` set (or
+    removed, for a null) when the body names it; every other attribute stays."""
+    names = {f'#f{i}': name for i, name in enumerate(sets)}
+    values: dict[str, Any] = {f':f{i}': value for i, value in enumerate(sets.values())}
+    expression = 'SET ' + ', '.join(f'#f{i} = :f{i}' for i in range(len(sets)))
+    if FORM_THEME_FIELD in body:
+        names['#theme'] = FORM_THEME_FIELD
+        if theme is None:
+            expression += ' REMOVE #theme'
+        else:
+            values[':theme'] = theme
+            expression += ', #theme = :theme'
+    table.update_item(Key={'pk': SETTINGS_PK, 'sk': SETTINGS_SK}, UpdateExpression=expression,
+                      ExpressionAttributeNames=names, ExpressionAttributeValues=values)
 
 
 @app.get("/settings/categories")
@@ -817,6 +879,9 @@ def generate_categories_work(config: dict) -> dict:
 
 ASSIST_WORK: Final = {  # job_type → the work the settings worker (ASSIST_WORKER_FUNCTION) runs
     CATEGORIES_JOB: assist_jobs.Work(generate_categories_work, CATEGORIES_FAILURE),
+    # A feedback form's AI draft (7.04.00): started by POST /feedback-forms/draft (shared/forms_v2_draft_routes.py, on
+    # this Lambda), run here, on the twin that already holds the Bedrock grant; it reads only its request.
+    forms_v2_draft.DRAFT_JOB: assist_jobs.Work(forms_v2_draft.run_job, forms_v2_draft.DRAFT_FAILURE),
 }
 
 

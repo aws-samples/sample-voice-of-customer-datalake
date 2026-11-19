@@ -6,8 +6,7 @@
  * the query boundary via a lenient Zod schema.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { normalizeFeedbackForms } from './formSchema'
-import { defaultFormConfig } from './formTemplates'
+import { normalizeFeedbackForms, V1_FORM_DEFAULTS as defaultFormConfig } from './formSchema'
 import type { FeedbackForm } from '../../api/types'
 
 /** What the wire is expected to deliver for a stored form: identity fields
@@ -140,6 +139,12 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     expect(form.document_id).toBe('')
   })
 
+  it('reads a form saved before 7.04.00 as no follow-up and the browser language, and a stray language as that', () => {
+    expect(normalizeFeedbackForm(sparseForm)).toMatchObject({ text_question: '', language: '' })
+    expect(normalizeFeedbackForm({ ...sparseForm, text_question: null, language: 'pl-PL' }))
+      .toMatchObject({ text_question: '', language: '' })
+  })
+
   it('keeps a complete record unchanged', () => {
     const complete: FeedbackForm = {
       ...defaultFormConfig,
@@ -152,6 +157,8 @@ describe('normalizeFeedbackForm (issue #171)', () => {
       // record omitting them is not what this test claims to cover.
       project_id: 'proj_1',
       document_id: 'doc_1',
+      text_question: 'What should change?',
+      language: 'pl',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-02-01T00:00:00Z',
       theme: { primary_color: '#111111', background_color: '#222222', text_color: '#333333', border_radius: '4px' },

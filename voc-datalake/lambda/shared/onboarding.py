@@ -195,7 +195,10 @@ def preference_view(item: dict | None, now: datetime) -> dict:
 def signals(table: Any) -> dict:
     """The deployment-wide first-run facts the aggregates table holds."""
     watermark = table.get_item(Key=dict(EARLIEST_DATE_KEY)).get('Item')
-    forms = table.query(KeyConditionExpression=Key('pk').eq(FEEDBACK_FORM_PK), Limit=1, ProjectionExpression='pk')
+    # Form rows only (`FORM#{id}`): the partition also holds a form's revision snapshots, test responses, funnel rows
+    # and the AI drafts' hourly counters (lambda/api/feedback_form_handler.py), none of them a configured form.
+    forms = table.query(KeyConditionExpression=Key('pk').eq(FEEDBACK_FORM_PK) & Key('sk').begins_with('FORM#'),
+                        Limit=1, ProjectionExpression='pk')
     return {
         'feedback_present': earliest_date_from_item(watermark) is not None,
         'feedback_form_configured': bool(forms.get('Items')),

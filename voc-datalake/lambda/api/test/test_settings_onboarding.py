@@ -130,6 +130,13 @@ class TestRoutes:
         _, body = _call(api_gateway_event, lambda_context, 'GET')
         assert body['signals'] == {'feedback_present': True, 'feedback_form_configured': True}
 
+    def test_a_forms_partition_without_a_form_row_is_no_configured_form(self, api_gateway_event, lambda_context,
+                                                                       table):
+        # An AI draft's hourly counter (it sorts after every FORM# row) is not a form.
+        table.put_item(Item={'pk': 'FEEDBACK_FORM', 'sk': 'FORMDRAFT#user-sub#2026-11-18T10', 'drafts': 1})
+        _, body = _call(api_gateway_event, lambda_context, 'GET')
+        assert body['signals']['feedback_form_configured'] is False
+
     def test_closing_home_cards_is_stored_and_leaves_the_other_fields(self, api_gateway_event, lambda_context, table):
         _call(api_gateway_event, lambda_context, 'PUT', {'state': 'skipped', 'guide': 'skipped'})
         _call(api_gateway_event, lambda_context, 'PUT', {'dismiss_decision_run': RUN_A})

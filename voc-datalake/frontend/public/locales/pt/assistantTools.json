@@ -39,7 +39,9 @@
     "confirmChange": "Pedir alterações",
     "openFeedback": "Abrir a lista de feedback",
     "openRadar": "Abrir Radar",
-    "openRadarSettings": "Abrir Administração → Fontes → Radar"
+    "openRadarSettings": "Abrir Administração → Fontes → Radar",
+    "approveCreate": "Aprovar e criar",
+    "openForm": "Abrir o formulário no editor"
   },
   "preview": {
     "participants": {
@@ -342,6 +344,49 @@
       "off": "Desativado",
       "onNote": "As importações agendadas voltam a rodar e um disjuntor acionado é fechado.",
       "offNote": "As importações agendadas param. Nada do que já foi importado muda."
+    },
+    "feedbackFormDraft": {
+      "label": "O formulário redigido",
+      "name": "Nome",
+      "nameMissing": "Dê um nome ao formulário.",
+      "channel": {
+        "link": "Link",
+        "embed": "Incorporado",
+        "in_app": "No app"
+      },
+      "questions": "Perguntas",
+      "leaveOut": "Remover a pergunta {{number}}",
+      "lastQuestion": "Um formulário precisa de pelo menos uma pergunta, por isso a última não pode ser removida.",
+      "leftOut": "A pergunta {{number}} foi removida.",
+      "endings": "Finais",
+      "hiddenFields": "Campos ocultos",
+      "fromAi": "Da IA",
+      "warning": "Aviso",
+      "addresses": "Endereços sugeridos pela IA",
+      "checkedAddress": "Verifiquei este endereço",
+      "remove": "Remover",
+      "removeAddress": "Remover o endereço {{url}}",
+      "createsOff": "Aprovar cria o formulário desativado: nada fica público até você publicá-lo.",
+      "openInBuilder": "Abrir no editor",
+      "notAForm": "O rascunho não é um formulário que este app consiga ler.",
+      "questionCount_one": "{{count, number}} pergunta",
+      "questionCount_many": "{{count, number}} perguntas",
+      "questionCount_other": "{{count, number}} perguntas",
+      "endingCount_one": "{{count, number}} final",
+      "endingCount_many": "{{count, number}} finais",
+      "endingCount_other": "{{count, number}} finais",
+      "hiddenCount_one": "{{count, number}} campo oculto",
+      "hiddenCount_many": "{{count, number}} campos ocultos",
+      "hiddenCount_other": "{{count, number}} campos ocultos",
+      "options_one": "{{count, number}} opção",
+      "options_many": "{{count, number}} opções",
+      "options_other": "{{count, number}} opções",
+      "rules_one": "{{count, number}} regra",
+      "rules_many": "{{count, number}} regras",
+      "rules_other": "{{count, number}} regras",
+      "rulesDropped_one": "A regra em {{questions}} que levava a ela também é removida.",
+      "rulesDropped_many": "As {{count, number}} regras em {{questions}} que levavam a ela também são removidas.",
+      "rulesDropped_other": "As {{count, number}} regras em {{questions}} que levavam a ela também são removidas."
     }
   },
   "tools": {
@@ -533,6 +578,10 @@
       "titleWith_one": "Criar {{count, number}} usuário",
       "titleWith_other": "Criar {{count, number}} usuários",
       "titleWith_many": "Criar {{count, number}} usuários"
+    },
+    "draft_feedback_form": {
+      "title": "Criar um formulário de opinião",
+      "titleWith": "Criar o formulário de opinião “{{name}}”"
     }
   }
 }

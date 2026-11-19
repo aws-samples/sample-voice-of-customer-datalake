@@ -18,9 +18,14 @@ def test_reads_the_brand_row_and_field_the_brand_route_writes(api_gateway_event,
         response, _ = call_route(lambda_handler, api_gateway_event, lambda_context, method='PUT',
                                  path='/settings/brand', body={'brand_name': 'Acme'})
     assert response['statusCode'] == 200
-    written = table.put_item.call_args.kwargs['Item']
-    assert {'pk': written['pk'], 'sk': written['sk']} == user_messages.BRAND_KEY
-    assert written['brand_name'] == 'Acme'
+    # The brand save is one UpdateItem of the brand row (the config version's bump is another write, elsewhere).
+    writes = [c.kwargs for c in table.update_item.call_args_list
+              if 'brand_name' in c.kwargs.get('ExpressionAttributeNames', {}).values()]
+    assert len(writes) == 1
+    write = writes[0]
+    assert write['Key'] == user_messages.BRAND_KEY
+    alias = next(alias for alias, name in write['ExpressionAttributeNames'].items() if name == 'brand_name')
+    assert write['ExpressionAttributeValues'][alias.replace('#', ':', 1)] == 'Acme'
 
 
 def test_reads_the_design_system_row_the_design_system_writes():

@@ -5,6 +5,12 @@
   // (src/i18n/options.test.ts parses it) and i18n-check.test.mjs, set-nested.test.mjs, fix-i18n-helpers.test.mjs, check-mock-coverage.test.mjs and the mock-*.test.mjs files are run by validate.sh with node.
   "entry": [
     "index.html!",
+    // The builder's preview window, the build's second page (vite.config.ts): its <script> is
+    // src/pages/FeedbackForms/preview/window/main.ts.
+    "form-preview.html!",
+    // FeedbackFormConfig, the public widget's wire shape (schema version 2 since 7.04.00): nothing imports it; it is
+    // read as text by lambda/api/test/test_widget_config_type_lockstep.py and feedbackFormTypes.test.ts.
+    "src/api/feedbackFormsV2Types.ts!",
     "scripts/fix-i18n.mjs",
     "scripts/i18n-check.test.mjs",
     "scripts/set-nested.test.mjs",
@@ -15,13 +21,16 @@
     "scripts/mock-scope.test.mjs",
     "scripts/mock-edit-stamp.test.mjs",
     "scripts/mock-reprocess.test.mjs",
-    "scripts/mock-methodology.test.mjs"
+    "scripts/mock-methodology.test.mjs",
+    "scripts/mock-forms-events.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",
     "!src/**/*.{spec,test}.{ts,tsx}!",
     "!src/**/*-fixtures.{ts,tsx}!",
     "!src/test/**!",
+    // A page's own spec helpers (pages/FeedbackForms/test/: harnesses, stubs), imported by its specs only.
+    "!src/**/test/**!",
     "scripts/**/*.{js,mjs,ts}"
   ],
   // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
@@ -31,8 +40,7 @@
   // Each entry is an export nothing imports ON PURPOSE. Do not add one without its reason.
   "ignoreIssues": {
     // DocTypeField* are compile-time pins: exported only so noUnusedLocals cannot delete them, and
-    // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
-    // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
+    // lambda/api/test/test_doc_type_lockstep.py pins their exact text.
     "src/api/types.ts": ["types"],
     // Test seams of the approval layer: listWriteTools is compared against the stream Lambda's
     // contract by registry.test.ts; resetExecutions resets the module-private zustand store between

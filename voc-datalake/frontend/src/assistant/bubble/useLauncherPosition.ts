@@ -8,15 +8,18 @@
  *   Home puts it back in the default corner.
  * - Every rendered position is clamped to the viewport (re-clamped on resize,
  *   without overwriting the stored spot, so growing the window back restores
- *   it) and, when not being dragged, lifted above registered action bars.
+ *   it) and, when not being dragged, kept clear of the registered keep-clear
+ *   zones (lifted above action bars, moved beside a form's preview), again
+ *   without overwriting the stored spot: a spot the person chose stays theirs
+ *   wherever it covers nothing.
  *
  * @module assistant/bubble/useLauncherPosition
  */
 import { useRef, useState, useSyncExternalStore } from 'react'
-import { useActionBarRects } from '../../components/StickyActionBar/actionBarRegistry'
+import { useKeepClearZones } from '../../components/StickyActionBar/actionBarRegistry'
 import { useBubbleStore, useBubbleUserKey } from './bubbleStore'
 import {
-  DEFAULT_POSITION, arrowDelta, clampToViewport, liftAboveActionBars, moveBy, panelAnchor,
+  DEFAULT_POSITION, arrowDelta, clampToViewport, keepClear, moveBy, panelAnchor,
 } from './geometry'
 import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import type { BubblePosition, PanelAnchor, Viewport } from './geometry'
@@ -47,7 +50,7 @@ interface DragStart {
 }
 
 export interface LauncherPosition {
-  /** Where the launcher renders (clamped, lifted above action bars). */
+  /** Where the launcher renders (clamped, clear of the keep-clear zones). */
   readonly position: BubblePosition
   /** CSS variables that place the floating panel beside the launcher. */
   readonly panelAnchor: PanelAnchor
@@ -72,12 +75,12 @@ export function useLauncherPosition(): LauncherPosition {
   const setPosition = useBubbleStore((s) => s.setPosition)
   const resetPosition = useBubbleStore((s) => s.resetPosition)
   const viewport = useViewport()
-  const bars = useActionBarRects()
+  const zones = useKeepClearZones()
   const [dragPosition, setDragPosition] = useState<BubblePosition | null>(null)
   const dragStart = useRef<DragStart | null>(null)
   const swallowClick = useRef(false)
 
-  const resting = liftAboveActionBars(clampToViewport(stored ?? DEFAULT_POSITION, viewport), bars, viewport)
+  const resting = keepClear(clampToViewport(stored ?? DEFAULT_POSITION, viewport), zones, viewport)
   const position = dragPosition ?? resting
   const save = (next: BubblePosition) => setPosition(user, clampToViewport(next, viewport))
   const reset = () => resetPosition(user)

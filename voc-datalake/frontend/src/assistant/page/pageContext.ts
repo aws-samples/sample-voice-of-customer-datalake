@@ -40,7 +40,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'prioritization', kind: 'prioritization' },
   { route: 'data-explorer', kind: 'data-explorer' },
   { route: 'scrapers', kind: 'scrapers' },
-  { route: 'feedback-forms', kind: 'feedback-forms' },
+  // The list, the picker and a form's builder and preview are the page's own paths (FeedbackForms/builder/builderPaths.ts).
+  { route: 'feedback-forms/*', kind: 'feedback-forms' },
   // Administration is the `settings` kind; `/settings`
   // only redirects to it now but keeps its pattern for the redirect's instant.
   { route: 'admin', kind: 'settings', label: 'admin' },

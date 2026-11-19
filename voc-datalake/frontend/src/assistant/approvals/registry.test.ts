@@ -14,6 +14,13 @@ const P = 'proj_20260101120000'
 const LONG = (n: number) => 'x'.repeat(n)
 
 /** One valid args object per tool, and invalid variants that must be rejected. */
+/** A whole version 2 form, as the assistant's draft_feedback_form card carries it. */
+const DRAFTED_FORM = {
+  schema_version: 2, name: 'Why back', language: 'en', languages: ['en'], welcome: { enabled: false },
+  questions: [{ id: 'q_why', type: 'open_text', headline: { en: 'Why?' }, required: true, long: true, input_type: 'text' }],
+  hidden_fields: [], endings: [{ id: 'end_thanks', title: { en: 'Thanks' } }], settings: { test: { link_enabled: false, record: 'tag' } },
+}
+
 const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
   create_project: {
     good: [{ name: 'Onboarding' }, { name: 'A', description: LONG(2000) }],
@@ -101,12 +108,25 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     ],
   },
   update_feedback_form: {
-    good: [{ form_id: 'form_1', updates: { enabled: false } }, { form_id: 'form_1', updates: { question: 'How was it?', rating_type: 'emoji' } }],
+    good: [{ form_id: 'form_1', updates: { enabled: false } }, { form_id: 'form_1', updates: { title: 'Witaj', success_message: 'Dzięki!' } }],
     bad: [
       { form_id: 'form_1', updates: {} },
       { form_id: 'form_1', updates: { theme: { primary_color: 'red' } } },
       { form_id: 'form_1', updates: { project_id: 'proj_x' } },
       { form_id: 'form_1', updates: { custom_fields: [] } },
+      // (7.04.00: version 1 fields a version 2 form refuses; its definition changes in the builder)
+      { form_id: 'form_1', updates: { question: 'How was it?' } },
+      { form_id: 'form_1', updates: { rating_type: 'emoji' } },
+      { form_id: 'form_1', updates: { questions: [] } },
+    ],
+  },
+  draft_feedback_form: {
+    good: [{ form: DRAFTED_FORM, notes: ['Short on purpose.'], channel: 'in_app' }],
+    bad: [
+      {},
+      { form: 'a form' },
+      { form: { schema_version: 2, name: 'No questions', language: 'en', questions: [], endings: [{ id: 'end_thanks', title: { en: 'Thanks' } }] } },
+      { form: { schema_version: 2, name: 'x', language: 'en', questions: [], endings: [] }, channel: 'email' },
     ],
   },
   run_scraper: {
@@ -393,6 +413,13 @@ describe('write-tool registry', () => {
     const def = getWriteTool('create_project')
     expect(def?.title({ nope: true }, translate)).toBe(toolTitleKey('create_project'))
     expect(def?.title({ name: 'Acme' }, translate)).toContain('"name":"Acme"')
+  })
+
+  it('titles the draft_feedback_form card with the drafted name, or the tool title for a blank one', () => {
+    const def = getWriteTool('draft_feedback_form')
+    const args = (name: string) => ({ form: { ...DRAFTED_FORM, name }, notes: [], channel: 'in_app' })
+    expect(def?.title(args('Why back'), translate)).toBe('assistantTools:tools.draft_feedback_form.titleWith{"name":"Why back"}')
+    expect(def?.title(args('  '), translate)).toBe(toolTitleKey('draft_feedback_form'))
   })
 
   it('refuses to execute with invalid args (the erased execute re-validates)', async () => {

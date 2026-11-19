@@ -76,7 +76,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── feedback_edit_handler.py  # PUT /feedback/{id}/category (the only feedback write route)
     │   │   ├── memory_handler.py         # /memory/* (company + personal memory)
     │   │   ├── agents_handler.py         # /agents/*, /workflows/* (autonomous agents)
-    │   │   ├── mcp_global_handler.py     # POST /mcp/global (one MCP server for the whole app, docs/mcp.md)
+    │   │   ├── mcp_global_handler.py     # POST /mcp/global (one MCP server for the whole app, docs/mcp.md); signing-deps layer: ProjectsApi, ProjectsAssistWorker and the MCP endpoint (SigningDepsLayer, VocApiStack), and the Cognito custom-message trigger (its own UserMessagesSigningDepsLayer, VocCoreStack)
     │   │   ├── mcp_tokens_handler.py     # /connect/tokens (mint / list / revoke global MCP tokens, audit)
     │   │   ├── chat_handler.py           # /chat/* (conversations)
     │   │   ├── integrations_handler.py   # /integrations/*, /sources/* (credentials, schedules)
@@ -105,7 +105,7 @@ voice-of-customer-datalake/       # Root repository
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4, app-review scrapers
     │       ├── processing-deps/      # Layer (ApiDepsLayer + ProcessingDepsLayer): aws-lambda-powertools, pydantic, requests
-    │       ├── signing-deps/         # Layer: cryptography, only for the 5 functions that sign CloudFront URLs
+    │       ├── signing-deps/         # Layer: cryptography, only for ProjectsApi, ProjectsAssistWorker and the MCP endpoint (SigningDepsLayer, VocApiStack: the first two sign CloudFront URLs, the endpoint verifies OAuth tokens), and the Cognito custom-message trigger (its own UserMessagesSigningDepsLayer, VocCoreStack: the invitation's logo link)
     │       └── email-intake-deps/    # Layer: lxml, only for the (opt-in) inbound-email intake
     ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities
@@ -202,7 +202,7 @@ voice-of-customer-datalake/       # Root repository
 | Table | PK | SK | Purpose |
 |-------|----|----|---------|
 | `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md), `csv_dataset` + `csv_content_hash` (a CSV dataset row, docs/csv-import.md) — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false`; only `voc-retention` deletes at runtime (opt-in per source profile) |
-| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, no `ttl`: an audit trail is kept; rows from earlier releases keep their 90-day `ttl`, docs/import-history.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
+| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, no `ttl`: an audit trail is kept; rows from earlier releases keep their 90-day `ttl`, docs/import-history.md), form configs (`FEEDBACK_FORM`: `FORM#{id}`, their revision snapshots `FORMREV#{id}#…`, the funnel's daily counters `FORMFUNNEL#{form}#{day}` (kept), each visit's dedupe row `FORMSESSION#{form}#{session}` (7-day `ttl`), the AI drafts' hourly counters `FORMDRAFT#{sub}#{hour}` (`ttl`)), a form's test responses (`FEEDBACK_FORM_TEST`/`{form}#{created_at}#{response}`, the only partition voc-retention may delete in), the brand row's `form_theme` (`SETTINGS#brand`), `AUDIT#delete` rows of a form's and its test responses' deletes — METRIC# rows kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
@@ -336,13 +336,14 @@ Every scraper write and analyze-url is admin-only (they write the
 shared API-credentials secret, drive scheduled scraping and spend Bedrock); the reads stay open to
 every signed-in user. MCP tokens and agents are never admin. See `docs/scrapers.md`.
 
-**Assist jobs (4.00.00).** No model call sits on a 29 s REST path. Six routes do their 4xx checks
+**Assist jobs (4.00.00).** No model call sits on a 29 s REST path. Seven routes do their 4xx checks
 synchronously, then write a pending row in voc-jobs (`lambda/shared/assist_jobs.py`, TTL 1 day),
 async-invoke their API Lambda's 15-minute twin (`voc-projects-assist`, `voc-settings-assist`,
 `voc-scrapers-assist`: same code and role, `lib/stacks/api-assist-workers.ts`) and answer **202**
 `{success, job_id, status:'pending'}`. Poll until `status` is `completed` (`result`) or `failed` (`error`):
-`POST /settings/categories/generate` → `GET /settings/jobs/{job_id}`; `POST /scrapers/analyze-url` →
-`GET /scrapers/jobs/{job_id}` (both owner-only, pk `ASSIST#{sub}`); and `POST /projects/{id}/prfaq-autofill`,
+`POST /settings/categories/generate` → `GET /settings/jobs/{job_id}`; `POST /feedback-forms/draft` →
+`GET /feedback-forms/draft/{job_id}` (7.04.00, on the settings Lambda and its twin); `POST /scrapers/analyze-url` →
+`GET /scrapers/jobs/{job_id}` (all three owner-only, pk `ASSIST#{sub}`); and `POST /projects/{id}/prfaq-autofill`,
 `/documents/suggest-brief`, `/research/suggest-questions`,
 `/personas/{pid}/regenerate-avatar` → `GET /projects/{id}/jobs/{job_id}` (pk `PROJECT#{id}`, view access;
 `GET /projects/{id}/jobs` hides `assist_*`). The SPA polls via `frontend/src/api/assistJobs.ts`.
@@ -365,8 +366,10 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 ### Settings (settings_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/settings/brand` | Get brand configuration (any signed-in user) |
-| PUT | `/settings/brand` | Save brand configuration — admin-only (#242: shared deployment config every AI surface reads); the Admin page's brand form is read-only for non-admins |
+| GET | `/settings/brand` | Get brand configuration (any signed-in user), with `form_theme` (the forms' "Your brand", `null` when none) |
+| PUT | `/settings/brand` | Save brand configuration — admin-only (#242: shared deployment config every AI surface reads); the Admin page's brand form is read-only for non-admins. One UpdateItem: a body of only `form_theme` sets just that (`null` removes it, checked by `shared/form_theme.py`); a full brand save keeps it |
+| POST | `/feedback-forms/draft` | An AI draft of a feedback form `{description, language, channel, base_form?, instruction?}` (`channel`: `link\|embed\|in_app`, where it will run; not a response's `link\|iframe\|script`) (any signed-in user, 20 per person per hour, `429 rate_limited`) → 202 + assist job (`shared/forms_v2_draft_routes.py`, on this Lambda's assist worker) |
+| GET | `/feedback-forms/draft/{job_id}` | Poll a form draft job (its starter only; 404 otherwise) |
 | GET | `/settings/appearance` | The workspace's start theme `{default_theme}` (any signed-in user; no row or an unknown stored id = `kiro`; `shared/appearance_routes.py`, ids in `shared/appearance.py` mirror `frontend/src/theme/themeCatalog.ts`) |
 | PUT | `/settings/appearance` | Set it `{default_theme}` — admin-only; 400 unless one of `kiro\|nord\|dracula\|highcontrast\|quick`; answers `{success, settings: {default_theme}}` (aggregates `SETTINGS#appearance`/`config`; no `config_version` bump: no read depends on it). A person's own pick lives in the browser (`/account` → Preferences) |
 | GET | `/settings/model` | Per-surface model overrides + allowlist + `image_model: {id, label, region, avatars_enabled}` (the fixed persona-avatar model, `shared/image_model_status.py`) (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, so that read keeps working for non-admins) |
@@ -418,22 +421,28 @@ password resets, user flags → Administration → Privacy & access → Users. N
 
 ### Feedback Forms (feedback_form_handler.py)
 
-Every route requires Cognito **except** the three marked public, which the
+Every route requires Cognito **except** the four marked public, which the
 embeddable widget calls from the customer's own site.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/feedback-forms` | Cognito | List all forms |
-| POST | `/feedback-forms` | Cognito | Create form |
-| PUT | `/feedback-forms/{id}` | Cognito | Update form |
-| DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
+| GET | `/feedback-forms` | Cognito | List all forms (`?include=stats`: each form's stats, `headline`, `last_response_at`, `channels`) |
+| POST | `/feedback-forms` | Cognito | Create form (schema version 2; records `created_by`; created live only with readable text, else `400 theme_unreadable`) |
+| GET | `/feedback-forms/{id}` | Cognito | One form, with `response_count`, `has_responses`, `can_delete_test_responses` |
+| PUT | `/feedback-forms/{id}` | Cognito | Update form (404 unknown id; `expected_revision` / `expected_write_count` → `409 revision_conflict`; `removes` for an answered form, and a kept question's type and range → `409 answers_locked`; `400 theme_unreadable` / `warnings: ['theme_unreadable']`) |
+| DELETE | `/feedback-forms/{id}` | Cognito | Delete form, its revisions, test responses and funnel rows; its `AUDIT#delete` row (`test_responses_deleted`) written first |
 | GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
-| GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
+| GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating, `headline`, `last_response_at`, `channels` |
+| GET | `/feedback-forms/{id}/results` | Cognito | Results per question and the funnel (`include_test`, `from`/`to`, `language`, `ending`, `hidden.<id>`); category AND source access applied |
+| GET | `/feedback-forms/{id}/responses` | Cognito | Responses, newest first (`include_test=false\|true\|only`, `limit`, `cursor`; `format=csv`: the newest 10,000 as CSV, formula-safe); category AND source access applied |
+| DELETE | `/feedback-forms/{id}/responses?test=true` | Cognito | Delete the form's test responses (an admin or the form's creator, else `403 test_responses_admin_or_creator`); `AUDIT#delete` row with `count` first |
+| POST | `/feedback-forms/{id}/test-link` | Cognito | Issue or rotate the test token (`admins` group; the only answer that carries it) |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
+| POST | `/feedback-forms/{id}/events` | **public** | The widget's funnel beacons (`opened`, `left`), apart from submit |
 | GET | `/feedback-forms/{id}/iframe` | **public** | Iframe embed variant |
 
-> **Rate limits on the three public routes** are stage method settings in
+> **Rate limits on the four public routes** are stage method settings in
 > `api-gateway.ts`, and are EXTERNALLY OBSERVABLE to anyone embedding the widget:
 >
 > <!-- LOCKSTEPPED against the stack by `the public feedback-form routes` in
@@ -447,12 +456,13 @@ embeddable widget calls from the customer's own site.
 > |---|---|---|
 > | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
 > | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
+> | `POST /events` | **100 rps / 200** | The widget's funnel beacons, at most two per visit: page-view demand, one or two `UpdateItem`s each, never a model call; a 429 costs one funnel count |
 >
 > The method-setting keys spell the variable `{form_id}` — the resource is created
 > as `addResource('{form_id}')`, so that is the path to look for in the template,
 > even though the table above uses `{id}` for brevity like the rest of this file.
 >
-> These four numbers are PINNED against the synthesized template by a lockstep case
+> These six numbers are PINNED against the synthesized template by a lockstep case
 > in `api-stack.test.ts`, so tuning them in `api-stack.ts` without updating this
 > table fails the CDK suite. The stack is the source of truth.
 >
@@ -461,7 +471,8 @@ embeddable widget calls from the customer's own site.
 > and not per client. 100 rps is therefore the aggregate widget page-view rate a
 > deployment supports.
 >
-> Above it, **each of the three fails differently and none names the limit**, so a
+> Above it, **each of the first three fails differently and none names the limit**
+> (a throttled `POST /events` beacon only costs a funnel count), so a
 > busy embed is fixed by raising the number rather than widget-side: `GET /config`
 > renders a flat "Failed to load form." with no retry (the gateway 429 carries the
 > deployment's frontend origin, `*` only in dev, so the widget cannot read it
@@ -482,7 +493,7 @@ embeddable widget calls from the customer's own site.
 > proxy without `defaultMethodOptions` defaults to `AuthorizationType: NONE`,
 > which is how form update/delete and submission reads were once public.
 > `api-stack.test.ts` asserts the handler and stack stay in step, and that only
-> the three public routes are unauthenticated.
+> the four public routes are unauthenticated.
 
 > ⚠️ **"Cognito" above means authenticated, NOT authorized.** These routes check
 > that the caller has a valid token; they do not check *which* forms the caller

@@ -116,7 +116,7 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
       and(LABEL('GenericRFI_QUERYARGUMENTS'), PATH(regex(['/oauth/authorize']))),
     ] } });
     expect(PATH(regex([])).RegexMatchStatement.RegexString).toBe(
-      `^(?:/v1)?(?:/feedback-forms/${PARAM}/(?:config|iframe|submit)|/voting-sessions/${PARAM}/(?:config|submit)|/unsubscribe`
+      `^(?:/v1)?(?:/feedback-forms/${PARAM}/(?:config|iframe|submit|events)|/voting-sessions/${PARAM}/(?:config|submit)|/unsubscribe`
       + '|/\\.well-known/(?:oauth-authorization-server|oauth-protected-resource|openid-configuration)'
       + '|/\\.well-known/oauth-protected-resource/mcp/global|/oauth/(?:authorize|callback|register|revoke|token)'
       + `|/webhooks/${PARAM})/?$`);

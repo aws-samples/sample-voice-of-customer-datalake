@@ -258,15 +258,19 @@ What ships (`lib/utils/dependency-layers.ts`, Docker builds, arm64):
 |---|---|---|---|
 | `ApiDepsLayer`, `ProcessingDepsLayer` (`processing-deps`) | Api, Processing | 29 + 14 | 20.5 / 7.3 MB |
 | `IngestionDepsLayer` (`ingestion-deps`) | Ingestion | 9 | 22.2 / 7.9 MB |
-| `SigningDepsLayer` (`signing-deps`) | Api | 5: projects API + its assist worker, the persona generator and importer, the document generator | 16.8 / 5.6 MB |
+| `SigningDepsLayer` (`signing-deps`) | Api | 3: projects API + its assist worker (`SIGNING_LAYER_FUNCTION_IDS`: they sign CDN URLs), the MCP endpoint (`api-mcp-oauth.ts`: it verifies OAuth tokens) | 16.8 / 5.6 MB |
+| `UserMessagesSigningDepsLayer` (`signing-deps`) | Core | 1: the Cognito custom-message trigger (`core-auth.ts`: it signs the invitation email's logo link) | 16.8 / 5.6 MB |
 | `EmailIntakeDepsLayer` (`email-intake-deps`) | Ingestion, only with `-c inboundEmailDomain` | 1: the email intake | 12.4 / 5.2 MB |
 
 Earlier releases shipped one 39 MB layer to every API and processing function; cryptography (17 MB with its
 dependencies) and lxml (12 MB) now go only to the functions that use them.
 
-- **Who gets the signing layer.** `SIGNING_LAYER_FUNCTION_IDS` lists them. `py_layers` fails the gate when a
-  function's live code imports a library none of its layers ships (`missing-distribution`), and when a
-  function gets a layer it reaches nothing of (`unused-layer`). So the list follows the code.
+- **Who gets the signing layer.** `SIGNING_LAYER_FUNCTION_IDS` lists the API stack's signers (the projects API and
+  its assist worker); the MCP endpoint takes the same layer to verify tokens (`api-mcp-oauth.ts`), and the Cognito
+  custom-message trigger has its own copy in VocCoreStack (`UserMessagesSigningDepsLayer`, `core-auth.ts`).
+  `py_layers` fails the gate when a function's live code imports a library none of its layers ships
+  (`missing-distribution`), and when a function gets a layer it reaches nothing of (`unused-layer`). So the list
+  follows the code.
   `dependency-layers.test.ts` checks the templates against the list.
 - **What the bundling strips.** `LAYER_STRIP` in `lib/utils/python-layer-bundling.ts`, in lockstep with
   `scripts/build-layers.sh`:

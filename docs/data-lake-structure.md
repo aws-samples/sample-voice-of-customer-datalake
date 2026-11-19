@@ -57,7 +57,7 @@ its manifest `version` for an ingestor (`webhook_<plugin>` for a webhook), or th
 | Writer | Where | What | Connector |
 |---|---|---|---|
 | Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
-| Feedback forms (`POST /feedback-forms/{id}/submit`) | `raw/feedback_form/…/<feedback id>/<sha16>.json` | `{form_id, submission}`: the body as the widget sent it, before the source policy | `feedback_form` |
+| Feedback forms (`POST /feedback-forms/{id}/submit`) | `raw/feedback_form/…/<feedback id>/<sha16>.json` | `{form_id, submission}`: the body as the widget sent it, before the source policy (a schema version 2 response also as checked against its revision, `submission.response`) | `feedback_form` |
 | Feedback boards ([feature-requests.md](feature-requests.md#raw-copies)) | `raw/feature_requests/…/<request id \| support id>/<sha16>.json` | A request on create and every content edit; a +1 on create and every edit. Not queued into `voc-feedback` | `feature_requests` |
 | Email inbox ([email-intake.md](email-intake.md#raw-copies)) | `raw/email_intake/…/<item id>/<sha16>.eml` | The email as received; filtered mail too, with metadata `drop-reason` | `email_intake` |
 | S3 import originals | `raw/s3_import/…/<file stem>/<sha16>.<csv\|json\|jsonl>` | The staged file as uploaded, metadata `original-key`; only when the `s3_import` profile keeps whole files (allow, no retention period) | `s3_import` |
@@ -203,7 +203,8 @@ such as every source or persona counter. Common key families include:
 | `JOB#category_reprocess` / `rp_<hex>` | Category reprocess jobs |
 | `JOB#erasure` / `er_<hex>`, `AUDIT#retention` | Erasure jobs and the retention audit trail |
 | `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL) |
-| `FEEDBACK_FORM` | Feedback-form configuration and statistics |
+| `FEEDBACK_FORM` | Feedback-form configuration (`FORM#<id>`), its revision snapshots (`FORMREV#`), the funnel's daily counters (`FORMFUNNEL#<form>#<day>`, kept), each visit's dedupe row (`FORMSESSION#`, 7-day TTL) and the AI drafts' hourly counters (`FORMDRAFT#`, TTL) ([feedback-forms.md](feedback-forms.md)) |
+| `FEEDBACK_FORM_TEST` / `<form>#<created_at>#<response>` | A form's test responses, kept apart so voc-retention's delete reaches only them ([feedback-forms.md](feedback-forms.md#test-mode)) |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state |
 | `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)) |

@@ -126,7 +126,9 @@ export const routes: RouteObject[] = [
       { path: 'prioritization', ...page(<Prioritization />) },
       { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
-      { path: 'feedback-forms', ...page(<FeedbackForms />) },
+      // The list, the picker (/feedback-forms/new), a form's builder and its full-screen preview are paths the page
+      // reads itself (FeedbackForms/builder/builderPaths.ts): /feedback-forms/<id|new>/<tab>[/…], /<id>/preview.
+      { path: 'feedback-forms/*', ...page(<FeedbackForms />) },
       { path: 'participants', ...page(<Participants />) },
       // Feedback boards: the list (an old `?request=` link opens its board), then one board by slug or id.
       { path: 'feature-requests', ...page(<FeatureRequests />) },

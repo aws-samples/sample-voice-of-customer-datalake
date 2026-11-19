@@ -375,7 +375,8 @@ class TestMetadata:
         assert kept.model_dump() == {
             'is_verified': None, 'location_id': None, 'reference_id': None, 'reply_count': None,
             'like_count': None, 'business_id': None, 'business_name': None, 'author_image': None,
-            'custom_fields': None, 'participant': None, 'external_ticket': 'T-1',
+            'custom_fields': None, 'participant': None, 'form_answers': None, 'form_hidden': None,
+            'form_path': None, 'form_revision': None, 'form_session': None, 'form_channel': None, 'external_ticket': 'T-1',
         }
 
 

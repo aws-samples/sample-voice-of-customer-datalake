@@ -1,0 +1,44 @@
+/**
+ * @fileoverview The welcome card (UX §4.5): Show a welcome screen, then its title, description and button label
+ * (empty: the widget's own "Start" in the respondent's language).
+ *
+ * @module pages/FeedbackForms/questions/WelcomeEditor
+ */
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { DoorOpen } from 'lucide-react'
+import SwitchField from '../../../components/SwitchField/SwitchField'
+import { textIn, withText } from '../model/i18nText'
+import { problemsAt } from '../model/validateForm'
+import { useDraft } from '../builder/formDraftContext'
+import { TextField } from './fields'
+import { fieldProblems } from './fieldHelpers'
+import { takeFocusRequest } from './focusRequest'
+
+export default function WelcomeEditor() {
+  const { t } = useTranslation('feedbackForms')
+  const draft = useDraft()
+  const { welcome, language: lng } = draft.form
+  const title = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  useEffect(() => { if (takeFocusRequest('welcome')) title.current?.focus() }, [])
+  const set = (patch: Partial<typeof welcome>) => draft.update((form) => ({ ...form, welcome: { ...form.welcome, ...patch } }))
+  return (
+    <div className="space-y-3">
+      <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-text-strong">
+        <DoorOpen size={16} className="text-muted" aria-hidden="true" />{t('questionList.welcomeName')}
+      </h2>
+      <SwitchField checked={welcome.enabled} label={t('welcome.show')} hint={t('welcome.hint')} onChange={(enabled) => set({ enabled })} />
+      {welcome.enabled && (
+        <>
+          <TextField label={t('welcome.title')} required inputRef={title} value={textIn(welcome.title, lng)}
+            problems={fieldProblems(problemsAt(draft.problems, 'welcome'), 'title')}
+            onChange={(value) => set({ title: withText(welcome.title, lng, value) })} />
+          <TextField label={t('welcome.description')} multiline value={textIn(welcome.description, lng)}
+            onChange={(value) => set({ description: withText(welcome.description, lng, value) })} />
+          <TextField label={t('welcome.buttonLabel')} value={textIn(welcome.button_label, lng)} placeholder={t('welcome.buttonDefault')}
+            onChange={(value) => set({ button_label: withText(welcome.button_label, lng, value) })} />
+        </>
+      )}
+    </div>
+  )
+}

@@ -34,6 +34,19 @@
  * what deploys. That adds the one log group the aspect gives a function CDK creates without one (the website
  * BucketDeployment handler): the deployed performance-tier synth was already 395, one over the ceiling set against
  * the bare fixture. The ceiling is 395, the deployed count; the 425 gate is unchanged.
+ *
+ * 7.04.00 (Feedback Forms schema version 2, docs/feedback-forms.md) spends 16: GET on `/feedback-forms/{form_id}` (one
+ * form, the builder's read) and one Cognito `{proxy+}` under the item with GET, POST, DELETE and its CORS preflight
+ * (the results, responses and test link), through the forms Lambda's existing integration and invoke permission (6);
+ * and the AI draft on a static `/feedback-forms/draft` resource beside the item, POST, with `{job_id}` under it, GET,
+ * each with its CORS preflight, through the SETTINGS Lambda's existing integration and invoke permission (6). The
+ * draft moved there in the AI review's round 1 (TENETS.md tenet 6: the forms role serves the public routes, so it
+ * holds no worker invoke and no jobs-table action); the item's POST that started a draft before is gone. The draft
+ * runs on the settings API's existing assist twin, so no function, role or log group is added. The round 2 review gave
+ * the widget's funnel beacons their own public route (4: `POST /feedback-forms/{form_id}/events`, its resource and
+ * CORS preflight, and its request model `FeedbackFormEvent`), through the forms Lambda's existing integration and
+ * invoke permission, so a beacon never spends the submit route's limit. The performance-tier synth goes 395 → 411:
+ * the ceiling is 411, and the 425 gate is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -44,9 +57,10 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 /**
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
- * performance-tier synth is 395, as deployed.
+ * performance-tier synth is 395, as deployed; + 5 for the forms' v2 proxy (7.04.00), 1 for its single-form GET and 6
+ * for the AI draft's static resource on the settings Lambda, and 4 for the beacons' own route and model: 411.
  */
-const ENGAGEMENT_RELEASE_CEILING = 395;
+const ENGAGEMENT_RELEASE_CEILING = 411;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

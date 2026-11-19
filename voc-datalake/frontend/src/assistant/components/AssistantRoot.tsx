@@ -3,7 +3,10 @@
  * default; draggable with the pointer or the arrow keys, kept inside the
  * viewport and above sticky action bars — bubble/useLauncherPosition) and,
  * when open, the floating assistant panel beside it. Hidden on `/chat`, which
- * renders the same assistant (same thread) as the page itself.
+ * renders the same assistant (same thread) as the page itself. The launcher
+ * alone hides while the mobile drawer is open (`launcherHidden`) and while a
+ * page offers the assistant in its own menu (the narrow form builder's ⋯,
+ * bubble/launcherYield); the panel still opens from there.
  *
  * Layering (docs/kiro-design-system.md): launcher and panel are fixed siblings
  * of `<main>` — never give `<main>` or the shell a z-index. The launcher and
@@ -14,7 +17,7 @@
  *
  * @module assistant/components/AssistantRoot
  */
-import { lazy, Suspense, useEffect, useId, useRef } from 'react'
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
@@ -22,6 +25,7 @@ import { X } from 'lucide-react'
 import ThemeMark from '../../components/ThemeMark/ThemeMark'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { useLauncherPosition } from '../bubble/useLauncherPosition'
+import { useLauncherYielded } from '../bubble/launcherYield'
 import { isChatRoute } from '../page/chatRoute'
 import { useRestoreLastSession } from '../runtime/restoreSession'
 import { useRunEnvironment } from '../runtime/useAssistant'
@@ -38,26 +42,37 @@ interface AssistantRootProps {
   launcherHidden?: boolean
 }
 
-export default function AssistantRoot({ launcherHidden = false }: Readonly<AssistantRootProps>) {
+export default function AssistantRoot({ launcherHidden: shellHides = false }: Readonly<AssistantRootProps>) {
   const { t } = useTranslation('assistant')
   const { pathname } = useLocation()
   const open = useAssistantUiStore((s) => s.open)
   const setOpen = useAssistantUiStore((s) => s.setOpen)
+  // The launcher also steps aside while a page offers the assistant in its own menu (bubble/launcherYield).
+  const launcherHidden = useLauncherYielded() || shellHides
   const launcher = useLauncherPosition()
   const hintId = useId()
   const launcherRef = useRef<HTMLButtonElement>(null)
   const wasOpen = useRef(open)
+  const opener = useRef<HTMLElement | null>(null)
   // On every route (also /chat, which renders nothing here): the last conversation
   // is loaded at app start, before the user can open the panel and type.
   useRestoreLastSession(useRunEnvironment())
+  // What had focus when the panel opened (the narrow form builder's ⋯, where the launcher is hidden): a layout
+  // effect, so it runs before the panel's own effect puts the caret in its composer.
+  useLayoutEffect(() => {
+    if (open) opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }, [open])
   // Closing the panel from inside it (header X) unmounts the focused control;
-  // put focus back on the launcher instead of dropping it on <body> (D-OVL).
+  // put focus back on the launcher instead of dropping it on <body> (D-OVL) or,
+  // while the launcher is hidden, on what opened the panel.
   useEffect(() => {
     const closed = wasOpen.current && !open
     wasOpen.current = open
     const active = document.activeElement
-    if (closed && (active === null || active === document.body)) launcherRef.current?.focus()
-  }, [open])
+    if (!closed || (active !== null && active !== document.body)) return
+    const back = launcherHidden && opener.current?.isConnected === true ? opener.current : launcherRef.current
+    back?.focus()
+  }, [open, launcherHidden])
 
   if (isChatRoute(pathname)) return null
 
