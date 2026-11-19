@@ -86,7 +86,6 @@ function LinkedFormStats({
         <>
           <div className="grid grid-cols-2 gap-3 mt-2">
             <FormStatsFigures
-              variant="compact"
               stats={isPending ? undefined : stats}
               busy={isPending}
               labels={{ submissions: t('evidence.submissions', { count: stats?.total_submissions ?? 0 }), avgRating: t('evidence.avgRating') }}

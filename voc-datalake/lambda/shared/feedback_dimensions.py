@@ -8,8 +8,9 @@ Resolution order for a new review (first wins per key, everything through
 ``shared.dimension_config.resolve_dimensions``):
 
 1. the message's own ``dimensions`` (``'source'``: a CSV column, a form embed option),
-   then the message's ``metadata`` and ``metadata.custom_fields`` entries whose key IS a
-   configured dimension key (also ``'source'``; explicit ``dimensions`` win);
+   then the message's ``metadata``, ``metadata.custom_fields`` and ``metadata.form_hidden``
+   (a version 2 form's hidden fields) entries whose key IS a configured dimension key (also
+   ``'source'``; explicit ``dimensions`` win);
 2. the source profile's ``dimension_defaults`` (``'profile'``);
 3. the category config's ``product`` when a dimension keyed ``product`` exists and
    admits that value (``'category'``);
@@ -102,13 +103,15 @@ def category_product(categories_config: Iterable[Mapping[str, Any]], category: o
 
 
 def _metadata_layers(metadata: object) -> list[Layer]:
-    """The message's ``metadata`` then its ``custom_fields``, both recorded as ``'source'``.
+    """The message's ``metadata``, then its ``custom_fields``, then a form's hidden fields (``form_hidden``), all
+    recorded as ``'source'``.
 
     Only keys equal to a configured dimension key are ever read (``_resolve_layers``
     walks the config's keys), and every value still has to be allowed.
     """
     flat = _as_mapping(metadata)
-    return [(flat, DIMENSION_SOURCE_SOURCE), (_as_mapping(flat.get('custom_fields')), DIMENSION_SOURCE_SOURCE)]
+    return [(flat, DIMENSION_SOURCE_SOURCE), (_as_mapping(flat.get('custom_fields')), DIMENSION_SOURCE_SOURCE),
+            (_as_mapping(flat.get('form_hidden')), DIMENSION_SOURCE_SOURCE)]
 
 
 def _category_layer(product: str | None) -> dict[str, str]:

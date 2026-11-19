@@ -1,7 +1,8 @@
 /**
  * VocCoreStack's CloudFront layer: the SPA distribution with its security
  * headers, the CloudFront URL-signing key pair (issue #229), the private
- * /avatars/* and /prototypes/* behaviors, and the design-integrations secret.
+ * /avatars/* and /prototypes/* behaviors, the public /widget/* behavior (the feedback
+ * widget customers' pages load), and the design-integrations secret.
  * Created on the stack itself (not a child construct), so logical ids are unchanged.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -36,6 +37,11 @@ import type { DataProtection } from '../utils/data-protection';
  * ever signed.
  */
 export const COMPANY_LOGO_PATH_PATTERN = '/company-context/design/logo_????????????.*';
+
+/** The public feedback widget's behavior (`/widget/feedback-widget.js`, frontend/widgetAssetPlugin.ts). */
+export const WIDGET_PATH_PATTERN = '/widget/*';
+/** What browsers may keep the widget for before they revalidate it: a stable address, replaced on each deploy. */
+export const WIDGET_CACHE_CONTROL = 'public, max-age=300';
 
 /** What a VocCoreStack builder needs from the stack: itself and its prefix-aware names. */
 export interface CoreBuildContext {
@@ -76,49 +82,53 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
   // CLOUDFRONT DISTRIBUTIONS
   // ============================================
   
-  // Security headers policy
+  // The SPA's security headers. The public widget's policy (WidgetHeadersPolicy, below) carries them too.
+  const spaSecurityHeaders: cloudfront.ResponseSecurityHeadersBehavior = {
+    contentSecurityPolicy: {
+      // frame-src 'self': required so the SPA can embed generated prototype HTML via
+      // <iframe src="https://<this-domain>/prototypes/*"> (PR #131 Finding 3 fix). This is
+      // a SEPARATE concern from frame-ancestors below: frame-ancestors governs who may embed
+      // THIS page, frame-src governs what THIS page may embed. Without it, frame-src falls
+      // back to default-src 'none' and blocks framing of anything, even same-origin content —
+      // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
+      // still governs script execution inside that framed document; this only permits the
+      // cross-document load itself.
+      contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+      override: true,
+    },
+    contentTypeOptions: { override: true },
+    frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+    referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.SAME_ORIGIN, override: true },
+    strictTransportSecurity: {
+      accessControlMaxAge: cdk.Duration.seconds(63072000),
+      includeSubdomains: true,
+      preload: true,
+      override: true,
+    },
+    // `X-XSS-Protection: 0` (EDGE-6): the legacy filter is gone from current browsers and, where it still
+    // runs, could itself leak data; OWASP and MDN advise turning it off and relying on the CSP above.
+    xssProtection: { protection: false, override: true },
+  };
+  // Nothing in the app uses these features (passkeys need only publickey-credentials, left at its
+  // same-origin default); denying them limits what an injected script or framed page could ask for.
+  const permissionsPolicy: cloudfront.ResponseCustomHeader = {
+    header: 'Permissions-Policy',
+    value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+    override: true,
+  };
   const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(stack, 'SecurityHeadersPolicy', {
-    securityHeadersBehavior: {
-      contentSecurityPolicy: {
-        // frame-src 'self': required so the SPA can embed generated prototype HTML via
-        // <iframe src="https://<this-domain>/prototypes/*"> (PR #131 Finding 3 fix). This is
-        // a SEPARATE concern from frame-ancestors below: frame-ancestors governs who may embed
-        // THIS page, frame-src governs what THIS page may embed. Without it, frame-src falls
-        // back to default-src 'none' and blocks framing of anything, even same-origin content —
-        // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
-        // still governs script execution inside that framed document; this only permits the
-        // cross-document load itself.
-        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
-        override: true,
-      },
-      contentTypeOptions: { override: true },
-      frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
-      referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.SAME_ORIGIN, override: true },
-      strictTransportSecurity: {
-        accessControlMaxAge: cdk.Duration.seconds(63072000),
-        includeSubdomains: true,
-        preload: true,
-        override: true,
-      },
-      // `X-XSS-Protection: 0` (EDGE-6): the legacy filter is gone from current browsers and, where it still
-      // runs, could itself leak data; OWASP and MDN advise turning it off and relying on the CSP above.
-      xssProtection: { protection: false, override: true },
-    },
-    customHeadersBehavior: {
-      customHeaders: [{
-        // Nothing in the app uses these features (passkeys need only publickey-credentials, left at its
-        // same-origin default); denying them limits what an injected script or framed page could ask for.
-        header: 'Permissions-Policy',
-        value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
-        override: true,
-      }],
-    },
+    securityHeadersBehavior: spaSecurityHeaders,
+    customHeadersBehavior: { customHeaders: [permissionsPolicy] },
   });
+
+  // The SPA bucket's origin: the app's pages (default behavior) and the public widget file (/widget/*) read through
+  // this one origin object, so CloudFront binds it, and its origin access control, once.
+  const websiteOrigin = origins.S3BucketOrigin.withOriginAccessControl(websiteBucket);
 
   // Frontend hosting distribution (created first so we can use its domain for CORS)
   const frontendDistribution = new cloudfront.Distribution(stack, 'FrontendDistribution', {
     defaultBehavior: {
-      origin: origins.S3BucketOrigin.withOriginAccessControl(websiteBucket),
+      origin: websiteOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
       cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
@@ -395,6 +405,54 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     origins.S3BucketOrigin.withOriginAccessControl(rawDataBucket),
     signedPathBehavior,
   );
+
+  // ── The public feedback widget (7.04.00; docs/feedback-forms.md, "The script embed") ──
+  // `/widget/feedback-widget.js` is the one file of this distribution customers' own pages load
+  // (`<script src="https://<this-domain>/widget/feedback-widget.js">`, the Share tab's script embed). It is public
+  // BY DESIGN, like the login page: anyone may fetch it anonymously, and no key group or auth goes on it (a gate
+  // would lock out the respondents it exists for). It is build output only: frontend/widgetAssetPlugin.ts writes
+  // lambda/api/static/feedback-widget.js into frontend/dist/widget/, and it ships with the frontend (BucketDeployment
+  // or frontend/scripts/deploy.sh). This behavior reads the SPA bucket through the default behavior's own origin, so
+  // it can serve nothing the login page could not already; the raw-data bucket stays signed-only.
+  //
+  // Its policy is the SPA's security headers plus what a cross-origin script needs:
+  //  - CORS for any origin, GET and HEAD, never credentials, so `<script crossorigin>` (and an `integrity` a customer
+  //    adds) works from any site; there is no preflight (this behavior answers GET and HEAD alone).
+  //  - `Cross-Origin-Resource-Policy: cross-origin`, so a page with `Cross-Origin-Embedder-Policy` can load it too.
+  //  - `Cache-Control: public, max-age=300`: the address is stable (a pasted snippet must survive every deploy), so
+  //    the file is replaced in place; browsers revalidate it (ETag) after 5 minutes, and every deploy invalidates the
+  //    edge. Set here with `override`, so the viewer gets it whatever metadata the deploy path wrote on the object.
+  //  - The SPA's own CSP and frame options, unchanged. They mean nothing to a script, but the distribution's 404 rule
+  //    answers a missing /widget/* key with index.html (custom error responses cannot be scoped per behavior), and
+  //    that page then keeps every protection it has at any other address. `nosniff` makes the browser refuse that
+  //    text/html as a script, so a mistyped address fails as an error, never as HTML run as script.
+  const widgetHeadersPolicy = new cloudfront.ResponseHeadersPolicy(stack, 'WidgetHeadersPolicy', {
+    comment: 'Public feedback widget: CORS GET/HEAD, any origin, no credentials; 5-minute cache; the SPA security headers',
+    corsBehavior: {
+      accessControlAllowCredentials: false,
+      // Only read on a preflight, which a script load never sends and this behavior never answers.
+      accessControlAllowHeaders: ['*'],
+      accessControlAllowMethods: ['GET', 'HEAD'],
+      accessControlAllowOrigins: ['*'],
+      originOverride: true,
+    },
+    securityHeadersBehavior: spaSecurityHeaders,
+    customHeadersBehavior: {
+      customHeaders: [
+        permissionsPolicy,
+        { header: 'Cache-Control', value: WIDGET_CACHE_CONTROL, override: true },
+        { header: 'Cross-Origin-Resource-Policy', value: 'cross-origin', override: true },
+      ],
+    },
+  });
+  frontendDistribution.addBehavior(WIDGET_PATH_PATTERN, websiteOrigin, {
+    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+    cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+    compress: true,
+    cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+    responseHeadersPolicy: widgetHeadersPolicy,
+  });
 
   return {
     frontendDistribution, frontendDomainName, cdnSigningSecretArn, cdnSigningKeyPairId,

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Roving focus keys of the WAI-ARIA composite widgets: where a key moves
- * among `count` items (wrapping), for a menu (Up/Down), a tablist (Left/Right) or a
- * radio group (both axes). Home and End go to the first and last item.
+ * among `count` items (wrapping), for a menu (Up/Down) or a radio group (both axes).
+ * Home and End go to the first and last item.
  * @module utils/rovingIndex
  */
 
@@ -11,7 +11,6 @@ export interface RovingKeys {
 }
 
 export const MENU_KEYS: RovingKeys = { next: ['ArrowDown'], previous: ['ArrowUp'] }
-export const TAB_KEYS: RovingKeys = { next: ['ArrowRight'], previous: ['ArrowLeft'] }
 export const RADIO_KEYS: RovingKeys = { next: ['ArrowRight', 'ArrowDown'], previous: ['ArrowLeft', 'ArrowUp'] }
 
 /** The index `key` moves to from `current`, or null when it is not one of `keys`, Home or End. */

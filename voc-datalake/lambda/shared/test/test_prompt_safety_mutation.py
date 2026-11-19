@@ -30,7 +30,7 @@ from shared.prompt_safety import (
 )
 
 # Spelled out, not imported: the point is to notice when the module's list drifts.
-EVERY_TAG = (
+_FIRST_TAGS = (
     'company_context', 'design_system', 'memory', 'my_context',
     'reference', 'document', 'reviews',
     'conductor_message', 'artifact', 'transcript',
@@ -42,6 +42,9 @@ EVERY_TAG = (
     'author_draft',
     'feature_requests',
 )
+# A feedback form's AI draft (7.04.00, shared/forms_v2_draft.py): the person's request and their current form.
+_FORM_DRAFT_TAGS = ('form_brief', 'current_form')
+EVERY_TAG = (*_FIRST_TAGS, *_FORM_DRAFT_TAGS)
 
 class TestEveryDataBlockTagIsFenced:
     def test_the_tag_tuple_is_exactly_this_in_this_order(self):

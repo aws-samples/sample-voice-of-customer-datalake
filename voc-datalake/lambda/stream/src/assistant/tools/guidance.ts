@@ -98,7 +98,8 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'prototype from the PRD / PR/FAQ) start background jobs; list_project_jobs reports progress.',
   ].join('\n'),
   forms: '- Feedback forms: list_feedback_forms, get_feedback_form_stats, get_feedback_form_submissions; '
-    + 'update_feedback_form changes settings.',
+    + 'update_feedback_form changes settings; draft_feedback_form drafts a new form (questions and logic change in '
+    + 'the form builder).',
   prioritization: '- Prioritization board: get_prioritization (rows, the user\u2019s own scores, team aggregates); '
     + 'name projects with list_projects.',
   scrapers: [

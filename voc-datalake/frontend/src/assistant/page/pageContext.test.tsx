@@ -21,6 +21,7 @@ describe('pageContextFromLocation', () => {
     ['/projects', '', { kind: 'projects', path: '/projects' }],
     ['/projects/p1', '?tab=personas', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'personas' }],
     ['/feedback-forms', '', { kind: 'feedback-forms', path: '/feedback-forms' }],
+    ['/feedback-forms/fd_1/questions', '', { kind: 'feedback-forms', path: '/feedback-forms/fd_1/questions' }],
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],
     ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows' }],
     ['/agents/ag_1', '', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],

@@ -30,12 +30,20 @@ export interface FrontendBuildCheckOptions {
 const SOURCE_DIRS = ['src', 'public'];
 const SOURCE_FILES = [
   'index.html',
+  // The builder's pop-out preview, the build's second HTML entry (7.04.00).
+  'form-preview.html',
   'vite.config.ts',
+  // Writes the public widget into dist/widget/ (7.04.00).
+  'widgetAssetPlugin.ts',
   'tsconfig.json',
   'tsconfig.app.json',
   'tsconfig.node.json',
   'package.json',
 ];
+// Inputs outside the frontend root, relative to it. The feedback widget is built into dist twice (the preview's
+// hashed asset and the public /widget/feedback-widget.js customers' pages load), so a widget edit with no rebuild
+// would leave the public file a release behind the API it talks to.
+const EXTERNAL_SOURCE_FILES = ['../lambda/api/static/feedback-widget.js'];
 // Directories never relevant to build freshness.
 const IGNORED_DIRS = new Set(['node_modules', 'dist', '.vite', 'coverage']);
 
@@ -100,6 +108,7 @@ export function assertFrontendBuildFresh(options: FrontendBuildCheckOptions): vo
   const candidates = [
     ...SOURCE_DIRS.map((dir) => path.join(frontendRoot, dir)),
     ...SOURCE_FILES.map((file) => path.join(frontendRoot, file)),
+    ...EXTERNAL_SOURCE_FILES.map((file) => path.join(frontendRoot, file)),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {

@@ -15,12 +15,21 @@
  *     add_persona_note). Sections follow `schemas/persona.schema.json`.
  *   - product context: `lambda/api/product_context.py` STRING_FIELDS (with their
  *     max lengths) + `current_state` ∈ LIFECYCLE_STATES. LIST_FIELDS is empty.
- *   - feedback form: flat text/boolean display settings from
- *     `feedback_form_handler.py::UPDATABLE_FIELDS`, excluding `theme` (CSS on
- *     customers' sites), `custom_fields` (nested), `rating_max`,
- *     `category` / `subcategory` (routing) and the `project_id` / `document_id`
- *     validation links; plus `dimension_defaults` / `tags` (docs/dimensions.md),
- *     flat maps/lists the route validates against the dimension config.
+ *   - feedback form (schema version 2 since 7.04.00): what every form takes.
+ *     From `feedback_form_handler.py::UPDATABLE_FIELDS`, `enabled`, `name` and
+ *     `dimension_defaults` / `tags` (docs/dimensions.md, flat maps/lists the
+ *     route validates against the dimension config); and the four version 1
+ *     texts the route maps onto a version 2 form in its primary language
+ *     (`_MAPPED_V1_FIELDS`): `title` / `description` (the welcome screen; an
+ *     empty title turns it off), `success_message` (the first ending's title,
+ *     so never empty) and `submit_button_text` (the last question's button).
+ *     Never the definition (questions, logic, endings, languages, hidden
+ *     fields): it changes in the form builder, whose "Improve with AI" redrafts
+ *     it, and `draft_feedback_form` drafts a new form. Never the version 1
+ *     fields the route refuses on a version 2 form (`question`,
+ *     `text_question`, `placeholder`, `rating_*`, `collect_*`), `language` (the
+ *     primary needs every text in it: the builder's Languages tab), `theme` (CSS
+ *     on customers' sites), `custom_fields`, the routing or the validation links.
  */
 import { z } from 'zod';
 import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../dimension-patterns.js';
@@ -126,9 +135,7 @@ export const productContextUpdatesShape = {
 export const productContextUpdatesSchema = changesSomething(z.object(productContextUpdatesShape).strict());
 
 export const FEEDBACK_FORM_UPDATE_FIELDS = [
-  'enabled', 'name', 'title', 'description', 'question', 'placeholder',
-  'submit_button_text', 'success_message', 'rating_enabled', 'rating_type',
-  'collect_email', 'collect_name', 'dimension_defaults', 'tags',
+  'enabled', 'name', 'title', 'description', 'submit_button_text', 'success_message', 'dimension_defaults', 'tags',
 ] as const;
 
 /** Mirrors lambda/shared/dimension_config.py (MAX_DIMENSIONS, MAX_TAGS, TAG_RE); the route re-validates. */
@@ -144,20 +151,14 @@ export const dimensionDefaultsSchema = z.record(z.string().regex(DIMENSION_KEY_P
 /** Shared by the form and scraper label fields (`tags`). */
 export const labelTagsSchema = z.array(z.string().trim().regex(TAG_PATTERN)).max(MAX_LABEL_TAGS);
 
-/** The feedback-form `updates` keys (flat display settings). */
+/** The feedback-form `updates` keys: settings, and the four texts with one place in every version 2 form. */
 export const feedbackFormUpdatesShape = {
   enabled: z.boolean().optional(),
   name: nonEmpty(200).optional(),
   title: textField(200).optional(),
   description: textField(1000).optional(),
-  question: textField(500).optional(),
-  placeholder: textField(200).optional(),
   submit_button_text: nonEmpty(50).optional(),
-  success_message: textField(500).optional(),
-  rating_enabled: z.boolean().optional(),
-  rating_type: z.enum(['stars', 'numeric', 'emoji']).optional(),
-  collect_email: z.boolean().optional(),
-  collect_name: z.boolean().optional(),
+  success_message: nonEmpty(500).optional(),
   dimension_defaults: dimensionDefaultsSchema.optional(),
   tags: labelTagsSchema.optional(),
 } satisfies Record<(typeof FEEDBACK_FORM_UPDATE_FIELDS)[number], z.ZodType>;

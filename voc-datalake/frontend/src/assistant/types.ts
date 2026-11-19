@@ -69,8 +69,13 @@ export interface WriteToolDefinition<A = unknown> {
   Preview?: ComponentType<{ args: A; page: PageContext }>
   /** Execute through the existing REST client; resolves to the executed summary. */
   execute: (args: A, ctx: WriteToolExecutionContext) => Promise<{ summary: string; data?: unknown }>
-  /** Optional in-app link shown on the resolved card once the write executed (e.g. the new scraper). */
-  resultLink?: (args: A) => ResultLink | undefined
+  /**
+   * Optional in-app link shown on the resolved card once the write executed (e.g. the new scraper). `data` is the
+   * executed outcome's data, for a link to what the write created (a new form's id).
+   */
+  resultLink?: (args: A, data?: unknown) => ResultLink | undefined
+  /** The Approve button's label (an `assistantTools` key), when not the plain "Approve" ("Approve and create"). */
+  approveLabelKey?: string
 }
 
 /** An in-app path (always starts with a single `/`) and the translation key of its label. */

@@ -27,7 +27,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 
 - **Data source plugins**: a configurable web scraper, public review pages read with a managed browser (Web Reviews), Apple App Store and Google Play reviews, GitHub Issues with a signed webhook, S3 bulk import and a synthetic review generator ([Plugin Architecture](docs/plugin-architecture.md))
 - **Imports**: paste text, upload CSV or JSON, or let the assistant extract reviews from an attached file. A named CSV dataset updates changed rows on re-upload, and every import leaves a run record ([CSV import](docs/csv-import.md), [Import History](docs/import-history.md))
-- **Feedback forms**: embeddable forms for your own website or app ([Feedback Forms](docs/feedback-forms.md))
+- **Feedback forms**: a form builder (questions, logic, hidden fields, nine languages, test links, per-question results and AI drafts) for forms embedded on your own website or app ([Feedback Forms](docs/feedback-forms.md))
 - **Email inbox** (opt-in): customers email `feedback@`, `ideas@`, `bugs@` or `reviews@` your domain through Amazon SES ([Email Inbox](docs/email-intake.md))
 - **Feedback boards**: shareable boards for sales requests, service issues or beta feedback, with their own sign-in, +1s and statuses ([Feedback boards](docs/feature-requests.md))
 - **Participants**: lists of people to ask for feedback, and emailed asks with unsubscribe ([Participants](docs/participants.md))

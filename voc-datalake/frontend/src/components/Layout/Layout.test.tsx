@@ -76,6 +76,7 @@ vi.mock('../ReviewModal/ReviewModalHost', () => ({
 }))
 
 import Layout from './Layout'
+import { useYieldLauncher } from '../../assistant/bubble/launcherYield'
 import { useThemeStore } from '../../theme/themeStore'
 import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
@@ -577,6 +578,28 @@ describe('nav sections and gating (Listen → Understand → Build → Validate,
     const host = await screen.findByTestId('review-modal-host')
     const following = screen.getByTestId('assistant-root').compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING
     expect(following).not.toBe(0)
+  })
+})
+
+// (forms audit §4.2) below md the form builder offers the assistant in its ⋯ and the launcher steps aside.
+describe('Layout while a page offers the assistant in its own menu', () => {
+  function Yielding({ active }: Readonly<{ active: boolean }>) {
+    useYieldLauncher(active)
+    return null
+  }
+  const reserved = () => screen.getByTestId('page-scroller').classList.contains('pb-20')
+
+  it('drops the launcher\'s bottom reserve while the page yields, so its save bar pins to the bottom edge', async () => {
+    const view = render(<><Layout /><Yielding active /></>, { wrapper: createWrapper() })
+    expect(await screen.findByText('Test Brand')).toBeInTheDocument()
+    const seen = [reserved()]
+    view.rerender(<><Layout /><Yielding active={false} /></>)
+    seen.push(reserved())
+    view.rerender(<><Layout /><Yielding active /></>)
+    seen.push(reserved())
+    view.rerender(<Layout />)
+    seen.push(reserved())
+    expect(seen).toStrictEqual([false, true, false, true])
   })
 })
 

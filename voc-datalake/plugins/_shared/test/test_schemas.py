@@ -297,6 +297,27 @@ def _feedback_form_message() -> dict:
     }
 
 
+def _feedback_form_v2_message() -> dict:
+    # feedback_form_handler.py::_ingest of a schema version 2 response (7.04.00): the open-text answers as the text,
+    # the answers, hidden values, path and revision in the metadata, the option's category preset, the language.
+    return {
+        **_feedback_form_message(), 'text': 'What is missing?\nBulk invoice export', 'rating': 4,
+        'preset_category': 'features', 'preset_subcategory': 'missing', 'language': 'pl',
+        'metadata': {
+            'form_id': 'ff_' + 'a' * 32, 'form_name': 'Old UI', 'form_version': '3.0', 'form_revision': 3,
+            'form_language': 'pl', 'form_ending_id': 'end_thanks',
+            'form_path': ['q_reason', 'q_which', 'q_rate', 'q_ok', 'q_contact'],
+            'form_answers': {
+                'q_reason': {'code': 'missing'}, 'q_which': 'x' * 5000, 'q_rate': 4,
+                'q_more': {'codes': ['a', 'b'], 'other': 'Support'}, 'q_ok': True,
+                'q_contact': {'email': 'a@example.com', 'name': 'A'},
+            },
+            'form_hidden': {'app_version': '5.0.3', 'screen': 's' * 200},
+            'submitter_email': 'a@example.com', 'submitter_name': 'A',
+        },
+    }
+
+
 _PRODUCER_MESSAGES = {
     'webscraper': lambda: _ingestor_message(_webscraper_item(), source_platform='webscraper'),
     # A Radar scraper / connector (docs/radar.md): the same message plus `radar_brand_key`.
@@ -314,6 +335,7 @@ _PRODUCER_MESSAGES = {
     'manual_import_csv_upload': _csv_upload_message,
     'manual_import_json_upload': _json_upload_message,
     'feedback_form_submit': _feedback_form_message,
+    'feedback_form_submit_v2': _feedback_form_v2_message,
 }
 
 

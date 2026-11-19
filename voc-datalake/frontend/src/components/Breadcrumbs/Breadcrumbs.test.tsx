@@ -388,10 +388,12 @@ describe('route coverage', () => {
     expect(paths.length).toBeGreaterThan(10)
   })
 
+  // A trailing `*` is a page's own places (a form's builder tabs, the picker): the trail ends before them
+  // (routeCrumbs.ts `trailSegments`).
   it('has a label for every static route segment', () => {
     const unlabelled = paths
       .flatMap((path) => path.split('/'))
-      .filter((segment) => !segment.startsWith(':') && SEGMENT_CRUMBS[segment] === undefined)
+      .filter((segment) => !segment.startsWith(':') && segment !== '*' && SEGMENT_CRUMBS[segment] === undefined)
     expect(unlabelled).toStrictEqual([])
   })
 

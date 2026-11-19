@@ -32,6 +32,9 @@ import * as rs from './radarSchemas'
 import * as radar from './radarExecutors'
 import * as pa from './participantSchemas'
 import * as participants from './participantExecutors'
+import * as fs from './formSchemas'
+import * as forms from './formExecutors'
+import { FeedbackFormDraftPreview } from './previews/FeedbackFormDraftPreview'
 import { AddParticipantsPreview, CreateParticipantListPreview } from './previews/ParticipantPreviews'
 import { RadarBrandsPreview, RadarScanPreview } from './previews/RadarPreviews'
 import { CreateUsersPreview, ImportReviewsPreview, SourceEnabledPreview } from './previews/BulkAdminPreviews'
@@ -62,16 +65,17 @@ interface ToolSpec<A> {
   title: (args: A, t: Translate) => string
   Preview?: ComponentType<{ args: A; page: PageContext }>
   execute: WriteToolDefinition<A>['execute']
-  resultLink?: (args: A) => ResultLink
+  resultLink?: (args: A, data?: unknown) => ResultLink | undefined
+  approveLabelKey?: string
 }
 
 /** Translation key of a tool's static title (also the fallback for invalid args). */
 export const toolTitleKey = (name: string) => `assistantTools:tools.${name}.title`
 
-function eraseLink<A>(schema: z.ZodType<A>, link: (args: A) => ResultLink): (args: unknown) => ResultLink | undefined {
-  return (args) => {
+function eraseLink<A>(schema: z.ZodType<A>, link: (args: A, data?: unknown) => ResultLink | undefined): (args: unknown, data?: unknown) => ResultLink | undefined {
+  return (args, data) => {
     const parsed = schema.safeParse(args)
-    return parsed.success ? link(parsed.data) : undefined
+    return parsed.success ? link(parsed.data, data) : undefined
   }
 }
 
@@ -94,6 +98,7 @@ function defineWriteTool<A>(spec: ToolSpec<A>): WriteToolDefinition {
     },
     Preview: ErasedPreview,
     ...(spec.resultLink === undefined ? {} : { resultLink: eraseLink(spec.argsSchema, spec.resultLink) }),
+    ...(spec.approveLabelKey === undefined ? {} : { approveLabelKey: spec.approveLabelKey }),
     // async so invalid args reject the promise rather than throw synchronously.
     execute: async (args, ctx) => spec.execute(spec.argsSchema.parse(args), ctx),
   }
@@ -110,6 +115,15 @@ const RADAR_SETTINGS_LINK: ResultLink = { to: '/admin?tab=sources&section=radar'
 /** The set_user_access card names the person only when the model passed their email alias as the username. */
 const userAccessTitle = (username: string, t: Translate) =>
   (username.includes('@') ? t('assistantTools:tools.set_user_access.titleWith', { email: username }) : t(toolTitleKey('set_user_access')))
+
+/** The `draft_feedback_form` card (7.04.00, UX §12.5): the stream contract's `forms` pack lists the tool. */
+const draftFeedbackFormDefinition = (): WriteToolDefinition => defineWriteTool({
+  name: fs.DRAFT_FEEDBACK_FORM_TOOL, argsSchema: fs.draftFeedbackFormArgs, execute: forms.createDraftedForm,
+  title: (a, t) => (a.form.name.trim() === ''
+    ? t(toolTitleKey(fs.DRAFT_FEEDBACK_FORM_TOOL))
+    : t('assistantTools:tools.draft_feedback_form.titleWith', { name: a.form.name.trim() })),
+  Preview: FeedbackFormDraftPreview, resultLink: forms.draftedFormLink, approveLabelKey: 'assistantTools:card.approveCreate',
+})
 
 const DEFINITIONS: readonly WriteToolDefinition[] = [
   defineWriteTool({
@@ -179,6 +193,7 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
     name: 'update_feedback_form', argsSchema: s.updateFeedbackFormArgs, execute: executors.updateFeedbackForm,
     title: (_a, t) => t(toolTitleKey('update_feedback_form')),
   }),
+  draftFeedbackFormDefinition(),
   defineWriteTool({
     name: 'run_scraper', argsSchema: s.runScraperArgs, execute: executors.runScraper,
     title: (_a, t) => t(toolTitleKey('run_scraper')),

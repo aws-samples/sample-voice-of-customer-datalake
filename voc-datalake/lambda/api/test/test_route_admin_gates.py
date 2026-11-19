@@ -71,6 +71,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # The workspace's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
+    # A form's test link (7.04.00): issuing or rotating its token. A token opens the form while it is Off, so only an
+    # admin (`_require_test_link_admin` -> require_admin); the form CRUD stays open.
+    'feedback_form_handler.py': frozenset({'POST /feedback-forms/<form_id>/test-link'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
     'company_personas_routes.py': frozenset({
         'POST /company-personas/generate', 'POST /company-personas/import',
@@ -205,6 +208,16 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /feedback-forms/<form_id>'),
     _open('public widget route: the embeddable form posts from the customer site (throttled)',
           'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/submit'),
+    _open("public widget route (7.04.00): the embeddable form's funnel beacons, on their own throttle so they never "
+          'spend the submit limit; counts only, the same form checks as submit',
+          'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/events'),
+    _open('AI form drafts (7.04.00, the owner\'s decision; not gated by the way of working): any signed-in user, as '
+          'the form CRUD, 20 per person per hour; nothing is saved (served by the settings API, beside its assist twin)',
+          'forms_v2_draft_routes.py', 'POST /feedback-forms/draft'),
+    _open("a form's test responses (7.04.00, the owner's decision): an admin or the form's creator deletes them "
+          '(`_may_delete_test_responses`), anyone else 403 test_responses_admin_or_creator; real responses are never '
+          'deleted there',
+          'feedback_form_handler.py', 'DELETE /feedback-forms/<form_id>/responses'),
     _open("caller's own data: a user mints and revokes only their own global MCP tokens",
           'mcp_tokens_handler.py', 'POST /connect/tokens', 'DELETE /connect/tokens/<token_id>'),
     _open("caller's own data: a person approves an MCP OAuth sign-in for themselves (grant keyed by their own "

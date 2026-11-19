@@ -6,8 +6,15 @@ import pytest
 from boto3.dynamodb.conditions import Key
 
 from jobs.retention import boards, boards_rekey, copies, handler, lineage, runs
-from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
-from shared.digests import sha256_hex
+from jobs.retention.test.conftest import (
+    BUCKET,
+    audit_row,
+    days_ago,
+    erasure_job_row,
+    hand_over_mid_page,
+    put_feedback,
+    queue_erasure_job,
+)
 from shared.feature_requests_store import support_key
 from shared.legal_basis import LEGACY_LEGAL_BASIS
 
@@ -28,23 +35,11 @@ def _radar(aws, feedback_id: str, source: str = 'web_rival', brand: str = 'rival
 
 
 def _job(aws, field: str, value: str, source: str | None = None, **extra: Any) -> dict:
-    aws['aggregates'].put_item(Item={
-        'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': 'queued', 'field': field,
-        'value_hash': sha256_hex(value), **({'source': source} if source else {}), **extra})
-    return {'mode': 'erase', 'job_id': JOB_ID, 'value': value}
-
-
-def _job_row(aws) -> dict:
-    return aws['aggregates'].get_item(Key={'pk': 'JOB#erasure', 'sk': JOB_ID})['Item']
+    return queue_erasure_job(aws, JOB_ID, field, value, source, **extra)
 
 
 def _tombstones(aws, source: str) -> list[dict]:
     return aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(f'AUDIT#tombstone#{source}'))['Items']
-
-
-def _audit(aws) -> dict:
-    [row] = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(runs.AUDIT_PK))['Items']
-    return row
 
 
 def _keys(aws) -> set[str]:
@@ -65,7 +60,7 @@ class TestTombstones:
         assert 'ttl' not in tombstone
         assert 'Jane' not in str(tombstone)
         assert 'hate' not in str(tombstone)
-        assert (_job_row(aws)['legal_basis'], _audit(aws)['legal_basis']) == (BASIS, BASIS)
+        assert (erasure_job_row(aws, JOB_ID)['legal_basis'], audit_row(aws)['legal_basis']) == (BASIS, BASIS)
 
     def test_the_tombstones_are_written_before_any_item_is_deleted(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
@@ -114,7 +109,7 @@ class TestTombstones:
         assert _tombstones(aws, 'tickets')[0]['legal_basis'] == 'DPA with vendor X, 12 months'
         assert _tombstones(aws, 'legacy')[0]['legal_basis'] == LEGACY_LEGAL_BASIS
         assert _tombstones(aws, 'legacy')[0]['mode'] == 'retention'
-        assert _audit(aws)['legal_bases'] == {'tickets': 'DPA with vendor X, 12 months', 'legacy': LEGACY_LEGAL_BASIS}
+        assert audit_row(aws)['legal_bases'] == {'tickets': 'DPA with vendor X, 12 months', 'legacy': LEGACY_LEGAL_BASIS}
 
 
 class TestRadar:
@@ -133,7 +128,7 @@ class TestRadar:
         assert ('RADARID#rival', 'r2') in rows
         assert key not in _keys(aws)
         assert _tombstones(aws, 'web_rival')[0]['store'] == 'radar'
-        assert _job_row(aws)['deleted_radar_items'] == 1
+        assert erasure_job_row(aws, JOB_ID)['deleted_radar_items'] == 1
 
     def test_a_whole_source_erasure_of_a_radar_routed_source(self, aws, worker_context):
         event = _job(aws, 'source', 'web_rival', 'web_rival', legal_basis=BASIS)
@@ -180,7 +175,7 @@ class TestWholeFileUploads:
         result = handler.handle_event(event, worker_context)
         assert result['deleted_items'] == 2
         assert aws['s3'].list_object_versions(Bucket=BUCKET, Prefix=UPLOAD).get('Versions') is None
-        assert 'files_needing_review' not in _job_row(aws)
+        assert 'files_needing_review' not in erasure_job_row(aws, JOB_ID)
 
     def test_any_other_erasure_keeps_the_file_and_lists_it_for_review(self, aws, worker_context):
         aws['s3'].put_object(Bucket=BUCKET, Key=UPLOAD, Body=b'a')
@@ -191,22 +186,19 @@ class TestWholeFileUploads:
         result = handler.handle_event(event, worker_context)
         assert (result['deleted_items'], result['deleted_objects']) == (2, 0)
         assert UPLOAD in _keys(aws)
-        assert _job_row(aws)['files_needing_review'] == {'count': 1, 'keys': [UPLOAD], 'more': False}
-        assert _audit(aws)['files_needing_review']['keys'] == [UPLOAD]
+        assert erasure_job_row(aws, JOB_ID)['files_needing_review'] == {'count': 1, 'keys': [UPLOAD], 'more': False}
+        assert audit_row(aws)['files_needing_review']['keys'] == [UPLOAD]
 
     def test_the_review_list_survives_a_hand_over(self, aws, worker_context, invoke_mock):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
         self._from_upload(aws, 'c1', 'tickets', author='Jane')
         self._from_upload(aws, 'c2', 'tickets', author='Jane')
         # Time for one item: the hand-over comes mid-page, after the first row of the upload.
-        budget = iter([900_000, 0])
-        worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
-        assert handler.handle_event(event, worker_context)['status'] == 'continued'
-        payload = invoke_mock.call_args.args[1]
+        payload = hand_over_mid_page(event, worker_context, invoke_mock)
         assert payload['run']['review_files'] == [UPLOAD]
         worker_context.get_remaining_time_in_millis.side_effect = None
         handler.handle_event(payload, worker_context)
-        assert _job_row(aws)['files_needing_review']['keys'] == [UPLOAD]
+        assert erasure_job_row(aws, JOB_ID)['files_needing_review']['keys'] == [UPLOAD]
 
 
 def _artifact(aws, sk: str, **lists: Any) -> None:
@@ -233,7 +225,7 @@ class TestLineage:
         assert (mark['count'], mark['job_id'], mark['mode']) == (2, JOB_ID, 'erase')
         assert persona['text'] == 'quote'
         assert 'erased_evidence' not in _row(aws, 'PRD#b')
-        assert _job_row(aws)['artifacts_marked'] == 1
+        assert erasure_job_row(aws, JOB_ID)['artifacts_marked'] == 1
 
     def test_the_count_adds_up_over_runs(self, aws, worker_context):
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'], erased_evidence={'count': 3, 'job_id': 'er_old'})
@@ -327,7 +319,7 @@ class TestBoards:
         assert (other['email'], other['name']) == ('john@example.com', 'John')
         assert _keys(aws) == {keys['sup_0000000000bb']}
         assert result['deleted_objects'] == 2
-        assert (_job_row(aws)['board_items_deidentified'], _audit(aws)['board_items_deidentified']) == (2, 2)
+        assert (erasure_job_row(aws, JOB_ID)['board_items_deidentified'], audit_row(aws)['board_items_deidentified']) == (2, 2)
 
     def test_each_board_row_leaves_a_contentless_tombstone_first(self, aws, worker_context):
         _board_rows(aws)
@@ -376,7 +368,7 @@ class TestBoards:
         with patch.object(boards_rekey, 'current_support', removed_meanwhile):
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
         assert {row['sk'] for row in _tombstones(aws, 'feature_requests')} == {'fr_000000000001'}
-        assert _job_row(aws)['board_items_deidentified'] == 1
+        assert erasure_job_row(aws, JOB_ID)['board_items_deidentified'] == 1
 
     @pytest.mark.parametrize(('field', 'value', 'source'), [
         ('author', 'Jane', None), ('email', 'jane@example.com', 'web')])

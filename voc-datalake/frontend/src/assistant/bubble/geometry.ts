@@ -5,8 +5,10 @@
  * BOTTOM edges (the corner it lives in by default), so a window resize keeps it
  * in the same corner instead of flinging it across the screen. Every rendered
  * position goes through `clampToViewport` (never off screen, on drag and on
- * resize) and `liftAboveActionBars` (never over a registered sticky action bar,
- * the page's primary actions — "hovers over the Save button").
+ * resize) and `keepClear` (never over a registered keep-clear zone:
+ * `liftAboveActionBars` for a sticky action bar, the page's primary actions —
+ * "hovers over the Save button" — and `stepAside` for a pane at the page's end
+ * edge, a form's live preview whose Next sits where the launcher rests).
  *
  * No DOM access here: the component measures, these functions decide.
  *
@@ -21,6 +23,8 @@ const DEFAULT_OFFSET = 16
 export const EDGE_MARGIN = 8
 /** Clearance kept between the launcher and an action bar below it. */
 export const ACTION_BAR_GAP = 8
+/** Clearance kept between the launcher and a `beside` zone it stands next to. */
+export const BESIDE_GAP = 16
 /** One arrow-key step, and the Shift+arrow step. */
 export const KEY_STEP = 16
 export const KEY_STEP_LARGE = 64
@@ -46,11 +50,10 @@ export interface Viewport {
 }
 
 import type { CSSProperties } from 'react'
-import type { BarRect } from '../../components/StickyActionBar/actionBarRegistry'
+import type { BarRect, KeepClearZone } from '../../components/StickyActionBar/actionBarRegistry'
+import { clamp } from '../../lib/clamp'
 
 export const DEFAULT_POSITION: BubblePosition = { right: DEFAULT_OFFSET, bottom: DEFAULT_OFFSET }
-
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), Math.max(min, max))
 
 /** Keep the whole launcher inside the viewport, `EDGE_MARGIN` from every edge. */
 export function clampToViewport(position: BubblePosition, viewport: Viewport): BubblePosition {
@@ -102,6 +105,47 @@ function coversBar(bottom: number, bar: BarRect, span: { left: number; right: nu
   const launcherBottom = viewport.height - bottom
   const launcherTop = launcherBottom - LAUNCHER_SIZE
   return visible && !besideIt && bar.top < launcherBottom + ACTION_BAR_GAP && bar.bottom > launcherTop
+}
+
+/** The launcher's box on screen for a position. */
+function launcherBox(position: BubblePosition, viewport: Viewport): BarRect {
+  const { left, right } = horizontalSpan(position, viewport)
+  const bottom = viewport.height - position.bottom
+  return { left, right, top: bottom - LAUNCHER_SIZE, bottom }
+}
+
+const overlaps = (a: BarRect, b: BarRect): boolean => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+/**
+ * Move the launcher off every `beside` zone its box overlaps, to the zone's inline-start side: its right edge
+ * `BESIDE_GAP` before the zone's left edge (`right = viewport width − zone left + 16`), at the same height. (The app
+ * has no right-to-left language, so inline-start is the left.)
+ *
+ * Zones are taken from the rightmost: stepping off one can land on the next one to its left, which is then cleared
+ * the same way. A zone that leaves no room for the launcher on its inline-start side (one as wide as the page, on a
+ * narrow screen) is left as it is: the page's bottom reserve lets its end scroll clear. A position that overlaps no
+ * zone, the default corner or a spot the person dragged the launcher to, is returned unchanged.
+ */
+export function stepAside(position: BubblePosition, zones: readonly BarRect[], viewport: Viewport): BubblePosition {
+  const maxRight = viewport.width - LAUNCHER_SIZE - EDGE_MARGIN
+  const rightmostFirst = [...zones].sort((a, b) => b.left - a.left)
+  return rightmostFirst.reduce((current, zone) => {
+    const right = Math.round(viewport.width - zone.left + BESIDE_GAP)
+    if (right > maxRight || !overlaps(launcherBox(current, viewport), zone)) return current
+    return { right, bottom: current.bottom }
+  }, position)
+}
+
+/**
+ * Where the launcher rests given the page's keep-clear zones: beside the `beside` zones, above the `lift` ones (an
+ * action bar under the spot it stepped to), and beside again for a zone the lift brought it to. Clamped to the
+ * viewport at the end, so on a viewport too small for every rule the screen edges win.
+ */
+export function keepClear(position: BubblePosition, zones: readonly KeepClearZone[], viewport: Viewport): BubblePosition {
+  const beside = zones.filter((zone) => zone.mode === 'beside')
+  const bars = zones.filter((zone) => zone.mode === 'lift')
+  const lifted = liftAboveActionBars(stepAside(position, beside, viewport), bars, viewport)
+  return clampToViewport(stepAside(lifted, beside, viewport), viewport)
 }
 
 /** CSS custom properties that place the floating panel next to the launcher (from `sm` up). */

@@ -562,12 +562,17 @@ describe('VocCoreStack S3 server access logging', () => {
  */
 describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
   const PRIVATE_PATHS = ['/avatars/*', '/prototypes/*', COMPANY_LOGO_PATH_PATTERN];
+  // Public by design (7.04.00): the feedback widget customers' pages load, build output read from the SPA bucket
+  // (core-cdn-widget.test.ts has its headers). The one exception, and it may only read what the login page reads.
+  const PUBLIC_PATHS = ['/widget/*'];
 
   const BehaviorSchema = z.object({
     PathPattern: z.string(),
+    TargetOriginId: z.string(),
     TrustedKeyGroups: z.array(z.unknown()).optional(),
   });
   const DistributionConfigSchema = z.object({
+    DefaultCacheBehavior: z.object({ TargetOriginId: z.string() }),
     CacheBehaviors: z.array(BehaviorSchema),
     CustomErrorResponses: z.array(z.object({
       ErrorCode: z.number(),
@@ -591,14 +596,25 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     // Property-based on purpose: the default behavior MUST stay public (it
     // serves the login page), and everything else on this distribution serves
     // customer data derived from feedback, so "additional behavior" implies
-    // "needs a signature".
-    const behaviors = distributionConfig().CacheBehaviors;
+    // "needs a signature" unless it is a named public path of build output.
+    const behaviors = distributionConfig().CacheBehaviors.filter((b) => !PUBLIC_PATHS.includes(b.PathPattern));
 
     expect(behaviors.map((b) => b.PathPattern).sort(byCodeUnit)).toStrictEqual([...PRIVATE_PATHS].sort(byCodeUnit));
     for (const behavior of behaviors) {
       expect(behavior.TrustedKeyGroups, `${behavior.PathPattern} must require a signature`)
         .toBeDefined();
       expect(behavior.TrustedKeyGroups).not.toHaveLength(0);
+    }
+  });
+
+  it('reads every public path through the SPA bucket origin, the one the login page reads', () => {
+    const config = distributionConfig();
+    const publicBehaviors = config.CacheBehaviors.filter((b) => PUBLIC_PATHS.includes(b.PathPattern));
+
+    expect(publicBehaviors.map((b) => b.PathPattern)).toStrictEqual(PUBLIC_PATHS);
+    for (const behavior of publicBehaviors) {
+      expect(behavior.TargetOriginId, `${behavior.PathPattern} must read the SPA bucket`)
+        .toBe(config.DefaultCacheBehavior.TargetOriginId);
     }
   });
 

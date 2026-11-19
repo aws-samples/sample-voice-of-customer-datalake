@@ -44,9 +44,20 @@
         "voc-datalake/lambda/shared/company_context.py",
         "voc-datalake/lambda/shared/dimension_config.py",
         "voc-datalake/lambda/shared/draft_intent.py",
+        "voc-datalake/lambda/shared/forms_v2.py",
+        "voc-datalake/lambda/shared/forms_v2_draft.py",
         "voc-datalake/lambda/shared/prioritization_axes.py"
       ],
-      "reason": "optional-field validators whose 400 wording and rules are each route's contract: form fields checked unstripped ('must be a string'), company-context lists ('may hold at most N entries'), dimension config lists raising ValueError ('At most N <what> are allowed'), draft intent text ('must be text' / 'is too long (at most N characters)', stripped after the check), Prioritization axis text (stripped before the check, '' -> None); one helper would need the type, exception, strip order and both messages as parameters"
+      "reason": "optional-field validators whose 400 wording and rules are each route's contract: form fields checked unstripped ('must be a string'), company-context lists ('may hold at most N entries'), dimension config lists raising ValueError ('At most N <what> are allowed'), draft intent text ('must be text' / 'is too long (at most N characters)', stripped after the check), Prioritization axis text (stripped before the check, '' -> None); one helper would need the type, exception, strip order and both messages as parameters; and since 7.04.00 the forms schema's own (shared/forms_v2.py, forms_v2_draft.py), which name the field path in their 400 (questions[2].required must be true or false) and import nothing but the standard library and two pure shared modules"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/settings_handler.py",
+        "voc-datalake/lambda/shared/agents_store.py",
+        "voc-datalake/lambda/shared/feature_board_fields.py",
+        "voc-datalake/lambda/shared/forms_v2.py"
+      ],
+      "reason": "whole-number readers whose refusals are each module's contract: a reprocess window's days, an agent's limit, a board field's number, and the forms schema's integers (forms_v2.py `_int`: a bool is not a number, the field path in the 400, standard library only)"
     }
   ]
 }

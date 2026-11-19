@@ -33,7 +33,7 @@ const contractSpecs = textEntries(specs).filter(([path, text]) =>
 describe('every guarded editor runs the shared Cancel contract', () => {
   it('finds the guarded editors it audits (the scan is not vacuous)', () => {
     expect(guardedModules.map(moduleName)).toStrictEqual(expect.arrayContaining([
-      'Settings', 'AgentDetail', 'CompanyContextSection', 'FormEditor', 'WorkflowEditor',
+      'Settings', 'AgentDetail', 'CompanyContextSection', 'FormBuilderPage', 'WorkflowEditor',
     ]))
     expect(guardedModules.length).toBeGreaterThanOrEqual(12)
   })

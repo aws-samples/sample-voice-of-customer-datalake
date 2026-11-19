@@ -36,7 +36,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     feedbackTable, aggregatesTable, projectsTable, conversationsTable, kmsKey, userPool, processingQueueUrl,
-    processingQueueArn, brandName, participantsTable, rawDataBucket,
+    processingQueueArn, brandName, participantsTable, rawDataBucket, primaryLanguage,
   } = ctx.props;
 
   // Logs API — also runs alerting (Settings → Logs → Alerts): it creates and
@@ -114,15 +114,25 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   // Feedback Form API
   const feedbackFormRole = ctx.role('FeedbackFormLambdaRole');
-  // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes the FEEDBACK_FORM / FORM#<id>
-  // config row, the only delete.
+  // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes, in the FEEDBACK_FORM partition,
+  // the form's config row FORM#<id> and the rows that belong to it (schema version 2, 7.04.00): its revision snapshots
+  // FORMREV#<id>#* and daily funnel counters FORMFUNNEL#<id>#*; and its test responses, which live in their own
+  // partition FEEDBACK_FORM_TEST (<id>#*: the one voc-retention may delete in, retention-worker.ts). DELETE
+  // …/responses?test=true deletes the test ones alone. The funnel's visit rows (FORMSESSION#) expire by ttl. No other
+  // delete. Every delete is recorded first: the role is a one-partition audit writer (AUDIT#delete,
+  // lib/utils/audit-row-guard.ts).
   grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
-  grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM']);
+  grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM', 'FEEDBACK_FORM_TEST']);
   feedbackTable.grantReadData(feedbackFormRole);
   kmsKey.grantEncryptDecrypt(feedbackFormRole);
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // A submission gets its source's PII policy before it is queued.
   feedbackFormRole.addToPolicy(piiDetectionStatement());
+  // No AI: this role also serves the three unauthenticated widget routes, so it holds no lambda:InvokeFunction, no
+  // jobs-table action and no model grant (TENETS.md tenet 6, least privilege; pinned by
+  // api-stack-feedback-forms-v2.test.ts). A form's AI draft (POST /feedback-forms/draft, GET
+  // /feedback-forms/draft/{job_id}) is the SETTINGS API's (lambda/shared/forms_v2_draft_routes.py, api-routes.ts),
+  // whose role already owns the assist job rows, its assist twin and the Bedrock grant.
   // The submission as the widget sent it (lambda/shared/feedback_form_raw.py): write-once, under the
   // feedback_form source's own prefix only (the source id is fixed, not per form). No read, no delete.
   rawDataBucket.grantPut(feedbackFormRole, 'raw/feedback_form/*');
@@ -150,6 +160,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       PROCESSING_QUEUE_URL: processingQueueUrl,
       PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
+      // The language a version 1 form without one is migrated to, as the processor gets it.
+      PRIMARY_LANGUAGE: primaryLanguage ?? 'en',
       // The raw copy of each submission and its connector-version (lambda/shared/feedback_form_raw.py).
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       APP_VERSION: appVersion(),

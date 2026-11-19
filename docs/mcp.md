@@ -413,7 +413,8 @@ jobs table `MCPOAUTH#RELAY#…` / `MCPOAUTH#CODE#…` with `ttl` (the projects t
 by a DeleteItem returning the old row. Routes: `voc-mcp-tokens-api` (`shared/mcp_oauth_routes.py`,
 `shared/mcp_oauth_consent_routes.py`); its role gains Put/Delete on `MCPOAUTH#*` only. Cognito
 resource server and clients: `lib/stacks/api-mcp-oauth.ts` on VocApiStack. `cryptography` (the
-signing layer) is attached to the MCP endpoint function only.
+signing layer) is attached to the MCP endpoint function only, of the MCP functions (the projects API and its assist
+worker have it to sign CDN URLs, and the Cognito custom-message trigger its own copy in VocCoreStack).
 
 ### Checking a deployment
 

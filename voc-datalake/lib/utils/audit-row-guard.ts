@@ -4,7 +4,8 @@
  *
  * Audit, tombstone and delete-record rows live under partition keys that start with `AUDIT#`, in the tables that
  * hold them ({@link AuditRowTables}): voc-aggregates (`AUDIT#retention`, `AUDIT#tombstone#<source>`, written by
- * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API) and voc-projects /
+ * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API, and for a deleted
+ * feedback form, written by the Feedback Form API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
@@ -78,6 +79,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'aggregatesTable', rolePathSuffix: '/RetentionWorker/RetentionRole' },
   // The settings API (and its assist twin, same role): the AUDIT#delete row of an archived design reference's copies.
   { table: 'aggregatesTable', rolePathSuffix: '/SettingsLambdaRole', partitionKey: 'AUDIT#delete' },
+  // The Feedback Form API (7.04.00): the AUDIT#delete row of a deleted form (feedback_form_handler.py delete_form,
+  // through shared/delete_audit.py record_delete_once).
+  { table: 'aggregatesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#delete' },
   // Project, persona, document, revision, product doc and comment deletes (the projects API and its assist twin);
   // a replace regeneration's removed personas (the persona generator).
   { table: 'projectsTable', rolePathSuffix: '/ProjectsLambdaRole' },

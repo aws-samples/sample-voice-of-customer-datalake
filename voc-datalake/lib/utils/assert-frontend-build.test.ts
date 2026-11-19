@@ -96,6 +96,25 @@ describe('assertFrontendBuildFresh', () => {
     expect(() => assertFrontendBuildFresh({ frontendRoot: root })).toThrow(/index\.html/);
   });
 
+  it('treats the feedback widget source, outside the frontend root, as a source input', () => {
+    // <tmp>/frontend beside <tmp>/lambda/api/static/feedback-widget.js, as in the repo.
+    const repo = newFrontend();
+    const root = path.join(repo, 'frontend');
+    fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src', 'app.ts'), 'export const x = 1;');
+    buildDist(root);
+    const widget = path.join(repo, 'lambda', 'api', 'static', 'feedback-widget.js');
+    fs.mkdirSync(path.dirname(widget), { recursive: true });
+    fs.writeFileSync(widget, '/* widget */');
+    setMtimeSecondsAgo(path.join(root, 'src', 'app.ts'), 100);
+    setMtimeSecondsAgo(widget, 100);
+    setMtimeSecondsAgo(path.join(root, 'dist', 'index.html'), 50);
+    expect(() => assertFrontendBuildFresh({ frontendRoot: root })).not.toThrow();
+
+    setMtimeSecondsAgo(widget, 5);
+    expect(() => assertFrontendBuildFresh({ frontendRoot: root })).toThrow(/lambda\/api\/static\/feedback-widget\.js/);
+  });
+
   it('bypasses the check when skip is true', () => {
     const root = staleFrontend();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

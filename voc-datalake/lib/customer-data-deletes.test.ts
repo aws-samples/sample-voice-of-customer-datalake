@@ -48,7 +48,15 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     'VocApiStack/IntegrationsLambdaRole': CIRCUIT_ROW,
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
-    'VocApiStack/FeedbackFormLambdaRole': { scope: ['FEEDBACK_FORM'], why: 'DELETE /feedback-forms/{id} (the config row)' },
+    'VocApiStack/FeedbackFormLambdaRole': {
+      scope: ['FEEDBACK_FORM', 'FEEDBACK_FORM_TEST'],
+      why: 'DELETE /feedback-forms/{id} (the form\'s rows) and DELETE …/responses?test=true (its test responses)',
+    },
+    [RETENTION_ROLE]: {
+      // Their own partition only: never a form's definition, revision or funnel row (FEEDBACK_FORM).
+      scope: ['FEEDBACK_FORM_TEST'],
+      why: 'erasure requests and the feedback_form retention window reach the forms\' test responses',
+    },
     [PROJECTS_API]: {
       scope: ['PRIORITIZATION', 'VOTING_SESSION_ROW'],
       why: 'a deleted Prioritization row with its ballots, and a closed vote\'s pointer',

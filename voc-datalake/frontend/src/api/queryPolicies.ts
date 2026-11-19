@@ -98,11 +98,12 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope
   'feedback-forms': 'standard',
+  // One form as the builder edits it (GET /feedback-forms/{id}): read once per page, its draft is the page's own.
+  'feedback-form-v2': 'standard',
   'feedback-preview': 'feedbackData', // the persona / research wizards' live match count
   'feedback-problems': 'feedbackData',
   'feedback-similar': 'feedbackData',
   'form-stats': 'standard',
-  'form-submissions': 'standard',
   'generator-config': 'config',
   'githubMetrics': 'feedbackData',
   'import-history': 'standard', // import runs (Data sources → Import history); a finished upload invalidates it

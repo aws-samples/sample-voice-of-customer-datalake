@@ -20,9 +20,11 @@ const GUARDED_TABLES = ['AggregatesTable', 'ProjectsTable', 'ParticipantsTable',
 const WRITES = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|\*)$/;
 const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] } };
 
-/** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`). */
+/** Table → the roles that may PUT an audit row there (the audit writers; the settings and Feedback Form APIs only
+ *  `AUDIT#delete`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
-  AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole'],
+  AggregatesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/SettingsLambdaRole',
+    'VocProcessingStack/RetentionWorkerRetentionRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
@@ -102,8 +104,9 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
   });
 
-  it('the settings API may put only AUDIT#delete in voc-aggregates (no retention row, no tombstone)', () => {
-    const deny = denied(byRole.get('VocApiStack/SettingsLambdaRole') ?? [], AUDIT_DENY_OTHER_PARTITION_SID);
+  it.each(['VocApiStack/SettingsLambdaRole', 'VocApiStack/FeedbackFormLambdaRole'])(
+    '%s may put only AUDIT#delete in voc-aggregates (no retention row, no tombstone)', (role) => {
+    const deny = denied(byRole.get(role) ?? [], AUDIT_DENY_OTHER_PARTITION_SID);
     expect(deny.Effect).toBe('Deny');
     expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
     expect(tablesOf(deny)).toStrictEqual(['AggregatesTable']);
@@ -111,9 +114,10 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } });
   });
 
-  it('only the settings API carries a one-partition deny', () => {
+  it('only the settings and Feedback Form APIs carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
-    expect(holders.map(([role]) => role)).toStrictEqual(['VocApiStack/SettingsLambdaRole']);
+    expect(holders.map(([role]) => role).sort(byCodeUnit))
+      .toStrictEqual(['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/SettingsLambdaRole']);
   });
 
   it('leaves a read-only role alone', () => {

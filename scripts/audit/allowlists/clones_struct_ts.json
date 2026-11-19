@@ -36,6 +36,20 @@
         "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
       ],
       "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, onboarding step done/pending/todo at 20 px with a spinner): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/FeedbackForms/FormsList.tsx",
+        "voc-datalake/frontend/src/pages/Projects/ProjectCard.tsx"
+      ],
+      "reason": "two loading placeholders, each drawn in its own card's shape (the forms list card's three zones, its title, figures and controls; the project card's icon, title, line and button): what matches is the design system's `skeleton` recipe in a three-item map, and one component would take each card's layout as props"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/FeedbackForms/theme/useFormBrand.ts",
+        "voc-datalake/frontend/src/pages/Scrapers/Scrapers.tsx"
+      ],
+      "reason": "two features' TanStack mutations over their own APIs and query keys (the form brand's save with its read-back flags; a scraper's save, delete and run): what matches is the library's useMutation + invalidateQueries recipe, and a shared hook would take the call and the key as parameters and save nothing"
     }
   ]
 }

@@ -65,6 +65,12 @@ describe('the shared recipes draw their boundary with the token', () => {
     expect(body).toContain('border: 1px solid var(--control-border)')
   })
 
+  it('a switch that is off draws the --control-border edge (its --border track is 1.27:1 on the light card); on, the accent fill is the edge', () => {
+    expect(contrast(token('kiro-light', 'border'), token('kiro-light', 'card')).toFixed(2)).toBe('1.27')
+    expect(ruleBody('.switch')).toContain('box-shadow: inset 0 0 0 1px var(--control-border)')
+    expect(ruleBody('.switch[aria-checked="true"], .switch-on')).toContain('box-shadow: none')
+  })
+
   it('the Tailwind bridge exposes the tokens as utilities', () => {
     expect(css).toContain('--color-control-border: var(--control-border);')
     expect(css).toContain('--color-control-border-hover: var(--control-border-hover);')

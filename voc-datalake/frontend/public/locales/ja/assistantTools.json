@@ -39,7 +39,9 @@
     "confirmChange": "変更を依頼",
     "openFeedback": "フィードバック一覧を開く",
     "openRadar": "Radar を開く",
-    "openRadarSettings": "管理 → ソース → レーダー を開く"
+    "openRadarSettings": "管理 → ソース → レーダー を開く",
+    "approveCreate": "承認して作成",
+    "openForm": "ビルダーでフォームを開く"
   },
   "preview": {
     "participants": {
@@ -332,6 +334,43 @@
       "off": "オフ",
       "onNote": "スケジュールされたインポートが再開し、作動中のサーキットブレーカーが閉じられます。",
       "offNote": "スケジュールされたインポートが停止します。インポート済みのデータは変わりません。"
+    },
+    "feedbackFormDraft": {
+      "label": "下書きされたフィードバックフォーム",
+      "name": "名前",
+      "nameMissing": "フォームに名前を付けてください。",
+      "channel": {
+        "link": "リンク",
+        "embed": "埋め込み",
+        "in_app": "アプリ内"
+      },
+      "questions": "質問",
+      "leaveOut": "質問 {{number}} を除外",
+      "lastQuestion": "フォームには質問が 1 つ以上必要なため、最後の質問は除外できません。",
+      "leftOut": "質問 {{number}} を除外しました。",
+      "endings": "終了画面",
+      "hiddenFields": "非表示フィールド",
+      "fromAi": "AI から",
+      "warning": "警告",
+      "addresses": "AI が提案したアドレス",
+      "checkedAddress": "このアドレスを確認しました",
+      "remove": "削除",
+      "removeAddress": "アドレス {{url}} を削除",
+      "createsOff": "承認するとオフの状態で作成されます。公開するまで誰にも表示されません。",
+      "openInBuilder": "ビルダーで開く",
+      "notAForm": "この下書きは、このアプリで読み取れるフォームではありません。",
+      "questionCount_one": "質問 {{count, number}} 件",
+      "questionCount_other": "質問 {{count, number}} 件",
+      "endingCount_one": "終了画面 {{count, number}} 件",
+      "endingCount_other": "終了画面 {{count, number}} 件",
+      "hiddenCount_one": "非表示フィールド {{count, number}} 件",
+      "hiddenCount_other": "非表示フィールド {{count, number}} 件",
+      "options_one": "選択肢 {{count, number}} 件",
+      "options_other": "選択肢 {{count, number}} 件",
+      "rules_one": "ルール {{count, number}} 件",
+      "rules_other": "ルール {{count, number}} 件",
+      "rulesDropped_one": "{{questions}} からこの質問へのルール（{{count, number}} 件）も削除されます。",
+      "rulesDropped_other": "{{questions}} からこの質問へのルール（{{count, number}} 件）も削除されます。"
     }
   },
   "tools": {
@@ -519,6 +558,10 @@
       "title": "ユーザーを作成",
       "titleWith_one": "{{count, number}} 人のユーザーを作成",
       "titleWith_other": "{{count, number}} 人のユーザーを作成"
+    },
+    "draft_feedback_form": {
+      "title": "フィードバックフォームを作成",
+      "titleWith": "フィードバックフォーム「{{name}}」を作成"
     }
   }
 }

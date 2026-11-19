@@ -1,86 +1,387 @@
 {
+  "newForm": "새 양식",
+  "migration": {
+    "tellUsMore": "더 자세히 알려 주세요",
+    "contactHeadline": "어떻게 연락드리면 될까요?"
+  },
+  "types": {
+    "single_select": {
+      "name": "단일 선택",
+      "hint": "선택지 하나를 고릅니다(예: 이유)"
+    },
+    "multi_select": {
+      "name": "다중 선택",
+      "hint": "선택지를 여러 개 고릅니다"
+    },
+    "open_text": {
+      "name": "텍스트",
+      "hint": "짧거나 긴 입력형 답변",
+      "short": "짧은 텍스트",
+      "long": "긴 텍스트"
+    },
+    "rating": {
+      "name": "평점",
+      "hint": "별, 숫자 또는 얼굴, 3–10점"
+    },
+    "nps": {
+      "name": "NPS",
+      "hint": "0–10: 추천 가능성"
+    },
+    "csat": {
+      "name": "CSAT",
+      "hint": "1–5 얼굴: 만족도"
+    },
+    "ces": {
+      "name": "CES",
+      "hint": "1–7: 용이성"
+    },
+    "statement": {
+      "name": "안내문",
+      "hint": "읽을 텍스트(링크 버튼 선택 가능)"
+    },
+    "consent": {
+      "name": "동의",
+      "hint": "응답자가 체크하는 확인란"
+    },
+    "contact_info": {
+      "name": "연락처 정보",
+      "hint": "이름, 이메일, 전화번호, 회사"
+    },
+    "groups": {
+      "ask": "질문",
+      "measure": "측정",
+      "other": "기타"
+    },
+    "ending": "종료 화면",
+    "welcome": "환영 카드"
+  },
+  "problems": {
+    "count_one": "문제 {{count, number}}개",
+    "count_other": "문제 {{count, number}}개",
+    "warnings_one": "경고 {{count, number}}개",
+    "warnings_other": "경고 {{count, number}}개",
+    "goTo": "이동",
+    "listLabel": "이 양식의 문제",
+    "where": {
+      "question": "Q{{number}}",
+      "ending": "종료 화면 “{{title}}”",
+      "welcome": "환영 카드",
+      "hidden": "숨겨진 필드 {{id}}",
+      "language": "{{language}}",
+      "form": "양식",
+      "themeLight": "스타일(라이트)",
+      "themeDark": "스타일(다크)"
+    },
+    "otherProblems": "기타 문제",
+    "noQuestions": "양식에는 질문이 하나 이상 있어야 합니다.",
+    "tooManyQuestions": "양식에는 질문을 최대 30개까지 넣을 수 있습니다.",
+    "noEndings": "양식에는 종료 화면이 하나 이상 있어야 합니다.",
+    "tooManyEndings": "양식에는 종료 화면을 최대 5개까지 넣을 수 있습니다.",
+    "tooManyHidden": "양식에는 숨겨진 필드를 최대 20개까지 넣을 수 있습니다.",
+    "headlineEmpty": "질문을 입력하세요.",
+    "optionEmpty": "선택지 {{number}}에 텍스트가 없습니다.",
+    "endingTitleEmpty": "종료 화면의 제목을 입력하세요.",
+    "welcomeTitleEmpty": "환영 화면에는 제목이 필요합니다.",
+    "consentLabelEmpty": "확인란 텍스트를 입력하세요.",
+    "duplicateQuestionId": "ID {{id}}은(는) 다른 질문에서 이미 사용 중입니다.",
+    "retiredQuestionId": "ID {{id}}는 이전에 삭제한 질문의 것이었으며, ID는 다시 사용되지 않습니다. 다른 ID를 선택하세요.",
+    "answeredReshaped": "질문 {{number}}에 응답이 있어 유형과 점수 단계를 바꿀 수 없습니다. 변경을 취소하거나 새 질문을 추가하세요.",
+    "invalidQuestionId": "질문 ID는 q_로 시작하며 영문 소문자, 숫자, _만 사용할 수 있습니다.",
+    "duplicateEndingId": "ID {{id}}은(는) 다른 종료 화면에서 이미 사용 중입니다.",
+    "invalidEndingId": "종료 화면 ID는 end_로 시작하며 영문 소문자, 숫자, _만 사용할 수 있습니다.",
+    "duplicateHiddenId": "이 양식에서 이미 사용 중입니다.",
+    "invalidHiddenId": "영문자로 시작하고 영문 소문자, 숫자, _만 사용하세요.",
+    "reservedHiddenId": "{{id}}은(는) 예약된 이름입니다. 다른 이름을 선택하세요.",
+    "duplicateCode": "두 선택지가 같은 코드 {{code}}을(를) 사용합니다.",
+    "reservedCode": "이 코드는 기타 및 해당 없음 행용으로 예약되어 있습니다.",
+    "invalidCode": "코드는 영문 소문자, 숫자, _로 최대 40자까지 사용할 수 있습니다.",
+    "noOptions": "선택지를 하나 이상 추가하세요.",
+    "tooManyOptions": "질문 하나에는 선택지를 최대 50개까지 넣을 수 있습니다.",
+    "minOverMax": "최소는 최대보다 클 수 없습니다.",
+    "maxOverChoices": "최대는 선택지 수({{count, number}}개)보다 클 수 없습니다.",
+    "minOverChoices": "최소는 선택지 수({{count, number}}개)보다 클 수 없습니다.",
+    "buttonUrl": "주소는 https://로 시작해야 합니다.",
+    "buttonLabelEmpty": "버튼 레이블을 입력하세요.",
+    "ctaUrl": "주소는 https://로 시작해야 합니다.",
+    "contactNoField": "필드를 하나 이상 표시하세요.",
+    "contactTwice": "양식에는 연락처 정보 질문을 하나만 넣을 수 있습니다.",
+    "maxCharsRange": "제한은 1~5,000자입니다.",
+    "facesRange": "얼굴 척도는 3~5점입니다.",
+    "aiAddress": "AI가 제안한 주소를 확인하거나 삭제하세요.",
+    "missingTranslations_one": "{{language}} 텍스트 {{count, number}}개가 누락되었습니다. {{language}} 사용자에게는 {{primary}}(으)로 표시됩니다.",
+    "missingTranslations_other": "{{language}} 텍스트 {{count, number}}개가 누락되었습니다. {{language}} 사용자에게는 {{primary}}(으)로 표시됩니다.",
+    "unreachableQuestion": "이 질문에 도달하는 경로가 없습니다. 위의 모든 규칙이 이 질문을 건너뜁니다.",
+    "unreachableEnding": "여기서 끝나는 규칙이 없습니다.",
+    "chipsLong": "칩은 짧은 레이블에 적합합니다. 긴 레이블은 줄바꿈됩니다.",
+    "dropdownFew": "목록은 모든 선택지를 한 번에 보여 주지만, 드롭다운은 선택지를 숨깁니다.",
+    "noCategory": "피드백을 카테고리로 분류하는 선택지가 없고 양식에도 카테고리가 없습니다. 설정 › 카테고리 라우팅에서 지정하세요.",
+    "themeUnreadable": "배경 위 텍스트 대비가 {{ratio}}:1로 3:1보다 낮아 응답자가 읽을 수 없습니다.",
+    "themeUnreadableLive": "이 양식의 텍스트는 읽기 어렵습니다({{ratio}}:1, 3:1 미만). 색상을 수정하세요. 그때까지도 다른 변경 사항은 게시됩니다.",
+    "themeTextLow": "배경 위 텍스트 대비가 {{ratio}}:1로 4.5:1보다 낮아 많은 사람이 읽을 수 없습니다.",
+    "themePrimaryLow": "배경 위 기본 색상 대비가 {{ratio}}:1로 3:1보다 낮아 포커스 링, 진행 표시, 선택한 답변이 잘 보이지 않습니다.",
+    "themeLabelLow": "이 기본 색상 위에서는 흰색 텍스트도 어두운 텍스트도 읽기 어렵습니다: {{ratio}}:1, 4.5:1 미만.",
+    "blocksPublishOnly": "이 문제를 고칠 때까지 게시할 수 없지만 저장은 됩니다.",
+    "targetMissingQuestion": "이 규칙은 삭제된 질문으로 이동합니다. 이동할 곳을 선택하세요.",
+    "targetMissingEnding": "이 규칙은 삭제된 종료 화면으로 이동합니다. 다른 종료 화면을 선택하세요.",
+    "targetBackwards": "이동은 앞쪽으로만 할 수 있는데, 질문 {{number}}이(가) 이제 이 질문보다 위에 있습니다. 아래로 옮기거나 다른 대상을 선택하세요.",
+    "noValueOption": "선택지를 고르세요.",
+    "noValueNumber": "숫자를 고르세요.",
+    "optionRemoved": "“{{code}}”은(는) 더 이상 선택지가 아닙니다. 다른 선택지를 고르거나 이 규칙을 삭제하세요.",
+    "outsideScale": "{{value}}은(는) 이 질문의 {{min}}–{{max}} 척도를 벗어납니다.",
+    "opInvalid": "이 질문은 이 방식으로 비교할 수 없습니다. 다른 조건을 선택하세요.",
+    "skippedOnRequired": "이 질문은 필수이므로 건너뛸 수 없습니다. 따라서 이 규칙은 실행되지 않습니다.",
+    "ruleNeverRuns": "이 규칙은 실행되지 않습니다. 해당하는 모든 답변이 이미 규칙 {{number}}에 일치합니다.",
+    "whereAnyway": "이 규칙은 효과가 없습니다. 이 규칙에 도달한 모든 응답자는 어차피 질문 {{number}}(으)로 이동합니다.",
+    "whereAnywayEnding": "이 규칙은 효과가 없습니다. 이 규칙에 도달한 모든 응답자는 어차피 종료 화면 “{{title}}”을(를) 봅니다."
+  },
+  "logic": {
+    "ops": {
+      "equals": "다음과 같음",
+      "not_equals": "다음과 같지 않음",
+      "includesAnySingle": "다음 중 하나임",
+      "includesAnyMulti": "다음 중 하나 이상 포함",
+      "includes_all": "다음을 모두 포함",
+      "lt": "다음보다 작음",
+      "lte": "다음 이하",
+      "gt": "다음보다 큼",
+      "gte": "다음 이상",
+      "submitted": "답변함",
+      "skipped": "건너뜀",
+      "accepted": "동의함",
+      "notAccepted": "동의하지 않음"
+    },
+    "values": {
+      "other": "기타(직접 입력한 답변)",
+      "none": "해당 없음",
+      "quoted": "“{{text}}”",
+      "separator": ", "
+    },
+    "target": {
+      "question": "{{number}} · {{headline}}",
+      "ending": "종료 화면: {{title}}",
+      "missing": "삭제된 질문 또는 종료 화면",
+      "next": "다음 질문",
+      "nextNumbered": "다음 질문: {{number}} · {{headline}}",
+      "defaultEnding": "종료: {{title}}"
+    },
+    "sentence": {
+      "rule": "답변이 {{condition}} → {{target}}",
+      "otherwise": "그 외 → {{target}}"
+    },
+    "ifTheAnswer": "답변이",
+    "goTo": "→ 이동",
+    "otherwise": "그 외",
+    "thenGoTo": "그다음 이동",
+    "firstWins": "처음 일치하는 규칙이 적용됩니다",
+    "rulesLabel": "규칙",
+    "addRule": "규칙 추가",
+    "moved": "규칙 {{from}}을(를) {{total, number}}개 중 {{to}}번째 위치로 옮겼습니다.",
+    "controls": {
+      "operator": "규칙 {{number}}: 연산자",
+      "value": "규칙 {{number}}: 값",
+      "goTo": "규칙 {{number}}: 이동 대상"
+    },
+    "actions": {
+      "label": "규칙 {{number}} 추가 작업",
+      "moveUp": "위로 이동",
+      "moveDown": "아래로 이동",
+      "duplicate": "복제",
+      "delete": "삭제",
+      "first": "이미 첫 번째 규칙입니다.",
+      "last": "이미 마지막 규칙입니다."
+    },
+    "chooseNumber": "숫자 선택…",
+    "chooseOption": "선택지 선택…",
+    "chooseOptions": "선택지 선택(여러 개)…",
+    "addOption": "선택지 추가…",
+    "removedOption": "“{{code}}”(더 이상 선택지가 아님)",
+    "removeValue": "{{option}} 제거",
+    "numberWithLabel": "{{value}} — {{label}}",
+    "groups": {
+      "next": "다음 질문",
+      "later": "이후 질문",
+      "endings": "종료 화면"
+    }
+  },
+  "builder": {
+    "back": "피드백 양식",
+    "loading": "양식을 불러오는 중…",
+    "loadFailed": "이 양식을 불러오지 못했습니다.",
+    "name": {
+      "label": "양식 이름(내부용)",
+      "rename": "양식 이름 바꾸기",
+      "untitled": "제목 없는 양식"
+    },
+    "state": {
+      "live": "게시 중",
+      "off": "꺼짐",
+      "testOn": "테스트 링크 켜짐",
+      "notSaved": "아직 저장되지 않음"
+    },
+    "save": {
+      "unsaved": "저장되지 않은 변경 사항",
+      "saving": "저장 중…",
+      "saved": "저장됨",
+      "fixToSave_one": "저장하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToSave_other": "저장하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublish_one": "게시하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublish_other": "게시하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublishSaveWorks_one": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
+      "fixToPublishSaveWorks_other": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
+      "themeRefused": "저장하지 못했습니다. 게시된 양식에는 응답자가 읽을 수 있는 텍스트(배경 대비 3:1 이상)가 필요합니다. 스타일에서 색상을 바꾸세요.",
+      "questionIdReused": "저장하지 못했습니다: ID {{id}}는 이전에 삭제한 질문의 것이며 ID는 다시 사용되지 않습니다. 고급에서 그 질문에 다른 ID를 지정하세요.",
+      "themeHardToRead": "이 양식의 텍스트는 읽기 어렵습니다.",
+      "themeFix": "색상 수정",
+      "save": "저장",
+      "publish": "게시",
+      "update": "게시된 양식 업데이트",
+      "failed": "저장하지 못했습니다: {{reason}}.",
+      "failedGeneric": "저장하지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+      "retry": "다시 시도"
+    },
+    "published": "게시되었습니다. 이제부터 응답자에게 이 버전이 표시됩니다.",
+    "firstSave": "저장되었습니다. 이 양식은 꺼져 있어, 게시할 때까지 링크에 “피드백 양식을 사용할 수 없습니다.”라는 메시지가 표시됩니다.",
+    "aiSaved": "저장되었습니다. 이제 AI 초안이 이 양식이 되었습니다.",
+    "turnedOff": "양식을 껐습니다. 링크에는 “피드백 양식을 사용할 수 없습니다.”라는 메시지가 표시되며, 테스트 링크는 계속 작동합니다.",
+    "menu": {
+      "label": "양식 추가 작업",
+      "improve": "AI로 개선…",
+      "askAssistant": "어시스턴트에게 묻기",
+      "discard": "변경 사항 취소",
+      "duplicate": "양식 복제",
+      "preview": "창에서 미리보기",
+      "turnOff": "끄기",
+      "delete": "양식 삭제…",
+      "saveFirst": "먼저 양식을 저장하세요.",
+      "nothingToDiscard": "저장되지 않은 변경 사항이 없습니다."
+    },
+    "copyName": "{{name}} (사본)",
+    "confirmRemoval": {
+      "title": "게시된 양식을 업데이트할까요?",
+      "message": "삭제된 항목: {{list}}. 해당 답변은 결과에 그대로 남습니다.",
+      "confirm": "게시된 양식 업데이트",
+      "question": "질문 “{{text}}”",
+      "option": "선택지 “{{text}}”",
+      "ending": "종료 화면 “{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "번역이 빠진 채로 게시할까요?",
+      "titleUpdate": "번역이 빠진 채로 게시된 양식을 업데이트할까요?",
+      "line_one": "{{language}} 응답자에게는 텍스트 {{count, number}}개가 {{primary}}(으)로 표시됩니다.",
+      "line_other": "{{language}} 응답자에게는 텍스트 {{count, number}}개가 {{primary}}(으)로 표시됩니다.",
+      "publishAnyway": "그대로 게시",
+      "updateAnyway": "그대로 업데이트",
+      "translate": "{{language}} 번역"
+    },
+    "confirmAiPublish": {
+      "title": "이 AI 초안을 게시할까요?",
+      "message": "응답자에게 지금 상태 그대로 표시됩니다. 먼저 질문, 선택지, 종료 화면을 확인하세요.",
+      "confirm": "게시"
+    },
+    "confirmDiscard": {
+      "title": "변경 사항을 취소할까요?",
+      "message": "양식이 마지막으로 저장된 상태로 돌아갑니다.",
+      "messageNew": "양식이 처음 열었을 때의 상태로 돌아갑니다. 저장된 내용은 없습니다.",
+      "confirm": "변경 사항 취소"
+    },
+    "confirmDelete": {
+      "title": "양식을 삭제할까요?",
+      "message": "“{{name}}”을(를) 삭제할까요? 링크가 더 이상 작동하지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+      "messageResponses_one": "“{{name}}”과(와) 응답 {{count, number}}개를 삭제할까요? 링크가 더 이상 작동하지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+      "messageResponses_other": "“{{name}}”과(와) 응답 {{count, number}}개를 삭제할까요? 링크가 더 이상 작동하지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+      "confirm": "양식 삭제"
+    },
+    "conflict": {
+      "messageAnonymous": "편집하는 동안 다른 사람이 이 양식을 저장했습니다.",
+      "explain": "지금 저장하면 상대방의 버전을 덮어씁니다. 두 버전을 비교하거나, 상대방 버전을 다시 불러오거나, 내 버전으로 덮어써 저장하세요.",
+      "compare": "비교",
+      "reload": "상대방 버전 불러오기",
+      "saveMine": "내 버전 저장",
+      "compareTitle": "상대방 버전과 내 버전",
+      "compareDescription": "내 버전을 저장하면 상대방 버전에서 바뀌는 내용입니다.",
+      "noDifferences": "질문, 종료 화면, 숨겨진 필드, 언어에 차이가 없습니다.",
+      "readFailed": "상대방 버전을 읽지 못했습니다. 다시 시도하세요.",
+      "added": "내 버전에서 추가",
+      "removed": "내 버전에서 삭제",
+      "changed": "내 버전에서 변경",
+      "close": "닫기",
+      "messageSelf": "다른 탭이나 창에서 {{time}}에 이 양식을 저장했습니다."
+    },
+    "migrated": "이 양식은 이제 새 빌더를 사용합니다. 기존 평점과 텍스트 상자는 질문 1과 2가 되었습니다. 저장하면 새 형식으로 저장되며, 응답자에게는 같은 질문이 표시됩니다.",
+    "tabs": {
+      "label": "양식 빌더 섹션",
+      "questions": "질문",
+      "flow": "흐름",
+      "languages": "언어",
+      "hidden-fields": "숨겨진 필드",
+      "test": "테스트",
+      "share": "공유",
+      "results": "결과",
+      "settings": "설정",
+      "withProblems_one": "문제 {{count, number}}개",
+      "withProblems_other": "문제 {{count, number}}개",
+      "withMissing_one": "누락된 번역 {{count, number}}개",
+      "withMissing_other": "누락된 번역 {{count, number}}개",
+      "scrollStart": "이전 탭으로 스크롤",
+      "scrollEnd": "다른 탭으로 스크롤"
+    },
+    "shortcut": "Ctrl+S 또는 ⌘+S를 누르면 저장됩니다."
+  },
+  "previewFrame": {
+    "loading": "미리보기를 불러오는 중…",
+    "unavailable": "미리보기를 시작할 수 없습니다. 양식 위젯이 로드되지 않았습니다. 페이지를 새로 고쳐 다시 시도하세요."
+  },
   "card": {
-    "avgRating": "평균 평점",
-    "category": "카테고리:",
-    "collects": "수집 항목",
-    "copy": "복사",
-    "deleteForm": "양식 삭제",
-    "directLink": "직접 링크",
-    "prototypePins": "프로토타입 핀",
-    "editForm": "양식 편집",
-    "hideEmbedCode": "임베드 코드 숨기기",
-    "iframeEmbed": "iFrame 임베드",
-    "preview": "미리보기",
-    "ratingAndText": "평점 및 텍스트",
-    "ratingType": "평점 유형",
-    "showEmbedCode": "임베드 코드 표시",
-    "submissions_one": "제출",
-    "submissions_other": "제출",
-    "themeLabel": "테마",
-    "themeDefault": "기본 색상",
-    "themeCustom": "사용자 지정 색상",
-    "viewSubmissions": "제출 보기",
-    "collectsName": "이름",
-    "collectsEmail": "이메일",
-    "disabledNotice": "이 양식은 꺼져 있습니다. 활성화할 때까지 링크와 임베드에 “Feedback form unavailable.”이 표시됩니다.",
     "live": "게시 중",
     "off": "꺼짐",
-    "noSubmissionsYet": "아직 응답이 없습니다. 양식을 공유해 응답을 받으세요.",
-    "themeSwatch": "양식 색상"
+    "prototypePins": "프로토타입 핀",
+    "testLinkOn": "테스트 링크 켜짐",
+    "summary_one": "질문 {{count, number}}개 · {{languages}}",
+    "summary_other": "질문 {{count, number}}개 · {{languages}}",
+    "responses_one": "응답 {{formatted}}개",
+    "responses_other": "응답 {{formatted}}개",
+    "reading": "응답을 읽는 중…",
+    "lastResponse": "마지막 응답: {{when}}",
+    "channels": {
+      "label": "응답 경로",
+      "link": "링크",
+      "script": "웹사이트 스크립트",
+      "iframe": "임베드"
+    },
+    "average": "{{average}} / {{max}}",
+    "results": "결과",
+    "actions": "{{name}} 추가 작업",
+    "edit": "편집",
+    "copyLink": "링크 복사",
+    "qr": "QR 코드",
+    "qrTitle": "QR 코드",
+    "preview": "미리보기",
+    "duplicate": "복제",
+    "delete": "삭제…",
+    "copyName": "{{name}} (사본)",
+    "cannotRead": "이 양식을 읽을 수 없습니다.",
+    "unnamed": "제목 없는 양식",
+    "fixFirst_one": "게시하기 전에 문제 {{count, number}}개를 해결하세요.",
+    "fixFirst_other": "게시하기 전에 문제 {{count, number}}개를 해결하세요.",
+    "open": "열기",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "평균 평점",
+      "ces": "평균 노력 점수(CES)"
+    },
+    "turnOff": {
+      "title": "'{{name}}'을(를) 끄시겠습니까?",
+      "message": "링크와 임베드에서 다음 응답자에게 '피드백 양식을 사용할 수 없습니다.'가 표시됩니다.",
+      "confirm": "끄기"
+    }
   },
   "configureApiFirst": "피드백 양식을 관리하려면 관리 → 일반에서 API 엔드포인트를 구성하세요.",
-  "createForm": "양식 만들기",
   "deleteConfirmLabel": "삭제",
   "deleteConfirmMessage": "이 양식을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
-  "deleteConfirmMessageNamed": "양식 '{{name}}'을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  "deleteConfirmMessageNamed": "양식 “{{name}}”을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
   "deleteConfirmTitle": "양식 삭제",
   "editor": {
-    "backgroundColor": "배경 색상",
-    "borderRadius": "테두리 반경",
-    "cancel": "취소",
-    "categoryHint": "카테고리는 관리 → 분류 체계 → 카테고리에서 구성됩니다",
-    "categoryLabel": "카테고리",
-    "categoryRoutingDescription": "이 양식에 카테고리를 할당합니다. 이 양식을 통해 제출된 모든 피드백은 선택한 카테고리로 자동 태그됩니다.",
-    "categoryRoutingTitle": "카테고리 라우팅",
-    "collectEmail": "이메일 수집",
-    "collectName": "이름 수집",
-    "createForm": "양식 만들기",
-    "createTitle": "새 피드백 양식 만들기",
-    "creating": "생성 중...",
-    "description": "설명",
-    "editTitle": "피드백 양식 편집",
-    "enableRating": "평점 활성화",
-    "formName": "양식 이름 (내부용)",
-    "formNamePlaceholder": "예: 웹사이트 푸터 양식",
-    "formTitle": "양식 제목",
-    "placeholderText": "플레이스홀더 텍스트",
-    "preview": "미리보기",
-    "previewLabel": "미리보기:",
-    "previewTagged": "이 양식의 피드백은 다음과 같이 태그됩니다:",
-    "primaryColor": "기본 색상",
-    "question": "질문",
-    "ratingEmoji": "이모지",
-    "ratingNumeric": "숫자 (1-10)",
-    "ratingStars": "별",
-    "saveChanges": "변경사항 저장",
-    "saving": "저장 중...",
-    "selectCategory": "-- 카테고리 선택 --",
-    "selectSubcategory": "-- 하위 카테고리 선택 --",
-    "startButton": "시작 →",
-    "subcategoryLabel": "하위 카테고리 (선택사항)",
-    "submitButtonText": "제출 버튼 텍스트",
-    "successMessage": "성공 메시지",
-    "tabs": {
-      "category": "카테고리",
-      "categoryRouting": "카테고리 라우팅",
-      "formSettings": "양식 설정",
-      "settings": "설정",
-      "theme": "테마",
-      "validates": "연결된 프로젝트",
-      "validatesShort": "프로젝트",
-      "label": "양식 편집기 섹션"
-    },
-    "textColor": "텍스트 색상",
     "validationDescription": "이 양식이 어떤 프로젝트의, 어떤 PRD 또는 PR/FAQ에 대한 피드백을 수집하는지 선택적으로 기록할 수 있습니다. 수집된 평점은 우선순위 지정 페이지의 해당 문서 옆에 표시됩니다. 웹사이트 설문처럼 독립적인 양식이라면 두 항목을 비워 두세요.",
     "validationDocumentHint": "프로젝트 전체로 두면 문서를 다시 생성해도 연결이 유지됩니다.",
     "validationDocumentLabel": "문서(선택 사항)",
@@ -94,60 +395,1697 @@
     "validationUnknownProject": "연결된 프로젝트(더 이상 사용할 수 없음)",
     "validationUnverifiedDocument": "연결된 문서(확인할 수 없음)",
     "validationUnverifiedProject": "연결된 프로젝트(확인할 수 없음)",
-    "validationWholeProject": "-- 프로젝트 전체 --",
-    "dimensionsHint": "모든 제출에 이 값이 적용됩니다. 임베드에서 dimensions 옵션으로 페이지별 값을 지정할 수 있습니다. 예:",
-    "dimensionsDevHint": "개발자용: 임베드 코드에서 페이지별로 설정"
+    "validationWholeProject": "-- 프로젝트 전체 --"
   },
   "empty": {
-    "createButton": "첫 번째 양식 만들기",
+    "title": "아직 피드백 양식이 없습니다",
     "description": "첫 번째 양식을 만들어 고객 피드백 수집을 시작하세요.",
-    "title": "아직 피드백 양식이 없습니다"
+    "startsLabel": "시작 방법",
+    "describeHint": "알고 싶은 내용을 쓰면 AI가 질문 초안을 작성합니다."
   },
   "infoBanner": {
-    "item1": "다양한 목적(웹사이트, 앱, 지원 등)을 위한 여러 양식 만들기",
-    "item2": "각 양식에는 고유한 URL과 임베드 코드가 있습니다",
-    "item3": "카테고리를 할당하여 피드백을 자동으로 라우팅",
-    "item4": "모든 제출은 AI 강화(감정, 페르소나 등)를 거칩니다",
-    "title": "피드백 양식의 작동 방식"
+    "title": "피드백 양식의 작동 방식",
+    "item1": "각 양식에는 고유한 링크, 임베드 코드, 테스트 링크가 있습니다.",
+    "item2": "응답은 AI 강화(감정, 페르소나…)를 거치며, 테스트 응답은 거치지 않습니다.",
+    "dismiss": "이 설명 숨기기"
   },
-  "submissions": {
-    "avgRating": "평균 평점",
-    "close": "닫기",
-    "failedToLoad": "제출 로드 실패",
-    "noRating": "평점 없음",
-    "noSubmissions": "아직 제출이 없습니다",
-    "noSubmissionsHint": "사용자가 이 양식을 통해 피드백을 제출하면 여기에 표시됩니다.",
-    "rated": "평가됨",
-    "title": "양식 제출",
-    "totalSubmissions": "총 제출"
+  "list": {
+    "toolbarLabel": "양식 찾기",
+    "search": "양식 검색",
+    "searchPlaceholder": "이름으로 검색",
+    "stateLabel": "표시",
+    "states": {
+      "all": "전체",
+      "live": "게시 중",
+      "off": "꺼짐",
+      "test": "테스트 링크 켜짐"
+    },
+    "sortLabel": "정렬",
+    "sorts": {
+      "newest": "최신순",
+      "lastResponse": "마지막 응답",
+      "name": "이름",
+      "responses": "응답 수"
+    },
+    "shown_one": "양식 {{count, number}}개 중 {{shown, number}}개",
+    "shown_other": "양식 {{count, number}}개 중 {{shown, number}}개",
+    "noMatchTitle": "일치하는 양식이 없습니다",
+    "noMatch": "이 검색어나 필터에 맞는 양식이 없습니다.",
+    "clear": "모든 양식 표시"
   },
   "subtitle": "고객 피드백을 수집하기 위한 임베드 가능한 양식 만들기",
   "title": "피드백 양식",
-  "wizard": {
-    "anonymous": "익명",
-    "anonymousDesc": "PII 수집 없음",
-    "cancel": "취소",
-    "contactInfoDescription": "응답자로부터 수집할 개인 정보를 선택하세요.",
-    "contactInfoTitle": "연락처 정보 수집",
-    "continue": "계속",
-    "emailOnly": "이메일만",
-    "emailOnlyDesc": "이메일 수집",
-    "nameAndEmail": "이름 및 이메일",
-    "nameAndEmailDesc": "전체 연락처 정보",
-    "nameOnly": "이름만",
-    "nameOnlyDesc": "이름 수집",
-    "selectedTemplate": "선택됨: {{name}}",
-    "selectPrompt": "계속하려면 템플릿을 선택하세요",
-    "subtitle": "시작할 템플릿을 선택하세요",
-    "title": "새 양식 만들기"
-  },
-  "createdDisabled": {
-    "dismiss": "닫기",
-    "enable": "지금 활성화",
-    "message": "“{{name}}”이(가) 생성되었으며 꺼져 있습니다. 활성화할 때까지 링크를 여는 사람에게 “Feedback form unavailable.”이 표시됩니다."
-  },
   "systemForms": {
     "title": "시스템 양식 ({{n, number}})",
     "description": "빌드한 프로토타입마다 자동으로 만들어져 테스터의 핀을 모읍니다. 공유하거나 편집할 필요가 없습니다."
+  },
+  "templates": {
+    "nps": {
+      "name": "순추천지수(NPS)",
+      "purpose": "0–10점 척도로 충성도를 측정한 뒤, 비추천자와 추천자에게 서로 다른 후속 질문을 합니다.",
+      "q": {
+        "q_nps": {
+          "headline": "친구나 동료에게 저희를 추천할 가능성은 얼마나 되나요?",
+          "lower": "전혀 추천하지 않음",
+          "upper": "매우 추천함"
+        },
+        "q_passive_improve": {
+          "headline": "어떤 점이 달라지면 저희를 더 추천하고 싶으실까요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_detractor_reason": {
+          "headline": "이 점수를 주신 가장 큰 이유는 무엇인가요?",
+          "other": "기타",
+          "otherPlaceholder": "어떤 이유인지 알려 주세요",
+          "options": {
+            "price": "가격이 너무 비쌉니다",
+            "missing_features": "필요한 기능이 없습니다",
+            "hard_to_use": "사용하기 어렵습니다",
+            "reliability": "오류나 서비스 중단이 있습니다",
+            "support": "고객 지원으로 문제가 해결되지 않았습니다"
+          }
+        },
+        "q_detractor_fix": {
+          "headline": "가장 먼저 개선해야 할 점은 무엇인가요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_promoter_value": {
+          "headline": "가장 만족스러운 점은 무엇인가요?",
+          "other": "기타",
+          "options": {
+            "ease": "사용하기 쉽습니다",
+            "features": "기능",
+            "reliability": "안정적입니다",
+            "support": "고객 지원팀",
+            "value": "가격 대비 가치가 좋습니다"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "답변 내용과 관련해 추가로 연락드려도 될까요?",
+          "label": "네, 제 피드백과 관련해 연락하셔도 됩니다."
+        },
+        "q_contact": {
+          "headline": "어떻게 연락드리면 될까요?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다!",
+          "description": "보내 주신 피드백은 다음 개선 사항을 정하는 데 도움이 됩니다."
+        },
+        "end_contact": {
+          "title": "감사합니다. 연락드릴 수도 있습니다",
+          "description": "답변 내용에 관해 궁금한 점이 있으면 담당자가 이메일로 연락드리겠습니다."
+        }
+      }
+    },
+    "csat_support": {
+      "name": "고객 지원 만족도(CSAT)",
+      "purpose": "지원 상담이 끝날 때 평가를 받고, 평가가 낮으면 무엇이 문제였는지 알아봅니다.",
+      "q": {
+        "q_csat": {
+          "headline": "받으신 도움에 얼마나 만족하시나요?",
+          "lower": "매우 불만족",
+          "upper": "매우 만족"
+        },
+        "q_what_wrong": {
+          "headline": "어떤 점이 아쉬웠나요?",
+          "other": "기타",
+          "options": {
+            "slow": "답변을 받기까지 너무 오래 걸렸습니다",
+            "not_solved": "문제가 해결되지 않았습니다",
+            "unclear": "답변을 이해하기 어려웠습니다",
+            "passed_around": "여러 담당자에게 계속 넘겨졌습니다",
+            "tone": "응대가 친절하지 않았습니다"
+          }
+        },
+        "q_resolved": {
+          "headline": "문제가 해결되었나요?",
+          "options": {
+            "yes": "예",
+            "partly": "일부 해결됨",
+            "no": "아니요"
+          }
+        },
+        "q_comment": {
+          "headline": "이번 상담과 관련해 더 하고 싶은 말씀이 있나요?",
+          "placeholder": "의견을 입력해 주세요"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "피드백을 주셔서 감사합니다",
+          "description": "지원팀이 더 나은 도움을 드리는 데 활용하겠습니다."
+        }
+      }
+    },
+    "ces": {
+      "name": "고객 노력 점수(CES)",
+      "purpose": "작업을 마친 직후 얼마나 쉬웠는지, 무엇이 방해가 되었는지 묻습니다.",
+      "q": {
+        "q_ces": {
+          "headline": "오늘 원하시던 일을 처리하기가 얼마나 쉬웠나요?",
+          "lower": "매우 어려움",
+          "upper": "매우 쉬움"
+        },
+        "q_obstacle": {
+          "headline": "어떤 점이 어려웠나요?",
+          "other": "기타",
+          "options": {
+            "start": "어디서부터 시작해야 할지 몰랐습니다",
+            "steps": "단계가 너무 많았습니다",
+            "labels": "명칭이나 안내가 불분명했습니다",
+            "errors": "오류가 나거나 작동하지 않는 부분이 있었습니다",
+            "slow": "로딩을 기다려야 했습니다"
+          }
+        },
+        "q_easier": {
+          "headline": "한 가지를 바꾼다면 무엇이 더 쉬워질까요?",
+          "placeholder": "아이디어를 입력해 주세요"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다",
+          "description": "보내 주신 답변은 하나하나 모두 읽습니다."
+        }
+      }
+    },
+    "churn": {
+      "name": "해지/이탈",
+      "purpose": "고객이 해지하는 이유를 알아보고, 이유별로 알맞은 후속 질문을 합니다.",
+      "q": {
+        "q_reason": {
+          "headline": "해지하시는 가장 큰 이유는 무엇인가요?",
+          "other": "다른 이유",
+          "otherPlaceholder": "어떤 이유인지 알려 주세요",
+          "options": {
+            "too_expensive": "저에게는 너무 비쌉니다",
+            "missing_features": "필요한 기능이 없습니다",
+            "hard_to_use": "사용하기 어렵습니다",
+            "switching_product": "다른 제품으로 옮깁니다",
+            "not_needed": "더 이상 필요하지 않습니다",
+            "technical_issues": "오류나 성능 문제가 있습니다"
+          }
+        },
+        "q_price": {
+          "headline": "무엇이 있었다면 계속 이용하셨을까요?",
+          "other": "기타",
+          "otherPlaceholder": "무엇인지 알려 주세요",
+          "options": {
+            "lower_price": "더 낮은 가격",
+            "smaller_plan": "기능이 적은 저렴한 요금제",
+            "annual_discount": "연간 결제 할인",
+            "pause": "구독 일시 중지 옵션"
+          }
+        },
+        "q_missing_feature": {
+          "headline": "어떤 기능이 필요하셨나요?",
+          "placeholder": "예: Excel로 내보내기"
+        },
+        "q_hard_part": {
+          "headline": "가장 사용하기 어려웠던 부분은 무엇인가요?",
+          "placeholder": "어디에서 어려움을 겪으셨는지 알려 주세요"
+        },
+        "q_competitor": {
+          "headline": "어떤 제품으로 옮기시나요? 그 제품은 어떤 점이 더 나은가요?"
+        },
+        "q_technical": {
+          "headline": "어떤 문제가 있었나요? 기억나는 내용이라면 무엇이든 원인을 찾는 데 도움이 됩니다."
+        },
+        "q_follow_up_ok": {
+          "headline": "추가로 연락드려도 될까요?",
+          "label": "네, 제 답변과 관련해 연락하셔도 됩니다."
+        },
+        "q_contact": {
+          "headline": "어떻게 연락드리면 될까요?"
+        }
+      },
+      "endings": {
+        "end_bye": {
+          "title": "알려 주셔서 감사합니다",
+          "description": "떠나신다니 아쉽습니다. 보내 주신 답변은 제품팀에 바로 전달됩니다."
+        },
+        "end_contact": {
+          "title": "감사합니다. 곧 연락드리겠습니다",
+          "description": "답변 내용과 관련해 담당자가 이메일로 연락드릴 수 있습니다."
+        }
+      }
+    },
+    "old_ui": {
+      "name": "이전 인터페이스로 되돌아가기",
+      "purpose": "새 디자인에서 이전 화면으로 되돌아가는 순간, 그 이유를 묻습니다.",
+      "q": {
+        "q_why": {
+          "headline": "이전 인터페이스로 되돌아가신 이유는 무엇인가요?",
+          "other": "기타",
+          "otherPlaceholder": "무엇인지 알려 주세요",
+          "options": {
+            "cant_find": "필요한 것을 찾을 수 없습니다",
+            "slower_work": "업무 시간이 더 오래 걸립니다",
+            "missing_function": "제가 쓰는 기능이 없습니다",
+            "errors": "작동하지 않거나 오류가 표시됩니다",
+            "slow_loading": "로딩이 너무 느립니다",
+            "layout": "화면 구성이 보기 어렵습니다",
+            "prefer_known": "익숙한 화면이 좋고 새로 익힐 시간이 없습니다"
+          }
+        },
+        "q_missing_function": {
+          "headline": "어떤 기능이 없나요?",
+          "subheader": "이전 인터페이스에서 그 기능을 어디에서 사용하셨나요?",
+          "placeholder": "예: 영업 메뉴의 송장 일괄 전기"
+        },
+        "q_task": {
+          "headline": "지금 어떤 작업을 하고 계신가요?",
+          "placeholder": "예: 재고 보고서"
+        },
+        "q_return": {
+          "headline": "새 인터페이스를 다시 사용해 보실 의향이 있나요?",
+          "options": {
+            "yes_soon": "예, 곧 사용해 보겠습니다",
+            "when_fixed": "예, 말씀드린 문제가 해결되면 사용하겠습니다",
+            "not_sure": "잘 모르겠습니다",
+            "no": "아니요, 이전 인터페이스를 계속 쓰겠습니다"
+          }
+        },
+        "q_comment": {
+          "headline": "팀에 더 전하고 싶은 말씀이 있나요?",
+          "placeholder": "의견을 입력해 주세요"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다",
+          "description": "보내 주신 답변은 새 인터페이스를 만드는 팀에 바로 전달됩니다."
+        }
+      },
+      "hidden": {
+        "user_id": "사용자",
+        "app_version": "앱 버전",
+        "screen": "되돌아간 화면"
+      }
+    },
+    "abandonment": {
+      "name": "결제 또는 가입 이탈",
+      "purpose": "사용자가 결제나 가입을 끝내지 않고 멈춘 이유를 알아봅니다.",
+      "q": {
+        "q_stopped": {
+          "headline": "끝까지 진행하지 못하신 이유는 무엇인가요?",
+          "other": "기타",
+          "options": {
+            "price": "총액이 예상보다 높았습니다",
+            "payment": "원하는 결제 수단이 없었습니다",
+            "account": "계정을 만들고 싶지 않았습니다",
+            "too_long": "시간이 너무 오래 걸렸습니다",
+            "trust": "안전한지 확신이 서지 않았습니다",
+            "technical": "제대로 작동하지 않는 부분이 있었습니다",
+            "just_looking": "둘러보기만 하던 중이었습니다"
+          }
+        },
+        "q_payment": {
+          "headline": "어떤 결제 수단을 사용하고 싶으셨나요?",
+          "other": "다른 결제 수단",
+          "options": {
+            "card": "신용카드 또는 체크카드",
+            "bank_transfer": "계좌 이체",
+            "paypal": "PayPal",
+            "wallet": "Apple Pay 또는 Google Pay",
+            "invoice": "청구서로 나중에 결제"
+          }
+        },
+        "q_technical": {
+          "headline": "어떤 일이 있었나요?",
+          "subheader": "오류 메시지나 진행 중이던 단계를 알려 주시면 원인을 찾는 데 도움이 됩니다."
+        },
+        "q_come_back": {
+          "headline": "다시 돌아와서 마무리하실 계획이 있나요?",
+          "options": {
+            "yes": "예",
+            "maybe": "아마도",
+            "no": "아니요"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다. 큰 도움이 됩니다",
+          "description": "보내 주신 답변을 바탕으로 모두가 더 빠르게 진행할 수 있도록 개선하겠습니다."
+        }
+      }
+    },
+    "pmf": {
+      "name": "제품-시장 적합성",
+      "purpose": "“매우 실망” 테스트: 제품이 없어지면 아쉬워할 사용자가 얼마나 되는지, 그 이유는 무엇인지 알아봅니다.",
+      "q": {
+        "q_disappointment": {
+          "headline": "더 이상 이 제품을 사용할 수 없게 된다면 어떠실 것 같나요?",
+          "options": {
+            "very": "매우 실망할 것이다",
+            "somewhat": "조금 실망할 것이다",
+            "not": "실망하지 않을 것이다"
+          }
+        },
+        "q_main_benefit": {
+          "headline": "이 제품에서 얻는 가장 큰 이점은 무엇인가요?"
+        },
+        "q_ideal_user": {
+          "headline": "이 제품이 가장 도움이 될 사람은 누구라고 생각하시나요?",
+          "placeholder": "예: 중견 기업의 재무팀"
+        },
+        "q_improve": {
+          "headline": "어떻게 개선하면 더 도움이 될까요?"
+        },
+        "q_role": {
+          "headline": "다음 중 귀하의 역할에 가장 가까운 것은 무엇인가요?",
+          "other": "기타",
+          "options": {
+            "manager": "관리자 또는 팀장",
+            "specialist": "실무 전문가",
+            "executive": "대표 또는 임원",
+            "it": "IT 담당자 또는 관리자",
+            "consultant": "컨설턴트 또는 파트너"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다",
+          "description": "보내 주신 답변은 다음에 무엇을 만들지 정하는 데 도움이 됩니다."
+        }
+      }
+    },
+    "feature_request": {
+      "name": "기능 요청/의견함",
+      "purpose": "언제나 열려 있는 의견함: 아이디어, 문제, 칭찬마다 알맞은 후속 질문이 이어집니다.",
+      "q": {
+        "q_kind": {
+          "headline": "어떤 내용을 공유하고 싶으신가요?",
+          "options": {
+            "idea": "아이디어",
+            "problem": "문제",
+            "praise": "칭찬",
+            "question": "질문"
+          }
+        },
+        "q_idea": {
+          "headline": "제품에 어떤 기능이 있으면 좋을까요?",
+          "placeholder": "생각하고 계신 기능이나 변경 사항을 설명해 주세요"
+        },
+        "q_idea_importance": {
+          "headline": "업무에 얼마나 중요한가요?",
+          "options": {
+            "nice": "있으면 좋음",
+            "important": "중요함",
+            "blocking": "이것 없이는 업무를 할 수 없음"
+          }
+        },
+        "q_problem": {
+          "headline": "어떤 문제가 있었나요?",
+          "subheader": "무엇을 하셨는지, 무엇을 기대하셨는지, 실제로는 어떻게 되었는지 알려 주세요."
+        },
+        "q_praise": {
+          "headline": "어떤 점이 마음에 드시나요?"
+        },
+        "q_question": {
+          "headline": "어떤 점이 궁금하신가요?"
+        },
+        "q_follow_up_ok": {
+          "headline": "추가로 연락드려도 될까요?",
+          "label": "네, 이 내용과 관련해 연락하셔도 됩니다."
+        },
+        "q_contact": {
+          "headline": "어떻게 연락드리면 될까요?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "공유해 주셔서 감사합니다",
+          "description": "보내 주신 내용은 제품팀에 바로 전달됩니다."
+        },
+        "end_contact": {
+          "title": "감사합니다. 연락드릴 수도 있습니다",
+          "description": "여쭤볼 점이나 답변드릴 내용이 있으면 이메일로 연락드리겠습니다."
+        }
+      }
+    },
+    "feature_satisfaction": {
+      "name": "기능 만족도",
+      "purpose": "사용자가 기능을 써 본 뒤 평가를 받고, 무엇을 개선하면 좋을지 알아봅니다.",
+      "q": {
+        "q_rating": {
+          "headline": "이 기능에 얼마나 만족하시나요?",
+          "lower": "전혀 만족하지 않음",
+          "upper": "매우 만족"
+        },
+        "q_better": {
+          "headline": "무엇이 달라지면 더 좋을까요?",
+          "other": "기타",
+          "options": {
+            "faster": "더 빨라졌으면 좋겠습니다",
+            "clearer": "더 이해하기 쉬웠으면 좋겠습니다",
+            "more_options": "옵션이 더 많았으면 좋겠습니다",
+            "fewer_steps": "단계가 더 적었으면 좋겠습니다",
+            "fix": "작동하지 않는 부분을 고쳐 주세요"
+          }
+        },
+        "q_frequency": {
+          "headline": "얼마나 자주 사용하시나요?",
+          "options": {
+            "daily": "매일",
+            "weekly": "매주",
+            "monthly": "매월",
+            "rarely": "그보다 드물게",
+            "first_time": "이번이 처음입니다"
+          }
+        },
+        "q_comment": {
+          "headline": "이 기능에 대해 더 하고 싶은 말씀이 있나요?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다",
+          "description": "보내 주신 평가는 이 기능을 담당하는 팀에 전달됩니다."
+        }
+      }
+    },
+    "bug_report": {
+      "name": "버그 신고",
+      "purpose": "팀이 문제를 재현하는 데 필요한 정보와 함께 사용자가 문제를 신고할 수 있게 합니다.",
+      "q": {
+        "q_what_happened": {
+          "headline": "어떤 문제가 있었나요?",
+          "placeholder": "무슨 일이 있었는지 설명해 주세요"
+        },
+        "q_steps": {
+          "headline": "문제가 생기기 직전에 무엇을 하고 계셨나요?",
+          "placeholder": "1. …을(를) 열었습니다  2. …을(를) 클릭했습니다"
+        },
+        "q_expected": {
+          "headline": "원래 어떻게 될 것으로 예상하셨나요?"
+        },
+        "q_frequency": {
+          "headline": "얼마나 자주 발생하나요?",
+          "options": {
+            "every_time": "매번",
+            "sometimes": "가끔",
+            "once": "한 번만"
+          }
+        },
+        "q_impact": {
+          "headline": "업무에 얼마나 영향을 주나요?",
+          "options": {
+            "blocked": "업무를 계속할 수 없습니다",
+            "workaround": "우회 방법을 찾았습니다",
+            "minor": "약간 불편한 정도입니다"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "자세한 정보가 필요하면 연락드려도 될까요?",
+          "label": "네, 이 신고와 관련해 연락하셔도 됩니다."
+        },
+        "q_contact": {
+          "headline": "어떻게 연락드리면 될까요?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "신고해 주셔서 감사합니다",
+          "description": "보내 주신 신고는 문제를 해결하는 팀에 바로 전달됩니다."
+        },
+        "end_contact": {
+          "title": "감사합니다. 연락드릴 수도 있습니다",
+          "description": "자세한 정보가 필요하면 이메일로 연락드리겠습니다."
+        }
+      }
+    },
+    "onboarding": {
+      "name": "온보딩 세분화",
+      "purpose": "신규 사용자에게 어떤 분인지, 무엇을 하러 왔는지 물어 첫 단계를 맞춤화합니다.",
+      "welcome": {
+        "title": "환영합니다!",
+        "description": "꼭 필요한 내용부터 보여 드릴 수 있도록 간단한 질문 네 가지에 답해 주세요.",
+        "button": "시작하기"
+      },
+      "q": {
+        "q_role": {
+          "headline": "어떤 업무를 맡고 계신가요?",
+          "other": "기타",
+          "options": {
+            "management": "경영/관리",
+            "finance": "재무 또는 회계",
+            "sales": "영업",
+            "operations": "운영 또는 물류",
+            "it": "IT 또는 시스템 관리"
+          }
+        },
+        "q_company_size": {
+          "headline": "회사의 직원 수는 몇 명인가요?",
+          "options": {
+            "size_1": "저 혼자입니다",
+            "size_2_10": "2–10명",
+            "size_11_50": "11–50명",
+            "size_51_250": "51–250명",
+            "size_251_1000": "251–1,000명",
+            "size_1000_plus": "1,000명 초과"
+          }
+        },
+        "q_first_goal": {
+          "headline": "가장 먼저 무엇을 하고 싶으신가요?",
+          "none": "아직 잘 모르겠습니다",
+          "options": {
+            "import": "데이터 가져오기",
+            "invite": "팀원 초대하기",
+            "reports": "보고서 설정하기",
+            "connect": "다른 도구 연결하기",
+            "explore": "둘러보기"
+          }
+        },
+        "q_experience": {
+          "headline": "비슷한 제품을 사용해 보신 적이 있나요?",
+          "options": {
+            "daily": "예, 매일 사용합니다",
+            "some": "예, 조금 써 봤습니다",
+            "no": "아니요, 처음입니다"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "준비가 끝났습니다",
+          "description": "답변에 맞춰 첫 단계를 준비해 드리겠습니다."
+        },
+        "end_newcomer": {
+          "title": "함께하게 되어 반갑습니다",
+          "description": "기본적인 내용부터 안내해 드리겠습니다."
+        }
+      },
+      "tips": {
+        "end_newcomer": "시작 가이드로 연결되는 버튼을 추가하세요."
+      }
+    },
+    "blank": {
+      "name": "빈 양식",
+      "purpose": "주관식 질문 하나로 시작합니다. 나머지는 직접 만드세요.",
+      "q": {
+        "q_feedback": {
+          "headline": "저희에게 하고 싶은 말씀이 있으신가요?",
+          "placeholder": "여기에 답변을 입력해 주세요…"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다!",
+          "description": "보내 주신 메시지는 하나하나 모두 읽습니다."
+        }
+      }
+    }
+  },
+  "picker": {
+    "title": "새 양식",
+    "subtitle": "설명을 입력하면 AI가 초안을 작성합니다. 시작점을 직접 골라도 됩니다. 모든 질문은 나중에 바꿀 수 있습니다.",
+    "createIn": "작성 언어",
+    "railLabel": "시작",
+    "goalsLabel": "목표",
+    "describeIt": "설명으로 만들기",
+    "groups": {
+      "all": "전체",
+      "loyalty": "충성도",
+      "dropoffs": "이탈",
+      "product": "제품",
+      "onboarding": "온보딩",
+      "blank": "빈 양식"
+    },
+    "runs": {
+      "link": "링크",
+      "embed": "임베드",
+      "in_app": "인앱"
+    },
+    "minutes_one": "약 {{count, number}}분",
+    "minutes_other": "약 {{count, number}}분",
+    "moreTypes": "+{{count, number}}개 더",
+    "use": "이 템플릿 사용",
+    "empty": "템플릿을 고르거나 양식을 설명하면 여기에 표시됩니다.",
+    "backToList": "템플릿",
+    "preview": {
+      "label": "미리보기",
+      "questions": "질문",
+      "rules_one": "규칙 {{count, number}}개",
+      "rules_other": "규칙 {{count, number}}개",
+      "endings_one": "종료 화면 {{count, number}}개",
+      "endings_other": "종료 화면 {{count, number}}개",
+      "restart": "다시 시작",
+      "loading": "이 언어로 템플릿을 불러오는 중…",
+      "frameTitle": "양식 미리보기, 휴대폰 크기, {{language}}"
+    }
+  },
+  "describe": {
+    "kicker": "양식 설명",
+    "title": "양식 설명하기",
+    "nothingSaved": "직접 저장하기 전까지는 아무것도 저장되지 않습니다.",
+    "hint": "누구를 위한 양식인지, 무엇을 알고 싶은지, 어떤 답변을 제시할지 적어 주세요.",
+    "count": "{{n, number}} / {{max, number}}",
+    "tooShort": "먼저 양식을 설명하세요.",
+    "try": "예시",
+    "examples": {
+      "oldUi": {
+        "chip": "이전 UI로 되돌아가는 사용자…",
+        "text": "이전 UI로 되돌아가는 앱 사용자에게 미리 정한 이유 선택지로 그 이유를 묻는 양식."
+      },
+      "nps": {
+        "chip": "모바일 앱용 짧은 NPS…",
+        "text": "모바일 앱용 짧은 NPS 설문. 만족하지 않는 고객에게는 후속 질문을 합니다."
+      },
+      "support": {
+        "chip": "지원 티켓이 종료된 후…",
+        "text": "지원 티켓이 종료되면 고객이 얼마나 만족하는지, 문제가 해결되었는지 묻는 양식."
+      },
+      "churn": {
+        "chip": "해지하는 고객…",
+        "text": "해지하는 고객에게 떠나는 이유와 연락해도 되는지 묻는 양식."
+      }
+    },
+    "replaceAsk": "설명을 바꿀까요?",
+    "replace": "바꾸기",
+    "keepMine": "내 설명 유지",
+    "runs": "배포 방식",
+    "runsHint": {
+      "link": "환영 화면으로 시작할 수 있습니다.",
+      "embed": "페이지 안에 표시되며 환영 화면이 없습니다.",
+      "in_app": "짧고 환영 화면이 없으며, 앱용 숨겨진 필드를 씁니다."
+    },
+    "draft": "초안 작성",
+    "draftingButton": "작성 중…",
+    "drafting": "양식 초안을 작성하는 중… 보통 10~30초 정도 걸립니다.",
+    "inLanguage": "{{language}}(으)로 작성",
+    "changeLanguage": "변경",
+    "busyReason": "초안이 완성되면 변경할 수 있습니다.",
+    "waitReason": "{{minutes}}분 후에 다시 초안을 작성할 수 있습니다.",
+    "privacy": "설명은 이 워크스페이스의 AI 모델로 전송됩니다. 개인 정보는 붙여 넣지 마세요."
+  },
+  "ai": {
+    "refusal": {
+      "role": "편집자와 관리자만 AI로 양식 초안을 작성할 수 있습니다.",
+      "aiMode": "사람 주도: AI가 양식을 대신 작성하지 않습니다. 템플릿에서 시작하거나 어시스턴트에게 코칭을 받으세요.",
+      "coachPrompt": "피드백 양식 작성을 코칭해 주세요. 제가 무엇을 알고 싶은지 물어보고, 질문과 제시할 답변의 표현을 다듬도록 도와주세요.",
+      "coachMe": "코칭 받기",
+      "changeInPeople": "관리 → 개인정보 및 액세스 → 사용자에서 변경",
+      "askAdminMode": "관리자가 변경할 수 있습니다.",
+      "noModel": "이 워크스페이스에는 AI 초안 작성이 설정되어 있지 않습니다. 사용할 수 있는 AI 모델이 없습니다.",
+      "openAiModels": "관리 → AI 모델 열기",
+      "askAdminModel": "관리자에게 설정을 요청하세요.",
+      "spendCap": "이 워크스페이스의 이번 달 AI 예산이 모두 소진되었습니다.",
+      "rateLimited": "지금은 AI 사용 한도에 도달했습니다. {{minutes}}분 후에 다시 시도하세요.",
+      "rateLimitOver": "AI 사용 한도가 해제되었습니다. 다시 초안을 작성할 수 있습니다.",
+      "invalid": "AI가 이 내용을 올바른 양식으로 만들지 못했습니다.",
+      "invalidHint": "두 번 시도했습니다. 질문과 답변을 더 간단하게 설명하거나 템플릿에서 시작하세요.",
+      "details": "세부 정보",
+      "tryAgain": "다시 시도",
+      "noAnswer": "AI가 응답하지 않았습니다. 잠시 후 다시 시도하세요.",
+      "other": "AI가 이 양식의 초안을 작성하지 못했습니다: {{message}}"
+    },
+    "banner": {
+      "label": "AI 초안",
+      "draft": "AI 초안: 게시하기 전에 검토하세요. 아직 저장된 내용은 없습니다.",
+      "improve": "AI로 변경됨: 저장하기 전에 검토하세요.",
+      "notes": "참고 사항({{count, number}})",
+      "discard": "초안 삭제",
+      "undo": "AI 변경 사항 실행 취소",
+      "goTo": "이동",
+      "discardConfirm": {
+        "title": "AI 초안을 삭제할까요?",
+        "message": "저장된 내용은 없습니다.",
+        "confirm": "초안 삭제"
+      },
+      "addresses": {
+        "label": "AI가 제안한 주소",
+        "suggested": "AI 제안",
+        "confirm": "주소 확인",
+        "remove": "삭제"
+      }
+    },
+    "improve": {
+      "title": "AI로 개선",
+      "description": "변경을 요청하세요. 모든 변경 사항은 적용 전에 직접 검토하며, 아무것도 저장되지 않습니다.",
+      "instruction": "요청 내용",
+      "try": "예시",
+      "examples": {
+        "translations": "영어 번역 추가",
+        "shorter": "모든 질문을 더 짧게",
+        "contact": "마지막에 연락처 질문 추가",
+        "hidden": "모바일 앱용 숨겨진 필드 추가",
+        "dropdown": "질문 1을 드롭다운으로 변경",
+        "question": "질문 {{number}} 개선"
+      },
+      "scope": "변경 대상: 질문, 로직, 종료 화면, 숨겨진 필드, 언어. 설정, 테마, 라우팅은 그대로 유지됩니다.",
+      "reads": "저장하지 않은 편집 내용을 포함해 현재 상태의 양식을 읽습니다({{questions}} · {{endings}}).",
+      "questionsCount_one": "질문 {{count, number}}개",
+      "questionsCount_other": "질문 {{count, number}}개",
+      "endingsCount_one": "종료 화면 {{count, number}}개",
+      "endingsCount_other": "종료 화면 {{count, number}}개",
+      "cancel": "취소",
+      "draft": "변경 사항 초안 작성",
+      "drafting": "변경 사항 초안을 작성하는 중… 보통 10~30초 정도 걸립니다.",
+      "emptyInstruction": "먼저 무엇을 바꿀지 입력하세요.",
+      "nothing": "AI가 아무것도 변경하지 않았습니다. 바꿀 내용을 더 자세히 설명해 보세요.",
+      "back": "뒤로",
+      "applied_one": "AI의 변경 사항 {{count, number}}개가 적용되었습니다. 검토한 후 저장하세요.",
+      "applied_other": "AI의 변경 사항 {{count, number}}개가 적용되었습니다. 검토한 후 저장하세요."
+    },
+    "diff": {
+      "title": "AI의 변경 사항",
+      "count_one": "변경 사항 {{count, number}}개",
+      "count_other": "변경 사항 {{count, number}}개",
+      "acceptAll": "모두 수락",
+      "rejectAll": "모두 거부",
+      "fromAi": "AI 제안",
+      "ignored": "무시됨: {{areas}}에 대한 변경.",
+      "ignoredAreas": {
+        "name": "이름",
+        "theme": "테마",
+        "routing": "카테고리 라우팅",
+        "project": "연결된 프로젝트",
+        "test": "테스트 설정",
+        "tags": "태그",
+        "dimensions": "차원 기본값"
+      },
+      "kinds": {
+        "added": "추가",
+        "removed": "삭제",
+        "changed": "변경"
+      },
+      "apply": "적용: {{what}} {{kind}}",
+      "what": {
+        "question": "질문 {{number}}",
+        "ending": "종료 화면 “{{title}}”",
+        "hidden": "숨겨진 필드 {{id}}",
+        "language": "언어 {{language}}",
+        "welcome": "환영 카드"
+      },
+      "languageTexts_one": "텍스트 {{count, number}}개",
+      "languageTexts_other": "텍스트 {{count, number}}개",
+      "welcome": "환영 카드",
+      "hidden": "숨겨진 필드 {{id}}",
+      "expand": "변경 내용 보기",
+      "collapse": "변경 내용 숨기기",
+      "notApplied": "적용 안 됨",
+      "notAppliedWith": "함께 적용되지 않음: {{questions}}의 규칙.",
+      "keptWith": "함께 유지됨: 이곳으로 이동하는 {{questions}}의 규칙.",
+      "checkAddress": "이 주소를 확인했습니다",
+      "addressWaits": "주소를 확인할 때까지 적용되지 않습니다.",
+      "applyCount_one": "변경 사항 {{count, number}}개 적용",
+      "applyCount_other": "변경 사항 {{count, number}}개 적용",
+      "invalid": "이 변경 사항을 함께 적용하면 양식에 문제가 남습니다: {{problem}}",
+      "noneSelected": "적용할 변경 사항을 하나 이상 선택하세요.",
+      "before": "변경 전",
+      "after": "변경 후",
+      "ruleAdded": "추가된 규칙: {{sentence}}",
+      "ruleRemoved": "삭제된 규칙: {{sentence}}",
+      "fields": {
+        "headline": "질문",
+        "subheader": "설명",
+        "required": "필수",
+        "type": "유형",
+        "options": "선택지",
+        "other": "기타",
+        "none": "해당 없음",
+        "shuffle": "순서",
+        "display": "표시 방식",
+        "min": "최소",
+        "max": "최대",
+        "long": "길이",
+        "input_type": "답변 유형",
+        "placeholder": "플레이스홀더",
+        "max_chars": "제한",
+        "scale": "척도",
+        "range": "점수",
+        "lower_label": "최저점",
+        "upper_label": "최고점",
+        "label": "텍스트",
+        "cta": "링크 버튼",
+        "fields": "필드",
+        "button_label": "버튼 레이블",
+        "title": "제목",
+        "description": "설명",
+        "button": "버튼",
+        "enabled": "표시",
+        "logic": "로직"
+      },
+      "values": {
+        "yes": "예",
+        "no": "아니요",
+        "empty": "—"
+      }
+    },
+    "stop": {
+      "button": "중지",
+      "title": "초안 작성을 중단할까요?",
+      "message": "AI가 양식 초안 작성을 중단하고, 지금까지 작성한 내용은 삭제됩니다. 저장된 것은 없습니다.",
+      "confirm": "작성 중단",
+      "keep": "계속 작성"
+    }
+  },
+  "questionList": {
+    "title": "질문({{count, number}})",
+    "label": "질문",
+    "improve": "AI로 개선",
+    "welcomeName": "환영 화면",
+    "welcomeStateOn": "켜짐",
+    "welcomeStateOff": "꺼짐",
+    "add": "질문 추가",
+    "addBelow": "아래에 질문 추가",
+    "insertAfter": "질문 {{number}} 뒤에 질문 추가",
+    "typeMenu": "질문 유형",
+    "contactOnce": "이미 이 양식에 있음",
+    "limit": "양식에는 질문을 최대 30개까지 넣을 수 있습니다.",
+    "lastQuestion": "양식에는 질문이 하나 이상 있어야 합니다.",
+    "cardName": "질문 {{number}}/{{total, number}}",
+    "cardMenu": "질문 {{number}} 추가 작업",
+    "duplicate": "복제",
+    "moveUp": "위로 이동",
+    "moveDown": "아래로 이동",
+    "alreadyFirst": "이미 맨 처음입니다.",
+    "alreadyLast": "이미 맨 마지막입니다.",
+    "changeType": "유형 변경…",
+    "delete": "삭제…",
+    "deleteTitle": "이 질문을 삭제할까요?",
+    "deleteConfirm": "삭제",
+    "deleteRules_one": "규칙 {{count, number}}개가 이 질문으로 이동합니다. 해당 규칙은 삭제되며, 그 응답자는 다음 질문으로 이동합니다.",
+    "deleteRules_other": "규칙 {{count, number}}개가 이 질문으로 이동합니다. 해당 규칙은 삭제되며, 그 응답자는 다음 질문으로 이동합니다.",
+    "deleteAnswers": "이 질문의 답변은 결과의 “삭제된 질문”에 남습니다.",
+    "deleted": "질문을 삭제했습니다.",
+    "undo": "실행 취소",
+    "moved": "“{{headline}}”을(를) {{total, number}}개 중 {{position}}번째 위치로 옮겼습니다.",
+    "rules_one": "규칙 {{count, number}}개",
+    "rules_other": "규칙 {{count, number}}개",
+    "languageMissing": "{{language}} 누락",
+    "languagesMissing": "언어 {{count, number}}개 누락",
+    "problem": "문제",
+    "ai": "AI",
+    "gone": "이 카드는 더 이상 양식에 없습니다.",
+    "back": "질문",
+    "position": "{{n}}/{{total, number}}",
+    "previous": "이전 질문",
+    "next": "다음 질문",
+    "meta": {
+      "options_one": "선택지 {{count, number}}개",
+      "options_other": "선택지 {{count, number}}개",
+      "other": "기타",
+      "none": "해당 없음",
+      "required": "필수",
+      "optional": "선택",
+      "upTo": "최대 {{count, number}}자",
+      "range": "{{min}}–{{max}}",
+      "scale": {
+        "star": "별 {{range}}",
+        "number": "숫자 {{range}}",
+        "smiley": "얼굴 {{range}}"
+      },
+      "textOnly": "텍스트만",
+      "linkButton": "링크 버튼 포함"
+    }
+  },
+  "question": {
+    "headline": "질문",
+    "newQuestion": "새 질문",
+    "description": "설명",
+    "required": "필수",
+    "requiredScaleHint": "응답자가 건너뛸 수 없습니다.",
+    "logic_one": "로직 · 규칙 {{count, number}}개",
+    "logic_other": "로직 · 규칙 {{count, number}}개",
+    "advanced": "고급",
+    "id": "질문 ID",
+    "idLocked": "답변이 이 ID로 저장되므로 응답이 생긴 후에는 변경할 수 없습니다.",
+    "buttonLabel": "버튼 레이블",
+    "buttonLabelPlaceholder": "다음",
+    "duplicate": "질문 {{number}} 복제",
+    "translationLine_one": "{{language}}: 텍스트 {{count, number}}개 누락",
+    "translationLine_other": "{{language}}: 텍스트 {{count, number}}개 누락",
+    "translate": "번역",
+    "translateInto": "번역({{language}})"
+  },
+  "typeChange": {
+    "label": "질문 {{number}}: 유형",
+    "none": "유형을 바꾸려면 해당 유형의 새 질문을 추가하고 이 질문을 삭제하세요.",
+    "locked": "응답이 이 유형으로 저장되므로 양식에 응답이 생긴 뒤에는 바꿀 수 없습니다. 다른 방식으로 물으려면 새 질문을 추가하고 이 질문을 삭제하세요.",
+    "confirmTitle": "질문 유형을 변경할까요?",
+    "confirmMessage": "이 변경으로 다음 항목이 삭제됩니다: {{lost}}.",
+    "confirm": "유형 변경",
+    "lost": {
+      "none": "“해당 없음” 행",
+      "minMax": "최소 및 최대",
+      "includesAll": "모든 선택지가 필요한 규칙",
+      "rulesOutsideScale": "새 척도를 벗어나는 규칙"
+    }
+  },
+  "choice": {
+    "options": "선택지",
+    "view": "선택지 보기 방식",
+    "labels": "레이블",
+    "pasteList": "목록 붙여넣기",
+    "optionN": "선택지 {{number}}",
+    "optionMenu": "선택지 {{number}} 추가 작업",
+    "codeOf": "선택지 {{number}}의 코드",
+    "codeLocked": "답변이 이 코드로 저장되므로 응답이 생긴 후에는 변경할 수 없습니다. 대신 레이블을 바꾸세요.",
+    "goesTo": "{{target}}(으)로 이동",
+    "lastOption": "선택형 질문에는 선택지가 하나 이상 있어야 합니다.",
+    "addOption": "선택지 추가",
+    "count": "{{n, number}}/{{max, number}}",
+    "pasteAsOptions_one": "{{count, number}}줄을 선택지 {{count, number}}개로 붙여 넣을까요?",
+    "pasteAsOptions_other": "{{count, number}}줄을 선택지 {{count, number}}개로 붙여 넣을까요?",
+    "addAsOptions": "선택지로 추가",
+    "keepAsOne": "하나로 유지",
+    "paste": {
+      "label": "한 줄에 선택지 하나씩 입력하세요. 각 줄이 선택지가 되며, 코드는 텍스트에서 만들어집니다.",
+      "options_one": "선택지 {{count, number}}개",
+      "options_other": "선택지 {{count, number}}개",
+      "duplicates_one": "중복 {{count, number}}개 건너뜀",
+      "duplicates_other": "중복 {{count, number}}개 건너뜀",
+      "blanks_one": "빈 줄 {{count, number}}개 무시됨",
+      "blanks_other": "빈 줄 {{count, number}}개 무시됨",
+      "add_one": "선택지 {{count, number}}개 추가",
+      "add_other": "선택지 {{count, number}}개 추가",
+      "replace": "모두 바꾸기…",
+      "cancel": "취소",
+      "replaceTitle": "모든 선택지를 바꿀까요?",
+      "replaceMessage": "이 양식에는 응답이 있습니다. 바꾼 선택지에 대한 답변은 결과에 삭제된 선택지로 남습니다.",
+      "replaceConfirm": "모두 바꾸기"
+    },
+    "other": "텍스트 상자가 있는 “기타”",
+    "otherLabel": "레이블",
+    "otherDefault": "기타",
+    "otherPlaceholder": "플레이스홀더",
+    "otherPlaceholderDefault": "직접 입력해 주세요",
+    "none": "“해당 없음”",
+    "noneHint": "배타적 선택: 이 항목을 고르면 다른 선택이 해제됩니다. 다중 선택에만 해당합니다.",
+    "noneLabel": "해당 없음 레이블",
+    "order": "순서",
+    "orderHint": "기타와 해당 없음은 항상 맨 끝에 표시됩니다.",
+    "shuffle": {
+      "none": "목록 순서대로",
+      "all": "섞기",
+      "except_last": "섞기(마지막 선택지는 고정)"
+    },
+    "showAs": "표시 방식",
+    "display": {
+      "auto": "자동",
+      "list": "목록",
+      "dropdown": "드롭다운",
+      "chips": "칩"
+    },
+    "autoList_one": "자동: 여기서는 목록으로 표시됩니다(선택지 {{count, number}}개).",
+    "autoList_other": "자동: 여기서는 목록으로 표시됩니다(선택지 {{count, number}}개).",
+    "autoDropdown_one": "자동: 여기서는 드롭다운으로 표시됩니다(선택지 {{count, number}}개).",
+    "autoDropdown_other": "자동: 여기서는 드롭다운으로 표시됩니다(선택지 {{count, number}}개).",
+    "answers": "선택 개수",
+    "atLeast": "최소",
+    "atMost": "최대",
+    "minMaxHint": "최소를 비워 두면 필수 질문은 1, 선택 질문은 0입니다. 최대를 비워 두면 제한이 없습니다.",
+    "respondentsSee": "응답자에게 “최대 {{count, number}}개 선택”이 표시됩니다.",
+    "showCodes": "코드 표시",
+    "showCodesHint": "코드는 답변이 저장되는 값이자 규칙에서 선택지를 가리키는 이름입니다.",
+    "routing": {
+      "title": "라우팅",
+      "option": "선택지",
+      "category": "카테고리",
+      "goTo": "이동",
+      "formDefault": "— 양식 기본값",
+      "notConfigured": "{{name}}(더 이상 구성되지 않음)",
+      "categoryOf": "“{{option}}”의 카테고리",
+      "goToOf": "“{{option}}” 다음 이동",
+      "otherwise": "그 외: {{target}}",
+      "otherRow": "{{label}}(기타)",
+      "setByRule": "로직의 규칙으로 설정됨",
+      "editInLogic": "로직에서 편집",
+      "precedence": "이 질문의 피드백은 매핑된 첫 번째 선택지의 카테고리로 분류되며, 없으면 양식의 카테고리(설정 › 카테고리 라우팅)로 분류됩니다.",
+      "firstRuleWins": "선택한 여러 선택지가 각각 다른 곳으로 이동하면 로직의 첫 번째 규칙이 적용됩니다."
+    }
+  },
+  "scale": {
+    "scale": "척도",
+    "scales": {
+      "star": "별",
+      "number": "숫자",
+      "smiley": "얼굴"
+    },
+    "points": "점수",
+    "facesRange": "얼굴 척도는 3~5점입니다.",
+    "rangeLocked": "응답이 이 점수 단계로 저장되므로 양식에 응답이 생긴 뒤에는 바꿀 수 없습니다.",
+    "lowEnd": "최저점 레이블",
+    "highEnd": "최고점 레이블",
+    "fixed": {
+      "nps": "0–10, 고정.",
+      "csat": "1–5 얼굴, 고정. 4와 5는 만족으로 집계됩니다.",
+      "ces": "1–7, 고정. 5~7은 쉬움으로 집계됩니다."
+    },
+    "npsGroups": "0–6 비추천자 · 7–8 중립자 · 9–10 추천자",
+    "npsHelper": {
+      "button": "비추천자와 추천자에게 다른 질문하기",
+      "detractor": "이 점수를 주신 가장 큰 이유는 무엇인가요?",
+      "promoter": "가장 만족스러운 점은 무엇인가요?",
+      "done": "후속 질문 두 개를 추가했습니다. 비추천자와 추천자가 각각 다른 질문을 받습니다."
+    }
+  },
+  "text": {
+    "length": "길이",
+    "short": "짧게",
+    "long": "길게",
+    "answerType": "답변 유형",
+    "inputTypes": {
+      "text": "텍스트",
+      "email": "이메일",
+      "number": "숫자",
+      "phone": "전화번호",
+      "url": "웹 주소"
+    },
+    "placeholder": "플레이스홀더",
+    "placeholderHint": "레이블이 아니라 입력란 안에 표시되는 힌트입니다. 응답자에게는 항상 그 위에 질문이 표시됩니다.",
+    "limit": "제한(글자 수)",
+    "limitHint": "1~5,000자. 비워 두면 5,000자입니다."
+  },
+  "statement": {
+    "text": "텍스트",
+    "addButton": "링크 버튼 추가",
+    "hint": "다음 버튼으로 계속 진행되며, 링크는 새 탭에서 열립니다.",
+    "buttonLabel": "버튼 레이블",
+    "buttonLabelPlaceholder": "자세히 알아보기",
+    "address": "주소",
+    "addressHint": "주소는 https://로 시작해야 합니다."
+  },
+  "consent": {
+    "checkboxText": "확인란 텍스트",
+    "placeholder": "네, 제 피드백과 관련해 연락하셔도 됩니다.",
+    "hint": "선택 사항인 동의를 체크하지 않으면 “아니요”로 응답한 것으로 처리됩니다.",
+    "mustTick": "계속하려면 체크해야 함"
+  },
+  "contact": {
+    "field": "필드",
+    "show": "표시",
+    "required": "필수",
+    "fields": {
+      "name": "이름",
+      "email": "이메일",
+      "phone": "전화번호",
+      "company": "회사"
+    },
+    "showField": "{{field}} 표시",
+    "requireField": "{{field}} 필수",
+    "personalData": "이 질문은 개인 정보를 수집합니다. 응답자가 이 질문에 도달한 경우에만 표시되며, 응답과 함께 저장됩니다."
+  },
+  "welcome": {
+    "show": "환영 화면 표시",
+    "hint": "인앱 양식에서는 끄세요. 사용자가 양식이 열린 이유를 이미 알고 있습니다.",
+    "title": "제목",
+    "description": "설명",
+    "buttonLabel": "버튼 레이블",
+    "buttonDefault": "시작"
+  },
+  "endings": {
+    "heading": "종료 화면",
+    "label": "종료 화면",
+    "default": "기본",
+    "untitled": "제목 없는 종료 화면",
+    "cardMenu": "종료 화면 “{{title}}” 추가 작업",
+    "add": "종료 화면 추가",
+    "newTitle": "감사합니다",
+    "limit": "양식에는 종료 화면을 최대 5개까지 넣을 수 있습니다.",
+    "lastEnding": "양식에는 종료 화면이 하나 이상 있어야 합니다.",
+    "deleteTitle": "이 종료 화면을 삭제할까요?",
+    "deleteRules_one": "규칙 {{count, number}}개가 여기서 끝납니다. 해당 규칙은 삭제되며, 그 응답자에게는 기본 종료 화면이 표시됩니다.",
+    "deleteRules_other": "규칙 {{count, number}}개가 여기서 끝납니다. 해당 규칙은 삭제되며, 그 응답자에게는 기본 종료 화면이 표시됩니다.",
+    "nowDefault": "이제 “{{title}}”이(가) 기본 종료 화면입니다.",
+    "moved": "“{{title}}”을(를) {{total, number}}개 중 {{position}}번째 위치로 옮겼습니다.",
+    "title": "제목",
+    "description": "설명",
+    "addButton": "버튼 추가",
+    "buttonLabel": "버튼 레이블",
+    "reachedBy": "도달 경로:",
+    "reachedFrom": "질문 {{number}}: {{condition}}",
+    "otherwise": "그 외",
+    "endOfQuestions": "질문 끝(기본)",
+    "id": "종료 화면 ID",
+    "idLocked": "응답이 이 ID와 함께 저장되므로 응답이 생긴 후에는 변경할 수 없습니다."
+  },
+  "preview": {
+    "label": "미리보기",
+    "device": {
+      "phone": "휴대폰 크기"
+    },
+    "language": "미리보기 언어",
+    "languageMissing": "{{language}}({{count, number}}개 누락, {{primary}}(으)로 표시)",
+    "frameTitle": "양식 미리보기, {{size}}, {{language}}",
+    "restart": "다시 시작",
+    "startHere": "여기서 시작",
+    "show": "미리보기",
+    "hide": "미리보기 숨기기",
+    "showPane": "미리보기 표시",
+    "inWindow": "미리보기가 별도 창에 열려 있습니다.",
+    "size": "휴대폰 · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "표시 중: {{scheme}}",
+    "scheme": {
+      "light": "라이트",
+      "dark": "다크"
+    },
+    "shuffled": "응답자마다 순서를 섞음",
+    "style": "스타일",
+    "openWindow": "창에서 열기",
+    "openTab": "미리보기, 새 탭에서 열림",
+    "blocked": "브라우저가 미리보기 창을 차단했습니다. 이 사이트의 팝업을 허용한 다음 다시 시도하세요.",
+    "stylePanel": {
+      "title": "스타일",
+      "back": "질문으로 돌아가기"
+    }
+  },
+  "previewWindow": {
+    "title": "양식 미리보기",
+    "region": "양식 미리보기, {{language}}",
+    "size": "창 크기",
+    "language": "미리보기 언어",
+    "restart": "다시 시작",
+    "waiting": "양식을 기다리는 중입니다. 빌더에서 양식을 열어 두세요.",
+    "noSession": "양식 빌더에서 이 미리보기를 여세요.",
+    "unavailable": "미리보기를 시작할 수 없습니다. 양식 위젯을 불러오지 못했습니다. 이 창을 새로 고친 다음 다시 시도하세요.",
+    "resizeRefused": "브라우저가 이 창의 크기를 그대로 유지했습니다.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "사용자 지정 · {{width}} × {{height}}",
+    "presets": {
+      "phone": "휴대폰",
+      "rotate": "휴대폰, 가로",
+      "tablet": "태블릿",
+      "desktop": "데스크톱",
+      "embedded": "삽입, 높이 480px"
+    }
+  },
+  "flow": {
+    "title": "흐름",
+    "questions_one": "질문 {{count, number}}개",
+    "questions_other": "질문 {{count, number}}개",
+    "endings_one": "종료 화면 {{count, number}}개",
+    "endings_other": "종료 화면 {{count, number}}개",
+    "paths_one": "경로 {{count, number}}개",
+    "paths_other": "경로 {{count, number}}개",
+    "lengths": "최단 {{min, number}}개, 최장 {{max, number}}개 질문",
+    "expandAll": "모두 펼치기",
+    "collapseAll": "모두 접기",
+    "start": "시작",
+    "end": "종료",
+    "welcomeOn": "환영 카드 켜짐 → 1",
+    "welcomeOff": "환영 카드 꺼짐 → 1",
+    "questionsLabel": "질문과 규칙",
+    "endingsLabel": "종료 화면",
+    "default": "기본",
+    "reachedBy_one": "경로 {{count, number}}개로 도달",
+    "reachedBy_other": "경로 {{count, number}}개로 도달",
+    "unreachable": "이 질문에 도달하는 경로가 없습니다",
+    "ai": "AI",
+    "noRules": "모든 응답자가 질문을 순서대로 진행합니다. 일부 응답자를 다른 곳으로 보내려면 질문에 규칙을 추가하세요.",
+    "thenGoTo": "그다음 이동 → {{target}}",
+    "meta": {
+      "required": "필수",
+      "optional": "선택",
+      "options_one": "선택지 {{count, number}}개",
+      "options_other": "선택지 {{count, number}}개",
+      "other": "기타"
+    }
+  },
+  "hidden": {
+    "title": "숨겨진 필드",
+    "intro": "앱이나 링크가 각 응답과 함께 전달하는 값입니다. 응답자에게는 표시되지 않습니다.",
+    "addField": "필드 추가",
+    "limit": "양식에는 숨겨진 필드를 최대 20개까지 넣을 수 있습니다.",
+    "emptyTitle": "숨겨진 필드 없음",
+    "empty": "필드를 추가하면 앱에서 사용자 ID나 앱 버전 같은 값을 받을 수 있습니다.",
+    "count": "{{n, number}}/{{max, number}} · 각 값은 최대 200자의 텍스트이며, 더 긴 값은 잘립니다.",
+    "columns": {
+      "id": "ID",
+      "label": "레이블",
+      "filledBy": "값 제공",
+      "inResults": "결과에서",
+      "actions": "작업"
+    },
+    "filledBy": "링크 · SDK",
+    "inResults": "필터 및 열",
+    "inResultsDimension": "필터, 열 및 차원 {{name}}*",
+    "actions": "{{id}} 추가 작업",
+    "rename": "이름 바꾸기",
+    "delete": "삭제…",
+    "deleteConfirm": "삭제",
+    "deleteTitle": "“{{id}}”을(를) 삭제할까요?",
+    "deleteMessage": "이미 받은 값은 결과에 남습니다.",
+    "locked": "응답이 이 ID로 저장됩니다.",
+    "cancel": "취소",
+    "add": "추가",
+    "done": "완료",
+    "useThem": "사용 방법",
+    "kindLabel": "값을 보내는 곳",
+    "valuesFor": "대상 링크",
+    "kinds": {
+      "link": "링크",
+      "script": "스크립트 임베드",
+      "sdk": "인앱 SDK",
+      "webview": "모바일 WebView"
+    },
+    "modes": {
+      "live": "게시",
+      "test": "테스트"
+    },
+    "codeLabel": "{{kind}} 코드",
+    "testShown": "테스트 링크입니다. 응답은 테스트로 표시되며 집계되지 않습니다.",
+    "testOff": "먼저 테스트 탭에서 테스트 링크를 켜세요.",
+    "openTest": "테스트 열기",
+    "saveFirst": "양식을 저장하면 링크가 생성됩니다.",
+    "save": "저장",
+    "noEndpoint": "이 양식의 링크를 받으려면 관리 → 일반에서 API 엔드포인트를 설정하세요.",
+    "notes": {
+      "replace": "각 {…}을(를) URL 인코딩한 값으로 바꾸세요. 알 수 없는 hf_ 매개변수는 무시됩니다.",
+      "sdk": "사용자가 질문 대상인 행동을 할 때 호출하세요(예: 이전 인터페이스로 전환).",
+      "webview": "이 주소를 WebView에서 여세요. 테스트 빌드에서는 테스트 링크를 사용하세요(위의 게시 | 테스트).",
+      "ids": "개인 정보가 아닌 ID를 전달하세요. user_id는 이메일이 아니라 내부 ID여야 합니다."
+    }
+  },
+  "languages": {
+    "title": "언어",
+    "add": "언어 추가",
+    "primary": "기본 언어",
+    "primaryHint": "모든 텍스트를 처음 작성하는 언어입니다.",
+    "change": "변경…",
+    "changeLabel": "다른 언어를 기본 언어로 지정",
+    "changeNone": "먼저 언어를 추가하세요.",
+    "makePrimary": "{{language}}을(를) 기본 언어로 지정",
+    "completeFirst": "먼저 번역을 완료하세요",
+    "listLabel": "양식의 언어",
+    "primaryBadge": "기본",
+    "texts_one": "텍스트 {{count, number}}개",
+    "texts_other": "텍스트 {{count, number}}개",
+    "complete": "완료",
+    "missingCount_one": "{{count, number}}개 누락",
+    "missingCount_other": "{{count, number}}개 누락",
+    "doneOf": "{{done, number}}/{{total, number}}",
+    "translate": "번역",
+    "actions": "{{language}} 추가 작업",
+    "remove": "언어 삭제…",
+    "removeConfirm": "삭제",
+    "removeTitle": "{{language}}을(를) 삭제할까요?",
+    "removeMessage_one": "번역 {{count, number}}개가 삭제되며, {{language}} 사용자에게는 {{primary}}(으)로 표시됩니다.",
+    "removeMessage_other": "번역 {{count, number}}개가 삭제되며, {{language}} 사용자에게는 {{primary}}(으)로 표시됩니다.",
+    "filled_one": "템플릿에서 텍스트 {{count, number}}개를 채웠습니다. 게시하기 전에 확인하세요.",
+    "filled_other": "템플릿에서 텍스트 {{count, number}}개를 채웠습니다. 게시하기 전에 확인하세요.",
+    "emptyTitle": "단일 언어",
+    "empty": "이 양식은 {{language}}(으)로만 제공됩니다. 다른 언어로도 제공하려면 언어를 추가하세요.",
+    "respondents": "응답자에게 표시되는 언어: 링크의 lang= 또는 SDK의 언어, 없으면 브라우저 언어, 그것도 없으면 {{primary}}.",
+    "fallback": "누락된 텍스트는 {{primary}}(으)로 표시됩니다. 위젯 자체의 문구(다음, 뒤로, 최대 3개 선택…)는 항상 번역됩니다.",
+    "back": "언어",
+    "viewTitle": "{{language}}({{code}}) · {{done, number}}/{{total, number}}",
+    "onlyMissing": "누락된 항목만",
+    "search": "텍스트 검색…",
+    "nothingShown": "일치하는 텍스트가 없습니다.",
+    "missing": "누락",
+    "fromTemplate": "템플릿에서 가져옴",
+    "targetQuestion": "{{language}}: 질문 {{number}}의 {{field}}",
+    "targetWelcome": "{{language}}: 환영 카드의 {{field}}",
+    "targetEnding": "{{language}}: 종료 화면 “{{title}}”의 {{field}}",
+    "fields": {
+      "headline": "질문",
+      "subheader": "설명",
+      "placeholder": "플레이스홀더",
+      "buttonLabel": "버튼 레이블",
+      "option": "선택지 {{number}}",
+      "otherLabel": "기타 레이블",
+      "otherPlaceholder": "기타 플레이스홀더",
+      "noneLabel": "해당 없음 레이블",
+      "lowerLabel": "최저점 레이블",
+      "upperLabel": "최고점 레이블",
+      "consentLabel": "확인란 텍스트",
+      "ctaLabel": "링크 버튼",
+      "welcomeTitle": "제목",
+      "welcomeDescription": "설명",
+      "welcomeButton": "버튼 레이블",
+      "endingTitle": "제목",
+      "endingDescription": "설명",
+      "endingButton": "버튼 레이블"
+    },
+    "confirm": {
+      "text": "이 양식은 양식에 언어 설정이 생기기 전에 만들어졌습니다.",
+      "writtenIn": "작성 언어",
+      "saving": "저장하면 이 설정이 저장됩니다."
+    }
+  },
+  "test": {
+    "title": "테스트 링크",
+    "subtitle": "테스트 링크로는 양식이 꺼져 있어도 열 수 있습니다. 테스트 응답은 집계되지 않습니다.",
+    "linkSwitch": "테스트 링크",
+    "linkOnHint": "켜짐: 양식이 꺼져 있어도 아래 링크가 작동합니다.",
+    "linkOffHint": "테스트 링크가 더 이상 작동하지 않습니다. 다시 켜면 같은 링크를 다시 사용할 수 있습니다.",
+    "linkOff": "테스트 링크가 꺼져 있습니다. 켜면 응답을 집계하지 않고 앱에서 양식을 테스트할 수 있습니다.",
+    "linkLabel": "테스트 링크",
+    "linkMenu": "테스트 링크 추가 작업",
+    "copyWithHidden": "숨겨진 필드와 함께 복사",
+    "reset": "테스트 링크 재설정…",
+    "resetTitle": "테스트 링크를 재설정할까요?",
+    "resetMessage": "현재 테스트 링크는 공유된 모든 곳에서 즉시 작동하지 않게 되며, 새 링크로 대체됩니다.",
+    "resetConfirm": "테스트 링크 재설정",
+    "resetFailed": "테스트 링크를 재설정하지 못했습니다. 잠시 후 다시 시도하세요.",
+    "noToken": "이 양식에는 아직 테스트 링크가 없습니다.",
+    "makeLink": "테스트 링크 만들기",
+    "makeLinkFailed": "테스트 링크를 만들지 못했습니다. 잠시 후 다시 시도하세요.",
+    "tokenLoading": "테스트 링크를 읽는 중…",
+    "qrTitle": "테스트 링크 QR 코드",
+    "recordTitle": "테스트 응답 처리 방식",
+    "keep": "테스트로 표시해 보관",
+    "keepHint": "테스트 응답으로 저장됩니다. 테스트 응답 포함을 선택한 경우에만 아래와 결과에 표시되며, 지표, NPS, 대시보드, 우선순위 근거, AI 처리에는 포함되지 않습니다.",
+    "checkOnly": "검사만 하고 보관하지 않음",
+    "checkOnlyHint": "각 답변을 실제 응답과 똑같이 검사한 뒤 폐기합니다. 자동화 테스트나 부하 테스트용입니다.",
+    "testersSee": "테스터에게 표시되는 내용:",
+    "bannerKeep": "양식의 모든 화면에 “테스트 · 응답이 집계되지 않음” 띠가 표시됩니다.",
+    "bannerDrop": "양식의 모든 화면에 “테스트 · 아무것도 저장되지 않음” 띠가 표시됩니다.",
+    "previewNote": "미리보기는 아무것도 전송하지 않습니다. 실제 동작을 확인하려면 테스트 링크를 사용하세요.",
+    "recentTitle": "최근 테스트 응답",
+    "refreshes": "10초마다 새로 고침",
+    "deleteAll": "모두 삭제…",
+    "deleteTitle": "테스트 응답을 모두 삭제할까요?",
+    "deleteMessage": "이 양식의 모든 테스트 응답이 삭제됩니다. 실제 응답은 영향을 받지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+    "deleteConfirm": "테스트 응답 삭제",
+    "deleteFailed": "테스트 응답을 삭제하지 못했습니다. 잠시 후 다시 시도하세요.",
+    "noneYet": "아직 테스트 응답이 없습니다. 테스트 링크를 열거나 휴대폰으로 QR 코드를 스캔해 응답을 보내 보세요.",
+    "checkOnlyEmpty": "검사만 모드에서는 아무것도 보관하지 않으므로 여기에 표시할 내용이 없습니다. 테스트 응답을 보려면 보관으로 전환하세요.",
+    "emptyValue": "비어 있음",
+    "open": "열기",
+    "openResponse": "{{time}}의 테스트 응답 열기",
+    "todayAt": "오늘 {{time}}",
+    "keptUntilDeleted": "테스트 응답은 관리자나 양식을 만든 사람이 삭제할 때까지 보관됩니다."
+  },
+  "share": {
+    "title": "공유",
+    "mode": "게시 링크 또는 테스트 링크 표시",
+    "live": "게시",
+    "test": "테스트",
+    "offBanner": "이 양식은 꺼져 있습니다. 링크에 “피드백 양식을 사용할 수 없습니다.”라는 메시지가 표시됩니다.",
+    "publish": "게시",
+    "testWhileOff": "테스트 링크를 표시하고 있습니다. 양식이 꺼져 있어도 작동합니다.",
+    "testOff": "먼저 테스트 탭에서 테스트 링크를 켜세요.",
+    "openTest": "테스트 열기",
+    "testNotice": "테스트 링크입니다. 응답은 테스트로 표시되며 집계되지 않습니다.",
+    "link": "링크",
+    "liveHint": "이 링크로 받은 응답은 집계됩니다.",
+    "open": "열기",
+    "newTab": "(새 탭에서 열림)",
+    "copy": "복사",
+    "copied": "복사됨",
+    "qr": "QR",
+    "qrTitle": "QR 코드",
+    "withHidden": "숨겨진 필드 포함:",
+    "toHidden": "숨겨진 필드 보기",
+    "iframe": "임베드(iframe)",
+    "script": "스크립트 임베드",
+    "iframeHint": "프레임 뒤의 스크립트가 프레임 높이를 양식에 맞춥니다. 스크립트가 없으면 프레임은 480px 높이를 유지하고 양식은 그 안에서 스크롤됩니다.",
+    "scriptHint": "양식이 표시될 위치에 붙여 넣으세요. 위젯 파일은 이 앱에서 제공되며 릴리스마다 업데이트됩니다. 사이트에서 Content-Security-Policy를 설정한 경우 script-src {{app}} 및 connect-src {{api}}를 허용하세요.",
+    "inApp": "앱에서:",
+    "inAppHint": "웹 앱은 언어와 숨겨진 필드를 지정해 스크립트 임베드를 호출하고, 모바일 앱은 WebView에서 링크를 엽니다.",
+    "saveFirstTitle": "아직 링크 없음",
+    "saveFirst": "양식을 저장하면 링크가 생성됩니다.",
+    "showProblems": "문제 보기",
+    "save": "저장"
+  },
+  "results": {
+    "summary": "요약",
+    "responsesView": "응답",
+    "view": "결과 보기 방식",
+    "loading": "결과를 불러오는 중…",
+    "csv": "CSV 내보내기",
+    "csvFailed": "응답을 내보내지 못했습니다.",
+    "includeTest": "테스트 응답 포함",
+    "including_one": "테스트 응답 {{formatted}}개가 포함되어 있습니다. 이 수치는 실제 결과가 아닙니다.",
+    "including_other": "테스트 응답 {{formatted}}개가 포함되어 있습니다. 이 수치는 실제 결과가 아닙니다.",
+    "onlyTestTitle": "아직 실제 응답이 없습니다",
+    "onlyTest_one": "테스트 응답 {{count, number}}개가 숨겨져 있습니다.",
+    "onlyTest_other": "테스트 응답 {{count, number}}개가 숨겨져 있습니다.",
+    "noneTitle": "아직 응답이 없습니다",
+    "none": "양식을 공유하거나 테스트 링크로 사용해 보세요.",
+    "openShare": "공유 열기",
+    "noMatchTitle": "결과 없음",
+    "noMatch": "이 필터와 일치하는 응답이 없습니다.",
+    "clearFilters": "필터 지우기",
+    "test": "테스트",
+    "other": "기타",
+    "otherAnswer": "{{label}}: “{{text}}”",
+    "accepted": "동의함",
+    "notAccepted": "동의하지 않음",
+    "openInFeedback": "피드백에서 열기",
+    "reach": "답변 {{answered}} · 건너뜀 {{skipped}} · 표시 안 됨 {{hidden}}(로직)",
+    "changed": "{{date}}에 변경됨: 그 이전 답변은 다른 선택지를 사용했습니다",
+    "earlierVersion_one": "이 질문의 이전 버전(다른 유형 또는 점수 단계)에 대한 응답 {{formatted}}개는 여기서 세지 않습니다",
+    "earlierVersion_other": "이 질문의 이전 버전(다른 유형 또는 점수 단계)에 대한 응답 {{formatted}}개는 여기서 세지 않습니다",
+    "endings": "종료 화면",
+    "defaultEnding": "기본",
+    "removedQuestions": "삭제된 질문({{count, number}})",
+    "removedAnswered_one": "답변 {{formatted}}개",
+    "removedAnswered_other": "답변 {{formatted}}개",
+    "statementNone": "표시할 답변이 없습니다.",
+    "statementShown_one": "{{count, number}}명에게 표시됨.",
+    "statementShown_other": "{{count, number}}명에게 표시됨.",
+    "consent": "본 사람 {{saw}}명 중 {{accepted}}명이 동의함({{percent}}).",
+    "contact": "{{left}}명이 연락처를 남김 · 이메일 {{emails}}개 · 전화번호 {{phones}}개",
+    "contactHint": "연락처 세부 정보는 응답에서 확인할 수 있습니다.",
+    "figures": {
+      "responses": "응답",
+      "completion": "완료율",
+      "ofOpened": "열람 대비 {{percent}}",
+      "last": "마지막 응답",
+      "largestDropAt": "최대 이탈: {{step}}",
+      "questionShort": "Q{{position}}"
+    },
+    "filters": {
+      "range": "기간",
+      "days7": "최근 7일",
+      "days30": "최근 30일",
+      "days90": "최근 90일",
+      "all": "전체 기간",
+      "language": "언어",
+      "allLanguages": "모든 언어",
+      "ending": "종료 화면",
+      "allEndings": "모든 종료 화면",
+      "add": "필터: 숨겨진 필드",
+      "addLabel": "숨겨진 필드로 필터링",
+      "field": "숨겨진 필드",
+      "value": "값",
+      "apply": "필터 추가",
+      "cancel": "취소",
+      "remove": "필터 {{field}} = {{value}} 제거"
+    },
+    "choice": {
+      "sortByCount": "개수순 정렬",
+      "optionsLabel": "선택지별 답변",
+      "removed": "{{label}}(삭제됨)",
+      "showOther_one": "답변 {{count, number}}개 보기",
+      "showOther_other": "답변 {{count, number}}개 보기",
+      "hideOther": "답변 숨기기",
+      "multiNote": "여러 개를 선택할 수 있어 비율의 합이 100%를 넘습니다.",
+      "multiNoteMax_one": "최대 {{count, number}}개까지 선택할 수 있어 비율의 합이 100%를 넘습니다.",
+      "multiNoteMax_other": "최대 {{count, number}}개까지 선택할 수 있어 비율의 합이 100%를 넘습니다."
+    },
+    "scale": {
+      "average": "평균",
+      "averageOf": "{{average}} / {{max}}",
+      "distribution": "점수별 답변",
+      "pointLabel": "{{score}} · {{label}}",
+      "npsScore": "NPS",
+      "groups": "NPS 그룹",
+      "detractors": "비추천자(0–6)",
+      "passives": "중립자(7–8)",
+      "promoters": "추천자(9–10)",
+      "satisfied": "만족(4 또는 5)",
+      "easy": "쉬움(5~7)"
+    },
+    "text": {
+      "latest": "최근 답변",
+      "none": "아직 답변이 없습니다.",
+      "noMatch": "일치하는 답변이 없습니다.",
+      "analysing": "분석 중…",
+      "open": "열기",
+      "search": "답변 검색…",
+      "showAll_one": "응답에서 {{count, number}}개 보기",
+      "showAll_other": "응답에서 {{count, number}}개 모두 보기"
+    },
+    "funnel": {
+      "title": "이탈",
+      "opened": "열람",
+      "started": "시작",
+      "completed": "완료",
+      "ofOpened": "열람 대비 {{percent}}",
+      "largestDrop": "최대 이탈",
+      "somePaths": "일부 경로에서만",
+      "somePathsNote": "로직에 따라 일부 경로에서만 표시되는 질문이 있습니다. 이 질문에는 이탈을 표시하지 않으며, 숫자는 질문을 본 사람 수입니다."
+    },
+    "reachCard": {
+      "title": "도달",
+      "answeredBy": "완료된 응답 {{total}}개 중 {{answered}}개가 답변함",
+      "note": "중도 이탈 인원을 알려면 조회 추적이 필요하며, 아직 수집되지 않습니다.",
+      "filtered": "이탈은 모든 방문을 세므로 언어, 종료 화면 또는 숨김 값으로 필터링하는 동안에는 표시되지 않습니다."
+    },
+    "responses": {
+      "title": "응답 없음",
+      "none": "이 필터와 일치하는 응답이 없습니다.",
+      "caption": "응답(최신순)",
+      "time": "시간",
+      "answers": "답변",
+      "language": "언어",
+      "ending": "종료 화면",
+      "hidden": "숨겨진 필드",
+      "openColumn": "열기",
+      "open": "{{time}}의 응답 열기",
+      "more": "더 불러오기"
+    },
+    "sheet": {
+      "title": "{{time}}의 응답",
+      "answers": "답변",
+      "question": "{{number}} · {{headline}}",
+      "notAnswered": "답변 없음: 건너뛰었거나 이 응답자의 경로에 없는 질문입니다.",
+      "time": "시간",
+      "language": "언어",
+      "ending": "종료 화면",
+      "revisionLabel": "양식 버전",
+      "revision": "버전 {{number}}에서 답변함",
+      "previous": "이전",
+      "next": "다음"
+    },
+    "contactLeft_one": "{{count, number}}명이 연락처를 남김",
+    "contactLeft_other": "{{count, number}}명이 연락처를 남김"
+  },
+  "theme": {
+    "presets": {
+      "label": "프리셋",
+      "vocLight": "VoC 라이트",
+      "vocDark": "VoC 다크",
+      "highContrast": "고대비",
+      "brand": "우리 브랜드",
+      "saveAsBrand": "브랜드로 저장…",
+      "notAdmin": "이 워크스페이스의 관리자만 브랜드를 저장할 수 있습니다.",
+      "unreadable": "이 스타일을 브랜드로 저장하기 전에 텍스트를 읽을 수 있게 하세요(3:1 이상).",
+      "confirmTitle": "이 스타일을 브랜드로 저장할까요?",
+      "confirmMessage": "이 워크스페이스의 새 양식은 이 스타일로 시작하며, 모든 양식의 스타일에서 '우리 브랜드'로 제공됩니다.",
+      "confirmReplace": "이 워크스페이스의 새 양식은 이 스타일로 시작하며, 모든 양식의 스타일에서 '우리 브랜드'로 제공됩니다. 이전에 저장한 브랜드를 대체합니다.",
+      "confirm": "브랜드로 저장",
+      "saved": "브랜드로 저장했습니다.",
+      "saveFailed": "브랜드를 저장하지 못했습니다. 다시 시도하세요."
+    },
+    "reset": "{{preset}}(으)로 재설정",
+    "mode": {
+      "label": "모드",
+      "light": "라이트",
+      "dark": "다크",
+      "auto": "자동",
+      "hint": "자동은 각 응답자의 기기 설정을 따릅니다."
+    },
+    "editing": {
+      "label": "편집 중"
+    },
+    "palette": {
+      "light": "라이트 팔레트",
+      "dark": "다크 팔레트"
+    },
+    "colours": {
+      "legend": "색상",
+      "primary": "기본",
+      "primaryHint": "버튼, 진행 표시, 포커스 링, 선택한 답변",
+      "background": "배경",
+      "text": "텍스트",
+      "swatch": "{{label}}: 색상 선택",
+      "invalid": "#8e48ff 같은 16진수 색상을 사용하세요."
+    },
+    "derived": "파생: 선택지 테두리 {{ratio}}:1(텍스트 색상 {{percent}} %).",
+    "corners": {
+      "label": "모서리",
+      "square": "직각 {{px}}",
+      "small": "작게 {{px}}",
+      "medium": "중간 {{px}}",
+      "large": "크게 {{px}}",
+      "slider": "모서리 반경",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "글꼴",
+      "system": "시스템",
+      "inherit": "페이지와 동일(스크립트 임베드 전용)",
+      "serif": "세리프",
+      "rounded": "둥근 글꼴",
+      "mono": "고정폭",
+      "inheritHint": "페이지 글꼴은 스크립트 임베드에서만 사용됩니다. 링크, iframe, 미리 보기는 시스템 글꼴로 표시됩니다."
+    },
+    "size": {
+      "label": "크기",
+      "default": "기본",
+      "large": "크게",
+      "hint": "크게: 본문 18 px로, 고령 응답자에게 적합합니다."
+    },
+    "contrast": {
+      "title": "대비 · {{palette}}",
+      "pair": "조합",
+      "ratio": "비율",
+      "result": "결과",
+      "text": "배경 위 텍스트",
+      "primary": "배경 위 기본 색상",
+      "label": "기본 색상 위 버튼 레이블",
+      "edge": "선택지 테두리",
+      "minimum": "(최소 {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "AA 미만",
+      "use": "{{colour}} 사용({{ratio}}:1)",
+      "other": {
+        "light_one": "라이트 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "light_other": "라이트 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "dark_one": "다크 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "dark_other": "다크 팔레트에 대비 문제가 {{count, number}}개 있습니다."
+      },
+      "editOther": {
+        "light": "라이트 편집",
+        "dark": "다크 편집"
+      }
+    }
+  },
+  "settings": {
+    "sectionsLabel": "설정 섹션",
+    "sections": {
+      "general": "일반",
+      "routing": "카테고리 라우팅",
+      "project": "연결된 프로젝트",
+      "appearance": "모양",
+      "danger": "위험 구역"
+    },
+    "general": {
+      "name": "내부 이름",
+      "nameHint": "팀에게만 표시됩니다. 응답자에게는 질문만 보입니다.",
+      "primary": "기본 언어:",
+      "toLanguages": "언어",
+      "languageHint": "응답은 답변한 언어와 함께 저장됩니다."
+    },
+    "routing": {
+      "category": "양식의 카테고리",
+      "subcategory": "하위 카테고리(선택)",
+      "none": "— 카테고리 없음",
+      "noSubcategory": "— 하위 카테고리 없음",
+      "notConfiguredBadge": "더 이상 구성되지 않음",
+      "pickConfigured": "구성된 카테고리를 선택하세요.",
+      "categoryHint": "카테고리는 관리 → 분류 체계 → 카테고리에서 구성됩니다.",
+      "taggedAs": "이 양식의 응답은 다음으로 분류됩니다:",
+      "perOption": "선택지별 라우팅",
+      "noChoices": "이 양식에는 선택형 질문이 없으므로 모든 응답이 양식의 카테고리로 분류됩니다.",
+      "mapped_one": "선택지 {{count, number}}개 중 {{mapped}}개 매핑됨",
+      "mapped_other": "선택지 {{count, number}}개 중 {{mapped}}개 매핑됨",
+      "edit": "편집",
+      "editQuestion": "질문 {{number}}의 라우팅 편집",
+      "precedence": "응답은 카테고리가 지정된 첫 번째 답변 선택지의 카테고리로 분류되며, 없으면 양식의 카테고리로 분류됩니다.",
+      "dimensionsHint": "모든 응답에 이 값이 포함됩니다. 임베드에서는 dimensions 옵션으로 페이지별 값을 지정할 수 있습니다."
+    },
+    "danger": {
+      "hint": "양식을 삭제하면 양식과 링크가 삭제됩니다. 응답은 피드백에 남습니다.",
+      "delete": "양식 삭제…",
+      "confirmTitle": "이 양식을 삭제할까요?",
+      "confirmMessage_one": "“{{name}}”을(를) 삭제할까요? 응답이 {{count, number}}개 있습니다. 링크가 더 이상 작동하지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+      "confirmMessage_other": "“{{name}}”을(를) 삭제할까요? 응답이 {{count, number}}개 있습니다. 링크가 더 이상 작동하지 않습니다. 이 작업은 되돌릴 수 없습니다.",
+      "confirm": "양식 삭제",
+      "failed": "양식을 삭제하지 못했습니다. 잠시 후 다시 시도하세요.",
+      "unnamed": "이 양식"
+    }
   }
 }

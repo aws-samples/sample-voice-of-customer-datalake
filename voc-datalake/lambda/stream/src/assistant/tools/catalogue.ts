@@ -9,6 +9,7 @@ import { CLIENT_TOOLS, SERVER_TOOLS, TOOL_PACKS } from '../contract.js';
 import type { AssistantToolDefinition } from '../types.js';
 import { createAgentsClientTools } from './client/agents.js';
 import { createCompanyClientTools } from './client/company.js';
+import { createFormDraftClientTools } from './client/form-draft.js';
 import { createCoreMemoryClientTools, createMemoryClientTools } from './client/memory.js';
 import { createProjectClientTools } from './client/project.js';
 import { createScraperClientTools } from './client/scrapers.js';
@@ -62,6 +63,7 @@ export function buildCatalogue(deps: ToolDeps): AssistantToolDefinition[] {
     ...createReviewImportClientTools(deps),
     ...createParticipantClientTools(deps),
     ...createCoreMemoryClientTools(),
+    ...createFormDraftClientTools(),
     ...createMemoryClientTools(),
     ...createAgentsClientTools(),
     ...createCompanyClientTools(),

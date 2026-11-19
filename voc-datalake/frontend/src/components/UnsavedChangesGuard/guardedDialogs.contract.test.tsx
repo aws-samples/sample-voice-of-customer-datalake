@@ -6,7 +6,8 @@
  * the edit and the editor open, and the next close asks again.
  *
  * Covers PersonaEditModal, DocumentModal, EditUserModal and ScraperEditor
- * (FormEditor runs the contract in its own spec).
+ * (the feedback form builder, a page since 7.04.00, runs the contract in its own
+ * spec, FormBuilderPage.unsavedGuard.test.tsx).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'

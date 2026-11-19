@@ -255,7 +255,8 @@ class TestSignals:
         assert onboarding.signals(table) == NO_SIGNALS
         table.get_item.assert_called_once_with(Key=WATERMARK_KEY)
         table.query.assert_called_once_with(
-            KeyConditionExpression=Key('pk').eq('FEEDBACK_FORM'), Limit=1, ProjectionExpression='pk')
+            KeyConditionExpression=Key('pk').eq('FEEDBACK_FORM') & Key('sk').begins_with('FORM#'), Limit=1,
+            ProjectionExpression='pk')
 
     def test_both_present(self):
         table = _table(watermark={'date': '2025-01-15'}, forms=[{'pk': 'FEEDBACK_FORM'}])

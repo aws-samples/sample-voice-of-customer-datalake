@@ -1,86 +1,387 @@
 {
+  "newForm": "New form",
+  "migration": {
+    "tellUsMore": "Tell us more",
+    "contactHeadline": "Where can we reach you?"
+  },
+  "types": {
+    "single_select": {
+      "name": "Single choice",
+      "hint": "Pick one option, e.g. a reason"
+    },
+    "multi_select": {
+      "name": "Multiple choice",
+      "hint": "Pick several options"
+    },
+    "open_text": {
+      "name": "Text",
+      "hint": "A short or long typed answer",
+      "short": "Short text",
+      "long": "Long text"
+    },
+    "rating": {
+      "name": "Rating",
+      "hint": "Stars, numbers or faces, 3–10 points"
+    },
+    "nps": {
+      "name": "NPS",
+      "hint": "0–10: how likely to recommend"
+    },
+    "csat": {
+      "name": "CSAT",
+      "hint": "1–5 faces: how satisfied"
+    },
+    "ces": {
+      "name": "CES",
+      "hint": "1–7: how easy"
+    },
+    "statement": {
+      "name": "Statement",
+      "hint": "Text to read, with an optional link button"
+    },
+    "consent": {
+      "name": "Consent",
+      "hint": "A checkbox someone ticks"
+    },
+    "contact_info": {
+      "name": "Contact info",
+      "hint": "Name, email, phone, company"
+    },
+    "groups": {
+      "ask": "Ask",
+      "measure": "Measure",
+      "other": "Other"
+    },
+    "ending": "Ending",
+    "welcome": "Welcome card"
+  },
+  "problems": {
+    "count_one": "{{count, number}} problem",
+    "count_other": "{{count, number}} problems",
+    "warnings_one": "{{count, number}} warning",
+    "warnings_other": "{{count, number}} warnings",
+    "goTo": "Go to",
+    "listLabel": "Problems in this form",
+    "where": {
+      "question": "Q{{number}}",
+      "ending": "Ending “{{title}}”",
+      "welcome": "Welcome card",
+      "hidden": "Hidden field {{id}}",
+      "language": "{{language}}",
+      "form": "Form",
+      "themeLight": "Style (light)",
+      "themeDark": "Style (dark)"
+    },
+    "otherProblems": "Other problems",
+    "noQuestions": "A form needs at least one question.",
+    "tooManyQuestions": "A form holds up to 30 questions.",
+    "noEndings": "A form needs at least one ending.",
+    "tooManyEndings": "A form has up to 5 endings.",
+    "tooManyHidden": "A form has up to 20 hidden fields.",
+    "headlineEmpty": "Write the question.",
+    "optionEmpty": "Option {{number}} has no text.",
+    "endingTitleEmpty": "Write the ending's title.",
+    "welcomeTitleEmpty": "The welcome screen needs a title.",
+    "consentLabelEmpty": "Write the checkbox text.",
+    "duplicateQuestionId": "Another question has the id {{id}}.",
+    "retiredQuestionId": "The id {{id}} belonged to a question removed earlier, and ids are never reused. Choose another.",
+    "answeredReshaped": "Question {{number}} has responses, so its type and points can't change. Undo the change, or add a new question for it.",
+    "invalidQuestionId": "A question id starts with q_ and uses lower-case letters, digits and _.",
+    "duplicateEndingId": "Another ending has the id {{id}}.",
+    "invalidEndingId": "An ending id starts with end_ and uses lower-case letters, digits and _.",
+    "duplicateHiddenId": "Already used in this form.",
+    "invalidHiddenId": "Start with a letter; use lower-case letters, digits and _.",
+    "reservedHiddenId": "{{id}} is a reserved name; choose another.",
+    "duplicateCode": "Two options have the code {{code}}.",
+    "reservedCode": "This code is reserved for the Other and None rows.",
+    "invalidCode": "A code uses lower-case letters, digits and _, up to 40 characters.",
+    "noOptions": "Add at least one option.",
+    "tooManyOptions": "A question has at most 50 options.",
+    "minOverMax": "At least can't be more than At most.",
+    "maxOverChoices": "At most can't be more than the {{count, number}} choices.",
+    "minOverChoices": "At least can't be more than the {{count, number}} choices.",
+    "buttonUrl": "The address must start with https://",
+    "buttonLabelEmpty": "Write the button's label.",
+    "ctaUrl": "The address must start with https://",
+    "contactNoField": "Show at least one field.",
+    "contactTwice": "A form has one contact-info question.",
+    "maxCharsRange": "The limit is 1 to 5,000 characters.",
+    "facesRange": "Faces come in 3 to 5 points.",
+    "aiAddress": "Confirm or remove the address the AI suggested.",
+    "missingTranslations_one": "{{language}} is missing {{count, number}} text; {{language}} speakers will see it in {{primary}}.",
+    "missingTranslations_other": "{{language}} is missing {{count, number}} texts; {{language}} speakers will see them in {{primary}}.",
+    "unreachableQuestion": "No path reaches this question: every rule above jumps past it.",
+    "unreachableEnding": "No rule ends here.",
+    "chipsLong": "Chips suit short labels; long ones wrap.",
+    "dropdownFew": "A list shows every choice at once; a dropdown hides them.",
+    "noCategory": "No option files feedback under a category and the form has none: set one in Settings › Category routing.",
+    "themeUnreadable": "Text on the background is {{ratio}}:1, under 3:1: respondents can't read it.",
+    "themeUnreadableLive": "This form's text is hard to read ({{ratio}}:1, under 3:1). Fix its colours; until then, your other changes still go live.",
+    "themeTextLow": "Text on the background is {{ratio}}:1, below 4.5:1: many people can't read it.",
+    "themePrimaryLow": "The primary colour on the background is {{ratio}}:1, below 3:1: the focus ring, progress and selected answers are hard to see.",
+    "themeLabelLow": "Neither white nor dark text reads on this primary: {{ratio}}:1, below 4.5:1.",
+    "blocksPublishOnly": "Publishing waits for this; saving still works.",
+    "targetMissingQuestion": "This rule goes to a question that was deleted. Choose where it should go.",
+    "targetMissingEnding": "This rule goes to an ending that was deleted. Choose another ending.",
+    "targetBackwards": "Jumps only go forward, and question {{number}} is now above this question. Move it below, or choose another target.",
+    "noValueOption": "Choose an option.",
+    "noValueNumber": "Choose a number.",
+    "optionRemoved": "“{{code}}” is no longer an option. Choose another, or delete this rule.",
+    "outsideScale": "{{value}} is outside this question's {{min}}–{{max}} scale.",
+    "opInvalid": "This question can't be compared that way. Choose another condition.",
+    "skippedOnRequired": "This question is required, so it is never skipped: this rule never runs.",
+    "ruleNeverRuns": "This rule never runs: rule {{number}} already matches every answer it would.",
+    "whereAnyway": "This rule has no effect: everyone who reaches it goes to question {{number}} anyway.",
+    "whereAnywayEnding": "This rule has no effect: everyone who reaches it sees the ending “{{title}}” anyway."
+  },
+  "logic": {
+    "ops": {
+      "equals": "is",
+      "not_equals": "is not",
+      "includesAnySingle": "is one of",
+      "includesAnyMulti": "includes any of",
+      "includes_all": "includes all of",
+      "lt": "is less than",
+      "lte": "is at most",
+      "gt": "is more than",
+      "gte": "is at least",
+      "submitted": "is answered",
+      "skipped": "is skipped",
+      "accepted": "is accepted",
+      "notAccepted": "is not accepted"
+    },
+    "values": {
+      "other": "Other (typed answer)",
+      "none": "None of these",
+      "quoted": "“{{text}}”",
+      "separator": ", "
+    },
+    "target": {
+      "question": "{{number}} · {{headline}}",
+      "ending": "Ending: {{title}}",
+      "missing": "a deleted question or ending",
+      "next": "Next question",
+      "nextNumbered": "Next question: {{number}} · {{headline}}",
+      "defaultEnding": "End: {{title}}"
+    },
+    "sentence": {
+      "rule": "If the answer {{condition}} → {{target}}",
+      "otherwise": "Otherwise → {{target}}"
+    },
+    "ifTheAnswer": "If the answer",
+    "goTo": "→ go to",
+    "otherwise": "Otherwise",
+    "thenGoTo": "Then go to",
+    "firstWins": "First rule that matches wins",
+    "rulesLabel": "Rules",
+    "addRule": "Add rule",
+    "moved": "Moved rule {{from}} to position {{to}} of {{total, number}}.",
+    "controls": {
+      "operator": "Rule {{number}}: operator",
+      "value": "Rule {{number}}: value",
+      "goTo": "Rule {{number}}: go to"
+    },
+    "actions": {
+      "label": "More actions for rule {{number}}",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "first": "It is already the first rule.",
+      "last": "It is already the last rule."
+    },
+    "chooseNumber": "Choose a number…",
+    "chooseOption": "Choose an option…",
+    "chooseOptions": "Choose options…",
+    "addOption": "Add an option…",
+    "removedOption": "“{{code}}” (no longer an option)",
+    "removeValue": "Remove {{option}}",
+    "numberWithLabel": "{{value}} — {{label}}",
+    "groups": {
+      "next": "Next question",
+      "later": "Later questions",
+      "endings": "Endings"
+    }
+  },
+  "builder": {
+    "back": "Feedback Forms",
+    "loading": "Loading the form…",
+    "loadFailed": "Couldn't load this form.",
+    "name": {
+      "label": "Form name (internal)",
+      "rename": "Rename the form",
+      "untitled": "Untitled form"
+    },
+    "state": {
+      "live": "Live",
+      "off": "Off",
+      "testOn": "Test link on",
+      "notSaved": "Not saved yet"
+    },
+    "save": {
+      "unsaved": "Unsaved changes",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "fixToSave_one": "Fix {{count, number}} problem to save.",
+      "fixToSave_other": "Fix {{count, number}} problems to save.",
+      "fixToPublish_one": "Fix {{count, number}} problem to publish.",
+      "fixToPublish_other": "Fix {{count, number}} problems to publish.",
+      "fixToPublishSaveWorks_one": "Fix {{count, number}} problem to publish. Saving still works.",
+      "fixToPublishSaveWorks_other": "Fix {{count, number}} problems to publish. Saving still works.",
+      "themeRefused": "Couldn't save: a live form needs text respondents can read, at least 3:1 on its background. Change the colours in Style.",
+      "questionIdReused": "Couldn't save: the id {{id}} belonged to a question removed earlier, and ids are never reused. Give that question another id under Advanced.",
+      "themeHardToRead": "This form's text is hard to read.",
+      "themeFix": "Fix its colours",
+      "save": "Save",
+      "publish": "Publish",
+      "update": "Update live form",
+      "failed": "Couldn't save: {{reason}}.",
+      "failedGeneric": "Couldn't save. Check your connection and try again.",
+      "retry": "Try again"
+    },
+    "published": "Live. Respondents see this version from now on.",
+    "firstSave": "Saved. This form is Off: its link shows “Feedback form unavailable.” until you publish it.",
+    "aiSaved": "Saved. The AI draft is now your form.",
+    "turnedOff": "Turned off. Its link shows “Feedback form unavailable.”; the test link keeps working.",
+    "menu": {
+      "label": "More form actions",
+      "improve": "Improve with AI…",
+      "askAssistant": "Ask the assistant",
+      "discard": "Discard changes",
+      "duplicate": "Duplicate form",
+      "preview": "Preview in a window",
+      "turnOff": "Turn off",
+      "delete": "Delete form…",
+      "saveFirst": "Save the form first.",
+      "nothingToDiscard": "There are no unsaved changes."
+    },
+    "copyName": "{{name}} (copy)",
+    "confirmRemoval": {
+      "title": "Update the live form?",
+      "message": "Removed: {{list}}. Their answers stay in Results.",
+      "confirm": "Update live form",
+      "question": "question “{{text}}”",
+      "option": "option “{{text}}”",
+      "ending": "ending “{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "Publish with missing translations?",
+      "titleUpdate": "Update the live form with missing translations?",
+      "line_one": "{{language}} respondents will see {{count, number}} text in {{primary}}.",
+      "line_other": "{{language}} respondents will see {{count, number}} texts in {{primary}}.",
+      "publishAnyway": "Publish anyway",
+      "updateAnyway": "Update anyway",
+      "translate": "Translate {{language}}"
+    },
+    "confirmAiPublish": {
+      "title": "Publish this AI draft?",
+      "message": "Respondents will see it as it is. Check the questions, options and endings first.",
+      "confirm": "Publish"
+    },
+    "confirmDiscard": {
+      "title": "Discard your changes?",
+      "message": "The form goes back to how it was last saved.",
+      "messageNew": "The form goes back to how it opened. Nothing was saved.",
+      "confirm": "Discard changes"
+    },
+    "confirmDelete": {
+      "title": "Delete the form?",
+      "message": "Delete “{{name}}”? Its link stops working. This can't be undone.",
+      "messageResponses_one": "Delete “{{name}}” and its {{count, number}} response? Its link stops working. This can't be undone.",
+      "messageResponses_other": "Delete “{{name}}” and its {{count, number}} responses? Its link stops working. This can't be undone.",
+      "confirm": "Delete form"
+    },
+    "conflict": {
+      "messageAnonymous": "Someone else saved this form while you were editing it.",
+      "explain": "Saving now would overwrite their version. Compare them, reload theirs, or save yours over it.",
+      "compare": "Compare",
+      "reload": "Reload theirs",
+      "saveMine": "Save mine",
+      "compareTitle": "Their version and yours",
+      "compareDescription": "What saving yours would change in theirs.",
+      "noDifferences": "No differences in the questions, endings, hidden fields or languages.",
+      "readFailed": "Couldn't read their version. Try again.",
+      "added": "Yours adds",
+      "removed": "Yours removes",
+      "changed": "Yours changes",
+      "close": "Close",
+      "messageSelf": "You saved this form at {{time}}, in another tab or window."
+    },
+    "migrated": "This form now uses the new builder: its rating and its text box are questions 1 and 2. Saving stores it in the new format; respondents see the same questions.",
+    "tabs": {
+      "label": "Form builder sections",
+      "questions": "Questions",
+      "flow": "Flow",
+      "languages": "Languages",
+      "hidden-fields": "Hidden fields",
+      "test": "Test",
+      "share": "Share",
+      "results": "Results",
+      "settings": "Settings",
+      "withProblems_one": "{{count, number}} problem",
+      "withProblems_other": "{{count, number}} problems",
+      "withMissing_one": "{{count, number}} missing translation",
+      "withMissing_other": "{{count, number}} missing translations",
+      "scrollStart": "Scroll to earlier tabs",
+      "scrollEnd": "Scroll to more tabs"
+    },
+    "shortcut": "Ctrl+S or ⌘+S saves."
+  },
+  "previewFrame": {
+    "loading": "Loading the preview…",
+    "unavailable": "The preview can't start: the form widget didn't load. Reload the page to try again."
+  },
   "card": {
-    "avgRating": "Avg Rating",
-    "category": "Category:",
-    "collects": "Collects",
-    "copy": "Copy",
-    "deleteForm": "Delete form",
-    "directLink": "Direct Link",
-    "prototypePins": "Prototype pins",
-    "editForm": "Edit form",
-    "hideEmbedCode": "Hide Embed Code",
-    "iframeEmbed": "iFrame Embed",
-    "preview": "Preview",
-    "ratingAndText": "Rating & Text",
-    "ratingType": "Rating Type",
-    "showEmbedCode": "Show Embed Code",
-    "submissions_one": "Submission",
-    "submissions_other": "Submissions",
-    "themeLabel": "Theme",
-    "themeDefault": "Default colours",
-    "themeCustom": "Custom colour",
-    "viewSubmissions": "View Submissions",
-    "collectsName": "Name",
-    "collectsEmail": "Email",
-    "disabledNotice": "This form is off. Its link and embed show “Feedback form unavailable.” until you enable it.",
     "live": "Live",
     "off": "Off",
-    "noSubmissionsYet": "No submissions yet — share the form to collect some.",
-    "themeSwatch": "Form colour"
+    "prototypePins": "Prototype pins",
+    "testLinkOn": "Test link on",
+    "summary_one": "{{count, number}} question · {{languages}}",
+    "summary_other": "{{count, number}} questions · {{languages}}",
+    "responses_one": "{{formatted}} response",
+    "responses_other": "{{formatted}} responses",
+    "reading": "Reading the responses…",
+    "lastResponse": "Last response: {{when}}",
+    "channels": {
+      "label": "Answered through",
+      "link": "Link",
+      "script": "Website script",
+      "iframe": "Embedded"
+    },
+    "average": "{{average}} / {{max}}",
+    "results": "Results",
+    "actions": "More actions for {{name}}",
+    "edit": "Edit",
+    "copyLink": "Copy link",
+    "qr": "QR code",
+    "qrTitle": "QR code",
+    "preview": "Preview",
+    "duplicate": "Duplicate",
+    "delete": "Delete…",
+    "copyName": "{{name}} (copy)",
+    "cannotRead": "This form could not be read.",
+    "unnamed": "Untitled form",
+    "fixFirst_one": "Fix {{count, number}} problem before publishing.",
+    "fixFirst_other": "Fix {{count, number}} problems before publishing.",
+    "open": "Open",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "Average rating",
+      "ces": "Average effort (CES)"
+    },
+    "turnOff": {
+      "title": "Turn off “{{name}}”?",
+      "message": "Its link and embeds will show “Feedback form unavailable.” to the next respondents.",
+      "confirm": "Turn off"
+    }
   },
   "configureApiFirst": "Configure the API endpoint in Administration → General to manage feedback forms.",
-  "createForm": "Create Form",
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this form? This action cannot be undone.",
   "deleteConfirmMessageNamed": "Delete the form “{{name}}”? This action cannot be undone.",
   "deleteConfirmTitle": "Delete Form",
   "editor": {
-    "backgroundColor": "Background Color",
-    "borderRadius": "Border Radius",
-    "cancel": "Cancel",
-    "categoryHint": "Categories are configured in Administration → Taxonomy → Categories",
-    "categoryLabel": "Category",
-    "categoryRoutingDescription": "Assign a category to this form. All feedback submitted through this form will be automatically tagged with the selected category, making it easy to filter and analyze feedback by source.",
-    "categoryRoutingTitle": "Category Routing",
-    "collectEmail": "Collect Email",
-    "collectName": "Collect Name",
-    "createForm": "Create Form",
-    "createTitle": "Create New Feedback Form",
-    "creating": "Creating...",
-    "description": "Description",
-    "editTitle": "Edit Feedback Form",
-    "enableRating": "Enable Rating",
-    "formName": "Form Name (Internal)",
-    "formNamePlaceholder": "e.g., Website Footer Form",
-    "formTitle": "Form Title",
-    "placeholderText": "Placeholder Text",
-    "preview": "Preview",
-    "previewLabel": "Preview:",
-    "previewTagged": "Feedback from this form will be tagged as:",
-    "primaryColor": "Primary Color",
-    "question": "Question",
-    "ratingEmoji": "Emoji",
-    "ratingNumeric": "Numeric (1-10)",
-    "ratingStars": "Stars",
-    "saveChanges": "Save Changes",
-    "saving": "Saving...",
-    "selectCategory": "-- Select Category --",
-    "selectSubcategory": "-- Select Subcategory --",
-    "startButton": "Start →",
-    "subcategoryLabel": "Subcategory (Optional)",
-    "submitButtonText": "Submit Button Text",
-    "successMessage": "Success Message",
-    "tabs": {
-      "category": "Category",
-      "categoryRouting": "Category Routing",
-      "formSettings": "Form Settings",
-      "settings": "Settings",
-      "theme": "Theme",
-      "validates": "Linked project",
-      "validatesShort": "Project",
-      "label": "Form editor sections"
-    },
-    "textColor": "Text Color",
     "validationDescription": "Optionally record which project — and which PRD or PR/FAQ — this form collects feedback about. The ratings it gathers then appear next to that document on the Prioritization page. Leave both empty for a standalone form such as a website survey.",
     "validationDocumentHint": "Leave on the whole project to keep the link when a document is regenerated.",
     "validationDocumentLabel": "Document (Optional)",
@@ -94,60 +395,1697 @@
     "validationUnknownProject": "Linked project (no longer available)",
     "validationUnverifiedDocument": "Linked document (could not be checked)",
     "validationUnverifiedProject": "Linked project (could not be checked)",
-    "validationWholeProject": "-- Whole project --",
-    "dimensionsHint": "Every submission carries these values. An embed can set its own per page with the dimensions option, e.g.",
-    "dimensionsDevHint": "For developers: set these per page in the embed code"
+    "validationWholeProject": "-- Whole project --"
   },
   "empty": {
-    "createButton": "Create Your First Form",
+    "title": "No feedback forms yet",
     "description": "Create your first form to start collecting customer feedback.",
-    "title": "No feedback forms yet"
+    "startsLabel": "Ways to start",
+    "describeHint": "Say what you want to learn, and the AI drafts the questions."
   },
   "infoBanner": {
-    "item1": "Create multiple forms for different purposes (website, app, support, etc.)",
-    "item2": "Each form has its own unique URL and embed code",
-    "item3": "Assign categories to route feedback automatically",
-    "item4": "All submissions go through AI enrichment (sentiment, personas, etc.)",
-    "title": "How feedback forms work"
+    "title": "How feedback forms work",
+    "item1": "Each form has its own link, embed code and test link.",
+    "item2": "Responses go through AI enrichment (sentiment, personas…); test responses never do.",
+    "dismiss": "Hide this explanation"
   },
-  "submissions": {
-    "avgRating": "Avg Rating",
-    "close": "Close",
-    "failedToLoad": "Failed to load submissions",
-    "noRating": "No rating",
-    "noSubmissions": "No submissions yet",
-    "noSubmissionsHint": "Submissions will appear here once users submit feedback through this form.",
-    "rated": "Rated",
-    "title": "Form Submissions",
-    "totalSubmissions": "Total Submissions"
+  "list": {
+    "toolbarLabel": "Find a form",
+    "search": "Search forms",
+    "searchPlaceholder": "Search by name",
+    "stateLabel": "Show",
+    "states": {
+      "all": "All",
+      "live": "Live",
+      "off": "Off",
+      "test": "Test link on"
+    },
+    "sortLabel": "Sort",
+    "sorts": {
+      "newest": "Newest",
+      "lastResponse": "Last response",
+      "name": "Name",
+      "responses": "Responses"
+    },
+    "shown_one": "{{shown, number}} of {{count, number}} form",
+    "shown_other": "{{shown, number}} of {{count, number}} forms",
+    "noMatchTitle": "No forms match",
+    "noMatch": "No form matches this search or filter.",
+    "clear": "Show all forms"
   },
   "subtitle": "Create embeddable forms to collect customer feedback",
   "title": "Feedback Forms",
-  "wizard": {
-    "anonymous": "Anonymous",
-    "anonymousDesc": "No PII collected",
-    "cancel": "Cancel",
-    "contactInfoDescription": "Choose what personal information to collect from respondents.",
-    "contactInfoTitle": "Contact Information Collection",
-    "continue": "Continue",
-    "emailOnly": "Email Only",
-    "emailOnlyDesc": "Collect email",
-    "nameAndEmail": "Name & Email",
-    "nameAndEmailDesc": "Full contact info",
-    "nameOnly": "Name Only",
-    "nameOnlyDesc": "Collect name",
-    "selectedTemplate": "Selected: {{name}}",
-    "selectPrompt": "Select a template to continue",
-    "subtitle": "Choose a template to get started",
-    "title": "Create New Form"
-  },
-  "createdDisabled": {
-    "dismiss": "Dismiss",
-    "enable": "Enable now",
-    "message": "“{{name}}” was created and is disabled: anyone opening its link sees “Feedback form unavailable.” until you enable it."
-  },
   "systemForms": {
     "title": "System forms ({{n, number}})",
     "description": "Created automatically for each prototype you build, to collect testers’ pins. You don’t need to share or edit them."
+  },
+  "templates": {
+    "nps": {
+      "name": "Net Promoter Score",
+      "purpose": "Measure loyalty on the 0–10 scale, then ask detractors and promoters different follow-ups.",
+      "q": {
+        "q_nps": {
+          "headline": "How likely are you to recommend us to a friend or colleague?",
+          "lower": "Not at all likely",
+          "upper": "Extremely likely"
+        },
+        "q_passive_improve": {
+          "headline": "What would make you more likely to recommend us?",
+          "placeholder": "Your answer"
+        },
+        "q_detractor_reason": {
+          "headline": "What's the main reason for your score?",
+          "other": "Something else",
+          "otherPlaceholder": "Tell us what",
+          "options": {
+            "price": "It's too expensive",
+            "missing_features": "It's missing features I need",
+            "hard_to_use": "It's hard to use",
+            "reliability": "It has bugs or downtime",
+            "support": "Support didn't solve my problem"
+          }
+        },
+        "q_detractor_fix": {
+          "headline": "What should we fix first?",
+          "placeholder": "Your answer"
+        },
+        "q_promoter_value": {
+          "headline": "What do you value most?",
+          "other": "Something else",
+          "options": {
+            "ease": "It's easy to use",
+            "features": "The features",
+            "reliability": "It's reliable",
+            "support": "The support team",
+            "value": "Good value for money"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "Can we follow up on your answers?",
+          "label": "Yes, you may contact me about my feedback."
+        },
+        "q_contact": {
+          "headline": "Where can we reach you?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you!",
+          "description": "Your feedback helps us decide what to improve next."
+        },
+        "end_contact": {
+          "title": "Thank you, we may be in touch",
+          "description": "If we have questions about your answers, someone from our team will email you."
+        }
+      }
+    },
+    "csat_support": {
+      "name": "Support satisfaction (CSAT)",
+      "purpose": "Rate a support conversation as it closes, and find out what went wrong when the rating is low.",
+      "q": {
+        "q_csat": {
+          "headline": "How satisfied are you with the help you received?",
+          "lower": "Very dissatisfied",
+          "upper": "Very satisfied"
+        },
+        "q_what_wrong": {
+          "headline": "What went wrong?",
+          "other": "Something else",
+          "options": {
+            "slow": "It took too long to get an answer",
+            "not_solved": "My problem wasn't solved",
+            "unclear": "The answer was hard to follow",
+            "passed_around": "I was passed from person to person",
+            "tone": "The tone wasn't friendly"
+          }
+        },
+        "q_resolved": {
+          "headline": "Is your issue resolved?",
+          "options": {
+            "yes": "Yes",
+            "partly": "Partly",
+            "no": "No"
+          }
+        },
+        "q_comment": {
+          "headline": "Anything else you'd like to tell us about this conversation?",
+          "placeholder": "Your comment"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thanks for your feedback",
+          "description": "It helps our support team get better at helping you."
+        }
+      }
+    },
+    "ces": {
+      "name": "Customer effort (CES)",
+      "purpose": "Ask how easy a task was, right after it, and what got in the way.",
+      "q": {
+        "q_ces": {
+          "headline": "How easy was it to get done what you wanted today?",
+          "lower": "Very difficult",
+          "upper": "Very easy"
+        },
+        "q_obstacle": {
+          "headline": "What made it hard?",
+          "other": "Something else",
+          "options": {
+            "start": "Knowing where to start",
+            "steps": "Too many steps",
+            "labels": "Unclear labels or instructions",
+            "errors": "Errors, or something not working",
+            "slow": "Waiting for it to load"
+          }
+        },
+        "q_easier": {
+          "headline": "What one change would make it easier?",
+          "placeholder": "Your idea"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you",
+          "description": "We read every answer."
+        }
+      }
+    },
+    "churn": {
+      "name": "Cancellation / churn",
+      "purpose": "Find out why customers cancel, with the right follow-up for each reason.",
+      "q": {
+        "q_reason": {
+          "headline": "What's the main reason you're cancelling?",
+          "other": "Another reason",
+          "otherPlaceholder": "Tell us which",
+          "options": {
+            "too_expensive": "It's too expensive for me",
+            "missing_features": "Features I need are missing",
+            "hard_to_use": "It's hard to use",
+            "switching_product": "I'm moving to another product",
+            "not_needed": "I don't need it any more",
+            "technical_issues": "Bugs or performance problems"
+          }
+        },
+        "q_price": {
+          "headline": "What could have kept you?",
+          "other": "Something else",
+          "otherPlaceholder": "Tell us what",
+          "options": {
+            "lower_price": "A lower price",
+            "smaller_plan": "A smaller plan with fewer features",
+            "annual_discount": "A discount for paying yearly",
+            "pause": "The option to pause my subscription"
+          }
+        },
+        "q_missing_feature": {
+          "headline": "Which feature were you missing?",
+          "placeholder": "e.g. export to Excel"
+        },
+        "q_hard_part": {
+          "headline": "What was hardest to use?",
+          "placeholder": "Tell us where it got difficult"
+        },
+        "q_competitor": {
+          "headline": "Which product are you moving to, and what does it do better?"
+        },
+        "q_technical": {
+          "headline": "What went wrong? Anything you remember helps us find it."
+        },
+        "q_follow_up_ok": {
+          "headline": "Can we follow up with you?",
+          "label": "Yes, you may contact me about my answers."
+        },
+        "q_contact": {
+          "headline": "Where can we reach you?"
+        }
+      },
+      "endings": {
+        "end_bye": {
+          "title": "Thank you for telling us",
+          "description": "We're sorry to see you go. Your answers go straight to our product team."
+        },
+        "end_contact": {
+          "title": "Thank you, we'll be in touch",
+          "description": "Someone from our team may email you about your answers."
+        }
+      }
+    },
+    "old_ui": {
+      "name": "Switching back to the old interface",
+      "purpose": "Ask people who leave a redesign why, at the moment they switch back.",
+      "q": {
+        "q_why": {
+          "headline": "What made you switch back to the old interface?",
+          "other": "Something else",
+          "otherPlaceholder": "Tell us what",
+          "options": {
+            "cant_find": "I can't find what I need",
+            "slower_work": "My work takes longer",
+            "missing_function": "A function I use is missing",
+            "errors": "Something doesn't work or shows an error",
+            "slow_loading": "It loads too slowly",
+            "layout": "The screen layout is hard to read",
+            "prefer_known": "I prefer the layout I know and have no time to learn"
+          }
+        },
+        "q_missing_function": {
+          "headline": "Which function is missing?",
+          "subheader": "Where did you use it in the old interface?",
+          "placeholder": "e.g. bulk posting of invoices in Sales"
+        },
+        "q_task": {
+          "headline": "Which task are you working on right now?",
+          "placeholder": "e.g. a stock report"
+        },
+        "q_return": {
+          "headline": "Will you try the new interface again?",
+          "options": {
+            "yes_soon": "Yes, soon",
+            "when_fixed": "Yes, once what I mentioned is fixed",
+            "not_sure": "I'm not sure",
+            "no": "No, I'll stay with the old one"
+          }
+        },
+        "q_comment": {
+          "headline": "Anything else the team should know?",
+          "placeholder": "Your comment"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you",
+          "description": "Your answers go straight to the team working on the new interface."
+        }
+      },
+      "hidden": {
+        "user_id": "User",
+        "app_version": "App version",
+        "screen": "Screen where they switched"
+      }
+    },
+    "abandonment": {
+      "name": "Checkout or signup abandonment",
+      "purpose": "Find out why people stop before finishing a checkout or signup.",
+      "q": {
+        "q_stopped": {
+          "headline": "What stopped you from finishing?",
+          "other": "Something else",
+          "options": {
+            "price": "The total was higher than I expected",
+            "payment": "My payment method wasn't available",
+            "account": "I didn't want to create an account",
+            "too_long": "It was taking too long",
+            "trust": "I wasn't sure it was safe",
+            "technical": "Something didn't work",
+            "just_looking": "I was just looking"
+          }
+        },
+        "q_payment": {
+          "headline": "Which payment method would you have used?",
+          "other": "Another method",
+          "options": {
+            "card": "Credit or debit card",
+            "bank_transfer": "Bank transfer",
+            "paypal": "PayPal",
+            "wallet": "Apple Pay or Google Pay",
+            "invoice": "Pay later by invoice"
+          }
+        },
+        "q_technical": {
+          "headline": "What happened?",
+          "subheader": "An error message, or the step you were on, helps us find it."
+        },
+        "q_come_back": {
+          "headline": "Do you plan to come back and finish?",
+          "options": {
+            "yes": "Yes",
+            "maybe": "Maybe",
+            "no": "No"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thanks, that helps",
+          "description": "We'll use your answer to make this quicker for everyone."
+        }
+      }
+    },
+    "pmf": {
+      "name": "Product-market fit",
+      "purpose": "The 'very disappointed' test: how many users would miss the product, and why.",
+      "q": {
+        "q_disappointment": {
+          "headline": "How would you feel if you could no longer use the product?",
+          "options": {
+            "very": "Very disappointed",
+            "somewhat": "Somewhat disappointed",
+            "not": "Not disappointed"
+          }
+        },
+        "q_main_benefit": {
+          "headline": "What is the main benefit you get from it?"
+        },
+        "q_ideal_user": {
+          "headline": "Who do you think would benefit most from it?",
+          "placeholder": "e.g. finance teams in mid-sized companies"
+        },
+        "q_improve": {
+          "headline": "How could we improve it for you?"
+        },
+        "q_role": {
+          "headline": "What best describes your role?",
+          "other": "Something else",
+          "options": {
+            "manager": "Manager or team lead",
+            "specialist": "Specialist",
+            "executive": "Owner or executive",
+            "it": "IT or administrator",
+            "consultant": "Consultant or partner"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you",
+          "description": "Your answers help us decide what to build next."
+        }
+      }
+    },
+    "feature_request": {
+      "name": "Feature request / feedback box",
+      "purpose": "An always-open feedback box: ideas, problems and praise, each with its own follow-up.",
+      "q": {
+        "q_kind": {
+          "headline": "What would you like to share?",
+          "options": {
+            "idea": "An idea",
+            "problem": "A problem",
+            "praise": "Praise",
+            "question": "A question"
+          }
+        },
+        "q_idea": {
+          "headline": "What would you like the product to do?",
+          "placeholder": "Describe the feature or change you have in mind"
+        },
+        "q_idea_importance": {
+          "headline": "How important is it for your work?",
+          "options": {
+            "nice": "Nice to have",
+            "important": "Important",
+            "blocking": "I can't do my work without it"
+          }
+        },
+        "q_problem": {
+          "headline": "What went wrong?",
+          "subheader": "What you did, what you expected and what happened instead."
+        },
+        "q_praise": {
+          "headline": "What do you like?"
+        },
+        "q_question": {
+          "headline": "What's your question?"
+        },
+        "q_follow_up_ok": {
+          "headline": "Can we follow up with you?",
+          "label": "Yes, you may contact me about this."
+        },
+        "q_contact": {
+          "headline": "Where can we reach you?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thanks for sharing",
+          "description": "It goes straight to the product team."
+        },
+        "end_contact": {
+          "title": "Thanks, we may be in touch",
+          "description": "If we have a question or an answer for you, we'll email you."
+        }
+      }
+    },
+    "feature_satisfaction": {
+      "name": "Feature satisfaction",
+      "purpose": "Rate one feature after people have used it, and learn what would make it better.",
+      "q": {
+        "q_rating": {
+          "headline": "How satisfied are you with this feature?",
+          "lower": "Not at all",
+          "upper": "Very satisfied"
+        },
+        "q_better": {
+          "headline": "What would make it better?",
+          "other": "Something else",
+          "options": {
+            "faster": "Make it faster",
+            "clearer": "Make it easier to understand",
+            "more_options": "Give me more options",
+            "fewer_steps": "Fewer steps",
+            "fix": "Fix what doesn't work"
+          }
+        },
+        "q_frequency": {
+          "headline": "How often do you use it?",
+          "options": {
+            "daily": "Every day",
+            "weekly": "Every week",
+            "monthly": "Every month",
+            "rarely": "Less often",
+            "first_time": "This was my first time"
+          }
+        },
+        "q_comment": {
+          "headline": "Anything else about this feature?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you",
+          "description": "Your rating goes to the team that owns this feature."
+        }
+      }
+    },
+    "bug_report": {
+      "name": "Bug report",
+      "purpose": "Let people report a problem, with the context the team needs to reproduce it.",
+      "q": {
+        "q_what_happened": {
+          "headline": "What went wrong?",
+          "placeholder": "Describe what happened"
+        },
+        "q_steps": {
+          "headline": "What were you doing just before?",
+          "placeholder": "1. I opened…  2. I clicked…"
+        },
+        "q_expected": {
+          "headline": "What did you expect to happen?"
+        },
+        "q_frequency": {
+          "headline": "How often does it happen?",
+          "options": {
+            "every_time": "Every time",
+            "sometimes": "Sometimes",
+            "once": "Only once"
+          }
+        },
+        "q_impact": {
+          "headline": "How much does it affect your work?",
+          "options": {
+            "blocked": "I can't carry on with my work",
+            "workaround": "I found a way around it",
+            "minor": "It's a small annoyance"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "Can we contact you if we need more details?",
+          "label": "Yes, you may contact me about this report."
+        },
+        "q_contact": {
+          "headline": "Where can we reach you?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thanks for reporting it",
+          "description": "Your report goes straight to the team that fixes problems."
+        },
+        "end_contact": {
+          "title": "Thanks, we may be in touch",
+          "description": "If we need more details, we'll email you."
+        }
+      }
+    },
+    "onboarding": {
+      "name": "Onboarding segmentation",
+      "purpose": "Ask new users who they are and what they came for, so their first steps can be tailored.",
+      "welcome": {
+        "title": "Welcome!",
+        "description": "Four quick questions so we can show you the right things first.",
+        "button": "Let's go"
+      },
+      "q": {
+        "q_role": {
+          "headline": "What's your role?",
+          "other": "Something else",
+          "options": {
+            "management": "Management",
+            "finance": "Finance or accounting",
+            "sales": "Sales",
+            "operations": "Operations or logistics",
+            "it": "IT or administration"
+          }
+        },
+        "q_company_size": {
+          "headline": "How many people work at your company?",
+          "options": {
+            "size_1": "Just me",
+            "size_2_10": "2–10",
+            "size_11_50": "11–50",
+            "size_51_250": "51–250",
+            "size_251_1000": "251–1,000",
+            "size_1000_plus": "More than 1,000"
+          }
+        },
+        "q_first_goal": {
+          "headline": "What do you want to do first?",
+          "none": "Not sure yet",
+          "options": {
+            "import": "Import my data",
+            "invite": "Invite my team",
+            "reports": "Set up reports",
+            "connect": "Connect another tool",
+            "explore": "Look around"
+          }
+        },
+        "q_experience": {
+          "headline": "Have you used a similar product before?",
+          "options": {
+            "daily": "Yes, every day",
+            "some": "Yes, a little",
+            "no": "No, this is my first"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "You're all set",
+          "description": "We'll tailor your first steps to your answers."
+        },
+        "end_newcomer": {
+          "title": "Welcome aboard",
+          "description": "We'll start you with the basics."
+        }
+      },
+      "tips": {
+        "end_newcomer": "Add a button to your getting-started guide."
+      }
+    },
+    "blank": {
+      "name": "Blank form",
+      "purpose": "One open question. Build the rest yourself.",
+      "q": {
+        "q_feedback": {
+          "headline": "What would you like to tell us?",
+          "placeholder": "Type your answer here…"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you!",
+          "description": "We read every message."
+        }
+      }
+    }
+  },
+  "picker": {
+    "title": "New form",
+    "subtitle": "Describe it and the AI drafts it, or pick a starting point. Every question can be changed afterwards.",
+    "createIn": "Create in",
+    "railLabel": "Start",
+    "goalsLabel": "Goals",
+    "describeIt": "Describe it",
+    "groups": {
+      "all": "All",
+      "loyalty": "Loyalty",
+      "dropoffs": "Drop-offs",
+      "product": "Product",
+      "onboarding": "Onboarding",
+      "blank": "Blank"
+    },
+    "runs": {
+      "link": "Link",
+      "embed": "Embed",
+      "in_app": "In-app"
+    },
+    "minutes_one": "~{{count, number}} min",
+    "minutes_other": "~{{count, number}} min",
+    "moreTypes": "+{{count, number}} more",
+    "use": "Use this template",
+    "empty": "Pick a template, or describe your form, to see it here.",
+    "backToList": "Templates",
+    "preview": {
+      "label": "Preview",
+      "questions": "Questions",
+      "rules_one": "{{count, number}} rule",
+      "rules_other": "{{count, number}} rules",
+      "endings_one": "{{count, number}} ending",
+      "endings_other": "{{count, number}} endings",
+      "restart": "Restart",
+      "loading": "Loading the template in this language…",
+      "frameTitle": "Form preview, phone size, {{language}}"
+    }
+  },
+  "describe": {
+    "kicker": "Describe your form",
+    "title": "Describe your form",
+    "nothingSaved": "Nothing is saved until you save it.",
+    "hint": "Say who it's for, what you want to learn, and the answers you want to offer.",
+    "count": "{{n, number}} / {{max, number}}",
+    "tooShort": "Describe your form first.",
+    "try": "Try",
+    "examples": {
+      "oldUi": {
+        "chip": "Users who switch back to the old UI…",
+        "text": "Ask app users who switch back to the old UI why, with predefined reasons."
+      },
+      "nps": {
+        "chip": "A short NPS for our mobile app…",
+        "text": "A short NPS survey for our mobile app, with a follow-up for unhappy customers."
+      },
+      "support": {
+        "chip": "After a support ticket…",
+        "text": "After a support ticket closes, ask how satisfied the customer is and whether the issue was solved."
+      },
+      "churn": {
+        "chip": "Customers who cancel…",
+        "text": "Ask customers who cancel why they're leaving, and whether we may contact them."
+      }
+    },
+    "replaceAsk": "Replace your description?",
+    "replace": "Replace",
+    "keepMine": "Keep mine",
+    "runs": "Runs",
+    "runsHint": {
+      "link": "Can open with a welcome screen.",
+      "embed": "Sits on your page; no welcome screen.",
+      "in_app": "Short, no welcome screen, hidden fields for your app."
+    },
+    "draft": "Draft it",
+    "draftingButton": "Drafting…",
+    "drafting": "Drafting your form… This usually takes 10 to 30 seconds.",
+    "inLanguage": "in {{language}}",
+    "changeLanguage": "change",
+    "busyReason": "You can change this once the draft is ready.",
+    "waitReason": "You can draft again in {{minutes}} min.",
+    "privacy": "The description goes to this workspace's AI model. Don't paste personal data."
+  },
+  "ai": {
+    "refusal": {
+      "role": "Only editors and administrators can draft forms with AI.",
+      "aiMode": "Human-driven: AI doesn't write forms for you. Start from a template, or let the assistant coach you.",
+      "coachPrompt": "Coach me while I write a feedback form: ask me what I want to learn, and help me word the questions and the answers to offer.",
+      "coachMe": "Coach me",
+      "changeInPeople": "Change it in Administration → Privacy & access → Users",
+      "askAdminMode": "An administrator can change it.",
+      "noModel": "AI drafting isn't set up in this workspace: no AI model is available for it.",
+      "openAiModels": "Open Administration → AI models",
+      "askAdminModel": "Ask an administrator to set one up.",
+      "spendCap": "This workspace's AI budget for the month is used up.",
+      "rateLimited": "You've reached the AI limit for now. Try again in {{minutes}} min.",
+      "rateLimitOver": "The AI limit has passed. You can draft again.",
+      "invalid": "The AI couldn't turn this into a valid form.",
+      "invalidHint": "It tried twice. Describe the questions and answers more plainly, or start from a template.",
+      "details": "Details",
+      "tryAgain": "Try again",
+      "noAnswer": "The AI didn't answer. Try again in a moment.",
+      "other": "The AI couldn't draft this form: {{message}}"
+    },
+    "banner": {
+      "label": "AI draft",
+      "draft": "AI draft: review before publishing. Nothing is saved yet.",
+      "improve": "Changed with AI: review before saving.",
+      "notes": "Notes ({{count, number}})",
+      "discard": "Discard draft",
+      "undo": "Undo AI changes",
+      "goTo": "Go to",
+      "discardConfirm": {
+        "title": "Discard the AI draft?",
+        "message": "Nothing was saved.",
+        "confirm": "Discard draft"
+      },
+      "addresses": {
+        "label": "Addresses the AI suggested",
+        "suggested": "Suggested by AI",
+        "confirm": "Confirm address",
+        "remove": "Remove"
+      }
+    },
+    "improve": {
+      "title": "Improve with AI",
+      "description": "Ask for a change. You review every change before it's applied; nothing is saved.",
+      "instruction": "Instruction",
+      "try": "Try",
+      "examples": {
+        "translations": "Add English translations",
+        "shorter": "Make every question shorter",
+        "contact": "Add a contact question at the end",
+        "hidden": "Add hidden fields for a mobile app",
+        "dropdown": "Turn question 1 into a dropdown",
+        "question": "Improve question {{number}}"
+      },
+      "scope": "Changes: questions, logic, endings, hidden fields and languages. Settings, theme and routing stay as they are.",
+      "reads": "It reads this form as it is now, unsaved edits included ({{questions}} · {{endings}}).",
+      "questionsCount_one": "{{count, number}} question",
+      "questionsCount_other": "{{count, number}} questions",
+      "endingsCount_one": "{{count, number}} ending",
+      "endingsCount_other": "{{count, number}} endings",
+      "cancel": "Cancel",
+      "draft": "Draft changes",
+      "drafting": "Drafting changes… This usually takes 10 to 30 seconds.",
+      "emptyInstruction": "Say what should change first.",
+      "nothing": "The AI made no changes. Try saying more about what should change.",
+      "back": "Back",
+      "applied_one": "{{count, number}} change from the AI applied. Review it, then save.",
+      "applied_other": "{{count, number}} changes from the AI applied. Review them, then save."
+    },
+    "diff": {
+      "title": "Changes from the AI",
+      "count_one": "{{count, number}} change",
+      "count_other": "{{count, number}} changes",
+      "acceptAll": "Accept all",
+      "rejectAll": "Reject all",
+      "fromAi": "From the AI",
+      "ignored": "Ignored: a change to {{areas}}.",
+      "ignoredAreas": {
+        "name": "the name",
+        "theme": "the theme",
+        "routing": "the category routing",
+        "project": "the linked project",
+        "test": "the test settings",
+        "tags": "the tags",
+        "dimensions": "the dimension defaults"
+      },
+      "kinds": {
+        "added": "Added",
+        "removed": "Removed",
+        "changed": "Changed"
+      },
+      "apply": "Apply: {{kind}} {{what}}",
+      "what": {
+        "question": "question {{number}}",
+        "ending": "ending “{{title}}”",
+        "hidden": "hidden field {{id}}",
+        "language": "language {{language}}",
+        "welcome": "the welcome card"
+      },
+      "languageTexts_one": "{{count, number}} text",
+      "languageTexts_other": "{{count, number}} texts",
+      "welcome": "Welcome card",
+      "hidden": "Hidden field {{id}}",
+      "expand": "Show what changed",
+      "collapse": "Hide what changed",
+      "notApplied": "not applied",
+      "notAppliedWith": "Not applied with it: the rule on {{questions}}.",
+      "keptWith": "Kept with it: the rules on {{questions}} that go to it.",
+      "checkAddress": "I've checked this address",
+      "addressWaits": "Not applied until you confirm the address.",
+      "applyCount_one": "Apply {{count, number}} change",
+      "applyCount_other": "Apply {{count, number}} changes",
+      "invalid": "These changes together leave a problem in the form: {{problem}}",
+      "noneSelected": "Choose at least one change to apply.",
+      "before": "Before",
+      "after": "After",
+      "ruleAdded": "Rule added: {{sentence}}",
+      "ruleRemoved": "Rule removed: {{sentence}}",
+      "fields": {
+        "headline": "Question",
+        "subheader": "Description",
+        "required": "Required",
+        "type": "Type",
+        "options": "Options",
+        "other": "Other",
+        "none": "None of these",
+        "shuffle": "Order",
+        "display": "Show as",
+        "min": "At least",
+        "max": "At most",
+        "long": "Length",
+        "input_type": "Answer type",
+        "placeholder": "Placeholder",
+        "max_chars": "Limit",
+        "scale": "Scale",
+        "range": "Points",
+        "lower_label": "Low end",
+        "upper_label": "High end",
+        "label": "Text",
+        "cta": "Link button",
+        "fields": "Fields",
+        "button_label": "Button label",
+        "title": "Title",
+        "description": "Description",
+        "button": "Button",
+        "enabled": "Shown",
+        "logic": "Logic"
+      },
+      "values": {
+        "yes": "Yes",
+        "no": "No",
+        "empty": "—"
+      }
+    },
+    "stop": {
+      "button": "Stop",
+      "title": "Stop drafting?",
+      "message": "The AI stops drafting your form, and what it has written so far is dropped. Nothing was saved.",
+      "confirm": "Stop drafting",
+      "keep": "Keep drafting"
+    }
+  },
+  "questionList": {
+    "title": "Questions ({{count, number}})",
+    "label": "Questions",
+    "improve": "Improve with AI",
+    "welcomeName": "Welcome screen",
+    "welcomeStateOn": "On",
+    "welcomeStateOff": "Off",
+    "add": "Add question",
+    "addBelow": "Add question below",
+    "insertAfter": "Add question after question {{number}}",
+    "typeMenu": "Question types",
+    "contactOnce": "Already in this form",
+    "limit": "A form holds up to 30 questions.",
+    "lastQuestion": "A form needs at least one question.",
+    "cardName": "Question {{number}} of {{total, number}}",
+    "cardMenu": "More actions for question {{number}}",
+    "duplicate": "Duplicate",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "alreadyFirst": "It's already first.",
+    "alreadyLast": "It's already last.",
+    "changeType": "Change type…",
+    "delete": "Delete…",
+    "deleteTitle": "Delete this question?",
+    "deleteConfirm": "Delete",
+    "deleteRules_one": "{{count, number}} rule goes to this question. It will be removed, and those respondents will go to the next question.",
+    "deleteRules_other": "{{count, number}} rules go to this question. They'll be removed, and those respondents will go to the next question.",
+    "deleteAnswers": "Its answers stay in Results under “Removed questions”.",
+    "deleted": "Question deleted.",
+    "undo": "Undo",
+    "moved": "Moved “{{headline}}” to position {{position}} of {{total, number}}.",
+    "rules_one": "{{count, number}} rule",
+    "rules_other": "{{count, number}} rules",
+    "languageMissing": "{{language}} missing",
+    "languagesMissing": "{{count, number}} languages missing",
+    "problem": "Problem",
+    "ai": "AI",
+    "gone": "This card is no longer in the form.",
+    "back": "Questions",
+    "position": "{{n}} of {{total, number}}",
+    "previous": "Previous question",
+    "next": "Next question",
+    "meta": {
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "other": "Other",
+      "none": "None",
+      "required": "Required",
+      "optional": "Optional",
+      "upTo": "up to {{count, number}} characters",
+      "range": "{{min}}–{{max}}",
+      "scale": {
+        "star": "{{range}} stars",
+        "number": "{{range}} numbers",
+        "smiley": "{{range}} faces"
+      },
+      "textOnly": "Text only",
+      "linkButton": "With a link button"
+    }
+  },
+  "question": {
+    "headline": "Question",
+    "newQuestion": "New question",
+    "description": "Description",
+    "required": "Required",
+    "requiredScaleHint": "Respondents can't skip it.",
+    "logic_one": "Logic · {{count, number}} rule",
+    "logic_other": "Logic · {{count, number}} rules",
+    "advanced": "Advanced",
+    "id": "Question id",
+    "idLocked": "Answers are stored under this id, so it can't change once there are responses.",
+    "buttonLabel": "Button label",
+    "buttonLabelPlaceholder": "Next",
+    "duplicate": "Duplicate question {{number}}",
+    "translationLine_one": "{{language}}: {{count, number}} text missing",
+    "translationLine_other": "{{language}}: {{count, number}} texts missing",
+    "translate": "Translate",
+    "translateInto": "Translate into {{language}}"
+  },
+  "typeChange": {
+    "label": "Question {{number}}: type",
+    "none": "To change its type, add a new question of that type and delete this one.",
+    "locked": "Answers are stored for this type, so it can't change once the form has responses. To ask it another way, add a new question and delete this one.",
+    "confirmTitle": "Change the question's type?",
+    "confirmMessage": "This change drops: {{lost}}.",
+    "confirm": "Change type",
+    "lost": {
+      "none": "the “None of these” row",
+      "minMax": "At least and At most",
+      "includesAll": "the rules that need every option",
+      "rulesOutsideScale": "the rules outside the new scale"
+    }
+  },
+  "choice": {
+    "options": "Options",
+    "view": "Options view",
+    "labels": "Labels",
+    "pasteList": "Paste list",
+    "optionN": "Option {{number}}",
+    "optionMenu": "More actions for option {{number}}",
+    "codeOf": "Code of option {{number}}",
+    "codeLocked": "Answers are stored under this code, so it can't change once there are responses. Rename the label instead.",
+    "goesTo": "Goes to {{target}}",
+    "lastOption": "A choice needs at least one option.",
+    "addOption": "Add option",
+    "count": "{{n, number}} of {{max, number}}",
+    "pasteAsOptions_one": "Paste {{count, number}} line as {{count, number}} option?",
+    "pasteAsOptions_other": "Paste {{count, number}} lines as {{count, number}} options?",
+    "addAsOptions": "Add as options",
+    "keepAsOne": "Keep as one",
+    "paste": {
+      "label": "One option per line. Each line becomes an option; codes are made from the text.",
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "duplicates_one": "{{count, number}} duplicate skipped",
+      "duplicates_other": "{{count, number}} duplicates skipped",
+      "blanks_one": "{{count, number}} blank line ignored",
+      "blanks_other": "{{count, number}} blank lines ignored",
+      "add_one": "Add {{count, number}} option",
+      "add_other": "Add {{count, number}} options",
+      "replace": "Replace all…",
+      "cancel": "Cancel",
+      "replaceTitle": "Replace every option?",
+      "replaceMessage": "This form has responses: answers given to the options you replace stay in Results as removed options.",
+      "replaceConfirm": "Replace all"
+    },
+    "other": "“Other” with a text box",
+    "otherLabel": "Label",
+    "otherDefault": "Other",
+    "otherPlaceholder": "Placeholder",
+    "otherPlaceholderDefault": "Please specify",
+    "none": "“None of these”",
+    "noneHint": "Exclusive: picking it clears the others. Multiple choice only.",
+    "noneLabel": "None label",
+    "order": "Order",
+    "orderHint": "Other and None always stay at the end.",
+    "shuffle": {
+      "none": "As listed",
+      "all": "Shuffle",
+      "except_last": "Shuffle, keep the last option in place"
+    },
+    "showAs": "Show as",
+    "display": {
+      "auto": "Auto",
+      "list": "List",
+      "dropdown": "Dropdown",
+      "chips": "Chips"
+    },
+    "autoList_one": "Auto shows a list here: {{count, number}} choice.",
+    "autoList_other": "Auto shows a list here: {{count, number}} choices.",
+    "autoDropdown_one": "Auto shows a dropdown here: {{count, number}} choice.",
+    "autoDropdown_other": "Auto shows a dropdown here: {{count, number}} choices.",
+    "answers": "Answers",
+    "atLeast": "At least",
+    "atMost": "At most",
+    "minMaxHint": "Blank At least is 1 when the question is required, 0 when optional. Blank At most is no limit.",
+    "respondentsSee": "Respondents see “Choose up to {{count, number}}”.",
+    "showCodes": "Show codes",
+    "showCodesHint": "Codes are how answers are stored and how rules name options.",
+    "routing": {
+      "title": "Routing",
+      "option": "Option",
+      "category": "Category",
+      "goTo": "Go to",
+      "formDefault": "— Form default",
+      "notConfigured": "{{name}} (no longer configured)",
+      "categoryOf": "Category for “{{option}}”",
+      "goToOf": "Go to after “{{option}}”",
+      "otherwise": "Otherwise: {{target}}",
+      "otherRow": "{{label}} (Other)",
+      "setByRule": "Set by a rule in Logic",
+      "editInLogic": "Edit in Logic",
+      "precedence": "Feedback from this question is filed under the first mapped option's category; otherwise the form's (Settings › Category routing).",
+      "firstRuleWins": "When several picked options jump, the first rule in Logic wins."
+    }
+  },
+  "scale": {
+    "scale": "Scale",
+    "scales": {
+      "star": "Stars",
+      "number": "Numbers",
+      "smiley": "Faces"
+    },
+    "points": "Points",
+    "facesRange": "Faces come in 3 to 5 points.",
+    "rangeLocked": "Answers are stored on these points, so they can't change once the form has responses.",
+    "lowEnd": "Low end label",
+    "highEnd": "High end label",
+    "fixed": {
+      "nps": "0–10, fixed.",
+      "csat": "1–5 faces, fixed. 4 and 5 count as satisfied.",
+      "ces": "1–7, fixed. 5 to 7 count as easy."
+    },
+    "npsGroups": "0–6 detractors · 7–8 passives · 9–10 promoters",
+    "npsHelper": {
+      "button": "Ask detractors and promoters different questions",
+      "detractor": "What's the main reason for your score?",
+      "promoter": "What do you value most?",
+      "done": "Two follow-up questions added: detractors and promoters each get their own."
+    }
+  },
+  "text": {
+    "length": "Length",
+    "short": "Short",
+    "long": "Long",
+    "answerType": "Answer type",
+    "inputTypes": {
+      "text": "Text",
+      "email": "Email",
+      "number": "Number",
+      "phone": "Phone",
+      "url": "Web address"
+    },
+    "placeholder": "Placeholder",
+    "placeholderHint": "A hint inside the box, never a label: respondents always see the question above it.",
+    "limit": "Limit (characters)",
+    "limitHint": "1 to 5,000; blank is 5,000."
+  },
+  "statement": {
+    "text": "Text",
+    "addButton": "Add a link button",
+    "hint": "Next still moves on; the link opens in a new tab.",
+    "buttonLabel": "Button label",
+    "buttonLabelPlaceholder": "Learn more",
+    "address": "Address",
+    "addressHint": "The address must start with https://"
+  },
+  "consent": {
+    "checkboxText": "Checkbox text",
+    "placeholder": "Yes, you may contact me about my feedback.",
+    "hint": "An optional consent left unticked answers No.",
+    "mustTick": "Must be ticked to continue"
+  },
+  "contact": {
+    "field": "Field",
+    "show": "Show",
+    "required": "Required",
+    "fields": {
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "company": "Company"
+    },
+    "showField": "Show {{field}}",
+    "requireField": "{{field}} required",
+    "personalData": "This question collects personal data. Respondents see it only if they reach it, and it's stored with the response."
+  },
+  "welcome": {
+    "show": "Show a welcome screen",
+    "hint": "Leave it off for in-app forms: people already know why it opened.",
+    "title": "Title",
+    "description": "Description",
+    "buttonLabel": "Button label",
+    "buttonDefault": "Start"
+  },
+  "endings": {
+    "heading": "Endings",
+    "label": "Endings",
+    "default": "default",
+    "untitled": "Untitled ending",
+    "cardMenu": "More actions for ending “{{title}}”",
+    "add": "Add ending",
+    "newTitle": "Thank you",
+    "limit": "A form has up to 5 endings.",
+    "lastEnding": "A form needs at least one ending.",
+    "deleteTitle": "Delete this ending?",
+    "deleteRules_one": "{{count, number}} rule ends here. It will be removed, and those respondents will see the default ending.",
+    "deleteRules_other": "{{count, number}} rules end here. They'll be removed, and those respondents will see the default ending.",
+    "nowDefault": "“{{title}}” is now the default ending.",
+    "moved": "Moved “{{title}}” to position {{position}} of {{total, number}}.",
+    "title": "Title",
+    "description": "Description",
+    "addButton": "Add a button",
+    "buttonLabel": "Button label",
+    "reachedBy": "Reached by:",
+    "reachedFrom": "{{number}} {{condition}}",
+    "otherwise": "otherwise",
+    "endOfQuestions": "the end of the questions (default)",
+    "id": "Ending id",
+    "idLocked": "Responses are stored with this id, so it can't change once there are responses."
+  },
+  "preview": {
+    "label": "Preview",
+    "device": {
+      "phone": "phone size"
+    },
+    "language": "Preview language",
+    "languageMissing": "{{language}} ({{count, number}} missing, shown in {{primary}})",
+    "frameTitle": "Form preview, {{size}}, {{language}}",
+    "restart": "Restart",
+    "startHere": "Start here",
+    "show": "Preview",
+    "hide": "Hide preview",
+    "showPane": "Show preview",
+    "inWindow": "The preview is open in its window.",
+    "size": "Phone · {{width}} × {{height}} · {{zoom}} %",
+    "showing": "Showing: {{scheme}}",
+    "scheme": {
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "shuffled": "Shuffled for each respondent",
+    "style": "Style",
+    "openWindow": "Open in window",
+    "openTab": "Preview, opens in a new tab",
+    "blocked": "Your browser blocked the preview window. Allow pop-ups for this site, then try again.",
+    "stylePanel": {
+      "title": "Style",
+      "back": "Back to question"
+    }
+  },
+  "previewWindow": {
+    "title": "Form preview",
+    "region": "Form preview, {{language}}",
+    "size": "Window size",
+    "language": "Preview language",
+    "restart": "Restart",
+    "waiting": "Waiting for the form. Keep it open in the builder.",
+    "noSession": "Open this preview from the form builder.",
+    "unavailable": "The preview can't start: the form widget didn't load. Reload this window to try again.",
+    "resizeRefused": "Your browser kept this window's size.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "Custom · {{width}} × {{height}}",
+    "presets": {
+      "phone": "Phone",
+      "rotate": "Phone, rotated",
+      "tablet": "Tablet",
+      "desktop": "Desktop",
+      "embedded": "Embedded, 480 px tall"
+    }
+  },
+  "flow": {
+    "title": "Flow",
+    "questions_one": "{{count, number}} question",
+    "questions_other": "{{count, number}} questions",
+    "endings_one": "{{count, number}} ending",
+    "endings_other": "{{count, number}} endings",
+    "paths_one": "{{count, number}} path",
+    "paths_other": "{{count, number}} paths",
+    "lengths": "shortest {{min, number}}, longest {{max, number}} questions",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "start": "Start",
+    "end": "End",
+    "welcomeOn": "Welcome card on → 1",
+    "welcomeOff": "Welcome card off → 1",
+    "questionsLabel": "Questions and their rules",
+    "endingsLabel": "Endings",
+    "default": "default",
+    "reachedBy_one": "reached by {{count, number}} path",
+    "reachedBy_other": "reached by {{count, number}} paths",
+    "unreachable": "No path reaches this question",
+    "ai": "AI",
+    "noRules": "Everyone goes through the questions in order. Add a rule on a question to send some people elsewhere.",
+    "thenGoTo": "Then go to → {{target}}",
+    "meta": {
+      "required": "required",
+      "optional": "optional",
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "other": "Other"
+    }
+  },
+  "hidden": {
+    "title": "Hidden fields",
+    "intro": "Values your app or link passes in with each response. Respondents never see them.",
+    "addField": "Add field",
+    "limit": "A form has up to 20 hidden fields.",
+    "emptyTitle": "No hidden fields",
+    "empty": "Add one to receive values such as a user id or the app version from your app.",
+    "count": "{{n, number}} of {{max, number}} · Each value is text, up to 200 characters; longer values are cut.",
+    "columns": {
+      "id": "ID",
+      "label": "Label",
+      "filledBy": "Filled by",
+      "inResults": "In results",
+      "actions": "Actions"
+    },
+    "filledBy": "link · SDK",
+    "inResults": "filter and column",
+    "inResultsDimension": "filter, column and the dimension {{name}}*",
+    "actions": "More actions for {{id}}",
+    "rename": "Rename",
+    "delete": "Delete…",
+    "deleteConfirm": "Delete",
+    "deleteTitle": "Delete “{{id}}”?",
+    "deleteMessage": "Values already received stay in Results.",
+    "locked": "Responses are stored under this id.",
+    "cancel": "Cancel",
+    "add": "Add",
+    "done": "Done",
+    "useThem": "Use them",
+    "kindLabel": "Where the values come from",
+    "valuesFor": "Values for",
+    "kinds": {
+      "link": "Link",
+      "script": "Script embed",
+      "sdk": "In-app SDK",
+      "webview": "Mobile WebView"
+    },
+    "modes": {
+      "live": "Live",
+      "test": "Test"
+    },
+    "codeLabel": "{{kind}} code",
+    "testShown": "This is the test link: responses are marked Test and never counted.",
+    "testOff": "Turn on the test link in Test first.",
+    "openTest": "Open Test",
+    "saveFirst": "Save the form to get its links.",
+    "save": "Save",
+    "noEndpoint": "Set the API endpoint in Administration → General to get this form's links.",
+    "notes": {
+      "replace": "Replace each {…} with the value, URL-encoded. Unknown hf_ parameters are ignored.",
+      "sdk": "Call it when the person takes the action you're asking about (e.g. Switch to the old interface).",
+      "webview": "Open this address in a WebView. For your test build, use the Test link (Live | Test above).",
+      "ids": "Pass ids, not personal data: user_id should be your internal id, not an email."
+    }
+  },
+  "languages": {
+    "title": "Languages",
+    "add": "Add language",
+    "primary": "Primary language",
+    "primaryHint": "The language every text is written in first.",
+    "change": "Change…",
+    "changeLabel": "Make another language the primary",
+    "changeNone": "Add a language first.",
+    "makePrimary": "Make {{language}} the primary language",
+    "completeFirst": "Complete its translation first",
+    "listLabel": "The form's languages",
+    "primaryBadge": "primary",
+    "texts_one": "{{count, number}} text",
+    "texts_other": "{{count, number}} texts",
+    "complete": "Complete",
+    "missingCount_one": "{{count, number}} missing",
+    "missingCount_other": "{{count, number}} missing",
+    "doneOf": "{{done, number}} of {{total, number}}",
+    "translate": "Translate",
+    "actions": "More actions for {{language}}",
+    "remove": "Remove language…",
+    "removeConfirm": "Remove",
+    "removeTitle": "Remove {{language}}?",
+    "removeMessage_one": "Its {{count, number}} translation is deleted, and {{language}} speakers will see {{primary}}.",
+    "removeMessage_other": "Its {{count, number}} translations are deleted, and {{language}} speakers will see {{primary}}.",
+    "filled_one": "{{count, number}} text filled from the template. Check it before publishing.",
+    "filled_other": "{{count, number}} texts filled from the template. Check them before publishing.",
+    "emptyTitle": "One language",
+    "empty": "This form is in {{language}} only. Add a language to offer it in another.",
+    "respondents": "Respondents get: the link's lang= or the SDK's language; else their browser's; else {{primary}}.",
+    "fallback": "A missing text is shown in {{primary}}. The widget's own words (Next, Back, Choose up to 3…) are always translated.",
+    "back": "Languages",
+    "viewTitle": "{{language}} ({{code}}) · {{done, number}} of {{total, number}}",
+    "onlyMissing": "Only missing",
+    "search": "Search texts…",
+    "nothingShown": "No texts match.",
+    "missing": "Missing",
+    "fromTemplate": "From template",
+    "targetQuestion": "{{language}}: {{field}} of question {{number}}",
+    "targetWelcome": "{{language}}: {{field}} of the welcome card",
+    "targetEnding": "{{language}}: {{field}} of the ending “{{title}}”",
+    "fields": {
+      "headline": "Question",
+      "subheader": "Description",
+      "placeholder": "Placeholder",
+      "buttonLabel": "Button label",
+      "option": "Option {{number}}",
+      "otherLabel": "Other label",
+      "otherPlaceholder": "Other placeholder",
+      "noneLabel": "None label",
+      "lowerLabel": "Low end label",
+      "upperLabel": "High end label",
+      "consentLabel": "Checkbox text",
+      "ctaLabel": "Link button",
+      "welcomeTitle": "Title",
+      "welcomeDescription": "Description",
+      "welcomeButton": "Button label",
+      "endingTitle": "Title",
+      "endingDescription": "Description",
+      "endingButton": "Button label"
+    },
+    "confirm": {
+      "text": "This form was made before forms had a language.",
+      "writtenIn": "Written in",
+      "saving": "Saving stores it."
+    }
+  },
+  "test": {
+    "title": "Test link",
+    "subtitle": "A test link opens this form even while it's Off. Its responses never count.",
+    "linkSwitch": "Test link",
+    "linkOnHint": "On: the link below works, also while the form is Off.",
+    "linkOffHint": "The test link stops working. Turn it on again to reuse the same link.",
+    "linkOff": "The test link is off. Turn it on to try the form from your app without counting the responses.",
+    "linkLabel": "Test link",
+    "linkMenu": "More actions for the test link",
+    "copyWithHidden": "Copy with hidden fields",
+    "reset": "Reset test link…",
+    "resetTitle": "Reset the test link?",
+    "resetMessage": "The current test link stops working at once, wherever it was shared. A new one replaces it.",
+    "resetConfirm": "Reset test link",
+    "resetFailed": "Couldn't reset the test link. Try again in a moment.",
+    "noToken": "This form has no test link yet.",
+    "makeLink": "Make the test link",
+    "makeLinkFailed": "Couldn't make the test link. Try again in a moment.",
+    "tokenLoading": "Reading the test link…",
+    "qrTitle": "Test link QR code",
+    "recordTitle": "What happens to test responses",
+    "keep": "Keep them, marked Test",
+    "keepHint": "Stored as test responses. Shown below and in Results only when you include test responses. Never in metrics, NPS, dashboards, Prioritization evidence or AI processing.",
+    "checkOnly": "Check them, keep nothing",
+    "checkOnlyHint": "Each answer is checked as a real one would be, then discarded. For automated or load tests.",
+    "testersSee": "What testers see:",
+    "bannerKeep": "a “TEST · Responses aren't counted” strip on every screen of the form.",
+    "bannerDrop": "a “TEST · Nothing is saved” strip on every screen of the form.",
+    "previewNote": "The preview never sends anything; use the test link to try the real thing.",
+    "recentTitle": "Recent test responses",
+    "refreshes": "Refreshes every 10 s",
+    "deleteAll": "Delete all…",
+    "deleteTitle": "Delete all test responses?",
+    "deleteMessage": "Every test response of this form is deleted. Real responses are not touched. This can't be undone.",
+    "deleteConfirm": "Delete test responses",
+    "deleteFailed": "Couldn't delete the test responses. Try again in a moment.",
+    "noneYet": "No test responses yet. Open the test link, or scan its QR code on a phone, and send one.",
+    "checkOnlyEmpty": "Check only keeps nothing, so there's nothing to show here. Switch to Keep to see test responses.",
+    "emptyValue": "empty",
+    "open": "Open",
+    "openResponse": "Open the test response from {{time}}",
+    "todayAt": "Today {{time}}",
+    "keptUntilDeleted": "Test responses are kept until an administrator or the form's creator deletes them."
+  },
+  "share": {
+    "title": "Share",
+    "mode": "Show the live or the test link",
+    "live": "Live",
+    "test": "Test",
+    "offBanner": "This form is Off: its link shows “Feedback form unavailable.”",
+    "publish": "Publish",
+    "testWhileOff": "Showing the test link: it works while the form is Off.",
+    "testOff": "Turn on the test link in Test first.",
+    "openTest": "Open Test",
+    "testNotice": "This is the test link: responses are marked Test and never counted.",
+    "link": "Link",
+    "liveHint": "Responses from this link count.",
+    "open": "Open",
+    "newTab": "(opens in a new tab)",
+    "copy": "Copy",
+    "copied": "Copied",
+    "qr": "QR",
+    "qrTitle": "QR code",
+    "withHidden": "With hidden fields:",
+    "toHidden": "see Hidden fields",
+    "iframe": "Embed (iframe)",
+    "script": "Script embed",
+    "iframeHint": "The script after the frame sets its height to the form's. Without it, the frame stays 480 px tall and the form scrolls inside it.",
+    "scriptHint": "Paste it where the form should appear. The widget file comes from this app and updates with each release. If your site sets a Content-Security-Policy, allow script-src {{app}} and connect-src {{api}}.",
+    "inApp": "In your app:",
+    "inAppHint": "a web app calls the script embed with its language and hidden fields; a mobile app opens the link in a WebView.",
+    "saveFirstTitle": "No links yet",
+    "saveFirst": "Save the form to get its links.",
+    "showProblems": "Show problems",
+    "save": "Save"
+  },
+  "results": {
+    "summary": "Summary",
+    "responsesView": "Responses",
+    "view": "Results view",
+    "loading": "Loading results…",
+    "csv": "Export CSV",
+    "csvFailed": "Couldn't export the responses.",
+    "includeTest": "Include test responses",
+    "including_one": "Including {{formatted}} test response. These numbers aren't your real results.",
+    "including_other": "Including {{formatted}} test responses. These numbers aren't your real results.",
+    "onlyTestTitle": "No real responses yet",
+    "onlyTest_one": "{{count, number}} test response is hidden.",
+    "onlyTest_other": "{{count, number}} test responses are hidden.",
+    "noneTitle": "No responses yet",
+    "none": "Share the form, or try it with the test link.",
+    "openShare": "Open Share",
+    "noMatchTitle": "Nothing here",
+    "noMatch": "No responses match these filters.",
+    "clearFilters": "Clear filters",
+    "test": "Test",
+    "other": "Other",
+    "otherAnswer": "{{label}}: “{{text}}”",
+    "accepted": "Accepted",
+    "notAccepted": "Not accepted",
+    "openInFeedback": "Open in Feedback",
+    "reach": "Answered {{answered}} · Skipped {{skipped}} · Not shown {{hidden}} (logic)",
+    "changed": "Changed {{date}}: answers before then used other options",
+    "earlierVersion_one": "{{formatted}} answer to an earlier version of this question (another type or points) isn't counted here",
+    "earlierVersion_other": "{{formatted}} answers to an earlier version of this question (another type or points) aren't counted here",
+    "endings": "Endings",
+    "defaultEnding": "default",
+    "removedQuestions": "Removed questions ({{count, number}})",
+    "removedAnswered_one": "{{formatted}} answer",
+    "removedAnswered_other": "{{formatted}} answers",
+    "statementNone": "No answer to show.",
+    "statementShown_one": "Shown to {{count, number}} person.",
+    "statementShown_other": "Shown to {{count, number}} people.",
+    "consent": "Accepted by {{accepted}} of {{saw}} who saw it ({{percent}}).",
+    "contact": "{{left}} left contact details · {{emails}} emails · {{phones}} phone numbers",
+    "contactHint": "The details themselves are in Responses.",
+    "figures": {
+      "responses": "Responses",
+      "completion": "Completion",
+      "ofOpened": "{{percent}} of opened",
+      "last": "Last response",
+      "largestDropAt": "largest drop at {{step}}",
+      "questionShort": "Q{{position}}"
+    },
+    "filters": {
+      "range": "Time range",
+      "days7": "Last 7 days",
+      "days30": "Last 30 days",
+      "days90": "Last 90 days",
+      "all": "All time",
+      "language": "Language",
+      "allLanguages": "All languages",
+      "ending": "Ending",
+      "allEndings": "All endings",
+      "add": "Filter: hidden field",
+      "addLabel": "Filter by a hidden field",
+      "field": "Hidden field",
+      "value": "Value",
+      "apply": "Add filter",
+      "cancel": "Cancel",
+      "remove": "Remove the filter {{field}} = {{value}}"
+    },
+    "choice": {
+      "sortByCount": "Sort by count",
+      "optionsLabel": "Answers by option",
+      "removed": "{{label}} (removed)",
+      "showOther_one": "Show {{count, number}} answer",
+      "showOther_other": "Show {{count, number}} answers",
+      "hideOther": "Hide the answers",
+      "multiNote": "People could pick several, so the shares add up to more than 100 %.",
+      "multiNoteMax_one": "People could pick up to {{count, number}}, so the shares add up to more than 100 %.",
+      "multiNoteMax_other": "People could pick up to {{count, number}}, so the shares add up to more than 100 %."
+    },
+    "scale": {
+      "average": "average",
+      "averageOf": "{{average}} of {{max}}",
+      "distribution": "Answers by score",
+      "pointLabel": "{{score}} · {{label}}",
+      "npsScore": "NPS",
+      "groups": "NPS groups",
+      "detractors": "Detractors (0–6)",
+      "passives": "Passives (7–8)",
+      "promoters": "Promoters (9–10)",
+      "satisfied": "satisfied (4 or 5)",
+      "easy": "easy (5 to 7)"
+    },
+    "text": {
+      "latest": "Latest answers",
+      "none": "No answers yet.",
+      "noMatch": "No answer matches.",
+      "analysing": "Analysing…",
+      "open": "Open",
+      "search": "Search answers…",
+      "showAll_one": "Show {{count, number}} in Responses",
+      "showAll_other": "Show all {{count, number}} in Responses"
+    },
+    "funnel": {
+      "title": "Drop-off",
+      "opened": "Opened",
+      "started": "Started",
+      "completed": "Completed",
+      "ofOpened": "{{percent}} of opened",
+      "largestDrop": "largest drop",
+      "somePaths": "on some paths only",
+      "somePathsNote": "Logic shows some questions on some paths only: they carry no drop, and their count is the people they were shown to."
+    },
+    "reachCard": {
+      "title": "Reach",
+      "answeredBy": "answered by {{answered}} of {{total}} completed responses",
+      "note": "How many people stop part-way needs view tracking, not yet collected.",
+      "filtered": "The drop-off counts every visit, so it isn't shown while you filter by language, ending or a hidden value."
+    },
+    "responses": {
+      "title": "No responses",
+      "none": "No responses match these filters.",
+      "caption": "Responses, newest first",
+      "time": "Time",
+      "answers": "Answers",
+      "language": "Language",
+      "ending": "Ending",
+      "hidden": "Hidden",
+      "openColumn": "Open",
+      "open": "Open the response from {{time}}",
+      "more": "Load more"
+    },
+    "sheet": {
+      "title": "Response from {{time}}",
+      "answers": "Answers",
+      "question": "{{number}} · {{headline}}",
+      "notAnswered": "Not answered: skipped, or not on this respondent's path.",
+      "time": "Time",
+      "language": "Language",
+      "ending": "Ending",
+      "revisionLabel": "Form version",
+      "revision": "Answered on version {{number}}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "contactLeft_one": "{{count, number}} person left contact details",
+    "contactLeft_other": "{{count, number}} people left contact details"
+  },
+  "theme": {
+    "presets": {
+      "label": "Preset",
+      "vocLight": "VoC light",
+      "vocDark": "VoC dark",
+      "highContrast": "High contrast",
+      "brand": "Your brand",
+      "saveAsBrand": "Save as brand…",
+      "notAdmin": "Only this workspace's admins can save its brand.",
+      "unreadable": "Make the text readable (at least 3:1) before saving this style as your brand.",
+      "confirmTitle": "Save this style as your brand?",
+      "confirmMessage": "New forms in this workspace will start on it, and every form's Style offers it as Your brand.",
+      "confirmReplace": "New forms in this workspace will start on it, and every form's Style offers it as Your brand. It replaces the brand saved before.",
+      "confirm": "Save as brand",
+      "saved": "Saved as your brand.",
+      "saveFailed": "The brand couldn't be saved. Try again."
+    },
+    "reset": "Reset to {{preset}}",
+    "mode": {
+      "label": "Mode",
+      "light": "Light",
+      "dark": "Dark",
+      "auto": "Auto",
+      "hint": "Auto follows each respondent's device setting."
+    },
+    "editing": {
+      "label": "Editing"
+    },
+    "palette": {
+      "light": "Light palette",
+      "dark": "Dark palette"
+    },
+    "colours": {
+      "legend": "Colours",
+      "primary": "Primary",
+      "primaryHint": "Buttons, progress, the focus ring, selected answers",
+      "background": "Background",
+      "text": "Text",
+      "swatch": "{{label}}: pick a colour",
+      "invalid": "Use a hex colour like #8e48ff."
+    },
+    "derived": "Derived: option edges {{ratio}}:1 (the text colour at {{percent}} %).",
+    "corners": {
+      "label": "Corners",
+      "square": "Square {{px}}",
+      "small": "Small {{px}}",
+      "medium": "Medium {{px}}",
+      "large": "Large {{px}}",
+      "slider": "Corner radius",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "Font",
+      "system": "System",
+      "inherit": "Same as your page (script embed only)",
+      "serif": "Serif",
+      "rounded": "Rounded",
+      "mono": "Monospace",
+      "inheritHint": "Only the script embed takes your page's font; the link, the iframe and the preview show System."
+    },
+    "size": {
+      "label": "Size",
+      "default": "Default",
+      "large": "Large",
+      "hint": "Large: an 18 px body for older audiences."
+    },
+    "contrast": {
+      "title": "Contrast · {{palette}}",
+      "pair": "Pair",
+      "ratio": "Ratio",
+      "result": "Result",
+      "text": "Text on background",
+      "primary": "Primary on background",
+      "label": "Button label on primary",
+      "edge": "Option edge",
+      "minimum": "(min {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "Below AA",
+      "use": "Use {{colour}} ({{ratio}}:1)",
+      "other": {
+        "light_one": "The light palette has {{count, number}} contrast problem.",
+        "light_other": "The light palette has {{count, number}} contrast problems.",
+        "dark_one": "The dark palette has {{count, number}} contrast problem.",
+        "dark_other": "The dark palette has {{count, number}} contrast problems."
+      },
+      "editOther": {
+        "light": "Edit light",
+        "dark": "Edit dark"
+      }
+    }
+  },
+  "settings": {
+    "sectionsLabel": "Settings sections",
+    "sections": {
+      "general": "General",
+      "routing": "Category routing",
+      "project": "Linked project",
+      "appearance": "Appearance",
+      "danger": "Danger zone"
+    },
+    "general": {
+      "name": "Internal name",
+      "nameHint": "Only your team sees it. Respondents read the questions.",
+      "primary": "Primary language:",
+      "toLanguages": "Languages",
+      "languageHint": "Responses are stored with the language they were answered in."
+    },
+    "routing": {
+      "category": "The form's category",
+      "subcategory": "Subcategory (optional)",
+      "none": "— No category",
+      "noSubcategory": "— No subcategory",
+      "notConfiguredBadge": "No longer configured",
+      "pickConfigured": "Pick a configured category.",
+      "categoryHint": "Categories are configured in Administration → Taxonomy → Categories.",
+      "taggedAs": "Responses from this form are filed as:",
+      "perOption": "Per-option routing",
+      "noChoices": "This form has no choice question, so every response is filed under the form's category.",
+      "mapped_one": "{{mapped}} of {{count, number}} option mapped",
+      "mapped_other": "{{mapped}} of {{count, number}} options mapped",
+      "edit": "Edit",
+      "editQuestion": "Edit the routing of question {{number}}",
+      "precedence": "A response is filed under the category of the first answered option that has one; otherwise under the form's category.",
+      "dimensionsHint": "Every response carries these values. An embed can set its own per page with the dimensions option."
+    },
+    "danger": {
+      "hint": "Deleting a form removes it and its link. Its responses stay in Feedback.",
+      "delete": "Delete form…",
+      "confirmTitle": "Delete this form?",
+      "confirmMessage_one": "Delete “{{name}}”? It has {{count, number}} response. Its link stops working. This can't be undone.",
+      "confirmMessage_other": "Delete “{{name}}”? It has {{count, number}} responses. Its link stops working. This can't be undone.",
+      "confirm": "Delete form",
+      "failed": "Couldn't delete the form. Try again in a moment.",
+      "unnamed": "this form"
+    }
   }
 }

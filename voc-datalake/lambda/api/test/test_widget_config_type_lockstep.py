@@ -13,7 +13,7 @@ That split creates two ways to drift, in opposite directions and both silent:
   compiler believes. The frontend reads `config.x`, gets `undefined`, and TypeScript
   never says so.
 - A field added to the dict but not to the type publishes something on an
-  unauthenticated route that no reviewer of `types.ts` ever saw.
+  unauthenticated route that no reviewer of `feedbackFormsV2Types.ts` ever saw.
 
 Neither language can see the other, so this test reads the TypeScript
 declaration directly — the same lockstep approach as
@@ -30,7 +30,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-TYPES_SOURCE = 'frontend/src/api/types.ts'
+TYPES_SOURCE = 'frontend/src/api/feedbackFormsV2Types.ts'
 
 
 def _interface_body(source: str, name: str) -> str:
@@ -45,7 +45,7 @@ def _interface_body(source: str, name: str) -> str:
 
 
 def _declared_config_fields() -> set[str]:
-    """Field names on `FeedbackFormConfig`, including its inherited base.
+    """Field names on `FeedbackFormConfig` (schema version 2: it extends no base since 7.04.00).
 
     Only top-level members count: a nested object's own keys (`theme`'s colours,
     `custom_fields`' entries) are not fields of the response body.
@@ -60,7 +60,8 @@ def _declared_config_fields() -> set[str]:
     source = path.read_text(encoding='utf-8')
 
     fields: set[str] = set()
-    for name in ('FeedbackFormConfig', 'FeedbackFormFields'):
+    # Schema version 2 (7.04.00): the public config no longer extends the version 1 FeedbackFormFields.
+    for name in ('FeedbackFormConfig',):
         declared_here = set()
         for line in _interface_body(source, name).split('\n'):
             # Top-level members are indented exactly two spaces; anything deeper
@@ -100,7 +101,7 @@ class TestWidgetConfigTypeLockstep:
             f'  served but not declared: {sorted(served - declared)}\n'
             f'  declared but not served: {sorted(declared - served)}\n'
             'The first publishes a field on an UNAUTHENTICATED route that no '
-            'reviewer of types.ts saw; the second makes the frontend read '
+            'reviewer of feedbackFormsV2Types.ts saw; the second makes the frontend read '
             'undefined from a field the compiler swears exists. Change both, or '
             'neither.\n'
             f'If neither list looks wrong, {TYPES_SOURCE} was probably '

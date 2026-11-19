@@ -114,6 +114,7 @@ What uses it:
 | View | Without push (as before) | While subscribed |
 |---|---|---|
 | Assist jobs (`api/assistJobs.ts`) | poll every 1.5 s | poll at once on the job's notice; fallback poll every 10 s |
+| A feedback form's AI draft (`api/feedbackFormsDraftJob.ts`, docs/feedback-forms.md "AI drafts") | poll every 1.5 s, 3 minutes at most | read at once on the job's notice (the settings assist worker sends it); fallback poll every 10 s |
 | A reloaded "still generating" assistant session (`assistant/runtime/followServerRun.ts`) | GET with backoff (1, 2, 3, then 5 s) | GET at once on the session notice; fallback GET every 15 s |
 | Agent runs, the agents list, plans (`realtime/session.ts`) | their own polling | the same polling, plus an immediate refresh of the named run / plan on its notice and of every agent and plan query on a reconnect |
 | Project jobs and the project (`pages/ProjectDetail/useProjectData.ts`), company persona jobs (`pages/Company/useCompanyPersonas.ts`) | poll every 3 s while a job runs | re-read on the project's job notice; a running job polled every 10 s |
