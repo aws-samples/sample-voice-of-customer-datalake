@@ -4,6 +4,9 @@
  * …/connections/<id>` removes it and its stored credential; `POST` / `DELETE …/connections/<id>/ci-attestation`
  * records or withdraws an administrator's attestation that the repository's CI meets the setup guide (the broker
  * refuses every push and pull request on a connection while none holds; a repository change or a removal voids it).
+ * Since 7.57.00 a connection has a kind (a public repository read only, or a person's fork of one): `POST
+ * …/connections/<id>/fork` starts a fork of a public one, `PUT …/connections/<id>/upstream` sets a fork's upstream
+ * pull request settings (api/publicRepositoriesApi.ts finds and connects public repositories).
  *
  * The credential is write-only: a GitHub App's (its ids and its private key) or a GitLab project access token. The
  * server stores it in SSM and no answer ever carries it back; a connection says only whether one is set, and the
@@ -34,9 +37,10 @@ export type ConnectionHost = (typeof CONNECTION_HOSTS)[number]
 /**
  * A connection's credential kinds: a GitHub App's pasted key (`app`), a reference to one of the deployment's GitHub
  * Apps whose key is stored once for all its connections (`app_reference`, 7.45.00: a connection the in-app connect flow
- * saved), or a GitLab project access token (`project_token`).
+ * saved), a GitLab project access token (`project_token`), or (7.57.00) a public repository read through one of the
+ * deployment's GitHub Apps with a read-only token (`public_read`: nothing is ever written with it).
  */
-const CREDENTIAL_KINDS = ['app', 'app_reference', 'project_token'] as const
+const CREDENTIAL_KINDS = ['app', 'app_reference', 'project_token', 'public_read'] as const
 
 const CredentialStateSchema = z.object({
   /** A kind the page does not know reads as `app` (a GitHub App's, its ids shown as they are). */
@@ -79,6 +83,43 @@ const CiAttestationSchema = z.object({
 
 export type CiAttestation = z.output<typeof CiAttestationSchema>
 
+/**
+ * What a connection is (7.57.00): a repository the deployment's App or credential reaches (`repository`), any public
+ * repository read only (`public_read`: issues as feedback, Understand and the knowledge docs, triage and bug hunts, all
+ * kept in VoC: nothing is written to GitHub), or a person's fork of one (`fork`), whose agents push to the fork and
+ * whose run ends with a pull request on the upstream, opened as the fork connection's owner. A kind the page does not
+ * know reads as `repository`.
+ */
+export const CONNECTION_KINDS = ['repository', 'public_read', 'fork'] as const
+
+/** A public repository's facts as the read-only connection recorded them; null for any other kind. */
+const PublicFactsSchema = z.object({
+  stars: z.number().int().nonnegative().catch(0),
+  /** Its licence's SPDX id (`MIT`, `Apache-2.0`, `NOASSERTION` for another licence); null for none. */
+  licence: optionalServerText(),
+  archived: z.boolean().catch(false),
+  pushed_at: optionalServerText(),
+}).nullable().catch(null)
+
+/** A fork connection's upstream and its owner (whose GitHub authorization opens the upstream pull request). */
+const ForkFactsSchema = z.object({
+  upstream: z.string().min(1),
+  upstream_connection: optionalServerText(),
+  upstream_default_branch: z.string().catch('main'),
+  /** The person who made the fork connection (their name): the upstream pull request is opened as them. */
+  owner: z.string().catch(''),
+  owned_by_me: z.boolean().catch(false),
+  /** The upstream's licence (SPDX) its owner acknowledged; null for none. */
+  licence: optionalServerText(),
+  /** The owner's explicit setting: an AI-assisted run opens the upstream pull request too. */
+  upstream_pr_assisted: z.boolean().catch(false),
+  /** The fork's account on GitHub (a person's login or an organization's), and its kind. */
+  account: z.string().catch(''),
+  account_type: z.string().catch(''),
+}).nullable().catch(null)
+
+export type ForkFacts = NonNullable<z.output<typeof ForkFactsSchema>>
+
 const ConnectionSchema = z.object({
   connection_id: z.string().min(1),
   host: z.enum(CONNECTION_HOSTS).catch('github'),
@@ -95,6 +136,10 @@ const ConnectionSchema = z.object({
   ci_attestation: CiAttestationSchema.nullable().catch(null),
   /** Whether GitHub said the repository is private when an App's installation saved it; null when not known. */
   repository_private: z.boolean().nullable().catch(null),
+  /** (7.57.00) What the connection is; a row stored before it is a `repository`. */
+  kind: z.enum(CONNECTION_KINDS).catch('repository'),
+  public: PublicFactsSchema.optional().transform((facts) => facts ?? null),
+  fork: ForkFactsSchema.optional().transform((facts) => facts ?? null),
 })
 
 export type EngineeringConnection = z.output<typeof ConnectionSchema>
@@ -104,6 +149,9 @@ export function parseConnection(raw: unknown): EngineeringConnection | null {
   const parsed = ConnectionSchema.safeParse(raw)
   return parsed.success ? parsed.data : null
 }
+
+/** A read-only connection to a public repository (7.57.00): nothing is ever written to it, so no CI to attest. */
+export const isPublicRead = (connection: EngineeringConnection): boolean => connection.kind === 'public_read'
 
 /** Whether the connection's newest version is an attestation that holds (the only state the broker serves). */
 export const isCiAttested = (connection: EngineeringConnection): boolean => connection.ci_attestation?.state === 'attested'
@@ -185,6 +233,42 @@ function parseAttestation(raw: unknown): RecordedAttestation {
   return { attestation: attestation.data, connectionVersion: raw.connection_version }
 }
 
+/** Where a fork goes (7.57.00): the person's own account (the default), or an organization they administer. */
+export type ForkDestination = { account: 'user' } | { account: 'organization'; org: string }
+
+/** Contributing, step 2: the destination, the licence acknowledged (its SPDX id), the App, the workspace. */
+export type ForkRequest = ForkDestination & { licence: string; app_id?: string; workspace?: string }
+
+/**
+ * What step 2 goes to (its answer's `fork_url`, GitHub's own fork page, is step 1's link already, which the card makes
+ * from the upstream's name before anything is asked of the server).
+ */
+export interface ForkLinks {
+  /** The App's installation page with a single-use state: installed on the fork, it saves the fork connection. */
+  installUrl: string
+}
+
+/** The owner's upstream pull request settings of a fork connection. */
+export interface UpstreamSettings {
+  assisted: boolean
+  licence?: string
+  reason?: string
+}
+
+const GITHUB_PAGES = 'https://github.com/'
+
+function parseForkLinks(raw: unknown): ForkLinks {
+  const install = isRecord(raw) ? raw.install_url : undefined
+  if (typeof install !== 'string' || !install.startsWith(GITHUB_PAGES)) throw new Error('The fork links were unreadable')
+  return { installUrl: install }
+}
+
+function parseUpstreamSaved(raw: unknown): EngineeringConnection {
+  const connection = isRecord(raw) ? parseConnection(raw.connection) : null
+  if (connection === null) throw new Error('The saved connection was unreadable')
+  return connection
+}
+
 const connectionPath = (connectionId: string) => `/agents/engineering/connections/${encodeURIComponent(connectionId)}`
 const attestationPath = (connectionId: string) => `${connectionPath(connectionId)}/ci-attestation`
 
@@ -212,4 +296,14 @@ export const engineeringConnectionsApi = {
   withdraw: async (connectionId: string, reason: string): Promise<void> => {
     await fetchApi<unknown>(attestationPath(connectionId), del(withReason(reason)))
   },
+  /**
+   * Contributing to a read-only public connection, step 2 (7.57.00): GitHub's fork page and the App's install
+   * link (a single-use state). Refused (409) for an archived upstream, one that opts out of bot pull requests, one
+   * without a licence, or a licence other than the one acknowledged.
+   */
+  fork: async (connectionId: string, request: ForkRequest): Promise<ForkLinks> =>
+    parseForkLinks(await fetchApi<unknown>(`${connectionPath(connectionId)}/fork`, post(request))),
+  /** A fork connection's upstream pull request settings, its owner's alone (409 for anyone else). */
+  setUpstream: async (connectionId: string, settings: UpstreamSettings): Promise<EngineeringConnection> =>
+    parseUpstreamSaved(await fetchApi<unknown>(`${connectionPath(connectionId)}/upstream`, put(settings))),
 }

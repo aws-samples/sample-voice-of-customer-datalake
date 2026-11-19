@@ -23,7 +23,7 @@ const stored: EngineeringConnection = {
   connection_id: 'web-app', host: 'github', repository: 'example-org/web-app', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: '123', installation_id: '456', expires_at: null },
   created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null,
-  repository_private: null,
+  repository_private: null, kind: 'repository', public: null, fork: null,
 }
 // A fake GitLab project access token: its shape only.
 const TOKEN = `glpat-${'x'.repeat(20)}`

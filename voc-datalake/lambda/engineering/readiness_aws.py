@@ -140,6 +140,37 @@ class AwsReadinessPorts:
         del connection   # (the broker's read, with the connection's own token: this role holds none)
         return None
 
+    def fork_parent(self, connection: Mapping[str, Any]) -> str | None:
+        """The fork's parent on GitHub now (7.57.00), through the token function's ``public_repository`` with the
+        fork's installation's read-only token (a fork of a public repository is public)."""
+        from engineering.connectors.connections import ConnectionRefused
+        from engineering.connectors.upstream import facts_from_answer
+        app_id, installation_id = str(connection.get('app_id') or ''), str(connection.get('installation_id') or '')
+        if not (app_id.isdigit() and installation_id.isdigit()):
+            return None
+        try:
+            answer = self.inspect({'action': 'public_repository', 'app_id': app_id,
+                                   'installation_id': int(installation_id),
+                                   'repository': str(connection.get('repository', '')), 'details': False})
+        except ConnectionRefused as refused:
+            raise ReadFailed(str(refused)) from refused
+        facts = facts_from_answer(answer.get('repository'))
+        return None if facts is None else facts.parent if facts.fork else ''
+
+    def user_authorized(self, app_id: str, subject: str) -> bool:
+        """Whether ``subject`` holds a user authorization of App ``app_id`` (its row in voc-agents, 7.57.00)."""
+        from engineering.connectors.connections import PARTITION
+        from engineering.connectors.user_auth_paths import subject_hash
+        from engineering.connectors.user_authorizations import ROW_PREFIX
+        if not (app_id.isdigit() and subject):
+            return False
+        try:
+            row = self.agents.get_item(Key={'pk': PARTITION, 'sk': f'{ROW_PREFIX}{app_id}#{subject_hash(subject)}'},
+                                       ConsistentRead=True).get('Item')
+        except _AWS_ERRORS as error:
+            raise _failed('the owner\'s authorization', error) from error
+        return isinstance(row, dict) and row.get('removed') is not True
+
     def knowledge_approved(self, connection_id: str) -> int:
         from engineering.knowledge.workspaces import ROOT
         from engineering.rows import get_row

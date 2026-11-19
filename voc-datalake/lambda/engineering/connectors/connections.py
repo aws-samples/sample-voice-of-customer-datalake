@@ -24,6 +24,13 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
   the administrator says: an optional ``reason``, one line of at most ``MAX_REASON`` characters, credential-shaped
   text redacted), written in the same transaction as the row.
 
+Since 7.57.00 a connection is of a kind (the row's ``connection_kind``; none: ``repository``, as before): a public
+repository read only (``public_read``: ``public_repos.py``; its parameter names the deployment's App installation whose
+read-only token reads it, ``PublicRead``), or a fork of one, its App installed on the fork, with the upstream its runs'
+pull request goes to (``fork``: ``forks.py``; ``ForkReference``, the owner's subject's sha256, their acknowledged
+licence and their setting for AI-assisted runs). A kind never changes: the generic save refuses a connection of another
+kind (409), and a read-only connection takes no CI attestation (nothing is pushed to it).
+
 A connection's CI attestation (7.04.00, ``attestations.py``): an administrator confirms the setup guide's points for
 it (``attest``) or withdraws the confirmation (``withdraw``); a repository change and a removal void it. Each is a
 create-only version row in the attestation's own partition, written in one transaction with the connection's audit
@@ -50,8 +57,9 @@ import json
 import re
 import secrets
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Final, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -104,7 +112,17 @@ _FIELDS: Final = frozenset({'host', 'repository', 'default_branch', 'credential'
 _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key'})
 #: The row's fields an audit row records the change of (never the private key or the token).
 _AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at',
-                   'credential_kind', 'repository_private')
+                   'credential_kind', 'repository_private', 'connection_kind', 'upstream', 'licence',
+                   'upstream_pr_assisted')
+#: A connection's kinds (7.57.00; hosts.py REPOSITORY_KIND, PUBLIC_READ, FORK): the row's ``connection_kind``, none for ``repository``.
+KIND_REPOSITORY: Final = 'repository'
+KIND_PUBLIC_READ: Final = 'public_read'
+KIND_FORK: Final = 'fork'
+#: A read-only connection's refusal of a CI attestation.
+READ_ONLY_ATTESTATION: Final = ('a read-only connection: the agents push nothing to this repository, so there is no CI '
+                                'to attest (its Contribute card makes a fork, whose CI is attested)')
+OTHER_KIND: Final = ('this connection is a {kind} connection, which does not change here: remove it and connect the '
+                     'repository again')
 _MAX_NAME: Final = 128
 #: The longest reason a change takes (one line; longer is refused, never cut).
 MAX_REASON: Final = 500
@@ -162,6 +180,32 @@ class AppReference:
 
 
 @dataclass(frozen=True)
+class PublicRead:
+    """A public repository read only (7.57.00, ``public_repos.py``): the deployment's App installation whose read-only
+    token reads it (the repository is not in it: the broker's client mints ``metadata: read`` alone, naming no
+    repository). No key: the reader resolves the App's."""
+
+    app_id: str
+    installation_id: int
+
+
+@dataclass(frozen=True)
+class ForkReference:
+    """A fork of a public repository (7.57.00, ``forks.py``), its App installed on the fork: the App and that
+    installation, the upstream and its default branch, the connection owner (``owner``: their subject's sha256, whose
+    user authorization lets the app open the upstream pull request), the licence they acknowledged, and whether the app
+    opens an AI-assisted run's upstream pull request (``assisted``, their explicit setting)."""
+
+    app_id: str
+    installation_id: int
+    upstream: str
+    upstream_default_branch: str
+    owner: str
+    licence: str
+    assisted: bool = False
+
+
+@dataclass(frozen=True)
 class ProjectToken:
     """A GitLab project access token as a save sends it (``repr`` leaves it out)."""
 
@@ -180,9 +224,13 @@ class ConnectionRequest:
     host: str
     repository: str
     default_branch: str
-    credential: AppCredential | AppReference | ProjectToken | None
+    credential: AppCredential | AppReference | PublicRead | ForkReference | ProjectToken | None
     reason: str = ''
     repository_private: bool | None = None
+    #: The connection's kind (7.57.00) and the row's facts of it (a public repository's stars, licence, archived and
+    #: last push; a fork's upstream, owner and licence): never a secret.
+    kind: str = KIND_REPOSITORY
+    facts: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -364,6 +412,30 @@ def reference_value(repository: str, reference: AppReference) -> str:
                        'repository': repository, 'key': APP_REFERENCE})
 
 
+def public_read_value(repository: str, reference: PublicRead) -> str:
+    """A public repository's parameter JSON (7.57.00): the App installation whose read-only token reads it."""
+    return json.dumps({'kind': KIND_PUBLIC_READ, 'app_id': reference.app_id,
+                       'installation_id': reference.installation_id, 'repository': repository, 'key': APP_REFERENCE})
+
+
+def fork_value(repository: str, reference: ForkReference) -> str:
+    """A fork's parameter JSON (7.57.00), as the broker's reader parses it (``credentials._fork_facts``)."""
+    return json.dumps({'kind': KIND_FORK, 'app_id': reference.app_id, 'installation_id': reference.installation_id,
+                       'repository': repository, 'key': APP_REFERENCE, 'upstream': reference.upstream,
+                       'upstream_default_branch': reference.upstream_default_branch, 'owner': reference.owner,
+                       'licence': reference.licence, 'upstream_pr_assisted': reference.assisted})
+
+
+def _value(repository: str, credential: AppCredential | AppReference | PublicRead | ForkReference) -> str:
+    if isinstance(credential, AppCredential):
+        return parameter_value(repository, credential)
+    if isinstance(credential, PublicRead):
+        return public_read_value(repository, credential)
+    if isinstance(credential, ForkReference):
+        return fork_value(repository, credential)
+    return reference_value(repository, credential)
+
+
 def parameter_value(repository: str, credential: AppCredential) -> str:
     """The parameter's JSON, as the broker's reader parses it (credentials.py ``parse_credential``)."""
     value = json.dumps({'app_id': credential.app_id, 'installation_id': credential.installation_id,
@@ -378,12 +450,43 @@ def _name(text: str) -> str:
     return ''.join(char for char in text if char.isprintable())[:_MAX_NAME] or UNNAMED
 
 
-def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def kind_of(item: Mapping[str, Any]) -> str:
+    """A stored connection's kind (7.57.00): its row's ``connection_kind``, ``repository`` for none."""
+    kind = item.get('connection_kind')
+    return kind if kind in (KIND_PUBLIC_READ, KIND_FORK) else KIND_REPOSITORY
+
+
+def _number(value: object) -> int:
+    return int(value) if isinstance(value, (int, Decimal)) and not isinstance(value, bool) else 0
+
+
+def _public_view(item: Mapping[str, Any]) -> dict[str, Any] | None:
+    if kind_of(item) != KIND_PUBLIC_READ:
+        return None
+    return {'stars': _number(item.get('stars')), 'licence': item.get('licence') or None,
+            'archived': item.get('archived') is True, 'pushed_at': item.get('pushed_at') or None}
+
+
+def _fork_view(item: Mapping[str, Any], viewer: str) -> dict[str, Any] | None:
+    """A fork's facts (never its owner's subject: ``owned_by_me`` says whether the viewer is the owner)."""
+    if kind_of(item) != KIND_FORK:
+        return None
+    owner = str(item.get('owner_subject') or '')
+    return {'upstream': str(item.get('upstream') or ''), 'upstream_connection': item.get('upstream_connection') or None,
+            'upstream_default_branch': str(item.get('upstream_default_branch') or ''),
+            'owner': str(item.get('owner_name') or UNNAMED), 'owned_by_me': bool(viewer) and owner == viewer,
+            'licence': item.get('licence') or None, 'upstream_pr_assisted': item.get('upstream_pr_assisted') is True,
+            'account': str(item.get('fork_account') or ''), 'account_type': str(item.get('fork_account_type') or '')}
+
+
+def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None, viewer: str = '') -> dict[str, Any]:
     """A stored connection as the API answers it: never a secret, only whether the credential is set; and its CI
-    attestation's newest version (``attestation``, None for none)."""
+    attestation's newest version (``attestation``, None for none); since 7.57.00 its kind and, for a public
+    repository or a fork, their facts (``viewer``: the caller's subject, whether they own a fork)."""
     texts = {field: item[field] if isinstance(item.get(field), str) and item[field] else None for field in _OPTIONAL_TEXT}
     host = str(item.get('host', 'github'))
     return {
+        'kind': kind_of(item), 'public': _public_view(item), 'fork': _fork_view(item, viewer),
         'connection_id': str(item.get('connection_id', '')), 'host': host,
         'repository': str(item.get('repository', '')), 'default_branch': str(item.get('default_branch', '')),
         # (a GitLab connection's token expires on its own date, at most a year out: the page warns before it does)
@@ -404,7 +507,8 @@ def _credential_kind(item: Mapping[str, Any]) -> str:
     (a GitHub App's key pasted for this connection)."""
     if str(item.get('host', 'github')) == 'gitlab':
         return 'project_token'
-    return 'app_reference' if item.get('credential_kind') == 'app_reference' else 'app'
+    kind = item.get('credential_kind')
+    return kind if kind in ('app_reference', KIND_PUBLIC_READ) else 'app'
 
 
 def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
@@ -412,16 +516,19 @@ def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
     return earlier.get('repository') != request.repository or earlier.get('host', 'github') != request.host
 
 
-def _credential_fields(credential: AppCredential | AppReference | ProjectToken | None, facts: TokenFacts | None,
-                       earlier: Mapping[str, Any]) -> dict[str, Any]:
+def _credential_fields(credential: AppCredential | AppReference | PublicRead | ForkReference | ProjectToken | None,
+                       facts: TokenFacts | None, earlier: Mapping[str, Any]) -> dict[str, Any]:
     """The row's facts of its credential (never the secret): a GitHub App's ids (and, for one of the deployment's
-    Apps, ``credential_kind: app_reference``), or when a GitLab token expires; a save without a credential keeps the
-    stored ones (its host unchanged: ``_check_save``)."""
+    Apps, ``credential_kind: app_reference``, or ``public_read`` for a public repository read through one), or when a
+    GitLab token expires; a save without a credential keeps the stored ones (its host unchanged: ``_check_save``)."""
     if isinstance(credential, AppCredential):
         return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id)}
-    if isinstance(credential, AppReference):
+    if isinstance(credential, (AppReference, ForkReference)):
         return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id),
                 'credential_kind': 'app_reference'}
+    if isinstance(credential, PublicRead):
+        return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id),
+                'credential_kind': KIND_PUBLIC_READ}
     if credential is not None:
         return {'token_expires_at': facts.expires_at if facts is not None else None}
     return {field: earlier.get(field) for field in ('app_id', 'installation_id', 'token_expires_at', 'credential_kind')}
@@ -478,11 +585,12 @@ class ConnectionStore:
     def _rows(self) -> list[dict[str, Any]]:
         return partition_rows(self._table, ROW_PREFIX)
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self, viewer: str = '') -> list[dict[str, Any]]:
         """The stored connections (not the removed ones), by id, each with its CI attestation's newest version (one
-        Query of one row per connection: at most ``MAX_CONNECTIONS``)."""
+        Query of one row per connection: at most ``MAX_CONNECTIONS``); ``viewer``: the caller's subject (whether they
+        own a fork)."""
         try:
-            return [view(item, attestations.newest(self._table, str(item.get('connection_id', ''))))
+            return [view(item, attestations.newest(self._table, str(item.get('connection_id', ''))), viewer)
                     for item in self._rows() if item.get('removed') is not True]
         except (ClientError, BotoCoreError) as exc:
             raise ConnectionRefused('unavailable', 'the connections could not be read: retry') from exc
@@ -520,6 +628,8 @@ class ConnectionStore:
 
     def _check_save(self, connection_id: str, request: ConnectionRequest, before: Mapping[str, Any] | None) -> None:
         earlier: Mapping[str, Any] = before or {}
+        if before is not None and earlier.get('removed') is not True and kind_of(earlier) != request.kind:
+            raise ConnectionRefused('conflict', OTHER_KIND.format(kind=kind_of(earlier).replace('_', ' ')))
         if before is None or earlier.get('removed') is True:
             if request.credential is None:
                 raise _invalid('credential is needed to add a connection')
@@ -550,18 +660,19 @@ class ConnectionStore:
         # (a repository change voids the attestation: it stood for the repository the connection had)
         attestation = self._newest_attestation(connection_id) if live else None
         credential = request.credential
-        if isinstance(credential, AppCredential):
-            self._put_credential(name, parameter_value(request.repository, credential), connection_id)
-        elif isinstance(credential, AppReference):
-            self._put_credential(name, reference_value(request.repository, credential), connection_id)
-        elif isinstance(credential, ProjectToken) and facts is not None:
-            self._put_credential(name, gitlab_parameter_value(facts, credential), connection_id)
+        if isinstance(credential, ProjectToken):
+            if facts is not None:
+                self._put_credential(name, gitlab_parameter_value(facts, credential), connection_id)
+        elif credential is not None:
+            self._put_credential(name, _value(request.repository, credential), connection_id)
         at, who = self._clock().astimezone(UTC).isoformat(), _name(actor.name)
         # (a save without a credential is one of a live connection whose credential is set: _check_save)
         item: dict[str, Any] = {
             **_key(connection_id), 'connection_id': connection_id, 'host': request.host,
             'repository': request.repository, 'default_branch': request.default_branch, 'credential_set': True,
             **_credential_fields(credential, facts, earlier),
+            # (7.57.00: a public repository's or a fork's kind and facts, as the save names them; never a secret)
+            **({'connection_kind': request.kind, **request.facts} if request.kind != KIND_REPOSITORY else {}),
             # (GitHub's word at an App's save; another save keeps it while the repository stays)
             'repository_private': (request.repository_private if request.repository_private is not None
                                    else None if moved else earlier.get('repository_private')),
@@ -585,7 +696,7 @@ class ConnectionStore:
         logger.info('engineering connection saved', extra={'connection_id': connection_id, 'connection_created': not live,
                                                             'credential_replaced': credential is not None,
                                                             'host': request.host})
-        return view(item, attestation if void is None else void['Put']['Item']), not live
+        return view(item, attestation if void is None else void['Put']['Item'], actor.subject), not live
 
     def _void(self, attestation: Mapping[str, Any] | None, cause: str, actor: Actor, at: str) -> dict[str, Any] | None:
         """The transaction's Put voiding ``attestation`` when it is one (``attestations.void_put``), else None."""
@@ -623,6 +734,11 @@ class ConnectionStore:
             raise ConnectionRefused('not_found', 'Connection not found')
         return row
 
+    def stored_row(self, connection_id: str) -> dict[str, Any]:
+        """A stored connection's row (never a secret: the credential is in SSM), 404 for one not stored: what the
+        fork workflow reads of a public repository's or a fork's facts (``forks.py``)."""
+        return self._live_row(connection_id)
+
     def attest(self, connection_id: str, request: AttestationRequest, actor: Actor) -> tuple[dict[str, Any], bool]:
         """Record an administrator's confirmation of the setup guide's points (``parse_attestation``) for the
         repository they reviewed: the new version and True, or the one that already holds and False (nothing
@@ -631,6 +747,8 @@ class ConnectionStore:
         again in the transaction's own condition, so a change landing in between refuses the write. 404 for a
         connection that is not stored."""
         row = self._live_row(connection_id)
+        if kind_of(row) == KIND_PUBLIC_READ:
+            raise ConnectionRefused('conflict', READ_ONLY_ATTESTATION)
         if row.get('repository') != request.repository or int(row.get('version', 0)) != request.version:
             raise ConnectionRefused('conflict', _REVIEWED_CHANGED)
         newest = self._newest_attestation(connection_id)
@@ -816,6 +934,19 @@ def put_with_audit(table: Any, item: Mapping[str, Any], before: Mapping[str, Any
                  'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
         *(dict(write) for write in extra),
     ])
+
+
+def write_audited(table: Any, item: Mapping[str, Any], before: Mapping[str, Any] | None, audit: Mapping[str, Any],
+                  *, logged: str, about: Mapping[str, object], changed: str, failed: str) -> None:
+    """``put_with_audit``, a failure logged as ``logged`` (``about`` and the AWS error code) and refused: a change made
+    meanwhile as ``changed`` (409), any other as ``failed`` (503)."""
+    try:
+        put_with_audit(table, item, before, audit)
+    except (ClientError, BotoCoreError) as error:
+        logger.warning(logged, extra={**about, 'error_code': error_code(error)})
+        if isinstance(error, ClientError) and _canceled(error):
+            raise ConnectionRefused('conflict', changed) from None
+        raise ConnectionRefused('unavailable', failed) from None
 
 
 def display_name(text: str) -> str:

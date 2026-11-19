@@ -139,6 +139,26 @@ Integrations API at the same moment is not lost: the version read is checked aga
 another save landed in between, the change is applied again on top of it. The label is the token function's, which
 the Agents API already invokes.
 
+### Any public repository (7.57.00)
+
+A public repository you do not own, connected read only under **Agents → Connections → Add a public repository**
+([autonomous-engineering.md](autonomous-engineering.md#any-public-repository-75700)), is followed the same way: its
+connection adds it to the source's **Repositories**, signed in with the deployment's App, and its issues are read as
+feedback. Two differences:
+
+- **How it is read.** No installation of the App covers it, so `issues_token` answers one more token for it: an
+  installation token of the App with `metadata: read` alone that names no repository (GitHub serves a public
+  repository's issues to any reader). The token function reads the repository with it first, and one that turns out
+  private or missing stays `uncovered`, as before. A failure there never stops the covered repositories' read. A
+  repository listed by hand that no installation covers and that is public is now read this way too, where before it
+  was skipped as not covered.
+- **No label, and no webhook.** The `voc-agent` label is never created on it (a label is a write, and nothing is
+  written to a repository connected read only), so the trigger's label check stays `unknown` there, and no App webhook
+  delivers its events (the App is not installed on it): the schedule picks its issues up every 30 minutes.
+
+A fork connection (the fork workflow) is never followed: its issues are its upstream's, which the upstream's own
+public connection reads.
+
 ### Signing in with a GitHub App (7.45.00)
 
 Where the engineering agents are deployed (`-c engineeringAgents=true`), a deployment-wide source can sign in with one

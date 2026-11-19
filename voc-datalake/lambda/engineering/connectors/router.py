@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from engineering.connectors.credentials import Credential, GitLabTokenCredential
 from engineering.connectors.github import GitHubHost
+from engineering.connectors.github_upstream import GitHubUpstream
 from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
     BundleContents,
@@ -91,6 +92,11 @@ class HostRouter:
             return FetchAccess(repository=repository, token=token, host='gitlab', revocable=False)
         repository, token = self._github.fetch_token(connection_id)
         return FetchAccess(repository=repository, token=token)
+
+    def upstream(self) -> GitHubUpstream:
+        """A connection's kind and a fork's upstream (7.57.00, ``github_upstream.py``), over the same credentials and
+        GitHub client (the broker's)."""
+        return GitHubUpstream(self._credentials, self._github)
 
     def revoke_fetch_token(self, token: str) -> None:
         """Revoke a GitHub fetch token (``GitHubHost.revoke_fetch_token``)."""

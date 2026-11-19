@@ -28,6 +28,18 @@ def test_a_run_started_from_an_issue_records_it_once_as_given(aws: Any, host: st
     assert (found.url, found.verified) == (url, False)
 
 
+def test_a_fork_runs_issue_is_its_upstreams(aws: Any) -> None:
+    # (7.57.00: a fork's issue is the upstream's: its address, and META's issue_repo the reader checks it against)
+    RunStore(aws[1]).start(RUN, caps=RunCaps(max_tasks=5), now=0, repo='casey-dev/shop', issue=12, host='github',
+                           issue_repo='example-org/shop')
+    meta = aws[1].get_item(Key=META)['Item']
+    assert meta['issue']['url'] == 'https://github.com/example-org/shop/issues/12'
+    assert meta['issue_repo'] == 'example-org/shop'
+    found = issue_of({name: TypeSerializer().serialize(value) for name, value in meta.items()})
+    assert found is not None
+    assert found.number == 12
+
+
 def test_a_run_started_from_no_issue_has_none(aws: Any) -> None:
     RunStore(aws[1]).start(RUN, caps=RunCaps(max_tasks=5), now=0, repo='example-org/shop', host='github')
     assert 'issue' not in aws[1].get_item(Key=META)['Item']

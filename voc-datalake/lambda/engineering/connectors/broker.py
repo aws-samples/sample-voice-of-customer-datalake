@@ -50,6 +50,14 @@ approved, rendered again from the stored records and held to the request's and t
 ``voc-agent/docs/<kind>-v<n>`` and a pull request, under the requesting administrator's way of working, the CI
 attestation and the branch rules, once per (connection, kind, version) (``records.DocsClaims``); and every agent reads
 its run's connection's accepted tenets (``Broker.tenets``, the ``read`` of kind ``tenets``).
+
+Since 7.57.00 a connection is of a kind (``connection_kind``: its credential's). On a public repository read only
+(``public_read``) every write is refused, whatever the role, before any token is minted or the host asked
+(``_require_kind``: ``READ_ONLY``; a kind it does not know too, failing closed); reads are served. On a fork (``fork``)
+the run's issue is the upstream's, so it gets no comment and no label (``FORK_ISSUE``), the fork's pull request names no
+issue, and the PR author's open of it goes on to the run's upstream pull request (``_upstream_after``, ``upstream_pr.py``;
+``open_upstream_pr`` is that step on its own, the PR author's alone), whose outcome its answer carries and the run's
+record keeps; a refusal there never fails the fork's pull request, which was made.
 """
 from __future__ import annotations
 
@@ -64,7 +72,10 @@ from typing import Any, Final
 
 from engineering.connectors.hosts import (
     ACTIVE,
+    FORK,
     NO_CONNECTION,
+    PUBLIC_READ,
+    REPOSITORY_KIND,
     WRITE_DONE,
     WRITE_REFUSED,
     WRITE_UNKNOWN,
@@ -79,6 +90,7 @@ from engineering.connectors.hosts import (
     InvalidTarget,
     NoConnection,
     NotFound,
+    NotNow,
     OutcomeUnknown,
     PullRequestRef,
     ReadKind,
@@ -93,7 +105,9 @@ from engineering.connectors.identity import (
     AGENT_ROLES,
     LABEL_ISSUE,
     OPEN_OR_UPDATE_DRAFT_PR,
+    OPEN_UPSTREAM_PR,
     POST_COMMENT,
+    PUSH_APPROVED_DOCS,
     PUSH_BUNDLE,
     READ,
     RUNTIME_ROLE,
@@ -103,6 +117,8 @@ from engineering.connectors.identity import (
 )
 from engineering.connectors.patches import AUTHOR
 from engineering.connectors.reactions import PullRequestReactions
+from engineering.connectors.upstream_pr import NOT_A_FORK as UPSTREAM_NOT_A_FORK
+from engineering.connectors.upstream_pr import UpstreamPullRequests
 from engineering.connectors.write_policy import (
     WriteRefused,
     branch_refusal,
@@ -121,13 +137,21 @@ from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
 from shared.logging import logger, metrics
 
 #: Beyond reading, which every agent may do: the writes each writing role needs, and no other (the understander's
-#: comment and its triage labels on the run's issue, 7.50.00; every other writer's one write).
+#: comment and its triage labels on the run's issue, 7.50.00; every other writer's one write; the PR author's upstream
+#: pull request on a fork connection, 7.57.00, which its open of the fork's pull request also goes on to).
 _WRITES: Final[Mapping[str, frozenset[str]]] = {
     'understander': frozenset({POST_COMMENT, LABEL_ISSUE}),
     'pr-reviewer': frozenset({POST_COMMENT}),
     'committer': frozenset({PUSH_BUNDLE}),
-    'pr-author': frozenset({OPEN_OR_UPDATE_DRAFT_PR}),
+    'pr-author': frozenset({OPEN_OR_UPDATE_DRAFT_PR, OPEN_UPSTREAM_PR}),
 }
+#: A write asked on a public repository read only (7.57.00): refused before any token, whatever the role.
+READ_ONLY: Final = ("The run's connection is a public repository read only: nothing is written to it (no comment, "
+                    'label, branch or pull request). What the run finds stays in VoC; the connection\'s Contribute '
+                    'card makes a fork the agents can push to.')
+#: An issue write on a fork connection (7.57.00): the run's issue is the upstream's, which nothing writes to.
+FORK_ISSUE: Final = ("The run's issue is the fork's upstream's: the agents comment on and label nothing there. What "
+                     'the triage finds stays in VoC.')
 HUMAN_DRIVEN_REFUSAL: Final = ('This run works Human-driven: its agents find and propose, and push no branch and '
                                'open no pull request. A person makes the change, or an administrator changes the '
                                'way of working of the person who started the run.')
@@ -145,11 +169,6 @@ OTHER_REPOSITORY: Final = ("The run's connection now names another repository th
 
 class NotPermitted(WriteRefused):
     """The caller's role may not make this operation."""
-
-
-class NotNow(WriteRefused):
-    """The run, the dial or the board does not allow the operation now (an unknown or inactive run, Human-driven,
-    no person's go, no GO, no attestation)."""
 
 
 def permitted(role: str, operation: str) -> bool:
@@ -196,6 +215,26 @@ def _require_dial(connector: Connector, run: RunRecord, run_id: str) -> None:
     raise NotNow(HUMAN_DRIVEN_REFUSAL)
 
 
+def connection_kind(connector: Connector, connection_id: str) -> str:
+    """The connection's kind (7.57.00: ``hosts.REPOSITORY_KIND``, ``PUBLIC_READ`` or ``FORK``), from its credential: ``repository`` where the
+    deployment wires no upstream reader (every connection is then one's own)."""
+    return REPOSITORY_KIND if connector.upstream is None else connector.upstream.kind(connection_id)
+
+
+def _require_kind(kind: str, operation: str) -> None:
+    """Every write refused on a public repository read only; an issue's label on a fork (its issue is the upstream's;
+    an issue comment is refused in ``post_comment``, which knows the target); the upstream pull request only on a
+    fork. Any kind this broker does not know refuses every write, failing closed."""
+    if operation == READ:
+        return
+    if kind == PUBLIC_READ or kind not in (REPOSITORY_KIND, FORK):
+        raise NotNow(READ_ONLY)
+    if kind == FORK and operation == LABEL_ISSUE:
+        raise NotNow(FORK_ISSUE)
+    if kind != FORK and operation == OPEN_UPSTREAM_PR:
+        raise NotNow(UPSTREAM_NOT_A_FORK)
+
+
 def _require_branch(branch: str, run: RunRecord, run_id: str) -> None:
     refusal = branch_refusal(branch, run.default_branch, run_id)
     if refusal is not None:
@@ -235,6 +274,9 @@ class Broker:
         # failed save): a run never reads or writes another repository than its own.
         if self._connector.host.repository(run.connection_id) != run.repository:
             raise NotNow(OTHER_REPOSITORY)
+        # (7.57.00) A public repository read only takes no write of any kind, and a fork's issue is its upstream's:
+        # refused here, before any token is minted or the host asked (fail closed: a kind not read is no pass).
+        _require_kind(connection_kind(self._connector, run.connection_id), operation)
         # Only then the run's branch: the stored one once the host confirms it (StoredBranchMissing, 409, when not),
         # so a credential re-pointed at another repository is never used for a lookup.
         branch = self._connector.host.default_branch(run.connection_id, run.stored_default_branch)
@@ -282,6 +324,8 @@ class Broker:
         if first is not None:
             return str(first['url'])
         connector, run = self._open(caller, POST_COMMENT)
+        if on == 'issue' and connection_kind(connector, run.connection_id) == FORK:
+            raise NotNow(FORK_ISSUE)
         own = run.issue_number if on == 'issue' else run.pull_request_number
         if own is None or number != own:
             raise NotPermitted(f"An agent comments only on its own run's {on.replace('_', ' ')}.")
@@ -350,10 +394,12 @@ class Broker:
     def open_or_update_draft_pr(self, caller: Caller, branch: str, title: str, body: str,
                                 attempt: int = 1) -> PullRequestRef:
         """Open the run's draft pull request from ``branch`` to the default branch, or update its text. Once per
-        ``attempt`` (``_once``)."""
+        ``attempt`` (``_once``). On a fork connection (7.57.00) it goes on to the run's upstream pull request
+        (``_upstream_after``): the answer's ``upstream`` says what came of it, and a refusal leaves the run with the
+        fork's pull request."""
         first = self._first_outcome(caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, branch, title, body)
         if first is not None:
-            return _pull_request(first)
+            return self._upstream_after(caller, branch, _pull_request(first))
         connector, run, ci = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
         check_text(f'{title}\n\n{body}', run.cited_reviews, prose=True)
         tree_hash = connector.host.branch_tree_hash(run.connection_id, branch)
@@ -361,11 +407,13 @@ class Broker:
             raise NotNow('The branch is not on the host yet; push it first.')
         if not connector.ledger.has_go(caller.run_id, tree_hash):
             raise NotNow("The board holds no GO for the branch's tree.")
+        fork = connection_kind(connector, run.connection_id) == FORK
+        # (a fork's pull request names no issue: its issue is the upstream's, which the upstream pull request fixes)
+        sent = merge_is_human(body if fork else closing_body(body, run))
 
         def open_draft() -> dict[str, object]:
-            ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title,
-                                                         merge_is_human(closing_body(body, run)), tree_hash,
-                                                         draft=run.draft_pr)
+            ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, sent,
+                                                         tree_hash, draft=run.draft_pr)
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
             # (the host answered with it, so it stands: kept on the run's record; an answer that never came, an
             # outcome unknown, records nothing, and the next open or update finds it by its branch)
@@ -375,7 +423,45 @@ class Broker:
             return {'number': ref.number, 'url': ref.url, 'head': ref.head, 'base': ref.base, 'host': ref.host,
                     'ci': ci}
 
-        return _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title, body))
+        done = _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title,
+                                   body))
+        return self._upstream_after(caller, branch, done) if fork else done
+
+    def _upstream_after(self, caller: Caller, branch: str, ref: PullRequestRef) -> PullRequestRef:
+        """The fork's pull request ``ref`` with the run's upstream pull request's outcome (7.57.00): opened, its
+        one-click link (``link``, the run's record keeping it), refused with its reason and no link (the run ends with
+        the fork's pull request), or unknown (the record keeping the link). Never raises: the fork's
+        pull request was made, and is the answer whatever becomes of the upstream one. ``ref`` as it is on any other
+        connection."""
+        connector = self._connector
+        if connector is None or connector.upstream is None:
+            return ref
+        run = connector.runs.run(caller.run_id)
+        if (run is None or run.status != ACTIVE or connector.host.repository(run.connection_id) != run.repository
+                or connection_kind(connector, run.connection_id) != FORK):
+            return ref
+        try:
+            outcome = self._upstream_step(connector).open(caller.run_id, run, branch)
+        except (WriteRefused, HostError, NoConnection) as failed:
+            reason = failed.reason if isinstance(failed, (WriteRefused, HostError)) else NO_CONNECTION
+            logger.info('broker upstream pull request not opened', extra={'run_id': caller.run_id,
+                                                                          'kind': type(failed).__name__})
+            outcome = {'state': 'unknown' if isinstance(failed, OutcomeUnknown) else 'refused', 'reason': reason}
+        return replace(ref, upstream=outcome)
+
+    @staticmethod
+    def _upstream_step(connector: Connector) -> UpstreamPullRequests:
+        return UpstreamPullRequests(connector, _claimed)
+
+    def open_upstream_pr(self, caller: Caller, branch: str) -> dict[str, object]:
+        """The run's upstream pull request (7.57.00, the PR author's alone): what ``upstream_pr.py`` checks, then its
+        one-click link, and the pull request ``<fork owner>:<branch>`` → the upstream's default branch, ready for
+        review, opened as the fork connection's owner where they authorized it and GitHub lets it (else ``link``);
+        once per run (an opened one is answered as it stands). A safety check's refusal is ``NotNow`` (409), no link,
+        and is kept on the run's record."""
+        connector, run = self._open(caller, OPEN_UPSTREAM_PR)
+        _require_branch(branch, run, caller.run_id)
+        return self._upstream_step(connector).open(caller.run_id, run, branch)
 
     def reactions(self, caller: Caller, run_id: str) -> PullRequestReactions | None:
         """People's reactions to an ended run's recorded pull request (7.10.00): the runtime's operation alone (an
@@ -548,6 +634,8 @@ def _approved_docs(connector: Connector, request: DocsRequest) -> tuple[Any, Any
     the kind's own and the files fit one write."""
     if connector.host.repository(request.connection) != request.repository:
         raise NotNow(START_OTHER_REPOSITORY)
+    # (7.57.00: a public repository read only gets no docs pull request; its approved docs stay in VoC)
+    _require_kind(connection_kind(connector, request.connection), PUSH_APPROVED_DOCS)
     approved = None if connector.docs is None else connector.docs.approved(request.connection, request.kind)
     if approved is None:
         raise DocsRefused(DOCS_NOT_APPROVED, 'not_approved')

@@ -9,7 +9,8 @@
  * icon buttons at the end. Narrow: the repository with ⓘ and ⋯ beside it, then each cell on its own line, and the action
  * full width (`min-h-9`). Keyboard order: the issues switch, the action, ⓘ, ⋯. The action names its repository to a
  * screen reader ("Attest CI example-org/web"). No id is content: the connection id, the App's and the installation's
- * live in the details.
+ * live in the details. A fork connection (7.57.00) says which upstream it is a fork of, its owner, the licence they
+ * acknowledged and its upstream pull request switch (ForkLines.tsx), and has no edit in its menu.
  *
  * @module pages/Agents/ConnectionRow
  */
@@ -23,6 +24,7 @@ import { issuesOf, rowPrimary, viaApp } from './connectionStatus'
 import { CiBadge } from './CiAttestation'
 import { ConnectionDetails } from './ConnectionDetails'
 import { IssuesCell, LabelCell } from './ConnectionIssues'
+import { ForkBadge, ForkLines } from './ForkLines'
 import type { TFunction } from 'i18next'
 import type { RowMenuEntry } from '../../components/RowActionsMenu/rowMenuEntries'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
@@ -72,12 +74,16 @@ function RepositoryCell({ connection }: Readonly<{ connection: EngineeringConnec
         <FolderGit2 size={16} aria-hidden="true" />
       </span>
       <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-semibold text-text-strong break-words [overflow-wrap:anywhere]">{connection.repository}</p>
+        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text-strong break-words [overflow-wrap:anywhere]">
+          {connection.repository}
+          {connection.fork !== null && <ForkBadge fork={connection.fork} />}
+        </p>
         <p className="flex items-center gap-1 text-[12px] text-muted">
           <GitBranch size={12} aria-hidden="true" /> {t('connections.branch', { branch: connection.default_branch })}
         </p>
         {!credential.set && !viaApp(connection) && <p className="text-[12px] text-warn">{t('connections.notSetHint')}</p>}
         {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
+        {connection.fork !== null && <ForkLines connection={connection} fork={connection.fork} />}
       </div>
     </div>
   )
@@ -115,7 +121,8 @@ function PrimaryAction({ primary, connection, busy, actions }: Readonly<{
 function menuEntries(connection: EngineeringConnection, primary: RowPrimary, actions: RowActions,
   t: TFunction<'agents'>): RowMenuEntry[] {
   const app = viaApp(connection)
-  const entries: RowMenuEntry[] = [{
+  // (7.57.00: a fork connection is its installation's on the fork, made again to change it: no edit)
+  const entries: RowMenuEntry[] = connection.fork !== null ? [] : [{
     kind: 'action', id: 'edit', icon: app ? GitBranch : Pencil,
     label: app ? t('connections.menu.changeBranch') : t('connections.menu.edit'), onSelect: () => { actions.onEdit(connection) },
   }]
@@ -126,7 +133,8 @@ function menuEntries(connection: EngineeringConnection, primary: RowPrimary, act
     entries.push({ kind: 'action', id: 'attest', icon: ShieldCheck, label: t('connections.menu.attest'),
       onSelect: () => { actions.onAttest(connection) } })
   }
-  entries.push({ kind: 'separator', id: 'remove-separator' }, {
+  if (entries.length > 0) entries.push({ kind: 'separator', id: 'remove-separator' })
+  entries.push({
     kind: 'action', id: 'remove', icon: Trash2, danger: true, label: t('connections.menu.remove'),
     onSelect: () => { actions.onRemove(connection) },
   })

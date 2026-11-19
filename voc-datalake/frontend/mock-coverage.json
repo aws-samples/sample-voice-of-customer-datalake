@@ -679,6 +679,33 @@
     ]
   },
   {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "POST",
+    "call": "`${connectionPath(connectionId)}/fork`",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/lint-kit/fork",
+        "body": {
+          "account": "user",
+          "licence": "MIT"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringConnectionsApi.ts",
+    "method": "PUT",
+    "call": "`${connectionPath(connectionId)}/upstream`",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/lint-kit-fork/upstream",
+        "body": {
+          "assisted": true
+        }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringReactionsApi.ts",
     "method": "POST",
     "call": "`/agents/engineering/${encodeURIComponent(runId)}/reactions`",
@@ -1538,6 +1565,65 @@
     ]
   },
   {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${appPath(appId)}/authorize`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828/authorize",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "POST",
+    "call": "`${APPS_PATH}/authorizations`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/authorizations",
+        "body": {
+          "code": "demo-code",
+          "state": "demo-authorize-state"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "GET",
+    "call": "`${APPS_PATH}/authorizations`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/authorizations"
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "DELETE",
+    "call": "`${appPath(appId)}/authorization`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828/authorization"
+      }
+    ]
+  },
+  {
+    "file": "api/githubAppsApi.ts",
+    "method": "PUT",
+    "call": "`${appPath(appId)}/oauth`",
+    "probes": [
+      {
+        "path": "/agents/engineering/github-apps/271828/oauth",
+        "body": {
+          "client_id": "Iv23liDemoClient01",
+          "client_secret": "demo-client-secret"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/issuesSourceApi.ts",
     "method": "GET",
     "call": "ISSUES_SOURCE_PATH",
@@ -2216,6 +2302,29 @@
       },
       {
         "path": "/feedback/urgent?days=7&limit=5&source=webscraper,manual_import"
+      }
+    ]
+  },
+  {
+    "file": "api/publicRepositoriesApi.ts",
+    "method": "GET",
+    "call": "`${SEARCH_PATH}?${new URLSearchParams({ q: query.trim() }).toString()}`",
+    "probes": [
+      {
+        "path": "/agents/engineering/public-repositories?q=lint"
+      }
+    ]
+  },
+  {
+    "file": "api/publicRepositoriesApi.ts",
+    "method": "POST",
+    "call": "CONNECT_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/public-connections",
+        "body": {
+          "repository": "open-tools/old-cli"
+        }
       }
     ]
   },

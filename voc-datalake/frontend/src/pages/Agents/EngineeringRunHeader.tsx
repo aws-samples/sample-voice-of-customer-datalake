@@ -10,7 +10,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
-import { EngineeringRunLinks } from './EngineeringRunLinks'
+import { EngineeringRunLinks, UpstreamEndNotice } from './EngineeringRunLinks'
 import { shareTone } from './spendView'
 import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
@@ -63,6 +63,7 @@ export function EngineeringRunHeader({ overview, children }: Readonly<{ overview
         </p>
         <EngineeringRunLinks run={run} />
       </div>
+      <UpstreamEndNotice run={run} />
       <Totals totals={overview.totals} />
       {run.budget !== null && <BudgetFlag budget={run.budget} />}
       {children}

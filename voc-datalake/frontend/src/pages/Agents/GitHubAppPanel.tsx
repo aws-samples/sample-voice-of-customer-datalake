@@ -21,6 +21,7 @@ import { ORGANIZATION_LOGIN, githubAppsApi } from '../../api/githubAppsApi'
 import { useConnectionError } from './connectionText'
 import { leavingForGitHub } from './githubReturn'
 import { PAGE_WORKSPACE } from '../../workspace/workspacePath'
+import { AccountRadios } from './AccountRadios'
 import type { ManifestForm, ManifestRequest } from '../../api/githubAppsApi'
 
 type Account = ManifestRequest['account']
@@ -67,16 +68,9 @@ export function CreateApp({ full, emphasis }: Readonly<{ full: boolean; emphasis
   return (
     <>
       <form className="space-y-3" noValidate onSubmit={(event) => { event.preventDefault(); if (!busy) create() }}>
-      <fieldset className="space-y-1">
-        <legend className="text-sm font-medium text-text-strong">{t('connections.githubApp.accountLegend')}</legend>
-        {(['user', 'organization'] as const).map((choice) => (
-          <label key={choice} className="flex items-center gap-2 text-sm text-text">
-            <input type="radio" name={`github-app-account-${orgId}`} value={choice} checked={account === choice}
-              onChange={() => { setAccount(choice) }} />
-            {choice === 'user' ? t('connections.githubApp.accountUser') : t('connections.githubApp.accountOrganization')}
-          </label>
-        ))}
-      </fieldset>
+      <AccountRadios legend={t('connections.githubApp.accountLegend')} name={`github-app-account-${orgId}`}
+        labels={{ user: t('connections.githubApp.accountUser'), organization: t('connections.githubApp.accountOrganization') }}
+        account={account} onAccount={setAccount} />
       {account === 'organization' && (
         <div className="space-y-1">
           <label htmlFor={orgId} className="block text-sm font-medium text-text">{t('connections.githubApp.orgLabel')}</label>

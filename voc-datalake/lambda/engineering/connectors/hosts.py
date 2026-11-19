@@ -7,6 +7,9 @@ and the way of working ``dial.WaysOfWorking``. A deployment that names none of t
 their place, so every permitted operation answers ``NoConnection``. Since 7.52.00 the approved docs' reader
 (``records.ApprovedDocsRecords``: the knowledge docs and the tenets as an administrator approved them) and their writes'
 claims (``records.DocsClaims``), for voc-engineering-start's ``push_approved_docs`` and the agents' ``tenets`` read.
+Since 7.57.00 a connection is of a kind (a repository of one's own, ``REPOSITORY_KIND``; a public repository read
+only, ``PUBLIC_READ``; or a fork whose upstream gets the run's pull request, ``FORK``), and the broker opens that upstream pull request through
+three more collaborators (``UpstreamHost``, ``OwnerTokens``, ``UpstreamLedger``: ``upstream_pr.py``).
 """
 from __future__ import annotations
 
@@ -157,6 +160,12 @@ class OutcomeUnknown(HostError):
     502, never made again for the same key (``WriteLedger``)."""
 
 
+class NotNow(WriteRefused):
+    """The run, the dial or the board does not allow the operation now (an unknown or inactive run, Human-driven,
+    no person's go, no GO, no attestation; since 7.57.00 a write on a public repository read only, and the upstream
+    pull request's safeguards): the broker's, here so the upstream pull request's step (upstream_pr.py) raises it."""
+
+
 class Conflict(WriteRefused):
     """The host's state is not the one the write was checked against: the branch moved (the lease), or its tree is
     not the checked one. Nothing was written to the branch."""
@@ -209,6 +218,96 @@ class PullRequestRef:
     head: str = ''
     base: str = ''
     host: str = ''
+    #: The run's upstream pull request's outcome (7.57.00, a fork connection's: ``UpstreamRecord.view``), which the
+    #: broker's open of the fork's pull request goes on to; None on any other connection.
+    upstream: dict[str, object] | None = None
+
+
+#: A connection's kinds (7.57.00): a repository the App is installed on (``repository``, as before), a public repository
+#: read through a read-only token (``public_read``: the broker refuses every write on it), and a fork of a public
+#: repository, whose upstream gets the run's pull request (``fork``).
+REPOSITORY_KIND: Final = 'repository'
+PUBLIC_READ: Final = 'public_read'
+FORK: Final = 'fork'
+
+
+@dataclass(frozen=True)
+class ForkFacts:
+    """A fork connection's upstream, as its credential names it (written by the Agents API: ``connections.py``): the
+    upstream ``owner/name`` and its default branch, the connection owner (``owner``: the sha256 of their subject, whose
+    GitHub user authorization opens the upstream pull request), the licence they acknowledged (its SPDX id), and their
+    setting for AI-assisted runs (``assisted``: an AI-assisted run's upstream pull request opens only with it)."""
+
+    upstream: str
+    upstream_default_branch: str
+    owner: str
+    licence: str
+    assisted: bool = False
+    #: The deployment's GitHub App the fork's installation is of: the owner's user token is that App's.
+    app_id: str = ''
+    #: The fork itself (``owner/name``): the head of the upstream pull request and of its compare link.
+    repository: str = ''
+
+
+@dataclass(frozen=True)
+class UpstreamFacts:
+    """What the broker reads of a fork's upstream before its pull request (``UpstreamHost.facts``), read only: the
+    repository's facts (``upstream.RepositoryFacts``), the marker it opts out of bot pull requests with (None: none),
+    its pull request template ('' for none) and what its CONTRIBUTING file asks (``upstream.ContributingAsks``)."""
+
+    facts: Any
+    opt_out: str | None
+    template: str
+    contributing: Any
+
+
+@dataclass(frozen=True)
+class ForkPullRequest:
+    """The run's pull request on the fork as the host reads it now: its title and body, and whether it is open."""
+
+    title: str
+    body: str
+    open: bool
+
+
+@dataclass(frozen=True)
+class OwnerToken:
+    """The connection owner's GitHub user token (``repr`` leaves it out) and their login: for the upstream pull request
+    alone."""
+
+    token: str = field(repr=False)
+    login: str = ''
+
+
+#: The run's upstream pull request's states on its record: opened by the app; offered as a one-click link the person
+#: opens on GitHub (``link``: the app did not open it, which is no error); refused by a safety check (no link); unknown.
+UPSTREAM_OPENED: Final = 'opened'
+UPSTREAM_LINK: Final = 'link'
+UPSTREAM_REFUSED: Final = 'refused'
+UPSTREAM_UNKNOWN: Final = 'unknown'
+
+
+@dataclass(frozen=True)
+class UpstreamRecord:
+    """The run's upstream pull request as its record keeps it (``UpstreamLedger``): ``opened``, ``link``, ``refused``
+    or ``unknown``, the upstream, its number and address once opened, the login it was opened as, and why not; and the
+    one-click link to GitHub's compare page that opens it (``compare_url``, with its prefilled ``title``; when the link's
+    body had to be shortened, the full text, ``description``, for "Copy the description")."""
+
+    state: str
+    upstream: str
+    number: int | None = None
+    url: str | None = None
+    login: str | None = None
+    reason: str | None = None
+    compare_url: str | None = None
+    title: str | None = None
+    description: str | None = None
+
+    def view(self) -> dict[str, object]:
+        return {'state': self.state, 'upstream': self.upstream, 'number': self.number, 'url': self.url,
+                'as': self.login, 'reason': self.reason, 'compare_url': self.compare_url, 'title': self.title,
+                'description': self.description}
 
 
 @dataclass(frozen=True)
@@ -564,6 +663,71 @@ class DocsReader(Protocol):
         ...
 
 
+class UpstreamHost(Protocol):
+    """A connection's kind and, for a fork, its upstream (7.57.00, ``github_upstream.py``): reads with the fork's
+    installation token (the upstream is public), and the one write, the upstream pull request, with the connection
+    owner's user token alone."""
+
+    def kind(self, connection_id: str) -> str:
+        """The connection's kind (``REPOSITORY_KIND``, ``PUBLIC_READ`` or ``FORK``), from its credential."""
+        ...
+
+    def fork(self, connection_id: str) -> ForkFacts | None:
+        """A fork connection's upstream (``ForkFacts``), None for any other kind."""
+        ...
+
+    def facts(self, connection_id: str) -> UpstreamFacts:
+        """The fork's upstream as GitHub answers it now: its facts, opt-out marker, template and CONTRIBUTING."""
+        ...
+
+    def existing(self, connection_id: str, branch: str) -> PullRequestRef | None:
+        """The open upstream pull request from the fork's ``branch``, None for none."""
+        ...
+
+    def fork_pull_request(self, connection_id: str, number: int) -> ForkPullRequest:
+        """The fork's pull request ``number`` (the run's): its title, body and whether it is open."""
+        ...
+
+    def open(self, connection_id: str, owner: OwnerToken, branch: str, title: str, body: str) -> PullRequestRef:
+        """Open the upstream pull request ``fork:branch`` → the upstream's default branch, ready for review, as
+        ``owner`` (their user token, sent in this one request's ``Authorization`` header alone)."""
+        ...
+
+
+class OwnerTokens(Protocol):
+    """The connection owners' GitHub user tokens (7.57.00, ``user_auth.OwnerTokens``): the broker's alone."""
+
+    def token(self, app_id: str, owner: str) -> OwnerToken:
+        """``owner``'s (a subject's sha256) user token of App ``app_id``, refreshed when due; ``OwnerUnauthorized``
+        when there is none, or it can no longer be refreshed."""
+        ...
+
+
+class UpstreamLedger(Protocol):
+    """The upstream pull requests' records (7.57.00, ``records.UpstreamRecords``): the run's, and the day's caps."""
+
+    def recorded(self, run_id: str) -> UpstreamRecord | None:
+        """The run's upstream pull request record, None for none."""
+        ...
+
+    def record(self, run_id: str, record: UpstreamRecord) -> None:
+        """Keep ``record`` as the run's (an opened one is never replaced by a later refusal)."""
+        ...
+
+    def take_slot(self, day: str, upstream: str, run_id: str, connection_id: str) -> str | None:
+        """Count the run's upstream pull request against ``day``'s caps (the deployment's and ``upstream``'s): None
+        once counted (or already counted for the run), else why not (a cap reached)."""
+        ...
+
+    def close_slot(self, day: str, upstream: str, run_id: str, outcome: dict[str, object]) -> None:
+        """Record ``outcome`` on the run's slots of ``day`` (their audit: who, when, which upstream, what)."""
+        ...
+
+
+class OwnerUnauthorized(Conflict):
+    """The connection owner's GitHub user authorization is missing, expired or refused (the message says what to do)."""
+
+
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
     is ``NoConnection``, so the broker refuses each permitted operation with 503 before it reaches the host."""
@@ -621,3 +785,9 @@ class Connector:
     #: docs write and the tenets read are refused, ``NoConnection``).
     docs: DocsReader | None = None
     docs_writes: WriteLedger | None = None
+    #: A connection's kind and a fork's upstream, the owners' user tokens and the upstream pull requests' records
+    #: (7.57.00; None where the deployment names none: every connection is a ``repository``, and a fork's upstream pull
+    #: request is refused, ``NoConnection``).
+    upstream: UpstreamHost | None = None
+    owner_tokens: OwnerTokens | None = None
+    upstream_ledger: UpstreamLedger | None = None

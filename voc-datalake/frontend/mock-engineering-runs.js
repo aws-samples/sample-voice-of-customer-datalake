@@ -29,6 +29,9 @@
 //   POST|DELETE /agents/engineering/connections/<id>/ci-attestation   attest its CI (every point), or withdraw it
 //   …/agents/engineering/github-apps…   the deployment's GitHub Apps (7.45.00): mock-github-apps.js, over the
 //                     connections here ('billing-api' goes through the sample App, a reference to its key)
+//   GET  /agents/engineering/public-repositories, POST …/public-connections, POST …/connections/<id>/fork,
+//   PUT …/connections/<id>/upstream   any public repository read only, and a fork of it (7.57.00): mock-public-repos.js,
+//                     over the connections here (they start with the sample 'lint-kit' read only and its fork)
 //   GET  /agents/engineering/issues-source, PUT …/connections/<id>/issues   the GitHub Issues source as the
 //                     connections drive it (7.50.02): mock-issues-source.js, over the connections here
 //                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
@@ -48,6 +51,7 @@
 
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
 import { handleIssuesSourceRoutes } from './mock-issues-source.js';
+import { handlePublicRepositoryRoutes, sampleContributions } from './mock-public-repos.js';
 import {
   CHILD_RUN_ID, ENDED_RUN_ID, FAILED_RUN_ID, agentRoute, assertions, failedRunThread, otherOverview, restart, runsList, steer,
   workspaceOverview,
@@ -632,6 +636,7 @@ const connections = new Map([['storefront', {
   created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
   version: 1, repository_private: null,
 }]]);
+for (const sample of sampleContributions()) connections.set(sample.connection_id, sample);
 /** Whether `id` names a stored connection (a removed one is gone from the map): the readiness preview's rule. */
 export const isStoredConnection = (id) => connections.has(id);
 const DIGITS = /^[1-9]\d{0,19}$/;
@@ -863,10 +868,53 @@ function spendRoute(req, res, send, _shared, url) {
   else send(403, { message: 'Admin access required' });
 }
 
+const UPSTREAM_TITLE = 'Fix the lint rule that flags valid optional chaining';
+const UPSTREAM_DESCRIPTION = [
+  '## What this changes', '',
+  'The `no-unsafe-chain` rule reported `a?.b?.()` as unsafe. It now reads the optional call as guarded.', '',
+  '## How it was checked', '',
+  '- The rule\'s tests: 48 passed, 3 added for optional calls.',
+  '- The repository\'s own CI commands, run on the fork\'s branch.', '',
+  '## Why', '',
+  'Customer feedback: the false positive blocked teams adopting the kit.', '',
+  'Prepared by engineering agents; reviewed by its owner before this pull request.',
+].join('\n');
+
+/** The compare page with the pull request prefilled; its body shortened, the way the broker shortens a long one. */
+function compareUrl(branch) {
+  const query = new URLSearchParams({ expand: '1', title: UPSTREAM_TITLE, body: `${UPSTREAM_DESCRIPTION.slice(0, 120)}…` });
+  return `https://github.com/open-tools/lint-kit/compare/main...admin-demo:lint-kit:${branch}?${query}`;
+}
+
+/**
+ * The runs as ones on a fork connection would end (7.57.00), with the broker's upstream pull request on their record:
+ * the ended run's one click away (`link`: the person clicks Create on GitHub; the body in the link is shortened, the
+ * full description copied from the run page), and its child's opened by the app as its owner (authorized).
+ */
+const UPSTREAMS = {
+  [ENDED_RUN_ID]: () => ({
+    state: 'link', upstream: 'open-tools/lint-kit', number: null, url: null, as: null,
+    reason: 'The app opens it for you once you authorize it (Authorize as me). '
+      + 'Open it with one click: you create it on GitHub, from your fork.',
+    at: new Date(Date.now() - 3_600_000).toISOString(), compare_url: compareUrl(`voc-agent/${ENDED_RUN_ID}/fix`),
+    title: UPSTREAM_TITLE, description: UPSTREAM_DESCRIPTION,
+  }),
+  [CHILD_RUN_ID]: () => ({
+    state: 'opened', upstream: 'open-tools/lint-kit', number: 128, url: 'https://github.com/open-tools/lint-kit/pull/128',
+    as: 'admin-demo', reason: null, at: new Date(Date.now() - 1_800_000).toISOString(), compare_url: null, title: null,
+    description: null,
+  }),
+};
+
+function withUpstream(overview, runId) {
+  const upstream = UPSTREAMS[runId];
+  return upstream === undefined ? overview : { ...overview, run: { ...overview.run, upstream_pull_request: upstream() } };
+}
+
 /** The ended run and its child (7.51.00): their overviews, and the ended run's restart (the child is live: 409). */
 function otherRunRoute(req, res, send, shared, runId, sub) {
   if (!isAdmin()) send(403, { message: 'Admin access required' });
-  else if (req.method === 'GET' && sub === undefined) send(200, otherOverview(runId));
+  else if (req.method === 'GET' && sub === undefined) send(200, withUpstream(otherOverview(runId), runId));
   else if (req.method === 'POST' && sub === 'restart') {
     shared.collectJson(req, res, (body) => send(...restart(runId, body ?? {}, runId === CHILD_RUN_ID)));
   } else send(404, { message: 'Engineering run not found' });
@@ -883,10 +931,16 @@ function failedRunRoute(req, send, sub, rest) {
 /** The routes of one exact path under the prefix. */
 const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRoute };
 
+/** The domain modules over the connections here (the GitHub Apps, the Issues source, the public repositories). */
+function handleConnectionModules(req, res, url, send, shared) {
+  const over = { connections, connectionLimit: CONNECTION_LIMIT, isAdmin };
+  return handleGitHubAppRoutes(req, res, url, send, shared, over) || handleIssuesSourceRoutes(req, res, url, send, shared, over)
+    || handlePublicRepositoryRoutes(req, res, url, send, shared, over);
+}
+
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
-  if (handleGitHubAppRoutes(req, res, url, send, shared, { connections, connectionLimit: CONNECTION_LIMIT, isAdmin })) return true;
-  if (handleIssuesSourceRoutes(req, res, url, send, shared, { connections, isAdmin })) return true;
+  if (handleConnectionModules(req, res, url, send, shared)) return true;
   const connection = CONNECTION_PATH.exec(url.pathname);
   if (connection) {
     connectionsRoute(req, res, send, shared, connection[1] === undefined ? undefined : decodeURIComponent(connection[1]),

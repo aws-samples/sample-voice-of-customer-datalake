@@ -14,6 +14,9 @@
  *   connections outside every App (a pasted App key, a GitLab token, one whose App is no longer listed) under "Other
  *   connections" with the same rows. Each row has at most one action (connectionStatus.ts), its details (ⓘ) and its
  *   "⋯" (edit, the CI attestation's other move, remove).
+ * - **Public repositories** (7.57.00, PublicRepositories.tsx), once an App is there to read with: the read-only
+ *   connections to public repositories in a card of their own (each with its guided Contribute to ‹upstream›), and
+ *   Add a public repository (search GitHub, Connect read-only).
  * - **More ways to connect**, folded (MoreWaysToConnect.tsx): another GitHub App, a connection made by hand, GitLab.
  *
  * One dialog at a time over the page: adding or editing a connection (ConnectionDialog.tsx: an empty key keeps the
@@ -41,6 +44,7 @@ import { RepositoryList } from './ConnectionRow'
 import { AppGroup } from './AppGroup'
 import { ConnectGitHubHero } from './GitHubAppPanel'
 import { MoreWaysToConnect } from './MoreWaysToConnect'
+import { PublicConnections, PublicRepositoryPicker } from './PublicRepositories'
 import { useAppChecks } from './useAppChecks'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type {
@@ -145,6 +149,7 @@ function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly
   // (while the Apps are read, nothing is grouped: a connection made through one would show among the others)
   if (apps.isPending) return <div className="skeleton h-16" />
   const groups = groupConnections(list.connections, apps.data?.apps ?? [])
+  const contributing = list.connections.some((connection) => connection.kind !== 'repository')
   return (
     <>
       {apps.data === undefined && (
@@ -155,13 +160,17 @@ function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly
           {groups.apps.map((group) => (
             <li key={group.app.app_id}>
               <AppGroup group={group} view={view} record={checks.records.get(group.app.app_id)}
-                checking={checks.running.has(group.app.app_id)} actions={actions} onNotice={onNotice}
+                checking={checks.running.has(group.app.app_id)} actions={actions} onNotice={onNotice} contributing={contributing}
                 onCheck={() => { void checks.check(group.app.app_id) }} />
             </li>
           ))}
         </ul>
       )}
       {groups.others.length > 0 && <OtherConnections connections={groups.others} view={view} actions={actions} />}
+      {groups.publicRead.length > 0 && (
+        <PublicConnections connections={groups.publicRead} all={list.connections} apps={apps.data?.apps ?? []} view={view}
+          onRemove={actions.onRemove} />
+      )}
     </>
   )
 }
@@ -237,13 +246,16 @@ function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd 
   const appList = apps.data
   const appsFull = appList === undefined || appList.apps.length >= appList.limit
   const empty = summary?.empty === true
+  const connectionsFull = list.connections.length >= list.limit
   return (
     <>
       {empty
         ? <ConnectGitHubHero full={appsFull} />
         : <ConnectedBody list={list} apps={apps} view={view} checks={checks} actions={actions} onNotice={onNotice} />}
+      {/* (7.57.00: any public repository, read with the deployment's App, so once there is one) */}
+      {(appList?.apps.length ?? 0) > 0 && <PublicRepositoryPicker full={connectionsFull} onNotice={onNotice} />}
       <MoreWaysToConnect anotherApp={!empty} appsFull={appsFull} appLimit={appList?.limit ?? null}
-        connectionsFull={list.connections.length >= list.limit} connectionLimit={list.limit} onAdd={onAdd} />
+        connectionsFull={connectionsFull} connectionLimit={list.limit} onAdd={onAdd} />
     </>
   )
 }

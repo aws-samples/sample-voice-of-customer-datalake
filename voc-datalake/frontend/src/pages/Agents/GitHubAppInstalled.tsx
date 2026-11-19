@@ -5,7 +5,9 @@
  * → Connections (its state), sends it once (`POST /agents/engineering/github-apps/installations`): the server saves a
  * connection for every repository the installation covers, up to the connection limit, and says which it skipped.
  * Since 7.50.02 their issues follow: the page says what the deployment's GitHub Issues source reads now and each
- * repository's `voc-agent` label (ConnectionIssues.tsx `IssuesFollowLines`).
+ * repository's `voc-agent` label (ConnectionIssues.tsx `IssuesFollowLines`). Since 7.57.00 an installation started from
+ * "Contribute to ‹upstream›" (ContributeCard.tsx) saves the person's fork alone, and the page says which upstream it
+ * is a fork of.
  *
  * Nothing is sent when GitHub says an owner must approve the installation first (`setup_action=request`: the state
  * stays good until it expires), nor for a return without the page's state (an installation changed in GitHub's own
@@ -65,6 +67,9 @@ function Saved({ installation }: Readonly<{ installation: Installation }>) {
         {t('connections.githubReturn.installedBody', { count: connections.length, slug: app.slug })}
       </p>
       {account.login !== '' && <p className="text-sm text-muted">{t('connections.githubReturn.account', { account: account.login })}</p>}
+      {installation.fork !== null && (
+        <p className="text-sm text-text">{t('connections.githubReturn.forkConnected', installation.fork)}</p>
+      )}
       {connections.length > 0 && (
         <ul className="list-disc list-inside text-sm text-text font-mono" aria-label={t('connections.githubReturn.connectedList')}>
           {connections.map(({ connection }) => <li key={connection.connection_id}>{connection.repository}</li>)}

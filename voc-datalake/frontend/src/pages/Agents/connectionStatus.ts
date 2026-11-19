@@ -17,9 +17,13 @@
  * A connection made through one of the deployment's Apps (`app_reference`) has no key of its own (the App's is stored
  * once): its missing credential is the App's to fix, never "Store the key" on the row.
  *
+ * Since 7.57.00 a read-only public repository (`public_read`) is in a card of its own (PublicRepositories.tsx): nothing
+ * is written to it, so it has no CI to attest and no row primary; a fork connection (`fork`, the App installed on a
+ * person's fork) is a row of its App like any other, its CI attested before the agents push to the fork.
+ *
  * @module pages/Agents/connectionStatus
  */
-import { isCiAttested } from '../../api/engineeringConnectionsApi'
+import { isCiAttested, isPublicRead } from '../../api/engineeringConnectionsApi'
 import { tokenExpiry } from './connectionRules'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { GitHubApp, InstallationCheck } from '../../api/githubAppsApi'
@@ -42,6 +46,8 @@ export interface ConnectionGroups {
   readonly apps: readonly AppGroupOf[]
   /** A pasted App key's, a GitLab token's, or one made through an App this deployment no longer lists. */
   readonly others: readonly EngineeringConnection[]
+  /** (7.57.00) The public repositories read only, whatever App reads them. */
+  readonly publicRead: readonly EngineeringConnection[]
 }
 
 /** A connection made through one of the deployment's GitHub Apps: its key is the App's, its issues follow it. */
@@ -54,9 +60,11 @@ export function groupConnections(connections: readonly EngineeringConnection[], 
   const ownApp = (connection: EngineeringConnection): string | null =>
     viaApp(connection) && connection.credential.app_id !== null && listed.has(connection.credential.app_id)
       ? connection.credential.app_id : null
+  const written = connections.filter((connection) => !isPublicRead(connection))
   return {
-    apps: apps.map((app) => ({ app, connections: connections.filter((connection) => ownApp(connection) === app.app_id) })),
-    others: connections.filter((connection) => ownApp(connection) === null),
+    apps: apps.map((app) => ({ app, connections: written.filter((connection) => ownApp(connection) === app.app_id) })),
+    others: written.filter((connection) => ownApp(connection) === null),
+    publicRead: connections.filter(isPublicRead),
   }
 }
 
@@ -67,6 +75,7 @@ export function issuesOf(view: IssuesSourceView | undefined, connectionId: strin
 
 /** The row's one primary (the module's table, repository rows), as of `today` (`YYYY-MM-DD`, UTC). */
 export function rowPrimary(connection: EngineeringConnection, issues: ConnectionIssues | undefined, today: string): RowPrimary {
+  if (isPublicRead(connection)) return null
   if (!connection.credential.set && !viaApp(connection)) return 'storeKey'
   if (connection.host === 'gitlab' && connection.credential.set) {
     const expiry = tokenExpiry(connection.credential.expires_at, today)
@@ -93,6 +102,8 @@ export interface ConnectionsSummary {
   readonly through: readonly { readonly slug: string; readonly count: number }[]
   /** Connections outside every listed App. */
   readonly others: number
+  /** (7.57.00) Public repositories read only. */
+  readonly publicRead: number
   /** Connections whose CI is not attested yet (the agents push nothing to them). */
   readonly ciNeeded: number
   /** The deployment's GitHub Issues source reads at least one repository. */
@@ -116,7 +127,8 @@ export function connectionsSummary(input: Readonly<{
     through: groups.apps.filter((group) => group.connections.length > 0)
       .map((group) => ({ slug: group.app.slug, count: group.connections.length })),
     others: groups.others.length,
-    ciNeeded: connections.filter((connection) => !isCiAttested(connection)).length,
+    publicRead: groups.publicRead.length,
+    ciNeeded: connections.filter((connection) => !isPublicRead(connection) && !isCiAttested(connection)).length,
     issuesRead: issues?.connections.some((entry) => entry.reading) ?? false,
   }
 }

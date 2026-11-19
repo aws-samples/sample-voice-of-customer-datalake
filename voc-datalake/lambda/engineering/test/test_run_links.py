@@ -96,6 +96,17 @@ def test_an_issue_off_its_shape_reads_as_none(issue: Any) -> None:
     assert issue_of(meta) is None
 
 
+def test_a_fork_runs_issue_is_read_on_its_upstream() -> None:
+    # (7.57.00: META's issue_repo, the fork's upstream, names the repository the issue's address is of)
+    url = 'https://github.com/upstream-org/shop/issues/7'
+    meta: dict[str, Any] = {'repo': {'S': REPO}, 'issue_repo': {'S': 'upstream-org/shop'},
+                            'issue': {'M': {'host': {'S': 'github'}, 'number': {'N': '7'}, 'url': {'S': url}}}}
+    found = issue_of(meta)
+    assert found is not None
+    assert (found.number, found.url) == (7, url)
+    assert issue_of({**meta, 'issue_repo': {'S': ''}}) is None   # (on the fork itself it is no issue of the run's)
+
+
 class _NoSessions:
     def of_run(self, run_id: str) -> list[AgentSession]:  # noqa: ARG002 - the protocol's signature
         return []
@@ -200,4 +211,5 @@ def test_a_row_naming_another_repository_is_read_as_none() -> None:
         _meta(client, 'SET #repo = :r', {':r': {'S': REPO}})
         _pull_request(client, url='https://github.com/other-org/shop/pull/7')
         meta = client.get_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}})['Item']
-        assert run_links(client, TABLE, 'default', RUN, meta) == {'issue': None, 'pull_request': None}
+        assert run_links(client, TABLE, 'default', RUN, meta) == {'issue': None, 'pull_request': None,
+                                                                  'upstream_pull_request': None}

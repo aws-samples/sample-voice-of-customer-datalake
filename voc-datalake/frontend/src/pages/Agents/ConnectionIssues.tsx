@@ -24,6 +24,7 @@ import { CircleX, Tag } from 'lucide-react'
 import clsx from 'clsx'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
+import { isPublicRead } from '../../api/engineeringConnectionsApi'
 import { deploymentSourcePath } from '../Settings/adminPaths'
 import { useConnectionError } from './connectionText'
 import { issuesOf, viaApp } from './connectionStatus'
@@ -114,7 +115,11 @@ export function IssuesCell({ connection, view }: Readonly<{
     onSuccess: (answer) => { queryClient.setQueryData(issuesSourceKeys.view(), answer) },
   })
   if (connection.host === 'gitlab') return <NoIssues meaning={t('connections.issues.githubOnly')} />
-  if (!viaApp(connection)) return <NoIssues meaning={t('connections.issues.appOnly')} />
+  // (7.57.00: a fork's issues are its upstream's, read through the upstream's own read-only connection)
+  if (connection.fork !== null) {
+    return <NoIssues meaning={t('connections.issues.fromUpstream', { upstream: connection.fork.upstream })} />
+  }
+  if (!viaApp(connection) && !isPublicRead(connection)) return <NoIssues meaning={t('connections.issues.appOnly')} />
   const issues = issuesOf(view, connection.connection_id)
   if (view === undefined || issues === undefined) return <NoIssues meaning={null} />
   return (
@@ -136,7 +141,9 @@ export function LabelCell({ connection, view }: Readonly<{
   connection: EngineeringConnection; view: IssuesSourceView | undefined
 }>) {
   const { t } = useTranslation('agents')
-  const issues = viaApp(connection) ? issuesOf(view, connection.connection_id) : undefined
+  // (a public repository read only gets no label: nothing is ever written to it)
+  if (isPublicRead(connection)) return <NoIssues meaning={t('connections.issues.noLabelReadOnly')} />
+  const issues = viaApp(connection) && connection.fork === null ? issuesOf(view, connection.connection_id) : undefined
   if (view === undefined || issues === undefined || issues.label === null) return <NoIssues meaning={null} />
   if (issues.label === 'failed') {
     return <IconBadge toneClass="badge-danger" icon={CircleX}>{t('connections.issues.labelFailed')}</IconBadge>

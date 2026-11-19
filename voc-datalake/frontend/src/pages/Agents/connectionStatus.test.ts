@@ -25,7 +25,7 @@ function connection(fields: Record<string, unknown> = {}, credential: Record<str
 
 const app = (fields: Partial<GitHubApp> = {}): GitHubApp => ({
   app_id: '271828', slug: 'voc-agents-ac7a4f', owner: 'example-org', owner_type: 'Organization', html_url: '',
-  webhook: true, connections: ['web'], created_at: null, created_by: null, version: 1, ...fields,
+  webhook: true, connections: ['web'], created_at: null, created_by: null, version: 1, oauth: false, client_id: null, ...fields,
 })
 
 const issues = (fields: Partial<ConnectionIssues> = {}): ConnectionIssues => ({
@@ -87,6 +87,13 @@ describe('the groups', () => {
     expect([groups.apps.map((group) => [group.app.slug, group.connections.map((c) => c.connection_id)]),
       groups.others.map((c) => c.connection_id)]).toStrictEqual([[['voc-agents-ac7a4f', ['web']], ['fresh', []]], ['pasted', 'orphan', 'docs']])
   })
+
+  it('keeps a public repository read only out of the Apps and the others, in its own group (7.57.00)', () => {
+    const read = connection({ connection_id: 'tools', repository: 'other-org/tools', kind: 'public_read' }, { kind: 'public_read' })
+    const groups = groupConnections([connection(), read], [app()])
+    expect([groups.apps[0]?.connections.map((c) => c.connection_id), groups.others, groups.publicRead.map((c) => c.connection_id)])
+      .toStrictEqual([['web'], [], ['tools']])
+  })
 })
 
 describe('the status line', () => {
@@ -105,8 +112,17 @@ describe('the status line', () => {
   it('counts the repositories through each App, the other connections, and those whose CI waits', () => {
     const pasted = connection({ connection_id: 'pasted', ci_attestation: null }, { kind: 'app' })
     expect(summary({ connections: [connection(), pasted] })).toStrictEqual({
-      empty: false, attention: true, through: [{ slug: 'voc-agents-ac7a4f', count: 1 }], others: 1, ciNeeded: 1, issuesRead: true,
+      empty: false, attention: true, through: [{ slug: 'voc-agents-ac7a4f', count: 1 }], others: 1, publicRead: 0, ciNeeded: 1,
+      issuesRead: true,
     })
+  })
+
+  it('counts a public repository read only apart, with no CI to attest and nothing waiting on it (7.57.00)', () => {
+    const read = connection({ connection_id: 'tools', repository: 'other-org/tools', kind: 'public_read', ci_attestation: null },
+      { kind: 'public_read' })
+    const counted = summary({ connections: [connection(), read] })
+    expect([counted.publicRead, counted.ciNeeded, counted.attention, counted.others]).toStrictEqual([1, 0, false, 0])
+    expect(rowPrimary(read, undefined, TODAY)).toBeNull()
   })
 
   it('needs attention when an App waits too, and says issues are read only while one is', () => {

@@ -67,6 +67,13 @@ export const ENGINEERING_APP_TOKENS_FUNCTION_BASE_NAME = 'voc-engineering-app-to
  * for the connections' follow (ENGINEERING_ISSUES_CONFIG_FUNCTION).
  */
 export const ENGINEERING_ISSUES_CONFIG_FUNCTION_BASE_NAME = 'voc-engineering-issues-config';
+/**
+ * The GitHub App user authorizations' code exchange (VocProcessingStack, lib/stacks/engineering-user-auth.ts; with
+ * `-c engineeringAgents=true`; 7.57.00): its own role reads the Apps' OAuth clients and writes the people's
+ * user-to-server tokens (never reads one), entered where it takes `exchange` alone. The Agents API in VocApiStack
+ * invokes it when a person's GitHub sign-in comes back (ENGINEERING_USER_AUTH_FUNCTION).
+ */
+export const ENGINEERING_USER_AUTH_FUNCTION_BASE_NAME = 'voc-engineering-user-auth';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

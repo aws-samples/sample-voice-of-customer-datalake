@@ -769,7 +769,8 @@ def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     # approves or marks a pull request ready).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
                       'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
-                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue', 'tree_with'}
+                      'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue', 'tree_with',
+                      'public_get', 'open_upstream_pull_request'}
 
 
 def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:

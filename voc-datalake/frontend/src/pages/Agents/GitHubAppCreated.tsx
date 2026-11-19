@@ -10,8 +10,6 @@
  *
  * @module pages/Agents/GitHubAppCreated
  */
-import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
@@ -19,7 +17,7 @@ import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { useConnectionError } from './connectionText'
 import { GitHubReturnFrame } from './GitHubReturnFrame'
 import { leavingForGitHub } from './githubReturn'
-import { useSingleRequest, useTakenQuery } from './githubCallback'
+import { useCodeExchange } from './githubCallback'
 import type { CreatedApp } from '../../api/githubAppsApi'
 import type { RequestOutcome } from './githubCallback'
 
@@ -54,20 +52,8 @@ function Created({ outcome }: Readonly<{ outcome: RequestOutcome<CreatedApp> }>)
 
 export default function GitHubAppCreated() {
   const { t } = useTranslation('agents')
-  const queryClient = useQueryClient()
-  const taken = useTakenQuery(CREATED_QUERY)
-  const [request] = useState(() => {
-    const code = taken.get('code') ?? ''
-    const state = taken.get('state') ?? ''
-    if (code === '' || state === '') return null
-    return async () => {
-      const created = await githubAppsApi.convert(code, state)
-      void queryClient.invalidateQueries({ queryKey: githubAppsKeys.list() })
-      void queryClient.invalidateQueries({ queryKey: engineeringConnectionsKeys.list() })
-      return created
-    }
-  })
-  const outcome = useSingleRequest(request)
+  const { outcome } = useCodeExchange(CREATED_QUERY, (code, state) => githubAppsApi.convert(code, state),
+    [githubAppsKeys.list(), engineeringConnectionsKeys.list()])
   return (
     <GitHubReturnFrame title={t('connections.githubReturn.createdTitle')}>
       <Created outcome={outcome} />

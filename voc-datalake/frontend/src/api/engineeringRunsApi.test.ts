@@ -28,6 +28,7 @@ describe('parseOverview', () => {
       started_at: '2026-11-12T08:00:00Z', ended_at: null, waiting_at: '', waiting_detail: null, stop: null, budget: null,
       flow_steps: null, flow_revision: null, flow_outcome: null, flow_definition: null, issue: null, pull_request: null,
       cost_usd: null, learn_cost_usd: null, cost_cap_usd: null, parent: null, manifest: null, expansion: [],
+      upstream_pull_request: null,
     })
     expect(overview.agents.map((agent) => [agent.agent, agent.status, agent.task_id, agent.tokens.length])).toStrictEqual([
       ['coordinator-0', 'waiting', null, 1], ['fixer-1', 'working', 'task-1', 1], ['final-go-1', 'working', 'task-3', 0],

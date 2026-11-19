@@ -129,6 +129,27 @@ const PullRequestLinkSchema = z.object({
   host: RunHostSchema, number: LinkNumberSchema, url: z.string(), head: text, base: text,
 }).nullable().catch(null)
 export type RunIssueLink = NonNullable<z.output<typeof IssueLinkSchema>>
+/**
+ * (7.57.00) On a fork connection, the run's pull request on the upstream: opened by the broker as the connection's owner
+ * once the gate passed (`opened`); or one click away, GitHub's compare page prefilled (`link`: `compare_url`, its
+ * `title`, and the full `description` when the link's body had to be shortened), the app not having opened it (`reason`
+ * says why: no authorization, GitHub's refusal, the daily cap); or refused by a safety check (`refused`: no link, the
+ * run ends with the fork's pull request); or a write whose outcome is not known (`unknown`, the compare link kept); null
+ * for none. A state the page does not know reads as `unknown`.
+ */
+const UpstreamPullRequestSchema = z.object({
+  state: z.enum(['opened', 'link', 'refused', 'unknown']).catch('unknown'),
+  upstream: z.string().min(1),
+  number: LinkNumberSchema.nullable().catch(null),
+  url: maybeText,
+  as: maybeText,
+  reason: maybeText,
+  at: maybeText,
+  compare_url: maybeText,
+  title: maybeText,
+  description: maybeText,
+}).nullable().catch(null)
+export type RunUpstreamPullRequest = NonNullable<z.output<typeof UpstreamPullRequestSchema>>
 /** (7.51.00) A run restarted from another: its parent (on the child), or a child (on the parent): who, when, how. */
 const RunLinkSchema = z.object({ run_id: z.string().min(1), mode: text, by: text, at: text })
 /** An ended run's manifest: what it cost and used, as its end wrote it; null before. */
@@ -163,6 +184,7 @@ const OverviewSchema = z.object({
     flow_definition: z.unknown().optional().transform((definition) => normalizeDefinition(definition ?? null)),
     issue: IssueLinkSchema.optional().transform((issue) => issue ?? null),
     pull_request: PullRequestLinkSchema.optional().transform((pull) => pull ?? null),
+    upstream_pull_request: UpstreamPullRequestSchema.optional().transform((upstream) => upstream ?? null),
     /** (7.51.00) Its cost so far (Learn's apart) against its cap, in USD; null when unsaid. */
     cost_usd: maybeCount.optional().transform((usd) => usd ?? null),
     learn_cost_usd: maybeCount.optional().transform((usd) => usd ?? null),

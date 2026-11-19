@@ -856,6 +856,7 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
                    budget_usd=budget_usd, flow_definition=definition,
                    flow_revision=_optional_number(event, 'flow_revision', int) or 0,
                    issue=issue, host=str(event.get('host', '')), issue_verified=verified,
+                   issue_repo=str(event.get('issue_repo', '')),
                    origin=RunOrigin.of(event))
     except RunExists:
         run = runs.get(run_id)

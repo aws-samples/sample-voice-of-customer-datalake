@@ -31,6 +31,12 @@ that one repository, created only when missing; up to ``LABEL_WORKERS`` at once)
 the step that called it: the connections are saved, and the answer's ``issues`` block says what went wrong (Check
 installation tries again).
 
+**Any public repository (7.57.00).** A public repository connected read only (``public_read``) is followed like an
+App's connection (its issues are read as feedback, through the token function's ``issues_token``, which reads a public
+repository no installation covers with a ``metadata: read`` token naming none), but it never gets the label: a label
+is a write, and nothing is written to a public repository read only. A fork is never followed: its issues are its
+upstream's, which the upstream's own public connection reads.
+
 **What is kept.** Each connection's switch and label state is one row of the connections' partition,
 ``CONNECTIONS#default`` / ``ISSUES#<connection_id>`` (``read``, ``label_state``: ``created`` | ``present`` |
 ``failed``), and every change is an audit row of the same ``LOG#`` shape as the connections' (``issues_source_added``,
@@ -51,6 +57,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors.connections import (
     ISSUE_LABEL,
+    KIND_FORK,
+    KIND_PUBLIC_READ,
     PARTITION,
     Actor,
     ConnectionRefused,
@@ -255,14 +263,31 @@ def _lower(names: Iterable[str]) -> set[str]:
 
 
 def app_of(connection: Mapping[str, Any]) -> tuple[str, int] | None:
-    """The deployment's App and installation a connection uses (``app_reference``), or None for any other."""
+    """The deployment's App and installation a connection uses (``app_reference``, or since 7.57.00 a public
+    repository read through one, ``public_read``), or None for any other (a fork included: its issues are its
+    upstream's)."""
     credential = connection.get('credential')
-    if not isinstance(credential, Mapping) or credential.get('kind') != 'app_reference':
+    if (not isinstance(credential, Mapping) or credential.get('kind') not in ('app_reference', KIND_PUBLIC_READ)
+            or connection.get('kind') == KIND_FORK):
         return None
     app_id, installation = str(credential.get('app_id') or ''), str(credential.get('installation_id') or '')
     if connection.get('host', 'github') != 'github' or not (GITHUB_NUMBER.fullmatch(app_id) and installation.isdigit()):
         return None
     return app_id, int(installation)
+
+
+def follow_stored(issues: IssuesFollow | None, app_id: str, connections: Any, actor: Actor) -> dict[str, Any] | None:
+    """``issues``' follow of App ``app_id``'s stored connections (``connections``: a ``ConnectionStore``), after an
+    installation, a check or a public connection (7.57.00): never raises; None where the source is not deployed or no
+    follow is wired; a store that cannot be read is said in the answer's ``error``."""
+    if issues is None:
+        return None
+    try:
+        stored = connections.list()
+    except ConnectionRefused as refused:
+        return {'signs_in': 'none', 'added': [], 'reading': [], 'skipped': [], 'labels': [], 'schedule': 'unknown',
+                'error': str(refused)}
+    return issues.follow_app(app_id, stored, actor)
 
 
 def _iso(moment: datetime) -> str:
@@ -390,8 +415,10 @@ class IssuesFollow:
     def _labels(self, connections: Sequence[Mapping[str, Any]], rows: Mapping[str, Mapping[str, Any]],
                 actor: Actor) -> list[dict[str, str]]:
         """The label on each of ``connections`` whose row has none recorded (``created`` or ``present``), ensured up
-        to ``LABEL_WORKERS`` at once, each recorded on its row (and audited when created)."""
-        due = [c for c in connections if rows.get(_id(c), {}).get('label_state') not in ('created', 'present')]
+        to ``LABEL_WORKERS`` at once, each recorded on its row (and audited when created). Never on a public
+        repository read only (7.57.00: a label is a write)."""
+        due = [c for c in connections if rows.get(_id(c), {}).get('label_state') not in ('created', 'present')
+               and c.get('kind') != KIND_PUBLIC_READ]
         if not due:
             return []
         with ThreadPoolExecutor(max_workers=min(LABEL_WORKERS, len(due))) as pool:

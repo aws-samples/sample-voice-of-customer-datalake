@@ -189,6 +189,9 @@ def run_connection(row: Mapping[str, Any] | None, issue: int | None = None) -> d
     run: dict[str, Any] = {'repo': str(row.get('repository', '')), 'default_branch': str(row.get('default_branch', ''))}
     if issue is not None:
         run.update(issue=issue, host=connection_host(row))
+        # (7.57.00: a fork's issue is its upstream's, the one its public connection reads as feedback)
+        if row.get('connection_kind') == 'fork' and isinstance(row.get('upstream'), str) and row['upstream']:
+            run['issue_repo'] = row['upstream']
     return run
 
 

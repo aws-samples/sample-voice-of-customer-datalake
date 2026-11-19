@@ -39,10 +39,13 @@ from shared.workflow_engineering import PUSHING_ROLES
 Status = Literal['pass', 'fail', 'warn', 'unknown']
 DOCS: Final = 'docs/autonomous-engineering.md'
 READINESS_DOCS: Final = f'{DOCS}#readiness-75000'
-#: The checks, in the order they are answered.
-CHECK_IDS: Final = ('connection', 'app_installation', 'ci_attestation', 'ci_protection', 'image', 'pack', 'tenets',
-                    'issues_source', 'issue_label', 'dial', 'budget', 'hard_cap', 'bedrock_models',
-                    'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'kiro', 'session_storage')
+#: The checks, in the order they are answered (7.57.00: a fork connection's ``fork``, ``user_authorization`` and
+#: ``upstream_pr``, none of them required: a run whose upstream pull request the app does not open ends with its
+#: one-click link).
+CHECK_IDS: Final = ('connection', 'app_installation', 'fork', 'user_authorization', 'upstream_pr', 'ci_attestation',
+                    'ci_protection', 'image', 'pack', 'tenets', 'issues_source', 'issue_label', 'dial', 'budget',
+                    'hard_cap', 'bedrock_models', 'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'kiro',
+                    'session_storage')
 #: What a run truly needs (owner decision): Enable is refused while one of these fails.
 REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_models', 'budget', 'dial'})
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
@@ -236,6 +239,15 @@ class ReadinessPorts(Protocol):
         stored: its metadata only, never its value."""
         ...
 
+    def fork_parent(self, connection: Mapping[str, Any]) -> str | None:
+        """What a fork connection's repository is a fork of on GitHub now (7.57.00: its ``parent``, read through the
+        token function with a read-only token), '' when it is no fork, None when GitHub has no such repository."""
+        ...
+
+    def user_authorized(self, app_id: str, subject: str) -> bool:
+        """Whether ``subject`` holds a GitHub user authorization of App ``app_id`` (7.57.00: its row; never a token)."""
+        ...
+
 
 @dataclass(frozen=True)
 class SandboxSeen:
@@ -378,6 +390,7 @@ def _not_needed(check_id: str, why: str, docs: str = READINESS_DOCS) -> Check:
 
 CONNECTORS_DOCS: Final = f'{DOCS}#repository-connectors'
 APP_DOCS: Final = f'{DOCS}#a-github-app-in-two-clicks-74500'
+PUBLIC_DOCS: Final = f'{DOCS}#any-public-repository-75700'
 KNOWLEDGE_DOCS: Final = f'{DOCS}#the-knowledge-pack'
 TENETS_DOCS: Final = f'{DOCS}#the-repositorys-tenets'
 RUNTIME_DOCS: Final = f'{DOCS}#runtime-one-agentcore-session-per-agent'
@@ -404,8 +417,20 @@ def _connection(ctx: _Context) -> Check:
     if ctx.row is None:
         return Check('connection', 'fail', f'The connection {ctx.subject.connection} is not stored (or was removed).',
                      ADD_CONNECTION, CONNECTORS_DOCS)
-    return Check('connection', 'pass', f'{ctx.row.get("host") or "github"}: {ctx.row.get("repository", "")}', '',
-                 CONNECTORS_DOCS)
+    where = f'{ctx.row.get("host") or "github"}: {ctx.row.get("repository", "")}'
+    if ctx.row.get('connection_kind') == 'public_read':
+        # (7.57.00: a public repository read only takes no write; a flow that pushes needs a fork)
+        if requires(ctx.subject, 'ci_attestation'):
+            return Check('connection', 'fail', f'{where} is a public repository connected read only: this flow '
+                         'pushes and opens a pull request, which the broker refuses on it.',
+                         'Agents → Connections → the repository → its Contribute card\'s steps, then set the agent up '
+                         'on the fork.', PUBLIC_DOCS)
+        return Check('connection', 'pass', f'{where}, read only: what the run finds stays in VoC (no comment, label '
+                     'or pull request on GitHub).', '', PUBLIC_DOCS)
+    if ctx.row.get('connection_kind') == 'fork':
+        return Check('connection', 'pass', f'{where}, a fork of {ctx.row.get("upstream", "")}: the run\'s outcome is '
+                     'a pull request on the upstream.', '', PUBLIC_DOCS)
+    return Check('connection', 'pass', where, '', CONNECTORS_DOCS)
 
 
 def _repository(ctx: _Context) -> str:
@@ -437,6 +462,76 @@ def _app_installation(ctx: _Context) -> Check:
                      f'{repository} is not among those read.', 'Check the installation on GitHub.', APP_DOCS)
     return Check('app_installation', 'fail', f'The GitHub App installation does not cover {repository}.',
                  'On GitHub, add the repository to the App\'s installation (Configure → Repository access).', APP_DOCS)
+
+
+def _is_fork(ctx: _Context) -> bool:
+    return (ctx.row or {}).get('connection_kind') == 'fork'
+
+
+def _fork(ctx: _Context) -> Check:
+    """A fork connection's fork (7.57.00): its repository is still a fork of its upstream on GitHub."""
+    if not _is_fork(ctx) or ctx.row is None:
+        return _not_needed('fork', 'the connection is not a fork', PUBLIC_DOCS)
+    upstream = str(ctx.row.get('upstream') or '')
+    fix = f'Fork {upstream} again on GitHub, install the App on the fork, and connect it (the Contribute card).'
+    try:
+        parent = ctx.ports.fork_parent(ctx.row)
+    except ReadFailed as error:
+        return _unknown('fork', 'The fork', error, docs=PUBLIC_DOCS)
+    if parent is None:
+        return Check('fork', 'fail', f'GitHub has no repository {_repository(ctx)} any more.', fix, PUBLIC_DOCS)
+    if parent.lower() != upstream.lower():
+        return Check('fork', 'fail', f'{_repository(ctx)} is not a fork of {upstream} on GitHub now.', fix,
+                     PUBLIC_DOCS)
+    return Check('fork', 'pass', f'{_repository(ctx)} is a fork of {upstream}.', '', PUBLIC_DOCS)
+
+
+def _user_authorization(ctx: _Context) -> Check:
+    """The fork connection's owner's GitHub user authorization (7.57.00): what lets the app open the upstream pull
+    request for them (optional: without it each run ends with the one-click link)."""
+    if not _is_fork(ctx) or ctx.row is None:
+        return _not_needed('user_authorization', 'the connection is not a fork', PUBLIC_DOCS)
+    owner = str(ctx.row.get('owner_name') or 'the connection\'s owner')
+    fix = (f'{owner} authorizes the App under Agents → Connections → GitHub Apps → Authorize as me (its OAuth client '
+           'set first, for an App made before 7.57.00).')
+    try:
+        held = ctx.ports.user_authorized(str(ctx.row.get('app_id') or ''), str(ctx.row.get('owner_subject') or ''))
+    except ReadFailed as error:
+        return _unknown('user_authorization', 'The owner\'s authorization', error, fix, PUBLIC_DOCS)
+    if held:
+        return Check('user_authorization', 'pass', f'{owner} authorized the App: the app opens the upstream pull '
+                     'request as them where GitHub lets it, else the run ends with the one-click link.', '', PUBLIC_DOCS)
+    return Check('user_authorization', 'warn', f'{owner} has not authorized the App (optional): a run ends with the '
+                 'one-click link, and they create the upstream pull request on GitHub.', fix, PUBLIC_DOCS)
+
+
+def _upstream_pr(ctx: _Context) -> Check:
+    """Whether the app opens the runs' upstream pull request under the way of working they follow (7.57.00):
+    AI-driven, or AI-assisted with the owner's explicit setting; the licence acknowledged (otherwise a run ends with the
+    one-click link). GitHub's own state (archived, opted out, a changed licence) is read by the broker at each upstream
+    pull request."""
+    if not _is_fork(ctx) or ctx.row is None:
+        return _not_needed('upstream_pr', 'the connection is not a fork', PUBLIC_DOCS)
+    if not requires(ctx.subject, 'ci_attestation'):
+        return _not_needed('upstream_pr', 'the flow pushes nothing, so it opens no pull request', PUBLIC_DOCS)
+    assisted = ctx.row.get('upstream_pr_assisted') is True
+    try:
+        mode = ctx.ports.mode(ctx.subject.person) if ctx.subject.person else ''
+    except ReadFailed as error:
+        return _unknown('upstream_pr', 'The way of working', error, docs=PUBLIC_DOCS)
+    licence = str(ctx.row.get('licence') or '')
+    if mode == MODE_AI_DRIVEN or (mode == MODE_AI_ASSISTED and assisted):
+        return Check('upstream_pr', 'pass', f'The runs open their pull request on {ctx.row.get("upstream", "")} after '
+                     f'the gate passes (licence {licence} acknowledged), within the daily caps.', '',
+                     PUBLIC_DOCS)
+    if mode == MODE_AI_ASSISTED:
+        return Check('upstream_pr', 'warn', 'The runs work AI-assisted, and the owner has not allowed the app to open '
+                     'upstream pull requests for AI-assisted runs: a run ends with the one-click link.',
+                     'The owner turns on "Open upstream pull requests for AI-assisted runs" on the fork connection.',
+                     PUBLIC_DOCS)
+    return Check('upstream_pr', 'warn', 'The runs\' way of working lets the app open no upstream pull request: a run '
+                 'ends with the one-click link.', 'Set AI-driven (or AI-assisted, with the owner\'s setting) for the person the '
+                 'runs follow.', PUBLIC_DOCS)
 
 
 def _ci_attestation(ctx: _Context) -> Check:
@@ -818,7 +913,8 @@ def _session_storage(ctx: _Context) -> Check:
 
 
 _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
-    'connection': _connection, 'app_installation': _app_installation, 'ci_attestation': _ci_attestation,
+    'connection': _connection, 'app_installation': _app_installation, 'fork': _fork,
+    'user_authorization': _user_authorization, 'upstream_pr': _upstream_pr, 'ci_attestation': _ci_attestation,
     'ci_protection': _ci_protection, 'image': _image, 'pack': _pack, 'tenets': _tenets,
     'issues_source': _issues_source, 'issue_label': _issue_label, 'dial': _dial, 'budget': _budget,
     'hard_cap': _hard_cap, 'bedrock_models': _bedrock_models, 'agentcore_quota': _agentcore_quota,

@@ -32,6 +32,7 @@ import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParamete
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
+import { grantUserAuthorizationWrites } from './api-engineering-user-auth';
 import { grantEngineeringRunReads } from './api-engineering-run-reads';
 import { agentsApiRole, grantEngineeringVoice } from './api-engineering-voice';
 import { engineeringRunCaps } from './engineering-start';
@@ -117,7 +118,9 @@ export interface AssistantLambdas {
  * source and a person's steering and answer (api-engineering-voice.ts); a person's signals go through the start
  * function's `signal_run`, on the invoke below. Since 7.53.00 the run requests' writes (`RunRequests`: PutItem and
  * UpdateItem on `WS#*#RUNREQ#*` alone, a local assistant's request for a Run now over MCP and an administrator's
- * decision on it). Returns the env that turns the routes on (shared/engineering_agents.py), or undefined: off, the
+ * decision on it). Since 7.57.00 the GitHub App user authorizations: the code exchange's function by name, the Apps'
+ * OAuth clients put and deleted, a person's token deleted, never read (api-engineering-user-auth.ts). Returns the env
+ * that turns the routes on (shared/engineering_agents.py), or undefined: off, the
  * role gets nothing and the routes answer 404.
  */
 function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
@@ -195,10 +198,14 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   const issues = grantIssuesSourceFollow(ctx, role);
   // A person's steering and answers on the engineering bus, and nothing else there (7.51.02, api-engineering-voice.ts).
   const voice = grantEngineeringVoice(ctx, role);
+  // The GitHub App user authorizations (7.57.00, api-engineering-user-auth.ts): the code exchange's function by name,
+  // the Apps' OAuth clients written and removed, a person's token removed; never a read.
+  const userAuth = grantUserAuthorizationWrites(ctx, role);
   return {
     ...readiness,
     ...issues,
     ...voice,
+    ...userAuth,
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,

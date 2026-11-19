@@ -5,7 +5,8 @@
  *   connection, the connection limit), the server's own reason, which names the field or what to do; else the
  *   status's message;
  * - a connection's CI attestation (7.52.00, the row's details): who recorded or withdrew it and when, or why none
- *   holds (none yet, voided by a repository change or a removal).
+ *   holds (none yet, voided by a repository change or a removal);
+ * - why a public repository takes no contribution from here (7.57.00: archived, no licence).
  *
  * @module pages/Agents/connectionText
  */
@@ -13,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { apiErrorStatus, messageKeyForStatus } from '../../api/apiErrorStatus'
 import { serverReason } from '../../lib/errors'
 import { formatDateTime } from '../../utils/dateUtils'
-import type { CiAttestation } from '../../api/engineeringConnectionsApi'
+import type { CiAttestation, EngineeringConnection } from '../../api/engineeringConnectionsApi'
 
 const CONNECTION_ERRORS = [
   { status: 400, messageKey: 'agents:connections.errors.invalid' },
@@ -45,4 +46,11 @@ export function useAttestationText(): (attestation: CiAttestation | null) => str
     if (attestation.state === 'withdrawn') return t('connections.ci.withdrawnBy', { who, when })
     return attestation.cause === 'connection_removed' ? t('connections.ci.voidedRemoved') : t('connections.ci.voidedRepository')
   }
+}
+
+/** (7.57.00) Why a public repository takes no contribution from here (archived, no licence), or null when it does. */
+export function useContributionHeld(connection: EngineeringConnection): string | null {
+  const { t } = useTranslation('agents')
+  if (connection.public?.archived === true) return t('connections.contribute.archived')
+  return (connection.public?.licence ?? null) === null ? t('connections.contribute.noLicence') : null
 }

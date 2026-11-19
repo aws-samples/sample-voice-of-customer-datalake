@@ -56,7 +56,13 @@ Permissions:
   reactions read asked for by hand (``POST /agents/engineering/<run_id>/reactions``, 7.10.00: the start function's
   ``ask_reactions``, below), and, since 7.52.00, the Registry (its cards, a card made from a skill), the quality
   gates and the assertions' vocabulary (``/agents/engineering/registry``, ``…/registry/<card>``, ``POST
-  …/registry/cards``, ``…/gates``, ``…/assertions``: shared/agents_engineering_registry_routes.py); while the
+  …/registry/cards``, ``…/gates``, ``…/assertions``: shared/agents_engineering_registry_routes.py), and, since
+  7.57.00, any public repository (``GET /agents/engineering/public-repositories``, ``POST …/public-connections``,
+  engineering/connectors/public_repos.py; the fork workflow, ``POST …/connections/<id>/fork``, ``PUT
+  …/connections/<id>/upstream``, engineering/connectors/forks.py; a person's GitHub user authorization, ``PUT
+  …/github-apps/<app_id>/oauth``, ``POST …/github-apps/<app_id>/authorize``, ``POST``/``GET
+  …/github-apps/authorizations``, ``DELETE …/github-apps/<app_id>/authorization``,
+  engineering/connectors/user_authorizations.py, the code exchanged by voc-engineering-user-auth); while the
   engineering agents are off every caller gets 404;
 - a flow's expansion (``GET /workflows/<id>/expanded``) and an automation's pause and resume (``POST
   /agents/<id>/pause``, ``…/resume``) are administrators' too (7.52.00, the same router); a workflow's ``used_by``
@@ -89,7 +95,11 @@ voc-engineering-app-tokens: the broker's code under its own role, which reads an
 neither of which answers a token), and, since 7.50.02, on the GitHub Issues settings function
 (``ENGINEERING_ISSUES_CONFIG_FUNCTION``, voc-engineering-issues-config: its own role reads and writes the source's
 settings and turns its schedule on; this role holds no grant on the secret or the rule), where that plugin is deployed
-(lib/stacks/api-engineering-issues-sync.ts), and
+(lib/stacks/api-engineering-issues-sync.ts), and, since 7.57.00, on the user authorizations' function
+(``ENGINEERING_USER_AUTH_FUNCTION``, voc-engineering-user-auth: it reads an App's OAuth client and writes a person's
+token; this API asks it only ``exchange``, which answers no token), with ``ssm:PutParameter`` and
+``ssm:DeleteParameter`` on the user-auth path's App clients and ``ssm:DeleteParameter`` on its people's tokens
+(``/[<prefix>-]voc/engineering-user-auth/``, still no ``ssm:GetParameter``), and
 ``dynamodb:PutItem`` and ``UpdateItem`` on the run requests' partitions only (``WS#*#RUNREQ#*``, 7.53.00), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``), and, since 7.51.02,
@@ -2040,10 +2050,11 @@ def _connection_call(act: Any) -> Any:
 def list_engineering_connections():
     """``{connections: [...], limit}``: the stored connections, each with whether its credential is set (never the
     credential), one Query of their partition."""
-    connections, _ = _connection_store()
+    connections, caller = _connection_store()
     from engineering.connectors.connections import MAX_CONNECTIONS
 
-    return {'connections': _connection_call(connections.list), 'limit': MAX_CONNECTIONS}
+    # (7.57.00: the caller's subject says whether they own a fork; it is never answered)
+    return {'connections': _connection_call(lambda: connections.list(caller.subject)), 'limit': MAX_CONNECTIONS}
 
 
 @app.put('/agents/engineering/connections/<connection_id>')
@@ -2183,6 +2194,11 @@ def withdraw_engineering_connection_ci(connection_id: str):
 #: on, a plain "try again" for the rest.
 _APP_TOKENS_REFUSALS: Final[Mapping[str, Kind]] = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 'conflict',
                                                    'HostBusy': 'unavailable', 'HostError': 'unavailable'}
+#: The user authorizations' function's errors (7.57.00, engineering/connectors/user_auth.py): a code GitHub refused or
+#: an App with no OAuth client here are 409 in its words, GitHub or SSM failing "try again".
+_USER_AUTH_REFUSALS: Final[Mapping[str, Kind]] = {'AuthorizationRefused': 'conflict', 'ClientUnavailable': 'conflict',
+                                                  'UserAuthRefused': 'invalid', 'HostBusy': 'unavailable',
+                                                  'HostError': 'unavailable'}
 
 
 #: The GitHub Issues settings function's errors (7.50.02, engineering/connectors/issues_config.py): a request off its
@@ -2202,15 +2218,27 @@ def _issues_follow() -> Any:
 
 
 def _github_apps() -> tuple[Any, Caller]:
-    """The Apps' store and its caller (``_connection_store``'s gate)."""
+    """The Apps' store and its caller (``_connection_store``'s gate), with the fork workflow's install (7.57.00)."""
+    apps, _, caller = _engineering_github()
+    return apps, caller
+
+
+def _engineering_github() -> tuple[Any, Any, Caller]:
+    """The Apps' store, the connections' and the caller (``_connection_store``'s gate); since 7.57.00 the Apps keep
+    their OAuth client under the user-auth path, and a fork's install goes to the fork workflow (forks.py)."""
     connections, caller = _connection_store()
     from engineering.connectors.connections import PARAMETER_KEY_ENV, PARAMETER_PREFIX_ENV
+    from engineering.connectors.forks import Forks
     from engineering.connectors.github_apps import FRONTEND_URL_ENV, WEBHOOK_URL_ENV, GitHubApps
+    from engineering.connectors.user_auth_paths import USER_AUTH_PREFIX_ENV
 
-    return GitHubApps(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
+    apps = GitHubApps(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
                       os.environ.get(PARAMETER_KEY_ENV, ''), connections, _invoke_app_tokens,
                       frontend_url=os.environ.get(FRONTEND_URL_ENV, ''),
-                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow()), caller
+                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow(),
+                      user_prefix=os.environ.get(USER_AUTH_PREFIX_ENV, ''))
+    apps.forks = Forks(connections, apps, _invoke_app_tokens)
+    return apps, connections, caller
 
 
 def _invoke_peer(env: str, refusals: Mapping[str, Kind], request: dict[str, Any], *, what: str, unnamed: str,
@@ -2353,6 +2381,150 @@ def delete_engineering_github_app(app_id: str):
         if not set(body) <= {'reason'}:
             raise ValidationError('the body is {reason?}, or none')
         apps.remove(app_id, _connection_actor(caller), body.get('reason'))
+
+    _connection_call(remove)
+    return {'removed': True}
+
+
+# Any public GitHub repository (7.57.00; docs/autonomous-engineering.md, "Any public repository"): the connections' gate
+# (404 while the module is off, then administrators acting for themselves), behind Cognito (/agents/{proxy+}): no new
+# unauthenticated endpoint. A public repository is read with a read-only token of the deployment's App, minted by the
+# token function and never answered here; a fork's upstream pull request is the person's one click (the run's link),
+# or the broker's, as the connection's owner, through their optional GitHub user authorization, whose code this API
+# hands to voc-engineering-user-auth and never sees again.
+def _invoke_user_auth(request: dict[str, Any]) -> dict[str, Any]:
+    """voc-engineering-user-auth's answer to ``exchange`` (``{login, user_id, expires_at, refresh_token_expires_at}``,
+    never a token): a code GitHub refused or an App without its OAuth client here are 409, anything else 503."""
+    from shared.engineering_agents import USER_AUTH_FUNCTION_ENV
+
+    return _invoke_peer(USER_AUTH_FUNCTION_ENV, _USER_AUTH_REFUSALS, request, what='user auth',
+                        unnamed='GitHub user authorizations cannot be made here: the deployment names no function',
+                        unreadable='GitHub could not be asked for the authorization: authorize again',
+                        refused='GitHub refused the authorization: authorize again')
+
+
+def _user_authorizations() -> tuple[Any, Caller]:
+    apps, _, caller = _engineering_github()
+    from engineering.connectors.connections import PARAMETER_KEY_ENV
+    from engineering.connectors.github_apps import FRONTEND_URL_ENV
+    from engineering.connectors.user_auth_paths import USER_AUTH_PREFIX_ENV
+    from engineering.connectors.user_authorizations import UserAuthorizations
+
+    return UserAuthorizations(_agents_table(), _ssm_client, os.environ.get(USER_AUTH_PREFIX_ENV, ''),
+                              os.environ.get(PARAMETER_KEY_ENV, ''), apps, _invoke_user_auth,
+                              frontend_url=os.environ.get(FRONTEND_URL_ENV, '')), caller
+
+
+@app.get('/agents/engineering/public-repositories')
+@tracer.capture_method(capture_response=False)
+def search_engineering_public_repositories():
+    """``?q=<a name, owner/name or a GitHub address>`` → ``{repositories: [{repository, description, stars, licence,
+    archived, pushed_at, default_branch, html_url, fork, connected}], query}``: public repositories only, read through
+    the token function with a read-only token of the deployment's App. 409 with no App installation to read with."""
+    connections, _ = _connection_store()
+    from engineering.connectors.public_repos import PublicRepositories
+
+    query = query_text(app.current_event, 'q')
+    return _connection_call(lambda: PublicRepositories(connections, _invoke_app_tokens).search(query))
+
+
+@app.post('/agents/engineering/public-connections')
+@tracer.capture_method(capture_response=False)
+def connect_engineering_public_repository():
+    """``{repository, reason?}`` → 201 ``{connection, created, issues}``: a public repository connected read only (its
+    issues read as feedback; the broker refuses every write on it). 404 for a repository GitHub has no public one by;
+    409 for one connected already or past the connections' limit."""
+    connections, caller = _connection_store()
+    from engineering.connectors.public_repos import PublicRepositories
+
+    def connect() -> tuple[dict, bool, dict | None]:
+        return PublicRepositories(connections, _invoke_app_tokens, _issues_follow()).connect(
+            json_object_body(app), _connection_actor(caller))
+
+    connection, created, issues = _connection_call(connect)
+    return _json(201, {'connection': connection, 'created': created, 'issues': issues})
+
+
+@app.post('/agents/engineering/connections/<connection_id>/fork')
+@tracer.capture_method(capture_response=False)
+def start_engineering_fork(connection_id: str):
+    """``{account: user | organization, org?, licence, app_id?, workspace?}`` → ``{fork_url, install_url, expires_at,
+    app_id}``: the Contribute card's step 2, on a public repository connected read only: GitHub's fork page, and the App's
+    install link for the fork (a single-use state). 409 for an archived or opted-out repository, one without a licence,
+    or a licence other than the one acknowledged."""
+    apps, _, caller = _engineering_github()
+    from engineering.connectors.connections import check_connection_id
+
+    def start() -> dict:
+        check_connection_id(connection_id)
+        return apps.forks.start(connection_id, json_object_body(app), _connection_actor(caller))
+
+    return _connection_call(start)
+
+
+@app.put('/agents/engineering/connections/<connection_id>/upstream')
+@tracer.capture_method(capture_response=False)
+def put_engineering_fork_upstream(connection_id: str):
+    """``{assisted, licence?, reason?}`` → ``{connection}``: a fork connection's owner's settings for its upstream pull
+    requests (whether an AI-assisted run's opens; the licence acknowledged again). 409 for anyone but its owner."""
+    apps, _, caller = _engineering_github()
+    from engineering.connectors.connections import check_connection_id
+
+    def settings() -> dict:
+        check_connection_id(connection_id)
+        return apps.forks.set_upstream(connection_id, json_object_body(app), _connection_actor(caller))
+
+    return {'connection': _connection_call(settings)}
+
+
+@app.put('/agents/engineering/github-apps/<app_id>/oauth')
+@tracer.capture_method(capture_response=False)
+def put_engineering_github_app_oauth(app_id: str):
+    """``{client_id, client_secret}`` → ``{app}``: the App's OAuth client stored for the user authorization (an App
+    made before 7.57.00, whose client the manifest flow discarded). Never answered or logged."""
+    authorizations, caller = _user_authorizations()
+    return {'app': _connection_call(lambda: authorizations.set_client(app_id, json_object_body(app),
+                                                                       _connection_actor(caller)))}
+
+
+@app.post('/agents/engineering/github-apps/<app_id>/authorize')
+@tracer.capture_method(capture_response=False)
+def authorize_engineering_github_app(app_id: str):
+    """``{workspace?}`` → ``{authorize_url, expires_at}``: GitHub's authorize link for the caller's own user
+    authorization of the App (a single-use state, 30 minutes). 409 while its OAuth client is not stored here."""
+    authorizations, caller = _user_authorizations()
+    return _connection_call(lambda: authorizations.authorize(app_id, json_object_body(app), _connection_actor(caller)))
+
+
+@app.post('/agents/engineering/github-apps/authorizations')
+@tracer.capture_method(capture_response=False)
+def complete_engineering_github_authorization():
+    """``{code, state}`` (as GitHub handed them back) → ``{authorization: {app_id, login, authorized_at,
+    refresh_expires_at}}``: the code exchanged by voc-engineering-user-auth, which keeps the token; never a token
+    here. 400 for a state not this step's; 409 when GitHub refused the code."""
+    authorizations, caller = _user_authorizations()
+    return _connection_call(lambda: authorizations.complete(json_object_body(app), _connection_actor(caller)))
+
+
+@app.get('/agents/engineering/github-apps/authorizations')
+@tracer.capture_method(capture_response=False)
+def list_engineering_github_authorizations():
+    """``{authorizations: [...]}``: the caller's own GitHub user authorizations (never another person's, never a
+    token)."""
+    authorizations, caller = _user_authorizations()
+    return {'authorizations': _connection_call(lambda: authorizations.mine(_connection_actor(caller)))}
+
+
+@app.delete('/agents/engineering/github-apps/<app_id>/authorization')
+@tracer.capture_method(capture_response=False)
+def delete_engineering_github_authorization(app_id: str):
+    """``{}`` → ``{removed: true}``: the caller's own authorization of the App removed (its token deleted first). 404
+    when there is none. Revoking it on GitHub stays the person's."""
+    authorizations, caller = _user_authorizations()
+
+    def remove() -> None:
+        _empty_body()
+        authorizations.remove(app_id, _connection_actor(caller))
 
     _connection_call(remove)
     return {'removed': True}

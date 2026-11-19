@@ -28,6 +28,25 @@ refuses every other, and any request off its shape, before anything is read (``A
   create (``LABEL_COLOR``, ``LABEL_DESCRIPTION``), then revoked. The answer, ``{repository, label, created}``, never
   carries the token; the Agents API writes the audit row (this function holds no table).
 
+Since 7.57.00 (any public repository; docs/autonomous-engineering.md, "Any public repository"), three more actions, the
+Agents API's, each with one installation token of ``{metadata: read}`` alone, naming no repository (a public
+repository is not in the installation: the token reads what any reader of a public repository reads, and can write
+nothing anywhere), revoked before the answer:
+
+* ``public_search`` ``{app_id, installation_id, query}``: the picker's query (``upstream.parse_query``): one repository
+  by ``owner/name`` or address, else GitHub's repository search, public ones only (``is:public``), at most
+  ``upstream.SEARCH_RESULTS``; ``{repositories: [facts]}``, private ones never answered;
+* ``public_repository`` ``{app_id, installation_id, repository, details}``: one repository's facts and, with
+  ``details``, its opt-out marker and what its CONTRIBUTING file asks (``{repository: facts | null, opt_out,
+  contributing}``): what a public connection's save and the fork workflow's start check;
+* ``inspect_fork`` ``{app_id, installation_id, upstream}``: the installation (as ``inspect_installation`` checks it) and
+  the forks of ``upstream`` among its repositories (each fork's ``parent`` read), ``{account, forks: [{repository,
+  default_branch, private, archived}]}``: the fork workflow's install.
+
+And ``issues_token`` reads a public repository no installation covers with such a token too (one more token of
+``{metadata: read}`` from an installation of the App, narrowed to nothing), so a public connection's issues are read
+as feedback.
+
 The App's key is read from ``{prefix}_github-app/<app_id>/key`` (its App id checked) and kept ``CACHE_SECONDS``; a key
 that cannot be read is ``AppKeyUnavailable``. The key, the JWT and any token are never logged or put in an error; a
 host failure is ``HostBusy`` (rate limited, unreachable) or ``HostError`` (any other answer), naming the call and the
@@ -47,16 +66,43 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from engineering.connectors.connections import ISSUE_LABEL, PARAMETER_PREFIX_ENV, REPOSITORY, github_number
 from engineering.connectors.credentials import AppKeys, CredentialUnusable
-from engineering.connectors.github import API_HOST, ISSUES_WRITE, METADATA_READ, TOKEN_PATH, send_request, sign_app_jwt
+from engineering.connectors.github import (
+    API_HOST,
+    ISSUES_WRITE,
+    METADATA_READ,
+    RAW_ACCEPT,
+    TOKEN_PATH,
+    send_request,
+    sign_app_jwt,
+)
 from engineering.connectors.hosts import HostError, NoConnection
 from engineering.connectors.transport import HttpsTransport, Response, Transport, dig, json_of, text_of
+from engineering.connectors.upstream import (
+    CONTRIBUTING_PATHS,
+    MAX_FILE_BYTES,
+    OPT_OUT_MARKERS,
+    SEARCH_RESULTS,
+    UpstreamRefused,
+    contributing_asks,
+    facts_of,
+    opt_out,
+    parse_query,
+    search_text,
+)
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger
 
 INSPECT: Final = 'inspect_installation'
 ISSUES_ACTION: Final = 'issues_token'
 LABEL_ACTION: Final = 'ensure_label'
-ACTIONS: Final = frozenset({INSPECT, ISSUES_ACTION, LABEL_ACTION})
+SEARCH_ACTION: Final = 'public_search'
+REPOSITORY_ACTION: Final = 'public_repository'
+FORK_ACTION: Final = 'inspect_fork'
+ACTIONS: Final = frozenset({INSPECT, ISSUES_ACTION, LABEL_ACTION, SEARCH_ACTION, REPOSITORY_ACTION, FORK_ACTION})
+#: What a public repository's token may do (7.57.00): read what is public; it names no repository.
+PUBLIC_PERMISSIONS: Final = METADATA_READ
+#: The forks of an upstream an inspection reads the parent of, at most.
+MAX_FORKS_READ: Final = 20
 #: Exactly what the Issues source's token may do (the plan's, pinned by test_app_tokens.py).
 ISSUES_PERMISSIONS: Final = {'issues': 'read', 'metadata': 'read'}
 #: Exactly what the label's token may do: create a label on its one repository (the broker's labels write, github.py;
@@ -80,6 +126,9 @@ REQUEST_TIMEOUT_SECONDS: Final = 5.0
 _INSPECT_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id'})
 _ISSUES_FIELDS: Final = frozenset({'action', 'app_id', 'repositories'})
 _LABEL_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id', 'repository', 'label'})
+_SEARCH_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id', 'query'})
+_REPOSITORY_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id', 'repository', 'details'})
+_FORK_FIELDS: Final = frozenset({'action', 'app_id', 'installation_id', 'upstream'})
 _WORKSPACE_FIELDS: Final = frozenset({'workspace', 'workspace_id', 'ws'})
 #: The installation answers' refusal (another App's, gone, suspended): one sentence for each, never the id read.
 OTHER_APP: Final = ('this installation belongs to another GitHub App, or is gone: install this App from Agents → '
@@ -120,13 +169,37 @@ def _repositories(value: object) -> tuple[str, ...]:
     return tuple(found.values())
 
 
+def _public_request(action: str, event: Mapping[str, Any]) -> dict[str, Any]:
+    """A 7.57.00 action's arguments: the App and the installation whose read-only token reads, and the query, the
+    repository (with ``details``) or the upstream."""
+    fields = {SEARCH_ACTION: _SEARCH_FIELDS, REPOSITORY_ACTION: _REPOSITORY_FIELDS, FORK_ACTION: _FORK_FIELDS}[action]
+    if frozenset(event) != fields:
+        raise AppTokensRefused(f'the request is {{{", ".join(sorted(fields))}}}')
+    found: dict[str, Any] = {'app_id': _number(event['app_id'], 'app_id'),
+                             'installation_id': int(_number(event['installation_id'], 'installation_id'))}
+    if action == SEARCH_ACTION:
+        try:
+            found['query'] = parse_query(event['query'])
+        except UpstreamRefused as refused:
+            raise AppTokensRefused(str(refused)) from None
+    elif action == REPOSITORY_ACTION:
+        if not isinstance(event['details'], bool):
+            raise AppTokensRefused('details is true or false')
+        found.update(repository=_repositories([event['repository']])[0], details=event['details'])
+    else:
+        found['upstream'] = _repositories([event['upstream']])[0]
+    return found
+
+
 def parse_request(event: object) -> tuple[str, dict[str, Any]]:
     """The action and its checked arguments, or ``AppTokensRefused`` (nothing read yet)."""
     action = event.get('action') if isinstance(event, Mapping) else None
     if action not in ACTIONS or not isinstance(event, Mapping):
-        raise AppTokensRefused(f'this function takes {INSPECT!r}, {ISSUES_ACTION!r} or {LABEL_ACTION!r} only')
+        raise AppTokensRefused(f'this function takes {", ".join(sorted(repr(name) for name in ACTIONS))} only')
     if _WORKSPACE_FIELDS & set(event):
         raise AppTokensRefused('a workspace\'s run signs in with its own token: the GitHub Apps are the deployment\'s')
+    if action in (SEARCH_ACTION, REPOSITORY_ACTION, FORK_ACTION):
+        return action, _public_request(action, event)
     if action == LABEL_ACTION:
         if frozenset(event) != _LABEL_FIELDS:
             raise AppTokensRefused('the request is {action, app_id, installation_id, repository, label}')
@@ -241,7 +314,8 @@ class AppTokens:
                 branch = dig(item, 'default_branch')
                 found.append({'repository': name, 'private': dig(item, 'private') is True,
                               'archived': dig(item, 'archived') is True,
-                              'default_branch': branch if isinstance(branch, str) else ''})
+                              'default_branch': branch if isinstance(branch, str) else '',
+                              'fork': dig(item, 'fork') is True})
             total = dig(data, 'total_count')
             if len(items) < PAGE_SIZE or (isinstance(total, int) and len(found) >= total):
                 return found, False
@@ -273,6 +347,19 @@ class AppTokens:
             for minted in tokens:
                 self._revoke(minted['token'])
             raise
+        # (7.57.00: a public repository no installation covers is read with a token of the App that names no
+        # repository and holds metadata: read alone, so a public connection's issues are read as feedback; a failure
+        # here leaves them uncovered, never the covered ones unread)
+        public = None
+        if uncovered:
+            try:
+                public = self._public_issues(jwt, list(covered) or self._installations(jwt), uncovered)
+            except HostError as error:
+                logger.warning('engineering GitHub App public issues token not minted',
+                               extra={'status': getattr(error, 'status', None)})
+        if public is not None:
+            tokens.append(public)
+            uncovered = [name for name in uncovered if name not in public['repositories']]
         logger.info('engineering GitHub App issues tokens minted',
                     extra={'app_id': app_id, 'tokens': len(tokens), 'uncovered': len(uncovered)})
         return {'tokens': tokens, 'uncovered': uncovered}
@@ -308,6 +395,126 @@ class AppTokens:
                           body={'name': LABEL, 'color': LABEL_COLOR, 'description': LABEL_DESCRIPTION})
         return made.status == 201
 
+    # --- any public repository (7.57.00) ---------------------------------------------------------------------------
+
+    def _public_token(self, jwt: str, installation_id: int) -> tuple[str, str]:
+        """An installation token of ``PUBLIC_PERMISSIONS`` naming no repository, and when it expires
+        (``InstallationRefused`` when the installation is not this App's, or is gone or suspended: GitHub answers 403,
+        404 or 422 to its mint)."""
+        data = self._send('POST', f'/app/installations/{installation_id}/access_tokens', jwt, 'the token request',
+                          body={'permissions': dict(PUBLIC_PERMISSIONS)}, ok=(201, 403, 404, 422))
+        if data.status != 201:
+            raise InstallationRefused(OTHER_APP)
+        minted = json_of(data)
+        return text_of(minted, 'token'), text_of(minted, 'expires_at')
+
+    def _with_public_token[T](self, app_id: str, installation_id: int, read: Callable[[str], T]) -> T:
+        token, _ = self._public_token(self._jwt(app_id), installation_id)
+        try:
+            return read(f'Bearer {token}')
+        finally:
+            self._revoke(token)
+
+    def _repository(self, authorization: str, repository: str) -> Any:
+        found = self._send('GET', f'/repos/{repository}', authorization, 'the repository read', ok=(200, 404))
+        return None if found.status == 404 else facts_of(json_of(found))
+
+    def public_search(self, app_id: str, installation_id: int, query: tuple[str, str]) -> dict[str, Any]:
+        """The picker's results: one repository by name, or a search of public ones; never a private one."""
+        kind, text = query
+
+        def read(authorization: str) -> list[Any]:
+            if kind == 'repository':
+                found = self._repository(authorization, text)
+                return [] if found is None else [found]
+            q = urlencode({'q': search_text(text), 'per_page': SEARCH_RESULTS})
+            data = json_of(self._send('GET', f'/search/repositories?{q}', authorization, 'the repository search'))
+            items = dig(data, 'items')
+            return [found for found in map(facts_of, items if isinstance(items, list) else []) if found is not None]
+
+        found = self._with_public_token(app_id, installation_id, read)
+        public = [facts.answer() for facts in found if not facts.private][:SEARCH_RESULTS]
+        logger.info('engineering public repositories searched', extra={'app_id': app_id, 'found': len(public)})
+        return {'repositories': public}
+
+    def public_repository(self, app_id: str, installation_id: int, repository: str, details: bool) -> dict[str, Any]:
+        """One repository's facts (None when GitHub has no public one by that name) and, with ``details``, its
+        opt-out marker and what its CONTRIBUTING file asks."""
+        def read(authorization: str) -> dict[str, Any]:
+            found = self._repository(authorization, repository)
+            if found is None or found.private:
+                return {'repository': None, 'opt_out': None, 'contributing': None}
+            if not details:
+                return {'repository': found.answer(), 'opt_out': None, 'contributing': None}
+            name = found.repository
+            labels = [marker for marker in OPT_OUT_MARKERS if self._send(
+                'GET', f'/repos/{name}/labels/{quote(marker, safe="")}', authorization, 'the label read',
+                ok=(200, 404)).status == 200]
+            path, text = self._contributing(authorization, name)
+            return {'repository': found.answer(), 'opt_out': opt_out(found.topics, labels, text),
+                    'contributing': contributing_asks(path, text).view() if path else None}
+
+        return self._with_public_token(app_id, installation_id, read)
+
+    def _contributing(self, authorization: str, repository: str) -> tuple[str, str]:
+        for path in CONTRIBUTING_PATHS:
+            found = send_request(self._transport, self._clock, 'GET',
+                                 f'/repos/{repository}/contents/{quote(path, safe="/")}', authorization,
+                                 'the CONTRIBUTING read', ok=(200, 404), accept=RAW_ACCEPT,
+                                 user_agent='voc-engineering-app-tokens')
+            if found.status == 200:
+                return path, found.body[:MAX_FILE_BYTES].decode('utf-8', errors='replace')
+        return '', ''
+
+    def inspect_fork(self, app_id: str, installation_id: int, upstream: str) -> dict[str, Any]:
+        """The installation (as ``inspect`` checks it) and the forks of ``upstream`` it covers (each fork's parent
+        read), with a revoked ``metadata: read`` token; never a token in the answer."""
+        inspected = self.inspect(app_id, installation_id)
+        candidates = [item for item in inspected['repositories'] if item.get('fork') is True][:MAX_FORKS_READ]
+
+        def read(authorization: str) -> list[dict[str, Any]]:
+            forks = []
+            for item in candidates:
+                found = self._repository(authorization, str(item['repository']))
+                if found is not None and found.parent.lower() == upstream.lower():
+                    forks.append({'repository': found.repository, 'default_branch': found.default_branch,
+                                  'private': found.private, 'archived': found.archived})
+            return forks
+
+        forks = self._with_public_token(app_id, installation_id, read) if candidates else []
+        logger.info('engineering GitHub App fork inspected',
+                    extra={'app_id': app_id, 'installation_id': installation_id, 'forks': len(forks)})
+        return {'account': inspected['account'], 'forks': forks}
+
+    def _public_issues(self, jwt: str, installations: list[int], repositories: list[str]) -> dict[str, Any] | None:
+        """One ``PUBLIC_PERMISSIONS`` token for the public ``repositories`` no installation covers (read with it: a
+        private or missing one stays uncovered), from the first of ``installations`` that mints one; None for none."""
+        for installation in installations:
+            try:
+                token, expires_at = self._public_token(jwt, installation)
+            except InstallationRefused:
+                continue
+            authorization = f'Bearer {token}'
+            try:
+                public = [name for name in repositories
+                          if (found := self._repository(authorization, name)) is not None and not found.private]
+            except Exception:
+                self._revoke(token)
+                raise
+            if not public:
+                self._revoke(token)
+                return None
+            return {'repositories': public, 'token': token, 'expires_at': expires_at}
+        return None
+
+    def _installations(self, jwt: str) -> list[int]:
+        """The App's installations that are not suspended (one page: the first that mints a token is enough)."""
+        data = json_of(self._send('GET', f'/app/installations?{urlencode({"per_page": PAGE_SIZE})}', jwt,
+                                  'the installations read'))
+        items = data if isinstance(data, list) else []
+        return [found for item in items if isinstance(found := dig(item, 'id'), int)
+                and dig(item, 'suspended_at') is None]
+
 
 @lru_cache(maxsize=1)
 def app_tokens(prefix: str) -> AppTokens:
@@ -330,4 +537,11 @@ def lambda_handler(event: object, context: object) -> dict[str, Any]:
         return tokens.inspect(request['app_id'], request['installation_id'])
     if action == LABEL_ACTION:
         return tokens.ensure_label(request['app_id'], request['installation_id'], request['repository'])
+    if action == SEARCH_ACTION:
+        return tokens.public_search(request['app_id'], request['installation_id'], request['query'])
+    if action == REPOSITORY_ACTION:
+        return tokens.public_repository(request['app_id'], request['installation_id'], request['repository'],
+                                        request['details'])
+    if action == FORK_ACTION:
+        return tokens.inspect_fork(request['app_id'], request['installation_id'], request['upstream'])
     return tokens.issues(request['app_id'], request['repositories'])

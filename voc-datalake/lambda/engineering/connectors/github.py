@@ -36,6 +36,12 @@ Since 7.10.00 it also reads people's reactions to the run's pull request (``reac
 its reviews and comments with their authors' associations, the commits on the default branch after its merge and its
 files' names.
 
+Since 7.57.00 (any public repository): a public repository read only (``PUBLIC_READ``) gets a token of
+``metadata: read`` alone that names no repository, whatever its operation asks (it is in no installation; GitHub serves
+a public repository to any reader); a fork's issue reads go to its upstream (``issues_repository``); a public read of a
+whole ``/repos/`` path (``public_get``, the upstream's facts) uses the connection's ``metadata: read`` token; and
+``open_upstream_pull_request`` is the one request a connection owner's user token is ever sent in.
+
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets.
 Every request goes to ``api.github.com`` through one ``Transport`` (tests inject a fake): the token travels only in
@@ -62,8 +68,10 @@ from engineering.connectors import github_reactions
 from engineering.connectors.credentials import GitHubAppCredential
 from engineering.connectors.hosts import (
     FILE_MODES,
+    FORK,
     OBJECT_ID,
     PAGE_NUMBER,
+    PUBLIC_READ,
     STORED_BRANCH_MISSING,
     BranchCaches,
     BundleContents,
@@ -122,7 +130,7 @@ _ON_DEFAULT_BRANCH: Final = frozenset({'behind', 'identical'})
 #: within the hour), so the transport answers it as retryable, like a read.
 TOKEN_PATH: Final = re.compile(r'/app/installations/[0-9]+/access_tokens\Z')
 JSON_ACCEPT: Final = 'application/vnd.github+json'
-_RAW: Final = 'application/vnd.github.raw+json'
+RAW_ACCEPT: Final = 'application/vnd.github.raw+json'
 _NEXT: Final = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 Permissions = Mapping[str, str]
@@ -259,7 +267,31 @@ def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
     return _check_names(names)
 
 
-def _pull_request_ref(found: object) -> PullRequestRef:
+#: ``owner/name`` as a path (the upstream pull request's repository).
+REPOSITORY_PATH: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}')
+
+
+def issues_repository(credential: GitHubAppCredential) -> str:
+    """Where the run's issue lives: the connection's own repository, or a fork's upstream (7.57.00: a fork's issues
+    are its upstream's, the ones its public_read connection reads as feedback)."""
+    if credential.kind == FORK and credential.fork is not None:
+        return credential.fork.upstream
+    return f'{credential.owner}/{credential.repository}'
+
+
+def open_from(owner: str, branch: str) -> str:
+    """The query of a repository's open pull request from ``owner``'s ``branch`` (one is enough)."""
+    return urlencode({'state': 'open', 'head': f'{owner}:{branch}', 'per_page': 1})
+
+
+def first_pull_request(response: Response) -> PullRequestRef | None:
+    """The first pull request a list answer names (its lookup by branch: ``open_from``), None for none."""
+    found = _json(response)
+    first = found[0] if isinstance(found, list) and found else None
+    return None if first is None else pull_request_ref(first)
+
+
+def pull_request_ref(found: object) -> PullRequestRef:
     """A pull request as GitHub answers it (its create, its lookup): the number, the URL, its head and base branches."""
     return PullRequestRef(number=_int(found, 'number'), url=_text(found, 'html_url'),
                           head=text_or_empty(found, 'head', 'ref'), base=text_or_empty(found, 'base', 'ref'),
@@ -290,6 +322,12 @@ class GitHubHost:
 
     def _token(self, connection_id: str, permissions: Permissions) -> tuple[GitHubAppCredential, str]:
         credential = self._credentials(connection_id)
+        # A public repository read only (7.57.00) is not in the installation its token comes from: whatever the
+        # operation asked, its token holds ``metadata: read`` alone and names no repository, so it reads what is
+        # public and can write nothing on any repository (the broker refuses every write on it before this).
+        public = credential.kind == PUBLIC_READ
+        if public:
+            permissions = METADATA_READ
         # The installation and repository are in the key: a connection re-pointed at another repository (or
         # installation) never reuses a token minted for the old one.
         key = (connection_id, credential.installation_id, f'{credential.owner}/{credential.repository}',
@@ -298,9 +336,11 @@ class GitHubHost:
         now = self._clock()
         if held is not None and now < held[1]:
             return credential, held[0]
+        body: dict[str, object] = {'permissions': dict(permissions)}
+        if not public:
+            body['repositories'] = [credential.repository]
         response = self._send('POST', f'/app/installations/{credential.installation_id}/access_tokens',
-                              f'Bearer {app_jwt(credential, now)}', 'the token request', ok=(201,),
-                              body={'repositories': [credential.repository], 'permissions': dict(permissions)})
+                              f'Bearer {app_jwt(credential, now)}', 'the token request', ok=(201,), body=body)
         data = _json(response)
         try:
             expires = datetime.fromisoformat(_text(data, 'expires_at')).timestamp()
@@ -311,11 +351,37 @@ class GitHubHost:
         return credential, token
 
     def _api(self, connection_id: str, permissions: Permissions, method: str, path: str, what: str,
-             body: object = None, accept: str = JSON_ACCEPT, ok: tuple[int, ...] = (200,)) -> Response:
-        """``path`` (after ``/repos/{owner}/{repo}``) with a token for ``permissions`` on the connection's repo."""
+             body: object = None, accept: str = JSON_ACCEPT, ok: tuple[int, ...] = (200,), *,
+             issues: bool = False) -> Response:
+        """``path`` (after ``/repos/{owner}/{repo}``) with a token for ``permissions`` on the connection's repo.
+        ``issues``: a read of the run's issue, which on a fork connection (7.57.00) is the upstream's, read as any
+        reader of a public repository reads it (the fork's token, ``issues_repository``)."""
         credential, token = self._token(connection_id, permissions)
-        return self._send(method, f'/repos/{credential.owner}/{credential.repository}{path}', f'Bearer {token}',
-                          what, body=body, accept=accept, ok=ok)
+        repository = issues_repository(credential) if issues else f'{credential.owner}/{credential.repository}'
+        return self._send(method, f'/repos/{repository}{path}', f'Bearer {token}', what, body=body, accept=accept,
+                          ok=ok)
+
+    def public_get(self, connection_id: str, path: str, what: str, *, accept: str = JSON_ACCEPT,
+                   ok: tuple[int, ...] = (200,)) -> Response:
+        """``GET path`` (a whole API path under ``/repos/``, a public repository's: a fork's upstream, 7.57.00) with
+        the connection's ``metadata: read`` token: what any reader of a public repository reads; never a write."""
+        if not path.startswith('/repos/'):
+            raise InvalidTarget('A public read is of a repository.')
+        _, token = self._token(connection_id, METADATA_READ)
+        return self._send('GET', path, f'Bearer {token}', what, accept=accept, ok=ok)
+
+    def open_upstream_pull_request(self, user_token: str, upstream: str, head: str, base: str, title: str,
+                                   body: str) -> Response:
+        """The one request a connection owner's user token is ever sent in (7.57.00, ``github_upstream.py``): ``POST
+        /repos/<upstream>/pulls``, ``head`` the fork's ``<owner>:<branch>``, ready for review (``draft: false``), the
+        maintainers allowed to edit it. A rate limit is ``HostBusy``, another status than 201 a ``HostError`` (its
+        ``status`` set); the token is never logged or put in an error."""
+        if not REPOSITORY_PATH.fullmatch(upstream):
+            raise InvalidTarget('The upstream is owner/name.')
+        return self._send('POST', f'/repos/{upstream}/pulls', f'Bearer {user_token}', 'the upstream pull request',
+                          body={'title': title, 'body': body, 'head': head, 'base': base, 'draft': False,
+                                'maintainer_can_modify': True}, ok=(201,))
+
 
     # --- reads ------------------------------------------------------------------------------------------------
 
@@ -329,7 +395,7 @@ class GitHubHost:
     def _read_file(self, connection_id: str, target: str, branch: str) -> ReadPage:
         on = f'?{urlencode({"ref": branch})}' if branch else ''
         response = self._api(connection_id, _READS['file'], 'GET', f'/contents/{_repository_path(target)}{on}',
-                             'the file read', accept=_RAW, ok=(200, 404))
+                             'the file read', accept=RAW_ACCEPT, ok=(200, 404))
         return file_page(None if response.status == 404 else response.body)
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
@@ -339,7 +405,7 @@ class GitHubHost:
             raise InvalidTarget('The commit is a full object id.')
         response = self._api(connection_id, _READS['file'], 'GET',
                              f'/contents/{_repository_path(path)}?{urlencode({"ref": commit})}', 'the base file read',
-                             accept=_RAW, ok=(200, 404))
+                             accept=RAW_ACCEPT, ok=(200, 404))
         return None if response.status == 404 else response.body
 
     def repository(self, connection_id: str) -> str:
@@ -459,9 +525,11 @@ class GitHubHost:
         permissions = _READS[kind]
         what = 'the issue read' if kind == 'issue' else 'the pull request read'
         content: dict[str, object] = {}
+        issues = kind == 'issue'
         if page == '1':
             item = self._api(connection_id, permissions, 'GET',
-                             f'/issues/{number}' if kind == 'issue' else f'/pulls/{number}', what, ok=(200, 404))
+                             f'/issues/{number}' if kind == 'issue' else f'/pulls/{number}', what, ok=(200, 404),
+                             issues=issues)
             if item.status == 404:
                 raise NotFound(f'The repository has no {kind.replace("_", " ")} {number}.')
             data = _json(item)
@@ -474,7 +542,7 @@ class GitHubHost:
                       ('reviews', f'/pulls/{number}/reviews', _REVIEW_FIELDS)]
         cursors: list[str] = []
         for key, path, fields in parts:
-            response = self._api(connection_id, permissions, 'GET', f'{path}?{query}', what)
+            response = self._api(connection_id, permissions, 'GET', f'{path}?{query}', what, issues=issues)
             content[key] = _items(_json(response), fields)
             cursors += [c for c in [next_page(response.headers)] if c is not None]
         return ReadPage(content=json.dumps(content), next_cursor=cursors[0] if cursors else None)
@@ -507,10 +575,8 @@ class GitHubHost:
 
     def _open_pull_request(self, connection_id: str, permissions: Permissions, branch: str) -> PullRequestRef | None:
         credential = self._credentials(connection_id)
-        query = urlencode({'state': 'open', 'head': f'{credential.owner}:{branch}', 'per_page': 1})
-        found = _json(self._api(connection_id, permissions, 'GET', f'/pulls?{query}', 'the pull request lookup'))
-        first = found[0] if isinstance(found, list) and found else None
-        return None if first is None else _pull_request_ref(first)
+        return first_pull_request(self._api(connection_id, permissions, 'GET',
+                                            f'/pulls?{open_from(credential.owner, branch)}', 'the pull request lookup'))
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         return self._branch_tree(connection_id, _BRANCH, branch)
@@ -523,7 +589,7 @@ class GitHubHost:
         """Issue ``number``'s state (``issues: read``): None for no such issue, and for a pull request, which GitHub's
         issues API answers too (with its ``pull_request`` field)."""
         response = self._api(connection_id, _READS['issue'], 'GET', f'/issues/{int(number)}', 'the issue read',
-                             ok=(200, 404, 410))
+                             ok=(200, 404, 410), issues=True)
         data = None if response.status != 200 else _json(response)
         if not isinstance(data, dict) or 'pull_request' in data:
             return None
@@ -645,7 +711,7 @@ class GitHubHost:
             created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the pull request', ok=(201,),
                                       body={'title': title, 'body': body, 'head': branch, 'base': base,
                                             'draft': draft}))
-            ref = _pull_request_ref(created)
+            ref = pull_request_ref(created)
         number = ref.number
         # (a pull request this call opened is never left open unchecked)
         return checked_after_write(

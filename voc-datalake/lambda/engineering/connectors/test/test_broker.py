@@ -504,7 +504,7 @@ def test_the_broker_has_no_merge_approve_or_ready_operation_of_any_kind() -> Non
     # (7.52.00: the agents' read of the accepted tenets, and the start's write of the docs an administrator approved,
     # which approves nothing itself: test_broker_docs.py)
     assert public == {'read', 'post_comment', 'label_issue', 'push_bundle', 'open_or_update_draft_pr', 'reactions',
-                      'head', 'tenets', 'push_approved_docs'}
+                      'head', 'tenets', 'push_approved_docs', 'open_upstream_pr'}
     for name in public - {'push_approved_docs'}:
         assert not any(word in name for word in ('merge', 'approve', 'ready'))
 

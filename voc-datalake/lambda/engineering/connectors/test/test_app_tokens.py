@@ -156,6 +156,8 @@ def test_each_token_is_exactly_issues_and_metadata_read_narrowed_to_the_runs_rep
         ('GET', '/repos/example-org/api/installation'): answer(200, installation(11)),
         ('GET', '/repos/other-org/tool/installation'): answer(200, installation(22)),
         ('GET', '/repos/example-org/private/installation'): answer(404, {'message': 'Not Found'}),
+        # (7.57.00: an uncovered repository is read as a public one, here private, so it stays uncovered)
+        ('GET', '/repos/example-org/private'): answer(404, {'message': 'Not Found'}),
     })
     found = tokens(ssm, github).issues(APP_ID, ('example-org/web', 'example-org/api', 'other-org/tool',
                                                 'example-org/private'))
@@ -164,20 +166,42 @@ def test_each_token_is_exactly_issues_and_metadata_read_narrowed_to_the_runs_rep
         ('/app/installations/11/access_tokens', {'permissions': {'issues': 'read', 'metadata': 'read'},
                                                  'repositories': ['web', 'api']}),
         ('/app/installations/22/access_tokens', {'permissions': {'issues': 'read', 'metadata': 'read'},
-                                                 'repositories': ['tool']})]
+                                                 'repositories': ['tool']}),
+        ('/app/installations/11/access_tokens', {'permissions': {'metadata': 'read'}})]
     assert ISSUES_PERMISSIONS == {'issues': 'read', 'metadata': 'read'}
     assert found == {'tokens': [
         {'repositories': ['example-org/web', 'example-org/api'], 'token': 'ghs_minted_1', 'expires_at': '2027-01-15T10:00:00Z'},
         {'repositories': ['other-org/tool'], 'token': 'ghs_minted_2', 'expires_at': '2027-01-15T10:00:00Z'}],
         'uncovered': ['example-org/private']}
-    lookups = [sent for sent in github.sent if sent.method == 'GET']
+    lookups = [sent for sent in github.sent if sent.method == 'GET' and sent.path.endswith('/installation')]
     assert {claims(sent.authorization)['iss'] for sent in lookups + mints} == {APP_ID}   # (the App's JWT)
+    # (the public read's token, which found nothing public, is revoked)
+    assert [sent.authorization for sent in github.sent if sent.method == 'DELETE'] == ['Bearer ghs_minted_3']
+
+
+def test_a_public_repository_no_installation_covers_is_read_with_a_metadata_token_naming_none(ssm: Any) -> None:
+    # 7.57.00: a public connection's issues, through a token of the App that holds metadata: read alone and names no
+    # repository (it can write nothing anywhere); a private one stays uncovered.
+    github = FakeGitHub(routes={
+        ('GET', '/repos/someone/public/installation'): answer(404, {}),
+        ('GET', '/repos/someone/hidden/installation'): answer(404, {}),
+        ('GET', '/app/installations?per_page=100'): answer(200, [installation(31, suspended_at='2026-01-01'),
+                                                                  installation(32)]),
+        ('GET', '/repos/someone/public'): answer(200, {'full_name': 'someone/public', 'private': False}),
+        ('GET', '/repos/someone/hidden'): answer(200, {'full_name': 'someone/hidden', 'private': True}),
+    })
+    found = tokens(ssm, github).issues(APP_ID, ('someone/public', 'someone/hidden'))
+    [mint] = [sent for sent in github.sent if sent.path.endswith('/access_tokens')]
+    assert (mint.path, mint.body) == ('/app/installations/32/access_tokens', {'permissions': {'metadata': 'read'}})
+    assert found == {'tokens': [{'repositories': ['someone/public'], 'token': 'ghs_minted_1',
+                                 'expires_at': '2027-01-15T10:00:00Z'}], 'uncovered': ['someone/hidden']}
 
 
 def test_a_suspended_or_another_apps_installation_covers_nothing(ssm: Any) -> None:
     github = FakeGitHub(routes={
         ('GET', '/repos/o/a/installation'): answer(200, installation(11, suspended_at='2026-11-01T00:00:00Z')),
         ('GET', '/repos/o/b/installation'): answer(200, installation(12, app_id=999)),
+        ('GET', '/app/installations?per_page=100'): answer(200, []),   # (7.57.00: no installation to read as public)
     })
     assert tokens(ssm, github).issues(APP_ID, ('o/a', 'o/b')) == {'tokens': [], 'uncovered': ['o/a', 'o/b']}
     assert github.minted == 0
@@ -212,8 +236,9 @@ def test_an_inspection_lists_the_repositories_with_a_metadata_token_it_revokes_a
     found = tokens(ssm, github).inspect(APP_ID, 77)
     assert found == {'account': {'login': 'example-org', 'type': 'Organization'}, 'truncated': False,
                      'app_slug': 'voc-autonomous-agent-a1b2', 'repositories': [
-        {'repository': 'example-org/a', 'private': True, 'archived': False, 'default_branch': 'main'},
-        {'repository': 'example-org/old', 'private': True, 'archived': True, 'default_branch': 'main'}]}
+        {'repository': 'example-org/a', 'private': True, 'archived': False, 'default_branch': 'main', 'fork': False},
+        {'repository': 'example-org/old', 'private': True, 'archived': True, 'default_branch': 'main',
+         'fork': False}]}
     [mint] = [sent for sent in github.sent if sent.path.endswith('/access_tokens')]
     assert mint.body == {'permissions': INSPECT_PERMISSIONS} == {'permissions': {'metadata': 'read'}}
     assert [(sent.method, sent.path, sent.authorization) for sent in github.sent[-2:]] == [
@@ -248,7 +273,8 @@ def test_the_repositories_are_read_page_by_page_and_revoked_even_when_a_page_fai
 
 
 def test_the_apps_key_is_read_once_per_cache_window_and_must_name_its_app(ssm: Any) -> None:
-    github = FakeGitHub(routes={('GET', '/repos/o/a/installation'): answer(404, {})})
+    github = FakeGitHub(routes={('GET', '/repos/o/a/installation'): answer(404, {}),
+                                ('GET', '/app/installations?per_page=100'): answer(200, [])})
     clock = [0.0]
     source = tokens(ssm, github, clock)
     with patch.object(ssm, 'get_parameter', wraps=ssm.get_parameter) as reads:

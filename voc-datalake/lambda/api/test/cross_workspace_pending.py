@@ -141,6 +141,17 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/engineering/github-apps/conversions',
         'POST /agents/engineering/github-apps/installations',
         'POST /agents/engineering/github-apps/manifest',
+        # Any public repository (7.57.00): its read-only connections, the forks and their owners' settings, and the
+        # people's GitHub user authorizations of the deployment's Apps: the deployment's until 3g3.
+        'GET /agents/engineering/public-repositories',
+        'POST /agents/engineering/public-connections',
+        'POST /agents/engineering/connections/<connection_id>/fork',
+        'PUT /agents/engineering/connections/<connection_id>/upstream',
+        'PUT /agents/engineering/github-apps/<app_id>/oauth',
+        'POST /agents/engineering/github-apps/<app_id>/authorize',
+        'POST /agents/engineering/github-apps/authorizations',
+        'GET /agents/engineering/github-apps/authorizations',
+        'DELETE /agents/engineering/github-apps/<app_id>/authorization',
         'GET /agents/engineering/<run_id>',
         'GET /agents/engineering/<run_id>/board',
         'GET /agents/engineering/<run_id>/conversation',

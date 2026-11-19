@@ -23,6 +23,7 @@ const CONNECTION: EngineeringConnection = {
   connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
   credential: { kind: 'app', set: true, app_id: null, installation_id: null, expires_at: null },
   created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null, repository_private: null,
+  kind: 'repository', public: null, fork: null,
 }
 const FACTS = { state: 'ready', connections: [CONNECTION], budget: 50 } as const
 const NO_CONNECTION = { state: 'ready', connections: [], budget: 50 } as const

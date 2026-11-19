@@ -416,6 +416,7 @@ class RunStore:
               connection: str = '', commit: str = '', language: str = '', actor: str = '',
               budget_usd: float | None = None, flow_definition: str = '', flow_revision: int = 0,
               default_branch: str = '', issue: int = 0, host: str = '', issue_verified: bool = False,
+              issue_repo: str = '',
               origin: RunOrigin | None = None, parent: Mapping[str, Any] | None = None,
               extra: tuple[Mapping[str, Any], ...] = (), coordinator_seed: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
@@ -427,7 +428,8 @@ class RunStore:
         stored flow's definition as its JSON text (at ``flow_revision``), is copied into the run's own ``FLOW`` row in
         the same transaction, create-only (``engineering/flow/record.py``): the run follows that copy, whatever the
         flow becomes; refused before anything is written when it is not an engineering flow the conductor can
-        follow. ``issue``, the issue the run was started from (0 for none), on ``repo`` at ``host`` (the stored
+        follow. ``issue``, the issue the run was started from (0 for none), on ``repo`` (a fork's: its upstream,
+        ``issue_repo``, 7.57.00) at ``host`` (the stored
         connection's kind), goes into META's ``issue`` with its address, once, as given: not read from the host
         (``engineering/run_links.py``), unless the start read it through the broker (``issue_verified``: an
         engineering agent's run, 7.47.00). ``origin``: an engineering agent's run, its ``via`` on the first
@@ -437,7 +439,7 @@ class RunStore:
         task names. Every start writes its runs list row (``runlist_key``) in the transaction too."""
         if connection:
             check_id('connection', connection)
-        issue_item = _issue_item(issue, host, repo, issue_verified)
+        issue_item = _issue_item(issue, host, issue_repo or repo, issue_verified)
         origin = origin or RunOrigin()
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
@@ -463,6 +465,8 @@ class RunStore:
         optional = {'max_tokens': caps.max_tokens,
                     'max_cost_usd': None if caps.max_cost_usd is None else str(caps.max_cost_usd),
                     'budget_usd': None if budget_usd is None else str(budget_usd), 'issue': issue_item,
+                    # (7.57.00: a fork run's issue is its upstream's, run_links.py issue_of)
+                    'issue_repo': issue_repo if issue_item is not None and issue_repo else None,
                     'feedback': origin.feedback, 'prd': origin.prd, 'parent': dict(parent) if parent else None}
         meta.update({key: value for key, value in optional.items() if value is not None})
         listed: dict[str, Any] = {**runlist_key(run_id, now), 'kind': 'run_list', 'run_id': run_id, 'flow': _text(flow),

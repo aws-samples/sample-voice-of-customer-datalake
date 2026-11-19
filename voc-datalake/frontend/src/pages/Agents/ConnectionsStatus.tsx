@@ -17,6 +17,7 @@ export function ConnectionsStatus({ summary }: Readonly<{ summary: ConnectionsSu
   const parts = [
     ...summary.through.map(({ slug, count }) => t('connections.summary.through', { count, slug })),
     ...(summary.others > 0 ? [t('connections.summary.others', { count: summary.others })] : []),
+    ...(summary.publicRead > 0 ? [t('connections.summary.publicRead', { count: summary.publicRead })] : []),
     ...(summary.ciNeeded > 0 ? [t('connections.summary.ciNeeded', { count: summary.ciNeeded })] : []),
     ...(summary.issuesRead ? [t('connections.summary.issuesRead')] : []),
   ]

@@ -73,6 +73,14 @@ def test_a_connection_row_is_read_as_stored_and_a_removed_one_is_none() -> None:
         eng_runs.run_connection(None)
 
 
+def test_a_forks_issue_is_its_upstreams() -> None:
+    # (7.57.00: the issue a fork's run starts from is the upstream's, which the start's issue link names)
+    fork = {**ROW, 'connection_kind': 'fork', 'upstream': 'upstream-org/shop'}
+    assert eng_runs.run_connection(fork, 42) == {'repo': 'example-org/shop', 'default_branch': 'main', 'issue': 42,
+                                                 'host': 'github', 'issue_repo': 'upstream-org/shop'}
+    assert 'issue_repo' not in eng_runs.run_connection(fork)
+
+
 def test_a_connection_is_public_unless_its_row_says_private() -> None:
     # (7.45.00 writes repository_private; a row from before it is a public repository's)
     assert eng_runs.repository_private({}) is False

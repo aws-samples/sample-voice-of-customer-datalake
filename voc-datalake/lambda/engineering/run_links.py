@@ -31,9 +31,11 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any, Final, Literal
 
 from engineering.connectors.identity import OPEN_OR_UPDATE_DRAFT_PR
+from engineering.connectors.user_auth_paths import GITHUB_LOGIN
 from engineering.rows import amount_attr
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
 from shared.logging import logger
@@ -181,13 +183,14 @@ def _whole(value: object) -> int:
 
 
 def issue_of(meta: Mapping[str, Any]) -> IssueLink | None:
-    """META's issue (a low-level item), None when there is none or it is not the run's own repository's."""
+    """META's issue (a low-level item), None when there is none or it is not the run's own repository's (a fork run's,
+    7.57.00: its upstream's, META's ``issue_repo``)."""
     raw = meta.get('issue')
     fields = raw.get('M') if isinstance(raw, dict) else None
     if not isinstance(fields, dict):
         return None
     host, number, url = _string(fields.get('host')), _whole(fields.get('number')), _string(fields.get('url'))
-    if not own_url(host, _string(meta.get('repo')), 'issue', number, url):
+    if not own_url(host, _string(meta.get('issue_repo')) or _string(meta.get('repo')), 'issue', number, url):
         return None
     verified = fields.get('verified')
     return IssueLink(host=host, number=number, url=url,
@@ -299,9 +302,67 @@ def _log_rebuild(run_id: str, row: str, number: int) -> None:
                                                                                      'number': number})
 
 
+#: The run's upstream pull request's row (7.57.00, a fork connection's: ``connectors/upstream_records.py``), beside its
+#: pull request's in its writes' partition, and its ``op``.
+UPSTREAM_SK: Final = 'UPSTREAM_PULL_REQUEST'
+UPSTREAM_OP: Final = 'upstream_pull_request'
+UPSTREAM_STATES: Final = ('opened', 'link', 'refused', 'unknown')
+#: The longest reason the record keeps (one line), and the longest prefilled title and full text read back (GitHub's).
+MAX_UPSTREAM_REASON: Final = 500
+MAX_UPSTREAM_TITLE: Final = 256
+MAX_UPSTREAM_TEXT: Final = 65_536
+#: The one-click link's longest address (connectors/upstream.py MAX_COMPARE_URL, with room for its encoding).
+MAX_COMPARE_LINK: Final = 8000
+
+
+def _compare_url(upstream: str, value: object) -> str | None:
+    """The one-click link read back only when it is GitHub's compare page of the upstream itself, over https."""
+    page = f'https://github.com/{upstream}/compare/'
+    ok = isinstance(value, str) and value.startswith(page) and len(value) <= MAX_COMPARE_LINK and value.isascii()
+    return value if ok and isinstance(value, str) else None
+
+
+def _text_or_none(value: object, limit: int) -> str | None:
+    return value if isinstance(value, str) and value and len(value) <= limit else None
+
+
+def upstream_view(state: str, result: str) -> dict[str, Any] | None:
+    """The run's upstream pull request as its row keeps it (``state`` and the ``result`` JSON), None when it is off
+    its shape: its address read back only when it is exactly that number's on github.com under the upstream, and its
+    one-click link only when it is the upstream's own compare page (``_compare_url``)."""
+    fields = _fields(result)
+    upstream, number, url, login, reason = (fields.get(name) for name in ('upstream', 'number', 'url', 'as', 'reason'))
+    if state not in UPSTREAM_STATES or not (isinstance(upstream, str) and _repository_ok('github', upstream)):
+        return None
+    opened = isinstance(number, int) and isinstance(url, str) and own_url('github', upstream, 'pull_request', number,
+                                                                         url)
+    return {'state': state, 'upstream': upstream, 'number': number if opened else None,
+            'url': link_url('github', upstream, 'pull_request', number) if opened and isinstance(number, int) else None,
+            'as': login if isinstance(login, str) and GITHUB_LOGIN.fullmatch(login) else None,
+            'reason': ' '.join(reason.split())[:MAX_UPSTREAM_REASON] if isinstance(reason, str) and reason else None,
+            'compare_url': _compare_url(upstream, fields.get('compare_url')),
+            'title': _text_or_none(fields.get('title'), MAX_UPSTREAM_TITLE),
+            'description': _text_or_none(fields.get('description'), MAX_UPSTREAM_TEXT)}
+
+
+def run_upstream(client: Any, table: str, ws: str, run_id: str) -> dict[str, Any] | None:
+    """The run's upstream pull request (one consistent GetItem of its row), None for none."""
+    key = {'pk': {'S': writes_pk(ws, run_id)}, 'sk': {'S': UPSTREAM_SK}}
+    item = client.get_item(TableName=table, Key=key, ConsistentRead=True).get('Item')
+    if item is None:
+        return None
+    found = upstream_view(_string(item.get('state')), _string(item.get('result')))
+    if found is not None:
+        at = _whole(item.get('closed_at'))
+        found['at'] = datetime.fromtimestamp(at, UTC).isoformat() if at else None
+    return found
+
+
 def run_links(client: Any, table: str, ws: str, run_id: str, meta: Mapping[str, Any]) -> dict[str, Any]:
-    """``{issue, pull_request}`` of the run (each its view, or None), from its low-level META, one consistent GetItem
-    of the pull request's row and one bounded Query of its author's write claims."""
+    """``{issue, pull_request, upstream_pull_request}`` of the run (each its view, or None), from its low-level META,
+    one consistent GetItem of the pull request's row, one bounded Query of its author's write claims and, since
+    7.57.00, one GetItem of its upstream pull request's row."""
     issue, pull_request = issue_of(meta), _pull_request(client, table, ws, run_id, _string(meta.get('repo')))
     return {'issue': None if issue is None else issue.view(),
-            'pull_request': None if pull_request is None else pull_request.view()}
+            'pull_request': None if pull_request is None else pull_request.view(),
+            'upstream_pull_request': run_upstream(client, table, ws, run_id)}

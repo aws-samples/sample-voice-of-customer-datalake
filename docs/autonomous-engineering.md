@@ -100,7 +100,9 @@ project access token, and the broker and the checkout cache's writer serve each 
 (`connectors/router.py`), below, and, since 7.09.00, the run's issue and pull request on its record ("The run's
 issue and pull request", below), and, since 7.45.00, the in-app GitHub connect flow: an administrator makes a private
 GitHub App in two clicks, its key goes straight to SSM, and every repository it is installed on becomes a connection
-([A GitHub App in two clicks](#a-github-app-in-two-clicks-74500), below). Planned: its cited reviews on the run's record, sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
+([A GitHub App in two clicks](#a-github-app-in-two-clicks-74500), below), and, since 7.57.00, any public GitHub
+repository: read only, or a fork of it whose run ends with a pull request on the upstream, opened as the connection's
+owner ([Any public repository](#any-public-repository-75700), below). Planned: its cited reviews on the run's record, sparse clones, a self-managed GitLab instance (its base URL is one constant today, `gitlab_api.py` `GITLAB_HOST`; the
 owner decides whether a connection names its own), and the first real run against a repository (it waits for the
 owner).
 
@@ -560,7 +562,7 @@ branch, being refused:
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per attempt; no dial: a label changes no code) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
-| PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`) |
+| PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`); on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
 | voc-engineering-start (no agent) | `head` (7.47.00: a connection's default branch's head and an issue's state, read only) and `push_approved_docs` (7.52.00: the approved knowledge docs or tenets, at an administrator's request: [The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)) |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
@@ -752,6 +754,207 @@ module on. The shared webhook role: `ssm:GetParameter` on `…/_github-app/*/web
 webhook and the module are both deployed (its `kms:Decrypt` is the role's grant of the stack's key). The broker and the
 checkout cache's writer: nothing new. All pinned by `lib/stacks/engineering-app-tokens.test.ts` and
 `api-engineering-reads.test.ts`.
+
+### Any public repository (7.57.00)
+
+The engineering agents work on any public GitHub repository, not only the deployment's own: read only, or, to
+contribute, on a fork whose run ends with a pull request on the upstream. **The model, plainly: the upstream is the
+organization's (for example `aws-samples/X`); the fork and the pull requests are the person's (`<their account>/X`).**
+The agents read the upstream, push only to the person's fork, and the pull request to the upstream comes from that fork:
+the person clicks Create on GitHub (always possible, for anyone: no token, no App on the upstream), or the app opens it
+for them once they authorized it. Only with `-c engineeringAgents=true` (404
+otherwise); every route is an administrator's acting for themselves (a delegated MCP credential gets 403), served
+through `/agents/{proxy+}` with Cognito: no new unauthenticated endpoint. A connection now has a kind (its row's
+`connection_kind`; none is `repository`, as before): `public_read` or `fork`. A kind never changes (the generic save
+answers 409 for a connection of another kind: remove it and connect again).
+
+**Read only (`public_read`, `connectors/public_repos.py`).**
+
+- **The picker.** Agents → Connections → **Add a public repository**: `GET /agents/engineering/public-repositories?q=`
+  (a name, `owner/name`, or a GitHub address) → `{repositories: [{repository, description, stars, licence: {spdx,
+  name}, archived, pushed_at, default_branch, html_url, fork, connected}], query}`. The search runs server-side through
+  the token function's `public_search` (GitHub's `/search/repositories` with `is:public`, at most 10, or one
+  `/repos/<owner>/<name>` for a name or address); a private repository is never answered (it connects through the App's
+  installation, as before). 409 while the deployment has no GitHub App installation to read with.
+- **The connection.** `POST /agents/engineering/public-connections` `{repository, reason?}` → 201 `{connection,
+  created, issues}`: the repository read again (it must be public now; 404 otherwise), then stored with its stars,
+  licence, whether it is archived and its last push on the row, and its parameter naming only the App installation
+  whose read-only token reads it: `{"kind": "public_read", "app_id", "installation_id", "repository", "key": "app"}`. No
+  write credential for it exists anywhere. An archived repository connects (reading is fine); its fork workflow is
+  refused.
+- **How it is read, and why that way.** With an installation token of one of the deployment's Apps that holds
+  `metadata: read` alone and names no repository (the public repository is in no installation): GitHub serves any
+  reader of a public repository with any token, so it reads what is public and can write nothing, even on the
+  repositories the App is installed on. The broker mints it whatever an operation asks (`github.py` `_token`), and so
+  does the token function for the picker, the issues and the fork workflow (each revoked at once). Unauthenticated reads
+  were not chosen: GitHub allows an anonymous reader 60 requests an hour per address, and a Lambda's address is shared,
+  so the agents' reads and an issues backfill would fail at random; the installation's own limit (5,000 an hour and
+  more) holds them. So a deployment connects one repository of its own through Connect GitHub first: that
+  installation is the anchor (the first own repository's connection, else any of the Apps').
+- **What runs on it.** The Issues source reads its issues as feedback (its follow adds it, never with the `voc-agent`
+  label: a label is a write; [github-issues.md](github-issues.md#any-public-repository-75700)). Understand and the
+  knowledge docs run, and the docs stay in VoC (no docs pull request: the broker refuses `push_approved_docs` on it).
+  Issue triage and a bug hunt run read only: what they find stays in VoC, and the page says so on the connection.
+- **The broker refuses every write on it, failing closed** (`broker.py` `_require_kind`, before any token is minted
+  or the host asked: an issue's comment or labels, a push, a pull request, the upstream pull request, the docs pull
+  request, whatever the role): "The run's connection is a public repository read only: nothing is written to it". A
+  kind the broker does not know refuses every write too. Reads are served as on any connection. Pinned by
+  `connectors/test/test_upstream_pr.py`.
+- **No CI attestation** on it (409: nothing is pushed). Readiness's `connection` fails a flow that pushes on it (a
+  required check: Enable is refused, with the connection's **Contribute** card as the fix) and passes one that reads.
+
+**The fork workflow (`fork`, `connectors/forks.py`).** On the public connection, a guided card, **Contribute to
+‹upstream›**, walks it in three steps, each with its status: **1. Fork it on GitHub** (GitHub's fork page: the person's
+account or an organization they administer); **2. Let the agents push to your fork** (the App's install link, choosing
+only the fork; the app detects the fork on the way back); **3. Optional: open pull requests for you** (Authorize as me,
+below). Under the steps, in the connection's own names: "Reads: ‹upstream› (public, read-only)", "Agents push to: ‹your
+account›/‹name› (your fork)", "Pull requests to ‹upstream› come from: ‹your account› (you click Create, or the app opens it
+for you once authorized)". Behind the steps:
+
+1. **Step 2's dialog** (the account and the licence) on a `public_read` connection: `POST /agents/engineering/connections/<id>/fork`
+   `{account: "user" | "organization", org?, licence, app_id?, workspace?}` → `{fork_url, install_url, expires_at,
+   app_id}`. The upstream is read again (with its opt-out marker and CONTRIBUTING): an archived one, one that opts out
+   of bot pull requests, one without a licence GitHub recognises, or a licence other than the one the person
+   acknowledged (`licence`, its SPDX id as the page showed it: a checkbox in the dialog), is refused (409). The fork goes
+   to the person's own account by default, or to an organization they administer, chosen per connection.
+2. **The fork.** The person forks the upstream on GitHub's own page (`https://github.com/<upstream>/fork`, the card's
+   step 1, also answered as `fork_url`; GitHub lets them pick the account or organization there). The platform creates no fork: GitHub's `POST
+   /repos/{owner}/{repo}/forks` needs Administration (write) for a GitHub App and for its user tokens alike, on every
+   repository the App is installed on, which the table above forbids.
+3. **The App on the fork.** `install_url` is the App's install link with a single-use state of its own
+   (`fork_install`: the upstream, the account and the licence acknowledged; 30 minutes). GitHub's return goes to the
+   installations route as any install, which reads the installation (`inspect_fork`: another App's or a suspended one
+   refused) and the forks of the upstream it covers in the account chosen (each fork's `parent` read), and saves the
+   fork's one connection: an App reference on the fork's installation (so the broker pushes to the fork and opens its
+   pull request exactly as on one's own repository) with the upstream, its default branch, its owner (who started the
+   workflow), the licence acknowledged and the owner's setting for AI-assisted runs (off). Its parameter: `{"kind":
+   "fork", "app_id", "installation_id", "repository", "key": "app", "upstream", "upstream_default_branch", "owner": <the
+   sha256 of the owner's subject>, "licence", "upstream_pr_assisted"}`. An install that covers no fork there is 409
+   with the state kept, so the same link works once the fork exists.
+4. **Its CI.** As any connection's: the CI attestation is the fork's, and the broker's branch-rules check reads the
+   fork's (its default branch protected with a required check, `voc-agent/*` unprotected). A fork has Actions off by
+   default: turn them on, and protect its default branch.
+5. **The owner's settings.** `PUT /agents/engineering/connections/<id>/upstream` `{assisted, licence?, reason?}` →
+   `{connection}`, the owner's alone (409 for anyone else): whether the app opens an AI-assisted run's upstream pull
+   request itself (otherwise its run ends with the one-click link), and the licence acknowledged again after the upstream changed it (read again; it must be the current one). The
+   connection view answers `fork: {upstream, upstream_connection, upstream_default_branch, owner, owned_by_me,
+   licence, upstream_pr_assisted, account, account_type}`, never the owner's subject.
+
+On a fork, the run's issue is the upstream's (a start names it as the upstream's, META's `issue_repo`; the start's
+`head` reads its state there): the agents comment on and label nothing there (`FORK_ISSUE`), the fork's pull request
+names no issue, and the upstream pull request fixes it.
+
+**The run's outcome: the upstream pull request, always one click away (`connectors/upstream_pr.py`, the broker's
+`open_upstream_pr`).** On a fork connection the PR author's `open_or_update_draft_pr` opens (or updates) the fork's
+pull request, `voc-agent/<run>/…` → the fork's default branch, exactly as before, and then goes on to the upstream pull
+request: `<fork owner>:voc-agent/…` → `<upstream>:<its default branch>`. `open_upstream_pr` `{branch}` is the same step on
+its own, the PR author's alone (any other role, the runtime and the start: 403). Its answer, and the PR operation's
+`upstream`, are the run's record (`run.upstream_pull_request`): `{state: opened | link | refused | unknown, upstream,
+number, url, as, reason, at, compare_url, title, description}`. Merging it stays the upstream maintainers'.
+
+- **The one-click link, for everyone.** Once the safety checks pass, the run always gets **"Open the pull request on
+  ‹upstream›"**: GitHub's compare page, `https://github.com/<upstream>/compare/<default>...<fork owner>:<fork
+  name>:<branch>?expand=1&title=…&body=…` (`upstream.compare_link`, every part percent-encoded), its title and body
+  prefilled. The person clicks Create on GitHub, so the pull request is theirs; it needs no token, no App on the upstream
+  and no permission beyond their own. The link is at most 7,000 characters: past it, its body is a short one (`Fixes #N`,
+  a pointer to the full text and the disclosure) and the full text is kept on the run (`description`, the run page's
+  **Copy the description**). It is shown on the run page and in the run's end notice.
+- **Opened for you, the optional extra.** With the owner's GitHub user authorization (**Authorize as me**, below) the
+  broker opens it as them, **ready for review**, `maintainer_can_modify: true` (`state: opened`). When it does not, the
+  run keeps the link (`state: link`, a plain note, never an error): no authorization ("the app opens it for you once you
+  authorize it"); the starter's way of working (AI-driven, or AI-assisted with a person's go on the run AND the owner's
+  explicit setting `upstream_pr_assisted`; anything else, failing closed as the dial does); the day's cap; or GitHub
+  refusing the app (403, 404, 422: "GitHub didn't let the app open it for you: open it with one click", with the status,
+  never GitHub's text). GitHub's documentation says a user access token reaches only accounts where the App is installed,
+  so a 403 is the expected answer on an upstream without the App: the link is the design, the automatic open a
+  convenience where GitHub allows it (needs a live check).
+
+**The safety checks**, before any link and any token, in this order; a refusal (409, `state: refused`) offers **no link**,
+its reason on the run, and the run ends with the fork's pull request:
+
+1. the connection is a fork; an upstream pull request already opened for the run is answered as it stands;
+2. the run's pull request on the fork is recorded, from the branch asked, and open;
+3. **our gate and final go**: the board's final-go GO (after the gate runner's GO on the same tree) for the branch's
+   tree now;
+4. **the upstream now** (read with the fork's token): not archived; no opt-out (a topic or label `no-bot-prs` or
+   `no-ai-prs`, or `<!-- no-bot-prs -->` / `<!-- no-ai-prs -->` in its CONTRIBUTING file); public; its licence the one
+   the owner acknowledged; a CONTRIBUTING file that asks for a DCO sign-off (`Signed-off-by`, "Developer Certificate of
+   Origin") is refused (the agents' commits cannot sign off for a person), and one that asks for an issue first needs
+   the run's issue (both a best-effort reading);
+5. an open upstream pull request from the branch (opened meanwhile by the person's click, or by an attempt whose answer
+   was lost) is recorded as the run's, with no new write and no cap used;
+6. **the body**: the upstream's pull request template (`.github/pull_request_template.md` and GitHub's other places)
+   with its comments taken out, the fork pull request's description under its description section (else after its
+   first heading), `Fixes #<issue>` under its issue section (else at the end), "Prepared following this repository's
+   `CONTRIBUTING.md`", and the **AI-assistance disclosure** ("this pull request was prepared by AI agents … on @<fork
+   account>'s fork, and opened from it by @<fork account>. Our own quality gate and final review passed … only the
+   maintainers decide whether to merge it"); the fork's own closing line (`MERGE_IS_HUMAN`) stays on the fork. The
+   agents' words (the title, the description) pass the write rules again; checkboxes stay unticked.
+
+Then, for the automatic open only: the starter's way of working, the owner's authorization (`OwnerUnauthorized` when none,
+or it can no longer be refreshed), **the daily caps** (UTC days: 10 a deployment and 2 per upstream repository; they count
+automatic opens alone, an attempt counting whatever GitHub answers; a click on the link counts nothing), and the write,
+once per run and branch (a claim in the run's writes): a refusal GitHub answers wrote nothing and keeps the link; a lost
+answer is an unknown outcome (the link kept), never made again, which step 5 settles on the next attempt. **Every
+automatic open is audited**: each day's cap slot row (`WS#default#WRITES#_upstream#<day>` and `…#<day>#<owner/name>`,
+`CAP#<n>`) keeps the run, the connection, the upstream and, once closed, the outcome, the number and the login it was
+opened as; the run's row (`WS#default#WRITES#<run>` / `UPSTREAM_PULL_REQUEST`) keeps the outcome and the link; both with a
+write claim's attributes alone, so the broker's DynamoDB grant is unchanged; and an operational log line (`broker wrote`,
+never a body or a token).
+
+**The user authorization (`connectors/user_authorizations.py`, `connectors/user_auth.py`), optional.** The owner's
+GitHub user access token of the same App (its OAuth user-to-server token), kept per person, encrypted in SSM under the
+stack's key, refreshed, and used for this one action alone, the automatic open, by the broker alone; never by an agent.
+Without it every run still ends with the one-click link.
+
+- **The App's OAuth client.** An App made from 7.57.00 keeps its client id and secret from the manifest's conversion,
+  and its manifest names the callback, `<the deployment>/agents/connections/github/authorized`. One made before had them
+  discarded: `PUT /agents/engineering/github-apps/<app_id>/oauth` `{client_id, client_secret}` → `{app}` stores a new
+  secret an administrator generates on GitHub (the App's settings → **Generate a new client secret**), after adding the
+  callback URL there. The App view answers `oauth` and `client_id` (not a secret).
+- **Authorize.** `POST …/github-apps/<app_id>/authorize` `{workspace?}` → `{authorize_url, expires_at}`: GitHub's
+  authorize link with a single-use state (`authorize`, 30 minutes; 409 while the App's client is not stored). GitHub
+  sends the browser to the SPA's `/agents/connections/github/authorized` page (top-level like the install's return,
+  taken back into the workspace the flow started in), which takes `code` and `state` out of its address at once (a
+  replace) and posts them once: `POST …/github-apps/authorizations` `{code, state}` → `{authorization: {app_id, login,
+  authorized_at, refresh_expires_at}}`. The code goes to **voc-engineering-user-auth** (`exchange`), the one function
+  that reads the App's client secret: it exchanges the code at `https://github.com/login/oauth/access_token`, reads who
+  the token is (`GET /user`), writes the person's parameter and answers no token. The row (`CONNECTIONS#default` /
+  `USER_AUTH#<app>#<sha256 of the subject>`) keeps the login, when and the refresh token's expiry, with an audit row
+  (`github_user_authorized`). A code GitHub refuses is 409; a replay of the same state answers the same.
+- **Read and remove.** `GET …/github-apps/authorizations` → the caller's own; `DELETE …/github-apps/<app_id>/authorization`
+  → `{removed: true}`: the person's token deleted first, then the row marked removed (`github_user_authorization_removed`).
+  Revoking it on GitHub (Settings → Applications → Authorized GitHub Apps) stays the person's.
+- **The broker's use** (`OwnerTokens`): it reads the owner's parameter at each upstream pull request (never cached, so a
+  removal holds at once), refreshes it when it expires within five minutes (GitHub's user tokens live eight hours, their
+  refresh tokens six months; the rotated pair written back; a refresh another container made first is read again), and
+  sends it in exactly one request: `POST /repos/<upstream>/pulls` (`github.py` `open_upstream_pull_request`, pinned by
+  `connectors/test/test_github_upstream.py`: no other request carries it).
+
+**Parameters.** Under their own path, outside the connections', so the broker's and the checkout cache writer's read
+of `/[<prefix>-]voc/engineering/*` never reaches them: `/[<prefix>-]voc/engineering-user-auth/app/<app_id>/client`
+(`{app_id, client_id, client_secret}`) and `…/engineering-user-auth/user/<app_id>/<sha256 of the subject>` (`{app_id,
+user_id, login, access_token, expires_at, refresh_token, refresh_token_expires_at}`), SecureString, standard tier, the
+stack's key.
+
+**IAM (pinned by `lib/stacks/engineering-user-auth.test.ts`, `engineering-broker.test.ts`, `api-engineering-reads.test.ts`).**
+
+- voc-engineering-user-auth (VocProcessingStack, `lib/stacks/engineering-user-auth.ts`, only with the module):
+  `ssm:GetParameter` on `…/engineering-user-auth/app/*/client`, `ssm:PutParameter` on `…/engineering-user-auth/user/*`,
+  `kms:Decrypt` through SSM for the clients and `kms:Encrypt` / `kms:GenerateDataKey` through SSM for the people's
+  tokens (`PARAMETER_ARN`); no table, no bucket, no function URL, no resource policy; the Agents API invokes it by name.
+- The broker adds `ssm:GetParameter` on the clients and the people's tokens, `ssm:PutParameter` on the people's tokens
+  only (a refresh), and the same KMS conditions; nothing on DynamoDB (the records above use its claims' grant).
+- The Agents API adds `lambda:InvokeFunction` on voc-engineering-user-auth, `ssm:PutParameter` and
+  `ssm:DeleteParameter` on `…/engineering-user-auth/app/*` and `ssm:DeleteParameter` on `…/user/*`, with `kms:Encrypt`
+  and `kms:GenerateDataKey` through SSM for the clients; still no `ssm:GetParameter` anywhere.
+- **Negative pins**: no agent role, not the checkout cache's writer, the token function, the github_issues ingestor,
+  voc-engineering-start, voc-engineering-issues-config or the runtime holds any statement naming
+  `engineering-user-auth`; and the connections' grant's pattern does not match a user-auth parameter.
+
+**Egress.** The broker reaches `github.com` too, for a refresh alone (`/login/oauth/access_token`, its own bound
+transport), and voc-engineering-user-auth `github.com` for the exchange and `api.github.com` for the user read; the
+agents' sessions reach no new host.
 
 ## The knowledge pack
 
@@ -3860,8 +4063,11 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 
 | Check | Required | Reads | Fix |
 |---|---|---|---|
-| `connection` | yes | the agent's stored connection | Agents → Connections, then the agent's Set up |
+| `connection` | yes | the agent's stored connection (7.57.00: a public repository read only fails a flow that pushes, and passes one that reads) | Agents → Connections, then the agent's Set up; for a read-only one, its Contribute card |
 | `app_installation` | | the GitHub App installation, through `voc-engineering-app-tokens`' `inspect_installation`, for a connection made through one of the deployment's Apps (`unknown` for a connection with its own App key, which only the broker reads; GitLab: not needed) | add the repository to the installation on GitHub |
+| `fork` (7.57.00) | | a fork connection's repository is still a fork of its upstream (its `parent`, through the token function's `public_repository`); not needed off a fork | fork the upstream again, install the App on it, the Contribute card |
+| `user_authorization` (7.57.00) | | the fork connection's owner holds a user authorization of the fork's App (its row): `warn` without it (optional: a run then ends with the one-click link, and the person creates the upstream pull request on GitHub) | the owner: Agents → Connections → GitHub Apps → Authorize as me |
+| `upstream_pr` (7.57.00) | | the way of working the runs follow against the rule for the app opening the upstream pull request (AI-driven, or AI-assisted with the owner's setting): `warn` otherwise, a run then ending with the one-click link; the upstream's own state is the broker's to read at each one | AI-driven, or the owner's "Open upstream pull requests for AI-assisted runs" |
 | `ci_attestation` | yes, where the flow pushes | the connection's CI attestation | the CI attestation under Agents → Connections |
 | `ci_protection` | | `unknown`: the broker reads the host's branch rules with the connection's own token at each push; this API holds no host token | protect the default branch with its required checks, and leave `voc-agent/*` unprotected |
 | `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |

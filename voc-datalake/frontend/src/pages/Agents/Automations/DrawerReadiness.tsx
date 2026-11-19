@@ -21,7 +21,8 @@ import type { ReadinessCheck, ReadinessSubject } from '../../../api/engineeringR
 
 /** The checks whose fix is on the Connections tab (a connection, its App, its CI, its issues). */
 const CONNECTIONS_CHECKS: ReadonlySet<string> = new Set([
-  'connection', 'app_installation', 'ci_attestation', 'ci_protection', 'issues_source', 'issue_label',
+  'connection', 'app_installation', 'fork', 'user_authorization', 'upstream_pr', 'ci_attestation', 'ci_protection',
+  'issues_source', 'issue_label',
 ])
 
 /** A drawer step's number in its circle, then its title. */
