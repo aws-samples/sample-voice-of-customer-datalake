@@ -4,6 +4,9 @@
  * column when codes are shown (checked as you type, locked once there are responses), and its ⋯ menu. Pasting
  * several lines into one label offers to make them options.
  *
+ * The row is a grid whose jump-marker column is reserved on every row, jump or not, so the labels of one question
+ * line up at one width.
+ *
  * @module pages/FeedbackForms/questions/OptionRow
  */
 import { useState } from 'react'
@@ -12,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { ArrowDown, ArrowUp, Copy, GripVertical, Lock, Trash2 } from 'lucide-react'
 import { InfoTip } from '../../../components/Tooltip/InfoTip'
+import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import { isReservedCode, isValidCode } from '../model/codes'
 import type { FormProblem } from '../model/validateForm'
 import ActionsMenu from '../ui/ActionsMenu'
@@ -107,13 +111,21 @@ export default function OptionRow(props: OptionRowProps) {
   return (
     <li onKeyDown={onRowKey} onDragOver={(event: DragEvent<HTMLLIElement>) => { event.preventDefault(); drag.onDragOver() }}
       onDrop={(event) => { event.preventDefault(); drag.onDrop() }} className={clsx(drag.over && 'shadow-[0_-2px_0_0_var(--accent)]')}>
-      <div className="flex items-center gap-1.5">
+      <div className={clsx('grid items-center gap-1.5', showCodes ? 'grid-cols-[auto_minmax(0,1fr)_2.5rem_auto_auto]' : 'grid-cols-[auto_minmax(0,1fr)_2.5rem_auto]')}>
         <span draggable onDragStart={drag.onDragStart} aria-hidden="true" className="cursor-grab text-muted"><GripVertical size={14} /></span>
-        <input ref={inputRef} className="input min-w-0 flex-1" aria-label={t('choice.optionN', { number })} value={label}
+        <input ref={inputRef} className="input min-w-0" aria-label={t('choice.optionN', { number })} value={label}
           aria-invalid={problems.some((p) => p.severity === 'error') ? true : undefined}
           aria-describedby={problems.length === 0 ? undefined : problemsId}
           onChange={(event) => props.onLabel(event.target.value)} onKeyDown={onKey} onPaste={onPaste} />
-        {jump !== null && <span className="shrink-0 text-[12px] text-muted" aria-label={t('choice.goesTo', { target: jump })}>→ {jump}</span>}
+        {/* (the column stays when there is no jump, so every label is the same width; `role="img"` because a name
+            on a plain span is not read out, and "→ 2" alone says little) */}
+        <span className="min-w-0 text-[12px] text-muted">
+          {jump !== null && (
+            <span role="img" className="block" aria-label={t('choice.goesTo', { target: jump })}>
+              <TruncatedText as="span" className="block truncate" text={`→ ${jump}`} />
+            </span>
+          )}
+        </span>
         {showCodes && <CodeCell code={code} otherCodes={props.otherCodes} locked={locked} number={number} onCode={props.onCode} />}
         <ActionsMenu label={t('choice.optionMenu', { number })} items={[
           { label: t('questionList.moveUp'), icon: ArrowUp, onSelect: () => props.onMove(index - 1), disabledReason: index === 0 ? t('questionList.alreadyFirst') : undefined },

@@ -36,7 +36,7 @@ const FORM_TABS: readonly FormTab[] = [
   { name: 'Share', segment: 'share', shows: (m) => m.getByRole('group', { name: 'Show the live or the test link' }) },
   // An unsaved form has no results: the panel is only the "save first" notice (Share shows it under its own controls).
   { name: 'Results', segment: 'results', shows: (m) => m.getByRole('heading', { name: 'No links yet' }) },
-  { name: 'Settings', segment: 'settings', shows: (m) => m.getByRole('region', { name: 'Theme' }) },
+  { name: 'Settings', segment: 'settings', shows: (m) => m.getByRole('region', { name: 'Appearance' }) },
 ]
 
 /** A builder tab by its label; a tab with problems adds them to its name ("Languages, 4 missing translations"). */

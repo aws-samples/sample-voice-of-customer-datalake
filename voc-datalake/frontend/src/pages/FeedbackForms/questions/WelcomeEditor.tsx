@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DoorOpen } from 'lucide-react'
 import SwitchField from '../../../components/SwitchField/SwitchField'
 import { textIn, withText } from '../model/i18nText'
 import { problemsAt } from '../model/validateForm'
@@ -23,7 +24,9 @@ export default function WelcomeEditor() {
   const set = (patch: Partial<typeof welcome>) => draft.update((form) => ({ ...form, welcome: { ...form.welcome, ...patch } }))
   return (
     <div className="space-y-3">
-      <h2 className="text-base font-semibold tracking-tight text-text-strong">{t('types.welcome')}</h2>
+      <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-text-strong">
+        <DoorOpen size={16} className="text-muted" aria-hidden="true" />{t('questionList.welcomeName')}
+      </h2>
       <SwitchField checked={welcome.enabled} label={t('welcome.show')} hint={t('welcome.hint')} onChange={(enabled) => set({ enabled })} />
       {welcome.enabled && (
         <>

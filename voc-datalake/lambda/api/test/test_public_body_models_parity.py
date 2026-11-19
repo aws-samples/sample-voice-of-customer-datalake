@@ -78,6 +78,8 @@ def _v2_bodies(h: Any) -> list[dict]:
     ) for value in values]
     bodies += [{'answers': {'q_a': 1}, 'session': value} for value in (
         None, '0123456789abcdef01234567', 'abcdefgh', 'short', 'a' * 64, 'a' * 65, 'not a session', 5)]
+    bodies += [{'answers': {'q_a': 1}, 'channel': value} for value in (
+        None, 'link', 'iframe', 'script', 'app', 'LINK', '', 5)]
     # A beacon is the events route's: the submit refuses one (its limit is for responses only).
     bodies += [{'event': {'kind': 'opened', 'session': '0123456789abcdef01234567'}}]
     return bodies

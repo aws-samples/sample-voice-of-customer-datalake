@@ -96,6 +96,11 @@ class TestThePrompt:
                      'Onboarding segmentation', 'Bug report', '"jump_to"'):
             assert part in d.SYSTEM_PROMPT
 
+    def test_the_system_prompt_asks_for_a_short_name_not_the_request_copied(self):
+        """A form named after its description, cut mid-word ("…with predef"), was the audit's AI draft in the builder."""
+        assert '- name: a short title for the form, 2 to 6 words' in d.SYSTEM_PROMPT
+        assert 'keep its name unless asked' in d.SYSTEM_PROMPT
+
     def test_an_improvement_sends_the_current_form_as_data(self):
         request = d.validate_request({'instruction': 'Add English', 'language': 'pl', 'base_form': GOOD})
         prompt = d.user_prompt(request)

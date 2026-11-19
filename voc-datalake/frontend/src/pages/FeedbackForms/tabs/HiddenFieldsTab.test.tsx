@@ -65,7 +65,10 @@ describe('HiddenFieldsTab: declare hidden fields, then copy the link or code tha
   it('shows the test link, and says its responses are never counted, when Test is picked', async () => {
     const user = userEvent.setup()
     renderWithDraft(<HiddenFieldsTab />, withHidden({ settings: { test: { link_enabled: true, record: 'tag' } } }))
-    await user.click(screen.getByRole('button', { name: 'Test' }))
+    // ("Values for" Live | Test is its own named control, on its own line under the kind of snippet)
+    const valuesFor = screen.getByRole('group', { name: 'Values for' })
+    expect(valuesFor.parentElement).not.toContainElement(screen.getByRole('group', { name: 'Where the values come from' }))
+    await user.click(within(valuesFor).getByRole('button', { name: 'Test' }))
     expect(codeText()).toContain('iframe?test=tk_test&hf_user_id={USER_ID}')
     expect(screen.getByText('This is the test link: responses are marked Test and never counted.')).toBeInTheDocument()
   })

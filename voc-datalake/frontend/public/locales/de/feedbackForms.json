@@ -68,7 +68,9 @@
       "welcome": "Begrüßungskarte",
       "hidden": "Verstecktes Feld {{id}}",
       "language": "{{language}}",
-      "form": "Formular"
+      "form": "Formular",
+      "themeLight": "Stil (hell)",
+      "themeDark": "Stil (dunkel)"
     },
     "otherProblems": "Weitere Probleme",
     "noQuestions": "Ein Formular braucht mindestens eine Frage.",
@@ -110,6 +112,12 @@
     "chipsLong": "Chips eignen sich für kurze Beschriftungen; lange brechen um.",
     "dropdownFew": "Eine Liste zeigt alle Optionen auf einmal; ein Dropdown verbirgt sie.",
     "noCategory": "Keine Option ordnet Feedback einer Kategorie zu, und das Formular hat keine: Legen Sie eine unter Einstellungen › Kategorie-Routing fest.",
+    "themeUnreadable": "Text auf dem Hintergrund hat {{ratio}}:1, unter 3:1: Befragte können ihn nicht lesen.",
+    "themeUnreadableLive": "Der Text dieses Formulars ist schwer lesbar ({{ratio}}:1, unter 3:1). Korrigieren Sie die Farben; bis dahin gehen Ihre anderen Änderungen trotzdem live.",
+    "themeTextLow": "Text auf dem Hintergrund hat {{ratio}}:1, unter 4,5:1: Viele Menschen können ihn nicht lesen.",
+    "themePrimaryLow": "Die Primärfarbe auf dem Hintergrund hat {{ratio}}:1, unter 3:1: Fokusrahmen, Fortschritt und gewählte Antworten sind schwer zu erkennen.",
+    "themeLabelLow": "Auf dieser Primärfarbe ist weder weißer noch dunkler Text lesbar: {{ratio}}:1, unter 4,5:1.",
+    "blocksPublishOnly": "Das Veröffentlichen wartet darauf; Speichern funktioniert weiterhin.",
     "targetMissingQuestion": "Diese Regel führt zu einer gelöschten Frage. Wählen Sie, wohin sie führen soll.",
     "targetMissingEnding": "Diese Regel führt zu einem gelöschten Abschluss. Wählen Sie einen anderen Abschluss.",
     "targetBackwards": "Sprünge gehen nur vorwärts, und Frage {{number}} steht jetzt über dieser Frage. Verschieben Sie sie nach unten oder wählen Sie ein anderes Ziel.",
@@ -120,7 +128,8 @@
     "opInvalid": "Diese Frage lässt sich so nicht vergleichen. Wählen Sie eine andere Bedingung.",
     "skippedOnRequired": "Diese Frage ist erforderlich und wird daher nie übersprungen: Diese Regel greift nie.",
     "ruleNeverRuns": "Diese Regel greift nie: Regel {{number}} trifft bereits auf jede Antwort zu, auf die sie zuträfe.",
-    "whereAnyway": "Hierhin geht das Formular ohnehin."
+    "whereAnyway": "Diese Regel bewirkt nichts: Alle, die sie erreichen, gehen ohnehin zu Frage {{number}}.",
+    "whereAnywayEnding": "Diese Regel bewirkt nichts: Alle, die sie erreichen, sehen ohnehin den Abschluss „{{title}}“."
   },
   "logic": {
     "ops": {
@@ -212,6 +221,13 @@
       "saved": "Gespeichert",
       "fixToSave_one": "{{count, number}} Problem beheben, um zu speichern.",
       "fixToSave_other": "{{count, number}} Probleme beheben, um zu speichern.",
+      "fixToPublish_one": "{{count, number}} Problem beheben, um zu veröffentlichen.",
+      "fixToPublish_other": "{{count, number}} Probleme beheben, um zu veröffentlichen.",
+      "fixToPublishSaveWorks_one": "{{count, number}} Problem beheben, um zu veröffentlichen. Speichern funktioniert weiterhin.",
+      "fixToPublishSaveWorks_other": "{{count, number}} Probleme beheben, um zu veröffentlichen. Speichern funktioniert weiterhin.",
+      "themeRefused": "Speichern nicht möglich: Ein Live-Formular braucht Text, den Befragte lesen können, mindestens 3:1 auf seinem Hintergrund. Ändern Sie die Farben unter Stil.",
+      "themeHardToRead": "Der Text dieses Formulars ist schwer lesbar.",
+      "themeFix": "Farben korrigieren",
       "save": "Speichern",
       "publish": "Veröffentlichen",
       "update": "Live-Formular aktualisieren",
@@ -226,9 +242,10 @@
     "menu": {
       "label": "Weitere Formularaktionen",
       "improve": "Mit KI verbessern…",
+      "askAssistant": "Assistent fragen",
       "discard": "Änderungen verwerfen",
       "duplicate": "Formular duplizieren",
-      "preview": "Vorschau im Vollbild",
+      "preview": "Vorschau in einem Fenster",
       "turnOff": "Ausschalten",
       "delete": "Formular löschen…",
       "saveFirst": "Speichern Sie das Formular zuerst.",
@@ -242,6 +259,15 @@
       "question": "Frage „{{text}}“",
       "option": "Option „{{text}}“",
       "ending": "Abschluss „{{text}}“"
+    },
+    "confirmLanguages": {
+      "titlePublish": "Mit fehlenden Übersetzungen veröffentlichen?",
+      "titleUpdate": "Live-Formular mit fehlenden Übersetzungen aktualisieren?",
+      "line_one": "Befragte auf {{language}} sehen {{count, number}} Text auf {{primary}}.",
+      "line_other": "Befragte auf {{language}} sehen {{count, number}} Texte auf {{primary}}.",
+      "publishAnyway": "Trotzdem veröffentlichen",
+      "updateAnyway": "Trotzdem aktualisieren",
+      "translate": "{{language}} übersetzen"
     },
     "confirmAiPublish": {
       "title": "Diesen KI-Entwurf veröffentlichen?",
@@ -291,7 +317,9 @@
       "withProblems_one": "{{count, number}} Problem",
       "withProblems_other": "{{count, number}} Probleme",
       "withMissing_one": "{{count, number}} fehlende Übersetzung",
-      "withMissing_other": "{{count, number}} fehlende Übersetzungen"
+      "withMissing_other": "{{count, number}} fehlende Übersetzungen",
+      "scrollStart": "Zu früheren Tabs blättern",
+      "scrollEnd": "Zu weiteren Tabs blättern"
     },
     "shortcut": "Strg+S oder ⌘+S speichert."
   },
@@ -309,7 +337,14 @@
     "responses_one": "{{formatted}} Einsendung",
     "responses_other": "{{formatted}} Einsendungen",
     "reading": "Einsendungen werden gelesen…",
-    "average": "Ø {{average}} von {{max}}",
+    "lastResponse": "Letzte Antwort: {{when}}",
+    "channels": {
+      "label": "Beantwortet über",
+      "link": "Link",
+      "script": "Website-Skript",
+      "iframe": "Eingebettet"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "Ergebnisse",
     "actions": "Weitere Aktionen für {{name}}",
     "edit": "Bearbeiten",
@@ -324,7 +359,18 @@
     "unnamed": "Unbenanntes Formular",
     "fixFirst_one": "{{count, number}} Problem vor dem Veröffentlichen beheben.",
     "fixFirst_other": "{{count, number}} Probleme vor dem Veröffentlichen beheben.",
-    "open": "Öffnen"
+    "open": "Öffnen",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "Durchschnittliche Bewertung",
+      "ces": "Durchschnittlicher Aufwand (CES)"
+    },
+    "turnOff": {
+      "title": "„{{name}}“ ausschalten?",
+      "message": "Sein Link und seine Einbettungen zeigen den nächsten Befragten „Feedback-Formular nicht verfügbar.“",
+      "confirm": "Ausschalten"
+    }
   },
   "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Marke & Darstellung, um Feedback-Formulare zu verwalten.",
   "deleteConfirmLabel": "Löschen",
@@ -349,12 +395,39 @@
   },
   "empty": {
     "title": "Noch keine Feedback-Formulare",
-    "description": "Erstellen Sie Ihr erstes Formular, um Kundenfeedback zu sammeln."
+    "description": "Erstellen Sie Ihr erstes Formular, um Kundenfeedback zu sammeln.",
+    "startsLabel": "So fangen Sie an",
+    "describeHint": "Sagen Sie, was Sie erfahren möchten, und die KI entwirft die Fragen."
   },
   "infoBanner": {
     "title": "So funktionieren Feedback-Formulare",
     "item1": "Jedes Formular hat einen eigenen Link, Einbettungscode und Testlink.",
-    "item2": "Einsendungen durchlaufen die KI-Anreicherung (Stimmung, Personas …); Testeinsendungen nie."
+    "item2": "Einsendungen durchlaufen die KI-Anreicherung (Stimmung, Personas …); Testeinsendungen nie.",
+    "dismiss": "Diese Erklärung ausblenden"
+  },
+  "list": {
+    "toolbarLabel": "Formular finden",
+    "search": "Formulare durchsuchen",
+    "searchPlaceholder": "Nach Name suchen",
+    "stateLabel": "Anzeigen",
+    "states": {
+      "all": "Alle",
+      "live": "Live",
+      "off": "Aus",
+      "test": "Testlink an"
+    },
+    "sortLabel": "Sortieren",
+    "sorts": {
+      "newest": "Neueste",
+      "lastResponse": "Letzte Antwort",
+      "name": "Name",
+      "responses": "Einsendungen"
+    },
+    "shown_one": "{{shown, number}} von {{count, number}} Formular",
+    "shown_other": "{{shown, number}} von {{count, number}} Formularen",
+    "noMatchTitle": "Keine passenden Formulare",
+    "noMatch": "Kein Formular passt zu dieser Suche oder diesem Filter.",
+    "clear": "Alle Formulare anzeigen"
   },
   "subtitle": "Erstellen Sie einbettbare Formulare zur Erfassung von Kundenfeedback",
   "title": "Feedback-Formulare",
@@ -957,13 +1030,9 @@
       "rules_other": "{{count, number}} Regeln",
       "endings_one": "{{count, number}} Abschluss",
       "endings_other": "{{count, number}} Abschlüsse",
-      "device": "Vorschaugröße",
-      "phone": "Smartphone",
-      "desktop": "Desktop",
       "restart": "Neu starten",
       "loading": "Vorlage wird in dieser Sprache geladen…",
-      "frameTitle": "Formularvorschau, Größe {{device}}, {{language}}",
-      "nothingSent": "Vorschau · es wird nichts gesendet"
+      "frameTitle": "Formularvorschau, Smartphone-Größe, {{language}}"
     },
     "stopDraft": {
       "title": "Entwurf abbrechen?",
@@ -1000,7 +1069,6 @@
     "replaceAsk": "Ihre Beschreibung ersetzen?",
     "replace": "Ersetzen",
     "keepMine": "Meine behalten",
-    "language": "Sprache",
     "runs": "Einsatz",
     "runsHint": {
       "link": "Kann mit einer Begrüßungsseite beginnen.",
@@ -1009,8 +1077,10 @@
     },
     "draft": "Entwerfen",
     "draftingButton": "Wird entworfen…",
-    "draftingStatus": "Ihr Formular wird entworfen… Das dauert meist 10 bis 30 Sekunden.",
-    "drafting": "Wird entworfen…",
+    "drafting": "Ihr Formular wird entworfen… Das dauert meist 10 bis 30 Sekunden.",
+    "inLanguage": "Sprache: {{language}}",
+    "changeLanguage": "ändern",
+    "busyReason": "Sie können das ändern, sobald der Entwurf fertig ist.",
     "waitReason": "Sie können in {{minutes}} Min. erneut entwerfen.",
     "privacy": "Die Beschreibung geht an das KI-Modell dieses Arbeitsbereichs. Fügen Sie keine personenbezogenen Daten ein."
   },
@@ -1180,10 +1250,12 @@
     "title": "Fragen ({{count, number}})",
     "label": "Fragen",
     "improve": "Mit KI verbessern",
-    "welcomeOn": "Begrüßungskarte · An",
-    "welcomeOff": "Begrüßungskarte · Aus",
+    "welcomeName": "Begrüßungsseite",
+    "welcomeStateOn": "An",
+    "welcomeStateOff": "Aus",
     "add": "Frage hinzufügen",
-    "addHere": "Frage hier hinzufügen",
+    "addBelow": "Frage darunter hinzufügen",
+    "insertAfter": "Frage nach Frage {{number}} hinzufügen",
     "typeMenu": "Fragetypen",
     "contactOnce": "Schon in diesem Formular",
     "limit": "Ein Formular hat höchstens 30 Fragen.",
@@ -1248,9 +1320,10 @@
     "buttonLabel": "Schaltflächentext",
     "buttonLabelPlaceholder": "Weiter",
     "duplicate": "Frage {{number}} duplizieren",
-    "translationMissing_one": "{{primary}} ist die Hauptsprache. Für {{language}} fehlt bei dieser Frage {{count, number}} Text.",
-    "translationMissing_other": "{{primary}} ist die Hauptsprache. Für {{language}} fehlen bei dieser Frage {{count, number}} Texte.",
-    "translate": "Übersetzen"
+    "translationLine_one": "{{language}}: {{count, number}} Text fehlt",
+    "translationLine_other": "{{language}}: {{count, number}} Texte fehlen",
+    "translate": "Übersetzen",
+    "translateInto": "Übersetzen: {{language}}"
   },
   "typeChange": {
     "label": "Frage {{number}}: Typ",
@@ -1454,24 +1527,53 @@
   },
   "preview": {
     "label": "Vorschau",
-    "deviceLabel": "Vorschaugröße",
-    "phone": "Smartphone",
-    "desktop": "Desktop",
     "device": {
-      "phone": "Smartphone-Größe",
-      "desktop": "Desktop-Größe"
+      "phone": "Smartphone-Größe"
     },
     "language": "Vorschausprache",
     "languageMissing": "{{language}} ({{count, number}} fehlen, angezeigt auf {{primary}})",
     "frameTitle": "Formularvorschau, {{size}}, {{language}}",
-    "nothingSent": "Vorschau · es wird nichts gesendet",
     "restart": "Neu starten",
     "startHere": "Hier starten",
-    "fullScreen": "Vollbild",
     "show": "Vorschau",
     "hide": "Vorschau ausblenden",
-    "backToBuilder": "Zurück zum Editor",
-    "loading": "Formular wird geladen…"
+    "showPane": "Vorschau einblenden",
+    "inWindow": "Die Vorschau ist in ihrem Fenster geöffnet.",
+    "size": "Smartphone · {{width}} × {{height}} · {{zoom}} %",
+    "showing": "Angezeigt: {{scheme}}",
+    "scheme": {
+      "light": "Hell",
+      "dark": "Dunkel"
+    },
+    "shuffled": "Für jede antwortende Person neu gemischt",
+    "style": "Stil",
+    "openWindow": "In Fenster öffnen",
+    "openTab": "Vorschau, öffnet sich in einem neuen Tab",
+    "blocked": "Ihr Browser hat das Vorschaufenster blockiert. Erlauben Sie Pop-ups für diese Website und versuchen Sie es erneut.",
+    "stylePanel": {
+      "title": "Stil",
+      "back": "Zurück zur Frage"
+    }
+  },
+  "previewWindow": {
+    "title": "Formularvorschau",
+    "region": "Formularvorschau, {{language}}",
+    "size": "Fenstergröße",
+    "language": "Vorschausprache",
+    "restart": "Neu starten",
+    "waiting": "Warten auf das Formular. Lassen Sie es im Editor geöffnet.",
+    "noSession": "Öffnen Sie diese Vorschau im Formular-Editor.",
+    "unavailable": "Die Vorschau kann nicht starten: Das Formular-Widget wurde nicht geladen. Laden Sie dieses Fenster neu, um es erneut zu versuchen.",
+    "resizeRefused": "Ihr Browser hat die Größe dieses Fensters beibehalten.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "Benutzerdefiniert · {{width}} × {{height}}",
+    "presets": {
+      "phone": "Smartphone",
+      "rotate": "Smartphone, gedreht",
+      "tablet": "Tablet",
+      "desktop": "Desktop",
+      "embedded": "Eingebettet, 480 px hoch"
+    }
   },
   "flow": {
     "title": "Ablauf",
@@ -1535,7 +1637,7 @@
     "done": "Fertig",
     "useThem": "Verwendung",
     "kindLabel": "Woher die Werte kommen",
-    "modeLabel": "Live- oder Testlink",
+    "valuesFor": "Werte für",
     "kinds": {
       "link": "Link",
       "script": "Skript-Einbettung",
@@ -1563,7 +1665,6 @@
   "languages": {
     "title": "Sprachen",
     "add": "Sprache hinzufügen",
-    "addOption": "+ Sprache hinzufügen…",
     "primary": "Hauptsprache",
     "primaryHint": "Die Sprache, in der jeder Text zuerst geschrieben wird.",
     "change": "Ändern…",
@@ -1666,6 +1767,7 @@
     "emptyValue": "leer",
     "open": "Öffnen",
     "openResponse": "Testeinsendung von {{time}} öffnen",
+    "todayAt": "Heute {{time}}",
     "keptUntilDeleted": "Testantworten bleiben erhalten, bis ein Administrator oder die Person, die das Formular erstellt hat, sie löscht."
   },
   "share": {
@@ -1691,10 +1793,13 @@
     "toHidden": "siehe Versteckte Felder",
     "iframe": "Einbettung (iframe)",
     "script": "Skript-Einbettung",
+    "iframeHint": "Das Skript nach dem Frame passt seine Höhe an die des Formulars an. Ohne das Skript bleibt der Frame 480 px hoch und das Formular scrollt darin.",
+    "scriptHint": "Fügen Sie es dort ein, wo das Formular erscheinen soll. Die Widget-Datei kommt von dieser App und wird mit jedem Release aktualisiert. Setzt Ihre Website eine Content-Security-Policy, erlauben Sie script-src {{app}} und connect-src {{api}}.",
     "inApp": "In Ihrer App:",
     "inAppHint": "Eine Web-App ruft die Skript-Einbettung mit ihrer Sprache und den versteckten Feldern auf; eine mobile App öffnet den Link in einer WebView.",
     "saveFirstTitle": "Noch keine Links",
     "saveFirst": "Speichern Sie das Formular, um seine Links zu erhalten.",
+    "showProblems": "Probleme anzeigen",
     "save": "Speichern"
   },
   "results": {
@@ -1739,7 +1844,9 @@
       "responses": "Einsendungen",
       "completion": "Abschlussrate",
       "ofOpened": "{{percent}} der Geöffneten",
-      "last": "Letzte Einsendung"
+      "last": "Letzte Einsendung",
+      "largestDropAt": "größter Abbruch bei {{step}}",
+      "questionShort": "F{{position}}"
     },
     "filters": {
       "range": "Zeitraum",
@@ -1799,7 +1906,9 @@
       "started": "Begonnen",
       "completed": "Abgeschlossen",
       "ofOpened": "{{percent}} der Geöffneten",
-      "largestDrop": "größter Abbruch"
+      "largestDrop": "größter Abbruch",
+      "somePaths": "nur auf manchen Pfaden",
+      "somePathsNote": "Die Logik zeigt manche Fragen nur auf manchen Pfaden: Sie haben keinen Abbruch, und ihre Zahl sind die Personen, denen sie gezeigt wurden."
     },
     "reachCard": {
       "title": "Reichweite",
@@ -1835,13 +1944,105 @@
     "contactLeft_one": "{{count, number}} Person hat Kontaktdaten hinterlassen",
     "contactLeft_other": "{{count, number}} Personen haben Kontaktdaten hinterlassen"
   },
+  "theme": {
+    "presets": {
+      "label": "Vorlage",
+      "vocLight": "VoC hell",
+      "vocDark": "VoC dunkel",
+      "highContrast": "Hoher Kontrast",
+      "brand": "Ihre Marke",
+      "saveAsBrand": "Als Marke speichern…",
+      "notAdmin": "Nur die Admins dieses Arbeitsbereichs können seine Marke speichern.",
+      "unreadable": "Machen Sie den Text lesbar (mindestens 3:1), bevor Sie diesen Stil als Marke speichern.",
+      "confirmTitle": "Diesen Stil als Ihre Marke speichern?",
+      "confirmMessage": "Neue Formulare in diesem Arbeitsbereich beginnen damit, und der Stil jedes Formulars bietet ihn als „Ihre Marke“ an.",
+      "confirmReplace": "Neue Formulare in diesem Arbeitsbereich beginnen damit, und der Stil jedes Formulars bietet ihn als „Ihre Marke“ an. Er ersetzt die zuvor gespeicherte Marke.",
+      "confirm": "Als Marke speichern",
+      "saved": "Als Ihre Marke gespeichert.",
+      "saveFailed": "Die Marke konnte nicht gespeichert werden. Versuchen Sie es erneut."
+    },
+    "reset": "Auf {{preset}} zurücksetzen",
+    "mode": {
+      "label": "Modus",
+      "light": "Hell",
+      "dark": "Dunkel",
+      "auto": "Automatisch",
+      "hint": "Automatisch folgt der Geräteeinstellung der jeweiligen Befragten."
+    },
+    "editing": {
+      "label": "Bearbeitet wird"
+    },
+    "palette": {
+      "light": "Helle Palette",
+      "dark": "Dunkle Palette"
+    },
+    "colours": {
+      "legend": "Farben",
+      "primary": "Primärfarbe",
+      "primaryHint": "Schaltflächen, Fortschritt, Fokusrahmen, gewählte Antworten",
+      "background": "Hintergrund",
+      "text": "Text",
+      "swatch": "{{label}}: Farbe wählen",
+      "invalid": "Verwenden Sie eine Hex-Farbe wie #8e48ff."
+    },
+    "derived": "Abgeleitet: Optionsränder {{ratio}}:1 (die Textfarbe zu {{percent}} %).",
+    "corners": {
+      "label": "Ecken",
+      "square": "Eckig {{px}}",
+      "small": "Klein {{px}}",
+      "medium": "Mittel {{px}}",
+      "large": "Groß {{px}}",
+      "slider": "Eckenradius",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "Schrift",
+      "system": "System",
+      "inherit": "Wie Ihre Seite (nur Skript-Einbettung)",
+      "serif": "Serifen",
+      "rounded": "Abgerundet",
+      "mono": "Monospace",
+      "inheritHint": "Nur die Skript-Einbettung übernimmt die Schrift Ihrer Seite; Link, iframe und Vorschau zeigen System."
+    },
+    "size": {
+      "label": "Größe",
+      "default": "Standard",
+      "large": "Groß",
+      "hint": "Groß: 18 px Fließtext für ältere Zielgruppen."
+    },
+    "contrast": {
+      "title": "Kontrast · {{palette}}",
+      "pair": "Paar",
+      "ratio": "Verhältnis",
+      "result": "Ergebnis",
+      "text": "Text auf Hintergrund",
+      "primary": "Primärfarbe auf Hintergrund",
+      "label": "Schaltflächentext auf Primärfarbe",
+      "edge": "Optionsrand",
+      "minimum": "(mind. {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "Unter AA",
+      "use": "{{colour}} verwenden ({{ratio}}:1)",
+      "other": {
+        "light_one": "Die helle Palette hat {{count, number}} Kontrastproblem.",
+        "light_other": "Die helle Palette hat {{count, number}} Kontrastprobleme.",
+        "dark_one": "Die dunkle Palette hat {{count, number}} Kontrastproblem.",
+        "dark_other": "Die dunkle Palette hat {{count, number}} Kontrastprobleme."
+      },
+      "editOther": {
+        "light": "Helle bearbeiten",
+        "dark": "Dunkle bearbeiten"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "Bereiche der Einstellungen",
     "sections": {
       "general": "Allgemein",
       "routing": "Kategorie-Routing",
       "project": "Verknüpftes Projekt",
-      "theme": "Design",
+      "appearance": "Darstellung",
       "danger": "Gefahrenbereich"
     },
     "general": {
@@ -1856,7 +2057,8 @@
       "subcategory": "Unterkategorie (optional)",
       "none": "— Keine Kategorie",
       "noSubcategory": "— Keine Unterkategorie",
-      "notConfigured": "{{name}} (nicht mehr konfiguriert)",
+      "notConfiguredBadge": "Nicht mehr konfiguriert",
+      "pickConfigured": "Wählen Sie eine konfigurierte Kategorie.",
       "categoryHint": "Kategorien werden unter Administration → Kategorien konfiguriert.",
       "taggedAs": "Einsendungen dieses Formulars werden abgelegt als:",
       "perOption": "Routing pro Option",
@@ -1867,13 +2069,6 @@
       "editQuestion": "Routing von Frage {{number}} bearbeiten",
       "precedence": "Eine Einsendung wird unter der Kategorie der ersten beantworteten Option abgelegt, die eine hat; sonst unter der Kategorie des Formulars.",
       "dimensionsHint": "Jede Einsendung trägt diese Werte. Eine Einbettung kann mit der Option dimensions eigene Werte pro Seite setzen."
-    },
-    "theme": {
-      "primary": "Primärfarbe",
-      "background": "Hintergrundfarbe",
-      "text": "Textfarbe",
-      "radius": "Eckenradius",
-      "lowContrast": "Text auf diesem Hintergrund hat {{ratio}}:1, unter 4,5:1: für viele Menschen schwer lesbar."
     },
     "danger": {
       "hint": "Beim Löschen werden das Formular und sein Link entfernt. Seine Einsendungen bleiben unter Feedback erhalten.",

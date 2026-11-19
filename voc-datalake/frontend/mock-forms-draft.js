@@ -56,10 +56,32 @@ const WORDS = {
 };
 const CODES = ['cant_find', 'slower_work', 'missing_function', 'errors'];
 
+const NAME_WORDS = 6;
+const NAME_CHARS = 48;
+/** What a cut leaves at the end that a name does not end with. */
+const NAME_TRAILING = new Set([',', ';', ':', '–', '-']);
+
+/**
+ * A short name from the description, as the model is asked for one: its first sentence, at most six whole words
+ * and 48 characters, without the trailing comma or stop (never a word cut in two: "…with predef").
+ */
+function shortName(description) {
+  const sentence = description.trim().split(/\n|[.!?](?:\s|$)/u)[0] ?? '';
+  let name = '';
+  for (const word of sentence.split(/\s+/u).filter(Boolean).slice(0, NAME_WORDS)) {
+    const next = name === '' ? word : `${name} ${word}`;
+    if (next.length > NAME_CHARS) break;
+    name = next;
+  }
+  let end = name.length;
+  while (end > 0 && NAME_TRAILING.has(name[end - 1])) end -= 1;
+  return name.slice(0, end);
+}
+
 function draftForm(language, channel, description) {
   const words = WORDS[language] ?? WORDS.en;
   const t = (text) => ({ [language]: text });
-  const name = description.trim().split('\n')[0].slice(0, 60) || words.name;
+  const name = shortName(description) || words.name;
   return {
     schema_version: 2, name, enabled: false, language, languages: [language],
     welcome: channel === 'link' ? { enabled: true, title: t(words.name), button_label: t('OK') } : { enabled: false, title: {} },

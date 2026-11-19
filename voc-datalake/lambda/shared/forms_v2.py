@@ -20,6 +20,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from shared import form_theme
 from shared.dynamo_values import plain  # fv2.plain: DynamoDB's Decimals back into ints and floats, at any depth
 from shared.exceptions import ValidationError
 
@@ -27,6 +28,7 @@ __all__ = [
     'DEFINITION_FIELDS',
     'FORM_LOCALES',
     'SCHEMA_VERSION',
+    'THEME_UNREADABLE',
     'definition_of',
     'is_v2',
     'language_assumed',
@@ -36,7 +38,9 @@ __all__ = [
     'question_bounds',
     'revision_of',
     'test_settings_of',
+    'theme_publish_problems',
     'validate_definition',
+    'validate_publishable',
     'validate_test_settings',
 ]
 
@@ -870,6 +874,56 @@ def validate_test_settings(value: object, current: Mapping[str, Any]) -> dict[st
     out['record'] = _choice(test, 'record', 'settings.test', TEST_RECORDS, current.get('record', 'tag'))
     return out
 
+
+
+# ── Publishing: what a live form must hold ───────────────────────────────────────────────────────────────────────
+
+#: The 400 code of a save that would put (or keep) a form live whose text respondents cannot read (the editor maps
+#: it onto its own problem, frontend pages/FeedbackForms/model/validateForm.ts ``themeUnreadable``).
+THEME_UNREADABLE: Final = 'theme_unreadable'
+
+
+def theme_publish_problems(theme: object) -> list[dict[str, Any]]:
+    """Each palette respondents can be shown whose text is under 3:1 on its background, as ``{palette, ratio}``
+    (shared/form_theme.py: one set of contrast rules with the editor and the widget). Empty: it can be published."""
+    problems = []
+    for name, palette in form_theme.shown_palettes(theme):
+        ratio = form_theme.text_contrast_problem(palette)
+        if ratio is not None:
+            problems.append({'palette': name, 'ratio': round(ratio, 2)})
+    return problems
+
+
+def same_theme(a: object, b: object) -> bool:
+    """Whether two themes draw the same form (each read with its defaults, as the API answers it)."""
+    return form_theme.with_defaults(a) == form_theme.with_defaults(b)
+
+
+def validate_publishable(theme: object, *, live: bool, was_live: bool = False, theme_changed: bool = True) -> list[str]:
+    """The publish rule of a write whose form ends ``live`` (any writer: the editor, an API caller, the assistant), when
+    text is under 3:1 on its background in a palette respondents can be shown:
+
+    - 400 ``theme_unreadable`` when the write turns the form live (``was_live`` False: a new form, a draft or an Off
+      form published), or changes a live form's theme (``theme_changed``): a colour change never leaves a live form
+      unreadable;
+    - otherwise ``['theme_unreadable']``, a warning the API answers with the save: a live form whose stored theme was
+      already unreadable (saved before 7.55.01) can still be edited (its questions, Update live form with the theme
+      as it is), while the widget's ``safeContrast`` keeps what respondents see readable.
+
+    A form that stays, or goes, Off is always saved, without a warning, so nothing is lost while its colours are being
+    fixed. ``[]``: nothing to say."""
+    if not live:
+        return []
+    problems = theme_publish_problems(theme)
+    if not problems:
+        return []
+    if was_live and not theme_changed:
+        return [THEME_UNREADABLE]
+    first = problems[0]
+    raise ValidationError(
+        f"The text on the {first['palette']} background is {first['ratio']:.1f}:1, under 3:1: respondents could not "
+        'read it. Choose a text or background colour with more contrast to publish the form.',
+        code=THEME_UNREADABLE, details={'palettes': problems, 'minimum': form_theme.TEXT_PUBLISH_MINIMUM})
 
 # ── The public projection ────────────────────────────────────────────────────────────────────────────────────────
 

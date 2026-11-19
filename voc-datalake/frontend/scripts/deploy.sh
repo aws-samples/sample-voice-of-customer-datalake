@@ -215,6 +215,10 @@ aws s3 sync dist/assets/ "s3://${BUCKET_NAME}/assets" \
 # Everything else (stable names): always revalidate. ETags make this cheap
 # (304s), and no visitor ever holds a stale config/locale/index again.
 # --exclude also shields assets/* from this pass's --delete.
+# widget/feedback-widget.js (the public script embed customers' pages load,
+# docs/feedback-forms.md) goes in this pass: a stable name, replaced in place.
+# Its viewers' Cache-Control comes from the /widget/* response headers policy
+# (lib/stacks/core-cdn.ts), not from this metadata.
 aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete \
   --exclude 'assets/*' \
   --cache-control 'no-cache'

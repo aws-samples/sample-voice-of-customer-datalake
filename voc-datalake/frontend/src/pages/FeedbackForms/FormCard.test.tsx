@@ -1,6 +1,7 @@
 /**
- * The forms list card (UX §14.2): the name as a link, the Live / Off switch (refusing in words to publish a form
- * with problems), "Test link on", the summary and responses lines, Results, and ⋯ (Preview never the counting live
+ * The forms list card (UX §14.2): the whole card a link to the form (a quiet title link), the Live / Off switch
+ * (refusing in words to publish a form with problems; asking before a Live form with responses goes Off), "Test link
+ * on", the summary, the headline figure as a number and the responses, Results, and ⋯ (Preview never the counting live
  * link, Duplicate as an unsaved copy, QR, Delete). It stays render-safe on sparse and v1 records (issue #171).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -90,17 +91,109 @@ describe('FormCard', () => {
     expect(screen.queryByText(/responses?$/)).not.toBeInTheDocument()
   })
 
-  it('marks Test link on, and the average of its first rating', async () => {
+  it('marks Test link on, and shows the headline figure as a number with its label under it', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
+      total_submissions: 3, avg_rating: 4.1, rating_count: 2, headline: { question_id: 'q_rating', type: 'rating', value: 4.1, count: 2, scale_max: 5 },
+    } })
     renderCard(record())
     expect(screen.getByText('Test link on')).toBeInTheDocument()
-    expect(await screen.findByText('Average 4.1 of 5')).toBeInTheDocument()
+    expect(await screen.findByText('4.1 / 5')).toBeInTheDocument()
+    expect(screen.getByText('Average rating')).toBeInTheDocument()
   })
 
-  it('says Live or Off on a labelled switch and turns the form off', async () => {
+  it.each([
+    [{ type: 'nps', value: 32.4, count: 40, scale_max: 10 }, '+32', 'NPS'],
+    [{ type: 'nps', value: -8, count: 40, scale_max: 10 }, '−8', 'NPS'],
+    [{ type: 'csat', value: 84, count: 40, scale_max: 5 }, '84%', 'CSAT'],
+  ])('writes the %o figure as people read it', async (headline, value, label) => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 40, avg_rating: null, rating_count: 0, headline } })
+    renderCard(record())
+    expect(await screen.findByText(value)).toBeInTheDocument()
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
+  it('says when the last response came, and nothing when the stats carry no time', async () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000 - 60_000).toISOString()
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
+      total_submissions: 3, avg_rating: null, rating_count: 0, headline: null, last_response_at: twoHoursAgo,
+    } })
+    const { unmount } = renderCard(record())
+    expect(await screen.findByText(/^Last response: /)).toHaveTextContent(/2 hr\. ago|Yesterday/)
+    unmount()
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
+    renderCard(record())
+    await screen.findByText('3 responses')
+    expect(screen.queryByText(/^Last response: /)).not.toBeInTheDocument()
+  })
+
+  it('names the ways the form was answered in the last 30 days, and nothing without one', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: {
+      total_submissions: 3, avg_rating: null, rating_count: 0, headline: null, last_response_at: daysAgo(1),
+      channels: { iframe: daysAgo(2), link: daysAgo(40), script: daysAgo(1) },
+    } })
+    const { unmount } = renderCard(record())
+    const chips = await screen.findByRole('list', { name: 'Answered through' })
+    expect(within(chips).getAllByRole('listitem').map((chip) => chip.textContent)).toStrictEqual(['Website script', 'Embedded'])
+    unmount()
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
+    renderCard(record())
+    await screen.findByText('3 responses')
+    expect(screen.queryByRole('list', { name: 'Answered through' })).not.toBeInTheDocument()
+  })
+
+  it('shows no figure when the form has no measuring answer yet', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 3, avg_rating: null, rating_count: 0, headline: null } })
+    renderCard(record())
+    await screen.findByText('3 responses')
+    expect(screen.queryByText(/ \/ 5$/)).not.toBeInTheDocument()
+  })
+
+  it('makes the whole card the way into the form, its title a quiet link', () => {
+    renderCard(record())
+    const title = screen.getByRole('link', { name: 'Website Feedback' })
+    expect(title).toHaveClass('link-quiet', 'after:absolute', 'after:inset-0')
+    expect(screen.getByRole('article', { name: 'Website Feedback' })).toHaveClass('relative')
+  })
+
+  it('keeps the switch label as wide as its widest word, so Results never moves', () => {
+    renderCard(record())
+    const label = screen.getByRole('switch', { name: 'Live' }).closest('label')
+    expect(label).toHaveTextContent('LiveOffLive')
+  })
+
+  it('asks before turning off a Live form people are answering, and turns it off only when told', async () => {
+    const user = userEvent.setup()
     const onToggle = vi.fn()
     renderCard(record(), { onToggle })
-    await userEvent.setup().click(screen.getByRole('switch', { name: 'Live' }))
+    await screen.findByText('3 responses')
+    await user.click(screen.getByRole('switch', { name: 'Live' }))
+    const dialog = screen.getByRole('dialog', { name: 'Turn off “Website Feedback”?' })
+    expect(dialog).toHaveTextContent('Its link and embeds will show “Feedback form unavailable.” to the next respondents.')
+    expect(onToggle).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(onToggle).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('switch', { name: 'Live' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }))
     expect(onToggle).toHaveBeenCalledWith('form_1', false)
+  })
+
+  it('turns off a Live form nobody answered at once', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
+    const onToggle = vi.fn()
+    renderCard(record(), { onToggle })
+    await screen.findByText('0 responses')
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Live' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onToggle).toHaveBeenCalledWith('form_1', false)
+  })
+
+  it('turns a form on without asking', async () => {
+    const onToggle = vi.fn()
+    renderCard(record({ enabled: false }), { onToggle })
+    await userEvent.setup().click(screen.getByRole('switch', { name: 'Off' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onToggle).toHaveBeenCalledWith('form_1', true)
   })
 
   it('refuses in words to publish a form with problems, with the way to them', async () => {
@@ -117,10 +210,13 @@ describe('FormCard', () => {
     expect(screen.getByRole('link', { name: 'Results' })).toHaveAttribute('href', '/feedback-forms/form_1/results')
   })
 
-  it('previews in the full-screen preview that never submits, not the live link', async () => {
+  it('previews in the preview window that never submits, not the live link (a tab on a narrow screen)', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     renderCard(record())
     await pick('Preview')
-    expect(screen.getByTestId('where')).toHaveTextContent('/feedback-forms/form_1/preview')
+    expect(open).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^\/form-preview\.html#s=[\w-]+&ui=en&p=phone&n=\w+&tab=1$/u), 'voc-form-preview')
+    expect(screen.getByTestId('where')).toHaveTextContent('/feedback-forms')
+    open.mockRestore()
   })
 
   it('duplicates as an unsaved copy in the builder', async () => {

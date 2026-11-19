@@ -68,7 +68,9 @@
       "welcome": "Welcome card",
       "hidden": "Hidden field {{id}}",
       "language": "{{language}}",
-      "form": "Form"
+      "form": "Form",
+      "themeLight": "Style (light)",
+      "themeDark": "Style (dark)"
     },
     "otherProblems": "Other problems",
     "noQuestions": "A form needs at least one question.",
@@ -110,6 +112,12 @@
     "chipsLong": "Chips suit short labels; long ones wrap.",
     "dropdownFew": "A list shows every choice at once; a dropdown hides them.",
     "noCategory": "No option files feedback under a category and the form has none: set one in Settings › Category routing.",
+    "themeUnreadable": "Text on the background is {{ratio}}:1, under 3:1: respondents can't read it.",
+    "themeUnreadableLive": "This form's text is hard to read ({{ratio}}:1, under 3:1). Fix its colours; until then, your other changes still go live.",
+    "themeTextLow": "Text on the background is {{ratio}}:1, below 4.5:1: many people can't read it.",
+    "themePrimaryLow": "The primary colour on the background is {{ratio}}:1, below 3:1: the focus ring, progress and selected answers are hard to see.",
+    "themeLabelLow": "Neither white nor dark text reads on this primary: {{ratio}}:1, below 4.5:1.",
+    "blocksPublishOnly": "Publishing waits for this; saving still works.",
     "targetMissingQuestion": "This rule goes to a question that was deleted. Choose where it should go.",
     "targetMissingEnding": "This rule goes to an ending that was deleted. Choose another ending.",
     "targetBackwards": "Jumps only go forward, and question {{number}} is now above this question. Move it below, or choose another target.",
@@ -120,7 +128,8 @@
     "opInvalid": "This question can't be compared that way. Choose another condition.",
     "skippedOnRequired": "This question is required, so it is never skipped: this rule never runs.",
     "ruleNeverRuns": "This rule never runs: rule {{number}} already matches every answer it would.",
-    "whereAnyway": "This is where the form goes anyway."
+    "whereAnyway": "This rule has no effect: everyone who reaches it goes to question {{number}} anyway.",
+    "whereAnywayEnding": "This rule has no effect: everyone who reaches it sees the ending “{{title}}” anyway."
   },
   "logic": {
     "ops": {
@@ -212,6 +221,13 @@
       "saved": "Saved",
       "fixToSave_one": "Fix {{count, number}} problem to save.",
       "fixToSave_other": "Fix {{count, number}} problems to save.",
+      "fixToPublish_one": "Fix {{count, number}} problem to publish.",
+      "fixToPublish_other": "Fix {{count, number}} problems to publish.",
+      "fixToPublishSaveWorks_one": "Fix {{count, number}} problem to publish. Saving still works.",
+      "fixToPublishSaveWorks_other": "Fix {{count, number}} problems to publish. Saving still works.",
+      "themeRefused": "Couldn't save: a live form needs text respondents can read, at least 3:1 on its background. Change the colours in Style.",
+      "themeHardToRead": "This form's text is hard to read.",
+      "themeFix": "Fix its colours",
       "save": "Save",
       "publish": "Publish",
       "update": "Update live form",
@@ -226,9 +242,10 @@
     "menu": {
       "label": "More form actions",
       "improve": "Improve with AI…",
+      "askAssistant": "Ask the assistant",
       "discard": "Discard changes",
       "duplicate": "Duplicate form",
-      "preview": "Preview full screen",
+      "preview": "Preview in a window",
       "turnOff": "Turn off",
       "delete": "Delete form…",
       "saveFirst": "Save the form first.",
@@ -242,6 +259,15 @@
       "question": "question “{{text}}”",
       "option": "option “{{text}}”",
       "ending": "ending “{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "Publish with missing translations?",
+      "titleUpdate": "Update the live form with missing translations?",
+      "line_one": "{{language}} respondents will see {{count, number}} text in {{primary}}.",
+      "line_other": "{{language}} respondents will see {{count, number}} texts in {{primary}}.",
+      "publishAnyway": "Publish anyway",
+      "updateAnyway": "Update anyway",
+      "translate": "Translate {{language}}"
     },
     "confirmAiPublish": {
       "title": "Publish this AI draft?",
@@ -291,7 +317,9 @@
       "withProblems_one": "{{count, number}} problem",
       "withProblems_other": "{{count, number}} problems",
       "withMissing_one": "{{count, number}} missing translation",
-      "withMissing_other": "{{count, number}} missing translations"
+      "withMissing_other": "{{count, number}} missing translations",
+      "scrollStart": "Scroll to earlier tabs",
+      "scrollEnd": "Scroll to more tabs"
     },
     "shortcut": "Ctrl+S or ⌘+S saves."
   },
@@ -309,7 +337,14 @@
     "responses_one": "{{formatted}} response",
     "responses_other": "{{formatted}} responses",
     "reading": "Reading the responses…",
-    "average": "Average {{average}} of {{max}}",
+    "lastResponse": "Last response: {{when}}",
+    "channels": {
+      "label": "Answered through",
+      "link": "Link",
+      "script": "Website script",
+      "iframe": "Embedded"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "Results",
     "actions": "More actions for {{name}}",
     "edit": "Edit",
@@ -324,7 +359,18 @@
     "unnamed": "Untitled form",
     "fixFirst_one": "Fix {{count, number}} problem before publishing.",
     "fixFirst_other": "Fix {{count, number}} problems before publishing.",
-    "open": "Open"
+    "open": "Open",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "Average rating",
+      "ces": "Average effort (CES)"
+    },
+    "turnOff": {
+      "title": "Turn off “{{name}}”?",
+      "message": "Its link and embeds will show “Feedback form unavailable.” to the next respondents.",
+      "confirm": "Turn off"
+    }
   },
   "configureApiFirst": "Configure the API endpoint in Administration → Brand & appearance to manage feedback forms.",
   "deleteConfirmLabel": "Delete",
@@ -349,12 +395,39 @@
   },
   "empty": {
     "title": "No feedback forms yet",
-    "description": "Create your first form to start collecting customer feedback."
+    "description": "Create your first form to start collecting customer feedback.",
+    "startsLabel": "Ways to start",
+    "describeHint": "Say what you want to learn, and the AI drafts the questions."
   },
   "infoBanner": {
     "title": "How feedback forms work",
     "item1": "Each form has its own link, embed code and test link.",
-    "item2": "Responses go through AI enrichment (sentiment, personas…); test responses never do."
+    "item2": "Responses go through AI enrichment (sentiment, personas…); test responses never do.",
+    "dismiss": "Hide this explanation"
+  },
+  "list": {
+    "toolbarLabel": "Find a form",
+    "search": "Search forms",
+    "searchPlaceholder": "Search by name",
+    "stateLabel": "Show",
+    "states": {
+      "all": "All",
+      "live": "Live",
+      "off": "Off",
+      "test": "Test link on"
+    },
+    "sortLabel": "Sort",
+    "sorts": {
+      "newest": "Newest",
+      "lastResponse": "Last response",
+      "name": "Name",
+      "responses": "Responses"
+    },
+    "shown_one": "{{shown, number}} of {{count, number}} form",
+    "shown_other": "{{shown, number}} of {{count, number}} forms",
+    "noMatchTitle": "No forms match",
+    "noMatch": "No form matches this search or filter.",
+    "clear": "Show all forms"
   },
   "subtitle": "Create embeddable forms to collect customer feedback",
   "title": "Feedback Forms",
@@ -957,13 +1030,9 @@
       "rules_other": "{{count, number}} rules",
       "endings_one": "{{count, number}} ending",
       "endings_other": "{{count, number}} endings",
-      "device": "Preview size",
-      "phone": "Phone",
-      "desktop": "Desktop",
       "restart": "Restart",
       "loading": "Loading the template in this language…",
-      "frameTitle": "Form preview, {{device}} size, {{language}}",
-      "nothingSent": "Preview · nothing is sent"
+      "frameTitle": "Form preview, phone size, {{language}}"
     },
     "stopDraft": {
       "title": "Stop drafting?",
@@ -1000,7 +1069,6 @@
     "replaceAsk": "Replace your description?",
     "replace": "Replace",
     "keepMine": "Keep mine",
-    "language": "Language",
     "runs": "Runs",
     "runsHint": {
       "link": "Can open with a welcome screen.",
@@ -1009,8 +1077,10 @@
     },
     "draft": "Draft it",
     "draftingButton": "Drafting…",
-    "draftingStatus": "Drafting your form… This usually takes 10 to 30 seconds.",
-    "drafting": "Drafting…",
+    "drafting": "Drafting your form… This usually takes 10 to 30 seconds.",
+    "inLanguage": "in {{language}}",
+    "changeLanguage": "change",
+    "busyReason": "You can change this once the draft is ready.",
     "waitReason": "You can draft again in {{minutes}} min.",
     "privacy": "The description goes to this workspace's AI model. Don't paste personal data."
   },
@@ -1180,10 +1250,12 @@
     "title": "Questions ({{count, number}})",
     "label": "Questions",
     "improve": "Improve with AI",
-    "welcomeOn": "Welcome card · On",
-    "welcomeOff": "Welcome card · Off",
+    "welcomeName": "Welcome screen",
+    "welcomeStateOn": "On",
+    "welcomeStateOff": "Off",
     "add": "Add question",
-    "addHere": "Add question here",
+    "addBelow": "Add question below",
+    "insertAfter": "Add question after question {{number}}",
     "typeMenu": "Question types",
     "contactOnce": "Already in this form",
     "limit": "A form holds up to 30 questions.",
@@ -1248,9 +1320,10 @@
     "buttonLabel": "Button label",
     "buttonLabelPlaceholder": "Next",
     "duplicate": "Duplicate question {{number}}",
-    "translationMissing_one": "{{primary}} is the primary language. {{language}} is missing {{count, number}} text on this question.",
-    "translationMissing_other": "{{primary}} is the primary language. {{language}} is missing {{count, number}} texts on this question.",
-    "translate": "Translate"
+    "translationLine_one": "{{language}}: {{count, number}} text missing",
+    "translationLine_other": "{{language}}: {{count, number}} texts missing",
+    "translate": "Translate",
+    "translateInto": "Translate into {{language}}"
   },
   "typeChange": {
     "label": "Question {{number}}: type",
@@ -1454,24 +1527,53 @@
   },
   "preview": {
     "label": "Preview",
-    "deviceLabel": "Preview size",
-    "phone": "Phone",
-    "desktop": "Desktop",
     "device": {
-      "phone": "phone size",
-      "desktop": "desktop size"
+      "phone": "phone size"
     },
     "language": "Preview language",
     "languageMissing": "{{language}} ({{count, number}} missing, shown in {{primary}})",
     "frameTitle": "Form preview, {{size}}, {{language}}",
-    "nothingSent": "Preview · nothing is sent",
     "restart": "Restart",
     "startHere": "Start here",
-    "fullScreen": "Full screen",
     "show": "Preview",
     "hide": "Hide preview",
-    "backToBuilder": "Back to the builder",
-    "loading": "Loading the form…"
+    "showPane": "Show preview",
+    "inWindow": "The preview is open in its window.",
+    "size": "Phone · {{width}} × {{height}} · {{zoom}} %",
+    "showing": "Showing: {{scheme}}",
+    "scheme": {
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "shuffled": "Shuffled for each respondent",
+    "style": "Style",
+    "openWindow": "Open in window",
+    "openTab": "Preview, opens in a new tab",
+    "blocked": "Your browser blocked the preview window. Allow pop-ups for this site, then try again.",
+    "stylePanel": {
+      "title": "Style",
+      "back": "Back to question"
+    }
+  },
+  "previewWindow": {
+    "title": "Form preview",
+    "region": "Form preview, {{language}}",
+    "size": "Window size",
+    "language": "Preview language",
+    "restart": "Restart",
+    "waiting": "Waiting for the form. Keep it open in the builder.",
+    "noSession": "Open this preview from the form builder.",
+    "unavailable": "The preview can't start: the form widget didn't load. Reload this window to try again.",
+    "resizeRefused": "Your browser kept this window's size.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "Custom · {{width}} × {{height}}",
+    "presets": {
+      "phone": "Phone",
+      "rotate": "Phone, rotated",
+      "tablet": "Tablet",
+      "desktop": "Desktop",
+      "embedded": "Embedded, 480 px tall"
+    }
   },
   "flow": {
     "title": "Flow",
@@ -1535,7 +1637,7 @@
     "done": "Done",
     "useThem": "Use them",
     "kindLabel": "Where the values come from",
-    "modeLabel": "Live or test link",
+    "valuesFor": "Values for",
     "kinds": {
       "link": "Link",
       "script": "Script embed",
@@ -1563,7 +1665,6 @@
   "languages": {
     "title": "Languages",
     "add": "Add language",
-    "addOption": "+ Add language…",
     "primary": "Primary language",
     "primaryHint": "The language every text is written in first.",
     "change": "Change…",
@@ -1666,6 +1767,7 @@
     "emptyValue": "empty",
     "open": "Open",
     "openResponse": "Open the test response from {{time}}",
+    "todayAt": "Today {{time}}",
     "keptUntilDeleted": "Test responses are kept until an administrator or the form's creator deletes them."
   },
   "share": {
@@ -1691,10 +1793,13 @@
     "toHidden": "see Hidden fields",
     "iframe": "Embed (iframe)",
     "script": "Script embed",
+    "iframeHint": "The script after the frame sets its height to the form's. Without it, the frame stays 480 px tall and the form scrolls inside it.",
+    "scriptHint": "Paste it where the form should appear. The widget file comes from this app and updates with each release. If your site sets a Content-Security-Policy, allow script-src {{app}} and connect-src {{api}}.",
     "inApp": "In your app:",
     "inAppHint": "a web app calls the script embed with its language and hidden fields; a mobile app opens the link in a WebView.",
     "saveFirstTitle": "No links yet",
     "saveFirst": "Save the form to get its links.",
+    "showProblems": "Show problems",
     "save": "Save"
   },
   "results": {
@@ -1739,7 +1844,9 @@
       "responses": "Responses",
       "completion": "Completion",
       "ofOpened": "{{percent}} of opened",
-      "last": "Last response"
+      "last": "Last response",
+      "largestDropAt": "largest drop at {{step}}",
+      "questionShort": "Q{{position}}"
     },
     "filters": {
       "range": "Time range",
@@ -1799,7 +1906,9 @@
       "started": "Started",
       "completed": "Completed",
       "ofOpened": "{{percent}} of opened",
-      "largestDrop": "largest drop"
+      "largestDrop": "largest drop",
+      "somePaths": "on some paths only",
+      "somePathsNote": "Logic shows some questions on some paths only: they carry no drop, and their count is the people they were shown to."
     },
     "reachCard": {
       "title": "Reach",
@@ -1835,13 +1944,105 @@
     "contactLeft_one": "{{count, number}} person left contact details",
     "contactLeft_other": "{{count, number}} people left contact details"
   },
+  "theme": {
+    "presets": {
+      "label": "Preset",
+      "vocLight": "VoC light",
+      "vocDark": "VoC dark",
+      "highContrast": "High contrast",
+      "brand": "Your brand",
+      "saveAsBrand": "Save as brand…",
+      "notAdmin": "Only this workspace's admins can save its brand.",
+      "unreadable": "Make the text readable (at least 3:1) before saving this style as your brand.",
+      "confirmTitle": "Save this style as your brand?",
+      "confirmMessage": "New forms in this workspace will start on it, and every form's Style offers it as Your brand.",
+      "confirmReplace": "New forms in this workspace will start on it, and every form's Style offers it as Your brand. It replaces the brand saved before.",
+      "confirm": "Save as brand",
+      "saved": "Saved as your brand.",
+      "saveFailed": "The brand couldn't be saved. Try again."
+    },
+    "reset": "Reset to {{preset}}",
+    "mode": {
+      "label": "Mode",
+      "light": "Light",
+      "dark": "Dark",
+      "auto": "Auto",
+      "hint": "Auto follows each respondent's device setting."
+    },
+    "editing": {
+      "label": "Editing"
+    },
+    "palette": {
+      "light": "Light palette",
+      "dark": "Dark palette"
+    },
+    "colours": {
+      "legend": "Colours",
+      "primary": "Primary",
+      "primaryHint": "Buttons, progress, the focus ring, selected answers",
+      "background": "Background",
+      "text": "Text",
+      "swatch": "{{label}}: pick a colour",
+      "invalid": "Use a hex colour like #8e48ff."
+    },
+    "derived": "Derived: option edges {{ratio}}:1 (the text colour at {{percent}} %).",
+    "corners": {
+      "label": "Corners",
+      "square": "Square {{px}}",
+      "small": "Small {{px}}",
+      "medium": "Medium {{px}}",
+      "large": "Large {{px}}",
+      "slider": "Corner radius",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "Font",
+      "system": "System",
+      "inherit": "Same as your page (script embed only)",
+      "serif": "Serif",
+      "rounded": "Rounded",
+      "mono": "Monospace",
+      "inheritHint": "Only the script embed takes your page's font; the link, the iframe and the preview show System."
+    },
+    "size": {
+      "label": "Size",
+      "default": "Default",
+      "large": "Large",
+      "hint": "Large: an 18 px body for older audiences."
+    },
+    "contrast": {
+      "title": "Contrast · {{palette}}",
+      "pair": "Pair",
+      "ratio": "Ratio",
+      "result": "Result",
+      "text": "Text on background",
+      "primary": "Primary on background",
+      "label": "Button label on primary",
+      "edge": "Option edge",
+      "minimum": "(min {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "Below AA",
+      "use": "Use {{colour}} ({{ratio}}:1)",
+      "other": {
+        "light_one": "The light palette has {{count, number}} contrast problem.",
+        "light_other": "The light palette has {{count, number}} contrast problems.",
+        "dark_one": "The dark palette has {{count, number}} contrast problem.",
+        "dark_other": "The dark palette has {{count, number}} contrast problems."
+      },
+      "editOther": {
+        "light": "Edit light",
+        "dark": "Edit dark"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "Settings sections",
     "sections": {
       "general": "General",
       "routing": "Category routing",
       "project": "Linked project",
-      "theme": "Theme",
+      "appearance": "Appearance",
       "danger": "Danger zone"
     },
     "general": {
@@ -1856,7 +2057,8 @@
       "subcategory": "Subcategory (optional)",
       "none": "— No category",
       "noSubcategory": "— No subcategory",
-      "notConfigured": "{{name}} (no longer configured)",
+      "notConfiguredBadge": "No longer configured",
+      "pickConfigured": "Pick a configured category.",
       "categoryHint": "Categories are configured in Administration → Categories.",
       "taggedAs": "Responses from this form are filed as:",
       "perOption": "Per-option routing",
@@ -1867,13 +2069,6 @@
       "editQuestion": "Edit the routing of question {{number}}",
       "precedence": "A response is filed under the category of the first answered option that has one; otherwise under the form's category.",
       "dimensionsHint": "Every response carries these values. An embed can set its own per page with the dimensions option."
-    },
-    "theme": {
-      "primary": "Primary colour",
-      "background": "Background colour",
-      "text": "Text colour",
-      "radius": "Corner radius",
-      "lowContrast": "Text on this background is {{ratio}}:1, below 4.5:1: hard to read for many people."
     },
     "danger": {
       "hint": "Deleting a form removes it and its link. Its responses stay in Feedback.",

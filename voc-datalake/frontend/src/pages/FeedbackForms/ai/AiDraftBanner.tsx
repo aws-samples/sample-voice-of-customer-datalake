@@ -35,10 +35,13 @@ function Warnings({ warnings }: Readonly<{ warnings: readonly DraftNote[] }>) {
       {warnings.map((warning) => {
         const go = goTo(warning.target)
         return (
-          <li key={warning.message} className="flex flex-wrap items-center gap-2 text-[13px] text-text">
-            <AlertTriangle size={14} className="shrink-0 text-warn" aria-hidden="true" />
-            <span className="mr-auto min-w-0">{warning.message}</span>
-            {go !== null && <button type="button" className="btn btn-ghost btn-sm" onClick={go}>{t('ai.banner.goTo')}</button>}
+          <li key={warning.message} className="flex items-start gap-2 text-[13px] text-text">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
+            {/* (Go to right after its sentence: at the row's end it sat about 500 px from what it is about) */}
+            <span className="min-w-0">
+              {warning.message}
+              {go !== null && <>{' '}<button type="button" className="link" onClick={go}>{t('ai.banner.goTo')}</button></>}
+            </span>
           </li>
         )
       })}

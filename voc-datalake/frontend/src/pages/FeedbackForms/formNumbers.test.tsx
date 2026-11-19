@@ -10,7 +10,11 @@ import feedbackFormsPl from '../../../public/locales/pl/feedbackForms.json'
 import { createQueryWrapper } from './feedback-forms-fixtures'
 import { formatCount } from '../../utils/numberFormat'
 
-const stats = { total_submissions: 26622, avg_rating: 4.5, rating_count: 20480 }
+// (the card's figure is the server's `headline`: here the first question's average rating)
+const stats = {
+  total_submissions: 26622, avg_rating: 4.5, rating_count: 20480,
+  headline: { type: 'rating', value: 4.5, count: 20480, scale_max: 5 },
+}
 
 vi.mock('../../api/client', () => ({
   api: {

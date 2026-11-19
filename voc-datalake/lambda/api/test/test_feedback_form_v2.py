@@ -416,6 +416,25 @@ class TestTheSubmit:
                                                             'session': session})
         assert answer[0] == status, answer
 
+    @pytest.mark.parametrize('channel', ['link', 'iframe', 'script'])
+    def test_where_it_was_answered_is_kept_with_the_response(self, world, lambda_context, channel):
+        form = _create(lambda_context)
+        answer = _submit(lambda_context, form['form_id'], {'answers': {'q_reason': {'code': 'slow'}}, 'channel': channel})
+        assert answer[0] == 200, answer
+        record = _queued(world)
+        assert record['metadata']['form_channel'] == channel
+        validated = validate_message(record)
+        assert validated.metadata is not None
+        assert validated.metadata.form_channel == channel
+
+    @pytest.mark.parametrize(('channel', 'status'), [(None, 200), ('app', 400), ('LINK', 400), ('', 400), (5, 400)])
+    def test_a_channel_is_optional_and_one_of_three(self, world, lambda_context, channel, status):
+        form = _create(lambda_context)
+        answer = _submit(lambda_context, form['form_id'], {'answers': {'q_reason': {'code': 'slow'}}, 'channel': channel})
+        assert answer[0] == status, answer
+        if status == 200:
+            assert 'form_channel' not in _queued(world)['metadata']
+
     def test_without_a_mapped_option_the_forms_own_routing_applies(self, world, lambda_context):
         form = _create(lambda_context, {**V2_FORM, 'category': 'ux', 'subcategory': 'old_ui'})
         assert _submit(lambda_context, form['form_id'], {'answers': {'q_reason': {'code': 'slow'}}})[0] == 200

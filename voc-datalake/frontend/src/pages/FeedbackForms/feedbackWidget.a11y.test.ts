@@ -8,7 +8,7 @@ import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   backButton, choice, clickNext, en, errorText, form, heading, nextButton, pickByKey, pickByPointer, press, pressIn,
-  renderWidget, resetWidgetPage, screen, submissions, typeText,
+  focused, renderWidget, resetWidgetPage, screen, submissions, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -113,9 +113,9 @@ describe('one screen at a time', () => {
     const container = await renderWidget(form([PICK, open('q_b', 'Second')]))
     pickByKey(container, 'Price')
     clickNext(container)
-    const inputs = [...container.querySelectorAll('input, textarea, select')]
+    const inputs = [...widgetRoot(container).querySelectorAll('input, textarea, select')]
 
-    expect(container.querySelectorAll('.voc-screen')).toHaveLength(1)
+    expect(widgetRoot(container).querySelectorAll('.voc-screen')).toHaveLength(1)
     expect(inputs.map((input) => input.className)).toStrictEqual(['voc-input'])
   })
 })
@@ -137,14 +137,14 @@ describe('structure for screen readers', () => {
 
     expect([error?.getAttribute('role'), errorText(container)]).toStrictEqual(['alert', '✕ Choose an answer to continue.'])
     expect(group?.getAttribute('aria-describedby')?.split(' ')).toContain(error?.id)
-    expect(document.activeElement).toBe(choice(container, 'Price'))
+    expect(focused(container)).toBe(choice(container, 'Price'))
   })
 
   it('announces the progress politely and on the progress bar', async () => {
     const container = await renderWidget(THREE)
-    const bar = container.querySelector('[role="progressbar"]')
+    const bar = widgetRoot(container).querySelector('[role="progressbar"]')
 
-    expect(container.querySelector('.voc-live')?.getAttribute('aria-live')).toBe('polite')
+    expect(widgetRoot(container).querySelector('.voc-live')?.getAttribute('aria-live')).toBe('polite')
     expect([bar?.getAttribute('aria-valuenow'), bar?.getAttribute('aria-valuemax'), bar?.getAttribute('aria-valuetext')])
       .toStrictEqual(['1', '3', 'Question 1 of 3'])
   })
@@ -170,18 +170,18 @@ describe('focus', () => {
   it('moves focus to the field on a text screen and to the heading on any other', async () => {
     const container = await renderWidget(form([open('q_a', 'First'), PICK]))
     clickNext(container)
-    const onChoice = document.activeElement === screen(container).querySelector('h2')
+    const onChoice = focused(container) === screen(container).querySelector('h2')
     backButton(container).click()
 
     expect(onChoice).toBe(true)
-    expect(document.activeElement).toBe(screen(container).querySelector('.voc-input'))
+    expect(focused(container)).toBe(screen(container).querySelector('.voc-input'))
   })
 
   it("moves focus to the ending's title", async () => {
     const container = await renderWidget(form([open('q_a', 'First')]))
     clickNext(container)
 
-    await waitFor(() => expect(document.activeElement?.textContent).toBe('Thanks!'))
+    await waitFor(() => expect(focused(container)?.textContent).toBe('Thanks!'))
     expect(submissions()).toHaveLength(1)
   })
 })
@@ -198,6 +198,26 @@ describe('targets and motion', () => {
     expect(screen(nps).querySelector<HTMLElement>('.voc-scale-cell')?.style.minWidth).toBe('40px')
   })
 
+  it("pins a phone's Back and Next to the bottom: the sticky bar is the screen's own child, the notice above the buttons", async () => {
+    // A 375 px wide container (jsdom has no layout), set in the widget's realm and undone after.
+    const narrow = "var widthWas = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth'); " +
+      "Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: function () { return 375; } }); " +
+      "document.body.__vocWide = function () { if (widthWas) Object.defineProperty(HTMLElement.prototype, 'clientWidth', widthWas); else delete HTMLElement.prototype.clientWidth; };"
+    const eight = Array.from({ length: 8 }, (_, i) => ({ code: `o${i}`, label: en(`Option ${i}`) }))
+    try {
+      const container = await renderWidget(form([{ ...PICK, display: 'list', options: eight }, open('q_b', 'Second')]), {}, { beforeInit: narrow })
+      const bar = nextButton(container).closest<HTMLElement>('.voc-nav-bar')
+
+      expect([bar?.style.position, bar?.style.bottom, bar?.parentElement === screen(container)]).toStrictEqual(['sticky', '0px', true])
+      expect([...(bar?.children ?? [])].map((child) => child.className)).toStrictEqual(['voc-submit-error', 'voc-nav'])
+      expect(bar?.style.background).toBe('rgb(255, 255, 255)')
+    } finally {
+      const wide: unknown = Reflect.get(document.body, '__vocWide')
+      if (typeof wide === 'function') Reflect.apply(wide, undefined, [])
+      Reflect.deleteProperty(document.body, '__vocWide')
+    }
+  })
+
   it('fades a new screen in, and not under prefers-reduced-motion', async () => {
     const moving = await renderWidget(THREE)
     const fade = screen(moving).style.transition
@@ -209,12 +229,12 @@ describe('targets and motion', () => {
 
   it('shows the Enter hint only with a fine pointer', async () => {
     const touch = await renderWidget(THREE)
-    const onTouch = touch.querySelector('.voc-enter-hint')
+    const onTouch = widgetRoot(touch).querySelector('.voc-enter-hint')
     document.body.dataset.media = 'fine'
     const mouse = await renderWidget(THREE)
 
     expect(onTouch).toBeNull()
-    expect(mouse.querySelector('.voc-enter-hint')?.textContent).toBe('Press Enter ↵')
+    expect(widgetRoot(mouse).querySelector('.voc-enter-hint')?.textContent).toBe('Press Enter ↵')
   })
 
   it('reads "Ctrl+Enter" under a long text', async () => {
@@ -222,6 +242,6 @@ describe('targets and motion', () => {
     const container = await renderWidget(form([open('q_a', 'First', { long: true })]))
     typeText(container, 'x', 'textarea')
 
-    expect(container.querySelector('.voc-enter-hint')?.textContent).toBe('Ctrl+Enter to continue (⌘+Enter on a Mac)')
+    expect(widgetRoot(container).querySelector('.voc-enter-hint')?.textContent).toBe('Ctrl+Enter to continue (⌘+Enter on a Mac)')
   })
 })

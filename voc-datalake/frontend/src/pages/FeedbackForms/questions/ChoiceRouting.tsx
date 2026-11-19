@@ -4,9 +4,18 @@
  * own rule (single `equals`, multiple `includes_any [code]`); an option a broader rule in Logic names shows
  * "Set by a rule in Logic" instead.
  *
+ * The rows follow the editor column's width (a container query, not the viewport's): from 40rem (640 px) one row per
+ * option, Option · Category · Go to under column headings; narrower, each option stacks, its label on its own line
+ * and then Category and Go to side by side, each with its caption (a phone's column, under 28rem, puts them one under
+ * the other), so a long target wraps to two lines at most (the customizable select cannot cut its text with an
+ * ellipsis). Every select is named after its option ("Category for “Too expensive”"), so the headings and captions
+ * are only visual.
+ *
  * @module pages/FeedbackForms/questions/ChoiceRouting
  */
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import clsx from 'clsx'
 import { z } from 'zod'
 import type { Category } from '../../../components/CategoriesManager/CategoriesManager'
 import { categoryLabel, subcategoryLabel } from '../../../utils/displayLabels'
@@ -15,6 +24,19 @@ import { textIn } from '../model/i18nText'
 import { splitOtherwise } from '../model/rules'
 import { targetText } from '../logic/ruleSentence'
 import { optionJump, withOptionJump } from './choiceOps'
+
+/** From a 40rem editor column: Option · Category · Go to on one row (the headings use the same columns). */
+const ROW_GRID = '@[40rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)] @[40rem]:items-center'
+
+/** A Category or Go to cell: its caption above the control while the rows are stacked (the headings name it after). */
+function RoutingCell({ caption, children }: Readonly<{ caption: string; children: ReactNode }>) {
+  return (
+    <div className="min-w-0">
+      <span aria-hidden="true" className="mb-0.5 block text-[12px] text-muted @[40rem]:hidden">{caption}</span>
+      {children}
+    </div>
+  )
+}
 
 const NO_CATEGORY = ''
 const categoryValue = (category: OptionCategory): string => JSON.stringify([category.category, category.subcategory ?? ''])
@@ -96,33 +118,25 @@ export default function ChoiceRouting({ form, question, index, categories, onCha
   const setCategory = (code: string, category: OptionCategory | undefined) =>
     onChange({ ...question, options: question.options.map((option) => (option.code === code ? { ...option, category } : option)) })
   return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-[13px]">
-          <thead>
-            <tr className="text-[11px] font-semibold uppercase tracking-[.08em] text-muted-strong">
-              <th scope="col" className="py-1 pr-2">{t('choice.routing.option')}</th>
-              <th scope="col" className="py-1 pr-2">{t('choice.routing.category')}</th>
-              <th scope="col" className="py-1">{t('choice.routing.goTo')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((row) => (
-              <tr key={row.code}>
-                <th scope="row" className="py-1.5 pr-2 font-normal text-text">{row.label}</th>
-                <td className="py-1.5 pr-2">
-                  {row.isOther ? <span className="text-[12px] text-muted">{t('choice.routing.formDefault')}</span>
-                    : <CategorySelect value={row.category} categories={categories} label={t('choice.routing.categoryOf', { option: row.label })} onChange={(next) => setCategory(row.code, next)} />}
-                </td>
-                <td className="py-1.5">
-                  <GoToSelect form={form} question={question} index={index} code={row.code} label={t('choice.routing.goToOf', { option: row.label })}
-                    onChange={onChange} onEditLogic={onEditLogic} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="@container space-y-2">
+      <div aria-hidden="true" className={clsx('hidden @[40rem]:grid', ROW_GRID, 'text-[11px] font-semibold uppercase tracking-[.08em] text-muted-strong')}>
+        <span>{t('choice.routing.option')}</span><span>{t('choice.routing.category')}</span><span>{t('choice.routing.goTo')}</span>
       </div>
+      <ul aria-label={t('choice.routing.title')} className="divide-y divide-border text-[13px]">
+        {rows.map((row) => (
+          <li key={row.code} className={clsx('grid grid-cols-1 gap-x-2 gap-y-1 py-2 @[28rem]:grid-cols-2 @[40rem]:py-1.5', ROW_GRID)}>
+            <span className="min-w-0 break-words font-medium text-text @[28rem]:col-span-2 @[40rem]:col-span-1 @[40rem]:font-normal">{row.label}</span>
+            <RoutingCell caption={t('choice.routing.category')}>
+              {row.isOther ? <span className="text-[12px] text-muted">{t('choice.routing.formDefault')}</span>
+                : <CategorySelect value={row.category} categories={categories} label={t('choice.routing.categoryOf', { option: row.label })} onChange={(next) => setCategory(row.code, next)} />}
+            </RoutingCell>
+            <RoutingCell caption={t('choice.routing.goTo')}>
+              <GoToSelect form={form} question={question} index={index} code={row.code} label={t('choice.routing.goToOf', { option: row.label })}
+                onChange={onChange} onEditLogic={onEditLogic} />
+            </RoutingCell>
+          </li>
+        ))}
+      </ul>
       <p className="text-[12px] text-muted">{t('choice.routing.precedence')}</p>
       {question.type === 'multi_select' && <p className="text-[12px] text-muted">{t('choice.routing.firstRuleWins')}</p>}
     </div>

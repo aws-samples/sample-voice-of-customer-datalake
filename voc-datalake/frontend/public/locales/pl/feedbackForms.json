@@ -72,7 +72,9 @@
       "welcome": "Ekran powitalny",
       "hidden": "Pole ukryte {{id}}",
       "language": "{{language}}",
-      "form": "Formularz"
+      "form": "Formularz",
+      "themeLight": "Styl (jasny)",
+      "themeDark": "Styl (ciemny)"
     },
     "otherProblems": "Inne problemy",
     "noQuestions": "Formularz musi mieć co najmniej jedno pytanie.",
@@ -116,6 +118,12 @@
     "chipsLong": "Kafelki pasują do krótkich etykiet; dłuższe się zawijają.",
     "dropdownFew": "Lista pokazuje wszystkie opcje naraz; lista rozwijana je ukrywa.",
     "noCategory": "Żadna opcja nie przypisuje opinii do kategorii, a formularz nie ma własnej: ustaw ją w sekcji Ustawienia › Przypisywanie kategorii.",
+    "themeUnreadable": "Kontrast tekstu na tle to {{ratio}}:1, poniżej 3:1: respondenci nie odczytają tego tekstu.",
+    "themeUnreadableLive": "Tekst tego formularza jest trudny do odczytania ({{ratio}}:1, poniżej 3:1). Popraw jego kolory; do tego czasu pozostałe zmiany są nadal publikowane.",
+    "themeTextLow": "Kontrast tekstu na tle to {{ratio}}:1, poniżej 4,5:1: wiele osób nie odczyta tego tekstu.",
+    "themePrimaryLow": "Kontrast koloru głównego na tle to {{ratio}}:1, poniżej 3:1: obramowanie fokusu, postęp i wybrane odpowiedzi są słabo widoczne.",
+    "themeLabelLow": "Na tym kolorze głównym ani biały, ani ciemny tekst nie jest czytelny: {{ratio}}:1, poniżej 4,5:1.",
+    "blocksPublishOnly": "Publikacja czeka na poprawkę; zapisywanie nadal działa.",
     "targetMissingQuestion": "Ta reguła prowadzi do usuniętego pytania. Wybierz, dokąd ma prowadzić.",
     "targetMissingEnding": "Ta reguła prowadzi do usuniętego zakończenia. Wybierz inne zakończenie.",
     "targetBackwards": "Przejścia prowadzą tylko do przodu, a pytanie {{number}} jest teraz nad tym pytaniem. Przenieś je niżej lub wybierz inny cel.",
@@ -126,7 +134,8 @@
     "opInvalid": "Tego pytania nie można porównać w ten sposób. Wybierz inny warunek.",
     "skippedOnRequired": "To pytanie jest wymagane, więc nigdy nie zostanie pominięte: ta reguła nigdy się nie uruchomi.",
     "ruleNeverRuns": "Ta reguła nigdy się nie uruchomi: reguła {{number}} pasuje już do każdej odpowiedzi, do której pasowałaby ta.",
-    "whereAnyway": "Formularz i tak przechodzi w to miejsce."
+    "whereAnyway": "Ta reguła nic nie zmienia: każdy, kto do niej dotrze, i tak przechodzi do pytania {{number}}.",
+    "whereAnywayEnding": "Ta reguła nic nie zmienia: każdy, kto do niej dotrze, i tak widzi zakończenie „{{title}}”."
   },
   "logic": {
     "ops": {
@@ -220,6 +229,17 @@
       "fixToSave_few": "Popraw {{count, number}} problemy, aby zapisać.",
       "fixToSave_many": "Popraw {{count, number}} problemów, aby zapisać.",
       "fixToSave_other": "Popraw {{count, number}} problemu, aby zapisać.",
+      "fixToPublish_one": "Popraw {{count, number}} problem, aby opublikować.",
+      "fixToPublish_few": "Popraw {{count, number}} problemy, aby opublikować.",
+      "fixToPublish_many": "Popraw {{count, number}} problemów, aby opublikować.",
+      "fixToPublish_other": "Popraw {{count, number}} problemu, aby opublikować.",
+      "fixToPublishSaveWorks_one": "Popraw {{count, number}} problem, aby opublikować. Zapisywanie nadal działa.",
+      "fixToPublishSaveWorks_few": "Popraw {{count, number}} problemy, aby opublikować. Zapisywanie nadal działa.",
+      "fixToPublishSaveWorks_many": "Popraw {{count, number}} problemów, aby opublikować. Zapisywanie nadal działa.",
+      "fixToPublishSaveWorks_other": "Popraw {{count, number}} problemu, aby opublikować. Zapisywanie nadal działa.",
+      "themeRefused": "Nie udało się zapisać: aktywny formularz potrzebuje tekstu czytelnego dla respondentów, o kontraście co najmniej 3:1 względem tła. Zmień kolory w sekcji Styl.",
+      "themeHardToRead": "Tekst tego formularza jest trudny do odczytania.",
+      "themeFix": "Popraw kolory",
       "save": "Zapisz",
       "publish": "Opublikuj",
       "update": "Zaktualizuj aktywny formularz",
@@ -234,9 +254,10 @@
     "menu": {
       "label": "Więcej działań na formularzu",
       "improve": "Ulepsz z AI…",
+      "askAssistant": "Zapytaj asystenta",
       "discard": "Odrzuć zmiany",
       "duplicate": "Duplikuj formularz",
-      "preview": "Podgląd na pełnym ekranie",
+      "preview": "Podgląd w oknie",
       "turnOff": "Wyłącz",
       "delete": "Usuń formularz…",
       "saveFirst": "Najpierw zapisz formularz.",
@@ -250,6 +271,17 @@
       "question": "pytanie „{{text}}”",
       "option": "opcja „{{text}}”",
       "ending": "zakończenie „{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "Opublikować mimo brakujących tłumaczeń?",
+      "titleUpdate": "Zaktualizować aktywny formularz mimo brakujących tłumaczeń?",
+      "line_one": "{{language}}: respondenci zobaczą {{count, number}} tekst w języku głównym ({{primary}}).",
+      "line_few": "{{language}}: respondenci zobaczą {{count, number}} teksty w języku głównym ({{primary}}).",
+      "line_many": "{{language}}: respondenci zobaczą {{count, number}} tekstów w języku głównym ({{primary}}).",
+      "line_other": "{{language}}: respondenci zobaczą {{count, number}} tekstu w języku głównym ({{primary}}).",
+      "publishAnyway": "Opublikuj mimo to",
+      "updateAnyway": "Zaktualizuj mimo to",
+      "translate": "Przetłumacz: {{language}}"
     },
     "confirmAiPublish": {
       "title": "Opublikować ten szkic AI?",
@@ -305,7 +337,9 @@
       "withMissing_one": "{{count, number}} brakujące tłumaczenie",
       "withMissing_few": "{{count, number}} brakujące tłumaczenia",
       "withMissing_many": "{{count, number}} brakujących tłumaczeń",
-      "withMissing_other": "{{count, number}} brakującego tłumaczenia"
+      "withMissing_other": "{{count, number}} brakującego tłumaczenia",
+      "scrollStart": "Przewiń do wcześniejszych kart",
+      "scrollEnd": "Przewiń do kolejnych kart"
     },
     "shortcut": "Ctrl+S lub ⌘+S zapisuje."
   },
@@ -327,7 +361,14 @@
     "responses_many": "{{formatted}} odpowiedzi",
     "responses_other": "{{formatted}} odpowiedzi",
     "reading": "Odczytywanie odpowiedzi…",
-    "average": "Średnia {{average}} z {{max}}",
+    "lastResponse": "Ostatnia odpowiedź: {{when}}",
+    "channels": {
+      "label": "Odpowiedzi przez",
+      "link": "Link",
+      "script": "Skrypt na stronie",
+      "iframe": "Osadzenie"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "Wyniki",
     "actions": "Więcej działań: {{name}}",
     "edit": "Edytuj",
@@ -344,7 +385,18 @@
     "fixFirst_few": "Przed publikacją popraw {{count, number}} problemy.",
     "fixFirst_many": "Przed publikacją popraw {{count, number}} problemów.",
     "fixFirst_other": "Przed publikacją popraw {{count, number}} problemu.",
-    "open": "Otwórz"
+    "open": "Otwórz",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "Średnia ocena",
+      "ces": "Średni wysiłek (CES)"
+    },
+    "turnOff": {
+      "title": "Wyłączyć „{{name}}”?",
+      "message": "Jego link i osadzenia pokażą kolejnym respondentom komunikat „Formularz jest niedostępny.”",
+      "confirm": "Wyłącz"
+    }
   },
   "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Marka i wygląd, aby zarządzać formularzami opinii.",
   "deleteConfirmLabel": "Usuń",
@@ -369,12 +421,41 @@
   },
   "empty": {
     "title": "Brak formularzy opinii",
-    "description": "Utwórz pierwszy formularz, aby zacząć zbierać opinie klientów."
+    "description": "Utwórz pierwszy formularz, aby zacząć zbierać opinie klientów.",
+    "startsLabel": "Jak zacząć",
+    "describeHint": "Napisz, czego chcesz się dowiedzieć, a AI przygotuje szkic pytań."
   },
   "infoBanner": {
     "title": "Jak działają formularze opinii",
     "item1": "Każdy formularz ma własny link, kod osadzenia i link testowy.",
-    "item2": "Odpowiedzi przechodzą wzbogacanie AI (sentyment, persony…); odpowiedzi testowe nigdy."
+    "item2": "Odpowiedzi przechodzą wzbogacanie AI (sentyment, persony…); odpowiedzi testowe nigdy.",
+    "dismiss": "Ukryj to wyjaśnienie"
+  },
+  "list": {
+    "toolbarLabel": "Znajdź formularz",
+    "search": "Szukaj formularzy",
+    "searchPlaceholder": "Szukaj po nazwie",
+    "stateLabel": "Pokaż",
+    "states": {
+      "all": "Wszystkie",
+      "live": "Aktywne",
+      "off": "Wyłączone",
+      "test": "Link testowy włączony"
+    },
+    "sortLabel": "Sortuj",
+    "sorts": {
+      "newest": "Najnowsze",
+      "lastResponse": "Ostatnia odpowiedź",
+      "name": "Nazwa",
+      "responses": "Odpowiedzi"
+    },
+    "shown_one": "{{shown, number}} z {{count, number}} formularza",
+    "shown_few": "{{shown, number}} z {{count, number}} formularzy",
+    "shown_many": "{{shown, number}} z {{count, number}} formularzy",
+    "shown_other": "{{shown, number}} z {{count, number}} formularza",
+    "noMatchTitle": "Brak pasujących formularzy",
+    "noMatch": "Żaden formularz nie pasuje do tego wyszukiwania ani filtra.",
+    "clear": "Pokaż wszystkie formularze"
   },
   "subtitle": "Twórz formularze do osadzania, aby zbierać opinie klientów",
   "title": "Formularze opinii",
@@ -983,13 +1064,9 @@
       "endings_few": "{{count, number}} zakończenia",
       "endings_many": "{{count, number}} zakończeń",
       "endings_other": "{{count, number}} zakończenia",
-      "device": "Rozmiar podglądu",
-      "phone": "Telefon",
-      "desktop": "Komputer",
       "restart": "Od nowa",
       "loading": "Wczytywanie szablonu w tym języku…",
-      "frameTitle": "Podgląd formularza: {{device}}, {{language}}",
-      "nothingSent": "Podgląd · nic nie jest wysyłane"
+      "frameTitle": "Podgląd formularza: rozmiar telefonu, {{language}}"
     },
     "stopDraft": {
       "title": "Przerwać tworzenie szkicu?",
@@ -1026,7 +1103,6 @@
     "replaceAsk": "Zastąpić Twój opis?",
     "replace": "Zastąp",
     "keepMine": "Zostaw mój",
-    "language": "Język",
     "runs": "Gdzie działa",
     "runsHint": {
       "link": "Może zaczynać się od ekranu powitalnego.",
@@ -1035,8 +1111,10 @@
     },
     "draft": "Przygotuj szkic",
     "draftingButton": "Tworzenie szkicu…",
-    "draftingStatus": "Tworzenie szkicu formularza… Zwykle trwa to od 10 do 30 sekund.",
-    "drafting": "Tworzenie szkicu…",
+    "drafting": "Tworzenie szkicu formularza… Zwykle trwa to od 10 do 30 sekund.",
+    "inLanguage": "w języku: {{language}}",
+    "changeLanguage": "zmień",
+    "busyReason": "Można to zmienić, gdy szkic będzie gotowy.",
     "waitReason": "Kolejny szkic możesz przygotować za {{minutes}} min.",
     "privacy": "Opis trafia do modelu AI tego obszaru roboczego. Nie wklejaj danych osobowych."
   },
@@ -1218,10 +1296,12 @@
     "title": "Pytania ({{count, number}})",
     "label": "Pytania",
     "improve": "Ulepsz z AI",
-    "welcomeOn": "Ekran powitalny · włączony",
-    "welcomeOff": "Ekran powitalny · wyłączony",
+    "welcomeName": "Ekran powitalny",
+    "welcomeStateOn": "Włączony",
+    "welcomeStateOff": "Wyłączony",
     "add": "Dodaj pytanie",
-    "addHere": "Dodaj pytanie tutaj",
+    "addBelow": "Dodaj pytanie poniżej",
+    "insertAfter": "Dodaj pytanie po pytaniu {{number}}",
     "typeMenu": "Typy pytań",
     "contactOnce": "Już jest w tym formularzu",
     "limit": "Formularz może mieć maksymalnie 30 pytań.",
@@ -1294,11 +1374,12 @@
     "buttonLabel": "Etykieta przycisku",
     "buttonLabelPlaceholder": "Dalej",
     "duplicate": "Duplikuj pytanie {{number}}",
-    "translationMissing_one": "Język główny to {{primary}}. {{language}}: w tym pytaniu brakuje {{count, number}} tekstu.",
-    "translationMissing_few": "Język główny to {{primary}}. {{language}}: w tym pytaniu brakuje {{count, number}} tekstów.",
-    "translationMissing_many": "Język główny to {{primary}}. {{language}}: w tym pytaniu brakuje {{count, number}} tekstów.",
-    "translationMissing_other": "Język główny to {{primary}}. {{language}}: w tym pytaniu brakuje {{count, number}} tekstu.",
-    "translate": "Przetłumacz"
+    "translationLine_one": "{{language}}: brakuje {{count, number}} tekstu",
+    "translationLine_few": "{{language}}: brakuje {{count, number}} tekstów",
+    "translationLine_many": "{{language}}: brakuje {{count, number}} tekstów",
+    "translationLine_other": "{{language}}: brakuje {{count, number}} tekstu",
+    "translate": "Przetłumacz",
+    "translateInto": "Przetłumacz: {{language}}"
   },
   "typeChange": {
     "label": "Pytanie {{number}}: typ",
@@ -1518,24 +1599,53 @@
   },
   "preview": {
     "label": "Podgląd",
-    "deviceLabel": "Rozmiar podglądu",
-    "phone": "Telefon",
-    "desktop": "Komputer",
     "device": {
-      "phone": "rozmiar telefonu",
-      "desktop": "rozmiar komputera"
+      "phone": "rozmiar telefonu"
     },
     "language": "Język podglądu",
     "languageMissing": "{{language}} (brak: {{count, number}}; zamiast nich: {{primary}})",
     "frameTitle": "Podgląd formularza, {{size}}, {{language}}",
-    "nothingSent": "Podgląd · nic nie jest wysyłane",
     "restart": "Od nowa",
     "startHere": "Zacznij tutaj",
-    "fullScreen": "Pełny ekran",
     "show": "Podgląd",
     "hide": "Ukryj podgląd",
-    "backToBuilder": "Wróć do kreatora",
-    "loading": "Wczytywanie formularza…"
+    "showPane": "Pokaż podgląd",
+    "inWindow": "Podgląd jest otwarty w osobnym oknie.",
+    "size": "Telefon · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "Widoczny motyw: {{scheme}}",
+    "scheme": {
+      "light": "jasny",
+      "dark": "ciemny"
+    },
+    "shuffled": "Kolejność losowana dla każdej osoby",
+    "style": "Styl",
+    "openWindow": "Otwórz w oknie",
+    "openTab": "Podgląd, otwiera się w nowej karcie",
+    "blocked": "Przeglądarka zablokowała okno podglądu. Zezwól na wyskakujące okna dla tej witryny i spróbuj ponownie.",
+    "stylePanel": {
+      "title": "Styl",
+      "back": "Wróć do pytania"
+    }
+  },
+  "previewWindow": {
+    "title": "Podgląd formularza",
+    "region": "Podgląd formularza, {{language}}",
+    "size": "Rozmiar okna",
+    "language": "Język podglądu",
+    "restart": "Od nowa",
+    "waiting": "Oczekiwanie na formularz. Nie zamykaj go w kreatorze.",
+    "noSession": "Otwórz ten podgląd z kreatora formularzy.",
+    "unavailable": "Nie można uruchomić podglądu: widżet formularza się nie wczytał. Odśwież to okno, aby spróbować ponownie.",
+    "resizeRefused": "Przeglądarka nie zmieniła rozmiaru tego okna.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "Własny · {{width}} × {{height}}",
+    "presets": {
+      "phone": "Telefon",
+      "rotate": "Telefon, obrócony",
+      "tablet": "Tablet",
+      "desktop": "Komputer",
+      "embedded": "Osadzony, 480 px wysokości"
+    }
   },
   "flow": {
     "title": "Przebieg",
@@ -1609,7 +1719,7 @@
     "done": "Gotowe",
     "useThem": "Jak ich użyć",
     "kindLabel": "Skąd pochodzą wartości",
-    "modeLabel": "Link aktywny lub testowy",
+    "valuesFor": "Wartości dla",
     "kinds": {
       "link": "Link",
       "script": "Osadzenie skryptem",
@@ -1637,7 +1747,6 @@
   "languages": {
     "title": "Języki",
     "add": "Dodaj język",
-    "addOption": "+ Dodaj język…",
     "primary": "Język główny",
     "primaryHint": "Język, w którym najpierw powstaje każdy tekst.",
     "change": "Zmień…",
@@ -1748,6 +1857,7 @@
     "emptyValue": "puste",
     "open": "Otwórz",
     "openResponse": "Otwórz odpowiedź testową z {{time}}",
+    "todayAt": "Dziś {{time}}",
     "keptUntilDeleted": "Odpowiedzi testowe są przechowywane, dopóki administrator lub twórca formularza ich nie usunie."
   },
   "share": {
@@ -1773,10 +1883,13 @@
     "toHidden": "zobacz Pola ukryte",
     "iframe": "Osadzenie (iframe)",
     "script": "Osadzenie skryptem",
+    "iframeHint": "Skrypt pod ramką dopasowuje jej wysokość do formularza. Bez niego ramka ma 480 px wysokości, a formularz przewija się w jej wnętrzu.",
+    "scriptHint": "Wklej go tam, gdzie ma się pojawić formularz. Plik widżetu pochodzi z tej aplikacji i aktualizuje się z każdym wydaniem. Jeśli Twoja witryna ustawia Content-Security-Policy, zezwól na script-src {{app}} i connect-src {{api}}.",
     "inApp": "W aplikacji:",
     "inAppHint": "aplikacja internetowa wywołuje osadzenie skryptem z językiem i polami ukrytymi; aplikacja mobilna otwiera link w WebView.",
     "saveFirstTitle": "Brak linków",
     "saveFirst": "Zapisz formularz, aby otrzymać jego linki.",
+    "showProblems": "Pokaż problemy",
     "save": "Zapisz"
   },
   "results": {
@@ -1829,7 +1942,9 @@
       "responses": "Odpowiedzi",
       "completion": "Ukończenie",
       "ofOpened": "{{percent}} otwartych",
-      "last": "Ostatnia odpowiedź"
+      "last": "Ostatnia odpowiedź",
+      "largestDropAt": "największy spadek: {{step}}",
+      "questionShort": "P{{position}}"
     },
     "filters": {
       "range": "Zakres czasu",
@@ -1895,7 +2010,9 @@
       "started": "Rozpoczęte",
       "completed": "Ukończone",
       "ofOpened": "{{percent}} otwartych",
-      "largestDrop": "największy spadek"
+      "largestDrop": "największy spadek",
+      "somePaths": "tylko na niektórych ścieżkach",
+      "somePathsNote": "Logika pokazuje niektóre pytania tylko na niektórych ścieżkach: nie mają spadku, a ich liczba to osoby, którym je pokazano."
     },
     "reachCard": {
       "title": "Zasięg",
@@ -1933,13 +2050,109 @@
     "contactLeft_many": "{{count, number}} osób zostawiło dane kontaktowe",
     "contactLeft_other": "{{count, number}} osoby zostawiło dane kontaktowe"
   },
+  "theme": {
+    "presets": {
+      "label": "Gotowy styl",
+      "vocLight": "VoC jasny",
+      "vocDark": "VoC ciemny",
+      "highContrast": "Wysoki kontrast",
+      "brand": "Twoja marka",
+      "saveAsBrand": "Zapisz jako markę…",
+      "notAdmin": "Tylko administratorzy tego obszaru roboczego mogą zapisać jego markę.",
+      "unreadable": "Zanim zapiszesz ten styl jako markę, zadbaj o czytelny tekst (co najmniej 3:1).",
+      "confirmTitle": "Zapisać ten styl jako Twoją markę?",
+      "confirmMessage": "Nowe formularze w tym obszarze roboczym będą zaczynać od tego stylu, a sekcja Styl każdego formularza zaproponuje go jako Twoją markę.",
+      "confirmReplace": "Nowe formularze w tym obszarze roboczym będą zaczynać od tego stylu, a sekcja Styl każdego formularza zaproponuje go jako Twoją markę. Zastąpi on markę zapisaną wcześniej.",
+      "confirm": "Zapisz jako markę",
+      "saved": "Zapisano jako Twoją markę.",
+      "saveFailed": "Nie udało się zapisać marki. Spróbuj ponownie."
+    },
+    "reset": "Przywróć: {{preset}}",
+    "mode": {
+      "label": "Tryb",
+      "light": "Jasny",
+      "dark": "Ciemny",
+      "auto": "Automatyczny",
+      "hint": "Tryb automatyczny dopasowuje się do ustawień urządzenia każdego respondenta."
+    },
+    "editing": {
+      "label": "Edytujesz"
+    },
+    "palette": {
+      "light": "Paleta jasna",
+      "dark": "Paleta ciemna"
+    },
+    "colours": {
+      "legend": "Kolory",
+      "primary": "Główny",
+      "primaryHint": "Przyciski, postęp, obramowanie fokusu, wybrane odpowiedzi",
+      "background": "Tło",
+      "text": "Tekst",
+      "swatch": "{{label}}: wybierz kolor",
+      "invalid": "Użyj koloru szesnastkowego, np. #8e48ff."
+    },
+    "derived": "Pochodne: obramowanie opcji {{ratio}}:1 (kolor tekstu w {{percent}} %).",
+    "corners": {
+      "label": "Rogi",
+      "square": "Proste {{px}}",
+      "small": "Małe {{px}}",
+      "medium": "Średnie {{px}}",
+      "large": "Duże {{px}}",
+      "slider": "Zaokrąglenie rogów",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "Czcionka",
+      "system": "Systemowa",
+      "inherit": "Taka jak na Twojej stronie (tylko osadzenie skryptem)",
+      "serif": "Szeryfowa",
+      "rounded": "Zaokrąglona",
+      "mono": "O stałej szerokości",
+      "inheritHint": "Czcionkę Twojej strony przejmuje tylko osadzenie skryptem; link, iframe i podgląd pokazują czcionkę systemową."
+    },
+    "size": {
+      "label": "Rozmiar",
+      "default": "Domyślny",
+      "large": "Duży",
+      "hint": "Duży: tekst 18 px dla starszych odbiorców."
+    },
+    "contrast": {
+      "title": "Kontrast · {{palette}}",
+      "pair": "Para",
+      "ratio": "Współczynnik",
+      "result": "Wynik",
+      "text": "Tekst na tle",
+      "primary": "Kolor główny na tle",
+      "label": "Etykieta przycisku na kolorze głównym",
+      "edge": "Obramowanie opcji",
+      "minimum": "(min. {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "Poniżej AA",
+      "use": "Użyj {{colour}} ({{ratio}}:1)",
+      "other": {
+        "light_one": "Paleta jasna ma {{count, number}} problem z kontrastem.",
+        "light_few": "Paleta jasna ma {{count, number}} problemy z kontrastem.",
+        "light_many": "Paleta jasna ma {{count, number}} problemów z kontrastem.",
+        "light_other": "Paleta jasna ma {{count, number}} problemu z kontrastem.",
+        "dark_one": "Paleta ciemna ma {{count, number}} problem z kontrastem.",
+        "dark_few": "Paleta ciemna ma {{count, number}} problemy z kontrastem.",
+        "dark_many": "Paleta ciemna ma {{count, number}} problemów z kontrastem.",
+        "dark_other": "Paleta ciemna ma {{count, number}} problemu z kontrastem."
+      },
+      "editOther": {
+        "light": "Edytuj jasną",
+        "dark": "Edytuj ciemną"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "Sekcje ustawień",
     "sections": {
       "general": "Ogólne",
       "routing": "Przypisywanie kategorii",
       "project": "Powiązany projekt",
-      "theme": "Motyw",
+      "appearance": "Wygląd",
       "danger": "Strefa zagrożenia"
     },
     "general": {
@@ -1954,7 +2167,8 @@
       "subcategory": "Podkategoria (opcjonalnie)",
       "none": "— Brak kategorii",
       "noSubcategory": "— Brak podkategorii",
-      "notConfigured": "{{name}} (już nieskonfigurowana)",
+      "notConfiguredBadge": "Już nieskonfigurowana",
+      "pickConfigured": "Wybierz skonfigurowaną kategorię.",
       "categoryHint": "Kategorie są konfigurowane w sekcji Administracja → Kategorie.",
       "taggedAs": "Odpowiedzi z tego formularza są oznaczane jako:",
       "perOption": "Kierowanie według opcji",
@@ -1967,13 +2181,6 @@
       "editQuestion": "Edytuj kierowanie w pytaniu {{number}}",
       "precedence": "Odpowiedź trafia do kategorii pierwszej wybranej opcji, która ma kategorię; w przeciwnym razie do kategorii formularza.",
       "dimensionsHint": "Każda odpowiedź zawiera te wartości. Osadzenie może ustawić własne dla każdej strony za pomocą opcji dimensions."
-    },
-    "theme": {
-      "primary": "Kolor główny",
-      "background": "Kolor tła",
-      "text": "Kolor tekstu",
-      "radius": "Zaokrąglenie rogów",
-      "lowContrast": "Kontrast tekstu na tym tle to {{ratio}}:1, poniżej 4,5:1: dla wielu osób jest trudny do odczytania."
     },
     "danger": {
       "hint": "Usunięcie formularza usuwa go wraz z linkiem. Jego odpowiedzi pozostają wśród opinii.",

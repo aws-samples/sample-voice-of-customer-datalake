@@ -23,13 +23,13 @@ const TAILWIND_BLUE_500_HEX = '#3b82f6'
 const F7_SCOPE_ATTR = 'data-e2e-f7-scope'
 /** The F7 step on a NEW form's theme (the forms builder's Settings tab). */
 const FORM_THEME_STEP = 'form-builder-theme'
-/** The Settings › Theme colour fields (feedbackForms.json settings.theme). */
-const THEME_COLOUR_FIELDS = ['Primary colour', 'Background colour', 'Text colour'] as const
+/** The Settings › Appearance colour fields (feedbackForms.json theme.colours). */
+const THEME_COLOUR_FIELDS = ['Primary', 'Background', 'Text'] as const
 
 /**
  * F7: the five screens the off-palette blue was seen on. `open` lands on the
  * screen; a new form's theme is reached by the template picker's Blank form →
- * Use this template → the builder's Settings tab, Theme (nothing is saved: the
+ * Use this template → the builder's Settings tab, Appearance (nothing is saved: the
  * unsaved form is dropped with the page).
  */
 /** Longer than the app's `.btn` colour transition, so a sampled fill is the resting one. */
@@ -50,7 +50,7 @@ const F7_SCREENS: ReadonlyArray<{ step: string; scope?: string; open: (page: Pag
       await page.getByRole('button', { name: 'Use this template', exact: true }).click()
       const tabs = page.getByRole('tablist', { name: 'Form builder sections' })
       await tabs.getByRole('tab', { name: /^Settings\b/ }).click()
-      const theme = page.getByRole('region', { name: 'Theme' })
+      const theme = page.getByRole('region', { name: 'Appearance' })
       await theme.scrollIntoViewIfNeeded()
       // The new form's own defaults: no colour field holds the old blue (the fields' swatches are native, not fills).
       for (const field of THEME_COLOUR_FIELDS) {

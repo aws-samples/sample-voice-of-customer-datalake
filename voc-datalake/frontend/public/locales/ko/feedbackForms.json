@@ -68,7 +68,9 @@
       "welcome": "환영 카드",
       "hidden": "숨겨진 필드 {{id}}",
       "language": "{{language}}",
-      "form": "양식"
+      "form": "양식",
+      "themeLight": "스타일(라이트)",
+      "themeDark": "스타일(다크)"
     },
     "otherProblems": "기타 문제",
     "noQuestions": "양식에는 질문이 하나 이상 있어야 합니다.",
@@ -110,6 +112,12 @@
     "chipsLong": "칩은 짧은 레이블에 적합합니다. 긴 레이블은 줄바꿈됩니다.",
     "dropdownFew": "목록은 모든 선택지를 한 번에 보여 주지만, 드롭다운은 선택지를 숨깁니다.",
     "noCategory": "피드백을 카테고리로 분류하는 선택지가 없고 양식에도 카테고리가 없습니다. 설정 › 카테고리 라우팅에서 지정하세요.",
+    "themeUnreadable": "배경 위 텍스트 대비가 {{ratio}}:1로 3:1보다 낮아 응답자가 읽을 수 없습니다.",
+    "themeUnreadableLive": "이 양식의 텍스트는 읽기 어렵습니다({{ratio}}:1, 3:1 미만). 색상을 수정하세요. 그때까지도 다른 변경 사항은 게시됩니다.",
+    "themeTextLow": "배경 위 텍스트 대비가 {{ratio}}:1로 4.5:1보다 낮아 많은 사람이 읽을 수 없습니다.",
+    "themePrimaryLow": "배경 위 기본 색상 대비가 {{ratio}}:1로 3:1보다 낮아 포커스 링, 진행 표시, 선택한 답변이 잘 보이지 않습니다.",
+    "themeLabelLow": "이 기본 색상 위에서는 흰색 텍스트도 어두운 텍스트도 읽기 어렵습니다: {{ratio}}:1, 4.5:1 미만.",
+    "blocksPublishOnly": "이 문제를 고칠 때까지 게시할 수 없지만 저장은 됩니다.",
     "targetMissingQuestion": "이 규칙은 삭제된 질문으로 이동합니다. 이동할 곳을 선택하세요.",
     "targetMissingEnding": "이 규칙은 삭제된 종료 화면으로 이동합니다. 다른 종료 화면을 선택하세요.",
     "targetBackwards": "이동은 앞쪽으로만 할 수 있는데, 질문 {{number}}이(가) 이제 이 질문보다 위에 있습니다. 아래로 옮기거나 다른 대상을 선택하세요.",
@@ -120,7 +128,8 @@
     "opInvalid": "이 질문은 이 방식으로 비교할 수 없습니다. 다른 조건을 선택하세요.",
     "skippedOnRequired": "이 질문은 필수이므로 건너뛸 수 없습니다. 따라서 이 규칙은 실행되지 않습니다.",
     "ruleNeverRuns": "이 규칙은 실행되지 않습니다. 해당하는 모든 답변이 이미 규칙 {{number}}에 일치합니다.",
-    "whereAnyway": "규칙이 없어도 양식은 어차피 여기로 이동합니다."
+    "whereAnyway": "이 규칙은 효과가 없습니다. 이 규칙에 도달한 모든 응답자는 어차피 질문 {{number}}(으)로 이동합니다.",
+    "whereAnywayEnding": "이 규칙은 효과가 없습니다. 이 규칙에 도달한 모든 응답자는 어차피 종료 화면 “{{title}}”을(를) 봅니다."
   },
   "logic": {
     "ops": {
@@ -212,6 +221,13 @@
       "saved": "저장됨",
       "fixToSave_one": "저장하려면 문제 {{count, number}}개를 해결하세요.",
       "fixToSave_other": "저장하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublish_one": "게시하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublish_other": "게시하려면 문제 {{count, number}}개를 해결하세요.",
+      "fixToPublishSaveWorks_one": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
+      "fixToPublishSaveWorks_other": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
+      "themeRefused": "저장하지 못했습니다. 게시된 양식에는 응답자가 읽을 수 있는 텍스트(배경 대비 3:1 이상)가 필요합니다. 스타일에서 색상을 바꾸세요.",
+      "themeHardToRead": "이 양식의 텍스트는 읽기 어렵습니다.",
+      "themeFix": "색상 수정",
       "save": "저장",
       "publish": "게시",
       "update": "게시된 양식 업데이트",
@@ -226,9 +242,10 @@
     "menu": {
       "label": "양식 추가 작업",
       "improve": "AI로 개선…",
+      "askAssistant": "어시스턴트에게 묻기",
       "discard": "변경 사항 취소",
       "duplicate": "양식 복제",
-      "preview": "전체 화면 미리보기",
+      "preview": "창에서 미리보기",
       "turnOff": "끄기",
       "delete": "양식 삭제…",
       "saveFirst": "먼저 양식을 저장하세요.",
@@ -242,6 +259,15 @@
       "question": "질문 “{{text}}”",
       "option": "선택지 “{{text}}”",
       "ending": "종료 화면 “{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "번역이 빠진 채로 게시할까요?",
+      "titleUpdate": "번역이 빠진 채로 게시된 양식을 업데이트할까요?",
+      "line_one": "{{language}} 응답자에게는 텍스트 {{count, number}}개가 {{primary}}(으)로 표시됩니다.",
+      "line_other": "{{language}} 응답자에게는 텍스트 {{count, number}}개가 {{primary}}(으)로 표시됩니다.",
+      "publishAnyway": "그대로 게시",
+      "updateAnyway": "그대로 업데이트",
+      "translate": "{{language}} 번역"
     },
     "confirmAiPublish": {
       "title": "이 AI 초안을 게시할까요?",
@@ -291,7 +317,9 @@
       "withProblems_one": "문제 {{count, number}}개",
       "withProblems_other": "문제 {{count, number}}개",
       "withMissing_one": "누락된 번역 {{count, number}}개",
-      "withMissing_other": "누락된 번역 {{count, number}}개"
+      "withMissing_other": "누락된 번역 {{count, number}}개",
+      "scrollStart": "이전 탭으로 스크롤",
+      "scrollEnd": "다른 탭으로 스크롤"
     },
     "shortcut": "Ctrl+S 또는 ⌘+S를 누르면 저장됩니다."
   },
@@ -309,7 +337,14 @@
     "responses_one": "응답 {{formatted}}개",
     "responses_other": "응답 {{formatted}}개",
     "reading": "응답을 읽는 중…",
-    "average": "평균 {{average}} / {{max}}",
+    "lastResponse": "마지막 응답: {{when}}",
+    "channels": {
+      "label": "응답 경로",
+      "link": "링크",
+      "script": "웹사이트 스크립트",
+      "iframe": "임베드"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "결과",
     "actions": "{{name}} 추가 작업",
     "edit": "편집",
@@ -324,7 +359,18 @@
     "unnamed": "제목 없는 양식",
     "fixFirst_one": "게시하기 전에 문제 {{count, number}}개를 해결하세요.",
     "fixFirst_other": "게시하기 전에 문제 {{count, number}}개를 해결하세요.",
-    "open": "열기"
+    "open": "열기",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "평균 평점",
+      "ces": "평균 노력 점수(CES)"
+    },
+    "turnOff": {
+      "title": "'{{name}}'을(를) 끄시겠습니까?",
+      "message": "링크와 임베드에서 다음 응답자에게 '피드백 양식을 사용할 수 없습니다.'가 표시됩니다.",
+      "confirm": "끄기"
+    }
   },
   "configureApiFirst": "피드백 양식을 관리하려면 관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요.",
   "deleteConfirmLabel": "삭제",
@@ -349,12 +395,39 @@
   },
   "empty": {
     "title": "아직 피드백 양식이 없습니다",
-    "description": "첫 번째 양식을 만들어 고객 피드백 수집을 시작하세요."
+    "description": "첫 번째 양식을 만들어 고객 피드백 수집을 시작하세요.",
+    "startsLabel": "시작 방법",
+    "describeHint": "알고 싶은 내용을 쓰면 AI가 질문 초안을 작성합니다."
   },
   "infoBanner": {
     "title": "피드백 양식의 작동 방식",
     "item1": "각 양식에는 고유한 링크, 임베드 코드, 테스트 링크가 있습니다.",
-    "item2": "응답은 AI 강화(감정, 페르소나…)를 거치며, 테스트 응답은 거치지 않습니다."
+    "item2": "응답은 AI 강화(감정, 페르소나…)를 거치며, 테스트 응답은 거치지 않습니다.",
+    "dismiss": "이 설명 숨기기"
+  },
+  "list": {
+    "toolbarLabel": "양식 찾기",
+    "search": "양식 검색",
+    "searchPlaceholder": "이름으로 검색",
+    "stateLabel": "표시",
+    "states": {
+      "all": "전체",
+      "live": "게시 중",
+      "off": "꺼짐",
+      "test": "테스트 링크 켜짐"
+    },
+    "sortLabel": "정렬",
+    "sorts": {
+      "newest": "최신순",
+      "lastResponse": "마지막 응답",
+      "name": "이름",
+      "responses": "응답 수"
+    },
+    "shown_one": "양식 {{count, number}}개 중 {{shown, number}}개",
+    "shown_other": "양식 {{count, number}}개 중 {{shown, number}}개",
+    "noMatchTitle": "일치하는 양식이 없습니다",
+    "noMatch": "이 검색어나 필터에 맞는 양식이 없습니다.",
+    "clear": "모든 양식 표시"
   },
   "subtitle": "고객 피드백을 수집하기 위한 임베드 가능한 양식 만들기",
   "title": "피드백 양식",
@@ -957,13 +1030,9 @@
       "rules_other": "규칙 {{count, number}}개",
       "endings_one": "종료 화면 {{count, number}}개",
       "endings_other": "종료 화면 {{count, number}}개",
-      "device": "미리보기 크기",
-      "phone": "휴대폰",
-      "desktop": "데스크톱",
       "restart": "다시 시작",
       "loading": "이 언어로 템플릿을 불러오는 중…",
-      "frameTitle": "양식 미리보기, {{device}} 크기, {{language}}",
-      "nothingSent": "미리보기 · 아무것도 전송되지 않음"
+      "frameTitle": "양식 미리보기, 휴대폰 크기, {{language}}"
     },
     "stopDraft": {
       "title": "초안 작성을 중단할까요?",
@@ -1000,7 +1069,6 @@
     "replaceAsk": "설명을 바꿀까요?",
     "replace": "바꾸기",
     "keepMine": "내 설명 유지",
-    "language": "언어",
     "runs": "배포 방식",
     "runsHint": {
       "link": "환영 화면으로 시작할 수 있습니다.",
@@ -1009,8 +1077,10 @@
     },
     "draft": "초안 작성",
     "draftingButton": "작성 중…",
-    "draftingStatus": "양식 초안을 작성하는 중… 보통 10~30초 정도 걸립니다.",
-    "drafting": "작성 중…",
+    "drafting": "양식 초안을 작성하는 중… 보통 10~30초 정도 걸립니다.",
+    "inLanguage": "{{language}}(으)로 작성",
+    "changeLanguage": "변경",
+    "busyReason": "초안이 완성되면 변경할 수 있습니다.",
     "waitReason": "{{minutes}}분 후에 다시 초안을 작성할 수 있습니다.",
     "privacy": "설명은 이 워크스페이스의 AI 모델로 전송됩니다. 개인 정보는 붙여 넣지 마세요."
   },
@@ -1180,10 +1250,12 @@
     "title": "질문({{count, number}})",
     "label": "질문",
     "improve": "AI로 개선",
-    "welcomeOn": "환영 카드 · 켜짐",
-    "welcomeOff": "환영 카드 · 꺼짐",
+    "welcomeName": "환영 화면",
+    "welcomeStateOn": "켜짐",
+    "welcomeStateOff": "꺼짐",
     "add": "질문 추가",
-    "addHere": "여기에 질문 추가",
+    "addBelow": "아래에 질문 추가",
+    "insertAfter": "질문 {{number}} 뒤에 질문 추가",
     "typeMenu": "질문 유형",
     "contactOnce": "이미 이 양식에 있음",
     "limit": "양식에는 질문을 최대 30개까지 넣을 수 있습니다.",
@@ -1248,9 +1320,10 @@
     "buttonLabel": "버튼 레이블",
     "buttonLabelPlaceholder": "다음",
     "duplicate": "질문 {{number}} 복제",
-    "translationMissing_one": "기본 언어는 {{primary}}입니다. 이 질문에서 {{language}} 텍스트 {{count, number}}개가 누락되었습니다.",
-    "translationMissing_other": "기본 언어는 {{primary}}입니다. 이 질문에서 {{language}} 텍스트 {{count, number}}개가 누락되었습니다.",
-    "translate": "번역"
+    "translationLine_one": "{{language}}: 텍스트 {{count, number}}개 누락",
+    "translationLine_other": "{{language}}: 텍스트 {{count, number}}개 누락",
+    "translate": "번역",
+    "translateInto": "번역({{language}})"
   },
   "typeChange": {
     "label": "질문 {{number}}: 유형",
@@ -1454,24 +1527,53 @@
   },
   "preview": {
     "label": "미리보기",
-    "deviceLabel": "미리보기 크기",
-    "phone": "휴대폰",
-    "desktop": "데스크톱",
     "device": {
-      "phone": "휴대폰 크기",
-      "desktop": "데스크톱 크기"
+      "phone": "휴대폰 크기"
     },
     "language": "미리보기 언어",
     "languageMissing": "{{language}}({{count, number}}개 누락, {{primary}}(으)로 표시)",
     "frameTitle": "양식 미리보기, {{size}}, {{language}}",
-    "nothingSent": "미리보기 · 아무것도 전송되지 않음",
     "restart": "다시 시작",
     "startHere": "여기서 시작",
-    "fullScreen": "전체 화면",
     "show": "미리보기",
     "hide": "미리보기 숨기기",
-    "backToBuilder": "빌더로 돌아가기",
-    "loading": "양식을 불러오는 중…"
+    "showPane": "미리보기 표시",
+    "inWindow": "미리보기가 별도 창에 열려 있습니다.",
+    "size": "휴대폰 · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "표시 중: {{scheme}}",
+    "scheme": {
+      "light": "라이트",
+      "dark": "다크"
+    },
+    "shuffled": "응답자마다 순서를 섞음",
+    "style": "스타일",
+    "openWindow": "창에서 열기",
+    "openTab": "미리보기, 새 탭에서 열림",
+    "blocked": "브라우저가 미리보기 창을 차단했습니다. 이 사이트의 팝업을 허용한 다음 다시 시도하세요.",
+    "stylePanel": {
+      "title": "스타일",
+      "back": "질문으로 돌아가기"
+    }
+  },
+  "previewWindow": {
+    "title": "양식 미리보기",
+    "region": "양식 미리보기, {{language}}",
+    "size": "창 크기",
+    "language": "미리보기 언어",
+    "restart": "다시 시작",
+    "waiting": "양식을 기다리는 중입니다. 빌더에서 양식을 열어 두세요.",
+    "noSession": "양식 빌더에서 이 미리보기를 여세요.",
+    "unavailable": "미리보기를 시작할 수 없습니다. 양식 위젯을 불러오지 못했습니다. 이 창을 새로 고친 다음 다시 시도하세요.",
+    "resizeRefused": "브라우저가 이 창의 크기를 그대로 유지했습니다.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "사용자 지정 · {{width}} × {{height}}",
+    "presets": {
+      "phone": "휴대폰",
+      "rotate": "휴대폰, 가로",
+      "tablet": "태블릿",
+      "desktop": "데스크톱",
+      "embedded": "삽입, 높이 480px"
+    }
   },
   "flow": {
     "title": "흐름",
@@ -1535,7 +1637,7 @@
     "done": "완료",
     "useThem": "사용 방법",
     "kindLabel": "값을 보내는 곳",
-    "modeLabel": "게시 링크 또는 테스트 링크",
+    "valuesFor": "대상 링크",
     "kinds": {
       "link": "링크",
       "script": "스크립트 임베드",
@@ -1563,7 +1665,6 @@
   "languages": {
     "title": "언어",
     "add": "언어 추가",
-    "addOption": "+ 언어 추가…",
     "primary": "기본 언어",
     "primaryHint": "모든 텍스트를 처음 작성하는 언어입니다.",
     "change": "변경…",
@@ -1666,6 +1767,7 @@
     "emptyValue": "비어 있음",
     "open": "열기",
     "openResponse": "{{time}}의 테스트 응답 열기",
+    "todayAt": "오늘 {{time}}",
     "keptUntilDeleted": "테스트 응답은 관리자나 양식을 만든 사람이 삭제할 때까지 보관됩니다."
   },
   "share": {
@@ -1691,10 +1793,13 @@
     "toHidden": "숨겨진 필드 보기",
     "iframe": "임베드(iframe)",
     "script": "스크립트 임베드",
+    "iframeHint": "프레임 뒤의 스크립트가 프레임 높이를 양식에 맞춥니다. 스크립트가 없으면 프레임은 480px 높이를 유지하고 양식은 그 안에서 스크롤됩니다.",
+    "scriptHint": "양식이 표시될 위치에 붙여 넣으세요. 위젯 파일은 이 앱에서 제공되며 릴리스마다 업데이트됩니다. 사이트에서 Content-Security-Policy를 설정한 경우 script-src {{app}} 및 connect-src {{api}}를 허용하세요.",
     "inApp": "앱에서:",
     "inAppHint": "웹 앱은 언어와 숨겨진 필드를 지정해 스크립트 임베드를 호출하고, 모바일 앱은 WebView에서 링크를 엽니다.",
     "saveFirstTitle": "아직 링크 없음",
     "saveFirst": "양식을 저장하면 링크가 생성됩니다.",
+    "showProblems": "문제 보기",
     "save": "저장"
   },
   "results": {
@@ -1739,7 +1844,9 @@
       "responses": "응답",
       "completion": "완료율",
       "ofOpened": "열람 대비 {{percent}}",
-      "last": "마지막 응답"
+      "last": "마지막 응답",
+      "largestDropAt": "최대 이탈: {{step}}",
+      "questionShort": "Q{{position}}"
     },
     "filters": {
       "range": "기간",
@@ -1799,7 +1906,9 @@
       "started": "시작",
       "completed": "완료",
       "ofOpened": "열람 대비 {{percent}}",
-      "largestDrop": "최대 이탈"
+      "largestDrop": "최대 이탈",
+      "somePaths": "일부 경로에서만",
+      "somePathsNote": "로직에 따라 일부 경로에서만 표시되는 질문이 있습니다. 이 질문에는 이탈을 표시하지 않으며, 숫자는 질문을 본 사람 수입니다."
     },
     "reachCard": {
       "title": "도달",
@@ -1835,13 +1944,105 @@
     "contactLeft_one": "{{count, number}}명이 연락처를 남김",
     "contactLeft_other": "{{count, number}}명이 연락처를 남김"
   },
+  "theme": {
+    "presets": {
+      "label": "프리셋",
+      "vocLight": "VoC 라이트",
+      "vocDark": "VoC 다크",
+      "highContrast": "고대비",
+      "brand": "우리 브랜드",
+      "saveAsBrand": "브랜드로 저장…",
+      "notAdmin": "이 워크스페이스의 관리자만 브랜드를 저장할 수 있습니다.",
+      "unreadable": "이 스타일을 브랜드로 저장하기 전에 텍스트를 읽을 수 있게 하세요(3:1 이상).",
+      "confirmTitle": "이 스타일을 브랜드로 저장할까요?",
+      "confirmMessage": "이 워크스페이스의 새 양식은 이 스타일로 시작하며, 모든 양식의 스타일에서 '우리 브랜드'로 제공됩니다.",
+      "confirmReplace": "이 워크스페이스의 새 양식은 이 스타일로 시작하며, 모든 양식의 스타일에서 '우리 브랜드'로 제공됩니다. 이전에 저장한 브랜드를 대체합니다.",
+      "confirm": "브랜드로 저장",
+      "saved": "브랜드로 저장했습니다.",
+      "saveFailed": "브랜드를 저장하지 못했습니다. 다시 시도하세요."
+    },
+    "reset": "{{preset}}(으)로 재설정",
+    "mode": {
+      "label": "모드",
+      "light": "라이트",
+      "dark": "다크",
+      "auto": "자동",
+      "hint": "자동은 각 응답자의 기기 설정을 따릅니다."
+    },
+    "editing": {
+      "label": "편집 중"
+    },
+    "palette": {
+      "light": "라이트 팔레트",
+      "dark": "다크 팔레트"
+    },
+    "colours": {
+      "legend": "색상",
+      "primary": "기본",
+      "primaryHint": "버튼, 진행 표시, 포커스 링, 선택한 답변",
+      "background": "배경",
+      "text": "텍스트",
+      "swatch": "{{label}}: 색상 선택",
+      "invalid": "#8e48ff 같은 16진수 색상을 사용하세요."
+    },
+    "derived": "파생: 선택지 테두리 {{ratio}}:1(텍스트 색상 {{percent}} %).",
+    "corners": {
+      "label": "모서리",
+      "square": "직각 {{px}}",
+      "small": "작게 {{px}}",
+      "medium": "중간 {{px}}",
+      "large": "크게 {{px}}",
+      "slider": "모서리 반경",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "글꼴",
+      "system": "시스템",
+      "inherit": "페이지와 동일(스크립트 임베드 전용)",
+      "serif": "세리프",
+      "rounded": "둥근 글꼴",
+      "mono": "고정폭",
+      "inheritHint": "페이지 글꼴은 스크립트 임베드에서만 사용됩니다. 링크, iframe, 미리 보기는 시스템 글꼴로 표시됩니다."
+    },
+    "size": {
+      "label": "크기",
+      "default": "기본",
+      "large": "크게",
+      "hint": "크게: 본문 18 px로, 고령 응답자에게 적합합니다."
+    },
+    "contrast": {
+      "title": "대비 · {{palette}}",
+      "pair": "조합",
+      "ratio": "비율",
+      "result": "결과",
+      "text": "배경 위 텍스트",
+      "primary": "배경 위 기본 색상",
+      "label": "기본 색상 위 버튼 레이블",
+      "edge": "선택지 테두리",
+      "minimum": "(최소 {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "AA 미만",
+      "use": "{{colour}} 사용({{ratio}}:1)",
+      "other": {
+        "light_one": "라이트 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "light_other": "라이트 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "dark_one": "다크 팔레트에 대비 문제가 {{count, number}}개 있습니다.",
+        "dark_other": "다크 팔레트에 대비 문제가 {{count, number}}개 있습니다."
+      },
+      "editOther": {
+        "light": "라이트 편집",
+        "dark": "다크 편집"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "설정 섹션",
     "sections": {
       "general": "일반",
       "routing": "카테고리 라우팅",
       "project": "연결된 프로젝트",
-      "theme": "테마",
+      "appearance": "모양",
       "danger": "위험 구역"
     },
     "general": {
@@ -1856,7 +2057,8 @@
       "subcategory": "하위 카테고리(선택)",
       "none": "— 카테고리 없음",
       "noSubcategory": "— 하위 카테고리 없음",
-      "notConfigured": "{{name}}(더 이상 구성되지 않음)",
+      "notConfiguredBadge": "더 이상 구성되지 않음",
+      "pickConfigured": "구성된 카테고리를 선택하세요.",
       "categoryHint": "카테고리는 관리 → 카테고리에서 구성됩니다.",
       "taggedAs": "이 양식의 응답은 다음으로 분류됩니다:",
       "perOption": "선택지별 라우팅",
@@ -1867,13 +2069,6 @@
       "editQuestion": "질문 {{number}}의 라우팅 편집",
       "precedence": "응답은 카테고리가 지정된 첫 번째 답변 선택지의 카테고리로 분류되며, 없으면 양식의 카테고리로 분류됩니다.",
       "dimensionsHint": "모든 응답에 이 값이 포함됩니다. 임베드에서는 dimensions 옵션으로 페이지별 값을 지정할 수 있습니다."
-    },
-    "theme": {
-      "primary": "기본 색상",
-      "background": "배경 색상",
-      "text": "텍스트 색상",
-      "radius": "모서리 반경",
-      "lowContrast": "이 배경에서 텍스트 대비가 {{ratio}}:1로 4.5:1보다 낮아 많은 사람이 읽기 어렵습니다."
     },
     "danger": {
       "hint": "양식을 삭제하면 양식과 링크가 삭제됩니다. 응답은 피드백에 남습니다.",

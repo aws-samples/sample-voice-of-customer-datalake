@@ -1,6 +1,7 @@
 /**
  * @fileoverview The Test tab's recent test responses (UX §9.1, Keep only): the last 20, newest first, read again
- * every 10 s while the page is visible; each with its time, Test, language, ending and hidden values (an empty value
+ * every 10 s while the page is visible; each with its day and time ("Today 10:20", "Nov 18, 23:25"), Test, language,
+ * ending and hidden values (an empty value
  * reads "—" with a warning mark, so an integrator sees at once what the app did not pass). Open shows the response
  * in the Results sheet; Delete all… removes every test response (D2), offered only to an admin or the form's creator
  * (the owner's decision of 2026-11-18: test responses are kept until one of them deletes them).
@@ -16,7 +17,9 @@ import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { feedbackFormsV2Api } from '../../../api/feedbackFormsV2Api'
 import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
 import type { FormResponse } from '../../../api/feedbackFormsV2Results'
-import { formatTime } from '../../../utils/dateUtils'
+import type { TFunction } from 'i18next'
+import { isSameDay } from 'date-fns'
+import { formatDateTime, formatTime } from '../../../utils/dateUtils'
 import { useDraft } from '../builder/formDraftContext'
 import type { FormV2 } from '../model/formsV2'
 import { endingTitle, hiddenValues } from '../results/answers'
@@ -55,9 +58,20 @@ function HiddenLine({ form, response }: Readonly<{ form: FormV2; response: FormR
   )
 }
 
+/**
+ * When a test response came, with its day, so the order reads across midnight: "Today 10:20", else "Nov 18, 23:25"
+ * (the year too when it is not this year), in the reader's locale.
+ */
+function testResponseTime(t: TFunction<'feedbackForms'>, submittedAt: string, language: string, nowMs: number = Date.now()): string {
+  const date = new Date(submittedAt)
+  if (submittedAt === '' || Number.isNaN(date.getTime())) return '—'
+  if (isSameDay(date, nowMs)) return t('test.todayAt', { time: formatTime(date, language) })
+  return formatDateTime(date, language, '—', date.getFullYear() === new Date(nowMs).getFullYear() ? 'short' : 'long')
+}
+
 function TestRow({ form, response, onOpen }: Readonly<{ form: FormV2; response: FormResponse; onOpen: () => void }>) {
   const { t, i18n } = useTranslation('feedbackForms')
-  const time = formatTime(response.submitted_at, i18n.language, '—')
+  const time = testResponseTime(t, response.submitted_at, i18n.language)
   return (
     <li className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center">
       <span className="flex flex-wrap items-center gap-2 text-sm text-text">

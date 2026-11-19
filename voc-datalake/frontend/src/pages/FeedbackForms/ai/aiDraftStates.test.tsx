@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { z } from 'zod'
 import { FormsApiError } from '../../../api/feedbackFormsV2Api'
@@ -99,7 +99,10 @@ describe('drafting a form from a description', () => {
       signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
     }))
     const user = await describeAndDraft()
-    expect(screen.getByText('Drafting your form… This usually takes 10 to 30 seconds.')).toBeInTheDocument()
+    // (said by the button and the preview card only: the status line under Describe repeated them; Runs waits)
+    const runs = within(screen.getByRole('group', { name: 'Runs' })).getAllByRole('button').map((choice) => choice.getAttribute('aria-disabled'))
+    expect([screen.getAllByText('Drafting your form… This usually takes 10 to 30 seconds.').length, runs])
+      .toStrictEqual([1, ['true', 'true', 'true']])
     await user.click(screen.getByRole('button', { name: 'Stop' }))
     expect(screen.getByRole('dialog', { name: 'Stop drafting?' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Keep drafting' }))

@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { CLIENT_TOOLS } from '@stream/assistant/contract'
 
@@ -77,20 +77,22 @@ function renderCard(args: DraftFeedbackFormArgs = ARGS): Card {
   const hold = vi.fn<(held: boolean) => void>()
   const decline = vi.fn<(reason: string) => void>()
   render(
-    <MemoryRouter initialEntries={['/chat']}>
-      <Routes>
-        <Route path="/chat" element={(
-          <ShownContext.Provider value={shown}>
-            <ApprovalHoldContext.Provider value={hold}>
-              <ApprovalDeclineContext.Provider value={decline}>
-                <FeedbackFormDraftPreview args={args} />
-              </ApprovalDeclineContext.Provider>
-            </ApprovalHoldContext.Provider>
-          </ShownContext.Provider>
-        )} />
-        <Route path="/feedback-forms/new/questions" element={<BuilderProbe />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={['/chat']}>
+        <Routes>
+          <Route path="/chat" element={(
+            <ShownContext.Provider value={shown}>
+              <ApprovalHoldContext.Provider value={hold}>
+                <ApprovalDeclineContext.Provider value={decline}>
+                  <FeedbackFormDraftPreview args={args} />
+                </ApprovalDeclineContext.Provider>
+              </ApprovalHoldContext.Provider>
+            </ShownContext.Provider>
+          )} />
+          <Route path="/feedback-forms/new/questions" element={<BuilderProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
   return { shown, hold, decline, user: userEvent.setup() }
 }

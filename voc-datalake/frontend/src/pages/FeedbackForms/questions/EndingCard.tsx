@@ -44,7 +44,7 @@ export default function EndingCard({ ending, index, total, language, selected, h
         </span>
         <button type="button" data-card-id={ending.id} aria-current={selected ? 'true' : undefined} onClick={onSelect}
           className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 rounded-md text-left focus-ring">
-          <Flag size={14} className="shrink-0 text-muted" aria-hidden="true" />
+          <Flag size={14} className={clsx('shrink-0', selected ? 'text-text' : 'text-muted')} aria-hidden="true" />
           <TruncatedText as="span" className="min-w-0 flex-1 truncate text-sm text-text-strong" text={title === '' ? t('endings.untitled') : title} />
           {index === 0 && <span className="badge badge-muted">{t('endings.default')}</span>}
           {hasError && <span className="badge badge-danger inline-flex items-center gap-1"><CircleX size={12} aria-hidden="true" />{t('questionList.problem')}</span>}

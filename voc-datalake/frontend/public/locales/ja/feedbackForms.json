@@ -68,7 +68,9 @@
       "welcome": "ウェルカムカード",
       "hidden": "非表示フィールド {{id}}",
       "language": "{{language}}",
-      "form": "フォーム"
+      "form": "フォーム",
+      "themeLight": "スタイル（ライト）",
+      "themeDark": "スタイル（ダーク）"
     },
     "otherProblems": "その他の問題",
     "noQuestions": "フォームには質問が1つ以上必要です。",
@@ -110,6 +112,12 @@
     "chipsLong": "チップは短いラベル向けです。長いラベルは折り返されます。",
     "dropdownFew": "リストではすべての選択肢が一度に表示されますが、ドロップダウンでは隠れてしまいます。",
     "noCategory": "フィードバックをカテゴリに分類する選択肢がなく、フォームにもカテゴリがありません。「設定 › カテゴリルーティング」で設定してください。",
+    "themeUnreadable": "背景上のテキストのコントラスト比は{{ratio}}:1で、3:1を下回っています。回答者は読めません。",
+    "themeUnreadableLive": "このフォームの文字は読みにくくなっています（{{ratio}}:1、3:1 未満）。色を修正してください。それまでも、その他の変更は公開されます。",
+    "themeTextLow": "背景上のテキストのコントラスト比は{{ratio}}:1で、4.5:1を下回っています。多くの人が読めません。",
+    "themePrimaryLow": "背景上のプライマリカラーのコントラスト比は{{ratio}}:1で、3:1を下回っています。フォーカスリング、進捗、選んだ回答が見えにくくなります。",
+    "themeLabelLow": "このプライマリカラーの上では白のテキストも暗いテキストも読めません（{{ratio}}:1、4.5:1未満）。",
+    "blocksPublishOnly": "修正するまで公開できませんが、保存はできます。",
     "targetMissingQuestion": "このルールの移動先の質問は削除されています。移動先を選んでください。",
     "targetMissingEnding": "このルールの移動先の終了画面は削除されています。別の終了画面を選んでください。",
     "targetBackwards": "ジャンプは先にしか進めませんが、質問{{number}}は現在この質問より上にあります。その質問を下に移動するか、別の移動先を選んでください。",
@@ -120,7 +128,8 @@
     "opInvalid": "この質問ではその比較はできません。別の条件を選んでください。",
     "skippedOnRequired": "この質問は必須のためスキップされることはなく、このルールは実行されません。",
     "ruleNeverRuns": "このルールは実行されません。このルールが一致する回答には、すべてルール{{number}}が先に一致します。",
-    "whereAnyway": "ルールがなくても、フォームはここに進みます。"
+    "whereAnyway": "このルールには効果がありません。ここに来た回答者は、ルールがなくても質問{{number}}に進みます。",
+    "whereAnywayEnding": "このルールには効果がありません。ここに来た回答者には、ルールがなくても終了画面「{{title}}」が表示されます。"
   },
   "logic": {
     "ops": {
@@ -212,6 +221,13 @@
       "saved": "保存済み",
       "fixToSave_one": "保存するには{{count, number}}件の問題を修正してください。",
       "fixToSave_other": "保存するには{{count, number}}件の問題を修正してください。",
+      "fixToPublish_one": "公開するには{{count, number}}件の問題を修正してください。",
+      "fixToPublish_other": "公開するには{{count, number}}件の問題を修正してください。",
+      "fixToPublishSaveWorks_one": "公開するには{{count, number}}件の問題を修正してください。保存はできます。",
+      "fixToPublishSaveWorks_other": "公開するには{{count, number}}件の問題を修正してください。保存はできます。",
+      "themeRefused": "保存できませんでした。公開中のフォームには、回答者が読めるテキスト（背景に対して3:1以上）が必要です。スタイルで色を変更してください。",
+      "themeHardToRead": "このフォームの文字は読みにくくなっています。",
+      "themeFix": "色を修正",
       "save": "保存",
       "publish": "公開",
       "update": "公開中のフォームを更新",
@@ -226,9 +242,10 @@
     "menu": {
       "label": "フォームのその他の操作",
       "improve": "AIで改善…",
+      "askAssistant": "アシスタントに質問",
       "discard": "変更を破棄",
       "duplicate": "フォームを複製",
-      "preview": "全画面でプレビュー",
+      "preview": "ウィンドウでプレビュー",
       "turnOff": "オフにする",
       "delete": "フォームを削除…",
       "saveFirst": "先にフォームを保存してください。",
@@ -242,6 +259,15 @@
       "question": "質問「{{text}}」",
       "option": "選択肢「{{text}}」",
       "ending": "終了画面「{{text}}」"
+    },
+    "confirmLanguages": {
+      "titlePublish": "翻訳が足りないまま公開しますか？",
+      "titleUpdate": "翻訳が足りないまま公開中のフォームを更新しますか？",
+      "line_one": "{{language}}の回答者には{{count, number}}件のテキストが{{primary}}で表示されます。",
+      "line_other": "{{language}}の回答者には{{count, number}}件のテキストが{{primary}}で表示されます。",
+      "publishAnyway": "このまま公開",
+      "updateAnyway": "このまま更新",
+      "translate": "{{language}}を翻訳"
     },
     "confirmAiPublish": {
       "title": "このAI下書きを公開しますか？",
@@ -291,7 +317,9 @@
       "withProblems_one": "{{count, number}}件の問題",
       "withProblems_other": "{{count, number}}件の問題",
       "withMissing_one": "未翻訳{{count, number}}件",
-      "withMissing_other": "未翻訳{{count, number}}件"
+      "withMissing_other": "未翻訳{{count, number}}件",
+      "scrollStart": "前のタブへスクロール",
+      "scrollEnd": "ほかのタブへスクロール"
     },
     "shortcut": "Ctrl+S または ⌘+S で保存します。"
   },
@@ -309,7 +337,14 @@
     "responses_one": "{{formatted}}件の回答",
     "responses_other": "{{formatted}}件の回答",
     "reading": "回答を読み込み中…",
-    "average": "平均 {{average}}（{{max}}点中）",
+    "lastResponse": "最新の回答: {{when}}",
+    "channels": {
+      "label": "回答経路",
+      "link": "リンク",
+      "script": "ウェブサイトのスクリプト",
+      "iframe": "埋め込み"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "結果",
     "actions": "{{name}}のその他の操作",
     "edit": "編集",
@@ -324,7 +359,18 @@
     "unnamed": "無題のフォーム",
     "fixFirst_one": "公開する前に{{count, number}}件の問題を修正してください。",
     "fixFirst_other": "公開する前に{{count, number}}件の問題を修正してください。",
-    "open": "開く"
+    "open": "開く",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "平均評価",
+      "ces": "平均労力（CES）"
+    },
+    "turnOff": {
+      "title": "「{{name}}」をオフにしますか？",
+      "message": "リンクと埋め込みでは、次の回答者に「フィードバックフォームは利用できません。」と表示されます。",
+      "confirm": "オフにする"
+    }
   },
   "configureApiFirst": "フィードバックフォームを管理するには、「管理 → ブランドと外観」でAPIエンドポイントを構成してください。",
   "deleteConfirmLabel": "削除",
@@ -349,12 +395,39 @@
   },
   "empty": {
     "title": "フィードバックフォームがまだありません",
-    "description": "最初のフォームを作成して顧客フィードバックの収集を開始しましょう。"
+    "description": "最初のフォームを作成して顧客フィードバックの収集を開始しましょう。",
+    "startsLabel": "作成の始め方",
+    "describeHint": "知りたいことを書くと、AI が質問の下書きを作成します。"
   },
   "infoBanner": {
     "title": "フィードバックフォームの仕組み",
     "item1": "フォームごとに専用のリンク、埋め込みコード、テストリンクがあります。",
-    "item2": "回答はAIエンリッチメント（感情、ペルソナなど）で処理されます。テスト回答は処理されません。"
+    "item2": "回答はAIエンリッチメント（感情、ペルソナなど）で処理されます。テスト回答は処理されません。",
+    "dismiss": "この説明を非表示"
+  },
+  "list": {
+    "toolbarLabel": "フォームを探す",
+    "search": "フォームを検索",
+    "searchPlaceholder": "名前で検索",
+    "stateLabel": "表示",
+    "states": {
+      "all": "すべて",
+      "live": "公開中",
+      "off": "オフ",
+      "test": "テストリンク オン"
+    },
+    "sortLabel": "並べ替え",
+    "sorts": {
+      "newest": "新しい順",
+      "lastResponse": "最新の回答",
+      "name": "名前",
+      "responses": "回答数"
+    },
+    "shown_one": "{{count, number}}件中{{shown, number}}件のフォーム",
+    "shown_other": "{{count, number}}件中{{shown, number}}件のフォーム",
+    "noMatchTitle": "一致するフォームはありません",
+    "noMatch": "この検索条件またはフィルターに一致するフォームはありません。",
+    "clear": "すべてのフォームを表示"
   },
   "subtitle": "埋め込み可能なフォームを作成して顧客フィードバックを収集",
   "title": "フィードバックフォーム",
@@ -957,13 +1030,9 @@
       "rules_other": "ルール{{count, number}}件",
       "endings_one": "終了画面{{count, number}}件",
       "endings_other": "終了画面{{count, number}}件",
-      "device": "プレビューのサイズ",
-      "phone": "スマートフォン",
-      "desktop": "デスクトップ",
       "restart": "最初から",
       "loading": "この言語でテンプレートを読み込み中…",
-      "frameTitle": "フォームのプレビュー、{{device}}サイズ、{{language}}",
-      "nothingSent": "プレビュー · 何も送信されません"
+      "frameTitle": "フォームのプレビュー、スマートフォンサイズ、{{language}}"
     },
     "stopDraft": {
       "title": "下書きの作成を中止しますか？",
@@ -1000,7 +1069,6 @@
     "replaceAsk": "説明を置き換えますか？",
     "replace": "置き換える",
     "keepMine": "自分の説明を残す",
-    "language": "言語",
     "runs": "配信方法",
     "runsHint": {
       "link": "ウェルカム画面から始めることができます。",
@@ -1009,8 +1077,10 @@
     },
     "draft": "下書きを作成",
     "draftingButton": "作成中…",
-    "draftingStatus": "フォームの下書きを作成しています… 通常10〜30秒かかります。",
-    "drafting": "作成中…",
+    "drafting": "フォームの下書きを作成しています… 通常10〜30秒かかります。",
+    "inLanguage": "{{language}}で作成",
+    "changeLanguage": "変更",
+    "busyReason": "下書きが完成したら変更できます。",
     "waitReason": "{{minutes}}分後にもう一度下書きを作成できます。",
     "privacy": "説明はこのワークスペースのAIモデルに送信されます。個人データは貼り付けないでください。"
   },
@@ -1180,10 +1250,12 @@
     "title": "質問（{{count, number}}）",
     "label": "質問",
     "improve": "AIで改善",
-    "welcomeOn": "ウェルカムカード · オン",
-    "welcomeOff": "ウェルカムカード · オフ",
+    "welcomeName": "ウェルカム画面",
+    "welcomeStateOn": "オン",
+    "welcomeStateOff": "オフ",
     "add": "質問を追加",
-    "addHere": "ここに質問を追加",
+    "addBelow": "下に質問を追加",
+    "insertAfter": "質問{{number}}の後に質問を追加",
     "typeMenu": "質問の種類",
     "contactOnce": "このフォームに追加済み",
     "limit": "フォームに入れられる質問は30問までです。",
@@ -1248,9 +1320,10 @@
     "buttonLabel": "ボタンのラベル",
     "buttonLabelPlaceholder": "次へ",
     "duplicate": "質問{{number}}を複製",
-    "translationMissing_one": "メイン言語は{{primary}}です。この質問には{{language}}の未翻訳テキストが{{count, number}}件あります。",
-    "translationMissing_other": "メイン言語は{{primary}}です。この質問には{{language}}の未翻訳テキストが{{count, number}}件あります。",
-    "translate": "翻訳"
+    "translationLine_one": "{{language}}：未翻訳のテキスト{{count, number}}件",
+    "translationLine_other": "{{language}}：未翻訳のテキスト{{count, number}}件",
+    "translate": "翻訳",
+    "translateInto": "翻訳（{{language}}）"
   },
   "typeChange": {
     "label": "質問{{number}}：種類",
@@ -1454,24 +1527,53 @@
   },
   "preview": {
     "label": "プレビュー",
-    "deviceLabel": "プレビューのサイズ",
-    "phone": "スマートフォン",
-    "desktop": "デスクトップ",
     "device": {
-      "phone": "スマートフォンサイズ",
-      "desktop": "デスクトップサイズ"
+      "phone": "スマートフォンサイズ"
     },
     "language": "プレビューの言語",
     "languageMissing": "{{language}}（未翻訳{{count, number}}件、{{primary}}で表示）",
     "frameTitle": "フォームのプレビュー、{{size}}、{{language}}",
-    "nothingSent": "プレビュー · 何も送信されません",
     "restart": "最初から",
     "startHere": "ここから開始",
-    "fullScreen": "全画面",
     "show": "プレビュー",
     "hide": "プレビューを非表示",
-    "backToBuilder": "ビルダーに戻る",
-    "loading": "フォームを読み込み中…"
+    "showPane": "プレビューを表示",
+    "inWindow": "プレビューは別のウィンドウで開いています。",
+    "size": "スマートフォン · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "表示中: {{scheme}}",
+    "scheme": {
+      "light": "ライト",
+      "dark": "ダーク"
+    },
+    "shuffled": "回答者ごとに順序を入れ替え",
+    "style": "スタイル",
+    "openWindow": "ウィンドウで開く",
+    "openTab": "プレビュー（新しいタブで開きます）",
+    "blocked": "ブラウザーがプレビューウィンドウをブロックしました。このサイトのポップアップを許可してから、もう一度お試しください。",
+    "stylePanel": {
+      "title": "スタイル",
+      "back": "質問に戻る"
+    }
+  },
+  "previewWindow": {
+    "title": "フォームのプレビュー",
+    "region": "フォームのプレビュー、{{language}}",
+    "size": "ウィンドウのサイズ",
+    "language": "プレビューの言語",
+    "restart": "最初から",
+    "waiting": "フォームを待っています。ビルダーで開いたままにしてください。",
+    "noSession": "このプレビューはフォームビルダーから開いてください。",
+    "unavailable": "プレビューを開始できません: フォームウィジェットが読み込まれませんでした。このウィンドウを再読み込みして、もう一度お試しください。",
+    "resizeRefused": "ブラウザーはこのウィンドウのサイズを変更しませんでした。",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "カスタム · {{width}} × {{height}}",
+    "presets": {
+      "phone": "スマートフォン",
+      "rotate": "スマートフォン（横向き）",
+      "tablet": "タブレット",
+      "desktop": "デスクトップ",
+      "embedded": "埋め込み（高さ 480 px）"
+    }
   },
   "flow": {
     "title": "フロー",
@@ -1535,7 +1637,7 @@
     "done": "完了",
     "useThem": "使い方",
     "kindLabel": "値の送信元",
-    "modeLabel": "公開リンクまたはテストリンク",
+    "valuesFor": "対象のリンク",
     "kinds": {
       "link": "リンク",
       "script": "スクリプト埋め込み",
@@ -1563,7 +1665,6 @@
   "languages": {
     "title": "言語",
     "add": "言語を追加",
-    "addOption": "+ 言語を追加…",
     "primary": "メイン言語",
     "primaryHint": "すべてのテキストを最初に書く言語です。",
     "change": "変更…",
@@ -1666,6 +1767,7 @@
     "emptyValue": "空",
     "open": "開く",
     "openResponse": "{{time}}のテスト回答を開く",
+    "todayAt": "今日 {{time}}",
     "keptUntilDeleted": "テスト回答は、管理者またはフォームの作成者が削除するまで保持されます。"
   },
   "share": {
@@ -1691,10 +1793,13 @@
     "toHidden": "「非表示フィールド」を参照",
     "iframe": "埋め込み（iframe）",
     "script": "スクリプト埋め込み",
+    "iframeHint": "フレームの後のスクリプトが、フレームの高さをフォームに合わせます。スクリプトがない場合、フレームの高さは 480 px のままで、フォームはその中でスクロールします。",
+    "scriptHint": "フォームを表示したい場所に貼り付けてください。ウィジェットのファイルはこのアプリから配信され、リリースごとに更新されます。サイトで Content-Security-Policy を設定している場合は、script-src {{app}} と connect-src {{api}} を許可してください。",
     "inApp": "アプリ内：",
     "inAppHint": "Webアプリでは言語と非表示フィールドを指定してスクリプト埋め込みを呼び出し、モバイルアプリではリンクをWebViewで開きます。",
     "saveFirstTitle": "まだリンクはありません",
     "saveFirst": "リンクを取得するには、フォームを保存してください。",
+    "showProblems": "問題を表示",
     "save": "保存"
   },
   "results": {
@@ -1739,7 +1844,9 @@
       "responses": "回答数",
       "completion": "完了率",
       "ofOpened": "開いた人の{{percent}}",
-      "last": "最新の回答"
+      "last": "最新の回答",
+      "largestDropAt": "最大の離脱: {{step}}",
+      "questionShort": "Q{{position}}"
     },
     "filters": {
       "range": "期間",
@@ -1799,7 +1906,9 @@
       "started": "開始した",
       "completed": "完了した",
       "ofOpened": "開いた人の{{percent}}",
-      "largestDrop": "最大の離脱"
+      "largestDrop": "最大の離脱",
+      "somePaths": "一部の経路のみ",
+      "somePathsNote": "ロジックにより一部の経路でのみ表示される質問があります。これらには離脱を示さず、数値は表示された人数です。"
     },
     "reachCard": {
       "title": "到達",
@@ -1835,13 +1944,105 @@
     "contactLeft_one": "{{count, number}}人が連絡先を入力しました",
     "contactLeft_other": "{{count, number}}人が連絡先を入力しました"
   },
+  "theme": {
+    "presets": {
+      "label": "プリセット",
+      "vocLight": "VoC ライト",
+      "vocDark": "VoC ダーク",
+      "highContrast": "ハイコントラスト",
+      "brand": "自社ブランド",
+      "saveAsBrand": "ブランドとして保存…",
+      "notAdmin": "ブランドを保存できるのはこのワークスペースの管理者だけです。",
+      "unreadable": "このスタイルをブランドとして保存する前に、テキストを読めるようにしてください（3:1以上）。",
+      "confirmTitle": "このスタイルをブランドとして保存しますか？",
+      "confirmMessage": "このワークスペースの新しいフォームはこのスタイルで始まり、各フォームのスタイルに「自社ブランド」として表示されます。",
+      "confirmReplace": "このワークスペースの新しいフォームはこのスタイルで始まり、各フォームのスタイルに「自社ブランド」として表示されます。以前に保存したブランドは置き換えられます。",
+      "confirm": "ブランドとして保存",
+      "saved": "ブランドとして保存しました。",
+      "saveFailed": "ブランドを保存できませんでした。もう一度お試しください。"
+    },
+    "reset": "{{preset}}に戻す",
+    "mode": {
+      "label": "モード",
+      "light": "ライト",
+      "dark": "ダーク",
+      "auto": "自動",
+      "hint": "自動では回答者それぞれのデバイス設定に従います。"
+    },
+    "editing": {
+      "label": "編集中"
+    },
+    "palette": {
+      "light": "ライトパレット",
+      "dark": "ダークパレット"
+    },
+    "colours": {
+      "legend": "色",
+      "primary": "プライマリ",
+      "primaryHint": "ボタン、進捗、フォーカスリング、選んだ回答",
+      "background": "背景",
+      "text": "テキスト",
+      "swatch": "{{label}}: 色を選択",
+      "invalid": "#8e48ff のような16進数の色を使ってください。"
+    },
+    "derived": "派生: 選択肢の枠線 {{ratio}}:1（テキスト色の{{percent}} %）。",
+    "corners": {
+      "label": "角",
+      "square": "角張り {{px}}",
+      "small": "小 {{px}}",
+      "medium": "中 {{px}}",
+      "large": "大 {{px}}",
+      "slider": "角の丸み",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "フォント",
+      "system": "システム",
+      "inherit": "ページと同じ（スクリプト埋め込みのみ）",
+      "serif": "セリフ",
+      "rounded": "丸ゴシック",
+      "mono": "等幅",
+      "inheritHint": "ページのフォントを使うのはスクリプト埋め込みだけです。リンク、iframe、プレビューではシステムフォントで表示されます。"
+    },
+    "size": {
+      "label": "サイズ",
+      "default": "標準",
+      "large": "大",
+      "hint": "大: 本文18 px。年配の回答者向けです。"
+    },
+    "contrast": {
+      "title": "コントラスト · {{palette}}",
+      "pair": "組み合わせ",
+      "ratio": "比率",
+      "result": "結果",
+      "text": "背景上のテキスト",
+      "primary": "背景上のプライマリ",
+      "label": "プライマリ上のボタンラベル",
+      "edge": "選択肢の枠線",
+      "minimum": "（最低 {{ratio}}:1）",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "AA未満",
+      "use": "{{colour}} を使う（{{ratio}}:1）",
+      "other": {
+        "light_one": "ライトパレットにコントラストの問題が{{count, number}}件あります。",
+        "light_other": "ライトパレットにコントラストの問題が{{count, number}}件あります。",
+        "dark_one": "ダークパレットにコントラストの問題が{{count, number}}件あります。",
+        "dark_other": "ダークパレットにコントラストの問題が{{count, number}}件あります。"
+      },
+      "editOther": {
+        "light": "ライトを編集",
+        "dark": "ダークを編集"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "設定のセクション",
     "sections": {
       "general": "一般",
       "routing": "カテゴリルーティング",
       "project": "リンク先プロジェクト",
-      "theme": "テーマ",
+      "appearance": "外観",
       "danger": "危険な操作"
     },
     "general": {
@@ -1856,7 +2057,8 @@
       "subcategory": "サブカテゴリ（任意）",
       "none": "— カテゴリなし",
       "noSubcategory": "— サブカテゴリなし",
-      "notConfigured": "{{name}}（現在は未設定）",
+      "notConfiguredBadge": "現在は未設定",
+      "pickConfigured": "設定済みのカテゴリを選んでください。",
       "categoryHint": "カテゴリは「管理 → カテゴリ」で構成します。",
       "taggedAs": "このフォームの回答は次のように分類されます：",
       "perOption": "選択肢ごとのルーティング",
@@ -1867,13 +2069,6 @@
       "editQuestion": "質問{{number}}のルーティングを編集",
       "precedence": "回答は、カテゴリが割り当てられた選択肢のうち最初に回答されたもののカテゴリに分類されます。ない場合はフォームのカテゴリに分類されます。",
       "dimensionsHint": "すべての回答にこれらの値が付きます。埋め込みでは dimensions オプションでページごとに値を設定できます。"
-    },
-    "theme": {
-      "primary": "プライマリカラー",
-      "background": "背景色",
-      "text": "テキスト色",
-      "radius": "角の丸み",
-      "lowContrast": "この背景上のテキストのコントラスト比は{{ratio}}:1で、4.5:1を下回っています。多くの人にとって読みにくくなります。"
     },
     "danger": {
       "hint": "フォームを削除すると、フォームとそのリンクが削除されます。回答は「フィードバック」に残ります。",

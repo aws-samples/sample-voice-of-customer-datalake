@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   accessibleText, answersOf, clickNext, en, errorText, form, heading, pickByKey, renderWidget,
-  resetWidgetPage, screen, submitted, typeText,
+  focused, resetWidgetPage, screen, submitted, typeText,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -239,7 +239,7 @@ describe('contact info', () => {
     clickNext(container)
 
     expect([missing, errorText(container)]).toStrictEqual(['✕ Type an answer to continue.', '✕ Enter a valid email address.'])
-    expect(document.activeElement).toBe(screen(container).querySelector('input[autocomplete="email"]'))
+    expect(focused(container)).toBe(screen(container).querySelector('input[autocomplete="email"]'))
   })
 
   it('sends the filled fields only', async () => {

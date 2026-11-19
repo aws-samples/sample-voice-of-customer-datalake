@@ -8,6 +8,9 @@
   // alias maps to it, so it would report all four exports unused: it is an entry of its own (exports public).
   "entry": [
     "index.html!",
+    // The builder's preview window, the build's second page (vite.config.ts): its <script> is
+    // src/pages/FeedbackForms/preview/window/main.ts.
+    "form-preview.html!",
     "src/components/Document/edit/editor/noCollaboration.ts!",
     // FeedbackFormConfig, the public widget's wire shape (schema version 2 since 7.55.00): nothing imports it; it is
     // read as text by lambda/api/test/test_widget_config_type_lockstep.py and feedbackFormTypes.test.ts.

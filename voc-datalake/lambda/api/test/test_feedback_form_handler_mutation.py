@@ -48,6 +48,12 @@ _no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 
 FORM_ID = 'deadbeef'
 QUEUE = 'https://sqs.us-east-1.amazonaws.com/123456789012/forms'
+#: A theme read without one: every field, its defaults (shared/form_theme.py ``with_defaults``).
+DEFAULT_THEME_READ = {
+    'primary_color': '#8e48ff', 'background_color': '#ffffff', 'text_color': '#19161d', 'border_radius': '8px',
+    'mode': 'light', 'dark': {'primary_color': '#bd8fff', 'background_color': '#19161d', 'text_color': '#f2f1f4'},
+    'font': 'system', 'text_size': 'default',
+}
 
 
 def _route(api_gateway_event, lambda_context, method: str, path: str, **kwargs) -> tuple[dict, dict]:
@@ -144,8 +150,7 @@ class TestANewFormIsStoredWithTheDocumentedDefaults:
         ('enabled', False),
         ('schema_version', 2),
         ('revision', 1),
-        ('theme', {'primary_color': '#8e48ff', 'background_color': '#ffffff',
-                   'text_color': '#19161d', 'border_radius': '8px'}),
+        ('theme', DEFAULT_THEME_READ),
         ('custom_fields', []),
         ('category', ''),
         ('subcategory', ''),
@@ -359,7 +364,7 @@ EMPTY_DEFINITION = {
     'hidden_fields': [], 'endings': [{'id': 'end_thanks', 'title': {'en': 'Thank you!'}}],
 }
 EMPTY_WIDGET = {'enabled': False, 'schema_version': 2, 'revision': 1, **EMPTY_DEFINITION, 'language_assumed': True,
-                'theme': {}}
+                'theme': DEFAULT_THEME_READ}
 WIDGET_FIELDS = tuple(EMPTY_WIDGET)
 EMPTY_FORM = {
     'form_id': '', 'name': '', **EMPTY_WIDGET,
@@ -421,7 +426,8 @@ class TestTheProjectionsDefaultEveryAbsentField:
         assert h.item_to_widget_config(V2_ITEM) == {
             'enabled': True, 'schema_version': 2, 'revision': 4, 'language': 'pl', 'languages': ['pl', 'en'],
             'welcome': V2_ITEM['welcome'], 'questions': [public_question], 'hidden_fields': [{'id': 'user_id'}],
-            'endings': V2_ITEM['endings'], 'language_assumed': False, 'theme': {'primary_color': '#123456'},
+            'endings': V2_ITEM['endings'], 'language_assumed': False,
+            'theme': {**DEFAULT_THEME_READ, 'primary_color': '#123456'},
         }
         form = h.item_to_form(V2_ITEM)
         assert form == {
@@ -597,6 +603,33 @@ class TestTheListStatsReadEachPartitionOnce:
         assert stats == {'a': {'total_submissions': 1, 'avg_rating': 5.0, 'rating_count': 1,
                                'headline': _rating_headline(5.0)}}
 
+    def test_the_latest_response_time_rides_along_when_the_rows_carry_one(self, feedback):
+        """The card's "last response 2 h ago": the latest ``source_created_at`` of the counted rows, absent without one."""
+        feedback.query.side_effect = [{'Items': [
+            {'source_channel': 'form_a', 'rating': 4, 'source_created_at': '2026-11-18T09:00:00+00:00'},
+            {'source_channel': 'form_a', 'rating': 5, 'source_created_at': '2026-11-19T08:30:00+00:00'},
+            {'source_channel': 'form_a', 'rating': 3, 'source_created_at': '2026-11-17T23:59:00+00:00'},
+            {'source_channel': 'form_b'},
+        ]}]
+        stats = self._stats([{'form_id': 'a', 'brand_name': 'Acme'}, {'form_id': 'b', 'brand_name': 'Acme'}])
+        assert stats['a']['last_response_at'] == '2026-11-19T08:30:00+00:00'
+        assert 'last_response_at' not in stats['b']
+
+    def test_each_channel_rides_along_with_the_last_time_it_answered(self, feedback):
+        """The card's "Link · Website script · Embedded": per channel the response stored, its latest time; none for a
+        widget from before 7.55.01 (no ``form_channel``), and nothing unknown."""
+        row = lambda channel, at: {'source_channel': 'form_a', 'source_created_at': at,  # noqa: E731 - a table row
+                                   'metadata': {} if channel is None else {'form_channel': channel}}
+        feedback.query.side_effect = [{'Items': [
+            row('script', '2026-11-10T09:00:00+00:00'), row('script', '2026-11-18T09:00:00+00:00'),
+            row('link', '2026-11-12T10:00:00+00:00'), row(None, '2026-11-19T08:00:00+00:00'),
+            row('app', '2026-11-19T08:30:00+00:00'),
+            {'source_channel': 'form_b', 'source_created_at': '2026-11-19T07:00:00+00:00'},
+        ]}]
+        stats = self._stats([{'form_id': 'a', 'brand_name': 'Acme'}, {'form_id': 'b', 'brand_name': 'Acme'}])
+        assert stats['a']['channels'] == {'link': '2026-11-12T10:00:00+00:00', 'script': '2026-11-18T09:00:00+00:00'}
+        assert 'channels' not in stats['b']
+
     def test_a_row_without_a_channel_counts_for_no_form_whatever_its_id(self, feedback):
         feedback.query.side_effect = [{'Items': [{'rating': 1}]}]
         stats = self._stats([{'form_id': 'XXXX', 'brand_name': 'Acme'}])
@@ -728,6 +761,93 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         assert payload == {'success': False, 'error': 'No fields to update'}
         table.get_item.assert_not_called()
         table.update_item.assert_not_called()
+
+
+class TestALiveFormKeepsReadableText:
+    """Text under 3:1 on its background (shared/forms_v2.py ``validate_publishable``): Publish, and a colour change on a
+    live form, are refused; any other save of a live form whose stored theme is already unreadable goes through with
+    the warning ``theme_unreadable``; a form that stays, or goes, Off is always saved."""
+
+    GREY: ClassVar[dict[str, str]] = {'text_color': '#9ca3af'}  # 2.54:1 on white
+    PALE: ClassVar[dict[str, str]] = {'text_color': '#b0b0b0'}  # 2.1:1 on white: unreadable as well
+
+    def _put(self, api_gateway_event, lambda_context, body, stored):
+        self.table.get_item.return_value = {'Item': {**V2_ITEM, **stored}}
+        self.table.update_item.return_value = {'Attributes': {'form_id': FORM_ID}}
+        return _route(api_gateway_event, lambda_context, 'PUT', f'/feedback-forms/{FORM_ID}',
+                      path_params={'form_id': FORM_ID}, body=body)
+
+    @pytest.fixture(autouse=True)
+    def _table(self, table):
+        self.table = table
+
+    def _refused(self, response, payload):
+        assert response['statusCode'] == 400
+        assert payload['code'] == 'theme_unreadable'
+        assert payload['palettes'] == [{'palette': 'light', 'ratio': 2.54}]
+        assert payload['error'].startswith('The text on the light background is 2.5:1, under 3:1')
+
+    def test_creating_a_live_form_with_unreadable_text_is_refused(self, api_gateway_event, lambda_context):
+        response, payload = _route(api_gateway_event, lambda_context, 'POST', '/feedback-forms',
+                                   body={'enabled': True, 'theme': self.GREY})
+        self._refused(response, payload)
+        self.table.put_item.assert_not_called()
+
+    def test_creating_it_off_stores_it(self, api_gateway_event, lambda_context):
+        response, _ = _route(api_gateway_event, lambda_context, 'POST', '/feedback-forms', body={'theme': self.GREY})
+        assert response['statusCode'] == 200
+
+    @pytest.mark.parametrize(('body', 'stored'), [
+        ({'enabled': True, 'theme': GREY}, {'enabled': False}),
+        ({'enabled': True}, {'enabled': False, 'theme': GREY}),
+        ({'enabled': True, 'name': 'Renamed'}, {'enabled': False, 'theme': GREY}),
+    ], ids=['publish-with-it', 'publish-a-stored-one', 'publish-with-another-edit'])
+    def test_publishing_with_unreadable_text_is_refused(self, api_gateway_event, lambda_context, body, stored):
+        self._refused(*self._put(api_gateway_event, lambda_context, body, stored))
+        self.table.update_item.assert_not_called()
+
+    @pytest.mark.parametrize(('body', 'stored'), [
+        ({'theme': GREY}, {'enabled': True}),
+        ({'enabled': True, 'theme': GREY}, {'enabled': True}),
+        ({'theme': {**GREY, 'border_radius': '4px'}}, {'enabled': True, 'theme': GREY}),
+    ], ids=['readable-to-unreadable', 'with-enabled-sent', 'unreadable-and-changed'])
+    def test_a_live_forms_theme_changed_to_unreadable_text_is_refused(self, api_gateway_event, lambda_context,
+                                                                      body, stored):
+        self._refused(*self._put(api_gateway_event, lambda_context, body, stored))
+        self.table.update_item.assert_not_called()
+
+    def test_a_live_forms_colours_changed_to_other_unreadable_ones_are_refused(self, api_gateway_event, lambda_context):
+        response, payload = self._put(api_gateway_event, lambda_context, {'theme': self.PALE},
+                                      {'enabled': True, 'theme': self.GREY})
+        assert response['statusCode'] == 400
+        assert payload['code'] == 'theme_unreadable'
+        self.table.update_item.assert_not_called()
+
+    @pytest.mark.parametrize(('body', 'stored'), [
+        ({'name': 'Renamed'}, {'enabled': True, 'theme': GREY}),
+        ({'theme': GREY, 'name': 'Renamed'}, {'enabled': True, 'theme': GREY}),
+        ({'enabled': True, 'theme': {**GREY, 'mode': 'light'}}, {'enabled': True, 'theme': GREY}),
+    ], ids=['theme-not-sent', 'same-theme-sent', 'same-theme-with-its-defaults'])
+    def test_a_live_form_kept_on_its_stored_unreadable_theme_is_saved_with_a_warning(self, api_gateway_event,
+                                                                                     lambda_context, body, stored):
+        response, payload = self._put(api_gateway_event, lambda_context, body, stored)
+        assert response['statusCode'] == 200
+        assert payload['success'] is True
+        assert payload['warnings'] == ['theme_unreadable']
+        self.table.update_item.assert_called_once()
+
+    @pytest.mark.parametrize(('body', 'stored'), [
+        ({'theme': GREY}, {'enabled': False}),
+        ({'enabled': False}, {'enabled': True, 'theme': GREY}),
+        ({'enabled': False, 'theme': GREY}, {'enabled': True}),
+        ({'theme': {**GREY, 'mode': 'dark'}}, {'enabled': True}),
+    ], ids=['save-off', 'turn-off', 'turn-off-with-it', 'light-palette-not-shown'])
+    def test_a_form_that_stays_off_or_shows_readable_text_is_saved(self, api_gateway_event, lambda_context,
+                                                                    body, stored):
+        response, payload = self._put(api_gateway_event, lambda_context, body, stored)
+        assert response['statusCode'] == 200
+        assert 'warnings' not in payload
+        self.table.update_item.assert_called_once()
 
 
 @pytest.mark.usefixtures('metrics')
@@ -888,6 +1008,16 @@ class TestTheIframePage:
                    f'"eventsEndpoint": "/feedback-forms/{FORM_ID}/events"}}')
         assert f'  VoCFeedbackForm.init({options});\n  </script>\n</body>\n</html>' in body
         assert body.endswith('</html>')
+
+    def test_the_page_styles_only_itself_and_leaves_the_form_to_the_widget(self, table, api_gateway_event,
+                                                                          lambda_context):
+        """The widget ships its own reset inside its shadow root (7.55.01): the page keeps no copy of it, so the API's
+        page, a script embed and the editor's preview draw the same form. Only the page's margins and the
+        container's height are the page's."""
+        body = _iframe_page(table, api_gateway_event, lambda_context, {'domainName': 'api.example'})['body']
+        style = body.split('<style>', 1)[1].split('</style>', 1)[0]
+        assert [line.strip() for line in style.strip().splitlines()] == [
+            'html, body { margin: 0; }', '#voc-feedback-form { min-height: 100vh; }']
 
     def test_no_host_is_no_endpoint(self, table, api_gateway_event, lambda_context):
         body = _iframe_page(table, api_gateway_event, lambda_context, {})['body']

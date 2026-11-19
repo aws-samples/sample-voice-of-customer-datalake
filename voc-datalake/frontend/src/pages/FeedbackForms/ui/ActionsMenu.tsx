@@ -2,16 +2,23 @@
  * @fileoverview The forms builder's ⋯ menus (a card's, a rule's, an option's, the header's): a WAI-ARIA menu button
  * (`components/ProfileMenu/useMenuButton`: arrow keys, Home/End, Escape back to the trigger) whose icon-only trigger
  * carries its name and a label Tooltip (R5, R16). An item that is off says why in visible text under its label and
- * stays focusable (`aria-disabled`).
+ * stays focusable (`aria-disabled`). The menu is fixed and in a portal (utils/fixedMenu.ts, as `RowActionsMenu`), so a
+ * scrolling pane or a card's `overflow-hidden` never clips it (the last question card's menu in the builder's
+ * full-height list pane): it opens under its trigger, flipped above it when there is no room, and closes when the page
+ * scrolls or the window resizes; Tab leaves it for the control after the trigger.
  *
  * @module pages/FeedbackForms/ui/ActionsMenu
  */
-import { useId } from 'react'
+import { useId, useLayoutEffect } from 'react'
+import type { KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useMenuButton } from '../../../components/ProfileMenu/useMenuButton'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
+import { useCloseOnViewportChange } from '../../../hooks/useCloseOnViewportChange'
+import { placeFixedMenu, tabTargetFrom } from '../../../utils/fixedMenu'
 
 export interface MenuAction {
   readonly label: string
@@ -31,10 +38,27 @@ export default function ActionsMenu({ label, items, className }: Readonly<{
 }>) {
   const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
   const menuId = useId()
+  useCloseOnViewportChange(open, close, menuRef)
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    const button = buttonRef.current
+    if (open && menu !== null && button !== null) placeFixedMenu(menu, button.getBoundingClientRect(), 'end')
+  }, [open, menuRef, buttonRef])
   const pick = (item: MenuAction) => {
     if (item.disabledReason !== undefined) return
     close(true)
     item.onSelect()
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const opener = buttonRef.current
+    // (the menu sits at the end of the page: Tab goes on from the trigger, as if the menu were still beside it)
+    if (event.key === 'Tab' && opener !== null) {
+      event.preventDefault()
+      close()
+      tabTargetFrom(opener, event.shiftKey).focus()
+      return
+    }
+    onMenuKeyDown(event)
   }
   return (
     <div className={clsx('relative', className)}>
@@ -45,9 +69,9 @@ export default function ActionsMenu({ label, items, className }: Readonly<{
           <MoreHorizontal size={16} aria-hidden="true" />
         </button>
       </Tooltip>
-      {open && (
+      {open && createPortal(
         <div ref={menuRef} id={menuId} role="menu" aria-label={label} aria-orientation="vertical"
-          onKeyDown={onMenuKeyDown} className="menu absolute right-0 top-full z-30 mt-1 w-60 animate-scale-in">
+          onKeyDown={onKeyDown} className="menu fixed z-[75] w-60 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto animate-scale-in">
           {items.map((item, index) => (item === null
             ? <div key={`separator-${String(index)}`} role="separator" className="menu-separator" />
             : (
@@ -63,7 +87,8 @@ export default function ActionsMenu({ label, items, className }: Readonly<{
                 </span>
               </button>
             )))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

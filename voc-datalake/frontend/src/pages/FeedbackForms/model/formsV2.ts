@@ -181,12 +181,33 @@ interface TestSettings {
   readonly record: TestRecord
 }
 
-/** The customer's widget theme (data rendered on their page: the out-of-scope colours of the design system). */
-export interface FormTheme {
+/** One palette of a form's theme: its primary (buttons, progress, the focus ring), background and text colours. */
+export interface ThemePalette {
   readonly primary_color: string
   readonly background_color: string
   readonly text_color: string
+}
+
+export const THEME_MODES = ['light', 'dark', 'auto'] as const
+/** Which palette respondents see: light, dark, or auto (their device's `prefers-color-scheme`). */
+export type ThemeMode = (typeof THEME_MODES)[number]
+/** System font stacks only (never a web font); `inherit` is the script embed's page font ("Same as your page"). */
+export const THEME_FONTS = ['system', 'inherit', 'serif', 'rounded', 'mono'] as const
+export type ThemeFont = (typeof THEME_FONTS)[number]
+export const THEME_TEXT_SIZES = ['default', 'large'] as const
+export type ThemeTextSize = (typeof THEME_TEXT_SIZES)[number]
+
+/**
+ * The customer's widget theme (data rendered on their page: the out-of-scope colours of the design system). The three
+ * top-level colours are the LIGHT palette and `dark` the dark one (lambda/shared/form_theme.py, the same schema); the
+ * editor always holds every field, a stored theme without the 7.55.01 ones read with their defaults.
+ */
+export interface FormTheme extends ThemePalette {
   readonly border_radius: string
+  readonly mode: ThemeMode
+  readonly dark: ThemePalette
+  readonly font: ThemeFont
+  readonly text_size: ThemeTextSize
 }
 
 /** Where a form is meant to run: the describe panel's `channel` and a template's "Runs". */
@@ -244,10 +265,16 @@ export interface LoadedForm {
   readonly meta: StoredFormMeta
 }
 
-export const DEFAULT_THEME: FormTheme = {
-  // Kiro Light: accent, page background and strong text (theme/printPalette.ts, pinned to index.css by its spec).
+/** VoC light: Kiro Light's accent, page background and strong text (theme/printPalette.ts, pinned to index.css). */
+export const VOC_LIGHT_PALETTE: ThemePalette = {
   primary_color: KIRO_LIGHT_HEX.accent, background_color: KIRO_LIGHT_HEX.bg, text_color: KIRO_LIGHT_HEX.textStrong,
-  border_radius: '8px',
+}
+/** VoC dark: Kiro Dark's accent text, page and strong text (styles/theme-palettes.css; text 15.9:1, primary 7.27:1). */
+export const VOC_DARK_PALETTE: ThemePalette = { primary_color: '#bd8fff', background_color: '#19161d', text_color: '#f2f1f4' }
+
+/** A new form's theme, as the server's (form_theme.py `default_theme`): VoC light shown, VoC dark beside it. */
+export const DEFAULT_THEME: FormTheme = {
+  ...VOC_LIGHT_PALETTE, border_radius: '8px', mode: 'light', dark: VOC_DARK_PALETTE, font: 'system', text_size: 'default',
 }
 
 /** Is `value` one of the app's nine languages? */

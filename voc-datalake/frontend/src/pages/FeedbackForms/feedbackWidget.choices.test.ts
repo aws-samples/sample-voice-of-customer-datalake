@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   answersOf, backButton, choice, choiceWords, clickNext, en, errorText, form, heading, pickByKey, press, renderWidget,
-  resetWidgetPage, screen, selectValue, submitted, typeText,
+  focused, resetWidgetPage, screen, selectValue, submitted, typeText,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -203,7 +203,7 @@ describe('multiple choice as a dropdown (an inline checklist)', () => {
     press(choice(container, 'Option H'), 'Escape')
 
     expect(opened).toStrictEqual(['true', '2 selected'])
-    expect([toggle?.getAttribute('aria-expanded'), document.activeElement === toggle]).toStrictEqual(['false', true])
+    expect([toggle?.getAttribute('aria-expanded'), focused(container) === toggle]).toStrictEqual(['false', true])
     expect(await answer(container)).toStrictEqual({ codes: ['b', 'h'] })
   })
 

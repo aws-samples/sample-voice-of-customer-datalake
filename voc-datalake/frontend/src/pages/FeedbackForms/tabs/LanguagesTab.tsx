@@ -6,12 +6,13 @@
  *
  * @module pages/FeedbackForms/tabs/LanguagesTab
  */
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from 'i18next'
-import { Info, Languages } from 'lucide-react'
+import { ChevronDown, Info, Languages, Plus } from 'lucide-react'
 import Notice from '../../../components/Notice/Notice'
 import ConfirmModal from '../../../components/ConfirmModal/ConfirmModal'
+import { RowActionsMenu } from '../../../components/RowActionsMenu/RowActionsMenu'
 import { languageNames } from '../../../i18n/languages'
 import { useDraft } from '../builder/formDraftContext'
 import { useBuilderUi } from '../builder/builderUi'
@@ -25,20 +26,15 @@ import LanguageRows from './languages/LanguageRows'
 import { catalogueLookup, completeness } from './languages/languageEdits'
 import InfoNote from './hidden/InfoNote'
 
+/** "+ Add language…": a menu button of the languages the form does not have yet (a button, not a select dressed as one). */
 function AddLanguage({ form, onAdd }: Readonly<{ form: FormV2; onAdd: (language: FormLanguage) => void }>) {
   const { t } = useTranslation('feedbackForms')
-  const id = useId()
   const left = FORM_LANGUAGES.filter((language) => !form.languages.includes(language))
   if (left.length === 0) return null
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor={id} className="sr-only">{t('languages.add')}</label>
-      <select id={id} className="select select-sm w-auto" value=""
-        onChange={(event) => { if (isFormLanguage(event.target.value)) onAdd(event.target.value) }}>
-        <option value="">{t('languages.addOption')}</option>
-        {left.map((language) => <option key={language} value={language} lang={language}>{languageNames[language]}</option>)}
-      </select>
-    </div>
+    <RowActionsMenu label={t('languages.add')} className="btn btn-secondary btn-sm"
+      face={<><Plus size={14} aria-hidden="true" />{t('languages.add')}<ChevronDown size={14} aria-hidden="true" /></>}
+      entries={left.map((language) => ({ kind: 'action', id: language, label: languageNames[language], onSelect: () => onAdd(language) }))} />
   )
 }
 

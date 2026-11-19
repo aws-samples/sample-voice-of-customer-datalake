@@ -51,6 +51,7 @@ import Breadcrumbs from '../Breadcrumbs/Breadcrumbs'
 import AssistantRoot from '../../assistant/components/AssistantRoot'
 import { isChatRoute } from '../../assistant/page/chatRoute'
 import { LAUNCHER_RESERVE_CLASS } from '../../assistant/bubble/geometry'
+import { useLauncherYielded } from '../../assistant/bubble/launcherYield'
 import ReviewModalHost from '../ReviewModal/ReviewModalHost'
 import { isMenuItemEnabled } from '../../config/menuConfig'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
@@ -184,11 +185,13 @@ function MainHeader({ onOpenMenu, menuButtonRef, showTimeRange, account }: Reado
 /**
  * The page scroller's classes. The launcher floats over the page's bottom-right corner (not on /chat, which has no
  * launcher): reserve room below the content so the last control (e.g. the Categories CSV export) can always scroll
- * clear of it (5.35, E2E 5.34). A document page in focus view is the window: no padding, no launcher.
+ * clear of it (5.35, E2E 5.34). A document page in focus view is the window: no padding, no launcher. Nor is there a
+ * launcher to keep room for while the page offers the assistant in its own menu (assistant/bubble/launcherYield): the
+ * reserve goes too, so the page's sticky save bar pins to the bottom edge, not 80 px above it.
  */
-function pageScrollerClass(focusView: boolean, pathname: string): string {
+function pageScrollerClass(focusView: boolean, pathname: string, launcherYielded: boolean): string {
   if (focusView) return 'relative flex-1 overflow-auto'
-  return clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(pathname) && LAUNCHER_RESERVE_CLASS)
+  return clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(pathname) && !launcherYielded && LAUNCHER_RESERVE_CLASS)
 }
 
 // Custom hook for mobile menu management
@@ -229,6 +232,7 @@ export default function Layout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
   const focusView = useFocusViewActive()
+  const launcherYielded = useLauncherYielded()
   // Mobile drawer keyboard contract: focus moves into it, Escape closes it, Tab
   // leaving it closes it (it covers the page), and focus returns to the menu
   // button (design audit D-NAV).
@@ -315,7 +319,7 @@ export default function Layout() {
         {/* `relative`: the page scroller is the containing block of every absolute element inside it
             (e.g. `.sr-only` spans). Without it they resolve against the initial containing block and
             their offset grows the document, so the window shows a second scrollbar (/radar, 5.12.00). */}
-        <div className={pageScrollerClass(focusView, location.pathname)} data-testid="page-scroller">
+        <div className={pageScrollerClass(focusView, location.pathname, launcherYielded)} data-testid="page-scroller">
           {focusView ? null : <PasskeyPrompt />}
           <Outlet />
         </div>

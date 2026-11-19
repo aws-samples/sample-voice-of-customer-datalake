@@ -54,6 +54,25 @@ describe('TestTab', () => {
     expect(screen.getByRole('button', { name: 'QR' })).toBeInTheDocument()
   })
 
+  it('opens the test link from beside Copy and QR, in a new tab', () => {
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    const open = screen.getByRole('link', { name: /^Open\s?\(opens in a new tab\)$/u })
+    expect(open).toHaveAttribute('href', LINK)
+    expect(open).toHaveAttribute('target', '_blank')
+    expect(open).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('dates each recent test response, "Today" for today\'s, so the order reads across midnight', async () => {
+    const today = new Date()
+    today.setHours(10, 20, 0, 0)
+    getResponses.mockResolvedValue({ responses: [{ ...TEST_RESPONSE, response_id: 'r_today', submitted_at: today.toISOString() }, TEST_RESPONSE], next_cursor: null })
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }, [{ id: 'user_id' }, { id: 'app_version' }]))
+    const list = await screen.findByRole('list', { name: 'Recent test responses' })
+    const times = within(list).getAllByRole('listitem').map((item) => item.querySelector('.font-mono')?.textContent)
+    expect(times[0]).toMatch(/^Today 10:20\s?AM$/u)
+    expect(times[1]).toMatch(new RegExp(`^Nov 17(, 2026)?, \\d{1,2}:02\\s?[AP]M$`, 'u'))
+  })
+
   it('says what an off link means, and turns it on in the draft', async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<TestTab />, formWith({ link_enabled: false, record: 'tag' }))

@@ -209,6 +209,7 @@ class TestTheEnvelope:
         {'answers': {f'q_{n}': 1 for n in range(31)}}, {'answers': {}, 'form_revision': 0},
         {'answers': {}, 'form_revision': True}, {'answers': {}, 'test': 'x' * 65}, {'answers': {}, 'ending_id': 3},
         {'answers': {}, 'session': 'short'}, {'answers': {}, 'session': 'with spaces in it'}, {'answers': {}, 'session': 5},
+        {'answers': {}, 'channel': 'app'}, {'answers': {}, 'channel': 'Link'}, {'answers': {}, 'channel': 5},
     ])
     def test_unknown_keys_and_malformed_fields_are_refused_before_any_read(self, body):
         with pytest.raises(ValidationError):

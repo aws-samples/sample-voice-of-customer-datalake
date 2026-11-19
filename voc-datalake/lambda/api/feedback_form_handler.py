@@ -42,7 +42,7 @@ from aws_lambda_powertools.event_handler import Response
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, feedback_category, null_origin_cors, prototype_pins
+from shared import category_access, feedback_category, form_theme, null_origin_cors, prototype_pins
 from shared import forms_v2 as fv2
 from shared import forms_v2_responses as fresp
 from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
@@ -185,16 +185,11 @@ def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
 # Form Configuration Schema & Defaults
 # ============================================
 
-# Kiro Light palette (docs/kiro-design-system.md): accent, page background,
-# strong text. White on the accent is 4.64:1 (WCAG AA); the old blue default
-# was 3.68:1 and failed axe colour-contrast on the widget's start button (E2E F6).
-# Mirrored by frontend/mock-forms.js and the widget's own KIRO defaults.
-DEFAULT_THEME = {
-    'primary_color': '#8e48ff',
-    'background_color': '#ffffff',
-    'text_color': '#19161d',
-    'border_radius': '8px'
-}
+# VoC light shown (the Kiro Light palette, docs/kiro-design-system.md: accent, page background, strong text; white
+# on the accent is 4.64:1, where the old blue default was 3.68:1 and failed axe colour-contrast on the widget's start
+# button, E2E F6), VoC dark as the dark palette, the system font at the default size (shared/form_theme.py).
+# Mirrored by frontend …/model/formsV2.ts DEFAULT_THEME, frontend/mock-forms-v2.js and the widget's own defaults.
+DEFAULT_THEME = form_theme.default_theme()
 
 #: A new form's fields besides its definition (shared/forms_v2.py ``DEFINITION_FIELDS``) and test settings, with
 #: their defaults. A create body without ``questions`` is a version 1 body: its v1 fields (shared/forms_v2.py
@@ -637,6 +632,8 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
     validate_link_fields(body)
     validate_theme(body)
     definition = fv2.validate_definition(_body_definition(body))
+    # Created live: its text must be readable (shared/forms_v2.py); a form created Off is always stored.
+    fv2.validate_publishable(body.get('theme', DEFAULT_THEME), live=bool(body.get('enabled', False)))
     test = fv2.test_settings_of({})
     if 'settings' in body:
         test = fv2.validate_test_settings(body['settings'], test)
@@ -660,6 +657,8 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
     # Apply defaults, then override with provided values
     for name, default in DEFAULT_FORM_CONFIG.items():
         item[name] = body.get(name, default)
+    if 'theme' not in body:
+        item['theme'] = form_theme.default_theme()  # its own copy: the default holds a nested palette
 
     return item
 
@@ -694,8 +693,13 @@ class _RatingTally:
 
     Given the form's definition (the stats and list routes), ``stats`` also reports the
     card's ``headline`` (shared/forms_v2_results.py ``headline``: the first measuring
-    question's NPS, CSAT % or average, None without one). Test responses are never
-    feedback items, so no figure here counts them.
+    question's NPS, CSAT % or average, None without one) and, when a counted response carries
+    its time, ``last_response_at``: the latest ``source_created_at`` (the card's "last response
+    2 h ago"; absent when none does), and ``channels``: for each way the form was answered
+    (``metadata.form_channel``: link, iframe, script), the latest time it was (absent when no
+    response says; a widget from before 7.55.01 sends none). Derived when the stats are read,
+    so a submit writes nothing more than its response. Test responses are never feedback
+    items, so no figure here counts them.
     """
 
     def __init__(self, definition: Mapping[str, Any] | None = None):
@@ -703,6 +707,8 @@ class _RatingTally:
         self.rating_count = 0
         self._definition = definition
         self._rows: list[ResultRow] = []
+        self._last_response_at = ''
+        self._channels: dict[str, str] = {}
 
     def add(self, item: dict) -> None:
         rating = item.get('rating')
@@ -711,6 +717,15 @@ class _RatingTally:
             self.rating_count += 1
         if self._definition is not None and (row := _result_row(item, self._definition)) is not None:
             self._rows.append(row)
+        # (ISO 8601 UTC timestamps, so the latest is the greatest string)
+        created = item.get('source_created_at')
+        if not isinstance(created, str):
+            return
+        self._last_response_at = max(self._last_response_at, created)
+        metadata = item.get('metadata')
+        channel = metadata.get('form_channel') if isinstance(metadata, Mapping) else None
+        if channel in fresp.CHANNELS:
+            self._channels[channel] = max(self._channels.get(channel, ''), created)
 
     def stats(self, total_submissions: int) -> dict:
         avg_rating = round(self.total_rating / self.rating_count, 2) if self.rating_count > 0 else None
@@ -721,6 +736,10 @@ class _RatingTally:
         }
         if self._definition is not None:
             out['headline'] = headline(self._definition)(self._rows)
+            if self._last_response_at:
+                out['last_response_at'] = self._last_response_at
+            if self._channels:
+                out['channels'] = {name: self._channels[name] for name in fresp.CHANNELS if name in self._channels}
         return out
 
 
@@ -799,7 +818,8 @@ def item_to_widget_config(item: dict) -> dict:
         **fv2.public_definition(_definition(item)),
         # A version 1 form without a language: migrated to the deployment's, which its author has not confirmed yet.
         'language_assumed': fv2.language_assumed(item),
-        'theme': item.get('theme', {}),
+        # Every field: a theme stored before 7.55.01 answers its new ones' defaults (shared/form_theme.py).
+        'theme': form_theme.with_defaults(item.get('theme')),
     }
 
 
@@ -1135,6 +1155,8 @@ class _Update:
     removes: list[str]
     snapshot: tuple[int, dict[str, Any], dict[str, Any] | None] | None
     nested_test: dict[str, Any] = dataclass_field(default_factory=dict)
+    #: What the save answers besides the form (``warnings``): ``theme_unreadable`` for a live form kept unreadable.
+    warnings: list[str] = dataclass_field(default_factory=list)
 
 
 def _settings_update(stored: Mapping[str, Any], body: Mapping[str, Any]) -> tuple[dict | None, dict[str, Any]]:
@@ -1179,6 +1201,12 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str)
     to_check = proposed if proposed is not None else (None if fv2.is_v2(stored) else current)
     definition = fv2.validate_definition(to_check, retired=retired) if to_check is not None else current
     changed = proposed is not None and _canonical(definition) != _canonical(current)
+    # Publish, and a colour change on a live form, need readable text; any other save of a live form whose stored
+    # theme is already unreadable goes through with a warning; turning a form Off always works.
+    live = body['enabled'] if 'enabled' in body else stored.get('enabled', False)
+    theme = body['theme'] if 'theme' in body else stored.get('theme')
+    warnings = fv2.validate_publishable(theme, live=bool(live), was_live=stored.get('enabled') is True,
+                                        theme_changed='theme' in body and not fv2.same_theme(theme, stored.get('theme')))
     removes = fv2.validate_removes(body.get('removes'))
     if changed and stored.get('has_responses') is True:
         # The lock of an answered form (shared/forms_v2.py): a dropped question id or option code is named, or refused.
@@ -1195,7 +1223,7 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str)
         sets['settings'] = whole
     v1 = None if fv2.is_v2(stored) else fv2.v1_source(stored)
     snapshot = (revision, current, v1) if changed or v1 is not None else None
-    return _Update(sets, [name for name in fv2.V1_FIELDS if name in stored], snapshot, nested)
+    return _Update(sets, [name for name in fv2.V1_FIELDS if name in stored], snapshot, nested, warnings)
 
 
 def _update_request(stored: Mapping[str, Any], plan: _Update) -> dict[str, Any]:
@@ -1255,7 +1283,10 @@ def update_form(form_id: str):
             raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(current)) from e
         logger.exception(f"Error updating form: {e}")
         raise ServiceError('Failed to update form') from e
-    return {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
+    saved: dict[str, Any] = {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
+    if plan.warnings:
+        saved['warnings'] = plan.warnings
+    return saved
 
 
 FORM_DELETED = 'form_deleted'
@@ -1472,6 +1503,9 @@ def _v2_submission(form_id: str, form: Mapping[str, Any], scope: WorkspaceScope 
         metadata['form_hidden'] = response.hidden
     if isinstance(body.get('session'), str):
         metadata['form_session'] = body['session']
+    if body.get('channel') in fresp.CHANNELS:
+        # Where it was answered (the list card's channels): kept with the response, read back by the list stats.
+        metadata['form_channel'] = body['channel']
     contact = fresp.contact_of(definition, response)
     # The keys an erasure by email matches, and the name the version 1 route kept (a redacting policy drops it).
     for key, field_name in (('submitter_email', 'email'), ('submitter_name', 'name')):
@@ -1871,6 +1905,8 @@ def get_form_iframe(form_id: str):
         'submitEndpoint': f'/feedback-forms/{form_id}/submit',
         'eventsEndpoint': f'/feedback-forms/{form_id}/events',
     })
+    # The page styles only itself: the widget ships its own reset inside its shadow root (7.55.01), so this page,
+    # a script embed and the editor's preview draw the same form.
     html = f'''<!DOCTYPE html>
 <html lang="{html_text.escape(language)}">
 <head>
@@ -1878,8 +1914,7 @@ def get_form_iframe(form_id: str):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{html_text.escape(title[:200])}</title>
   <style>
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    body {{ font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; }}
+    html, body {{ margin: 0; }}
     #voc-feedback-form {{ min-height: 100vh; }}
   </style>
 </head>

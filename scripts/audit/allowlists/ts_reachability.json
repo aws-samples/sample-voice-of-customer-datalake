@@ -116,6 +116,26 @@
     {
       "key": "frontend:src/components/Tooltip/Tooltip.tsx#TriggerProps.data-tooltip",
       "reason": "A DOM attribute the Tooltip sets on its trigger (label or description, while it has content): read from the element, by the specs' [data-tooltip] queries and the page's own inspection, never as a prop."
+    },
+    {
+      "key": "frontend:src?pages?FeedbackForms?preview?window?previewWindow.ts#*",
+      "reason": "The pop-out preview window's own code (7.55.01): frontend/form-preview.html, the build's second Vite HTML entry, loads src/pages/FeedbackForms/preview/window/main.ts, which runs it; the detector's frontend entries are src/main.tsx alone, so everything only that page reaches reads as test-only. (The key's ? stands for each /.)"
+    },
+    {
+      "key": "frontend:src?pages?FeedbackForms?preview?window?windowWords.ts#*",
+      "reason": "The pop-out preview window's own code (7.55.01): frontend/form-preview.html, the build's second Vite HTML entry, loads src/pages/FeedbackForms/preview/window/main.ts, which runs it; the detector's frontend entries are src/main.tsx alone, so everything only that page reaches reads as test-only. (The key's ? stands for each /.)"
+    },
+    {
+      "key": "frontend:src?pages?FeedbackForms?preview?previewChannel.ts#readWindowAddress",
+      "reason": "Read by the pop-out preview window (preview/window/previewWindow.ts, form-preview.html's entry, outside the detector's src/main.tsx) to learn its session from its address; it sits beside windowAddress, the builder's writer of the same address, so the two cannot drift. (The key's ? stands for each /.)"
+    },
+    {
+      "key": "frontend:src?pages?FeedbackForms?preview?previewChannel.ts#isPreset",
+      "reason": "readWindowAddress's check of the size preset in the window's address (see that entry). (The key's ? stands for each /.)"
+    },
+    {
+      "key": "frontend:widgetAssetPlugin.ts#*",
+      "reason": "Build-only (7.55.01): vite.config.ts, which the detector's entries do not include, loads this Vite plugin; it writes lambda/api/static/feedback-widget.js into frontend/dist/widget/ for the app's CloudFront and serves it at /widget/feedback-widget.js on the dev server (src/build/widgetAssetPlugin.test.ts)."
     }
   ]
 }

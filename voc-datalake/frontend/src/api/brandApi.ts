@@ -9,11 +9,17 @@
  * deployment's row from any address, a workspace's included. The answer is read leniently: a field of the wrong
  * type reads as empty.
  *
+ * The same row holds the workspace's FORM brand (7.55.01, `form_theme`: the forms builder's "Your brand" preset, the
+ * theme a new form starts on; null when none was saved). `formBrandApi.save` PUTs only it, in the current workspace,
+ * which the server applies alone (the brand's own fields stay); a full brand save keeps it.
+ *
  * @module api/brandApi
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { put } from './requestKit'
+import type { FormTheme } from '../pages/FeedbackForms/model/formsV2'
+import { themeSchema } from '../pages/FeedbackForms/model/formsV2Schema'
 
 /** Brand settings payload returned by GET /settings/brand. */
 export interface BrandSettingsResponse {
@@ -21,6 +27,8 @@ export interface BrandSettingsResponse {
   brand_handles?: string[]
   hashtags?: string[]
   urls_to_track?: string[]
+  /** The workspace's form brand (a form theme), null when none was saved. */
+  form_theme?: unknown
   error?: string
 }
 
@@ -53,4 +61,17 @@ export const deploymentBrandApi = {
   get: async (): Promise<BrandSettingsPayload> => readBrand(await fetchApi<unknown>('/settings/brand', { method: 'GET' }, 'deployment')),
   /** The deployment's `admins` only (403 for anyone else). */
   save: (settings: BrandSettingsPayload) => fetchApi<unknown>('/settings/brand', put(settings), 'deployment'),
+}
+
+/** The form brand of a `GET /settings/brand` answer, every field read with its default; null when none was saved. */
+export function readFormBrand(raw: unknown): FormTheme | null {
+  if (typeof raw !== 'object' || raw === null || !('form_theme' in raw)) return null
+  const stored = raw.form_theme
+  return typeof stored === 'object' && stored !== null ? themeSchema.parse(stored) : null
+}
+
+/** The current workspace's form brand (its admins only: 403 for anyone else). */
+export const formBrandApi = {
+  /** Save `theme` as the form brand (null removes it); the brand's own fields stay as they are. */
+  save: (theme: FormTheme | null) => fetchApi<unknown>('/settings/brand', put({ form_theme: theme })),
 }

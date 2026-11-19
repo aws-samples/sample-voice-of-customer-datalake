@@ -19,6 +19,7 @@ import { removeQuestion } from '../../../pages/FeedbackForms/model/mutations'
 import { splitOtherwise } from '../../../pages/FeedbackForms/model/rules'
 import { builderPath } from '../../../pages/FeedbackForms/builder/builderPaths'
 import { handoffState } from '../../../pages/FeedbackForms/builder/newFormHandoff'
+import { onBrand, useSavedFormBrand } from '../../../pages/FeedbackForms/theme/useFormBrand'
 import type { ProblemLocation } from '../../../pages/FeedbackForms/model/validateForm'
 import { languageNames } from '../../../i18n/languages'
 import { useCurrentWorkspace } from '../../../workspace/currentWorkspace'
@@ -87,6 +88,9 @@ export function FeedbackFormDraftPreview({ args }: Readonly<{ args: DraftFeedbac
   const workspace = useCurrentWorkspace()
   const nameId = useId()
   const [form, setForm] = useState<FormV2>(args.form)
+  // A new form starts on the workspace's form brand when one is saved, as a template or the picker's draft does.
+  const brand = useSavedFormBrand()
+  const branded = useMemo(() => onBrand(form, brand), [form, brand])
   const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set())
   const [leftOut, setLeftOut] = useState<LeftOut | null>(null)
   // (a workspace's admins and editors; outside a workspace, whoever may open the forms page)
@@ -98,9 +102,9 @@ export function FeedbackFormDraftPreview({ args }: Readonly<{ args: DraftFeedbac
 
   // What Approve creates, recorded as the card shows it (the executor creates exactly this form, or nothing).
   useEffect(() => {
-    if (shown !== null) recordFeedbackFormDraft(shown, ready ? { ...form, name: form.name.trim(), enabled: false } : undefined)
+    if (shown !== null) recordFeedbackFormDraft(shown, ready ? { ...branded, name: branded.name.trim(), enabled: false } : undefined)
     hold(!ready)
-  }, [shown, hold, ready, form])
+  }, [shown, hold, ready, branded])
 
   const leaveOut = (index: number) => {
     const question = form.questions[index]
@@ -112,7 +116,7 @@ export function FeedbackFormDraftPreview({ args }: Readonly<{ args: DraftFeedbac
     ? [...current, key] : [...current].filter((entry) => entry !== key)))
   const openInBuilder = () => {
     const ai = { notes: args.notes, warnings: args.warnings, description: '', channel: args.channel, addresses: unchecked.map(locationOf) }
-    void navigate(builderPath(null, 'questions'), { state: handoffState({ form: { ...form, enabled: false }, templateId: null, ai }) })
+    void navigate(builderPath(null, 'questions'), { state: handoffState({ form: { ...branded, enabled: false }, templateId: null, ai }) })
     decline?.(OPENED_IN_BUILDER_REASON)
   }
 

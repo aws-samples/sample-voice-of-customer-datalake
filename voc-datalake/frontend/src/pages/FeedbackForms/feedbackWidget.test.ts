@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { supportedLanguages } from '../../i18n/languages'
 import {
   WIDGET_SOURCE, backButton, calls, clickNext, clickStart, en, errorText, form, heading, expectHeading,
-  nextButton, noticeText, pickByKey, renderWidget, resetWidgetPage, screen, submissions, submitted, typeText,
+  nextButton, noticeText, pickByKey, renderWidget, resetWidgetPage, screen, submissions, submitted, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import { WIDGET_START_LABEL, widgetLanguage } from './test/widgetLanguage'
 
@@ -22,7 +22,7 @@ afterEach(resetWidgetPage)
 const BASE = { enabled: true, title: 'How likely are you to recommend us?', description: 'One question.', rating_enabled: false }
 
 function startButton(container: HTMLElement): HTMLElement {
-  const button = container.querySelector<HTMLElement>('.voc-start')
+  const button = widgetRoot(container).querySelector<HTMLElement>('.voc-start')
   if (button === null) throw new Error('no start button')
   return button
 }
@@ -62,7 +62,7 @@ describe('the widget never renders dynamic text as HTML', () => {
     const container = await renderWidget(form([{ ...PICK, headline: en(markup), options: [{ code: 'a', label: en(markup) }] }]))
 
     expect(heading(container)).toBe(markup)
-    expect(container.querySelector('img')).toBeNull()
+    expect(widgetRoot(container).querySelector('img')).toBeNull()
     expect(document.body.dataset.pwned).toBeUndefined()
   })
 
@@ -74,7 +74,7 @@ describe('the widget never renders dynamic text as HTML', () => {
       { id: 'q_info', type: 'statement', headline: en('Read this'), required: false, cta: { label: en('More'), url } },
     ]))
 
-    expect(container.querySelector('a')).toBeNull()
+    expect(widgetRoot(container).querySelector('a')).toBeNull()
   })
 })
 
@@ -103,8 +103,8 @@ describe('feedback widget colours', () => {
   it('defaults page text and background to Kiro Light', async () => {
     const container = await renderWidget(BASE)
 
-    expect(container.style.color).toBe('rgb(25, 22, 29)')
-    expect(container.style.background).toBe('rgb(255, 255, 255)')
+    expect(widgetRoot(container).style.color).toBe('rgb(25, 22, 29)')
+    expect(widgetRoot(container).style.background).toBe('rgb(255, 255, 255)')
   })
 
   it('falls back to the defaults for a stored colour that is not a hex value, so no CSS reaches the page', async () => {
@@ -114,8 +114,8 @@ describe('feedback widget colours', () => {
     })
 
     expect({
-      position: container.style.position, zIndex: container.style.zIndex,
-      background: container.style.background, color: container.style.color,
+      position: widgetRoot(container).style.position, zIndex: widgetRoot(container).style.zIndex,
+      background: widgetRoot(container).style.background, color: widgetRoot(container).style.color,
     }).toStrictEqual({ position: 'relative', zIndex: '', background: 'rgb(255, 255, 255)', color: 'rgb(25, 22, 29)' })
     expect(startButton(container).style.background).toBe('rgb(142, 72, 255)')
     expect(startButton(container).style.borderRadius).toBe('8px')
@@ -126,14 +126,14 @@ describe('feedback widget states', () => {
   it('announces a disabled form as a status message', async () => {
     const container = await renderWidget({ ...BASE, enabled: false })
 
-    expect(container.querySelector('[role="status"]')?.textContent).toBe('Feedback form unavailable.')
+    expect(widgetRoot(container).querySelector('[role="status"]')?.textContent).toBe('Feedback form unavailable.')
   })
 
   it("says the form couldn't load when the config route can't be reached", async () => {
     document.body.dataset.configMode = 'reject'
     const container = await renderWidget(BASE)
 
-    expect(container.querySelector('[role="status"]')?.textContent)
+    expect(widgetRoot(container).querySelector('[role="status"]')?.textContent)
       .toBe("Couldn't load this form. Check your connection and reload the page.")
   })
 
@@ -184,7 +184,7 @@ describe('sending the answers', () => {
     await waitFor(() => expect(noticeText(container)).toBe("Couldn't send your answers. Check your connection and try again."))
     delete document.body.dataset.submit
 
-    container.querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
+    widgetRoot(container).querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
 
     await expectHeading(container, 'Thanks!')
     expect(submissions().map((body) => body.answers)).toStrictEqual([{ q_text: 'Slow' }, { q_text: 'Slow' }])
@@ -203,7 +203,7 @@ describe('sending the answers', () => {
 
     await expectHeading(container, 'What happened?')
     expect([noticeText(container), errorText(container)]).toStrictEqual(["Some answers couldn't be accepted.", '✕ Enter a valid email address.'])
-    expect(container.textContent).not.toContain('must be an email address')
+    expect(widgetRoot(container).textContent).not.toContain('must be an email address')
   })
 
   it('says the form changed while answering (409), and Reload loads it again', async () => {
@@ -213,7 +213,7 @@ describe('sending the answers', () => {
     clickNext(container)
     await waitFor(() => expect(noticeText(container)).toBe('This form was updated while you were answering. Reload to answer the latest version.'))
 
-    container.querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
+    widgetRoot(container).querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
 
     await waitFor(() => expect(calls().filter((call) => call.method === 'GET')).toHaveLength(2))
     await expectHeading(container, 'What happened?')
@@ -225,7 +225,7 @@ describe('sending the answers', () => {
     typeText(container, 'Slow')
     clickNext(container)
 
-    await waitFor(() => expect(container.querySelector('[role="status"]')?.textContent).toBe('This test link no longer works.'))
+    await waitFor(() => expect(widgetRoot(container).querySelector('[role="status"]')?.textContent).toBe('This test link no longer works.'))
   })
 })
 

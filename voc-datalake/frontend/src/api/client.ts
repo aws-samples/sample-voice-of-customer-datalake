@@ -356,6 +356,8 @@ export const api = {
     brand_handles: string[]
     hashtags: string[]
     urls_to_track: string[]
+    /** The workspace's form brand (api/brandApi.ts `readFormBrand`); a full brand save keeps it. */
+    form_theme?: unknown
     error?: string
   }>('/settings/brand'),
   

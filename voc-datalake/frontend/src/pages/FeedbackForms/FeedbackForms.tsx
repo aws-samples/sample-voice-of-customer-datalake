@@ -1,8 +1,9 @@
 /**
- * @fileoverview The Feedback Forms pages (7.55.00, the forms builder): the list, the template picker, the builder
- * and the full-screen preview, as paths this page reads itself (builder/builderPaths.ts):
- * `/feedback-forms`, `/feedback-forms/new`, `/feedback-forms/new/<tab>` (an unsaved new form),
- * `/feedback-forms/<id>/<tab>[/…]` and `/feedback-forms/<id>/preview`.
+ * @fileoverview The Feedback Forms pages (7.55.00, the forms builder): the list, the template picker and the
+ * builder, as paths this page reads itself (builder/builderPaths.ts):
+ * `/feedback-forms`, `/feedback-forms/new`, `/feedback-forms/new/<tab>` (an unsaved new form) and
+ * `/feedback-forms/<id>/<tab>[/…]`. The old full-screen preview's `/feedback-forms/<id>/preview` goes on to the
+ * builder's Questions tab (the preview window replaced it, 7.55.01).
  *
  * @module pages/FeedbackForms
  */
@@ -10,8 +11,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Plus, Info } from 'lucide-react'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Plus } from 'lucide-react'
 import { accountTabPath } from '../Account/accountSections'
 import { api } from '../../api/client'
 import { feedbackFormsKey, feedbackFormsWithStatsKey, formStatsKey } from '../../api/feedbackFormQueryKeys'
@@ -23,10 +24,9 @@ import { useOptimisticFormDelete } from './useOptimisticFormDelete'
 import FormsListContent from './FormsList'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import { stripTrailingSlashes } from '../../api/baseUrl'
-import { parseFormsPath, pickerPath } from './builder/builderPaths'
+import { builderPath, parseFormsPath, pickerPath } from './builder/builderPaths'
 import FormBuilderPage from './builder/FormBuilderPage'
 import TemplatePicker from './picker/TemplatePicker'
-import FullScreenPreview from './preview/FullScreenPreview'
 
 /** The delete confirmation, naming the form; the generic text when it has no name. */
 function deleteConfirmMessage(t: TFunction<'feedbackForms'>, forms: readonly FeedbackForm[] | undefined, formId: string | null): string {
@@ -34,7 +34,7 @@ function deleteConfirmMessage(t: TFunction<'feedbackForms'>, forms: readonly Fee
   return name === '' ? t('deleteConfirmMessage') : t('deleteConfirmMessageNamed', { name })
 }
 
-/** The list of forms (UX §14.2): New form, the two-bullet banner, a card per form. */
+/** The list of forms (UX §14.2): New form, then the list (its banner, toolbar and cards, or the empty state's start). */
 function FormsListPage({ apiEndpoint }: Readonly<{ apiEndpoint: string }>) {
   const { t } = useTranslation('feedbackForms')
   const navigate = useNavigate()
@@ -72,23 +72,13 @@ function FormsListPage({ apiEndpoint }: Readonly<{ apiEndpoint: string }>) {
         </button>
       </div>
 
-      <div className="bg-info-subtle border border-info/30 rounded-lg p-4">
-        <h2 className="text-sm font-semibold tracking-tight text-info mb-2 flex items-center gap-2">
-          <Info size={16} aria-hidden="true" /> {t('infoBanner.title')}
-        </h2>
-        <ul className="text-sm text-text space-y-1 list-disc list-inside">
-          <li>{t('infoBanner.item1')}</li>
-          <li>{t('infoBanner.item2')}</li>
-        </ul>
-      </div>
-
       <FormsListContent
         isLoading={isLoading}
         loadFailed={isError && formsData === undefined ? { retry: () => void refetch(), retrying: isFetching } : null}
         forms={formsData?.forms}
+        stats={formsData?.stats ?? null}
         onDelete={setDeleteFormId}
         onToggle={(formId, enabled) => toggleMutation.mutate({ formId, enabled })}
-        onCreateNew={openPicker}
         apiEndpoint={apiEndpoint}
         statsRefreshing={isFetching}
       />
@@ -127,6 +117,6 @@ export default function FeedbackForms() {
     case 'list': return <FormsListPage apiEndpoint={stripTrailingSlashes(config.apiEndpoint)} />
     case 'picker': return <TemplatePicker template={place.template} />
     case 'builder': return <FormBuilderPage formId={place.formId} tab={place.tab} rest={place.rest} />
-    case 'preview': return <FullScreenPreview formId={place.formId} />
+    case 'preview': return <Navigate to={builderPath(place.formId, 'questions')} replace />
   }
 }

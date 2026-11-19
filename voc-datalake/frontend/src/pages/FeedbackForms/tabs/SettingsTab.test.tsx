@@ -1,6 +1,7 @@
 /**
  * Settings (UX §14.1): category routing by NAME (a form saved with config ids still resolves), the per-option
- * overview, the theme's contrast warning, and Delete form, asked first and then out of the builder.
+ * overview, Appearance (second, with its own preview; the theme editor's own spec is theme/ThemeEditor.test.tsx), the
+ * anchor list's card in view, and Delete form, asked first and then out of the builder.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -21,9 +22,12 @@ vi.mock('../../../hooks/useCategories', () => ({
 }))
 vi.mock('../../../components/DimensionFields/DimensionDefaultsSection', () => ({ default: () => <div data-testid="dimension-defaults" /> }))
 vi.mock('../ValidationLinkPicker', () => ({ default: () => <div data-testid="validation-link" /> }))
+vi.mock('../preview/PreviewFrame', () => import('../test/previewFrameStub'))
 
 import { renderWithDraft, sampleForm } from '../test/draftHarness'
 import type { FormV2 } from '../model/formsV2'
+import { DEFAULT_THEME } from '../model/formsV2'
+import { stubElementScrollIntoView } from '../../../test/stubScrollTo'
 import SettingsTab from './SettingsTab'
 
 const CHOICE: FormV2['questions'][number] = {
@@ -66,21 +70,52 @@ describe('SettingsTab', () => {
     expect(harness.go).toHaveBeenCalledWith('questions', ['q_reason'])
   })
 
-  it('warns when the text on the background is hard to read, and not when it is not', () => {
-    const low = renderWithDraft(<SettingsTab />, sampleForm({ theme: { primary_color: '#8e48ff', background_color: '#ffffff', text_color: '#999999', border_radius: '8px' } }))
-    expect(screen.getByRole('note')).toHaveTextContent('Text on this background is 2.8:1, below 4.5:1: hard to read for many people.')
+  it('shows Appearance second, the style editor with its own preview', () => {
+    renderWithDraft(<SettingsTab />)
+    const titles = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    expect(titles.slice(0, 2)).toStrictEqual(['General', 'Appearance'])
+    const appearance = screen.getByRole('region', { name: 'Appearance' })
+    expect(within(appearance).getByRole('group', { name: 'Preset' })).toBeInTheDocument()
+    expect(within(appearance).getByTestId('preview-frame')).toHaveAccessibleName('Form preview, phone size, English')
+  })
+
+  it('notes text that is hard to read, and not text that is not', () => {
+    const low = renderWithDraft(<SettingsTab />, sampleForm({ theme: { ...DEFAULT_THEME, text_color: '#808080' } }))
+    expect(screen.getByRole('note')).toHaveTextContent("Text on the background is 3.9:1, below 4.5:1: many people can't read it.")
     low.unmount()
     renderWithDraft(<SettingsTab />)
-    expect(screen.queryByText(/hard to read for many people/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
   it('writes a theme colour into the draft', async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<SettingsTab />)
-    const field = screen.getByRole('textbox', { name: 'Primary colour' })
+    const field = screen.getByRole('textbox', { name: 'Primary' })
     await user.clear(field)
     await user.type(field, '#123456')
     expect(harness.probe.current?.form.theme.primary_color).toBe('#123456')
+  })
+
+  it('says which card is in view in its anchor list', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<SettingsTab />)
+    const anchors = within(screen.getByRole('navigation', { name: 'Settings sections' }))
+    expect(anchors.getByRole('link', { name: 'General' })).toHaveAttribute('aria-current', 'true')
+    await user.click(anchors.getByRole('link', { name: 'Appearance' }))
+    const current = ['General', 'Appearance'].map((name) => anchors.getByRole('link', { name }).getAttribute('aria-current'))
+    expect(current).toStrictEqual([null, 'true'])
+  })
+
+  it("opens on Appearance from a theme problem's Go to", () => {
+    const restore = stubElementScrollIntoView()
+    try {
+      renderWithDraft(<SettingsTab />, sampleForm(), { rest: ['appearance'] })
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+      const anchors = within(screen.getByRole('navigation', { name: 'Settings sections' }))
+      expect(anchors.getByRole('link', { name: 'Appearance' })).toHaveAttribute('aria-current', 'true')
+    } finally {
+      restore()
+    }
   })
 
   it('deletes the form only after naming it and its responses, then leaves for the list', async () => {

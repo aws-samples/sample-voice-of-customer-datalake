@@ -23,12 +23,16 @@ export interface MenuAnchor {
  * Place the fixed `menu` under `anchor`, flipped above it when there is no room below, and kept inside the
  * viewport: its left edge at the anchor's left (`start`), or its right edge at the anchor's right (`end`). An ancestor
  * with a transform or backdrop filter becomes the containing block of a fixed element, so where (0, 0) lands is
- * measured and corrected rather than assumed.
+ * measured and corrected rather than assumed. The menu is measured without its own transform: `.menu` scales in
+ * from 92 %, and a box measured mid-animation put a tall menu (the forms builder's type picker) 25 px off.
  */
 export function placeFixedMenu(menu: HTMLElement, anchor: MenuAnchor, align: 'start' | 'end'): void {
   menu.style.top = '0px'
   menu.style.left = '0px'
+  // (an important declaration outranks the running animation for this one synchronous measurement)
+  menu.style.setProperty('transform', 'none', 'important')
   const origin = menu.getBoundingClientRect()
+  menu.style.removeProperty('transform')
   const below = anchor.bottom + GAP
   const fitsBelow = below + origin.height <= window.innerHeight - EDGE
   const top = fitsBelow ? below : Math.max(EDGE, anchor.top - GAP - origin.height)

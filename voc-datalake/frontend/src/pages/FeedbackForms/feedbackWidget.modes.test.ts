@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   calls, clickNext, en, expectHeading, form, handle, heading, nextButton, renderPreview, renderWidget,
-  resetWidgetPage, screen, setHiddenFieldsForPage, submitted, typeText,
+  resetWidgetPage, screen, setHiddenFieldsForPage, submitted, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -114,7 +114,7 @@ describe("the respondent's language (D4)", () => {
 describe('the test link', () => {
   it('shows a TEST strip on every screen, asks the config with the token, and sends the token', async () => {
     const container = await renderWidget(form([QUESTION]), { test: 'tk_abc' })
-    const strip = container.querySelector('.voc-strip')
+    const strip = widgetRoot(container).querySelector('.voc-strip')
 
     expect([strip?.textContent, strip?.getAttribute('role')]).toStrictEqual(["TEST · Responses aren't counted", 'note'])
     expect(calls()[0]?.url).toBe('https://api.example.com/feedback-forms/f1/config?test=tk_abc')
@@ -124,7 +124,7 @@ describe('the test link', () => {
   it("reads `test=` from the API's own page, and says Check only when the config does", async () => {
     const container = await renderWidget(form([QUESTION], { test: { valid: true, record: 'drop' } }), {}, { path: `${IFRAME}?test=tk_abc` })
 
-    expect(container.querySelector('.voc-strip')?.textContent).toBe('TEST · Nothing is saved')
+    expect(widgetRoot(container).querySelector('.voc-strip')?.textContent).toBe('TEST · Nothing is saved')
   })
 
   it('opens a form that is Off (D2)', async () => {
@@ -136,13 +136,13 @@ describe('the test link', () => {
   it('says the link no longer works when the config says its token is wrong', async () => {
     const container = await renderWidget(form([QUESTION], { test: { valid: false } }), { test: 'tk_old' })
 
-    expect(container.querySelector('[role="status"]')?.textContent).toBe('This test link no longer works.')
+    expect(widgetRoot(container).querySelector('[role="status"]')?.textContent).toBe('This test link no longer works.')
   })
 
   it('shows no strip and sends no token on the live link', async () => {
     const container = await renderWidget(form([QUESTION]))
 
-    expect(container.querySelector('.voc-strip')).toBeNull()
+    expect(widgetRoot(container).querySelector('.voc-strip')).toBeNull()
     expect(await send(container)).not.toHaveProperty('test')
   })
 })
@@ -153,7 +153,7 @@ describe("the editor's preview", () => {
   it('shows "Preview · Nothing is sent", renders a form that is Off, and never fetches', () => {
     const container = renderPreview(TWO)
 
-    expect(container.querySelector('.voc-strip')?.textContent).toBe('Preview · Nothing is sent')
+    expect(widgetRoot(container).querySelector('.voc-strip')?.textContent).toBe('Preview · Nothing is sent')
     expect([heading(container), calls()]).toStrictEqual(['Anything else?', []])
   })
 
@@ -195,7 +195,7 @@ describe("the editor's preview", () => {
     handle().setLanguage('pl')
 
     expect([went, restarted, heading(container)]).toStrictEqual(['One more?', 'Anything else?', 'Coś jeszcze?'])
-    expect(container.querySelector('.voc-strip')?.textContent).toBe('Podgląd · Nic nie jest wysyłane')
+    expect(widgetRoot(container).querySelector('.voc-strip')?.textContent).toBe('Podgląd · Nic nie jest wysyłane')
   })
 
   it("takes postMessage from this page's own origin only", async () => {

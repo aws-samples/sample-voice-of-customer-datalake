@@ -4,12 +4,15 @@
  * Routing view, the precedence in one sentence, and the dimension defaults and tags every response carries.
  *
  * A form stores the category NAME (what the processor copies onto each response); a form saved with a config id
- * still resolves, and the next save stores the name. A name no longer configured is kept, never dropped.
+ * still resolves, and the next save stores the name. A name no longer configured is kept, never dropped, and said as
+ * a state beside the select ("No longer configured", warn, "Pick a configured category").
  *
  * @module pages/FeedbackForms/tabs/settings/CategoryRoutingSection
  */
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
+import clsx from 'clsx'
+import { AlertTriangle } from 'lucide-react'
 import DimensionDefaultsSection from '../../../../components/DimensionFields/DimensionDefaultsSection'
 import { useCategoriesConfig } from '../../../../hooks/useCategories'
 import { categoryLabel, subcategoryLabel } from '../../../../utils/displayLabels'
@@ -25,7 +28,48 @@ function findRouted<T extends { readonly id: string; readonly name: string }>(en
   return entries.find((entry) => entry.name === stored) ?? entries.find((entry) => entry.id === stored)
 }
 
-function FormCategory({ categories }: Readonly<{ categories: readonly Category[] }>) {
+/** A stored category the workspace no longer configures: a state, said beside the select (not inside an option). */
+function NotConfigured({ id }: Readonly<{ id: string }>) {
+  const { t } = useTranslation('feedbackForms')
+  return (
+    <p id={id} className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-text">
+      <span className="badge badge-warn inline-flex items-center gap-1"><AlertTriangle size={12} aria-hidden="true" />{t('settings.routing.notConfiguredBadge')}</span>
+      {t('settings.routing.pickConfigured')}
+    </p>
+  )
+}
+
+/** The form's category: the configured ones, and a stored name no longer among them (kept, and said as a state). */
+function CategorySelect({ id, categories, category, configured, loaded }: Readonly<{
+  id: string
+  categories: readonly Category[]
+  category: string
+  /** The stored category is one the workspace configures. */
+  configured: boolean
+  /** The categories were read (before then every stored name would look "no longer configured"). */
+  loaded: boolean
+}>) {
+  const { t } = useTranslation('feedbackForms')
+  const { update } = useDraft()
+  const kept = category !== '' && !configured
+  const stale = loaded && kept
+  return (
+    <div>
+      <label htmlFor={`${id}-category`} className="mb-1 block text-sm font-medium text-text">{t('settings.routing.category')}</label>
+      <select id={`${id}-category`} className={clsx('select', stale && 'border-warn')} value={category}
+        aria-describedby={stale ? `${id}-stale ${id}-hint` : `${id}-hint`}
+        onChange={(event) => update((current) => ({ ...current, category: event.target.value, subcategory: '' }))}>
+        <option value="">{t('settings.routing.none')}</option>
+        {categories.map((entry) => <option key={entry.id} value={entry.name}>{categoryLabel(entry.name, categories)}</option>)}
+        {kept && <option value={category}>{category}</option>}
+      </select>
+      {stale && <NotConfigured id={`${id}-stale`} />}
+      <p id={`${id}-hint`} className="mt-1 text-[12px] text-muted">{t('settings.routing.categoryHint')}</p>
+    </div>
+  )
+}
+
+function FormCategory({ categories, loaded }: Readonly<{ categories: readonly Category[]; loaded: boolean }>) {
   const { t } = useTranslation('feedbackForms')
   const { form, update } = useDraft()
   const id = useId()
@@ -36,16 +80,7 @@ function FormCategory({ categories }: Readonly<{ categories: readonly Category[]
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`${id}-category`} className="mb-1 block text-sm font-medium text-text">{t('settings.routing.category')}</label>
-          <select id={`${id}-category`} className="select" value={category}
-            onChange={(event) => update((current) => ({ ...current, category: event.target.value, subcategory: '' }))}>
-            <option value="">{t('settings.routing.none')}</option>
-            {categories.map((entry) => <option key={entry.id} value={entry.name}>{categoryLabel(entry.name, categories)}</option>)}
-            {category !== '' && selected === undefined && <option value={category}>{t('settings.routing.notConfigured', { name: category })}</option>}
-          </select>
-          <p className="mt-1 text-[12px] text-muted">{t('settings.routing.categoryHint')}</p>
-        </div>
+        <CategorySelect id={id} categories={categories} category={category} configured={selected !== undefined} loaded={loaded} />
         <div>
           <label htmlFor={`${id}-subcategory`} className="mb-1 block text-sm font-medium text-text">{t('settings.routing.subcategory')}</label>
           <select id={`${id}-subcategory`} className="select" value={subcategory} disabled={selected === undefined}
@@ -96,7 +131,7 @@ export default function CategoryRoutingSection() {
   const categories = data?.categories ?? []
   return (
     <div className="space-y-5">
-      <FormCategory categories={categories} />
+      <FormCategory categories={categories} loaded={data !== undefined} />
       <div className="space-y-2">
         <h3 className="text-sm font-semibold tracking-tight text-text-strong">{t('settings.routing.perOption')}</h3>
         <OptionRouting />

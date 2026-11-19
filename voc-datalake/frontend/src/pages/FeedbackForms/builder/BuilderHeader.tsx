@@ -1,7 +1,8 @@
 /**
  * @fileoverview The builder's header (UX §3.1): the internal name edited inline, the state chip (Off / Live / Not
  * saved yet, and Test link on), the problems chip, the save status (`role="status"`), Save / Publish / Update live
- * form and the ⋯ menu. On narrow screens the save buttons also sit in a StickyActionBar.
+ * form and the ⋯ menu. On a phone the save buttons sit in `BuilderActionBar` instead, which the page renders after
+ * the tab's content.
  *
  * @module pages/FeedbackForms/builder/BuilderHeader
  */
@@ -10,13 +11,17 @@ import type { KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Link } from 'react-router-dom'
-import { ChevronLeft, FlaskConical, Pencil, PowerOff, Radio } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, FlaskConical, Pencil, PowerOff, Radio } from 'lucide-react'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { saveIgnoringFailure } from '../../../components/UnsavedChangesGuard/useSnapshotGuard'
 import { useDraft } from './formDraftContext'
 import type { FormDraft } from './formDraftContext'
 import { FORMS_LIST_PATH } from './builderPaths'
+import { useBuilderUi } from './builderUi'
+import { goToProblem } from './problemText'
+import type { FormProblem } from '../model/validateForm'
+import { THEME_UNREADABLE } from './useFormDraft'
 import ProblemsPopover from './ProblemsPopover'
 import SaveButtons from './SaveButtons'
 import FormMenu from './FormMenu'
@@ -77,6 +82,13 @@ function savedText(t: TFunction<'feedbackForms'>, message: Extract<FormDraft['st
   }
 }
 
+/** A failed save in words: the server's reason, its refusal of an unreadable theme, or the generic message. */
+function failedText(t: TFunction<'feedbackForms'>, reason: string): string {
+  if (reason === 'save failed') return t('builder.save.failedGeneric')
+  if (reason === THEME_UNREADABLE) return t('builder.save.themeRefused')
+  return t('builder.save.failed', { reason })
+}
+
 /** The save status, in words (never only a tooltip): saved, saving, failed with Try again, or what blocks a save. */
 function SaveStatus() {
   const { t } = useTranslation('feedbackForms')
@@ -85,7 +97,7 @@ function SaveStatus() {
   if (status.kind === 'failed') {
     return (
       <p role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-danger">
-        {status.reason === 'save failed' ? t('builder.save.failedGeneric') : t('builder.save.failed', { reason: status.reason })}
+        {failedText(t, status.reason)}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => saveIgnoringFailure(draft.save)}>{t('builder.save.retry')}</button>
       </p>
     )
@@ -94,18 +106,71 @@ function SaveStatus() {
     if (status.kind === 'saving') return t('builder.save.saving')
     if (status.kind === 'saved') return savedText(t, status.message)
     if (draft.errors.length > 0) return t('builder.save.fixToSave', { count: draft.errors.length })
+    // An unreadable theme blocks only Publish: Save still works, and the line says both.
+    if (draft.publishErrors.length > 0) return t('builder.save.fixToPublishSaveWorks', { count: draft.publishErrors.length })
     return draft.dirty ? t('builder.save.unsaved') : ''
   })()
-  return <p role="status" className="text-[13px] text-muted">{text}</p>
+  const hardToRead = draft.problems.find((found) => found.code === 'themeUnreadableLive')
+  return (
+    <p role="status" className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
+      {text !== '' && <span>{text}</span>}
+      {hardToRead !== undefined && <HardToRead at={hardToRead.at} />}
+    </p>
+  )
+}
+
+/** A live form kept on its stored, unreadable theme (it saves, with the server's warning): a warning in words, with the
+ * way to its colours. */
+function HardToRead({ at }: Readonly<{ at: FormProblem['at'] }>) {
+  const { t } = useTranslation('feedbackForms')
+  const ui = useBuilderUi()
+  return (
+    <span className="inline-flex items-center gap-1 text-text">
+      <AlertTriangle size={14} aria-hidden="true" className="shrink-0 text-warn" />
+      {t('builder.save.themeHardToRead')}{' '}
+      <button type="button" className="link" onClick={() => goToProblem(ui, at)}>{t('builder.save.themeFix')}</button>
+    </span>
+  )
+}
+
+/** "‹ Feedback Forms": the way back to the list, above the header and above a form that could not load (F26). */
+export function BackToForms() {
+  const { t } = useTranslation('feedbackForms')
+  return (
+    <Link to={FORMS_LIST_PATH} className="link inline-flex items-center gap-1 text-[13px]">
+      <ChevronLeft size={14} aria-hidden="true" />{t('builder.back')}
+    </Link>
+  )
+}
+
+/**
+ * Whether the save buttons show anything: SaveButtons' table (Publish while the form is Off or new, Save beside it
+ * with edits, Update live form for a Live form with edits) leaves nothing only for a Live form without edits.
+ */
+function hasSaveButton(draft: FormDraft): boolean {
+  const live = draft.form.enabled && !draft.isNew
+  return !live || draft.dirty
+}
+
+/**
+ * The save buttons on a phone (below `sm`, where the header keeps only the ⋯): a StickyActionBar at the END of the
+ * builder, after the tab's content, so `sticky bottom-0` pins it to the bottom of the page while the tab scrolls (in
+ * the header it never stuck), and rendered only while a button shows, so no empty pill sits under the ⋯ (F15).
+ */
+export function BuilderActionBar() {
+  const draft = useDraft()
+  if (!hasSaveButton(draft)) return null
+  return (
+    <StickyActionBar className="justify-end sm:hidden">
+      <SaveButtons />
+    </StickyActionBar>
+  )
 }
 
 export default function BuilderHeader() {
-  const { t } = useTranslation('feedbackForms')
   return (
     <header className="space-y-2">
-      <Link to={FORMS_LIST_PATH} className="link inline-flex items-center gap-1 text-[13px]">
-        <ChevronLeft size={14} aria-hidden="true" />{t('builder.back')}
-      </Link>
+      <BackToForms />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 space-y-1.5">
           <FormName />
@@ -120,9 +185,6 @@ export default function BuilderHeader() {
           <FormMenu />
         </div>
       </div>
-      <StickyActionBar className="justify-end sm:hidden">
-        <SaveButtons />
-      </StickyActionBar>
     </header>
   )
 }

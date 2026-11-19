@@ -57,7 +57,11 @@ __all__ = [
 
 #: The keys a version 2 submission may carry; anything else is refused.
 RESPONSE_KEYS: Final = frozenset({'answers', 'hidden', 'form_revision', 'language', 'ending_id', 'test', 'form_id',
-                                  'page_url', 'dimensions', 'participant_token', 'custom_fields', 'session'})
+                                  'page_url', 'dimensions', 'participant_token', 'custom_fields', 'session', 'channel'})
+#: How the widget that sent a response runs (7.55.01, the forms list's "Link · Website script · Embedded"): the API's
+#: own page opened as it is, that page framed in another (the iframe snippet), or a script embed. Optional: a widget
+#: from before 7.55.01 sends none.
+CHANNELS: Final = ('link', 'iframe', 'script')
 #: The widget's random id of one visit (never stored with anything that names a person): the funnel leaves out a
 #: ``left`` beacon of a session that submitted.
 SESSION_ID: Final = re.compile(r'[A-Za-z0-9_-]{8,64}')
@@ -133,6 +137,8 @@ def check_envelope(body: Mapping[str, Any]) -> None:
     session = body.get('session')
     if session is not None and not (isinstance(session, str) and SESSION_ID.fullmatch(session)):
         raise _fail('session must be 8 to 64 letters, digits, _ or -')
+    if body.get('channel') is not None and body['channel'] not in CHANNELS:
+        raise _fail(f'channel must be one of: {", ".join(CHANNELS)}')
     _optional_str(body, 'form_id', 64)
 
 

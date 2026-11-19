@@ -66,6 +66,20 @@ describe('the question editor', () => {
     expect(harness.probe.current?.form.questions[0]?.logic).toStrictEqual([{ when: { op: 'includes_any', value: ['price'] }, then: { jump_to: 'end_thanks' } }])
   })
 
+  it('says a missing translation in one line under the Question field, and Translate opens that language', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_feedback" />, sampleForm({ languages: ['en', 'pl'] }))
+    expect(screen.getByText('Polski: 1 text missing')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Translate into Polski' }))
+    expect(harness.go).toHaveBeenCalledWith('languages', ['pl'])
+  })
+
+  it('keeps Logic and Advanced as compact sections under the editor’s heading', () => {
+    renderWithDraft(<LiveEditor id="q_feedback" />)
+    expect(screen.getByRole('heading', { name: 'Advanced' })).toHaveClass('text-sm')
+    expect(screen.getByRole('heading', { name: /^Logic/ })).toHaveClass('text-sm')
+  })
+
   it('focuses the Question field of a question just added', () => {
     requestFocus('q_feedback')
     renderWithDraft(<LiveEditor id="q_feedback" />)

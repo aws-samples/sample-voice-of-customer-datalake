@@ -42,6 +42,7 @@ from workspace_fixtures import WS, act_in_workspace
 
 import settings_handler
 from settings_handler import lambda_handler
+from shared import form_theme
 from shared.category_access import CategoryScope
 from shared.exceptions import AuthorizationError, ServiceError, ValidationError
 from shared.model_config import ALLOWED_MODEL_IDS, offered_picker_surfaces
@@ -288,7 +289,7 @@ class TestEveryServiceFailureIsLoggedAndNamed:
          'Failed to update problem resolution', 'Failed to update problem resolution'),
         ('GET', '/settings/brand', None, 'get_item', 'Failed to retrieve brand settings',
          'Failed to get brand settings: boom'),
-        ('PUT', '/settings/brand', {'brand_name': 'x'}, 'put_item', 'Failed to save brand settings',
+        ('PUT', '/settings/brand', {'brand_name': 'x'}, 'update_item', 'Failed to save brand settings',
          'Failed to save brand settings: boom'),
         ('PUT', '/settings/categories', {'categories': []}, 'put_item', 'Failed to save categories',
          'Failed to save categories config: boom'),
@@ -875,40 +876,106 @@ class TestTheModelSettingsRow:
 
 # ── Brand ────────────────────────────────────────────────────────────────────
 
+def _brand_write(table: MagicMock) -> tuple[str, dict]:
+    """The brand save's UpdateItem (the config version's bump is another): its expression and what it sets, by name."""
+    writes = [c.kwargs for c in table.update_item.call_args_list if c.kwargs['Key'] == BRAND_KEY]
+    assert len(writes) == 1
+    kwargs = writes[0]
+    names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
+    written = {names[name]: values[name.replace('#', ':')] for name in names
+               if name.replace('#', ':') in values}
+    return kwargs['UpdateExpression'], written
+
+
+#: The workspace's form brand as stored and read: every field of a form theme (shared/form_theme.py).
+FORM_BRAND = {'primary_color': '#0552c2', 'background_color': '#ffffff', 'text_color': '#000000',
+              'border_radius': '16px', 'mode': 'auto',
+              'dark': {'primary_color': '#00d4ff', 'background_color': '#000000', 'text_color': '#ffffff'},
+              'font': 'rounded', 'text_size': 'default'}
+
+
 class TestBrand:
     def test_a_row_missing_every_field_reads_as_the_defaults(self, route, table):
         table.get_item.return_value = {'Item': BRAND_KEY}
         response, payload = route('GET', '/settings/brand')
         assert response['statusCode'] == 200
-        assert payload == {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
+        assert payload == {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': [],
+                           'form_theme': None}
         table.get_item.assert_called_once_with(Key=BRAND_KEY)
 
     @pytest.mark.usefixtures('fixed_now')
-    def test_a_partial_save_writes_the_whole_row_with_defaults(self, route, table):
+    def test_a_partial_save_writes_every_brand_field_with_defaults(self, route, table):
         response, payload = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
         assert response['statusCode'] == 200
         assert payload == {
             'success': True, 'message': 'Brand settings saved',
             'settings': {'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []},
         }
-        table.put_item.assert_called_once_with(Item={
-            **BRAND_KEY, 'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [],
-            'urls_to_track': [], 'updated_at': FIXED_NOW_ISO,
-        })
+        expression, written = _brand_write(table)
+        assert written == {'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [], 'urls_to_track': [],
+                           'updated_at': FIXED_NOW_ISO}
+        # Never the form brand: a full brand save keeps the stored one.
+        assert 'REMOVE' not in expression
+        table.put_item.assert_not_called()
 
     def test_a_full_save_echoes_every_field(self, route, table):
         body = {'brand_name': 'Acme', 'brand_handles': ['@acme'], 'hashtags': ['#acme'],
                 'urls_to_track': ['https://acme.test']}
         _, payload = route('PUT', '/settings/brand', body)
         assert payload['settings'] == body
-        item = table.put_item.call_args.kwargs['Item']
-        assert {k: item[k] for k in body} == body
+        _, written = _brand_write(table)
+        assert {k: written[k] for k in body} == body
 
     def test_a_save_without_a_name_stores_an_empty_name(self, route, table):
         _, payload = route('PUT', '/settings/brand', {'hashtags': ['#acme']})
         assert payload['settings'] == {'brand_name': '', 'brand_handles': [], 'hashtags': ['#acme'],
                                        'urls_to_track': []}
-        assert table.put_item.call_args.kwargs['Item']['brand_name'] == ''
+        assert _brand_write(table)[1]['brand_name'] == ''
+
+
+class TestTheFormBrand:
+    """The workspace's feedback-form brand (``form_theme`` on the brand row): the forms builder's "Your brand"."""
+
+    def test_it_reads_whole_and_null_when_none_was_saved(self, route, table):
+        table.get_item.return_value = {'Item': {**BRAND_KEY, 'brand_name': 'Acme',
+                                                'form_theme': {'primary_color': '#0552c2'}}}
+        payload = route('GET', '/settings/brand')[1]
+        assert payload['form_theme'] == {**form_theme.default_theme(), 'primary_color': '#0552c2'}
+        table.get_item.return_value = {'Item': {**BRAND_KEY, 'brand_name': 'Acme'}}
+        assert route('GET', '/settings/brand')[1]['form_theme'] is None
+
+    @pytest.mark.usefixtures('fixed_now')
+    def test_a_put_of_only_the_form_theme_sets_only_it(self, route, table):
+        response, payload = route('PUT', '/settings/brand', {'form_theme': {**FORM_BRAND, 'text_size': None}})
+        assert response['statusCode'] == 200
+        assert payload['settings'] == {'form_theme': FORM_BRAND}
+        expression, written = _brand_write(table)
+        assert written == {'form_theme': FORM_BRAND, 'updated_at': FIXED_NOW_ISO}
+        assert 'REMOVE' not in expression
+
+    def test_a_null_form_theme_removes_it(self, route, table):
+        route('PUT', '/settings/brand', {'form_theme': None})
+        expression, written = _brand_write(table)
+        assert expression.endswith(' REMOVE #theme')
+        assert set(written) == {'updated_at'}
+
+    def test_a_full_brand_save_that_names_one_sets_both(self, route, table):
+        route('PUT', '/settings/brand', {'brand_name': 'Acme', 'form_theme': FORM_BRAND})
+        _, written = _brand_write(table)
+        assert (written['brand_name'], written['form_theme']) == ('Acme', FORM_BRAND)
+
+    @pytest.mark.parametrize('theme', ['red', {'primary_color': 'red;x:y'}, {'font': 'Comic Sans'}, {'size': 'L'}])
+    def test_a_form_theme_is_checked_like_a_form_s_and_nothing_is_written(self, route, table, theme):
+        response, payload = route('PUT', '/settings/brand', {'form_theme': theme})
+        assert response['statusCode'] == 400
+        assert payload['error'].startswith('form_theme')
+        table.update_item.assert_not_called()
+
+    def test_only_the_workspace_s_admins_save_it(self, monkeypatch, route, table):
+        act_in_workspace(monkeypatch, settings_handler, 'editor')
+        response, _ = route('PUT', '/settings/brand', {'form_theme': FORM_BRAND})
+        assert response['statusCode'] == 403
+        table.update_item.assert_not_called()
 
 
 # ── Categories ───────────────────────────────────────────────────────────────
@@ -1614,12 +1681,12 @@ class TestTheBrandWithoutAWorkspace:
     def test_put_is_the_deployment_admins_and_writes_the_deployment_row(self, route, table):
         response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
         assert response['statusCode'] == 200
-        assert table.put_item.call_args.kwargs['Item']['pk'] == 'SETTINGS#brand'
+        assert table.update_item.call_args_list[0].kwargs['Key'] == {'pk': 'SETTINGS#brand', 'sk': 'config'}
 
     def test_put_is_refused_to_a_user_outside_the_admins_group(self, route, table):
         response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'}, claims=USER)
         assert response['statusCode'] == 403
-        table.put_item.assert_not_called()
+        table.update_item.assert_not_called()
 
 
 @pytest.mark.parametrize(('role', 'status'), [('viewer', 403), ('editor', 403), ('admin', 200)])
@@ -1628,7 +1695,7 @@ def test_in_a_workspace_only_its_admins_change_the_brand(monkeypatch, route, tab
     act_in_workspace(monkeypatch, settings_handler, role)
     response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
     assert response['statusCode'] == status
-    assert table.put_item.called is (status == 200)
+    assert table.update_item.called is (status == 200)
 
 
 def test_the_brand_s_write_resolves_the_role_fresh_and_its_read_from_the_cache(monkeypatch, route, table):

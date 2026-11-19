@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   answersOf, backButton, clickNext, clickStart, en, expectHeading, form, heading, nextButton, pickByKey, renderWidget,
-  resetWidgetPage, screen, submitted, typeText,
+  resetWidgetPage, screen, submitted, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -240,7 +240,7 @@ describe('Back and the path', () => {
 describe('progress', () => {
   /** The progress bar's words. */
   function progress(container: HTMLElement): string | null {
-    return container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext') ?? null
+    return widgetRoot(container).querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext') ?? null
   }
 
   it('counts the longest path left, and shrinks when the logic skips ahead', async () => {
@@ -254,7 +254,7 @@ describe('progress', () => {
     clickNext(container)
 
     expect([first, progress(container)]).toStrictEqual(['Question 1 of 4', 'Question 2 of 2'])
-    expect(container.querySelector('.voc-live')?.textContent).toBe('Question 2 of 2')
+    expect(widgetRoot(container).querySelector('.voc-live')?.textContent).toBe('Question 2 of 2')
   })
 
   it('counts an "Otherwise" as the only way on (the next question is never reached by no match)', async () => {
@@ -265,13 +265,13 @@ describe('progress', () => {
 
   it('is hidden on the welcome card and the ending', async () => {
     const container = await renderWidget(form([open('q_a', 'First')], { welcome: { enabled: true, title: en('Hi') } }))
-    const onWelcome = container.querySelector<HTMLElement>('[role="progressbar"]')?.hidden
+    const onWelcome = widgetRoot(container).querySelector<HTMLElement>('[role="progressbar"]')?.hidden
     clickStart(container)
-    const onQuestion = container.querySelector<HTMLElement>('[role="progressbar"]')?.hidden
+    const onQuestion = widgetRoot(container).querySelector<HTMLElement>('[role="progressbar"]')?.hidden
     clickNext(container)
     await expectHeading(container, 'Thanks!')
 
-    expect([onWelcome, onQuestion, container.querySelector<HTMLElement>('[role="progressbar"]')?.hidden]).toStrictEqual([true, false, true])
+    expect([onWelcome, onQuestion, widgetRoot(container).querySelector<HTMLElement>('[role="progressbar"]')?.hidden]).toStrictEqual([true, false, true])
   })
 })
 

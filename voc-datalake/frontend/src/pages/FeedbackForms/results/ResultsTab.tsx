@@ -132,7 +132,7 @@ export default function ResultsTab() {
   const shown: View = rest[0] === 'responses' ? 'responses' : 'summary'
   const setFilters = (next: ViewFilters) => setParams(writeFilters(params, next), { replace: true })
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmented label={t('results.view')} value={shown} onChange={(next) => go('results', next === 'responses' ? ['responses'] : [])}
           choices={[{ value: 'summary', label: t('results.summary'), icon: BarChart3 }, { value: 'responses', label: t('results.responsesView'), icon: Rows3 }]} />

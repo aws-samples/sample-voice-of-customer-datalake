@@ -39,7 +39,11 @@ describe('AiDraftBanner', () => {
   it('always shows the warnings, and goes to the ending one names', async () => {
     const user = userEvent.setup()
     const harness = renderAiDraft()
-    await user.click(screen.getByRole('button', { name: 'Go to' }))
+    const goTo = screen.getByRole('button', { name: 'Go to' })
+    // (inline, right after its sentence, as a link: at the row's end it sat about 500 px away from it)
+    expect(goTo).toHaveClass('link')
+    expect(goTo.parentElement?.textContent.endsWith(' Go to')).toBe(true)
+    await user.click(goTo)
     expect(harness.go).toHaveBeenCalledWith('questions', ['end', 'end_thanks'])
   })
 

@@ -178,6 +178,22 @@ function funnelOf(item, rows) {
   return { opened, left };
 }
 
+/**
+ * The forms list's card figure (forms_v2_results.py `headline`): the first measuring question's NPS score, CSAT % or
+ * average (rating, CES) over the real responses, with the count it is over; null without such a question or answer.
+ */
+export function headlineOf(item, allRows) {
+  const question = (item.questions ?? []).find((candidate) => SCALES.includes(candidate.type));
+  if (question === undefined) return null;
+  const answered = allRows.filter((row) => !row.is_test)
+    .map((row) => ({ value: fitting(question, row.answers?.[question.id]) }))
+    .filter(({ value }) => value !== undefined);
+  if (answered.length === 0) return null;
+  const result = scaleResult(question, answered);
+  const value = question.type === 'nps' || question.type === 'csat' ? result[question.type].score : result.average;
+  return { question_id: question.id, type: question.type, value, count: answered.length, scale_max: result.scale_max };
+}
+
 /** GET …/results without its envelope (the route adds form_id, revision and include_test). */
 export function formResults(item, allRows, params) {
   const rows = filteredResponses(allRows, params);

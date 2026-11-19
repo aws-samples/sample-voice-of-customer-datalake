@@ -129,6 +129,170 @@ templates, at `voc-datalake/templates/orchestration/images/`, with `npm run imag
 - A scope that runs a stored skill version keeps it, without the library: it gets it once a person accepts the newer
   template (Skills, "Template updated").
 
+## [7.55.01] - 2026-11-19
+
+The Feedback Forms v2 UX audit (28 findings), fixed. The form now draws itself apart from the page it lands on, so
+the builder's preview, the template picker's preview and a customer's script embed on a dark site show exactly what
+respondents get. The in-pane preview is an honest phone, and a pop-out window shows the draft at real sizes. A form's
+colours become a Style panel beside the preview, with presets, a dark palette and Auto mode, fonts, sizes and a live
+contrast table; unreadable text is refused at publish and on a live form's colour change, in the editor and on the
+server, only warned about on a live form kept on the theme it already has, and corrected in the widget. The
+assistant button no longer covers the preview's Next, the phone's Next bar really sticks, nothing overflows at
+390 px, and the Share tab's script embed works as pasted, from a static file of the app's own CloudFront.
+
+### Fixed
+
+- **The widget is isolated from the host page** (F1, F2; `lambda/api/static/feedback-widget.js`):
+  - it draws in an open shadow root of its container (`container.shadowRoot`), with its own reset (an adopted
+    stylesheet, else a `<style>`) and one inner root, `.voc-root`; every colour and inherited text property is also
+    inline, so a browser without Shadow DOM, a container that cannot host one (a `<form>`: the light DOM then), or a
+    page whose CSP blocks the stylesheet still gets the theme's form; the container's own styles and classes are left
+    alone;
+  - checkboxes and radios are drawn by the widget (a 20 px box in the option-edge colour, the primary fill and an
+    on-primary tick), the real inputs kept, hidden, for the keyboard and screen readers; `accent-color` is gone; the
+    placeholder is blended to 4.5:1; keys and pointer handling sit on the shadow root (`composedPath`);
+  - the iframe page and the mock's copy keep no reset of their own (`html, body {margin: 0}` and the container's
+    height); the widget sets `<html>`'s background and `color-scheme` there.
+- **The phone's Next bar sticks** (F6): the sticky element is the bar itself (`.voc-nav-bar`, a child of the screen),
+  the submit notice above the buttons; at 375 × 667 Next is at y 603–655 (it was at 688, below the fold).
+- **Phone / Desktop is gone** (F3): the pane shows a 390 px logical phone scaled to fit ("Phone · 390 × 394 · 89 %"),
+  as tall as the window leaves (at least 320 px in the full-height builder, 480 elsewhere); the toolbar is Language ·
+  Restart · Start here · Style · Open in window ▾; from 1600 px the preview column is `minmax(22rem, 28rem)`; the
+  duplicate "Preview · nothing is sent" caption goes (F21).
+- **The assistant button keeps clear** (F4; `components/StickyActionBar/actionBarRegistry.ts`, `assistant/bubble/`):
+  keep-clear zones, `lift` (the save bars) and `beside` (the builder's and the picker's preview), so the launcher
+  stands beside the preview instead of on its Next (measured at 1280 × 800, 1440 × 900 and 1920 × 1080, never
+  overlapping); a dragged spot stays the person's unless it covers a zone. Below md the builder hides the launcher
+  and its ⋯ menu has **Ask the assistant**.
+- **No sideways overflow at 390 px** (F7): the picker (669 px wide before), a template's preview (425 px) and Results ›
+  Responses (649 px, now a card per response below md) are 390 on all twelve pages the audit measured.
+- **The Share tab's script embed works** (F8): the snippet is the container, `<script
+  src="<app origin>/widget/feedback-widget.js">` and `VoCFeedbackForm.init({…})` (hidden-field placeholders as
+  strings, the test token in Test mode); the in-app SDK snippet likewise.
+- **The Questions tab scrolls once** (F9): from lg it is a full-height page whose panes each scroll; the Add question
+  type menu and every builder ⋯ menu open fixed, in a portal (`utils/fixedMenu.ts` now measures a menu without its
+  scale-in transform), never clipped by their pane; the type menu gains type-ahead.
+- **Turning a Live form with responses Off asks first** (F10).
+- **The preview follows every card** (F11): the welcome screen (while on) and the endings too (`goTo('welcome')`,
+  `goTo('end:<id>')`), and Start here works for all three.
+- **Flow's false "goes anyway" note** (F12): a rule is noted only when everyone it catches would go to the same place
+  without it, the question's Otherwise target when it has one (`paths.noMatchTarget`), and no later rule could send
+  them elsewhere; new words, and an ending's own.
+- **Question cards** (F13, F14, F18's clamp): 8 px apart, with an insertion line and a 24 px "+" on hover or focus
+  in place of the reserved gap, and Add question below in each card's ⋯; the selected card's secondary text in
+  `text-text` (it was 4.06:1); the headline's two-line clamp works; the welcome screen is a real card with its On /
+  Off badge.
+- **Narrow builder** (F15): the save bar renders only when a button shows, at the end of the tab body, so it sticks;
+  the tab row shows that it scrolls (an end fade and scroll buttons, `IconTabs` `scrollLabels`, with the run
+  workspace's strip helpers moved to `components/TabStrip/`); Preview opens the preview window in a new tab.
+- **The iframe embed grows to the form** (F16): framed on its own page, the widget posts `{type: 'voc-form-height',
+  height}` to its parent, and the iframe snippet carries a resizer that takes it only from that frame and the API's
+  origin (a plain 480 px frame without script).
+- The template cards (F18): three chips in one row then "+N", horizontal cards, one column below 2xl, two at 2xl.
+- `CollapsibleSection` `size="sm"` for Logic and Advanced (F19); the translation notice is one line under the
+  Question field (F20); options keep one width with the jump marker's column reserved, and the Routing view stacks
+  on a column narrower than 40 rem (F28). Room for the editor (F28): from lg, Hide preview / Show preview, remembered
+  in the browser, and while the preview window is open the in-pane preview collapses on its own and the editor
+  takes its width, back when the window closes (the window says `alive` and `closed` on its channel).
+- The forms list (F22): one link per card (`link-quiet`, a new recipe in the design system), a three-zone layout, the
+  headline figure as a number ("+32" NPS, "84 %" CSAT, "4.2 / 5"), **Last response: 2 hr. ago** (the list stats'
+  new `last_response_at`) and the ways it was answered in the last 30 days ("Link · Website script · Embedded"),
+  a Live / Off label that keeps its width, skeleton cards while loading, a template-led
+  empty state, a dismissible info banner, and from seven forms a search, a state filter and a sort.
+- The switch's Off track has a 3:1 `--control-border` edge, app-wide (F23; it was 1.27:1 on light).
+- The picker has one language control, "Create in"; Describe says "in English · change"; "Drafting…" is said once
+  less, and Runs is `aria-disabled` while drafting (F24). The AI draft banner's Go to sits after its sentence; the
+  drafter is asked for a short title (2 to 6 words).
+- The Test tab's recent responses show their day ("Today 10:20", "Nov 18, 11:25 PM"), with Open beside Copy and QR
+  (F25); a builder that could not load has "‹ Feedback Forms" (F26); a new form's Save says why it is off ("Fix 1
+  problem to save. Go to") on Share, Test, Results and Hidden fields (F27).
+- Languages: Add language is a menu button, Change… a ghost button by its language. Hidden fields: Live | Test on its
+  own line, "Values for". Settings: a category no longer configured is a `badge-warn` with "Pick a configured
+  category."; the anchor list says which card is in view (`aria-current`). Results: "Completion 48 % · largest drop at
+  Q2" in the summary, and the funnel marks a drop only between steps every path passes (`results/funnelSteps.ts`).
+- The StickyActionBar's `bar` is an opaque `bg-card`, never `backdrop-blur`: a backdrop filter trapped a confirmation
+  opened from the phone save bar inside the bar.
+
+### Added
+
+- **The preview window** (`frontend/form-preview.html`, the build's second page, `preview/window/`): the same widget
+  file in preview mode at Phone 390 × 844, Rotate, Tablet 768 × 1024, Desktop 1280 × 800 or "Embedded, 480 px
+  tall", with Restart and Language, no app CSS and no app chrome; it never submits. It follows the unsaved draft, the
+  selected card, the language and the palette over `BroadcastChannel('voc-form-preview:<session>')` (same origin by
+  construction; the window says `ready` until a draft arrives), its session kept per form in `sessionStorage` so a
+  builder reload keeps talking to it; the list card's ⋯ › Preview opens it on the saved form. No CloudFront or CSP
+  change: a top-level window on the app's own origin. `FullScreenPreview` is retired; `/feedback-forms/<id>/preview`
+  redirects to the builder.
+- **Style** (F5; `pages/FeedbackForms/theme/`): from the preview toolbar (the editor column from xl, a side sheet
+  with the phone below), and Settings › **Appearance**, now the second card with its own preview: presets VoC light,
+  VoC dark, High contrast and **Your brand**; Mode Light | Dark | Auto (and which palette is being edited, which the
+  preview then shows, "Showing: Dark"); primary, background and text, each a swatch with a 3:1 edge and a hex field
+  that says why it refuses; the derived option edge; corners 0 / 4 / 8 / 16 px and a 0–24 px slider; font (System,
+  Same as your page, Serif, Rounded, Monospace: system stacks only); size Default | Large (18 px). A **live contrast
+  table** for text (4.5:1), primary (3:1), button label (4.5:1) and option edge (3:1), each with an icon, its ratio and
+  "AA" / "Below AA", and one-click suggestions that move the colour in OKLCH lightness only (`#f5c518` → `#b39018`,
+  `#9ca3af` → `#6f7681`).
+- **The theme's new fields** (schema version 2, all optional with defaults, read-time migration; `shared/form_theme.py`,
+  `model/formsV2.ts`): `mode` (`light` | `dark` | `auto`, default `light`), `dark` (`{primary_color,
+  background_color, text_color}`, default VoC dark `#bd8fff` / `#19161d` / `#f2f1f4`), `font` (`system` |
+  `inherit` | `serif` | `rounded` | `mono`, default `system`) and `text_size` (`default` | `large`). The top-level
+  colours are the light palette. A stored theme is answered with the defaults filled in (`with_defaults`) and written
+  back whole on its next save.
+- **One set of contrast rules, three places:** the editor (`theme/contrast.ts`, `validateForm.ts`: text under 3:1 is
+  an error that blocks Publish and a live form's colour change but never Save, and a warning, `themeUnreadableLive`,
+  on a live form kept on the theme it already has, shown in the Style panel and the header's save status, "This
+  form's text is hard to read. Fix its colours"; 3–4.5:1 and the other pairs are warnings), the server
+  (`shared/forms_v2.py` `validate_publishable` on `shared/form_theme.py`'s helpers, with text under 3:1 in a palette
+  the form can show: a write that turns a form live, or changes a live form's theme, is `400 theme_unreadable` with
+  the palettes and ratios; any other write to a live form already on that theme is saved and answers `warnings:
+  ['theme_unreadable']`) and the widget (`safeContrast`: text under 3:1 is drawn white or `#19161d`; the option edge raised from 55 %
+  until 3:1; a primary under 3:1 gets its ring and selected edges in the text colour).
+- **The widget's theme engine**: `mode` with `prefers-color-scheme` followed live, the dark palette, `color-scheme`,
+  the font stacks (`inherit` for a script embed only), large text; a seeded Shuffle in the preview (`preview.seed`,
+  stable across Restart) with "Shuffled for each respondent" under the frame, and `preview.scheme` /
+  `setScheme('light' | 'dark' | null)`.
+- **The workspace form brand**: `form_theme` on the existing `/settings/brand` row (no new route): `GET` answers it
+  (`null` when none), a `PUT` of only `form_theme` sets just that (`null` removes it), a brand `PUT` keeps it; saved
+  by the workspace's admins ("Save as brand…", off with the reason for anyone else). New forms from a template, Blank,
+  Describe or the assistant's draft start on it.
+- **The widget as a static file**: `/widget/feedback-widget.js` on the SPA distribution (`lib/stacks/core-cdn.ts`, a
+  `/widget/*` behavior on the SPA bucket's origin, `WidgetHeadersPolicy`: CORS GET/HEAD from any origin without
+  credentials, `Cache-Control: public, max-age=300`, `Cross-Origin-Resource-Policy: cross-origin` and the SPA's own
+  security headers), built from the one source by `frontend/widgetAssetPlugin.ts` (a release banner on its first
+  line; the dev server serves it too) and deployed with the frontend by either path. The address is stable and
+  unversioned on purpose (both deploy paths prune, so a hashed name would break pasted snippets); no SRI, since the
+  app uses none and a file replaced each release cannot carry a fixed hash (docs/feedback-forms.md says how a site
+  that needs SRI can host its own copy). `lib/stacks/core-stack.test.ts` allows exactly this one unsigned path.
+- **Publishing with a language half translated asks first** (F17): "English respondents will see 5 texts in
+  Polski." with Publish anyway / Update anyway and Translate per language; the Share tab's Publish asks the same.
+- The list stats (`?include=stats` and `…/stats`) carry `last_response_at`, the latest counted response's
+  `source_created_at`, when one carries it, and `channels: {link?, iframe?, script?}`, each channel's latest response.
+- **Where a response was answered**: the widget sends `channel` (`link`: its own page opened as it is; `iframe`: that
+  page framed; `script`: a script embed), optional and one of the three in the API's request model
+  (`schemas/public-body-models.json`, `lib/stacks/api-request-models.ts`: a model change, no new resource) and in
+  `forms_v2_responses.check_envelope`; it is kept with the response (`metadata.form_channel`) and read back by the list
+  stats, so a submit writes nothing more. Test responses never count.
+
+### Changed
+
+- The synth-time frontend freshness check counts the widget source, `form-preview.html` and the widget plugin as
+  frontend inputs.
+- The design system records `link-quiet`, the switch's Off edge, keep-clear zones, the opaque save bar, the portalled
+  builder menus and `IconTabs` `scrollLabels` (docs/kiro-design-system.md); docs/feedback-forms.md the list, the
+  builder, the script embed and its asset, isolation, the preview and its window, the theme fields, the contrast rules
+  and the brand.
+
+### Upgrade notes
+
+- Deploy the frontend and VocCoreStack together: the Share tab's script embed names `/widget/feedback-widget.js`,
+  which the new `/widget/*` behavior serves (a deployment adds a response headers policy and a cache behavior to the
+  SPA distribution). Rebuild `frontend/dist` first: a widget edit now makes the old build stale for `cdk synth`.
+- A live form whose stored theme has text under 3:1 keeps saving: the save answers `warnings: ['theme_unreadable']`
+  and the builder says "This form's text is hard to read". Only a colour change that stays unreadable, or publishing
+  such a form again after turning it off, is refused; its respondents already get readable text from the widget.
+- Deploy VocApiStack before, or with, a frontend-only deploy (`npm run deploy:frontend`): the new widget sends
+  `channel`, which an API from before 7.55.01 refuses as an unknown field (the CDK deploy ships both in VocApiStack).
+
 ## [7.55.00] - 2026-11-18
 
 Feedback Forms become a form builder. A form is now a flow of questions (schema version 2): a welcome screen, 1 to

@@ -10,7 +10,7 @@ import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   backButton, calls, clickNext, clickStart, en, expectHeading, form, hidePage, leavePage, noticeText, renderPreview,
-  renderWidget, resetWidgetPage, sentBeacons, submissions, submitted, typeText,
+  renderWidget, resetWidgetPage, sentBeacons, submissions, submitted, typeText, widgetRoot,
 } from '../../test/feedbackWidgetHarness'
 import type { Question } from '../../test/feedbackWidgetHarness'
 
@@ -67,7 +67,7 @@ describe('the open', () => {
     clickNext(container)
     clickNext(container)
     await waitFor(() => expect(noticeText(container)).toContain('This form was updated'))
-    container.querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
+    widgetRoot(container).querySelector<HTMLButtonElement>('.voc-notice-action')?.click()
 
     await waitFor(() => expect(configReads()).toStrictEqual([
       'https://api.example.com/feedback-forms/f1/config', 'https://api.example.com/feedback-forms/f1/config',

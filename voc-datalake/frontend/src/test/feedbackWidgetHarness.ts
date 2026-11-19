@@ -6,12 +6,16 @@
  * `globalThis`, so its stubs (fetch, the browser's languages, matchMedia) are defined inside the script itself
  * and read their knobs from `<body data-*>`, which both realms share:
  * - `data-browser-language` / `data-browser-languages` (comma list): the browser's languages (default en-US);
- * - `data-media`: words the matchMedia stub matches ('reduce', 'fine');
+ * - `data-media`: words the matchMedia stub matches ('reduce', 'fine', 'dark'); `setDeviceDark` changes 'dark' and
+ *   fires the listeners the widget added (a device switching between light and dark);
  * - `data-config-mode="reject"`: the config fetch fails;
  * - `data-submit="reject"`: the submission fails at the network; `data-submit-status` / `data-submit-body`: its answer;
  * - `data-beacon="refuse"`: navigator.sendBeacon refuses (returns false), so the widget falls back to a keepalive fetch.
  * Every fetch is recorded on `<body data-calls>` (URL, method, parsed body), and every navigator.sendBeacon on
  * `<body data-sent-beacons>` (URL, parsed body).
+ *
+ * The widget draws in an open shadow root of its container (7.55.01): `widgetRoot(container)` is its inner root
+ * there, which every helper below queries, and `focused(container)` the element with the focus inside it.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -30,9 +34,12 @@ interface Call { url: string, method: string, body: Record<string, unknown> | nu
 interface WidgetHandle {
   setHiddenFields: (values: Record<string, unknown>) => void
   update: (config: Record<string, unknown>) => void
-  goTo: (questionId: string) => void
+  /** A question's id, 'welcome' or 'end:<ending id>'. */
+  goTo: (target: string) => void
   restart: () => void
   setLanguage: (language: string) => void
+  setScheme: (scheme: 'light' | 'dark' | null) => void
+  destroy: () => void
 }
 
 /**
@@ -64,7 +71,8 @@ function stubs(answer: unknown): string {
     "Object.defineProperty(navigator, 'language', { configurable: true, get: function () { var d = document.body.dataset; return 'browserLanguage' in d ? d.browserLanguage : 'en-US'; } });",
     "Object.defineProperty(navigator, 'languages', { configurable: true, get: function () { var d = document.body.dataset; if ('browserLanguages' in d) return d.browserLanguages ? d.browserLanguages.split(',') : []; return 'browserLanguage' in d ? [d.browserLanguage] : ['en-US']; } });",
     "Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: function (url, data) { var d = document.body.dataset; if (d.beacon === 'refuse') return false; var sent = JSON.parse(d.sentBeacons || '[]'); sent.push({ url: String(url), body: JSON.parse(String(data)) }); d.sentBeacons = JSON.stringify(sent); return true; } });",
-    "window.matchMedia = function (query) { var m = document.body.dataset.media || ''; var on = (query.indexOf('reduce') >= 0 && m.indexOf('reduce') >= 0) || (query.indexOf('pointer: fine') >= 0 && m.indexOf('fine') >= 0); return { matches: on, media: query, addListener: function () {}, removeListener: function () {} }; };",
+    // The listeners live on <body> (`__vocMedia`), so `setDeviceDark` can fire them from the test's realm.
+    "window.matchMedia = function (query) { var matches = function () { var m = document.body.dataset.media || ''; return (query.indexOf('reduce') >= 0 && m.indexOf('reduce') >= 0) || (query.indexOf('pointer: fine') >= 0 && m.indexOf('fine') >= 0) || (query.indexOf('prefers-color-scheme: dark') >= 0 && m.indexOf('dark') >= 0); }; var listeners = document.body.__vocMedia || (document.body.__vocMedia = []); var add = function (type, fn) { listeners.push({ query: query, fn: fn }); }; var remove = function (type, fn) { for (var i = listeners.length - 1; i >= 0; i--) if (listeners[i].fn === fn) listeners.splice(i, 1); }; return { get matches() { return matches(); }, media: query, addEventListener: add, removeEventListener: remove, addListener: function (fn) { add('change', fn); }, removeListener: function (fn) { remove('change', fn); } }; };",
     'window.fetch = function (url, init) {',
     '  var d = document.body.dataset;',
     "  var calls = JSON.parse(d.calls || '[]');",
@@ -115,8 +123,49 @@ export async function renderWidget(config: Record<string, unknown>, initOptions:
     EXPOSE(init)].join('\n'))
   const container = document.querySelector<HTMLElement>('#voc-feedback-form')
   if (container === null) throw new Error('no container')
-  await waitFor(() => expect(container.textContent).not.toBe(''))
+  // In the shadow root, or in the container itself where the page has no Shadow DOM.
+  await waitFor(() => expect((container.shadowRoot ?? container).querySelector('.voc-root')?.textContent ?? '').not.toBe(''))
   return container
+}
+
+/** The widget's inner root in the container's shadow root: the strip, the progress bar, the live region and the
+ * screen, or a status message. */
+export function widgetRoot(container: HTMLElement): HTMLElement {
+  const shadow = container.shadowRoot
+  if (shadow === null) throw new Error('the widget drew no shadow root')
+  return required(shadow.querySelector<HTMLElement>('.voc-root'), 'widget root')
+}
+
+/** The element with the focus inside the widget (null when the focus is elsewhere). */
+export function focused(container: HTMLElement): Element | null {
+  return container.shadowRoot?.activeElement ?? null
+}
+
+/** A listener the widget added on the matchMedia stub (`__vocMedia` on <body>). */
+interface MediaListener { readonly query: string, readonly call: (event: { matches: boolean, media: string }) => void }
+
+function schemeListeners(): MediaListener[] {
+  const raw: unknown = Reflect.get(document.body, '__vocMedia')
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((entry: unknown): MediaListener[] => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const query: unknown = Reflect.get(entry, 'query')
+    const fn: unknown = Reflect.get(entry, 'fn')
+    if (typeof query !== 'string' || !query.includes('prefers-color-scheme') || typeof fn !== 'function') return []
+    return [{ query, call: (event) => { Reflect.apply(fn, undefined, [event]) } }]
+  })
+}
+
+/** How many prefers-color-scheme listeners the widget has on the matchMedia stub. */
+export function schemeListenerCount(): number {
+  return schemeListeners().length
+}
+
+/** The device switches between light and dark (prefers-color-scheme): the stub's answer, then its listeners. */
+export function setDeviceDark(dark: boolean): void {
+  const words = (document.body.dataset.media ?? '').split(' ').filter((word) => word !== '' && word !== 'dark')
+  document.body.dataset.media = (dark ? [...words, 'dark'] : words).join(' ')
+  for (const listener of schemeListeners()) listener.call({ matches: dark, media: listener.query })
 }
 
 /** The editor's preview: the widget given `config` itself (`preview: {config}`), never fetching. */
@@ -162,8 +211,10 @@ export function resetWidgetPage(): void {
     if (name.startsWith('data-')) document.body.removeAttribute(name)
   }
   document.documentElement.removeAttribute('lang')
+  document.documentElement.removeAttribute('style')
   document.title = ''
   Reflect.deleteProperty(document, 'visibilityState')
+  Reflect.deleteProperty(document.body, '__vocMedia')
   window.history.replaceState(null, '', '/')
 }
 
@@ -221,7 +272,7 @@ function required<T extends Element>(element: T | null | undefined, what: string
 
 /** The screen on show (only one is in the page at a time). */
 export function screen(container: HTMLElement): HTMLElement {
-  return required(container.querySelector<HTMLElement>('.voc-screen'), 'screen')
+  return required(widgetRoot(container).querySelector<HTMLElement>('.voc-screen'), 'screen')
 }
 
 /** The heading of the screen on show (its question, the welcome title or the ending title). */
@@ -230,11 +281,11 @@ export function heading(container: HTMLElement): string {
 }
 
 export function nextButton(container: HTMLElement): HTMLButtonElement {
-  return required(container.querySelector<HTMLButtonElement>('.voc-next'), 'Next button')
+  return required(widgetRoot(container).querySelector<HTMLButtonElement>('.voc-next'), 'Next button')
 }
 
 export function backButton(container: HTMLElement): HTMLButtonElement {
-  return required(container.querySelector<HTMLButtonElement>('.voc-back'), 'Back button')
+  return required(widgetRoot(container).querySelector<HTMLButtonElement>('.voc-back'), 'Back button')
 }
 
 export function clickNext(container: HTMLElement): void {
@@ -242,17 +293,17 @@ export function clickNext(container: HTMLElement): void {
 }
 
 export function clickStart(container: HTMLElement): void {
-  required(container.querySelector<HTMLButtonElement>('.voc-start'), 'Start button').click()
+  required(widgetRoot(container).querySelector<HTMLButtonElement>('.voc-start'), 'Start button').click()
 }
 
 /** The error under the question on show ('' when none). */
 export function errorText(container: HTMLElement): string {
-  return container.querySelector('.voc-error')?.textContent ?? ''
+  return widgetRoot(container).querySelector('.voc-error')?.textContent ?? ''
 }
 
 /** The notice by the buttons (sending failed, refused, form changed). */
 export function noticeText(container: HTMLElement): string {
-  const notice = container.querySelector<HTMLElement>('.voc-submit-error')
+  const notice = widgetRoot(container).querySelector<HTMLElement>('.voc-submit-error')
   return notice === null || notice.hidden ? '' : notice.querySelector('span')?.textContent ?? ''
 }
 

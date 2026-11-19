@@ -1,6 +1,8 @@
 /**
  * @fileoverview The editor always shows the primary language (UX §3.4); when another of the form's languages misses
- * texts of this card, a line says so with Translate, which opens that language's translation view.
+ * texts of this card, one line under the Question field says so, "English: 2 texts missing · Translate", Translate
+ * opening that language's translation view. A line, not a block: it repeats on every card that misses texts, and the
+ * card's "en missing" badge already flags it in the list.
  *
  * @module pages/FeedbackForms/questions/TranslationBanner
  */
@@ -20,14 +22,20 @@ export default function TranslationBanner({ ownerId }: Readonly<{ ownerId: strin
     .filter((entry) => entry.count > 0)
   if (missing.length === 0) return null
   return (
-    <div className="space-y-1 rounded-lg border border-warn/30 bg-warn-subtle p-2.5 text-[13px] text-text">
-      {missing.map(({ lng, count }) => (
-        <p key={lng} className="flex flex-wrap items-center gap-2">
-          <Languages size={14} className="shrink-0 text-warn" aria-hidden="true" />
-          <span>{t('question.translationMissing', { primary: languageNames[form.language], language: languageNames[lng], count })}</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => go('languages', [lng])}>{t('question.translate')}</button>
-        </p>
-      ))}
-    </div>
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text">
+      <Languages size={13} className="shrink-0 text-warn" aria-hidden="true" />
+      {missing.map(({ lng, count }) => {
+        const language = languageNames[lng]
+        return (
+          <span key={lng} className="inline-flex flex-wrap items-center gap-1">
+            {t('question.translationLine', { language, count })}
+            <span aria-hidden="true">·</span>
+            <button type="button" className="link" aria-label={t('question.translateInto', { language })} onClick={() => go('languages', [lng])}>
+              {t('question.translate')}
+            </button>
+          </span>
+        )
+      })}
+    </p>
   )
 }

@@ -68,7 +68,9 @@
       "welcome": "欢迎卡片",
       "hidden": "隐藏字段 {{id}}",
       "language": "{{language}}",
-      "form": "表单"
+      "form": "表单",
+      "themeLight": "样式（浅色）",
+      "themeDark": "样式（深色）"
     },
     "otherProblems": "其他错误",
     "noQuestions": "表单至少需要一个问题。",
@@ -110,6 +112,12 @@
     "chipsLong": "标签适合简短的文字；过长的文字会换行。",
     "dropdownFew": "列表会一次显示所有选项；下拉菜单会将其隐藏。",
     "noCategory": "没有选项将反馈归入某个类别，表单本身也未设置类别：请在“设置 › 类别路由”中设置一个。",
+    "themeUnreadable": "背景上的文字对比度为 {{ratio}}:1，低于 3:1：受访者无法阅读。",
+    "themeUnreadableLive": "此表单的文字难以阅读（{{ratio}}:1，低于 3:1）。请修正其颜色；在此之前，其他更改仍会发布。",
+    "themeTextLow": "背景上的文字对比度为 {{ratio}}:1，低于 4.5:1：许多人无法阅读。",
+    "themePrimaryLow": "背景上的主色对比度为 {{ratio}}:1，低于 3:1：焦点环、进度和所选答案难以看清。",
+    "themeLabelLow": "在此主色上，白色和深色文字都不易阅读：{{ratio}}:1，低于 4.5:1。",
+    "blocksPublishOnly": "修复之前无法发布，但仍可保存。",
     "targetMissingQuestion": "此规则指向的问题已被删除。请选择它应前往的位置。",
     "targetMissingEnding": "此规则指向的结束页已被删除。请选择另一个结束页。",
     "targetBackwards": "只能向前跳转，而问题 {{number}} 现在位于此问题上方。请将其移到下方，或选择其他目标。",
@@ -120,7 +128,8 @@
     "opInvalid": "此问题无法这样比较。请选择其他条件。",
     "skippedOnRequired": "此问题为必填，永远不会被跳过：此规则永远不会执行。",
     "ruleNeverRuns": "此规则永远不会执行：规则 {{number}} 已匹配它会匹配的所有回答。",
-    "whereAnyway": "表单本来就会前往这里。"
+    "whereAnyway": "此规则不起作用：到达此规则的所有人本来就会前往问题 {{number}}。",
+    "whereAnywayEnding": "此规则不起作用：到达此规则的所有人本来就会看到结束页“{{title}}”。"
   },
   "logic": {
     "ops": {
@@ -212,6 +221,13 @@
       "saved": "已保存",
       "fixToSave_one": "修复 {{count, number}} 个错误后才能保存。",
       "fixToSave_other": "修复 {{count, number}} 个错误后才能保存。",
+      "fixToPublish_one": "修复 {{count, number}} 个错误后才能发布。",
+      "fixToPublish_other": "修复 {{count, number}} 个错误后才能发布。",
+      "fixToPublishSaveWorks_one": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
+      "fixToPublishSaveWorks_other": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
+      "themeRefused": "无法保存：已上线的表单需要受访者能读清的文字，与背景的对比度至少为 3:1。请在“样式”中更改颜色。",
+      "themeHardToRead": "此表单的文字难以阅读。",
+      "themeFix": "修正颜色",
       "save": "保存",
       "publish": "发布",
       "update": "更新已上线的表单",
@@ -226,9 +242,10 @@
     "menu": {
       "label": "更多表单操作",
       "improve": "用 AI 改进…",
+      "askAssistant": "询问助手",
       "discard": "放弃更改",
       "duplicate": "复制表单",
-      "preview": "全屏预览",
+      "preview": "在窗口中预览",
       "turnOff": "关闭",
       "delete": "删除表单…",
       "saveFirst": "请先保存表单。",
@@ -242,6 +259,15 @@
       "question": "问题“{{text}}”",
       "option": "选项“{{text}}”",
       "ending": "结束页“{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "在翻译不完整的情况下发布？",
+      "titleUpdate": "在翻译不完整的情况下更新已上线的表单？",
+      "line_one": "使用 {{language}} 的受访者将看到 {{count, number}} 条 {{primary}} 文本。",
+      "line_other": "使用 {{language}} 的受访者将看到 {{count, number}} 条 {{primary}} 文本。",
+      "publishAnyway": "仍然发布",
+      "updateAnyway": "仍然更新",
+      "translate": "翻译 {{language}}"
     },
     "confirmAiPublish": {
       "title": "发布此 AI 草稿？",
@@ -291,7 +317,9 @@
       "withProblems_one": "{{count, number}} 个错误",
       "withProblems_other": "{{count, number}} 个错误",
       "withMissing_one": "缺少 {{count, number}} 条翻译",
-      "withMissing_other": "缺少 {{count, number}} 条翻译"
+      "withMissing_other": "缺少 {{count, number}} 条翻译",
+      "scrollStart": "滚动到前面的标签页",
+      "scrollEnd": "滚动到更多标签页"
     },
     "shortcut": "按 Ctrl+S 或 ⌘+S 保存。"
   },
@@ -309,7 +337,14 @@
     "responses_one": "{{formatted}} 条回复",
     "responses_other": "{{formatted}} 条回复",
     "reading": "正在读取回复…",
-    "average": "平均 {{average}}（满分 {{max}}）",
+    "lastResponse": "最近回复：{{when}}",
+    "channels": {
+      "label": "回答渠道",
+      "link": "链接",
+      "script": "网站脚本",
+      "iframe": "嵌入"
+    },
+    "average": "{{average}} / {{max}}",
     "results": "结果",
     "actions": "{{name}} 的更多操作",
     "edit": "编辑",
@@ -324,7 +359,18 @@
     "unnamed": "未命名表单",
     "fixFirst_one": "发布前请修复 {{count, number}} 个错误。",
     "fixFirst_other": "发布前请修复 {{count, number}} 个错误。",
-    "open": "打开"
+    "open": "打开",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "平均评分",
+      "ces": "平均费力度（CES）"
+    },
+    "turnOff": {
+      "title": "要关闭“{{name}}”吗？",
+      "message": "其链接和嵌入将向接下来的答题者显示“反馈表单不可用。”",
+      "confirm": "关闭"
+    }
   },
   "configureApiFirst": "请在“管理 → 品牌与外观”中配置API端点以管理反馈表单。",
   "deleteConfirmLabel": "删除",
@@ -349,12 +395,39 @@
   },
   "empty": {
     "title": "还没有反馈表单",
-    "description": "创建您的第一个表单以开始收集客户反馈。"
+    "description": "创建您的第一个表单以开始收集客户反馈。",
+    "startsLabel": "开始方式",
+    "describeHint": "说明您想了解什么，AI 会起草问题。"
   },
   "infoBanner": {
     "title": "反馈表单的工作方式",
     "item1": "每个表单都有自己的链接、嵌入代码和测试链接。",
-    "item2": "回复会经过 AI 增强处理（情感、角色等）；测试回复则不会。"
+    "item2": "回复会经过 AI 增强处理（情感、角色等）；测试回复则不会。",
+    "dismiss": "隐藏此说明"
+  },
+  "list": {
+    "toolbarLabel": "查找表单",
+    "search": "搜索表单",
+    "searchPlaceholder": "按名称搜索",
+    "stateLabel": "显示",
+    "states": {
+      "all": "全部",
+      "live": "已上线",
+      "off": "已关闭",
+      "test": "测试链接已开启"
+    },
+    "sortLabel": "排序",
+    "sorts": {
+      "newest": "最新",
+      "lastResponse": "最近回复",
+      "name": "名称",
+      "responses": "回复数"
+    },
+    "shown_one": "{{count, number}} 个表单中的 {{shown, number}} 个",
+    "shown_other": "{{count, number}} 个表单中的 {{shown, number}} 个",
+    "noMatchTitle": "没有匹配的表单",
+    "noMatch": "没有表单符合此搜索或筛选条件。",
+    "clear": "显示所有表单"
   },
   "subtitle": "创建可嵌入的表单来收集客户反馈",
   "title": "反馈表单",
@@ -957,13 +1030,9 @@
       "rules_other": "{{count, number}} 条规则",
       "endings_one": "{{count, number}} 个结束页",
       "endings_other": "{{count, number}} 个结束页",
-      "device": "预览尺寸",
-      "phone": "手机",
-      "desktop": "桌面",
       "restart": "重新开始",
       "loading": "正在以此语言加载模板…",
-      "frameTitle": "表单预览，{{device}}尺寸，{{language}}",
-      "nothingSent": "预览 · 不会发送任何内容"
+      "frameTitle": "表单预览，手机尺寸，{{language}}"
     },
     "stopDraft": {
       "title": "停止生成草稿？",
@@ -1000,7 +1069,6 @@
     "replaceAsk": "替换您的描述？",
     "replace": "替换",
     "keepMine": "保留我的",
-    "language": "语言",
     "runs": "投放方式",
     "runsHint": {
       "link": "可以从欢迎页开始。",
@@ -1009,8 +1077,10 @@
     },
     "draft": "生成草稿",
     "draftingButton": "正在生成…",
-    "draftingStatus": "正在生成您的表单草稿… 通常需要 10 到 30 秒。",
-    "drafting": "正在生成…",
+    "drafting": "正在生成您的表单草稿… 通常需要 10 到 30 秒。",
+    "inLanguage": "使用{{language}}",
+    "changeLanguage": "更改",
+    "busyReason": "草稿完成后即可更改。",
     "waitReason": "您可以在 {{minutes}} 分钟后再次生成草稿。",
     "privacy": "描述会发送到此工作区的 AI 模型。请勿粘贴个人数据。"
   },
@@ -1180,10 +1250,12 @@
     "title": "问题（{{count, number}}）",
     "label": "问题",
     "improve": "用 AI 改进",
-    "welcomeOn": "欢迎卡片 · 开启",
-    "welcomeOff": "欢迎卡片 · 关闭",
+    "welcomeName": "欢迎页",
+    "welcomeStateOn": "开启",
+    "welcomeStateOff": "关闭",
     "add": "添加问题",
-    "addHere": "在此添加问题",
+    "addBelow": "在下方添加问题",
+    "insertAfter": "在问题 {{number}} 后添加问题",
     "typeMenu": "问题类型",
     "contactOnce": "此表单中已有",
     "limit": "一个表单最多可包含 30 个问题。",
@@ -1248,9 +1320,10 @@
     "buttonLabel": "按钮文字",
     "buttonLabelPlaceholder": "下一步",
     "duplicate": "复制问题 {{number}}",
-    "translationMissing_one": "{{primary}} 是主要语言。此问题缺少 {{count, number}} 条 {{language}} 文本。",
-    "translationMissing_other": "{{primary}} 是主要语言。此问题缺少 {{count, number}} 条 {{language}} 文本。",
-    "translate": "翻译"
+    "translationLine_one": "{{language}}：缺少 {{count, number}} 条文本",
+    "translationLine_other": "{{language}}：缺少 {{count, number}} 条文本",
+    "translate": "翻译",
+    "translateInto": "翻译（{{language}}）"
   },
   "typeChange": {
     "label": "问题 {{number}}：类型",
@@ -1454,24 +1527,53 @@
   },
   "preview": {
     "label": "预览",
-    "deviceLabel": "预览尺寸",
-    "phone": "手机",
-    "desktop": "桌面",
     "device": {
-      "phone": "手机尺寸",
-      "desktop": "桌面尺寸"
+      "phone": "手机尺寸"
     },
     "language": "预览语言",
     "languageMissing": "{{language}}（缺少 {{count, number}} 条，以 {{primary}} 显示）",
     "frameTitle": "表单预览，{{size}}，{{language}}",
-    "nothingSent": "预览 · 不会发送任何内容",
     "restart": "重新开始",
     "startHere": "从此处开始",
-    "fullScreen": "全屏",
     "show": "预览",
     "hide": "隐藏预览",
-    "backToBuilder": "返回构建器",
-    "loading": "正在加载表单…"
+    "showPane": "显示预览",
+    "inWindow": "预览已在单独的窗口中打开。",
+    "size": "手机 · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "显示：{{scheme}}",
+    "scheme": {
+      "light": "浅色",
+      "dark": "深色"
+    },
+    "shuffled": "为每位答题者打乱顺序",
+    "style": "样式",
+    "openWindow": "在窗口中打开",
+    "openTab": "预览（在新标签页中打开）",
+    "blocked": "浏览器阻止了预览窗口。请允许此网站的弹出窗口，然后重试。",
+    "stylePanel": {
+      "title": "样式",
+      "back": "返回问题"
+    }
+  },
+  "previewWindow": {
+    "title": "表单预览",
+    "region": "表单预览，{{language}}",
+    "size": "窗口尺寸",
+    "language": "预览语言",
+    "restart": "重新开始",
+    "waiting": "正在等待表单。请在构建器中保持表单打开。",
+    "noSession": "请从表单构建器中打开此预览。",
+    "unavailable": "预览无法启动：表单组件未加载。请重新加载此窗口后重试。",
+    "resizeRefused": "浏览器保留了此窗口的尺寸。",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "自定义 · {{width}} × {{height}}",
+    "presets": {
+      "phone": "手机",
+      "rotate": "手机（横屏）",
+      "tablet": "平板",
+      "desktop": "桌面",
+      "embedded": "嵌入，高 480 px"
+    }
   },
   "flow": {
     "title": "流程",
@@ -1535,7 +1637,7 @@
     "done": "完成",
     "useThem": "使用方式",
     "kindLabel": "值的来源",
-    "modeLabel": "正式链接或测试链接",
+    "valuesFor": "适用链接",
     "kinds": {
       "link": "链接",
       "script": "脚本嵌入",
@@ -1563,7 +1665,6 @@
   "languages": {
     "title": "语言",
     "add": "添加语言",
-    "addOption": "+ 添加语言…",
     "primary": "主要语言",
     "primaryHint": "所有文本最先使用的语言。",
     "change": "更改…",
@@ -1666,6 +1767,7 @@
     "emptyValue": "空",
     "open": "打开",
     "openResponse": "打开 {{time}} 的测试回复",
+    "todayAt": "今天 {{time}}",
     "keptUntilDeleted": "测试回答会一直保留，直到管理员或表单创建者将其删除。"
   },
   "share": {
@@ -1691,10 +1793,13 @@
     "toHidden": "参见“隐藏字段”",
     "iframe": "嵌入（iframe）",
     "script": "脚本嵌入",
+    "iframeHint": "框架后的脚本会把框架高度设为表单的高度。没有该脚本时，框架保持 480 px 高，表单在其中滚动。",
+    "scriptHint": "将其粘贴到表单应出现的位置。表单组件文件由此应用提供，并随每个版本更新。如果您的网站设置了 Content-Security-Policy，请允许 script-src {{app}} 和 connect-src {{api}}。",
     "inApp": "在您的应用中：",
     "inAppHint": "网页应用通过脚本嵌入调用，并传入语言和隐藏字段；移动应用在 WebView 中打开链接。",
     "saveFirstTitle": "还没有链接",
     "saveFirst": "保存表单即可获取其链接。",
+    "showProblems": "查看问题",
     "save": "保存"
   },
   "results": {
@@ -1739,7 +1844,9 @@
       "responses": "回复",
       "completion": "完成率",
       "ofOpened": "占打开数的 {{percent}}",
-      "last": "最近回复"
+      "last": "最近回复",
+      "largestDropAt": "流失最多：{{step}}",
+      "questionShort": "Q{{position}}"
     },
     "filters": {
       "range": "时间范围",
@@ -1799,7 +1906,9 @@
       "started": "已开始",
       "completed": "已完成",
       "ofOpened": "占打开数的 {{percent}}",
-      "largestDrop": "流失最多"
+      "largestDrop": "流失最多",
+      "somePaths": "仅部分路径",
+      "somePathsNote": "逻辑只在部分路径上显示某些问题：这些问题不计流失，其数字是看到它们的人数。"
     },
     "reachCard": {
       "title": "到达情况",
@@ -1835,13 +1944,105 @@
     "contactLeft_one": "{{count, number}} 人留下了联系方式",
     "contactLeft_other": "{{count, number}} 人留下了联系方式"
   },
+  "theme": {
+    "presets": {
+      "label": "预设",
+      "vocLight": "VoC 浅色",
+      "vocDark": "VoC 深色",
+      "highContrast": "高对比度",
+      "brand": "您的品牌",
+      "saveAsBrand": "保存为品牌…",
+      "notAdmin": "只有此工作区的管理员才能保存其品牌。",
+      "unreadable": "将此样式保存为品牌之前，请先让文字清晰可读（至少 3:1）。",
+      "confirmTitle": "将此样式保存为您的品牌？",
+      "confirmMessage": "此工作区的新表单将以它为起点，每个表单的“样式”都会把它作为“您的品牌”提供。",
+      "confirmReplace": "此工作区的新表单将以它为起点，每个表单的“样式”都会把它作为“您的品牌”提供。它会替换之前保存的品牌。",
+      "confirm": "保存为品牌",
+      "saved": "已保存为您的品牌。",
+      "saveFailed": "无法保存品牌。请重试。"
+    },
+    "reset": "重置为 {{preset}}",
+    "mode": {
+      "label": "模式",
+      "light": "浅色",
+      "dark": "深色",
+      "auto": "自动",
+      "hint": "“自动”会跟随每位受访者的设备设置。"
+    },
+    "editing": {
+      "label": "正在编辑"
+    },
+    "palette": {
+      "light": "浅色配色",
+      "dark": "深色配色"
+    },
+    "colours": {
+      "legend": "颜色",
+      "primary": "主色",
+      "primaryHint": "按钮、进度、焦点环、所选答案",
+      "background": "背景",
+      "text": "文字",
+      "swatch": "{{label}}：选择颜色",
+      "invalid": "请使用 #8e48ff 这样的十六进制颜色。"
+    },
+    "derived": "派生：选项边框 {{ratio}}:1（文字颜色的 {{percent}} %）。",
+    "corners": {
+      "label": "圆角",
+      "square": "直角 {{px}}",
+      "small": "小 {{px}}",
+      "medium": "中 {{px}}",
+      "large": "大 {{px}}",
+      "slider": "圆角半径",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "字体",
+      "system": "系统",
+      "inherit": "与您的页面相同（仅限脚本嵌入）",
+      "serif": "衬线",
+      "rounded": "圆体",
+      "mono": "等宽",
+      "inheritHint": "只有脚本嵌入会使用您页面的字体；链接、iframe 和预览都显示系统字体。"
+    },
+    "size": {
+      "label": "大小",
+      "default": "默认",
+      "large": "大",
+      "hint": "大：正文 18 px，适合年长的受众。"
+    },
+    "contrast": {
+      "title": "对比度 · {{palette}}",
+      "pair": "组合",
+      "ratio": "比值",
+      "result": "结果",
+      "text": "背景上的文字",
+      "primary": "背景上的主色",
+      "label": "主色上的按钮文字",
+      "edge": "选项边框",
+      "minimum": "（最低 {{ratio}}:1）",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "低于 AA",
+      "use": "使用 {{colour}}（{{ratio}}:1）",
+      "other": {
+        "light_one": "浅色配色有 {{count, number}} 个对比度问题。",
+        "light_other": "浅色配色有 {{count, number}} 个对比度问题。",
+        "dark_one": "深色配色有 {{count, number}} 个对比度问题。",
+        "dark_other": "深色配色有 {{count, number}} 个对比度问题。"
+      },
+      "editOther": {
+        "light": "编辑浅色",
+        "dark": "编辑深色"
+      }
+    }
+  },
   "settings": {
     "sectionsLabel": "设置分区",
     "sections": {
       "general": "常规",
       "routing": "类别路由",
       "project": "关联项目",
-      "theme": "主题",
+      "appearance": "外观",
       "danger": "危险操作"
     },
     "general": {
@@ -1856,7 +2057,8 @@
       "subcategory": "子类别（可选）",
       "none": "— 无类别",
       "noSubcategory": "— 无子类别",
-      "notConfigured": "{{name}}（已不再配置）",
+      "notConfiguredBadge": "已不再配置",
+      "pickConfigured": "请选择已配置的类别。",
       "categoryHint": "类别在“管理 → 分类”中配置。",
       "taggedAs": "此表单的回复将归入：",
       "perOption": "按选项路由",
@@ -1867,13 +2069,6 @@
       "editQuestion": "编辑问题 {{number}} 的路由",
       "precedence": "回复会归入第一个已作答且设置了类别的选项所对应的类别；否则归入表单的类别。",
       "dimensionsHint": "每条回复都带有这些值。嵌入时可以通过 dimensions 选项按页面设置自己的值。"
-    },
-    "theme": {
-      "primary": "主色",
-      "background": "背景色",
-      "text": "文字颜色",
-      "radius": "圆角",
-      "lowContrast": "此背景上的文字对比度为 {{ratio}}:1，低于 4.5:1：许多人会难以阅读。"
     },
     "danger": {
       "hint": "删除表单会移除表单及其链接。其回复仍保留在“反馈”中。",

@@ -202,6 +202,8 @@ function oldUiResponse(random, index, isTest) {
     hidden: { user_id: isTest ? 'qa-17' : `u_${String(1800 + index)}`, app_version: isTest ? '5.0.3' : pickOf(['5.0.1', '5.0.2', '5.0.3']), screen },
     ending_id: 'end_thanks', is_test: isTest, shown, sentiment: pickOf(SENTIMENTS),
     feedback_id: isTest ? undefined : `fb_old_${String(index)}`,
+    // (where it was answered: mostly the in-app script, some by the link, a few in the help centre's iframe)
+    channel: ['script', 'script', 'link', 'iframe'][index % 4],
   };
 }
 
@@ -238,6 +240,7 @@ function npsResponse(random, index) {
     form_revision: 1, language: 'en', answers, hidden: { user_id: `u_${String(4200 + index)}`, plan: index % 2 ? 'pro' : 'free' },
     ending_id: accepted ? 'end_contact' : 'end_thanks', is_test: false, shown, sentiment: null,
     feedback_id: `fb_nps_${String(index)}`,
+    channel: index % 3 === 0 ? 'link' : 'script',
   };
 }
 

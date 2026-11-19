@@ -11,7 +11,7 @@ import copy
 import json
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -407,10 +407,56 @@ class TestTheLockOfAnAnsweredForm:
             'question_id_reused', {'question_id': _form()['questions'][0]['id']})
 
 
-def test_the_module_imports_nothing_but_the_standard_library_and_two_pure_shared_modules():
-    """Pure (portable to main as is): no AWS client; of shared, only the exceptions and dynamo_values' ``plain``
-    (both standard library only, and on main)."""
+class TestPublishing:
+    """Text respondents can read: under 3:1 on its background in a palette that can be shown refuses Publish and a
+    colour change on a live form, and only warns on another save of a live form already on that theme
+    (shared/form_theme.py, the editor's and the widget's rules)."""
+
+    GREY: ClassVar[dict[str, str]] = {'text_color': '#9ca3af'}  # 2.54:1 on white
+
+    @pytest.mark.parametrize('theme', [None, {}, {'mode': 'auto'}, {'text_color': '#767676'}, {'text_color': '#949494'},
+                                       {'mode': 'dark', 'text_color': '#9ca3af'}],
+                             ids=['absent', 'empty', 'auto-defaults', 'aa', 'warning-only', 'grey-light-not-shown'])
+    def test_a_readable_theme_publishes(self, theme):
+        assert fv2.theme_publish_problems(theme) == []
+        fv2.validate_publishable(theme, live=True)
+
+    def test_unreadable_text_refuses_a_live_form_with_its_code_and_palettes(self):
+        with pytest.raises(ValidationError) as refused:
+            fv2.validate_publishable(self.GREY, live=True)
+        assert refused.value.code == fv2.THEME_UNREADABLE == 'theme_unreadable'
+        assert refused.value.details == {'palettes': [{'palette': 'light', 'ratio': 2.54}], 'minimum': 3.0}
+        assert refused.value.message.startswith('The text on the light background is 2.5:1, under 3:1')
+
+    def test_every_palette_that_can_be_shown_is_checked(self):
+        dark = {'mode': 'auto', 'dark': {'text_color': '#333333'}}  # #333 on #19161d: 1.4:1
+        assert [p['palette'] for p in fv2.theme_publish_problems(dark)] == ['dark']
+        assert [p['palette'] for p in fv2.theme_publish_problems({**dark, **self.GREY})] == ['light', 'dark']
+        assert fv2.theme_publish_problems({**dark, 'mode': 'light'}) == []
+
+    def test_a_form_that_stays_off_is_always_saved(self):
+        fv2.validate_publishable(self.GREY, live=False)
+
+    def test_a_live_form_kept_on_its_unreadable_theme_is_a_warning_and_a_change_or_publish_a_refusal(self):
+        assert fv2.validate_publishable(self.GREY, live=True, was_live=True, theme_changed=False) == ['theme_unreadable']
+        assert fv2.validate_publishable({}, live=True, was_live=True, theme_changed=False) == []
+        assert fv2.validate_publishable(self.GREY, live=False, was_live=True, theme_changed=True) == []
+        for was_live, changed in ((True, True), (False, False), (False, True)):
+            with pytest.raises(ValidationError) as exc:
+                fv2.validate_publishable(self.GREY, live=True, was_live=was_live, theme_changed=changed)
+            assert exc.value.code == 'theme_unreadable'
+
+    def test_two_themes_are_the_same_when_they_draw_the_same_form(self):
+        assert fv2.same_theme(self.GREY, {**self.GREY, 'mode': 'light', 'font': 'system'})
+        assert fv2.same_theme(None, {})
+        assert not fv2.same_theme(self.GREY, {**self.GREY, 'border_radius': '4px'})
+
+
+def test_the_module_imports_nothing_but_the_standard_library_and_three_pure_shared_modules():
+    """Pure (portable to main as is): no AWS client; of shared, only the exceptions, dynamo_values' ``plain`` and
+    form_theme (the theme's contrast rules), all standard library only."""
     source = Path(fv2.__file__).read_text(encoding='utf-8')
     imports = [line.split('  #')[0] for line in source.splitlines() if line.startswith(('import ', 'from '))]
     assert [line for line in imports if 'shared' in line] == [
-        'from shared.dynamo_values import plain', 'from shared.exceptions import ValidationError']
+        'from shared import form_theme', 'from shared.dynamo_values import plain',
+        'from shared.exceptions import ValidationError']

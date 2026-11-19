@@ -47,8 +47,13 @@ export interface FormDraft {
   readonly dirty: boolean
   /** Every problem (errors, warnings, notes), the AI's unconfirmed addresses included. */
   readonly problems: readonly FormProblem[]
-  /** The problems that block Save and Publish. */
+  /**
+   * The problems that block this draft's save: on a Live form (whose save is Update live form) every error; on an
+   * Off or new one every error but an unreadable theme, which blocks only Publish (Save still works).
+   */
   readonly errors: readonly FormProblem[]
+  /** The problems that block Publish and Update live form: every error. */
+  readonly publishErrors: readonly FormProblem[]
   /** The server's own refusals of the last save (a 400), shown under "Other problems". */
   readonly serverErrors: readonly FormsFieldError[]
   /** Codes and ids are locked: the form has a real response (D9). */

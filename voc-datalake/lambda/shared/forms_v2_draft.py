@@ -134,6 +134,8 @@ SYSTEM_PROMPT: Final = (
     'Answer with ONE JSON object and nothing else: {"form": {"name", "language", "languages", "welcome", "questions", '
     '"hidden_fields", "endings"}, "notes": ["one short sentence per choice worth telling the person"]}.\n\n'
     'The form (schema version 2):\n'
+    '- name: a short title for the form, 2 to 6 words in the primary language (like "App NPS"), never the '
+    'request copied; when changing a form, keep its name unless asked.\n'
     '- Every text is an object keyed by locale, e.g. {"pl": "..."}. Write every text in the primary language; add '
     'another language only when asked.\n'
     f'- questions: 1 to {fv2.MAX_QUESTIONS}. Each {{id, type, headline, subheader?, required, button_label?, logic?}} '

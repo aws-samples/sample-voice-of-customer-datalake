@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import type { Location } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
 import { Info } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import { useUnsavedChangesGuard } from '../../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
@@ -30,13 +31,15 @@ import type { BuilderTab } from './builderPaths'
 import { readHandoff } from './newFormHandoff'
 import { defaultBuilderTab } from './tabState'
 import type { NewFormHandoff } from './newFormHandoff'
-import BuilderHeader from './BuilderHeader'
+import BuilderHeader, { BackToForms, BuilderActionBar } from './BuilderHeader'
 import BuilderTabs from './BuilderTabs'
 import ConflictBanner from './ConflictBanner'
 import AiDraftBanner from '../ai/AiDraftBanner'
 import ImproveSheet from '../ai/ImproveSheet'
 import LanguageConfirmNotice from '../tabs/LanguageConfirmNotice'
 import QuestionsTab from '../questions/QuestionsTab'
+import { MEDIUM, useMedia } from '../questions/useMedia'
+import PreviewWindowProvider from '../preview/PreviewWindowProvider'
 import FlowTab from '../logic/FlowTab'
 import LanguagesTab from '../tabs/LanguagesTab'
 import HiddenFieldsTab from '../tabs/HiddenFieldsTab'
@@ -97,24 +100,32 @@ function BuilderSession({ loaded, handoff, tab, rest, onCreated, formId }: Sessi
   }), [formId, rest, navigate])
 
   const active = tab ?? defaultBuilderTab(draft)
+  const medium = useMedia(MEDIUM)
   useEffect(() => {
     if (tab === null) void navigate(builderPath(formId, active), { replace: true })
   }, [tab, active, formId, navigate])
 
+  // From lg the Questions tab's panes scroll on their own: the builder is then as tall as the page's scroller, its
+  // tab body takes what the header and banners leave, and the page itself does not scroll (forms audit F9). Every
+  // other tab, and the Questions tab on a narrow screen, scrolls with the page as before.
+  const fullHeight = active === 'questions' && medium
   return (
     <FormDraftContext.Provider value={draft}>
       <BuilderUiContext.Provider value={ui}>
-        <div className="space-y-4">
-          <BuilderHeader />
-          <ConflictBanner />
-          <MigratedNotice draft={draft} />
-          <LanguageConfirmNotice />
-          <AiDraftBanner />
-          <BuilderTabs active={active} onSelect={(next) => ui.go(next)} />
-          <div>{TAB_CONTENT[active]()}</div>
-        </div>
-        <ImproveSheet isOpen={improving} onClose={() => setImproving(false)} />
-        {guard.dialog}
+        <PreviewWindowProvider form={draft.form} formKey={ref}>
+          <div className={clsx('space-y-4', fullHeight && 'flex h-full min-h-[36rem] flex-col')}>
+            <BuilderHeader />
+            <ConflictBanner />
+            <MigratedNotice draft={draft} />
+            <LanguageConfirmNotice />
+            <AiDraftBanner />
+            <BuilderTabs active={active} onSelect={(next) => ui.go(next)} />
+            <div className={clsx(fullHeight && 'min-h-0 flex-1')}>{TAB_CONTENT[active]()}</div>
+            <BuilderActionBar />
+          </div>
+          <ImproveSheet isOpen={improving} onClose={() => setImproving(false)} />
+          {guard.dialog}
+        </PreviewWindowProvider>
       </BuilderUiContext.Provider>
     </FormDraftContext.Provider>
   )
@@ -124,7 +135,14 @@ function BuilderSession({ loaded, handoff, tab, rest, onCreated, formId }: Sessi
 function StoredFormBuilder({ formId, tab, rest }: Readonly<{ formId: string; tab: BuilderTab | null; rest: readonly string[] }>) {
   const { t } = useTranslation('feedbackForms')
   const query = useQuery({ queryKey: ['feedback-form-v2', formId], queryFn: () => feedbackFormsV2Api.getForm(formId), staleTime: Infinity, retry: false })
-  if (query.isError) return <LoadFailed onRetry={() => void query.refetch()} retrying={query.isFetching} message={t('builder.loadFailed')} />
+  if (query.isError) {
+    return (
+      <div className="space-y-4">
+        <BackToForms />
+        <LoadFailed onRetry={() => void query.refetch()} retrying={query.isFetching} message={t('builder.loadFailed')} />
+      </div>
+    )
+  }
   if (query.data === undefined) return <p role="status" className="text-sm text-muted">{t('builder.loading')}</p>
   return <BuilderSession key={formId} loaded={query.data} handoff={null} tab={tab} rest={rest} formId={formId} onCreated={storedFormIsNeverCreated} />
 }

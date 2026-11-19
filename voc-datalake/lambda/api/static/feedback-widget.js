@@ -1,7 +1,9 @@
 /**
  * VoC Feedback Form Widget: one question per screen, for a form of schema version 2 (questions, logic, hidden
- * fields, endings, languages; docs/feedback-forms.md). Self-contained and dependency-free: the API serves this
- * file to customers' sites and inlines it into its own iframe page.
+ * fields, endings, languages; docs/feedback-forms.md). Self-contained and dependency-free: the app's own CloudFront
+ * serves this file to customers' sites as a static asset, `/widget/feedback-widget.js` (frontend/widgetAssetPlugin.ts
+ * builds it from this one source), the API inlines it into its own iframe page, and the editor's preview and its
+ * pop-out window load it from the app's bundle.
  *
  * Usage:
  *   var form = VoCFeedbackForm.init({
@@ -18,13 +20,40 @@
  *   });
  *   form.setHiddenFields({ screen: 'invoice_list' });  // or VoCFeedbackForm.setHiddenFields(...) for every form
  *
- * The editor's preview: `init({ container, preview: { config } })` renders the given draft and never fetches,
- * submits or counts anything. The returned object's update(config), goTo(questionId), restart() and
- * setLanguage(lang) drive it, and so do `postMessage`s from this page's own origin
- * ({ type: 'voc-form-preview', action: 'config' | 'goTo' | 'restart' | 'language', ... }).
+ * Isolation: the widget draws in an OPEN shadow root of the container (`container.shadowRoot`; the container's own
+ * light DOM only where Shadow DOM is missing or the element cannot host one, a <form> for one). Inside it, its own
+ * reset (`:host { all: initial }` and the rest, an adopted stylesheet where the browser has them, else a <style>),
+ * then one inner root (`.voc-root`) holding the strip, the progress bar, the live region and the screen, so every
+ * id, `aria-describedby` and `<label for>` resolves there. Every colour and inherited text property is also set
+ * inline, so a page whose CSP blocks the stylesheet, or a browser without Shadow DOM, still gets the theme's form.
+ * The checkboxes and radios are drawn by the widget (the real inputs stay, visually hidden, for the keyboard and
+ * screen readers). Keys are handled in the shadow root, never on the page. The container's own styles stay the
+ * page's: the widget sets only its `lang`.
+ *
+ * The theme (the config's `theme`; every field optional, so an old theme still works): `primary_color`,
+ * `background_color` and `text_color` (the light palette; `#rgb` or `#rrggbb`, and a `#rrggbbaa` an old form holds
+ * is drawn as its 6-digit colour), `border_radius` ('0px'–'39px'), `mode` ('light' by default, 'dark', or 'auto':
+ * the respondent's prefers-color-scheme, followed as it changes), `dark` (the dark palette's three colours, the VoC
+ * dark ones by default), `font` ('system' by default, 'serif', 'rounded', 'mono': system stacks, never a web font;
+ * 'inherit' takes the page's font on a script embed only) and `text_size` ('default', or 'large': an 18 px body,
+ * every size scaled alike). The widget holds the contrast rules of shared/form_theme.py: text under 3:1 on its
+ * background is replaced by one that reads, the option edge is raised until it holds 3:1, and a primary under 3:1
+ * gets its focus ring and selected edges drawn in the text colour.
+ *
+ * The editor's preview: `init({ container, language, preview: { config, seed, scheme } })` renders the given draft
+ * and never fetches, submits or counts anything. `seed` (a number) makes Shuffle's order the same for the whole
+ * preview session, Restart included; `scheme` ('light' | 'dark') shows that palette whatever the theme and the
+ * device say. The returned object's update(config), goTo(target) (a question's id, 'welcome' or
+ * 'end:<ending id>'), restart(), setLanguage(lang), setScheme('light' | 'dark' | null: the theme's own again) and
+ * destroy() drive it, and so do `postMessage`s from this page's own origin
+ * ({ type: 'voc-form-preview', action: 'config' | 'goTo' | 'restart' | 'language' | 'scheme', ... }).
  *
  * The API's own iframe page (…/feedback-forms/<id>/iframe) also reads its link: `hf_<id>=` hidden fields,
- * `lang=` and `test=`. A widget embedded on a customer's page never reads that page's address.
+ * `lang=` and `test=`. A widget embedded on a customer's page never reads that page's address. A response says how
+ * it was answered, `channel`: `link` (that page opened as it is), `iframe` (that page framed) or `script` (a script
+ * embed), for the forms list's "Link · Website script · Embedded". Framed, that page
+ * tells its parent how tall the form is, for the iframe snippet's resizer: `{ type: 'voc-form-height', height }`
+ * (px, the height only) to `window.parent`, whenever it changes.
  *
  * The drop-off funnel (D6) takes two small beacons on its own route, `…/events` (`eventsEndpoint`;
  * navigator.sendBeacon, a text body), with its own throttle, so a beacon never spends the submit route's limit: one
@@ -36,28 +65,48 @@
 (function() {
   'use strict';
 
-  // Defaults from the Kiro Light palette (docs/kiro-design-system.md): accent, page background, strong text. A
-  // form's own theme colours always win; these apply only where the form leaves one unset.
+  // The VoC palettes (frontend/src/styles/theme-palettes.css, AA-checked): primary, background, text. The light one
+  // is a form's default (Kiro Light, docs/kiro-design-system.md), the dark one the default of a theme's `dark`
+  // palette. A form's own theme colours always win; these apply only where the form leaves one unset.
   var KIRO = {
     primary: '#8e48ff',
     background: '#ffffff',
     text: '#19161d'
   };
+  var KIRO_DARK = {
+    primary: '#bd8fff',
+    background: '#19161d',
+    text: '#f2f1f4'
+  };
+  // The theme's `font`: system stacks only, so no web font is ever fetched (CSP and privacy). `inherit` ("Same as
+  // your page") is the container's own font, for a script embed only (fontFor).
+  var FONTS = {
+    system: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif',
+    serif: 'ui-serif,Georgia,Cambria,"Times New Roman",serif',
+    rounded: 'ui-rounded,"SF Pro Rounded","Arial Rounded MT",system-ui,sans-serif',
+    mono: 'ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace'
+  };
+  // `text_size: 'large'`: an 18 px body instead of 16, every text size scaled by the same factor.
+  var LARGE_SCALE = 18 / 16;
   // The test and preview strips: the same in every theme (12:1 and 14:1).
   var STRIP_TEXT = '#19161d';
   var STRIP_TEST = '#f5d565';
   var STRIP_PREVIEW = '#e4e4e7';
 
-  /** WCAG relative luminance of a #rgb / #rrggbb colour, or null for anything else. */
+  /** `#rrggbb` as its three 0–255 channels. */
+  function channelsOf(hex) {
+    return [1, 3, 5].map(function(i) { return parseInt(hex.slice(i, i + 2), 16); });
+  }
+
+  /** WCAG relative luminance of a theme colour (hexColour), or null for anything else. */
   function luminance(colour) {
-    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(colour || '').trim());
-    if (!m) return null;
-    var hex = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
-    var channels = [0, 2, 4].map(function(i) {
-      var channel = parseInt(hex.slice(i, i + 2), 16) / 255;
+    var hex = hexColour(colour);
+    if (!hex) return null;
+    var linear = channelsOf(hex).map(function(value) {
+      var channel = value / 255;
       return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
     });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
   }
 
   function contrast(a, b) {
@@ -65,11 +114,27 @@
     return (hi + 0.05) / (lo + 0.05);
   }
 
+  /** The WCAG contrast of two hex colours (1 when either is not one). */
+  function contrastOf(a, b) {
+    var la = luminance(a), lb = luminance(b);
+    return la === null || lb === null ? 1 : contrast(la, lb);
+  }
+
   /** `#rgb`, `#rrggbb` or `#rrggbbaa` only (as shared/form_theme.py HEX_COLOR): the theme is concatenated
    * into style.cssText on the customer's own page, so anything else falls back to the default (FE-2). */
   var HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+  /** A theme colour as `#rrggbb`, or null. `#rgb` is expanded; a `#rrggbbaa` an old form may hold is drawn as its
+   * 6-digit colour (its alpha dropped), so what is drawn is what the contrast checks measured. */
+  function hexColour(value) {
+    if (typeof value !== 'string' || !HEX_COLOR.test(value)) return null;
+    var hex = value.slice(1).toLowerCase();
+    if (hex.length === 3) hex = hex.replace(/./g, '$&$&');
+    return '#' + hex.slice(0, 6);
+  }
+
   function safeColour(value, fallback) {
-    return typeof value === 'string' && HEX_COLOR.test(value) ? value : fallback;
+    return hexColour(value) || fallback;
   }
 
   /**
@@ -83,13 +148,37 @@
     return contrast(l, 1) >= contrast(l, luminance(KIRO.text)) ? '#ffffff' : KIRO.text;
   }
 
+  /** The widget's last line of defence for text: `text` on `bg`, unless it is under 3:1 there, when it is
+   * readableOn(bg). The editor and the server refuse to publish such a form; this keeps an old one legible. */
+  function safeContrast(text, bg) {
+    return contrastOf(text, bg) >= 3 ? text : readableOn(bg);
+  }
+
   /** A checked hex colour at `alpha`, as rgba() (borders and tints that follow the theme). */
   function rgba(hex, alpha) {
-    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(hex);
-    if (!m) return hex;
-    var h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
-    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' +
-      parseInt(h.slice(4, 6), 16) + ',' + alpha + ')';
+    var h = hexColour(hex);
+    if (!h) return hex;
+    // Not `c`: that name means the version 1 config in this file (V1Config.migrate).
+    var rgb = channelsOf(h);
+    return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + alpha + ')';
+  }
+
+  /** `fg` at `alpha` over `bg`, as the browser blends it: one `#rrggbb`. */
+  function blend(fg, bg, alpha) {
+    var f = channelsOf(fg), b = channelsOf(bg);
+    return '#' + [0, 1, 2].map(function(i) {
+      var value = Math.round(f[i] * alpha + b[i] * (1 - alpha));
+      return (value < 16 ? '0' : '') + value.toString(16);
+    }).join('');
+  }
+
+  /** The least alpha of `fg` over `bg`, from `start` up in steps of 0.05, at which it reaches `ratio` against `bg`
+   * (1 at most: an opaque `fg`). */
+  function alphaFor(fg, bg, start, ratio) {
+    for (var alpha = start; alpha < 1; alpha = Math.round((alpha + 0.05) * 100) / 100) {
+      if (contrastOf(blend(fg, bg, alpha), bg) >= ratio) return alpha;
+    }
+    return 1;
   }
 
   // The widget's own words, in the app's nine locales (frontend/public/locales). The form's own copy (its
@@ -726,11 +815,11 @@
     return isObject(q[key]) && q[key].enabled === true;
   }
 
-  /** `items` in a random order (Fisher-Yates), as a new array. */
-  function shuffled(items) {
+  /** `items` in a random order (Fisher-Yates, by `random`: 0 ≤ n < 1), as a new array. */
+  function shuffled(items, random) {
     var out = items.slice();
     for (var i = out.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
+      var j = Math.floor(random() * (i + 1));
       var swap = out[i];
       out[i] = out[j];
       out[j] = swap;
@@ -738,12 +827,47 @@
     return out;
   }
 
-  /** The option codes in this respondent's order: shuffled once (none | all | except_last). */
-  function optionOrder(q) {
+  /** The option codes in this respondent's order: shuffled once (none | all | except_last), by `random`
+   * (Math.random when none is given). */
+  function optionOrder(q, random) {
     var codes = optionsOf(q).map(function(option) { return option.code; });
-    if (q.shuffle === 'all') return shuffled(codes);
-    if (q.shuffle === 'except_last' && codes.length > 1) return shuffled(codes.slice(0, -1)).concat(codes.slice(-1));
+    var draw = random || Math.random;
+    if (q.shuffle === 'all') return shuffled(codes, draw);
+    if (q.shuffle === 'except_last' && codes.length > 1) return shuffled(codes.slice(0, -1), draw).concat(codes.slice(-1));
     return codes;
+  }
+
+  /** Whether a question still shuffles the same options the same way (the preview keeps its order then). */
+  function sameShuffle(a, b) {
+    var codes = function(q) { return optionsOf(q).map(function(option) { return option.code; }).join('\n'); };
+    return a.shuffle === b.shuffle && codes(a) === codes(b);
+  }
+
+  /** A 32-bit FNV-1a hash of `text`. */
+  function hashText(text) {
+    var hash = 2166136261;
+    for (var i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  /** A small seeded PRNG (mulberry32): numbers 0 ≤ n < 1, the same ones for the same seed. The preview's shuffle
+   * (`preview.seed`), so an author sees one stable order for the whole session, Restart included. */
+  function seededRandom(seed) {
+    var state = seed >>> 0;
+    return function() {
+      state = (state + 0x6d2b79f5) >>> 0;
+      var t = Math.imul(state ^ (state >>> 15), state | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** `preview.seed` as a 32-bit seed, or null for none (then Shuffle is random, as for a respondent). */
+  function previewSeed(value) {
+    return typeof value === 'number' && isFinite(value) ? Math.floor(Math.abs(value)) % 4294967296 : null;
   }
 
   /** The scale a rating, NPS, CSAT or CES question offers: its values and how they are drawn. */
@@ -908,20 +1032,140 @@
   // VoCFeedbackForm.setHiddenFields(...): every form on the page, including those that load later.
   var SDK_HIDDEN = {};
 
-  /** A plain status line in the container (unavailable, failed to load, an invalid test link). */
-  function message(container, text) {
-    container.innerHTML = '';
-    var p = el('p', 'color:inherit;text-align:center;padding:40px 20px;margin:0;font-size:16px;line-height:24px;', text);
+  // ── Isolation and the theme ───────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Where the widget draws in `host` (its container): an OPEN shadow root of it, made once and reused by a later
+   * init, so neither the page's CSS nor its ids reach the form (a customer's `h2 { color: #fff }` or forms reset, the
+   * app's own base layer around the editor's preview), while tests and Playwright can still look inside. The element
+   * itself only where Shadow DOM is missing or the element cannot host one (a <form>, a <td>…): everything the form
+   * needs is also set inline, so it still renders right there.
+   */
+  function mountOf(host) {
+    if (host.shadowRoot) return host.shadowRoot;
+    if (typeof host.attachShadow === 'function') {
+      try {
+        return host.attachShadow({ mode: 'open' });
+      } catch (e) {
+        return host;
+      }
+    }
+    return host;
+  }
+
+  /** The palette a theme shows, 'light' or 'dark': `forced` (the preview's) first, else its `mode` ('auto' follows
+   * the respondent's device, prefers-color-scheme; a theme without one is light). */
+  function schemeOf(theme, forced) {
+    if (forced === 'light' || forced === 'dark') return forced;
+    if (theme.mode === 'dark') return 'dark';
+    if (theme.mode === 'auto') return media('(prefers-color-scheme: dark)') ? 'dark' : 'light';
+    return 'light';
+  }
+
+  /** The font stack of a theme's `font`. `inherit` takes the container's font on a script embed only: the API's own
+   * page and the editor's preview have no page font of the form's, so they show the system stack. */
+  function fontFor(font, embedded) {
+    if (font === 'inherit' && embedded) return 'inherit';
+    return own(FONTS, font) ? FONTS[font] : FONTS.system;
+  }
+
+  /**
+   * The colours and sizes a form is drawn with, from its theme (schema version 2: every field optional, so an old
+   * theme gets the defaults). The palette is the one `schemeOf` picks (the top-level colours are the light one,
+   * `dark` the dark one), each colour checked (hexColour) and held to the contrast rules the editor and the server
+   * share (shared/form_theme.py):
+   * - text under 3:1 on its background is replaced (safeContrast);
+   * - the option edge (`border`) is the text colour at 55 %, raised until it holds 3:1 (WCAG 1.4.11);
+   * - a primary under 3:1 on the background still fills the buttons and the checked boxes, but the focus ring and
+   *   the selected edges are drawn in the text colour (`ring`), and a text link in a colour that reads (`link`).
+   */
+  function themeOf(theme, forced, embedded) {
+    var t = isObject(theme) ? theme : {};
+    var scheme = schemeOf(t, forced);
+    var darkPalette = isObject(t.dark) ? t.dark : {};
+    var palette = scheme === 'dark' ? darkPalette : t;
+    var defaults = scheme === 'dark' ? KIRO_DARK : KIRO;
+    var primary = safeColour(palette.primary_color, defaults.primary);
+    var bg = safeColour(palette.background_color, defaults.background);
+    var text = safeContrast(safeColour(palette.text_color, defaults.text), bg);
+    var radius = /^([0-9]|[1-3][0-9])px$/.test(String(t.border_radius || '')) ? t.border_radius : '8px';
+    return {
+      scheme: scheme, primary: primary, onPrimary: readableOn(primary), bg: bg, text: text,
+      border: rgba(text, alphaFor(text, bg, 0.55, 3)), muted: rgba(text, alphaFor(text, bg, 0.7, 4.5)),
+      ring: contrastOf(primary, bg) >= 3 ? primary : text, link: contrastOf(primary, bg) >= 4.5 ? primary : text,
+      tint: rgba(primary, 0.1), track: rgba(text, 0.12), radius: radius,
+      font: fontFor(t.font, embedded), scale: t.text_size === 'large' ? LARGE_SCALE : 1
+    };
+  }
+
+  /**
+   * The inner root's own declarations: every inherited property the form relies on, inline, so a page whose CSP
+   * blocks the widget's stylesheet, or a browser without Shadow DOM, still gets the theme's form (an inline style
+   * beats the page's selectors, and nothing is left to inherit from the page). Never on the container itself: the
+   * customer's own layout CSS for it stays theirs.
+   */
+  function rootCss(th) {
+    return 'display:block;position:relative;box-sizing:border-box;margin:0;padding:0;border:0;' +
+      'background:' + th.bg + ';color:' + th.text + ';color-scheme:' + th.scheme + ';font-family:' + th.font + ';' +
+      'font-size:' + Math.round(16 * th.scale) + 'px;line-height:1.5;font-style:normal;font-weight:400;' +
+      'font-variant:normal;letter-spacing:normal;word-spacing:normal;text-align:start;text-indent:0;' +
+      'text-transform:none;text-shadow:none;white-space:normal;word-break:normal;overflow-wrap:break-word;' +
+      'hyphens:manual;-webkit-hyphens:manual;cursor:auto;';
+  }
+
+  /**
+   * The widget's stylesheet, inside its shadow root: the reset that keeps the page out (`:host` takes nothing from
+   * the page but what the page sets on the container itself, a page rule for the container beating a `:host` one),
+   * and the enhancements (hover, the focus ring, the placeholder, motion). Rules are scoped to the inner root, so
+   * they hold in the light-DOM fallback too. No `contain: paint`: it would clip the focus ring at the edges.
+   */
+  function styleText(th, scope) {
+    var s = '.' + scope;
+    return ':host{all:initial;display:block;position:relative;background:' + th.bg + ';color-scheme:' + th.scheme +
+        (th.font === 'inherit' ? ';font-family:inherit' : '') + '}' +
+      ':host([hidden]){display:none}' +
+      s + ',' + s + ' *,' + s + ' *::before,' + s + ' *::after{box-sizing:border-box}' +
+      s + ' h1,' + s + ' h2,' + s + ' p,' + s + ' legend{margin:0;color:inherit;font:inherit;letter-spacing:normal;' +
+        'text-transform:none;hyphens:manual;-webkit-hyphens:manual}' +
+      s + ' input,' + s + ' select,' + s + ' textarea,' + s + ' button{font:inherit;color:inherit;' +
+        'letter-spacing:inherit;text-transform:none}' +
+      s + ' ::placeholder{color:' + th.muted + ';opacity:1}' +
+      // A row's background is inline (rowCss), so its hover needs !important; never on touch, where :hover sticks
+      // to the last row tapped and would look picked.
+      '@media (hover: hover){' + s + ' .voc-opt:hover{background:' + th.tint + '!important}}' +
+      s + ' :focus-visible{outline:3px solid ' + th.ring + ';outline-offset:2px}' +
+      s + ' .voc-spin{animation:' + scope + '-spin 0.8s linear infinite}' +
+      '@keyframes ' + scope + '-spin{to{transform:rotate(360deg)}}' +
+      '@media (prefers-reduced-motion: reduce){' + s + ' *{transition:none!important;animation:none!important}}';
+  }
+
+  /** A plain status line in the container (unavailable, failed to load, an invalid test link), in the form's
+   * colours (the default ones while the form is unknown). */
+  function message(container, text, colours) {
+    var th = colours || themeOf({}, null, false);
+    var mount = mountOf(container);
+    mount.innerHTML = '';
+    var root = el('div', rootCss(th));
+    root.className = 'voc-root';
+    var p = el('p', 'color:' + th.text + ';text-align:center;padding:40px 20px;margin:0;font-size:16px;' +
+      'line-height:24px;', text);
     p.setAttribute('role', 'status');
-    container.appendChild(p);
+    root.appendChild(p);
+    mount.appendChild(root);
   }
 
   function Widget(container, form, opts) {
     this.container = container;
+    // The shadow root (or, without one, the container) the widget draws in, and the inner root it fills there.
+    this.mount = mountOf(container);
+    this.root = el('div', '');
     this.form = form;
     this.opts = opts;
     this.uid = 'voc' + (++instanceCount);
     this.preview = !!opts.preview;
+    // The preview's: a palette shown whatever the device says (setScheme), and Shuffle's seed.
+    this.forcedScheme = this.preview && (opts.scheme === 'light' || opts.scheme === 'dark') ? opts.scheme : null;
+    this.seed = this.preview ? previewSeed(opts.seed) : null;
     this.apiEndpoint = opts.apiEndpoint;
     this.submitEndpoint = opts.submitEndpoint;
     this.eventsEndpoint = opts.eventsEndpoint;
@@ -939,13 +1183,17 @@
     this.submitted = false;
     this.timers = [];
     this.listeners = [];
+    // Undo steps for what `listen` cannot remove (an old matchMedia listener, the height observer).
+    this.cleanups = [];
     this.indexes();
     this.setLanguage(this.requestedLanguage, true);
     this.reset();
     this.attachKeys();
     this.watchLeaving();
+    this.watchScheme();
     this.renderShell();
     this.show(this.firstScreen(), false);
+    this.watchHeight();
   }
 
   /** Where a visit starts: the welcome card, else the first question ('empty' for a draft without one). */
@@ -979,15 +1227,20 @@
     this.mark = optional <= answerable.length - optional ? 'optional' : 'required';
   };
 
-  /** A fresh visit: no answers, this respondent's option orders. */
+  /** A fresh visit: no answers, this respondent's option orders (the preview's, by its seed: the same each time). */
   Widget.prototype.reset = function() {
     var self = this;
     this.state = {};
     this.orders = {};
     this.history = [];
     this.form.questions.forEach(function(q) {
-      if (q.type === 'single_select' || q.type === 'multi_select') self.orders[q.id] = optionOrder(q);
+      if (q.type === 'single_select' || q.type === 'multi_select') self.orders[q.id] = optionOrder(q, self.randomFor(q));
     });
+  };
+
+  /** The numbers a question's Shuffle draws: seeded per question in a preview with `seed`, else none (Math.random). */
+  Widget.prototype.randomFor = function(q) {
+    return this.seed === null ? null : seededRandom(hashText(this.seed + ':' + q.id));
   };
 
   Widget.prototype.setLanguage = function(requested, initial) {
@@ -996,19 +1249,39 @@
     this.words = STRINGS[wordsLanguage(this.form, requested)] || STRINGS.en;
     // The container says the author's language only when the form names one for sure (a v1 form may not).
     this.langAttr = this.form.language && !this.form.languageAssumed ? this.lang : null;
-    if (!initial) {
-      this.renderShell();
-      this.show(this.screen, false);
-    }
+    if (!initial) this.redraw();
+  };
+
+  /** Draw the shell and the screen on show again (another language or palette), keeping the answers, and the
+   * focus where it was. */
+  Widget.prototype.redraw = function() {
+    var focusedId = this.focusedId();
+    this.renderShell();
+    this.show(this.screen, false);
+    if (this.sending) this.setSending(true);
+    var again = focusedId ? this.root.querySelector('[id="' + focusedId + '"]') : null;
+    if (again && typeof again.focus === 'function') again.focus();
+  };
+
+  /** The id of the widget's element that has the focus, or null. */
+  Widget.prototype.focusedId = function() {
+    var active = this.mount === this.container ? document.activeElement : this.mount.activeElement;
+    return active && active.id && this.root.contains(active) ? active.id : null;
   };
 
   Widget.prototype.applyLanguage = function() {
-    if (this.langAttr) this.container.setAttribute('lang', this.langAttr);
-    else this.container.removeAttribute('lang');
-    // The API's own iframe page: its <html lang> and <title> follow the form.
+    var lang = this.langAttr;
+    [this.container, this.root].forEach(function(node) {
+      if (lang) node.setAttribute('lang', lang);
+      else node.removeAttribute('lang');
+    });
+    // The API's own iframe page: its <html lang> and <title> follow the form, and the page around the form takes
+    // its palette (the overscroll area, the page's scrollbar).
     if (!this.preview && onOwnPage(this.opts.formId)) {
-      if (this.langAttr) document.documentElement.setAttribute('lang', this.langAttr);
+      if (lang) document.documentElement.setAttribute('lang', lang);
       document.title = this.words.pageTitle;
+      document.documentElement.style.background = this.colours.bg;
+      document.documentElement.style.colorScheme = this.colours.scheme;
     }
   };
 
@@ -1047,8 +1320,11 @@
   Widget.prototype.destroy = function() {
     this.timers.forEach(function(timer) { clearTimeout(timer); });
     this.listeners.forEach(function(entry) { entry[0].removeEventListener(entry[1], entry[2], entry[3]); });
+    this.cleanups.forEach(function(undo) { undo(); });
     this.timers = [];
     this.listeners = [];
+    this.cleanups = [];
+    this.watchingHeight = false;
     var index = instances.indexOf(this);
     if (index >= 0) instances.splice(index, 1);
     this.destroyed = true;
@@ -1056,45 +1332,65 @@
 
   // ── The shell: strip, progress, live region, the screen ──────────────────────────────────────────────────
 
-  Widget.prototype.theme = function() {
-    var t = this.form.theme;
-    var primary = safeColour(t.primary_color, KIRO.primary);
-    var text = safeColour(t.text_color, KIRO.text);
-    var radius = /^([0-9]|[1-3][0-9])px$/.test(String(t.border_radius || '')) ? t.border_radius : '8px';
-    return {
-      primary: primary, onPrimary: readableOn(primary), bg: safeColour(t.background_color, KIRO.background),
-      // A field's edge from the text colour, so it follows the theme and holds 3:1 (WCAG 1.4.11): Kiro text at
-      // 55 % on white is 3.9:1.
-      text: text, border: rgba(text, 0.55),
-      tint: rgba(primary, 0.1), track: rgba(text, 0.12), radius: radius
-    };
+  /** Whether this is a script embed on someone's page (neither the API's own iframe page nor the editor's preview). */
+  Widget.prototype.embedded = function() {
+    return !this.preview && !onOwnPage(this.opts.formId);
   };
 
-  Widget.prototype.renderShell = function() {
-    var host = this.container, th = this.colours = this.theme();
-    host.innerHTML = '';
-    host.className = (host.className.replace(/(^|\s)(voc-ff|voc\d+)(?=\s|$)/g, ' ').trim() + ' voc-ff ' + this.uid).trim();
-    this.applyLanguage();
-    host.style.cssText = 'position:relative;min-height:400px;background:' + th.bg + ';color:' + th.text +
-      ';font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5;';
-    // Enhancements only (hover, focus ring, motion); everything the form needs is inline, so a page whose
-    // CSP blocks this <style> still gets a working form.
-    var scope = '.' + this.uid;
+  Widget.prototype.theme = function() {
+    return themeOf(this.form.theme, this.forcedScheme, this.embedded());
+  };
+
+  /** A font size (and line height) in px, scaled for `text_size: 'large'`. */
+  Widget.prototype.fs = function(size, line) {
+    var scale = this.colours.scale;
+    return 'font-size:' + Math.round(size * scale) + 'px;' + (line ? 'line-height:' + Math.round(line * scale) + 'px;' : '');
+  };
+
+  /** The theme's text colour, on every element that shows text (inline, so no page rule wins where the shadow root
+   * is missing). */
+  Widget.prototype.ink = function() {
+    return 'color:' + this.colours.text + ';';
+  };
+
+  /** The widget's stylesheet in its shadow root: an adopted, constructed sheet where the browser has them (a CSP
+   * that blocks <style> elements does not stop one), else a <style> element. */
+  Widget.prototype.applyStyles = function(css) {
+    var mount = this.mount;
+    if (mount !== this.container && 'adoptedStyleSheets' in mount && typeof window.CSSStyleSheet === 'function') {
+      try {
+        this.sheet = this.sheet || new window.CSSStyleSheet();
+        this.sheet.replaceSync(css);
+        mount.adoptedStyleSheets = [this.sheet];
+        return;
+      } catch (e) {
+        this.sheet = null;
+      }
+    }
     var style = el('style');
-    style.textContent = scope + ' .voc-opt:hover{background:' + th.tint + '}' +
-      scope + ' :focus-visible{outline:3px solid ' + th.primary + ';outline-offset:2px}' +
-      scope + ' .voc-spin{animation:' + this.uid + '-spin 0.8s linear infinite}' +
-      '@keyframes ' + this.uid + '-spin{to{transform:rotate(360deg)}}' +
-      '@media (prefers-reduced-motion: reduce){' + scope + ' *{transition:none!important;animation:none!important}}';
-    host.appendChild(style);
+    style.textContent = css;
+    mount.appendChild(style);
+  };
+
+  /** The shell, in the shadow root: the stylesheet, then ONE inner root holding the strip, the progress bar, the
+   * live region and the stage (so every id, `aria-describedby` and `<label for>` resolves in the one root). */
+  Widget.prototype.renderShell = function() {
+    var mount = this.mount, root = this.root, th = this.colours = this.theme();
+    mount.innerHTML = '';
+    this.applyStyles(styleText(th, this.uid));
+    root.innerHTML = '';
+    root.className = 'voc-ff voc-root ' + this.uid;
+    root.style.cssText = rootCss(th) + 'min-height:400px;';
+    this.applyLanguage();
+    mount.appendChild(root);
 
     var strip = this.stripText();
     if (strip) {
-      var note = el('div', 'margin:0;padding:6px 16px;font-size:13px;line-height:20px;font-weight:600;' +
+      var note = el('div', 'margin:0;padding:6px 16px;' + this.fs(13, 20) + 'font-weight:600;' +
         'text-align:center;color:' + STRIP_TEXT + ';background:' + (this.preview ? STRIP_PREVIEW : STRIP_TEST) + ';', strip);
       note.className = 'voc-strip';
       note.setAttribute('role', 'note');
-      host.appendChild(note);
+      root.appendChild(note);
     }
 
     var track = el('div', 'height:4px;background:' + th.track + ';');
@@ -1103,33 +1399,71 @@
     track.setAttribute('aria-valuemin', '0');
     var bar = el('div', 'height:4px;width:0%;background:' + th.primary + ';transition:width 0.3s ease;');
     track.appendChild(bar);
-    host.appendChild(track);
+    root.appendChild(track);
     this.progress = track;
     this.progressBar = bar;
 
     var live = el('div', SR_ONLY);
     live.className = 'voc-live';
     live.setAttribute('aria-live', 'polite');
-    host.appendChild(live);
+    root.appendChild(live);
     this.live = live;
 
     this.stage = el('div', '');
-    host.appendChild(this.stage);
+    root.appendChild(this.stage);
   };
 
-  /** Keys are the form's own: handled on its container, never on the page around it (once per widget). */
+  /**
+   * Keys are the form's own: handled in its shadow root (without one, its container), never on the page around it
+   * (once per widget). In the shadow root because there `e.target` is the element itself (at the container it would
+   * read as the container), and because `change` events stop at the shadow root.
+   */
   Widget.prototype.attachKeys = function() {
-    var host = this.container, self = this;
-    this.listen(host, 'keydown', function(e) { self.onKeydown(e); });
-    var pointer = function() { self.pointerAt = Date.now(); };
+    var mount = this.mount, self = this;
+    this.listen(mount, 'keydown', function(e) { self.onKeydown(e); });
+    // `pointerAt` decides an auto-advance; `lastInput` whether a focus ring is drawn (keyboardFocus).
+    var pointer = function() {
+      self.pointerAt = Date.now();
+      self.lastInput = 'pointer';
+    };
     var passive = { capture: true, passive: true };
-    this.listen(host, 'pointerdown', pointer, passive);
-    this.listen(host, 'mousedown', pointer, passive);
-    this.listen(host, 'touchstart', pointer, passive);
-    this.listen(host, 'keydown', function() { self.pointerAt = 0; }, true);
+    this.listen(mount, 'pointerdown', pointer, passive);
+    this.listen(mount, 'mousedown', pointer, passive);
+    this.listen(mount, 'touchstart', pointer, passive);
+    this.listen(mount, 'keydown', function() {
+      self.pointerAt = 0;
+      self.lastInput = 'key';
+    }, true);
     var touched = function() { self.started = true; };
-    this.listen(host, 'input', touched, true);
-    this.listen(host, 'change', touched, true);
+    this.listen(mount, 'input', touched, true);
+    this.listen(mount, 'change', touched, true);
+  };
+
+  /** `mode: 'auto'` follows the device: a change of prefers-color-scheme redraws the form in the other palette
+   * (unless the preview forces one). */
+  Widget.prototype.watchScheme = function() {
+    var self = this, query = null;
+    try {
+      query = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    } catch (e) {
+      query = null;
+    }
+    if (!query) return;
+    var onChange = function() {
+      if (!self.destroyed && self.colours && self.theme().scheme !== self.colours.scheme) self.redraw();
+    };
+    if (typeof query.addEventListener === 'function') {
+      this.listen(query, 'change', onChange);
+    } else if (typeof query.addListener === 'function') {
+      query.addListener(onChange);
+      this.cleanups.push(function() { query.removeListener(onChange); });
+    }
+  };
+
+  /** The preview's palette: 'light' or 'dark' whatever the theme and the device say, or null for the theme's own. */
+  Widget.prototype.setScheme = function(scheme) {
+    this.forcedScheme = scheme === 'light' || scheme === 'dark' ? scheme : null;
+    this.redraw();
   };
 
   Widget.prototype.stripText = function() {
@@ -1139,7 +1473,7 @@
   };
 
   Widget.prototype.narrow = function(width) {
-    var w = this.container.clientWidth || 0;
+    var w = this.root.clientWidth || this.container.clientWidth || 0;
     return w > 0 && w < width;
   };
 
@@ -1154,7 +1488,7 @@
     if (screen === 'welcome') {
       node = this.buildWelcome();
     } else if (screen === 'empty') {
-      node = { root: el('p', 'text-align:center;padding:40px 20px;margin:0;', this.words.unavailable), focus: null };
+      node = { root: el('p', this.ink() + 'text-align:center;padding:40px 20px;margin:0;', this.words.unavailable), focus: null };
     } else if (typeof screen === 'number') {
       node = this.buildQuestion(screen);
     } else {
@@ -1172,6 +1506,7 @@
     focusTarget = node.focus;
     if (focus && focusTarget) focusTarget.focus();
     if (typeof screen === 'number') this.furthest = Math.max(this.furthest, screen);
+    this.reportHeight();
   };
 
   Widget.prototype.updateProgress = function() {
@@ -1194,8 +1529,21 @@
 
   // ── Screens ───────────────────────────────────────────────────────────────────────────────────────────────
 
-  var SCREEN_CSS = 'max-width:40rem;margin:0 auto;box-sizing:border-box;';
-  var HEADLINE_CSS = 'margin:0;font-size:24px;line-height:32px;font-weight:600;outline-offset:4px;';
+  // Not rem: a rem is the customer page's root size, which the widget never reads.
+  var SCREEN_CSS = 'max-width:640px;margin:0 auto;box-sizing:border-box;';
+  // What a page rule may restyle on a heading or a paragraph (where the shadow root is missing), pinned inline.
+  var TEXT_RESET = 'letter-spacing:normal;text-transform:none;hyphens:manual;-webkit-hyphens:manual;';
+
+  /** A screen's heading: the theme's text colour inline, so neither a page's `h2 { color }` nor its hyphenation wins. */
+  Widget.prototype.headlineCss = function(size, line) {
+    return 'margin:0;' + this.fs(size || 24, line || 32) + 'font-weight:600;font-family:inherit;font-style:normal;' +
+      this.ink() + TEXT_RESET + 'outline-offset:4px;';
+  };
+
+  /** A paragraph of text in the theme's colour, at `size` / `line` px. */
+  Widget.prototype.textCss = function(size, line) {
+    return this.fs(size, line) + this.ink() + TEXT_RESET;
+  };
 
   Widget.prototype.screenRoot = function() {
     var pad = this.narrow(640) ? '20px' : '40px';
@@ -1204,28 +1552,32 @@
     return root;
   };
 
+  /** What every button of the widget sets, so a page's `button { text-transform: uppercase }` never reaches one. */
+  var BUTTON_RESET = 'font:inherit;font-weight:600;letter-spacing:normal;text-transform:none;text-shadow:none;' +
+    'box-shadow:none;cursor:pointer;margin:0;';
+
   Widget.prototype.primaryButtonCss = function() {
     var th = this.colours;
     return 'min-height:48px;padding:12px 24px;border:2px solid ' + th.primary + ';background:' + th.primary + ';color:' +
-      th.onPrimary + ';border-radius:' + th.radius + ';font:inherit;font-weight:600;cursor:pointer;';
+      th.onPrimary + ';border-radius:' + th.radius + ';' + BUTTON_RESET;
   };
 
   Widget.prototype.secondaryButtonCss = function() {
     var th = this.colours;
     return 'min-height:48px;padding:12px 24px;border:2px solid ' + th.border + ';background:transparent;color:' +
-      th.text + ';border-radius:' + th.radius + ';font:inherit;font-weight:600;cursor:pointer;';
+      th.text + ';border-radius:' + th.radius + ';' + BUTTON_RESET;
   };
 
   Widget.prototype.buildWelcome = function() {
     var self = this, w = this.form.welcome, root = this.screenRoot();
     root.style.textAlign = 'center';
     root.style.paddingTop = '64px';
-    var h1 = el('h1', 'margin:0 0 16px;font-size:30px;line-height:38px;font-weight:700;outline-offset:4px;');
+    var h1 = el('h1', this.headlineCss(30, 38) + 'margin:0 0 16px;font-weight:700;');
     h1.setAttribute('tabindex', '-1');
     this.setText(h1, w.title);
     root.appendChild(h1);
     if (this.text(w.description)) {
-      root.appendChild(this.setText(el('p', 'margin:0 0 32px;font-size:18px;line-height:28px;'), w.description));
+      root.appendChild(this.setText(el('p', 'margin:0 0 32px;' + this.textCss(18, 28)), w.description));
     }
     var button = el('button', this.primaryButtonCss() + 'min-width:160px;');
     button.type = 'button';
@@ -1248,16 +1600,16 @@
     var root = this.screenRoot();
     root.style.textAlign = 'center';
     root.style.paddingTop = '64px';
-    var mark = el('div', 'font-size:48px;line-height:56px;margin:0 0 16px;color:' + this.colours.primary + ';', '✓');
+    var mark = el('div', this.fs(48, 56) + 'margin:0 0 16px;color:' + this.colours.ring + ';', '✓');
     mark.setAttribute('aria-hidden', 'true');
     root.appendChild(mark);
-    var h2 = el('h2', HEADLINE_CSS + 'font-size:28px;line-height:36px;');
+    var h2 = el('h2', this.headlineCss(28, 36));
     h2.className = 'voc-ending-title';
     h2.setAttribute('tabindex', '-1');
     this.setText(h2, ending.title, this.words.thanks);
     root.appendChild(h2);
     if (this.text(ending.description)) {
-      root.appendChild(this.setText(el('p', 'margin:16px 0 0;font-size:18px;line-height:28px;'), ending.description));
+      root.appendChild(this.setText(el('p', 'margin:16px 0 0;' + this.textCss(18, 28)), ending.description));
     }
     var button = isObject(ending.button) ? ending.button : null;
     var href = button ? safeHttpsUrl(button.url) : null;
@@ -1267,7 +1619,7 @@
       root.appendChild(link);
     }
     if (this.preview) {
-      var done = el('p', 'margin:24px 0 0;font-size:13px;', this.words.previewDone);
+      var done = el('p', 'margin:24px 0 0;' + this.textCss(13, 20), this.words.previewDone);
       done.className = 'voc-preview-done';
       root.appendChild(done);
     }
@@ -1299,27 +1651,28 @@
     var root = this.screenRoot();
     var ctx = { q: q, index: index, headId: this.id('h' + index), errId: this.id('e' + index), describedBy: [] };
     this.ctx = ctx;
-    var fieldset = el('fieldset', 'border:0;margin:0;padding:0;min-width:0;');
+    var fieldset = el('fieldset', 'border:0;margin:0;padding:0;min-width:0;background:none;');
     fieldset.className = 'voc-question';
     fieldset.setAttribute('data-question-id', q.id);
-    var legend = el('legend', 'padding:0;margin:0 0 8px;width:100%;');
-    var head = el('h2', HEADLINE_CSS);
+    // `float:none`: a page's `legend { float: left }` would pull the heading out of the fieldset's flow.
+    var legend = el('legend', 'display:block;float:none;padding:0;margin:0 0 8px;width:100%;border:0;' + this.ink());
+    var head = el('h2', this.headlineCss());
     head.id = ctx.headId;
     head.setAttribute('tabindex', '-1');
     this.setText(head, q.headline);
     legend.appendChild(head);
     fieldset.appendChild(legend);
     if (this.text(q.subheader)) {
-      var desc = this.setText(el('p', 'margin:0 0 8px;font-size:16px;line-height:24px;'), q.subheader);
+      var desc = this.setText(el('p', 'margin:0 0 8px;' + this.textCss(16, 24)), q.subheader);
       desc.id = this.id('d' + index);
       ctx.describedBy.push(desc.id);
       fieldset.appendChild(desc);
     }
     var marker = this.markFor(q);
-    if (marker) fieldset.appendChild(el('p', 'margin:0 0 8px;font-size:13px;line-height:20px;', marker));
+    if (marker) fieldset.appendChild(el('p', 'margin:0 0 8px;' + this.textCss(13, 20), marker));
     var hint = q.type === 'multi_select' ? this.multiHint(q) : '';
     if (hint) {
-      var hintEl = el('p', 'margin:0 0 8px;font-size:14px;line-height:20px;', hint);
+      var hintEl = el('p', 'margin:0 0 8px;' + this.textCss(14, 20), hint);
       hintEl.className = 'voc-hint';
       hintEl.id = this.id('m' + index);
       ctx.describedBy.push(hintEl.id);
@@ -1327,7 +1680,7 @@
     }
     var body = el('div', 'margin-top:16px;');
     fieldset.appendChild(body);
-    var err = el('p', 'margin:12px 0 0;font-size:14px;line-height:20px;font-weight:600;');
+    var err = el('p', 'margin:12px 0 0;' + this.textCss(14, 20) + 'font-weight:600;');
     err.id = ctx.errId;
     err.className = 'voc-error';
     err.setAttribute('role', 'alert');
@@ -1348,13 +1701,30 @@
     node.setAttribute('aria-describedby', ids.join(' '));
   };
 
+  /**
+   * Back and Next, with the notice above them (sending failed, refused, form changed). On a phone the whole bar is
+   * sticky at the bottom (UX §11.1): the bar itself, a child of the screen root, so it can stick while the screen
+   * scrolls under it (a sticky element never leaves its parent, and a wrapper as tall as the bar would hold it in
+   * place). The API's own page scrolls the document, so there it pins to the window; in the editor's preview, to the
+   * preview's frame.
+   */
   Widget.prototype.buildNav = function(ctx) {
-    var self = this, words = this.words, q = ctx.q;
+    var self = this, words = this.words, q = ctx.q, th = this.colours;
     var narrow = this.narrow(640);
+    var wrap = el('div', narrow
+      ? 'position:sticky;bottom:0;z-index:1;margin:24px -20px 0;padding:12px 20px;background:' + th.bg +
+        ';border-top:1px solid ' + th.track + ';'
+      : 'margin-top:32px;');
+    wrap.className = 'voc-nav-bar';
+    var notice = el('div', 'margin:0 0 12px;' + this.textCss(14, 20) + 'font-weight:600;');
+    notice.className = 'voc-submit-error';
+    notice.setAttribute('role', 'alert');
+    notice.hidden = true;
+    wrap.appendChild(notice);
+    this.notice = notice;
     var nav = el('div', narrow
-      ? 'position:sticky;bottom:0;display:flex;gap:12px;margin:24px -20px 0;padding:12px 20px;background:' +
-        this.colours.bg + ';border-top:1px solid ' + this.colours.track + ';'
-      : 'display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:32px;');
+      ? 'display:flex;gap:12px;'
+      : 'display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;');
     nav.className = 'voc-nav';
     var back = el('button', this.secondaryButtonCss() + (narrow ? 'flex:1 1 0;' : ''), words.previous);
     back.type = 'button';
@@ -1370,19 +1740,12 @@
     this.nextButton = next;
     var hintWords = q.type === 'open_text' && q.long === true ? words.ctrlEnterHint : words.enterHint;
     if (!narrow && media('(pointer: fine)')) {
-      var hint = el('span', 'font-size:13px;line-height:20px;', hintWords);
+      var hint = el('span', this.textCss(13, 20), hintWords);
       hint.className = 'voc-enter-hint';
       hint.setAttribute('aria-hidden', 'true');
       nav.appendChild(hint);
     }
-    var wrap = el('div', '');
     wrap.appendChild(nav);
-    var notice = el('div', 'margin:12px 0 0;font-size:14px;line-height:20px;font-weight:600;');
-    notice.className = 'voc-submit-error';
-    notice.setAttribute('role', 'alert');
-    notice.hidden = true;
-    wrap.appendChild(notice);
-    this.notice = notice;
     return wrap;
   };
 
@@ -1427,9 +1790,13 @@
 
   Widget.prototype.inputCss = function() {
     var th = this.colours;
-    return 'display:block;width:100%;box-sizing:border-box;min-height:48px;padding:12px 14px;font:inherit;' +
+    return 'display:block;width:100%;box-sizing:border-box;min-height:48px;margin:0;padding:12px 14px;font:inherit;' +
+      'letter-spacing:normal;text-transform:none;box-shadow:none;' +
       'color:' + th.text + ';background:' + th.bg + ';border:2px solid ' + th.border + ';border-radius:' + th.radius + ';';
   };
+
+  /** A text field's own look (no platform inset or rounding), the same in every browser. */
+  var FIELD_APPEARANCE = '-webkit-appearance:none;appearance:none;';
 
   var INPUT_TYPES = {
     email: { type: 'email', inputmode: 'email', autocomplete: 'email' },
@@ -1447,11 +1814,12 @@
     var self = this, q = ctx.q, s = this.stateOf(q), max = this.maxChars(q);
     var field;
     if (q.long === true) {
-      field = el('textarea', this.inputCss() + 'resize:vertical;min-height:96px;max-height:260px;overflow-y:auto;');
+      field = el('textarea', this.inputCss() + FIELD_APPEARANCE + 'resize:vertical;min-height:96px;max-height:260px;' +
+        'overflow-y:auto;');
       field.rows = 3;
     } else {
       var kind = own(INPUT_TYPES, q.input_type) ? INPUT_TYPES[q.input_type] : INPUT_TYPES.text;
-      field = el('input', this.inputCss());
+      field = el('input', this.inputCss() + FIELD_APPEARANCE);
       field.type = kind.type;
       if (kind.inputmode) field.setAttribute('inputmode', kind.inputmode);
       if (kind.autocomplete) field.setAttribute('autocomplete', kind.autocomplete);
@@ -1463,7 +1831,7 @@
     field.value = s.text;
     field.setAttribute('aria-labelledby', ctx.headId);
     if (q.required === true) field.setAttribute('aria-required', 'true');
-    var counter = el('p', 'margin:6px 0 0;font-size:13px;line-height:20px;text-align:right;');
+    var counter = el('p', 'margin:6px 0 0;' + this.textCss(13, 20) + 'text-align:right;');
     counter.id = this.id('c' + ctx.index);
     this.describe(field, ctx, [counter.id]);
     var paint = function() {
@@ -1570,8 +1938,79 @@
       ? 'display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 16px;border-radius:999px;'
       : 'display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:48px;padding:10px 14px;' +
         'border-radius:' + th.radius + ';';
-    return base + 'cursor:pointer;border:2px solid ' + (selected ? th.primary : th.border) + ';background:' +
-      (selected ? th.tint : 'transparent') + ';color:' + th.text + ';font:inherit;text-align:left;';
+    // `position:relative` holds the visually hidden input inside its row.
+    return base + 'position:relative;margin:0;cursor:pointer;border:2px solid ' + (selected ? th.ring : th.border) +
+      ';background:' + (selected ? th.tint : 'transparent') + ';color:' + th.text + ';font:inherit;text-align:start;' +
+      'letter-spacing:normal;text-transform:none;';
+  };
+
+  /** The focus ring around a drawn control: a gap in the background colour, then the ring colour. */
+  Widget.prototype.ringShadow = function() {
+    return '0 0 0 2px ' + this.colours.bg + ',0 0 0 4px ' + this.colours.ring;
+  };
+
+  Widget.prototype.ringCss = function() {
+    return 'box-shadow:' + this.ringShadow() + ';';
+  };
+
+  /** Whether the focus on `node` is one to show (the browser's :focus-visible, or the last input was not a pointer:
+   * the ring is drawn for the keyboard, not after a click or a tap). */
+  Widget.prototype.keyboardFocus = function(node) {
+    var visible = false;
+    try {
+      visible = node.matches(':focus-visible');
+    } catch (e) {
+      visible = false;
+    }
+    return visible || this.lastInput !== 'pointer';
+  };
+
+  // The tick and the dot of a checked box, on a 16 px grid.
+  var TICK_PATH = 'M3.5 8.5 6.6 11.5 12.5 4.75';
+
+  /**
+   * A choice: the real checkbox or radio, visually hidden but focused, toggled and announced as usual (so Space and
+   * the arrow keys keep their native behaviour), and the box the widget draws beside it (`box`: a square, round for
+   * a radio). No native box at all, so neither a page's forms reset nor the platform decides how a choice looks:
+   * the same in Safari, Chrome and Firefox. `chip`: no box, the chip itself shows the choice.
+   */
+  Widget.prototype.choiceEntry = function(type, chip) {
+    var self = this;
+    var entry = { input: el('input', SR_ONLY), box: null, mark: null, radio: type === 'radio', focused: false };
+    entry.input.type = type;
+    if (!chip) {
+      entry.box = el('span', '');
+      entry.box.className = 'voc-box';
+      entry.box.setAttribute('aria-hidden', 'true');
+      var svg = svgNode('svg', { viewBox: '0 0 16 16', width: '100%', height: '100%', focusable: 'false' });
+      entry.mark = entry.radio
+        ? svgNode('circle', { cx: 8, cy: 8, r: 3.5, stroke: 'none' })
+        : svgNode('path', { d: TICK_PATH, fill: 'none', 'stroke-width': 2.2, 'stroke-linecap': 'round',
+          'stroke-linejoin': 'round' });
+      svg.appendChild(entry.mark);
+      entry.box.appendChild(svg);
+    }
+    entry.input.onfocus = function() {
+      entry.focused = self.keyboardFocus(entry.input);
+      if (entry.paint) entry.paint();
+    };
+    entry.input.onblur = function() {
+      entry.focused = false;
+      if (entry.paint) entry.paint();
+    };
+    return entry;
+  };
+
+  /** Paint a drawn box: the option edge, or when checked the primary fill (its edge in the ring colour, so a pale
+   * primary still shows) with the on-primary tick or dot; the focus ring while the keyboard is on it. */
+  Widget.prototype.paintBox = function(entry, checked) {
+    var th = this.colours, size = Math.round(20 * th.scale) + 'px';
+    entry.box.style.cssText = 'display:inline-flex;flex:none;align-items:center;justify-content:center;' +
+      'box-sizing:border-box;width:' + size + ';height:' + size + ';margin:0;padding:0;border:2px solid ' +
+      (checked ? th.ring : th.border) + ';border-radius:' + (entry.radio ? '50%' : '4px') + ';background:' +
+      (checked ? th.primary : th.bg) + ';' + (entry.focused ? this.ringCss() : '');
+    entry.mark.setAttribute(entry.radio ? 'fill' : 'stroke', th.onPrimary);
+    entry.mark.style.display = checked ? '' : 'none';
   };
 
   /** The text box under Other, shown while Other is picked: its wrapper is what `hidden` toggles (an inline
@@ -1580,7 +2019,7 @@
     var self = this, q = ctx.q, s = this.stateOf(q);
     var wrap = el('div', 'margin-top:8px;');
     wrap.className = 'voc-other';
-    var box = el('input', this.inputCss());
+    var box = el('input', this.inputCss() + FIELD_APPEARANCE);
     box.type = 'text';
     box.className = 'voc-other-input';
     box.id = this.id('o' + ctx.index);
@@ -1609,26 +2048,24 @@
     this.describe(group, ctx);
     var otherBox = enabled(q, 'other') ? this.otherBox(ctx) : null;
     var inputs = [];
+    var paint = function(entry) {
+      var picked = self.isPicked(s, entry.row, multi);
+      entry.input.checked = picked;
+      entry.label.style.cssText = self.rowCss(picked, chips) + (chips && entry.focused ? self.ringCss() : '');
+      if (entry.box) self.paintBox(entry, picked);
+    };
     var repaint = function() {
-      inputs.forEach(function(entry) {
-        var picked = self.isPicked(s, entry.row, multi);
-        entry.input.checked = picked;
-        entry.label.style.cssText = self.rowCss(picked, chips);
-      });
+      inputs.forEach(paint);
       if (otherBox) otherBox.hidden = !s.other;
     };
     rows.forEach(function(row, i) {
       var label = el('label', '');
       label.className = 'voc-opt';
-      var input = el('input', chips ? SR_ONLY : 'width:20px;height:20px;margin:0;flex:none;accent-color:' + self.colours.primary + ';');
-      input.type = multi ? 'checkbox' : 'radio';
+      var entry = self.choiceEntry(multi ? 'checkbox' : 'radio', chips);
+      var input = entry.input;
       input.name = self.id('q' + ctx.index);
       input.value = row.kind === 'option' ? row.code : '#' + row.kind;
       input.id = self.id('q' + ctx.index + '-' + i);
-      if (chips) {
-        input.onfocus = function() { label.style.boxShadow = '0 0 0 3px ' + self.colours.primary; };
-        input.onblur = function() { label.style.boxShadow = ''; };
-      }
       input.onchange = function() {
         var on = multi ? input.checked : true;
         self.clearError();
@@ -1639,11 +2076,15 @@
         if (!multi && row.kind !== 'other') self.autoAdvance(ctx.index);
       };
       label.appendChild(input);
-      var words = el('span', 'flex:1 1 auto;');
+      if (entry.box) label.appendChild(entry.box);
+      var words = el('span', 'flex:1 1 auto;' + self.ink());
       self.setText(words, row.i18n, row.label);
       label.appendChild(words);
       group.appendChild(label);
-      inputs.push({ row: row, input: input, label: label });
+      entry.row = row;
+      entry.label = label;
+      entry.paint = function() { paint(entry); };
+      inputs.push(entry);
       if (row.kind === 'other' && otherBox && !chips) group.appendChild(otherBox);
     });
     ctx.body.appendChild(group);
@@ -1656,7 +2097,9 @@
 
   Widget.prototype.buildSelect = function(ctx, rows) {
     var self = this, q = ctx.q, s = this.stateOf(q);
-    var select = el('select', this.inputCss() + 'cursor:pointer;');
+    // The platform's own select (its list is the device's, in the palette `color-scheme` names), never a page's
+    // restyled one (`appearance: base-select`).
+    var select = el('select', this.inputCss() + '-webkit-appearance:menulist;appearance:auto;cursor:pointer;');
     select.className = 'voc-select';
     select.id = this.id('s' + ctx.index);
     select.setAttribute('aria-labelledby', ctx.headId);
@@ -1694,12 +2137,12 @@
   Widget.prototype.buildChecklist = function(ctx, rows) {
     var self = this, q = ctx.q, s = this.stateOf(q);
     var panelId = this.id('p' + ctx.index);
-    var toggle = el('button', this.inputCss() + 'text-align:left;cursor:pointer;');
+    var toggle = el('button', this.inputCss() + FIELD_APPEARANCE + 'text-align:start;cursor:pointer;');
     toggle.type = 'button';
     toggle.className = 'voc-dropdown';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', panelId);
-    var toggleWords = el('span', '');
+    var toggleWords = el('span', this.ink());
     toggleWords.id = this.id('t' + ctx.index);
     toggle.appendChild(toggleWords);
     toggle.setAttribute('aria-labelledby', ctx.headId + ' ' + toggleWords.id);
@@ -1710,11 +2153,11 @@
     panel.setAttribute('role', 'group');
     panel.setAttribute('aria-labelledby', ctx.headId);
     this.describe(panel, ctx);
-    var search = null, empty = el('p', 'margin:8px 0;font-size:14px;', this.words.noMatches);
+    var search = null, empty = el('p', 'margin:8px 0;' + this.textCss(14, 20), this.words.noMatches);
     empty.className = 'voc-no-matches';
     empty.hidden = true;
     if (rows.length > 12) {
-      search = el('input', this.inputCss() + 'margin-bottom:8px;');
+      search = el('input', this.inputCss() + FIELD_APPEARANCE + 'margin-bottom:8px;');
       search.type = 'search';
       search.className = 'voc-search';
       search.setAttribute('aria-label', this.words.search);
@@ -1727,12 +2170,14 @@
     panel.appendChild(empty);
     var otherBox = enabled(q, 'other') ? this.otherBox(ctx) : null;
     var entries = [];
+    var paint = function(entry) {
+      var picked = self.isPicked(s, entry.row, true);
+      entry.input.checked = picked;
+      entry.label.style.cssText = self.rowCss(picked, false) + (entry.filtered ? 'display:none;' : '');
+      self.paintBox(entry, picked);
+    };
     var repaint = function() {
-      entries.forEach(function(entry) {
-        var picked = self.isPicked(s, entry.row, true);
-        entry.input.checked = picked;
-        entry.label.style.cssText = self.rowCss(picked, false) + (entry.filtered ? 'display:none;' : '');
-      });
+      entries.forEach(paint);
       var count = (s.none ? 1 : s.codes.length) + (s.other && !s.none ? 1 : 0);
       toggleWords.textContent = count ? fill(self.words.selected, { n: count }) : self.words.choose;
       if (otherBox) otherBox.hidden = !s.other;
@@ -1740,8 +2185,8 @@
     rows.forEach(function(row, i) {
       var label = el('label', '');
       label.className = 'voc-opt';
-      var input = el('input', 'width:20px;height:20px;margin:0;flex:none;accent-color:' + self.colours.primary + ';');
-      input.type = 'checkbox';
+      var entry = self.choiceEntry('checkbox', false);
+      var input = entry.input;
       input.value = row.kind === 'option' ? row.code : '#' + row.kind;
       input.id = self.id('q' + ctx.index + '-' + i);
       input.onchange = function() {
@@ -1751,9 +2196,14 @@
         self.refreshNext();
       };
       label.appendChild(input);
-      label.appendChild(self.setText(el('span', 'flex:1 1 auto;'), row.i18n, row.label));
+      label.appendChild(entry.box);
+      label.appendChild(self.setText(el('span', 'flex:1 1 auto;' + self.ink()), row.i18n, row.label));
       list.appendChild(label);
-      entries.push({ row: row, input: input, label: label, filtered: false });
+      entry.row = row;
+      entry.label = label;
+      entry.filtered = false;
+      entry.paint = function() { paint(entry); };
+      entries.push(entry);
     });
     if (search) {
       search.oninput = function() {
@@ -1838,24 +2288,25 @@
         } else {
           cell.label.style.background = on ? th.primary : 'transparent';
           cell.label.style.color = on ? th.onPrimary : th.text;
-          cell.label.style.borderColor = on ? th.primary : th.border;
+          cell.label.style.borderColor = on ? th.ring : th.border;
         }
       });
     };
     scale.values.forEach(function(value, i) {
-      var label = el('label', scale.kind === 'number'
+      var label = el('label', 'position:relative;margin:0;letter-spacing:normal;text-transform:none;color:' + th.text +
+        ';' + (scale.kind === 'number'
         ? 'flex:1 1 0;min-width:' + minWidth + ';max-width:64px;min-height:48px;display:flex;align-items:center;' +
           'justify-content:center;border:2px solid ' + th.border + ';border-radius:' + th.radius + ';cursor:pointer;' +
           'font-weight:600;font-variant-numeric:tabular-nums;'
         : 'display:flex;flex-direction:column;align-items:center;gap:4px;min-width:44px;min-height:44px;cursor:pointer;' +
-          'padding:2px;border-radius:' + th.radius + ';');
+          'padding:2px;border-radius:' + th.radius + ';'));
       label.className = 'voc-scale-cell';
       var input = el('input', SR_ONLY);
       input.type = 'radio';
       input.name = self.id('q' + ctx.index);
       input.value = String(value);
       input.id = self.id('q' + ctx.index + '-' + i);
-      input.onfocus = function() { label.style.boxShadow = '0 0 0 3px ' + th.primary; };
+      input.onfocus = function() { label.style.boxShadow = self.keyboardFocus(input) ? self.ringShadow() : ''; };
       input.onblur = function() { label.style.boxShadow = ''; };
       input.onchange = function() {
         s.value = value;
@@ -1866,7 +2317,7 @@
       };
       var visual;
       if (scale.kind === 'star') {
-        visual = el('span', 'font-size:36px;line-height:40px;', '★');
+        visual = el('span', self.fs(36, 40), '★');
       } else if (scale.kind === 'smiley') {
         visual = drawFace(moods[i]);
       } else {
@@ -1877,7 +2328,7 @@
       label.appendChild(visual);
       label.appendChild(el('span', SR_ONLY, self.scaleName(q, scale, value, i)));
       if (scale.kind === 'smiley') {
-        var word = el('span', 'font-size:13px;line-height:18px;text-align:center;', faceWords[i]);
+        var word = el('span', self.textCss(13, 18) + 'text-align:center;', faceWords[i]);
         word.setAttribute('aria-hidden', 'true');
         label.appendChild(word);
       }
@@ -1892,12 +2343,12 @@
     var lower = this.text(q.lower_label), upper = this.text(q.upper_label);
     if (lower || upper) {
       // The end words, always shown (never hover-only); the end radios carry them in their names too.
-      var ends = el('div', 'display:flex;justify-content:space-between;gap:16px;margin-top:8px;font-size:14px;' +
-        'line-height:20px;');
+      var ends = el('div', 'display:flex;justify-content:space-between;gap:16px;margin-top:8px;' +
+        this.textCss(14, 20));
       ends.className = 'voc-scale-ends';
       ends.setAttribute('aria-hidden', 'true');
-      ends.appendChild(this.setText(el('span', ''), q.lower_label));
-      ends.appendChild(this.setText(el('span', 'text-align:right;'), q.upper_label));
+      ends.appendChild(this.setText(el('span', this.ink()), q.lower_label));
+      ends.appendChild(this.setText(el('span', this.ink() + 'text-align:right;'), q.upper_label));
       ctx.body.appendChild(ends);
     }
     paint(s.value);
@@ -1923,7 +2374,7 @@
     if (href && this.text(cta.label)) {
       var th = this.colours;
       var link = this.newTabLink(href, cta.label, 'display:inline-flex;align-items:center;min-height:44px;' +
-        'font-weight:600;color:' + th.primary + ';text-decoration:underline;');
+        'font-weight:600;color:' + th.link + ';text-decoration:underline;letter-spacing:normal;text-transform:none;');
       link.className = 'voc-cta';
       ctx.body.appendChild(link);
     }
@@ -1934,13 +2385,17 @@
     var self = this, q = ctx.q, s = this.stateOf(q);
     var label = el('label', '');
     label.className = 'voc-opt';
-    var box = el('input', 'width:22px;height:22px;margin:0;flex:none;accent-color:' + this.colours.primary + ';');
-    box.type = 'checkbox';
+    var entry = this.choiceEntry('checkbox', false);
+    var box = entry.input;
     box.id = this.id('i' + ctx.index);
     box.checked = s.checked;
     if (q.required === true) box.setAttribute('aria-required', 'true');
     this.describe(box, ctx);
-    var paint = function() { label.style.cssText = self.rowCss(s.checked, false); };
+    var paint = function() {
+      label.style.cssText = self.rowCss(s.checked, false);
+      self.paintBox(entry, s.checked);
+    };
+    entry.paint = paint;
     box.onchange = function() {
       s.checked = box.checked;
       self.clearError();
@@ -1948,7 +2403,8 @@
       self.refreshNext();
     };
     label.appendChild(box);
-    label.appendChild(this.setText(el('span', 'flex:1 1 auto;'), q.label));
+    label.appendChild(entry.box);
+    label.appendChild(this.setText(el('span', 'flex:1 1 auto;' + this.ink()), q.label));
     ctx.body.appendChild(label);
     paint();
     ctx.first = box;
@@ -1975,7 +2431,7 @@
       if (field.show !== true) return;
       var spec = CONTACT_INPUTS[name];
       var wrap = el('div', 'margin:0 0 16px;');
-      var input = el('input', self.inputCss());
+      var input = el('input', self.inputCss() + FIELD_APPEARANCE);
       input.id = self.id('f' + ctx.index + '-' + name);
       input.type = spec.type;
       input.setAttribute('autocomplete', spec.autocomplete);
@@ -1984,11 +2440,13 @@
       input.value = s[name];
       if (field.required === true) input.setAttribute('aria-required', 'true');
       self.describe(input, ctx);
-      var label = el('label', 'display:block;margin:0 0 6px;font-weight:600;', self.words[name]);
+      var label = el('label', 'display:block;margin:0 0 6px;font-weight:600;' + self.ink() + TEXT_RESET,
+        self.words[name]);
       label.htmlFor = input.id;
       if (field.required === true) {
         label.appendChild(document.createTextNode(' '));
-        label.appendChild(el('span', 'font-weight:400;font-size:13px;margin-left:4px;', self.words.required));
+        label.appendChild(el('span', 'font-weight:400;' + self.fs(13) + 'margin-left:4px;' + self.ink(),
+          self.words.required));
       }
       input.oninput = function() {
         s[name] = input.value;
@@ -2119,7 +2577,7 @@
     if (!ctx || !ctx.err) return;
     ctx.err.textContent = '';
     if (!text) return;
-    var mark = el('span', '', '✕ ');
+    var mark = el('span', this.ink(), '✕ ');
     mark.setAttribute('aria-hidden', 'true');
     ctx.err.appendChild(mark);
     ctx.err.appendChild(document.createTextNode(text));
@@ -2140,7 +2598,7 @@
     if (!ctx) return;
     var target = ctx.first;
     if (problem.field && ctx.inputs && ctx.inputs[problem.field]) target = ctx.inputs[problem.field];
-    if (problem.other) target = this.container.querySelector('.voc-other-input') || target;
+    if (problem.other) target = this.root.querySelector('.voc-other-input') || target;
     if (target && typeof target.focus === 'function') target.focus();
   };
 
@@ -2237,6 +2695,8 @@
       // The `left` beacon's session: a respondent who left (a tab switch) and came back to submit is not counted as
       // a drop-off (the server drops that session's `left`).
       body.session = this.session;
+      // Where it was answered (the forms list's channels): never anything about the person.
+      body.channel = this.channel();
     }
     if (this.dimensions) body.dimensions = this.dimensions;
     if (this.participantToken) body.participant_token = this.participantToken;
@@ -2302,7 +2762,7 @@
     }
     if (status === 403 && this.testToken) {
       this.destroy();
-      message(this.container, this.words.testInvalid);
+      message(this.container, this.words.testInvalid, this.colours);
       return;
     }
     if (status === 400 || status === 422) {
@@ -2351,7 +2811,7 @@
     var notice = this.notice;
     if (!notice) return;
     notice.textContent = '';
-    notice.appendChild(el('span', '', text));
+    notice.appendChild(el('span', this.ink(), text));
     if (actionWords && action) {
       var button = el('button', this.secondaryButtonCss() + 'display:block;margin-top:8px;', actionWords);
       button.type = 'button';
@@ -2377,7 +2837,9 @@
       return;
     }
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
-    var target = e.target || {};
+    // The element the key was pressed on, even where an event is retargeted at the shadow host.
+    var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    var target = path[0] || e.target || {};
     var tag = String(target.tagName || '').toUpperCase();
     // A button's or a link's own Enter is its click: handled once, by it.
     if (tag === 'BUTTON' || tag === 'A') return;
@@ -2397,9 +2859,35 @@
 
   // ── The editor's preview ──────────────────────────────────────────────────────────────────────────────────
 
-  /** A new draft: the same screen when its question is still there (answers kept by id), focus left alone. */
+  /** The screen on show as goTo names it: a question's id, 'welcome' or 'end:<ending id>' (null for none). */
+  Widget.prototype.screenName = function() {
+    var screen = this.screen;
+    if (typeof screen === 'number') return this.form.questions[screen].id;
+    if (screen === 'welcome') return 'welcome';
+    var ending = isObject(screen) ? this.form.endings[screen.ending] : null;
+    return ending && ending.id ? 'end:' + ending.id : null;
+  };
+
+  /** The screen goTo's `target` names in this form, or null when it has no such screen (the welcome screen of a
+   * form that has none, an ending or a question that is gone). */
+  Widget.prototype.screenFor = function(target) {
+    if (target === 'welcome') return this.form.welcome ? 'welcome' : null;
+    if (typeof target !== 'string') return null;
+    if (target.indexOf('end:') === 0) {
+      var endingId = target.slice(4);
+      return own(this.eIndex, endingId) ? { ending: this.eIndex[endingId] } : null;
+    }
+    return own(this.qIndex, target) ? this.qIndex[target] : null;
+  };
+
+  /**
+   * A new draft: the same screen when it is still there (a question, the welcome screen, an ending: the author
+   * editing it keeps seeing it), the answers kept by id, focus left alone. A question keeps its shuffled order
+   * while its options and its Shuffle are unchanged (an added option shows at once).
+   */
   Widget.prototype.update = function(config) {
-    var currentId = typeof this.screen === 'number' ? this.form.questions[this.screen].id : null;
+    var current = this.screenName();
+    var old = { form: this.form, qIndex: this.qIndex };
     var state = this.state, orders = this.orders, history = this.history.map(function(i) { return this.form.questions[i].id; }, this);
     this.form = toForm({}, config);
     this.indexes();
@@ -2407,18 +2895,25 @@
     this.reset();
     var self = this;
     Object.keys(state).forEach(function(id) { if (own(self.qIndex, id)) self.state[id] = state[id]; });
-    Object.keys(orders).forEach(function(id) { if (own(self.qIndex, id)) self.orders[id] = orders[id]; });
+    Object.keys(orders).forEach(function(id) {
+      if (!own(self.qIndex, id) || !own(old.qIndex, id)) return;
+      var before = old.form.questions[old.qIndex[id]], now = self.form.questions[self.qIndex[id]];
+      if (sameShuffle(before, now)) self.orders[id] = orders[id];
+    });
     this.history = history.filter(function(id) { return own(self.qIndex, id); }).map(function(id) { return self.qIndex[id]; });
     this.renderShell();
-    if (currentId !== null && own(this.qIndex, currentId)) this.show(this.qIndex[currentId], false);
-    else this.show(this.firstScreen(), false);
+    var screen = current === null ? null : this.screenFor(current);
+    this.show(screen === null ? this.firstScreen() : screen, false);
   };
 
-  Widget.prototype.goTo = function(questionId) {
-    if (!own(this.qIndex, questionId)) return;
+  /** Show the screen `target` names: a question's id, 'welcome' or 'end:<ending id>' (the editor's selected card),
+   * as a fresh visit; nothing when the form has no such screen. */
+  Widget.prototype.goTo = function(target) {
+    var screen = this.screenFor(target);
+    if (screen === null) return;
     this.state = {};
     this.history = [];
-    this.show(this.qIndex[questionId], false);
+    this.show(screen, false);
   };
 
   Widget.prototype.restart = function() {
@@ -2426,7 +2921,8 @@
     this.show(this.firstScreen(), false);
   };
 
-  /** Preview messages from this page's own origin only (the app that framed it): config, goTo, restart, language. */
+  /** Preview messages from this page's own origin only (the app that framed it): config, goTo, restart, language,
+   * scheme. */
   Widget.prototype.listenForPreview = function() {
     var self = this;
     this.listen(window, 'message', function(e) {
@@ -2437,10 +2933,68 @@
       if (!isObject(data) || data.type !== 'voc-form-preview') return;
       if (data.action === 'config' && isObject(data.config)) self.update(data.config);
       else if (data.action === 'goTo' && typeof data.questionId === 'string') self.goTo(data.questionId);
+      else if (data.action === 'goTo' && typeof data.target === 'string') self.goTo(data.target);
       else if (data.action === 'restart') self.restart();
+      else if (data.action === 'scheme') self.setScheme(data.scheme);
       else if (data.action === 'language') {
         self.requestedLanguage = data.language;
         self.setLanguage(data.language, false);
+      }
+    });
+  };
+
+  /** How this widget runs: `link` (the API's own page, opened as it is: a link, a QR code, a WebView), `iframe` (that
+   * page framed in another, the iframe snippet) or `script` (a script embed on someone's own page). */
+  Widget.prototype.channel = function() {
+    if (!onOwnPage(this.opts.formId)) return 'script';
+    return framed() ? 'iframe' : 'link';
+  };
+
+  // ── The iframe snippet's auto-height ──────────────────────────────────────────────────────────────────────
+
+  /** Whether this page is framed (a cross-origin parent included). */
+  function framed() {
+    try {
+      return window.parent !== window;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  /**
+   * On the API's own iframe page, when framed, tell the parent page how tall the form is, so the iframe snippet's
+   * resizer can fit the frame to it: `{type: 'voc-form-height', height: <px>}` to `window.parent` (targetOrigin '*':
+   * the parent is the customer's page, whatever its origin, and the height is all it says). Sent when the height
+   * changes (a ResizeObserver where there is one, else on each screen), at most once per animation frame. Never in
+   * the preview, never from a script embed.
+   */
+  Widget.prototype.watchHeight = function() {
+    if (this.preview || !onOwnPage(this.opts.formId) || !framed()) return;
+    var self = this;
+    this.watchingHeight = true;
+    this.lastHeight = null;
+    if (typeof window.ResizeObserver === 'function') {
+      var observer = new window.ResizeObserver(function() { self.reportHeight(); });
+      observer.observe(this.root);
+      this.cleanups.push(function() { observer.disconnect(); });
+    }
+    this.reportHeight();
+  };
+
+  Widget.prototype.reportHeight = function() {
+    if (!this.watchingHeight || this.heightFrame) return;
+    var self = this;
+    var raf = window.requestAnimationFrame || function(fn) { return setTimeout(fn, 16); };
+    this.heightFrame = raf(function() {
+      self.heightFrame = null;
+      if (!self.watchingHeight) return;
+      var height = Math.ceil(self.root.getBoundingClientRect().height);
+      if (height === self.lastHeight) return;
+      self.lastHeight = height;
+      try {
+        window.parent.postMessage({ type: 'voc-form-height', height: height }, '*');
+      } catch (e) {
+        self.watchingHeight = false;
       }
     });
   };
@@ -2552,14 +3106,15 @@
         var config = isObject(answer.config) ? answer.config : answer;
         var form = toForm(answer, config);
         var words = STRINGS[wordsLanguage(form, opts.language)];
+        var colours = themeOf(form.theme, null, !onOwnPage(opts.formId));
         if (opts.testToken && form.test && !form.test.valid) {
-          message(container, words.testInvalid);
+          message(container, words.testInvalid, colours);
           return;
         }
         // A test link opens the form even while it's off (D2); its token is checked again on submit.
         var usable = answer.success === true && (form.enabled || opts.testToken) && form.questions.length > 0;
         if (!usable) {
-          message(container, words.unavailable);
+          message(container, words.unavailable, colours);
           return;
         }
         var widget = new Widget(container, form, opts);
@@ -2591,19 +3146,23 @@
           if (widget) widget.setHiddenFields(values);
         },
         update: function(config) { if (widget && widget.preview) widget.update(config); },
-        goTo: function(questionId) { if (widget && widget.preview) widget.goTo(questionId); },
+        goTo: function(target) { if (widget && widget.preview) widget.goTo(target); },
         restart: function() { if (widget && widget.preview) widget.restart(); },
         setLanguage: function(language) {
           if (!widget) return;
           widget.requestedLanguage = language;
           widget.setLanguage(language, false);
         },
+        setScheme: function(scheme) { if (widget && widget.preview) widget.setScheme(scheme); },
         destroy: function() { if (widget) widget.destroy(); }
       };
       if (isObject(options.preview)) {
+        var preview = options.preview;
         var opts = readOptions(options);
         opts.preview = true;
-        widget = new Widget(container, toForm({}, options.preview.config), opts);
+        opts.seed = preview.seed;
+        opts.scheme = preview.scheme;
+        widget = new Widget(container, toForm({}, preview.config), opts);
         instances.push(widget);
         widget.listenForPreview();
         return handle;

@@ -1,12 +1,14 @@
 /**
  * @fileoverview Where people stop (UX §10.3). With the widget's open/step beacon (D6): Opened → Started → each
- * question on the path → Completed, the drop at each step and "largest drop" on the worst one (a warning, with an
- * icon and words). Without it, the card is titled Reach and lists how many completed responses answered each
- * question, and says why there is no funnel: there is never a fake one.
+ * question → Completed, the drop at each step every path passes and "largest drop" on the worst one (a warning, with
+ * an icon and words); a question only some paths show says so instead of a drop (funnelSteps.ts). Without the beacon,
+ * the card is titled Reach and lists how many completed responses answered each question, and says why there is no
+ * funnel: there is never a fake one.
  *
  * @module pages/FeedbackForms/results/FunnelCard
  */
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { AlertTriangle } from 'lucide-react'
 import type { FormFunnel, FormResults } from '../../../api/feedbackFormsV2Results'
 import { formatCount, formatPercent } from '../../../utils/numberFormat'
@@ -14,61 +16,42 @@ import type { FormV2 } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
 import { Bar } from './BarRow'
 import { percentOf } from './scoreMath'
+import { FUNNEL_HEADING_ID, funnelSteps, largestDrop } from './funnelSteps'
+import type { FunnelStep } from './funnelSteps'
 
-interface Step {
-  readonly key: string
-  readonly label: string
-  readonly count: number
+function stepLabel(t: TFunction<'feedbackForms'>, form: FormV2, step: FunnelStep): string {
+  if (step.key === 'opened') return t('results.funnel.opened')
+  if (step.key === 'started') return t('results.funnel.started')
+  if (step.key === 'completed') return t('results.funnel.completed')
+  const question = form.questions.find((q) => q.id === step.key)
+  return question === undefined || step.number === null ? step.key : `${String(step.number)} · ${textIn(question.headline, form.language)}`
 }
 
-function stepsOf(form: FormV2, funnel: FormFunnel, words: { opened: string; started: string; completed: string }): Step[] {
-  const question = (id: string) => {
-    const at = form.questions.findIndex((q) => q.id === id)
-    const q = form.questions[at]
-    return q === undefined ? id : `${String(at + 1)} · ${textIn(q.headline, form.language)}`
-  }
-  return [
-    { key: 'opened', label: words.opened, count: funnel.opened },
-    { key: 'started', label: words.started, count: funnel.started },
-    ...funnel.steps.map((step) => ({ key: step.question_id, label: question(step.question_id), count: step.reached })),
-    { key: 'completed', label: words.completed, count: funnel.completed },
-  ]
-}
-
-/** The index of the step with the largest drop from the one before (null: no drop at all). */
-function largestDrop(steps: readonly Step[]): number | null {
-  const drops = steps.map((step, index) => (index === 0 ? 0 : (steps[index - 1]?.count ?? 0) - step.count))
-  const worst = Math.max(...drops)
-  return worst <= 0 ? null : drops.indexOf(worst)
-}
-
-export function FunnelCard({ form, funnel }: Readonly<{ form: FormV2; funnel: FormFunnel }>) {
+export function FunnelCard({ form, funnel, results }: Readonly<{ form: FormV2; funnel: FormFunnel; results: FormResults }>) {
   const { t, i18n } = useTranslation('feedbackForms')
-  const steps = stepsOf(form, funnel, { opened: t('results.funnel.opened'), started: t('results.funnel.started'), completed: t('results.funnel.completed') })
+  const steps = funnelSteps(form, funnel, results)
   const worst = largestDrop(steps)
   return (
-    <section className="card space-y-3" aria-labelledby="results-funnel">
-      <h3 id="results-funnel" className="text-sm font-semibold tracking-tight text-text-strong">{t('results.funnel.title')}</h3>
+    <section className="card space-y-3" aria-labelledby={FUNNEL_HEADING_ID}>
+      <h3 id={FUNNEL_HEADING_ID} tabIndex={-1} className="rounded-sm text-sm font-semibold tracking-tight text-text-strong focus-ring">{t('results.funnel.title')}</h3>
       <ol className="space-y-2">
-        {steps.map((step, index) => {
-          const previous = steps[index - 1]?.count
-          const drop = previous === undefined || previous === 0 ? null : percentOf(previous - step.count, previous)
-          return (
-            <li key={step.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,14rem)_1fr_auto]">
-              <span className="min-w-0 break-words text-sm text-text">{step.label}</span>
-              <span className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto"><Bar percent={percentOf(step.count, funnel.opened)} /></span>
-              <span className="text-right text-[12px] tabular-nums text-text">
-                {formatCount(step.count, i18n.language)}
-                {step.key === 'completed' && <span className="text-muted"> · {t('results.funnel.ofOpened', { percent: formatPercent(percentOf(step.count, funnel.opened), i18n.language) })}</span>}
-                {step.key !== 'completed' && drop !== null && drop > 0 && <span className="text-muted"> · −{formatPercent(drop, i18n.language)}</span>}
-                {worst === index && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-warn"><AlertTriangle size={12} aria-hidden="true" />{t('results.funnel.largestDrop')}</span>
-                )}
-              </span>
-            </li>
-          )
-        })}
+        {steps.map((step, index) => (
+          <li key={step.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,14rem)_1fr_auto]">
+            <span className="min-w-0 break-words text-sm text-text">{stepLabel(t, form, step)}</span>
+            <span className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto"><Bar percent={percentOf(step.count, funnel.opened)} /></span>
+            <span className="text-right text-[12px] tabular-nums text-text">
+              {formatCount(step.count, i18n.language)}
+              {step.key === 'completed' && <span className="text-muted"> · {t('results.funnel.ofOpened', { percent: formatPercent(percentOf(step.count, funnel.opened), i18n.language) })}</span>}
+              {step.key !== 'completed' && step.dropPercent !== null && step.dropPercent > 0 && <span className="text-muted"> · −{formatPercent(step.dropPercent, i18n.language)}</span>}
+              {!step.everyPath && <span className="text-muted"> · {t('results.funnel.somePaths')}</span>}
+              {worst === index && (
+                <span className="ml-2 inline-flex items-center gap-1 text-warn"><AlertTriangle size={12} aria-hidden="true" />{t('results.funnel.largestDrop')}</span>
+              )}
+            </span>
+          </li>
+        ))}
       </ol>
+      {steps.some((step) => !step.everyPath) && <p className="text-[12px] text-muted">{t('results.funnel.somePathsNote')}</p>}
     </section>
   )
 }

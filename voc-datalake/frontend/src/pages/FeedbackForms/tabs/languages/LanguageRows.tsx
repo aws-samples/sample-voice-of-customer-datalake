@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Languages, Trash2 } from 'lucide-react'
+import { Check, Languages, Pencil, Trash2 } from 'lucide-react'
 import { languageNames } from '../../../../i18n/languages'
 import ActionsMenu from '../../ui/ActionsMenu'
 import type { FormLanguage, FormV2 } from '../../model/formsV2'
@@ -81,13 +81,17 @@ export default function LanguageRows({ form, onTranslate, onRemove, onPrimary }:
   const total = completeness(form, form.language).total
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
+      {/* (Change… right after the language it changes, a ghost button with its pencil: at the row's far end it read
+          as loose text, 500 px from its language) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="text-[12px] font-medium text-muted">{t('languages.primary')}</span>
-        <span className="text-sm font-medium text-text-strong" lang={form.language}>{nameOf(form.language)}</span>
+        <span className="flex items-center gap-1">
+          <span className="text-sm font-medium text-text-strong" lang={form.language}>{nameOf(form.language)}</span>
+          <button type="button" className="btn btn-ghost btn-sm" aria-expanded={changing} onClick={() => setChanging((on) => !on)}>
+            <Pencil size={14} aria-hidden="true" />{t('languages.change')}
+          </button>
+        </span>
         <span className="text-[13px] text-muted">{t('languages.primaryHint')}</span>
-        <button type="button" className="btn btn-ghost btn-sm ml-auto" aria-expanded={changing} onClick={() => setChanging((on) => !on)}>
-          {t('languages.change')}
-        </button>
       </div>
       {changing && <ChangePrimary form={form} onChange={(language) => { onPrimary(language); setChanging(false) }} />}
       <ul className="divide-y divide-border rounded-lg border border-border" aria-label={t('languages.listLabel')}>

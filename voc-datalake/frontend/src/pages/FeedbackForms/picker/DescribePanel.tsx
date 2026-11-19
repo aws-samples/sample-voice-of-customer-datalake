@@ -1,8 +1,9 @@
 /**
  * @fileoverview "Describe your form" (UX §12.1), the picker's first option: a description (2,000 characters), the
- * "Try" examples, the form's language (the page's "Create in"), where it runs, and Draft it. The draft opens in the
- * builder unsaved; nothing is saved until the person saves it. While it drafts, Stop (asked first) ends it and drops
- * the draft. What the AI can't do is said in words (§12.4): a viewer is told before pressing; a refusal after it.
+ * "Try" examples, where it runs, Draft it, and the form's language ("in English · change": the page's "Create in" is
+ * its one control). The draft opens in the builder unsaved; nothing is saved until the person saves it. While it
+ * drafts, Stop (asked first) ends it and drops the draft, and Runs waits (`aria-disabled`, dimmed). What the AI can't
+ * do is said in words (§12.4): a viewer is told before pressing; a refusal after it.
  *
  * @module pages/FeedbackForms/picker/DescribePanel
  */
@@ -14,7 +15,7 @@ import { languageNames } from '../../../i18n/languages'
 import { useCurrentWorkspace } from '../../../workspace/currentWorkspace'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
 import type { Channel, FormLanguage } from '../model/formsV2'
-import { CHANNELS, FORM_LANGUAGES, LIMITS, isFormLanguage } from '../model/formsV2'
+import { CHANNELS, LIMITS } from '../model/formsV2'
 import Segmented from '../ui/Segmented'
 import AiRefusalNotice from '../ai/AiRefusalNotice'
 import StopDraftButton from '../ai/StopDraftButton'
@@ -43,9 +44,12 @@ function DraftButton({ busy, waitMinutes, onDraft }: Readonly<{ busy: boolean; w
   )
 }
 
-export default function DescribePanel({ language, onLanguage, request, initialDescription, onSubmit, textareaRef }: Readonly<{
+export default function DescribePanel({ language, onLanguage, onChangeLanguage, request, initialDescription, onSubmit, textareaRef }: Readonly<{
+  /** The page's "Create in" (the one language control): Describe says it, and an example may set it. */
   language: FormLanguage
   onLanguage: (language: FormLanguage) => void
+  /** "change": go to "Create in". */
+  onChangeLanguage: () => void
   request: AiDraftRequest
   initialDescription: string
   onSubmit: (submit: DescribeSubmit) => void
@@ -103,16 +107,9 @@ export default function DescribePanel({ language, onLanguage, request, initialDe
           <DescribeExamples current={description} disabled={request.busy} onUse={useExample} />
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <label htmlFor={`${id}-language`} className="block text-[12px] font-medium text-muted">{t('describe.language')}</label>
-              <select id={`${id}-language`} className="select w-auto" value={language} disabled={request.busy}
-                onChange={(event) => { if (isFormLanguage(event.target.value)) onLanguage(event.target.value) }}>
-                {FORM_LANGUAGES.map((code) => <option key={code} value={code} lang={code}>{languageNames[code]}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
               <p className="text-[12px] font-medium text-muted">{t('describe.runs')}</p>
               <Segmented label={t('describe.runs')} value={channel} onChange={setChannel}
-                choices={CHANNELS.map((value) => ({ value, label: t(`picker.runs.${value}`) }))} />
+                choices={CHANNELS.map((value) => ({ value, label: t(`picker.runs.${value}`), disabledReason: request.busy ? t('describe.busyReason') : undefined }))} />
               <p className="text-[12px] text-muted">{t(`describe.runsHint.${channel}`)}</p>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -120,7 +117,11 @@ export default function DescribePanel({ language, onLanguage, request, initialDe
               <DraftButton busy={request.busy} waitMinutes={request.waitMinutes} onDraft={submit} />
             </div>
           </div>
-          {request.busy && <p role="status" className="text-[13px] text-muted">{t('describe.draftingStatus')}</p>}
+          {/* (while it drafts, the button and the preview card say so: a third "Drafting…" here only repeated them) */}
+          <p className="text-[12px] text-muted">
+            {t('describe.inLanguage', { language: languageNames[language] })}{' · '}
+            <button type="button" className="link" onClick={onChangeLanguage}>{t('describe.changeLanguage')}</button>
+          </p>
           <p className="text-[12px] text-muted">{t('describe.privacy')}</p>
           {request.refusal !== null && (
             <AiRefusalNotice refusal={request.refusal} waitMinutes={request.waitMinutes}

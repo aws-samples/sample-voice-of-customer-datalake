@@ -480,6 +480,24 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+  /* Quiet link: a title that is the link of a whole card (the forms list's card title, a stretched link) and never
+     sits in running text. It reads as the heading it is (`--text-strong`, no accent) and underlines on hover and on
+     keyboard focus. WCAG 1.4.1 asks a cue besides colour of a link AMONG words; a card title has no words around it
+     to tell it from, so `link` stays the rule for every link in a sentence. */
+  .link-quiet {
+    color: var(--text-strong);
+    text-decoration-line: none;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    border-radius: var(--radius-sm);
+    overflow-wrap: break-word;
+    max-width: 100%;
+  }
+  .link-quiet:hover, .link-quiet:focus-visible { text-decoration-line: underline; }
+  .link-quiet:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 
   /* Badge tones (KiroCrew Badge: ok | err | warn | muted | aim + accent/info).
      A badge keeps its one-line width when it fits (`flex: none`), but is never
@@ -629,12 +647,15 @@
     overflow-wrap: break-word;
   }
 
-  /* --- Switch: KiroCrew Toggle (ui.tsx) -------------------------------- */
+  /* --- Switch: KiroCrew Toggle (ui.tsx) --------------------------------
+   * The off track is `--border` (1.27:1 on the light card), so it also draws the `--control-border` edge every
+   * control has (3:1, WCAG 1.4.11): an inset ring, which keeps the knob's 2px inset. On, the accent fill is the edge. */
   .switch {
     @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-border transition-colors
       disabled:cursor-not-allowed disabled:opacity-40;
+    box-shadow: inset 0 0 0 1px var(--control-border);
   }
-  .switch[aria-checked="true"], .switch-on { @apply bg-accent; }
+  .switch[aria-checked="true"], .switch-on { @apply bg-accent; box-shadow: none; }
   .switch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .switch-knob {
     @apply pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform;

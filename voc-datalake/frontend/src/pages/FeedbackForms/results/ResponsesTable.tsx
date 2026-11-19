@@ -1,7 +1,8 @@
 /**
  * @fileoverview Results › Responses (UX §10.4): the responses under the filters, newest first, 50 at a time with Load
  * more; each row's time, a summary of its answers, Test on a test response, its language, ending and hidden values,
- * and › to open it in the side sheet (`/results/responses/<id>`, so Back closes it).
+ * and › to open it in the side sheet (`/results/responses/<id>`, so Back closes it). Below md each response is a card
+ * (time · ending · language, then its first answers): the 40rem table pushed a 390 px page to 649 px (WCAG 1.4.10).
  *
  * @module pages/FeedbackForms/results/ResponsesTable
  */
@@ -52,6 +53,28 @@ function Row({ form, response, onOpen }: Readonly<{ form: FormV2; response: Form
   )
 }
 
+/** Below md, one response as a card: time · ending · language, then the first answers and the hidden values. */
+function ResponseCard({ form, response, onOpen }: Readonly<{ form: FormV2; response: FormResponse; onOpen: () => void }>) {
+  const { t, i18n } = useTranslation('feedbackForms')
+  const time = formatDateTime(response.submitted_at, i18n.language, '—', 'short')
+  const hidden = hiddenValues(form, response).filter((field) => field.value !== '').map((field) => `${field.id} ${field.value}`).join(' · ')
+  const open = t('results.responses.open', { time })
+  const meta = [time, response.ending_id === '' ? '' : endingTitle(form, response.ending_id), response.language].filter((part) => part !== '')
+  return (
+    <li className="card space-y-1.5 p-3">
+      <div className="flex items-start gap-2">
+        <p className="min-w-0 flex-1 break-words text-[12px] tabular-nums text-muted">{meta.join(' · ')}</p>
+        {response.is_test && <span className="badge badge-info inline-flex flex-shrink-0 items-center gap-1"><FlaskConical size={12} aria-hidden="true" />{t('results.test')}</span>}
+        <Tooltip kind="label" content={open}>
+          <button type="button" className="icon-btn -my-1 flex-shrink-0" aria-label={open} onClick={onOpen}><ChevronRight size={16} aria-hidden="true" /></button>
+        </Tooltip>
+      </div>
+      <p className="line-clamp-3 break-words text-sm text-text">{responseSummary(t, form, response)}</p>
+      {hidden !== '' && <p className="break-all text-[12px] text-muted">{hidden}</p>}
+    </li>
+  )
+}
+
 export default function ResponsesTable({ form, formId, filters, openId, onOpen, onClose }: Readonly<{
   form: FormV2
   formId: string
@@ -77,24 +100,30 @@ export default function ResponsesTable({ form, formId, filters, openId, onOpen, 
     const target = rows[index]
     return target === undefined ? undefined : () => onOpen(target.response_id)
   }
+  // Below md each response is a card; from md the table (its 40rem scrolls inside its card, never the page).
   return (
-    <div className="card space-y-3 overflow-x-auto">
-      <table className="w-full min-w-[40rem] text-left">
-        <caption className="sr-only">{t('results.responses.caption')}</caption>
-        <thead>
-          <tr className="border-b border-border text-[11px] font-semibold uppercase tracking-[.04em] text-muted-strong">
-            <th scope="col" className="py-2 pr-3">{t('results.responses.time')}</th>
-            <th scope="col" className="py-2 pr-3">{t('results.responses.answers')}</th>
-            <th scope="col" className="py-2 pr-3">{t('results.responses.language')}</th>
-            <th scope="col" className="py-2 pr-3">{t('results.responses.ending')}</th>
-            <th scope="col" className="py-2 pr-3">{t('results.responses.hidden')}</th>
-            <th scope="col" className="py-2"><span className="sr-only">{t('results.responses.openColumn')}</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((response) => <Row key={response.response_id} form={form} response={response} onOpen={() => onOpen(response.response_id)} />)}
-        </tbody>
-      </table>
+    <div className="min-w-0 space-y-3">
+      <ul className="space-y-2 md:hidden" aria-label={t('results.responses.caption')}>
+        {rows.map((response) => <ResponseCard key={response.response_id} form={form} response={response} onOpen={() => onOpen(response.response_id)} />)}
+      </ul>
+      <div className="card hidden min-w-0 overflow-x-auto md:block">
+        <table className="w-full min-w-[40rem] text-left">
+          <caption className="sr-only">{t('results.responses.caption')}</caption>
+          <thead>
+            <tr className="border-b border-border text-[11px] font-semibold uppercase tracking-[.04em] text-muted-strong">
+              <th scope="col" className="py-2 pr-3">{t('results.responses.time')}</th>
+              <th scope="col" className="py-2 pr-3">{t('results.responses.answers')}</th>
+              <th scope="col" className="py-2 pr-3">{t('results.responses.language')}</th>
+              <th scope="col" className="py-2 pr-3">{t('results.responses.ending')}</th>
+              <th scope="col" className="py-2 pr-3">{t('results.responses.hidden')}</th>
+              <th scope="col" className="py-2"><span className="sr-only">{t('results.responses.openColumn')}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((response) => <Row key={response.response_id} form={form} response={response} onOpen={() => onOpen(response.response_id)} />)}
+          </tbody>
+        </table>
+      </div>
       {query.hasNextPage && (
         <button type="button" className="btn btn-secondary btn-sm" disabled={query.isFetchingNextPage} onClick={() => { void query.fetchNextPage() }}>
           {t('results.responses.more')}

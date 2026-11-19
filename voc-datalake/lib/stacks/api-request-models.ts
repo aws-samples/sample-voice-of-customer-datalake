@@ -52,6 +52,8 @@ const HIDDEN_ID = '^[a-z][a-z0-9_]{0,39}$';
 const SESSION_ID = '^[A-Za-z0-9_-]{8,64}$';
 /** lambda/shared/forms_v2.py FORM_LOCALES. */
 const FORM_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko', 'pl'];
+/** lambda/shared/forms_v2_responses.py CHANNELS: how the widget that sent a response runs. */
+const FORM_CHANNELS = ['link', 'iframe', 'script'];
 
 /** `POST /feedback-forms/{form_id}/submit`: `_validated_submission` + `_widget_dimensions`. */
 const feedbackFormSubmission: apigateway.JsonSchema = {
@@ -79,6 +81,9 @@ const feedbackFormSubmission: apigateway.JsonSchema = {
     ending_id: optionalString(formBounds.MAX_FORM_ID_CHARS),
     // The widget's random id of the visit (closes the funnel's dedupe row of its `left`): no person's data.
     session: { type: [STRING, NULL], pattern: SESSION_ID },
+    // Where it was answered (7.55.01): the API's own page, that page framed, or a script embed; a widget from before
+    // 7.55.01 sends none.
+    channel: { type: [STRING, NULL], enum: [...FORM_CHANNELS, null] },
     form_id: optionalString(formBounds.FORM_ID_MAX_LENGTH),
     // The form's test token (the test link's `test=`), checked against the form by the handler.
     test: optionalString(formBounds.MAX_TEST_TOKEN_CHARS),

@@ -14,7 +14,7 @@ import type {
 } from './formsV2'
 import {
   DEFAULT_THEME, DISPLAYS, FORM_LANGUAGES, INPUT_TYPES, RATING_RANGES, RATING_SCALES, RULE_OPS,
-  SHUFFLES, TEST_RECORDS, isFormLanguage,
+  SHUFFLES, TEST_RECORDS, THEME_FONTS, THEME_MODES, THEME_TEXT_SIZES, isFormLanguage,
 } from './formsV2'
 
 const text = z.record(z.string(), z.unknown()).catch({}).transform((raw): I18nText =>
@@ -122,12 +122,33 @@ const hiddenFields = z.array(z.unknown()).catch([]).transform((items) => items.f
 
 const language = z.enum(FORM_LANGUAGES)
 const languages = z.array(z.unknown()).catch([]).transform((items) => items.filter(isFormLanguage))
-const theme = z.object({
-  primary_color: z.string().catch(DEFAULT_THEME.primary_color),
-  background_color: z.string().catch(DEFAULT_THEME.background_color),
-  text_color: z.string().catch(DEFAULT_THEME.text_color),
-  border_radius: z.string().catch(DEFAULT_THEME.border_radius),
+/** A stored colour: `#rgb`, `#rrggbb`, or an old form's `#rrggbbaa` (lambda/shared/form_theme.py HEX_COLOR). */
+const STORED_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+/** The dark palette is new in 7.55.01: `#rgb` or `#rrggbb` only (form_theme.py PALETTE_HEX). */
+const PALETTE_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+const colour = (pattern: RegExp, fallback: string) => z.string().regex(pattern).catch(fallback)
+const darkPalette = z.object({
+  primary_color: colour(PALETTE_HEX, DEFAULT_THEME.dark.primary_color),
+  background_color: colour(PALETTE_HEX, DEFAULT_THEME.dark.background_color),
+  text_color: colour(PALETTE_HEX, DEFAULT_THEME.dark.text_color),
+}).catch({ ...DEFAULT_THEME.dark })
+
+/**
+ * A form's theme as the editor holds it, every field present: one missing (a theme stored before 7.55.01 has no mode,
+ * dark palette, font or size) or unusable is its default, as the server reads it (form_theme.py `with_defaults`).
+ * Shared with the v1 migration (migrateV1.ts).
+ */
+export const themeSchema = z.object({
+  primary_color: colour(STORED_HEX, DEFAULT_THEME.primary_color),
+  background_color: colour(STORED_HEX, DEFAULT_THEME.background_color),
+  text_color: colour(STORED_HEX, DEFAULT_THEME.text_color),
+  border_radius: z.string().regex(/^\d{1,2}px$/).catch(DEFAULT_THEME.border_radius),
+  mode: z.enum(THEME_MODES).catch(DEFAULT_THEME.mode),
+  dark: darkPalette,
+  font: z.enum(THEME_FONTS).catch(DEFAULT_THEME.font),
+  text_size: z.enum(THEME_TEXT_SIZES).catch(DEFAULT_THEME.text_size),
 }).catch({ ...DEFAULT_THEME })
+const theme = themeSchema
 
 const formV2 = z.object({
   name: z.string().catch(''),

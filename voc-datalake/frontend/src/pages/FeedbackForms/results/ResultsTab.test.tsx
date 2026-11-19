@@ -99,6 +99,38 @@ describe('ResultsTab summary', () => {
     expect(within(funnel).getByText('Completed').closest('li')).toHaveTextContent('25% of opened')
   })
 
+  it('says the largest drop beside Completion, and that line moves to the funnel', async () => {
+    const user = userEvent.setup()
+    getResults.mockResolvedValue({ ...RESULTS, funnel: { opened: 40, started: 30, steps: [{ question_id: 'q_why', reached: 12 }], completed: 10 } })
+    renderWithDraft(<ResultsTab />, RESULTS_FORM)
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+    await user.click(await screen.findByRole('button', { name: 'largest drop at Q1' }))
+    expect(screen.getByRole('heading', { name: 'Drop-off' })).toHaveFocus()
+    expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', behavior: 'smooth' })
+  })
+
+  it('never calls a question logic shows to some people only the largest drop', async () => {
+    const form = {
+      ...RESULTS_FORM,
+      questions: RESULTS_FORM.questions.map((question, index) => (index === 0
+        ? { ...question, logic: [{ when: { op: 'includes_any' as const, value: ['cant_find'] }, then: { jump_to: 'q_nps' } }, { when: { op: 'submitted' as const }, then: { jump_to: 'q_rating' } }] }
+        : question)),
+    }
+    getResults.mockResolvedValue({
+      ...RESULTS, funnel: {
+        opened: 12, started: 12, completed: 10,
+        steps: [{ question_id: 'q_why', reached: 12 }, { question_id: 'q_nps', reached: 11 }, { question_id: 'q_rating', reached: 11 }],
+      },
+    })
+    renderWithDraft(<ResultsTab />, form)
+    const funnel = await screen.findByRole('region', { name: 'Drop-off' })
+    const nps = within(funnel).getByText('2 · How likely are you to recommend us?').closest('li')
+    expect(nps).toHaveTextContent('on some paths only')
+    expect(nps).not.toHaveTextContent('largest drop')
+    expect(within(funnel).getByText(/Logic shows some questions on some paths only/u)).toBeInTheDocument()
+  })
+
   it('reads without test responses, and says so loudly once they are included', async () => {
     const user = userEvent.setup()
     getResults.mockResolvedValue({ ...RESULTS, test_count: 14 })

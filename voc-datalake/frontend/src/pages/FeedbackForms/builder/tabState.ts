@@ -20,7 +20,7 @@ export function tabProblemCount(tab: BuilderTab, problems: readonly FormProblem[
     case 'questions': return listed.filter((p) => ON_QUESTIONS.has(p.at.kind) || p.code === 'noQuestions' || p.code === 'noEndings').length
     case 'languages': return listed.filter((p) => p.at.kind === 'language').reduce((sum, p) => sum + Number(p.params['count'] ?? 0), 0)
     case 'hidden-fields': return listed.filter((p) => p.at.kind === 'hidden').length
-    case 'settings': return listed.filter((p) => p.code === 'noCategory').length
+    case 'settings': return listed.filter((p) => p.code === 'noCategory' || p.at.kind === 'theme').length
     case 'flow': case 'test': case 'share': case 'results': return 0
   }
 }

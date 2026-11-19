@@ -85,7 +85,7 @@ export default function EndingEditor({ ending }: Readonly<{ ending: Ending }>) {
           <Lightbulb size={14} className="mt-0.5 shrink-0" aria-hidden="true" />{t('templates.onboarding.tips.end_newcomer')}
         </p>
       )}
-      <CollapsibleSection title={t('question.advanced')} open={advanced} onOpenChange={setAdvanced}>
+      <CollapsibleSection size="sm" title={t('question.advanced')} open={advanced} onOpenChange={setAdvanced}>
         <IdField label={t('endings.id')} value={ending.id} locked={draft.locked} lockedText={t('endings.idLocked')} check={checkId}
           onCommit={(id) => { draft.update((current) => renameEndingId(current, ending.id, id)); go('questions', ['end', id], { replace: true }) }} />
       </CollapsibleSection>

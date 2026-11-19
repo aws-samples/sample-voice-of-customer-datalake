@@ -120,6 +120,7 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
         language: { type: ['string', 'null'], enum: ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko', 'pl', null] },
         ending_id: { type: ['string', 'null'], maxLength: 44 },
         session: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{8,64}$' },
+        channel: { type: ['string', 'null'], enum: ['link', 'iframe', 'script', null] },
         form_id: { type: ['string', 'null'], maxLength: 64 },
         test: { type: ['string', 'null'], maxLength: 64 },
         rating: { type: ['number', 'null'], minimum: 1, maximum: 10 },

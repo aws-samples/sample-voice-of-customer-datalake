@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -34,6 +35,7 @@ from shared import (
     design_logo,
     design_references,
     extracted_design,
+    form_theme,
     forms_v2_draft,
     forms_v2_draft_routes,
     image_model_quota,
@@ -174,6 +176,11 @@ RETENTION_FUNCTION = os.environ.get("RETENTION_FUNCTION", "")
 BRAND_KIND = "brand"
 FAILED_BRAND_READ = 'Failed to retrieve brand settings'
 FAILED_BRAND_SAVE = 'Failed to save brand settings'
+#: The brand's own fields: what every AI surface of the workspace reads (a full brand PUT writes them all).
+BRAND_FIELDS: Final = ('brand_name', 'brand_handles', 'hashtags', 'urls_to_track')
+#: The workspace's feedback-form brand (7.55.01, the forms builder's "Your brand" preset): a theme checked by
+#: shared/form_theme.py, on the same row; a new form starts on it. A PUT naming only it changes only it.
+FORM_THEME_FIELD: Final = 'form_theme'
 # The resolved problems are a workspace's (docs/multi-workspace.md, "Per-workspace configuration"): their row is
 # under the workspace the request names (shared/request_workspace.py), keyed by shared/workspace_settings.py. A request
 # that names none keeps the deployment's row, as before.
@@ -720,9 +727,8 @@ def get_brand_settings():
         response = aggregates_table.get_item(Key=_brand_key(context))
         item = response.get('Item')
         if not item:
-            return {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
-        result = {'brand_name': item.get('brand_name', ''), 'brand_handles': item.get('brand_handles', []),
-                  'hashtags': item.get('hashtags', []), 'urls_to_track': item.get('urls_to_track', [])}
+            return {**{name: _brand_value({}, name) for name in BRAND_FIELDS}, FORM_THEME_FIELD: None}
+        result = {**{name: _brand_value(item, name) for name in BRAND_FIELDS}, FORM_THEME_FIELD: _stored_form_theme(item)}
     except ConfigurationError:
         raise
     except Exception as e:
@@ -742,6 +748,12 @@ def save_brand_settings():
     them (#242; with no workspace, the deployment's admins, as before). The
     gate runs before the body is parsed or anything is written. GET
     /settings/brand stays open to every member.
+
+    The row also holds the workspace's feedback-form brand (``form_theme``, the
+    forms builder's "Your brand"): a body naming only ``form_theme`` sets just
+    that (null removes it); a full brand save writes the brand's own fields and
+    keeps the stored ``form_theme`` unless it names one. Both are one UpdateItem,
+    so neither save can undo the other.
     """
     event = app.current_event.raw_event
     # A write: the caller's role from the table, not the warm cache.
@@ -750,17 +762,61 @@ def save_brand_settings():
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     body = json_object_body(app)
+    theme = _form_theme_of(body)
+    theme_only = set(body) == {FORM_THEME_FIELD}
+    sets: dict[str, Any] = {} if theme_only else {name: _brand_value(body, name) for name in BRAND_FIELDS}
+    settings = dict(sets)
+    if FORM_THEME_FIELD in body:
+        settings[FORM_THEME_FIELD] = theme
     try:
-        item = {**_brand_key(context), 'brand_name': body.get('brand_name', ''),
-                'brand_handles': body.get('brand_handles', []), 'hashtags': body.get('hashtags', []),
-                'urls_to_track': body.get('urls_to_track', []), 'updated_at': now_iso()}
-        aggregates_table.put_item(Item=item)
-        bump_config_version(aggregates_table)
+        _update_brand_row(context, {**sets, 'updated_at': now_iso()}, body, theme)
+        if not theme_only:
+            bump_config_version(aggregates_table)
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
         raise ServiceError(FAILED_BRAND_SAVE) from e
     else:
-        return {'success': True, 'message': 'Brand settings saved', 'settings': {k: item[k] for k in ['brand_name', 'brand_handles', 'hashtags', 'urls_to_track']}}
+        return {'success': True, 'message': 'Brand settings saved', 'settings': settings}
+
+
+def _brand_value(source: Mapping[str, Any], name: str) -> Any:
+    """One of the brand's own fields from a row or a body: its value, else its empty one ('' for the name, [] for the
+    handles, hashtags and tracked URLs)."""
+    return source.get(name, '' if name == 'brand_name' else [])
+
+
+def _form_theme_of(body: dict[str, Any]) -> dict[str, Any] | None:
+    """A brand body's ``form_theme``: checked as a form's theme is (shared/form_theme.py) and stored whole (every
+    field, its defaults filled), or None (absent, or null to remove it)."""
+    theme = body.get(FORM_THEME_FIELD)
+    if theme is None:
+        return None
+    form_theme.check_theme(theme, FORM_THEME_FIELD)
+    return form_theme.with_defaults(theme)
+
+
+def _stored_form_theme(item: dict[str, Any]) -> dict[str, Any] | None:
+    """The brand row's form theme as the builder reads it (every field), or None when none was saved."""
+    stored = item.get(FORM_THEME_FIELD)
+    return form_theme.with_defaults(stored) if isinstance(stored, dict) else None
+
+
+def _update_brand_row(context: WorkspaceContext | None, sets: dict[str, Any], body: dict[str, Any],
+                      theme: dict[str, Any] | None) -> None:
+    """One UpdateItem of the brand row: ``sets``, and ``form_theme`` set (or removed, for a null) when the body names
+    it; every other attribute stays."""
+    names = {f'#f{i}': name for i, name in enumerate(sets)}
+    values: dict[str, Any] = {f':f{i}': value for i, value in enumerate(sets.values())}
+    expression = 'SET ' + ', '.join(f'#f{i} = :f{i}' for i in range(len(sets)))
+    if FORM_THEME_FIELD in body:
+        names['#theme'] = FORM_THEME_FIELD
+        if theme is None:
+            expression += ' REMOVE #theme'
+        else:
+            values[':theme'] = theme
+            expression += ', #theme = :theme'
+    aggregates_table.update_item(Key=_brand_key(context), UpdateExpression=expression,
+                                 ExpressionAttributeNames=names, ExpressionAttributeValues=values)
 
 
 def _brand_key(context: WorkspaceContext | None) -> dict[str, str]:

@@ -439,7 +439,7 @@ Disabled: `opacity-40`, no press scale.
 | `input` | Text inputs and textareas: `bg-bg-elevated border border-control-border rounded-md px-3 py-2 text-sm`, hover `border-control-border-hover`, focus ring glow |
 | `select` / `select-sm` | Native `<select>` with a theme-aware chevron (`--select-chevron`); same `--control-border` edge as `input` |
 | `focus-ring` | The 2px `--ring` outline (offset 2px) on `:focus-visible` for any non-text-field focusable. Never a tint alone: the `--accent-subtle` glow is 1.28:1 on the card |
-| `switch` + `switch-knob` | On/off pill: `w-9 h-5`, `bg-border` → `bg-accent` when `aria-checked="true"` or `switch-on`; white knob slides 16px |
+| `switch` + `switch-knob` | On/off pill: `w-9 h-5`, `bg-border` → `bg-accent` when `aria-checked="true"` or `switch-on`; white knob slides 16px. Off, the track also draws a 1px inset `--control-border` edge (`box-shadow`, so the knob keeps its 2px inset): the `--border` track alone is 1.27:1 on the light card, and a control's boundary needs 3:1 (WCAG 1.4.11). On, the accent fill is the edge (`theme/controlBorder.test.ts`). A label that flips ("Live" / "Off") passes `widthOf` to `components/Switch` so it keeps the widest word's width and the controls after it never move |
 | `range` (+ `range-unscored`) | Native `<input type="range">`: thin `bg-border` track, 18px accent thumb with a card-coloured ring, `h-8` hit area; `range-unscored` = hollow muted thumb for "not chosen yet" |
 | Checkboxes / radios | Every `<input type="checkbox">` / `"radio"` is drawn by the base layer (no class needed): 16px box, 1px `--control-border` edge, `rounded-sm` (radio round), filled `--accent` with an `--accent-fg` lucide check when checked; `accent-danger` fills `--danger` for a destructive choice. The UA box ignores CSS borders, hence `appearance: none`. Do not add `border-border*` to them |
 
@@ -462,6 +462,18 @@ only on hover leaves colour as the only cue at rest, which fails WCAG 1.4.1 (axe
 `link-in-text-block`). `src/theme/linkStyle.test.ts` bans that spelling. Rendered
 markdown gets the same treatment from `.md-content a`.
 
+`link-quiet` (7.55.01) is the one exception, for a title that is the link of a whole card
+and never sits among words: `--text-strong`, no underline at rest, underlined on hover
+and on keyboard focus, with the focus ring. WCAG 1.4.1 asks a cue besides colour of a
+link *in a block of text*; a card title has no surrounding text to tell it from, and a
+purple underlined title made every card read as a sentence of hyperlinks. Make the card
+the target with a stretched link (`after:absolute after:inset-0` on the title's link, the
+card `relative`) and keep the card's controls (switch, buttons, ⋯) after it in the DOM,
+`relative` without a z-index: they paint above the overlay by order, and an open ⋯ menu
+is not trapped in a z-index context the next card would cover. The Feedback Forms list
+card (`pages/FeedbackForms/FormCard.tsx`) is the pattern. Anywhere a link sits in a
+sentence, it is `link`.
+
 ### Badges
 
 `badge` + tone: `badge-ok` · `badge-warn` · `badge-danger` · `badge-info` · `badge-aim` · `badge-accent` · `badge-muted`. Pills are `rounded-full px-2 py-0.5 text-xs font-medium`; counts inside use `font-mono`.
@@ -481,6 +493,8 @@ The tone is chosen by **meaning** ([Labels vs status](#labels-vs-status)): a des
 ```
 
 The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted`. The active segment is a raised card (`bg-card border shadow-sm text-accent-text`); `aria-selected="true"` also activates it. Use the same recipe for segmented filters (grid/list, sort, range pickers).
+
+A row of tabs wider than its screen scrolls sideways and says so: `IconTabs`' `scrollLabels` (7.55.01, the form builder's tabs) gives it the `.tab-strip` end fade and the two scroll buttons of `components/TabStrip/` (shared with the run workspace's agent tabs), and scrolls the active tab into view.
 
 ### Dialogs
 
@@ -531,6 +545,10 @@ Every settings card saves itself: there is no page-level Save. After a save the 
 `menu` (container: `rounded-lg border bg-bg-elevated p-1 shadow-lg`, scales in) · `menu-item` (`rounded-md px-3 py-1.5 text-[13px]`, hover `bg-bg-hover`) · `menu-label` · `menu-separator`. Position with utilities (`absolute right-0 top-full mt-1 w-52`).
 
 **A row's actions: `RowActionsMenu`** (`components/RowActionsMenu/`, 7.52.00): the "⋯" `icon-btn` named "Actions for <item>" (its Tooltip the same words), opening a `menu` fixed in a portal (a list card's `overflow-hidden` never clips it), the WAI-ARIA menu button pattern (the first item focused, arrows, Home/End, Escape back to the button, Tab on to the next control). Entries are actions or separators (`rowMenuEntries.ts`; a separator is never first, last or doubled); a destructive one is last, in the danger tone; one that cannot act now stays focusable (`aria-disabled`) with its reason as visible text. `face` makes it a text menu button ("Run another flow ▾"). Automations' rows and an automation's page header use it.
+
+The form builder's ⋯ menus (`pages/FeedbackForms/ui/ActionsMenu.tsx`) and its Add question type menu open the same way (fixed, in a portal, placed by `utils/fixedMenu.ts`, closed when the page scrolls or the window resizes), so a pane that scrolls on its own never clips them (7.55.01). `placeFixedMenu` measures the menu with its scale-in transform turned off, so a tall menu is not placed off by the animation.
+
+**Keep-clear zones** (7.55.01, `components/StickyActionBar/actionBarRegistry.ts`): floating UI keeps clear of what a page registers with `useRegisterKeepClear(ref, { mode })`. `lift` is a sticky action bar (the assistant launcher rises above it; `useRegisterActionBar` is its shorthand); `beside` is a tall pane at the end edge, such as a form's preview, which the launcher stands beside, on its inline-start side, instead of covering its Next. A spot the person dragged the launcher to stays theirs unless it covers a zone. Save bars (`StickyActionBar` `bar`) are an opaque `bg-card`, never `backdrop-blur`: a backdrop filter makes the bar the containing block of a fixed dialog opened from it, and traps the dialog inside the bar.
 
 ### Tooltips
 

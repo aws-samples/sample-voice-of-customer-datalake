@@ -7,7 +7,7 @@
  * @module pages/FeedbackForms/model/paths
  */
 import type { FormV2, Question } from './formsV2'
-import { matchesEverything } from './rules'
+import { matchesEverything, splitOtherwise } from './rules'
 
 /** Where a question can send a respondent: a later question, or an ending. */
 export interface Outcome {
@@ -31,6 +31,17 @@ export interface FormPaths {
 /** The target a question falls through to when no rule matches: the next question, else the default ending. */
 export function fallthroughTarget(form: FormV2, index: number): string | null {
   return form.questions[index + 1]?.id ?? form.endings[0]?.id ?? null
+}
+
+/**
+ * Where the question at `index` sends a respondent none of its own rules caught: its Otherwise target when it has
+ * one, else the fall-through. (Comparing a rule with the fall-through alone called a rule redundant when the
+ * question's Otherwise sends everyone else elsewhere, so the rule was the only way into its target.)
+ */
+export function noMatchTarget(form: FormV2, index: number): string | null {
+  const question = form.questions[index]
+  if (question === undefined) return null
+  return splitOtherwise(question).otherwise ?? fallthroughTarget(form, index)
 }
 
 /** Is `target` a valid jump from the question at `index` (a later question, or an ending)? */

@@ -104,10 +104,15 @@ export interface FeedbackFormConfig {
   endings: FormEnding[]
   /** A version 1 form without a language, migrated to the deployment's: the widget keeps the browser's for its words. */
   language_assumed: boolean
+  /** Every field since 7.55.01 (a stored theme without its new ones is served with their defaults: form_theme.py). */
   theme: {
     primary_color?: string
     background_color?: string
     text_color?: string
     border_radius?: string
+    mode?: 'light' | 'dark' | 'auto'
+    dark?: { primary_color?: string; background_color?: string; text_color?: string }
+    font?: 'system' | 'inherit' | 'serif' | 'rounded' | 'mono'
+    text_size?: 'default' | 'large'
   }
 }

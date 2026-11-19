@@ -38,6 +38,14 @@ describe('.link', () => {
     expect(css).toMatch(/\n {2}\.link\[href\^="http"\] \{ overflow-wrap: anywhere; \}/)
   })
 
+  it('has one quiet variant, for a card title that is the card\'s link: heading colour, underlined on hover and focus', () => {
+    const rule = /\n {2}\.link-quiet \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(rule).toContain('color: var(--text-strong)')
+    expect(rule).toContain('text-decoration-line: none')
+    expect(css).toMatch(/\n {2}\.link-quiet:hover, \.link-quiet:focus-visible \{ text-decoration-line: underline; \}/)
+    expect(/\n {2}\.link-quiet:focus-visible \{([^}]*)\}/.exec(css)?.[1] ?? '').toContain('outline: 2px solid var(--ring)')
+  })
+
   it('is never replaced by a hover-only underline in a class string', () => {
     const offenders = sourceFiles(SRC).filter((path) => /"[^"\n]*\bhover:underline\b[^"\n]*"|'[^'\n]*\bhover:underline\b[^'\n]*'/.test(readFileSync(path, 'utf8')))
     expect(offenders.map((path) => relative(SRC, path))).toStrictEqual([])

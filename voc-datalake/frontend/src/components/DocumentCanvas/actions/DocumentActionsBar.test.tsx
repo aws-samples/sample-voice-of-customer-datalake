@@ -16,7 +16,7 @@ import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
 import enDocuments from '../../../../public/locales/en/documents.json'
 import enComponents from '../../../../public/locales/en/components.json'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
-import { useActionBarRects } from '../../StickyActionBar/actionBarRegistry'
+import { useKeepClearZones } from '../../StickyActionBar/actionBarRegistry'
 import { canvasState } from './canvas-state-fixtures'
 import DocumentActionsBar from './DocumentActionsBar'
 import type { ReactElement } from 'react'
@@ -144,7 +144,7 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
     const measured = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ ...box, toJSON: () => box })
     onTestFinished(() => measured.mockRestore())
     function LauncherProbe() {
-      return <p data-testid="bars">{useActionBarRects().length}</p>
+      return <p data-testid="bars">{useKeepClearZones().filter((zone) => zone.mode === 'lift').length}</p>
     }
     render(<LauncherProbe />)
     renderBar({ state: canvasState({ dirty: true }) })

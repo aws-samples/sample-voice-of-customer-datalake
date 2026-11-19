@@ -13,6 +13,7 @@ import { builderPath } from '../builder/builderPaths'
 import { handoffState } from '../builder/newFormHandoff'
 import type { NewFormHandoff } from '../builder/newFormHandoff'
 import { draftAddresses } from '../ai/aiAddresses'
+import { onBrand, useSavedFormBrand } from '../theme/useFormBrand'
 import type { AiDraftRequest } from '../ai/useAiDraftRequest'
 import type { CreateInCopy } from './useCreateInCopy'
 import type { DescribeSubmit } from './DescribePanel'
@@ -34,8 +35,10 @@ export function usePickerActions({ flow, copy, language, request }: Readonly<{
 }>): PickerActions {
   const navigate = useNavigate()
   const [stopDraft, setStopDraft] = useState(false)
+  // A new form starts on the workspace's form brand when one is saved (templates and AI drafts carry the default).
+  const brand = useSavedFormBrand()
   const openBuilder = (handoff: NewFormHandoff) => {
-    void navigate(builderPath(null, 'questions'), { state: handoffState(handoff) })
+    void navigate(builderPath(null, 'questions'), { state: handoffState({ ...handoff, form: onBrand(handoff.form, brand) }) })
   }
   const open = (picked: TemplateFlow) => openBuilder({ form: copy.formOf(picked), templateId: picked.id, ai: null })
   const draft = async ({ description, channel }: DescribeSubmit) => {

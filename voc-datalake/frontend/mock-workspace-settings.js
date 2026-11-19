@@ -14,6 +14,7 @@
 // afresh. Wired into mock-server.js by handleDomainModules.
 
 import { resolve } from './mock-workspaces.js';
+import { brandFormTheme } from './mock-forms-v2.js';
 
 const PLUGINS_ROUTE = '/me/workspaces/current/plugins';
 const PLUGIN_ROUTE = /^\/me\/workspaces\/current\/plugins\/([^/]+)$/;
@@ -74,9 +75,13 @@ function changePlugin(req, res, send, shared, pluginId) {
   });
 }
 
-const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [] };
+const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [], form_theme: null };
 const strings = (value) => (Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []);
 
+/**
+ * The workspace's brand. `form_theme` is its form brand (the forms builder's "Your brand"): a PUT of only it sets
+ * only it; a full brand PUT keeps it unless it names one (settings_handler.py, one UpdateItem either way).
+ */
 function workspaceBrand(req, res, send, shared) {
   shared.collectJson(req, res, (body) => {
     const entry = resolve(req, shared);
@@ -84,9 +89,17 @@ function workspaceBrand(req, res, send, shared) {
     const { workspace, role } = entry;
     if (req.method === 'GET') return send(200, { ...EMPTY_BRAND, ...workspace.brand });
     if (role !== 'admin') return refuse(send, [403, NOT_WORKSPACE_ADMIN]);
+    const named = brandFormTheme(body);
+    if (named?.error) return send(400, { success: false, error: named.error });
+    const formTheme = named === undefined ? workspace.brand?.form_theme ?? null : named.theme;
+    if (named !== undefined && Object.keys(body).length === 1) {
+      workspace.brand = { ...EMPTY_BRAND, ...workspace.brand, form_theme: formTheme };
+      return send(200, { success: true, message: 'Brand settings saved', settings: { form_theme: formTheme } });
+    }
     workspace.brand = {
       brand_name: typeof body?.brand_name === 'string' ? body.brand_name : '',
       brand_handles: strings(body?.brand_handles), hashtags: strings(body?.hashtags), urls_to_track: strings(body?.urls_to_track),
+      form_theme: formTheme,
     };
     return send(200, { success: true, message: 'Brand settings saved', settings: { ...workspace.brand } });
   });

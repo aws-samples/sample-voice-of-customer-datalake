@@ -50,6 +50,24 @@ describe('Results responses', () => {
     expect(rows[2]).toHaveTextContent('Test')
   })
 
+  it('below md shows each response as a card: time · ending · language, then its first answers', async () => {
+    renderWithDraft(<ResultsTab />, RESULTS_FORM, { rest: ['responses'] })
+    const cards = within(await screen.findByRole('list', { name: 'Responses, newest first' })).getAllByRole('listitem')
+    expect(cards[0]).toHaveTextContent(/^Nov 17, \d{1,2}:02\s?[AP]M · Thank you · en/u)
+    expect(cards[0]).toHaveTextContent("I can't find what I need, Something else: “printing” · 9 · “The export is gone”")
+    expect(cards[1]).toHaveTextContent('Test')
+  })
+
+  it('keeps the 40rem table from md only, scrolling inside its card, and a card opens its response', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<ResultsTab />, RESULTS_FORM, { rest: ['responses'] })
+    const list = await screen.findByRole('list', { name: 'Responses, newest first' })
+    expect([list.className.includes('md:hidden'), screen.getByRole('table').parentElement?.className.split(' ')])
+      .toStrictEqual([true, expect.arrayContaining(['hidden', 'md:block', 'overflow-x-auto', 'min-w-0'])])
+    await user.click(within(at(within(list).getAllByRole('listitem'), 1)).getByRole('button', { name: /Open the response from/ }))
+    expect(harness.go).toHaveBeenCalledWith('results', ['responses', 'r_2'])
+  })
+
   it('opens a response by its path', async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<ResultsTab />, RESULTS_FORM, { rest: ['responses'] })

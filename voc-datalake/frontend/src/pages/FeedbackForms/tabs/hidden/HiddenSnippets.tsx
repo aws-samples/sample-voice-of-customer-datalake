@@ -1,11 +1,12 @@
 /**
  * @fileoverview "Use them" on the Hidden fields tab (UX §6): the link, the script embed, the in-app SDK call and the
  * mobile WebView link, each with every hidden field as a `{PLACEHOLDER}` and the form's language, in the shared code
- * view. Live | Test swaps in the test link (D2), and says what that means; a new form has no links until saved.
+ * view. "Values for" Live | Test, on its own line, swaps in the test link (D2), and says what that means; a new form
+ * has no links until saved.
  *
  * @module pages/FeedbackForms/tabs/hidden/HiddenSnippets
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, Save } from 'lucide-react'
 import CodeView from '../../../../components/Document/text/CodeView'
@@ -13,9 +14,10 @@ import { useConfigStore } from '../../../../store/configStore'
 import Segmented from '../../ui/Segmented'
 import { useDraft } from '../../builder/formDraftContext'
 import { useBuilderUi } from '../../builder/builderUi'
-import { formLink, initSnippet } from '../snippets'
+import { formLink, scriptEmbedSnippet, sdkSnippet } from '../snippets'
 import type { SnippetInput } from '../snippets'
 import InfoNote from './InfoNote'
+import { SaveBlockedReason } from '../linkParts'
 import { useTestToken } from '../testToken'
 
 const KINDS = ['link', 'script', 'sdk', 'webview'] as const
@@ -23,7 +25,8 @@ type SnippetKind = (typeof KINDS)[number]
 type Mode = 'live' | 'test'
 
 function snippetText(kind: SnippetKind, input: SnippetInput): string | null {
-  return kind === 'script' || kind === 'sdk' ? initSnippet(input) : formLink(input, true)
+  if (kind === 'script') return scriptEmbedSnippet(input)
+  return kind === 'sdk' ? sdkSnippet(input) : formLink(input, true)
 }
 
 function TestNotice({ ready }: Readonly<{ ready: boolean }>) {
@@ -69,12 +72,19 @@ export default function HiddenSnippets() {
   const { formId } = useBuilderUi()
   const [kind, setKind] = useState<SnippetKind>('link')
   const [mode, setMode] = useState<Mode>('live')
+  const reasonId = useId()
   const { form } = draft
   const token = useTestToken() ?? ''
   const testReady = form.settings.test.link_enabled && token !== ''
   if (formId === null) {
+    // (while problems block Save, it says why under the note, with the way to them: F27)
+    const blocked = draft.errors.length > 0
     return (
-      <InfoNote icon={Save} action={{ label: t('hidden.save'), onClick: () => { void draft.save() } }}>{t('hidden.saveFirst')}</InfoNote>
+      <div className="space-y-2">
+        <InfoNote icon={Save} action={{ label: t('hidden.save'), onClick: () => { void draft.save() }, disabled: blocked,
+          describedBy: blocked ? reasonId : undefined }}>{t('hidden.saveFirst')}</InfoNote>
+        <SaveBlockedReason id={reasonId} />
+      </div>
     )
   }
   const input: SnippetInput = {
@@ -83,14 +93,16 @@ export default function HiddenSnippets() {
   }
   return (
     <section aria-labelledby="hidden-use-heading" className="space-y-3">
+      {/* (the kind and Live | Test side by side read as one bar of six: Live | Test is on its own line, named) */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="hidden-use-heading" className="text-sm font-semibold tracking-tight text-text-strong">{t('hidden.useThem')}</h3>
-        <div className="flex flex-wrap gap-2">
-          <Segmented label={t('hidden.kindLabel')} value={kind} onChange={setKind}
-            choices={KINDS.map((value) => ({ value, label: t(`hidden.kinds.${value}`) }))} />
-          <Segmented label={t('hidden.modeLabel')} value={mode} onChange={setMode}
-            choices={[{ value: 'live', label: t('hidden.modes.live') }, { value: 'test', label: t('hidden.modes.test') }]} />
-        </div>
+        <Segmented label={t('hidden.kindLabel')} value={kind} onChange={setKind}
+          choices={KINDS.map((value) => ({ value, label: t(`hidden.kinds.${value}`) }))} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span aria-hidden="true" className="text-[13px] font-medium text-text">{t('hidden.valuesFor')}</span>
+        <Segmented label={t('hidden.valuesFor')} value={mode} onChange={setMode}
+          choices={[{ value: 'live', label: t('hidden.modes.live') }, { value: 'test', label: t('hidden.modes.test') }]} />
       </div>
       <SnippetBody kind={kind} input={input} testShown={mode === 'test'} testReady={testReady} />
       <SnippetNotes kind={kind} />

@@ -24,6 +24,7 @@ producer's shape is pinned by a test in ``plugins/_shared/test/test_schemas.py``
 import re
 import unicodedata
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -204,6 +205,8 @@ class MessageMetadata(BaseModel):
     form_revision: int | None = Field(None, ge=1)
     # The widget's random id of the visit (no person's data): the funnel's dedupe of `left` beacons.
     form_session: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    # How the widget that sent it runs (shared/forms_v2_responses.py CHANNELS): the forms list's channels.
+    form_channel: Literal['link', 'iframe', 'script'] | None = None
 
     # Validators take `cls` without `@classmethod`: pydantic wraps a `cls`-first
     # validator in `classmethod` itself (ensure_classmethod_based_on_signature),

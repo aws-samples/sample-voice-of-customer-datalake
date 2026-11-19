@@ -55,6 +55,7 @@ def test_a_non_admin_is_refused_and_nothing_is_written_or_generated(
     assert response['statusCode'] == 403
     assert payload['error'] == 'Admin access required'
     table.put_item.assert_not_called()
+    table.update_item.assert_not_called()
     converse.assert_not_called()
 
 
@@ -76,7 +77,8 @@ def test_an_admin_saves_the_brand(api_gateway_event, lambda_context, table):
                               {'brand_name': 'Acme'}, ADMIN)
     assert response['statusCode'] == 200
     assert payload['settings']['brand_name'] == 'Acme'
-    table.put_item.assert_called_once()
+    # The brand row's UpdateItem (the config version's bump is the other one).
+    assert table.update_item.call_args_list[0].kwargs['Key'] == {'pk': 'SETTINGS#brand', 'sk': 'config'}
 
 
 @pytest.mark.usefixtures('table')

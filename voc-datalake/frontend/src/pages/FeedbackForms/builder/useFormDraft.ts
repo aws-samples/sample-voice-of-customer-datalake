@@ -18,7 +18,8 @@ import { HTTP_CONFLICT } from '../../../api/apiErrorStatus'
 import type { FormV2, LoadedForm, StoredFormMeta } from '../model/formsV2'
 import { removalsOf } from '../model/removals'
 import type { FormRemovals } from '../model/removals'
-import { blockingProblems, validateForm } from '../model/validateForm'
+import { blockingProblems, publishBlockingProblems, validateForm } from '../model/validateForm'
+import { liveThemeOf } from '../theme/contrast'
 import type { AiState, ConflictInfo, FormDraft, SaveStatus } from './formDraftContext'
 import type { NewFormHandoff } from './newFormHandoff'
 import { sameJson } from '../../../lib/sameJson'
@@ -43,9 +44,15 @@ function initialAi(handoff: NewFormHandoff | null): AiState | null {
 const SAVE_FAILED = 'save failed'
 /** The 409 code of a save that drops an answered question id or option code without naming it (model/removals.ts). */
 const ANSWERS_LOCKED = 'answers_locked'
+/**
+ * The 400 code of a save the server refused because the form would be live with text respondents cannot read
+ * (lambda/shared/forms_v2.py `validate_publishable`); the failed status keeps it as its reason, and the header words it.
+ */
+export const THEME_UNREADABLE = 'theme_unreadable'
 
 /** The words a failed save shows: the server's own reason, else a generic one (the page words it). */
 function failureReason(error: unknown): string {
+  if (error instanceof FormsApiError && error.code === THEME_UNREADABLE) return THEME_UNREADABLE
   return error instanceof Error && error.message !== '' ? error.message : SAVE_FAILED
 }
 
@@ -122,8 +129,14 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
   const [serverErrors, setServerErrors] = useState<readonly FormsFieldError[]>([])
 
   const unconfirmed = ai?.unconfirmed
-  const problems = useMemo(() => validateForm(form, { unconfirmedAddresses: unconfirmed }), [form, unconfirmed])
-  const errors = useMemo(() => blockingProblems(problems), [problems])
+  // (a live form kept on its stored theme is only warned about unreadable text, as the server warns)
+  const liveTheme = liveThemeOf(baseline, meta !== null)
+  const problems = useMemo(() => validateForm(form, { unconfirmedAddresses: unconfirmed, liveTheme }), [form, unconfirmed, liveTheme])
+  // A Live form's save is Update live form, so whatever blocks Publish blocks it too (an unreadable theme included).
+  const live = form.enabled && meta !== null
+  const publishErrors = useMemo(() => publishBlockingProblems(problems), [problems])
+  const saveErrors = useMemo(() => blockingProblems(problems), [problems])
+  const errors = live ? publishErrors : saveErrors
   const dirty = !sameForm(form, baseline)
 
   const update = useCallback((change: (current: FormV2) => FormV2) => {
@@ -157,7 +170,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
 
   const wasAiDraft = ai?.kind === 'draft'
   const run = useCallback(async (enabled: boolean | null): Promise<boolean> => {
-    if (errors.length > 0 && enabled !== false) return false
+    if ((enabled === true ? publishErrors : errors).length > 0 && enabled !== false) return false
     setStatus({ kind: 'saving' })
     try {
       const { loaded: next, created } = await persist(form, baseline, meta, enabled)
@@ -171,7 +184,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
       refuse(error)
       return false
     }
-  }, [errors.length, form, baseline, meta, settle, wasAiDraft, onCreated, refuse])
+  }, [errors, publishErrors, form, baseline, meta, settle, wasAiDraft, onCreated, refuse])
 
   const turnOff = useCallback(async (): Promise<boolean> => {
     if (meta === null) return false
@@ -222,7 +235,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
 
   const [templateId] = useState(handoff === null ? null : handoff.templateId)
   return {
-    form, baseline, meta, isNew: meta === null, dirty, problems, errors, serverErrors,
+    form, baseline, meta, isNew: meta === null, dirty, problems, errors, publishErrors, serverErrors,
     locked: meta?.has_responses === true,
     update, ai, setAi, templateId,
     fromTemplate, setFromTemplate, freshCodes, setFreshCodes, status, conflict,

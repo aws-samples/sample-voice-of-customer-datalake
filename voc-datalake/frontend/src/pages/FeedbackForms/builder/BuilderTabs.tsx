@@ -1,7 +1,12 @@
 /**
  * @fileoverview The builder's tabs (UX §3.1): Questions · Flow · Languages · Hidden fields · Test · Share · Results ·
- * Settings, as `IconTabs` in a scrolling rail. A tab with problems shows a 6 px dot and says it in sr-only text
- * ("Languages, 4 missing translations").
+ * Settings, as `IconTabs`. A tab with problems shows a 6 px dot and says it in sr-only text ("Languages, 4 missing
+ * translations").
+ *
+ * (7.55.01, forms audit F15) The eight tabs do not fit a phone: at 390 px the rail cut "Hidde…" with no sign that it
+ * scrolls. They sit in a `.tab-strip` now (IconTabs `scrollLabels`, as the run workspace's sessions): the cut side
+ * fades, two scroll buttons show while it overflows, and the tab shown is brought into view. Where the tabs fit,
+ * none of this shows.
  *
  * @module pages/FeedbackForms/builder/BuilderTabs
  */
@@ -44,5 +49,9 @@ export default function BuilderTabs({ active, onSelect }: Readonly<{ active: Bui
       </>
     )
   }
-  return <IconTabs tabs={BUILDER_TABS} active={active} icons={ICONS} label={t('builder.tabs.label')} labelOf={labelOf} onSelect={onSelect} />
+  const scrollLabels = { start: t('builder.tabs.scrollStart'), end: t('builder.tabs.scrollEnd') }
+  return (
+    <IconTabs tabs={BUILDER_TABS} active={active} icons={ICONS} label={t('builder.tabs.label')} labelOf={labelOf} onSelect={onSelect}
+      scrollLabels={scrollLabels} />
+  )
 }

@@ -41,7 +41,29 @@ describe('TemplatePicker', () => {
     const card = screen.getByTestId('template-churn')
     expect(card).toHaveTextContent('Cancellation / churn')
     expect(card).toHaveTextContent(/Single choice\s*×2/)
-    expect(card).toHaveTextContent('In-app · Link · ~1 min')
+    expect(card).toHaveTextContent('In-app · Link')
+    expect(card).toHaveTextContent('~1 min')
+  })
+
+  it('clamps a card\'s purpose to two lines, and shows at most three types in one row, then how many more', () => {
+    renderPicker()
+    const card = screen.getByTestId('template-churn')
+    const purpose = screen.getByText('Find out why customers cancel, with the right follow-up for each reason.')
+    // (`block` beside `line-clamp-2` won, so the purpose ran to four lines)
+    expect(purpose).toHaveClass('line-clamp-2')
+    expect(purpose).not.toHaveClass('block')
+    // Five types: three chips and "+2 more" on a wide card; on one under 28rem, two chips and "+3 more".
+    expect(within(card).getByText('+2 more')).toHaveClass('hidden', '@md:inline-flex')
+    expect(within(card).getByText('+3 more')).toHaveClass('@md:hidden')
+  })
+
+  it('lays the cards out in one column below 2xl and two at 2xl, every column of the page able to shrink', () => {
+    renderPicker()
+    const grid = screen.getByTestId('template-churn').parentElement
+    expect(grid).toHaveClass('grid-cols-1', '2xl:grid-cols-2')
+    const preview = screen.getByRole('complementary', { name: 'Preview' })
+    expect(preview).toHaveClass('min-w-0')
+    expect(preview.parentElement).toHaveClass('grid-cols-1')
   })
 
   it('asks to pick something before it previews anything', () => {
@@ -84,8 +106,18 @@ describe('TemplatePicker: Describe your form', () => {
     renderPicker()
     await user.click(screen.getByRole('button', { name: 'Users who switch back to the old UI…' }))
     expect(screen.getByRole('textbox', { name: 'Describe your form' })).toHaveValue('Ask app users who switch back to the old UI why, with predefined reasons.')
-    expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('pl')
+    expect(screen.getByRole('combobox', { name: 'Create in' })).toHaveValue('pl')
+    expect(screen.getByText('in Polski', { exact: false })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'In-app' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('has one language control, "Create in": Describe says the language and moves there to change it', async () => {
+    const user = userEvent.setup()
+    renderPicker()
+    expect(screen.getAllByRole('combobox')).toHaveLength(1)
+    expect(screen.getByText('in English', { exact: false })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    expect(screen.getByRole('combobox', { name: 'Create in' })).toHaveFocus()
   })
 
   it('asks before an example replaces the person\'s own description, and keeps it when they say so', async () => {

@@ -12,6 +12,15 @@ describe('parseFormStatsResponse', () => {
     expect(parseFormStatsResponse({ success: true, form_id: 'f1', stats })).toStrictEqual({ stats })
   })
 
+  it('keeps the card headline figure, and reads a malformed one as no figure without losing the counts', () => {
+    const headline = { question_id: 'q_nps', type: 'nps', value: 32.5, count: 40, scale_max: 10 }
+    expect(parseFormStatsResponse({ stats: { ...stats, headline } }).stats?.headline)
+      .toStrictEqual({ type: 'nps', value: 32.5, count: 40, scale_max: 10 })
+    expect(parseFormStatsResponse({ stats: { ...stats, headline: { type: 'nps', value: 'high' } } }).stats)
+      .toStrictEqual({ ...stats, headline: null })
+    expect(parseFormStatsResponse({ stats: { ...stats, headline: null } }).stats?.headline).toBeNull()
+  })
+
   it('reads a malformed or missing stats object as null', () => {
     expect(parseFormStatsResponse({ stats: { total_submissions: 'many' } })).toStrictEqual({ stats: null })
     expect(parseFormStatsResponse(null)).toStrictEqual({ stats: null })

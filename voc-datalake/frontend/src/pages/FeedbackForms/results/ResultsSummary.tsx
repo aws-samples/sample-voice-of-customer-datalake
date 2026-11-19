@@ -1,23 +1,41 @@
 /**
- * @fileoverview Results › Summary (UX §10.1–10.3): the figures (Responses; Completion, with the beacon; Last
- * response), one card per question in form order, the endings with their counts, the questions removed since
- * (folded), and the drop-off: the funnel when the beacon's counts exist, else Reach.
+ * @fileoverview Results › Summary (UX §10.1–10.3): the figures (Responses; Completion, with the beacon, and "largest
+ * drop at Q2", which moves to the funnel; Last response), one card per question in form order, the endings with their
+ * counts, the questions removed since (folded), and the drop-off: the funnel when the beacon's counts exist, else
+ * Reach.
  *
  * @module pages/FeedbackForms/results/ResultsSummary
  */
 import { useTranslation } from 'react-i18next'
 import { Clock, Flag, MessageSquare, TrendingDown } from 'lucide-react'
 import MetricCard from '../../../components/MetricCard/MetricCard'
-import type { FormResults } from '../../../api/feedbackFormsV2Results'
+import type { FormFunnel, FormResults } from '../../../api/feedbackFormsV2Results'
 import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import { formatRelativeDate } from '../../../utils/dateUtils'
 import type { FormV2 } from '../model/formsV2'
 import QuestionResultCard from './QuestionResultCard'
 import { FunnelCard, ReachCard } from './FunnelCard'
+import { FUNNEL_HEADING_ID, funnelSteps, largestDrop } from './funnelSteps'
 import { endingTitle } from './answers'
 import { percentOf } from './scoreMath'
 
-function Figures({ results }: Readonly<{ results: FormResults }>) {
+/** "largest drop at Q2", the funnel's own marker in the figures row; it moves to the funnel card. */
+function LargestDropLink({ form, funnel, results }: Readonly<{ form: FormV2; funnel: FormFunnel; results: FormResults }>) {
+  const { t } = useTranslation('feedbackForms')
+  const steps = funnelSteps(form, funnel, results)
+  const step = steps[largestDrop(steps) ?? -1]
+  if (step === undefined) return null
+  const named = step.key === 'started' ? t('results.funnel.started') : t('results.funnel.completed')
+  const where = step.number === null ? named : t('results.figures.questionShort', { position: step.number })
+  const show = () => {
+    const heading = document.getElementById(FUNNEL_HEADING_ID)
+    heading?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    heading?.focus({ preventScroll: true })
+  }
+  return <button type="button" className="link text-[12px]" onClick={show}>{t('results.figures.largestDropAt', { step: where })}</button>
+}
+
+function Figures({ form, results }: Readonly<{ form: FormV2; results: FormResults }>) {
   const { t, i18n } = useTranslation('feedbackForms')
   const funnel = results.funnel
   return (
@@ -25,7 +43,8 @@ function Figures({ results }: Readonly<{ results: FormResults }>) {
       <MetricCard title={t('results.figures.responses')} value={results.total} icon={<MessageSquare size={20} aria-hidden="true" />} />
       {funnel !== null && (
         <MetricCard title={t('results.figures.completion')} icon={<TrendingDown size={20} aria-hidden="true" />}
-          value={t('results.figures.ofOpened', { percent: formatPercent(percentOf(funnel.completed, funnel.opened), i18n.language) })} />
+          value={t('results.figures.ofOpened', { percent: formatPercent(percentOf(funnel.completed, funnel.opened), i18n.language) })}
+          detail={<LargestDropLink form={form} funnel={funnel} results={results} />} />
       )}
       <MetricCard title={t('results.figures.last')} icon={<Clock size={20} aria-hidden="true" />} color="muted"
         value={results.last_response_at === null ? '—' : formatRelativeDate(results.last_response_at, i18n.language)} />
@@ -83,14 +102,14 @@ export default function ResultsSummary({ form, results, onShowAll }: Readonly<{
 }>) {
   return (
     <div className="space-y-4">
-      <Figures results={results} />
+      <Figures form={form} results={results} />
       {form.questions.map((question, index) => (
         <QuestionResultCard key={question.id} form={form} question={question} number={index + 1} aggregate={results.questions[question.id]}
           removed={results.removed_options} funnel={results.funnel} onShowAll={onShowAll} />
       ))}
       <Endings form={form} results={results} />
       <RemovedQuestions form={form} results={results} />
-      {results.funnel === null ? <ReachCard form={form} results={results} /> : <FunnelCard form={form} funnel={results.funnel} />}
+      {results.funnel === null ? <ReachCard form={form} results={results} /> : <FunnelCard form={form} funnel={results.funnel} results={results} />}
     </div>
   )
 }

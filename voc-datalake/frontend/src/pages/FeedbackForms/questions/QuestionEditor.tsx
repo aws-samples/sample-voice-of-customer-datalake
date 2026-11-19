@@ -2,7 +2,8 @@
  * @fileoverview The selected question's editor (UX §3.4), top to bottom: the header ("1 · Multiple choice ▾", whose
  * type select lists only the conversions that keep the content; Duplicate; ⋯), Question * and Description, the
  * type's own fields, Required, ▸ Logic · N rules, and ▸ Advanced (the question id, the button label, Show codes).
- * It always edits the primary language; a missing translation is said at the top, with Translate.
+ * It always edits the primary language; a missing translation is one line under the Question field, with Translate.
+ * Logic and Advanced are the compact collapsible sections, so they never outrank the header.
  *
  * @module pages/FeedbackForms/questions/QuestionEditor
  */
@@ -77,10 +78,12 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
   return (
     <div className="space-y-4">
       <EditorHeader question={question} index={index} />
-      <TranslationBanner ownerId={question.id} />
-      <TextField label={question.type === 'statement' ? t('statement.text') : t('question.headline')} required multiline counter={LIMITS.headlineChars}
-        inputRef={headline} value={textIn(question.headline, lng)} placeholder={t('question.newQuestion')} problems={fieldProblems(problems, 'headline')}
-        onChange={(value) => replace({ ...question, headline: withText(question.headline, lng, value) })} />
+      <div className="space-y-1.5">
+        <TextField label={question.type === 'statement' ? t('statement.text') : t('question.headline')} required multiline counter={LIMITS.headlineChars}
+          inputRef={headline} value={textIn(question.headline, lng)} placeholder={t('question.newQuestion')} problems={fieldProblems(problems, 'headline')}
+          onChange={(value) => replace({ ...question, headline: withText(question.headline, lng, value) })} />
+        <TranslationBanner ownerId={question.id} />
+      </div>
       <TextField label={t('question.description')} multiline value={textIn(question.subheader, lng)}
         onChange={(value) => replace({ ...question, subheader: withText(question.subheader, lng, value) })} />
       <OwnFields question={question} index={index} showCodes={showCodes} onChange={replace} onEditLogic={editLogic} />
@@ -89,11 +92,11 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
           hint={requiredHint(t, question)} onChange={(required) => replace({ ...question, required })} />
       )}
       <div id={`logic-${question.id}`}>
-        <CollapsibleSection title={t('question.logic', { count: ruleCount })} open={logicOpen} onOpenChange={setLogicOpen}>
+        <CollapsibleSection size="sm" title={t('question.logic', { count: ruleCount })} open={logicOpen} onOpenChange={setLogicOpen}>
           <LogicSection questionId={question.id} />
         </CollapsibleSection>
       </div>
-      <CollapsibleSection title={t('question.advanced')} open={advanced} onOpenChange={setAdvanced}>
+      <CollapsibleSection size="sm" title={t('question.advanced')} open={advanced} onOpenChange={setAdvanced}>
         <div className="space-y-3">
           <IdField label={t('question.id')} value={question.id} locked={draft.locked} lockedText={t('question.idLocked')} check={checkId}
             onCommit={(id) => { draft.update((current) => renameQuestionId(current, question.id, id)); go('questions', [id], { replace: true }) }} />

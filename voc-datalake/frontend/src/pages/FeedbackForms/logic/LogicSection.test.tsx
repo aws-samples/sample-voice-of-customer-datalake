@@ -53,6 +53,15 @@ describe('LogicSection: the rules of a question as sentences of controls', () =>
     expect(screen.getByText('This rule never runs: rule 2 already matches every answer it would.')).toBeInTheDocument()
   })
 
+  it('notes a rule that changes nothing, and not one the Otherwise makes the only way into its target', () => {
+    const { unmount } = renderWithDraft(<LogicSection questionId="q_reason" />, formOf([reason([rule('equals', 'price', 'q_price')]), followUp, last]))
+    expect(screen.getByText('This rule has no effect: everyone who reaches it goes to question 2 anyway.')).toBeInTheDocument()
+    unmount()
+    renderWithDraft(<LogicSection questionId="q_reason" />,
+      formOf([reason([rule('equals', 'price', 'q_price'), rule('submitted', undefined, 'q_last')]), followUp, last]))
+    expect(screen.queryByText(/This rule has no effect/)).not.toBeInTheDocument()
+  })
+
   it('adds a rule with the type’s most likely operator and focuses its value', async () => {
     const user = userEvent.setup()
     const score: Question = { id: 'q_score', type: 'nps', headline: { en: 'Recommend us?' }, required: true }

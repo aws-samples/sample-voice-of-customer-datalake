@@ -9,7 +9,12 @@
 //                                                    is 409 {code: 'revision_conflict', revision, updated_by, updated_at};
 //                                                    on an answered form, a question id or option code the save drops
 //                                                    must be named in `removes` ({questions, options: {qid: codes}}),
-//                                                    else 409 {code: 'answers_locked', questions, options}
+//                                                    else 409 {code: 'answers_locked', questions, options}; with
+//                                                    text under 3:1 on its background, Publish or a live form's
+//                                                    colour change is 400 {code: 'theme_unreadable', palettes,
+//                                                    minimum}, and another save of a live form already on that theme
+//                                                    answers `warnings: ['theme_unreadable']`. Every answer carries
+//                                                    the whole theme (a stored one's new fields defaulted)
 //   POST   /feedback-forms/{id}/test-link            {rotate?, link_enabled?, record?} → {test: {token,…}, test_link,
 //                                                    test_query}: the only answer with the token (no record has it;
 //                                                    `settings.test.token_issued` says whether one was issued)
@@ -35,7 +40,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { seedResponses } from './mock-forms-seeds.js';
-import { formResults, filteredResponses, responseView, responsesCsv } from './mock-forms-results.js';
+import { formResults, filteredResponses, headlineOf, responseView, responsesCsv } from './mock-forms-results.js';
 import { draftAnswer, draftJob } from './mock-forms-draft.js';
 
 const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|config|submit|events))?$/;
@@ -90,13 +95,36 @@ function formRecord(item, shared, projectV1, counted) {
     ...(counted ? { response_count: real, can_delete_test_responses: true } : {}),
   };
   if (!isV2(item)) return { ...projectV1(item), ...meta, migrated_from: 1 };
-  return { ...without(copy(item), STORED_ONLY), settings: { test: testView(item) }, ...meta };
+  return { ...without(copy(item), STORED_ONLY), theme: withThemeDefaults(item.theme), settings: { test: testView(item) }, ...meta };
+}
+
+/**
+ * A form's card stats as `GET /feedback-forms?include=stats` gives them (handler _RatingTally.stats): the stored
+ * counts plus the card's `headline` figure, a v2 form's from its responses, a v1 record's its rating average (the
+ * migrated rating question), as the handler reads both.
+ */
+export function listedStats(item, stats) {
+  if (isV2(item)) {
+    // `last_response_at` and `channels` (7.55.01): the latest real response's time, and per channel the widget said
+    // (`channel`) its latest one, each absent without one (handler _RatingTally).
+    const real = responsesOf(item.form_id).filter((r) => !r.is_test);
+    const last = real.map((r) => r.submitted_at).sort().at(-1);
+    const channels = {};
+    for (const r of real) if (CHANNELS.includes(r.channel) && (channels[r.channel] ?? '') <= r.submitted_at) channels[r.channel] = r.submitted_at;
+    const headline = headlineOf(item, responsesOf(item.form_id));
+    return {
+      ...stats, total_submissions: realCount(item, stats), headline, ...(last ? { last_response_at: last } : {}),
+      ...(Object.keys(channels).length > 0 ? { channels } : {}),
+    };
+  }
+  const rated = typeof stats.avg_rating === 'number' && stats.rating_count > 0 && item.rating_enabled !== false;
+  return { ...stats, headline: rated ? { question_id: 'q_rating', type: 'rating', value: stats.avg_rating, count: stats.rating_count, scale_max: item.rating_max ?? 5 } : null };
 }
 
 /** A form as `GET /feedback-forms` lists it (mock-server.js): a v2 form without its token, a v1 record as stored. */
 export function listedForm(item) {
   if (!isV2(item)) return item;
-  return { ...without(copy(item), STORED_ONLY), settings: { test: testView(item) }, revision: item.revision ?? 1,
+  return { ...without(copy(item), STORED_ONLY), theme: withThemeDefaults(item.theme), settings: { test: testView(item) }, revision: item.revision ?? 1,
     has_responses: item.has_responses === true || responsesOf(item.form_id).some((r) => !r.is_test) };
 }
 
@@ -107,6 +135,115 @@ function v2BodyError(body) {
   if (!Array.isArray(body.endings) || body.endings.length === 0) return 'endings must hold 1 to 5 endings';
   const bad = body.questions.find((q) => !isPlainObject(q) || !/^q_[a-z0-9_]{1,40}$/.test(q.id ?? ''));
   return bad === undefined ? null : `questions[${String(body.questions.indexOf(bad))}].id must match ^q_[a-z0-9_]{1,40}$`;
+}
+
+// ── The theme (lambda/shared/form_theme.py: the same schema, defaults and publish rule) ──────────────────────────
+
+const THEME_COLOURS = ['primary_color', 'background_color', 'text_color'];
+const THEME_CHOICES = { mode: ['light', 'dark', 'auto'], font: ['system', 'inherit', 'serif', 'rounded', 'mono'], text_size: ['default', 'large'] };
+const THEME_FIELDS = [...THEME_COLOURS, 'border_radius', 'dark', ...Object.keys(THEME_CHOICES)];
+/** `#rgb`, `#rrggbb`, or an old form's `#rrggbbaa`; the dark palette (new in 7.55.01) has no alpha. */
+const STORED_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const PALETTE_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const RADIUS = /^\d{1,2}px$/;
+/** How the widget that sent a response runs (forms_v2_responses.py CHANNELS): the list card's channels. */
+const CHANNELS = ['link', 'iframe', 'script'];
+const VOC_LIGHT = { primary_color: '#8e48ff', background_color: '#ffffff', text_color: '#19161d' };
+const VOC_DARK = { primary_color: '#bd8fff', background_color: '#19161d', text_color: '#f2f1f4' };
+const defaultTheme = () => ({ ...VOC_LIGHT, border_radius: '8px', mode: 'light', dark: { ...VOC_DARK }, font: 'system', text_size: 'default' });
+
+/** Why a body's `theme` is refused (form_theme.py `check_theme`), or null. */
+function themeError(theme, where = 'theme') {
+  if (!isPlainObject(theme)) return `${where} must be an object`;
+  const unknown = Object.keys(theme).filter((key) => !THEME_FIELDS.includes(key)).sort();
+  if (unknown.length > 0) return `${where} has unknown fields: ${unknown.slice(0, 5).join(', ')}`;
+  const colour = (value, pattern) => value === undefined || value === null || (typeof value === 'string' && pattern.test(value));
+  const badColour = THEME_COLOURS.find((field) => !colour(theme[field], STORED_HEX));
+  if (badColour) return `${where}.${badColour} must be a hex colour such as #8e48ff`;
+  if (!(theme.border_radius == null || (typeof theme.border_radius === 'string' && RADIUS.test(theme.border_radius)))) {
+    return `${where}.border_radius must be a pixel value such as 8px`;
+  }
+  const badChoice = Object.keys(THEME_CHOICES).find((field) => theme[field] != null && !THEME_CHOICES[field].includes(theme[field]));
+  if (badChoice) return `${where}.${badChoice} must be one of: ${THEME_CHOICES[badChoice].join(', ')}`;
+  if (theme.dark == null) return null;
+  if (!isPlainObject(theme.dark)) return `${where}.dark must be an object`;
+  const extra = Object.keys(theme.dark).filter((key) => !THEME_COLOURS.includes(key)).sort();
+  if (extra.length > 0) return `${where}.dark has unknown fields: ${extra.join(', ')}`;
+  const badDark = THEME_COLOURS.find((field) => !colour(theme.dark[field], PALETTE_HEX));
+  return badDark ? `${where}.dark.${badDark} must be a hex colour such as #8e48ff` : null;
+}
+
+/** `stored`'s colours that match `pattern`, over `into` (a missing or unusable one keeps its default). */
+function keepColours(into, stored, pattern) {
+  for (const field of THEME_COLOURS) if (typeof stored[field] === 'string' && pattern.test(stored[field])) into[field] = stored[field];
+}
+
+/** The theme as the API reads it (form_theme.py `with_defaults`): every field, a missing or unusable one its default. */
+function withThemeDefaults(theme) {
+  const stored = isPlainObject(theme) ? theme : {};
+  const out = defaultTheme();
+  keepColours(out, stored, STORED_HEX);
+  if (typeof stored.border_radius === 'string' && RADIUS.test(stored.border_radius)) out.border_radius = stored.border_radius;
+  for (const [field, allowed] of Object.entries(THEME_CHOICES)) if (allowed.includes(stored[field])) out[field] = stored[field];
+  if (isPlainObject(stored.dark)) keepColours(out.dark, stored.dark, PALETTE_HEX);
+  return out;
+}
+
+/** A hex colour's 0–1 channels and alpha. */
+function channels(hex) {
+  const digits = hex.length === 4 ? hex.slice(1).replace(/./g, '$&$&') : hex.slice(1);
+  const at = (i) => Number.parseInt(digits.slice(i, i + 2), 16) / 255;
+  return { rgb: [at(0), at(2), at(4)], alpha: digits.length === 8 ? at(6) : 1 };
+}
+const mix = (top, alpha, bottom) => top.map((c, i) => c * alpha + bottom[i] * (1 - alpha));
+const luminance = (rgb) => rgb.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+  .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+
+/** The WCAG contrast of `text` painted on `background` (a translucent colour composited first). */
+function contrast(text, background) {
+  const bg = channels(background);
+  const under = mix(bg.rgb, bg.alpha, [1, 1, 1]);
+  const fg = channels(text);
+  const [hi, lo] = [luminance(mix(fg.rgb, fg.alpha, under)), luminance(under)].sort((a, b) => b - a);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Each palette respondents can be shown whose text is under 3:1 (shared/forms_v2.py `theme_publish_problems`). */
+function unreadablePalettes(theme) {
+  const full = withThemeDefaults(theme);
+  const light = { text_color: full.text_color, background_color: full.background_color };
+  const shown = { light: [['light', light]], dark: [['dark', full.dark]], auto: [['light', light], ['dark', full.dark]] }[full.mode];
+  return shown.map(([palette, colours]) => ({ palette, ratio: Math.round(contrast(colours.text_color, colours.background_color) * 100) / 100 }))
+    .filter((found) => found.ratio < 3);
+}
+
+/**
+ * A brand PUT's `form_theme`, the workspace's form brand (settings_handler.py `_form_theme_of`): `{ theme }` (stored
+ * whole, or null to remove it) or `{ error }`; undefined when the body names none. The brand mocks share it.
+ */
+export function brandFormTheme(body) {
+  if (!isPlainObject(body) || !('form_theme' in body)) return undefined;
+  if (body.form_theme === null) return { theme: null };
+  const error = themeError(body.form_theme, 'form_theme');
+  return error ? { error } : { theme: withThemeDefaults(body.form_theme) };
+}
+
+/** Do two themes draw the same form (each read with its defaults: forms_v2.py `same_theme`)? */
+const sameTheme = (a, b) => JSON.stringify(withThemeDefaults(a)) === JSON.stringify(withThemeDefaults(b));
+
+/**
+ * The publish rule of a save that ends `live` with text under 3:1 (`validate_publishable`): `{refusal}`, its 400,
+ * when it turns the form live or changes a live form's theme; `{warnings: ['theme_unreadable']}` for another save of
+ * a live form already on that theme; `{}` for anything else.
+ */
+function publishCheck(theme, { live, wasLive, themeChanged }) {
+  if (!live) return {};
+  const problems = unreadablePalettes(theme);
+  if (problems.length === 0) return {};
+  if (wasLive && !themeChanged) return { warnings: ['theme_unreadable'] };
+  const [first] = problems;
+  return { refusal: fail(400, `The text on the ${first.palette} background is ${first.ratio.toFixed(1)}:1, under 3:1: respondents could not read it. `
+    + 'Choose a text or background colour with more contrast to publish the form.', { code: 'theme_unreadable', palettes: problems, minimum: 3 }) };
 }
 
 /** `settings` from a save: only `test.link_enabled` and `test.record` (the token is the test-link route's). */
@@ -120,7 +257,7 @@ function savedSettings(item, settings) {
 }
 
 function createV2(shared, body, projectV1) {
-  const error = v2BodyError(body);
+  const error = v2BodyError(body) ?? (body.theme === undefined ? null : themeError(body.theme));
   if (error) return fail(400, error);
   const now = new Date().toISOString();
   const item = { form_id: `fd_${randomBytes(16).toString('hex')}`, schema_version: 2, revision: 1,
@@ -172,12 +309,20 @@ function updateV2(shared, item, body, projectV1) {
     const error = v2BodyError(body);
     if (error) return fail(400, error);
   }
+  const badTheme = body.theme === undefined ? null : themeError(body.theme);
+  if (badTheme) return fail(400, badTheme);
   const unnamed = unnamedRemovals(item, body);
   if (unnamed.questions !== undefined) {
     return fail(409, 'This form has responses: name each question or option it removes in `removes`', {
       code: 'answers_locked', ...unnamed,
     });
   }
+  // Publish and a live form's colour change keep readable text; a form that stays (or goes) Off is always saved.
+  const { refusal, warnings } = publishCheck(body.theme ?? item.theme, {
+    live: body.enabled ?? (item.enabled === true), wasLive: item.enabled === true,
+    themeChanged: body.theme !== undefined && !sameTheme(body.theme, item.theme),
+  });
+  if (refusal) return refusal;
   const fields = V2_FIELDS.filter((field) => body[field] !== undefined);
   if (fields.length === 0) return fail(400, 'No fields to update');
   for (const field of fields) item[field] = field === 'settings' ? savedSettings(item, body.settings) : copy(body[field]);
@@ -185,7 +330,7 @@ function updateV2(shared, item, body, projectV1) {
   item.revision = (item.revision ?? 1) + 1;
   item.updated_at = new Date().toISOString();
   item.updated_by = 'admin@example.com';
-  return [200, { success: true, form: formRecord(item, shared, projectV1, false) }];
+  return [200, { success: true, form: formRecord(item, shared, projectV1, false), ...(warnings ? { warnings } : {}) }];
 }
 
 /** A page of the form's responses as the responses route answers it (`cursor`: the previous page's `next_cursor`). */
@@ -216,7 +361,7 @@ function v2Config(item, url) {
     language: item.language ?? 'en', languages: copy(item.languages ?? [item.language ?? 'en']),
     welcome: copy(item.welcome ?? { enabled: false }), questions: (item.questions ?? []).map((q) => publicQuestion(copy(q))),
     hidden_fields: (item.hidden_fields ?? []).map((field) => ({ id: field.id })), endings: copy(item.endings ?? []),
-    language_assumed: false, theme: copy(item.theme ?? {}),
+    language_assumed: false, theme: withThemeDefaults(item.theme),
   };
   const token = url.searchParams.get('test');
   if (token === null || token === '') return [200, { success: true, config }];
@@ -248,6 +393,7 @@ function storeResponse(item, body, mode, done) {
     form_revision: body.form_revision ?? item.revision ?? 1, language: done.language, answers: copy(body.answers),
     hidden: isPlainObject(body.hidden) ? copy(body.hidden) : {}, ending_id: done.ending_id ?? '',
     is_test: mode !== null, shown: Object.keys(body.answers), sentiment: null,
+    ...(CHANNELS.includes(body.channel) ? { channel: body.channel } : {}),
   };
   responsesByForm.set(item.form_id, [row, ...responsesOf(item.form_id)]);
   const answer = { success: true, message: done.message, ...(done.ending_id ? { ending_id: done.ending_id } : {}) };
@@ -298,6 +444,9 @@ function v2Submit(item, body) {
   if (refused) return refused;
   if (!item.enabled && mode === null) return fail(400, 'This form is not enabled', { code: 'form_off' });
   if (!isPlainObject(body.answers)) return fail(400, 'answers must be an object', { code: 'submission_invalid' });
+  if (body.channel != null && !CHANNELS.includes(body.channel)) {
+    return fail(400, `channel must be one of: ${CHANNELS.join(', ')}`, { code: 'submission_invalid' });
+  }
   if (Number.isInteger(body.form_revision) && body.form_revision > (item.revision ?? 1)) {
     return fail(409, 'This form has changed since it was opened: reload it and answer again', { code: 'form_changed' });
   }

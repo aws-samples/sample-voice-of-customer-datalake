@@ -7,7 +7,8 @@
  *   Save replaces `new` with the form's id;
  * - `/feedback-forms/<id>/<tab>[/…]`: the builder; `/feedback-forms/<id>` alone opens Results for a Live form with
  *   responses, Questions otherwise;
- * - `/feedback-forms/<id>/preview`: the full-screen preview that never submits.
+ * - `/feedback-forms/<id>/preview`: the old full-screen preview's address (7.55.00), kept as a redirect to the
+ *   builder's Questions tab; the preview window (preview/previewChannel.ts) replaced the page in 7.55.01.
  *
  * Inside a tab: `/questions/<qid>`, `/questions/end/<eid>`, `/questions/welcome`; `/languages/<lng>`;
  * `/results/responses[/<responseId>]`.
@@ -27,6 +28,7 @@ export type FormsPlace =
   | { readonly kind: 'picker'; readonly template: string | null }
   /** `formId` null: the unsaved new form; `tab` null: the form's own default tab (decided once it is read). */
   | { readonly kind: 'builder'; readonly formId: string | null; readonly tab: BuilderTab | null; readonly rest: readonly string[] }
+  /** The retired full-screen preview's address: the page sends it on to the builder. */
   | { readonly kind: 'preview'; readonly formId: string }
 
 /** Where the page is, from the part of the path after `/feedback-forms/` and the query. */
@@ -58,7 +60,5 @@ export function selectedCard(rest: readonly string[]): { readonly kind: 'questio
 
 export const pickerPath = (template?: string): string =>
   (template === undefined ? `/feedback-forms/${NEW_FORM}` : `/feedback-forms/${NEW_FORM}?${new URLSearchParams({ template }).toString()}`)
-
-export const formPreviewPath = (formId: string): string => `/feedback-forms/${encodeURIComponent(formId)}/preview`
 
 export const FORMS_LIST_PATH = '/feedback-forms'

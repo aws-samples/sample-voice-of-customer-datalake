@@ -4,13 +4,20 @@
  * never block. Each problem names where it is, so the problems popover can go to it, and a message key under
  * `feedbackForms:problems.<code>`.
  *
+ * The theme's contrast (theme/contrast.ts, the server's rules in lambda/shared/form_theme.py), for every palette
+ * that can be shown: text under 3:1 on its background is an error that blocks only Publish and Update live form
+ * (`blocks: 'publish'`; Save still works, so nothing is lost while the colours are fixed); text from 3 to 4.5:1, a
+ * primary under 3:1 and a button label under 4.5:1 are warnings.
+ *
  * This is the frontend's copy of the contract's rules; `formTemplates.test.ts` checks the twelve templates against
  * it. The server's validator stays the authority (its 400 is mapped onto the same list).
  *
  * @module pages/FeedbackForms/model/validateForm
  */
-import type { ChoiceQuestion, FormV2, OpenTextQuestion, Question, StatementQuestion } from './formsV2'
+import type { ChoiceQuestion, FormTheme, FormV2, OpenTextQuestion, Question, StatementQuestion } from './formsV2'
 import { LIMITS, isChoice } from './formsV2'
+import { keptLiveTheme, palettePairs, paletteOf, shownPalettes } from '../theme/contrast'
+import type { PairId } from '../theme/contrast'
 import { hasText, textIn } from './i18nText'
 import { isReservedCode, isValidCode, isValidEndingId, isValidHiddenId, isValidQuestionId } from './codes'
 import { ruleProblems } from './ruleProblems'
@@ -26,11 +33,12 @@ type FormProblemCode = RuleProblemCode
   | 'noOptions' | 'tooManyOptions' | 'minOverMax' | 'maxOverChoices' | 'minOverChoices'
   | 'buttonUrl' | 'buttonLabelEmpty' | 'ctaUrl' | 'contactNoField' | 'contactTwice' | 'maxCharsRange' | 'facesRange'
   | 'aiAddress' | 'missingTranslations' | 'unreachableQuestion' | 'unreachableEnding' | 'chipsLong' | 'dropdownFew'
-  | 'noCategory'
+  | 'noCategory' | 'themeUnreadable' | 'themeUnreadableLive' | 'themeTextLow' | 'themePrimaryLow' | 'themeLabelLow'
 
 /** Where a problem is: what the popover's Go to selects, and the field it focuses. */
 export interface ProblemLocation {
-  readonly kind: 'question' | 'ending' | 'welcome' | 'hidden' | 'language' | 'form'
+  /** `theme`: the form's Style, `id` the palette (`light` | `dark`), `field` its colour. */
+  readonly kind: 'question' | 'ending' | 'welcome' | 'hidden' | 'language' | 'form' | 'theme'
   readonly id?: string
   readonly field?: string
   readonly ruleIndex?: number
@@ -42,12 +50,17 @@ export interface FormProblem {
   readonly code: FormProblemCode
   readonly params: Readonly<Record<string, string | number>>
   readonly at: ProblemLocation
+  /** `publish`: an error that blocks only Publish and Update live form; Save still works (an unreadable theme). */
+  readonly blocks?: 'publish'
 }
 
-/** What the form's checks need to know beyond the form: the AI's unconfirmed addresses. */
+/** What the form's checks need to know beyond the form: the AI's unconfirmed addresses, the live form's theme. */
 export interface ValidationContext {
   /** The `ProblemLocation`s of the https addresses the AI suggested that the person has not confirmed yet. */
   readonly unconfirmedAddresses?: readonly ProblemLocation[]
+  /** The theme the stored form has while it is live (theme/contrast.ts `liveThemeOf`): kept as it is, unreadable text
+   * is a warning (`themeUnreadableLive`) and never blocks Update live form; changed, it is the error again. */
+  readonly liveTheme?: FormTheme
 }
 
 const CHIP_LABEL_MAX = 30
@@ -204,11 +217,42 @@ function categoryProblems(form: FormV2): FormProblem[] {
   return choices.length > 0 && !mapped && form.category === '' ? [formProblem('warning', 'noCategory', { kind: 'form', field: 'category' })] : []
 }
 
+const THEME_WARNINGS: Readonly<Record<Exclude<PairId, 'edge'>, FormProblemCode>> = {
+  text: 'themeTextLow', primary: 'themePrimaryLow', label: 'themeLabelLow',
+}
+
+/**
+ * A ratio as the words show it, to one decimal: rounded down when it is under its minimum, so a failing pair never
+ * reads as meeting it ("2.96" is "2.9:1, below 3:1").
+ */
+export function shownRatio(ratio: number, minimum: number): number {
+  return ratio < minimum ? Math.floor(ratio * 10) / 10 : Math.round(ratio * 10) / 10
+}
+
+/**
+ * Each palette that can be shown, its pairs below their minimum (the option edge is derived from the text's). Text
+ * under 3:1 is an error that blocks Publish and Update live form, except on a live form kept on the theme it already
+ * has (`liveTheme`), where it is a warning, as the server only warns then.
+ */
+function themeProblems(form: FormV2, liveTheme: FormTheme | undefined): FormProblem[] {
+  const kept = keptLiveTheme(form.theme, liveTheme)
+  return shownPalettes(form.theme).flatMap((palette) => palettePairs(paletteOf(form.theme, palette)).flatMap((pair): FormProblem[] => {
+    if (pair.level === 'ok' || pair.id === 'edge' || pair.ratio === null) return []
+    const at: ProblemLocation = { kind: 'theme', id: palette, field: pair.colour }
+    if (pair.level === 'error' && kept) return [formProblem('warning', 'themeUnreadableLive', at, { ratio: shownRatio(pair.ratio, 3) })]
+    if (pair.level === 'error') {
+      return [{ ...formProblem('error', 'themeUnreadable', at, { ratio: shownRatio(pair.ratio, 3) }), blocks: 'publish' }]
+    }
+    return [formProblem('warning', THEME_WARNINGS[pair.id], at, { ratio: shownRatio(pair.ratio, pair.minimum) })]
+  }))
+}
+
 /** Every problem of the form: errors first, then warnings, then notes, each in form order. */
 export function validateForm(form: FormV2, context: ValidationContext = {}): FormProblem[] {
   const all = [
     ...countProblems(form), ...questionProblems(form), ...endingProblems(form), ...hiddenProblems(form),
     ...(context.unconfirmedAddresses ?? []).map((at) => formProblem('error', 'aiAddress', at)),
+    ...themeProblems(form, context.liveTheme),
     ...reachProblems(form), ...translationProblems(form), ...categoryProblems(form),
   ]
   const rank: Record<ProblemSeverity, number> = { error: 0, warning: 1, note: 2 }
@@ -217,8 +261,19 @@ export function validateForm(form: FormV2, context: ValidationContext = {}): For
     .map(({ found }) => found)
 }
 
-/** The problems that block Save and Publish. */
-export const blockingProblems = (problems: readonly FormProblem[]): FormProblem[] => problems.filter((found) => found.severity === 'error')
+/** The problems that block Save (and so Publish too): every error but those that block only Publish. */
+export const blockingProblems = (problems: readonly FormProblem[]): FormProblem[] =>
+  problems.filter((found) => found.severity === 'error' && found.blocks !== 'publish')
+
+/** The problems that block Publish and Update live form: every error, an unreadable theme's included. */
+export const publishBlockingProblems = (problems: readonly FormProblem[]): FormProblem[] =>
+  problems.filter((found) => found.severity === 'error')
+
+/** The languages the form offers that are incomplete, with how many texts their respondents get in the primary. */
+export function incompleteLanguages(problems: readonly FormProblem[]): readonly { readonly language: string; readonly count: number }[] {
+  return problems.flatMap((found) => (found.code === 'missingTranslations' && typeof found.params.language === 'string'
+    ? [{ language: found.params.language, count: Number(found.params.count) }] : []))
+}
 
 /** The problems located on one question, ending or the welcome card. */
 export const problemsAt = (problems: readonly FormProblem[], kind: ProblemLocation['kind'], id?: string): FormProblem[] =>

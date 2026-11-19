@@ -35,6 +35,58 @@ describe('QuestionList', () => {
     expect(probe.current?.freshCodes).toStrictEqual(new Set(['q_single_select:option', 'q_single_select:option_2']))
   })
 
+  it('opens the type menu outside the scrolling list (fixed, in a portal), and Escape goes back to the trigger', async () => {
+    const user = userEvent.setup()
+    const { container } = renderList(sampleForm())
+    const add = screen.getByRole('button', { name: 'Add question' })
+    await user.click(add)
+    const menu = screen.getByRole('menu', { name: 'Question types' })
+    expect(container).not.toContainElement(menu)
+    expect(menu).toHaveClass('fixed')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(add).toHaveFocus()
+  })
+
+  it('moves through the types by their first letters (type-ahead), and End to the last', async () => {
+    const user = userEvent.setup()
+    renderList(sampleForm())
+    await user.click(screen.getByRole('button', { name: 'Add question' }))
+    await user.keyboard('c')
+    expect(screen.getByRole('menuitem', { name: /^CSAT/ })).toHaveFocus()
+    await user.keyboard('c')
+    expect(screen.getByRole('menuitem', { name: /^CES/ })).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('menuitem', { name: /^Contact info/ })).toHaveFocus()
+  })
+
+  it('inserts between two cards from the "+" of the line between them', async () => {
+    const user = userEvent.setup()
+    const { probe } = renderList(threeQuestions())
+    await user.click(screen.getByRole('button', { name: 'Add question after question 1' }))
+    await user.click(screen.getByRole('menuitem', { name: /^Text/ }))
+    expect(ids(probe.current?.form)).toStrictEqual(['q_reason', 'q_open_text', 'q_middle', 'q_price'])
+  })
+
+  it('adds a question below a card from its ⋯ menu (no hover needed), under the last card too', async () => {
+    const user = userEvent.setup()
+    const { probe } = renderList(threeQuestions())
+    await user.click(screen.getByRole('button', { name: 'More actions for question 2' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Add question below' }))
+    expect(screen.getByRole('menuitem', { name: /^Single choice/ })).toHaveFocus()
+    await user.click(screen.getByRole('menuitem', { name: /^NPS/ }))
+    expect(ids(probe.current?.form)).toStrictEqual(['q_reason', 'q_middle', 'q_nps', 'q_price'])
+    await user.click(screen.getByRole('button', { name: 'More actions for question 4' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Add question below' }))
+    await user.click(screen.getByRole('menuitem', { name: /^Statement/ }))
+    expect(ids(probe.current?.form)?.at(-1)).toBe('q_statement')
+  })
+
+  it('shows the welcome screen as a card with its state', () => {
+    renderList(sampleForm({ welcome: { enabled: true, title: { en: 'Hello' } } }))
+    expect(screen.getByRole('button', { name: 'Welcome screen On' })).toBeInTheDocument()
+  })
+
   it('offers Contact info once per form', async () => {
     const user = userEvent.setup()
     const contact: Question = {

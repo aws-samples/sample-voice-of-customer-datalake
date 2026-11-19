@@ -1,5 +1,6 @@
 /**
- * @fileoverview The header's problems chip (UX §3.1): "✕ N problems" (`badge-danger`) while errors block Save,
+ * @fileoverview The header's problems chip (UX §3.1): "✕ N problems" (`badge-danger`) while errors block Save or
+ * Publish (an unreadable theme blocks only Publish, and its row says that Save still works),
  * "▲ N warnings" (`badge-warn`) when only warnings are left, nothing when the form is clean. It opens a list of
  * every problem ("Q4 · This rule goes to a question that was deleted.") with **Go to**, which selects the card,
  * and the server's own refusals of the last save under "Other problems".
@@ -13,7 +14,7 @@ import clsx from 'clsx'
 import type { FormProblem } from '../model/validateForm'
 import { useDraft } from './formDraftContext'
 import { useBuilderUi } from './builderUi'
-import { goToProblem, problemMessage, problemPlace } from './problemText'
+import { OPEN_PROBLEMS_EVENT, goToProblem, problemMessage, problemPlace } from './problemText'
 import { noCleanup } from '../../../hooks/noCleanup'
 
 function ProblemItem({ problem, onGo }: Readonly<{ problem: FormProblem; onGo: () => void }>) {
@@ -26,6 +27,7 @@ function ProblemItem({ problem, onGo }: Readonly<{ problem: FormProblem; onGo: (
       <p className="min-w-0 flex-1 text-[13px] text-text">
         <span className="font-medium text-text-strong">{problemPlace(t, form, problem.at)}</span>
         {' · '}{problemMessage(t, problem)}
+        {problem.blocks === 'publish' && <span className="text-muted">{' '}{t('problems.blocksPublishOnly')}</span>}
       </p>
       <button type="button" className="btn btn-ghost btn-sm shrink-0" onClick={onGo}>{t('problems.goTo')}</button>
     </li>
@@ -34,13 +36,24 @@ function ProblemItem({ problem, onGo }: Readonly<{ problem: FormProblem; onGo: (
 
 export default function ProblemsPopover() {
   const { t } = useTranslation('feedbackForms')
-  const { problems, errors, serverErrors } = useDraft()
+  // Every error counts as one, an unreadable theme's too (it blocks Publish, though Save still works).
+  const { problems, publishErrors: errors, serverErrors } = useDraft()
   const ui = useBuilderUi()
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const listed = problems.filter((problem) => problem.severity !== 'note')
   const warnings = listed.length - errors.length
+
+  // "Show problems" elsewhere in the builder (openProblemsList): open the list, focus on its chip.
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true)
+      trigger.current?.focus()
+    }
+    window.addEventListener(OPEN_PROBLEMS_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_PROBLEMS_EVENT, onOpen)
+  }, [])
 
   useEffect(() => {
     if (!open) return noCleanup

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { at } from '@test/defined'
+import { withMemoryLocalStorage } from '../../test/memoryLocalStorage'
 import {
   feedbackFormsApiMocks, clientApiModule, configStoreModule,
   CONFIGURED_API_ENDPOINT, formsConfigState,
@@ -155,12 +156,14 @@ describe('FeedbackForms', () => {
   })
 
   describe('loading state', () => {
-    it('shows loading spinner while fetching', () => {
+    it('shows three card skeletons while fetching, never a lone spinner', () => {
       mockGetFeedbackForms.mockReturnValue(new Promise(() => {}))
 
       renderPage()
 
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument()
+      expect(screen.getAllByTestId('form-card-skeleton')).toHaveLength(3)
+      expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
     })
   })
 
@@ -229,6 +232,82 @@ describe('FeedbackForms', () => {
       await confirmDeleteOfFirstForm()
 
       expect(await screen.findByTestId('form-card-form-1')).toBeInTheDocument()
+    })
+  })
+
+  describe('the empty state is the start', () => {
+    it('offers Describe and three templates, each opening the picker on it, and says how forms work', async () => {
+      mockGetFeedbackForms.mockResolvedValue({ forms: [] })
+      renderPage()
+
+      const starts = await screen.findByRole('list', { name: 'Ways to start' })
+      const links = within(starts).getAllByRole('link')
+      expect(links.map((link) => link.getAttribute('href'))).toStrictEqual([
+        '/feedback-forms/new', '/feedback-forms/new?template=nps', '/feedback-forms/new?template=churn', '/feedback-forms/new?template=old_ui',
+      ])
+      expect(links[0]).toHaveTextContent('Describe your form')
+      expect(screen.getByText('How feedback forms work')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Hide this explanation' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the info banner', () => {
+    const saved = withMemoryLocalStorage()
+
+    it('is dismissed per person, and stays dismissed on the next visit', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Hide this explanation' }))
+      expect(screen.queryByText('How feedback forms work')).not.toBeInTheDocument()
+      expect(JSON.parse(saved.get('voc-feedback-forms-intro-dismissed') ?? '[]')).toHaveLength(1)
+      cleanup()
+      renderPage()
+      await screen.findByTestId('form-card-form-1')
+      expect(screen.queryByText('How feedback forms work')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('past six forms, a toolbar', () => {
+    const many = ['Onboarding', 'Beta', 'Churn', 'Delta', 'Echo', 'Foxtrot', 'Alpha'].map((name, index) => ({
+      form_id: `f_${String(index)}`, name, enabled: index % 2 === 0, created_at: '2026-01-01T10:00:00Z', updated_at: '2026-01-01T10:00:00Z',
+    }))
+    /** The names of the cards shown, in order (the stand-in card's first span). */
+    const shownNames = () => screen.getAllByTestId(/^form-card-f_\d+$/).map((card) => card.querySelector('span')?.textContent ?? '')
+
+    it('is not there with six forms or fewer', async () => {
+      renderPage()
+      await screen.findByTestId('form-card-form-1')
+      expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    })
+
+    it('searches by name, filters by state and sorts by name', async () => {
+      const user = userEvent.setup()
+      mockGetFeedbackForms.mockResolvedValue({ forms: many })
+      renderPage()
+      const toolbar = await screen.findByRole('search', { name: 'Find a form' })
+      expect(screen.getByText('7 of 7 forms')).toHaveAttribute('role', 'status')
+
+      await user.type(within(toolbar).getByRole('searchbox', { name: 'Search forms' }), 'ta')
+      expect(screen.getAllByTestId(/^form-card-f_\d+$/).map((card) => card.dataset['testid'])).toStrictEqual(['form-card-f_1', 'form-card-f_3'])
+      await user.clear(within(toolbar).getByRole('searchbox', { name: 'Search forms' }))
+
+      await user.click(within(toolbar).getByRole('button', { name: 'Off' }))
+      expect(screen.getAllByTestId(/^form-card-f_\d+$/)).toHaveLength(3)
+      await user.click(within(toolbar).getByRole('button', { name: 'All' }))
+
+      await user.selectOptions(within(toolbar).getByRole('combobox', { name: 'Sort' }), 'name')
+      expect(shownNames()).toStrictEqual(['Alpha', 'Beta', 'Churn', 'Delta', 'Echo', 'Foxtrot', 'Onboarding'])
+    })
+
+    it('says when nothing matches, with the way back to every form', async () => {
+      const user = userEvent.setup()
+      mockGetFeedbackForms.mockResolvedValue({ forms: many })
+      renderPage()
+      await user.type(await screen.findByRole('searchbox', { name: 'Search forms' }), 'zzz')
+      expect(screen.getByText('No form matches this search or filter.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Show all forms' }))
+      expect(screen.getAllByTestId(/^form-card-f_\d+$/)).toHaveLength(7)
     })
   })
 

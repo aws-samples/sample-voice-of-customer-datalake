@@ -10,7 +10,8 @@ Since 7.55.00 a form is a flow of questions (schema version 2): a welcome screen
 types, logic that jumps forward to a later question or to one of up to five endings, hidden fields the link
 or the app fills in, and texts in any of the app's nine languages. A form:
 
-- embeds on any website, or opens from a link, through its iframe page;
+- embeds on any website, through its iframe page or the script embed, or opens from a link ([Embedding
+  Forms](#embedding-forms));
 - routes each response to the processing pipeline, its category taken from the answered option that maps one;
 - has a test link whose responses never count;
 - has per-question results, and an AI that drafts a form from a description.
@@ -23,10 +24,44 @@ checks are `lambda/shared/forms_v2_responses.py`, the results `lambda/shared/for
 ## Creating a Feedback Form
 
 1. Open **Feedback Forms** in the sidebar.
-2. Click **Create Form**, then pick a template, start blank, or describe the form and let the AI draft it
+2. Click **New form**, then pick a template, start blank, or describe the form and let the AI draft it
    ([AI drafts](#ai-drafts)).
 3. Edit the questions, their logic, the endings, the hidden fields and the languages, then save.
 4. Publish (enable) the form.
+
+**The list (7.55.01).** Each form is one card, a link to its builder as a whole: its name, its state (Live, Off,
+Test link on), its questions and languages, its responses and when the last one came ("Last response: 2 hr. ago",
+from the list stats' `last_response_at`, the latest counted response's `source_created_at`, absent when none
+carries one), and the first measuring question's figure as a number ("+32" NPS, "84 %" CSAT, "4.2 / 5" average;
+from the list stats' `headline`, test responses never counted).
+Turning a Live form that has responses Off asks first ("Its link and embeds will show 'Feedback form
+unavailable.' to the next respondents"); turning a form on needs no question, only a form without problems. From
+seven forms the list gets a search, a state filter and a sort (Newest, Last response, Name, Responses). "How
+feedback forms work" can be dismissed (per person, remembered in the browser), and the empty list offers Describe
+your form and three templates. Under the last response the card names the ways the form was answered in the last
+30 days, as labels ("Link · Website script · Embedded"; nothing when no response said), from the list stats'
+`channels` ([Responses](#responses)).
+
+**Where it was answered.** Each response the widget sends says how the widget ran, `channel`: `link` (the API's own
+page opened as it is: a link, a QR code, a mobile WebView), `iframe` (that page framed in another, the iframe
+snippet) or `script` (a script embed on a customer's own page). It is optional (a widget from before 7.55.01 sends
+none) and one of those three, in the API's request model (`schemas/public-body-models.json`) and the handler's
+check alike; it is kept with the response (`metadata.form_channel`) and never names the person. The list stats
+derive `channels: {link?, iframe?, script?}`, each channel's latest response time, when they are read, in the same
+pass as `last_response_at`, so a submit writes nothing besides its response (the form's record is written once,
+for `has_responses`, never per submission). Test responses never count: they are not feedback items.
+
+**The builder (7.55.01).** The Questions tab is three panes from xl (the cards, the selected card's editor, the
+preview), each scrolling on its own in a full-height page. Question cards sit 8 px apart; between two cards,
+hovering or focusing shows an insertion line with a "+" that opens the type menu (on touch, the card's ⋯ › Add
+question below), and the type menu and every ⋯ menu open in a portal, never clipped by their pane. The welcome
+screen is a card with its On / Off state, a missing translation is one line under the Question field ("English: 2
+texts missing · Translate"), and the Routing view stacks each option's Category and Go to when the editor column is
+narrower than 40 rem. Flow notes a rule "has no effect" only when everyone it catches would go to the same place
+without it (the question's Otherwise target when it has one, else the next question) and no later rule could send
+them elsewhere. The floating assistant button steps beside a form's preview instead of covering its Next; on a
+phone the builder hides it and its ⋯ menu has **Ask the assistant**, and the save bar sits at the bottom of the
+tab only when there is something to save. A form that could not load has a link back to Feedback Forms.
 
 New forms are created **disabled** on purpose: nothing is public until someone
 enables the form. Until it is enabled, the form's link, iframe and embed render
@@ -202,16 +237,50 @@ test link's state, never the option routing or a token.
 
 ## Embedding Forms
 
-Embed the form with an iframe. This is the snippet to hand to customers:
+A form reaches respondents three ways, each ready to copy on the builder's **Share** tab (Live | Test swaps the
+live link for the [test link](#test-mode) in every one of them):
+
+- **the link**: the form's own page on the API, `…/feedback-forms/{form_id}/iframe`, for an email, a QR code or a
+  mobile app's WebView;
+- **the iframe**: that page framed in yours, the form fully apart from your page's CSS and script
+  ([The iframe](#the-iframe));
+- **the script embed**: the widget drawn in your page, from a static file this app serves
+  ([The script embed](#the-script-embed)).
+
+Hidden fields › **Use them** gives the same snippets with a placeholder for each hidden field.
+
+### The iframe
 
 ```html
-<iframe 
+<iframe
+  id="voc-form-{form_id}"
   src="https://your-api.execute-api.region.amazonaws.com/v1/feedback-forms/{form_id}/iframe"
-  width="100%" 
-  height="500" 
-  frameborder="0">
-</iframe>
+  style="width: 100%; height: 480px; border: none;"
+  title="{form name}"
+></iframe>
+<script>
+  (function (frame) {
+    window.addEventListener('message', function (event) {
+      var data = event.data;
+      if (event.source !== frame.contentWindow || event.origin !== 'https://your-api.execute-api.region.amazonaws.com') return;
+      if (data && data.type === 'voc-form-height' && data.height > 0) {
+        frame.style.height = Math.max(320, Math.ceil(data.height)) + 'px';
+      }
+    });
+  })(document.getElementById('voc-form-{form_id}'));
+</script>
 ```
+
+**The resizer (7.55.01).** On its own page, when framed, the widget posts `{type: 'voc-form-height', height}` to
+the parent page whenever its height changes (a `ResizeObserver` on the form, at most once per animation frame;
+never in the editor's preview, never from a script embed). The target origin is `'*'`: the parent is your page,
+whatever its origin, and the message carries the height and nothing else. The script after the frame takes a
+message only from that frame's own window (`event.source`) and the API's origin (`event.origin`), and sets the
+frame's height to it, at least 320 px so a short screen never collapses the frame. Without the script (a site
+builder that strips scripts) the frame stays 480 px tall and the form scrolls inside it, as before 7.55.01. For a
+form that fills its own page, `height: 100dvh` without the script works as well. The Share tab builds the snippet
+with the form's id, its name as the frame's `title`, and the API's origin filled in (`tabs/snippets.ts`,
+`iframeSnippet`).
 
 The iframe route returns a self-contained HTML page: the Lambda inlines
 `lambda/api/static/feedback-widget.js` into it and calls `VoCFeedbackForm.init`
@@ -241,6 +310,137 @@ page's address) and hands the widget, before `init`:
 
 A token (`test`, `r`) is dropped from the address once read, so neither `page_url` nor a Referer carries it.
 
+### The script embed
+
+```html
+<div id="voc-feedback-form"></div>
+<script src="https://{app domain}/widget/feedback-widget.js"></script>
+<script>
+  VoCFeedbackForm.init({
+    container: '#voc-feedback-form',
+    apiEndpoint: 'https://your-api.execute-api.region.amazonaws.com/v1',
+    formId: '{form_id}',
+    language: 'en',
+    hidden: { user_id: '{USER_ID}' },
+    test: '{test token}',
+  });
+</script>
+```
+
+The Share tab gives the three parts whole for each form: the element the form renders into, the widget file from
+this app's own address, and the `init` call with the form's language, a placeholder per hidden field (`hidden`,
+only when the form has hidden fields: replace each `'{…}'` with your value; pasted as it is, the form still
+renders) and, in Test mode only, the test token. The
+**In-app SDK** snippet (Hidden fields › Use them) is the same file loaded once in your app's page, then the same
+`init` call when the person takes the action the form asks about. Values the snippets carry are written as
+JavaScript strings that cannot end their `<script>` (`tabs/snippets.ts`).
+
+**Where the file comes from (7.55.01).** `/widget/feedback-widget.js` is a static file of the app, served by the
+app's own CloudFront distribution, not an API route (the REST API is at its resource ceiling, and a public script
+gains nothing from a Lambda call):
+
+- **Built.** `frontend/widgetAssetPlugin.ts`, a Vite plugin, writes the one source,
+  `lambda/api/static/feedback-widget.js`, into `frontend/dist/widget/feedback-widget.js`, after a first line that
+  names the release: `/*! VoC feedback widget <version> (<commit>), served at /widget/feedback-widget.js. … */`.
+  No copy is kept by hand. The dev server answers the same address with the file as it is on disk, read on each
+  request (a new Vite plugin needs a dev server restart once).
+- **Deployed** with the frontend, by either path: CDK's `BucketDeployment` of `frontend/dist`, or
+  `npm run deploy:frontend` (`frontend/scripts/deploy.sh`, whose pass for everything outside `assets/` uploads it).
+  The synth-time freshness check (`lib/utils/assert-frontend-build.ts`) counts the widget source as a frontend
+  input, so a widget edit without a frontend rebuild fails `cdk synth` as a stale build instead of shipping a file a
+  release behind.
+- **Served** by the `/widget/*` behavior of the SPA distribution (`lib/stacks/core-cdn.ts`): the SPA bucket, read
+  through the default behavior's own origin, GET and HEAD only, HTTPS, with its own response headers policy:
+
+| Header | Value | Why |
+|---|---|---|
+| `Access-Control-Allow-Origin` | `*`, for GET and HEAD; credentials never allowed | `<script crossorigin>`, and an `integrity` you add, work from any site |
+| `Cross-Origin-Resource-Policy` | `cross-origin` | a page with `Cross-Origin-Embedder-Policy: require-corp` can load it |
+| `Cache-Control` | `public, max-age=300` | below; set at the edge, whatever metadata the deploy path wrote on the object |
+| `X-Content-Type-Options` | `nosniff` | |
+| `Strict-Transport-Security`, `Referrer-Policy`, `X-Frame-Options`, `Content-Security-Policy`, `Permissions-Policy` | the SPA's own, unchanged | [A missing or mistyped address](#a-missing-or-mistyped-address) |
+
+The app's own pages keep their policy exactly as it was: no CORS, the same CSP.
+
+**Caching and versions.** The address is stable and carries no version on purpose. A customer pastes it once and
+it must keep working after every deploy, and both deploy paths remove a file the new build does not have
+(`BucketDeployment` prunes, `deploy.sh --delete`s), so a versioned or hashed file name would disappear with the
+next release and break every page that pasted it. Instead the file is replaced in place on each deploy, each
+deploy invalidates the distribution, and browsers revalidate their copy after 5 minutes (by ETag, so an unchanged
+file costs a `304`): within 5 minutes of a deploy every page runs the new widget. Which release a page has is the
+file's first line. A `?v=` on the address would change nothing, because the cache key ignores query strings: every
+`?v=` gets the current file.
+
+**Subresource Integrity (SRI).** The app puts no `integrity` on its own scripts (Vite emits none), and the snippet
+has none either: a fixed hash cannot go with a file that changes with each release, so a pinned hash would make
+browsers refuse the widget after the next deploy and the form would vanish from the page. A site whose policy
+requires SRI can host its own copy (download the file, serve it from its own origin with `integrity`, and update it
+on purpose, keeping `apiEndpoint` as it is), or add `integrity="sha384-…" crossorigin="anonymous"` for the current
+file, accepting that the form stops loading at the next release until the hash is updated (the open CORS above is
+what makes `crossorigin` work).
+
+**A Content-Security-Policy on your page.** The widget needs:
+
+- `script-src <app origin>` for the file, and for the inline `init` call `'unsafe-inline'`, a nonce or a hash
+  (or move the call into a script file of your own);
+- `connect-src <api origin>`: it fetches the form's config and posts the response and the two funnel beacons
+  (`navigator.sendBeacon`, else `fetch`);
+- nothing for styles where the browser has constructed stylesheets: the widget adopts one in its shadow root,
+  which a CSP does not block, and sets its inline styles through the CSSOM, which a CSP does not block either.
+  Only a browser without them falls back to a `<style>` element, which needs `style-src 'unsafe-inline'`.
+
+Under the script embed the Share tab says the first two, with this app's and the API's origins filled in.
+
+#### A missing or mistyped address
+
+CloudFront's custom error responses apply to the whole distribution (they cannot be scoped to a behavior), and the
+SPA maps `404` to `index.html` for its deep links. So a key that does not exist under `/widget/` answers `200` with
+the app's `index.html`. That never runs as script: it is `text/html` sent with `nosniff`, so the browser refuses it
+("Refused to execute script … because its MIME type ('text/html') is not executable"), the `<script>` fails, and
+the `init` after it throws `VoCFeedbackForm is not defined`. The page itself keeps every protection it has at any
+other address (the SPA's CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`), which is why the widget's policy
+repeats the SPA's security headers. The one address the snippet names is always in the build.
+
+#### Who can fetch what
+
+`/widget/*` is public by design, like the login page: anyone, signed in or not, from any site, can fetch the
+widget file anonymously, and no key group or sign-in goes on it (a gate would lock out the respondents it exists
+for). What it serves is build output from the SPA bucket, the same bucket the public login page is read from; it
+holds no customer data and grants nothing on the API, whose form routes keep their own checks (the four public
+routes and their [rate limits](#rate-limits-on-the-four-public-routes); everything else needs Cognito). The
+raw-data paths on the same distribution (`/avatars/*`, `/prototypes/*`) still need a signed URL, and
+`lib/stacks/core-stack.test.ts` fails if another unsigned path appears or if a public path reads anything but the
+SPA bucket (`lib/stacks/core-cdn-widget.test.ts` pins the headers).
+
+### Isolation from the host page
+
+Since 7.55.01 the widget draws the form in an open shadow root of its container (`container.shadowRoot`), so the
+page's CSS and ids never reach it: a site's `h2 { color: #fff }`, a forms reset (Tailwind forms, Bootstrap) or
+`button { text-transform: uppercase }` leaves the form as its theme draws it, and the iframe page, a script embed,
+the editor's preview and the preview window draw the same form.
+
+- Inside the shadow root are the widget's own reset (`:host { all: initial; display: block }` and the rest, an
+  adopted constructed stylesheet where the browser has them, else a `<style>`) and one inner root, `.voc-root`,
+  holding the strip, the progress bar, the live region and the screen; every id, `aria-describedby` and `<label
+  for>` resolves there.
+- Every colour and inherited text property is also set inline, so a browser without Shadow DOM, a container that
+  cannot host a shadow root (a `<form>`, a `<td>`: the form is then drawn in the container's light DOM), or a page
+  whose CSP blocks the stylesheet still gets the theme's form.
+- Checkboxes and radios are drawn by the widget (a 20 px box in the option-edge colour, the primary fill and an
+  on-primary tick when checked); the real inputs stay, visually hidden, for the keyboard and screen readers.
+- Keys are handled inside the form only. The widget leaves the container's styles and classes alone (it sets only
+  its `lang`), and a page rule for the container beats the widget's `:host` defaults. On the iframe page the page
+  keeps no reset of its own, only `html, body { margin: 0 }` and the container's `min-height: 100vh`; there the
+  widget gives `<html>` the theme's background and `color-scheme`.
+- The class names inside stay (`.voc-nav-bar`, `.voc-next`, `fieldset.voc-question`, `.voc-ending-title`, …): reach
+  them through `container.shadowRoot` (Playwright locators pierce open shadow roots); `document.querySelector`
+  does not.
+- On a phone the Back / Next bar (`.voc-nav-bar`) is sticky at the bottom of the screen, so Next is in view on a
+  long question.
+
+With the font **Same as your page** (`theme.font: 'inherit'`) a script embed takes your page's font from its
+container; on the iframe page and in the preview that font is the system one.
+
 ### The widget's options and handle
 
 `VoCFeedbackForm.init(options)` takes `container` (a selector or an element), `apiEndpoint`, `formId`,
@@ -254,16 +454,60 @@ a handle:
 | `setHiddenFields(values)` | adds hidden values (`VoCFeedbackForm.setHiddenFields(...)` does it for every form on the page, those loaded later included) |
 | `setLanguage(locale)` | switches the respondent's language |
 | `update(config)` | renders another config (the editor's preview) |
-| `goTo(questionId)` | shows that question (preview) |
+| `goTo(target)` | shows a question (its id), the welcome screen (`'welcome'`) or an ending (`'end:<ending id>'`) (preview) |
 | `restart()` | starts again (preview) |
+| `setScheme('light' \| 'dark' \| null)` | shows the light or the dark palette whatever the device says; `null`: the device's (preview) |
 | `destroy()` | removes the widget and its listeners |
 
 A hidden value comes from the link, then `hidden`, then `setHiddenFields`.
 
-**The editor's preview.** `init({container, preview: {config}})` renders the given draft and never fetches,
-submits or counts anything; its handle drives it, and so do `postMessage`s from the page's own origin
-(`e.origin === window.location.origin`, from its parent frame): `{type: 'voc-form-preview', action: 'config',
-config}`, `{…, action: 'goTo', questionId}`, `{…, action: 'restart'}` and `{…, action: 'language', language}`.
+**The editor's preview.** `init({container, language, preview: {config, seed?, scheme?}})` renders the given
+draft and never fetches, submits or counts anything. `seed` keeps Shuffle's order for the whole preview session
+(Restart included); `scheme` forces the light or the dark palette. Its handle drives it, and so do `postMessage`s
+from the page's own origin (`e.origin === window.location.origin`, from its parent frame): `{type:
+'voc-form-preview', action: 'config', config}`, `{…, action: 'goTo', questionId}` (or `target`), `{…, action:
+'restart'}`, `{…, action: 'language', language}` and `{…, action: 'scheme', scheme}`.
+
+**In the builder (7.55.01).** The Questions tab shows the draft in the real widget as a phone: 390 px wide, scaled
+to the pane and as tall as the window leaves (at least 320 px in the full-height builder, 480 elsewhere), with its
+size and zoom shown ("Phone · 390 × 610 · 90 %"). It follows the selected question, the welcome screen (while it is
+on) or an ending, updates within 150 ms of typing (on the next frame for a colour or a slider) and never submits.
+Options set to Shuffle keep one order for the session ("Shuffled for each respondent"). **Style** opens the form's
+theme beside the preview ([Theming](#theming)); while you edit the dark palette the preview shows it ("Showing:
+Dark"). On a phone, Preview opens the preview window in a new tab. The old full-screen page
+`/feedback-forms/{id}/preview` now opens the builder.
+
+**Room for the editor.** From lg, **Hide preview** in the preview's toolbar gives the editor its width, and **Show
+preview** over the editor brings it back; the choice is remembered in this browser (`localStorage`). While the
+preview window is open the in-pane preview collapses on its own ("The preview is open in its window.") and comes
+back when the window closes: the window says `alive` every 1.5 s and `closed` when it goes, and 5 s of silence (a
+window killed with its tab) counts as closed. Show preview brings the in-pane one back beside the open window too,
+until the next window opens.
+
+### The preview window
+
+The builder's **Open in window** opens `frontend/form-preview.html`, the build's second HTML page: the same widget
+file in preview mode, a small toolbar of its own (size presets Phone 390 × 844, Rotate, Tablet 768 × 1024, Desktop
+1280 × 800 and "Embedded, 480 px tall"; Restart; Language) and no app CSS, so the window is a real viewport (the
+widget's width rules, the pointer and the sticky Next bar behave as on the device). The builder sends the draft as
+it changes over `BroadcastChannel('voc-form-preview:<session>')`, same-origin by construction, with
+`{type: 'voc-form-preview', action: 'ready' | 'config' | 'goTo' | 'restart' | 'language' | 'scheme', …}`:
+
+- the builder opens `/form-preview.html#s=<session>&ui=<language>&p=<preset>` in the click itself (a window named
+  `voc-form-preview`, `popup=yes` at the preset's size; a blocked pop-up is said in words);
+- the window says `ready` every 1.5 s until a draft arrives; the builder answers with `config` (the draft, the
+  preview's shuffle seed, the form's name and languages), then `language`, `scheme` and `goTo`;
+- after that the builder posts `config` on each change (the same 150 ms, the next frame for a theme-only change),
+  and `goTo`, `restart`, `language` and `scheme` as they happen;
+- the session is kept per form in `sessionStorage`, so a builder reload talks to the window it opened, and a new
+  form's first save keeps it;
+- the window's words come from the app's own catalogs (`/locales/<language>/feedbackForms.json`, `previewWindow.*`),
+  English where one is missing;
+- from the forms list, ⋯ › Preview opens the window on the saved form (read when the window says `ready`).
+
+It never submits, holds no data of its own and renders through the widget's `textContent`. A pop-up is a top-level
+window, so CloudFront's `frame-ancestors 'none'` does not apply to it and `script-src 'self'` allows its bundled
+script (the built page has no inline script): it needs no CloudFront or CSP change.
 
 **The `dimensions` embed option.** `VoCFeedbackForm.init({..., dimensions: {user_type:
 'partner'}})` sends up to 10 string/number values with each submission. The embed runs on
@@ -274,9 +518,10 @@ dropped by the processor. It is separate from hidden fields.
 The submitter's `email` is stored lower-cased, so an erasure by email matches however it
 was typed.
 
-There is no standalone `widget.js` script to load. That path is not a route of the handler, so a
-`<script src=".../feedback-forms/{id}/widget.js">` tag gets an API Gateway error instead of the widget: since
-7.55.00 a signed-in proxy serves the form's other signed-in routes under `/feedback-forms/{id}/`, so an
+The API serves no widget file: the script embed loads it from the app's own address,
+`https://{app domain}/widget/feedback-widget.js` ([The script embed](#the-script-embed)). A
+`<script src=".../feedback-forms/{id}/widget.js">` on the API gets an API Gateway error instead of the widget:
+since 7.55.00 a signed-in proxy serves the form's other signed-in routes under `/feedback-forms/{id}/`, so an
 anonymous request there is refused by the Cognito authorizer (`401`) before any code runs, and any other path
 answers `403 Missing Authentication Token`. Either way it means "no such route" here, not "not allowed".
 
@@ -313,6 +558,99 @@ Your own colours are always kept. The label on the start, next and selected
 rating buttons is white or `#19161d`, whichever contrasts more with your
 `primary_color`, so a light brand colour still gets a readable label. The iframe
 page renders the widget inside a `<main>` landmark.
+
+### Mode, dark palette, font and size (7.55.01)
+
+All optional, with defaults, so a theme saved before 7.55.01 reads as it always did:
+
+```json
+{
+  "theme": {
+    "primary_color": "#8e48ff",
+    "background_color": "#ffffff",
+    "text_color": "#19161d",
+    "border_radius": "8px",
+    "mode": "auto",
+    "dark": { "primary_color": "#bd8fff", "background_color": "#19161d", "text_color": "#f2f1f4" },
+    "font": "system",
+    "text_size": "default"
+  }
+}
+```
+
+- The three top-level colours are the **light** palette (`#rgb` or `#rrggbb`; `#rrggbbaa` is still read from
+  older forms), `dark` the **dark** one (VoC dark by default). `mode` picks the one shown: `light` (the default),
+  `dark`, or `auto`, the respondent's `prefers-color-scheme`, followed live. The widget sets `color-scheme` to match,
+  so native selects and scrollbars follow.
+- `border_radius`: `0px` to `24px` in the editor (presets 0, 4, 8 and 16, and a slider).
+- `font`: system stacks only, never a web font: `system`, `inherit` ("Same as your page", for the script embed;
+  the system font on the iframe page and in the preview), `serif`, `rounded`, `mono`.
+- `text_size`: `default` or `large` (18 px body text).
+- Presets in the editor: VoC light, VoC dark, High contrast (both palettes, mode `auto`), and **Your brand**, a
+  workspace theme an admin saves; a new form starts on the brand when there is one, else VoC light.
+
+A theme stored before 7.55.01 is answered with the defaults filled in (`form_theme.with_defaults`: the GET of a form
+and the public config) and written back whole on its next save.
+
+**Where it is edited.** The same editor (`pages/FeedbackForms/theme/ThemeEditor.tsx`) opens two ways: **Style** in
+the Questions tab's preview toolbar (from xl it takes the editor column while the preview stays; below xl a side
+sheet with the phone preview at its top), and **Settings › Appearance**, the second card, with its own preview. It
+offers the presets; Mode (Light | Dark | Auto, and in Auto which palette you are editing); the three colours, each a
+swatch and a hex field that says why it refuses a value ("Use a hex colour like #8e48ff."); the derived option
+edge; Corners (0, 4, 8, 16 px and a 0–24 px slider); Font; Size (Default | Large); and the live contrast table
+below.
+
+**Your brand.** A workspace's admins save the current style as its form brand ("Save as brand…"; for anyone else the
+button is off and says why). It is stored as `form_theme` on the workspace's `/settings/brand` row (outside a
+workspace, the deployment's): `GET /settings/brand` answers it (`null` when none), and a `PUT` whose body holds only
+`form_theme` sets just that (`null` removes it), while a brand `PUT` without it keeps it. The forms picker's
+templates, Blank, Describe your form and the assistant's form drafts start on it.
+
+### Contrast checks
+
+One set of rules, the same in the editor, on the server (`lambda/shared/form_theme.py`) and in the widget, for every
+palette that can be shown (light for `light`, dark for `dark`, both for `auto`):
+
+| Pair | Minimum | Below it |
+|---|---|---|
+| Text on background | 4.5:1 | under 3:1 an error that blocks Publish and a live form's colour change (Save still works); on a live form kept on the theme it already has, a warning; 3 to 4.5:1 a warning |
+| Primary on background (focus ring, progress, selected edge, checked box) | 3:1 | a warning; the widget draws the ring and selected edges in the text colour instead |
+| Button label on primary (white or `#19161d`, whichever contrasts more) | 4.5:1 | a warning |
+| Option edge (the text colour at 55 % over the background) | 3:1 | derived: the widget raises the alpha until it holds |
+
+The widget's last line of defence: text under 3:1 on its background is drawn in the readable one of white and
+`#19161d` instead. The editor's one-click suggestions move a colour in OKLCH lightness only (hue and chroma kept),
+to the nearest darker and the nearest lighter value that pass ("Use #6f7681 (4.6:1)"). The editor's table shows each
+pair with an icon, its ratio and "AA" or "Below AA" in words, never colour alone; the problems chip lists the same
+pairs, and an unreadable text keeps Publish, and Update live form after a colour change, off with the reason ("Fix 1
+problem to publish. Saving still works."). A live form kept on the unreadable theme it already has (one saved
+before 7.55.01) is only warned about: its Style panel shows the text pair as a warning ("This form's text is hard to
+read (2.5:1, under 3:1). Fix its colours; until then, your other changes still go live."), the header's save status
+says "This form's text is hard to read. Fix its colours", and Update live form goes through.
+
+**On the server** the rule lives in the shared forms module: `shared/forms_v2.py` `validate_publishable(theme,
+live=…, was_live=…, theme_changed=…)`, built on `shared/form_theme.py`'s contrast helpers. The handler applies it to
+a create whose `enabled` is true and to an update that leaves the form live (its `enabled`, else the stored one; its
+`theme`, else the stored one). With text under 3:1 in a palette respondents can be shown:
+
+- **refused**, `400 theme_unreadable`: a write that turns a form live (a new form, a draft or an Off form
+  published), and a write to a live form that changes its theme (`same_theme`: the two themes read with their
+  defaults differ), so a colour change never leaves a live form unreadable and an API caller cannot publish an
+  illegible form either;
+- **saved, with a warning**: any other write to a live form whose stored theme is already under 3:1 (a question
+  edit, Update live form with the theme as it is). The answer is `{success: true, form, warnings:
+  ['theme_unreadable']}`; the widget's `safeContrast` keeps what its respondents see readable meanwhile.
+
+```json
+{"success": false, "code": "theme_unreadable", "minimum": 3.0, "palettes": [{"palette": "light", "ratio": 2.54}],
+ "error": "The text on the light background is 2.5:1, under 3:1: respondents could not read it. …"}
+```
+
+A save that leaves the form Off, or turns it off, always works, without a warning, so nothing is lost.
+
+**Publishing with a language half translated.** Publish and Update live form ask first when a language the form
+offers is incomplete ("English respondents will see 5 texts in Polski."), with Publish anyway and a Translate
+button per language.
 
 ## API Endpoints
 
@@ -453,8 +791,9 @@ A form's [test responses](#test-mode) never take this path.
 ```
 
 Its keys are `answers` (required), `hidden`, `form_revision` (the current revision when absent), `language`,
-`ending_id`, `session` ([The funnel](#the-funnel)), `test`, `form_id`, `page_url`, `dimensions`,
-`participant_token` and `custom_fields`; any other key
+`ending_id`, `session` ([The funnel](#the-funnel)), `channel` (`link`, `iframe` or `script`: how the widget ran,
+[The list](#creating-a-feedback-form)), `test`, `form_id`, `page_url`, `dimensions`, `participant_token` and
+`custom_fields`; any other key
 is refused. Every answer is checked against the form's revision: its type and shape, a range, an option code,
 the characters of an open text (its `max_chars`, else 5,000) and its `input_type`, a multi-select's `min` / `max`,
 a contact's required fields, the hidden ids (declared only, 200 characters each), the language (one of the
@@ -551,7 +890,10 @@ past it) and `drop_off_rate` (skipped / shown), and by type:
 A question id is stable across revisions, so a response to an older revision counts towards the same question;
 a value of another shape is left out. A version 1 submission counts as the answers of its migrated `q_rating` and
 `q_text`. The forms list's `?include=stats` adds `headline` to each form's stats: its first `nps`, `csat`, `ces`
-or `rating` question's score (`{question_id, type, value, count, scale_max}`, `null` without one).
+or `rating` question's score (`{question_id, type, value, count, scale_max}`, `null` without one), and, since
+7.55.01, `last_response_at`, the latest counted response's `source_created_at` (absent when none carries one),
+and `channels`, per channel a response named (`link`, `iframe`, `script`) its latest one (absent when none did).
+`GET /feedback-forms/{id}/stats` answers the same fields.
 
 **Responses**, newest first: `{total, responses: [{response_id, feedback_id?, is_test, created_at, revision,
 language, ending_id, answers, hidden, path, sentiment?}], next_cursor}`, 50 per page (`limit` up to 100) from
@@ -604,6 +946,12 @@ day (pay-per-use writes and storage, gone after 7 days) and the counters of the 
 ever read back, queued or sent to a model. A per-form cap would bound it further (a follow-up, like the submit
 route's). A counter and its visit row are two writes, best effort, so one that fails costs a count. Read the
 drop-off as a trend next to the responses, not as an audited count.
+
+**Reading it with logic (7.55.01).** Results' summary line gives the completion and the largest drop ("Completion
+48 % · largest drop at Q2", a link to the funnel). A drop is measured only between steps every path passes
+(`results/funnelSteps.ts`: a question whose ways in times ways out equal all the form's paths); a question that only
+some paths show says "on some paths only" and never carries a drop, since few people reach it by design. Its count
+is the people it was shown to, a lower bound, because the paths of those who left are not recorded past it.
 
 ## AI drafts
 
@@ -812,6 +1160,8 @@ workspace. From 7.06.00 to 7.13.00 creating a form in a workspace and a submissi
 ## CORS Configuration
 
 The four public endpoints intentionally allow cross-origin requests from any origin so the widget can be embedded on customer-owned sites. `FeedbackFormApi` therefore uses `ALLOWED_ORIGIN=*`; changing the Lambda environment variable alone is not a supported per-form origin policy.
+
+The widget file a script embed loads is not an API route: it is a static file of the app's own CloudFront distribution, with its own CORS (any origin, GET and HEAD, no credentials; [The script embed](#the-script-embed)).
 
 The security boundary is the narrow public route set (`config`, `iframe`, `submit` and `events`), strict response projection, input validation, and the per-route throttles above. All form management, submission reads, and statistics routes require Cognito authentication. If a deployment needs an origin allowlist, implement and test it as an API change that preserves the intended embed sites rather than editing the deployed environment by hand.
 

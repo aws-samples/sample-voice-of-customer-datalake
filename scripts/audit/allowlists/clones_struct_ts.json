@@ -82,11 +82,10 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/pages/FeedbackForms/picker/TemplatePicker.tsx",
-        "voc-datalake/frontend/src/pages/FeedbackForms/tabs/LanguagesTab.tsx",
-        "voc-datalake/frontend/src/pages/Home/brief/BriefSettings.tsx"
+        "voc-datalake/frontend/src/pages/FeedbackForms/FormsList.tsx",
+        "voc-datalake/frontend/src/pages/Projects/ProjectCard.tsx"
       ],
-      "reason": "the same labelled-select markup over different data and events: the template picker's Create in language (a visible label, every language, the current one selected), the Languages tab's Add language (a screen-reader label, an empty first option, only the languages the form lacks, nothing selected) and the brief's delivery hour (a number, a disabled state); one component would be a props table as long as each"
+      "reason": "two loading placeholders, each drawn in its own card's shape (the forms list card's three zones, its title, figures and controls; the project card's icon, title, line and button): what matches is the design system's `skeleton` recipe in a three-item map, and one component would take each card's layout as props"
     }
   ]
 }

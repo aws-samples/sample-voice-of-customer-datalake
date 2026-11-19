@@ -71,6 +71,18 @@
         ],
         "pattern": "^[A-Za-z0-9_-]{8,64}$"
       },
+      "channel": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "link",
+          "iframe",
+          "script",
+          null
+        ]
+      },
       "form_id": {
         "type": [
           "string",
