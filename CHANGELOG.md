@@ -226,6 +226,31 @@ administrator's, behind Cognito.
 - The root `templates/` folder: its one file pointed to `voc-datalake/templates/orchestration/README.md`, which the
   root README now links.
 
+### Tuned for Kiro and Claude 5.5
+
+- **Each Claude 5.5 model runs at one effort, on both harnesses** (`harness/effort.py`): Opus 5.5 `medium`, Sonnet 5.5
+  `high`, Haiku 5.5 `medium`, each its API default (what the Converse loop ran before it was pinned), so a role thinks
+  as much on Kiro as on Bedrock. The native harness sends it as `output_config.effort`, to those three models only, and
+  its adaptive, summarized thinking only to the allowlist's `adaptive_thinking` models (`converse_loop.ADAPTIVE_THINKING`,
+  held equal to `shared/model_config.py` by a test). A Kiro session sets it after its model (`session/set_config_option
+  {configId: effortLevel}`: Kiro's model choice resets it); `auto` and a model the table does not name run at Kiro's
+  own. An effort Kiro refuses or does not take is a `kiro_settings` event and the session goes on at Kiro's (a model
+  Kiro does not take still stops the step for a person).
+- **A Converse call's output cap is 32,000 tokens** (`converse_loop.MAX_TOKENS`, 8,192 before; thinking counts toward
+  it). A reply cut at the cap is asked for again once, the cut reply never sent back; a second cut is a crash
+  (`OutputCut`), never a reply taken as it is. The harness's Bedrock client waits up to 900 seconds for an answer
+  (`main.BEDROCK_READ_TIMEOUT`, 300 before): Converse answers once the whole reply is written.
+- **The platform rules say how a turn ends** (`_shared/PLATFORM_RULES.md`, "How your turns end"): the run is
+  unattended and a reply with no tool call stops the task, so an agent keeps working with its tools, puts a status note
+  in `report_progress` instead of a summary that announces its next step, and stops only where nothing can move without
+  a person.
+- **The reviewers write every finding** (commit-reviewer and pr-reviewer, version 5): the small and the uncertain ones
+  too, the severity marking a small one and the evidence saying how sure it is.
+- **The 30 library skills' descriptions and emphasis are rewritten for Claude 5.5** (what the skill does, then when to
+  read it), and the voc-runs MCP skill's (version 2).
+- **A skill's worked examples are in `<example>` tags** inside `<examples>` (`harness/skills.py`, and the compiled Kiro
+  configs' prompts), so an example is never read as one more instruction.
+
 ### Upgrade notes
 
 - A role with no choice runs its card's model, on Kiro by Kiro's name for it. On a Kiro account that does not offer

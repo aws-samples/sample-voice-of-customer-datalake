@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: commit-reviewer
-version: 4
+version: 5
 purpose: Reviews one submitted change against the repository's review guide before the quality gate; scope creep is blocking.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}

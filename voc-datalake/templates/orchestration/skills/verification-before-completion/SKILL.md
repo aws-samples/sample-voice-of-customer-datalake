@@ -1,9 +1,9 @@
 ---
 name: verification-before-completion
-description: "Evidence gate before any completion claim (done, fixed, passing, ready) and before submit_work, a review, a gate record or a finish. The proving command runs in the current turn and its exit code is read first; another agent's success is a claim until its patch or record is read."
+description: "Requires evidence before any completion claim (done, fixed, passing, ready): the proving command runs this turn and its exit code is read first; another agent's success is a claim until read. Read it before submit_work, a review, a gate record or a finish."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/verification-before-completion"
 license: MIT
-adapted: "Commands are run's argv (the result carries the exit code; no shell pipes). Deploy-live and CI-green claims are dropped: the run never deploys and the people's CI is not the agent's to read. The sub-agent step became reading another agent's patch or record (read_patch, read_gate_record, read_findings). The red phase undoes the fix with write_file, not git stash. The Stop-hook enforcement section is dropped."
+adapted: "Commands are run's argv (the result carries the exit code; no shell pipes). Deploy-live and CI-green claims are dropped: the run never deploys and the people's CI is not the agent's to read. The sub-agent step became reading another agent's patch or record (read_patch, read_gate_record, read_findings). The red phase undoes the fix with write_file, not git stash. The Stop-hook enforcement section is dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Gate the completion claim you are about to make.
@@ -76,7 +76,7 @@ A test that has never failed proves nothing. It may assert on the wrong thing.
 2. Run it. It passes with the fix in place.
 3. Undo the fix only: write the changed lines back as they were with `write_file` (never `git stash` or
    `git revert`: the checkout's git is the harness's).
-4. Run again. It MUST fail. If it passes, the test does not cover the bug.
+4. Run again. It has to fail: if it passes, the test does not cover the bug.
 5. Write the fix back. Run again. It passes.
 
 Only after step 4 fails may you call the test a regression test. Full protocol: the `tdd` skill.

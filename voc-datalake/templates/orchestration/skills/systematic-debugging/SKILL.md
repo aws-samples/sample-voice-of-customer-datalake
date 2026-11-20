@@ -1,9 +1,9 @@
 ---
 name: systematic-debugging
-description: "Root-cause debugging with a fix-attempt budget, for any bug, test failure, crash, flake or unexpected behaviour before a fix is proposed. Four phases, one hypothesis at a time, and a hard stop at three failed fixes to question the design instead of looping."
+description: "Finds a root cause before a fix, with a fix-attempt budget: four phases, one hypothesis at a time, and a stop after three failed fixes to question the design. Read it when facing a bug, test failure, crash, flake or unexpected behaviour, before proposing a fix."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/systematic-debugging"
 license: MIT
-adapted: "Slash-command cross-references name library skills (read_skill); the GPU skill reference is dropped. History steps (git log, bisect) say the run's checkout is one commit without history. Production-only bugs and design questions end in the finish for a person to decide, never a question to a user mid-task. The red-phase proof undoes the fix with write_file. The report is the finish summary."
+adapted: "Slash-command cross-references name library skills (read_skill); the GPU skill reference is dropped. History steps (git log, bisect) say the run's checkout is one commit without history. Production-only bugs and design questions end in the finish for a person to decide, never a question to a user mid-task. The red-phase proof undoes the fix with write_file. The report is the finish summary; description reworded for Claude 5.5 skill discovery"
 ---
 
 Find the root cause of the failure your task names.

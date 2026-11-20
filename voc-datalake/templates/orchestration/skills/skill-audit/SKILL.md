@@ -1,9 +1,9 @@
 ---
 name: skill-audit
-description: "How the coach scores a role's skill before and after its change. Twelve static checks on the instructions and examples (sections, imperative steps, reasons, the role's own tools, examples, size, no filler, no duplicate rules) and why the failed agent missed what its skill says."
+description: "Scores a role's skill before and after the coach's change: static checks on the instructions and examples (sections, imperative steps, reasons, own tools, examples, size, filler, duplicates) and why the failed agent missed what its skill says. Read it when the coach checks a proposal."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/skill-audit"
 license: MIT
-adapted: "Rewritten for the coach's one model call: it audits the one role's skill it is about to change (the current version, then its own proposal), not a folder of skill files, and the trigger, undertrigger and coverage analyses became why the failed agent did not follow its skill. The research-backed scoring is kept as a reference for the Library's readers. Under 4,000 characters."
+adapted: "Rewritten for the coach's one model call: it audits the one role's skill it is about to change (the current version, then its own proposal), not a folder of skill files, and the trigger, undertrigger and coverage analyses became why the failed agent did not follow its skill. The research-backed scoring is kept as a reference for the Library's readers. Under 4,000 characters; description reworded for Claude 5.5 skill discovery"
 ---
 
 Score the role's current skill before you change it, and your proposal before you answer. A proposal must score

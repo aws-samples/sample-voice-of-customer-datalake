@@ -76,7 +76,7 @@ Python does not need a DI framework. Constructor injection plus a single composi
 - **Constructor / parameter injection**: pass the port instance in; never `new ConcreteClass()` inside business logic (DIP violation, anti-slop OCP/DIP checks).
 
 ```python
-# entrypoints/bootstrap.py: the ONLY place that names concrete infrastructure
+# entrypoints/bootstrap.py: the only place that names concrete infrastructure
 from sqlalchemy.orm import sessionmaker
 from myapp.adapters.orm import engine
 from myapp.service_layer.unit_of_work import SqlAlchemyUnitOfWork

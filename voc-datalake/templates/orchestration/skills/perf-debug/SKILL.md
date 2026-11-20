@@ -1,9 +1,9 @@
 ---
 name: perf-debug
-description: "Application performance diagnosis for slow code, latency, CPU or memory growth, event-loop blocking and slow queries. Profiling in Python and Node, tracing, load testing on loopback, connection pools, caches and observability code."
+description: "Diagnoses application performance: slow code, latency, CPU or memory growth, event-loop blocking, slow queries. Profiling in Python and Node, tracing, loopback load tests, connection pools, caches, observability code. Read it when a task reports slowness or a resource leak."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/perf-debug"
 license: MIT
-adapted: "Profiling runs in the sandbox: commands are run's argv (no shell pipes or pgrep), profilers come from the repository's dev dependencies (installing one is the install step), attaching to a running process may be refused, and load tests target loopback only. Production measurements and monitoring are a person's or code the agent writes. GPU references (an unvendored skill) are dropped; slash references name library skills."
+adapted: "Profiling runs in the sandbox: commands are run's argv (no shell pipes or pgrep), profilers come from the repository's dev dependencies (installing one is the install step), attaching to a running process may be refused, and load tests target loopback only. Production measurements and monitoring are a person's or code the agent writes. GPU references (an unvendored skill) are dropped; slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 Diagnose the performance problem your task names.

@@ -1,9 +1,9 @@
 ---
 name: security-audit
-description: "Application security audit against OWASP Top 10:2025: authentication and authorisation, input validation, information disclosure, infrastructure IAM, dependency CVEs, client-side XSS and CSRF, API security, supply chain. For auditing code or reviewing auth; AWS IaC alone is aws-security's."
+description: "Audits application security against OWASP Top 10:2025: authn and authz, input validation, information disclosure, IAM, dependency CVEs, XSS and CSRF, API security, supply chain. Read it when auditing code or reviewing auth; AWS IaC alone is the aws-security skill's."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/security-audit"
 license: MIT
-adapted: "The spec-loader step reads SECURITY.md and INFRA.md with read_file. Scanners run as run's argv with the repository's installed tools, offline: registry rulesets (semgrep p/...) and advisory databases (npm audit, pip-audit) need the network, so a missing or offline tool is a reported gap. Results go in findings or the finish; suppressions are the builder's or fixer's within its change. A reference to an unvendored skill is dropped."
+adapted: "The spec-loader step reads SECURITY.md and INFRA.md with read_file. Scanners run as run's argv with the repository's installed tools, offline: registry rulesets (semgrep p/...) and advisory databases (npm audit, pip-audit) need the network, so a missing or offline tool is a reported gap. Results go in findings or the finish; suppressions are the builder's or fixer's within its change. A reference to an unvendored skill is dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Run a security audit on the code your task names (a reviewer: the files the patch changes, read in full).
@@ -76,7 +76,7 @@ Use `--json` output for structured triage. For each finding:
 
 ### Triage tool findings
 
-After running tools, read ALL findings including INFO severity:
+After running tools, read every finding, INFO severity included:
 1. **ERROR/WARNING**: investigate immediately, classify as FAIL or WARN
 2. **INFO**: review each one. INFO findings include real issues (CSV injection, Secrets Manager path names). Do not auto-dismiss
 3. **False positives**: a fixer or builder suppresses one in its own change with an inline comment + justification,

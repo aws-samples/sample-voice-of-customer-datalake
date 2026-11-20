@@ -37,7 +37,7 @@ Verified API surface of `aws_cdk.aws_bedrockagentcore` (ships inside `aws-cdk-li
 
 | Factory | Use when |
 |---|---|
-| `from_image_uri(uri)` | Image already in ECR (built by CodeBuild). **Does NOT grant ECR pull** - call `ecr_repo.grant_pull(execution_role)` yourself. |
+| `from_image_uri(uri)` | Image already in ECR (built by CodeBuild). It does not grant ECR pull, so call `ecr_repo.grant_pull(execution_role)` yourself. |
 | `from_ecr_repository(repo, tag)` | CDK-managed ECR repo object. |
 | `from_asset(path)` | Local Docker bundling at synth - avoid: the synth then needs Docker, which the agents' sandbox does not have. |
 | `from_code_asset(...)` / `from_s3(...)` | CodeZip path - Python zipped to S3, no container. |

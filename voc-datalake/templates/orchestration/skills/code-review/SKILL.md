@@ -1,9 +1,9 @@
 ---
 name: code-review
-description: "Review a change for security, quality, architecture and AI slop, and for whether it built what was asked (the spec axis kept apart). Reading the patch and the changed files, eight architecture dimensions, security and slop checklists, language checks, complexity, severities and a verdict."
+description: "Reviews a change for security, quality, architecture and AI slop, and whether it built what was asked: architecture dimensions, security and slop checklists, language checks, complexity, severities and a verdict. Read it when reviewing a patch or a pull request."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/code-review"
 license: MIT
-adapted: "Reviews the patch the task names (read_patch, read_file on the patched checkout) instead of git diffs. The automated pass is the gate's: reviewers run no code, so tool results come from the gate record where the role has it. The spec axis takes the task's acceptance criteria and issue; its sub-agent is dropped. Findings and the verdict go through write_findings and write_review; reviewers never fix. A copyright-header reference specific to one vendor's samples became repository-compliance (the header the repository requires). Slash references name library skills."
+adapted: "Reviews the patch the task names (read_patch, read_file on the patched checkout) instead of git diffs. The automated pass is the gate's: reviewers run no code, so tool results come from the gate record where the role has it. The spec axis takes the task's acceptance criteria and issue; its sub-agent is dropped. Findings and the verdict go through write_findings and write_review; reviewers never fix. A copyright-header reference specific to one vendor's samples became repository-compliance (the header the repository requires). Slash references name library skills; reworded for Claude 5.5"
 ---
 
 Review the change your task names.
@@ -43,8 +43,8 @@ names, in its review, the checks a tool would settle. These are the tools the ga
 | Both | `semgrep scan --config <the repository's rules> --quiet <paths>` (`--config auto` fetches rules: it needs the network) |
 | Secrets | `gitleaks dir <paths>` |
 
-A check the gate record shows as missing or stopped is a gap in the review summary, never a pass. Review ALL tool
-findings the record holds, including INFO severity (some are real: CSV injection, Secrets Manager path names). See
+A check the gate record shows as missing or stopped is a gap in the review summary, never a pass. Review every tool
+finding the record holds, including INFO severity (some are real: CSV injection, Secrets Manager path names). See
 the `security-audit` skill for false-positive triage.
 
 ### Pass 2: Full Semantic Review

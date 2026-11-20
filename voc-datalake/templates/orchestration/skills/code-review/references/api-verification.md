@@ -92,9 +92,9 @@ Before modifying a function signature or removing an export:
 | Change | Risk | Check |
 |---|---|---|
 | Add optional parameter | Low | No callers break |
-| Remove parameter | High | ALL callers must update |
-| Change return type | High | ALL consumers must handle |
-| Rename function | High | ALL imports must update |
+| Remove parameter | High | Every caller must update |
+| Change return type | High | Every consumer must handle it |
+| Rename function | High | Every import must update |
 | Change default value | Medium | Callers relying on default may break |
 
 ## Breaking Change Detection

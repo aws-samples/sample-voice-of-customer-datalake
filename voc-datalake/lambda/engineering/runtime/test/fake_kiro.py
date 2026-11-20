@@ -15,7 +15,8 @@ request the client never offered), ``hold`` (until a cancel or the next prompt: 
 reason, ``end_turn`` by default), ``exit`` (ends the process mid-turn); ``refuse_mode`` (answers another agent);
 ``load_session`` (false: no ``loadSession`` capability); 7.58.00: ``model`` (the session's model at the start),
 ``models`` (the ones the account offers), ``model_groups`` (listed in a group), ``model_refuse`` (an error for a model
-set) and ``model_answer`` (another model said to be current); and a turn's ``info`` (a v3 ``session_info_update`` with
+set) and ``model_answer`` (another model said to be current); ``ignore`` (the options this Kiro never changes, as
+``['effortLevel']``), ``refuse_effort`` (an error for an effort set); and a turn's ``info`` (a v3 ``session_info_update`` with
 those ``_meta.kiro`` fields: ``turn_completion``'s credits, ``session_usage``'s total) or ``metadata`` (a v2
 ``_kiro.dev/metadata`` with those params). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
 """
@@ -44,6 +45,8 @@ class Fake:
         self.session_id = ''
         self.mode = ''
         self.model = str(scenario.get('model', 'claude-sonnet-4.5'))
+        #: (7.58.00) Kiro's default effort: an agent's selection and a model's reset it to this.
+        self.effort = 'medium'
         self.configs: dict[str, dict[str, Any]] = {}
         agents = os.path.join(self.home, '.kiro', 'agents')
         for name in sorted(os.listdir(agents)) if os.path.isdir(agents) else []:
@@ -80,22 +83,35 @@ class Fake:
         self.send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': code, 'message': message}})
 
     def options(self) -> dict[str, Any]:
-        """The session's config options as kiro-cli answers ``set_config_option``: the mode, and the model with the
-        ones the account offers (7.58.00, ``models``; grouped as ACP allows when ``model_groups``)."""
+        """The session's config options as kiro-cli answers ``set_config_option``: the mode, the model with the
+        ones the account offers (7.58.00, ``models``; grouped as ACP allows when ``model_groups``) and the effort."""
         offered = [{'value': value, 'name': value} for value in self.scenario.get('models', DEFAULT_MODELS)]
         listed: list[dict[str, Any]] = ([{'group': 'claude', 'name': 'Claude', 'options': offered}]
                                         if self.scenario.get('model_groups') else offered)
         return {'configOptions': [{'id': 'mode', 'currentValue': self.mode},
-                                  {'id': 'model', 'currentValue': self.model, 'options': listed}]}
+                                  {'id': 'model', 'currentValue': self.model, 'options': listed},
+                                  {'id': 'effortLevel', 'currentValue': self.effort}]}
 
     def set_option(self, ident: Any, params: dict[str, Any]) -> None:
-        """``set_config_option``: the mode (a ``.kiro/agents`` agent; ``refuse_mode`` answers another), or the model."""
-        wanted = params.get('value')
-        if params.get('configId') == 'model':
+        """``set_config_option``: the mode (a ``.kiro/agents`` agent; ``refuse_mode`` answers another), the model, or
+        (7.58.00) the effort (as kiro-cli 3.4.0: ``low`` to ``max``, another value ignored). Selecting an agent or a
+        model resets the effort to Kiro's default; an option the scenario's ``ignore`` names is never changed."""
+        option, wanted = params.get('configId'), params.get('value')
+        self.note({'configured': option, 'value': wanted})
+        if option in self.scenario.get('ignore', ()):
+            self.answer(ident, self.options())
+        elif option == 'model':
             self.set_model(ident, str(wanted))
-            return
-        self.mode = 'vibe' if self.scenario.get('refuse_mode') or wanted not in self.configs else str(wanted)
-        self.answer(ident, self.options())
+        elif option == 'effortLevel' and self.scenario.get('refuse_effort'):
+            self.error(ident, str(self.scenario['refuse_effort']))
+        elif option == 'effortLevel':
+            if wanted in ('low', 'medium', 'high', 'xhigh', 'max'):
+                self.effort = str(wanted)
+            self.answer(ident, self.options())
+        else:
+            self.mode = 'vibe' if self.scenario.get('refuse_mode') or wanted not in self.configs else str(wanted)
+            self.effort = 'medium'
+            self.answer(ident, self.options())
 
     def set_model(self, ident: Any, wanted: str) -> None:
         """``set_config_option {configId: model}`` (7.58.00): ``model_refuse`` answers an error, ``model_answer`` says
@@ -107,7 +123,7 @@ class Fake:
         if self.scenario.get('model_answer'):
             self.model = str(self.scenario['model_answer'])
         elif wanted in self.scenario.get('models', DEFAULT_MODELS):
-            self.model = wanted
+            self.model, self.effort = wanted, 'medium'
         self.answer(ident, self.options())
 
     def store(self, kind: str, text: str) -> None:

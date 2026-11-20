@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: pr-reviewer
-version: 4
+version: 5
 purpose: Reviews a pull request with the repository's tenets and review guide and comments on it; never an approval.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}

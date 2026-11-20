@@ -1,9 +1,9 @@
 ---
 name: aws-serverless
-description: "Build or review serverless applications on AWS Lambda, API Gateway, EventBridge, Step Functions, SQS and DynamoDB. Function design and limits, event source patterns, orchestration, IaC in SAM or CDK, observability, cold starts, cost and the anti-patterns to catch."
+description: "Designs and reviews serverless apps on AWS Lambda, API Gateway, EventBridge, Step Functions, SQS and DynamoDB: limits, event sources, orchestration, SAM or CDK, observability, cold starts, cost, anti-patterns. Read it when writing or reviewing serverless code or IaC."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/aws-serverless"
 license: MIT
-adapted: "Discovery uses list_files and read_file. The deployment step became IaC the agents write and validate offline (sam validate, cdk synth, sam local without Docker where possible); sam deploy, cdk deploy and cdk diff are a person's, since the run never deploys and has no account. Account commands in the references are marked as a person's. Slash references name library skills; deploy-on-aws (not vendored) is dropped."
+adapted: "Discovery uses list_files and read_file. The deployment step became IaC the agents write and validate offline (sam validate, cdk synth, sam local without Docker where possible); sam deploy, cdk deploy and cdk diff are a person's, since the run never deploys and has no account. Account commands in the references are marked as a person's. Slash references name library skills; deploy-on-aws (not vendored) is dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Build or review the serverless application your task names.

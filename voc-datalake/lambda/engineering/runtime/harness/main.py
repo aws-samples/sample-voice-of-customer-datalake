@@ -427,6 +427,9 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
 TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
                    'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
                    PATCH_KEY_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+#: How long the harness's Bedrock client waits for a Converse answer, which comes once the whole reply is written: a
+#: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at a slow model's pace.
+BEDROCK_READ_TIMEOUT: Final = 900
 #: Beside them, for kiro-cli's tool server: the agent's proxy (its boto3 reaches S3, the board and the broker through
 #: it, as the harness's own does).
 KIRO_TOOL_ENV: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'AWS_SDK_LOAD_CONFIG')
@@ -492,7 +495,8 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         from botocore.config import Config
         # Throttling and transient errors are retried by botocore itself, backing off.
         return boto3.client('bedrock-runtime', region_name=env.get('AWS_REGION'),
-                            config=Config(retries={'mode': 'adaptive', 'max_attempts': 8}, read_timeout=300))
+                            config=Config(retries={'mode': 'adaptive', 'max_attempts': 8},
+                                          read_timeout=BEDROCK_READ_TIMEOUT))
 
     # A session restored from a checkpoint renews its lease first (the supervisor refreshed it when the harness
     # started), then every minute through the restore (a working tree to put back may take minutes) and the session.

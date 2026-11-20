@@ -2,7 +2,7 @@
 
 ## Version-First Principle
 
-Before installing ANY software: check what the base AMI/image already includes. Only upgrade if incompatible.
+Before installing any software: check what the base AMI/image already includes. Only upgrade if incompatible.
 
 ## Deep Learning AMI (DLAMI) Contents
 
@@ -52,7 +52,7 @@ python3 -c "import torch; print(torch.version.cuda)"
 python3 -c "import flashinfer; flashinfer.show_config()" 2>/dev/null || echo "Not installed"
 ```
 
-**Decision rule**: If the installed CUDA version satisfies your framework's minimum, do NOT upgrade. CUDA upgrades risk breaking other pre-installed frameworks.
+**Decision rule**: If the installed CUDA version satisfies your framework's minimum, do not upgrade, because CUDA upgrades risk breaking other pre-installed frameworks.
 
 ## Container Base Image Selection
 

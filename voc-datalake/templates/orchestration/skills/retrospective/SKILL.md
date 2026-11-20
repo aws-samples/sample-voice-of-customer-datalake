@@ -1,9 +1,9 @@
 ---
 name: retrospective
-description: "How the coach turns what happened in a run into a durable lesson for a role's skill. Extract what went wrong from the evidence, generalise it into a rule with its reason, rate severity and confidence, check it is not already in the skill, and keep it to the instructions and examples."
+description: "Turns what happened in a run into a durable lesson for a role's skill: what went wrong per the evidence, a general rule with its reason, severity and confidence, a check it is not already there. Read it when the coach proposes a skill change after a run."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/retrospective"
 license: MIT
-adapted: "Rewritten for the coach's one model call: the evidence is the failed agent's task, conversation, outputs and people's comments, and the output is the coach's JSON proposal, never memory files, a dashboard or CLAUDE.md. Only the skill-improvement category is the coach's; the others go to people. Under 4,000 characters, self-contained."
+adapted: "Rewritten for the coach's one model call: the evidence is the failed agent's task, conversation, outputs and people's comments, and the output is the coach's JSON proposal, never memory files, a dashboard or CLAUDE.md. Only the skill-improvement category is the coach's; the others go to people. Under 4,000 characters, self-contained; description reworded for Claude 5.5 skill discovery"
 ---
 
 You read what happened in one run and propose a new version of one role's skill. This is how to get from the

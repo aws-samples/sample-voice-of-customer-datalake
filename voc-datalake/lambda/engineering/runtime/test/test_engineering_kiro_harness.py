@@ -31,7 +31,7 @@ from engineering.runtime.harness.kiro import (
     ssm_key,
     unpack_sessions,
 )
-from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION
+from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION, kiro_model
 from engineering.runtime.harness.ports import PAUSE, InboxMessage
 from engineering.runtime.harness.tools import STEER
 from engineering.runtime.harness.transcript import Transcript
@@ -388,6 +388,82 @@ def test_the_session_agent_serves_exactly_the_toolboxs_tools_from_its_registry(t
     assert config['allowedTools'] == sorted(f'@voc/{spec.name}' for spec in session.tools.specs)
     assert config['mcpServers']['voc']['env']['KIRO_API_KEY'] == ''
     assert config['mcpServers']['voc']['timeout'] > 3_600_000
+
+
+def test_the_session_agent_runs_the_sessions_model_by_kiros_name_never_kiros_default(tmp_path):
+    w = world(tmp_path, role='fixer')
+    w.session.context.model = 'global.anthropic.claude-sonnet-5-5'
+    assert session_agent(w.session, {'description': 'd'}, {})['model'] == 'claude-sonnet-5.5'
+    # (a model Kiro has no name for: no pin, so Kiro's own default)
+    w.session.context.model = 'amazon.nova-pro-v1:0'
+    assert 'model' not in session_agent(w.session, {'description': 'd'}, {})
+
+
+@pytest.mark.parametrize(('model_id', 'kiro'), [
+    ('global.anthropic.claude-sonnet-5-5', 'claude-sonnet-5.5'),
+    ('global.anthropic.claude-opus-5-5', 'claude-opus-5.5'),
+    ('global.anthropic.claude-haiku-5-5', 'claude-haiku-5.5'),
+    ('global.anthropic.claude-opus-5', 'claude-opus-5'),
+    ('global.anthropic.claude-sonnet-4-6', 'claude-sonnet-4.6'),
+    ('global.anthropic.claude-haiku-4-5-20251001-v1:0', 'claude-haiku-4.5'),
+    ('anthropic.claude-opus-4-8', 'claude-opus-4.8'),
+    ('amazon.nova-pro-v1:0', None),
+    ('global.anthropic.claude-sonnet-5-5 ', None),
+    ('', None),
+])
+def test_kiros_name_for_a_claude_model(model_id, kiro):
+    assert kiro_model(model_id) == kiro
+
+
+def test_a_session_runs_its_skills_model_then_its_effort_selected_after_the_agent(tmp_path):
+    w = world(tmp_path)
+    w.session.context.model = 'global.anthropic.claude-sonnet-5-5'
+    _transcribed(w)
+    binary, log = _fake(tmp_path, {'turns': [[_finish(), {'stop': 'end_turn'}]]})
+    assert _adapter(binary, w).run(w.session) == 'done'
+    home = Path(w.home) / '.voc' / 'kiro' / 'home'
+    assert json.loads((home / '.kiro' / 'agents' / 'fixer.json').read_text())['model'] == 'claude-sonnet-5.5'
+    # (the model is set and checked whatever the agent brought (7.58.00); Kiro's model choice resets the effort to its
+    # default, so the model's effort comes after it)
+    assert [(e['configured'], e['value']) for e in _log(log) if 'configured' in e] == [
+        ('mode', 'fixer'), ('model', 'claude-sonnet-5.5'), ('effortLevel', 'high')]
+    assert w.session.context.status.step == 'kiro session started on claude-sonnet-5.5 at high effort'
+    assert not [e for e in _events(w) if e['kind'] == 'kiro_settings']
+
+
+def test_an_effort_kiro_runs_already_is_not_set_again(tmp_path):
+    w = world(tmp_path)
+    w.session.context.model = 'global.anthropic.claude-opus-5-5'   # (medium: Kiro's default after the model)
+    _transcribed(w)
+    binary, log = _fake(tmp_path, {'turns': [[_finish(), {'stop': 'end_turn'}]]})
+    assert _adapter(binary, w).run(w.session) == 'done'
+    assert [e['configured'] for e in _log(log) if 'configured' in e] == ['mode', 'model']
+    assert w.session.context.status.step == 'kiro session started on claude-opus-5.5 at medium effort'
+
+
+@pytest.mark.parametrize('scenario', [{'ignore': ['effortLevel']}, {'refuse_effort': 'no such option'}])
+def test_an_effort_kiro_does_not_take_is_recorded_and_the_session_goes_on(tmp_path, scenario):
+    w = world(tmp_path)
+    w.session.context.model = 'global.anthropic.claude-sonnet-5-5'
+    _transcribed(w)
+    binary, _ = _fake(tmp_path, {**scenario, 'turns': [[_finish(), {'stop': 'end_turn'}]]})
+    assert _adapter(binary, w).run(w.session) == 'done'
+    [event] = [e for e in _events(w) if e['kind'] == 'kiro_settings']
+    if 'ignore' in scenario:
+        assert event['effortLevel'] == {'wanted': 'high', 'current': 'medium'}
+    else:
+        assert event['effortLevel'] == {'wanted': 'high', 'current': 'medium', 'refused': 'no such option'}
+    assert 'model' not in event   # (a model Kiro does not take stops the step instead: test_engineering_kiro_model.py)
+
+
+def test_a_model_with_no_effort_of_its_own_runs_at_kiros(tmp_path):
+    w = world(tmp_path)
+    w.session.context.model = 'global.anthropic.claude-opus-5'
+    _transcribed(w)
+    binary, log = _fake(tmp_path, {'models': ['auto', 'claude-opus-5'], 'turns': [[_finish(), {'stop': 'end_turn'}]]})
+    assert _adapter(binary, w).run(w.session) == 'done'
+    assert [e['configured'] for e in _log(log) if 'configured' in e] == ['mode', 'model']
+    assert not [e for e in _events(w) if e['kind'] == 'kiro_settings']
 
 
 def test_kiros_environment_is_built_never_inherited():

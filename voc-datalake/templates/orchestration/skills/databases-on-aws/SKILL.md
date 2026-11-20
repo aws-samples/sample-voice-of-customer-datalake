@@ -1,9 +1,9 @@
 ---
 name: databases-on-aws
-description: "Database guidance across AWS's portfolio (DynamoDB, Aurora and RDS, Aurora DSQL, caches). Choosing a database, schema and index design, query optimisation, multi-tenant data layers and migration planning."
+description: "Guides database work on AWS (DynamoDB, Aurora and RDS, Aurora DSQL, caches): choosing a database, schema and index design, query optimisation, multi-tenant data layers, migration planning. Read it when writing or reviewing a data model, queries or a migration."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/databases-on-aws"
 license: MIT
-adapted: "Discovery uses read_file, list_files and run's grep on the manifests and config, never the .env files (they hold secrets). Migrations are planned and written in code; running one against a database is a person's step. Slash references name library skills; deploy-on-aws (not vendored) is dropped. The report goes in the finish or as findings."
+adapted: "Discovery uses read_file, list_files and run's grep on the manifests and config, never the .env files (they hold secrets). Migrations are planned and written in code; running one against a database is a person's step. Slash references name library skills; deploy-on-aws (not vendored) is dropped. The report goes in the finish or as findings; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Database guidance for your task.

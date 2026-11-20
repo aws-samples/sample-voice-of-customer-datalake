@@ -206,11 +206,13 @@ def test_one_kiro_agent_config_per_launchable_role_none_for_the_coach_committed_
 
 def test_the_fixers_kiro_config_offers_only_the_platforms_tool_server_each_card_tool_allowed() -> None:
     fixer = KIRO['fixer']
-    assert list(fixer) == ['name', 'description', 'model', 'prompt', 'tools', 'allowedTools', 'mcpServers', 'resources',
-                           'permissions']
+    assert list(fixer) == ['name', 'description', 'model', 'prompt', 'tools', 'allowedTools', 'mcpServers',
+                           'resources', 'permissions']
     assert (fixer['name'], fixer['description']) == ('fixer', SOURCES.cards['fixer']['purpose'])
-    # (7.58.00: Kiro's name for its card's model, so Kiro runs it, never its own default)
+    # (7.58.00: Kiro's name for its card's model, so Kiro runs it, never its own default, ``auto``)
+    assert SOURCES.cards['fixer']['model']['id'] == 'global.anthropic.claude-sonnet-5-5'
     assert fixer['model'] == 'claude-sonnet-5.5'
+    assert KIRO['final-go']['model'] == 'claude-opus-5.5'
     # (7.53.00: no Kiro builtin at all: a read, a write and a command are the platform's, through its tool server)
     assert fixer['tools'] == ['@voc'] == list(KIRO_TOOLS)
     assert fixer['allowedTools'] == ['@voc/read_file', '@voc/list_files', '@voc/write_file', '@voc/run',
@@ -248,5 +250,5 @@ def test_a_kiro_configs_prompt_is_the_harness_system_prompt_less_the_sessions_fe
         assert config['prompt'].startswith(f'{rules.strip()}\n\n{skill.instructions}')
         assert system_prompt(context, skill) == config['prompt'].replace(
             rules.strip(), platform_rules('F3NC3', rules), 1)
-    assert 'Example 1. When: The task says `divide(7, 2)` returns 3' in KIRO['fixer']['prompt']
+    assert '<examples>\n<example index="1">\nWhen: The task says `divide(7, 2)` returns 3' in KIRO['fixer']['prompt']
     assert 'F3NC3' not in json.dumps(KIRO)

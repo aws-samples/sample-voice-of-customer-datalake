@@ -71,7 +71,7 @@ def test_kiro_takes_the_launchs_model_before_its_first_prompt_and_the_session_sa
     methods = [entry['in']['method'] for entry in json.loads(f'[{",".join(log.read_text().splitlines())}]')
                if 'in' in entry and entry['in'].get('method')]
     assert methods.index('session/set_config_option') < methods.index('session/prompt')
-    assert w.session.context.status.step == 'kiro session started on claude-opus-5.5'
+    assert w.session.context.status.step == 'kiro session started on claude-opus-5.5 at medium effort'
     # The session's agent config pins it too.
     assert _config(w)['model'] == 'claude-opus-5.5'
     asked = next(event for event in _events(w) if event['kind'] == 'acp_model')
@@ -83,14 +83,16 @@ def test_kiro_takes_the_launchs_model_before_its_first_prompt_and_the_session_sa
 def test_auto_takes_whichever_model_kiro_picks(tmp_path):
     w, log, ending = _run(tmp_path, {'model_answer': 'claude-sonnet-5.5'}, kiro_model('auto', chosen=True) or '')
     assert (ending, _model_sets(log), w.session.stopped_for) == ('done', ['auto'], '')
-    assert w.session.context.status.step == 'kiro session started on claude-sonnet-5.5'
+    # (and Kiro's effort: auto pins none, Kiro choosing per task)
+    assert w.session.context.status.step == 'kiro session started on claude-sonnet-5.5 at medium effort'
+    assert [frame['params']['configId'] for frame in _received(log, 'session/set_config_option')] == ['mode', 'model']
 
 
 def test_without_a_choice_kiro_runs_its_name_for_the_skills_model_never_its_default(tmp_path):
     w, log, ending = _run(tmp_path, {}, '', skill_model=SONNET)
     assert (ending, _model_sets(log), w.session.stopped_for) == ('done', ['claude-sonnet-5.5'], '')
     assert _config(w)['model'] == 'claude-sonnet-5.5'
-    assert w.session.context.status.step == 'kiro session started on claude-sonnet-5.5'
+    assert w.session.context.status.step == 'kiro session started on claude-sonnet-5.5 at high effort'
 
 
 def test_a_session_given_no_model_sets_none(tmp_path):

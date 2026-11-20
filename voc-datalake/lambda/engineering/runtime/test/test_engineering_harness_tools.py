@@ -305,7 +305,34 @@ class TestClaudeThinkingIsShown:
     def test_claude_models_ask_for_summarized_thinking(self):
         from engineering.runtime.harness.converse_loop import model_request_fields
         fields = model_request_fields('global.anthropic.claude-sonnet-5-5')
-        assert fields == {'additionalModelRequestFields': {'thinking': {'type': 'adaptive', 'display': 'summarized'}}}
+        assert fields == {'additionalModelRequestFields': {'thinking': {'type': 'adaptive', 'display': 'summarized'},
+                                                           'output_config': {'effort': 'high'}}}
+
+    def test_claude_5_5_models_run_at_their_pinned_effort_others_at_their_own_default(self):
+        from engineering.runtime.harness.converse_loop import model_request_fields
+        from engineering.runtime.harness.effort import CLAUDE_EFFORT, EFFORT_LEVELS
+        assert CLAUDE_EFFORT == {'global.anthropic.claude-opus-5-5': 'medium',
+                                 'global.anthropic.claude-sonnet-5-5': 'high',
+                                 'global.anthropic.claude-haiku-5-5': 'medium'}
+        assert set(CLAUDE_EFFORT.values()) <= set(EFFORT_LEVELS)
+        opus = model_request_fields('global.anthropic.claude-opus-5-5')['additionalModelRequestFields']
+        assert opus['output_config'] == {'effort': 'medium'}
+        older = model_request_fields('global.anthropic.claude-opus-5')['additionalModelRequestFields']
+        assert 'output_config' not in older
+        assert older['thinking'] == {'type': 'adaptive', 'display': 'summarized'}
+
+    def test_a_model_that_does_not_think_adaptively_is_asked_for_neither(self):
+        # (Q17: an older Claude refuses adaptive thinking; the launch runs none on this harness, and none is asked)
+        from engineering.runtime.harness.converse_loop import model_request_fields
+        assert model_request_fields('global.anthropic.claude-sonnet-4-6') == {}
+        assert model_request_fields('global.anthropic.claude-haiku-4-5-20251001-v1:0') == {}
+
+    def test_the_models_that_think_adaptively_are_the_allowlists(self):
+        from engineering.runtime.harness.converse_loop import ADAPTIVE_THINKING
+        from engineering.runtime.harness.effort import CLAUDE_EFFORT
+        from shared.model_config import ALLOWED_MODEL_IDS, uses_adaptive_thinking
+        assert {model for model in ALLOWED_MODEL_IDS if uses_adaptive_thinking(model)} == ADAPTIVE_THINKING
+        assert set(CLAUDE_EFFORT) <= ADAPTIVE_THINKING
 
     def test_other_models_get_no_extra_fields(self):
         from engineering.runtime.harness.converse_loop import model_request_fields

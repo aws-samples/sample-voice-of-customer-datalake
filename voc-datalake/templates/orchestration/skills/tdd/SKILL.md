@@ -1,9 +1,9 @@
 ---
 name: tdd
-description: "Test-driven development with a verified red phase, for adding a feature or fixing a bug with a test that claims to prevent a regression. Failing test first, minimum code to pass, then refactor; catches tests that can never fail."
+description: "Drives test-first development with a verified red phase: a failing test first, minimum code to pass, then refactor, and catches tests that can never fail. Read it when adding a feature or fixing a bug, or writing a test that claims to prevent a regression."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/tdd"
 license: MIT
-adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Commands are run's argv (its result carries the exit code), not shell lines. The red-phase proof restores the original lines with write_file instead of git stash or revert (the harness owns the checkout's git). Slash-command cross-references name library skills (read_skill). The report is the finish summary."
+adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Commands are run's argv (its result carries the exit code), not shell lines. The red-phase proof restores the original lines with write_file instead of git stash or revert (the harness owns the checkout's git). Slash-command cross-references name library skills (read_skill). The report is the finish summary; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Drive out one behaviour test-first.
@@ -72,7 +72,7 @@ Mandatory for every bug-fix test and every test described as a regression guard.
 
 1. Undo the fix only, leaving the test in place: write the lines the fix changed back as they were with
    `write_file` (you read them before you changed them; keep them in your notes).
-2. Run the test. It MUST fail.
+2. Run the test. It has to fail, because a test that passes without the fix cannot catch the bug.
 3. If it passes, the test does not cover the fix. Rewrite the test.
 4. Write the fix back. Run again. It passes.
 

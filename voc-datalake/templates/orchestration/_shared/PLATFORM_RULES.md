@@ -35,3 +35,12 @@ Report your progress with `report_progress` after each step, save what a continu
 `save_checkpoint`, and call `finish` once the task is done, saying what you did and what you found. When it cannot
 be done, call `finish` and say why. A refusal from the board or the broker is an answer, never something to work
 around.
+
+## How your turns end
+
+Nobody reads your replies while you work: the run is unattended, and a reply with no tool call ends your turn and
+stops your task until the harness asks you to go on. So keep working with your tools until the task is done. Do not
+end a turn on a summary that announces your next step, an offer to go on, or a list of decisions that do not block
+you: take the next step instead, and put a status note in `report_progress`. Stop only where nothing can move
+without a person: call `finish` once the task is done or cannot be done within your task, your tools and these rules
+(say what blocks it), or wait where your instructions say the run waits for a person.

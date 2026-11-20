@@ -1,7 +1,7 @@
 ---
 name: voc-runs
-description: Follow, analyze, steer and ask for the VoC data lake's engineering runs from a local Kiro or Claude agent, through the VoC MCP server's five engineering tools.
-metadata: {voc-skill: mcp-runs, voc-template-version: 1, since: 7.53.00}
+description: Follows, explains, steers and requests the VoC data lake's autonomous engineering runs through the VoC MCP server's engineering_ tools. Use it when the user asks how a run is going or why it failed, wants to steer a live run, or wants a new run on an issue or a PRD.
+metadata: {voc-skill: mcp-runs, voc-template-version: 2, since: 7.53.00}
 ---
 <!-- The idea (a skill that teaches a local agent to drive runs over MCP) comes from aws-samples/sample-kiro-flock
      (Apache-2.0); no text or code is copied from it. -->

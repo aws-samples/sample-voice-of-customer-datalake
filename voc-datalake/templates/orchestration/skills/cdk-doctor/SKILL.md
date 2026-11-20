@@ -1,9 +1,9 @@
 ---
 name: cdk-doctor
-description: "Diagnose a failed AWS CDK or CloudFormation deployment and crashing ECS tasks from the error text a task or issue gives, and validate infrastructure changes offline before anyone deploys. Failure patterns, Fargate sizes, AMI and image choice."
+description: "Diagnoses failed AWS CDK or CloudFormation deployments and crashing ECS tasks from the error text, and validates infrastructure changes offline: failure patterns, Fargate sizes, AMI and image choice. Read it when a task quotes a deploy failure or before submitting an IaC change."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/cdk-doctor"
 license: MIT
-adapted: "The agents have no AWS account and never deploy: diagnosis starts from the error text the task or issue quotes (stopped reasons, stack events, target health), the AWS CLI commands became what to ask a person for, and the deploy-and-monitor and post-deployment steps (with the monitor sub-agent) are dropped. Validation is offline (synth, cfn-lint, nag, guard). Slash references name library skills; the GPU skill reference is dropped."
+adapted: "The agents have no AWS account and never deploy: diagnosis starts from the error text the task or issue quotes (stopped reasons, stack events, target health), the AWS CLI commands became what to ask a person for, and the deploy-and-monitor and post-deployment steps (with the monitor sub-agent) are dropped. Validation is offline (synth, cfn-lint, nag, guard). Slash references name library skills; the GPU skill reference is dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Diagnose the CDK deployment failure your task names, and fix it in code.
@@ -142,7 +142,7 @@ ec2.MachineImage.genericLinux({ 'us-east-1': 'ami-0c55b159cbfafe1f0' });
 
 ### Version-First Principle
 
-Before installing ANY software on an instance or container:
+Before installing any software on an instance or container:
 1. Check what the base AMI/image already includes
 2. Only upgrade if the existing version is incompatible
 3. Pin versions in Dockerfile/user data to prevent drift

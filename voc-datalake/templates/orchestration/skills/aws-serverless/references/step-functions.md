@@ -54,8 +54,8 @@
 ```
 
 **Rules:**
-- Every Task state MUST have Retry for transient errors
-- Every Task state SHOULD have Catch for business errors
+- Give every Task state a Retry for transient errors, because throttles and service exceptions clear on retry
+- Give every Task state a Catch for business errors where you can, so a failure takes a defined path
 - Always retry `Lambda.ServiceException` and `Lambda.AWSLambdaException`
 - Use `BackoffRate: 2` for exponential backoff
 

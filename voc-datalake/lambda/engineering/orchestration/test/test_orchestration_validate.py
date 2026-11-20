@@ -186,6 +186,9 @@ ONLY_SERVER = r"tool server alone \(@voc\): no Kiro builtin, no subagent"
     ('fixer', lambda d: d['mcpServers']['voc'].update(args=['/opt/voc/harness.py', 'tool-server']), SERVER),
     ('fixer', lambda d: d['mcpServers'].update(other={'command': '/usr/bin/true'}), SERVER),
     ('fixer', lambda d: d.update(mcpServers=[]), SERVER),
+    # (without its card's model Kiro runs its own default, ``auto``)
+    ('fixer', lambda d: d.pop('model'), r"fixer\.json: its model is Kiro's name for its card's, claude-sonnet-5\.5"),
+    ('final-go', lambda d: d.update(model='auto'), r"final-go\.json: its model is Kiro's name for its card's, claude-opus-5\.5"),
 ])
 def test_each_kiro_agent_check_catches_what_it_is_for(copy: Path, role: str, change: Callable[[dict], None],
                                                       problem: str) -> None:

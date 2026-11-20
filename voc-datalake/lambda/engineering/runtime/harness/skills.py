@@ -112,10 +112,11 @@ class Skill:
             raise SkillError('a skill names the model it was written for')
 
     def system_prompt(self) -> str:
-        """The instructions, then the worked examples."""
-        shown = '\n\n'.join(f'Example {n}. When: {example.situation}\nDo: {example.action}'
-                            for n, example in enumerate(self.examples, 1))
-        return f'{self.instructions}\n\n{shown}' if shown else self.instructions
+        """The instructions, then the worked examples, each in its own ``<example>`` tag inside ``<examples>`` (the
+        structure Claude's prompting guide recommends, so an example is never read as one more instruction)."""
+        shown = '\n'.join(f'<example index="{n}">\nWhen: {example.situation}\nDo: {example.action}\n</example>'
+                           for n, example in enumerate(self.examples, 1))
+        return f'{self.instructions}\n\n<examples>\n{shown}\n</examples>' if shown else self.instructions
 
     def to_record(self) -> dict[str, Any]:
         return skill_record(self.name, self.version, self)

@@ -1,9 +1,9 @@
 ---
 name: terraform-engineer
-description: "Write Terraform with registry modules, the repository's pinned provider versions and the language's built-ins instead of hand-rolled HCL. Blocks provisioners, IAM JSON strings, string-built ARNs, count where for_each belongs and destroy-recreate refactors; the gate runs offline."
+description: "Writes Terraform with registry modules, the repository's pinned providers and built-ins; blocks provisioners, IAM JSON strings, string-built ARNs, count where for_each belongs and destroy-recreate refactors, with an offline gate. Read it when writing or editing Terraform."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/terraform-engineer"
 license: MIT
-adapted: "The spec-loader step reads INFRA.md with read_file. Versions come from versions.tf and .terraform.lock.hcl, not a registry query (no network); terraform init is the dependency step. Plan, apply and destroy need state and an account the agents never have: they are a person's, and the destroy protocol is what the finish hands them. Argument checks read the installed provider schema. Slash references name library skills."
+adapted: "The spec-loader step reads INFRA.md with read_file. Versions come from versions.tf and .terraform.lock.hcl, not a registry query (no network); terraform init is the dependency step. Plan, apply and destroy need state and an account the agents never have: they are a person's, and the destroy protocol is what the finish hands them. Argument checks read the installed provider schema. Slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 Model the infrastructure your task asks for in Terraform, at the highest level that fits.

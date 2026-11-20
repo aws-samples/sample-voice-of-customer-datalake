@@ -119,7 +119,7 @@ def get_dsql_token(cluster_endpoint: str, region: str) -> str:
 | Java | JDBC PostgreSQL | aurora-dsql-java |
 | Rust | tokio-postgres | aurora-dsql-rust |
 
-**Always prefer the DSQL Connector** when available, it handles IAM token refresh and connection management.
+Prefer the DSQL Connector when available, because it handles IAM token refresh and connection management.
 Bare drivers (`pg`, `psycopg2`, `pgx`) work until the first 15-minute token expiry, then every new
 connection fails auth. Use the Connector or implement token refresh yourself before shipping.
 
@@ -154,13 +154,13 @@ CREATE TABLE orders (
 );
 CREATE INDEX ASYNC idx_orders_tenant ON orders (tenant_id);
 
--- ALWAYS include tenant_id in queries
+-- Include tenant_id in every query (it scopes the row to one tenant)
 SELECT * FROM orders WHERE tenant_id = 'abc' AND amount > 100;
 ```
 
 **Rules:**
-- ALWAYS include `tenant_id` in the WHERE clause, built with parameter binding (`$1`), never
-  string interpolation
+- Include `tenant_id` in every WHERE clause, because a query without it reads across tenants; build it with
+  parameter binding (`$1`), never string interpolation
 - Authorize the caller against that `tenant_id` before querying. Format validation (regex,
   allowlist) alone is not authorization: a well-formed `tenant_id` the caller doesn't own is
   still a cross-tenant leak

@@ -1,9 +1,9 @@
 ---
 name: skill-builder
-description: "How the coach writes a role's skill so the next agent follows it. The shape of a role's instructions (Role, Reads, Writes, Steps, Rules, When to stop) and its worked examples, lean imperative steps, a reason for every rule, and the words that make an instruction weak."
+description: "Shows how to write a role's skill so the next agent follows it: the Role, Reads, Writes, Steps, Rules, When to stop shape, worked examples, lean imperative steps, a reason for every rule, weak wording to avoid. Read it when the coach writes a new skill version."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/skill-builder"
 license: MIT
-adapted: "Rewritten for the coach's one model call: it writes a role's instructions and worked examples (the platform's skill record), not a SKILL.md file with front matter, a references folder or an install step. The create, improve and analyse modes became one way of writing a version; the token-budget and trigger checks became the size and wording rules. The source-format reference is dropped; the architecture principles stay for the Library's readers. Under 4,000 characters."
+adapted: "Rewritten for the coach's one model call: it writes a role's instructions and worked examples (the platform's skill record), not a SKILL.md file with front matter, a references folder or an install step. The create, improve and analyse modes became one way of writing a version; the token-budget and trigger checks became the size and wording rules. The source-format reference is dropped; the architecture principles stay for the Library's readers. Under 4,000 characters; description reworded for Claude 5.5 skill discovery"
 ---
 
 You write the whole new instructions and the whole list of worked examples of one role's skill. This is what a

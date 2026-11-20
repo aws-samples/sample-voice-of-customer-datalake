@@ -335,7 +335,7 @@ Words that imply something is easy when it may not be. Removes useful signal abo
 ### 12k. Marketing Speak
 Superlatives and buzzwords with no technical content. Never in code, docs, or comments.
 ```
-# NEVER USE
+# Do not use (they carry no technical content)
 cutting-edge, industry-leading, best-in-class, next-generation
 world-class, state-of-the-art, revolutionary, game-changing
 seamless, frictionless, blazing-fast, enterprise-grade

@@ -1,9 +1,9 @@
 ---
 name: anti-slop
-description: "Detect AI-generated code and content slop in a change: hallucinated imports, defensive parsing, unsafe casts, silenced errors, dead code, language leaks, speculative abstraction, weasel words and marketing speak, across 54+ patterns. For reviewing a change, or checking your own before you submit."
+description: "Detects AI-generated slop in code and prose: hallucinated imports, defensive parsing, unsafe casts, silenced errors, dead code, language leaks, speculative abstraction, weasel words, marketing speak. Read it when reviewing a change or checking your own before you submit."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/anti-slop"
 license: MIT
-adapted: "The spec-loader step reads VOICE.md and STANDARDS.md with read_file. A reviewer reads the patch against the patterns (reviewers run no code); a fixer or builder runs the repository's installed tools on its changed files with run's argv. Fixes stay within the author's own change; a reviewer writes findings. Slash references name library skills."
+adapted: "The spec-loader step reads VOICE.md and STANDARDS.md with read_file. A reviewer reads the patch against the patterns (reviewers run no code); a fixer or builder runs the repository's installed tools on its changed files with run's argv. Fixes stay within the author's own change; a reviewer writes findings. Slash references name library skills; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Scan the change your task names (a reviewer: the patch; a fixer or builder: your own change before you submit) for
@@ -98,7 +98,7 @@ Full pattern explanations with code examples: `references/patterns.md`.
 
 pylint is GPL-2.0; use only in dev environment. Alternative: jscpd (MIT).
 
-A single-implementation port is NOT YAGNI when it is a deliberate layer boundary with a real test double (a fake Repository, a swappable adapter). Flag one-impl abstractions with no second implementation and no test seam; keep ports that enforce the dependency rule. See the `python-engineer` skill's architecture-patterns reference for the distinction.
+A single-implementation port is not YAGNI when it is a deliberate layer boundary with a real test double (a fake Repository, a swappable adapter). Flag one-impl abstractions with no second implementation and no test seam; keep ports that enforce the dependency rule. See the `python-engineer` skill's architecture-patterns reference for the distinction.
 
 This skill removes hand-rolled and speculative code after it exists. The `use-the-sdk` skill stops it being
 written: apply it before adding a function, dependency, or abstraction.
@@ -156,7 +156,7 @@ summary in its finish.
 
 - **Fix** clear slop in the lines your change touches: dead code, empty catches, silenced errors, hallucinated
   imports (slop elsewhere goes in your finish, not your patch)
-- **Recommend** borderline cases with reasoning
+- **Recommend** borderline cases, each with a short explanation of why
 - **Skip** intentional patterns (documented, tested, justified)
 - **Auto-fix** where tools support: `ruff check --fix`, `biome lint --write`
 - **Verify** fixes compile and tests pass

@@ -1,9 +1,9 @@
 ---
 name: python-engineer
-description: "Staff-level Python protocol for writing, refactoring or reviewing Python code, tests or dependencies. Package managers, ruff, pyright strict mode, pytest patterns, Pydantic at boundaries, 50-line functions, and when hexagonal ports, repositories and units of work earn their place."
+description: "Sets the protocol for Python code, tests and dependencies: package managers, ruff, pyright strict, pytest patterns, Pydantic at boundaries, 50-line functions, and when hexagonal ports, repositories and units of work earn their place. Read it when writing, refactoring or reviewing Python."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/python-engineer"
 license: MIT
-adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Package commands that reach the registry (uv add, uv lock, uv sync) belong to the one install step; commands are run's argv. Slash references name library skills (tdd, anti-slop, code-review). A reference to a file of the source repository (docs/engineering-principles.md) is dropped."
+adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Package commands that reach the registry (uv add, uv lock, uv sync) belong to the one install step; commands are run's argv. Slash references name library skills (tdd, anti-slop, code-review). A reference to a file of the source repository (docs/engineering-principles.md) is dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Apply staff engineer Python development practices to your task.

@@ -261,7 +261,7 @@ def test_the_converse_loop_runs_the_coordinator_on_its_skills_instructions(tmp_p
     system = bedrock.requests[0]['system'][0]['text']
     assert system == f'{platform_rules(w.session.context.fence)}\n\n{COORDINATOR.system_prompt()}'
     assert system != SYSTEM_PROMPT
-    assert 'Example 1. When:' in system
+    assert '<example index="1">\nWhen:' in system
     tools = [tool['toolSpec']['name'] for tool in bedrock.requests[0]['toolConfig']['tools']]
     assert (tools, len(planner.posted)) == (list(COORDINATOR.tool_policy), 1)
 

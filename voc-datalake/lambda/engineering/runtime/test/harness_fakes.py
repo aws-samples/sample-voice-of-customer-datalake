@@ -207,15 +207,21 @@ class FakeStore:
 
 
 class FakeBedrock:
-    """Answers ``converse`` with the scripted messages in turn, and records every request."""
+    """Answers ``converse`` with the scripted messages in turn, and records every request. The calls ``cut`` names
+    (0 the first) are answered as a reply that stopped at the output cap, a scripted message unspent."""
 
-    def __init__(self, answers: list[list[dict[str, Any]]], tokens: tuple[int, int] = (100, 20)) -> None:
+    def __init__(self, answers: list[list[dict[str, Any]]], tokens: tuple[int, int] = (100, 20),
+                 cut: frozenset[int] = frozenset()) -> None:
         self._answers = answers
         self._tokens = tokens
+        self._cut = cut
         self.requests: list[dict[str, Any]] = []
 
     def converse(self, **request: Any) -> dict[str, Any]:
         self.requests.append(request)
+        if len(self.requests) - 1 in self._cut:
+            return {'output': {'message': {'role': 'assistant', 'content': [{'text': 'I will now wri'}]}},
+                    'stopReason': 'max_tokens', 'usage': {'inputTokens': self._tokens[0], 'outputTokens': 32_000}}
         content = self._answers.pop(0) if self._answers else [{'text': 'nothing more'}]
         return {'output': {'message': {'role': 'assistant', 'content': content}},
                 'stopReason': 'tool_use' if any('toolUse' in block for block in content) else 'end_turn',

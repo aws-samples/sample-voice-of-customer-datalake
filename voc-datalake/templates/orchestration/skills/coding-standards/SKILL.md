@@ -1,9 +1,9 @@
 ---
 name: coding-standards
-description: "Coding style, type hints, docstrings, naming and size limits for Python and TypeScript, checked with the repository's own linters (ruff, pyright, biome, eslint, tsc). Read it when writing or reviewing code, before you submit."
+description: "Sets coding style, type hints, docstrings, naming and size limits for Python and TypeScript, checked with the repository's own linters (ruff, pyright, biome, eslint, tsc). Read it when writing or reviewing code, and before you submit."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/coding-standards"
 license: MIT
-adapted: "The spec-loader and preset step reads the repository's STANDARDS.md with read_file. Linters run through run as argv on the paths the change touched, only tools the repository installs (no npx fetch: the sandbox has no network). Fixes stay within the task's change; a reviewer writes findings instead. The slash reference names the python-engineer skill."
+adapted: "The spec-loader and preset step reads the repository's STANDARDS.md with read_file. Linters run through run as argv on the paths the change touched, only tools the repository installs (no npx fetch: the sandbox has no network). Fixes stay within the task's change; a reviewer writes findings instead. The slash reference names the python-engineer skill; description reworded for Claude 5.5 skill discovery"
 ---
 
 Check the coding standards of the files your change touches (a reviewer: the files the patch changes).

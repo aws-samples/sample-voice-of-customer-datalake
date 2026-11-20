@@ -1,9 +1,9 @@
 ---
 name: cdk-engineer
-description: "Write AWS CDK at the highest construct level and the repository's library version, in TypeScript or Python. Read it when writing or editing CDK apps, stacks or constructs; blocks raw L1 resources, hand-rolled IAM JSON, string-built ARNs and custom resources that duplicate a built-in."
+description: "Writes AWS CDK in TypeScript or Python at the highest construct level and the repository's library version; blocks raw L1 resources, hand-rolled IAM JSON, string-built ARNs and redundant custom resources. Read it when writing or editing CDK apps, stacks or constructs."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/cdk-engineer"
 license: MIT
-adapted: "The spec-loader step reads INFRA.md and STANDARDS.md with read_file. Versions come from the repository's lockfile, not a registry query (no network). The gate is offline: synth, nag, cfn-lint and tests; cdk diff and deploy need an account the agents never have, and a person deploys. Commands are run's argv. Slash references name library skills."
+adapted: "The spec-loader step reads INFRA.md and STANDARDS.md with read_file. Versions come from the repository's lockfile, not a registry query (no network). The gate is offline: synth, nag, cfn-lint and tests; cdk diff and deploy need an account the agents never have, and a person deploys. Commands are run's argv. Slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 Model the infrastructure your task asks for in CDK, at the highest construct level that fits.

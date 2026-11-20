@@ -19,6 +19,7 @@ import contextlib
 import time
 from typing import Any, Final
 
+from engineering.runtime.harness.effort import claude_effort
 from engineering.runtime.harness.interface import AgentSession, Ending
 from engineering.runtime.harness.library_tools import own, with_library
 from engineering.runtime.harness.review_tools import opening_parts
@@ -26,7 +27,13 @@ from engineering.runtime.harness.skills import SKILLS, Skill, platform_rules
 from engineering.runtime.harness.tools import AgentContext, bedrock_tools
 
 MAX_TURNS: Final = 150
-MAX_TOKENS: Final = 8192
+#: A call's output cap, thinking included (Claude 5.5 thinks adaptively, and its thinking counts toward the cap): room
+#: for a turn that thinks at length and writes a whole file. Converse answers once the whole reply is written, so a
+#: call can take minutes: the harness's client waits ``main.BEDROCK_READ_TIMEOUT`` for it.
+MAX_TOKENS: Final = 32_000
+#: A call that stops at ``MAX_TOKENS`` (its reply cut short, a tool call perhaps lost) is made again, once; a second
+#: one is a crash (``OutputCut``), never a reply taken as it is.
+CUT: Final = 'max_tokens'
 #: Past this many input tokens in one call the session checkpoints and pauses, well before the models' own limit
 #: (a few files read whole can fill a conversation long before its 150 turns).
 MAX_INPUT_TOKENS: Final = 120_000
@@ -48,14 +55,28 @@ def nudge(role: str) -> str:
 #: Claude on Bedrock thinks adaptively by default but sends its thinking with an empty text (``display: omitted``):
 #: ``summarized`` makes the run's thread show what the agent thought (the transcript keeps it; checked live on
 #: global.anthropic.claude-sonnet-5-5, 2026-11-18: the same reasoning block, now with its summary's text). Only a
-#: model that thinks adaptively takes it: the launch runs no other one here (``harness_switch.native_models``, the
-#: allowlist's ``adaptive_thinking``; this image has no ``shared/`` to read the flag from).
+#: model that thinks adaptively takes it (``ADAPTIVE_THINKING``); the launch runs no other one here
+#: (``harness_switch.native_models``).
 CLAUDE_THINKING: Final = {'thinking': {'type': 'adaptive', 'display': 'summarized'}}
+#: (7.58.00) The models that think adaptively: the agents' allowlist's ``adaptive_thinking`` rows
+#: (``shared/model_config.py``; this image has no ``shared/`` to read the flag from, and a test keeps the two equal).
+ADAPTIVE_THINKING: Final = frozenset({
+    'global.anthropic.claude-opus-5-5', 'global.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-sonnet-5',
+    'global.anthropic.claude-opus-5', 'global.anthropic.claude-opus-4-8', 'global.anthropic.claude-haiku-5-5',
+})
+
+
+class OutputCut(RuntimeError):
+    """The model's reply stopped at the output cap twice in a row."""
 
 
 def model_request_fields(model_id: str) -> dict[str, Any]:
-    """The Converse call's extra fields for ``model_id``: Claude's visible thinking, nothing for other models."""
-    return {'additionalModelRequestFields': CLAUDE_THINKING} if 'anthropic.claude' in model_id else {}
+    """The Converse call's extra fields for ``model_id``: Claude's visible thinking for a model that thinks adaptively
+    (``ADAPTIVE_THINKING``) and its effort for a model that has one (``effort.py``); nothing for any other model."""
+    effort = claude_effort(model_id)
+    fields = {**(CLAUDE_THINKING if model_id in ADAPTIVE_THINKING else {}),
+              **({'output_config': {'effort': effort}} if effort else {})}
+    return {'additionalModelRequestFields': fields} if fields else {}
 
 def system_prompt(context: AgentContext, skill: Skill | None) -> str:
     """The platform's rules with the session's fence (the bundle's, as the board served them with the skill, else
@@ -128,7 +149,7 @@ class ConverseAdapter:
                 # (steering in its own block below the platform rules, any other notice as data: AgentContext.note)
                 messages[-1]['content'].append({'text': '\n'.join(session.context.note(note) for note in notes)})
                 _said(session, 'user', [messages[-1]['content'][-1]])
-            usage, message = self._converse(session, messages, tools, turn)
+            usage, message = self._reply(session, messages, tools, turn)
             messages.append(message)
             calls = [block['toolUse'] for block in message.get('content', []) if 'toolUse' in block]
             if not calls:
@@ -164,9 +185,21 @@ class ConverseAdapter:
         session.checkpoint(turn=self._max_turns)
         return 'paused'
 
+    def _reply(self, session: AgentSession, messages: list[dict[str, Any]], tools: dict[str, Any],
+               turn: int) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The model's reply: a call cut at the output cap is made again, once (the cut reply is dropped, never sent
+        back); a second cut is ``OutputCut``."""
+        usage, message, stop = self._converse(session, messages, tools, turn)
+        if stop == CUT:
+            usage, message, stop = self._converse(session, messages, tools, turn)
+            if stop == CUT:
+                raise OutputCut(f'the model\'s reply stopped at its {MAX_TOKENS} output tokens twice')
+        return usage, message
+
     def _converse(self, session: AgentSession, messages: list[dict[str, Any]], tools: dict[str, Any],
-                  turn: int) -> tuple[dict[str, Any], dict[str, Any]]:
-        """One model call: its usage (counted on the status report) and its message, both in the transcript."""
+                  turn: int) -> tuple[dict[str, Any], dict[str, Any], str]:
+        """One model call: its usage (counted on the status report), its message and its stop reason, all three in
+        the transcript."""
         started = time.monotonic()
         answer = self._client.converse(modelId=self._model_id, messages=messages,
                                        system=[{'text': system_prompt(session.context, session.tools.skill)}],
@@ -182,7 +215,7 @@ class ConverseAdapter:
                               tokens_out=tokens_out, stop_reason=str(answer.get('stopReason', '')),
                               ms=int((time.monotonic() - started) * 1000))
         _said(session, 'assistant', message.get('content', []))
-        return usage, message
+        return usage, message, str(answer.get('stopReason', ''))
 
 
 def _said(session: AgentSession, role: str, content: Any) -> None:

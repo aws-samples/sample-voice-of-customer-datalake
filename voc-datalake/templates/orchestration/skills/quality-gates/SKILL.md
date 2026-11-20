@@ -1,9 +1,9 @@
 ---
 name: quality-gates
-description: "A repository's local quality gates (pre-commit, pre-push) that mirror its CI. The gate runner reads which hook system and CI checks exist so the checks it runs mirror them; the builder writes or extends the hook configuration when a feature asks for one."
+description: "Maps a repository's local quality gates (pre-commit, pre-push) to its CI, so the gate runner runs the checks CI runs and the builder can write hook configuration. Read it when running a quality gate, or when a feature asks for hooks."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/quality-gates"
 license: MIT
-adapted: "Split into two uses: the gate runner reads (detect the hook system and CI, mirror their commands, a step that cannot run is a stop, never a pass; it changes no file) and the builder writes hook configuration when a feature asks. Detection uses list_files and read_file; hooks are never installed or run where that needs the network; CI workflows are never edited. A project name from the source is removed. Slash references name library skills."
+adapted: "Split into two uses: the gate runner reads (detect the hook system and CI, mirror their commands, a step that cannot run is a stop, never a pass; it changes no file) and the builder writes hook configuration when a feature asks. Detection uses list_files and read_file; hooks are never installed or run where that needs the network; CI workflows are never edited. A project name from the source is removed. Slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 A repository's local quality gates: what they are, how they mirror CI, and how one is added. Two roles use this

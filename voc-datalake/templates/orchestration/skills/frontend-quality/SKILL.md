@@ -1,9 +1,9 @@
 ---
 name: frontend-quality
-description: "Frontend design and code quality for React, Next.js, Vue or Svelte components. AI-generated visual slop, div soup and Tailwind bloat, WCAG 2.2 accessibility, Core Web Vitals (LCP, INP, CLS) and design-system violations; not for backend-only changes."
+description: "Checks frontend design and code quality in React, Next.js, Vue or Svelte: AI visual slop, div soup, Tailwind bloat, WCAG 2.2 accessibility, Core Web Vitals (LCP, INP, CLS), design-system violations. Read it when writing or reviewing UI components; not for backend-only changes."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/frontend-quality"
 license: MIT
-adapted: "The spec-loader and preset step reads DESIGN.md and DESIGN.web.md with read_file. Tools run through run on the changed files with the repository's installed binaries (no npx fetch: no network); tools that need a running URL or a browser (axe-core CLI, Lighthouse) are a person's or the repository's own test setup. Fixes are the builder's, within its change; reviewers write findings."
+adapted: "The spec-loader and preset step reads DESIGN.md and DESIGN.web.md with read_file. Tools run through run on the changed files with the repository's installed binaries (no npx fetch: no network); tools that need a running URL or a browser (axe-core CLI, Lighthouse) are a person's or the repository's own test setup. Fixes are the builder's, within its change; reviewers write findings; description reworded for Claude 5.5 skill discovery"
 ---
 
 Audit the frontend design and code quality of the files your task names (a reviewer: the files the patch changes).

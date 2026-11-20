@@ -27,7 +27,7 @@ project-review-understanding-document/
 
 ## File responsibilities: single source of truth
 
-| File | Owns (lives ONLY here) | Must NOT repeat |
+| File | Owns (lives only here) | Must not repeat |
 |---|---|---|
 | `00-overview.md` | External actors, system boundary, external systems | Internal containers |
 | `01-containers.md` | Stacks/apps-as-containers, AWS service boxes, cross-stack wiring | How they deploy (-> 03) |

@@ -3192,7 +3192,7 @@ harness's own user and network namespace (7.50.03's walls hold for it: its one w
 
 | Control | ACP | Notes |
 | --- | --- | --- |
-| The brief | `initialize` (no `fs`, no `terminal` capability), `session/new {cwd: <home>/work, mcpServers: []}`, `session/set_config_option {configId: mode, value: <role>}`, since 7.58.00 `session/set_config_option {configId: model, value: <Kiro model>}`, `session/prompt` with the opening | Refused (a crash) unless Kiro answers that the mode is the role: on any other agent its prompt and rules would not apply. The model is the launch's choice, else Kiro's name for the skill's; unless Kiro answers that it is the session's model (`auto`: any), the step ends for a person, never on another model ([Choosing the model](#choosing-the-model-75800)). |
+| The brief | `initialize` (no `fs`, no `terminal` capability), `session/new {cwd: <home>/work, mcpServers: []}`, `session/set_config_option {configId: mode, value: <role>}`, since 7.58.00 `session/set_config_option {configId: model, value: <Kiro model>}`, then `{configId: effortLevel, value: <the model's effort>}` when Kiro's answer is not that effort, `session/prompt` with the opening | Refused (a crash) unless Kiro answers that the mode is the role: on any other agent its prompt and rules would not apply. The model is the launch's choice, else Kiro's name for the skill's; unless Kiro answers that it is the session's model (`auto`: any), the step ends for a person, never on another model ([Choosing the model](#choosing-the-model-75800)). The effort is the model's in `harness/effort.py` (none for `auto`, a session given no model, or a model the table does not name), set after the model because Kiro's model choice resets it; one Kiro refuses or does not take is a `kiro_settings` event and the session goes on at Kiro's. |
 | Steering: 7.51's `relay_steering` and the run's direction | a `session/prompt` sent mid-turn, its text the session's `<<<STEERING …>>>` blocks below the platform rules | Kiro cancels the running turn (`cancelled`) and goes on with the new prompt, keeping its context (the spike; the fake pins it). Each `steer` event is in the transcript; the message is seen once the prompt is taken, and done once the model saves notes after it (the CLI's rule). |
 | Other inbox messages (answers, notices) | none: they wait for the tool server's next result, as data | As the CLI adapter's. |
 | A person's Stop, a Shut down, a save-and-stop (`signal.pause`) | `session/cancel`, the turn's `cancelled` waited for (30 s), kiro-cli ended, then the checkpoint, exit 75 | A Stop now is still `StopRuntimeSession`. |
@@ -4118,6 +4118,26 @@ instance 0.06 for `claude-haiku-5.5`, 1.3 for `claude-sonnet-5.5` and 2.0 for `c
 differ) are counted since 7.58.00 at the deployment's price per credit, so a Kiro role's model choice is a spend choice
 the cost cap bounds: the Registry's **Model** of a Kiro role says "Billed in Kiro credits at ‹price› a credit, which the
 cost cap counts" ([What a Kiro credit counts as](#cost)).
+
+**Effort, output cap and wait (7.58.00, tuned for Kiro and Claude 5.5).** Each Claude 5.5 model runs at one effort
+on both harnesses (`lambda/engineering/runtime/harness/effort.py`), its API default, so a role thinks as much on Kiro as
+on Bedrock; a level changes only with an eval sweep that shows quality holds at the new one:
+
+| Model | Effort |
+|---|---|
+| Claude Opus 5.5 | `medium` |
+| Claude Sonnet 5.5 | `high` |
+| Claude Haiku 5.5 | `medium` |
+
+The native harness sends it as `output_config.effort` beside its adaptive, summarized thinking (both only to a model
+that takes them: the thinking to the allowlist's `adaptive_thinking` models, `converse_loop.ADAPTIVE_THINKING`, the
+effort to the three above). On Kiro the harness sets it after the model (`session/set_config_option {configId:
+effortLevel}`, since Kiro's model choice resets it); `auto` and a model the table does not name run at Kiro's own.
+Unlike a model, an effort Kiro refuses or does not take never stops the step: it is a `kiro_settings` event in the
+transcript, and the session goes on at Kiro's. A Converse call's output cap is 32,000 tokens, thinking included
+(`converse_loop.MAX_TOKENS`, 8,192 before): a reply cut at it is asked for again once, the cut one never sent back, and
+a second cut is a crash (`OutputCut`), never a reply taken as it is. Converse answers once the whole reply is written,
+so the harness's Bedrock client waits up to 900 seconds for it (`main.BEDROCK_READ_TIMEOUT`, 300 before).
 
 ## Trust and safety
 

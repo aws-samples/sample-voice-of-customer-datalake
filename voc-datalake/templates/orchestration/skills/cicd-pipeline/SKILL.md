@@ -1,9 +1,9 @@
 ---
 name: cicd-pipeline
-description: "Audit a pull request's changes to GitHub Actions workflows for security hardening (permissions, SHA pinning, OIDC, secrets), reliability and cost, with good workflow templates for comparison. For a reviewer judging a workflow change; never for editing one."
+description: "Audits GitHub Actions workflow changes for security hardening (permissions, SHA pinning, OIDC, secrets), reliability and cost, with good workflow templates to compare against. Read it when reviewing a pull request that changes a workflow; never for editing one."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/cicd-pipeline"
 license: MIT
-adapted: "Turned from setting up a pipeline into auditing a pull request's workflow changes: the agents never edit CI definitions, so the templates are what good looks like, and each issue is a finding. The pin-refresh curl call is dropped (no network): a reviewer checks that a pin is a full SHA with a version comment and that Dependabot covers it. Slash references name library skills."
+adapted: "Turned from setting up a pipeline into auditing a pull request's workflow changes: the agents never edit CI definitions, so the templates are what good looks like, and each issue is a finding. The pin-refresh curl call is dropped (no network): a reviewer checks that a pin is a full SHA with a version comment and that Dependabot covers it. Slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 Audit the workflow changes in the pull request or patch your task names.

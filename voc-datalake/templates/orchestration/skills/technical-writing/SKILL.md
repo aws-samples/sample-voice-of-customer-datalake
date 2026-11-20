@@ -1,9 +1,9 @@
 ---
 name: technical-writing
-description: "Technical writing quality for docs, READMEs, pull request descriptions, comments and prose. Active voice, 25-word sentences, banned and weasel words, punctuation, evidence-backed claims, scannable structure and reader-first framing, for writing or reviewing text."
+description: "Sets technical writing rules for docs, READMEs, pull request descriptions, comments and prose: active voice, 25-word sentences, banned and weasel words, punctuation, evidence-backed claims, scannable structure. Read it when writing or reviewing text."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/technical-writing"
 license: MIT
-adapted: "The spec-loader step reads VOICE.md and the repository's writing rules with read_file. The grep scan became a list of patterns to look for (the writers run no command). The public-content section keeps its rules without the unvendored narrative-writing dependency, and the blog-skill reference is dropped. Personal data from customer feedback is never quoted. Findings and fixes are the author's own text; the report goes in the finish."
+adapted: "The spec-loader step reads VOICE.md and the repository's writing rules with read_file. The grep scan became a list of patterns to look for (the writers run no command). The public-content section keeps its rules without the unvendored narrative-writing dependency, and the blog-skill reference is dropped. Personal data from customer feedback is never quoted. Findings and fixes are the author's own text; the report goes in the finish; description reworded for Claude 5.5 skill discovery"
 ---
 
 Write or review the technical text your task names: a pull request description, a triage, notes, a doc.

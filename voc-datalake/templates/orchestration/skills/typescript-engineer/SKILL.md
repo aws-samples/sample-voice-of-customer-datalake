@@ -1,9 +1,9 @@
 ---
 name: typescript-engineer
-description: "Staff engineer protocol for TypeScript code, tests and dependencies with pnpm, Biome, Vitest and Zod. Strict tsconfig, discriminated unions, runtime validation at boundaries, build tools, error handling and monorepo workflows."
+description: "Sets the protocol for TypeScript code, tests and dependencies with pnpm, Biome, Vitest and Zod: strict tsconfig, discriminated unions, runtime validation at boundaries, build tools, error handling, monorepos. Read it when writing, refactoring or reviewing TypeScript."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/typescript-engineer"
 license: MIT
-adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Registry-reaching package commands belong to the one install step; commands are run's argv. Lint and format run on the changed files only (never a whole-tree rewrite). Slash references name library skills (tdd, code-review, verification-before-completion)."
+adapted: "The spec-loader step reads the repository's STANDARDS.md with read_file. Registry-reaching package commands belong to the one install step; commands are run's argv. Lint and format run on the changed files only (never a whole-tree rewrite). Slash references name library skills (tdd, code-review, verification-before-completion); description reworded for Claude 5.5 skill discovery"
 ---
 
 Apply staff engineer TypeScript development practices to your task.

@@ -1,9 +1,9 @@
 ---
 name: red-team
-description: "The adversarial critic's checklist for reviewing a high-blast-radius change (authentication, payment, IAM, novel algorithms, 200+ lines of new logic). Steel-man the approach first, then the security, quality and architecture rubric, with severity and confidence on every finding."
+description: "Gives the adversarial critic's checklist: steel-man the approach, then a security, quality and architecture rubric with severity and confidence on every finding. Read it when reviewing a high-blast-radius change (auth, payment, IAM, novel algorithms, 200+ lines of new logic)."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/red-team"
 license: MIT
-adapted: "Only the critic's checklist is kept: the steel man, the rubric, severity and confidence, and the verification rule. The proposer-critic sub-agent rounds are dropped (on the platform the fixer or builder proposes and the reviewers and the final go are the critics, each in its own task). Findings go through write_findings and the verdict through write_review or the final go's record."
+adapted: "Only the critic's checklist is kept: the steel man, the rubric, severity and confidence, and the verification rule. The proposer-critic sub-agent rounds are dropped (on the platform the fixer or builder proposes and the reviewers and the final go are the critics, each in its own task). Findings go through write_findings and the verdict through write_review or the final go's record; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Review the change your task names as an adversarial critic: find real problems, not style nits.
@@ -28,7 +28,7 @@ State the STRONGEST case for the author's approach:
 
 A critique that cannot first state the approach's best case usually attacks a straw man.
 
-## Step 3: The Rubric (check ALL of these)
+## Step 3: The Rubric (check every item)
 
 **Security**: apply the `security-audit` skill's checklist (authentication, input validation, information
 disclosure). Key checks: no credentials in code or logs, external data validated at the boundary, no injection
@@ -50,7 +50,7 @@ premature abstractions.
 - Severity: MUST (blocks merge), SHOULD (improve), NIT (optional).
 - Confidence: HIGH (certain), MEDIUM (likely), LOW (uncertain assumption).
 - For MEDIUM or LOW confidence, state the assumption: "Wrong IF [assumption]".
-- Do NOT modify files. Report only.
+- Modify no file, because the critic reports and the author fixes.
 
 Write them with `write_findings` (a MUST is blocking; the confidence and its assumption go in the evidence), in
 this shape:
@@ -74,7 +74,7 @@ this shape:
 
 ## Step 5: A Second Look Is Bounded
 
-When the change comes back revised (a new task on the fixer's next patch), check ONLY the items from the first
+When the change comes back revised (a new task on the fixer's next patch), check only the items from the first
 review: was each fixed, does a fix introduce a new issue, and is each dispute of a MEDIUM or LOW finding valid
 (withdraw it) or overruled (it stands). Do not expand the scope: a critic that invents new findings every round
 turns a bounded review into an open-ended loop.

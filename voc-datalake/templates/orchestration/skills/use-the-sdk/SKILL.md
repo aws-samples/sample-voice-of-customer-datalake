@@ -1,9 +1,9 @@
 ---
 name: use-the-sdk
-description: "A gate before writing any new function, class, module, dependency or abstraction, against hand-rolled code and over-building. Climbs a ladder from delete-it through stdlib, platform native, existing dependency and official SDK before custom code. Also for simplifying or reducing a diff."
+description: "Gates new functions, classes, modules, dependencies or abstractions against hand-rolled code and over-building: delete it, stdlib, platform native, existing dependency, official SDK, then custom code. Read it before writing new code or adding a package, or when reducing a diff."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/use-the-sdk"
 license: MIT
-adapted: "The spec-loader step reads the repository's STANDARDS.md and INFRA.md with read_file. API verification reads the installed source (node_modules, site-packages) since the sandbox has no network; a new dependency is decided before the first command (install_dependencies runs once, first). Slash references name library skills; references to unvendored skills (deploy-on-aws, scaffolding-audit) are dropped. The report goes in the finish."
+adapted: "The spec-loader step reads the repository's STANDARDS.md and INFRA.md with read_file. API verification reads the installed source (node_modules, site-packages) since the sandbox has no network; a new dependency is decided before the first command (install_dependencies runs once, first). Slash references name library skills; references to unvendored skills (deploy-on-aws, scaffolding-audit) are dropped. The report goes in the finish; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Decide the smallest correct way to build what your task asks.
@@ -85,7 +85,7 @@ common failure at this rung.
 
 ## Step 5: Dependency Admission
 
-Adding a package is a supply-chain decision. All of these MUST hold:
+Adding a package is a supply-chain decision, so admit it only when every one of these holds:
 
 - [ ] Nothing at rungs 1 to 5 covers it
 - [ ] Saves more than roughly 50 lines of code you would otherwise own

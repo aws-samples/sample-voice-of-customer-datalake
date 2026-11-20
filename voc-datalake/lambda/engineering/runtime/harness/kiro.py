@@ -79,6 +79,7 @@ from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.acp import AcpClient, AcpError, AcpTimeout, Notification
 from engineering.runtime.harness.cli import PATH, TOOL_SERVER, sync_notes
 from engineering.runtime.harness.converse_loop import nudge, opening, system_prompt
+from engineering.runtime.harness.effort import CLAUDE_EFFORT
 from engineering.runtime.harness.interface import AgentSession, Ending
 from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CHOICES, kiro_model
 from engineering.runtime.harness.seed import seed_prefix
@@ -89,6 +90,11 @@ from engineering.runtime.harness.waiting import TOOL
 from engineering.runtime.interface import MICRO_PER_CREDIT
 
 KIRO_BINARY: Final = '/usr/local/bin/kiro-cli'
+#: The ACP config option of a session's effort (kiro-cli 3.4.0: ``low`` to ``max``, as Claude's levels).
+EFFORT_OPTION: Final = 'effortLevel'
+#: Each Claude model's effort by its Kiro name (``effort.CLAUDE_EFFORT``'s models by ``kiro_pin.kiro_model``): a session
+#: runs at the effort of the model it asked for (``_KiroRun.choose_effort``).
+KIRO_EFFORT: Final = {name: level for model, level in CLAUDE_EFFORT.items() if (name := kiro_model(model))}
 #: How it is started: ACP on stdio, the v3 engine (whose agents are chosen per session, ``session/set_config_option``).
 KIRO_ARGV: Final = ('acp', '--agent-engine=v3')
 #: The compiled role configs in the images (templates/orchestration/kiro-agents/, copied by every Dockerfile).
@@ -722,10 +728,12 @@ class _KiroRun:
             'sessionId': self.session_id, 'configId': 'mode', 'value': self.context.role}), timeouts['mode'])
         if _current(mode, 'mode') != self.context.role:
             raise AcpError(f'kiro-cli did not select the {self.context.role} agent')
-        model = self.choose_model(self.wanted) if self.wanted else _current(mode, 'model')
+        model, options = self.choose_model(self.wanted) if self.wanted else (_current(mode, 'model'), mode)
+        level = self.choose_effort(self.wanted, options)
         # (its credits' ledger model: what Kiro answered, else what was asked; plain characters, as a ledger key takes)
         self.metered_model = _LEDGER_MODEL.sub('-', model or self.wanted)[:80]
-        self.context.status.at(f'kiro session {"loaded" if loaded else "started"}' + (f' on {model}' if model else ''))
+        self.context.status.at(f'kiro session {"loaded" if loaded else "started"}' + (f' on {model}' if model else '')
+                               + (f' at {level} effort' if level else ''))
         self.session.checkpoint_extra = self.save_state
         return loaded
 
@@ -738,25 +746,25 @@ class _KiroRun:
             raise ModelRefused(f'{self.context.model} has no Kiro name; choose a Kiro model for this role.')
         return wanted
 
-    def choose_model(self, wanted: str) -> str:
+    def choose_model(self, wanted: str) -> tuple[str, Mapping[str, Any]]:
         """``session/set_config_option {configId: model}``: what Kiro answers is the session's model now (recorded,
-        ``acp_model``: what was asked, what Kiro answered, the models it offered when it listed them). Kiro refusing it,
-        not offering it on this account or answering another ends the step for a person (``ModelRefused``, after the
-        ``kiro_model`` record of what was wanted and what Kiro has); ``auto`` takes whichever model Kiro picks."""
-        words, offered, current = '', [], ''
+        ``acp_model``: what was asked, what Kiro answered, the models it offered when it listed them), returned with
+        Kiro's answer. Kiro refusing it, not offering it on this account or answering another ends the step for a
+        person (``ModelRefused``, after the ``kiro_model`` record of what was wanted and what Kiro has); ``auto`` takes
+        whichever model Kiro picks."""
+        words, offered, current, answer = '', [], '', {}
         try:
             answer = self.acp.wait(self.acp.request('session/set_config_option', {
                 'sessionId': self.session_id, 'configId': 'model', 'value': wanted}), self.adapter.timeouts['mode'])
         except AcpTimeout:
             raise
         except AcpError as refused:
-            # (Kiro's own words, after the client's "the agent refused request <n>: ")
-            words = (str(refused).partition(': ')[2] or str(refused))[:200]
+            words = _refusal(refused)
         else:
             current, offered = _current(answer, 'model'), _offered(answer, 'model')
         self.record('acp_model', wanted=wanted, current=current, offered=offered, **({'refused': words} if words else {}))
         if not words and (current == wanted or wanted == KIRO_CHOICES['auto']):
-            return current
+            return current, answer
         self.record('kiro_model', wanted=wanted, current=current or 'none')
         why = (f'it answered {current or "none"}' + (f': {words}' if words else '')
                + (f'; Kiro does not offer {wanted} on this account' if offered and wanted not in offered else ''))
@@ -764,6 +772,31 @@ class _KiroRun:
         # Model, or a new run, changes them.)
         raise ModelRefused(f'Kiro could not use {wanted} for the {self.context.role} ({why}). Restart the run with '
                            'another model (Restart run, Model), or start a new run with one.')
+
+    def choose_effort(self, model: str, options: Mapping[str, Any]) -> str:
+        """``session/set_config_option {configId: effortLevel}``: the effort of the model the session asked for
+        (``KIRO_EFFORT``), set after the model (Kiro's model choice resets it) unless Kiro's answer has it already; the
+        effort Kiro then says it runs. One Kiro refuses or does not take is recorded (``kiro_settings``: what was
+        wanted, what Kiro has) and the session goes on at Kiro's: unlike the model, the effort is the platform's
+        tuning, not a person's choice. Kiro's own effort for a model the table does not name, for ``auto`` (Kiro's
+        model per task) and for a session given no model."""
+        wanted, current = KIRO_EFFORT.get(model, ''), _current(options, EFFORT_OPTION)
+        if not wanted or current == wanted:
+            return current
+        words = ''
+        try:
+            answer = self.acp.wait(self.acp.request('session/set_config_option', {
+                'sessionId': self.session_id, 'configId': EFFORT_OPTION, 'value': wanted}), self.adapter.timeouts['mode'])
+        except AcpTimeout:
+            raise
+        except AcpError as refused:
+            words = _refusal(refused)
+        else:
+            current = _current(answer, EFFORT_OPTION)
+        if current != wanted:
+            self.record('kiro_settings', **{EFFORT_OPTION: {'wanted': wanted, 'current': current or 'none',
+                                                           **({'refused': words} if words else {})}})
+        return current
 
     def load(self, session_id: str) -> tuple[bool, str]:
         """``session/load`` of the restored session (its history replayed, counted, not recorded again): whether it
@@ -943,6 +976,11 @@ class _KiroRun:
                                     for message in rest])
             self.posted[name] = [message.event_id for message in rest]
         return None
+
+
+def _refusal(refused: AcpError) -> str:
+    """Kiro's own words for a refused request, after the client's "the agent refused request <n>: "."""
+    return (str(refused).partition(': ')[2] or str(refused))[:200]
 
 
 def _current(answer: Mapping[str, Any], option: str) -> str:

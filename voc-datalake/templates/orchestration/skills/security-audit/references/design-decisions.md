@@ -4,7 +4,7 @@ Why each rule exists, told through the incidents that motivated them.
 
 ## INFO Severity Must Be Reviewed
 
-**Rule**: Review ALL tool findings including INFO severity. Do not auto-dismiss.
+**Rule**: Review every tool finding, INFO severity included. Do not auto-dismiss.
 
 **Battle story**: A bandit INFO-level finding flagged `csv.writer` usage where user-submitted data flowed into cells. Team dismissed it as noise. Three months later, a security researcher reported CSV formula injection: cells starting with `=CMD(...)` executed in Excel when analysts downloaded reports. The fix required `defusedcsv` and an emergency patch.
 

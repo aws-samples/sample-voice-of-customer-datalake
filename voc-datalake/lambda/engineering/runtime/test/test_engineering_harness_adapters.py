@@ -10,7 +10,14 @@ import pytest
 
 from engineering.runtime.checkpoints import is_valid
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, CliNotOffered, choose_cli
-from engineering.runtime.harness.converse_loop import MAX_INPUT_TOKENS, SYSTEM_PROMPT, ConverseAdapter, system_prompt
+from engineering.runtime.harness.converse_loop import (
+    MAX_INPUT_TOKENS,
+    MAX_TOKENS,
+    SYSTEM_PROMPT,
+    ConverseAdapter,
+    OutputCut,
+    system_prompt,
+)
 from engineering.runtime.harness.interface import PAUSED_EXIT_CODE
 from engineering.runtime.harness.library_tools import listing, own
 from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage
@@ -25,6 +32,24 @@ FIXER = SKILLS['fixer']
 
 def test_the_harness_pauses_with_the_code_the_supervisor_reads_as_paused():
     assert PAUSED_EXIT_CODE == SUPERVISOR_PAUSED
+
+
+def test_a_reply_cut_at_the_output_cap_is_asked_again_and_never_sent_back(tmp_path):
+    w = world(tmp_path)
+    bedrock = FakeBedrock([[use('finish', 't1', summary='fixed')]], cut=frozenset({0}))
+    assert ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
+    assert len(bedrock.requests) == 2
+    assert bedrock.requests[1]['messages'] == bedrock.requests[0]['messages']   # (the cut reply is not in it)
+    assert bedrock.requests[0]['inferenceConfig'] == {'maxTokens': MAX_TOKENS} == {'maxTokens': 32_000}
+
+
+def test_a_reply_cut_twice_is_a_crash_after_a_checkpoint(tmp_path):
+    w = world(tmp_path)
+    bedrock = FakeBedrock([[use('finish', 't1', summary='fixed')]], cut=frozenset({0, 1}))
+    with pytest.raises(OutputCut, match='stopped at its 32000 output tokens twice'):
+        ConverseAdapter(bedrock, 'model-a').run(w.session)
+    assert len(bedrock.requests) == 2
+    assert _checkpoints(w.store)
 
 
 def _checkpoints(store: Any) -> list[dict[str, Any]]:

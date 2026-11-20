@@ -1,9 +1,9 @@
 ---
 name: aws-security
-description: "AWS security policy for infrastructure code (CDK, CloudFormation, Terraform, SAM, AWS SDK) touching IAM, S3, Lambda auth, Cognito, CORS, VPC, KMS or Bedrock inference profiles. For writing or reviewing IaC; application-layer code is the security-audit skill's."
+description: "Sets AWS security policy for IaC (CDK, CloudFormation, Terraform, SAM, AWS SDK) touching IAM, S3, Lambda auth, Cognito, CORS, VPC, KMS or Bedrock inference profiles. Read it when writing or reviewing IaC; application-layer code is the security-audit skill's."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/aws-security"
 license: MIT
-adapted: "The spec-loader step reads SECURITY.md and INFRA.md with read_file. The policy simulation check is a person's (it needs the account). Fixes are the builder's, within its change; reviewers write findings. An internal scanner's name in the design notes is replaced by a generic security scanner. Slash references name library skills."
+adapted: "The spec-loader step reads SECURITY.md and INFRA.md with read_file. The policy simulation check is a person's (it needs the account). Fixes are the builder's, within its change; reviewers write findings. An internal scanner's name in the design notes is replaced by a generic security scanner. Slash references name library skills; description reworded for Claude 5.5 skill discovery"
 ---
 
 Audit the infrastructure code your task names, or your own change, against AWS security practice.

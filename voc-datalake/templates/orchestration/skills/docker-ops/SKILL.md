@@ -1,9 +1,9 @@
 ---
 name: docker-ops
-description: "Docker and container practice for Python and TypeScript projects. Multi-stage builds, base image choice and pinning, hardening, health checks, layer order, size targets and the anti-patterns to catch, when writing or reviewing a Dockerfile or compose file."
+description: "Sets Docker practice for Python and TypeScript projects: multi-stage builds, base image choice and pinning, hardening, health checks, layer order, image size and anti-patterns. Read it when writing or reviewing a Dockerfile or compose file."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/docker-ops"
 license: MIT
-adapted: "The sandbox has no Docker and no network: Dockerfiles are written and reviewed by reading (hadolint where the repository installs it), and building, scanning, pushing and registry checks are a person's, named in the finish. The release schedule check reads the repository's pins instead of a web page. Slash references name library skills. The report is the finish summary or findings."
+adapted: "The sandbox has no Docker and no network: Dockerfiles are written and reviewed by reading (hadolint where the repository installs it), and building, scanning, pushing and registry checks are a person's, named in the finish. The release schedule check reads the repository's pins instead of a web page. Slash references name library skills. The report is the finish summary or findings; description reworded for Claude 5.5 skill discovery"
 ---
 
 Apply Docker best practices to the Dockerfiles and compose files your task names.

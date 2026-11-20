@@ -1,9 +1,9 @@
 ---
 name: deploy-agentcore
-description: "Write the infrastructure and code for an agent on Amazon Bedrock AgentCore Runtime with the stable CDK L2, ARM64 image builds and least-privilege IAM. Read it when writing AgentCore IaC, its build pipeline or its smoke test; the deploy itself is a person's."
+description: "Writes the infrastructure and code for an agent on Amazon Bedrock AgentCore Runtime: the stable CDK L2, ARM64 image builds, least-privilege IAM. Read it when writing AgentCore IaC, its build pipeline or its smoke test; the deploy itself is a person's."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/deploy-agentcore"
 license: MIT
-adapted: "The run never builds, pushes or deploys: the image build, the dependency-ordered deploy and the live smoke test became code the agent writes (the build pipeline, the stack, the smoke-test script) and steps its finish hands to a person, in order. Validation is offline (cdk synth and tests). Discovery uses run's grep and read_file. The report is the finish summary."
+adapted: "The run never builds, pushes or deploys: the image build, the dependency-ordered deploy and the live smoke test became code the agent writes (the build pipeline, the stack, the smoke-test script) and steps its finish hands to a person, in order. Validation is offline (cdk synth and tests). Discovery uses run's grep and read_file. The report is the finish summary; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Write the infrastructure and code that put the agent your task names on Amazon Bedrock AgentCore Runtime.

@@ -103,7 +103,7 @@ Table: what differs across envs (instance sizes, replica counts, feature flags).
 # Solution Strategy
 
 ## Fundamental decisions
-Bullet the key technology choices. Each links to its ADR in `06-adrs/`. Do NOT restate ADR rationale here.
+Bullet the key technology choices. Each links to its ADR in `06-adrs/`. Do not restate ADR rationale here, so it lives in one place.
 
 ## Quality tradeoffs
 How the architecture serves the §1 quality goals; the tensions accepted.

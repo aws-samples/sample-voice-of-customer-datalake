@@ -1,9 +1,9 @@
 ---
 name: understand-plan
-description: "Survey a repository's infrastructure and architecture (Pulumi or AWS CDK, AI on AWS) into provenance-tagged facts before anything is written about it. Every claim anchored to a file:line or a logical ID, levels L100 to L400, the doc set a knowledge pack needs."
+description: "Surveys a repository's infrastructure and architecture (Pulumi or AWS CDK, AI on AWS) into provenance-tagged facts, each anchored to a file:line or logical ID, with levels L100 to L400 and the doc plan. Read it when mapping a repository before anything is written about it."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/understand-plan"
 license: MIT
-adapted: "The survey's method is kept (facts with provenance, UNVERIFIED excluded, extraction tiers, the resource to AWS to C4 mapping, the level model, the doc plan), but its outputs are the platform's: the mapper's notes (write_notes, each claim with its citations) and the understander's draft. The roles run no command, so the read tier is source files and any committed cdk.out. The fan-out sub-agents, the output folder, the JSON model files and the questions to a user are dropped."
+adapted: "The survey's method is kept (facts with provenance, UNVERIFIED excluded, extraction tiers, the resource to AWS to C4 mapping, the level model, the doc plan), but its outputs are the platform's: the mapper's notes (write_notes, each claim with its citations) and the understander's draft. The roles run no command, so the read tier is source files and any committed cdk.out. The fan-out sub-agents, the output folder, the JSON model files and the questions to a user are dropped; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Survey the part of the repository your task names, and turn what it shows into facts with provenance, before

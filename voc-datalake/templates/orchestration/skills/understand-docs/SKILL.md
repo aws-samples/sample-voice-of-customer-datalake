@@ -1,16 +1,16 @@
 ---
 name: understand-docs
-description: "Write a repository's understanding docs (Markdown with Mermaid diagrams ramping from L100 to L400) from a provenance-tagged model only. C4 context, container, component and deployment diagrams, sequence, ER, state and pipeline charts, arc42 prose and MADR ADRs; uncited content is dropped."
+description: "Writes a repository's understanding docs (Markdown, Mermaid, L100 to L400) from a provenance-tagged model only: C4, deployment, sequence, ER, state and pipeline diagrams, arc42 prose, MADR ADRs; uncited content is dropped. Read it when drafting a knowledge pack's docs."
 source: "ai-skill-factory 2.0.0 (Amit Deol), skills/understand-docs"
 license: MIT
-adapted: "The model is the mapper's notes and the plan the understand-plan skill's Step 5; the output is the understander's draft in the form its task names, not files in a review folder. The per-file sub-agents are dropped (one agent writes the set in waves), open questions go in the finish instead of to a user, and the Mermaid check is the cookbook's static checklist (no mermaid-cli in the sandbox). Slash references name library skills."
+adapted: "The model is the mapper's notes and the plan the understand-plan skill's Step 5; the output is the understander's draft in the form its task names, not files in a review folder. The per-file sub-agents are dropped (one agent writes the set in waves), open questions go in the finish instead of to a user, and the Mermaid check is the cookbook's static checklist (no mermaid-cli in the sandbox). Slash references name library skills; description and emphasis reworded for Claude 5.5 skill discovery"
 ---
 
 Write the understanding docs your task asks for, from the model and the plan only.
 
 This is the GENERATE half of a two-skill pair. The `understand-plan` skill extracts the model (on the platform, the
 mapper's notes: each claim with its citations) and plans the doc set; this skill writes the docs from them. It
-renders diagrams ONLY from the model, never freehand. On the platform the understander writes the draft, in the
+renders diagrams only from the model, never freehand. On the platform the understander writes the draft, in the
 output its task names; a person approves it, and the platform publishes approved docs.
 
 ## Step 0: Load the plan and the model
