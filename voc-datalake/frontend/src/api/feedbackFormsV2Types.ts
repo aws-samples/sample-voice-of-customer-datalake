@@ -17,7 +17,7 @@ type FormLocale = 'en' | 'es' | 'fr' | 'de' | 'pt' | 'ja' | 'zh' | 'ko' | 'pl'
 type I18nText = Partial<Record<FormLocale, string>>
 type FormQuestionType =
   | 'open_text' | 'single_select' | 'multi_select' | 'rating' | 'nps' | 'csat' | 'ces'
-  | 'statement' | 'consent' | 'contact_info'
+  | 'statement' | 'consent' | 'contact_info' | 'matrix'
 type FormRuleOp =
   | 'equals' | 'not_equals' | 'includes_any' | 'includes_all' | 'lt' | 'lte' | 'gt' | 'gte' | 'submitted' | 'skipped'
 
@@ -36,6 +36,14 @@ interface FormOption {
 }
 
 type FormContactField = 'name' | 'email' | 'phone' | 'company'
+
+/** A matrix's row or column (7.61.00): `code` matches `^[a-z0-9_]{1,40}$` and is never `__proto__`, `constructor` or
+ * `prototype`; a column's optional `score` is a whole number from -100 to 100. */
+interface FormMatrixItem {
+  code: string
+  label: I18nText
+  score?: number
+}
 
 /** One question; the per-type fields are present only on their type (the server refuses any other key). */
 interface FormQuestion {
@@ -57,7 +65,8 @@ interface FormQuestion {
   other?: { enabled: boolean; label?: I18nText; placeholder?: I18nText }
   none?: { enabled: boolean; label?: I18nText }
   shuffle?: 'none' | 'all' | 'except_last'
-  display?: 'auto' | 'list' | 'dropdown' | 'chips'
+  /** A choice's `auto | list | dropdown | chips`; a matrix's `auto | grid | stacked`. */
+  display?: 'auto' | 'list' | 'dropdown' | 'chips' | 'grid' | 'stacked'
   min?: number
   max?: number
   // rating (nps / csat / ces take only the two labels)
@@ -69,6 +78,11 @@ interface FormQuestion {
   cta?: { label: I18nText; url?: string }
   label?: I18nText
   fields?: Record<FormContactField, { show: boolean; required: boolean }>
+  // matrix (7.61.00): 1 to 20 rows rated on 2 to 10 columns, one column per row; answered `{rows: {<row>: <column>}}`
+  rows?: FormMatrixItem[]
+  columns?: FormMatrixItem[]
+  shuffle_rows?: boolean
+  min_rows?: number
 }
 
 interface FormWelcome {

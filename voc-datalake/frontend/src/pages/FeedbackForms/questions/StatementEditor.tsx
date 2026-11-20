@@ -26,6 +26,7 @@ export default function StatementEditor({ question, onChange }: Readonly<{ quest
       {cta !== undefined && (
         <div className="grid gap-2 sm:grid-cols-2">
           <TextField label={t('statement.buttonLabel')} value={textIn(cta.label, lng)} placeholder={t('statement.buttonLabelPlaceholder')}
+            problems={fieldProblems(problems, 'cta_label')}
             onChange={(value) => onChange({ ...question, cta: { ...cta, label: withText(cta.label, lng, value) } })} />
           <TextField label={t('statement.address')} type="url" value={cta.url ?? ''} placeholder="https://" mono
             hint={t('statement.addressHint')} problems={fieldProblems(problems, 'cta_url')}

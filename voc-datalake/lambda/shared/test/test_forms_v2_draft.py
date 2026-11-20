@@ -134,6 +134,29 @@ class TestTheDraft:
         assert (result['success'], [h['id'] for h in result['form']['hidden_fields']], len(model.prompts)) == (
             True, ['constructor_field', 'prototype_field', 'proto'], 1)
 
+    def test_a_matrix_gets_its_codes_made_and_recall_follows_the_ids_made(self):
+        """7.61.00: a matrix's row and column codes are made like option codes (a reserved name renamed), and each
+        recall placeholder is re-pointed at the hidden field or question id made for it."""
+        matrix = {'id': 'Phases!', 'type': 'matrix', 'headline': {'pl': 'Jak było na {{ 1st screen | warsztacie }}?'},
+                  'required': False, 'rows': [{'code': 'Wstęp', 'label': {'pl': 'Wstęp'}},
+                                              {'code': 'constructor', 'label': {'pl': 'Laboratorium'}}],
+                  'columns': [{'code': 'ok', 'label': {'pl': 'Dobrze'}, 'score': 1},
+                              {'code': 'ok', 'label': {'pl': 'Świetnie'}, 'score': 2}]}
+        nps = {'id': 'NPS', 'type': 'nps', 'headline': {'pl': 'Polecisz?'}, 'required': False}
+        form = {**GOOD, 'questions': [nps, matrix], 'endings': [{'id': 'end_thanks', 'title': {'pl': 'Za {{NPS}}'}}]}
+        result = d.draft(REQUEST, FakeModel(_answer(form)))
+        assert result['success'] is True, result
+        made = result['form']['questions'][1]
+        assert ([row['code'] for row in made['rows']], [column['code'] for column in made['columns']]) == (
+            ['wstep', 'constructor_row'], ['ok', 'ok_2'])
+        assert made['headline'] == {'pl': 'Jak było na {{h_1st_screen| warsztacie }}?'}
+        assert result['form']['endings'][0]['title'] == {'pl': 'Za {{q_nps}}'}
+
+    def test_the_system_prompt_teaches_the_matrix_and_recall(self):
+        for part in ('matrix {rows: 1-20 of {code, label}', 'min_rows? (an optional matrix only)', '{{id|fallback}}',
+                     'never an open_text, contact_info, multi_select, consent or matrix answer'):
+            assert part in d.SYSTEM_PROMPT
+
     def test_addresses_that_are_not_https_are_dropped_with_a_warning(self):
         result = d.draft(REQUEST, FakeModel(_answer(GOOD)))
         assert 'url' not in result['form']['questions'][2]['cta']

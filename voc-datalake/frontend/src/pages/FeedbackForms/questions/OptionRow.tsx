@@ -10,75 +10,29 @@
  * @module pages/FeedbackForms/questions/OptionRow
  */
 import { useState } from 'react'
-import type { ClipboardEvent, DragEvent, KeyboardEvent, Ref } from 'react'
+import type { ClipboardEvent, DragEvent, KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import { ArrowDown, ArrowUp, Copy, GripVertical, Lock, Trash2 } from 'lucide-react'
-import { InfoTip } from '../../../components/Tooltip/InfoTip'
+import { ArrowDown, ArrowUp, Copy, GripVertical, Trash2 } from 'lucide-react'
 import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
-import { isReservedCode, isValidCode } from '../model/codes'
-import type { FormProblem } from '../model/validateForm'
+import { codeProblem, isReservedCode } from '../model/codes'
 import ActionsMenu from '../ui/ActionsMenu'
 import { FieldProblems } from './fields'
+import CodeCell from './CodeCell'
+import type { ListRowProps } from './listRowProps'
 import { moveOnArrowKeys } from '../../../lib/reorderKeys'
 
-export interface OptionRowProps {
-  readonly index: number
-  readonly total: number
-  readonly label: string
-  readonly code: string
-  /** Every other option's code (a hand-typed code must not repeat one). */
-  readonly otherCodes: readonly string[]
-  readonly locked: boolean
-  readonly showCodes: boolean
+export interface OptionRowProps extends ListRowProps {
   /** The question number a jump goes to ("→ 2"), or an ending's title; null: no jump. */
   readonly jump: string | null
-  readonly problems: readonly FormProblem[]
-  readonly inputRef: Ref<HTMLInputElement>
-  readonly onLabel: (value: string) => void
-  readonly onCode: (value: string) => void
-  readonly onEnter: () => void
   readonly onRemoveEmpty: () => void
-  readonly onMove: (to: number) => void
   readonly onDuplicate: () => void
-  readonly onDelete: () => void
   readonly onPasteLines: (lines: readonly string[]) => void
   readonly drag: { readonly onDragStart: () => void; readonly onDrop: () => void; readonly over: boolean; readonly onDragOver: () => void }
 }
 
-/** What is wrong with a hand-typed code ('' when nothing). */
-function codeProblem(code: string, others: readonly string[]): 'reservedCode' | 'invalidCode' | 'duplicateCode' | '' {
-  if (isReservedCode(code)) return 'reservedCode'
-  if (!isValidCode(code)) return 'invalidCode'
-  return others.includes(code) ? 'duplicateCode' : ''
-}
-
-function CodeCell({ code, otherCodes, locked, number, onCode }: Readonly<{ code: string; otherCodes: readonly string[]; locked: boolean; number: number; onCode: (value: string) => void }>) {
-  const { t } = useTranslation('feedbackForms')
-  const [typed, setTyped] = useState<string | null>(null)
-  const shown = typed ?? code
-  const problem = typed === null ? '' : codeProblem(typed, otherCodes)
-  const name = t('choice.codeOf', { number })
-  if (locked) {
-    return (
-      <span className="inline-flex items-center gap-1 font-mono text-[12px] text-muted">
-        <Lock size={12} aria-hidden="true" /><span aria-label={name}>{code}</span>
-        <InfoTip text={t('choice.codeLocked')} />
-      </span>
-    )
-  }
-  return (
-    <span className="block w-36 shrink-0">
-      <input className="input w-full font-mono text-[12px]" aria-label={name} value={shown} aria-invalid={problem === '' ? undefined : true}
-        onChange={(event) => setTyped(event.target.value)}
-        onBlur={() => {
-          if (typed !== null && problem === '' && typed !== code) onCode(typed)
-          setTyped(null)
-        }} />
-      {problem !== '' && <span role="alert" className="mt-0.5 block text-[12px] text-danger">{t(`problems.${problem}`, { code: shown })}</span>}
-    </span>
-  )
-}
+/** The `problems.<code>` key of each way a hand-typed option code is wrong. */
+const CODE_PROBLEMS = { reserved: 'reservedCode', invalid: 'invalidCode', taken: 'duplicateCode', '': '' } as const
 
 function PastePrompt({ lines, onAdd, onKeep }: Readonly<{ lines: readonly string[]; onAdd: () => void; onKeep: () => void }>) {
   const { t } = useTranslation('feedbackForms')
@@ -126,7 +80,8 @@ export default function OptionRow(props: OptionRowProps) {
             </span>
           )}
         </span>
-        {showCodes && <CodeCell code={code} otherCodes={props.otherCodes} locked={locked} number={number} onCode={props.onCode} />}
+        {showCodes && <CodeCell code={code} name={t('choice.codeOf', { number })} locked={locked} lockedText={t('choice.codeLocked')}
+          problemOf={(typed) => CODE_PROBLEMS[codeProblem(typed, props.otherCodes, isReservedCode)]} onCode={props.onCode} />}
         <ActionsMenu label={t('choice.optionMenu', { number })} items={[
           { label: t('questionList.moveUp'), icon: ArrowUp, onSelect: () => props.onMove(index - 1), disabledReason: index === 0 ? t('questionList.alreadyFirst') : undefined },
           { label: t('questionList.moveDown'), icon: ArrowDown, onSelect: () => props.onMove(index + 1), disabledReason: index === total - 1 ? t('questionList.alreadyLast') : undefined },

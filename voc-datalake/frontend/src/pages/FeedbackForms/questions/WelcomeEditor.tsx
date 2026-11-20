@@ -1,6 +1,7 @@
 /**
  * @fileoverview The welcome card (UX §4.5): Show a welcome screen, then its title, description and button label
- * (empty: the widget's own "Start" in the respondent's language).
+ * (empty: the widget's own "Start" in the respondent's language). The title and description may recall a hidden
+ * field (RecallField: no question comes before them).
  *
  * @module pages/FeedbackForms/questions/WelcomeEditor
  */
@@ -13,12 +14,14 @@ import { useDraft } from '../builder/formDraftContext'
 import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
 import { useRequestedFocus } from './focusRequest'
+import RecallField from './RecallField'
 
 export default function WelcomeEditor() {
   const { t } = useTranslation('feedbackForms')
   const draft = useDraft()
   const { welcome, language: lng } = draft.form
   const title = useRequestedFocus<HTMLInputElement & HTMLTextAreaElement>('welcome')
+  const problems = problemsAt(draft.problems, 'welcome')
   const set = (patch: Partial<typeof welcome>) => draft.update((form) => ({ ...form, welcome: { ...form.welcome, ...patch } }))
   return (
     <div className="space-y-3">
@@ -28,12 +31,14 @@ export default function WelcomeEditor() {
       <SwitchField checked={welcome.enabled} label={t('welcome.show')} hint={t('welcome.hint')} onChange={(enabled) => set({ enabled })} />
       {welcome.enabled && (
         <>
-          <TextField label={t('welcome.title')} required inputRef={title} value={textIn(welcome.title, lng)}
-            problems={fieldProblems(problemsAt(draft.problems, 'welcome'), 'title')}
+          <RecallField before={0} label={t('welcome.title')} required inputRef={title} value={textIn(welcome.title, lng)}
+            problems={fieldProblems(problems, 'title')}
             onChange={(value) => set({ title: withText(welcome.title, lng, value) })} />
-          <TextField label={t('welcome.description')} multiline value={textIn(welcome.description, lng)}
+          <RecallField before={0} label={t('welcome.description')} multiline value={textIn(welcome.description, lng)}
+            problems={fieldProblems(problems, 'description')}
             onChange={(value) => set({ description: withText(welcome.description, lng, value) })} />
           <TextField label={t('welcome.buttonLabel')} value={textIn(welcome.button_label, lng)} placeholder={t('welcome.buttonDefault')}
+            problems={fieldProblems(problems, 'button_label')}
             onChange={(value) => set({ button_label: withText(welcome.button_label, lng, value) })} />
         </>
       )}

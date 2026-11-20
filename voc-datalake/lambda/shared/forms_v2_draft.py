@@ -11,7 +11,8 @@ The model reads the contract's types, ops and limits and the twelve templates' f
 description and instruction travel in a ``form_brief`` DATA block and their current form in a ``current_form`` one,
 never as instructions. Its answer goes through ``sanitize`` before the one validator (shared/forms_v2.py
 ``validate_definition``): ids and option codes are made here (slugged, accents folded, de-duplicated, reserved codes
-renamed) and the rules re-pointed at them; an address that is not https is dropped with a warning. A draft that still
+renamed; a matrix's row and column codes too) and the rules, and every recall placeholder (``{{id}}``), re-pointed at
+them; an address that is not https is dropped with a warning. A draft that still
 fails after one repair with the validator's error is answered ``{success: false, code: 'invalid_draft', errors}``
 (the 422 of a synchronous route), never saved.
 """
@@ -26,6 +27,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared import forms_recall
 from shared import forms_v2 as fv2
 from shared.exceptions import ValidationError
 from shared.prompt_safety import data_block
@@ -146,12 +148,19 @@ SYSTEM_PROMPT: Final = (
     'auto|list|dropdown|chips, min?/max? (multi only)}; rating {scale: star|number|smiley, range: 3|4|5|7|10, '
     'lower_label?, upper_label?}; nps (0-10), csat (1-5) and ces (1-7) {lower_label?, upper_label?}; statement '
     '{cta?: {label, url? (https only)}}, no answer; consent {label}; contact_info {fields: {name, email, phone, '
-    'company}: {show, required}}.\n'
+    f'company}}: {{show, required}}}}; matrix {{rows: 1-{fv2.MAX_MATRIX_ROWS} of {{code, label}} (what is rated), columns: '
+    f'{fv2.MIN_MATRIX_COLUMNS}-{fv2.MAX_MATRIX_COLUMNS} of {{code, label, score? (a whole number -100 to 100, for '
+    'averages)} (the scale), shuffle_rows, display: auto|grid|stacked, min_rows? (an optional matrix only)}: one '
+    'choice per row, for rating several items on one scale.\n'
     '- logic: rules {"when": {"op", "value"?}, "then": {"jump_to": a LATER question id or an ending id}}; the first '
     'matching rule wins, otherwise the next question. Ops: open_text equals/not_equals (a text); single_select '
     'equals/not_equals (a code), includes_any (codes); multi_select includes_any/includes_all (codes); rating, nps, '
-    'csat, ces equals/not_equals/lt/lte/gt/gte (a number in range); every answerable type submitted/skipped; '
-    'statement submitted. Jumps only go forward.\n'
+    'csat, ces equals/not_equals/lt/lte/gt/gte (a number in range); every answerable type submitted/skipped '
+    '(matrix, consent and contact_info only those); statement submitted. Jumps only go forward.\n'
+    '- recall: a welcome title or description, a headline, a subheader, or an ending title or description may show a '
+    'hidden field\'s value or an EARLIER rating, nps, csat, ces or single_select answer with {{id}} or {{id|fallback}} '
+    '(e.g. "How was {{event|the event}}?"). Never in an option, row or column label, a button or an address; never an '
+    'open_text, contact_info, multi_select, consent or matrix answer.\n'
     f'- hidden_fields: at most {fv2.MAX_HIDDEN_FIELDS} {{id, label?}}, values the link or the app passes in (a user '
     'id, the app version, the screen), never personal data.\n'
     f'- endings: 1 to {fv2.MAX_ENDINGS} {{id, title, description?, button?: {{label, url (https only)}}}}.\n'
@@ -176,6 +185,9 @@ SYSTEM_PROMPT: Final = (
     '- Feature satisfaction: a 1-5 rating, an open text for low scores.\n'
     '- Bug report: "What happened?", "What did you expect?", hidden fields app_version and screen.\n'
     '- Onboarding segmentation: "What is your role?", then "What do you want to do first?" (multi-select).\n'
+    '- Workshop or event feedback: a hidden field event; "How was {{event|the event}}?" (a 1-5 rating); a matrix '
+    'rating each part on one scale (Needs improvement, Satisfactory, Very effective, Exceptional, scored 1-4); an open '
+    'text.\n'
     '- Blank: one open text.\n\n'
     'A complete answer:\n' + json.dumps(_EXAMPLE, ensure_ascii=False)
 )
@@ -313,6 +325,19 @@ def _remap_rules(question: dict[str, Any], targets: Mapping[str, str], codes: Ma
         question.pop('logic', None)
 
 
+def _sanitize_matrix(question: dict[str, Any]) -> None:
+    """Make a matrix's row and column codes (unique per list, never a reserved name)."""
+    for key, fallback in (('rows', 'row'), ('columns', 'column')):
+        codes = _Ids('', fv2.OPTION_CODE, fallback, fv2.RESERVED_MATRIX_CODES)
+        entries = []
+        for entry in question.get(key) or []:
+            if isinstance(entry, dict):
+                label = entry.get('label')
+                entries.append({**entry, 'code': codes.make(entry.get('code'), *(label.values() if isinstance(
+                    label, Mapping) else [label]))})
+        question[key] = entries
+
+
 def _sanitize_questions(form: Mapping[str, Any], language: str, warnings: list[str]) -> tuple[list, dict]:
     ids = _Ids('q_', fv2.QUESTION_ID, 'question')
     questions, targets, code_maps = [], {}, []
@@ -323,6 +348,8 @@ def _sanitize_questions(form: Mapping[str, Any], language: str, warnings: list[s
         made = ids.make(raw.get('id'), _primary_text(raw.get('headline'), language), f'question {index + 1}')
         targets.setdefault(str(raw.get('id')), made)
         question['id'] = made
+        if question.get('type') == fv2.MATRIX:
+            _sanitize_matrix(question)
         code_maps.append(_sanitize_options(question) if question.get('type') in fv2.SELECT_TYPES else {})
         _drop_http_urls(question, warnings, f'Question {index + 1}')
         questions.append(question)
@@ -348,11 +375,39 @@ def _sanitize_endings(form: Mapping[str, Any], language: str, warnings: list[str
     return endings, targets
 
 
-def _sanitize_hidden(form: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _sanitize_hidden(form: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """The hidden fields with their ids made, and the map from the model's ids."""
     ids = _Ids('', fv2.HIDDEN_ID, 'field', fv2.RESERVED_HIDDEN_IDS, letter_first=True)
-    return [{'id': ids.make(raw.get('id'), raw.get('label')),
-             **({'label': raw['label']} if isinstance(raw.get('label'), str) else {})}
-            for raw in form.get('hidden_fields') or [] if isinstance(raw, dict)]
+    fields, names = [], {}
+    for raw in form.get('hidden_fields') or []:
+        if isinstance(raw, dict):
+            made = ids.make(raw.get('id'), raw.get('label'))
+            names.setdefault(str(raw.get('id')), made)
+            fields.append({'id': made, **({'label': raw['label']} if isinstance(raw.get('label'), str) else {})})
+    return fields, names
+
+
+def _renamed(text: object, names: Mapping[str, str]) -> object:
+    """``text`` with each placeholder's id replaced by the id made for it (``{{old|fallback}}`` -> ``{{new|…}}``)."""
+    if not isinstance(text, str):
+        return text
+
+    def rename(match: re.Match[str]) -> str:
+        key, bar, fallback = match.group(1).partition('|')
+        made = names.get(key.strip())
+        return match.group(0) if made is None else '{{' + made + bar + fallback + '}}'
+    return forms_recall.PLACEHOLDER.sub(rename, text)
+
+
+def _repoint_recall(definition: dict[str, Any], names: Mapping[str, str]) -> None:
+    """Point every recall text's placeholders at the hidden field and question ids made here."""
+    holders = [definition['welcome'], *definition['questions'], *definition['endings']]
+    for holder in holders:
+        if not isinstance(holder, dict):
+            continue
+        for key in ('title', 'description', 'headline', 'subheader'):
+            if isinstance(holder.get(key), Mapping):
+                holder[key] = {locale: _renamed(text, names) for locale, text in holder[key].items()}
 
 
 def sanitize(raw: object, request: Mapping[str, Any]) -> tuple[dict[str, Any], str, list[str]]:
@@ -368,11 +423,14 @@ def sanitize(raw: object, request: Mapping[str, Any]) -> tuple[dict[str, Any], s
     targets = {**maps['targets'], **ending_targets}
     for index, (question, codes) in enumerate(zip(questions, maps['codes'], strict=True)):
         _remap_rules(question, targets, codes, warnings, f'Question {index + 1}')
+    hidden, hidden_names = _sanitize_hidden(form)
     definition = {
         'language': language, 'languages': [language, *[lang for lang in dict.fromkeys(languages) if lang != language]],
-        'welcome': form.get('welcome') if isinstance(form.get('welcome'), Mapping) else {'enabled': False},
-        'questions': questions, 'hidden_fields': _sanitize_hidden(form), 'endings': endings,
+        'welcome': dict(form['welcome']) if isinstance(form.get('welcome'), Mapping) else {'enabled': False},
+        'questions': questions, 'hidden_fields': hidden, 'endings': endings,
     }
+    # A hidden field's id first, as recall looks it up (shared/forms_recall.py), then a question's.
+    _repoint_recall(definition, {**maps['targets'], **hidden_names})
     name = form.get('name') if isinstance(form.get('name'), str) and form['name'].strip() else base.get('name')
     if not isinstance(name, str) or not name.strip():
         name = _primary_text(questions[0].get('headline'), language) if questions else 'New form'

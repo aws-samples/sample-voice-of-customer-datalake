@@ -15,22 +15,22 @@ import { useDraft } from '../builder/formDraftContext'
 import Segmented from '../ui/Segmented'
 import { FieldProblems, SelectField, TextField } from './fields'
 import { fieldProblems, numberOrUndefined } from './fieldHelpers'
+import { useQuestionFields } from './useEditorDraft'
 
 const AUTO_LIST_ROWS = 6
 
 function OtherAndNone({ question, onChange }: Readonly<{ question: ChoiceQuestion; onChange: (q: ChoiceQuestion) => void }>) {
   const { t } = useTranslation('feedbackForms')
-  const { form } = useDraft()
-  const lng = form.language
+  const { lng, problems } = useQuestionFields(question.id)
   return (
     <div className="space-y-2">
       <SwitchField checked={question.other.enabled} label={t('choice.other')} onChange={(enabled) => onChange({ ...question, other: { ...question.other, enabled } })} />
       {question.other.enabled && (
         <div className="grid gap-2 sm:grid-cols-2">
           <TextField label={t('choice.otherLabel')} value={textIn(question.other.label, lng)} placeholder={t('choice.otherDefault')}
-            onChange={(value) => onChange({ ...question, other: { ...question.other, label: withText(question.other.label, lng, value) } })} />
+            problems={fieldProblems(problems, 'other_label')} onChange={(value) => onChange({ ...question, other: { ...question.other, label: withText(question.other.label, lng, value) } })} />
           <TextField label={t('choice.otherPlaceholder')} value={textIn(question.other.placeholder, lng)} placeholder={t('choice.otherPlaceholderDefault')}
-            onChange={(value) => onChange({ ...question, other: { ...question.other, placeholder: withText(question.other.placeholder, lng, value) } })} />
+            problems={fieldProblems(problems, 'other_placeholder')} onChange={(value) => onChange({ ...question, other: { ...question.other, placeholder: withText(question.other.placeholder, lng, value) } })} />
         </div>
       )}
       {question.type === 'multi_select' && (
@@ -39,7 +39,7 @@ function OtherAndNone({ question, onChange }: Readonly<{ question: ChoiceQuestio
             onChange={(enabled) => onChange({ ...question, none: { ...question.none, enabled } })} />
           {question.none.enabled && (
             <TextField label={t('choice.noneLabel')} value={textIn(question.none.label, lng)} placeholder={t('logic.values.none')}
-              onChange={(value) => onChange({ ...question, none: { ...question.none, label: withText(question.none.label, lng, value) } })} />
+              problems={fieldProblems(problems, 'none_label')} onChange={(value) => onChange({ ...question, none: { ...question.none, label: withText(question.none.label, lng, value) } })} />
           )}
         </>
       )}

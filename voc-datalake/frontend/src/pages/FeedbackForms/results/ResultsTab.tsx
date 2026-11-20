@@ -2,21 +2,19 @@
  * @fileoverview The Results tab (UX §10): Summary (a card per question, the endings, the drop-off) and Responses (a
  * table and a response's side sheet), under filters the address holds, with test responses left out unless asked
  * for: "Include test responses" is never remembered, and when on, a banner says these aren't the real results.
- * Export CSV follows the filters.
+ * Download (the familiar CSV, or from its menu the detailed one) follows the filters. Above the summary, the link
+ * checks (7.61.00) say when the links that bring respondents leave a hidden field empty.
  *
  * @module pages/FeedbackForms/results/ResultsTab
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { BarChart3, Download, FlaskConical, Inbox, Rows3, SearchX, Share2 } from 'lucide-react'
+import { BarChart3, FlaskConical, Inbox, Rows3, SearchX, Share2 } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import Notice from '../../../components/Notice/Notice'
-import { feedbackFormsV2Api } from '../../../api/feedbackFormsV2Api'
 import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
 import type { FormResults } from '../../../api/feedbackFormsV2Results'
-import { sanitizeFilename } from '../../../utils/file'
 import { formatCount } from '../../../utils/numberFormat'
 import { useDraft } from '../builder/formDraftContext'
 import { useBuilderUi } from '../builder/builderUi'
@@ -25,49 +23,13 @@ import Segmented from '../ui/Segmented'
 import ResultsFilterBar from './ResultsFilterBar'
 import ResultsSummary from './ResultsSummary'
 import ResponsesTable from './ResponsesTable'
+import DownloadButton from './DownloadButton'
+import LinkHealthNotice from './LinkHealthNotice'
+import { useFormResults } from './useFormResults'
 import { CLEAR_FILTERS, apiFilters, hidesFunnel, narrows, readFilters, writeFilters } from './resultFilters'
 import type { ViewFilters } from './resultFilters'
 
 type View = 'summary' | 'responses'
-
-const resultsKey = (formId: string, filters: ResultsFilters) => ['feedback-forms', formId, 'results', filters] as const
-
-/** Download the responses as CSV under the filters, as `<form name>-responses.csv`. */
-async function downloadCsv(formId: string, name: string, filters: ResultsFilters): Promise<void> {
-  const blob = await feedbackFormsV2Api.downloadResponsesCsv(formId, filters)
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${sanitizeFilename(name === '' ? 'form' : name)}-responses.csv`
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-function CsvButton({ formId, filters }: Readonly<{ formId: string; filters: ResultsFilters }>) {
-  const { t } = useTranslation('feedbackForms')
-  const { form } = useDraft()
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const run = async () => {
-    setBusy(true)
-    setFailed(false)
-    try {
-      await downloadCsv(formId, form.name, filters)
-    } catch {
-      setFailed(true)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <span className="flex items-center gap-2">
-      {failed && <span role="alert" className="text-[12px] text-danger">{t('results.csvFailed')}</span>}
-      <button type="button" className="btn btn-secondary btn-sm" aria-busy={busy} disabled={busy} onClick={() => { void run() }}>
-        <Download size={14} aria-hidden="true" />{t('results.csv')}
-      </button>
-    </span>
-  )
-}
 
 /** What the summary shows when there is nothing to count; null when there is. */
 function EmptyState({ results, filters, includeTest, onInclude, onClear }: Readonly<{
@@ -101,13 +63,14 @@ function Summary({ formId, filters, view, includeTest, onInclude, onClear }: Rea
   const { t } = useTranslation('feedbackForms')
   const { form } = useDraft()
   const { go } = useBuilderUi()
-  const query = useQuery({ queryKey: resultsKey(formId, view), queryFn: () => feedbackFormsV2Api.getResults(formId, view) })
+  const query = useFormResults(formId, view)
   if (query.isError && query.data === undefined) return <LoadFailed onRetry={() => { void query.refetch() }} retrying={query.isFetching} />
   if (query.data === undefined) return <p role="status" className="text-sm text-muted">{t('results.loading')}</p>
   const results = query.data
   return (
     <div className="space-y-4">
       {includeTest && results.test_count > 0 && <IncludingTestBanner count={results.test_count} />}
+      <LinkHealthNotice health={results.link_health} action={{ label: t('results.openShare'), onClick: () => go('share') }} />
       <EmptyState results={results} filters={filters} includeTest={includeTest} onInclude={onInclude} onClear={onClear} />
       {results.total > 0 && <ResultsSummary form={form} results={results} funnelFiltered={hidesFunnel(filters)} onShowAll={() => go('results', ['responses'])} />}
     </div>
@@ -136,7 +99,7 @@ export default function ResultsTab() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmented label={t('results.view')} value={shown} onChange={(next) => go('results', next === 'responses' ? ['responses'] : [])}
           choices={[{ value: 'summary', label: t('results.summary'), icon: BarChart3 }, { value: 'responses', label: t('results.responsesView'), icon: Rows3 }]} />
-        <CsvButton formId={formId} filters={view} />
+        <DownloadButton formId={formId} filters={view} />
       </div>
       <ResultsFilterBar form={form} filters={filters} onChange={setFilters} includeTest={includeTest} onIncludeTest={setIncludeTest} />
       {shown === 'summary'

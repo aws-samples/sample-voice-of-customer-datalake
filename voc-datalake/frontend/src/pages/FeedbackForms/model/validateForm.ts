@@ -4,6 +4,9 @@
  * never block. Each problem names where it is, so the problems popover can go to it, and a message key under
  * `feedbackForms:problems.<code>`.
  *
+ * A matrix's own checks are model/matrixProblems.ts's; recall's (a `{{…}}` that cannot be filled where it stands: an
+ * error that blocks Save, or one that blocks only Publish where recall never works) model/recallProblems.ts's.
+ *
  * The theme's contrast (theme/contrast.ts, the server's rules in lambda/shared/form_theme.py), for every palette
  * that can be shown: text under 3:1 on its background is an error that blocks only Publish and Update live form
  * (`blocks: 'publish'`; Save still works, so nothing is lost while the colours are fixed); text from 3 to 4.5:1, a
@@ -25,8 +28,12 @@ import type { ProblemSeverity, RuleProblemCode } from './ruleProblems'
 import { formPaths } from './paths'
 import { missingTexts } from './translatable'
 import { reshapedIds } from './removals'
+import { matrixProblems } from './matrixProblems'
+import type { MatrixProblemCode } from './matrixProblems'
+import { recallProblems } from './recallProblems'
+import type { RecallProblemCode } from './recallProblems'
 
-type FormProblemCode = RuleProblemCode
+type FormProblemCode = RuleProblemCode | MatrixProblemCode | RecallProblemCode
   | 'noQuestions' | 'tooManyQuestions' | 'noEndings' | 'tooManyEndings' | 'tooManyHidden'
   | 'headlineEmpty' | 'optionEmpty' | 'endingTitleEmpty' | 'welcomeTitleEmpty' | 'consentLabelEmpty'
   | 'duplicateQuestionId' | 'invalidQuestionId' | 'retiredQuestionId' | 'answeredReshaped' | 'duplicateEndingId' | 'invalidEndingId'
@@ -134,13 +141,14 @@ const ctaWrong = (q: StatementQuestion): boolean => {
 }
 
 function ownProblems(form: FormV2, q: Question): FormProblem[] {
+  if (isChoice(q)) return choiceProblems(form, q)
   switch (q.type) {
-    case 'single_select': case 'multi_select': return choiceProblems(form, q)
     case 'open_text': return problemsWhen(textLimitWrong(q), () => formProblem('error', 'maxCharsRange', fieldAt(q, 'max_chars')))
     case 'rating': return problemsWhen(q.scale === 'smiley' && q.range > 5, () => formProblem('error', 'facesRange', fieldAt(q, 'range')))
     case 'consent': return problemsWhen(!hasText(q.label, form.language), () => formProblem('error', 'consentLabelEmpty', fieldAt(q, 'label')))
     case 'statement': return problemsWhen(ctaWrong(q), () => formProblem('error', 'ctaUrl', fieldAt(q, 'cta_url')))
     case 'contact_info': return problemsWhen(!Object.values(q.fields).some((field) => field.show), () => formProblem('error', 'contactNoField', fieldAt(q, 'fields')))
+    case 'matrix': return matrixProblems(form, q)
     case 'nps': case 'csat': case 'ces': return []
   }
 }
@@ -271,7 +279,7 @@ export function validateForm(form: FormV2, context: ValidationContext = {}): For
   const all = [
     ...countProblems(form), ...questionProblems(form, context.retiredIds ?? []), ...endingProblems(form), ...hiddenProblems(form),
     ...(context.unconfirmedAddresses ?? []).map((at) => formProblem('error', 'aiAddress', at)),
-    ...reshapedProblems(form, context.answered ?? null),
+    ...reshapedProblems(form, context.answered ?? null), ...recallProblems(form),
     ...themeProblems(form, context.liveTheme),
     ...reachProblems(form), ...translationProblems(form), ...categoryProblems(form),
   ]

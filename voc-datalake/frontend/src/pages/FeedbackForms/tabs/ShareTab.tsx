@@ -3,7 +3,8 @@
  * built from the form's own address (tabs/snippets.ts). The iframe comes with its resizer, the script embed whole
  * (the element, the widget file from this app's origin, the `init` call), each with a line on what it needs. Live |
  * Test swaps the live link for the test link in every snippet. An Off form says what its live link shows, with
- * Publish as the one action.
+ * Publish as the one action. A form with hidden fields gets a link builder (their values in every snippet, and a
+ * warning for each one its texts recall that the link leaves empty) and the link checks of its responses (7.61.00).
  *
  * @module pages/FeedbackForms/tabs/ShareTab
  */
@@ -21,6 +22,8 @@ import { formLink, iframeSnippet, scriptEmbedSnippet, widgetScriptUrl } from './
 import type { SnippetInput } from './snippets'
 import { LinkField, OpenLink, SaveFirstNotice } from './linkParts'
 import { useTestToken } from './testToken'
+import ShareTabLinkHealth from './ShareTabLinkHealth'
+import ShareTabLinkValues from './ShareTabLinkValues'
 
 type Mode = 'live' | 'test'
 
@@ -70,9 +73,10 @@ function Embeds({ input, link }: Readonly<{ input: SnippetInput; link: string }>
   )
 }
 
-function Snippets({ input, live }: Readonly<{ input: SnippetInput; live: boolean }>) {
+function Snippets({ input, live, onValues }: Readonly<{ input: SnippetInput; live: boolean; onValues: (next: Readonly<Record<string, string>>) => void }>) {
   const { t } = useTranslation('feedbackForms')
   const { go } = useBuilderUi()
+  const { form } = useDraft()
   const link = formLink(input, false)
   return (
     <div className="space-y-5">
@@ -80,6 +84,7 @@ function Snippets({ input, live }: Readonly<{ input: SnippetInput; live: boolean
         hint={live ? t('share.liveHint') : undefined}>
         {link !== null && <OpenLink url={link} />}
       </LinkField>
+      <ShareTabLinkValues form={form} values={input.values ?? {}} onChange={onValues} />
       <p className="text-[12px] text-muted">
         {t('share.withHidden')}{' '}
         <button type="button" className="link" onClick={() => go('hidden-fields')}>{t('share.toHidden')}</button>
@@ -109,9 +114,10 @@ export default function ShareTab() {
   const apiEndpoint = useConfigStore((state) => state.config.apiEndpoint)
   const token = useTestToken()
   const [mode, setMode] = useState<Mode>('live')
+  const [values, setValues] = useState<Readonly<Record<string, string>>>({})
   const testOn = form.settings.test.link_enabled
   const base: SnippetInput | null = formId === null ? null
-    : { apiEndpoint, formId, formName: form.name, language: form.language, hidden: form.hidden_fields, testToken: null }
+    : { apiEndpoint, formId, formName: form.name, language: form.language, hidden: form.hidden_fields, testToken: null, values }
   const testReady = testOn && token !== null
   return (
     <section className="card space-y-4" aria-labelledby="share-heading">
@@ -123,9 +129,10 @@ export default function ShareTab() {
       {base === null ? <SaveFirstNotice /> : (
         <>
           <OffBanner mode={mode} testOn={testOn} />
+          <ShareTabLinkHealth formId={base.formId} />
           {mode === 'test' && !testReady && <TestOffNote />}
           {mode === 'test' && testReady && <p role="note" className="flex items-center gap-2 text-sm text-text"><FlaskConical size={14} className="text-info" aria-hidden="true" />{t('share.testNotice')}</p>}
-          {(mode === 'live' || testReady) && <Snippets input={mode === 'live' ? base : { ...base, testToken: token }} live={mode === 'live'} />}
+          {(mode === 'live' || testReady) && <Snippets input={mode === 'live' ? base : { ...base, testToken: token }} live={mode === 'live'} onValues={setValues} />}
         </>
       )}
     </section>

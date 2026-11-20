@@ -1,8 +1,20 @@
 /**
  * Shared test support for the Results specs: a form with one question of each measured kind, and its results.
  */
-import type { FormV2 } from '../model/formsV2'
+import type { LinkHealth } from '../../../api/feedbackFormsV2Results'
+import type { FormV2, MatrixQuestion } from '../model/formsV2'
 import { blankForm } from '../test/blankForm'
+
+/** A workshop's phases rated on one scale, scored 1 to 4 (7.61.00), its headline recalling the `event` hidden field. */
+export const PHASES: MatrixQuestion = {
+  id: 'q_phases', type: 'matrix', headline: { en: 'How was each part of {{event|the workshop}}?' }, required: true,
+  rows: [{ code: 'intro', label: { en: 'Introduction' } }, { code: 'lab', label: { en: 'Hands-on lab' } }],
+  columns: [
+    { code: 'poor', label: { en: 'Needs improvement' }, score: 1 }, { code: 'ok', label: { en: 'Satisfactory' }, score: 2 },
+    { code: 'great', label: { en: 'Very effective' }, score: 3 }, { code: 'top', label: { en: 'Exceptional' }, score: 4 },
+  ],
+  shuffle_rows: false, display: 'auto',
+}
 
 export const RESULTS_FORM: FormV2 = {
   ...blankForm('en'),
@@ -44,4 +56,17 @@ export const RESULTS = {
   removed_questions: [],
   removed_options: {},
   funnel: null,
+}
+
+const fill = (filled: number, missing: number) => ({ filled, missing })
+
+/** 26 responses: `customer` never filled (a warning), `event` filled by the link but not by the embedded page. */
+export const LINK_HEALTH: LinkHealth = {
+  responses: 26,
+  hidden: { customer: fill(0, 26), event: fill(18, 8) },
+  by_channel: {
+    link: { responses: 18, hidden: { customer: fill(0, 18), event: fill(18, 0) } },
+    iframe: { responses: 8, hidden: { customer: fill(0, 8), event: fill(0, 8) } },
+  },
+  warnings: [{ id: 'customer', kind: 'never_filled', filled: 0, total: 26 }],
 }

@@ -1,5 +1,6 @@
 // A v2 form's Results for the dev mock (7.55.00): the filters (from, language, ending, hidden.<id>, include_test),
-// the per-question results, the funnel and the CSV, computed from the stored responses in the shapes
+// the per-question results, the funnel, the link checks (7.61.00) and the detailed CSV, computed from the stored
+// responses in the shapes
 // lambda/shared/forms_v2_results.py `tally_results` and the handler's responses route answer (the app reads them
 // through src/api/feedbackFormsResultsAdapter.ts). Test responses count only with include_test=true (UX §10.5).
 //
@@ -44,7 +45,11 @@ export function responseView(row) {
   };
 }
 
-const textIn = (text, primary) => (isPlainObject(text) ? text[primary] ?? Object.values(text)[0] ?? '' : '');
+export const textIn = (text, primary) => (isPlainObject(text) ? text[primary] ?? Object.values(text)[0] ?? '' : '');
+/** A text with each `{{id|fallback}}` shown as `[id]`: how results show a recall placeholder (lambda/shared/forms_recall.py). */
+const shownAsIds = (text) => text.replace(/\{\{([^{}]*)\}\}/g, (_raw, inner) => `[${inner.split('|')[0].trim()}]`);
+/** A question's headline in the primary language, its placeholders as `[id]`. */
+export const questionHeadline = (question, primary) => shownAsIds(textIn(question.headline, primary));
 
 /** A scale question's lowest and highest answer (forms_v2.py question_bounds). */
 function boundsOf(question) {
@@ -69,6 +74,7 @@ const FITS = {
   open_text: (_question, value) => typeof value === 'string' && value !== '',
   consent: (_question, value) => value === true,
   contact_info: (_question, value) => isPlainObject(value) && Object.keys(value).length > 0,
+  matrix: (_question, value) => isPlainObject(value) && isPlainObject(value.rows) && Object.keys(value.rows).length > 0,
 };
 
 /** `value` when it fits the question's type, else undefined (an older revision's other shape). */
@@ -133,6 +139,34 @@ function choiceResult(question, answered) {
   return out;
 }
 
+/** A matrix's rows (lambda/shared/forms_v2_results.py): each row's counts per column and the average score of its scored answers. */
+function matrixResult(question, answered) {
+  const columns = (question.columns ?? []).map((column) => column.code);
+  const scores = Object.fromEntries((question.columns ?? []).filter((column) => Number.isInteger(column.score)).map((column) => [column.code, column.score]));
+  const rowCodes = (question.rows ?? []).map((row) => row.code);
+  const removedRows = {};
+  const removedColumns = {};
+  const rows = rowCodes.map((code) => ({ code, answered: 0, counts: Object.fromEntries(columns.map((column) => [column, 0])), scores: [] }));
+  for (const { value } of answered) {
+    for (const [rowCode, column] of Object.entries(value.rows)) {
+      const row = rows.find((entry) => entry.code === rowCode);
+      if (row === undefined) removedRows[rowCode] = (removedRows[rowCode] ?? 0) + 1;
+      else if (!columns.includes(column)) removedColumns[column] = (removedColumns[column] ?? 0) + 1;
+      else {
+        row.answered += 1;
+        row.counts[column] += 1;
+        if (column in scores) row.scores.push(scores[column]);
+      }
+    }
+  }
+  const average = (values) => (values.length ? Math.round((values.reduce((sum, n) => sum + n, 0) / values.length) * 100) / 100 : null);
+  return {
+    rows: rows.map(({ scores: given, ...row }) => ({ ...row, average: average(given) })), scored: Object.keys(scores).length > 0,
+    ...(Object.keys(removedRows).length ? { removed_rows: removedRows } : {}),
+    ...(Object.keys(removedColumns).length ? { removed_columns: removedColumns } : {}),
+  };
+}
+
 /** Per type: the figures of its answers beside the counts every question has. */
 const OWN_RESULTS = {
   ...Object.fromEntries(SCALES.map((type) => [type, scaleResult])),
@@ -140,6 +174,7 @@ const OWN_RESULTS = {
   open_text: (_question, answered) => ({ count: answered.length, latest: newest(answered.map(({ row, value }) => latestEntry(row, value))) }),
   consent: (_question, answered) => ({ accepted: answered.length }),
   contact_info: (_question, answered) => ({ contacts: answered.length }),
+  matrix: matrixResult,
 };
 
 const ownResult = (question, answered) => OWN_RESULTS[question.type]?.(question, answered) ?? {};
@@ -153,7 +188,7 @@ function questionResult(question, rows, primary) {
   });
   const skipped = Math.max(shownRows.length - answered.length, 0);
   return {
-    id: question.id, type: question.type, headline: textIn(question.headline, primary),
+    id: question.id, type: question.type, headline: questionHeadline(question, primary),
     shown: shownRows.length, answered: answered.length, skipped, not_shown: Math.max(rows.length - shownRows.length, 0),
     drop_off_rate: shownRows.length ? Math.round((skipped / shownRows.length) * 10000) / 10000 : 0,
     ...ownResult(question, answered),
@@ -194,6 +229,39 @@ export function headlineOf(item, allRows) {
   return { question_id: question.id, type: question.type, value, count: answered.length, scale_max: result.scale_max };
 }
 
+/** How a set of rows filled each hidden field: `{id: {filled, missing}}`. */
+function fills(ids, rows) {
+  return Object.fromEntries(ids.map((id) => {
+    const filled = rows.filter((row) => typeof row.hidden?.[id] === 'string' && row.hidden[id] !== '').length;
+    return [id, { filled, missing: rows.length - filled }];
+  }));
+}
+
+/**
+ * The link checks (lambda/shared/forms_v2_results.py `link_health`, 7.61.00): per hidden field how many responses had it, by channel
+ * too, and a warning for one never filled once 5 came in, or missing from 80 % or more once 10 did.
+ */
+function linkHealthOf(item, rows) {
+  const ids = (item.hidden_fields ?? []).map((field) => field.id);
+  const hidden = fills(ids, rows);
+  const channels = [...new Set(rows.map((row) => row.channel ?? 'unknown'))];
+  const warnings = ids.flatMap((id) => {
+    const { filled } = hidden[id];
+    const total = rows.length;
+    if (filled === 0 && total >= 5) return [{ id, kind: 'never_filled', filled, total }];
+    if (total >= 10 && (total - filled) / total >= 0.8) return [{ id, kind: 'mostly_missing', filled, total }];
+    return [];
+  });
+  return {
+    responses: rows.length, hidden,
+    by_channel: Object.fromEntries(channels.map((channel) => {
+      const own = rows.filter((row) => (row.channel ?? 'unknown') === channel);
+      return [channel, { responses: own.length, hidden: fills(ids, own) }];
+    })),
+    warnings,
+  };
+}
+
 /** Does the view filter by what the funnel's daily counters know nothing of (the handler's `_funnel_hidden`)? */
 const funnelHidden = (params) => Boolean(params.get('language') || params.get('ending'))
   || [...params.keys()].some((key) => key.startsWith('hidden.'));
@@ -225,6 +293,7 @@ export function formResults(item, allRows, params) {
     hidden,
     removed_questions: Object.entries(removed).sort().map(([id, answered]) => ({ id, answered })),
     funnel: funnelHidden(params) ? null : { ...funnelOf(item, rows), completed: rows.length },
+    link_health: linkHealthOf(item, rows),
   };
 }
 
@@ -236,13 +305,14 @@ function cell(question, value, primary) {
     const codes = [...(value.codes ?? []), ...(value.code === undefined ? [] : [value.code])];
     return [...codes.map((code) => labels[code] ?? code), ...(value.other ? [`other: ${value.other}`] : [])].join('; ');
   }
+  if (isPlainObject(value) && isPlainObject(value.rows)) return Object.entries(value.rows).map(([row, column]) => `${row}: ${column}`).join('; ');
   if (isPlainObject(value)) return Object.entries(value).map(([key, item]) => `${key}: ${String(item)}`).join('; ');
   return String(value);
 }
 
 /** Never a spreadsheet formula: a leading = + - @ or control character is quoted off (_csv_cell). */
-const safe = (text) => (/^[=+\-@\t\r]/.test(text) ? `'${text}` : text);
-const csvField = (value) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+export const safe = (text) => (/^[=+\-@\t\r]/.test(text) ? `'${text}` : text);
+export const csvField = (value) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
 /**
  * GET …/responses?format=csv (_responses_csv): time, ids, test flag, revision, language, ending, one column per
@@ -255,7 +325,7 @@ export function responsesCsv(item, rows) {
   const fixed = ['created_at', 'response_id', 'is_test', 'revision', 'language', 'ending_id'];
   const lines = [
     // (the header is the author's text too: never a formula either)
-    [...fixed, ...questions.map((question) => textIn(question.headline, primary)), ...hidden.map((id) => `hidden: ${id}`)]
+    [...fixed, ...questions.map((question) => questionHeadline(question, primary)), ...hidden.map((id) => `hidden: ${id}`)]
       .map((text) => safe(String(text))),
     [...fixed, ...questions.map((question) => question.id), ...hidden.map((id) => `hidden.${id}`)],
     ...rows.map((row) => {

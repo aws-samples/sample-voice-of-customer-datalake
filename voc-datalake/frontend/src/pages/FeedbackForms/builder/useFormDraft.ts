@@ -5,7 +5,8 @@
  * `expected_write_count`), so a save that came in between, an Enable or a Turn off included, is that conflict and is
  * never undone. A save of an answered form names what it removes (`removes`, model/removals.ts), as the server
  * requires (D9); its 409 `answers_locked` is a refusal, never the stale-save banner, and so is a retired question id
- * taken again (400 `question_id_reused`, worded with the id).
+ * taken again (400 `question_id_reused`, worded with the id), a recall that names what it cannot recall (400
+ * `recall_*`) and a live form's placeholder respondents would see as written (409 `unresolved_placeholder`, 7.61.00).
  *
  * A new form (a template, an AI draft) is created on its first Save, Off, and `onCreated` gives the page its id
  * (the address replaces `new`). Saving clears the AI's provenance (UX §12.3: "the AI draft is now your form").
@@ -57,10 +58,24 @@ export const THEME_UNREADABLE = 'theme_unreadable'
  * `validate_definition`: ids are never reused); the failed status keeps it with the id, and the header words it.
  */
 export const QUESTION_ID_REUSED = 'question_id_reused'
+/**
+ * The 409 code of a save that would leave a form live with a `{{…}}` respondents would see as written (7.61.00,
+ * lambda/shared/forms_recall.py `unresolved_placeholders`): a refusal, never the stale-save banner. The builder's
+ * Problems list holds the same texts (model/recallProblems.ts), so it is reached only when they disagree.
+ */
+export const UNRESOLVED_PLACEHOLDER = 'unresolved_placeholder'
+/** The 400 codes of a save whose recall text names what it cannot recall there (7.61.00): worded as one refusal. */
+export const RECALL_REFUSED = 'recall_refused'
+const RECALL_CODES: readonly string[] = ['recall_unknown', 'recall_not_before', 'recall_type']
+/** The 409 codes that are a refusal of the save, not another save that came in between (D7). */
+const REFUSAL_CONFLICTS: readonly string[] = [ANSWERS_LOCKED, UNRESOLVED_PLACEHOLDER]
 
 /** What a failed save shows: the server's own reason, else a generic one (the page words it). */
 function failureOf(error: unknown): Extract<SaveStatus, { kind: 'failed' }> {
-  if (error instanceof FormsApiError && error.code === THEME_UNREADABLE) return { kind: 'failed', reason: THEME_UNREADABLE }
+  if (error instanceof FormsApiError && (error.code === THEME_UNREADABLE || error.code === UNRESOLVED_PLACEHOLDER)) {
+    return { kind: 'failed', reason: error.code }
+  }
+  if (error instanceof FormsApiError && RECALL_CODES.includes(error.code ?? '')) return { kind: 'failed', reason: RECALL_REFUSED }
   if (error instanceof FormsApiError && error.code === QUESTION_ID_REUSED) {
     return { kind: 'failed', reason: QUESTION_ID_REUSED, ...(error.questionId === null ? {} : { questionId: error.questionId }) }
   }
@@ -117,9 +132,10 @@ function retiredOf(meta: StoredFormMeta | null, baseline: FormV2 | null, form: F
   return new Set([...(meta?.retired_ids ?? []), ...(baseline?.questions ?? []).map((question) => question.id).filter((id) => !kept.has(id))])
 }
 
-/** A 409 that is a stale save (D7's banner), not the lock refusing an unnamed removal (`answers_locked`). */
+/** A 409 that is a stale save (D7's banner), not the lock refusing an unnamed removal (`answers_locked`) nor a live
+ * form's unresolved placeholder (`unresolved_placeholder`). */
 const isStaleSave = (error: unknown): error is FormsApiError =>
-  error instanceof FormsApiError && error.status === HTTP_CONFLICT && error.code !== ANSWERS_LOCKED
+  error instanceof FormsApiError && error.status === HTTP_CONFLICT && !REFUSAL_CONFLICTS.includes(error.code ?? '')
 
 function savedMessage(enabled: boolean | null, created: boolean, wasAi: boolean): Extract<SaveStatus, { kind: 'saved' }>['message'] {
   if (enabled === true) return 'published'

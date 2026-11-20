@@ -196,9 +196,9 @@ class MessageMetadata(BaseModel):
     )
     participant: ParticipantRef | None = None
     # A version 2 form response (docs/feedback-forms.md "Ingest"): its answers by question id (a text, a whole number,
-    # a consent, a choice {code} / {other} / {codes, other?}, contact details), its hidden values, the questions its
-    # logic path showed and the revision it answered.
-    form_answers: dict[str, bool | int | str | dict[str, str | list[str]]] | None = Field(
+    # a consent, a choice {code} / {other} / {codes, other?}, contact details, a matrix's {rows: {row: column}} since
+    # 7.61.00), its hidden values, the questions its logic path showed and the revision it answered.
+    form_answers: dict[str, bool | int | str | dict[str, str | list[str] | dict[str, str]]] | None = Field(
         None, max_length=MAX_FORM_ANSWERS)
     form_hidden: dict[str, str] | None = Field(None, max_length=MAX_FORM_HIDDEN)
     form_path: list[str] | None = Field(None, max_length=MAX_FORM_ANSWERS)
@@ -244,7 +244,8 @@ class MessageMetadata(BaseModel):
             if not key or len(key) > MAX_FORM_ID_CHARS:
                 raise ValueError(f"form_answers keys must be 1-{MAX_FORM_ID_CHARS} characters")
             parts = value.values() if isinstance(value, dict) else [value]
-            texts = [text for part in parts for text in (part if isinstance(part, list) else [part])]
+            texts = [text for part in parts
+                     for text in (part if isinstance(part, list) else part.values() if isinstance(part, dict) else [part])]
             if any(isinstance(text, str) and len(text) > MAX_FORM_ANSWER_CHARS for text in texts):
                 raise ValueError(f"form_answers value for '{key[:20]}' exceeds max length")
         return v

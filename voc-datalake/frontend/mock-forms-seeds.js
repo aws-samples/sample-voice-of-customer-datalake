@@ -5,6 +5,8 @@
 //   drop-off funnel in its results.
 // - fv2_nps: an English NPS form (the nps template), Off, with a few responses on every path.
 // - fv1_legacy: a v1 form whose language is '' (the visitor's browser): the builder migrates it (D15).
+// - fv2_workshop: a workshop's feedback (7.61.00), Live: a matrix of its phases, recall of the `event` hidden field and
+//   of an earlier rating, and a `customer` hidden field no link ever filled (the Results' and Share's link check).
 //
 // Responses are made by a seeded generator, so every mock start serves the same ones.
 
@@ -163,7 +165,35 @@ const LEGACY = {
   project_id: '', document_id: '', created_at: daysAgo(60), updated_at: daysAgo(30),
 };
 
-export const SEED_FORMS = [OLD_UI, NPS, LEGACY];
+const WORKSHOP = {
+  form_id: 'fv2_workshop', schema_version: 2, revision: 2, name: 'Workshop feedback', enabled: true,
+  language: 'en', languages: ['en'],
+  welcome: { enabled: true, title: en('How was {{event|the workshop}}?'), description: en('Four questions, about two minutes.') },
+  questions: [
+    {
+      id: 'q_phases', type: 'matrix', required: true, shuffle_rows: false, display: 'auto',
+      headline: en('How effective was each part of {{event|the workshop}}?'),
+      rows: options([['intro', en('Introduction')], ['demo', en('Live demo')], ['lab', en('Hands-on lab')], ['qa', en('Questions and answers')]]),
+      columns: [
+        { code: 'needs_improvement', label: en('Needs improvement'), score: 1 }, { code: 'satisfactory', label: en('Satisfactory'), score: 2 },
+        { code: 'very_effective', label: en('Very effective'), score: 3 }, { code: 'exceptional', label: en('Exceptional'), score: 4 },
+      ],
+    },
+    { id: 'q_overall', type: 'rating', required: true, scale: 'star', range: 5, headline: en('Overall, how would you rate it?') },
+    {
+      id: 'q_change', type: 'open_text', required: false, long: true, input_type: 'text',
+      headline: en('You rated it {{q_overall}} of 5. What should we change before the next one?'), placeholder: en('Your answer'),
+    },
+  ],
+  hidden_fields: [{ id: 'event', label: 'Event' }, { id: 'customer', label: 'Customer' }],
+  endings: [{ id: 'end_thanks', title: en('Thanks for joining {{event|us}}!'), description: en('We read every answer before the next session.') }],
+  settings: { test: { link_enabled: false, record: 'tag' } },
+  theme: { ...THEME }, category: '', subcategory: '', project_id: '', document_id: '', custom_fields: [],
+  dimension_defaults: {}, tags: ['workshop', 'q4'], form_type: 'standard',
+  test_token: 'tk_mock_workshop_51d0', updated_by: 'ana@example.com', created_at: daysAgo(6), updated_at: daysAgo(5),
+};
+
+export const SEED_FORMS = [OLD_UI, NPS, LEGACY, WORKSHOP];
 
 /** A small seeded generator (mulberry32), so the responses are the same on every start. */
 function generator(seed) {
@@ -244,13 +274,35 @@ function npsResponse(random, index) {
   };
 }
 
+const PHASES = ['intro', 'demo', 'lab', 'qa'];
+const SCALE = ['needs_improvement', 'satisfactory', 'very_effective', 'exceptional'];
+const CHANGES = ['More time for the lab, please.', 'Share the slides before the session.', '', 'A shorter introduction.'];
+
+/** A workshop response: every phase rated, the event from the link but for the embedded page's (it drops it). */
+function workshopResponse(random, index) {
+  const pickOf = (list) => list[Math.floor(random() * list.length)];
+  const rows = Object.fromEntries(PHASES.map((phase) => [phase, SCALE[Math.min(3, Math.floor(random() * 3) + (phase === 'lab' ? 1 : 0))]]));
+  const answers = { q_phases: { rows }, q_overall: 3 + Math.floor(random() * 3) };
+  const change = pickOf(CHANGES);
+  if (change !== '') answers.q_change = change;
+  const channel = index % 3 === 2 ? 'iframe' : 'link';
+  return {
+    response_id: `resp_ws_${String(index).padStart(3, '0')}`, submitted_at: daysAgo(5 - index * 0.15), form_revision: 2,
+    language: 'en', answers, hidden: channel === 'link' ? { event: index % 2 ? 'Lisbon workshop' : 'Madrid workshop' } : {},
+    ending_id: 'end_thanks', is_test: false, shown: ['q_phases', 'q_overall', 'q_change'], sentiment: null,
+    feedback_id: `fb_ws_${String(index)}`, channel,
+  };
+}
+
 /** Every seed form's stored responses, newest first. */
 export function seedResponses() {
   const oldRandom = generator(755);
   const npsRandom = generator(9);
   const old = Array.from({ length: 46 }, (_unused, index) => oldUiResponse(oldRandom, index, index % 8 === 1));
   const nps = Array.from({ length: 14 }, (_unused, index) => npsResponse(npsRandom, index));
-  return new Map([['fv2_old_ui', old], ['fv2_nps', nps]]);
+  const workshopRandom = generator(761);
+  const workshop = Array.from({ length: 26 }, (_unused, index) => workshopResponse(workshopRandom, index));
+  return new Map([['fv2_old_ui', old], ['fv2_nps', nps], ['fv2_workshop', workshop]]);
 }
 
 /** The seed forms' list stats (real responses only, as the list's card figures count them). */
@@ -260,6 +312,7 @@ export function seedStats() {
   return {
     fv2_old_ui: { total_submissions: real('fv2_old_ui'), avg_rating: null, rating_count: 0 },
     fv2_nps: { total_submissions: real('fv2_nps'), avg_rating: null, rating_count: 0 },
+    fv2_workshop: { total_submissions: real('fv2_workshop'), avg_rating: null, rating_count: 0 },
     fv1_legacy: { total_submissions: 12, avg_rating: 4.1, rating_count: 12 },
   };
 }

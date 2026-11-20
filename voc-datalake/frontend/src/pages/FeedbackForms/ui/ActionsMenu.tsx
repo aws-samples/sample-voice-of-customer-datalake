@@ -27,9 +27,11 @@ export interface MenuAction {
   readonly danger?: boolean
 }
 
-export default function ActionsMenu({ label, items, className }: Readonly<{
+export default function ActionsMenu({ label, items, className, icon: Icon = MoreHorizontal }: Readonly<{
   /** The trigger's name ("More actions for question 2"). */
   label: string
+  /** The trigger's icon (⋯ by default; recall's "Insert a value" is `{}`). */
+  icon?: LucideIcon
   /** The items; null entries are separators. */
   items: readonly (MenuAction | null)[]
   className?: string
@@ -49,7 +51,7 @@ export default function ActionsMenu({ label, items, className }: Readonly<{
         <button ref={buttonRef} type="button" className="icon-btn" aria-label={label} aria-haspopup="menu"
           aria-expanded={open} aria-controls={open ? menuId : undefined}
           onClick={toggle} onKeyDown={onButtonKeyDown}>
-          <MoreHorizontal size={16} aria-hidden="true" />
+          <Icon size={16} aria-hidden="true" />
         </button>
       </Tooltip>
       {open && createPortal(

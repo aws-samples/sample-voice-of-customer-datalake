@@ -6,9 +6,11 @@
  * Results: `{responses, test_responses, last_response_at, questions: [{id, type, shown, answered, skipped, not_shown,
  * earlier_version?, options?: {<code>: n}, other?, other_latest?: [{value, response_id, created_at, is_test,
  * sentiment?}], none?, removed_options?: {<code>: n}, histogram?: {<score>: n}, average?, count?, latest?: […],
- * accepted?, contacts?}], endings, removed_questions: [{id, answered}], funnel: {opened, left: {<qid>: n}, completed}
- * | null}` (`earlier_version`: answers to a revision where the question had another type or range, counted nowhere
- * else; `funnel` null under a language, ending or hidden-value filter).
+ * accepted?, contacts?, rows?: [{code, answered, counts, average}], scored?, removed_rows?, removed_columns?}],
+ * endings, removed_questions: [{id, answered}], funnel: {opened, left: {<qid>: n}, completed} | null, link_health}`
+ * (`earlier_version`: answers to a revision where the question had another type or range, counted nowhere else;
+ * `funnel` null under a language, ending or hidden-value filter; a matrix's rows, 7.61.00, kept as `matrix`;
+ * `link_health`, 7.61.00, as it is).
  *
  * Responses: rows `{response_id, is_test, created_at, revision, language, ending_id, answers, hidden, path,
  * sentiment?, feedback_id?}`.
@@ -48,6 +50,12 @@ function countsOf(question: Record<string, unknown>): Record<string, number> | u
   return counts
 }
 
+/** A matrix's figures (its rows' distributions and averages, what it no longer has), or undefined for another type. */
+function matrixOf(question: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!Array.isArray(question['rows'])) return undefined
+  return { rows: question['rows'], scored: question['scored'], removed_rows: question['removed_rows'] ?? {}, removed_columns: question['removed_columns'] ?? {} }
+}
+
 function aggregateOf(question: Record<string, unknown>): Record<string, unknown> {
   const latest = latestList.parse(question['latest'])
   const contacts = question['contacts']
@@ -62,6 +70,7 @@ function aggregateOf(question: Record<string, unknown>): Record<string, unknown>
     // (part A counts the people who left contact details, not their kinds)
     contact: contacts === undefined ? undefined : { left: contacts },
     latest: question['latest'] === undefined ? undefined : latest.map(asLatest),
+    matrix: matrixOf(question),
   }
 }
 
@@ -102,6 +111,7 @@ export function adaptResults(raw: unknown): unknown {
     removed_questions: raw['removed_questions'],
     removed_options: removedOptions,
     funnel: funnelOf(raw['funnel'], ids),
+    link_health: raw['link_health'],
   }
 }
 

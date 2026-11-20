@@ -24,6 +24,7 @@ import ChoiceRouting from './ChoiceRouting'
 import ChoiceSettings from './ChoiceSettings'
 import { FieldHeading, FieldProblems } from './fields'
 import { freshKey, optionJump, optionLabels, withNewOptions, withOptionLabel } from './choiceOps'
+import { followLabel, typedCode } from './freshCodes'
 
 type View = 'labels' | 'routing'
 
@@ -41,6 +42,7 @@ function useOptionEdits(question: ChoiceQuestion, focusAt: (index: number) => vo
   const { form } = draft
   const id = question.id
   const change = (fn: (q: ChoiceQuestion) => ChoiceQuestion) => draft.update((current) => updateChoice(current, id, fn))
+  const keyOf = (code: string) => freshKey(id, code)
   const markFresh = (codes: readonly string[]) => draft.setFreshCodes((keys) => new Set([...keys, ...codes.map((code) => freshKey(id, code))]))
   const insert = (at: number, labels: readonly string[]) => {
     const next = withNewOptions(question, at, labels, form.language)
@@ -51,22 +53,13 @@ function useOptionEdits(question: ChoiceQuestion, focusAt: (index: number) => vo
   return {
     change,
     insert,
-    label: (at: number, value: string) => {
-      const option = question.options[at]
-      if (option === undefined) return
-      const fresh = draft.freshCodes.has(freshKey(id, option.code))
-      const next = withOptionLabel(form, id, option.code, value, fresh)
+    label: (at: number, value: string) => followLabel(draft, keyOf, question.options[at]?.code, (code, fresh) => {
+      const next = withOptionLabel(form, id, code, value, fresh)
       draft.update(() => next.form)
-      if (next.code !== option.code) {
-        draft.setFreshCodes((keys) => new Set([...[...keys].filter((key) => key !== freshKey(id, option.code)), freshKey(id, next.code)]))
-      }
-    },
-    code: (at: number, value: string) => {
-      const option = question.options[at]
-      if (option === undefined) return
-      draft.update((current) => renameOptionCode(current, id, option.code, value))
-      draft.setFreshCodes((keys) => new Set([...keys].filter((key) => key !== freshKey(id, option.code))))
-    },
+      return next.code
+    }),
+    code: (at: number, value: string) => typedCode(draft, keyOf, question.options[at]?.code,
+      (code) => draft.update((current) => renameOptionCode(current, id, code, value))),
     remove: (at: number) => change((q) => ({ ...q, options: q.options.filter((_option, index) => index !== at) })),
     move: (from: number, to: number) => { change((q) => ({ ...q, options: moved(q.options, from, to) })); focusAt(to) },
     duplicate: (at: number) => {

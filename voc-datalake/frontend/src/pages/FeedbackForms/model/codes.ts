@@ -6,7 +6,7 @@
  * folded (ą→a, ł→l, ß→ss, é→e…), anything else `_`, repeats collapsed, trimmed to 40 characters; a clash gets `_2`,
  * `_3`. `other` and `none` are reserved for the Other and None rows (D3). The server makes the AI's codes the same way.
  * No hidden field is `__proto__`, `constructor` or `prototype` (7.58.00, shared/forms_v2.py `RESERVED_HIDDEN_IDS`):
- * the widget never fills those.
+ * the widget never fills those; nor is a matrix's row or column code (7.61.00: they key its answer).
  *
  * @module pages/FeedbackForms/model/codes
  */
@@ -26,6 +26,16 @@ export const isValidQuestionId = (id: string): boolean => QUESTION_ID.test(id)
 export const isValidEndingId = (id: string): boolean => ENDING_ID.test(id)
 export const isValidHiddenId = (id: string): boolean => HIDDEN_ID.test(id)
 export const isReservedHiddenId = (id: string): boolean => RESERVED_HIDDEN_IDS.includes(id)
+/** A matrix's row and column codes key its answer object, so they never name an object's own machinery either. */
+export const isReservedMatrixCode = (code: string): boolean => RESERVED_HIDDEN_IDS.includes(code)
+
+/** What is wrong with a code among `others` of its list ('' when nothing): a name `reserved` keeps, a malformed
+ * code, or one taken. One rule for options and a matrix's rows and columns, each with its own reserved names. */
+export function codeProblem(code: string, others: readonly string[], reserved: (code: string) => boolean): 'reserved' | 'invalid' | 'taken' | '' {
+  if (reserved(code)) return 'reserved'
+  if (!isValidCode(code)) return 'invalid'
+  return others.includes(code) ? 'taken' : ''
+}
 
 /** Letters NFD does not split into a base and a mark. */
 const SPECIAL_FOLDS: Readonly<Record<string, string>> = {

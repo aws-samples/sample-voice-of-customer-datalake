@@ -54,6 +54,11 @@ function questionCopy(question: Question, prefix: string, language: FormLanguage
     case 'rating': case 'nps': case 'csat': case 'ces': return { ...base, lower_label: text('lower'), upper_label: text('upper') }
     case 'consent': return { ...base, label: required('label') }
     case 'statement': case 'contact_info': return base
+    case 'matrix': return {
+      ...base,
+      rows: base.rows.map((row) => ({ ...row, label: text(`rows.${row.code}`) ?? {} })),
+      columns: base.columns.map((column) => ({ ...column, label: text(`columns.${column.code}`) ?? {} })),
+    }
   }
 }
 

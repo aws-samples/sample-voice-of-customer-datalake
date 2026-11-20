@@ -20,16 +20,17 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from shared import form_theme
+from shared import form_theme, forms_recall
 from shared.dynamo_values import plain  # fv2.plain: DynamoDB's Decimals back into ints and floats, at any depth
 
 # _v1_text(item, field): a version 1 text as the version 1 widget rendered it, trimmed; '' when absent or not a string.
 from shared.dynamo_values import trimmed_text as _v1_text
-from shared.exceptions import ValidationError
+from shared.exceptions import ConflictError, ValidationError
 
 __all__ = [
     'DEFINITION_FIELDS',
     'FORM_LOCALES',
+    'MATRIX',
     'SCHEMA_VERSION',
     'answer_shape',
     'definition_of',
@@ -43,6 +44,7 @@ __all__ = [
     'revision_of',
     'test_settings_of',
     'validate_definition',
+    'validate_placeholders',
     'validate_publishable',
     'validate_test_settings',
 ]
@@ -65,6 +67,11 @@ MAX_HIDDEN_FIELDS: Final = 20
 MAX_HIDDEN_VALUE_CHARS: Final = 200
 MAX_HIDDEN_LABEL_CHARS: Final = 64
 MAX_ENDINGS: Final = 5
+MAX_MATRIX_ROWS: Final = 20
+MIN_MATRIX_COLUMNS: Final = 2
+MAX_MATRIX_COLUMNS: Final = 10
+#: A matrix column's optional score is a whole number from -100 to 100 (the rows' averages in Results).
+MATRIX_SCORE_LIMIT: Final = 100
 MAX_OPEN_TEXT_CHARS: Final = 5000
 MAX_OTHER_CHARS: Final = 1000
 MAX_URL_CHARS: Final = 2048
@@ -88,6 +95,8 @@ ENDING_ID: Final = re.compile(r'end_[a-z0-9_]{1,40}')
 #: prototype), so the widget never fills them. A form stored before 7.58.00 with one reads as it is; only a save of
 #: its definition refuses it.
 RESERVED_HIDDEN_IDS: Final = frozenset({'__proto__', 'constructor', 'prototype'})
+#: Nor may a matrix's row or column code (7.61.00): its answer is an object keyed by row code.
+RESERVED_MATRIX_CODES: Final = RESERVED_HIDDEN_IDS
 
 #: Reserved choice codes: the "Other" answer and the exclusive "None of these" (multi only), each reserved only
 #: while the question enables it. A rule names them like any option code.
@@ -104,12 +113,15 @@ CES: Final = 'ces'
 STATEMENT: Final = 'statement'
 CONSENT: Final = 'consent'
 CONTACT: Final = 'contact_info'
-QUESTION_TYPES: Final = (OPEN_TEXT, SINGLE, MULTI, RATING, NPS, CSAT, CES, STATEMENT, CONSENT, CONTACT)
+#: Several rows rated on one scale, one choice per row (7.61.00): ``{rows: {<row code>: <column code>}}``.
+MATRIX: Final = 'matrix'
+QUESTION_TYPES: Final = (OPEN_TEXT, SINGLE, MULTI, RATING, NPS, CSAT, CES, STATEMENT, CONSENT, CONTACT, MATRIX)
 SELECT_TYPES: Final = frozenset({SINGLE, MULTI})
 SCALE_TYPES: Final = frozenset({RATING, NPS, CSAT, CES})
 INPUT_TYPES: Final = ('text', 'email', 'number', 'phone', 'url')
 SHUFFLES: Final = ('none', 'all', 'except_last')
 DISPLAYS: Final = ('auto', 'list', 'dropdown', 'chips')
+MATRIX_DISPLAYS: Final = ('auto', 'grid', 'stacked')
 RATING_SCALES: Final = ('star', 'number', 'smiley')
 RATING_RANGES: Final = (3, 4, 5, 7, 10)
 #: The fixed scales of the presets: NPS 0-10, CSAT a 1-5 smiley, CES 1-7.
@@ -127,6 +139,7 @@ OPS_BY_TYPE: Final[Mapping[str, frozenset[str]]] = {
     **{kind: _ANSWER_OPS | _COMPARE_OPS | {'equals', 'not_equals'} for kind in (RATING, NPS, CSAT, CES)},
     CONSENT: _ANSWER_OPS,
     CONTACT: _ANSWER_OPS,
+    MATRIX: _ANSWER_OPS,
     # A statement has no answer: it is always "submitted" once shown, so its rule is an unconditional jump.
     STATEMENT: frozenset({'submitted'}),
 }
@@ -144,6 +157,7 @@ _TYPE_KEYS: Final[Mapping[str, frozenset[str]]] = {
     STATEMENT: frozenset({'cta'}),
     CONSENT: frozenset({'label'}),
     CONTACT: frozenset({'fields'}),
+    MATRIX: frozenset({'rows', 'columns', 'shuffle_rows', 'display', 'min_rows'}),
 }
 
 # The localized default copy the migration writes where a version 1 form had none (template copy is the editor's).
@@ -465,23 +479,32 @@ def _category(value: object, where: str) -> dict[str, str] | None:
     return out
 
 
+def _coded(entry: object, at: str, allowed: set[str], seen: set[str], loc: _Locales,
+           reserved: frozenset[str] = frozenset()) -> tuple[Mapping[str, Any], dict[str, Any]]:
+    """An option's (or a matrix row's or column's) ``{code, label}``: the code unique in ``seen`` and not ``reserved``,
+    the label required. ``(the entry as sent, {code, label})``."""
+    item = _object(entry, at)
+    _closed(item, allowed, at)
+    code = item.get('code')
+    if isinstance(code, str) and code in reserved:
+        raise _fail(f'{at}.code "{code}" is a reserved name; choose another')
+    if not isinstance(code, str) or not OPTION_CODE.fullmatch(code):
+        raise _fail(f'{at}.code must match [a-z0-9_]{{1,40}}')
+    if code in seen:
+        raise _fail(f'{at}.code "{code}" is used twice')
+    seen.add(code)
+    return item, {'code': code, 'label': loc.text(item.get('label'), f'{at}.label', LABEL_CHARS, required=True)}
+
+
 def _options(source: Mapping[str, Any], where: str, loc: _Locales) -> list[dict[str, Any]]:
     raw = source.get('options')
     if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_OPTIONS:
         raise _fail(f'{where}.options must be a list of 1 to {MAX_OPTIONS} options')
-    options, seen = [], set()
+    options: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for index, entry in enumerate(raw):
         at = f'{where}.options[{index}]'
-        option = _object(entry, at)
-        _closed(option, {'code', 'label', 'category'}, at)
-        code = option.get('code')
-        if not isinstance(code, str) or not OPTION_CODE.fullmatch(code):
-            raise _fail(f'{at}.code must match [a-z0-9_]{{1,40}}')
-        if code in seen:
-            raise _fail(f'{at}.code "{code}" is used twice')
-        seen.add(code)
-        out: dict[str, Any] = {'code': code, 'label': loc.text(option.get('label'), f'{at}.label', LABEL_CHARS,
-                                                               required=True)}
+        option, out = _coded(entry, at, {'code', 'label', 'category'}, seen, loc)
         if (category := _category(option.get('category'), f'{at}.category')) is not None:
             out['category'] = category
         options.append(out)
@@ -584,6 +607,43 @@ def _contact(source: Mapping[str, Any], where: str, _loc: _Locales) -> dict[str,
     return {'fields': out}
 
 
+def _matrix_entries(source: Mapping[str, Any], key: str, where: str, loc: _Locales, bounds: tuple[int, int]
+                    ) -> list[dict[str, Any]]:
+    """A matrix's ``rows`` or ``columns``: ``bounds`` entries of ``{code, label}`` (a column also ``score?``), codes
+    unique and never a reserved name."""
+    raw = source.get(key)
+    low, high = bounds
+    if not isinstance(raw, list) or not low <= len(raw) <= high:
+        raise _fail(f'{where}.{key} must be a list of {low} to {high} entries')
+    allowed = {'code', 'label', 'score'} if key == 'columns' else {'code', 'label'}
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(raw):
+        at = f'{where}.{key}[{index}]'
+        item, out = _coded(entry, at, allowed, seen, loc, RESERVED_MATRIX_CODES)
+        if item.get('score') is not None:
+            out['score'] = _int(item['score'], f'{at}.score', -MATRIX_SCORE_LIMIT, MATRIX_SCORE_LIMIT)
+        entries.append(out)
+    return entries
+
+
+def _matrix(source: Mapping[str, Any], where: str, loc: _Locales) -> dict[str, Any]:
+    """A matrix (7.61.00): 1-20 rows, 2-10 columns, ``shuffle_rows``, ``display``, and ``min_rows`` on an optional
+    one only (a required matrix asks for every row)."""
+    rows = _matrix_entries(source, 'rows', where, loc, (1, MAX_MATRIX_ROWS))
+    out: dict[str, Any] = {
+        'rows': rows,
+        'columns': _matrix_entries(source, 'columns', where, loc, (MIN_MATRIX_COLUMNS, MAX_MATRIX_COLUMNS)),
+        'shuffle_rows': _bool(source, 'shuffle_rows', where),
+        'display': _choice(source, 'display', where, MATRIX_DISPLAYS, 'auto'),
+    }
+    if source.get('min_rows') is not None:
+        if source.get('required') is True:
+            raise _fail(f'{where}.min_rows is for an optional matrix (a required one needs every row)')
+        out['min_rows'] = _int(source['min_rows'], f'{where}.min_rows', 1, len(rows))
+    return out
+
+
 _TYPE_VALIDATORS: Final[Mapping[str, Callable[[Mapping[str, Any], str, _Locales], dict[str, Any]]]] = {
     OPEN_TEXT: _open_text,
     SINGLE: lambda source, where, loc: _select(source, where, loc, multi=False),
@@ -595,6 +655,7 @@ _TYPE_VALIDATORS: Final[Mapping[str, Callable[[Mapping[str, Any], str, _Locales]
     STATEMENT: _statement,
     CONSENT: _consent,
     CONTACT: _contact,
+    MATRIX: _matrix,
 }
 
 
@@ -793,6 +854,8 @@ def validate_definition(definition: Mapping[str, Any], *, retired: Sequence[str]
     out = {'language': loc.primary, 'languages': list(loc.languages), 'welcome': _welcome(definition.get('welcome'), loc),
            'questions': questions, 'hidden_fields': _hidden_fields(definition.get('hidden_fields')),
            'endings': endings}
+    # Each placeholder of a recall text names a hidden field or an earlier recallable question (shared/forms_recall.py).
+    forms_recall.check_recall(out)
     if len(json.dumps(out, ensure_ascii=False).encode()) > MAX_DEFINITION_BYTES:
         raise _fail(f'the form definition must be at most {MAX_DEFINITION_BYTES // 1000} KB')
     return out
@@ -820,8 +883,11 @@ def retired_ids(previous: Mapping[str, Any], current: Mapping[str, Any], already
 # ask it another way, remove it and add a new question). A named removal is kept as the builder keeps it (the question
 # id retires for good, ``retired_ids``; the answers stay in Results under the removed question or option).
 
-#: ``removes`` on a save: what the save takes away from an answered form, on purpose.
-_REMOVES_KEYS = frozenset({'questions', 'options'})
+#: ``removes`` on a save: what the save takes away from an answered form, on purpose (``rows`` and ``columns``: a
+#: matrix's, since 7.61.00, ``{question_id: [codes]}`` like ``options``).
+_REMOVES_KEYS = frozenset({'questions', 'options', 'rows', 'columns'})
+#: The per-question code lists of ``removes``, and each one's limit.
+_REMOVED_CODES: Final = (('options', MAX_OPTIONS), ('rows', MAX_MATRIX_ROWS), ('columns', MAX_MATRIX_COLUMNS))
 
 
 def _strings(value: object, where: str, limit: int) -> set[str]:
@@ -832,22 +898,27 @@ def _strings(value: object, where: str, limit: int) -> set[str]:
     return set(ids)
 
 
+def _removed_codes(source: Mapping[str, Any], key: str, limit: int) -> dict[str, set[str]]:
+    codes = _object(source.get(key, {}), f'removes.{key}')
+    if len(codes) > MAX_QUESTIONS:
+        raise _fail(f'removes.{key} names at most {MAX_QUESTIONS} questions')
+    return {str(qid): _strings(named, f'removes.{key}.{str(qid)[:40]}', limit) for qid, named in codes.items()}
+
+
 def validate_removes(value: object) -> dict[str, Any]:
-    """``removes`` from a save, as ``{questions: set, options: {question_id: set}}`` (absent or null: nothing)."""
+    """``removes`` from a save, as ``{questions: set, options: {question_id: set}, rows: {…}, columns: {…}}``
+    (absent or null: nothing)."""
     if value is None:
-        return {'questions': set(), 'options': {}}
+        return {'questions': set(), **{key: {} for key, _limit in _REMOVED_CODES}}
     source = _object(value, 'removes')
     _closed(source, _REMOVES_KEYS, 'removes')
-    options = _object(source.get('options', {}), 'removes.options')
-    if len(options) > MAX_QUESTIONS:
-        raise _fail(f'removes.options names at most {MAX_QUESTIONS} questions')
     return {'questions': _strings(source.get('questions', []), 'removes.questions', MAX_QUESTIONS),
-            'options': {str(qid): _strings(codes, f'removes.options.{str(qid)[:40]}', MAX_OPTIONS)
-                        for qid, codes in options.items()}}
+            **{key: _removed_codes(source, key, limit) for key, limit in _REMOVED_CODES}}
 
 
-def _option_codes(question: Mapping[str, Any]) -> list[str]:
-    options = question.get('options')
+def _option_codes(question: Mapping[str, Any], key: str = 'options') -> list[str]:
+    """The codes of a question's ``options`` (or a matrix's ``rows`` / ``columns``), in order."""
+    options = question.get(key)
     return [str(option['code']) for option in options or [] if isinstance(option, Mapping) and 'code' in option] \
         if isinstance(options, list) else []
 
@@ -855,11 +926,12 @@ def _option_codes(question: Mapping[str, Any]) -> list[str]:
 def unnamed_removals(previous: Mapping[str, Any], proposed: Mapping[str, Any],
                      removes: Mapping[str, Any]) -> dict[str, Any]:
     """What ``proposed`` drops from ``previous`` without ``removes`` naming it: ``{questions: [ids], options:
-    {question_id: [codes]}}``, each part present only when it is not empty (``{}``: the save may go on)."""
+    {question_id: [codes]}, rows: {…}, columns: {…}}`` (a matrix's row and column codes lock like option codes), each
+    part present only when it is not empty (``{}``: the save may go on)."""
     kept = {question.get('id'): question for question in proposed.get('questions') or [] if isinstance(question, Mapping)}
-    named_questions, named_options = removes.get('questions') or set(), removes.get('options') or {}
+    named_questions = removes.get('questions') or set()
     questions: list[str] = []
-    options: dict[str, list[str]] = {}
+    codes: dict[str, dict[str, list[str]]] = {key: {} for key, _limit in _REMOVED_CODES}
     for question in previous.get('questions') or []:
         qid = question.get('id') if isinstance(question, Mapping) else None
         if not isinstance(qid, str):
@@ -868,12 +940,12 @@ def unnamed_removals(previous: Mapping[str, Any], proposed: Mapping[str, Any],
             if qid not in named_questions:
                 questions.append(qid)
             continue
-        still = set(_option_codes(kept[qid]))
-        dropped = [code for code in _option_codes(question) if code not in still
-                   and code not in named_options.get(qid, set())]
-        if dropped:
-            options[qid] = dropped
-    return {**({'questions': questions} if questions else {}), **({'options': options} if options else {})}
+        for key, _limit in _REMOVED_CODES:
+            still, named = set(_option_codes(kept[qid], key)), (removes.get(key) or {}).get(qid, set())
+            dropped = [code for code in _option_codes(question, key) if code not in still and code not in named]
+            if dropped:
+                codes[key][qid] = dropped
+    return {**({'questions': questions} if questions else {}), **{key: found for key, found in codes.items() if found}}
 
 
 def reshaped_questions(previous: Mapping[str, Any], proposed: Mapping[str, Any]) -> list[str]:
@@ -950,6 +1022,24 @@ def validate_publishable(theme: object, *, live: bool, was_live: bool = False, t
         f"The text on the {first['palette']} background is {first['ratio']:.1f}:1, under 3:1: respondents could not "
         'read it. Choose a text or background colour with more contrast to publish the form.',
         code=THEME_UNREADABLE, details={'palettes': problems, 'minimum': form_theme.TEXT_PUBLISH_MINIMUM})
+
+#: The 409 code of a write that would leave a form live whose texts show a placeholder as written (7.61.00).
+UNRESOLVED_PLACEHOLDER: Final = 'unresolved_placeholder'
+
+
+def validate_placeholders(definition: Mapping[str, Any], *, live: bool) -> None:
+    """The publish guard of a write whose form ends ``live``: a 409 ``unresolved_placeholder`` ``{texts: [{where,
+    placeholder}]}`` while any text respondents can be shown holds a ``{{…}}`` they would see as written
+    (shared/forms_recall.py ``unresolved_placeholders``). A form that stays, or goes, Off is always saved."""
+    texts = forms_recall.unresolved_placeholders(definition) if live else []
+    if texts:
+        first = texts[0]
+        raise ConflictError(
+            f"{first['where']} shows {first['placeholder']} as written: a live form's texts may recall only a hidden "
+            'field or an earlier score or single choice, and only in a welcome, headline, subheader or ending. Fix '
+            'it to publish the form.',
+            code=UNRESOLVED_PLACEHOLDER, details={'texts': texts})
+
 
 # ── The public projection ────────────────────────────────────────────────────────────────────────────────────────
 

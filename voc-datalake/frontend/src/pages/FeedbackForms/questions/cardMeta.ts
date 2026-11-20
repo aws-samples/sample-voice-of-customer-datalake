@@ -40,6 +40,7 @@ function ownMeta(t: TFunction<'feedbackForms'>, question: Question): string[] {
     case 'rating': case 'nps': case 'csat': case 'ces': return scaleMeta(t, question)
     case 'statement': case 'consent': return otherMeta(t, question)
     case 'contact_info': return CONTACT_FIELDS.filter((field) => question.fields[field].show).map((field) => t(`contact.fields.${field}`))
+    case 'matrix': return [t('questionList.meta.rows', { count: question.rows.length }), t('questionList.meta.columns', { count: question.columns.length })]
   }
 }
 

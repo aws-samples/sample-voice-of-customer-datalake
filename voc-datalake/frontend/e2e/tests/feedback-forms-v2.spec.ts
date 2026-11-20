@@ -640,8 +640,10 @@ test.describe('Feedback Forms v2: the owner\'s test plan', () => {
       await expect(main(page).getByRole('table').getByRole('row')).toHaveCount(4)
       await shot(page, 'results-responses')
 
+      // 7.61.00: Download is the familiar layout; the two header rows (labels, then ids) are the detailed one's.
+      await main(page).getByRole('button', { name: 'More download options' }).click()
       const download = page.waitForEvent('download')
-      await main(page).getByRole('button', { name: 'Export CSV' }).click()
+      await page.getByRole('menuitem', { name: 'Detailed CSV (for scripts)' }).click()
       const file = await (await download).path()
       const lines = fs.readFileSync(file, 'utf8').replace(/^﻿/, '').split(/\r?\n/).filter((l) => l !== '')
       const [labels = [], ids = []] = lines.slice(0, 2).map(csvCells)

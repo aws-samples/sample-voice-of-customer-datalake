@@ -53,7 +53,11 @@
       "other": "Sonstiges"
     },
     "ending": "Abschluss",
-    "welcome": "Begrüßungskarte"
+    "welcome": "Begrüßungskarte",
+    "matrix": {
+      "name": "Matrix",
+      "hint": "Mehrere Punkte auf einer Skala bewerten"
+    }
   },
   "problems": {
     "count_one": "{{count, number}} Problem",
@@ -132,7 +136,22 @@
     "skippedOnRequired": "Diese Frage ist erforderlich und wird daher nie übersprungen: Diese Regel greift nie.",
     "ruleNeverRuns": "Diese Regel greift nie: Regel {{number}} trifft bereits auf jede Antwort zu, auf die sie zuträfe.",
     "whereAnyway": "Diese Regel bewirkt nichts: Alle, die sie erreichen, gehen ohnehin zu Frage {{number}}.",
-    "whereAnywayEnding": "Diese Regel bewirkt nichts: Alle, die sie erreichen, sehen ohnehin den Abschluss „{{title}}“."
+    "whereAnywayEnding": "Diese Regel bewirkt nichts: Alle, die sie erreichen, sehen ohnehin den Abschluss „{{title}}“.",
+    "matrixNoRows": "Fügen Sie mindestens eine Zeile hinzu.",
+    "matrixTooManyRows": "Eine Matrix hat höchstens {{max, number}} Zeilen.",
+    "matrixFewColumns": "Eine Matrix braucht mindestens {{min, number}} Spalten.",
+    "matrixTooManyColumns": "Eine Matrix hat höchstens {{max, number}} Spalten.",
+    "matrixRowEmpty": "Zeile {{number}} hat keinen Text.",
+    "matrixColumnEmpty": "Spalte {{number}} hat keinen Text.",
+    "matrixCodeInvalid": "Ein Code besteht aus Kleinbuchstaben, Ziffern und _, bis zu 40 Zeichen.",
+    "matrixCodeTwice": "Zwei Zeilen oder Spalten haben den Code {{code}}.",
+    "matrixCodeReserved": "{{code}} ist ein reservierter Name; wählen Sie einen anderen.",
+    "matrixScoreRange": "Der Wert von Spalte {{number}} muss eine ganze Zahl von -{{max, number}} bis {{max, number}} sein.",
+    "matrixMinRows": "Die Zahl der zu beantwortenden Zeilen liegt zwischen 1 und der Zahl der Zeilen ({{count, number}}).",
+    "recallUnknown": "{{placeholder}} nennt kein verstecktes Feld und keine Frage dieses Formulars ({{language}}).",
+    "recallNotBefore": "{{placeholder}} nennt eine spätere Frage: Einfügen lässt sich nur die Antwort einer früheren Frage ({{language}}).",
+    "recallType": "{{placeholder}} nennt eine Frage, deren Antwort nie angezeigt wird: Nur eine Bewertung oder eine Einfachauswahl lässt sich einfügen ({{language}}).",
+    "recallNotHere": "{{placeholder}} würde so angezeigt, wie es geschrieben ist: Werte füllen nur einen Titel, eine Frage, eine Beschreibung oder einen Abschluss. Entfernen Sie es, um zu veröffentlichen ({{language}})."
   },
   "logic": {
     "ops": {
@@ -237,7 +256,9 @@
       "update": "Live-Formular aktualisieren",
       "failed": "Speichern fehlgeschlagen: {{reason}}.",
       "failedGeneric": "Speichern fehlgeschlagen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "placeholderRefused": "Speichern nicht möglich: Ein aktives Formular darf keinen Platzhalter {…} so anzeigen, wie er geschrieben ist. Korrigieren Sie die Texte unter Probleme oder speichern Sie es deaktiviert.",
+      "recallRefused": "Speichern nicht möglich: Ein Text fügt einen Wert ein, den er an dieser Stelle nicht zeigen kann. Korrigieren Sie ihn unter Probleme."
     },
     "published": "Live. Befragte sehen ab jetzt diese Version.",
     "firstSave": "Gespeichert. Dieses Formular ist aus: Sein Link zeigt „Feedback-Formular nicht verfügbar.“, bis Sie es veröffentlichen.",
@@ -1234,7 +1255,11 @@
         "description": "Beschreibung",
         "button": "Schaltfläche",
         "enabled": "Angezeigt",
-        "logic": "Logik"
+        "logic": "Logik",
+        "rows": "Zeilen",
+        "columns": "Spalten",
+        "shuffle_rows": "Zeilen mischen",
+        "min_rows": "Zu beantwortende Zeilen"
       },
       "values": {
         "yes": "Ja",
@@ -1307,7 +1332,11 @@
         "smiley": "{{range}} Gesichter"
       },
       "textOnly": "Nur Text",
-      "linkButton": "Mit Link-Schaltfläche"
+      "linkButton": "Mit Link-Schaltfläche",
+      "rows_one": "{{count, number}} Zeile",
+      "rows_other": "{{count, number}} Zeilen",
+      "columns_one": "{{count, number}} Spalte",
+      "columns_other": "{{count, number}} Spalten"
     }
   },
   "question": {
@@ -1727,7 +1756,9 @@
       "welcomeButton": "Schaltflächentext",
       "endingTitle": "Titel",
       "endingDescription": "Beschreibung",
-      "endingButton": "Schaltflächentext"
+      "endingButton": "Schaltflächentext",
+      "matrixRow": "Zeile {{number}}",
+      "matrixColumn": "Spalte {{number}}"
     },
     "confirm": {
       "text": "Dieses Formular wurde erstellt, bevor Formulare eine Sprache hatten.",
@@ -1809,14 +1840,20 @@
     "saveFirstTitle": "Noch keine Links",
     "saveFirst": "Speichern Sie das Formular, um seine Links zu erhalten.",
     "showProblems": "Probleme anzeigen",
-    "save": "Speichern"
+    "save": "Speichern",
+    "toHiddenFields": "Versteckte Felder öffnen",
+    "values": {
+      "title": "Werte in diesem Link",
+      "hint": "Optional: Jeder Wert kommt in den Link, den iframe und die Skript-Einbettung.",
+      "warnings": "Versteckte Felder, die dieser Link leer lässt",
+      "leavesEmpty": "Dieser Link lässt {{id}} leer: Befragte sehen den Text ohne den Wert."
+    }
   },
   "results": {
     "summary": "Übersicht",
     "responsesView": "Einsendungen",
     "view": "Ergebnisansicht",
     "loading": "Ergebnisse werden geladen…",
-    "csv": "CSV exportieren",
     "csvFailed": "Die Einsendungen konnten nicht exportiert werden.",
     "includeTest": "Testeinsendungen einbeziehen",
     "including_one": "Einschließlich {{formatted}} Testeinsendung. Diese Zahlen sind nicht Ihre echten Ergebnisse.",
@@ -1954,7 +1991,32 @@
       "next": "Nächste"
     },
     "contactLeft_one": "{{count, number}} Person hat Kontaktdaten hinterlassen",
-    "contactLeft_other": "{{count, number}} Personen haben Kontaktdaten hinterlassen"
+    "contactLeft_other": "{{count, number}} Personen haben Kontaktdaten hinterlassen",
+    "download": "Herunterladen",
+    "downloadOptions": "Weitere Download-Optionen",
+    "downloadDetailed": "Ausführliche CSV (für Skripte)",
+    "downloadWithIds": "CSV mit einer Zeile mit IDs",
+    "matrix": {
+      "rowsLabel": "Antworten pro Zeile",
+      "columnsLabel": "Antworten zu {{row}}",
+      "rated_one": "Bewertet von {{formatted}}",
+      "rated_other": "Bewertet von {{formatted}}",
+      "average": "Durchschnitt {{average}} (Werte von {{low}} bis {{high}})",
+      "removedLabel": "Antworten zu entfernten Zeilen und Spalten",
+      "removedRow_one": "Zeile {{code}} (entfernt): {{formatted}} Antwort",
+      "removedRow_other": "Zeile {{code}} (entfernt): {{formatted}} Antworten",
+      "removedColumn_one": "Spalte {{code}} (entfernt): {{formatted}} Antwort",
+      "removedColumn_other": "Spalte {{code}} (entfernt): {{formatted}} Antworten"
+    },
+    "linkHealth": {
+      "title": "Prüfen Sie Ihre Links",
+      "never_filled": "{{filled, number}} von {{total, number}} Antworten hatten {{id}}: Prüfen Sie Ihren Link.",
+      "mostly_missing": "Nur {{filled, number}} von {{total, number}} Antworten hatten {{id}}: Prüfen Sie Ihren Link.",
+      "hint": "Ein Link füllt es mit {{param}}.",
+      "from": "Fehlt bei: {{channels}}.",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "Unbekannt"
+    }
   },
   "theme": {
     "presets": {
@@ -2092,5 +2154,62 @@
       "failed": "Das Formular konnte nicht gelöscht werden. Versuchen Sie es gleich noch einmal.",
       "unnamed": "dieses Formular"
     }
+  },
+  "matrix": {
+    "rows": "Zeilen",
+    "columns": "Spalten (die Skala)",
+    "rowN": "Zeile {{number}}",
+    "columnN": "Spalte {{number}}",
+    "codeOf": {
+      "row": "Code von Zeile {{number}}",
+      "column": "Code von Spalte {{number}}"
+    },
+    "codeLocked": "Antworten werden unter diesem Code gespeichert, daher kann er sich nicht mehr ändern, sobald es Antworten gibt. Benennen Sie stattdessen die Beschriftung um.",
+    "score": "Wert",
+    "scoreOf": "Wert von Spalte {{number}}",
+    "scoreHint": "Werte sind optionale ganze Zahlen von -100 bis 100: Die Ergebnisse bilden je Zeile den Durchschnitt.",
+    "menu": {
+      "row": "Weitere Aktionen für Zeile {{number}}",
+      "column": "Weitere Aktionen für Spalte {{number}}"
+    },
+    "last": {
+      "rows": "Eine Matrix braucht mindestens eine Zeile.",
+      "columns": "Eine Matrix braucht mindestens zwei Spalten."
+    },
+    "add": {
+      "rows": "Zeile hinzufügen",
+      "columns": "Spalte hinzufügen"
+    },
+    "shuffleRows": "Zeilen mischen",
+    "shuffleRowsHint": "Jede befragte Person sieht die Zeilen in eigener Reihenfolge.",
+    "display": {
+      "auto": "Automatisch",
+      "grid": "Raster",
+      "stacked": "Gestapelt"
+    },
+    "displayHint": {
+      "auto": "Ein Raster auf breiten Bildschirmen (bis 7 Spalten), auf dem Telefon jede Zeile für sich.",
+      "grid": "Immer ein Raster aus Zeilen und Spalten.",
+      "stacked": "Immer jede Zeile für sich, mit ihren Antworten darunter."
+    },
+    "minRows": "Zu beantwortende Zeilen, mindestens",
+    "minRowsHint": "Sobald eine Zeile beantwortet ist. Leer: beliebig viele.",
+    "requiredHint": "Jede Zeile muss beantwortet werden.",
+    "scale": {
+      "poor": "Schlecht",
+      "fair": "Mittel",
+      "good": "Gut",
+      "excellent": "Ausgezeichnet"
+    }
+  },
+  "recall": {
+    "insert": "Wert einfügen",
+    "hiddenItem": "Verstecktes Feld · {{name}}",
+    "questionItem": "F{{number}} · {{headline}}",
+    "nothing": "Hier gibt es nichts einzufügen",
+    "nothingHint": "Fügen Sie ein verstecktes Feld hinzu, oder vor diesem Text eine Bewertungs- oder Einfachauswahlfrage.",
+    "preview": "Befragte sehen: {{text}}",
+    "previewMissing": "Ohne Wert: {{text}}",
+    "previewEmpty": "(nichts)"
   }
 }

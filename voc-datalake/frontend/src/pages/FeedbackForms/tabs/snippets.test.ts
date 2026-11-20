@@ -5,7 +5,7 @@
  * while the endpoint cannot address the form.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { IFRAME_MIN_HEIGHT, WIDGET_PATH, iframeSnippet, scriptEmbedSnippet, sdkSnippet, widgetScriptUrl } from './snippets'
+import { IFRAME_MIN_HEIGHT, WIDGET_PATH, formLink, iframeSnippet, scriptEmbedSnippet, sdkSnippet, widgetScriptUrl } from './snippets'
 import type { SnippetInput } from './snippets'
 
 const INPUT: SnippetInput = {
@@ -106,6 +106,13 @@ describe('snippets', () => {
     post({ type: 'other', height: 2000 }, own, 'https://api.example.com')
     post({ type: 'voc-form-height', height: 'tall' }, own, 'https://api.example.com')
     expect(frame.style.height).toBe(`${String(IFRAME_MIN_HEIGHT)}px`)
+  })
+
+  it("puts the link builder's values into the link and the iframe, a blank one left out, never into the placeholders' link", () => {
+    const valued: SnippetInput = { ...INPUT, hidden: [{ id: 'event' }, { id: 'user_id' }], values: { event: ' Łódź 2026 ', user_id: '  ' } }
+    expect(formLink(valued, false)).toBe('https://api.example.com/v1/feedback-forms/f_test/iframe?hf_event=%C5%81%C3%B3d%C5%BA%202026')
+    expect(iframeSnippet(valued)).toContain('src="https://api.example.com/v1/feedback-forms/f_test/iframe?hf_event=%C5%81%C3%B3d%C5%BA%202026"')
+    expect(formLink(valued, true)).toBe('https://api.example.com/v1/feedback-forms/f_test/iframe?hf_event={EVENT}&hf_user_id={USER_ID}&lang=pl')
   })
 
   it('gives nothing while the endpoint cannot address the form', () => {

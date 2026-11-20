@@ -38,6 +38,12 @@ export const feedbackFormsKey = () => ['feedback-forms'] as const
  */
 export const feedbackFormsWithStatsKey = () => [...feedbackFormsKey(), 'with-stats'] as const
 
+/**
+ * One form's Results under a view's filters — `feedbackFormsV2Api.getResults`, read by Results › Summary and the Share
+ * tab's link checks (7.61.00). Under the list's prefix; `filters` is the API's `ResultsFilters` (no import here).
+ */
+export const formResultsKey = <Filters>(formId: string, filters: Filters) => [...feedbackFormsKey(), formId, 'results', filters] as const
+
 /** One form's submission count and average rating — `api.getFeedbackFormStats`. */
 export const formStatsKey = (formId: string) => ['form-stats', formId] as const
 

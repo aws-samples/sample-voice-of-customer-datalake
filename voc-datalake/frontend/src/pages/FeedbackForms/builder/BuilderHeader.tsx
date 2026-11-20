@@ -21,7 +21,7 @@ import { FORMS_LIST_PATH } from './builderPaths'
 import { useBuilderUi } from './builderUi'
 import { goToProblem } from './problemText'
 import type { FormProblem } from '../model/validateForm'
-import { QUESTION_ID_REUSED, THEME_UNREADABLE } from './useFormDraft'
+import { QUESTION_ID_REUSED, RECALL_REFUSED, THEME_UNREADABLE, UNRESOLVED_PLACEHOLDER } from './useFormDraft'
 import ProblemsPopover from './ProblemsPopover'
 import SaveButtons from './SaveButtons'
 import FormMenu from './FormMenu'
@@ -83,14 +83,16 @@ function savedText(t: TFunction<'feedbackForms'>, message: Extract<FormDraft['st
 }
 
 /**
- * A failed save in words: the server's reason, its refusal of an unreadable theme or of a removed question's id taken
- * again (with the id), or the generic message.
+ * A failed save in words: the server's reason, its refusal of an unreadable theme, of a removed question's id taken
+ * again (with the id), of a recall it cannot fill or of a live form's unresolved placeholder, or the generic message.
  */
 function failedText(t: TFunction<'feedbackForms'>, failed: Extract<FormDraft['status'], { kind: 'failed' }>): string {
   const { reason } = failed
   if (reason === 'save failed') return t('builder.save.failedGeneric')
   if (reason === THEME_UNREADABLE) return t('builder.save.themeRefused')
   if (reason === QUESTION_ID_REUSED) return t('builder.save.questionIdReused', { id: failed.questionId ?? '' })
+  if (reason === UNRESOLVED_PLACEHOLDER) return t('builder.save.placeholderRefused')
+  if (reason === RECALL_REFUSED) return t('builder.save.recallRefused')
   return t('builder.save.failed', { reason })
 }
 

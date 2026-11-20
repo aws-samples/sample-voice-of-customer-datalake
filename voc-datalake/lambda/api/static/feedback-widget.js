@@ -40,6 +40,14 @@
  * of shared/form_theme.py: text under 3:1 on its background is replaced by one that reads, the option edge is raised
  * until it holds 3:1, and a primary under 3:1 gets its focus ring and selected edges drawn in the text colour.
  *
+ * A matrix (7.61.00) rates several rows on one scale, one choice per row: each row its own radio group, a grid where
+ * the form is at least 600 px wide (with at most 7 columns, `display: 'auto'`) and stacked rows on a phone; its answer
+ * is `{rows: {<row code>: <column code>}}`. Recall (7.61.00): `{{id}}` or `{{id|fallback}}` in the welcome's title or
+ * description, a question's headline or subheader, or an ending's title or description shows a declared hidden
+ * field's value, or the answer of an earlier question on the respondent's path (a score's number, a single choice's
+ * label), else the fallback, else nothing with the text tidied around the gap (`recallText`, the rules of
+ * schemas/form-recall-cases.json), always as text. Anywhere else a placeholder is shown as written.
+ *
  * The editor's preview: `init({ container, language, preview: { config, seed, scheme } })` renders the given draft
  * and never fetches, submits or counts anything. `seed` (a number) makes Shuffle's order the same for the whole
  * preview session, Restart included; `scheme` ('light' | 'dark') shows that palette whatever the theme and the
@@ -201,6 +209,7 @@
       invalidEmail: 'Enter a valid email address.', invalidNumber: 'Enter a number.',
       invalidPhone: 'Enter a valid phone number.', invalidUrl: 'Enter a valid web address.',
       consentRequired: 'Tick the box to continue.',
+      matrixEveryRow: 'Answer every row to continue.', matrixAtLeast: 'Answer at least {n} rows to continue.',
       name: 'Name', email: 'Email', phone: 'Phone', company: 'Company',
       outOf: '{n} of {max}',
       faces3: ['Bad', 'Okay', 'Good'], faces4: ['Very bad', 'Bad', 'Good', 'Very good'],
@@ -231,6 +240,8 @@
       invalidEmail: 'Introduzca una dirección de correo electrónico válida.', invalidNumber: 'Introduzca un número.',
       invalidPhone: 'Introduzca un número de teléfono válido.', invalidUrl: 'Introduzca una dirección web válida.',
       consentRequired: 'Marque la casilla para continuar.',
+      matrixEveryRow: 'Responda todas las filas para continuar.',
+      matrixAtLeast: 'Responda al menos {n} filas para continuar.',
       name: 'Nombre', email: 'Correo electrónico', phone: 'Teléfono', company: 'Empresa',
       outOf: '{n} de {max}',
       faces3: ['Mal', 'Normal', 'Bien'], faces4: ['Muy mal', 'Mal', 'Bien', 'Muy bien'],
@@ -263,6 +274,8 @@
       invalidEmail: 'Saisissez une adresse e-mail valide.', invalidNumber: 'Saisissez un nombre.',
       invalidPhone: 'Saisissez un numéro de téléphone valide.', invalidUrl: 'Saisissez une adresse web valide.',
       consentRequired: 'Cochez la case pour continuer.',
+      matrixEveryRow: 'Répondez à chaque ligne pour continuer.',
+      matrixAtLeast: 'Répondez à au moins {n} lignes pour continuer.',
       name: 'Nom', email: 'E-mail', phone: 'Téléphone', company: 'Entreprise',
       outOf: '{n} sur {max}',
       faces3: ['Mauvais', 'Moyen', 'Bien'], faces4: ['Très mauvais', 'Mauvais', 'Bien', 'Très bien'],
@@ -297,6 +310,8 @@
       invalidEmail: 'Geben Sie eine gültige E-Mail-Adresse ein.', invalidNumber: 'Geben Sie eine Zahl ein.',
       invalidPhone: 'Geben Sie eine gültige Telefonnummer ein.', invalidUrl: 'Geben Sie eine gültige Webadresse ein.',
       consentRequired: 'Setzen Sie das Häkchen, um fortzufahren.',
+      matrixEveryRow: 'Beantworten Sie jede Zeile, um fortzufahren.',
+      matrixAtLeast: 'Beantworten Sie mindestens {n} Zeilen, um fortzufahren.',
       name: 'Name', email: 'E-Mail', phone: 'Telefon', company: 'Unternehmen',
       outOf: '{n} von {max}',
       faces3: ['Schlecht', 'Mittel', 'Gut'], faces4: ['Sehr schlecht', 'Schlecht', 'Gut', 'Sehr gut'],
@@ -328,6 +343,8 @@
       invalidEmail: 'Informe um endereço de e-mail válido.', invalidNumber: 'Informe um número.',
       invalidPhone: 'Informe um número de telefone válido.', invalidUrl: 'Informe um endereço web válido.',
       consentRequired: 'Marque a caixa para continuar.',
+      matrixEveryRow: 'Responda a todas as linhas para continuar.',
+      matrixAtLeast: 'Responda a pelo menos {n} linhas para continuar.',
       name: 'Nome', email: 'E-mail', phone: 'Telefone', company: 'Empresa',
       outOf: '{n} de {max}',
       faces3: ['Ruim', 'Razoável', 'Bom'], faces4: ['Muito ruim', 'Ruim', 'Bom', 'Muito bom'],
@@ -359,6 +376,7 @@
       invalidEmail: '有効なメールアドレスを入力してください。', invalidNumber: '数値を入力してください。',
       invalidPhone: '有効な電話番号を入力してください。', invalidUrl: '有効な Web アドレスを入力してください。',
       consentRequired: '続けるにはチェックボックスをオンにしてください。',
+      matrixEveryRow: '続けるにはすべての行に回答してください。', matrixAtLeast: '続けるには {n} 行以上に回答してください。',
       name: '氏名', email: 'メールアドレス', phone: '電話番号', company: '会社名',
       outOf: '{max} 段階中 {n}',
       faces3: ['悪い', '普通', '良い'], faces4: ['とても悪い', '悪い', '良い', 'とても良い'],
@@ -388,6 +406,7 @@
       invalidEmail: '请输入有效的电子邮箱地址。', invalidNumber: '请输入数字。',
       invalidPhone: '请输入有效的电话号码。', invalidUrl: '请输入有效的网址。',
       consentRequired: '请勾选此框以继续。',
+      matrixEveryRow: '请回答每一行以继续。', matrixAtLeast: '请至少回答 {n} 行以继续。',
       name: '姓名', email: '电子邮箱', phone: '电话', company: '公司',
       outOf: '{max} 分中的 {n} 分',
       faces3: ['差', '一般', '好'], faces4: ['很差', '差', '好', '很好'], faces5: ['很差', '差', '一般', '好', '很好'],
@@ -416,6 +435,7 @@
       invalidEmail: '올바른 이메일 주소를 입력하세요.', invalidNumber: '숫자를 입력하세요.',
       invalidPhone: '올바른 전화번호를 입력하세요.', invalidUrl: '올바른 웹 주소를 입력하세요.',
       consentRequired: '계속하려면 확인란을 선택하세요.',
+      matrixEveryRow: '계속하려면 모든 행에 답하세요.', matrixAtLeast: '계속하려면 {n}개 이상의 행에 답하세요.',
       name: '이름', email: '이메일', phone: '전화번호', company: '회사',
       outOf: '{max}점 중 {n}점',
       faces3: ['나쁨', '보통', '좋음'], faces4: ['매우 나쁨', '나쁨', '좋음', '매우 좋음'],
@@ -446,6 +466,8 @@
       invalidEmail: 'Podaj poprawny adres e-mail.', invalidNumber: 'Podaj liczbę.',
       invalidPhone: 'Podaj poprawny numer telefonu.', invalidUrl: 'Podaj poprawny adres strony.',
       consentRequired: 'Zaznacz pole, aby przejść dalej.',
+      matrixEveryRow: 'Odpowiedz w każdym wierszu, aby przejść dalej.',
+      matrixAtLeast: 'Odpowiedz w co najmniej {n} wierszach, aby przejść dalej.',
       name: 'Imię i nazwisko', email: 'E-mail', phone: 'Telefon', company: 'Firma',
       outOf: '{n} z {max}',
       faces3: ['Źle', 'Średnio', 'Dobrze'], faces4: ['Bardzo źle', 'Źle', 'Dobrze', 'Bardzo dobrze'],
@@ -564,7 +586,7 @@
   // ── The form: the config as version 2, whatever the server sent ──────────────────────────────────────────
 
   var TYPES = ['open_text', 'single_select', 'multi_select', 'rating', 'nps', 'csat', 'ces', 'statement', 'consent',
-    'contact_info'];
+    'contact_info', 'matrix'];
   var SCALE_TYPES = ['rating', 'nps', 'csat', 'ces'];
   var CONTACT_FIELDS = ['name', 'email', 'phone', 'company'];
   var NONE_CODE = 'none';
@@ -838,10 +860,52 @@
     return codes;
   }
 
-  /** Whether a question still shuffles the same options the same way (the preview keeps its order then). */
+  /** Whether a question still shuffles the same options (a matrix: rows) the same way (the preview keeps its order
+   * then). */
   function sameShuffle(a, b) {
+    if (a.type === 'matrix' || b.type === 'matrix') {
+      var rowCodes = function(q) { return matrixRows(q).map(function(row) { return row.code; }).join('\n'); };
+      return a.type === b.type && a.shuffle_rows === b.shuffle_rows && rowCodes(a) === rowCodes(b);
+    }
     var codes = function(q) { return optionsOf(q).map(function(option) { return option.code; }).join('\n'); };
     return a.shuffle === b.shuffle && codes(a) === codes(b);
+  }
+
+  // ── Matrix (7.61.00): several rows rated on one scale, one choice per row ──────────────────────────────────
+
+  // A row's or a column's code (shared/forms_v2.py): never a name of an object's own machinery, since an answer is an
+  // object keyed by row code.
+  var MATRIX_CODE = /^[a-z0-9_]{1,40}$/;
+  // Auto draws a grid up to this many columns (and from 600 px wide); more, or narrower, stacked rows.
+  var MATRIX_GRID_COLUMNS = 7;
+
+  function matrixCode(code) {
+    return typeof code === 'string' && MATRIX_CODE.test(code) && code !== '__proto__' && code !== 'constructor' &&
+      code !== 'prototype';
+  }
+
+  /** A matrix's usable entries of `key` ('rows' or 'columns'): objects with a code, each code once. */
+  function matrixEntries(q, key) {
+    var seen = {};
+    return (Array.isArray(q[key]) ? q[key] : []).filter(function(entry) {
+      var ok = isObject(entry) && matrixCode(entry.code) && !own(seen, entry.code);
+      if (ok) seen[entry.code] = true;
+      return ok;
+    });
+  }
+
+  function matrixRows(q) {
+    return matrixEntries(q, 'rows');
+  }
+
+  function matrixColumns(q) {
+    return matrixEntries(q, 'columns');
+  }
+
+  /** A matrix's row codes in this respondent's order: shuffled once when `shuffle_rows`, by `random`. */
+  function rowOrder(q, random) {
+    var codes = matrixRows(q).map(function(row) { return row.code; });
+    return q.shuffle_rows === true ? shuffled(codes, random || Math.random) : codes;
   }
 
   /** A 32-bit FNV-1a hash of `text`. */
@@ -869,6 +933,77 @@
   /** `preview.seed` as a 32-bit seed, or null for none (then Shuffle is random, as for a respondent). */
   function previewSeed(value) {
     return typeof value === 'number' && isFinite(value) ? Math.floor(Math.abs(value)) % 4294967296 : null;
+  }
+
+  // ── Recall (7.61.00): {{id}} or {{id|fallback}} in a form's texts ───────────────────────────────────────────
+  //
+  // ONE grammar and one way to show a text with a missing value, pinned by schemas/form-recall-cases.json with
+  // lambda/shared/forms_recall.py (the server's checks) and frontend/src/pages/FeedbackForms/model/recall.ts (the
+  // builder's preview), whose rules these are, one for one. A placeholder is {{ and }} around a text with no brace in
+  // it; the text before its first | is the id, the rest the fallback (both trimmed).
+
+  var PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
+  // The questions whose answer is recalled: a score (its number) or a single choice (its label).
+  var RECALL_TYPES = ['rating', 'nps', 'csat', 'ces', 'single_select'];
+  // What stands for a placeholder that left nothing while the text is tidied: a noncharacter, taken out of the text
+  // and of every value first.
+  var GAP = '\uffff';
+  var GAPS = /\uffff/g;
+  var R_SPACE = '[ \\u00a0]*';
+  var R_SEPARATORS = '[,;:、，]';
+  var R_TERMINALS = '[.!?…。！？]';
+
+  function gapRule(pattern, flags) {
+    return new RegExp(pattern.split('G').join('\\uffff'), flags === undefined ? 'g' : flags);
+  }
+
+  // In this order: a gap at a line's start; before closing punctuation (with the separator before it); before a
+  // separator or a closing bracket; at a line's end or the text's end (with its separator); between words (one
+  // space); anything left.
+  var RECALL_RULES = [
+    [gapRule('\\n' + R_SPACE + 'G' + R_SPACE), '\n'],
+    [gapRule(R_SEPARATORS + '?' + R_SPACE + 'G' + R_SPACE + '(?=' + R_TERMINALS + ')'), ''],
+    [gapRule(R_SPACE + 'G' + R_SPACE + '(?=' + R_SEPARATORS + '|[)\\]])'), ''],
+    [gapRule(R_SEPARATORS + '?' + R_SPACE + 'G' + R_SPACE + '(?=\\n|$)'), ''],
+    [gapRule('[ \\u00a0]+G[ \\u00a0]*|[ \\u00a0]*G[ \\u00a0]+'), ' '],
+    [gapRule('G'), '']
+  ];
+  var RECALL_RUNS = gapRule('G(?:' + R_SPACE + 'G)+');
+  var RECALL_BRACKETS = gapRule('[([]' + R_SPACE + 'G' + R_SPACE + '[)\\]]');
+  var RECALL_START = gapRule('^' + R_SPACE + 'G' + R_SPACE + '(' + R_SEPARATORS + R_SPACE + ')?', '');
+
+  /** `text` tidied where a placeholder left nothing: no doubled space, no space or separator before closing
+   * punctuation, no empty brackets, no separator at either end; a text that lost a leading separator starts with a
+   * capital. */
+  function tidyGaps(gapped) {
+    var text = gapped.replace(RECALL_RUNS, GAP).replace(RECALL_BRACKETS, GAP);
+    var start = RECALL_START.exec(text);
+    if (start) {
+      text = text.slice(start[0].length);
+      if (start[1] !== undefined) text = text.charAt(0).toUpperCase() + text.slice(1);
+    }
+    for (var i = 0; i < RECALL_RULES.length; i++) text = text.replace(RECALL_RULES[i][0], RECALL_RULES[i][1]);
+    return text;
+  }
+
+  /**
+   * `text` as the respondent sees it: each placeholder filled by `lookup(id)` (a string; '' when there is no value),
+   * else its fallback, else nothing, the text tidied around the gap. A value is never tidied, and is only ever text:
+   * the caller puts the result in `textContent`.
+   */
+  function recallText(text, lookup) {
+    if (typeof text !== 'string' || text.indexOf('{{') < 0) return text;
+    var gaps = 0;
+    var filled = text.replace(GAPS, '').replace(PLACEHOLDER, function(whole, inner) {
+      var bar = inner.indexOf('|');
+      var found = lookup((bar < 0 ? inner : inner.slice(0, bar)).trim());
+      var value = (typeof found === 'string' ? found : '').replace(GAPS, '').trim() ||
+        (bar < 0 ? '' : inner.slice(bar + 1).trim());
+      if (value) return value;
+      gaps += 1;
+      return GAP;
+    });
+    return gaps ? tidyGaps(filled) : filled;
   }
 
   /** The scale a rating, NPS, CSAT or CES question offers: its values and how they are drawn. */
@@ -1240,6 +1375,7 @@
     this.history = [];
     this.form.questions.forEach(function(q) {
       if (q.type === 'single_select' || q.type === 'multi_select') self.orders[q.id] = optionOrder(q, self.randomFor(q));
+      if (q.type === 'matrix') self.orders[q.id] = rowOrder(q, self.randomFor(q));
     });
   };
 
@@ -1297,14 +1433,44 @@
     return nonBlank(value[this.form.textKey]) ? value[this.form.textKey] : '';
   };
 
-  /** Put an I18nText on `node`; one shown in the primary language says so (`lang`). */
-  Widget.prototype.setText = function(node, value, fallback) {
-    var shown = this.text(value);
+  /** Put an I18nText on `node`; one shown in the primary language says so (`lang`). `before`: a recall text's place
+   * (the questions before it), whose placeholders are filled (`shownText`); absent for every other text, shown as
+   * written. */
+  Widget.prototype.setText = function(node, value, fallback, before) {
+    var written = this.text(value);
+    var shown = before === undefined ? written : this.shownText(value, before);
     node.textContent = shown || fallback || '';
-    if (shown && !nonBlank(value[this.lang]) && this.form.language && this.form.language !== this.lang) {
+    if (written && !nonBlank(value[this.lang]) && this.form.language && this.form.language !== this.lang) {
       node.setAttribute('lang', this.form.language);
     }
     return node;
+  };
+
+  /** A recall text (the welcome's title and description, a question's headline and subheader, an ending's title and
+   * description) as the respondent sees it, placed after `before` questions ('' for none). */
+  Widget.prototype.shownText = function(value, before) {
+    var self = this;
+    return recallText(this.text(value), function(id) { return self.recallValue(id, before); });
+  };
+
+  /**
+   * What `{{id}}` shows in a text placed after `before` questions ('' for nothing): a declared hidden field's value
+   * (looked up first, own fields only), else the answer of a question placed before the text, on this respondent's
+   * path, whose answer is recalled: a score's number, a single choice's label in the respondent's language (an
+   * "Other" text never: what a respondent typed is never echoed).
+   */
+  Widget.prototype.recallValue = function(id, before) {
+    if (this.form.hiddenIds.indexOf(id) >= 0) {
+      var hidden = this.hiddenValues();
+      return own(hidden, id) ? hidden[id] : '';
+    }
+    if (!own(this.qIndex, id)) return '';
+    var index = this.qIndex[id], q = this.form.questions[index];
+    if (index >= before || RECALL_TYPES.indexOf(q.type) < 0 || this.history.indexOf(index) < 0) return '';
+    var value = this.valueOf(q);
+    if (isInt(value)) return String(value);
+    var option = isObject(value) ? optionsOf(q).filter(function(entry) { return entry.code === value.code; })[0] : null;
+    return option ? this.text(option.label) : '';
   };
 
   Widget.prototype.id = function(part) {
@@ -1579,10 +1745,10 @@
     root.style.paddingTop = '64px';
     var h1 = el('h1', this.headlineCss(30, 38) + 'margin:0 0 16px;font-weight:700;');
     h1.setAttribute('tabindex', '-1');
-    this.setText(h1, w.title);
+    this.setText(h1, w.title, '', 0);
     root.appendChild(h1);
-    if (this.text(w.description)) {
-      root.appendChild(this.setText(el('p', 'margin:0 0 32px;' + this.textCss(18, 28)), w.description));
+    if (this.shownText(w.description, 0)) {
+      root.appendChild(this.setText(el('p', 'margin:0 0 32px;' + this.textCss(18, 28)), w.description, '', 0));
     }
     var button = el('button', this.primaryButtonCss() + 'min-width:160px;');
     button.type = 'button';
@@ -1602,7 +1768,7 @@
 
   Widget.prototype.buildEnding = function(index) {
     var ending = this.form.endings[index] || this.form.endings[0];
-    var root = this.screenRoot();
+    var root = this.screenRoot(), every = this.form.questions.length;
     root.style.textAlign = 'center';
     root.style.paddingTop = '64px';
     var mark = el('div', this.fs(48, 56) + 'margin:0 0 16px;color:' + this.colours.ring + ';', '✓');
@@ -1611,10 +1777,10 @@
     var h2 = el('h2', this.headlineCss(28, 36));
     h2.className = 'voc-ending-title';
     h2.setAttribute('tabindex', '-1');
-    this.setText(h2, ending.title, this.words.thanks);
+    this.setText(h2, ending.title, this.words.thanks, every);
     root.appendChild(h2);
-    if (this.text(ending.description)) {
-      root.appendChild(this.setText(el('p', 'margin:16px 0 0;' + this.textCss(18, 28)), ending.description));
+    if (this.shownText(ending.description, every)) {
+      root.appendChild(this.setText(el('p', 'margin:16px 0 0;' + this.textCss(18, 28)), ending.description, '', every));
     }
     var button = isObject(ending.button) ? ending.button : null;
     var href = button ? safeHttpsUrl(button.url) : null;
@@ -1664,11 +1830,11 @@
     var head = el('h2', this.headlineCss());
     head.id = ctx.headId;
     head.setAttribute('tabindex', '-1');
-    this.setText(head, q.headline);
+    this.setText(head, q.headline, '', index);
     legend.appendChild(head);
     fieldset.appendChild(legend);
-    if (this.text(q.subheader)) {
-      var desc = this.setText(el('p', 'margin:0 0 8px;' + this.textCss(16, 24)), q.subheader);
+    if (this.shownText(q.subheader, index)) {
+      var desc = this.setText(el('p', 'margin:0 0 8px;' + this.textCss(16, 24)), q.subheader, '', index);
       desc.id = this.id('d' + index);
       ctx.describedBy.push(desc.id);
       fieldset.appendChild(desc);
@@ -1773,6 +1939,7 @@
       case 'statement': return this.buildStatement(ctx);
       case 'consent': return this.buildConsent(ctx);
       case 'contact_info': return this.buildContact(ctx);
+      case 'matrix': return this.buildMatrix(ctx);
       default: return this.buildScale(ctx);
     }
   };
@@ -1787,6 +1954,7 @@
     else if (q.type === 'multi_select') s = { codes: [], none: false, other: false, otherText: '' };
     else if (q.type === 'consent') s = { checked: false };
     else if (q.type === 'contact_info') s = { name: '', email: '', phone: '', company: '' };
+    else if (q.type === 'matrix') s = { rows: {} };
     else s = { value: null };
     s.type = q.type;
     this.state[q.id] = s;
@@ -2466,6 +2634,140 @@
     return null;
   };
 
+  /** A matrix's rows in this respondent's order (`orders`, shuffled once when `shuffle_rows`). */
+  Widget.prototype.shownRows = function(q) {
+    var byCode = {};
+    matrixRows(q).forEach(function(row) { byCode[row.code] = row; });
+    return (this.orders[q.id] || rowOrder(q)).filter(function(code) { return own(byCode, code); })
+      .map(function(code) { return byCode[code]; });
+  };
+
+  /** Grid or stacked (§ Matrix): Auto is a grid from 600 px wide with at most 7 columns, else stacked rows. */
+  Widget.prototype.matrixDisplay = function(q, columns) {
+    if (q.display === 'grid' || q.display === 'stacked') return q.display;
+    return !this.narrow(600) && columns.length <= MATRIX_GRID_COLUMNS ? 'grid' : 'stacked';
+  };
+
+  /** A grid's columns: the row label's track, then one per column (the header and every row share it). */
+  Widget.prototype.matrixTracks = function(columns) {
+    return 'display:grid;grid-template-columns:minmax(120px,2fr) repeat(' + columns.length + ',minmax(56px,1fr));' +
+      'gap:4px;align-items:center;';
+  };
+
+  /**
+   * A matrix: one radio group per row (labelled by the row, required when the question is), each radio named with the
+   * row and the column, so the arrow keys move within a row and a screen reader says both. A grid draws a header of
+   * the column labels (hidden from screen readers, the radios' names carry them) over one line per row; stacked, each
+   * row's label is followed by its columns as a list. The real radios stay, visually hidden, under drawn ones.
+   */
+  Widget.prototype.buildMatrix = function(ctx) {
+    var self = this, q = ctx.q, columns = matrixColumns(q);
+    var grid = this.matrixDisplay(q, columns) === 'grid';
+    var wrap = el('div', grid ? 'overflow-x:auto;padding:4px;margin:-4px;' : 'display:flex;flex-direction:column;gap:20px;');
+    wrap.className = 'voc-matrix ' + (grid ? 'voc-matrix-grid' : 'voc-matrix-stacked');
+    if (grid) {
+      var header = el('div', this.matrixTracks(columns) + 'margin-bottom:4px;');
+      header.className = 'voc-matrix-head';
+      header.setAttribute('aria-hidden', 'true');
+      header.appendChild(el('span', ''));
+      columns.forEach(function(column) {
+        header.appendChild(self.setText(el('span', self.textCss(14, 20) + 'text-align:center;font-weight:600;'),
+          column.label, column.code));
+      });
+      wrap.appendChild(header);
+    }
+    ctx.rowInputs = {};
+    this.shownRows(q).forEach(function(row, r) { wrap.appendChild(self.matrixRow(ctx, row, r, columns, grid)); });
+    ctx.body.appendChild(wrap);
+    var firstRow = this.shownRows(q)[0];
+    ctx.first = firstRow ? ctx.rowInputs[firstRow.code] : null;
+    return null;
+  };
+
+  /** One row of a matrix: its radio group. */
+  Widget.prototype.matrixRow = function(ctx, row, r, columns, grid) {
+    var self = this, q = ctx.q, s = this.stateOf(q);
+    var group = el('div', grid ? this.matrixTracks(columns) + 'padding:6px 0;border-top:1px solid ' + this.colours.track + ';'
+      : 'display:flex;flex-direction:column;gap:8px;');
+    group.className = 'voc-matrix-row';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('data-row', row.code);
+    var label = this.setText(el('span', 'display:block;font-weight:600;' + this.textCss(16, 24)), row.label, row.code);
+    label.id = this.id('r' + ctx.index + '-' + r);
+    group.setAttribute('aria-labelledby', label.id);
+    if (q.required === true) group.setAttribute('aria-required', 'true');
+    this.describe(group, ctx);
+    group.appendChild(label);
+    var rowWords = label.textContent;
+    var entries = [];
+    var paint = function(entry) {
+      var picked = own(s.rows, row.code) && s.rows[row.code] === entry.column;
+      entry.input.checked = picked;
+      entry.label.style.cssText = grid
+        ? 'display:flex;align-items:center;justify-content:center;position:relative;min-height:44px;margin:0;' +
+          'cursor:pointer;border-radius:' + self.colours.radius + ';'
+        : self.rowCss(picked, false);
+      self.paintBox(entry, picked);
+    };
+    columns.forEach(function(column, c) {
+      var entry = self.choiceEntry('radio', false);
+      var input = entry.input;
+      input.name = self.id('q' + ctx.index + '-r' + r);
+      input.value = column.code;
+      input.id = self.id('q' + ctx.index + '-' + r + '-' + c);
+      input.onchange = function() {
+        s.rows[row.code] = column.code;
+        self.clearError();
+        entries.forEach(paint);
+        self.refreshNext();
+      };
+      entry.label.appendChild(input);
+      entry.label.appendChild(entry.box);
+      var columnWords = self.text(column.label) || column.code;
+      if (grid) {
+        entry.label.appendChild(el('span', SR_ONLY, rowWords + ': ' + columnWords));
+      } else {
+        entry.label.appendChild(el('span', SR_ONLY, rowWords + ': '));
+        entry.label.appendChild(self.setText(el('span', 'flex:1 1 auto;' + self.ink()), column.label, column.code));
+      }
+      entry.column = column.code;
+      entry.paint = function() { paint(entry); };
+      entries.push(entry);
+      group.appendChild(entry.label);
+    });
+    entries.forEach(paint);
+    var checked = entries.filter(function(entry) { return entry.input.checked; })[0];
+    if (entries.length) ctx.rowInputs[row.code] = (checked || entries[0]).input;
+    return group;
+  };
+
+  /** A matrix's answer, `{rows: {row: column}}` in the question's row order (rows and columns it has only), or
+   * null when no row is answered. */
+  Widget.prototype.matrixValue = function(q, s) {
+    var columns = matrixColumns(q).map(function(column) { return column.code; });
+    var rows = {}, count = 0;
+    matrixRows(q).forEach(function(row) {
+      if (own(s.rows, row.code) && columns.indexOf(s.rows[row.code]) >= 0) {
+        rows[row.code] = s.rows[row.code];
+        count += 1;
+      }
+    });
+    return count ? { rows: rows } : null;
+  };
+
+  /** A required matrix needs every row; an optional one with `min_rows`, once any row is answered, that many. The
+   * first row left out (in the respondent's order) is where the focus goes. */
+  Widget.prototype.checkMatrix = function(q, value) {
+    var answered = value === null ? {} : value.rows;
+    var missing = this.shownRows(q).filter(function(row) { return !own(answered, row.code); });
+    var count = matrixRows(q).length - missing.length;
+    var row = missing.length ? missing[0].code : null;
+    if (q.required === true) return { message: missing.length ? this.words.matrixEveryRow : '', row: row };
+    var min = isInt(q.min_rows) ? q.min_rows : 0;
+    if (count > 0 && count < min) return { message: fill(this.words.matrixAtLeast, { n: min }), row: row };
+    return { message: '' };
+  };
+
   // ── Answers, checks and the path ─────────────────────────────────────────────────────────────────────────
 
   /** The question's answer in the response v2 shape, or null for none. An optional consent left unticked is false. */
@@ -2501,6 +2803,7 @@
       return Object.keys(contact).length ? contact : null;
     }
     if (q.type === 'statement') return null;
+    if (q.type === 'matrix') return this.matrixValue(q, s);
     return isInt(s.value) ? s.value : null;
   };
 
@@ -2549,6 +2852,7 @@
     }
     if (q.type === 'consent') return { message: required && !s.checked ? words.consentRequired : '' };
     if (q.type === 'contact_info') return this.checkContact(q, value);
+    if (q.type === 'matrix') return this.checkMatrix(q, value);
     if (q.type === 'statement') return { message: '' };
     return { message: required && value === null ? words.chooseAnswer : '' };
   };
@@ -2601,6 +2905,7 @@
     if (!ctx) return;
     var target = ctx.first;
     if (problem.field && ctx.inputs && ctx.inputs[problem.field]) target = ctx.inputs[problem.field];
+    if (problem.row && own(ctx.rowInputs, problem.row)) target = ctx.rowInputs[problem.row];
     if (problem.other) target = this.root.querySelector('.voc-other-input') || target;
     if (target && typeof target.focus === 'function') target.focus();
   };
@@ -2795,6 +3100,10 @@
     var words = this.words;
     var problem = this.check(q);
     if (problem.message) return problem.message;
+    if (q.type === 'matrix' && (code === 'selection_count' || code === 'answer_required')) {
+      return code === 'selection_count' ? fill(words.matrixAtLeast, { n: isInt(q.min_rows) ? q.min_rows : 2 })
+        : words.matrixEveryRow;
+    }
     if (code === 'selection_count') {
       return isInt(q.max) && q.max > 0 ? fill(words.tooMany, { n: q.max }) : fill(words.tooFew, { n: isInt(q.min) ? q.min : 1 });
     }

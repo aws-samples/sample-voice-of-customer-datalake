@@ -17,6 +17,77 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.61.00] - 2026-11-20
+
+**Forms data quality**: a matrix question that rates several rows on one scale, hidden fields and earlier answers
+recalled into a form's texts (`{{id}}`, `{{id|fallback}}`), link checks that say when a link leaves a hidden field
+empty, a publish guard for a placeholder respondents would see as written, and a CSV that Excel opens as it is
+([feedback-forms.md](docs/feedback-forms.md#matrix)). No new route or resource: the existing forms routes carry it.
+
+### Added
+
+- **The matrix question** (`type: matrix`): 1 to 20 rows rated on 2 to 10 columns, one choice per row, each column
+  with an optional whole-number score (-100 to 100) for the rows' averages; `shuffle_rows`, `display` (`auto`: a
+  grid from 600 px wide with at most 7 columns, else stacked rows; `grid`; `stacked`), `required` (every row) or
+  `min_rows` on an optional matrix, and logic on `submitted` / `skipped`. Its answer is `{rows: {row: column}}`, its
+  row and column codes lock like option codes once the form is answered (`removes.rows`, `removes.columns`, and a
+  `409` `answers_locked` naming them), and a reserved name (`__proto__`, `constructor`, `prototype`) is never a code
+  ([Matrix](docs/feedback-forms.md#matrix)).
+  - The widget draws each row as its own radio group, labelled by the row, each radio named "Row: Column", the arrow
+    keys moving within a row; a grid on a wide form, stacked rows on a phone (no sideways scroll at 375 px), drawn in
+    its shadow root like every other control, with "Answer every row" / "Answer at least N rows" in nine languages.
+  - Results count each row per column with its average score (`rows`, `scored`, and `removed_rows` /
+    `removed_columns` for codes the revision no longer has); the item's text has one `Headline — Row: Column` line
+    per answered row.
+  - The builder edits it (rows and columns with their codes and scores, a default four-point scale in the form's
+    language, shuffle, display, every row or at least N), its Problems list checks it as the server does, and the AI
+    draft knows it (its codes made like option codes).
+- **Recall** in the welcome, headlines, subheaders (statements included) and endings: `{{id}}` shows a declared hidden
+  field's value or an earlier score or single choice on the respondent's path, `{{id|fallback}}` a fallback when
+  there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"). Never an open text,
+  a contact, a multiple choice, a consent or a matrix answer, never in an option label, a button or an address, and
+  always as text. One grammar in the server, the builder and the widget, pinned by `schemas/form-recall-cases.json`
+  ([Recall](docs/feedback-forms.md#recall)). The builder's "Insert a value" menu lists what a text may recall and
+  previews it with and without the value; the AI draft writes and re-points placeholders.
+- **Link checks** (`link_health` in `GET /feedback-forms/{id}/results`): per hidden field how many of the view's
+  responses carried it, overall and per channel (link, iframe, script), with a warning when it was never filled
+  after 5 responses or missing from 80 % of at least 10 ("0 of 26 responses had `customer`: check your link"), shown
+  on Results and on the Share tab with the `hf_<id>=` parameter and the channels it is missing from. The Share tab's
+  link builder now takes a value for each hidden field (into the link, the iframe snippet and the script embed's
+  `hidden`) and warns about a recalled hidden field the copied link leaves empty.
+- **A Download button on Results** (its menu: the detailed CSV, or one with a row of ids), and the CSV's **familiar**
+  layout (`layout=familiar`, the new default): a UTF-8
+  BOM, one header row (`Submission ID`, `Submitted On` in ISO 8601 UTC, `Locale`, `Tags`, the hidden fields, one
+  column per question by its headline, a matrix one per row, a contact question one per field), choices joined with
+  `;` and `Other: …` in the form's language, `ids=true` for a second row of ids, and the file named
+  `<form-name>-responses-<yyyy-mm-dd>.csv`. Every cell, headers included, keeps the formula guard.
+
+### Changed
+
+- **A live form never shows a placeholder as written**: a `POST` or `PUT` that leaves a form live answers `409`
+  `unresolved_placeholder` (`texts: [{where, placeholder}]`) while any text holds a `{{…}}` recall cannot fill there,
+  and a save that changes a definition refuses (`400` `recall_unknown`, `recall_not_before`, `recall_type`) a recall
+  text whose placeholder names no hidden field, a later question or an answer never recalled. Turning a form Off
+  always works; the builder lists the same problems, and Publish waits for them.
+- **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
+  `headline` in Results, the CSV's headers, and the text the processor reads.
+- **`format=csv` answers the familiar layout by default**; 7.55.00's file is `layout=detailed`, unchanged (a matrix
+  answer there is `Row: Column` pairs).
+
+### Fixed
+
+- **A matrix response is accepted by the processor**: the queue message's ingest schema (`form_answers`) took no
+  nested mapping, so every matrix answer would have been refused before it reached the lake.
+
+### Upgrade notes
+
+- **Scripts that read the responses CSV**: `GET …/responses?format=csv` now answers the familiar layout (a BOM and
+  other columns). Add `layout=detailed` to keep 7.55.00's file exactly as before.
+- **A live form saved before 7.61.00 whose text happens to hold `{{…}}`** keeps serving (the widget now shows an
+  unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed;
+  its next save that changes the definition asks for it. Turning it Off always works.
+- No new AWS resource, route, permission or flag; the API's resource count is unchanged.
+
 ## [7.60.00] - 2026-11-20
 
 **Connect a repository with a fine-grained token, this repository only**, and the three-way **Add a repository**

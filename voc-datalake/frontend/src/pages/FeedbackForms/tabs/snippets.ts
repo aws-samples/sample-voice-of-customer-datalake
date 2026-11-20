@@ -1,6 +1,7 @@
 /**
  * @fileoverview The ready-to-copy links and code a form is shared with (UX §6, §9.4), built from its own public
- * address (`feedbackFormPublicUrl`): the link (with `hf_<id>={PLACEHOLDER}` for each hidden field and `lang=`, D4),
+ * address (`feedbackFormPublicUrl`): the link (with `hf_<id>={PLACEHOLDER}` for each hidden field and `lang=`, D4, or
+ * with the values the Share tab's link builder was given, 7.61.00),
  * the iframe (with the resizer that grows it to the form's height), the script embed and the in-app SDK call. Live |
  * Test swaps the live link for the test link (`test=<token>`, D2). Null when the configured endpoint cannot address
  * the form (nothing to share yet).
@@ -23,7 +24,13 @@ export interface SnippetInput {
   readonly hidden: readonly HiddenField[]
   /** The test token when the Test link is shown; null: the live link. */
   readonly testToken: string | null
+  /** Hidden-field values to put in the link, the iframe and the script embed (the Share tab's link builder): by id;
+   * a blank one is left out of the link, and the script embed shows its placeholder. */
+  readonly values?: Readonly<Record<string, string>>
 }
+
+/** `field`'s value in `input` (trimmed; '' for none). */
+const valueOf = (input: SnippetInput, id: string): string => input.values?.[id]?.trim() ?? ''
 
 /** Where the app serves the widget file (frontend/widgetAssetPlugin.ts `WIDGET_PATH`; that file is build-only). */
 export const WIDGET_PATH = '/widget/feedback-widget.js'
@@ -42,13 +49,22 @@ export function widgetScriptUrl(appOrigin: string = window.location.origin): str
 /** `{USER_ID}` for `user_id`: the placeholder a developer replaces. */
 const placeholderOf = (id: string): string => `{${id.toUpperCase()}}`
 
-/** The form's link, live or test; with `withHidden`, every hidden field as `hf_<id>={…}` and the language. */
+/** The hidden fields given a value, as `hf_<id>=<value>` (in the form's order). */
+const filledParams = (input: SnippetInput): string[] => input.hidden.flatMap((field) => {
+  const value = valueOf(input, field.id)
+  return value === '' ? [] : [`hf_${field.id}=${encodeURIComponent(value)}`]
+})
+
+/**
+ * The form's link, live or test: with `withHidden`, every hidden field as `hf_<id>={…}` and the language; without,
+ * the hidden fields `values` fills.
+ */
 export function formLink(input: SnippetInput, withHidden: boolean): string | null {
   const base = feedbackFormPublicUrl(input.apiEndpoint, input.formId)
   if (base === null) return null
   const params = [
     ...(input.testToken === null ? [] : [`test=${encodeURIComponent(input.testToken)}`]),
-    ...(withHidden ? input.hidden.map((field) => `hf_${field.id}=${placeholderOf(field.id)}`) : []),
+    ...(withHidden ? input.hidden.map((field) => `hf_${field.id}=${placeholderOf(field.id)}`) : filledParams(input)),
     ...(withHidden ? [`lang=${input.language}`] : []),
   ]
   return params.length === 0 ? base : `${base}?${params.join('&')}`
@@ -106,7 +122,7 @@ export function iframeSnippet(input: SnippetInput): string | null {
  * developer's choice, never the snippet's default.
  */
 function initLines(input: SnippetInput): string[] {
-  const hidden = input.hidden.map((field) => `${field.id}: ${jsString(placeholderOf(field.id))}`).join(', ')
+  const hidden = input.hidden.map((field) => `${field.id}: ${jsString(valueOf(input, field.id) || placeholderOf(field.id))}`).join(', ')
   return [
     'VoCFeedbackForm.init({',
     `  container: '#${CONTAINER_ID}',`,

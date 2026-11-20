@@ -6,6 +6,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+
+// (the link checks read the results: none to say here, and no request leaves the test)
+vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
+  const { parseFormResults } = await import('../../../api/feedbackFormsV2Results')
+  return (await import('../test/formsApiMock')).formsApiWith(importOriginal, { getResults: () => Promise.resolve(parseFormResults({})) })
+})
 import { useConfigStore } from '../../../store/configStore'
 import { OPEN_PROBLEMS_EVENT } from '../builder/problemText'
 import type { Question } from '../model/formsV2'
