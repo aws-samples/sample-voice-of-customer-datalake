@@ -144,6 +144,35 @@ describe('Agents → Registry: a card', () => {
     expect(await screen.findByRole('heading', { name: 'Role' })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Properties' })).getByText('fixer')).toBeInTheDocument()
   })
+
+  it('lists a made card\'s versions, newest first, each with who made it', async () => {
+    const made = (version: number, who: string) => ({ ...FIXER, kind: 'card', id: 'fixer-careful', title: 'fixer-careful', version,
+      created_by: who, created_at: '2026-11-12T10:00:00Z' })
+    route({ 'GET /agents/engineering/registry/fixer-careful': () => ({ card: made(2, 'bob'), versions: [made(2, 'bob'), made(1, 'alice')], events: [] }) })
+    renderRegistry('/agents/registry/fixer-careful')
+    const versions = within(await screen.findByRole('region', { name: 'Versions' }))
+    expect(versions.getAllByRole('listitem').map((item) => item.firstChild?.textContent)).toStrictEqual(['v2', 'v1'])
+    expect(versions.getByText(/^Made by alice,/)).toBeInTheDocument()
+  })
+
+  it('offers Create from a skill on a role\'s card, for that role', async () => {
+    route({ 'GET /agents/engineering/registry/fixer': () => ({ card: FIXER, versions: [], events: [] }) })
+    renderRegistry('/agents/registry/fixer')
+    const card = within(await screen.findByRole('region', { name: 'Fixer' }))
+    await userEvent.click(await card.findByRole('button', { name: 'Create from a skill' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Create an agent card from a skill' }))
+    expect(sheet.getByLabelText('Role')).toHaveValue('fixer')
+  })
+
+  it('says a card it could not read, and reads it again on Try again', async () => {
+    const read = vi.fn(() => { throw new ApiError(500, 'Registry down') })
+    route({ 'GET /agents/engineering/registry/fixer': read })
+    renderRegistry('/agents/registry/fixer')
+    expect(await screen.findByText('The card could not be loaded. Try again in a moment.', {}, { timeout: 5000 })).toBeInTheDocument()
+    const tries = read.mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => { expect(read.mock.calls.length).toBeGreaterThan(tries) })
+  }, 15_000)
 })
 
 describe('Agents → Registry: Create from a skill', () => {

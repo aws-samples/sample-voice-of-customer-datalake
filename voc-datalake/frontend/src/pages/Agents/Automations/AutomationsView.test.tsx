@@ -14,6 +14,7 @@ import { TestRouter } from '@test/TestRouter'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { workflowView } from '@test/workflowFixtures'
 import { findEngineeringTemplate } from '../../../api/engineeringTemplates'
+import { ApiError } from '../../../lib/errors'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -143,6 +144,60 @@ describe('the exact Paused state (7.52.00)', () => {
     await userEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Pause' }))
     await waitFor(() => { expect(pause).toHaveBeenCalledWith(undefined) })
     expect(await row.findByText(/Autonomous Product paused/)).toHaveAttribute('role', 'status')
+  })
+})
+
+describe('a product automation\'s actions', () => {
+  /** The row's ⋯ menu item `name`, chosen. */
+  async function choose(row: Awaited<ReturnType<typeof rowOf>>, name: string) {
+    await userEvent.click(row.getAllByRole('button', { name: 'Actions for Autonomous Product' })[0] ?? document.body)
+    await userEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
+  }
+
+  it('says why an Enable was refused, in the server\'s words', async () => {
+    route({ 'GET /agents': () => ({ items: [product()] }), 'POST /agents/ag_p/enable': () => { throw new ApiError(403, 'Enabling is paused for this workspace') } })
+    renderList()
+    const row = await rowOf('ag_p')
+    await userEvent.click(row.getByRole('button', { name: 'Enable Autonomous Product' }))
+    expect(await row.findByRole('alert')).toHaveTextContent('Enabling is paused for this workspace')
+  })
+
+  it('turns an automation off from its ⋯ menu, and says a refused pause in its own words', async () => {
+    route({
+      'GET /agents': () => ({ items: [product({ enabled: true })] }),
+      'POST /agents/ag_p/disable': () => ({ agent: product() }),
+      'POST /agents/ag_p/pause': () => { throw new ApiError(500) },
+    })
+    renderList()
+    const row = await rowOf('ag_p')
+    await choose(row, 'Turn off')
+    expect(await row.findByText('Autonomous Product turned off.')).toHaveAttribute('role', 'status')
+    await choose(row, 'Pause')
+    expect(await row.findByRole('alert')).toHaveTextContent('The automation couldn\'t be paused or resumed.')
+  })
+
+  it('asks before Run now, then starts the run and says so; a refused start says why', async () => {
+    const start = vi.fn<(body: unknown) => unknown>()
+      .mockReturnValueOnce({ run: { run_id: 'run_2', agent_id: 'ag_p', status: 'queued', trigger: 'manual', started_at: '2026-11-18T09:00:00Z' } })
+      .mockImplementationOnce(() => { throw new ApiError(409, 'A run is already in progress') })
+    route({ 'GET /agents': () => ({ items: [product({ enabled: true })] }), 'POST /agents/ag_p/run': start })
+    renderList()
+    const row = await rowOf('ag_p')
+    const runNow = row.getByRole('button', { name: 'Run now Autonomous Product' })
+    await userEvent.click(runNow)
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Start a run now?' })).getByRole('button', { name: 'Start run' }))
+    expect(await row.findByText('A run of Autonomous Product started.')).toHaveAttribute('role', 'status')
+    await userEvent.click(runNow)
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Start a run now?' })).getByRole('button', { name: 'Start run' }))
+    expect(await row.findByRole('alert')).toHaveTextContent('A run is already in progress')
+  })
+
+  it('opens Rename… on the automation\'s name', async () => {
+    route({ 'GET /agents': () => ({ items: [product({ enabled: true })] }) })
+    renderList()
+    await choose(await rowOf('ag_p'), 'Rename…')
+    const dialog = within(await screen.findByRole('dialog', { name: 'Rename this automation' }))
+    expect(dialog.getByLabelText('Name')).toHaveValue('Autonomous Product')
   })
 })
 

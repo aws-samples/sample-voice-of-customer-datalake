@@ -7,10 +7,12 @@
  * jsdom cannot lay out React Flow, so `ReactFlow` is a probe that records the props the canvas passes it.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import { renderWithQueryClient as render } from '@test/query-client'
 import { probedFlowProps as props } from '@test/reactFlowProbe'
 import { BUG_HUNT_EDGES } from '@test/workflowFixtures'
+import { BLOCK_MIME, PALETTE_MIME } from './model'
+import { drawnPosition } from './nodes/nodeKinds'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 
 vi.mock('@xyflow/react', async (importOriginal) =>
@@ -85,5 +87,46 @@ describe('opening follows the selection', () => {
     expect(onSelect).toHaveBeenLastCalledWith({ kind: 'step', id: 'gate' }, { keyboard: true })
     fireEvent.keyDown(canvas, { key: 'Escape' })
     expect(onSelect).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('building on the canvas', () => {
+  /** What a drag carries, by its types. */
+  const carrying = (data: Record<string, string>) => ({ types: Object.keys(data), getData: (type: string) => data[type] ?? '', dropEffect: 'none' })
+  const canvasOf = (container: HTMLElement) => container.querySelector('.voc-workflow') ?? document.body
+
+  it('says what a palette item will add while over it, and adds the step dropped (a block, or a bare type)', () => {
+    const onChange = vi.fn<(definition: WorkflowDefinition) => void>()
+    const { container } = render(<FlowCanvas definition={FLOW} mode="build" onChange={onChange} />)
+    fireEvent.dragOver(canvasOf(container), { dataTransfer: carrying({ [BLOCK_MIME]: '{}' }) })
+    expect(screen.getByRole('status')).toHaveTextContent('Drop to add the step')
+    fireEvent.drop(canvasOf(container), { dataTransfer: carrying({ [BLOCK_MIME]: '{"type":"agent","title":"Review the fix","params":{"role":"pr-reviewer"}}' }) })
+    fireEvent.drop(canvasOf(container), { dataTransfer: carrying({ [PALETTE_MIME]: 'quality_gate' }) })
+    expect(onChange.mock.calls.map(([next]) => next.nodes.at(-1)?.data)).toStrictEqual([
+      { title: 'Review the fix', params: { role: 'pr-reviewer', skill_version: 'latest' } }, expect.objectContaining({ title: 'Quality gate' }),
+    ])
+  })
+
+  it('takes nothing dropped outside build, nor what is not a step', () => {
+    const onChange = vi.fn<(definition: WorkflowDefinition) => void>()
+    const { container, rerender } = render(<FlowCanvas definition={FLOW} mode="build" onChange={onChange} />)
+    fireEvent.drop(canvasOf(container), { dataTransfer: carrying({ [PALETTE_MIME]: 'no_such_step' }) })
+    rerender(<FlowCanvas definition={FLOW} mode="view" onChange={onChange} />)
+    fireEvent.dragOver(canvasOf(container), { dataTransfer: carrying({ [PALETTE_MIME]: 'agent' }) })
+    fireEvent.drop(canvasOf(container), { dataTransfer: carrying({ [PALETTE_MIME]: 'agent' }) })
+    expect([onChange.mock.calls, screen.queryByRole('status')]).toStrictEqual([[], null])
+  })
+
+  it('stores a step where it was let go (its column\'s corner), not while dragged, and drops a step deleted', () => {
+    const onChange = vi.fn<(definition: WorkflowDefinition) => void>()
+    render(<FlowCanvas definition={FLOW} mode="build" onChange={onChange} />)
+    const letGo = drawnPosition(node('fix', 'agent', 160, { role: 'fixer' }))
+    act(() => props().onNodesChange([
+      { type: 'position', id: 'fix', dragging: true, position: { x: 10, y: 10 } },
+      { type: 'position', id: 'fix', dragging: false, position: letGo }, { type: 'remove', id: 'human' },
+    ]))
+    const next = onChange.mock.calls.at(-1)?.[0]
+    expect(next?.nodes.map((each) => each.id)).toStrictEqual(['pr', 'gate', 'fix', 'start'])
+    expect(next?.nodes.find((each) => each.id === 'fix')?.position).toStrictEqual({ x: 0, y: 160 })
   })
 })

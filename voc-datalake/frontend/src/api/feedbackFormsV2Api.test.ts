@@ -2,11 +2,21 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { FormsApiError, feedbackFormsV2Api } from './feedbackFormsV2Api'
 import { adaptResults, adaptResponsesPage } from './feedbackFormsResultsAdapter'
 import { parseFormResults, parseResponsesPage } from './feedbackFormsV2Results'
+import { AuthError } from '../lib/errors'
+import { sampleForm } from '../pages/FeedbackForms/test/draftHarness'
+import type { ResultsFilters } from './feedbackFormsV2Api'
 
 vi.mock('./baseUrl', async (importOriginal) => ({ ...await importOriginal<typeof import('./baseUrl')>(), getBaseUrl: () => 'https://api.example.com' }))
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
+const NO_FILTERS: ResultsFilters = { days: null, language: '', ending: '', hidden: {}, includeTest: false }
+
+/** The JSON body of the first request. */
+function sentBody(): unknown {
+  const body = fetchMock.mock.calls[0]?.[1]?.body
+  return typeof body === 'string' ? JSON.parse(body) : null
+}
 
 describe('the forms builder client (reconciled with part A)', () => {
   beforeEach(() => {
@@ -15,6 +25,7 @@ describe('the forms builder client (reconciled with part A)', () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('keeps a stale save\'s stored revision on the 409', async () => {
@@ -129,6 +140,148 @@ describe('the forms builder client (reconciled with part A)', () => {
     fetchMock.mockResolvedValue(json(409, { success: false, error: 'This form has responses', code: 'answers_locked', questions: ['q_old'], options: {} }))
     const error = await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3).catch((e: unknown) => e)
     expect(error instanceof FormsApiError ? [error.status, error.code, error.message] : []).toStrictEqual([409, 'answers_locked', 'This form has responses'])
+  })
+
+  // (ported from main's 7.04.00 port of this release, where they were written: the refusals, writes, reads, results,
+  // AI drafts and the CSV export, with this branch's draft route)
+  describe('a refusal', () => {
+    it('keeps a 400\'s field errors, with the question each names, and drops what is not one', async () => {
+      fetchMock.mockResolvedValue(json(400, { error: 'Invalid form', errors: [{ message: 'Question 4 has 52 options', question_id: 'q_reason' }, 'Add an ending', 42] }))
+      const error = await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3).catch((e: unknown) => e)
+      expect(error instanceof FormsApiError ? [error.status, error.message, error.errors] : []).toStrictEqual([
+        400, 'Invalid form', [{ message: 'Question 4 has 52 options', questionId: 'q_reason' }, { message: 'Add an ending' }],
+      ])
+    })
+
+    it('without a JSON body is still a FormsApiError of its status', async () => {
+      fetchMock.mockResolvedValue(new Response('<html>Bad gateway</html>', { status: 502 }))
+      const error = await feedbackFormsV2Api.getResults('f_1', NO_FILTERS).catch((e: unknown) => e)
+      expect(error instanceof FormsApiError ? [error.status, error.message, error.errors, error.current] : []).toStrictEqual([502, 'API Error: 502', [], null])
+    })
+
+    it('reads a 429\'s wait from the Retry-After header when the body has none', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 'rate_limited' }), { status: 429, headers: { 'Retry-After': '30' } }))
+      const error = await feedbackFormsV2Api.draftForm({ description: 'An NPS form', language: 'en', channel: 'link' }).catch((e: unknown) => e)
+      expect(error instanceof FormsApiError ? [error.code, error.retryAfterSeconds] : []).toStrictEqual(['rate_limited', 30])
+    })
+
+    it('rejects an answer that carries no form', async () => {
+      fetchMock.mockResolvedValue(json(200, { success: true }))
+      await expect(feedbackFormsV2Api.createForm(sampleForm())).rejects.toThrow('The server answered without a form.')
+    })
+  })
+
+  describe('the writes', () => {
+    it('creates a form Off, whatever the draft says, and reads the stored copy back', async () => {
+      fetchMock.mockResolvedValue(json(201, { success: true, form: await record({ response_count: 0, enabled: false }) }))
+      const loaded = await feedbackFormsV2Api.createForm(sampleForm({ enabled: true }))
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms', expect.objectContaining({ method: 'POST' }))
+      expect(sentBody()).toMatchObject({ name: 'Sample form', enabled: false })
+      expect([loaded.meta.form_id, loaded.form.name]).toStrictEqual(['f_1', 'Sample form'])
+    })
+
+    it('turns a form on or off, over its revision when it has one', async () => {
+      fetchMock.mockImplementation(async () => json(200, { success: true, form: await record({ response_count: 0 }) }))
+      await feedbackFormsV2Api.setEnabled('f_1', false, 3)
+      await feedbackFormsV2Api.setEnabled('f_1', true)
+      expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method, init?.body])).toStrictEqual([
+        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_revision":3}'],
+        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":true}'],
+      ])
+    })
+
+    it('sets the test link and answers its state, token included', async () => {
+      fetchMock.mockResolvedValue(json(200, { success: true, test: { token: 'tk_abc', link_enabled: false, record: 'drop' } }))
+      expect(await feedbackFormsV2Api.issueTestLink('f_1', { link_enabled: false, record: 'drop' })).toStrictEqual({ token: 'tk_abc', link_enabled: false, record: 'drop' })
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/test-link', expect.objectContaining({ method: 'POST', body: '{"link_enabled":false,"record":"drop"}' }))
+    })
+
+    it('deletes the test responses and says how many went', async () => {
+      fetchMock.mockResolvedValue(json(200, { success: true, deleted: 4 }))
+      expect(await feedbackFormsV2Api.deleteTestResponses('f_1')).toBe(4)
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/responses?test=true', expect.objectContaining({ method: 'DELETE' }))
+    })
+  })
+
+  describe('reading a stored form', () => {
+    it('finds the form in the list when the server has no route for one form', async () => {
+      fetchMock
+        .mockResolvedValueOnce(json(404, { error: 'Not found' }))
+        .mockResolvedValueOnce(json(200, { forms: [{ form_id: 'f_2' }, await record({ response_count: 2 })] }))
+      const loaded = await feedbackFormsV2Api.getForm('f_1')
+      expect([loaded.meta.form_id, loaded.meta.response_count]).toStrictEqual(['f_1', 2])
+      expect(fetchMock.mock.calls.map(([url]) => url)).toStrictEqual(['https://api.example.com/feedback-forms/f_1', 'https://api.example.com/feedback-forms'])
+    })
+
+    it('is a 404 when the list does not have it either', async () => {
+      fetchMock
+        .mockResolvedValueOnce(json(405, { error: 'Method not allowed' }))
+        .mockResolvedValueOnce(json(200, { forms: [{ form_id: 'f_2' }] }))
+      const error = await feedbackFormsV2Api.getForm('f_1').catch((e: unknown) => e)
+      expect(error instanceof FormsApiError ? [error.status, error.code] : []).toStrictEqual([404, 'not_found'])
+    })
+
+    it('counts no responses when the stats cannot be read either', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      fetchMock
+        .mockResolvedValueOnce(json(200, { success: true, form: await record({}), stats_error: 'Failed to count' }))
+        .mockResolvedValueOnce(json(500, { error: 'Stats are down' }))
+      const loaded = await feedbackFormsV2Api.getForm('f_1')
+      expect(loaded.meta).toMatchObject({ response_count: 0, has_responses: false })
+      expect(warn).toHaveBeenCalledWith('The form\'s response count could not be read:', expect.any(FormsApiError))
+    })
+
+    it('migrates a version 1 record as the server would, in the app\'s language when it had none', async () => {
+      fetchMock.mockResolvedValue(json(200, { success: true, form: {
+        form_id: 'f_old', schema_version: 1, name: 'Old form', rating_enabled: true, question: 'How was it?', language: '', response_count: 0,
+      } }))
+      const loaded = await feedbackFormsV2Api.getForm('f_old')
+      expect(loaded.meta).toMatchObject({ migrated_from_v1: true, language_unconfirmed: true })
+      expect([loaded.form.language, loaded.form.questions.map((q) => q.headline)]).toStrictEqual(['en', [{ en: 'How was it?' }, { en: 'Tell us more' }]])
+    })
+  })
+
+  describe('results and AI drafts', () => {
+    it('asks the results with the Results filters', async () => {
+      vi.useFakeTimers({ now: new Date('2026-11-18T12:00:00Z'), toFake: ['Date'] })
+      fetchMock.mockResolvedValue(json(200, { responses: 3, test_responses: 0, questions: [] }))
+      const results = await feedbackFormsV2Api.getResults('f_1', { days: 7, language: 'pl', ending: 'end_thanks', hidden: { plan: 'pro' }, includeTest: false })
+      vi.useRealTimers()
+      expect(results.total).toBe(3)
+      expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.example.com/feedback-forms/f_1/results?from=2026-11-11T12%3A00%3A00.000Z&language=pl&ending=end_thanks&hidden.plan=pro&include_test=false')
+    })
+
+    it('reads a draft answered at once, Off, with its notes and warnings', async () => {
+      fetchMock.mockResolvedValue(json(200, {
+        form: { ...sampleForm(), enabled: true }, notes: ['Kept it short.', { message: 'Asked for the plan.', target: 'q_feedback' }, 7],
+        warnings: [{ message: 'No ending button.' }],
+      }))
+      const draft = await feedbackFormsV2Api.draftForm({ description: 'A short form', language: 'en', channel: 'link', base_form: sampleForm(), instruction: 'Shorter' })
+      expect([draft.form.enabled, draft.notes, draft.warnings]).toStrictEqual([
+        false, [{ message: 'Kept it short.' }, { message: 'Asked for the plan.', target: 'q_feedback' }], [{ message: 'No ending button.' }],
+      ])
+      expect(sentBody()).toMatchObject({ description: 'A short form', instruction: 'Shorter', base_form: { name: 'Sample form' } })
+    })
+
+    it('rejects a draft that came back without a form', async () => {
+      fetchMock.mockResolvedValue(json(200, { notes: [] }))
+      await expect(feedbackFormsV2Api.draftForm({ description: 'A form', language: 'en', channel: 'link' })).rejects.toThrow('The AI draft came back without a form.')
+    })
+  })
+
+  describe('the CSV export', () => {
+    it('downloads the responses as CSV with the filters', async () => {
+      fetchMock.mockResolvedValue(new Response('q_feedback,language\nFaster,en\n', { status: 200, headers: { 'Content-Type': 'text/csv' } }))
+      const csv = await feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS)
+      expect(await csv.text()).toBe('q_feedback,language\nFaster,en\n')
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/responses?format=csv&include_test=false', expect.objectContaining({ method: 'GET' }))
+    })
+
+    it('is an AuthError when the session is gone, and a FormsApiError when refused', async () => {
+      fetchMock.mockResolvedValueOnce(new Response('', { status: 401 })).mockResolvedValueOnce(json(403, { error: 'Not allowed' }))
+      await expect(feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS)).rejects.toBeInstanceOf(AuthError)
+      await expect(feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS)).rejects.toThrow(new FormsApiError(403, 'Not allowed', undefined, { errors: [], retryAfterSeconds: null, current: null }))
+    })
   })
 })
 

@@ -18,6 +18,7 @@ import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { ACME } from '@test/workspaceFixtures'
 import { fetchMock, installFetchMock, requestHeaders, requestUrl } from '@test/fetch-mock'
 import type { PluginManifest } from '../../plugins/types'
+import type { AdminSectionId } from './adminTabs'
 
 const API = 'https://api.example.com'
 vi.mock('../../store/configStore', () => import('@test/api-mocks').then((m) => m.configStoreMock('https://api.example.com')))
@@ -95,11 +96,14 @@ afterEach(() => {
   plugins.list = [issuesManifest]
 })
 
-/** Data sources at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator). */
-const renderPage = (path: string, isPlatformAdmin = true) => renderWithQueryClient(
+/** The page at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator), the card `section` names. */
+const pageAt = (path: string, isPlatformAdmin = true, section: AdminSectionId | null = null) => (
   <TestRouter initialEntries={[path]}>
-    <DataSourcesPage apiEndpoint={`${API}/`} isAdmin isPlatformAdmin={isPlatformAdmin} section={null} />
+    <DataSourcesPage apiEndpoint={`${API}/`} isAdmin isPlatformAdmin={isPlatformAdmin} section={section} />
   </TestRouter>)
+
+/** Data sources at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator). */
+const renderPage = (path: string, isPlatformAdmin = true) => renderWithQueryClient(pageAt(path, isPlatformAdmin))
 
 /** The deployment's sources (`?scope=deployment`). */
 const renderDeployment = (path = '/admin/sources') => renderPage(`${path}?scope=deployment`)
@@ -182,6 +186,16 @@ describe("this workspace's sources (the page's default)", () => {
     expect(await screen.findByRole('note')).toHaveTextContent('deployment-wide feedback')
   })
 
+  it('moves between the scopes by the arrow keys, choosing the one it moves to', async () => {
+    renderPage('/admin/sources')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'This workspace' }))
+    await user.keyboard('{ArrowRight}')
+    const deployment = screen.getByRole('radio', { name: 'Deployment' })
+    expect([deployment.getAttribute('aria-checked'), document.activeElement === deployment]).toStrictEqual(['true', true])
+    expect(await screen.findByRole('note')).toHaveTextContent('deployment-wide feedback')
+  })
+
   it('offers no switch to a plain administrator', () => {
     renderPage('/admin/sources', false)
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
@@ -209,5 +223,12 @@ describe("this workspace's sources (the page's default)", () => {
     await user.click(screen.getByRole('button', { name: 'Advanced' }))
     expect([screen.getByText('Email inbox card'), screen.getByText('Radar card'), screen.getByText('Design-system tokens card')])
       .toHaveLength(3)
+  })
+
+  it('opens the Advanced fold when the address comes to name one of its cards', () => {
+    const view = renderPage('/admin/sources')
+    expect(screen.queryByText('Radar card')).not.toBeInTheDocument()
+    view.rerender(pageAt('/admin/sources', true, 'radar'))
+    expect(screen.getByText('Radar card')).toBeInTheDocument()
   })
 })

@@ -8,6 +8,8 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
+import { defined } from '@test/defined'
+import { currentMonth } from '../../../api/engineeringSpendApi'
 import { calledEndpoints } from '@test/runWorkspaceHarness'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import fixture from '@test/engineeringRunWorkspace.json'
@@ -17,6 +19,7 @@ import { runsQueryOf } from './runsFilters'
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const LIST = '/agents/engineering/runs'
+const NO_RUNS = { runs: [], next: null }
 const FLOW = { workflow_id: 'wf_7c2d9e41a0b3', name: 'Fix the reported bugs', kind: 'engineering', status: 'active' }
 
 function renderRuns(search: string) {
@@ -31,7 +34,10 @@ beforeEach(() => {
     [`GET ${LIST}?month=2026-11`]: () => fixture.runs.answer,
     [`GET ${LIST}?month=2026-11&status=stopped`]: () => ({ runs: [fixture.runs.answer.runs[2]], next: 'page-2' }),
     [`GET ${LIST}?month=2026-11&status=stopped&cursor=page-2`]: () => ({ runs: [{ ...fixture.runs.answer.runs[2], run_id: 'OLDER' }], next: null }),
-    'GET /workflows': () => ({ workflows: [FLOW] }),
+    // (nothing in October: the empty states)
+    [`GET ${LIST}?month=2026-10&flow=wf_0123456789ab`]: () => NO_RUNS,
+    [`GET ${LIST}?month=2026-10&status=needs_human`]: () => NO_RUNS,
+    'GET /workflows': () => ({ items: [FLOW] }),
     // (7.53.00: the run requests above the list, none waiting: RunRequests.test.tsx)
     'GET /agents/engineering/requests': () => ({ requests: [] }),
   })
@@ -52,6 +58,43 @@ describe('the Runs list', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?month=2026-11&status=stopped'))
     await userEvent.click(await screen.findByRole('button', { name: 'Show more' }))
     await waitFor(() => expect(calledEndpoints()).toContain(`${LIST}?month=2026-11&status=stopped&cursor=page-2`))
+  })
+})
+
+describe('the Runs filters and empty states', () => {
+  it('names each run\'s flow by the library, and narrows the list to a flow or to another month', async () => {
+    const router = renderRuns('?month=2026-11')
+    const [first] = await screen.findAllByRole('link')
+    expect(first).toHaveTextContent('Fix the reported bugs')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Flow' }), FLOW.workflow_id)
+    await waitFor(() => expect(router.state.location.search).toBe(`?month=2026-11&flow=${FLOW.workflow_id}`))
+    const months = screen.getByRole('combobox', { name: 'Month' })
+    const other = defined(within(months).getAllByRole('option').map((option) => option.getAttribute('value')).find((month) => month !== '2026-11') ?? undefined)
+    await userEvent.selectOptions(months, other)
+    await waitFor(() => expect(router.state.location.search).toBe(`?month=${other}&flow=${FLOW.workflow_id}`))
+  })
+
+  it('keeps a flow the library no longer lists, by its id, and says no run matches', async () => {
+    renderRuns('?month=2026-10&flow=wf_0123456789ab')
+    expect(await screen.findByText('No run started in this month.')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Flow' })).toHaveDisplayValue('wf_0123456789ab')
+  })
+
+  it('says nothing needs you under the Needs-a-person filter, and shows every run on Show all runs', async () => {
+    const router = renderRuns('?month=2026-10&status=needs_human')
+    await userEvent.click(await screen.findByRole('button', { name: 'Show all runs' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?month=2026-10'))
+  })
+
+  it('says no run has started yet this month, with the way to the automations', async () => {
+    routeFetchApi({
+      [`GET ${LIST}?month=${currentMonth()}`]: () => NO_RUNS,
+      'GET /workflows': () => ({ items: [] }),
+      'GET /agents/engineering/requests': () => ({ requests: [] }),
+    })
+    renderRuns('')
+    expect(await screen.findByText('No runs yet.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to Automations' })).toHaveAttribute('href', '/agents')
   })
 })
 

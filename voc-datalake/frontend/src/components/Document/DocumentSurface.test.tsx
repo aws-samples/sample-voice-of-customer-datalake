@@ -7,7 +7,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { stubElementScrollIntoView } from '@test/stubScrollTo'
+import { stubRangeLayout } from '@test/stubRangeLayout'
 import { ApiError } from '../../lib/errors'
 import DocumentSurface from './DocumentSurface'
 import type { DocumentSurfaceProps } from './DocumentSurface'
@@ -43,6 +45,15 @@ describe('DocumentSurface: read', () => {
     expect(screen.getByRole('region', { name: 'Launch plan' })).toHaveAttribute('data-variant', 'page')
     expect(screen.getByRole('heading', { level: 2, name: 'Goals' })).toHaveAttribute('id', 'h-goals')
     expect(screen.getByRole('navigation', { name: 'Contents' })).toBeInTheDocument()
+  })
+
+  it('brings the heading a Contents link names into view and gives it the focus', async () => {
+    onTestFinished(stubElementScrollIntoView())
+    renderSurface({ stored: { title: 'Launch plan', content: SECTIONS, rev: 1 } })
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Contents' })).getByRole('link', { name: 'Risks' }))
+    const risks = screen.getByRole('heading', { level: 2, name: 'Risks' })
+    expect([document.activeElement === risks, risks.getAttribute('tabindex')]).toStrictEqual([true, '-1'])
+    expect(risks.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
   })
 
   it('opens a sheet on the app\'s side sheet, whose title, description and footer are the sheet\'s (SideSheet, wide)', async () => {
@@ -119,6 +130,14 @@ describe('DocumentSurface: compare', () => {
 })
 
 describe('DocumentSurface: edit', () => {
+  it('edits Markdown on the canvas, the text readable until the editor\'s chunk arrives', async () => {
+    onTestFinished(stubRangeLayout())
+    renderSurface({ mode: 'edit' })
+
+    expect(screen.getByRole('heading', { name: 'Plan' })).toBeInTheDocument()
+    expect(await screen.findByRole('textbox', { name: 'Launch plan' }, { timeout: 8000 })).toHaveTextContent('PlanShip it.')
+  }, 15_000)
+
   it('edits a prompt as written, counts it against its limit, and waits to save past it', async () => {
     const user = userEvent.setup()
     const save = vi.fn((draft: { content: string }, on: Doc) => Promise.resolve({ ...on, content: draft.content, rev: on.rev + 1 }))

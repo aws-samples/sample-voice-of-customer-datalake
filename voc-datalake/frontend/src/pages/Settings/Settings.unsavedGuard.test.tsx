@@ -6,7 +6,7 @@
  * overlay (`?review=`) does not.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { adminGuardScenario, mountAtAdmin } from '@test/adminRoute'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
@@ -16,11 +16,12 @@ import { brandSettingsKey } from '../../hooks/useBrandSettings'
 import type { BrandSettingsResponse } from '../../api/brandApi'
 
 const getBrandSettings = vi.fn<() => Promise<BrandSettingsResponse>>()
+const saveBrandSettings = vi.fn<(settings: unknown) => Promise<{ success: boolean }>>(() => Promise.resolve({ success: true }))
 
 vi.mock('../../api/client', () => ({
   api: {
     getBrandSettings: () => getBrandSettings(),
-    saveBrandSettings: () => Promise.resolve({ success: true }),
+    saveBrandSettings: (settings: unknown) => saveBrandSettings(settings),
     getLogsSummary: () => Promise.resolve({ summary: { total_validation_failures: 0, total_processing_errors: 0 }, days: 1 }),
   },
 }))
@@ -105,6 +106,15 @@ describe('/admin/brand brand form — the tab is the draft\'s page', () => {
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect([dialog.isConnected, router.state.location.pathname]).toStrictEqual([false, BRAND])
     expect(brandField()).toHaveDisplayValue(/draft$/)
+  })
+
+  it('saves the draft from the dialog\'s Save, then opens the other tab', async () => {
+    const { router, user } = await draftTheBrandName()
+    const logs = screen.getByRole('link', { name: 'Logs' })
+    await user.click(logs)
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(router.state.location.pathname).toBe(logs.getAttribute('href')) })
+    expect(saveBrandSettings).toHaveBeenCalledWith(expect.objectContaining({ brand_name: 'Stored brand draft' }))
   })
 
   it('lets an overlay such as ?review= open without asking', async () => {
