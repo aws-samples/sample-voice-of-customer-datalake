@@ -1171,7 +1171,9 @@
       "ciNeeded_one": "{{count, number}} needs its CI attested before the agents push",
       "ciNeeded_other": "{{count, number}} need their CI attested before the agents push",
       "publicRead_one": "{{count, number}} public repository read only",
-      "publicRead_other": "{{count, number}} public repositories read only"
+      "publicRead_other": "{{count, number}} public repositories read only",
+      "tokens_one": "{{count, number}} repository with a fine-grained token",
+      "tokens_other": "{{count, number}} repositories with a fine-grained token"
     },
     "columns": {
       "repository": "Repository",
@@ -1194,7 +1196,8 @@
       "edit": "Edit connection…",
       "attest": "Attest CI…",
       "withdraw": "Withdraw CI attestation…",
-      "remove": "Remove connection…"
+      "remove": "Remove connection…",
+      "replaceToken": "Replace token…"
     },
     "details": {
       "button": "Connection details for {{repository}}",
@@ -1292,6 +1295,103 @@
       "summaryPushes": "Agents push to: {{fork}} (your fork).",
       "summaryPushesPending": "Agents push to: your fork, once it is connected.",
       "summaryPullRequests": "Pull requests to {{upstream}} come from you: the run ends with a one-click link, and you click Create on GitHub."
+    },
+    "add": {
+      "title": "Add a repository",
+      "intro": "Three ways, by what you can do on the repository.",
+      "useWhen": "Use this when",
+      "endsWith": "The run ends with",
+      "needsApp": "Install this deployment's GitHub App on one of your repositories first: its read-only token reads the repository.",
+      "app": {
+        "title": "Install the GitHub App",
+        "when": "You administer the repository, or its organization lets you install apps.",
+        "ends": "A branch and a pull request on the repository.",
+        "action": "Add repositories to {{slug}}"
+      },
+      "token": {
+        "title": "Use a fine-grained token",
+        "when": "You can push to a public repository but can't install the App on it (an organization whose owners approve apps, say).",
+        "ends": "A branch and a pull request on the repository, pushed with your token after your go.",
+        "action": "Use a token…"
+      },
+      "fork": {
+        "title": "Contribute through a fork",
+        "when": "It is someone else's public repository.",
+        "ends": "A pull request on your fork, then a one-click link to open it on the repository.",
+        "action": "Find the repository"
+      }
+    },
+    "token": {
+      "kind": "Fine-grained token",
+      "loginUnknown": "login not known",
+      "expires_one": "expires {{date}} (in {{count, number}} day)",
+      "expires_other": "expires {{date}} (in {{count, number}} days)",
+      "expiredOn": "expired on {{date}}",
+      "expiryUnknown": "expiry not known",
+      "soonBadge_one": "Expires in {{count, number}} day",
+      "soonBadge_other": "Expires in {{count, number}} days",
+      "expiredBadge": "Token expired",
+      "notSet": "The fine-grained token is not set: replace it, or the agents push nothing to this repository.",
+      "owner": "Saved by {{owner}}: only they give a run on it its go.",
+      "ownerYou": "Saved by you: only you give a run on it its go.",
+      "revoke": "This deletes the stored token here. Revoke it on GitHub too: Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}} is connected with your fine-grained token.",
+      "replaced": "The token of {{repository}} is replaced.",
+      "list": {
+        "title": "Fine-grained tokens",
+        "hint": "Public repositories pushed to with a person's own token: a branch and a pull request after the token owner's go."
+      },
+      "dialog": {
+        "addTitle": "Connect a repository with a fine-grained token",
+        "replaceTitle": "Replace the token of {{repository}}",
+        "description": "For a public repository you can push to but can't install the App on. It is read with this deployment's GitHub App's read-only token; your token is used only for a run's final push and pull request, after the gates and your go.",
+        "save": "Check and connect",
+        "replace": "Check and replace"
+      },
+      "repository": {
+        "label": "Repository",
+        "hint": "A public GitHub repository you can push to: owner/name, or its GitHub address.",
+        "find": "Find on GitHub",
+        "use": "Use {{repository}}",
+        "noToken": "Archived: it takes no pushes",
+        "fixed": "The token is for this connection's repository, {{repository}}: the same checks apply to the new one."
+      },
+      "steps": {
+        "title": "Make the token on GitHub",
+        "owner": "Resource owner: {{owner}}.",
+        "access": "Repository access: Only select repositories, then {{repository}} alone.",
+        "permissions": "Repository permissions: Contents and Pull requests, both Read and write (Metadata, read-only, comes with them). Nothing else.",
+        "expiry": "Expiration: {{days, number}} days or less.",
+        "approval": "If {{owner}} is an organization that approves fine-grained tokens, one of its owners approves the token before it can push.",
+        "link": "Open GitHub's new token page",
+        "prefilled": "The link fills in the name, the owner, 90 days and the two permissions. Choose the repository there yourself: GitHub's link cannot."
+      },
+      "field": {
+        "label": "Fine-grained token",
+        "hint": "Paste the token (github_pat_…): it is checked on GitHub, stored encrypted, and never shown again."
+      },
+      "invalid": {
+        "repository": "Name a GitHub repository as owner/name, or paste its address.",
+        "tokenEmpty": "Paste the fine-grained token.",
+        "classic": "This is a classic, OAuth or App token, not a fine-grained one: make a fine-grained token.",
+        "shape": "A fine-grained token starts with github_pat_: paste it whole."
+      },
+      "tick": "This token can reach only {{repository}}",
+      "tickHint": "GitHub does not tell which repositories a token was given: you confirm it. A token that reaches private repositories is refused.",
+      "tickRequired": "Confirm that the token can reach only {{repository}}.",
+      "refused": {
+        "classic_token": "GitHub says this is not a fine-grained token: make a fine-grained one.",
+        "not_accepted": "GitHub does not accept the token (revoked, expired or mistyped): make a new one and paste it whole.",
+        "no_expiry": "The token has no expiry: make one that expires in 90 days or less.",
+        "expires_too_late": "The token lasts more than 90 days: make one that expires in 90 days or less.",
+        "expired": "The token has expired: make a new one.",
+        "not_found": "The token cannot see {{repository}} on GitHub: check its name, and that the token's repository access names it.",
+        "private_repository": "{{repository}} is private: a token connects only a public repository. Install the GitHub App on it instead.",
+        "archived": "{{repository}} is archived: it takes no pushes.",
+        "no_push": "The token cannot push to {{repository}}: give it Contents and Pull requests, Read and write, and check that you can push there.",
+        "org_pending_approval": "The token waits for the organization's approval: ask an owner of the organization to approve it, or contribute through a fork.",
+        "other_repositories": "The token reaches other repositories: make one with Only select repositories and {{repository}} alone."
+      }
     }
   },
   "skills": {
@@ -1853,7 +1953,8 @@
       "sandbox": "Session sandbox",
       "kiro": "Kiro harness",
       "fork": "Fork",
-      "upstream_pr": "Upstream pull request"
+      "upstream_pr": "Upstream pull request",
+      "write_token": "Fine-grained token"
     },
     "required": "Needed to run"
   },
@@ -2341,6 +2442,15 @@
       "noStderr": "No error output.",
       "toControls": "Go to the run's controls",
       "openSession": "Open {{agent}}'s session"
+    },
+    "tokenGo": {
+      "hint": "This run pushes with {{login}}'s fine-grained token: its branch and pull request wait for {{login}}'s go, after its gates.",
+      "push": "Push with {{login}}'s token",
+      "ownerOnly": "Only {{owner}}, who saved the token, gives this run its go.",
+      "given": "Your go is given: the run pushes with {{login}}'s token once its gates pass.",
+      "already": "A go was given on this run already.",
+      "refused": "Only the token's owner gives this run its go.",
+      "failed": "The go could not be given: try again."
     }
   },
   "canvas": {

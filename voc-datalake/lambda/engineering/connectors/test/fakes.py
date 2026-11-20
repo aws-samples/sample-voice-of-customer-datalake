@@ -211,12 +211,17 @@ class FakeLedger:
     goes: set[tuple[str, str]] = field(default_factory=set)
     #: The runs a person gave their go.
     people: set[str] = field(default_factory=set)
+    #: (7.60.00) Who gave each run's go (their subject); a run in ``people`` and not here: ``started_by``'s.
+    by: dict[str, str] = field(default_factory=dict)
 
     def has_go(self, run_id: str, tree_hash: str) -> bool:
         return (run_id, tree_hash) in self.goes
 
     def person_go(self, run_id: str) -> bool:
-        return run_id in self.people
+        return run_id in self.people or run_id in self.by
+
+    def person_go_by(self, run_id: str) -> str:
+        return self.by.get(run_id, '')
 
 
 @dataclass

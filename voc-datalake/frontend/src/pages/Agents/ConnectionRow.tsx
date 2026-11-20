@@ -11,14 +11,15 @@
  * screen reader ("Attest CI example-org/web"). No id is content: the connection id, the App's and the installation's
  * live in the details. A fork connection (7.57.00) says which upstream it is a fork of, its owner, the licence they
  * acknowledged and (7.58.00) its owner's acknowledgement of a changed licence (ForkLines.tsx), and has no edit in its
- * menu.
+ * menu. A fine-grained token connection (7.60.00) has its token's line (TokenExpiryBadge.tsx: its login, its expiry,
+ * whose it is) and Replace token… in place of the edit (the token dialog: the page's `onEdit`).
  *
  * @module pages/Agents/ConnectionRow
  */
 import { useTranslation } from 'react-i18next'
-import { FolderGit2, GitBranch, Loader2, Pencil, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react'
+import { FolderGit2, GitBranch, KeyRound, Loader2, Pencil, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react'
 import { RowActionsMenu } from '../../components/RowActionsMenu/RowActionsMenu'
-import { isCiAttested } from '../../api/engineeringConnectionsApi'
+import { isCiAttested, isTokenConnection } from '../../api/engineeringConnectionsApi'
 import { formatCalendarDay } from '../../utils/dateUtils'
 import { EXPIRY_WARNING_DAYS, todayUtc, tokenExpiry } from './connectionRules'
 import { issuesOf, rowPrimary, viaApp } from './connectionStatus'
@@ -26,6 +27,7 @@ import { CiBadge } from './CiAttestation'
 import { ConnectionDetails } from './ConnectionDetails'
 import { IssuesCell, LabelCell } from './ConnectionIssues'
 import { ForkBadge, ForkLines } from './ForkLines'
+import { TokenConnectionLine } from './TokenExpiryBadge'
 import type { TFunction } from 'i18next'
 import type { RowMenuEntry } from '../../components/RowActionsMenu/rowMenuEntries'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
@@ -82,7 +84,10 @@ function RepositoryCell({ connection }: Readonly<{ connection: EngineeringConnec
         <p className="flex items-center gap-1 text-[12px] text-muted">
           <GitBranch size={12} aria-hidden="true" /> {t('connections.branch', { branch: connection.default_branch })}
         </p>
-        {!credential.set && !viaApp(connection) && <p className="text-[12px] text-warn">{t('connections.notSetHint')}</p>}
+        {isTokenConnection(connection) && <TokenConnectionLine connection={connection} />}
+        {!credential.set && !viaApp(connection) && !isTokenConnection(connection) && (
+          <p className="text-[12px] text-warn">{t('connections.notSetHint')}</p>
+        )}
         {connection.host === 'gitlab' && credential.set && <TokenExpiryLine expiresAt={credential.expires_at} />}
         {connection.fork !== null && <ForkLines connection={connection} fork={connection.fork} />}
       </div>
@@ -118,15 +123,24 @@ function PrimaryAction({ primary, connection, busy, actions }: Readonly<{
   )
 }
 
+/** The row's edit: Replace token… (a token connection, 7.60.00), Change default branch… (through the App) or Edit. */
+function editEntry(connection: EngineeringConnection, actions: RowActions, t: TFunction<'agents'>): RowMenuEntry {
+  const onSelect = () => { actions.onEdit(connection) }
+  if (isTokenConnection(connection)) {
+    return { kind: 'action', id: 'edit', icon: KeyRound, label: t('connections.menu.replaceToken'), onSelect }
+  }
+  const app = viaApp(connection)
+  return {
+    kind: 'action', id: 'edit', icon: app ? GitBranch : Pencil,
+    label: app ? t('connections.menu.changeBranch') : t('connections.menu.edit'), onSelect,
+  }
+}
+
 /** The row's "⋯": its edit, its CI attestation's other move, and its removal last. */
 function menuEntries(connection: EngineeringConnection, primary: RowPrimary, actions: RowActions,
   t: TFunction<'agents'>): RowMenuEntry[] {
-  const app = viaApp(connection)
   // (7.57.00: a fork connection is its installation's on the fork, made again to change it: no edit)
-  const entries: RowMenuEntry[] = connection.fork !== null ? [] : [{
-    kind: 'action', id: 'edit', icon: app ? GitBranch : Pencil,
-    label: app ? t('connections.menu.changeBranch') : t('connections.menu.edit'), onSelect: () => { actions.onEdit(connection) },
-  }]
+  const entries: RowMenuEntry[] = connection.fork !== null ? [] : [editEntry(connection, actions, t)]
   if (isCiAttested(connection)) {
     entries.push({ kind: 'action', id: 'withdraw', icon: ShieldOff, label: t('connections.menu.withdraw'),
       onSelect: () => { actions.onWithdraw(connection) } })

@@ -20,6 +20,7 @@
  * read keeps (its last good state, retried with a backoff); below them people's reactions on the host. (7.51.04) At
  * the top, for an admin, the banner of a run that waits for a person, failed or was stopped (RunEndBanner.tsx): what
  * happened, which agent and step, why, the cost so far, and what to do next with the control bar it links to.
+ * (7.60.00) Beside the control bar, on a run of a fine-grained token connection, its token owner's go (RunTokenGo.tsx).
  *
  * @module pages/Agents/RunWorkspace/RunWorkspace
  */
@@ -38,6 +39,7 @@ import { readRunAddress } from './runWorkspacePaths'
 import { useSessionLayout } from './useSessionLayout'
 import { RunHeader } from './RunHeader'
 import { RunControlBar } from './RunControlBar'
+import { RunTokenGo } from './RunTokenGo'
 import { FlowPane } from './FlowPane'
 import { SessionsPane } from './SessionsPane'
 import { Inspector } from './Inspector'
@@ -80,6 +82,8 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
         // (a focusable place for the end banner's "Go to the run's controls")
         <div id={controlsId} tabIndex={-1} className="rounded-md">
           <RunControlBar runId={runId} overview={overview} live={live} isAdmin={isAdmin} refreshFailed={refresh.failed} onRetry={refresh.retry} />
+          {/* (7.60.00: a run on a fine-grained token connection pushes only after its token owner's go) */}
+          {isAdmin && live && <RunTokenGo runId={runId} connectionId={overview.run.connection} repository={overview.run.repo} />}
         </div>
       )} />
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,26rem)]">

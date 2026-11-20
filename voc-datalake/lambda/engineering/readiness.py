@@ -30,9 +30,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, Final, Literal, Protocol
 
+from engineering.connectors.hosts import FINE_GRAINED
 from engineering.runtime.harness.kiro_pin import kiro_model
 from engineering.runtime.harness.model_choice import bedrock_model
 from engineering.runtime.harness_switch import not_native
@@ -44,8 +46,9 @@ Status = Literal['pass', 'fail', 'warn', 'unknown']
 DOCS: Final = 'docs/autonomous-engineering.md'
 READINESS_DOCS: Final = f'{DOCS}#readiness-75000'
 #: The checks, in the order they are answered (7.57.00: a fork connection's ``fork`` and ``upstream_pr``, neither of
-#: them required).
-CHECK_IDS: Final = ('connection', 'app_installation', 'fork', 'upstream_pr', 'ci_attestation',
+#: them required; 7.60.00: a fine-grained connection's ``write_token``, not required either: an expired or unset token
+#: fails the ``connection`` check of a flow that pushes, which is).
+CHECK_IDS: Final = ('connection', 'app_installation', 'write_token', 'fork', 'upstream_pr', 'ci_attestation',
                     'ci_protection', 'image', 'pack', 'tenets', 'issues_source', 'issue_label', 'dial', 'budget',
                     'hard_cap', 'bedrock_models', 'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'kiro',
                     'session_storage')
@@ -162,6 +165,11 @@ class Settings:
     #: runtime/harness_switch.py ``native_models``; empty when not known).
     model_choices: Mapping[str, str] = field(default_factory=dict)
     native_models: frozenset[str] = frozenset()
+    #: (7.60.00) Today (UTC), which a fine-grained token's expiry is read against; None: the clock's.
+    today: date | None = None
+
+    def day(self) -> date:
+        return self.today if self.today is not None else datetime.now(UTC).date()
 
     def run_models(self) -> dict[str, str]:
         """The model each role's session asks Bedrock for: its card's, or on the native harness its model choice's
@@ -405,6 +413,11 @@ MODELS_DOCS: Final = f'{DOCS}#models'
 COST_DOCS: Final = f'{DOCS}#cost'
 TRUST_DOCS: Final = f'{DOCS}#trust-and-safety'
 ADD_CONNECTION: Final = 'Add the repository under Agents → Connections, then name it in the agent\'s Set up.'
+TOKEN_DOCS: Final = f'{DOCS}#a-fine-grained-token-76000'
+#: (7.60.00) A fine-grained token's warning window (connectors/fine_grained.py WARN_DAYS).
+TOKEN_WARN_DAYS: Final = 14
+REPLACE_FIX: Final = ('Its owner replaces the token under Agents → Connections → the repository → Replace token (a '
+                        'fine-grained token, this repository only, 90 days or less).')
 
 
 @dataclass
@@ -437,7 +450,55 @@ def _connection(ctx: _Context) -> Check:
     if ctx.row.get('connection_kind') == 'fork':
         return Check('connection', 'pass', f'{where}, a fork of {ctx.row.get("upstream", "")}: the run\'s outcome is '
                      'a pull request on the upstream.', '', PUBLIC_DOCS)
+    if ctx.row.get('connection_kind') == FINE_GRAINED:
+        return _token_connection(ctx, where)
     return Check('connection', 'pass', where, '', CONNECTORS_DOCS)
+
+
+def _token_days(ctx: _Context) -> int | None:
+    """A fine-grained connection's token's days left (0 or fewer: expired), None when the row says no usable one."""
+    row = ctx.row or {}
+    expires = row.get('token_expires_at')
+    if row.get('credential_set') is not True or not isinstance(expires, str):
+        return None
+    try:
+        return (date.fromisoformat(expires) - ctx.settings.day()).days
+    except ValueError:
+        return None
+
+
+def _login(ctx: _Context) -> str:
+    return str((ctx.row or {}).get('token_login') or 'its owner')
+
+
+def _token_connection(ctx: _Context, where: str) -> Check:
+    """A fine-grained connection (7.60.00): pushed with its owner's token after their go; a flow that pushes fails on an
+    expired or unset token (the start refuses its run)."""
+    left = _token_days(ctx)
+    if requires(ctx.subject, 'ci_attestation') and (left is None or left <= 0):
+        return Check('connection', 'fail', f'{where}: its fine-grained token has expired or is not set, so a run is '
+                     'refused at its start.', REPLACE_FIX, TOKEN_DOCS)
+    return Check('connection', 'pass', f"{where}, pushed with {_login(ctx)}'s fine-grained token: a branch and a pull "
+                 'request after your go.', '', TOKEN_DOCS)
+
+
+def _write_token(ctx: _Context) -> Check:
+    """A fine-grained connection's token (7.60.00): its days left (a warning at ``TOKEN_WARN_DAYS`` or fewer), and that
+    its first push confirms it can write (no write probe: it would be a write, and could start CI)."""
+    if ctx.row is None or ctx.row.get('connection_kind') != FINE_GRAINED:
+        return _not_needed('write_token', 'the connection pushes with no token of a person\'s', TOKEN_DOCS)
+    left = _token_days(ctx)
+    if left is None:
+        return Check('write_token', 'fail', 'The connection\'s fine-grained token is not set.', REPLACE_FIX,
+                     TOKEN_DOCS)
+    if left <= 0:
+        return Check('write_token', 'fail', f'The fine-grained token expired on {ctx.row.get("token_expires_at")}.',
+                     REPLACE_FIX, TOKEN_DOCS)
+    when = f'{_login(ctx)}\'s token expires in {left} day{"s" if left != 1 else ""}'
+    confirm = 'Its first push confirms it can write (it is never probed with a write).'
+    if left <= TOKEN_WARN_DAYS:
+        return Check('write_token', 'warn', f'{when}. {confirm}', REPLACE_FIX, TOKEN_DOCS)
+    return Check('write_token', 'pass', f'{when}. {confirm}', '', TOKEN_DOCS)
 
 
 def _repository(ctx: _Context) -> str:
@@ -450,11 +511,8 @@ def _app_installation(ctx: _Context) -> Check:
                      ADD_CONNECTION, APP_DOCS)
     if str(ctx.row.get('host') or 'github') != 'github':
         return _not_needed('app_installation', 'a GitLab connection signs in with its project access token', APP_DOCS)
-    if ctx.row.get('connection_kind') == 'public_read':
-        # (7.58.00) Read with an installation token of the deployment's App that holds metadata: read alone and names no
-        # repository (github.py ``_token``): no installation on the public repository is needed, nor asked for.
-        return _not_needed('app_installation', 'a public repository connected read only is read with this '
-                           "deployment's GitHub App, which needs no installation on it", PUBLIC_DOCS)
+    if ctx.row.get('connection_kind') in ('public_read', FINE_GRAINED):
+        return _read_only_installation(ctx)
     try:
         covered = ctx.ports.installation_repositories(ctx.row)
     except ReadFailed as error:
@@ -474,6 +532,28 @@ def _app_installation(ctx: _Context) -> Check:
                      f'{repository} is not among those read.', 'Check the installation on GitHub.', APP_DOCS)
     return Check('app_installation', 'fail', f'The GitHub App installation does not cover {repository}.',
                  'On GitHub, add the repository to the App\'s installation (Configure → Repository access).', APP_DOCS)
+
+
+def _read_only_installation(ctx: _Context) -> Check:
+    """A public repository read only, or a fine-grained connection's reads (7.60.00): with the read-only token of the
+    deployment's App installation its row names, which a token connection's check finds still there (no installation
+    on the repository itself is needed)."""
+    row = ctx.row or {}
+    if row.get('connection_kind') == 'public_read':
+        # (7.58.00) Read with an installation token of the deployment's App that holds metadata: read alone and names no
+        # repository (github.py ``_token``): no installation on the public repository is needed, nor asked for.
+        return _not_needed('app_installation', 'a public repository connected read only is read with this '
+                           "deployment's GitHub App, which needs no installation on it", PUBLIC_DOCS)
+    try:
+        covered = ctx.ports.installation_repositories({**row, 'credential_kind': 'app_reference'})
+    except ReadFailed as error:
+        return _unknown('app_installation', 'The GitHub App installation', error, docs=TOKEN_DOCS)
+    if covered is not None and not covered[0] and not covered[1]:
+        return Check('app_installation', 'fail', 'This deployment\'s GitHub App installation that reads the repository '
+                     'is gone or suspended.', 'Connect GitHub again (Agents → Connections), then replace the token.',
+                     TOKEN_DOCS)
+    return Check('app_installation', 'pass', "Not needed: read with this deployment's GitHub App's read-only token.",
+                 '', TOKEN_DOCS)
 
 
 def _is_fork(ctx: _Context) -> bool:
@@ -686,7 +766,12 @@ def _dial(ctx: _Context) -> Check:
                      'pushes nothing (documents default to AI-driven).', fix, TRUST_DOCS)
     found = f'The runs follow {who}, whose way of working is {MODE_NAMES.get(mode, mode)}'
     if mode in allowed:
-        return Check('dial', 'pass', f'{found}, which this flow runs in.', '', TRUST_DOCS)
+        token = ''
+        if (ctx.row or {}).get('connection_kind') == FINE_GRAINED and mode in PUSHING_MODES:
+            # (7.60.00: a person's token acts as that person, so every push waits for their own go, AI-driven too)
+            token = (f" On this connection every push waits for {_login(ctx)}'s go (the token owner's), in any way of "
+                     'working.')
+        return Check('dial', 'pass', f'{found}, which this flow runs in.{token}', '', TRUST_DOCS)
     pushes_nothing = ', so a run would push nothing' if mode not in PUSHING_MODES else ''
     return Check('dial', 'fail', f'{found}{pushes_nothing}. This flow needs {mode_names(allowed)}.', fix, TRUST_DOCS)
 
@@ -923,7 +1008,7 @@ def _session_storage(ctx: _Context) -> Check:
 
 
 _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
-    'connection': _connection, 'app_installation': _app_installation, 'fork': _fork,
+    'connection': _connection, 'app_installation': _app_installation, 'write_token': _write_token, 'fork': _fork,
     'upstream_pr': _upstream_pr, 'ci_attestation': _ci_attestation,
     'ci_protection': _ci_protection, 'image': _image, 'pack': _pack, 'tenets': _tenets,
     'issues_source': _issues_source, 'issue_label': _issue_label, 'dial': _dial, 'budget': _budget,

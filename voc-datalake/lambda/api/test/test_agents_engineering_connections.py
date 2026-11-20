@@ -103,7 +103,7 @@ def test_an_administrator_adds_lists_changes_and_removes_a_connection(lambda_con
     status, saved = _call(lambda_context, 'PUT', connection_path(), body=body())
     assert (status, saved['created'], saved['connection']['credential']) == (
         200, True, {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID),
-                    'expires_at': None})
+                    'expires_at': None, 'expires_in_days': None, 'login': None, 'saved_by_you': False, 'owner': None})
     assert saved['connection']['updated_by'] == 'alice'
     assert _call(lambda_context, 'GET', PATH)[1]['connections'] == [saved['connection']]
     # The branch alone changes without the credential, which stays as stored.

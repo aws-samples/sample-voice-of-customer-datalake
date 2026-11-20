@@ -29,6 +29,11 @@
 //   GET  /agents/engineering/public-repositories, POST …/public-connections, POST …/connections/<id>/fork,
 //   PUT …/connections/<id>/upstream   any public repository read only, and a fork of it (7.57.00): mock-public-repos.js,
 //                     over the connections here (they start with the sample 'lint-kit' read only and its fork)
+//   POST /agents/engineering/token-connections, PUT …/connections/<id>/token   a public repository connected with a
+//                     person's fine-grained token (7.60.00): mock-token-connections.js, over the connections here (they
+//                     start with the sample 'partner-sdk', its token expiring in 10 days)
+//   POST …/go         {reason?} (7.60.00 in the SPA): a person's go on the sample run, {go: {by, at, created, reason}}:
+//                     written once, answered as it stands after (created: false)
 //   GET  /agents/engineering/issues-source, PUT …/connections/<id>/issues   the GitHub Issues source as the
 //                     connections drive it (7.50.02): mock-issues-source.js, over the connections here
 //                     (the server's field checks; 409 past the limit or for a repository change with live runs) | remove
@@ -49,6 +54,7 @@
 import { handleGitHubAppRoutes } from './mock-github-apps.js';
 import { handleIssuesSourceRoutes } from './mock-issues-source.js';
 import { handlePublicRepositoryRoutes, sampleContributions } from './mock-public-repos.js';
+import { handleTokenConnectionRoutes, sampleTokenConnection } from './mock-token-connections.js';
 import {
   CHILD_RUN_ID, ENDED_RUN_ID, FAILED_RUN_ID, agentRoute, assertions, failedRunThread, otherOverview, restart, runsList, steer,
   workspaceOverview,
@@ -103,6 +109,8 @@ function agent(id, role, fields) {
 const run = {
   meta: {
     run_id: SAMPLE_RUN_ID, goal: 'Fix the paging bugs reported this week', repo: 'example-org/storefront',
+    // (7.60.00: the connection it started on, as the overview names it)
+    connection: 'storefront',
     flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null, waiting_at: '', stop: null,
     // Its flow's $50 budget, copied at the start; the flow's month passed 80% of it (the supervisor's flag).
     budget: { monthly_usd: 50, alert_percent: 80, alert_month: new Date().toISOString().slice(0, 7) },
@@ -405,7 +413,19 @@ function routeGet(sub, rest, url) {
 }
 
 /** The run's own actions (`POST …/<run>/<action>`), each on its body. */
+/** A person's go on the sample run (GO#person): written once, then answered as it stands. */
+let personGo = null;
+
+function giveGo(body) {
+  if (run.meta.ended_at !== null) return [409, { message: 'the run is not live: it takes no go' }];
+  if (personGo !== null) return [200, { go: { ...personGo, created: false } }];
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  personGo = { by: 'person:sub-admin-demo', at: new Date().toISOString(), reason };
+  return [200, { go: { ...personGo, created: true } }];
+}
+
 const RUN_POSTS = {
+  go: (body) => giveGo(body),
   signals: (body) => signal(body),
   messages: (body) => answer(body),
   stop: (body) => stopRun(body),
@@ -520,11 +540,11 @@ const connections = new Map([['storefront', {
   version: 1, repository_private: true,
 }], ['docs-site', {
   connection_id: 'docs-site', host: 'gitlab', repository: 'example-group/web/docs-site', default_branch: 'main',
-  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(12) },
+  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(12), expires_in_days: 12 },
   created_at: minutesAgo(60 * 24 * 340), created_by: 'admin-demo', updated_at: minutesAgo(60 * 24 * 340), updated_by: 'admin-demo',
   version: 1, repository_private: null,
 }]]);
-for (const sample of sampleContributions()) connections.set(sample.connection_id, sample);
+for (const sample of [...sampleContributions(), sampleTokenConnection()]) connections.set(sample.connection_id, sample);
 /** Whether `id` names a stored connection (a removed one is gone from the map): the readiness preview's rule. */
 export const isStoredConnection = (id) => connections.has(id);
 const DIGITS = /^[1-9]\d{0,19}$/;
@@ -539,7 +559,7 @@ function tokenState(credential) {
     || typeof credential.token !== 'string' || !GITLAB_TOKEN.test(credential.token)) {
     return 'credential is {token}: the GitLab project access token (glpat-…)';
   }
-  return { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(60) };
+  return { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: dayAhead(60), expires_in_days: 60 };
 }
 
 /** The stored credential's state for a save's credential (never the key), or the 400 message of a bad one. */
@@ -828,7 +848,7 @@ const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRo
 function handleConnectionModules(req, res, url, send, shared) {
   const over = { connections, connectionLimit: CONNECTION_LIMIT, isAdmin };
   return handleGitHubAppRoutes(req, res, url, send, shared, over) || handleIssuesSourceRoutes(req, res, url, send, shared, over)
-    || handlePublicRepositoryRoutes(req, res, url, send, shared, over);
+    || handlePublicRepositoryRoutes(req, res, url, send, shared, over) || handleTokenConnectionRoutes(req, res, url, send, shared, over);
 }
 
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {

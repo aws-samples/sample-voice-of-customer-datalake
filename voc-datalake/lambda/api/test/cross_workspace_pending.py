@@ -275,6 +275,12 @@ PHASE_3: dict[str, frozenset[str]] = {
     # The scheduled cross-run Learn pass's weekly record (7.53.00, included by agents_handler.py): the deployment's
     # flows' records (ws/default/learn/), so it moves with the engineering agents in 3g3.
     'agents_engineering_learn_routes.py': frozenset({'GET /agents/engineering/learn'}),
+    # A repository connected with a fine-grained token (7.60.00): a connection, the deployment's like every one (D8),
+    # until the connections move in 3g3 (docs/multi-workspace.md).
+    'agents_engineering_token_routes.py': frozenset({
+        'POST /agents/engineering/token-connections',
+        'PUT /agents/engineering/connections/<connection_id>/token',
+    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

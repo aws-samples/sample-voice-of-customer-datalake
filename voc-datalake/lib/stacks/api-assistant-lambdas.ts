@@ -10,6 +10,7 @@ import * as path from 'path';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantClaudeModels, grantClaudeModelsToFunction } from '../utils/claude-model-grant';
 import { grantEmbeddingModel } from '../utils/memory-recall-grant';
+import { grantParameters } from '../utils/parameter-grants';
 import {
   AGENTS_API_FUNCTION_BASE_NAME, ENGINEERING_BOARD_FUNCTION_BASE_NAME, ENGINEERING_START_FUNCTION_BASE_NAME,
   MEMORY_API_FUNCTION_BASE_NAME,
@@ -28,7 +29,10 @@ import {
   ENGINEERING_REPO_PARTITIONS, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS, ENGINEERING_WORKSPACE_REPORTS_KEYS,
 } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
-import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix } from './engineering-broker';
+import {
+  engineeringAgentsEnabled, engineeringParameterArns, engineeringParameterPrefix, engineeringTokenParameterArns,
+  engineeringTokenParameterPrefix,
+} from './engineering-broker';
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
@@ -187,7 +191,7 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // The run workspace's reads of the agents' transcripts, patches and gate records and the runs' manifests, and its
   // listings of the transcripts' and patches' prefixes alone (7.51.00, api-engineering-run-reads.ts).
   grantEngineeringRunReads(role, engineeringWorkspaceBucket);
-  const parameterPrefix = grantConnectionCredentialWrites(ctx, role);
+  const parameterPrefixes = grantConnectionCredentialWrites(ctx, role);
   // The readiness checks' own reads and the workspace bucket's probe (7.50.00, api-engineering-readiness.ts).
   const readiness = grantEngineeringReadiness(ctx, role);
   // The GitHub Issues source configured from the connections (7.50.02, api-engineering-issues-sync.ts): its settings in
@@ -200,7 +204,7 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     ...issues,
     ...voice,
     ENGINEERING_AGENTS: 'on',
-    ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
+    ...parameterPrefixes,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,
     ENGINEERING_TABLE: engineeringTable.tableName,
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
@@ -250,33 +254,27 @@ function grantKnowledgeDecisions(ctx: ApiStackContext, role: iam.Role): void {
 /**
  * The repository connections' credentials (`PUT`/`DELETE /agents/engineering/connections/<id>`,
  * lambda/engineering/connectors/connections.py): `ssm:PutParameter` and `ssm:DeleteParameter` on exactly the connections'
- * parameters (`/[<prefix>-]voc/engineering/*`, the path the broker reads: engineering-broker.ts), and `kms:Encrypt` and
- * `kms:GenerateDataKey` on the stack's key only through SSM and only for those parameters (SSM names the parameter in
- * the encryption context). Never `ssm:GetParameter`: the Agents API writes a credential and cannot read it back. The
- * prefix, for the role's env.
+ * parameters (`/[<prefix>-]voc/engineering/*`, the path the broker reads: engineering-broker.ts) and, since 7.60.00, the
+ * fine-grained connections' write tokens (`/[<prefix>-]voc/engineering-token/*`, which only the broker reads), and
+ * `kms:Encrypt` and `kms:GenerateDataKey` on the stack's key only through SSM and only for those parameters (SSM names
+ * the parameter in the encryption context). Never `ssm:GetParameter`: the Agents API writes a credential or a token and
+ * cannot read it back. The two prefixes, for the role's env. (Statements only, on the existing role: 7.60.00 adds no
+ * resource to VocApiStack.)
  */
-function grantConnectionCredentialWrites(ctx: ApiStackContext, role: iam.Role): string {
+function grantConnectionCredentialWrites(ctx: ApiStackContext, role: iam.Role): Record<string, string> {
   const stack = cdk.Stack.of(role);
-  const parameters = engineeringParameterArns(stack, ctx.deploymentPrefix);
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'ConnectionCredentialWrites', actions: ['ssm:PutParameter', 'ssm:DeleteParameter'], resources: [parameters],
-  }));
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'ConnectionCredentialKey',
-    actions: ['kms:Encrypt', 'kms:GenerateDataKey'],
-    resources: [ctx.props.kmsKey.keyArn],
-    conditions: {
-      StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
-      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
-    },
-  }));
-  acknowledgeNag(role, [{
-    id: 'AwsSolutions-IAM5',
-    reason: 'One SecureString per repository connection, named by an administrator at run time, so the writes are '
-      + 'scoped to the connections\' path (/[<prefix>-]voc/engineering/*): put and delete only, never a read',
-    findings: [resourceFinding(parameters)],
-  }]);
-  return engineeringParameterPrefix(ctx.deploymentPrefix);
+  grantParameters(role, ctx.props.kmsKey, {
+    sid: 'ConnectionCredentialWrites', keySid: 'ConnectionCredentialKey', actions: ['ssm:PutParameter', 'ssm:DeleteParameter'],
+    keyActions: ['kms:Encrypt', 'kms:GenerateDataKey'],
+    parameters: [engineeringParameterArns(stack, ctx.deploymentPrefix), engineeringTokenParameterArns(stack, ctx.deploymentPrefix)],
+    reason: 'One SecureString per repository connection (and per fine-grained token connection\'s write token), named '
+      + 'by an administrator at run time, so the writes are scoped to the connections\' and the write tokens\' paths '
+      + '(/[<prefix>-]voc/engineering/*, /[<prefix>-]voc/engineering-token/*): put and delete only, never a read',
+  });
+  return {
+    ENGINEERING_PARAMETER_PREFIX: engineeringParameterPrefix(ctx.deploymentPrefix),
+    ENGINEERING_TOKEN_PARAMETER_PREFIX: engineeringTokenParameterPrefix(ctx.deploymentPrefix),
+  };
 }
 
 export function createAssistantLambdas(

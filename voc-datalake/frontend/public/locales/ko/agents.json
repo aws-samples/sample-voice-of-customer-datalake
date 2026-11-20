@@ -1225,7 +1225,9 @@
       "ciNeeded_one": "{{count, number}}개는 에이전트가 푸시하기 전에 CI 확인이 필요합니다",
       "ciNeeded_other": "{{count, number}}개는 에이전트가 푸시하기 전에 CI 확인이 필요합니다",
       "publicRead_one": "읽기 전용 공개 리포지토리 {{count, number}}개",
-      "publicRead_other": "읽기 전용 공개 리포지토리 {{count, number}}개"
+      "publicRead_other": "읽기 전용 공개 리포지토리 {{count, number}}개",
+      "tokens_one": "세분화된 토큰을 쓰는 저장소 {{count, number}}개",
+      "tokens_other": "세분화된 토큰을 쓰는 저장소 {{count, number}}개"
     },
     "columns": {
       "repository": "저장소",
@@ -1248,7 +1250,8 @@
       "edit": "연결 편집…",
       "attest": "CI 확인…",
       "withdraw": "CI 확인 철회…",
-      "remove": "연결 제거…"
+      "remove": "연결 제거…",
+      "replaceToken": "토큰 교체…"
     },
     "details": {
       "button": "{{repository}} 연결 세부 정보",
@@ -1346,6 +1349,103 @@
       "summaryPushes": "에이전트 푸시 대상: {{fork}}(내 포크).",
       "summaryPushesPending": "에이전트 푸시 대상: 연결된 후의 내 포크.",
       "summaryPullRequests": "{{upstream}}으로의 풀 리퀘스트는 내가 보냅니다. 실행은 원클릭 링크로 끝나고, 내가 GitHub에서 Create를 클릭합니다."
+    },
+    "add": {
+      "title": "저장소 추가",
+      "intro": "저장소에서 할 수 있는 일에 따라 세 가지 방법이 있습니다.",
+      "useWhen": "이럴 때 사용",
+      "endsWith": "실행 결과",
+      "needsApp": "먼저 이 배포의 GitHub App을 내 저장소 중 하나에 설치하세요. 그 읽기 전용 토큰으로 저장소를 읽습니다.",
+      "app": {
+        "title": "GitHub App 설치",
+        "when": "저장소를 관리하거나, 저장소의 조직에서 앱을 설치할 수 있을 때.",
+        "ends": "저장소의 브랜치와 풀 리퀘스트.",
+        "action": "{{slug}}에 저장소 추가"
+      },
+      "token": {
+        "title": "세분화된 토큰 사용",
+        "when": "공개 저장소에 푸시할 수는 있지만 App을 설치할 수 없을 때(예: 소유자가 앱을 승인하는 조직).",
+        "ends": "저장소의 브랜치와 풀 리퀘스트. 내 승인 후 내 토큰으로 푸시됩니다.",
+        "action": "토큰 사용…"
+      },
+      "fork": {
+        "title": "포크로 기여",
+        "when": "다른 사람의 공개 저장소일 때.",
+        "ends": "내 포크의 풀 리퀘스트와, 원래 저장소에서 한 번의 클릭으로 여는 링크.",
+        "action": "저장소 찾기"
+      }
+    },
+    "token": {
+      "kind": "세분화된 토큰",
+      "loginUnknown": "로그인 알 수 없음",
+      "expires_one": "{{date}}에 만료({{count, number}}일 남음)",
+      "expires_other": "{{date}}에 만료({{count, number}}일 남음)",
+      "expiredOn": "{{date}}에 만료됨",
+      "expiryUnknown": "만료일 알 수 없음",
+      "soonBadge_one": "{{count, number}}일 후 만료",
+      "soonBadge_other": "{{count, number}}일 후 만료",
+      "expiredBadge": "토큰 만료됨",
+      "notSet": "세분화된 토큰이 저장되어 있지 않습니다. 교체하지 않으면 에이전트가 이 저장소에 아무것도 푸시하지 않습니다.",
+      "owner": "{{owner}}님이 저장: 이 연결의 실행은 그 사람만 승인할 수 있습니다.",
+      "ownerYou": "내가 저장: 이 연결의 실행은 나만 승인할 수 있습니다.",
+      "revoke": "여기에 저장된 토큰을 삭제합니다. GitHub에서도 취소하세요: Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}}을(를) 내 세분화된 토큰으로 연결했습니다.",
+      "replaced": "{{repository}}의 토큰을 교체했습니다.",
+      "list": {
+        "title": "세분화된 토큰",
+        "hint": "개인 토큰으로 푸시하는 공개 저장소: 토큰 소유자의 승인 후 브랜치와 풀 리퀘스트를 만듭니다."
+      },
+      "dialog": {
+        "addTitle": "세분화된 토큰으로 저장소 연결",
+        "replaceTitle": "{{repository}}의 토큰 교체",
+        "description": "푸시할 수는 있지만 App을 설치할 수 없는 공개 저장소용입니다. 읽기에는 이 배포 GitHub App의 읽기 전용 토큰을 쓰고, 내 토큰은 검사와 내 승인 후 실행의 마지막 푸시와 풀 리퀘스트에만 씁니다.",
+        "save": "확인 후 연결",
+        "replace": "확인 후 교체"
+      },
+      "repository": {
+        "label": "저장소",
+        "hint": "내가 푸시할 수 있는 GitHub 공개 저장소: owner/name 또는 GitHub 주소.",
+        "find": "GitHub에서 찾기",
+        "use": "{{repository}} 사용",
+        "noToken": "보관됨: 푸시를 받지 않음",
+        "fixed": "토큰은 이 연결의 저장소 {{repository}}용입니다. 새 토큰에도 같은 검사를 합니다."
+      },
+      "steps": {
+        "title": "GitHub에서 토큰 만들기",
+        "owner": "Resource owner: {{owner}}.",
+        "access": "Repository access: Only select repositories를 고른 뒤 {{repository}}만 선택.",
+        "permissions": "Repository permissions: Contents와 Pull requests를 모두 Read and write로(읽기 전용 Metadata는 자동으로 포함). 그 밖에는 없음.",
+        "expiry": "Expiration: {{days, number}}일 이하.",
+        "approval": "{{owner}}이(가) 세분화된 토큰을 승인하는 조직이라면, 토큰이 푸시하기 전에 조직의 소유자가 승인합니다.",
+        "link": "GitHub의 새 토큰 페이지 열기",
+        "prefilled": "링크가 이름, 소유자, 90일, 두 권한을 채웁니다. 저장소는 그 페이지에서 직접 고르세요. GitHub 링크로는 지정할 수 없습니다."
+      },
+      "field": {
+        "label": "세분화된 토큰",
+        "hint": "토큰(github_pat_…)을 붙여 넣으세요. GitHub에서 확인하고 암호화해 저장하며 다시 표시하지 않습니다."
+      },
+      "invalid": {
+        "repository": "GitHub 저장소를 owner/name으로 지정하거나 주소를 붙여 넣으세요.",
+        "tokenEmpty": "세분화된 토큰을 붙여 넣으세요.",
+        "classic": "클래식, OAuth 또는 App 토큰이며 세분화된 토큰이 아닙니다. 세분화된 토큰을 만드세요.",
+        "shape": "세분화된 토큰은 github_pat_로 시작합니다. 전체를 붙여 넣으세요."
+      },
+      "tick": "이 토큰은 {{repository}}에만 접근할 수 있습니다",
+      "tickHint": "GitHub는 토큰에 어떤 저장소가 주어졌는지 알려 주지 않으므로 직접 확인합니다. 비공개 저장소에 접근하는 토큰은 거부됩니다.",
+      "tickRequired": "토큰이 {{repository}}에만 접근할 수 있는지 확인하세요.",
+      "refused": {
+        "classic_token": "GitHub에 따르면 세분화된 토큰이 아닙니다. 세분화된 토큰을 만드세요.",
+        "not_accepted": "GitHub가 토큰을 받지 않습니다(취소됨, 만료됨 또는 잘못 입력됨). 새로 만들어 전체를 붙여 넣으세요.",
+        "no_expiry": "토큰에 만료일이 없습니다. 90일 이내에 만료되는 토큰을 만드세요.",
+        "expires_too_late": "토큰 유효 기간이 90일을 넘습니다. 90일 이내에 만료되는 토큰을 만드세요.",
+        "expired": "토큰이 만료되었습니다. 새로 만드세요.",
+        "not_found": "토큰이 GitHub에서 {{repository}}을(를) 볼 수 없습니다. 이름과 토큰의 저장소 접근에 포함되어 있는지 확인하세요.",
+        "private_repository": "{{repository}}은(는) 비공개입니다. 토큰으로는 공개 저장소만 연결합니다. 대신 GitHub App을 설치하세요.",
+        "archived": "{{repository}}은(는) 보관되어 푸시를 받지 않습니다.",
+        "no_push": "토큰으로 {{repository}}에 푸시할 수 없습니다. Contents와 Pull requests에 Read and write를 주고, 그곳에 푸시할 수 있는지 확인하세요.",
+        "org_pending_approval": "토큰이 조직의 승인을 기다리고 있습니다. 조직의 소유자에게 승인을 요청하거나 포크로 기여하세요.",
+        "other_repositories": "토큰이 다른 저장소에도 접근합니다. Only select repositories로 {{repository}}만 선택해 만드세요."
+      }
     }
   },
   "skills": {
@@ -1907,7 +2007,8 @@
       "sandbox": "세션 샌드박스",
       "kiro": "Kiro 하네스",
       "fork": "포크",
-      "upstream_pr": "업스트림 풀 리퀘스트"
+      "upstream_pr": "업스트림 풀 리퀘스트",
+      "write_token": "세분화된 토큰"
     },
     "required": "실행에 필요"
   },
@@ -2395,6 +2496,15 @@
       "noStderr": "오류 출력이 없습니다.",
       "toControls": "실행 제어로 이동",
       "openSession": "{{agent}}의 세션 열기"
+    },
+    "tokenGo": {
+      "hint": "이 실행은 {{login}}의 세분화된 토큰으로 푸시합니다. 브랜치와 풀 리퀘스트는 검사 후 {{login}}의 승인을 기다립니다.",
+      "push": "{{login}}의 토큰으로 푸시",
+      "ownerOnly": "이 실행은 토큰을 저장한 {{owner}}님만 승인할 수 있습니다.",
+      "given": "승인했습니다. 검사를 통과하면 실행이 {{login}}의 토큰으로 푸시합니다.",
+      "already": "이 실행은 이미 승인되었습니다.",
+      "refused": "이 실행은 토큰 소유자만 승인할 수 있습니다.",
+      "failed": "승인하지 못했습니다. 다시 시도하세요."
     }
   },
   "canvas": {

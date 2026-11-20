@@ -10,6 +10,8 @@ claims (``records.DocsClaims``), for voc-engineering-start's ``push_approved_doc
 Since 7.57.00 a connection is of a kind (a repository of one's own, ``REPOSITORY_KIND``; a public repository read
 only, ``PUBLIC_READ``; or a fork whose upstream gets the run's pull request, ``FORK``), and the broker offers that upstream
 pull request, one click away, through two more collaborators (``UpstreamHost``, ``UpstreamLedger``: ``upstream_pr.py``).
+Since 7.60.00 a public repository connected with a fine-grained token limited to it (``FINE_GRAINED``): read as a public
+one is, written only by a run's push and pull request with the token (``WriteTokenReader``, ``TokenWrites``).
 """
 from __future__ import annotations
 
@@ -229,6 +231,10 @@ class PullRequestRef:
 REPOSITORY_KIND: Final = 'repository'
 PUBLIC_READ: Final = 'public_read'
 FORK: Final = 'fork'
+#: (7.60.00) A public repository connected with a fine-grained personal access token limited to it: read with the
+#: deployment's App's read-only token, as ``PUBLIC_READ``; its run's push and pull request only are made with the token
+#: (``TokenWrites``), after every gate and the token owner's own go (``broker.py``).
+FINE_GRAINED: Final = 'fine_grained'
 
 
 @dataclass(frozen=True)
@@ -600,6 +606,11 @@ class GateLedger(Protocol):
         """A person gave the run their go (AI-assisted: what a push or a pull request waits for)."""
         ...
 
+    def person_go_by(self, run_id: str) -> str:
+        """The subject of the person who gave the run its go ('' for none): a fine-grained connection's push waits for
+        its token owner's own (7.60.00)."""
+        ...
+
 
 class Dial(Protocol):
     def mode(self, person: str) -> str:
@@ -686,6 +697,27 @@ class UpstreamLedger(Protocol):
         ...
 
 
+class WriteTokenReader(Protocol):
+    """A fine-grained connection's write token (7.60.00, ``credentials.WriteTokens``): the broker's alone."""
+
+    def token(self, connection_id: str) -> Any:
+        """``fine_grained.WriteToken`` (its repository, login, expiry, owner and the token), ``NoConnection`` when it
+        is not stored or not one this reader takes."""
+        ...
+
+
+class TokenWrites(Protocol):
+    """The two writes a fine-grained connection's token makes (7.60.00, ``github.GitHubHost``): the run's push and its
+    pull request, each request with the token pinned to the repository's Git Data and pull request paths
+    (``fine_grained.token_request_allowed``); every read with the App's read-only token."""
+
+    def push_bundle_as(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
+                       default_branch: str, write_token: str) -> None: ...
+
+    def open_or_update_pr_as(self, connection_id: str, branch: str, base: str, title: str, body: str, tree_hash: str,
+                             write_token: str, *, draft: bool = True) -> PullRequestRef: ...
+
+
 class Unconnected:
     """The patch reader, run records, GO ledger and dial where the deployment names none of their stores: every call
     is ``NoConnection``, so the broker refuses each permitted operation with 503 before it reaches the host."""
@@ -703,6 +735,9 @@ class Unconnected:
         raise NoConnection(NO_CONNECTION)
 
     def person_go(self, run_id: str) -> bool:  # noqa: ARG002 - the protocol's signature
+        raise NoConnection(NO_CONNECTION)
+
+    def person_go_by(self, run_id: str) -> str:  # noqa: ARG002 - the protocol's signature
         raise NoConnection(NO_CONNECTION)
 
     def mode(self, person: str) -> str:  # noqa: ARG002 - the protocol's signature
@@ -748,3 +783,7 @@ class Connector:
     #: ``NoConnection``).
     upstream: UpstreamHost | None = None
     upstream_ledger: UpstreamLedger | None = None
+    #: (7.60.00) A fine-grained connection's write token and the writes made with it (None where the deployment names
+    #: no token path: every push and pull request on such a connection is refused, ``NoConnection``).
+    write_tokens: WriteTokenReader | None = None
+    token_writes: TokenWrites | None = None

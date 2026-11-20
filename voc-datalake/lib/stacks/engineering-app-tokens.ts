@@ -22,6 +22,7 @@ import type { Construct } from 'constructs';
 
 import { ENGINEERING_APP_TOKENS_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { grantParameters } from '../utils/parameter-grants';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled, engineeringParameterPrefix } from './engineering-broker';
 
@@ -75,25 +76,14 @@ interface AppTokensProps {
 function appTokensRole(scope: Construct, props: AppTokensProps): iam.Role {
   const role = workerRole(scope, 'EngineeringAppTokensRole');
   const stack = cdk.Stack.of(scope);
-  const keys = githubAppParameterArns(stack, props.deploymentPrefix, 'key');
-  role.addToPrincipalPolicy(new iam.PolicyStatement({ sid: 'GitHubAppKeys', actions: ['ssm:GetParameter'], resources: [keys] }));
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    sid: 'GitHubAppKeysKey',
-    actions: ['kms:Decrypt'],
-    resources: [props.kmsKey.keyArn],
-    // Only through SSM, and only for the Apps' keys (SSM puts the parameter's ARN in the context).
-    conditions: {
-      StringEquals: { 'kms:ViaService': `ssm.${stack.region}.amazonaws.com` },
-      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': keys },
-    },
-  }));
-  acknowledgeNag(role, [{
-    id: 'AwsSolutions-IAM5',
+  // Only through SSM, and only for the Apps' keys (SSM puts the parameter's ARN in the context).
+  grantParameters(role, props.kmsKey, {
+    sid: 'GitHubAppKeys', actions: ['ssm:GetParameter'], keyActions: ['kms:Decrypt'],
+    parameters: [githubAppParameterArns(stack, props.deploymentPrefix, 'key')],
     reason: 'One key parameter per GitHub App an administrator makes at run time (its id known only then), so the read '
       + 'is scoped to the Apps\' keys (/[<prefix>-]voc/engineering/_github-app/*/key), read-only: never a connection\'s '
       + 'parameter or an App\'s webhook secret',
-    findings: [resourceFinding(keys)],
-  }]);
+  });
   return role;
 }
 

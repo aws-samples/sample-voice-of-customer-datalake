@@ -6,19 +6,27 @@
  * - **Roles' models** (`#models`): each role, the harness this deployment runs it on (Kiro or the native harness) and
  *   the model it runs on (`GET /agents/engineering/registry`, the Registry's own read), each linked to its Registry
  *   card, where the model is chosen (7.58.00);
- * - **GitHub connections** (`#connections`): where GitHub is connected, the spend and the setup guide.
+ * - **GitHub connections** (`#connections`): where GitHub is connected (the App, a fine-grained token or a fork), the
+ *   spend and the setup guide, and (7.60.00) the fine-grained tokens to replace, each with its chip, which "Needs
+ *   attention" counts (`GET /agents/engineering/connections`, Connections' own read).
  *
  * Shown to administrators while the Agents page and the engineering module are on (adminTabs.ts).
  *
  * @module pages/Settings/EngineeringAgentsTab
  */
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Cpu, KeyRound } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
+import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { RegistryCard } from '../../api/engineeringRegistryApi'
 import { EngineeringHardCap } from '../Agents/EngineeringHardCap'
 import { agentsPath } from '../Agents/agentsPaths'
+import { tokensToReplace } from '../Agents/connectionStatus'
+import { TokenExpiryBadge } from '../Agents/TokenExpiryBadge'
+import { tokenState } from '../Agents/tokenConnectionRules'
 import { useModelChoiceText } from '../Agents/modelChoiceText'
 import { useCardTitle } from '../Agents/Registry/cardTitle'
 import { registryCardPath } from '../Agents/Registry/registryPaths'
@@ -66,6 +74,33 @@ function RoleModelsCard() {
   )
 }
 
+/** One fine-grained token to replace: its repository and its chip (expiring, expired), or that it cannot be used. */
+function TokenToReplace({ connection }: Readonly<{ connection: EngineeringConnection }>) {
+  const { t } = useTranslation('settings')
+  const days = connection.credential.set ? connection.credential.expires_in_days : null
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+      <span className="min-w-0 break-words font-mono text-text-strong">{connection.repository}</span>
+      {tokenState(days) === 'none' ? <span className="text-warn">{t('agentsTab.tokenUnusable')}</span> : <TokenExpiryBadge daysLeft={days} />}
+    </li>
+  )
+}
+
+/** (7.60.00) The fine-grained tokens to replace, nothing while there are none (or the list cannot be read). */
+function TokensToReplace() {
+  const { t } = useTranslation('settings')
+  const read = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list })
+  const tokens = tokensToReplace(read.data?.connections ?? [])
+  if (tokens.length === 0) return null
+  return (
+    <div className="mt-3 rounded-lg border border-warn/40 bg-warn-subtle px-3 py-2" data-testid="tokens-to-replace">
+      <h3 className="text-sm font-semibold text-text-strong">{t('agentsTab.tokensTitle')}</h3>
+      <p className="text-[12px] text-muted">{t('agentsTab.tokensHint')}</p>
+      <ul>{tokens.map((connection) => <TokenToReplace key={connection.connection_id} connection={connection} />)}</ul>
+    </div>
+  )
+}
+
 function ConnectionsCard() {
   const { t } = useTranslation('settings')
   const links = [
@@ -84,6 +119,7 @@ function ConnectionsCard() {
           </li>
         ))}
       </ul>
+      <TokensToReplace />
     </section>
   )
 }

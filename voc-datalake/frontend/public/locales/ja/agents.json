@@ -1225,7 +1225,9 @@
       "ciNeeded_one": "{{count, number}} 件はエージェントがプッシュする前に CI の確認が必要",
       "ciNeeded_other": "{{count, number}} 件はエージェントがプッシュする前に CI の確認が必要",
       "publicRead_one": "読み取り専用の公開リポジトリ {{count, number}} 件",
-      "publicRead_other": "読み取り専用の公開リポジトリ {{count, number}} 件"
+      "publicRead_other": "読み取り専用の公開リポジトリ {{count, number}} 件",
+      "tokens_one": "Fine-grained トークンのリポジトリ {{count, number}} 件",
+      "tokens_other": "Fine-grained トークンのリポジトリ {{count, number}} 件"
     },
     "columns": {
       "repository": "リポジトリ",
@@ -1248,7 +1250,8 @@
       "edit": "接続を編集…",
       "attest": "CI を確認…",
       "withdraw": "CI の確認を取り消す…",
-      "remove": "接続を削除…"
+      "remove": "接続を削除…",
+      "replaceToken": "トークンを置き換える…"
     },
     "details": {
       "button": "{{repository}} の接続の詳細",
@@ -1346,6 +1349,103 @@
       "summaryPushes": "エージェントのプッシュ先: {{fork}} (あなたのフォーク)。",
       "summaryPushesPending": "エージェントのプッシュ先: 接続後のあなたのフォーク。",
       "summaryPullRequests": "{{upstream}} へのプルリクエストはあなたから送られます。実行はワンクリックのリンクで終わり、あなたが GitHub で Create をクリックします。"
+    },
+    "add": {
+      "title": "リポジトリを追加",
+      "intro": "リポジトリでできることに応じて、3 つの方法があります。",
+      "useWhen": "使う場面",
+      "endsWith": "実行の結果",
+      "needsApp": "まず、このデプロイの GitHub App をご自身のリポジトリのどれかにインストールしてください。その読み取り専用トークンでリポジトリを読み取ります。",
+      "app": {
+        "title": "GitHub App をインストール",
+        "when": "リポジトリを管理している、またはその組織で App をインストールできる場合。",
+        "ends": "リポジトリ上のブランチとプルリクエスト。",
+        "action": "{{slug}} にリポジトリを追加"
+      },
+      "token": {
+        "title": "Fine-grained トークンを使う",
+        "when": "公開リポジトリにプッシュできるが、App をインストールできない場合（オーナーが App を承認する組織など）。",
+        "ends": "リポジトリ上のブランチとプルリクエスト。あなたの承認の後、あなたのトークンでプッシュされます。",
+        "action": "トークンを使う…"
+      },
+      "fork": {
+        "title": "フォークで貢献する",
+        "when": "他の人の公開リポジトリの場合。",
+        "ends": "あなたのフォーク上のプルリクエストと、それを元のリポジトリでワンクリックで開くリンク。",
+        "action": "リポジトリを探す"
+      }
+    },
+    "token": {
+      "kind": "Fine-grained トークン",
+      "loginUnknown": "ログイン不明",
+      "expires_one": "{{date}} に期限切れ（あと {{count, number}} 日）",
+      "expires_other": "{{date}} に期限切れ（あと {{count, number}} 日）",
+      "expiredOn": "{{date}} に期限切れ",
+      "expiryUnknown": "有効期限不明",
+      "soonBadge_one": "あと {{count, number}} 日で期限切れ",
+      "soonBadge_other": "あと {{count, number}} 日で期限切れ",
+      "expiredBadge": "トークンの期限切れ",
+      "notSet": "Fine-grained トークンが保存されていません。置き換えないと、エージェントはこのリポジトリに何もプッシュしません。",
+      "owner": "{{owner}} が保存：この接続での実行を承認できるのはその人だけです。",
+      "ownerYou": "あなたが保存：この接続での実行を承認できるのはあなただけです。",
+      "revoke": "ここに保存されたトークンを削除します。GitHub でも取り消してください：Settings → Developer settings → Personal access tokens → Fine-grained tokens。",
+      "saved": "{{repository}} をあなたの Fine-grained トークンで接続しました。",
+      "replaced": "{{repository}} のトークンを置き換えました。",
+      "list": {
+        "title": "Fine-grained トークン",
+        "hint": "個人のトークンでプッシュする公開リポジトリ：トークンの所有者の承認の後、ブランチとプルリクエストを作成します。"
+      },
+      "dialog": {
+        "addTitle": "Fine-grained トークンでリポジトリを接続",
+        "replaceTitle": "{{repository}} のトークンを置き換える",
+        "description": "プッシュはできるが App をインストールできない公開リポジトリ向けです。読み取りにはこのデプロイの GitHub App の読み取り専用トークンを使い、あなたのトークンはチェックとあなたの承認の後、実行の最後のプッシュとプルリクエストにだけ使います。",
+        "save": "確認して接続",
+        "replace": "確認して置き換え"
+      },
+      "repository": {
+        "label": "リポジトリ",
+        "hint": "プッシュできる GitHub の公開リポジトリ：owner/name または GitHub のアドレス。",
+        "find": "GitHub で探す",
+        "use": "{{repository}} を使う",
+        "noToken": "アーカイブ済み：プッシュを受け付けません",
+        "fixed": "トークンはこの接続のリポジトリ {{repository}} 用です。新しいトークンにも同じチェックを行います。"
+      },
+      "steps": {
+        "title": "GitHub でトークンを作成",
+        "owner": "Resource owner：{{owner}}。",
+        "access": "Repository access：Only select repositories を選び、{{repository}} だけを指定。",
+        "permissions": "Repository permissions：Contents と Pull requests をどちらも Read and write（Metadata の読み取り専用は自動で付きます）。それ以外は不要です。",
+        "expiry": "Expiration：{{days, number}} 日以内。",
+        "approval": "{{owner}} が Fine-grained トークンを承認制にしている組織なら、プッシュできるようになる前に組織のオーナーがトークンを承認します。",
+        "link": "GitHub の新しいトークンのページを開く",
+        "prefilled": "リンクで名前、オーナー、90 日、2 つの権限が入力されます。リポジトリはそのページでご自身で選んでください（GitHub のリンクでは指定できません）。"
+      },
+      "field": {
+        "label": "Fine-grained トークン",
+        "hint": "トークン（github_pat_…）を貼り付けてください。GitHub で確認され、暗号化して保存され、二度と表示されません。"
+      },
+      "invalid": {
+        "repository": "GitHub のリポジトリを owner/name で指定するか、そのアドレスを貼り付けてください。",
+        "tokenEmpty": "Fine-grained トークンを貼り付けてください。",
+        "classic": "これはクラシック、OAuth、または App のトークンで、Fine-grained トークンではありません。Fine-grained トークンを作成してください。",
+        "shape": "Fine-grained トークンは github_pat_ で始まります。全体を貼り付けてください。"
+      },
+      "tick": "このトークンが届くのは {{repository}} だけです",
+      "tickHint": "GitHub はトークンにどのリポジトリが与えられたかを教えません。あなたが確認します。非公開リポジトリに届くトークンは拒否されます。",
+      "tickRequired": "トークンが {{repository}} だけに届くことを確認してください。",
+      "refused": {
+        "classic_token": "GitHub によると Fine-grained トークンではありません。Fine-grained トークンを作成してください。",
+        "not_accepted": "GitHub がトークンを受け付けません（取り消し、期限切れ、または入力ミス）。新しいトークンを作成し、全体を貼り付けてください。",
+        "no_expiry": "トークンに有効期限がありません。90 日以内に期限が切れるものを作成してください。",
+        "expires_too_late": "トークンの有効期間が 90 日を超えています。90 日以内に期限が切れるものを作成してください。",
+        "expired": "トークンの期限が切れています。新しいものを作成してください。",
+        "not_found": "トークンから GitHub 上の {{repository}} が見えません。名前と、トークンのリポジトリアクセスにそれが含まれていることを確認してください。",
+        "private_repository": "{{repository}} は非公開です。トークンで接続できるのは公開リポジトリだけです。代わりに GitHub App をインストールしてください。",
+        "archived": "{{repository}} はアーカイブ済みで、プッシュを受け付けません。",
+        "no_push": "トークンで {{repository}} にプッシュできません。Contents と Pull requests に Read and write を与え、そこにプッシュできることを確認してください。",
+        "org_pending_approval": "トークンは組織の承認待ちです。組織のオーナーに承認を依頼するか、フォークで貢献してください。",
+        "other_repositories": "トークンが他のリポジトリにも届きます。Only select repositories で {{repository}} だけを指定したものを作成してください。"
+      }
     }
   },
   "skills": {
@@ -1907,7 +2007,8 @@
       "sandbox": "セッションのサンドボックス",
       "kiro": "Kiro ハーネス",
       "fork": "フォーク",
-      "upstream_pr": "上流へのプルリクエスト"
+      "upstream_pr": "上流へのプルリクエスト",
+      "write_token": "Fine-grained トークン"
     },
     "required": "実行に必要"
   },
@@ -2395,6 +2496,15 @@
       "noStderr": "エラー出力はありません。",
       "toControls": "実行のコントロールへ移動",
       "openSession": "{{agent}} のセッションを開く"
+    },
+    "tokenGo": {
+      "hint": "この実行は {{login}} の Fine-grained トークンでプッシュします。ブランチとプルリクエストは、チェックの後に {{login}} の承認を待ちます。",
+      "push": "{{login}} のトークンでプッシュ",
+      "ownerOnly": "この実行を承認できるのは、トークンを保存した {{owner}} だけです。",
+      "given": "承認しました。チェックを通過すると、実行は {{login}} のトークンでプッシュします。",
+      "already": "この実行はすでに承認されています。",
+      "refused": "この実行を承認できるのはトークンの所有者だけです。",
+      "failed": "承認できませんでした。もう一度お試しください。"
     }
   },
   "canvas": {

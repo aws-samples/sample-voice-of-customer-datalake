@@ -61,13 +61,6 @@
     },
     {
       "files": [
-        "voc-datalake/lib/stacks/engineering-broker.ts",
-        "voc-datalake/lib/stacks/engineering-kiro.ts"
-      ],
-      "reason": "two SecureString reads kept apart on purpose: the connections' credentials are a path the administrator fills at run time (StringLike on the parameter ARN, acknowledged for cdk-nag), the Kiro key exactly one parameter (StringEquals); each grant names its own statements"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/components/S3ImportExplorer/S3ImportReprocess.tsx",
         "voc-datalake/frontend/src/pages/Company/DesignTokensEditor.tsx"
       ],

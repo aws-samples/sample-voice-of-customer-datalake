@@ -1225,7 +1225,9 @@
       "ciNeeded_one": "{{count, number}} 个仓库需要先确认 CI，智能体才能推送",
       "ciNeeded_other": "{{count, number}} 个仓库需要先确认 CI，智能体才能推送",
       "publicRead_one": "{{count, number}} 个只读公开仓库",
-      "publicRead_other": "{{count, number}} 个只读公开仓库"
+      "publicRead_other": "{{count, number}} 个只读公开仓库",
+      "tokens_one": "{{count, number}} 个使用细粒度令牌的仓库",
+      "tokens_other": "{{count, number}} 个使用细粒度令牌的仓库"
     },
     "columns": {
       "repository": "仓库",
@@ -1248,7 +1250,8 @@
       "edit": "编辑连接…",
       "attest": "确认 CI…",
       "withdraw": "撤回 CI 确认…",
-      "remove": "移除连接…"
+      "remove": "移除连接…",
+      "replaceToken": "替换令牌…"
     },
     "details": {
       "button": "{{repository}} 的连接详情",
@@ -1346,6 +1349,103 @@
       "summaryPushes": "智能体推送到：{{fork}}（你的分叉）。",
       "summaryPushesPending": "智能体推送到：你的分叉（连接后）。",
       "summaryPullRequests": "发往 {{upstream}} 的拉取请求来自你：运行以一个一键链接结束，由你在 GitHub 上点击 Create。"
+    },
+    "add": {
+      "title": "添加仓库",
+      "intro": "三种方式，取决于你在该仓库上能做什么。",
+      "useWhen": "适用于",
+      "endsWith": "运行的结果",
+      "needsApp": "请先在你的某个仓库上安装此部署的 GitHub App：它的只读令牌用来读取仓库。",
+      "app": {
+        "title": "安装 GitHub App",
+        "when": "你管理该仓库，或其组织允许你安装应用。",
+        "ends": "仓库上的一个分支和一个拉取请求。",
+        "action": "向 {{slug}} 添加仓库"
+      },
+      "token": {
+        "title": "使用细粒度令牌",
+        "when": "你可以向某个公开仓库推送，但无法在其上安装 App（例如所有者需审批应用的组织）。",
+        "ends": "仓库上的一个分支和一个拉取请求，在你批准后用你的令牌推送。",
+        "action": "使用令牌…"
+      },
+      "fork": {
+        "title": "通过分叉贡献",
+        "when": "这是别人的公开仓库。",
+        "ends": "你的分叉上的一个拉取请求，以及一键在原仓库打开它的链接。",
+        "action": "查找仓库"
+      }
+    },
+    "token": {
+      "kind": "细粒度令牌",
+      "loginUnknown": "登录名未知",
+      "expires_one": "{{date}} 到期（还有 {{count, number}} 天）",
+      "expires_other": "{{date}} 到期（还有 {{count, number}} 天）",
+      "expiredOn": "已于 {{date}} 到期",
+      "expiryUnknown": "到期时间未知",
+      "soonBadge_one": "{{count, number}} 天后到期",
+      "soonBadge_other": "{{count, number}} 天后到期",
+      "expiredBadge": "令牌已到期",
+      "notSet": "未保存细粒度令牌：请替换它，否则代理不会向此仓库推送任何内容。",
+      "owner": "由 {{owner}} 保存：只有此人能批准其上的运行。",
+      "ownerYou": "由你保存：只有你能批准其上的运行。",
+      "revoke": "这会删除此处保存的令牌。也请在 GitHub 上撤销它：Settings → Developer settings → Personal access tokens → Fine-grained tokens。",
+      "saved": "{{repository}} 已用你的细粒度令牌连接。",
+      "replaced": "{{repository}} 的令牌已替换。",
+      "list": {
+        "title": "细粒度令牌",
+        "hint": "用个人令牌推送的公开仓库：在令牌所有者批准后创建分支和拉取请求。"
+      },
+      "dialog": {
+        "addTitle": "用细粒度令牌连接仓库",
+        "replaceTitle": "替换 {{repository}} 的令牌",
+        "description": "适用于你能推送但无法安装 App 的公开仓库。读取使用此部署 GitHub App 的只读令牌；你的令牌只用于运行最后的推送和拉取请求，且在检查和你的批准之后。",
+        "save": "检查并连接",
+        "replace": "检查并替换"
+      },
+      "repository": {
+        "label": "仓库",
+        "hint": "你能推送的 GitHub 公开仓库：owner/name 或其 GitHub 地址。",
+        "find": "在 GitHub 上查找",
+        "use": "使用 {{repository}}",
+        "noToken": "已归档：不接受推送",
+        "fixed": "该令牌用于此连接的仓库 {{repository}}：新令牌也做同样的检查。"
+      },
+      "steps": {
+        "title": "在 GitHub 上创建令牌",
+        "owner": "Resource owner：{{owner}}。",
+        "access": "Repository access：Only select repositories，然后只选 {{repository}}。",
+        "permissions": "Repository permissions：Contents 和 Pull requests，均为 Read and write（只读的 Metadata 会随之附带）。其他都不需要。",
+        "expiry": "Expiration：{{days, number}} 天或更短。",
+        "approval": "如果 {{owner}} 是需要审批细粒度令牌的组织，其所有者之一需在令牌能推送前批准它。",
+        "link": "打开 GitHub 的新建令牌页面",
+        "prefilled": "该链接会填好名称、所有者、90 天和两项权限。请在那里自行选择仓库：GitHub 的链接无法预填。"
+      },
+      "field": {
+        "label": "细粒度令牌",
+        "hint": "粘贴令牌（github_pat_…）：它会在 GitHub 上检查，加密保存，且不再显示。"
+      },
+      "invalid": {
+        "repository": "请以 owner/name 指定 GitHub 仓库，或粘贴其地址。",
+        "tokenEmpty": "请粘贴细粒度令牌。",
+        "classic": "这是经典、OAuth 或 App 令牌，不是细粒度令牌：请创建细粒度令牌。",
+        "shape": "细粒度令牌以 github_pat_ 开头：请完整粘贴。"
+      },
+      "tick": "此令牌只能访问 {{repository}}",
+      "tickHint": "GitHub 不会告知令牌被授予了哪些仓库：由你确认。能访问私有仓库的令牌会被拒绝。",
+      "tickRequired": "请确认该令牌只能访问 {{repository}}。",
+      "refused": {
+        "classic_token": "GitHub 表示这不是细粒度令牌：请创建一个细粒度令牌。",
+        "not_accepted": "GitHub 不接受该令牌（已撤销、已到期或输错）：请新建一个并完整粘贴。",
+        "no_expiry": "该令牌没有到期时间：请创建一个 90 天内到期的令牌。",
+        "expires_too_late": "该令牌有效期超过 90 天：请创建一个 90 天内到期的令牌。",
+        "expired": "该令牌已到期：请新建一个。",
+        "not_found": "该令牌在 GitHub 上看不到 {{repository}}：请检查名称，以及令牌的仓库访问是否包含它。",
+        "private_repository": "{{repository}} 是私有仓库：令牌只能连接公开仓库。请改为在其上安装 GitHub App。",
+        "archived": "{{repository}} 已归档：不接受推送。",
+        "no_push": "该令牌无法推送到 {{repository}}：请授予 Contents 和 Pull requests 的 Read and write，并确认你能向那里推送。",
+        "org_pending_approval": "该令牌在等待组织批准：请让组织的所有者批准它，或通过分叉贡献。",
+        "other_repositories": "该令牌还能访问其他仓库：请用 Only select repositories 只选 {{repository}} 创建一个。"
+      }
     }
   },
   "skills": {
@@ -1907,7 +2007,8 @@
       "sandbox": "会话沙箱",
       "kiro": "Kiro 运行环境",
       "fork": "Fork",
-      "upstream_pr": "上游 pull request"
+      "upstream_pr": "上游 pull request",
+      "write_token": "细粒度令牌"
     },
     "required": "运行所需"
   },
@@ -2395,6 +2496,15 @@
       "noStderr": "没有错误输出。",
       "toControls": "前往运行控制",
       "openSession": "打开 {{agent}} 的会话"
+    },
+    "tokenGo": {
+      "hint": "此运行用 {{login}} 的细粒度令牌推送：其分支和拉取请求在检查后等待 {{login}} 的批准。",
+      "push": "用 {{login}} 的令牌推送",
+      "ownerOnly": "只有保存该令牌的 {{owner}} 能批准此运行。",
+      "given": "已批准：检查通过后，运行将用 {{login}} 的令牌推送。",
+      "already": "此运行已获批准。",
+      "refused": "只有令牌的所有者能批准此运行。",
+      "failed": "无法批准：请重试。"
     }
   },
   "canvas": {

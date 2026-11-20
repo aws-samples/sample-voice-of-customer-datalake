@@ -4,7 +4,8 @@ The broker and the checkout cache's writer hold one ``HostRouter``: each call go
 (``github.GitHubHost``) for a connection whose stored credential is a GitHub App's, and to the GitLab client
 (``gitlab.GitLabHost``) for one whose credential is a GitLab project access token, read from the same SSM parameter
 (``credentials.ParameterStoreCredentials.stored``, kept five minutes). A connection with no usable credential is
-``NoConnection`` before any host is asked.
+``NoConnection`` before any host is asked. A fine-grained connection's push and pull request with its token (7.60.00,
+``push_bundle_as``, ``open_or_update_pr_as``) are GitHub's alone: on a GitLab credential they are ``NoConnection``.
 """
 from __future__ import annotations
 
@@ -15,11 +16,13 @@ from engineering.connectors.github import GitHubHost
 from engineering.connectors.github_upstream import GitHubUpstream
 from engineering.connectors.gitlab import GitLabHost
 from engineering.connectors.hosts import (
+    NO_CONNECTION,
     BundleContents,
     CiProtection,
     CommentTarget,
     FetchAccess,
     FileChange,
+    NoConnection,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -77,6 +80,21 @@ class HostRouter:
                                 tree_hash: str, *, draft: bool = True) -> PullRequestRef:
         return self._host(connection_id).open_or_update_draft_pr(connection_id, branch, base, title, body, tree_hash,
                                                                  draft=draft)
+
+    def _github_only(self, connection_id: str) -> GitHubHost:
+        if isinstance(self._credentials(connection_id), GitLabTokenCredential):
+            raise NoConnection(NO_CONNECTION)
+        return self._github
+
+    def push_bundle_as(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
+                       default_branch: str, write_token: str) -> None:
+        self._github_only(connection_id).push_bundle_as(connection_id, branch, contents, tree_hash, default_branch,
+                                                        write_token)
+
+    def open_or_update_pr_as(self, connection_id: str, branch: str, base: str, title: str, body: str, tree_hash: str,
+                             write_token: str, *, draft: bool = True) -> PullRequestRef:
+        return self._github_only(connection_id).open_or_update_pr_as(connection_id, branch, base, title, body,
+                                                                     tree_hash, write_token, draft=draft)
 
     def tree_with(self, connection_id: str, base: str, changes: tuple[FileChange, ...]) -> str:
         return self._host(connection_id).tree_with(connection_id, base, changes)

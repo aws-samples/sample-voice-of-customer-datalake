@@ -1243,7 +1243,9 @@
       "ciNeeded_one": "{{count, number}} doit faire attester sa CI avant que les agents poussent",
       "ciNeeded_other": "{{count, number}} doivent faire attester leur CI avant que les agents poussent",
       "publicRead_one": "{{count, number}} dépôt public en lecture seule",
-      "publicRead_other": "{{count, number}} dépôts publics en lecture seule"
+      "publicRead_other": "{{count, number}} dépôts publics en lecture seule",
+      "tokens_one": "{{count, number}} dépôt avec un jeton à granularité fine",
+      "tokens_other": "{{count, number}} dépôts avec un jeton à granularité fine"
     },
     "columns": {
       "repository": "Dépôt",
@@ -1266,7 +1268,8 @@
       "edit": "Modifier la connexion…",
       "attest": "Attester la CI…",
       "withdraw": "Retirer l’attestation de CI…",
-      "remove": "Supprimer la connexion…"
+      "remove": "Supprimer la connexion…",
+      "replaceToken": "Remplacer le jeton…"
     },
     "details": {
       "button": "Détails de la connexion de {{repository}}",
@@ -1364,6 +1367,103 @@
       "summaryPushes": "Les agents poussent vers : {{fork}} (votre fork).",
       "summaryPushesPending": "Les agents poussent vers : votre fork, une fois connecté.",
       "summaryPullRequests": "Les pull requests vers {{upstream}} viennent de vous : l’exécution se termine par un lien à un clic, et vous cliquez sur Create sur GitHub."
+    },
+    "add": {
+      "title": "Ajouter un dépôt",
+      "intro": "Trois façons, selon ce que vous pouvez faire sur le dépôt.",
+      "useWhen": "À utiliser quand",
+      "endsWith": "L’exécution se termine par",
+      "needsApp": "Installez d’abord la GitHub App de ce déploiement sur l’un de vos dépôts : son jeton en lecture seule lit le dépôt.",
+      "app": {
+        "title": "Installer la GitHub App",
+        "when": "Vous administrez le dépôt, ou son organisation vous laisse installer des apps.",
+        "ends": "Une branche et une pull request sur le dépôt.",
+        "action": "Ajouter des dépôts à {{slug}}"
+      },
+      "token": {
+        "title": "Utiliser un jeton à granularité fine",
+        "when": "Vous pouvez pousser sur un dépôt public sans pouvoir y installer l’App (une organisation dont les propriétaires approuvent les apps, par exemple).",
+        "ends": "Une branche et une pull request sur le dépôt, poussées avec votre jeton après votre feu vert.",
+        "action": "Utiliser un jeton…"
+      },
+      "fork": {
+        "title": "Contribuer par un fork",
+        "when": "C’est le dépôt public de quelqu’un d’autre.",
+        "ends": "Une pull request sur votre fork, puis un lien qui l’ouvre sur le dépôt en un clic.",
+        "action": "Trouver le dépôt"
+      }
+    },
+    "token": {
+      "kind": "Jeton à granularité fine",
+      "loginUnknown": "identifiant inconnu",
+      "expires_one": "expire le {{date}} (dans {{count, number}} jour)",
+      "expires_other": "expire le {{date}} (dans {{count, number}} jours)",
+      "expiredOn": "a expiré le {{date}}",
+      "expiryUnknown": "expiration inconnue",
+      "soonBadge_one": "Expire dans {{count, number}} jour",
+      "soonBadge_other": "Expire dans {{count, number}} jours",
+      "expiredBadge": "Jeton expiré",
+      "notSet": "Le jeton à granularité fine n’est pas enregistré : remplacez-le, sinon les agents ne poussent rien sur ce dépôt.",
+      "owner": "Enregistré par {{owner}} : seule cette personne donne son feu vert à une exécution dessus.",
+      "ownerYou": "Enregistré par vous : vous seul donnez votre feu vert à une exécution dessus.",
+      "revoke": "Cela supprime le jeton enregistré ici. Révoquez-le aussi sur GitHub : Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}} est connecté avec votre jeton à granularité fine.",
+      "replaced": "Le jeton de {{repository}} est remplacé.",
+      "list": {
+        "title": "Jetons à granularité fine",
+        "hint": "Des dépôts publics sur lesquels on pousse avec le jeton d’une personne : une branche et une pull request après le feu vert du propriétaire du jeton."
+      },
+      "dialog": {
+        "addTitle": "Connecter un dépôt avec un jeton à granularité fine",
+        "replaceTitle": "Remplacer le jeton de {{repository}}",
+        "description": "Pour un dépôt public sur lequel vous pouvez pousser sans pouvoir y installer l’App. Il est lu avec le jeton en lecture seule de la GitHub App de ce déploiement ; votre jeton ne sert qu’au push final et à la pull request d’une exécution, après les contrôles et votre feu vert.",
+        "save": "Vérifier et connecter",
+        "replace": "Vérifier et remplacer"
+      },
+      "repository": {
+        "label": "Dépôt",
+        "hint": "Un dépôt GitHub public sur lequel vous pouvez pousser : owner/name, ou son adresse GitHub.",
+        "find": "Chercher sur GitHub",
+        "use": "Utiliser {{repository}}",
+        "noToken": "Archivé : il n’accepte aucun push",
+        "fixed": "Le jeton est pour le dépôt de cette connexion, {{repository}} : les mêmes contrôles s’appliquent au nouveau."
+      },
+      "steps": {
+        "title": "Créer le jeton sur GitHub",
+        "owner": "Resource owner : {{owner}}.",
+        "access": "Repository access : Only select repositories, puis {{repository}} seul.",
+        "permissions": "Repository permissions : Contents et Pull requests, tous deux en Read and write (Metadata, en lecture seule, vient avec). Rien d’autre.",
+        "expiry": "Expiration : {{days, number}} jours ou moins.",
+        "approval": "Si {{owner}} est une organisation qui approuve les jetons à granularité fine, l’un de ses propriétaires approuve le jeton avant qu’il puisse pousser.",
+        "link": "Ouvrir la page de nouveau jeton de GitHub",
+        "prefilled": "Le lien remplit le nom, le propriétaire, 90 jours et les deux permissions. Choisissez-y vous-même le dépôt : le lien de GitHub ne le peut pas."
+      },
+      "field": {
+        "label": "Jeton à granularité fine",
+        "hint": "Collez le jeton (github_pat_…) : il est vérifié sur GitHub, enregistré chiffré et jamais réaffiché."
+      },
+      "invalid": {
+        "repository": "Indiquez un dépôt GitHub sous la forme owner/name, ou collez son adresse.",
+        "tokenEmpty": "Collez le jeton à granularité fine.",
+        "classic": "C’est un jeton classique, OAuth ou d’App, pas un jeton à granularité fine : créez-en un à granularité fine.",
+        "shape": "Un jeton à granularité fine commence par github_pat_ : collez-le en entier."
+      },
+      "tick": "Ce jeton n’atteint que {{repository}}",
+      "tickHint": "GitHub ne dit pas à quels dépôts un jeton a été donné : vous le confirmez. Un jeton qui atteint des dépôts privés est refusé.",
+      "tickRequired": "Confirmez que le jeton n’atteint que {{repository}}.",
+      "refused": {
+        "classic_token": "Selon GitHub, ce n’est pas un jeton à granularité fine : créez-en un.",
+        "not_accepted": "GitHub n’accepte pas le jeton (révoqué, expiré ou mal saisi) : créez-en un nouveau et collez-le en entier.",
+        "no_expiry": "Le jeton n’expire pas : créez-en un qui expire dans 90 jours ou moins.",
+        "expires_too_late": "Le jeton dure plus de 90 jours : créez-en un qui expire dans 90 jours ou moins.",
+        "expired": "Le jeton a expiré : créez-en un nouveau.",
+        "not_found": "Le jeton ne voit pas {{repository}} sur GitHub : vérifiez son nom, et que l’accès aux dépôts du jeton le nomme.",
+        "private_repository": "{{repository}} est privé : un jeton ne connecte qu’un dépôt public. Installez-y plutôt la GitHub App.",
+        "archived": "{{repository}} est archivé : il n’accepte aucun push.",
+        "no_push": "Le jeton ne peut pas pousser sur {{repository}} : donnez-lui Contents et Pull requests en Read and write, et vérifiez que vous pouvez y pousser.",
+        "org_pending_approval": "Le jeton attend l’approbation de l’organisation : demandez à un propriétaire de l’organisation de l’approuver, ou contribuez par un fork.",
+        "other_repositories": "Le jeton atteint d’autres dépôts : créez-en un avec Only select repositories et {{repository}} seul."
+      }
     }
   },
   "skills": {
@@ -1926,7 +2026,8 @@
       "sandbox": "Bac à sable de la session",
       "kiro": "Harnais Kiro",
       "fork": "Fork",
-      "upstream_pr": "Pull request sur le dépôt d’origine"
+      "upstream_pr": "Pull request sur le dépôt d’origine",
+      "write_token": "Jeton à granularité fine"
     },
     "required": "Nécessaire à l'exécution"
   },
@@ -2414,6 +2515,15 @@
       "noStderr": "Aucune sortie d’erreur.",
       "toControls": "Aller aux commandes de l’exécution",
       "openSession": "Ouvrir la session de {{agent}}"
+    },
+    "tokenGo": {
+      "hint": "Cette exécution pousse avec le jeton à granularité fine de {{login}} : sa branche et sa pull request attendent le feu vert de {{login}}, après les contrôles.",
+      "push": "Pousser avec le jeton de {{login}}",
+      "ownerOnly": "Seul {{owner}}, qui a enregistré le jeton, donne son feu vert à cette exécution.",
+      "given": "Votre feu vert est donné : l’exécution pousse avec le jeton de {{login}} dès que ses contrôles passent.",
+      "already": "Cette exécution a déjà reçu un feu vert.",
+      "refused": "Seul le propriétaire du jeton donne son feu vert à cette exécution.",
+      "failed": "Le feu vert n’a pas pu être donné : réessayez."
     }
   },
   "canvas": {

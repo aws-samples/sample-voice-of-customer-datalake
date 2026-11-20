@@ -6,7 +6,10 @@
  * refuses every push and pull request on a connection while none holds; a repository change or a removal voids it).
  * Since 7.57.00 a connection has a kind (a public repository read only, or a person's fork of one): `POST
  * …/connections/<id>/fork` starts a fork of a public one, `PUT …/connections/<id>/upstream` acknowledges the upstream's
- * current licence again (7.58.00; api/publicRepositoriesApi.ts finds and connects public repositories).
+ * current licence again (7.58.00; api/publicRepositoriesApi.ts finds and connects public repositories). Since 7.60.00 a
+ * public repository can also be connected with a person's fine-grained token limited to it (`fine_grained`:
+ * api/tokenConnectionsApi.ts saves and replaces the token; the token itself is never answered, only its login, its
+ * expiry and whether the viewer saved it).
  *
  * The credential is write-only: a GitHub App's (its ids and its private key) or a GitLab project access token. The
  * server stores it in SSM and no answer ever carries it back; a connection says only whether one is set, and the
@@ -37,10 +40,11 @@ export type ConnectionHost = (typeof CONNECTION_HOSTS)[number]
 /**
  * A connection's credential kinds: a GitHub App's pasted key (`app`), a reference to one of the deployment's GitHub
  * Apps whose key is stored once for all its connections (`app_reference`, 7.45.00: a connection the in-app connect flow
- * saved), a GitLab project access token (`project_token`), or (7.57.00) a public repository read through one of the
- * deployment's GitHub Apps with a read-only token (`public_read`: nothing is ever written with it).
+ * saved), a GitLab project access token (`project_token`), (7.57.00) a public repository read through one of the
+ * deployment's GitHub Apps with a read-only token (`public_read`: nothing is ever written with it), or (7.60.00) a
+ * person's fine-grained token limited to the repository (`fine_grained_token`: only its final push and pull request).
  */
-const CREDENTIAL_KINDS = ['app', 'app_reference', 'project_token', 'public_read'] as const
+const CREDENTIAL_KINDS = ['app', 'app_reference', 'project_token', 'public_read', 'fine_grained_token'] as const
 
 const CredentialStateSchema = z.object({
   /** A kind the page does not know reads as `app` (a GitHub App's, its ids shown as they are). */
@@ -48,8 +52,16 @@ const CredentialStateSchema = z.object({
   set: z.boolean().catch(false),
   app_id: optionalServerText(),
   installation_id: optionalServerText(),
-  /** A GitLab token's expiry (`YYYY-MM-DD`), as GitLab reported it at the save; null for none known. */
+  /** A token's expiry (`YYYY-MM-DD`): GitLab's at the save, or a fine-grained token's as GitHub said it; null for none known. */
   expires_at: optionalServerText(),
+  /** (7.60.00) Whole days from today (UTC) to `expires_at` (0 or less: expired); null when the server sent none. */
+  expires_in_days: z.number().int().nullable().catch(null),
+  /** (7.60.00) A fine-grained token's GitHub login; null on every other kind. */
+  login: optionalServerText(),
+  /** (7.60.00) The viewer saved the fine-grained token: only they may give a run on it its go. */
+  saved_by_you: z.boolean().catch(false),
+  /** (7.60.00) Who saved the fine-grained token (their name); null on every other kind. */
+  owner: optionalServerText(),
 })
 
 /**
@@ -87,10 +99,11 @@ export type CiAttestation = z.output<typeof CiAttestationSchema>
  * What a connection is (7.57.00): a repository the deployment's App or credential reaches (`repository`), any public
  * repository read only (`public_read`: issues as feedback, Understand and the knowledge docs, triage and bug hunts, all
  * kept in VoC: nothing is written to GitHub), or a person's fork of one (`fork`), whose agents push to the fork and
- * whose run ends with a pull request on the upstream, opened as the fork connection's owner. A kind the page does not
- * know reads as `repository`.
+ * whose run ends with a pull request on the upstream, opened as the fork connection's owner; or (7.60.00) a public
+ * repository whose run ends with a branch and a pull request on it, pushed with a person's fine-grained token after
+ * their go (`fine_grained`). A kind the page does not know reads as `repository`.
  */
-const CONNECTION_KINDS = ['repository', 'public_read', 'fork'] as const
+const CONNECTION_KINDS = ['repository', 'public_read', 'fork', 'fine_grained'] as const
 
 /** A public repository's facts as the read-only connection recorded them; null for any other kind. */
 const PublicFactsSchema = z.object({
@@ -150,6 +163,9 @@ export function parseConnection(raw: unknown): EngineeringConnection | null {
 
 /** A read-only connection to a public repository (7.57.00): nothing is ever written to it, so no CI to attest. */
 export const isPublicRead = (connection: EngineeringConnection): boolean => connection.kind === 'public_read'
+
+/** (7.60.00) A connection whose final push and pull request go with a person's fine-grained token. */
+export const isTokenConnection = (connection: EngineeringConnection): boolean => connection.kind === 'fine_grained'
 
 /** Whether the connection's newest version is an attestation that holds (the only state the broker serves). */
 export const isCiAttested = (connection: EngineeringConnection): boolean => connection.ci_attestation?.state === 'attested'

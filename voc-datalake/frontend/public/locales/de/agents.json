@@ -1225,7 +1225,9 @@
       "ciNeeded_one": "{{count, number}} braucht eine CI-Bestätigung, bevor die Agenten pushen",
       "ciNeeded_other": "{{count, number}} brauchen eine CI-Bestätigung, bevor die Agenten pushen",
       "publicRead_one": "{{count, number}} öffentliches Repository, nur lesend",
-      "publicRead_other": "{{count, number}} öffentliche Repositorys, nur lesend"
+      "publicRead_other": "{{count, number}} öffentliche Repositorys, nur lesend",
+      "tokens_one": "{{count, number}} Repository mit einem Fine-grained Token",
+      "tokens_other": "{{count, number}} Repositorys mit einem Fine-grained Token"
     },
     "columns": {
       "repository": "Repository",
@@ -1248,7 +1250,8 @@
       "edit": "Verbindung bearbeiten…",
       "attest": "CI bestätigen…",
       "withdraw": "CI-Bestätigung zurückziehen…",
-      "remove": "Verbindung entfernen…"
+      "remove": "Verbindung entfernen…",
+      "replaceToken": "Token ersetzen…"
     },
     "details": {
       "button": "Verbindungsdetails für {{repository}}",
@@ -1346,6 +1349,103 @@
       "summaryPushes": "Agenten pushen nach: {{fork}} (Ihr Fork).",
       "summaryPushesPending": "Agenten pushen nach: Ihrem Fork, sobald er verbunden ist.",
       "summaryPullRequests": "Pull Requests an {{upstream}} kommen von Ihnen: Der Lauf endet mit einem Ein-Klick-Link, und Sie klicken auf GitHub auf „Create“."
+    },
+    "add": {
+      "title": "Ein Repository hinzufügen",
+      "intro": "Drei Wege, je nachdem, was Sie im Repository tun können.",
+      "useWhen": "Nutzen Sie dies, wenn",
+      "endsWith": "Der Lauf endet mit",
+      "needsApp": "Installieren Sie zuerst die GitHub App dieser Bereitstellung auf einem Ihrer Repositorys: Ihr Token mit Lesezugriff liest das Repository.",
+      "app": {
+        "title": "Die GitHub App installieren",
+        "when": "Sie verwalten das Repository, oder seine Organisation erlaubt Ihnen, Apps zu installieren.",
+        "ends": "Einem Branch und einem Pull Request im Repository.",
+        "action": "Repositorys zu {{slug}} hinzufügen"
+      },
+      "token": {
+        "title": "Ein Fine-grained Token verwenden",
+        "when": "Sie können in ein öffentliches Repository pushen, die App aber nicht darauf installieren (etwa eine Organisation, deren Owner Apps genehmigen).",
+        "ends": "Einem Branch und einem Pull Request im Repository, gepusht mit Ihrem Token nach Ihrer Freigabe.",
+        "action": "Ein Token verwenden…"
+      },
+      "fork": {
+        "title": "Über einen Fork beitragen",
+        "when": "Es ist das öffentliche Repository einer anderen Person.",
+        "ends": "Einem Pull Request in Ihrem Fork, dann einem Link, der ihn mit einem Klick im Repository öffnet.",
+        "action": "Das Repository suchen"
+      }
+    },
+    "token": {
+      "kind": "Fine-grained Token",
+      "loginUnknown": "Login unbekannt",
+      "expires_one": "läuft am {{date}} ab (in {{count, number}} Tag)",
+      "expires_other": "läuft am {{date}} ab (in {{count, number}} Tagen)",
+      "expiredOn": "am {{date}} abgelaufen",
+      "expiryUnknown": "Ablauf unbekannt",
+      "soonBadge_one": "Läuft in {{count, number}} Tag ab",
+      "soonBadge_other": "Läuft in {{count, number}} Tagen ab",
+      "expiredBadge": "Token abgelaufen",
+      "notSet": "Das Fine-grained Token ist nicht gespeichert: Ersetzen Sie es, sonst pushen die Agenten nichts in dieses Repository.",
+      "owner": "Gespeichert von {{owner}}: Nur diese Person gibt einem Lauf darauf die Freigabe.",
+      "ownerYou": "Von Ihnen gespeichert: Nur Sie geben einem Lauf darauf die Freigabe.",
+      "revoke": "Dies löscht das hier gespeicherte Token. Widerrufen Sie es auch auf GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}} ist mit Ihrem Fine-grained Token verbunden.",
+      "replaced": "Das Token von {{repository}} ist ersetzt.",
+      "list": {
+        "title": "Fine-grained Tokens",
+        "hint": "Öffentliche Repositorys, in die mit dem eigenen Token einer Person gepusht wird: ein Branch und ein Pull Request nach der Freigabe des Token-Inhabers."
+      },
+      "dialog": {
+        "addTitle": "Ein Repository mit einem Fine-grained Token verbinden",
+        "replaceTitle": "Das Token von {{repository}} ersetzen",
+        "description": "Für ein öffentliches Repository, in das Sie pushen können, auf dem Sie die App aber nicht installieren können. Gelesen wird es mit dem Token mit Lesezugriff der GitHub App dieser Bereitstellung; Ihr Token dient nur dem letzten Push und dem Pull Request eines Laufs, nach den Prüfungen und Ihrer Freigabe.",
+        "save": "Prüfen und verbinden",
+        "replace": "Prüfen und ersetzen"
+      },
+      "repository": {
+        "label": "Repository",
+        "hint": "Ein öffentliches GitHub-Repository, in das Sie pushen können: owner/name oder seine GitHub-Adresse.",
+        "find": "Auf GitHub suchen",
+        "use": "{{repository}} verwenden",
+        "noToken": "Archiviert: nimmt keine Pushes an",
+        "fixed": "Das Token gilt für das Repository dieser Verbindung, {{repository}}: Für das neue gelten dieselben Prüfungen."
+      },
+      "steps": {
+        "title": "Das Token auf GitHub erstellen",
+        "owner": "Resource owner: {{owner}}.",
+        "access": "Repository access: Only select repositories, dann nur {{repository}}.",
+        "permissions": "Repository permissions: Contents und Pull requests, beide Read and write (Metadata, nur lesend, kommt dazu). Sonst nichts.",
+        "expiry": "Expiration: {{days, number}} Tage oder weniger.",
+        "approval": "Ist {{owner}} eine Organisation, die Fine-grained Tokens genehmigt, genehmigt einer ihrer Owner das Token, bevor es pushen kann.",
+        "link": "GitHubs Seite für ein neues Token öffnen",
+        "prefilled": "Der Link füllt den Namen, den Owner, 90 Tage und die beiden Berechtigungen aus. Das Repository wählen Sie dort selbst: GitHubs Link kann es nicht."
+      },
+      "field": {
+        "label": "Fine-grained Token",
+        "hint": "Fügen Sie das Token ein (github_pat_…): Es wird auf GitHub geprüft, verschlüsselt gespeichert und nie wieder angezeigt."
+      },
+      "invalid": {
+        "repository": "Nennen Sie ein GitHub-Repository als owner/name, oder fügen Sie seine Adresse ein.",
+        "tokenEmpty": "Fügen Sie das Fine-grained Token ein.",
+        "classic": "Dies ist ein klassisches, OAuth- oder App-Token, kein Fine-grained Token: Erstellen Sie ein Fine-grained Token.",
+        "shape": "Ein Fine-grained Token beginnt mit github_pat_: Fügen Sie es vollständig ein."
+      },
+      "tick": "Dieses Token erreicht nur {{repository}}",
+      "tickHint": "GitHub sagt nicht, für welche Repositorys ein Token ausgestellt wurde: Sie bestätigen es. Ein Token, das private Repositorys erreicht, wird abgelehnt.",
+      "tickRequired": "Bestätigen Sie, dass das Token nur {{repository}} erreicht.",
+      "refused": {
+        "classic_token": "Laut GitHub ist dies kein Fine-grained Token: Erstellen Sie ein Fine-grained Token.",
+        "not_accepted": "GitHub akzeptiert das Token nicht (widerrufen, abgelaufen oder falsch eingegeben): Erstellen Sie ein neues und fügen Sie es vollständig ein.",
+        "no_expiry": "Das Token hat kein Ablaufdatum: Erstellen Sie eines, das in 90 Tagen oder früher abläuft.",
+        "expires_too_late": "Das Token gilt länger als 90 Tage: Erstellen Sie eines, das in 90 Tagen oder früher abläuft.",
+        "expired": "Das Token ist abgelaufen: Erstellen Sie ein neues.",
+        "not_found": "Das Token sieht {{repository}} auf GitHub nicht: Prüfen Sie den Namen und ob der Repository-Zugriff des Tokens es nennt.",
+        "private_repository": "{{repository}} ist privat: Ein Token verbindet nur ein öffentliches Repository. Installieren Sie stattdessen die GitHub App darauf.",
+        "archived": "{{repository}} ist archiviert: Es nimmt keine Pushes an.",
+        "no_push": "Das Token kann nicht in {{repository}} pushen: Geben Sie ihm Contents und Pull requests mit Read and write, und prüfen Sie, dass Sie dorthin pushen können.",
+        "org_pending_approval": "Das Token wartet auf die Genehmigung der Organisation: Bitten Sie einen Owner der Organisation, es zu genehmigen, oder tragen Sie über einen Fork bei.",
+        "other_repositories": "Das Token erreicht weitere Repositorys: Erstellen Sie eines mit Only select repositories und nur {{repository}}."
+      }
     }
   },
   "skills": {
@@ -1907,7 +2007,8 @@
       "sandbox": "Sitzungs-Sandbox",
       "kiro": "Kiro-Harness",
       "fork": "Fork",
-      "upstream_pr": "Upstream-Pull-Request"
+      "upstream_pr": "Upstream-Pull-Request",
+      "write_token": "Fine-grained Token"
     },
     "required": "Für einen Lauf nötig"
   },
@@ -2395,6 +2496,15 @@
       "noStderr": "Keine Fehlerausgabe.",
       "toControls": "Zur Steuerung des Laufs",
       "openSession": "Sitzung von {{agent}} öffnen"
+    },
+    "tokenGo": {
+      "hint": "Dieser Lauf pusht mit dem Fine-grained Token von {{login}}: Sein Branch und sein Pull Request warten nach den Prüfungen auf die Freigabe von {{login}}.",
+      "push": "Mit dem Token von {{login}} pushen",
+      "ownerOnly": "Nur {{owner}}, wer das Token gespeichert hat, gibt diesem Lauf die Freigabe.",
+      "given": "Ihre Freigabe ist erteilt: Der Lauf pusht mit dem Token von {{login}}, sobald seine Prüfungen bestanden sind.",
+      "already": "Dieser Lauf hat bereits eine Freigabe.",
+      "refused": "Nur der Inhaber des Tokens gibt diesem Lauf die Freigabe.",
+      "failed": "Die Freigabe konnte nicht erteilt werden: Versuchen Sie es erneut."
     }
   },
   "canvas": {

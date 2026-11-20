@@ -18,15 +18,19 @@ from moto import mock_aws
 
 from engineering.connectors import github_apps
 from engineering.connectors.connections import (
+    KIND_FINE_GRAINED,
     LOG_PREFIX,
     MAX_CONNECTIONS,
     PARTITION,
     Actor,
     ConnectionRefused,
+    ConnectionRequest,
     ConnectionStore,
+    FineGrainedToken,
     parse_request,
 )
 from engineering.connectors.credentials import ParameterStoreCredentials
+from engineering.connectors.fine_grained import TokenFacts
 from engineering.connectors.github_apps import (
     CODE_REFUSED,
     MAX_APPS,
@@ -511,3 +515,22 @@ def test_connection_ids_follow_the_repository_name() -> None:
     assert connection_id_for('org/repo', {'repo', 'repo-2'}) == 'repo-3'
     assert connection_id_for('org/---', set()) == 'repository'
     assert len(connection_id_for('org/' + 'a' * 100, {'a' * 58})) <= 63
+
+
+def test_a_token_connection_reading_through_the_app_keeps_it_and_is_never_missing(env: Env) -> None:
+    """(7.60.00) A fine-grained token connection reads with the App's installation: the App is in use while it stands,
+    and a check never reports its repository as left (it is in no installation)."""
+    installed(env, created(env))
+    env.connections().remove('refund-service', ADMIN)
+    facts = TokenFacts(repository='open-tools/lint-kit', default_branch='main', owner_type='Organization',
+                       login='casey-dev', expires_at='2027-01-31')
+    store = ConnectionStore(env.table, lambda: env.ssm, PREFIX, env.key_id, lambda _: [], clock=env.clock,
+                            token_prefix='/voc/engineering-token/')
+    store.save('lint-kit', ConnectionRequest(
+        host='github', repository=facts.repository, default_branch='main', repository_private=False,
+        credential=FineGrainedToken(APP_ID, 777, facts, 'a' * 64, 'github_pat_11ABCDEFG0' + 'k' * 40),
+        kind=KIND_FINE_GRAINED, facts={'token_login': 'casey-dev', 'token_owner': 'a' * 64}), ADMIN)
+    with pytest.raises(ConnectionRefused) as refused:
+        env.apps().remove(APP_ID, ADMIN)
+    assert refused.value.kind == 'conflict'
+    assert env.apps().check(APP_ID)['missing'] == []

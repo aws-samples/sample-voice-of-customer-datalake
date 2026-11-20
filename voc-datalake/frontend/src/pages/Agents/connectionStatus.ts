@@ -10,6 +10,7 @@
  * | A check finds repositories no longer covered | Reinstall on GitHub | the App's header (a warn banner) |
  * | Credential missing | Store the key | the row (its Edit dialog) |
  * | GitLab token expired or expiring | Replace token | the row (its Edit dialog) |
+ * | Fine-grained token not set, expired or within 14 days of it | Replace token | the row (the token dialog) |
  * | CI not attested | Attest CI | the row |
  * | The `voc-agent` label couldn't be created (7.50.02) | Create label | the row (the App's check tries again) |
  * | All healthy | none: Check now (secondary) in the header refreshes every App | — |
@@ -21,10 +22,15 @@
  * is written to it, so it has no CI to attest and no row primary; a fork connection (`fork`, the App installed on a
  * person's fork) is a row of its App like any other, its CI attested before the agents push to the fork.
  *
+ * Since 7.60.00 a public repository connected with a person's fine-grained token (`fine_grained`) is in a card of its
+ * own too ("Fine-grained tokens"): its rows have the token's line and the CI attestation like any written-to row, and
+ * Replace token from 14 days before the token expires (tokenConnectionRules.ts; a GitLab token keeps its 30).
+ *
  * @module pages/Agents/connectionStatus
  */
-import { isCiAttested, isPublicRead } from '../../api/engineeringConnectionsApi'
+import { isCiAttested, isPublicRead, isTokenConnection } from '../../api/engineeringConnectionsApi'
 import { tokenExpiry } from './connectionRules'
+import { tokenState } from './tokenConnectionRules'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { GitHubApp, InstallationCheck } from '../../api/githubAppsApi'
 import type { ConnectionIssues, IssuesSourceView } from '../../api/issuesSourceApi'
@@ -48,6 +54,8 @@ export interface ConnectionGroups {
   readonly others: readonly EngineeringConnection[]
   /** (7.57.00) The public repositories read only, whatever App reads them. */
   readonly publicRead: readonly EngineeringConnection[]
+  /** (7.60.00) The repositories connected with a person's fine-grained token. */
+  readonly tokens: readonly EngineeringConnection[]
 }
 
 /** A connection made through one of the deployment's GitHub Apps: its key is the App's, its issues follow it. */
@@ -60,11 +68,12 @@ export function groupConnections(connections: readonly EngineeringConnection[], 
   const ownApp = (connection: EngineeringConnection): string | null =>
     viaApp(connection) && connection.credential.app_id !== null && listed.has(connection.credential.app_id)
       ? connection.credential.app_id : null
-  const written = connections.filter((connection) => !isPublicRead(connection))
+  const written = connections.filter((connection) => !isPublicRead(connection) && !isTokenConnection(connection))
   return {
     apps: apps.map((app) => ({ app, connections: written.filter((connection) => ownApp(connection) === app.app_id) })),
     others: written.filter((connection) => ownApp(connection) === null),
     publicRead: connections.filter(isPublicRead),
+    tokens: connections.filter(isTokenConnection),
   }
 }
 
@@ -76,14 +85,32 @@ export function issuesOf(view: IssuesSourceView | undefined, connectionId: strin
 /** The row's one primary (the module's table, repository rows), as of `today` (`YYYY-MM-DD`, UTC). */
 export function rowPrimary(connection: EngineeringConnection, issues: ConnectionIssues | undefined, today: string): RowPrimary {
   if (isPublicRead(connection)) return null
-  if (!connection.credential.set && !viaApp(connection)) return 'storeKey'
-  if (connection.host === 'gitlab' && connection.credential.set) {
-    const expiry = tokenExpiry(connection.credential.expires_at, today)
-    if (expiry.state === 'soon' || expiry.state === 'expired') return 'replaceToken'
-  }
+  const credential = credentialPrimary(connection, today)
+  if (credential !== null) return credential
   if (!isCiAttested(connection)) return 'attest'
   if (viaApp(connection) && issues?.label === 'failed') return 'createLabel'
   return null
+}
+
+/** The credential's action, the table's first rows: a fine-grained token to replace (7.60.00), a key to store, a GitLab
+ *  token past or near its expiry; null when the credential is fine. */
+function credentialPrimary(connection: EngineeringConnection, today: string): RowPrimary {
+  if (isTokenConnection(connection)) return tokenToReplace(connection) ? 'replaceToken' : null
+  if (!connection.credential.set) return viaApp(connection) ? null : 'storeKey'
+  if (connection.host !== 'gitlab') return null
+  const expiry = tokenExpiry(connection.credential.expires_at, today)
+  return expiry.state === 'soon' || expiry.state === 'expired' ? 'replaceToken' : null
+}
+
+/** A fine-grained token not set, past its expiry, within its warning, or whose expiry is not known. */
+function tokenToReplace(connection: EngineeringConnection): boolean {
+  return !connection.credential.set || tokenState(connection.credential.expires_in_days) !== 'ok'
+}
+
+/** The fine-grained token connections whose row asks for Replace token (`tokenToReplace`), in their order: what
+ *  Administration's "Needs attention" counts and its Engineering agents tab lists (7.60.00 on 7.59.00). */
+export function tokensToReplace(connections: readonly EngineeringConnection[]): EngineeringConnection[] {
+  return connections.filter((connection) => isTokenConnection(connection) && tokenToReplace(connection))
 }
 
 /** The App's one primary: installed nowhere yet, or a check this session found repositories it no longer covers. */
@@ -104,6 +131,8 @@ export interface ConnectionsSummary {
   readonly others: number
   /** (7.57.00) Public repositories read only. */
   readonly publicRead: number
+  /** (7.60.00) Repositories connected with a fine-grained token. */
+  readonly tokens: number
   /** Connections whose CI is not attested yet (the agents push nothing to them). */
   readonly ciNeeded: number
   /** The deployment's GitHub Issues source reads at least one repository. */
@@ -128,6 +157,7 @@ export function connectionsSummary(input: Readonly<{
       .map((group) => ({ slug: group.app.slug, count: group.connections.length })),
     others: groups.others.length,
     publicRead: groups.publicRead.length,
+    tokens: groups.tokens.length,
     ciNeeded: connections.filter((connection) => !isPublicRead(connection) && !isCiAttested(connection)).length,
     issuesRead: issues?.connections.some((entry) => entry.reading) ?? false,
   }

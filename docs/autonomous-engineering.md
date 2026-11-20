@@ -893,6 +893,126 @@ The run's row (`WS#default#WRITES#<run>` / `UPSTREAM_PULL_REQUEST`) keeps the ou
 claim's attributes alone, so the broker's DynamoDB grant is unchanged; the broker holds no grant of its own for any of
 it (the upstream is read with the fork's own token).
 
+### A fine-grained token (7.60.00)
+
+For a public repository an administrator can push to but cannot install the deployment's GitHub App on (an
+organization whose owners must approve apps is the typical case), a connection made with **a fine-grained personal
+access token limited to that one repository**. A run on it ends with a branch and a pull request on the repository
+itself, pushed with the person's token only after the gates and their own go. Only with `-c engineeringAgents=true`
+(404 otherwise); every route is an administrator's acting for themselves (a delegated MCP credential gets 403), served
+through `/agents/{proxy+}` with Cognito: no new API Gateway resource. **Public repositories only** (the owner's
+decision): the token never becomes a read credential.
+
+**The three ways to add a repository** (Agents → Connections → **Add a repository**, three cards, each saying when to
+use it and what a run ends with):
+
+| Way | Use it when | A run ends with |
+|---|---|---|
+| **Install the GitHub App** | you (or the organization's owners) install apps on the repository | a branch and a pull request on the repository |
+| **Use a fine-grained token** | you can push to a public repository but cannot install the App there | a branch and a pull request on the repository, pushed with your token after your go |
+| **Contribute through a fork** | it is someone else's public repository | a fork, a pull request on the fork, then the one-click compare link to open it on the upstream ([Any public repository](#any-public-repository-75700)) |
+
+`GET /agents/engineering/public-repositories?q=` answers each repository's `ways: {app, token, fork}` (an archived one
+takes none; a fork needs a licence) for the cards' hints.
+
+**Making the token on GitHub** (the token dialog lists the steps, and links to
+`https://github.com/settings/personal-access-tokens/new` prefilled with `name`, `description`, `target_name=<owner>`,
+`expires_in=90`, `contents=write` and `pull_requests=write`, GitHub's documented parameters; the repository selection
+cannot be prefilled): Resource owner ‹owner›; Repository access **Only select repositories** → ‹repository›;
+Repository permissions **Contents** and **Pull requests** both **Read and write** (Metadata read comes with every
+token); an expiry of **90 days or less**. The token is pasted into a password field that is never shown again, and the
+person ticks "This token can reach only ‹repository›".
+
+**Connect and replace** (`connectors/token_connections.py`, routes in `shared/agents_engineering_token_routes.py`):
+
+- `POST /agents/engineering/token-connections` `{repository, token, only_this_repository: true, default_branch?,
+  connection_id?, reason?}` → 201 `{connection, created}`. 400 names the field, never its value (the tick missing, a
+  token off its `github_pat_` shape); 409 for no App installation to read with (Connect GitHub first: the reads use one
+  of the deployment's App installations, as a public repository's do), a repository connected already, the
+  20-connection limit, or another kind under the id; 422 `{error, code}` for a token GitHub's answers refuse; 503 when
+  GitHub cannot be asked.
+- `PUT /agents/engineering/connections/<id>/token` `{token, only_this_repository: true, reason?}` → `{connection}`: a
+  renewal, checked the same way against the connection's own repository. Any administrator saves a token, **only as
+  themselves**, and becomes its owner; while a run of the connection is live, only the current owner replaces it (409:
+  the run waits for its owner's go).
+- `DELETE /agents/engineering/connections/<id>` deletes the token's parameter first, then the read parameter, then marks
+  the row removed; the page tells the person to revoke the token on GitHub as well.
+- `GET /agents/engineering/connections` answers the connection with `kind: fine_grained` and `credential: {kind:
+  fine_grained_token, set, app_id, installation_id, expires_at, expires_in_days, login, saved_by_you, owner}` (every
+  token's `expires_in_days` is answered, a GitLab one's too). The page's row reads "Fine-grained token · ‹login› ·
+  expires ‹date› (in N days)", with a warning chip at 14 days or fewer and a failure chip once expired, Replace token
+  and Remove; its CI is attested as any connection's that is pushed to.
+
+**The check at a save** (`connectors/fine_grained.py`, run by the Agents API as GitLab's `check_token` is; four reads,
+each sent once with a 6 s timeout, no write):
+
+1. the shape: `github_pat_` and its body; `ghp_`, `gho_`, `ghu_`, `ghs_` and `ghr_` (a classic token, an OAuth, a GitHub
+   App's or a refresh token) are `classic_token`;
+2. `GET /repos/<repo>` with the token: 200 with `private: false` (`private_repository`), `archived: false`
+   (`archived`) and `permissions.push: true` (`no_push`); 401 `not_accepted`, 403 `org_pending_approval` ("ask an owner
+   of ‹org› to approve the token, or contribute through a fork"), 404 `not_found`;
+3. the expiry, from that answer's `GitHub-Authentication-Token-Expiration` header: present (`no_expiry`), after today
+   in UTC (`expired`) and at most 90 days on (`expires_too_late`; the header carries the owner's calendar day, so one
+   day more is allowed for an owner east of UTC);
+4. `GET /user` (it needs no permission): the token's `login`;
+5. `GET /user/repos?visibility=private&per_page=1`: a token that lists any private repository reaches more than this
+   public one (`other_repositories`). "This repository only" cannot be fully proven through the API (a token on "All
+   repositories" of an account with no private repository lists none), so the person's tick stands for the rest.
+
+Write access is never probed (the owner's decision: a probe is a write, and could start CI): readiness says the first
+push confirms it, and a 403 to the push or the pull request stops the step for a person (`token_cannot_write`, 409,
+nothing moved). A token pending its organization's approval reads only public resources (GitHub's docs), so its 403
+may come only then; the refusal says so.
+
+**Where it is kept.** The connection's read parameter is a public repository's, its kind its own, no token:
+`/[<prefix>-]voc/engineering/<id>` = `{"kind": "fine_grained", "app_id", "installation_id", "repository", "key":
+"app"}`. **The token has its own path**, beside the connections' and never under it:
+`/[<prefix>-]voc/engineering-token/<id>` = `{"repository", "login", "expires_at", "owner", "token"}` (`owner`: the
+saver's subject's sha256), a SecureString, standard tier, under the stack's customer-managed key. The Agents API holds
+`ssm:PutParameter` and `ssm:DeleteParameter` there (and `kms:Encrypt`, `kms:GenerateDataKey` through SSM for those
+names), never a read; **only the broker reads it** (`ssm:GetParameter`, `kms:Decrypt` through SSM for those names),
+and keeps it 60 s at most, so a replaced or removed token stops within a minute. No agent role, the runtime, the
+checkout cache's writer, the token function, the board, the router, the GitHub Issues ingestor or webhook, nor the
+stream Lambda reaches it (`lib/stacks/engineering-write-tokens.test.ts` pins it over the whole app, self-checking). The
+row keeps the token's login and expiry, its owner (the sha256 and the name) and when and how it was saved
+(`token_saved_at`, `token_acknowledged: {only_this_repository: true, at}`); each audit row says `token: replaced` or
+`removed`, never the value.
+
+**The broker** (`broker.py`, `github.py`). The connection is read as a public repository is, with the App's
+`metadata: read` token naming no repository; `GitHubHost._token` refuses any write permission on it, so no App write
+token is ever minted for it and the token never comes out of it. The token makes exactly two writes, the run's
+`push_bundle` and `open_or_update_draft_pr` (`push_bundle_as`, `open_or_update_pr_as`), each request pinned to
+`/repos/<repo>/git/(blobs|trees|commits|refs)` and `/repos/<repo>/pulls` (`fine_grained.token_request_allowed`, tested);
+every read before and after them uses the App's read-only token. The order of its checks: the role; the connection;
+the run active; **the dial**: Human-driven pushes nothing, and AI-assisted and AI-driven alike wait for a person's go,
+**the token owner's own** (`token_owner_go`: a token acts as its person); the CI attestation; the host's branch rules
+(read with the App's read-only token); the final-go GO for exactly the tree; the token unexpired (`token_expired`,
+failing closed); the write rules; then the host. On this kind the broker refuses `post_comment`, `label_issue`,
+`push_approved_docs` and `open_upstream_pr` (`token_scope`: the token holds no Issues permission, and the docs and
+tenets pull requests stay the App's in v1). The pull request's body adds "Pushed with ‹login›'s fine-grained token,
+after ‹login›'s own go on the run." before `MERGE_IS_HUMAN` (its commits and the pull request show the person, not the
+bot). Each use is logged (the operation, the run, the connection, the login; never the token) and kept on the write's
+claim (`with: {credential: fine_grained_token, login, expires_at}`).
+
+**The go and the start.** `POST /agents/engineering/<run_id>/go` on a run of this kind takes the token owner's go
+alone (403 `token_owner_go` for any other administrator, before anything is written; the run page's button reads
+"Push with ‹login›'s token"). A run's start (`POST /agents/engineering/runs`, an agent's Run now and its triggers) is
+refused on an expired or unset token (409 "replace it"), and the 202 answer carries `warnings` when 3 days or fewer
+remain. Readiness: `connection` says "‹repo›, pushed with ‹login›'s fine-grained token: a branch and a pull request
+after your go" (and fails a flow that pushes on an expired or unset token); `app_installation` says it is not needed
+(it fails if the deployment's App installation that reads it is gone); `write_token` passes with the days left, warns
+at 14 or fewer, and fails once expired or unset; `dial` says every push waits for ‹login›'s go.
+
+**Out of scope in v1:** private repositories (the token would have to become a read credential), classic tokens,
+OAuth and user-to-server tokens, issue comments and labels, the knowledge docs and tenets pull requests, GitLab (which
+has its project tokens), and rotation.
+
+**Live checks after deploy** (not verifiable from the docs): the header's exact spelling on a fine-grained token;
+whether a token pending an organization's approval answers `permissions.push` true on a public repository and 403 only
+at the write; that `GET /user/repos?visibility=private` lists the private repositories of an "All repositories"
+token; the prefilled new-token page; a branch rules read of a public repository with the App's read-only token; and an
+end-to-end run on a test repository without the App (save, run, go, pull request).
+
 ## The knowledge pack
 
 *Partly built* (`voc-datalake/lambda/engineering/knowledge/`): the packages and their owners, the shards, the map
@@ -4007,6 +4127,7 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 |---|---|---|---|
 | `connection` | yes | the agent's stored connection (7.57.00: a public repository read only fails a flow that pushes, and passes one that reads) | Agents → Connections, then the agent's Set up; for a read-only one, its Contribute card |
 | `app_installation` | | the GitHub App installation, through `voc-engineering-app-tokens`' `inspect_installation`, for a connection made through one of the deployment's Apps (`unknown` for a connection with its own App key, which only the broker reads; GitLab: not needed) | add the repository to the installation on GitHub |
+| `write_token` (7.60.00) | | a fine-grained connection's token: passes with the days left (its first push confirms it can write: no write probe), warns at 14 days or fewer, fails once expired or not set (an expired or unset token also fails the `connection` check of a flow that pushes); not needed on any other kind | its owner's **Replace token** (Agents → Connections) |
 | `fork` (7.57.00) | | a fork connection's repository is still a fork of its upstream (its `parent`, through the token function's `public_repository`); not needed off a fork | fork the upstream again, install the App on it, the Contribute card |
 | `upstream_pr` (7.57.00) | | a fork whose flow pushes: its run ends with the upstream pull request one click away once the gate passes (the licence acknowledged); the person creates it on GitHub (7.58.00: the app never opens it itself); the upstream's own state is the broker's to read at each one | none (a changed licence: the fork's **Acknowledge the current licence…**) |
 | `ci_attestation` | yes, where the flow pushes | the connection's CI attestation | the CI attestation under Agents → Connections |

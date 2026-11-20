@@ -42,6 +42,13 @@ a public repository to any reader); a fork's issue reads go to its upstream (``i
 whole ``/repos/`` path (``public_get``, the upstream's facts) uses the connection's ``metadata: read`` token. (7.58.00)
 No request opens a pull request on the upstream: the run ends with a link a person clicks.
 
+Since 7.60.00 (a fine-grained token, ``FINE_GRAINED``): the connection is read as a public repository is, with the App's
+``metadata: read`` token naming no repository, and ``_token`` refuses any write permission on it, so no App write token
+is ever minted for it; its run's push and pull request are ``push_bundle_as`` and ``open_or_update_pr_as``, whose writes
+alone carry the token the broker hands them (``_token_writer``), each request held to the repository's Git Data and
+pull request paths (``fine_grained.token_request_allowed``), every read with the App's read-only token. A 403 to a write
+with the token is ``TokenCannotWrite`` (nothing moved: the step waits for a person).
+
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets.
 Every request goes to ``api.github.com`` through one ``Transport`` (tests inject a fake): the token travels only in
@@ -66,8 +73,10 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from engineering.connectors import github_reactions
 from engineering.connectors.credentials import GitHubAppCredential
+from engineering.connectors.fine_grained import CANNOT_WRITE, token_request_allowed
 from engineering.connectors.hosts import (
     FILE_MODES,
+    FINE_GRAINED,
     FORK,
     OBJECT_ID,
     PAGE_NUMBER,
@@ -84,6 +93,7 @@ from engineering.connectors.hosts import (
     InvalidTarget,
     NoConnection,
     NotFound,
+    NotNow,
     PullRequestRef,
     ReadKind,
     ReadPage,
@@ -113,7 +123,7 @@ from engineering.connectors.transport import int_of as _int
 from engineering.connectors.transport import items_of as _items
 from engineering.connectors.transport import json_of as _json
 from engineering.connectors.transport import text_of as _text
-from engineering.connectors.write_policy import BrokerError
+from engineering.connectors.write_policy import BrokerError, WriteRefused
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 from shared.logging import logger
 
@@ -296,6 +306,22 @@ def pull_request_ref(found: object) -> PullRequestRef:
                           host='github')
 
 
+class TokenCannotWrite(NotNow):
+    """GitHub refused a write with a fine-grained connection's token (403, 7.60.00): nothing was moved, and the step
+    waits for a person (the token's permissions, or its organization's approval); ``code`` beside the reason."""
+
+    code = 'token_cannot_write'
+
+
+#: A write's request (``method``, the path after ``/repos/<owner>/<name>``, what it is, its body and the statuses it
+#: takes), with the App's write token or, on a fine-grained connection, the token the broker handed in.
+Writer = Callable[..., Response]
+#: The App's write token on a fine-grained connection, or a token write elsewhere: refused before any request.
+NO_APP_WRITES: Final = ("A fine-grained connection is written only with its own token, by the run's push and pull "
+                        'request: the App\'s token on it reads only.')
+NOT_ITS_CREDENTIAL: Final = 'A write token is only for a connection made with one.'
+
+
 class GitHubHost:
     """``RepositoryHost`` over the GitHub REST API, one App installation token per repository and permission set."""
 
@@ -322,8 +348,12 @@ class GitHubHost:
         credential = self._credentials(connection_id)
         # A public repository read only (7.57.00) is not in the installation its token comes from: whatever the
         # operation asked, its token holds ``metadata: read`` alone and names no repository, so it reads what is
-        # public and can write nothing on any repository (the broker refuses every write on it before this).
-        public = credential.kind == PUBLIC_READ
+        # public and can write nothing on any repository (the broker refuses every write on it before this). A
+        # fine-grained connection (7.60.00) reads the same way, and never gets an App write token: only its own token
+        # writes, and only through ``_token_writer``.
+        public = credential.kind in (PUBLIC_READ, FINE_GRAINED)
+        if credential.kind == FINE_GRAINED and 'write' in permissions.values():
+            raise WriteRefused(NO_APP_WRITES)
         if public:
             permissions = METADATA_READ
         # The installation and repository are in the key: a connection re-pointed at another repository (or
@@ -609,21 +639,23 @@ class GitHubHost:
                   body={'labels': list(labels)}, ok=(200,))
         return labels
 
-    def _entry(self, connection_id: str, change: FileChange) -> dict[str, object]:
-        """A tree entry for ``change``: a deletion, a text file inline, any other file as a blob."""
+    @staticmethod
+    def _entry(host_write: Writer, change: FileChange) -> dict[str, object]:
+        """A tree entry for ``change``: a deletion, a text file inline, any other file as a blob (``host_write``'s)."""
         entry: dict[str, object] = {'path': change.path, 'mode': change.mode, 'type': 'blob'}
         if change.content is None:
             return {**entry, 'sha': None}
         try:
             return {**entry, 'content': change.content.decode('utf-8')}
         except UnicodeDecodeError:
-            blob = self._api(connection_id, _PUSH, 'POST', '/git/blobs', 'the push', ok=(201,),
-                             body={'content': base64.b64encode(change.content).decode('ascii'), 'encoding': 'base64'})
+            blob = host_write('POST', '/git/blobs', 'the push', ok=(201,),
+                         body={'content': base64.b64encode(change.content).decode('ascii'), 'encoding': 'base64'})
             return {**entry, 'sha': _text(_json(blob), 'sha')}
 
-    def _require_on_default_branch(self, connection_id: str, default_branch: str, base: str) -> None:
+    def _require_on_default_branch(self, connection_id: str, permissions: Permissions, default_branch: str,
+                                   base: str) -> None:
         compare = f'{quote(default_branch, safe="/")}...{quote(base, safe="")}'
-        response = self._api(connection_id, _PUSH, 'GET', f'/compare/{compare}?per_page=1', 'the push',
+        response = self._api(connection_id, permissions, 'GET', f'/compare/{compare}?per_page=1', 'the push',
                              ok=(200, 404))
         if response.status == 404 or _dig(_json(response), 'status') not in _ON_DEFAULT_BRANCH:
             raise Conflict("A new branch starts on the default branch: the bundle's base is not its head or an "
@@ -631,34 +663,78 @@ class GitHubHost:
 
     def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
                     default_branch: str) -> None:
+        self._push(connection_id, branch, contents, tree_hash, default_branch, '')
+
+    def push_bundle_as(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
+                       default_branch: str, write_token: str) -> None:
+        """A fine-grained connection's push (7.60.00): ``push_bundle``'s, its writes with ``write_token``."""
+        self._push(connection_id, branch, contents, tree_hash, default_branch, write_token)
+
+    def _token_writer(self, connection_id: str, permissions: Permissions, write_token: str) -> Writer:
+        """How a write's request is sent: with the App's token for ``permissions`` (``_api``), or on a fine-grained
+        connection with ``write_token``, held to ``token_request_allowed`` (``WriteRefused`` off it, before any
+        request) and its 403 ``TokenCannotWrite``. A token write elsewhere, or none on a fine-grained connection, is
+        refused before any request."""
+        credential = self._credentials(connection_id)
+        if credential.kind != FINE_GRAINED:
+            if write_token:
+                raise WriteRefused(NOT_ITS_CREDENTIAL)
+            return partial(self._api, connection_id, permissions)
+        if not write_token:
+            raise WriteRefused(NO_APP_WRITES)
+        repository = f'{credential.owner}/{credential.repository}'
+
+        def send(method: str, path: str, what: str, body: object = None, accept: str = JSON_ACCEPT,
+                 ok: tuple[int, ...] = (200,)) -> Response:
+            full = f'/repos/{repository}{path}'
+            if not token_request_allowed(repository, method, full):
+                raise WriteRefused('A fine-grained connection\'s token writes only the run\'s branch and pull request.')
+            try:
+                return self._send(method, full, f'Bearer {write_token}', what, body=body, accept=accept, ok=ok)
+            except HostBusy:
+                raise
+            except HostError as refused:
+                if refused.status == 403:
+                    raise TokenCannotWrite(CANNOT_WRITE) from None
+                raise
+
+        return send
+
+    def _reads(self, connection_id: str, permissions: Permissions) -> Permissions:
+        """The permissions a write's own reads ask for: the write's (one token for both), or on a fine-grained
+        connection ``contents: read`` (``_token`` makes it the App's ``metadata: read``)."""
+        return _BRANCH if self._credentials(connection_id).kind == FINE_GRAINED else permissions
+
+    def _push(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str, default_branch: str,
+              write_token: str) -> None:
+        host_write = self._token_writer(connection_id, _PUSH, write_token)
+        reads = self._reads(connection_id, _PUSH)
         require_pushable(contents, tree_hash, _stray_changes(contents))
-        head = self._head(connection_id, _PUSH, branch)
+        head = self._head(connection_id, reads, branch)
         require_base(head, contents)
         if head is None:
-            self._require_on_default_branch(connection_id, default_branch, contents.base)
-        tree = self._tree_of(connection_id, _PUSH, contents.base)
+            self._require_on_default_branch(connection_id, reads, default_branch, contents.base)
+        tree = self._tree_of(connection_id, reads, contents.base)
         if tree is None:
             raise Conflict("The repository has no commit the bundle's base names; fetch and make the bundle again.")
         parent = contents.base
         for commit in contents.commits:
             if commit.changes:
-                entries = [self._entry(connection_id, change) for change in commit.changes]
-                built = self._api(connection_id, _PUSH, 'POST', '/git/trees', 'the push', ok=(201,),
-                                  body={'base_tree': tree, 'tree': entries})
+                entries = [self._entry(host_write, change) for change in commit.changes]
+                built = host_write('POST', '/git/trees', 'the push', ok=(201,), body={'base_tree': tree, 'tree': entries})
                 tree = _text(_json(built), 'sha')
-            made = self._api(connection_id, _PUSH, 'POST', '/git/commits', 'the push', ok=(201,),
-                             body={'message': commit.message, 'tree': tree, 'parents': [parent]})
+            made = host_write('POST', '/git/commits', 'the push', ok=(201,),
+                         body={'message': commit.message, 'tree': tree, 'parents': [parent]})
             parent = _text(_json(made), 'sha')
         if tree != tree_hash:
             raise Conflict('The commits rebuilt on the host have another tree than the one the broker checked; '
                            'the branch was not moved.')
         ref = f'refs/heads/{branch}'
         if head is None:
-            moved = self._api(connection_id, _PUSH, 'POST', '/git/refs', 'the push', ok=(201, 422),
-                              body={'ref': ref, 'sha': parent})
+            moved = host_write('POST', '/git/refs', 'the push', ok=(201, 422), body={'ref': ref, 'sha': parent})
         else:
-            moved = self._api(connection_id, _PUSH, 'PATCH', f'/git/{quote(ref, safe="/")}', 'the push',
-                              ok=(200, 422), body={'sha': parent, 'force': False})
+            moved = host_write('PATCH', f'/git/{quote(ref, safe="/")}', 'the push', ok=(200, 422),
+                          body={'sha': parent, 'force': False})
         if moved.status == 422:
             raise Conflict('The branch changed while the bundle was pushed; fetch it and make the bundle again.')
 
@@ -671,43 +747,54 @@ class GitHubHost:
             raise Conflict("The repository has no commit the docs' base names; read its head again.")
         if not changes:
             return tree
-        entries = [self._entry(connection_id, change) for change in changes]
-        built = self._api(connection_id, _PUSH, 'POST', '/git/trees', 'the docs tree', ok=(201,),
-                          body={'base_tree': tree, 'tree': entries})
+        host_write = partial(self._api, connection_id, _PUSH)
+        entries = [self._entry(host_write, change) for change in changes]
+        built = host_write('POST', '/git/trees', 'the docs tree', ok=(201,), body={'base_tree': tree, 'tree': entries})
         return _text(_json(built), 'sha')
 
-    def _require_pull_request_tree(self, connection_id: str, number: int, tree_hash: str) -> None:
+    def _require_pull_request_tree(self, connection_id: str, permissions: Permissions, number: int,
+                                   tree_hash: str) -> None:
         """Raise ``Conflict`` unless the pull request's head has ``tree_hash``."""
-        response = self._api(connection_id, _DRAFT, 'GET', f'/pulls/{number}', 'the pull request check')
-        if self._tree_of(connection_id, _DRAFT, _text(_dig(_json(response), 'head'), 'sha')) != tree_hash:
+        response = self._api(connection_id, permissions, 'GET', f'/pulls/{number}', 'the pull request check')
+        if self._tree_of(connection_id, permissions, _text(_dig(_json(response), 'head'), 'sha')) != tree_hash:
             raise Conflict("The branch moved while the pull request was written: its head does not have the tree "
                            "the board's GO is for.")
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
                                 tree_hash: str, *, draft: bool = True) -> PullRequestRef:
-        if self._branch_tree(connection_id, _DRAFT, branch) != tree_hash:
+        return self._pull_request(connection_id, branch, base, title, body, tree_hash, draft, '')
+
+    def open_or_update_pr_as(self, connection_id: str, branch: str, base: str, title: str, body: str, tree_hash: str,
+                             write_token: str, *, draft: bool = True) -> PullRequestRef:
+        """A fine-grained connection's pull request (7.60.00): ``open_or_update_draft_pr``'s, its writes with
+        ``write_token``."""
+        return self._pull_request(connection_id, branch, base, title, body, tree_hash, draft, write_token)
+
+    def _pull_request(self, connection_id: str, branch: str, base: str, title: str, body: str, tree_hash: str,
+                      draft: bool, write_token: str) -> PullRequestRef:
+        host_write = self._token_writer(connection_id, _DRAFT, write_token)
+        reads = self._reads(connection_id, _DRAFT)
+        if self._branch_tree(connection_id, reads, branch) != tree_hash:
             raise Conflict("The branch's head does not have the tree the board's GO is for.")
-        ref = self._open_pull_request(connection_id, _DRAFT, branch)
+        ref = self._open_pull_request(connection_id, reads, branch)
         opened = ref is None
         if ref is not None:
-            self._api(connection_id, _DRAFT, 'PATCH', f'/pulls/{ref.number}', 'the pull request update',
-                      body={'title': title, 'body': body})
+            host_write('PATCH', f'/pulls/{ref.number}', 'the pull request update', body={'title': title, 'body': body})
         else:
-            created = _json(self._api(connection_id, _DRAFT, 'POST', '/pulls', 'the pull request', ok=(201,),
-                                      body={'title': title, 'body': body, 'head': branch, 'base': base,
-                                            'draft': draft}))
+            created = _json(host_write('POST', '/pulls', 'the pull request', ok=(201,),
+                                  body={'title': title, 'body': body, 'head': branch, 'base': base, 'draft': draft}))
             ref = pull_request_ref(created)
         number = ref.number
         # (a pull request this call opened is never left open unchecked)
         return checked_after_write(
-            ref, opened, lambda: self._require_pull_request_tree(connection_id, number, tree_hash),
-            lambda: self._close(connection_id, number))
+            ref, opened, lambda: self._require_pull_request_tree(connection_id, reads, number, tree_hash),
+            lambda: self._close(host_write, number))
 
-    def _close(self, connection_id: str, number: int) -> None:
+    @staticmethod
+    def _close(host_write: Writer, number: int) -> None:
         """Close the pull request ``number`` this call opened; a close that fails is logged by its number only."""
         try:
-            self._api(connection_id, _DRAFT, 'PATCH', f'/pulls/{number}', 'the pull request close',
-                      body={'state': 'closed'})
+            host_write('PATCH', f'/pulls/{number}', 'the pull request close', body={'state': 'closed'})
         except (BrokerError, NoConnection, ValueError, OSError):
             # A failure of the close (a host refusal, a malformed answer, a lost connection) is logged by number
             # only, so the caller still gets the failure that made the close necessary.

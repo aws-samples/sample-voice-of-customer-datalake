@@ -445,6 +445,8 @@ class RunMonitor:
         ended = string_attr(meta, 'status') in ENDED
         return {
             'run': {'run_id': run_id, 'goal': string_attr(meta, 'goal'), 'repo': string_attr(meta, 'repo'),
+                    # (7.60.00: the connection it started on, which says whose go a token connection's push waits for)
+                    'connection': string_attr(meta, 'connection') or None,
                     'flow': string_attr(meta, 'flow'), 'status': string_attr(meta, 'status'),
                     'started_at': string_attr(meta, 'started_at') or None,
                     'ended_at': string_attr(meta, 'ended_at') or None,
@@ -512,6 +514,11 @@ class RunMonitor:
 
     def run_exists(self, run_id: str) -> bool:
         return self._get(run_id, 'META') is not None
+
+    def connection_of(self, run_id: str) -> str:
+        """The connection the run started on (META's ``connection``; '' for none, or no such run): a go on a run of a
+        fine-grained connection is its token owner's alone (7.60.00, the Agents API's go route)."""
+        return string_attr(self._get(run_id, 'META') or {}, 'connection')
 
     def open_run(self, run_id: str) -> None:
         meta = self._get(run_id, 'META')

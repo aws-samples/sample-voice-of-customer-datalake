@@ -29,7 +29,7 @@ const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_AGENT_NETWORK', 'ENG
   'ENGINEERING_IMAGE_LANGUAGES', 'ENGINEERING_KIRO_CREDIT_PRICE',
   'ENGINEERING_MAX_SESSIONS', 'ENGINEERING_MODEL_PRICES',
   'ENGINEERING_PARAMETER_KEY', 'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP',
-  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE',
+  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_TOKEN_PARAMETER_PREFIX',
   'ENGINEERING_WATERMARKS_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
@@ -254,7 +254,9 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
 
   it('write and delete the connections\' credentials where the broker reads them, and never read one back', () => {
     const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
-    const parameters = '{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering/*"]]}';
+    // (7.60.00: and the fine-grained connections' write tokens, on their own path, in the same statement)
+    const parameters = '[{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering/*"]]},'
+      + '{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering-token/*"]]}]';
     const ssm = statements.filter((statement) => statement.actions.some((action) => action.startsWith('ssm:')));
     expect(ssm.map((statement) => [[...statement.actions].sort(byCodeUnit), statement.resource]))
       .toStrictEqual([[['ssm:DeleteParameter', 'ssm:PutParameter'], parameters]]);
@@ -266,6 +268,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('name the connections\' parameter path and key to the agents API', () => {
     const env = serviceEnvironment(on(), 'voc-agents-api');
     expect(env.ENGINEERING_PARAMETER_PREFIX).toBe('/voc/engineering/');
+    expect(env.ENGINEERING_TOKEN_PARAMETER_PREFIX).toBe('/voc/engineering-token/');
     expect(JSON.stringify(env.ENGINEERING_PARAMETER_KEY)).toContain('Fn::ImportValue');
   });
 
@@ -277,9 +280,10 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(statements[0]?.condition).toStrictEqual({
       StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' },
       StringLike: {
-        'kms:EncryptionContext:PARAMETER_ARN': {
-          'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
-        },
+        'kms:EncryptionContext:PARAMETER_ARN': [
+          { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']] },
+          { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering-token/*']] },
+        ],
       },
     });
     expect(statements[0]?.resource).toContain('Fn::ImportValue');

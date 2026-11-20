@@ -310,7 +310,10 @@ describe('cdk-nag acknowledgements', () => {
       // more finding of its recorded outputs' acknowledgement (engineering-bus.ts).
       // (7.57.00's GitHub App user authorizations' path, six findings, is gone with the app's own open of the upstream
       // pull request: 7.58.00, back to 139.)
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 139, used: 139 });
+      // 139 -> 141 (7.60.00): the fine-grained connections' write tokens' path (`/[<prefix>-]voc/engineering-token/*`):
+      // the broker's read (engineering-broker.ts grantWriteTokenReads) and a second finding of the Agents API's put
+      // and delete acknowledgement (api-assistant-lambdas.ts grantConnectionCredentialWrites).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 141, used: 141 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

@@ -1036,9 +1036,12 @@
     "waysUnset_other": "AI와 일하는 방식이 설정되지 않은 사용자 {{count, number}}명",
     "modelsBlocked_one": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
     "modelsBlocked_other": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
+    "tokensToReplace_one": "곧 만료되거나 교체가 필요한 세분화된 토큰 {{count, number}}개",
+    "tokensToReplace_other": "곧 만료되거나 교체가 필요한 세분화된 토큰 {{count, number}}개",
     "reviewSources": "소스 확인",
     "openUsers": "사용자 열기",
     "openModels": "AI 모델 열기",
+    "openConnections": "GitHub 연결 열기",
     "badge_one": "{{count, number}}개 확인 필요",
     "badge_other": "{{count, number}}개 확인 필요",
     "option": "{{tab}} ({{count, number}})"
@@ -1056,9 +1059,12 @@
     "modelsDescription": "이 배포에서 각 역할이 실행되는 하네스와 사용하는 모델입니다. 변경은 역할의 레지스트리 카드에서 하며 다음 실행부터 적용됩니다.",
     "modelsUnread": "역할의 모델을 읽을 수 없습니다.",
     "connectionsDescription": "엔지니어링 에이전트가 저장소를 가져오는 곳, 비용, 첫 실행 전 단계입니다.",
+    "tokensTitle": "교체할 세분화된 토큰",
+    "tokensHint": "에이전트 오케스트레이션 › 연결에서 각각 교체하세요. 만료된 토큰으로 하는 실행은 시작할 때 거부됩니다.",
+    "tokenUnusable": "설정되지 않았거나 만료일을 알 수 없음",
     "links": {
       "connections": "에이전트 오케스트레이션 › 연결",
-      "connectionsHint": "GitHub를 연결하고 에이전트가 작업할 저장소를 선택",
+      "connectionsHint": "GitHub를 연결하고 에이전트가 작업할 저장소를 선택 (App, 세분화된 토큰 또는 포크를 통해)",
       "spend": "에이전트 오케스트레이션 › 비용",
       "spendHint": "각 워크플로의 월 예산과 실행 비용",
       "setup": "구성 가이드",
@@ -1107,7 +1113,7 @@
       "participants": "참가자, 보낸 사람 이름, 일일 한도, 외부 사용자, 이메일 발송",
       "hardCap": "강제 상한, 예산, 비용 상한, 실행 중지, 지출 한도",
       "models": "모델, Kiro, 네이티브 하네스, Opus, Sonnet, Haiku, 역할, 레지스트리",
-      "connections": "GitHub, GitHub 앱, 저장소, 연결, 설치, 이슈",
+      "connections": "GitHub, GitHub 앱, 저장소, 연결, 설치, 이슈, 세분화된 토큰, 개인 액세스 토큰, 포크",
       "spend": "비용, 지출, 예산, 상한, 청구",
       "preferences": "언어, 테마, 내 환경설정, 다크 모드"
     }

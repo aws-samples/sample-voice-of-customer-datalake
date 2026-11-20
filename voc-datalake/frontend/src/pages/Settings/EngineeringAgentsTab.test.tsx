@@ -4,10 +4,11 @@
  * Spend and the setup guide; each card an anchor a link may name.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
+import { tokenConnection } from '@test/tokenConnectionFixtures'
 import { useConfigStore } from '../../store/configStore'
 import { parseRegistry } from '../../api/engineeringRegistryApi'
 import type { RegistryCard } from '../../api/engineeringRegistryApi'
@@ -18,6 +19,11 @@ vi.mock('../../api/engineeringRegistryApi', async (importOriginal) => ({
   engineeringRegistryApi: { list: (connection: string) => list(connection) },
 }))
 vi.mock('../Agents/EngineeringHardCap', () => ({ EngineeringHardCap: () => <p data-testid="hard-cap">Hard cap</p> }))
+const listConnections = vi.fn<() => Promise<unknown>>()
+vi.mock('../../api/engineeringConnectionsApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../api/engineeringConnectionsApi')>(),
+  engineeringConnectionsApi: { list: () => listConnections() },
+}))
 
 const { default: EngineeringAgentsTab } = await import('./EngineeringAgentsTab')
 
@@ -37,6 +43,8 @@ const renderTab = () => renderWithQueryClient(<TestRouter initialEntries={['/adm
 beforeEach(() => {
   useConfigStore.setState((state) => ({ config: { ...state.config, apiEndpoint: 'https://api.example.com' } }))
   list.mockReset()
+  listConnections.mockReset()
+  listConnections.mockResolvedValue({ connections: [], limit: 50 })
 })
 
 describe("the roles' models", () => {
@@ -74,5 +82,29 @@ describe('the rest of the tab', () => {
     const links = ['Agent orchestration › Connections', 'Agent orchestration › Spend', 'Setup guide']
     expect(links.map((name) => screen.getByRole('link', { name }).getAttribute('href'))).toStrictEqual(['/agents/connections', '/agents/spend', '/agents/setup'])
     expect(['hard-cap', 'models', 'connections'].map((id) => document.getElementById(`admin-card-${id}`)?.tabIndex)).toStrictEqual([-1, -1, -1])
+  })
+})
+
+describe('the fine-grained tokens to replace (7.60.00)', () => {
+  it('lists each one with its chip, or that it cannot be used, and nothing for a token that is fine', async () => {
+    list.mockResolvedValue([])
+    listConnections.mockResolvedValue({ limit: 50, connections: [
+      tokenConnection('c-soon', 'partner-org/sdk', 3), tokenConnection('c-fine', 'partner-org/docs', 60),
+      tokenConnection('c-gone', 'partner-org/cli', 0), tokenConnection('c-unset', 'partner-org/api', 30, { set: false }),
+    ] })
+    renderTab()
+    const box = await screen.findByTestId('tokens-to-replace')
+    expect(within(box).getByRole('heading', { name: 'Fine-grained tokens to replace' })).toBeInTheDocument()
+    expect(within(box).getAllByRole('listitem').map((row) => row.textContent)).toStrictEqual([
+      'partner-org/sdkExpires in 3 days', 'partner-org/cliToken expired', 'partner-org/apiNot set, or its expiry is not known',
+    ])
+  })
+
+  it('shows nothing while every token is fine', async () => {
+    list.mockResolvedValue([])
+    listConnections.mockResolvedValue({ limit: 50, connections: [tokenConnection('c-fine', 'partner-org/docs', 60)] })
+    renderTab()
+    await waitFor(() => { expect(listConnections).toHaveBeenCalled() })
+    expect(screen.queryByTestId('tokens-to-replace')).not.toBeInTheDocument()
   })
 })

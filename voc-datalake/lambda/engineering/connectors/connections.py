@@ -31,6 +31,15 @@ pull request goes to (``fork``: ``forks.py``; ``ForkReference``, the owner's sub
 licence). A kind never changes: the generic save refuses a connection of another
 kind (409), and a read-only connection takes no CI attestation (nothing is pushed to it).
 
+Since 7.60.00 a public repository connected with a fine-grained token limited to it (``fine_grained``:
+``token_connections.py``, ``FineGrainedToken``): its parameter is a public repository's (the App installation whose
+read-only token reads it, no token), and its write token goes to a parameter of its own beside the connections' path
+and outside it, ``{token_prefix}<id>`` (``/[<prefix>-]voc/engineering-token/<id>``, ``fine_grained.parameter_value``),
+which only the broker reads (this role writes and deletes it, never reads it). The row keeps the token's login and
+expiry, its owner (the saver's subject's sha256, and their name) and when and how it was saved (``token_saved_at``,
+``token_acknowledged``); never the token. A save writes the token before the read parameter and both before the row;
+a removal deletes the token first. Its audit row says ``token: replaced`` or ``removed``, never the value.
+
 A connection's CI attestation (7.04.00, ``attestations.py``): an administrator confirms the setup guide's points for
 it (``attest``) or withdraws the confirmation (``withdraw``); a repository change and a removal void it. Each is a
 create-only version row in the attestation's own partition, written in one transaction with the connection's audit
@@ -66,10 +75,15 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors import attestations
 from engineering.connectors.attestations import ATTESTED, POINTS, WITHDRAWN
-from engineering.connectors.gitlab_api import TOKEN, TokenFacts, TokenRefused, check_token, is_project_path
+from engineering.connectors.fine_grained import TokenFacts, days_left, utc_today
+from engineering.connectors.fine_grained import parameter_value as token_value
+from engineering.connectors.gitlab_api import TOKEN, TokenRefused, check_token, is_project_path
+from engineering.connectors.gitlab_api import TokenFacts as GitLabTokenFacts
+from engineering.connectors.hosts import FINE_GRAINED as KIND_FINE_GRAINED
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
 from engineering.settings import UNNAMED
+from shared.digests import sha256_hex
 from shared.dynamo_paging import query_all
 from shared.github_rest import GITHUB_NUMBER
 from shared.logging import logger
@@ -79,6 +93,9 @@ from shared.model_fallback import error_code
 PARAMETER_PREFIX_ENV: Final = 'ENGINEERING_PARAMETER_PREFIX'
 #: The env var with the stack's customer-managed key (its ARN), which encrypts every connection's parameter.
 PARAMETER_KEY_ENV: Final = 'ENGINEERING_PARAMETER_KEY'
+#: (7.60.00) The env var with the write tokens' prefix (``/[<prefix>-]voc/engineering-token/``), the broker's and the
+#: Agents API's alike: beside the connections' path, never under it.
+WRITE_TOKENS_PREFIX_ENV: Final = 'ENGINEERING_TOKEN_PARAMETER_PREFIX'
 #: The deployment's GitHub Apps' parameters (7.45.00, ``github_apps.py``), under the connections' prefix: an App's key,
 #: stored once, and its webhook secret. A leading ``_`` is never a connection id (``CONNECTION_ID``; the reader's own
 #: pattern neither), so these names never collide with a connection's.
@@ -113,11 +130,15 @@ _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key
 #: The row's fields an audit row records the change of (never the private key or the token).
 _AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at',
                    'credential_kind', 'repository_private', 'connection_kind', 'upstream', 'licence',
-                   'upstream_default_branch')
+                   'upstream_default_branch', 'token_login', 'token_owner', 'token_saved_at', 'token_acknowledged')
 #: A connection's kinds (7.57.00; hosts.py REPOSITORY_KIND, PUBLIC_READ, FORK): the row's ``connection_kind``, none for ``repository``.
 KIND_REPOSITORY: Final = 'repository'
 KIND_PUBLIC_READ: Final = 'public_read'
 KIND_FORK: Final = 'fork'
+#: (7.60.00) A public repository connected with a fine-grained token limited to it is of the kind ``KIND_FINE_GRAINED``
+#: (hosts.py ``FINE_GRAINED``, the one spelling), its credential of this kind, as the row and the view name it.
+FINE_GRAINED_CREDENTIAL: Final = 'fine_grained_token'
+_KINDS: Final = (KIND_PUBLIC_READ, KIND_FORK, KIND_FINE_GRAINED)
 #: A read-only connection's refusal of a CI attestation.
 READ_ONLY_ATTESTATION: Final = ('a read-only connection: the agents push nothing to this repository, so there is no CI '
                                 'to attest (its Contribute card makes a fork, whose CI is attested)')
@@ -210,6 +231,19 @@ class ForkReference:
 
 
 @dataclass(frozen=True)
+class FineGrainedToken:
+    """A public repository connected with a fine-grained token (7.60.00, ``token_connections.py``): the deployment's App
+    installation whose read-only token reads it, what the token's check found (``fine_grained.TokenFacts``), its owner
+    (the saver's subject's sha256) and the token itself (``repr`` leaves it out)."""
+
+    app_id: str
+    installation_id: int
+    facts: TokenFacts
+    owner: str
+    token: str = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ProjectToken:
     """A GitLab project access token as a save sends it (``repr`` leaves it out)."""
 
@@ -228,7 +262,7 @@ class ConnectionRequest:
     host: str
     repository: str
     default_branch: str
-    credential: AppCredential | AppReference | PublicRead | ForkReference | ProjectToken | None
+    credential: AppCredential | AppReference | PublicRead | ForkReference | FineGrainedToken | ProjectToken | None
     reason: str = ''
     repository_private: bool | None = None
     #: The connection's kind (7.57.00) and the row's facts of it (a public repository's stars, licence, archived and
@@ -403,7 +437,7 @@ def parse_attestation(body: Mapping[str, object]) -> AttestationRequest:
                               reason=parse_reason(body.get('reason')))
 
 
-def gitlab_parameter_value(facts: TokenFacts, token: ProjectToken) -> str:
+def gitlab_parameter_value(facts: GitLabTokenFacts, token: ProjectToken) -> str:
     """A GitLab connection's parameter JSON, as the broker's reader parses it (credentials.py ``parse_stored``): the
     project's id and path and the token's expiry as the save's check found them, and the token."""
     return json.dumps({'host': 'gitlab', 'project_id': facts.project_id, 'repository': facts.project,
@@ -430,11 +464,21 @@ def fork_value(repository: str, reference: ForkReference) -> str:
                        'licence': reference.licence})
 
 
-def _value(repository: str, credential: AppCredential | AppReference | PublicRead | ForkReference) -> str:
+def fine_grained_value(repository: str, credential: FineGrainedToken) -> str:
+    """A fine-grained connection's read parameter JSON (7.60.00): a public repository's, its kind its own. No token:
+    that is in its own parameter (``fine_grained.parameter_value``)."""
+    return json.dumps({'kind': KIND_FINE_GRAINED, 'app_id': credential.app_id,
+                       'installation_id': credential.installation_id, 'repository': repository, 'key': APP_REFERENCE})
+
+
+def _value(repository: str,
+           credential: AppCredential | AppReference | PublicRead | ForkReference | FineGrainedToken) -> str:
     if isinstance(credential, AppCredential):
         return parameter_value(repository, credential)
     if isinstance(credential, PublicRead):
         return public_read_value(repository, credential)
+    if isinstance(credential, FineGrainedToken):
+        return fine_grained_value(repository, credential)
     if isinstance(credential, ForkReference):
         return fork_value(repository, credential)
     return reference_value(repository, credential)
@@ -457,7 +501,7 @@ def _name(text: str) -> str:
 def kind_of(item: Mapping[str, Any]) -> str:
     """A stored connection's kind (7.57.00): its row's ``connection_kind``, ``repository`` for none."""
     kind = item.get('connection_kind')
-    return kind if kind in (KIND_PUBLIC_READ, KIND_FORK) else KIND_REPOSITORY
+    return kind if kind in _KINDS else KIND_REPOSITORY
 
 
 def _number(value: object) -> int:
@@ -483,12 +527,27 @@ def _fork_view(item: Mapping[str, Any], viewer: str) -> dict[str, Any] | None:
             'account': str(item.get('fork_account') or ''), 'account_type': str(item.get('fork_account_type') or '')}
 
 
-def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None, viewer: str = '') -> dict[str, Any]:
+def _token_view(item: Mapping[str, Any], viewer: str) -> dict[str, Any]:
+    """A fine-grained connection's token as the list answers it (7.60.00): its login, whose it is and whether the viewer
+    saved it (only they give its runs their go); never the token, nor the owner's subject."""
+    if kind_of(item) != KIND_FINE_GRAINED:
+        return {'login': None, 'saved_by_you': False, 'owner': None}
+    owner = str(item.get('token_owner') or '')
+    return {'login': item.get('token_login') if isinstance(item.get('token_login'), str) else None,
+            'saved_by_you': bool(viewer) and bool(owner) and sha256_hex(viewer) == owner,
+            'owner': str(item.get('token_owner_name') or UNNAMED)}
+
+
+def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None, viewer: str = '',
+         today: date | None = None) -> dict[str, Any]:
     """A stored connection as the API answers it: never a secret, only whether the credential is set; and its CI
     attestation's newest version (``attestation``, None for none); since 7.57.00 its kind and, for a public
-    repository or a fork, their facts (``viewer``: the caller's subject, whether they own a fork)."""
+    repository or a fork, their facts (``viewer``: the caller's subject, whether they own a fork); since 7.60.00 the
+    days a token has left on ``today`` (UTC; ``expires_in_days``, any token's), and a fine-grained one's login, owner
+    and whether the viewer saved it."""
     texts = {field: item[field] if isinstance(item.get(field), str) and item[field] else None for field in _OPTIONAL_TEXT}
     host = str(item.get('host', 'github'))
+    on = today if today is not None else utc_today()
     return {
         'kind': kind_of(item), 'public': _public_view(item), 'fork': _fork_view(item, viewer),
         'connection_id': str(item.get('connection_id', '')), 'host': host,
@@ -496,7 +555,8 @@ def view(item: Mapping[str, Any], attestation: Mapping[str, Any] | None = None, 
         # (a GitLab connection's token expires on its own date, at most a year out: the page warns before it does)
         'credential': {'kind': _credential_kind(item), 'set': item.get('credential_set') is True,
                        'app_id': texts['app_id'], 'installation_id': texts['installation_id'],
-                       'expires_at': texts['token_expires_at']},
+                       'expires_at': texts['token_expires_at'],
+                       'expires_in_days': days_left(texts['token_expires_at'], on), **_token_view(item, viewer)},
         **{field: texts[field] for field in ('created_at', 'created_by', 'updated_at', 'updated_by')},
         # (a connection made through a GitHub App: whether GitHub said the repository is private; null: not known)
         'repository_private': item['repository_private'] if isinstance(item.get('repository_private'), bool) else None,
@@ -512,7 +572,7 @@ def _credential_kind(item: Mapping[str, Any]) -> str:
     if str(item.get('host', 'github')) == 'gitlab':
         return 'project_token'
     kind = item.get('credential_kind')
-    return kind if kind in ('app_reference', KIND_PUBLIC_READ) else 'app'
+    return kind if kind in ('app_reference', KIND_PUBLIC_READ, FINE_GRAINED_CREDENTIAL) else 'app'
 
 
 def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
@@ -520,8 +580,9 @@ def _moved(earlier: Mapping[str, Any], request: ConnectionRequest) -> bool:
     return earlier.get('repository') != request.repository or earlier.get('host', 'github') != request.host
 
 
-def _credential_fields(credential: AppCredential | AppReference | PublicRead | ForkReference | ProjectToken | None,
-                       facts: TokenFacts | None, earlier: Mapping[str, Any]) -> dict[str, Any]:
+def _credential_fields(credential: AppCredential | AppReference | PublicRead | ForkReference | FineGrainedToken
+                       | ProjectToken | None, facts: GitLabTokenFacts | None,
+                       earlier: Mapping[str, Any]) -> dict[str, Any]:
     """The row's facts of its credential (never the secret): a GitHub App's ids (and, for one of the deployment's
     Apps, ``credential_kind: app_reference``, or ``public_read`` for a public repository read through one), or when a
     GitLab token expires; a save without a credential keeps the stored ones (its host unchanged: ``_check_save``)."""
@@ -533,6 +594,9 @@ def _credential_fields(credential: AppCredential | AppReference | PublicRead | F
     if isinstance(credential, PublicRead):
         return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id),
                 'credential_kind': KIND_PUBLIC_READ}
+    if isinstance(credential, FineGrainedToken):
+        return {'app_id': credential.app_id, 'installation_id': str(credential.installation_id),
+                'credential_kind': FINE_GRAINED_CREDENTIAL, 'token_expires_at': credential.facts.expires_at}
     if credential is not None:
         return {'token_expires_at': facts.expires_at if facts is not None else None}
     return {field: earlier.get(field) for field in ('app_id', 'installation_id', 'token_expires_at', 'credential_kind')}
@@ -563,7 +627,7 @@ class ConnectionStore:
 
     def __init__(self, table: Any, ssm: Callable[[], Any], prefix: str, key_id: str,
                  live_runs: Callable[[str], Sequence[str]], clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-                 gitlab: Callable[[str, str, date], TokenFacts] | None = None) -> None:
+                 gitlab: Callable[[str, str, date], GitLabTokenFacts] | None = None, token_prefix: str = '') -> None:
         self._table = table
         self._ssm = ssm
         self._prefix = prefix
@@ -571,8 +635,10 @@ class ConnectionStore:
         self._live_runs = live_runs
         self._clock = clock
         self._gitlab = gitlab if gitlab is not None else check_token
+        #: (7.60.00) The write tokens' path ('' where the deployment names none: no token connection is stored).
+        self._token_prefix = token_prefix
 
-    def _checked_token(self, request: ConnectionRequest) -> tuple[ConnectionRequest, TokenFacts | None]:
+    def _checked_token(self, request: ConnectionRequest) -> tuple[ConnectionRequest, GitLabTokenFacts | None]:
         """A GitLab save's token checked against its project, once, before anything is stored (``ConnectionRefused``
         saying what to change, never the token): the request with the project's path as GitLab spells it, and what
         the check found. Any other save is as it came."""
@@ -594,7 +660,8 @@ class ConnectionStore:
         Query of one row per connection: at most ``MAX_CONNECTIONS``); ``viewer``: the caller's subject (whether they
         own a fork)."""
         try:
-            return [view(item, attestations.newest(self._table, str(item.get('connection_id', ''))), viewer)
+            today = utc_today(self._clock)
+            return [view(item, attestations.newest(self._table, str(item.get('connection_id', ''))), viewer, today)
                     for item in self._rows() if item.get('removed') is not True]
         except (ClientError, BotoCoreError) as exc:
             raise ConnectionRefused('unavailable', 'the connections could not be read: retry') from exc
@@ -615,6 +682,13 @@ class ConnectionStore:
             raise ConnectionRefused('unavailable', 'connections cannot be stored here: the deployment names no '
                                                    'parameter path or key')
         return f'{self._prefix}{connection_id}'
+
+    def _token_parameter(self, connection_id: str) -> str:
+        """A fine-grained connection's write token's parameter (7.60.00), beside the connections' path."""
+        if not (self._token_prefix and self._key_id):
+            raise ConnectionRefused('unavailable', 'a token connection cannot be stored here: the deployment names no '
+                                                   'token path or key')
+        return f'{self._token_prefix}{connection_id}'
 
     def _put_credential(self, name: str, value: str, connection_id: str) -> None:
         try:
@@ -664,11 +738,22 @@ class ConnectionStore:
         # (a repository change voids the attestation: it stood for the repository the connection had)
         attestation = self._newest_attestation(connection_id) if live else None
         credential = request.credential
+        names = (name,)
+        if isinstance(credential, FineGrainedToken):
+            # (7.60.00: the write token first, in its own parameter, then the read one: both before the row)
+            names = (self._token_parameter(connection_id), name)
+            self._put_credential(names[0], token_value(credential.facts, credential.owner, credential.token),
+                                 connection_id)
         if isinstance(credential, ProjectToken):
             if facts is not None:
                 self._put_credential(name, gitlab_parameter_value(facts, credential), connection_id)
         elif credential is not None:
-            self._put_credential(name, _value(request.repository, credential), connection_id)
+            try:
+                self._put_credential(name, _value(request.repository, credential), connection_id)
+            except ConnectionRefused:
+                if len(names) > 1:   # (a write token stored before its read parameter failed: never left behind)
+                    self._credential_undo(connection_id, names[:1], live, actor)()
+                raise
         at, who = self._clock().astimezone(UTC).isoformat(), _name(actor.name)
         # (a save without a credential is one of a live connection whose credential is set: _check_save)
         item: dict[str, Any] = {
@@ -690,17 +775,20 @@ class ConnectionStore:
             for field in _AUDITED if (not live or earlier.get(field) != item.get(field))
             and (field in item or (live and earlier.get(field) is not None))}
         changes['credential'] = 'replaced' if credential is not None else 'kept'
+        if isinstance(credential, FineGrainedToken):
+            changes |= {'token': 'replaced'}   # (never the value)
         void = self._void(attestation if moved else None, attestations.REPOSITORY_CHANGED, actor, at)
         if void is not None:
             changes['ci_attestation'] = attestations.VOIDED
         audit = self._audit(connection_id, 'updated' if live else 'created', changes, actor, at, item['version'],
                             request.reason)
-        undo = self._credential_undo(connection_id, name, live, actor) if credential is not None else None
+        undo = self._credential_undo(connection_id, names, live, actor) if credential is not None else None
         self._write(item, before, audit, undo=undo, extra=() if void is None else (void,))
         logger.info('engineering connection saved', extra={'connection_id': connection_id, 'connection_created': not live,
                                                             'credential_replaced': credential is not None,
                                                             'host': request.host})
-        return view(item, attestation if void is None else void['Put']['Item'], actor.subject), not live
+        return view(item, attestation if void is None else void['Put']['Item'], actor.subject,
+                    utc_today(self._clock)), not live
 
     def _void(self, attestation: Mapping[str, Any] | None, cause: str, actor: Actor, at: str) -> dict[str, Any] | None:
         """The transaction's Put voiding ``attestation`` when it is one (``attestations.void_put``), else None."""
@@ -717,17 +805,23 @@ class ConnectionStore:
         if before is None or before.get('removed') is True:
             raise ConnectionRefused('not_found', 'Connection not found')
         attestation = self._newest_attestation(connection_id)
+        names = (name,)
+        if kind_of(before) == KIND_FINE_GRAINED:
+            # (7.60.00: the write token goes first, so a failure after it never leaves a token behind a removed row)
+            names = (self._token_parameter(connection_id), name)
+            self._delete_credential(names[0], connection_id)
         self._delete_credential(name, connection_id)
         at = self._clock().astimezone(UTC).isoformat()
         version = int(before.get('version', 0)) + 1
         item = {**before, 'removed': True, 'credential_set': False, 'removed_at': at,
                 'removed_by': _name(actor.name), 'version': version}
-        changes = {'repository': {'from': before.get('repository'), 'to': None}, 'credential': 'removed'}
+        changes = {'repository': {'from': before.get('repository'), 'to': None}, 'credential': 'removed',
+                   **({'token': 'removed'} if len(names) > 1 else {})}
         void = self._void(attestation, attestations.CONNECTION_REMOVED, actor, at)
         if void is not None:
             changes['ci_attestation'] = attestations.VOIDED
         self._write(item, before, self._audit(connection_id, 'removed', changes, actor, at, version, reason),
-                    undo=self._credential_undo(connection_id, name, True, actor), extra=() if void is None else (void,))
+                    undo=self._credential_undo(connection_id, names, True, actor), extra=() if void is None else (void,))
         logger.info('engineering connection removed', extra={'connection_id': connection_id})
 
     # --- the CI attestation ----------------------------------------------------------------------------------------
@@ -818,17 +912,18 @@ class ConnectionStore:
         """The change's create-only audit row (D4): who, when, what and, when given, why; never the private key."""
         return audit_row({'connection_id': connection_id}, action, changes, actor, at, version, reason)
 
-    def _credential_undo(self, connection_id: str, name: str, live: bool, actor: Actor) -> Callable[[], None]:
+    def _credential_undo(self, connection_id: str, names: tuple[str, ...], live: bool,
+                         actor: Actor) -> Callable[[], None]:
         """What a changed credential needs when its row is not written: a new connection's parameter is deleted
         again, unless another save stored the connection meanwhile (``_undo_new``); a stored connection's row is
         marked credential not set (its parameter, replaced or deleted, no longer matches the row, so the page says so
         and the next save needs the credential; the broker still refuses a run whose repository the parameter does
         not name)."""
         if not live:
-            return lambda: self._undo_new(connection_id, name, actor)
+            return lambda: self._undo_new(connection_id, names, actor)
         return lambda: self._mark_unset(connection_id, actor)
 
-    def _undo_new(self, connection_id: str, name: str, actor: Actor) -> None:
+    def _undo_new(self, connection_id: str, names: tuple[str, ...], actor: Actor) -> None:
         """A new connection's save whose row was not written: two administrators adding the same id at once both put
         the parameter, and the save that wrote its row first won. The row is read again: with none stored (or a
         removed one) the parameter is deleted; once a save stored one, the parameter is never deleted (it may be the
@@ -849,7 +944,8 @@ class ConnectionStore:
         except ConnectionRefused:
             row = None
         if row is None or row.get('removed') is True:
-            self._delete_credential(name, connection_id)
+            for name in names:   # (a fine-grained connection's write token and its read parameter, 7.60.00)
+                self._delete_credential(name, connection_id)
             row = self._row(connection_id)
         if row is not None and row.get('removed') is not True and row.get('credential_set') is True:
             self._mark_unset(connection_id, actor)

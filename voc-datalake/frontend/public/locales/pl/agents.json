@@ -1298,7 +1298,11 @@
       "publicRead_one": "{{count, number}} publiczne repozytorium tylko do odczytu",
       "publicRead_other": "{{count, number}} publicznego repozytorium tylko do odczytu",
       "publicRead_few": "{{count, number}} publiczne repozytoria tylko do odczytu",
-      "publicRead_many": "{{count, number}} publicznych repozytoriów tylko do odczytu"
+      "publicRead_many": "{{count, number}} publicznych repozytoriów tylko do odczytu",
+      "tokens_one": "{{count, number}} repozytorium z tokenem fine-grained",
+      "tokens_few": "{{count, number}} repozytoria z tokenem fine-grained",
+      "tokens_many": "{{count, number}} repozytoriów z tokenem fine-grained",
+      "tokens_other": "{{count, number}} repozytorium z tokenem fine-grained"
     },
     "columns": {
       "repository": "Repozytorium",
@@ -1321,7 +1325,8 @@
       "edit": "Edytuj połączenie…",
       "attest": "Potwierdź CI…",
       "withdraw": "Wycofaj potwierdzenie CI…",
-      "remove": "Usuń połączenie…"
+      "remove": "Usuń połączenie…",
+      "replaceToken": "Zastąp token…"
     },
     "details": {
       "button": "Szczegóły połączenia {{repository}}",
@@ -1421,6 +1426,107 @@
       "summaryPushes": "Agenci wypychają do: {{fork}} (Twój fork).",
       "summaryPushesPending": "Agenci wypychają do: Twojego forka, gdy zostanie połączony.",
       "summaryPullRequests": "Pull requesty do {{upstream}} pochodzą od Ciebie: uruchomienie kończy się linkiem na jedno kliknięcie, a Ty klikasz Create na GitHubie."
+    },
+    "add": {
+      "title": "Dodaj repozytorium",
+      "intro": "Trzy sposoby, zależnie od tego, co możesz zrobić w repozytorium.",
+      "useWhen": "Użyj, gdy",
+      "endsWith": "Przebieg kończy się",
+      "needsApp": "Najpierw zainstaluj aplikację GitHub tego wdrożenia w jednym ze swoich repozytoriów: jej token tylko do odczytu czyta repozytorium.",
+      "app": {
+        "title": "Zainstaluj aplikację GitHub",
+        "when": "Administrujesz repozytorium albo jego organizacja pozwala ci instalować aplikacje.",
+        "ends": "Gałęzią i pull requestem w repozytorium.",
+        "action": "Dodaj repozytoria do {{slug}}"
+      },
+      "token": {
+        "title": "Użyj tokenu fine-grained",
+        "when": "Możesz wypychać do publicznego repozytorium, ale nie możesz zainstalować w nim aplikacji (na przykład w organizacji, której właściciele zatwierdzają aplikacje).",
+        "ends": "Gałęzią i pull requestem w repozytorium, wypchniętymi twoim tokenem po twojej zgodzie.",
+        "action": "Użyj tokenu…"
+      },
+      "fork": {
+        "title": "Wnieś wkład przez fork",
+        "when": "To publiczne repozytorium kogoś innego.",
+        "ends": "Pull requestem w twoim forku, a potem linkiem, który jednym kliknięciem otwiera go w repozytorium.",
+        "action": "Znajdź repozytorium"
+      }
+    },
+    "token": {
+      "kind": "Token fine-grained",
+      "loginUnknown": "login nieznany",
+      "expires_one": "wygasa {{date}} (za {{count, number}} dzień)",
+      "expires_few": "wygasa {{date}} (za {{count, number}} dni)",
+      "expires_many": "wygasa {{date}} (za {{count, number}} dni)",
+      "expires_other": "wygasa {{date}} (za {{count, number}} dnia)",
+      "expiredOn": "wygasł {{date}}",
+      "expiryUnknown": "data wygaśnięcia nieznana",
+      "soonBadge_one": "Wygasa za {{count, number}} dzień",
+      "soonBadge_few": "Wygasa za {{count, number}} dni",
+      "soonBadge_many": "Wygasa za {{count, number}} dni",
+      "soonBadge_other": "Wygasa za {{count, number}} dnia",
+      "expiredBadge": "Token wygasł",
+      "notSet": "Token fine-grained nie jest zapisany: zastąp go, inaczej agenci niczego nie wypchną do tego repozytorium.",
+      "owner": "Zapisany przez {{owner}}: tylko ta osoba daje zgodę na przebieg w nim.",
+      "ownerYou": "Zapisany przez ciebie: tylko ty dajesz zgodę na przebieg w nim.",
+      "revoke": "To usuwa zapisany tu token. Odwołaj go także w GitHubie: Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}} jest połączone twoim tokenem fine-grained.",
+      "replaced": "Token {{repository}} został zastąpiony.",
+      "list": {
+        "title": "Tokeny fine-grained",
+        "hint": "Publiczne repozytoria, do których wypycha się własnym tokenem osoby: gałąź i pull request po zgodzie właściciela tokenu."
+      },
+      "dialog": {
+        "addTitle": "Połącz repozytorium tokenem fine-grained",
+        "replaceTitle": "Zastąp token {{repository}}",
+        "description": "Dla publicznego repozytorium, do którego możesz wypychać, ale w którym nie możesz zainstalować aplikacji. Jest czytane tokenem tylko do odczytu aplikacji GitHub tego wdrożenia; twój token służy tylko do ostatniego wypchnięcia i pull requesta przebiegu, po kontrolach i twojej zgodzie.",
+        "save": "Sprawdź i połącz",
+        "replace": "Sprawdź i zastąp"
+      },
+      "repository": {
+        "label": "Repozytorium",
+        "hint": "Publiczne repozytorium GitHub, do którego możesz wypychać: owner/name albo jego adres w GitHubie.",
+        "find": "Szukaj w GitHubie",
+        "use": "Użyj {{repository}}",
+        "noToken": "Zarchiwizowane: nie przyjmuje wypchnięć",
+        "fixed": "Token jest dla repozytorium tego połączenia, {{repository}}: nowy przechodzi te same kontrole."
+      },
+      "steps": {
+        "title": "Utwórz token w GitHubie",
+        "owner": "Resource owner: {{owner}}.",
+        "access": "Repository access: Only select repositories, potem tylko {{repository}}.",
+        "permissions": "Repository permissions: Contents i Pull requests, oba Read and write (Metadata, tylko do odczytu, dochodzi samo). Nic więcej.",
+        "expiry": "Expiration: {{days, number}} dni lub mniej.",
+        "approval": "Jeśli {{owner}} to organizacja, która zatwierdza tokeny fine-grained, jeden z jej właścicieli zatwierdza token, zanim będzie mógł wypychać.",
+        "link": "Otwórz stronę nowego tokenu w GitHubie",
+        "prefilled": "Link wypełnia nazwę, właściciela, 90 dni i oba uprawnienia. Repozytorium wybierz tam sam: link GitHuba tego nie umie."
+      },
+      "field": {
+        "label": "Token fine-grained",
+        "hint": "Wklej token (github_pat_…): zostanie sprawdzony w GitHubie, zapisany zaszyfrowany i nigdy więcej nie pokazany."
+      },
+      "invalid": {
+        "repository": "Podaj repozytorium GitHub jako owner/name albo wklej jego adres.",
+        "tokenEmpty": "Wklej token fine-grained.",
+        "classic": "To token klasyczny, OAuth albo aplikacji, a nie fine-grained: utwórz token fine-grained.",
+        "shape": "Token fine-grained zaczyna się od github_pat_: wklej go w całości."
+      },
+      "tick": "Ten token sięga tylko {{repository}}",
+      "tickHint": "GitHub nie mówi, do których repozytoriów dano token: potwierdzasz to ty. Token sięgający prywatnych repozytoriów zostaje odrzucony.",
+      "tickRequired": "Potwierdź, że token sięga tylko {{repository}}.",
+      "refused": {
+        "classic_token": "Według GitHuba to nie jest token fine-grained: utwórz taki token.",
+        "not_accepted": "GitHub nie przyjmuje tokenu (odwołany, wygasły lub źle wpisany): utwórz nowy i wklej go w całości.",
+        "no_expiry": "Token nie wygasa: utwórz taki, który wygaśnie w ciągu 90 dni lub szybciej.",
+        "expires_too_late": "Token jest ważny dłużej niż 90 dni: utwórz taki, który wygaśnie w ciągu 90 dni lub szybciej.",
+        "expired": "Token wygasł: utwórz nowy.",
+        "not_found": "Token nie widzi {{repository}} w GitHubie: sprawdź nazwę i czy dostęp tokenu do repozytoriów je obejmuje.",
+        "private_repository": "{{repository}} jest prywatne: token łączy tylko publiczne repozytorium. Zainstaluj w nim zamiast tego aplikację GitHub.",
+        "archived": "{{repository}} jest zarchiwizowane: nie przyjmuje wypchnięć.",
+        "no_push": "Token nie może wypychać do {{repository}}: nadaj mu Contents i Pull requests z Read and write i sprawdź, czy możesz tam wypychać.",
+        "org_pending_approval": "Token czeka na zatwierdzenie przez organizację: poproś właściciela organizacji o zatwierdzenie albo wnieś wkład przez fork.",
+        "other_repositories": "Token sięga innych repozytoriów: utwórz taki z Only select repositories i tylko {{repository}}."
+      }
     }
   },
   "skills": {
@@ -1986,7 +2092,8 @@
       "sandbox": "Piaskownica sesji",
       "kiro": "Środowisko Kiro",
       "fork": "Fork",
-      "upstream_pr": "Pull request w repozytorium źródłowym"
+      "upstream_pr": "Pull request w repozytorium źródłowym",
+      "write_token": "Token fine-grained"
     },
     "required": "Potrzebna do uruchomienia"
   },
@@ -2476,6 +2583,15 @@
       "noStderr": "Brak wyjścia błędów.",
       "toControls": "Przejdź do sterowania przebiegiem",
       "openSession": "Otwórz sesję {{agent}}"
+    },
+    "tokenGo": {
+      "hint": "Ten przebieg wypycha tokenem fine-grained {{login}}: jego gałąź i pull request czekają po kontrolach na zgodę {{login}}.",
+      "push": "Wypchnij tokenem {{login}}",
+      "ownerOnly": "Tylko {{owner}}, kto zapisał token, daje zgodę na ten przebieg.",
+      "given": "Twoja zgoda jest dana: przebieg wypchnie tokenem {{login}}, gdy przejdzie kontrole.",
+      "already": "Ten przebieg ma już zgodę.",
+      "refused": "Tylko właściciel tokenu daje zgodę na ten przebieg.",
+      "failed": "Nie udało się dać zgody: spróbuj ponownie."
     }
   },
   "canvas": {

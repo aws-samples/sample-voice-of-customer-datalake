@@ -127,6 +127,7 @@ from shared import (
     agents_engineering_registry_routes,
     agents_engineering_run_routes,
     agents_engineering_setup_routes,
+    agents_engineering_token_routes,
     engineering_templates,
     flow_expand,
     plans_store,
@@ -1990,6 +1991,9 @@ app.include_router(agents_engineering_registry_routes.app)
 # The scheduled cross-run Learn pass's weekly record (7.53.00, GET /agents/engineering/learn:
 # shared/agents_engineering_learn_routes.py), before /agents/engineering/<run_id>.
 app.include_router(agents_engineering_learn_routes.app)
+# A repository connected with a fine-grained token, this repository only (7.60.00, POST …/token-connections and PUT
+# …/connections/<id>/token: shared/agents_engineering_token_routes.py), before /agents/engineering/<run_id>.
+app.include_router(agents_engineering_token_routes.app)
 
 
 # The repository connections (engineering/connectors/connections.py; docs/autonomous-engineering.md, "Repository
@@ -2008,14 +2012,17 @@ def _connection_store() -> tuple[Any, Caller]:
     from engineering.connectors.connections import (
         PARAMETER_KEY_ENV,
         PARAMETER_PREFIX_ENV,
+        WRITE_TOKENS_PREFIX_ENV,
         ConnectionStore,
         live_runs_of,
     )
     from engineering.runtime.runs import RunStore
 
     runs = RunStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']))
+    # (7.60.00: a fine-grained connection's removal deletes its write token, under its own path, first)
     return ConnectionStore(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
-                           os.environ.get(PARAMETER_KEY_ENV, ''), live_runs_of(runs)), caller
+                           os.environ.get(PARAMETER_KEY_ENV, ''), live_runs_of(runs),
+                           token_prefix=os.environ.get(WRITE_TOKENS_PREFIX_ENV, '')), caller
 
 
 @cache
@@ -2585,9 +2592,11 @@ def start_engineering_run():
         return _json(503, {'error': unsure.message, 'run_id': unsure.run_id})
     logger.info('Engineering run started', extra={'run_id': request['run_id'], 'workflow_id': fields['workflow_id'],
                                                   'started_by': caller.subject})
+    # (7.60.00: a fine-grained token that expires within days: said beside the run, which started)
+    warning = eng_runs.token_warning(eng_runs.connection_row(_agents_table(), fields['connection']))
     return _json(202, {'run': {'run_id': request['run_id'], 'status': str(answer.get('status', 'active')),
                                'workflow_id': fields['workflow_id'], 'started_by': caller.subject,
-                               'expansion': list(flow.expansion)}})
+                               'expansion': list(flow.expansion)}, **({'warnings': [warning]} if warning else {})})
 
 
 @app.get('/agents/engineering/<run_id>')
@@ -2690,6 +2699,7 @@ def _person_go(run_id: str) -> dict:
     board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
     try:
         monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
+        _require_token_owner(monitor.connection_of(run_id), caller.subject)
         if not board:
             raise ServiceUnavailableError('the board cannot be reached from here: the deployment names no board function')
         person = {'op': 'go', 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}
@@ -2710,6 +2720,19 @@ def _person_go(run_id: str) -> dict:
         logger.exception('engineering: the board could not be reached')
         raise ServiceUnavailableError('the board could not be reached: retry') from exc
     return result
+
+
+def _require_token_owner(connection: str, subject: str) -> None:
+    """(7.60.00) A run on a fine-grained connection takes its go from its token owner alone (403 for anyone else, before
+    anything is written: a go once given is never replaced, so another person's would leave the run without one its
+    push can use; the broker holds the go to the owner its token names too)."""
+    if not connection:
+        return
+    from engineering.connectors.token_connections import go_refusal
+
+    refusal = go_refusal(eng_runs.connection_row(_agents_table(), connection), subject)
+    if refusal is not None:
+        raise AuthorizationError(refusal, code='token_owner_go')
 
 
 def _invoke_board(function: str, payload: dict) -> dict:

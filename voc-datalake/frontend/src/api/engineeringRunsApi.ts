@@ -165,6 +165,8 @@ const RunStopSchema = z.object({
 const OverviewSchema = z.object({
   run: z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
+    /** (7.60.00) The connection it started on; null when the server does not say. */
+    connection: maybeText.optional().transform((connection) => connection ?? null),
     /** The decision point a run at a person waits at (`coordinator`, `budget`, `flow:<step>`…); '' for none. */
     waiting_at: z.string().optional().catch('').transform((point) => point ?? ''),
     /** (7.51.04) Why, in the plain words its supervisor gave (7.51.03); null for none. */

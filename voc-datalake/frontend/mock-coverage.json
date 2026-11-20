@@ -706,6 +706,46 @@
     ]
   },
   {
+    "file": "api/engineeringGoApi.ts",
+    "method": "POST",
+    "call": "`/agents/engineering/${encodeURIComponent(runId)}/go`",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/go",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/tokenConnectionsApi.ts",
+    "method": "POST",
+    "call": "CREATE_PATH",
+    "probes": [
+      {
+        "path": "/agents/engineering/token-connections",
+        "body": {
+          "repository": "partner-org/widgets",
+          "token": "github_pat_mock_000000000000000000000000",
+          "only_this_repository": true
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/tokenConnectionsApi.ts",
+    "method": "PUT",
+    "call": "tokenPath(connectionId)",
+    "probes": [
+      {
+        "path": "/agents/engineering/connections/partner-sdk/token",
+        "body": {
+          "token": "github_pat_mock_000000000000000000000000",
+          "only_this_repository": true
+        }
+      }
+    ]
+  },
+  {
     "file": "api/engineeringReactionsApi.ts",
     "method": "POST",
     "call": "`/agents/engineering/${encodeURIComponent(runId)}/reactions`",

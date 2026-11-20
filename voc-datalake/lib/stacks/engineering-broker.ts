@@ -41,6 +41,10 @@
  *   versions and their rendering, the tenets' versions), read only; `s3:GetObject` on the knowledge packs' objects
  *   (`ws/default/knowledge/*`); and the docs writes' claims in the connections' docs partitions (`WS#*#DOCS#*`, records.py
  *   DocsClaims) with the claims' own grant and attributes.
+ * - since 7.60.00, for a fine-grained connection's push and pull request: `ssm:GetParameter` on the write tokens'
+ *   parameters alone (`/[<prefix>-]voc/engineering-token/*`, beside the connections' path and never under it), and
+ *   `kms:Decrypt` of the stack's key only through SSM and only for those parameters; no other role reads them
+ *   (engineering-write-tokens.test.ts pins it, negatively, for every other role of the engineering agents);
  * - since 7.57.00, for its `open_upstream_pr` (a fork connection's pull request to the upstream, one click away: the
  *   app never opens it itself, 7.58.00), no grant of its own: the upstream is read with the fork's own token, and the
  *   run's upstream pull request's record is a claim row in the runs' writes' partitions, under the claims' grant above.
@@ -61,6 +65,7 @@ import { Construct } from 'constructs';
 import { booleanContextFlag } from '../utils/context-flag';
 import { ENGINEERING_CI_LAYER_DIR, SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { grantParameters } from '../utils/parameter-grants';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import { ENGINEERING_REPO_PARTITIONS, ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS } from './core-buckets';
 
@@ -75,6 +80,11 @@ export const ENGINEERING_ROLE_NAME_TEMPLATE = 'voc-eng-{role}';
 
 /** The connections' credentials, one SecureString each under this path (lambda/engineering/connectors/credentials.py). */
 const ENGINEERING_PARAMETER_PATH = 'voc/engineering/';
+/**
+ * The fine-grained connections' write tokens (7.60.00, credentials.py WriteTokens), one SecureString each, beside the
+ * connections' path and never under it: no grant on `/[<prefix>-]voc/engineering/*` reaches them.
+ */
+const ENGINEERING_TOKEN_PARAMETER_PATH = 'voc/engineering-token/';
 
 /**
  * `/voc/engineering/`, or `/<prefix>-voc/engineering/` on a prefixed deployment (the prefix on the `voc` segment, as
@@ -92,6 +102,21 @@ export function engineeringParameterPrefix(deploymentPrefix: string | undefined)
 export function engineeringParameterArns(stack: cdk.Stack, deploymentPrefix: string | undefined): string {
   return stack.formatArn({
     service: 'ssm', resource: 'parameter', resourceName: `${engineeringParameterPrefix(deploymentPrefix).slice(1)}*`,
+    arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+  });
+}
+
+/** `/voc/engineering-token/`, or `/<prefix>-voc/engineering-token/`: the broker's and the Agents API's
+ * `ENGINEERING_TOKEN_PARAMETER_PREFIX` (7.60.00). */
+export function engineeringTokenParameterPrefix(deploymentPrefix: string | undefined): string {
+  return deploymentPrefix ? `/${deploymentPrefix}-${ENGINEERING_TOKEN_PARAMETER_PATH}` : `/${ENGINEERING_TOKEN_PARAMETER_PATH}`;
+}
+
+/** Every write token's parameter (`/[<prefix>-]voc/engineering-token/*`): the broker reads them, the Agents API puts and
+ * deletes them (api-assistant-lambdas.ts), and no other role reaches them. */
+export function engineeringTokenParameterArns(stack: cdk.Stack, deploymentPrefix: string | undefined): string {
+  return stack.formatArn({
+    service: 'ssm', resource: 'parameter', resourceName: `${engineeringTokenParameterPrefix(deploymentPrefix).slice(1)}*`,
     arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
   });
 }
@@ -196,6 +221,8 @@ export class EngineeringBroker extends Construct {
       environment: {
         AGENT_ROLE_NAME_PATTERN: props.roleNamePattern,
         ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
+        // (7.60.00: the write tokens' path, this function's alone of the engineering agents' roles)
+        ENGINEERING_TOKEN_PARAMETER_PREFIX: engineeringTokenParameterPrefix(props.deploymentPrefix),
         ENGINEERING_TABLE: props.engineeringTable.tableName,
         ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
         AGGREGATES_TABLE: props.aggregatesTable.tableName,
@@ -213,6 +240,7 @@ export class EngineeringBroker extends Construct {
       'YAML reader for the engineering broker (GitLab CI files; ARM64/Graviton)'));
     this.connectionParameters = { prefix: parameterPrefix, arns: engineeringParameterArns(stack, props.deploymentPrefix) };
     grantConnectionCredentials(role, props.kmsKey, this.connectionParameters.arns);
+    grantWriteTokenReads(role, props.kmsKey, engineeringTokenParameterArns(stack, props.deploymentPrefix));
     grantRunRecordReads(role, props);
     this.url = broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     this.function = broker;
@@ -258,25 +286,25 @@ export interface ConnectionParameters {
  * only for those parameters. No put, no delete, no other parameter.
  */
 export function grantConnectionCredentials(role: iam.Role, kmsKey: kms.IKey, parameters: string): void {
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    sid: 'EngineeringConnectionCredentials', actions: ['ssm:GetParameter'], resources: [parameters],
-  }));
-  acknowledgeNag(role, [{
-    id: 'AwsSolutions-IAM5',
+  // (the key only through SSM, and only for the connections' parameters: SSM puts the parameter's ARN in the context)
+  grantParameters(role, kmsKey, {
+    sid: 'EngineeringConnectionCredentials', actions: ['ssm:GetParameter'], keyActions: ['kms:Decrypt'],
+    parameters: [parameters],
     reason: 'One SecureString per repository connection, created by an administrator at run time, so the read '
       + 'is scoped to the connections\' path (/[<prefix>-]voc/engineering/*), read-only, and nothing else',
-    findings: [resourceFinding(parameters)],
-  }]);
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    sid: 'EngineeringConnectionCredentialsKey',
-    actions: ['kms:Decrypt'],
-    resources: [kmsKey.keyArn],
-    // Only through SSM, and only for the connections' parameters (SSM puts the parameter's ARN in the context).
-    conditions: {
-      StringEquals: { 'kms:ViaService': `ssm.${cdk.Stack.of(role).region}.amazonaws.com` },
-      StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
-    },
-  }));
+  });
+}
+
+/**
+ * The broker's read of the fine-grained connections' write tokens (7.60.00): `ssm:GetParameter` on their parameters
+ * alone, and `kms:Decrypt` on the stack's key only through SSM and only for them. No put, no delete, no listing.
+ */
+function grantWriteTokenReads(role: iam.Role, kmsKey: kms.IKey, parameters: string): void {
+  grantParameters(role, kmsKey, {
+    sid: 'EngineeringWriteTokens', actions: ['ssm:GetParameter'], keyActions: ['kms:Decrypt'], parameters: [parameters],
+    reason: 'One SecureString per fine-grained token connection, saved by an administrator at run time, so the read is '
+      + 'scoped to the write tokens\' path (/[<prefix>-]voc/engineering-token/*), read-only, and nothing else',
+  });
 }
 
 /**

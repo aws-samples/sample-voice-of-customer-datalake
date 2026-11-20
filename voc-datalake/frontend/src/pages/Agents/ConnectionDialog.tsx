@@ -21,13 +21,12 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
+import { engineeringConnectionsApi } from '../../api/engineeringConnectionsApi'
 import { ConnectionTextField, CredentialGuidance, HostChoice, OneLineNoteField } from './ConnectionFields'
 import { ConnectionFormModal } from './ConnectionModals'
+import { keepSaved } from './savedConnection'
 import { EMPTY_CONNECTION_FORM, MAX_BRANCH, connectionIssues, connectionRequest } from './connectionRules'
-import type {
-  ConnectionHost, ConnectionList, EngineeringConnection, SavedConnection,
-} from '../../api/engineeringConnectionsApi'
+import type { ConnectionHost, EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
 import type { ConnectionField, ConnectionForm, ConnectionIssue, ConnectionIssues } from './connectionRules'
 
 /** The fields in the order they are shown (the first wrong one is focused). */
@@ -54,13 +53,6 @@ const formOf = (existing: EngineeringConnection | null, host: ConnectionHost): C
       // (not secret: an App's ids are shown back; its key never is)
       appId: existing.credential.app_id ?? '', installationId: existing.credential.installation_id ?? '',
     })
-
-/** The list with the saved connection in it (replaced in place, or added at the end). */
-function withSaved(list: ConnectionList | undefined, saved: EngineeringConnection): ConnectionList | undefined {
-  if (list === undefined) return list
-  const index = list.connections.findIndex((c) => c.connection_id === saved.connection_id)
-  return { ...list, connections: index === -1 ? [...list.connections, saved] : list.connections.map((c, i) => (i === index ? saved : c)) }
-}
 
 /** The longest reason a change takes (lambda/engineering/connectors/connections.py MAX_REASON). */
 const MAX_REASON = 500
@@ -114,8 +106,7 @@ export function ConnectionDialog({ existing, presetHost = 'github', onClose, onS
     }),
     onSuccess: (saved) => {
       setForm((current) => ({ ...current, privateKey: '', token: '' }))
-      queryClient.setQueryData<ConnectionList>(engineeringConnectionsKeys.list(), (list) => withSaved(list, saved.connection))
-      void queryClient.invalidateQueries({ queryKey: engineeringConnectionsKeys.list() })
+      keepSaved(queryClient, saved.connection)
       onSaved(saved)
     },
   })

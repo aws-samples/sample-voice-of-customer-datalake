@@ -30,7 +30,7 @@ export function engineeringOverview(run: Record<string, unknown> = {}, reach: Ru
     stop_available: reach.stop ?? true,
     run: {
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
-      started_at: '2026-11-12T08:00:00Z', ended_at: null, ...run,
+      started_at: '2026-11-12T08:00:00Z', ended_at: null, connection: 'storefront', ...run,
     },
     agents: [
       agent('coordinator-0', 'coordinator', { status: 'waiting', step: 'board', attempt: 1 }),

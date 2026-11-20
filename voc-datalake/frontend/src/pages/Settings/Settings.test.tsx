@@ -9,6 +9,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { renderWithQueryClient } from '../../test/query-client'
+import { tokenConnection } from '../../test/tokenConnectionFixtures'
 import { ACME } from '../../test/workspaceFixtures'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { useConfigStore } from '../../store/configStore'
@@ -35,6 +36,11 @@ const api = {
   getModelCapacity: vi.fn<() => Promise<unknown>>(),
 }
 vi.mock('../../api/client', () => ({ api }))
+const listConnections = vi.fn<() => Promise<unknown>>()
+vi.mock('../../api/engineeringConnectionsApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../api/engineeringConnectionsApi')>(),
+  engineeringConnectionsApi: { list: () => listConnections() },
+}))
 vi.mock('../../plugins', () => ({ getEnabledPlugins: () => [{ id: 'webscraper', name: 'Web Scraper' }, { id: 'app_reviews_ios', name: 'App Store' }] }))
 
 vi.mock('../../components/UserAdmin/UserAdmin', () => ({
@@ -92,6 +98,8 @@ beforeEach(() => {
   ] })
   api.getSourcesStatus.mockResolvedValue({ sources: { webscraper: { enabled: true, circuit: TRIPPED }, app_reviews_ios: { enabled: true, circuit: CLOSED } } })
   api.getModelCapacity.mockResolvedValue({ models: [], image: null })
+  listConnections.mockReset()
+  listConnections.mockResolvedValue({ connections: [], limit: 50 })
 })
 afterEach(() => { act(() => setCurrentWorkspace(null)) })
 
@@ -209,6 +217,25 @@ describe('needs attention', () => {
     mount('/admin/general')
     expect(await screen.findByRole('link', { name: 'Open AI models' })).toHaveAttribute('href', '/admin/ai')
     expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument()
+  })
+
+  it("counts the fine-grained tokens to replace (7.60.00) on Engineering agents' GitHub connections", async () => {
+    auth.agents = true
+    listConnections.mockResolvedValue({ limit: 50, connections: [
+      tokenConnection('c-soon', 'partner-org/sdk', 3), tokenConnection('c-fine', 'partner-org/docs', 60),
+      tokenConnection('c-gone', 'partner-org/cli', 0),
+    ] })
+    mount('/admin/general')
+    expect(await screen.findByRole('link', { name: 'Open GitHub connections' })).toHaveAttribute('href', '/admin/agents#connections')
+    expect(screen.getByRole('heading', { name: 'Needs attention' }).closest('[role="status"]'))
+      .toHaveTextContent('2 fine-grained tokens expire soon or need replacing')
+    expect(screen.getByRole('tab', { name: 'Engineering agents, 2 need attention' })).toBeInTheDocument()
+  })
+
+  it('reads no connections while the Engineering agents tab is hidden', async () => {
+    mount('/admin/general')
+    await screen.findByRole('heading', { name: 'Needs attention' })
+    expect(listConnections).not.toHaveBeenCalled()
   })
 })
 

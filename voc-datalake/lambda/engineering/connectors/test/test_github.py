@@ -770,7 +770,9 @@ def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
                       'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
                       'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue', 'tree_with',
-                      'public_get'}   # (7.58.00: no upstream pull request is opened through it)
+                      'public_get',   # (7.58.00: no upstream pull request is opened through it)
+                      # (7.60.00: a fine-grained connection's push and pull request, made with its own token)
+                      'push_bundle_as', 'open_or_update_pr_as'}
 
 
 def test_a_revoked_fetch_token_is_deleted_once_and_never_reused() -> None:

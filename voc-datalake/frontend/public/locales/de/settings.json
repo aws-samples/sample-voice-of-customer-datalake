@@ -1036,9 +1036,12 @@
     "waysUnset_other": "{{count, number}} Personen haben keine Arbeitsweise mit KI festgelegt",
     "modelsBlocked_one": "{{count, number}} KI-Modell kann in diesem Konto nicht aufgerufen werden",
     "modelsBlocked_other": "{{count, number}} KI-Modelle können in diesem Konto nicht aufgerufen werden",
+    "tokensToReplace_one": "{{count, number}} Fine-grained Token läuft bald ab oder muss ersetzt werden",
+    "tokensToReplace_other": "{{count, number}} Fine-grained Tokens laufen bald ab oder müssen ersetzt werden",
     "reviewSources": "Quellen prüfen",
     "openUsers": "Benutzer öffnen",
     "openModels": "KI-Modelle öffnen",
+    "openConnections": "GitHub-Verbindungen öffnen",
     "badge_one": "{{count, number}} braucht Aufmerksamkeit",
     "badge_other": "{{count, number}} brauchen Aufmerksamkeit",
     "option": "{{tab}} ({{count, number}})"
@@ -1056,9 +1059,12 @@
     "modelsDescription": "Die Laufzeitumgebung jeder Rolle in dieser Bereitstellung und das Modell, das sie nutzt. Geändert wird es auf der Registry-Karte der Rolle; es gilt ab dem nächsten Lauf.",
     "modelsUnread": "Die Modelle der Rollen konnten nicht gelesen werden.",
     "connectionsDescription": "Woher die Engineering-Agenten ihre Repositories bekommen, was sie kosten und die Schritte vor dem ersten Lauf.",
+    "tokensTitle": "Zu ersetzende Fine-grained Tokens",
+    "tokensHint": "Ersetzen Sie jedes unter Agenten-Orchestrierung › Verbindungen: Ein Lauf mit einem abgelaufenen Token wird bei seinem Start abgelehnt.",
+    "tokenUnusable": "Nicht festgelegt, oder sein Ablaufdatum ist nicht bekannt",
     "links": {
       "connections": "Agenten-Orchestrierung › Verbindungen",
-      "connectionsHint": "GitHub verbinden und die Repositories wählen, an denen die Agenten arbeiten",
+      "connectionsHint": "GitHub verbinden und die Repositories wählen, an denen die Agenten arbeiten: über die App, mit einem Fine-grained Token oder über einen Fork",
       "spend": "Agenten-Orchestrierung › Ausgaben",
       "spendHint": "Das Monatsbudget jedes Workflows und was die Läufe kosten",
       "setup": "Einrichtungsassistent",
@@ -1107,7 +1113,7 @@
       "participants": "Teilnehmende, Absendername, Tageslimit, externe Personen, E-Mail-Versand",
       "hardCap": "harte Obergrenze, Budget, Kostengrenze, Läufe stoppen, Ausgabenlimit",
       "models": "Modell, Kiro, native Laufzeitumgebung, Opus, Sonnet, Haiku, Rolle, Registry",
-      "connections": "GitHub, GitHub-App, Repository, Verbindung, installieren, Issues",
+      "connections": "GitHub, GitHub-App, Repository, Verbindung, installieren, Issues, Fine-grained Token, persönliches Zugriffstoken, Fork",
       "spend": "Kosten, Ausgaben, Budget, Obergrenze, Abrechnung",
       "preferences": "Sprache, Farbschema, meine Einstellungen, Dunkelmodus"
     }

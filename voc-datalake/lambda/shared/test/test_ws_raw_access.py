@@ -315,6 +315,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.52.00: the Registry's read of the month's spend ledger by role (voc-engineering, the engineering agents'
     # fixed scope, as GET /agents/engineering/spend reads it): the deployment's, like the engineering agents (phase 3).
     'lambda/shared/agents_engineering_registry_routes.py': (3, {'Table': 1}),
+    # 7.60.00: a fine-grained token connection's save reads the connection's live runs (voc-engineering's run registry, as
+    # the connections' own store does in agents_handler.py): the deployment's, like every connection (phase 3).
+    'lambda/shared/agents_engineering_token_routes.py': (3, {'Table': 1}),
     # (7.52.00: an agent's pause or resume with its history row, in one transaction)
     'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 4, 'transact': 4}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),

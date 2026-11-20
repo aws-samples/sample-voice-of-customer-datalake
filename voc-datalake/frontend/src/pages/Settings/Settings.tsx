@@ -158,7 +158,7 @@ export default function Settings() {
   const { place, selectTab, selectSection } = useAdminLocation(viewer)
   // The field follows the stored endpoint and pushes a runtime config's into the store (useSettingsSync.ts).
   const { apiEndpoint, setApiEndpoint } = useApiEndpointField(config.apiEndpoint, setConfig)
-  const attention = useAdminAttention(viewer.isAdmin, apiEndpoint)
+  const attention = useAdminAttention(viewer, apiEndpoint)
   useSlashFocus()
   useCardFocus(place.card)
   const tabs = visibleTabs(viewer)

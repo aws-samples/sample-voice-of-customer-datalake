@@ -8,6 +8,7 @@ import { Template as TemplateOf } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 
 import { buildApiStack, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
+import { globMatches } from '../test-support/iam-statements';
 import { functionEnv, policyText, runtimeStack, supervisorEnv } from '../test-support/engineering-runtime-fixture';
 import { processingSynths } from '../test-support/engineering-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -90,12 +91,6 @@ describe('readiness on Kiro', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect([env.ENGINEERING_HARNESS, env.ENGINEERING_KIRO_KEY_PARAMETER]).toStrictEqual(['kiro', KEY]);
   });
 });
-
-/** IAM's glob (an ARN's or a StringLike's): `*` any run of characters, `?` one. */
-function globMatches(pattern: string, value: string): boolean {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.');
-  return new RegExp(`^${escaped}$`).test(value);
-}
 
 /** A synthesized ARN with its `Fn::Join` flattened and the partition named (`{Ref: AWS::Partition}` as `aws`). */
 function flatArn(resource: unknown): string {

@@ -20,7 +20,8 @@ code writes; the broker writes none of them:
   the rule the board and the flow keep too); an older task's passing record never stands in for a newer one that did
   not pass. A record that cannot be read or is off ``voc-gate-record/1`` is no GO: only those two records are read.
 * a person's go on the run: ``WS#<ws>#RUN#<run>`` / ``GO#person``, the create-only row an administrator's go writes
-  (through the board function, ``board/store.py`` ``person_go``), what an AI-assisted run's push waits for.
+  (through the board function, ``board/store.py`` ``person_go``), what an AI-assisted run's push waits for, and since
+  7.60.00 who gave it (``person_go_by``): a fine-grained connection's push waits for its token owner's own go.
 
 * the CI attestation (7.04.00, ``attestations.py``): in voc-agents, the newest version of the run's connection's
   attestation (one Query of one row, projected), read at each push and pull request (``attested``), never for a
@@ -127,8 +128,14 @@ class RunRecords:
         return replace(run, ci_attested=version > 0, ci_attestation=version)
 
     def person_go(self, run_id: str) -> bool:
+        return bool(self.person_go_by(run_id))
+
+    def person_go_by(self, run_id: str) -> str:
+        """The subject of the person whose go the run's ``GO#person`` row records ('' for none, or a row not a
+        person's): a fine-grained connection's push waits for its token owner's own (7.60.00)."""
         item = self._row(run_id, PERSON_GO_SK)
-        return item is not None and string_attr(item, 'by').startswith(PERSON_PREFIX)
+        by = '' if item is None else string_attr(item, 'by')
+        return by.removeprefix(PERSON_PREFIX) if by.startswith(PERSON_PREFIX) else ''
 
     def _go_tree(self, run_id: str) -> str:
         """The tree the run's GO stands for ('' for none): the GO ledger's own rule (``flow/ledger.py`` ``go_tree``:

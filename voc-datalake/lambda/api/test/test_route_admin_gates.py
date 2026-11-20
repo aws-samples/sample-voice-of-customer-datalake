@@ -128,6 +128,12 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     }),
     # The engineering setup guide's progress (7.50.00, included by agents_handler.py): an admin acting for themselves.
     'agents_engineering_setup_routes.py': frozenset({'PUT /agents/engineering/setup'}),
+    # A repository connected with a fine-grained token (7.60.00, engineering/connectors/token_connections.py): the
+    # connections' gate, an admin acting for themselves (a token is saved only as oneself; never a delegated credential).
+    'agents_engineering_token_routes.py': frozenset({
+        'POST /agents/engineering/token-connections',
+        'PUT /agents/engineering/connections/<connection_id>/token',
+    }),
     # The run workspace's actions (7.51.00, included by agents_handler.py): a person's steering to a run's orchestrator
     # and an ended run's restart as a child run; an admin acting for themselves, like the run's signals. The steering
     # also admits the MCP tool engineering_run_steer, for that operation alone (7.53.00, _engineering_caller).

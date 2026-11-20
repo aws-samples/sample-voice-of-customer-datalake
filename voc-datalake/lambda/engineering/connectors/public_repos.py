@@ -4,7 +4,8 @@ Agents API's side: the picker and the connection. Nothing here imports ``cryptog
 * **The picker** (``search``, ``GET /agents/engineering/public-repositories?q=``): a name, ``owner/name`` or a GitHub
   address, searched server-side through the token function (``app_tokens.py`` ``public_search``) with a token of the
   deployment's App that holds ``metadata: read`` alone and names no repository; each result with its stars, licence,
-  whether it is archived, its last push, and the connection that already has it. Private repositories are never
+  whether it is archived, its last push, the connection that already has it, and since 7.60.00 the ways it may be
+  connected (``ways_of``: the App, a fine-grained token, a fork). Private repositories are never
   answered: they connect through the App's installation, as before.
 * **The connection** (``connect``, ``POST /agents/engineering/public-connections``): the repository read again through
   the token function (``public_repository``: it must be public on GitHub now), then stored as a ``public_read``
@@ -27,6 +28,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
 
 from engineering.connectors.connections import (
+    FINE_GRAINED_CREDENTIAL,
     KIND_PUBLIC_READ,
     KIND_REPOSITORY,
     MAX_CONNECTIONS,
@@ -61,14 +63,35 @@ def anchor(stored: Sequence[Mapping[str, Any]]) -> tuple[str, int]:
         own = connection.get('kind') == KIND_REPOSITORY and connection['credential'].get('kind') == 'app_reference'
         return (0 if own else 1, str(connection.get('connection_id', '')))
 
+    # (7.60.00: a fine-grained token connection reads through one of them too, so its installation anchors as well)
     candidates = [c for c in stored if str(c.get('host', 'github')) == 'github'
-                  and c['credential'].get('kind') in ('app_reference', KIND_PUBLIC_READ)
+                  and c['credential'].get('kind') in ('app_reference', KIND_PUBLIC_READ, FINE_GRAINED_CREDENTIAL)
                   and str(c['credential'].get('app_id') or '').isdigit()
                   and str(c['credential'].get('installation_id') or '').isdigit()]
     if not candidates:
         raise ConnectionRefused('conflict', NO_APP)
     first = min(candidates, key=ranked)
     return str(first['credential']['app_id']), int(first['credential']['installation_id'])
+
+
+def room_for(stored: Sequence[Mapping[str, Any]], repository: str) -> None:
+    """A new connection to ``repository`` (``owner/name``, any case) among the ``stored`` connections (their views):
+    409 when one has it already (``ALREADY``) or the deployment holds its most (``MAX_CONNECTIONS``). A public
+    repository's and (7.60.00) a fine-grained token's connect alike."""
+    same = next((c for c in stored if str(c['repository']).lower() == repository.lower()), None)
+    if same is not None:
+        raise ConnectionRefused('conflict', ALREADY.format(connection=same['connection_id']))
+    if len(stored) >= MAX_CONNECTIONS:
+        raise ConnectionRefused('conflict', f'at most {MAX_CONNECTIONS} connections: remove one to add another')
+
+
+def ways_of(facts: Any) -> dict[str, bool]:
+    """(7.60.00) The "Add a repository" chooser's hints for a public repository found (``upstream.RepositoryFacts``):
+    the App installed on it (``app``) or a fine-grained token (``token``: public repositories only) end with a branch
+    and a pull request on it, a fork (``fork``: one with a licence) with a pull request on the fork; an archived one
+    takes none of them."""
+    takes = not facts.archived
+    return {'app': takes, 'token': takes and not facts.private, 'fork': takes and bool(facts.licence_spdx)}
 
 
 class PublicRepositories:
@@ -97,8 +120,8 @@ class PublicRepositories:
         listed = answer.get('repositories')
         found = [facts for facts in map(facts_from_answer, listed if isinstance(listed, list) else [])
                  if facts is not None and not facts.private]
-        return {'repositories': [facts.view(connected.get(facts.repository.lower())) for facts in found],
-                'query': words}
+        return {'repositories': [{**facts.view(connected.get(facts.repository.lower())), 'ways': ways_of(facts)}
+                                 for facts in found], 'query': words}
 
     def connect(self, body: Mapping[str, object], actor: Actor) -> tuple[dict[str, Any], bool, dict[str, Any] | None]:
         """A ``public_read`` connection for the body's repository (``{repository, reason?}``), read again on GitHub
@@ -110,11 +133,7 @@ class PublicRepositories:
             raise ConnectionRefused('invalid', 'repository is owner/name, or its GitHub address')
         reason = parse_reason(body.get('reason'))
         stored = self._connections.list()
-        same = next((c for c in stored if str(c['repository']).lower() == named.lower()), None)
-        if same is not None:
-            raise ConnectionRefused('conflict', ALREADY.format(connection=same['connection_id']))
-        if len(stored) >= MAX_CONNECTIONS:
-            raise ConnectionRefused('conflict', f'at most {MAX_CONNECTIONS} connections: remove one to add another')
+        room_for(stored, named)
         app_id, installation_id = anchor(stored)
         answer = self._tokens({'action': 'public_repository', 'app_id': app_id, 'installation_id': installation_id,
                                'repository': named, 'details': False})

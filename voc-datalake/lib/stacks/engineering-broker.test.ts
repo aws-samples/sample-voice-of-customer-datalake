@@ -82,11 +82,12 @@ describe('the engineering broker', () => {
     // (7.52.00: one more GetItem and GetObject, the approved docs' rows and the knowledge packs' objects, read only)
     // (7.57.00's GitHub App user authorizations, a read and a put of the people's tokens, are gone with the app's own
     // open of the upstream pull request: 7.58.00)
+    // (7.60.00: one more GetParameter and Decrypt, the fine-grained connections' write tokens: EngineeringWriteTokens)
     expect(actions).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
       'dynamodb:Query', 'dynamodb:Query', 'dynamodb:Query', 'dynamodb:UpdateItem',
-      'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
-      's3:GetObject', 's3:GetObject', 'ssm:GetParameter',
+      'kms:Decrypt', 'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
+      's3:GetObject', 's3:GetObject', 'ssm:GetParameter', 'ssm:GetParameter',
     ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
@@ -104,6 +105,25 @@ describe('the engineering broker', () => {
     });
     // The stack's one customer-managed key (an import from the test's dependency stack), never "*".
     expect(JSON.stringify(decrypt?.Resource)).toContain('Fn::ImportValue');
+  });
+
+  it('reads the fine-grained connections\' write tokens on their own path, decrypted through SSM for them alone (7.60.00)', () => {
+    const statements = brokerStatements(template('on'));
+    const tokens = {
+      'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering-token/*']],
+    };
+    expect(statements.find((statement) => statement.Sid === 'EngineeringWriteTokens'))
+      .toMatchObject({ Effect: 'Allow', Action: 'ssm:GetParameter', Resource: tokens });
+    expect(statements.find((statement) => statement.Sid === 'EngineeringWriteTokensKey')).toMatchObject({
+      Effect: 'Allow', Action: 'kms:Decrypt',
+      Condition: {
+        StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' },
+        StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': tokens },
+      },
+    });
+    const on = template('on');
+    expect(on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment?.Variables
+      ?.ENGINEERING_TOKEN_PARAMETER_PREFIX).toBe('/voc/engineering-token/');
   });
 
   it('holds no grant of 7.57.00\'s user authorizations, gone with the app\'s own upstream pull request (7.58.00)', () => {

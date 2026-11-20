@@ -1,7 +1,8 @@
 // Any public GitHub repository for the engineering agents (7.57.00): the agents_handler.py routes over the mock's
 // connections (mock-engineering-runs.js), in their wire shape, admin only:
 //   GET  /agents/engineering/public-repositories?q=   a search of the sample public repositories (a name, owner/name or
-//                                                     a github.com address); 400 for an empty or too long query
+//                                                     a github.com address), each with the ways it can be connected
+//                                                     (7.60.00: `ways`); 400 for an empty or too long query
 //   POST /agents/engineering/public-connections       {repository, reason?}: 201 {connection, created, issues: null}, a
 //                                                     read-only connection (kind public_read); 404 for a private or
 //                                                     unknown one, 409 already connected or at the limit
@@ -32,6 +33,9 @@ const PUBLIC_REPOSITORIES = [
     default_branch: 'main' },
 ].map((repo) => ({ ...repo, html_url: `https://github.com/${repo.repository}`, fork: false }));
 
+/** (7.60.00) The ways a public repository can be connected: the App, a fine-grained token, a fork. */
+const waysOf = (repo) => ({ app: !repo.archived, token: !repo.archived, fork: !repo.archived && repo.licence !== null });
+
 /** The query as a repository name: `owner/name` out of a github.com address, else the text itself. */
 function asked(query) {
   const fromUrl = /^https:\/\/github\.com\/([^/]+\/[^/?#]+)/.exec(query);
@@ -45,7 +49,7 @@ function search(url, connections) {
   const connectedTo = (repository) => [...connections.values()]
     .find((c) => c.repository.toLowerCase() === repository.toLowerCase())?.connection_id ?? null;
   const repositories = PUBLIC_REPOSITORIES.filter((repo) => repo.repository.toLowerCase().includes(wanted))
-    .map((repo) => ({ ...repo, connected: connectedTo(repo.repository) }));
+    .map((repo) => ({ ...repo, connected: connectedTo(repo.repository), ways: waysOf(repo) }));
   return [200, { repositories, query }];
 }
 

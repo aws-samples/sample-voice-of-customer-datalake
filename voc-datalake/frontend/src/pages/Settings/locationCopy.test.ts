@@ -23,6 +23,7 @@ const THIRD_PARTY_PREFIX = 'settings:integrationGuide.'
 const THIRD_PARTY_KEYS: ReadonlySet<string> = new Set([
   'agents:connections.authorization.clientHint', // GitHub → Developer settings → the App → a new client secret
   'agents:connections.authorization.removeMessage', // GitHub → Applications → Authorized GitHub Apps (revoking it there)
+  'agents:connections.token.revoke', // (7.60.00) GitHub → Settings → Developer settings → Personal access tokens
 ])
 
 const commonSchema = z.object({ nav: z.object({ admin: z.string() }) })

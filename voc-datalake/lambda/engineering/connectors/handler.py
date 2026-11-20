@@ -33,6 +33,11 @@ Since 7.57.00 ``open_upstream_pr`` (``{branch}``, the PR author's alone) offers 
 one click away, and ``open_or_update_draft_pr``'s answer carries its outcome on a fork (``upstream``); the connection's
 kind and a fork's upstream are read from its credential (``github_upstream.GitHubUpstream``), and the upstream pull
 requests' records written with the claims' attributes (``upstream_records.UpstreamRecords``).
+
+Since 7.60.00 a fine-grained connection's write token is read from its own path (``ENGINEERING_TOKEN_PARAMETER_PREFIX``,
+``/[<prefix>-]voc/engineering-token/``: ``credentials.WriteTokens``), which only this function is told and granted; a
+deployment that names none refuses every push and pull request on such a connection (503). A write the token was
+refused (403) answers 409 with ``code: token_cannot_write``.
 """
 from __future__ import annotations
 
@@ -47,8 +52,8 @@ from functools import lru_cache
 from typing import Any, Final
 
 from engineering.connectors.broker import Broker, DocsRequest, NotNow, NotPermitted
-from engineering.connectors.connections import CONNECTION_ID, PARAMETER_PREFIX_ENV
-from engineering.connectors.credentials import ParameterStoreCredentials
+from engineering.connectors.connections import CONNECTION_ID, PARAMETER_PREFIX_ENV, WRITE_TOKENS_PREFIX_ENV
+from engineering.connectors.credentials import ParameterStoreCredentials, WriteTokens
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.gitlab import GitLabHost
@@ -410,16 +415,18 @@ def host_router(parameter_prefix: str) -> HostRouter:
 
 @lru_cache(maxsize=1)
 def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '',
-               agents: str = '') -> Broker:
+               agents: str = '', token_prefix: str = '') -> Broker:
     """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
     connections under ``parameter_prefix``, and the run's records, the patches and the dial in ``table``, ``bucket``
     and ``aggregates`` (``UNCONNECTED`` while any is unnamed), the CI attestations in ``agents`` (none attested while
     it is unnamed); no connector without a prefix. Since 7.57.00 every connection's kind and a fork's upstream (the
-    credentials), and the upstream pull requests' records."""
+    credentials), and the upstream pull requests' records; since 7.60.00 the fine-grained connections' write tokens
+    under ``token_prefix`` ('' for none: their pushes and pull requests are refused)."""
     if not parameter_prefix:
         return Broker(None)
     host = host_router(parameter_prefix)
     upstream = host.upstream()
+    tokens = WriteTokens(token_prefix) if token_prefix else None
     if not (table and bucket and aggregates):
         return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED,
                                 dial=UNCONNECTED, writes=UNCONNECTED, upstream=upstream))
@@ -433,7 +440,8 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
                             writes=WriteClaims(get_dynamodb_client(), table),
                             docs=ApprovedDocsRecords(approved_docs(get_dynamodb_client(), table, workspace)),
                             docs_writes=DocsClaims(get_dynamodb_client(), table), upstream=upstream,
-                            upstream_ledger=UpstreamRecords(get_dynamodb_client(), table)))
+                            upstream_ledger=UpstreamRecords(get_dynamodb_client(), table), write_tokens=tokens,
+                            token_writes=host if tokens is not None else None))
 
 
 def approved_docs(client: Any, table: str, workspace: WorkspaceStore) -> Any:
@@ -455,7 +463,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
                       broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
                                  environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
-                                 environ.get(CONNECTIONS_TABLE_ENV, '')),
+                                 environ.get(CONNECTIONS_TABLE_ENV, ''), environ.get(WRITE_TOKENS_PREFIX_ENV, '')),
                       (environ.get(RUNTIME_ROLE_NAME_ENV, ''), environ.get(RUNTIME_FUNCTION_ENV, '')),
                       (environ.get(START_ROLE_NAME_ENV, ''), environ.get(START_FUNCTION_ENV, '')))
     finally:

@@ -157,3 +157,9 @@ export function allowedActions(statements: NormalizedStatement[], prefix: string
     .filter((a) => a.startsWith(prefix));
   return [...new Set(actions)].sort(byCodeUnit);
 }
+
+/** IAM's glob (an ARN's or a StringLike's): `*` any run of characters, `?` one. Whether `pattern` matches `value`. */
+export function globMatches(pattern: string, value: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.');
+  return new RegExp(`^${escaped}$`).test(value);
+}

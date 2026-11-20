@@ -17,6 +17,77 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.60.00] - 2026-11-20
+
+**Connect a repository with a fine-grained token, this repository only**, and the three-way **Add a repository**
+chooser. An administrator who can push to a public repository but cannot install the deployment's GitHub App there
+(an organization whose owners must approve apps is the typical case) connects it with a fine-grained personal access
+token limited to it; a run then ends with a branch and a pull request on the repository itself, pushed with that
+person's token only after the gates and their own go
+([autonomous-engineering.md](docs/autonomous-engineering.md#a-fine-grained-token-76000)). Only with
+`-c engineeringAgents=true`; every route is an administrator's acting for themselves, behind Cognito; no new API
+Gateway resource.
+
+### Added
+
+- **Add a repository** (Agents → Connections): three cards, each saying when to use it and what a run ends with:
+  install the GitHub App (a branch and a pull request on the repository), use a fine-grained token (the same, pushed
+  with your token after your go), or contribute through a fork (a pull request on your fork, then the one-click link to
+  open it on the upstream). The other ways (another App, a manual connection, GitLab) stay folded under it. The public
+  repository search answers each result's `ways: {app, token, fork}`.
+- **Token connections** (`connectors/token_connections.py`, `connectors/fine_grained.py`):
+  - `POST /agents/engineering/token-connections` `{repository, token, only_this_repository: true, default_branch?,
+    connection_id?, reason?}` connects a public repository as a `fine_grained` connection; `PUT
+    /agents/engineering/connections/<id>/token` replaces (renews) its token. Any administrator saves a token, only as
+    themselves, and becomes its owner.
+  - The token is checked against GitHub at each save: a `github_pat_` token (classic, OAuth and GitHub App tokens
+    refused by their prefix), the repository public, not archived and pushable with it, an expiry GitHub reports
+    within 90 days, its login, and no private repository reached besides; each refusal is a 422 with its `code`
+    (`classic_token`, `not_accepted`, `no_expiry`, `expires_too_late`, `expired`, `not_found`, `private_repository`,
+    `archived`, `no_push`, `org_pending_approval`, `other_repositories`). Write access is never probed: the first push
+    confirms it, and a 403 there stops the step for a person (`token_cannot_write`).
+  - The token dialog lists the steps on GitHub (resource owner, **Only select repositories**, Contents and Pull
+    requests read and write, 90 days or less), links to GitHub's new-token page prefilled, takes the token in a field
+    never shown again, and asks for the tick "This token can reach only ‹repository›".
+  - The connection's row: "Fine-grained token · ‹login› · expires ‹date› (in N days)", a warning chip at 14 days or
+    fewer and a failure chip once expired, Replace token and Remove (which tells you to revoke the token on GitHub).
+- **The broker pushes with the token only after its owner's go**: on this kind, Human-driven pushes nothing, and
+  AI-assisted and AI-driven alike wait for a person's go, the token owner's own (`token_owner_go`); then the CI
+  attestation, the branch rules, the final go for the tree and the token unexpired (`token_expired`). The token makes
+  only the run's push and pull request, each request pinned to the repository's Git Data and pull request paths, every
+  read with the App's read-only token; comments, labels, the docs and tenets pull request and the upstream pull request
+  are refused on it (`token_scope`). Its pull request says whose token pushed it after whose go; each use is logged and
+  kept on the write's claim, never the token.
+- **The run page's go** on such a run: **Push with ‹login›'s token**, which only the token's owner can press; the go
+  route answers 403 `token_owner_go` to anyone else. The run overview now names its `connection`.
+- **Readiness**: a new `write_token` check (the days left, a warning at 14 or fewer, a failure once expired or not
+  set); `connection` says the run pushes with ‹login›'s token after your go (and fails a flow that pushes on an expired
+  token); `app_installation` is not needed on the repository; `dial` says every push waits for the token owner's go. A
+  run's start is refused on an expired or unset token (409) and warns when 3 days or fewer remain.
+- **Administration** (7.59.00's tabs): the fine-grained tokens to replace (expiring within 14 days, expired, not set or
+  of an unknown expiry, the rows' own Replace token rule) are counted in General's **Needs attention** and on the
+  Engineering agents tab's badge, and listed with their chips on Engineering agents → GitHub connections, whose links
+  now name the three ways to add a repository.
+
+### Security
+
+- **The token is kept in SSM under its own path**, `/[<prefix>-]voc/engineering-token/<id>` (SecureString, standard
+  tier, the stack's key), beside the connections' path and never under it: only the broker reads it (`ssm:GetParameter`,
+  `kms:Decrypt` through SSM for those names), the Agents API only puts and deletes it (with `kms:Encrypt` and
+  `kms:GenerateDataKey` through SSM for those names), and no agent role, the runtime, the checkout cache's writer, the
+  token function, the board, the router, the GitHub Issues ingestor or webhook, nor the stream Lambda reaches it
+  (pinned over the whole app). The broker keeps it 60 seconds at most, so a replaced or removed token stops within a
+  minute; a removal deletes it first. It is never logged, answered, put in an error or a transcript; audit rows say
+  `token: replaced` or `removed`.
+
+### Upgrade notes
+
+- Nothing to do before deploying: the new grants are statements on the existing broker and Agents API roles (no new
+  resource, no new stack). A token connection needs one GitHub App installation first (Connect GitHub), whose
+  read-only token reads the repository. Live checks for the owner after deploy, on a test repository without the App:
+  save a token, run, give the go, see the pull request; and whether a token pending an organization's approval answers
+  at the save or only at the push.
+
 ## [7.59.00] - 2026-11-20
 
 **Administration is back to main's tabbed layout**, with everything voc-multiplayer added since put in the tab it

@@ -30,7 +30,7 @@ import { IssuesCell, IssuesFollowLines } from './ConnectionIssues'
 import { ContributeCard } from './ContributeCard'
 import { ContributeDialog } from './ContributeDialog'
 import { useConnectionError } from './connectionText'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { GitHubApp } from '../../api/githubAppsApi'
 import type { IssuesSourceView } from '../../api/issuesSourceApi'
@@ -91,38 +91,58 @@ function ResultRow({ repository, busy, onConnect }: Readonly<{
   )
 }
 
-/** The search's results, its failure, or that nothing was found. */
-function Results({ query, connecting, onConnect }: Readonly<{
-  query: string; connecting: string | null; onConnect: (repository: string) => void
+/**
+ * A public search's outcome (`GET …/public-repositories`): searching, its failure (the server's reason when it gave
+ * one) or that nothing was found, else `children` with what was found; `inset`: inside the picker's card (its padding).
+ * The picker's, and (7.60.00) the token dialog's (TokenConnectionParts.tsx).
+ */
+export function PublicSearchOutcome({ query, inset, children }: Readonly<{
+  query: string; inset: boolean; children: (repositories: readonly PublicRepository[]) => ReactNode
 }>) {
   const { t } = useTranslation('agents')
   const errorText = usePublicError()
   const search = useQuery({
     queryKey: publicRepositoriesKeys.search(query), queryFn: () => publicRepositoriesApi.search(query), retry: false,
   })
+  const pad = inset ? 'px-4 pb-3 ' : ''
   if (search.isPending) {
     return (
-      <p role="status" className="flex items-center gap-2 px-4 pb-3 text-[12px] text-muted">
+      <p role="status" className={`${pad}flex items-center gap-2 text-[12px] text-muted`}>
         <Loader2 size={14} className="animate-spin" aria-hidden="true" />{t('connections.public.searching')}
       </p>
     )
   }
-  if (search.isError) return <p role="alert" className="px-4 pb-3 text-[12px] text-danger">{errorText(search.error)}</p>
+  if (search.isError) return <p role="alert" className={`${pad}text-[12px] text-danger`}>{errorText(search.error)}</p>
   if (search.data.repositories.length === 0) {
-    return <p role="status" className="px-4 pb-3 text-[12px] text-muted">{t('connections.public.none', { query })}</p>
+    return <p role="status" className={`${pad}text-[12px] text-muted`}>{t('connections.public.none', { query })}</p>
   }
+  return <>{children(search.data.repositories)}</>
+}
+
+/** The search's results, its failure, or that nothing was found. */
+function Results({ query, connecting, onConnect }: Readonly<{
+  query: string; connecting: string | null; onConnect: (repository: string) => void
+}>) {
+  const { t } = useTranslation('agents')
   return (
-    <ul role="list" aria-label={t('connections.public.resultsLabel')} className="divide-y divide-border border-t border-border">
-      {search.data.repositories.map((repository) => (
-        <ResultRow key={repository.repository} repository={repository} busy={connecting === repository.repository}
-          onConnect={() => { onConnect(repository.repository) }} />
-      ))}
-    </ul>
+    <PublicSearchOutcome query={query} inset>
+      {(repositories) => (
+        <ul role="list" aria-label={t('connections.public.resultsLabel')} className="divide-y divide-border border-t border-border">
+          {repositories.map((repository) => (
+            <ResultRow key={repository.repository} repository={repository} busy={connecting === repository.repository}
+              onConnect={() => { onConnect(repository.repository) }} />
+          ))}
+        </ul>
+      )}
+    </PublicSearchOutcome>
   )
 }
 
-/** Add a public repository: search, then Connect read-only. */
-export function PublicRepositoryPicker({ full, onNotice }: Readonly<{ full: boolean; onNotice: (text: string) => void }>) {
+/** Add a public repository: search, then Connect read-only; `searchRef`: its search box (7.60.00: the chooser's
+ *  Contribute through a fork brings the person there). */
+export function PublicRepositoryPicker({ full, onNotice, searchRef }: Readonly<{
+  full: boolean; onNotice: (text: string) => void; searchRef?: RefObject<HTMLInputElement | null>
+}>) {
   const { t } = useTranslation('agents')
   const errorText = usePublicError()
   const queryClient = useQueryClient()
@@ -150,7 +170,7 @@ export function PublicRepositoryPicker({ full, onNotice }: Readonly<{ full: bool
         }}>
           <div className="min-w-0 flex-1 space-y-1">
             <label htmlFor={inputId} className="block text-sm font-medium text-text">{t('connections.public.searchLabel')}</label>
-            <input id={inputId} type="search" className="input" value={text} maxLength={MAX_QUERY_CHARS} autoComplete="off"
+            <input ref={searchRef} id={inputId} type="search" className="input" value={text} maxLength={MAX_QUERY_CHARS} autoComplete="off"
               spellCheck={false} placeholder={t('connections.public.searchPlaceholder')} onChange={(event) => { setText(event.target.value) }} />
           </div>
           <button type="submit" className="btn btn-secondary btn-sm" aria-disabled={text.trim() === '' || undefined}>

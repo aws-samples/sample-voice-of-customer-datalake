@@ -11,7 +11,10 @@ trigger. Both read the same things the same way, from here:
   the run copies a flat flow and the calls it expanded (its start step's ``params.expansion``);
 * the stored connection (``connection_row``, ``run_connection``): its repository and default branch, copied onto the
   run, read from its row in voc-agents (``CONNECTIONS#<ws>`` / ``CONNECTION#<id>``: the spelling of
-  engineering/connectors/connections.py, held to it by ``shared/test/test_engineering_agent_runs.py``);
+  engineering/connectors/connections.py, held to it by ``shared/test/test_engineering_agent_runs.py``); since 7.60.00
+  a fine-grained connection's token is held to its expiry at the start (``run_connection``: an expired or unset one is
+  refused, 409 "replace it"; ``token_warning``: one that expires within ``TOKEN_START_WARN_DAYS`` is said beside the
+  run, which starts);
 * the run caps the deployment sets (``run_cap``: ``-c engineeringRunCapUsd``, ``-c engineeringRunTokenCap``);
 * the goal (``run_goal``): trusted text only, the agent's instructions (an administrator's words) and one sentence this
   module writes from numbers and names (an issue's number and repository, a count of reviews, the scope's categories,
@@ -30,6 +33,7 @@ import os
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from functools import cache
 from typing import Any, Final, Literal
 
@@ -46,6 +50,8 @@ ENGINEERING_WORKSPACE: Final = 'default'
 #: The connections' rows in voc-agents (engineering/connectors/connections.py PARTITION and ROW_PREFIX).
 CONNECTIONS_PARTITION: Final = f'CONNECTIONS#{ENGINEERING_WORKSPACE}'
 CONNECTION_ROW_PREFIX: Final = 'CONNECTION#'
+#: (7.60.00) How many days before a fine-grained connection's token's expiry a start warns.
+TOKEN_START_WARN_DAYS: Final = 3
 #: The task cap of every run started here (the board counts its tasks against it: runtime/runs.py RunCaps).
 RUN_TASK_CAP: Final = 100
 #: A run's cost and token caps when the deployment sets none (ENGINEERING_RUN_CAP_USD, ENGINEERING_RUN_TOKEN_CAP): every
@@ -181,12 +187,43 @@ def repository_private(row: Mapping[str, Any]) -> bool:
     return row.get('repository_private') is True
 
 
-def run_connection(row: Mapping[str, Any] | None, issue: int | None = None) -> dict[str, Any]:
+def token_days_left(row: Mapping[str, Any] | None, today: date | None = None) -> int | None:
+    """A fine-grained connection's token's days left on ``today`` (UTC; 0 or fewer: expired), None for another kind of
+    connection; -1 for a token whose expiry the row does not say (failing closed: taken as expired)."""
+    # (the kind as engineering/connectors/hosts.py FINE_GRAINED spells it: this module ships without the package)
+    if row is None or row.get('connection_kind') != 'fine_grained':
+        return None
+    expires = row.get('token_expires_at')
+    if row.get('credential_set') is not True or not isinstance(expires, str) or len(expires) != len('YYYY-MM-DD'):
+        return -1
+    try:
+        return (date.fromisoformat(expires) - (today or datetime.now(UTC).date())).days
+    except ValueError:
+        return -1
+
+
+def token_warning(row: Mapping[str, Any] | None, today: date | None = None) -> str | None:
+    """What a start says beside a run on a fine-grained connection whose token expires within
+    ``TOKEN_START_WARN_DAYS`` (7.60.00), None otherwise."""
+    left = token_days_left(row, today)
+    if left is None or left <= 0 or left > TOKEN_START_WARN_DAYS:
+        return None
+    return (f"The connection's fine-grained token expires in {left} day{'s' if left != 1 else ''}: its owner replaces "
+            'it under Agents → Connections before then, or the run\'s push is refused.')
+
+
+def run_connection(row: Mapping[str, Any] | None, issue: int | None = None,
+                   today: date | None = None) -> dict[str, Any]:
     """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
     connection's, copied onto the run (the broker serves the run on that branch once the host confirms it has it);
-    with the ``issue`` the run starts from, it and the connection's ``host``. 400 for a connection not stored."""
+    with the ``issue`` the run starts from, it and the connection's ``host``. 400 for a connection not stored; 409 for
+    a fine-grained connection whose token expired or is not set (7.60.00: its push would be refused)."""
     if row is None:
         raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
+    left = token_days_left(row, today)
+    if left is not None and left <= 0:
+        raise ConflictError("The connection's fine-grained token has expired (or is not set): its owner replaces it "
+                            'under Agents → Connections (Replace token), then the run starts.')
     run: dict[str, Any] = {'repo': str(row.get('repository', '')), 'default_branch': str(row.get('default_branch', ''))}
     if issue is not None:
         run.update(issue=issue, host=connection_host(row))

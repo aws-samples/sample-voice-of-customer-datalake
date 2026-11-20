@@ -1,7 +1,8 @@
 /**
  * @fileoverview Agents → Connections as a state (connectionStatus.ts, 7.52.00): every row of the "One primary per
  * state" table, in its order (the first that matches wins), an App's primary, how connections group under their Apps,
- * and the status line's facts.
+ * and the status line's facts; (7.60.00) a fine-grained token connection's Replace token from 14 days before its
+ * expiry, its own group and its count.
  */
 import { describe, it, expect } from 'vitest'
 import { parseConnection } from '../../api/engineeringConnectionsApi'
@@ -66,6 +67,35 @@ describe('a repository row\'s one primary', () => {
   })
 })
 
+describe('a fine-grained token connection\'s one primary (7.60.00)', () => {
+  const token = (credential: Record<string, unknown>, fields: Record<string, unknown> = {}) => connection(
+    { connection_id: 'sdk', repository: 'partner-org/sdk', kind: 'fine_grained', ...fields },
+    { kind: 'fine_grained_token', login: 'casey-dev', ...credential })
+
+  it.each([
+    ['not set', { set: false, expires_in_days: 40 }, 'replaceToken'],
+    ['expired', { expires_in_days: 0 }, 'replaceToken'],
+    ['within 14 days', { expires_in_days: 14 }, 'replaceToken'],
+    ['expiry not known', { expires_in_days: null }, 'replaceToken'],
+    ['15 days left, attested', { expires_in_days: 15 }, null],
+  ] as const)('%s: %s', (_name, credential, expected) => {
+    expect(rowPrimary(token(credential), undefined, TODAY)).toBe(expected)
+  })
+
+  it('needs its CI attested once its token is fine, as any written-to connection', () => {
+    expect(rowPrimary(token({ expires_in_days: 60 }, { ci_attestation: null }), undefined, TODAY)).toBe('attest')
+  })
+
+  it('is in its own group and counted apart, its CI counted with the others\'', () => {
+    const sdk = token({ expires_in_days: 60 }, { ci_attestation: null })
+    const groups = groupConnections([connection(), sdk], [app()])
+    expect([groups.apps[0]?.connections.map((c) => c.connection_id), groups.others, groups.tokens.map((c) => c.connection_id)])
+      .toStrictEqual([['web'], [], ['sdk']])
+    const counted = connectionsSummary({ connections: [connection(), sdk], apps: [app()], issues: undefined, checks: new Map(), today: TODAY })
+    expect([counted.tokens, counted.others, counted.ciNeeded, counted.attention]).toStrictEqual([1, 0, 1, true])
+  })
+})
+
 describe('an App\'s one primary', () => {
   it.each([
     ['installed nowhere: Install on GitHub', app({ connections: [] }), undefined, 'install'],
@@ -112,8 +142,8 @@ describe('the status line', () => {
   it('counts the repositories through each App, the other connections, and those whose CI waits', () => {
     const pasted = connection({ connection_id: 'pasted', ci_attestation: null }, { kind: 'app' })
     expect(summary({ connections: [connection(), pasted] })).toStrictEqual({
-      empty: false, attention: true, through: [{ slug: 'voc-agents-ac7a4f', count: 1 }], others: 1, publicRead: 0, ciNeeded: 1,
-      issuesRead: true,
+      empty: false, attention: true, through: [{ slug: 'voc-agents-ac7a4f', count: 1 }], others: 1, publicRead: 0, tokens: 0,
+      ciNeeded: 1, issuesRead: true,
     })
   })
 

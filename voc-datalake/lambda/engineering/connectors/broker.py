@@ -58,6 +58,17 @@ the run's issue is the upstream's, so it gets no comment and no label (``FORK_IS
 issue, and the PR author's open of it goes on to the run's upstream pull request (``_upstream_after``, ``upstream_pr.py``;
 ``open_upstream_pr`` is that step on its own, the PR author's alone), whose outcome its answer carries and the run's
 record keeps; a refusal there never fails the fork's pull request, which was made.
+
+Since 7.60.00 a public repository connected with a fine-grained token limited to it (``fine_grained``): it takes no
+comment, label, docs pull request or upstream pull request (``token_scope``: the token holds no Issues permission, and
+the docs stay the App's), and its push and pull request follow this order: the role, the connection, the run active,
+the dial (Human-driven pushes nothing; AI-assisted and AI-driven alike wait for a person's go, and it must be the token
+owner's own: ``token_owner_go``, the go's subject's sha256 held to the owner the token's parameter names), the CI
+attestation, the host's branch rules (read with the App's read-only token), the final-go GO for exactly the tree, the
+token unexpired (``token_expired``, failing closed), the write rules, and only then the host, with the token
+(``TokenWrites``: its requests pinned to the repository's Git Data and pull request paths). Its pull request's body says
+whose token pushed it (``token_disclosure``), and each use is logged and kept on the write's claim (who, never the
+token).
 """
 from __future__ import annotations
 
@@ -68,10 +79,13 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import Any, Final
 
+from engineering.connectors.fine_grained import WriteToken, expiry_state, utc_today
 from engineering.connectors.hosts import (
     ACTIVE,
+    FINE_GRAINED,
     FORK,
     NO_CONNECTION,
     PUBLIC_READ,
@@ -97,6 +111,7 @@ from engineering.connectors.hosts import (
     ReadPage,
     RunRecord,
     Submission,
+    TokenWrites,
     Unavailable,
     WriteLedger,
     ci_refusal,
@@ -134,6 +149,7 @@ from engineering.run_links import pull_request_link
 from engineering.runtime.outputs import TRIAGE_LABELS
 from engineering.runtime.runs import ENDED
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN
+from shared.digests import sha256_hex
 from shared.logging import logger, metrics
 
 #: Beyond reading, which every agent may do: the writes each writing role needs, and no other (the understander's
@@ -152,6 +168,28 @@ READ_ONLY: Final = ("The run's connection is a public repository read only: noth
 #: An issue write on a fork connection (7.57.00): the run's issue is the upstream's, which nothing writes to.
 FORK_ISSUE: Final = ("The run's issue is the fork's upstream's: the agents comment on and label nothing there. What "
                      'the triage finds stays in VoC.')
+class FineGrainedRefused(NotNow):
+    """A fine-grained connection's refusal (7.60.00), ``code`` saying which (``token_scope``, ``token_owner_go``,
+    ``token_expired``, ``token_not_set``): the broker's answer carries it beside the reason."""
+
+    def __init__(self, reason: str, code: str) -> None:
+        super().__init__(reason)
+        self.code = code
+
+
+#: (7.60.00) A write a fine-grained connection's token does not make (``token_scope``): its token holds Contents and Pull
+#: requests alone.
+SCOPE_REFUSAL: Final = ("The run's connection is a fine-grained token's: it makes the run's branch and pull request "
+                      'alone, no comment, label, docs pull request or upstream pull request. What the run finds stays '
+                      'in VoC.')
+#: A fine-grained connection's push or pull request without its token owner's own go, whatever the way of working
+#: (``token_owner_go``).
+OWNER_GO_REFUSAL: Final = ("This run pushes with {login}'s fine-grained token: a push or a pull request waits for "
+                         "{login}'s own go on the run (POST /agents/engineering/<run_id>/go), in every way of working.")
+EXPIRED_REFUSAL: Final = ("The connection's fine-grained token has expired: its owner replaces it under Agents → "
+                        'Connections (Replace token), then the step is tried again.')
+NOT_SET_REFUSAL: Final = ("The connection's fine-grained token is not stored: an administrator replaces it under Agents → "
+                        'Connections (Replace token).')
 HUMAN_DRIVEN_REFUSAL: Final = ('This run works Human-driven: its agents find and propose, and push no branch and '
                                'open no pull request. A person makes the change, or an administrator changes the '
                                'way of working of the person who started the run.')
@@ -215,17 +253,79 @@ def _require_dial(connector: Connector, run: RunRecord, run_id: str) -> None:
     raise NotNow(HUMAN_DRIVEN_REFUSAL)
 
 
+def _write_token(connector: Connector, connection_id: str) -> WriteToken:
+    """A fine-grained connection's write token (7.60.00): ``NoConnection`` where the deployment wires no token reader or
+    writes, ``token_not_set`` when none is stored."""
+    if connector.write_tokens is None or connector.token_writes is None:
+        raise NoConnection(NO_CONNECTION)
+    try:
+        token = connector.write_tokens.token(connection_id)
+    except NoConnection:
+        raise FineGrainedRefused(NOT_SET_REFUSAL, 'token_not_set') from None
+    if not isinstance(token, WriteToken):
+        raise FineGrainedRefused(NOT_SET_REFUSAL, 'token_not_set')
+    return token
+
+
+def _require_token_go(connector: Connector, run: RunRecord, run_id: str) -> WriteToken:
+    """A fine-grained connection's dial (7.60.00): Human-driven (or nothing stored, a mode the broker does not know) is
+    refused; AI-assisted and AI-driven alike wait for a person's go, and it must be the token owner's own (the go's
+    subject's sha256 is the owner the token's parameter names). The token, once its go holds."""
+    if connector.dial.mode(run.started_by) not in (MODE_AI_ASSISTED, MODE_AI_DRIVEN):
+        raise NotNow(HUMAN_DRIVEN_REFUSAL)
+    token = _write_token(connector, run.connection_id)
+    if token.repository.lower() != run.repository.lower():
+        raise NotNow(OTHER_REPOSITORY)
+    by = connector.ledger.person_go_by(run_id)
+    if not by or sha256_hex(by) != token.owner:
+        raise FineGrainedRefused(OWNER_GO_REFUSAL.format(login=token.login), 'token_owner_go')
+    return token
+
+
+def _require_unexpired(token: WriteToken | None, today: date) -> None:
+    """The token is not past its expiry on ``today`` (UTC), failing closed on an expiry it cannot read."""
+    if token is not None and expiry_state(token.expires_at, today) in ('expired', 'unset'):
+        raise FineGrainedRefused(EXPIRED_REFUSAL, 'token_expired')
+
+
+def _token_used(caller: Caller, operation: str, run: RunRecord, token: WriteToken) -> dict[str, object]:
+    """The use of a fine-grained connection's token (7.60.00), logged (never the token) and kept on the write's claim:
+    the credential's kind, whose it is and when it expires."""
+    used: dict[str, object] = {'credential': 'fine_grained_token', 'login': token.login,
+                               'expires_at': token.expires_at}
+    logger.info('broker used a fine-grained token', extra={'operation': operation, 'run_id': caller.run_id,
+                                                           'connection_id': run.connection_id, 'login': token.login})
+    return used
+
+
+def token_disclosure(body: str, login: str) -> str:
+    """A fine-grained connection's pull request body (7.60.00), naming whose token pushed it and whose go it waited
+    for (the token owner's own): trusted text the broker adds after the write rules read what the agent wrote, once."""
+    line = f"Pushed with {login}'s fine-grained token, after {login}'s own go on the run."
+    kept = body.rstrip()
+    return kept if line in kept else f'{kept}\n\n{line}'
+
+
 def connection_kind(connector: Connector, connection_id: str) -> str:
     """The connection's kind (7.57.00: ``hosts.REPOSITORY_KIND``, ``PUBLIC_READ`` or ``FORK``), from its credential: ``repository`` where the
     deployment wires no upstream reader (every connection is then one's own)."""
     return REPOSITORY_KIND if connector.upstream is None else connector.upstream.kind(connection_id)
 
 
+#: (7.60.00) What a fine-grained connection's token writes: the run's push and pull request, nothing else.
+_TOKEN_WRITES: Final = frozenset({PUSH_BUNDLE, OPEN_OR_UPDATE_DRAFT_PR})
+
+
 def _require_kind(kind: str, operation: str) -> None:
     """Every write refused on a public repository read only; an issue's label on a fork (its issue is the upstream's;
     an issue comment is refused in ``post_comment``, which knows the target); the upstream pull request only on a
-    fork. Any kind this broker does not know refuses every write, failing closed."""
+    fork; on a fine-grained connection (7.60.00) every write but the push and the pull request. Any kind this broker
+    does not know refuses every write, failing closed."""
     if operation == READ:
+        return
+    if kind == FINE_GRAINED:
+        if operation not in _TOKEN_WRITES:
+            raise FineGrainedRefused(SCOPE_REFUSAL, 'token_scope')
         return
     if kind == PUBLIC_READ or kind not in (REPOSITORY_KIND, FORK):
         raise NotNow(READ_ONLY)
@@ -260,8 +360,10 @@ def _active_run(connector: Connector, caller: Caller) -> RunRecord:
 class Broker:
     """The operations, over a configured ``Connector`` (``None``: no connection, every operation refused)."""
 
-    def __init__(self, connector: Connector | None) -> None:
+    def __init__(self, connector: Connector | None, today: Callable[[], date] = utc_today) -> None:
         self._connector = connector
+        #: Today (UTC): a fine-grained connection's token expiry is held to it (7.60.00).
+        self._today = today
 
     def _open(self, caller: Caller, operation: str) -> tuple[Connector, RunRecord]:
         if not permitted(caller.role, operation):
@@ -283,16 +385,21 @@ class Broker:
         return self._connector, replace(run, default_branch=branch)
 
     def _open_write(self, caller: Caller, operation: str,
-                    branch: str) -> tuple[Connector, RunRecord, dict[str, object]]:
-        """A push's or a pull request's checks before its own: the run, the dial, the CI attestation (read now, so a
-        withdrawal or a void holds from the next write), the branch, then the host's branch rules; with what the
-        write's claim keeps of the CI checks."""
+                    branch: str) -> tuple[Connector, RunRecord, dict[str, object], WriteToken | None]:
+        """A push's or a pull request's checks before its own: the run, the dial (on a fine-grained connection, its
+        token owner's own go: ``_require_token_go``), the CI attestation (read now, so a withdrawal or a void holds from
+        the next write), the branch, then the host's branch rules; with what the write's claim keeps of the CI checks,
+        and a fine-grained connection's token (None on any other)."""
         connector, run = self._open(caller, operation)
-        _require_dial(connector, run, caller.run_id)
+        token = None
+        if connection_kind(connector, run.connection_id) == FINE_GRAINED:
+            token = _require_token_go(connector, run, caller.run_id)
+        else:
+            _require_dial(connector, run, caller.run_id)
         run = connector.runs.attested(run)
         _require_attestation(run)
         _require_branch(branch, run, caller.run_id)
-        return connector, run, _ci_record(run, _require_ci(connector, run, branch))
+        return connector, run, _ci_record(run, _require_ci(connector, run, branch)), token
 
     def _first_outcome(self, caller: Caller, operation: str, attempt: int,
                        *arguments: object) -> dict[str, object] | None:
@@ -369,10 +476,11 @@ class Broker:
         first = self._first_outcome(caller, PUSH_BUNDLE, attempt, branch, patch, tree_hash, message)
         if first is not None:
             return str(first['tree_hash'])
-        connector, run, ci = self._open_write(caller, PUSH_BUNDLE, branch)
+        connector, run, ci, token = self._open_write(caller, PUSH_BUNDLE, branch)
         if not connector.ledger.has_go(caller.run_id, tree_hash):
             raise NotNow("The board holds no final-go GO for this tree: the quality gate's final go passes on it "
                          'first.')
+        _require_unexpired(token, self._today())
         contents = connector.bundles.contents(Submission(
             run_id=caller.run_id, agent_id=agent_id(caller), run=run, key=patch, branch=branch, tree_hash=tree_hash,
             message=message))
@@ -385,9 +493,15 @@ class Broker:
         check_text('\n'.join(contents.added_lines), run.cited_reviews, prose=False)
 
         def push() -> dict[str, object]:
-            connector.host.push_bundle(run.connection_id, branch, contents, tree_hash, run.default_branch)
+            used: dict[str, object] = {}
+            if token is None:
+                connector.host.push_bundle(run.connection_id, branch, contents, tree_hash, run.default_branch)
+            else:   # (7.60.00: the token's write, its every request pinned to the repository's Git Data paths)
+                _token_writes(connector).push_bundle_as(run.connection_id, branch, contents, tree_hash,
+                                                        run.default_branch, token.token)
+                used = {'with': _token_used(caller, PUSH_BUNDLE, run, token)}
             _wrote(caller, PUSH_BUNDLE, run, branch=branch, tree_hash=tree_hash, commits=len(contents.commits))
-            return {'branch': branch, 'tree_hash': tree_hash, 'ci': ci}
+            return {'branch': branch, 'tree_hash': tree_hash, 'ci': ci, **used}
 
         return str(_once(connector, caller, PUSH_BUNDLE, attempt, push, branch, patch, tree_hash, message)['tree_hash'])
 
@@ -400,20 +514,30 @@ class Broker:
         first = self._first_outcome(caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, branch, title, body)
         if first is not None:
             return self._upstream_after(caller, branch, _pull_request(first))
-        connector, run, ci = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
+        connector, run, ci, token = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
         check_text(f'{title}\n\n{body}', run.cited_reviews, prose=True)
         tree_hash = connector.host.branch_tree_hash(run.connection_id, branch)
         if tree_hash is None:
             raise NotNow('The branch is not on the host yet; push it first.')
         if not connector.ledger.has_go(caller.run_id, tree_hash):
             raise NotNow("The board holds no GO for the branch's tree.")
+        _require_unexpired(token, self._today())
         fork = connection_kind(connector, run.connection_id) == FORK
-        # (a fork's pull request names no issue: its issue is the upstream's, which the upstream pull request fixes)
-        sent = merge_is_human(body if fork else closing_body(body, run))
+        # (a fork's pull request names no issue: its issue is the upstream's, which the upstream pull request fixes;
+        # 7.60.00: a fine-grained token's says whose token pushed it, after whose go)
+        own = body if fork else closing_body(body, run)
+        sent = merge_is_human(own if token is None else token_disclosure(own, token.login))
+
+        def opened_or_updated() -> tuple[PullRequestRef, dict[str, object]]:
+            if token is None:
+                return connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title,
+                                                              sent, tree_hash, draft=run.draft_pr), {}
+            ref = _token_writes(connector).open_or_update_pr_as(run.connection_id, branch, run.default_branch, title,
+                                                                sent, tree_hash, token.token, draft=run.draft_pr)
+            return ref, {'with': _token_used(caller, OPEN_OR_UPDATE_DRAFT_PR, run, token)}
 
         def open_draft() -> dict[str, object]:
-            ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, sent,
-                                                         tree_hash, draft=run.draft_pr)
+            ref, used = opened_or_updated()
             _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
             # (the host answered with it, so it stands: kept on the run's record; an answer that never came, an
             # outcome unknown, records nothing, and the next open or update finds it by its branch)
@@ -421,7 +545,7 @@ class Broker:
             # (the claim keeps what the record keeps, so a record that could not be written is read back from it:
             # run_links.py)
             return {'number': ref.number, 'url': ref.url, 'head': ref.head, 'base': ref.base, 'host': ref.host,
-                    'ci': ci}
+                    'ci': ci, **used}
 
         done = _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title,
                                    body))
@@ -823,6 +947,13 @@ def _keep_pull_request(connector: Connector, caller: Caller, run: RunRecord, bra
     if why:
         logger.warning('broker pull request not recorded', extra={'run_id': caller.run_id, 'number': ref.number,
                                                                   'why': why})
+
+
+def _token_writes(connector: Connector) -> TokenWrites:
+    """The connector's writes with a fine-grained connection's token (``_write_token`` checked it is wired)."""
+    if connector.token_writes is None:
+        raise NoConnection(NO_CONNECTION)
+    return connector.token_writes
 
 
 def _pull_request(done: Mapping[str, object]) -> PullRequestRef:

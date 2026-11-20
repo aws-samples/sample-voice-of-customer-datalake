@@ -1243,7 +1243,9 @@
       "ciNeeded_one": "{{count, number}} precisa ter a CI atestada antes de os agentes fazerem push",
       "ciNeeded_other": "{{count, number}} precisam ter a CI atestada antes de os agentes fazerem push",
       "publicRead_one": "{{count, number}} repositório público só de leitura",
-      "publicRead_other": "{{count, number}} repositórios públicos só de leitura"
+      "publicRead_other": "{{count, number}} repositórios públicos só de leitura",
+      "tokens_one": "{{count, number}} repositório com um token refinado",
+      "tokens_other": "{{count, number}} repositórios com um token refinado"
     },
     "columns": {
       "repository": "Repositório",
@@ -1266,7 +1268,8 @@
       "edit": "Editar a conexão…",
       "attest": "Atestar CI…",
       "withdraw": "Retirar a atestação de CI…",
-      "remove": "Remover a conexão…"
+      "remove": "Remover a conexão…",
+      "replaceToken": "Substituir token…"
     },
     "details": {
       "button": "Detalhes da conexão de {{repository}}",
@@ -1364,6 +1367,103 @@
       "summaryPushes": "Os agentes enviam para: {{fork}} (seu fork).",
       "summaryPushesPending": "Os agentes enviam para: seu fork, quando estiver conectado.",
       "summaryPullRequests": "As pull requests para {{upstream}} vêm de você: a execução termina com um link de um clique, e você clica em Create no GitHub."
+    },
+    "add": {
+      "title": "Adicionar um repositório",
+      "intro": "Três maneiras, conforme o que você pode fazer no repositório.",
+      "useWhen": "Use quando",
+      "endsWith": "A execução termina com",
+      "needsApp": "Instale primeiro a GitHub App desta implantação em um dos seus repositórios: o token somente leitura dela lê o repositório.",
+      "app": {
+        "title": "Instalar a GitHub App",
+        "when": "Você administra o repositório, ou a organização dele permite que você instale apps.",
+        "ends": "Um branch e um pull request no repositório.",
+        "action": "Adicionar repositórios a {{slug}}"
+      },
+      "token": {
+        "title": "Usar um token refinado",
+        "when": "Você pode enviar para um repositório público, mas não pode instalar a App nele (uma organização cujos proprietários aprovam apps, por exemplo).",
+        "ends": "Um branch e um pull request no repositório, enviados com o seu token depois do seu aval.",
+        "action": "Usar um token…"
+      },
+      "fork": {
+        "title": "Contribuir por um fork",
+        "when": "É o repositório público de outra pessoa.",
+        "ends": "Um pull request no seu fork e um link que o abre no repositório com um clique.",
+        "action": "Encontrar o repositório"
+      }
+    },
+    "token": {
+      "kind": "Token refinado",
+      "loginUnknown": "login desconhecido",
+      "expires_one": "expira em {{date}} (em {{count, number}} dia)",
+      "expires_other": "expira em {{date}} (em {{count, number}} dias)",
+      "expiredOn": "expirou em {{date}}",
+      "expiryUnknown": "validade desconhecida",
+      "soonBadge_one": "Expira em {{count, number}} dia",
+      "soonBadge_other": "Expira em {{count, number}} dias",
+      "expiredBadge": "Token expirado",
+      "notSet": "O token refinado não está salvo: substitua-o, ou os agentes não enviam nada para este repositório.",
+      "owner": "Salvo por {{owner}}: só essa pessoa dá o aval a uma execução nele.",
+      "ownerYou": "Salvo por você: só você dá o aval a uma execução nele.",
+      "revoke": "Isto apaga o token salvo aqui. Revogue-o também no GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      "saved": "{{repository}} está conectado com o seu token refinado.",
+      "replaced": "O token de {{repository}} foi substituído.",
+      "list": {
+        "title": "Tokens refinados",
+        "hint": "Repositórios públicos que recebem envios com o token de uma pessoa: um branch e um pull request depois do aval do dono do token."
+      },
+      "dialog": {
+        "addTitle": "Conectar um repositório com um token refinado",
+        "replaceTitle": "Substituir o token de {{repository}}",
+        "description": "Para um repositório público para o qual você pode enviar, mas onde não pode instalar a App. Ele é lido com o token somente leitura da GitHub App desta implantação; o seu token só é usado no envio final e no pull request de uma execução, depois das verificações e do seu aval.",
+        "save": "Verificar e conectar",
+        "replace": "Verificar e substituir"
+      },
+      "repository": {
+        "label": "Repositório",
+        "hint": "Um repositório público do GitHub para o qual você pode enviar: owner/name, ou o endereço dele no GitHub.",
+        "find": "Procurar no GitHub",
+        "use": "Usar {{repository}}",
+        "noToken": "Arquivado: não aceita envios",
+        "fixed": "O token é do repositório desta conexão, {{repository}}: as mesmas verificações valem para o novo."
+      },
+      "steps": {
+        "title": "Criar o token no GitHub",
+        "owner": "Resource owner: {{owner}}.",
+        "access": "Repository access: Only select repositories e, depois, somente {{repository}}.",
+        "permissions": "Repository permissions: Contents e Pull requests, ambos Read and write (Metadata, somente leitura, vem junto). Nada mais.",
+        "expiry": "Expiration: {{days, number}} dias ou menos.",
+        "approval": "Se {{owner}} for uma organização que aprova tokens refinados, um dos proprietários dela aprova o token antes que ele possa enviar.",
+        "link": "Abrir a página de novo token do GitHub",
+        "prefilled": "O link preenche o nome, o proprietário, 90 dias e as duas permissões. Escolha lá o repositório você mesmo: o link do GitHub não consegue."
+      },
+      "field": {
+        "label": "Token refinado",
+        "hint": "Cole o token (github_pat_…): ele é verificado no GitHub, salvo criptografado e nunca mais exibido."
+      },
+      "invalid": {
+        "repository": "Informe um repositório do GitHub como owner/name, ou cole o endereço dele.",
+        "tokenEmpty": "Cole o token refinado.",
+        "classic": "Este é um token clássico, OAuth ou de App, não um refinado: crie um token refinado.",
+        "shape": "Um token refinado começa com github_pat_: cole-o inteiro."
+      },
+      "tick": "Este token alcança somente {{repository}}",
+      "tickHint": "O GitHub não informa a quais repositórios um token foi dado: você confirma. Um token que alcança repositórios privados é recusado.",
+      "tickRequired": "Confirme que o token alcança somente {{repository}}.",
+      "refused": {
+        "classic_token": "Segundo o GitHub, este não é um token refinado: crie um refinado.",
+        "not_accepted": "O GitHub não aceita o token (revogado, expirado ou digitado errado): crie um novo e cole-o inteiro.",
+        "no_expiry": "O token não expira: crie um que expire em 90 dias ou menos.",
+        "expires_too_late": "O token dura mais de 90 dias: crie um que expire em 90 dias ou menos.",
+        "expired": "O token expirou: crie um novo.",
+        "not_found": "O token não vê {{repository}} no GitHub: confira o nome e se o acesso a repositórios do token o inclui.",
+        "private_repository": "{{repository}} é privado: um token conecta apenas um repositório público. Instale nele a GitHub App.",
+        "archived": "{{repository}} está arquivado: não aceita envios.",
+        "no_push": "O token não consegue enviar para {{repository}}: dê a ele Contents e Pull requests com Read and write, e confira se você pode enviar para lá.",
+        "org_pending_approval": "O token aguarda a aprovação da organização: peça a um proprietário da organização que o aprove, ou contribua por um fork.",
+        "other_repositories": "O token alcança outros repositórios: crie um com Only select repositories e somente {{repository}}."
+      }
     }
   },
   "skills": {
@@ -1926,7 +2026,8 @@
       "sandbox": "Isolamento da sessão",
       "kiro": "Harness do Kiro",
       "fork": "Fork",
-      "upstream_pr": "Pull request no repositório original"
+      "upstream_pr": "Pull request no repositório original",
+      "write_token": "Token refinado"
     },
     "required": "Necessária para executar"
   },
@@ -2414,6 +2515,15 @@
       "noStderr": "Sem saída de erros.",
       "toControls": "Ir para os controlos da execução",
       "openSession": "Abrir a sessão de {{agent}}"
+    },
+    "tokenGo": {
+      "hint": "Esta execução envia com o token refinado de {{login}}: o branch e o pull request dela aguardam o aval de {{login}}, depois das verificações.",
+      "push": "Enviar com o token de {{login}}",
+      "ownerOnly": "Só {{owner}}, quem salvou o token, dá o aval a esta execução.",
+      "given": "Seu aval foi dado: a execução envia com o token de {{login}} assim que as verificações passarem.",
+      "already": "Esta execução já recebeu um aval.",
+      "refused": "Só o dono do token dá o aval a esta execução.",
+      "failed": "Não foi possível dar o aval: tente de novo."
     }
   },
   "canvas": {

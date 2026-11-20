@@ -69,6 +69,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors.connections import (
     APP_NUMBER,
+    FINE_GRAINED_CREDENTIAL,
+    KIND_FINE_GRAINED,
     KIND_PUBLIC_READ,
     MAX_CONNECTIONS,
     MAX_PARAMETER_BYTES,
@@ -418,8 +420,10 @@ class GitHubApps:
         found: dict[str, list[dict[str, Any]]] = {}
         for connection in self._connections.list():
             credential = connection['credential']
-            # (7.57.00: a public repository read through the App's token uses it too)
-            if credential.get('kind') in ('app_reference', KIND_PUBLIC_READ) and credential.get('app_id'):
+            # (7.57.00: a public repository read through the App's token uses it too; 7.60.00: and a fine-grained token
+            # connection, read the same way, so the App is not removed from under it)
+            if credential.get('kind') in ('app_reference', KIND_PUBLIC_READ, FINE_GRAINED_CREDENTIAL) \
+                    and credential.get('app_id'):
                 found.setdefault(str(credential['app_id']), []).append(connection)
         return found
 
@@ -660,8 +664,9 @@ class GitHubApps:
         has a new slug: the one its installation reports is recorded (``_renamed``), so its install links keep working.
         With ``actor``, the GitHub Issues source follows the App's connections again (``issues``)."""
         item = self._app(app_id)
-        # (a public repository read only is not in the installation its token comes from: never "missing")
-        users = [c for c in self._users().get(app_id, []) if c.get('kind') != KIND_PUBLIC_READ]
+        # (a public repository read only, or a fine-grained token's, is not in the installation its token comes from:
+        # never "missing")
+        users = [c for c in self._users().get(app_id, []) if c.get('kind') not in (KIND_PUBLIC_READ, KIND_FINE_GRAINED)]
         installations: dict[str, list[dict[str, Any]]] = {}
         for connection in users:
             installations.setdefault(str(connection['credential'].get('installation_id') or ''), []).append(connection)

@@ -25,7 +25,8 @@ describe('parseOverview', () => {
     const overview = parseOverview(engineeringOverview())
     expect(overview.run).toStrictEqual({
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
-      started_at: '2026-11-12T08:00:00Z', ended_at: null, waiting_at: '', waiting_detail: null, stop: null, budget: null,
+      started_at: '2026-11-12T08:00:00Z', ended_at: null, connection: 'storefront', waiting_at: '', waiting_detail: null,
+      stop: null, budget: null,
       flow_steps: null, flow_revision: null, flow_outcome: null, flow_definition: null, issue: null, pull_request: null,
       cost_usd: null, learn_cost_usd: null, cost_cap_usd: null, parent: null, manifest: null, expansion: [],
       upstream_pull_request: null, models: { choice: null, roles: {} },

@@ -20,6 +20,7 @@ from moto import mock_aws
 from engineering.connectors import attestations
 from engineering.connectors.attestations import POINTS
 from engineering.connectors.connections import (
+    KIND_FINE_GRAINED,
     LOG_PREFIX,
     MAX_CONNECTIONS,
     MAX_PARAMETER_BYTES,
@@ -27,7 +28,9 @@ from engineering.connectors.connections import (
     Actor,
     AttestationRequest,
     ConnectionRefused,
+    ConnectionRequest,
     ConnectionStore,
+    FineGrainedToken,
     is_branch_name,
     live_runs_of,
     parse_attestation,
@@ -40,6 +43,7 @@ from engineering.connectors.credentials import (
     parse_credential,
     parse_stored,
 )
+from engineering.connectors.fine_grained import TokenFacts as FineGrainedFacts
 from engineering.connectors.gitlab_api import TokenFacts, TokenRefused
 from engineering.connectors.hosts import NoConnection
 from engineering.connectors.test.app_keys import (
@@ -110,7 +114,9 @@ def test_a_new_connection_stores_its_credential_where_the_broker_reads_it(env: E
     assert connection == {
         'connection_id': 'refunds', 'host': 'github', 'repository': f'{OWNER}/{REPOSITORY}', 'default_branch': 'main',
         'credential': {'kind': 'app', 'set': True, 'app_id': APP_ID, 'installation_id': str(INSTALLATION_ID),
-                       'expires_at': None},
+                       'expires_at': None, 'expires_in_days': None,
+                       # (7.60.00: a fine-grained token's facts, none on any other kind)
+                       'login': None, 'saved_by_you': False, 'owner': None},
         'created_at': WHEN.isoformat(), 'created_by': 'alice', 'updated_at': WHEN.isoformat(), 'updated_by': 'alice',
         'repository_private': None, 'version': 1, 'ci_attestation': None,   # (none until an administrator confirms the setup guide's points)
         'kind': 'repository', 'public': None, 'fork': None}   # (7.57.00: one's own repository)
@@ -764,7 +770,10 @@ def test_a_gitlab_connection_is_checked_once_and_stored_where_the_broker_reads_i
         project_id=4242, repository='Example-Org/payments/refund-service', token=GITLAB_TOKEN, expires_at='2027-11-01')
     assert (connection['host'], connection['repository'], connection['credential']) == (
         'gitlab', 'Example-Org/payments/refund-service',
-        {'kind': 'project_token', 'set': True, 'app_id': None, 'installation_id': None, 'expires_at': '2027-11-01'})
+        {'kind': 'project_token', 'set': True, 'app_id': None, 'installation_id': None, 'expires_at': '2027-11-01',
+         # (7.60.00: every token's days left, as of the store's clock)
+         'expires_in_days': (date(2027, 11, 1) - WHEN.date()).days, 'login': None, 'saved_by_you': False,
+         'owner': None})
     assert GITLAB_TOKEN not in json.dumps([env.rows(), connection], default=str) + caplog.text
 
 
@@ -818,3 +827,71 @@ def test_a_project_token_never_shows_in_its_repr() -> None:
 def test_a_gitlab_projects_path_is_one_an_attestation_takes() -> None:
     request = parse_attestation({'points': list(POINTS), 'repository': GITLAB_PROJECT, 'version': 2})
     assert request.repository == GITLAB_PROJECT
+
+
+# --- a fine-grained token connection (7.60.00): two parameters, the token first in, first out -------------------------
+
+TOKEN_PREFIX = '/voc/engineering-token/'
+FG_PAT = 'github_pat_11ABCDEFG0' + 'm' * 40
+
+
+def token_request(**change: Any) -> ConnectionRequest:
+    facts = FineGrainedFacts(repository='open-tools/lint-kit', default_branch='main', owner_type='User',
+                             login='casey-dev', expires_at='2026-12-31')
+    return ConnectionRequest(host='github', repository=facts.repository, default_branch='main', repository_private=False,
+                             credential=FineGrainedToken(APP_ID, INSTALLATION_ID, facts, 'a' * 64, FG_PAT),
+                             kind=KIND_FINE_GRAINED, facts={'token_login': 'casey-dev', 'token_owner': 'a' * 64,
+                                                            'token_owner_name': 'alice', **change})
+
+
+def token_store(env: Env, ssm: Any = None) -> ConnectionStore:
+    return ConnectionStore(env.table, lambda: ssm or env.ssm, PREFIX, env.key_id, lambda _: [], clock=lambda: WHEN,
+                           token_prefix=TOKEN_PREFIX)
+
+
+def test_a_token_connection_stores_its_token_on_its_own_path_and_says_whose_it_is(env: Env) -> None:
+    connection, created = token_store(env).save('lint-kit', token_request(), ADMIN)
+    assert (created, connection['kind'], connection['credential']['kind']) == (True, 'fine_grained', 'fine_grained_token')
+    assert (connection['credential']['login'], connection['credential']['owner'],
+            connection['credential']['expires_in_days']) == ('casey-dev', 'alice', (date(2026, 12, 31) - WHEN.date()).days)
+    names = sorted(p['Name'] for p in env.ssm.describe_parameters()['Parameters'])
+    assert names == [f'{TOKEN_PREFIX}lint-kit', f'{PREFIX}lint-kit']
+    assert FG_PAT not in env.parameter('lint-kit')['Value']
+    assert FG_PAT not in json.dumps(env.rows(), default=str)
+
+
+def test_a_token_connection_is_never_stored_where_the_deployment_names_no_token_path(env: Env) -> None:
+    with pytest.raises(ConnectionRefused) as refused:
+        env.store().save('lint-kit', token_request(), ADMIN)
+    assert refused.value.kind == 'unavailable'
+    assert env.ssm.describe_parameters()['Parameters'] == []
+
+
+def test_a_token_whose_read_parameter_fails_is_deleted_again_and_nothing_is_recorded(env: Env) -> None:
+    real = env.ssm
+
+    class ReadPutFails:
+        exceptions = real.exceptions
+
+        def put_parameter(self, **kwargs: Any) -> Any:
+            if kwargs['Name'].startswith(PREFIX):
+                raise ClientError({'Error': {'Code': 'ThrottlingException'}}, 'PutParameter')
+            return real.put_parameter(**kwargs)
+
+        def delete_parameter(self, **kwargs: Any) -> Any:
+            return real.delete_parameter(**kwargs)
+
+    with pytest.raises(ConnectionRefused, match='could not be stored'):
+        token_store(env, ReadPutFails()).save('lint-kit', token_request(), ADMIN)
+    assert (env.ssm.describe_parameters()['Parameters'], env.rows()) == ([], [])
+
+
+def test_a_token_connection_s_removal_deletes_the_token_first_and_audits_it_removed(env: Env) -> None:
+    store = token_store(env)
+    store.save('lint-kit', token_request(), ADMIN)
+    store.remove('lint-kit', ADMIN, 'done with it')
+    assert env.ssm.describe_parameters()['Parameters'] == []
+    removal = env.audits()[-1]
+    assert (removal['action'], removal['changes']['credential'], removal['changes']['token']) == (
+        'removed', 'removed', 'removed')
+    assert [c['connection_id'] for c in store.list()] == []

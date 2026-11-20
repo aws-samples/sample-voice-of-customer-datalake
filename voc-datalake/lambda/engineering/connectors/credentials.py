@@ -29,6 +29,16 @@ or a fork of a public repository, the App installed on the fork, with the upstre
     {"kind": "fork", "app_id": "123456", "installation_id": 7890123, "repository": "me/name", "key": "app",
      "upstream": "owner/name", "upstream_default_branch": "main", "owner": "<64 hex>", "licence": "MIT"}
 
+or, since 7.60.00, a public repository connected with a fine-grained token limited to it (``kind: fine_grained``): read
+exactly as a public one is, so this parameter holds no token::
+
+    {"kind": "fine_grained", "app_id": "123456", "installation_id": 7890123, "repository": "owner/name", "key": "app"}
+
+and its write token in a parameter of its own, beside the connections' path and outside it (``WriteTokens``:
+``/[<prefix>-]voc/engineering-token/<id>``, ``{"repository", "login", "expires_at", "owner", "token"}``), which only the
+broker reads (the checkout cache's writer, the agents, the runtime and the Agents API hold no read of it), kept
+``TOKEN_CACHE_SECONDS`` at most so a replaced or removed token stops quickly;
+
 or, since 7.06.00, a GitLab project's (its id and path as GitLab answered the save's check, the token's expiry)::
 
     {"host": "gitlab", "project_id": 4242, "repository": "group/project", "token": "glpat-...", "expires_at": "2027-11-01"}
@@ -54,8 +64,17 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from engineering.connectors.connections import APP_NUMBER, APP_REFERENCE, REPOSITORY, app_key_parameter
+from engineering.connectors.fine_grained import WriteToken, parse_value
 from engineering.connectors.gitlab_api import TOKEN, is_project_path
-from engineering.connectors.hosts import FORK, NO_CONNECTION, PUBLIC_READ, REPOSITORY_KIND, ForkFacts, NoConnection
+from engineering.connectors.hosts import (
+    FINE_GRAINED,
+    FORK,
+    NO_CONNECTION,
+    PUBLIC_READ,
+    REPOSITORY_KIND,
+    ForkFacts,
+    NoConnection,
+)
 from engineering.connectors.upstream import SPDX
 from shared.logging import logger
 from shared.model_fallback import error_code
@@ -63,6 +82,8 @@ from shared.plan_canonical import FINGERPRINT_RE as SUBJECT_HASH
 
 #: How long a read credential is kept: a replaced key reaches a warm container within this.
 CACHE_SECONDS: Final = 300
+#: How long a fine-grained connection's write token is kept (7.60.00): a replaced or removed one stops within this.
+TOKEN_CACHE_SECONDS: Final = 60
 #: A connection id: what a parameter name may hold after the prefix (no ``/``, so never another path).
 _CONNECTION_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}')
 
@@ -162,8 +183,10 @@ def parse_credential(text: str, app_keys: AppKeyReader | None = None) -> GitHubA
             or repository.group('name') in {'.', '..'}:
         raise CredentialUnusable(NO_CONNECTION)
     kind = value.get('kind', REPOSITORY_KIND)
-    if kind not in (REPOSITORY_KIND, PUBLIC_READ, FORK) or (kind != REPOSITORY_KIND and value.get('key') != APP_REFERENCE):
-        raise CredentialUnusable(NO_CONNECTION)   # (a public read and a fork are always one of the deployment's Apps)
+    if kind not in (REPOSITORY_KIND, PUBLIC_READ, FORK, FINE_GRAINED) or (
+            kind != REPOSITORY_KIND and value.get('key') != APP_REFERENCE):
+        # (a public read, a fork and a token's read are always one of the deployment's Apps; a write token is never here)
+        raise CredentialUnusable(NO_CONNECTION)
     fork = _fork_facts(value) if kind == FORK else None
     if value.get('key') == APP_REFERENCE:
         if app_keys is None or 'private_key' in value:
@@ -201,6 +224,29 @@ class _CachedParameters[T]:
         self._client = client
         self._clock = clock
         self._cache: dict[str, tuple[float, T]] = {}
+
+
+    def _held(self, connection_id: str) -> T | None:
+        """What this container keeps for ``connection_id`` while it is fresh, else None; ``NoConnection`` for no prefix
+        or an id that names no connection's parameter (never another path)."""
+        if not self._prefix or not _CONNECTION_ID.fullmatch(connection_id):
+            raise NoConnection(NO_CONNECTION)
+        cached = self._cache.get(connection_id)
+        return cached[1] if cached is not None and self._clock() < cached[0] else None
+
+    def _value(self, connection_id: str, what: str) -> str:
+        """``connection_id``'s parameter's value, decrypted; ``NoConnection`` when it cannot be read (logged as ``what``
+        not read, with the connection and the AWS error code only)."""
+        try:
+            parameter = self._client().get_parameter(Name=f'{self._prefix}{connection_id}', WithDecryption=True)
+        except (ClientError, BotoCoreError) as error:
+            logger.warning(f'{what} not read', extra={'connection_id': connection_id, 'error_code': error_code(error)})
+            raise NoConnection(NO_CONNECTION) from None
+        return str(parameter.get('Parameter', {}).get('Value', ''))
+
+    def _keep(self, connection_id: str, value: T, seconds: float) -> T:
+        self._cache[connection_id] = (self._clock() + seconds, value)
+        return value
 
 
 class AppKeys(_CachedParameters[rsa.RSAPrivateKey]):
@@ -255,21 +301,30 @@ class ParameterStoreCredentials(_CachedParameters[Credential]):
 
     def stored(self, connection_id: str) -> Credential:
         """``connection_id``'s credential, either host's, or ``NoConnection`` when it has none this broker can use."""
-        if not self._prefix or not _CONNECTION_ID.fullmatch(connection_id):
-            raise NoConnection(NO_CONNECTION)
-        cached = self._cache.get(connection_id)
-        if cached is not None and self._clock() < cached[0]:
-            return cached[1]
+        held = self._held(connection_id)
+        if held is not None:
+            return held
+        value = self._value(connection_id, 'engineering connection credential')
         try:
-            parameter = self._client().get_parameter(Name=f'{self._prefix}{connection_id}', WithDecryption=True)
-        except (ClientError, BotoCoreError) as error:
-            logger.warning('engineering connection credential not read',
-                           extra={'connection_id': connection_id, 'error_code': error_code(error)})
-            raise NoConnection(NO_CONNECTION) from None
-        try:
-            credential = parse_stored(str(parameter.get('Parameter', {}).get('Value', '')), self._app_keys.get)
+            credential = parse_stored(value, self._app_keys.get)
         except CredentialUnusable:
             logger.warning('engineering connection credential unusable', extra={'connection_id': connection_id})
             raise
-        self._cache[connection_id] = (self._clock() + CACHE_SECONDS, credential)
-        return credential
+        return self._keep(connection_id, credential, CACHE_SECONDS)
+
+
+class WriteTokens(_CachedParameters[WriteToken]):
+    """The fine-grained connections' write tokens from SSM (7.60.00, ``{prefix}<connection_id>`` under
+    ``/[<prefix>-]voc/engineering-token/``), each kept ``TOKEN_CACHE_SECONDS`` in this container: the broker's alone."""
+
+    def token(self, connection_id: str) -> WriteToken:
+        """``connection_id``'s write token; ``NoConnection`` when none is stored, it cannot be read, or it is off its
+        shape (logged by the connection and the AWS error code only, never the value)."""
+        held = self._held(connection_id)
+        if held is not None:
+            return held
+        found = parse_value(self._value(connection_id, 'engineering write token'))
+        if found is None:
+            logger.warning('engineering write token unusable', extra={'connection_id': connection_id})
+            raise CredentialUnusable(NO_CONNECTION)
+        return self._keep(connection_id, found, TOKEN_CACHE_SECONDS)

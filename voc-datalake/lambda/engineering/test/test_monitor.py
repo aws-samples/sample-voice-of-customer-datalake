@@ -145,6 +145,7 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     view = monitor.overview(RUN)
     assert view is not None
     assert view['run'] == {'run_id': RUN, 'goal': 'Fix the paging bug', 'repo': 'example/shop', 'flow': 'wf_bugfix',
+                           'connection': None,   # (7.60.00: the connection it started on; this one names none)
                            'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
                            'budget': None, 'flow_revision': None, 'flow_copied_at': None, 'flow_definition': None,
                            'flow_steps': None, 'flow_outcome': None,   # (a run started without a flow: nothing to light)

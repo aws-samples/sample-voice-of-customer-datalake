@@ -230,3 +230,68 @@ def test_a_reference_without_its_apps_key_has_no_connection_and_logs_only_the_ap
         ('engineering GitHub App key not read', APP_ID)]
     with pytest.raises(CredentialUnusable):
         parse_credential(reference())   # (a reference parsed with no reader of App keys)
+
+
+# --- a fine-grained connection (7.60.00): its read parameter, and its write token on its own path ----------------------
+
+TOKEN_PREFIX = '/voc/engineering-token/'
+PAT = 'github_pat_11ABCDEFG0' + 'z' * 40
+OWNER_HASH = 'b' * 64
+
+
+def write_token_value(**change: Any) -> str:
+    return json.dumps({'repository': f'{OWNER}/{REPOSITORY}', 'login': 'casey-dev', 'expires_at': '2027-02-17',
+                       'owner': OWNER_HASH, 'token': PAT, **change})
+
+
+def test_a_fine_grained_connection_s_read_parameter_is_a_public_one_s_its_kind_its_own(ssm: Any) -> None:
+    from engineering.connectors.hosts import FINE_GRAINED
+
+    store(ssm, 'conn-token', reference(kind=FINE_GRAINED))
+    store_app_key(ssm)
+    found = ParameterStoreCredentials(PREFIX, client=lambda: ssm).get('conn-token')
+    assert (found.kind, found.owner, found.repository, found.fork) == (FINE_GRAINED, OWNER, REPOSITORY, None)
+    with pytest.raises(CredentialUnusable):   # (always one of the deployment's Apps: never a pasted key)
+        parse_credential(parameter_value().replace('{', f'{{"kind": "{FINE_GRAINED}", ', 1))
+
+
+def test_the_write_token_is_read_from_its_own_path_kept_a_minute_and_never_shown(ssm: Any) -> None:
+    ssm.put_parameter(Name=f'{TOKEN_PREFIX}conn-token', Value=write_token_value(), Type='SecureString')
+    clock = Clock()
+    tokens = credentials.WriteTokens(TOKEN_PREFIX, client=lambda: ssm, clock=clock)
+    found = tokens.token('conn-token')
+    assert (found.repository, found.login, found.expires_at, found.owner, found.token) == (
+        f'{OWNER}/{REPOSITORY}', 'casey-dev', '2027-02-17', OWNER_HASH, PAT)
+    assert PAT not in repr(found)
+    ssm.delete_parameter(Name=f'{TOKEN_PREFIX}conn-token')   # (removed: a warm broker stops within the minute)
+    clock.now += credentials.TOKEN_CACHE_SECONDS - 1
+    assert tokens.token('conn-token').token == PAT
+    clock.now += 2
+    with pytest.raises(NoConnection):
+        tokens.token('conn-token')
+    assert credentials.TOKEN_CACHE_SECONDS == 60 < CACHE_SECONDS
+
+
+@pytest.mark.parametrize('value', [write_token_value(token='ghp_' + 'a' * 36), write_token_value(owner='short'),
+                                   'not json', write_token_value(expires_at='soon')])
+def test_a_write_token_off_its_shape_is_unusable_and_logged_without_its_value(
+        ssm: Any, value: str, caplog: pytest.LogCaptureFixture) -> None:
+    ssm.put_parameter(Name=f'{TOKEN_PREFIX}conn-token', Value=value, Type='SecureString')
+    with pytest.raises(CredentialUnusable):
+        credentials.WriteTokens(TOKEN_PREFIX, client=lambda: ssm).token('conn-token')
+    assert [r.getMessage() for r in caplog.records] == ['engineering write token unusable']
+    assert PAT not in caplog.text
+
+
+@pytest.mark.parametrize(('prefix', 'connection_id'), [('', 'conn-token'), (TOKEN_PREFIX, '../conn'),
+                                                       (TOKEN_PREFIX, 'a/b')])
+def test_no_token_path_or_an_id_that_is_no_connection_s_reads_nothing(prefix: str, connection_id: str) -> None:
+    with pytest.raises(NoConnection):
+        credentials.WriteTokens(prefix, client=lambda: pytest.fail('read')).token(connection_id)
+
+
+def test_a_write_token_not_stored_has_no_connection(ssm: Any, caplog: pytest.LogCaptureFixture) -> None:
+    with pytest.raises(NoConnection):
+        credentials.WriteTokens(TOKEN_PREFIX, client=lambda: ssm).token('conn-token')
+    assert [(r.getMessage(), vars(r)['connection_id']) for r in caplog.records] == [
+        ('engineering write token not read', 'conn-token')]

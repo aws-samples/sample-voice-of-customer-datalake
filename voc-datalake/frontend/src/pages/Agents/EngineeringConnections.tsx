@@ -17,20 +17,26 @@
  * - **Public repositories** (7.57.00, PublicRepositories.tsx), once an App is there to read with: the read-only
  *   connections to public repositories in a card of their own (each with its guided Contribute to ‹upstream›), and
  *   Add a public repository (search GitHub, Connect read-only).
+ * - **Fine-grained tokens** (7.60.00): the public repositories connected with a person's fine-grained token, in a card of
+ *   their own with the same rows (each with its token's login and expiry, and Replace token).
+ * - **Add a repository** (7.60.00, AddRepositoryChooser.tsx), once something is connected: the three ways (install the
+ *   App, use a fine-grained token, contribute through a fork), each with when to use it and what a run ends with.
  * - **More ways to connect**, folded (MoreWaysToConnect.tsx): another GitHub App, a connection made by hand, GitLab.
  *
  * One dialog at a time over the page: adding or editing a connection (ConnectionDialog.tsx: an empty key keeps the
- * stored credential), removing one after a confirmation that says live runs on it lose access within five minutes,
- * attesting or withdrawing its CI (CiAttestation.tsx). What a change did is said once in a polite status line.
+ * stored credential), connecting one with a fine-grained token or replacing its token (TokenConnectionDialog.tsx),
+ * removing one after a confirmation that says live runs on it lose access within five minutes (and, for a token, to
+ * revoke it on GitHub too), attesting or withdrawing its CI (CiAttestation.tsx). What a change did is said once in a
+ * polite status line.
  *
  * @module pages/Agents/EngineeringConnections
  */
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, RefreshCw } from 'lucide-react'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
-import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
+import { engineeringConnectionsApi, engineeringConnectionsKeys, isTokenConnection } from '../../api/engineeringConnectionsApi'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { issuesSourceApi, issuesSourceKeys } from '../../api/issuesSourceApi'
 import { useConfigStore } from '../../store/configStore'
@@ -42,10 +48,13 @@ import { ConnectionChangeConfirm } from './ConnectionModals'
 import { ConnectionsStatus } from './ConnectionsStatus'
 import { RepositoryList } from './ConnectionRow'
 import { AppGroup } from './AppGroup'
+import { AddRepositoryChooser } from './AddRepositoryChooser'
+import { TokenConnectionDialog } from './TokenConnectionDialog'
 import { ConnectGitHubHero } from './GitHubAppPanel'
 import { MoreWaysToConnect } from './MoreWaysToConnect'
 import { PublicConnections, PublicRepositoryPicker } from './PublicRepositories'
 import { useAppChecks } from './useAppChecks'
+import type { RefObject } from 'react'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type {
   ConnectionHost, ConnectionList, EngineeringConnection, SavedConnection,
@@ -59,6 +68,7 @@ import type { AppChecks } from './useAppChecks'
 /** The dialog open: adding (on a host) or editing a connection, removing it, or attesting or withdrawing its CI. */
 type Open =
   | { kind: 'add'; host: ConnectionHost }
+  | { kind: 'token' }
   | { kind: 'edit' | 'remove' | 'attest' | 'withdraw'; connection: EngineeringConnection }
   | null
 
@@ -79,7 +89,10 @@ function RemoveConfirm({ connection, onDone, onCancel }: Readonly<{
     <ConnectionChangeConfirm variant="danger" title={t('connections.confirm.title', { repository })}
       message={t('connections.confirm.message', { repository })} confirmLabel={t('connections.confirm.confirm')}
       change={() => engineeringConnectionsApi.remove(connection.connection_id)} update={without}
-      onDone={removed} onCancel={onCancel} />
+      onDone={removed} onCancel={onCancel}>
+      {/* (7.60.00: removing deletes the stored token; GitHub still holds it until the person revokes it) */}
+      {isTokenConnection(connection) && <p className="mt-2 text-sm text-warn">{t('connections.token.revoke')}</p>}
+    </ConnectionChangeConfirm>
   )
 }
 
@@ -96,8 +109,15 @@ function OpenDialog({ open, onClose, onNotice }: Readonly<{
     done(created ? 'connections.created' : 'connections.saved', connection.repository)
   }
   if (open.kind === 'add') return <ConnectionDialog existing={null} presetHost={open.host} onClose={onClose} onSaved={saved} />
+  const tokenSaved = ({ connection, created }: SavedConnection) => {
+    done(created ? 'connections.token.saved' : 'connections.token.replaced', connection.repository)
+  }
+  if (open.kind === 'token') return <TokenConnectionDialog existing={null} onClose={onClose} onSaved={tokenSaved} />
   const { connection } = open
   const { repository } = connection
+  if (open.kind === 'edit' && isTokenConnection(connection)) {
+    return <TokenConnectionDialog existing={connection} onClose={onClose} onSaved={tokenSaved} />
+  }
   if (open.kind === 'edit') return <ConnectionDialog existing={connection} onClose={onClose} onSaved={saved} />
   if (open.kind === 'remove') {
     return <RemoveConfirm connection={connection} onCancel={onClose} onDone={() => done('connections.removed', repository)} />
@@ -118,20 +138,20 @@ function useConnectionReads() {
   return { configured, connections, apps, issues: issues.data }
 }
 
-/** Connections outside every listed App: a pasted key's, a GitLab token's, or one whose App is gone. */
-function OtherConnections({ connections, view, actions }: Readonly<{
+/** A card of connections outside every listed App: the other connections (a pasted key's, a GitLab token's, or one
+ *  whose App is gone), or (7.60.00) the fine-grained tokens'. */
+function ConnectionsCard({ title, hint, connections, view, actions }: Readonly<{
+  title: string; hint: string
   connections: readonly EngineeringConnection[]; view: IssuesSourceView | undefined; actions: RowActions
 }>) {
-  const { t } = useTranslation('agents')
   const titleId = useId()
   return (
     <section className="card p-0 overflow-hidden" aria-labelledby={titleId}>
       <div className="px-4 py-3">
-        <h3 id={titleId} className="text-sm font-semibold text-text-strong">{t('connections.others.title')}</h3>
-        <p className="text-[12px] text-muted">{t('connections.others.hint')}</p>
+        <h3 id={titleId} className="text-sm font-semibold text-text-strong">{title}</h3>
+        <p className="text-[12px] text-muted">{hint}</p>
       </div>
-      <RepositoryList label={t('connections.others.title')} connections={connections} view={view} actions={actions}
-        labelBusy={() => false} />
+      <RepositoryList label={title} connections={connections} view={view} actions={actions} labelBusy={() => false} />
     </section>
   )
 }
@@ -165,7 +185,14 @@ function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly
           ))}
         </ul>
       )}
-      {groups.others.length > 0 && <OtherConnections connections={groups.others} view={view} actions={actions} />}
+      {groups.others.length > 0 && (
+        <ConnectionsCard title={t('connections.others.title')} hint={t('connections.others.hint')} connections={groups.others}
+          view={view} actions={actions} />
+      )}
+      {groups.tokens.length > 0 && (
+        <ConnectionsCard title={t('connections.token.list.title')} hint={t('connections.token.list.hint')}
+          connections={groups.tokens} view={view} actions={actions} />
+      )}
       {groups.publicRead.length > 0 && (
         <PublicConnections connections={groups.publicRead} all={list.connections} apps={apps.data?.apps ?? []} view={view}
           onRemove={actions.onRemove} />
@@ -231,8 +258,15 @@ function ListState({ read, configured }: Readonly<{ read: UseQueryResult<Connect
   return <LoadFailed message={t('connections.loadFailed')} onRetry={() => { void read.refetch() }} retrying={read.isFetching} />
 }
 
-/** Nothing connected: the hero; else the Apps and the other connections. More ways to connect under either. */
-function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd }: Readonly<{
+/** Bring the person to the public repositories' search (the fork starts there): scrolled to, and focused. */
+function toSearch(search: RefObject<HTMLInputElement | null>): void {
+  search.current?.scrollIntoView({ block: 'center' })
+  search.current?.focus()
+}
+
+/** Nothing connected: the hero; else the Apps and the other connections, then Add a repository. More ways to connect
+ *  under either. */
+function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd, onToken }: Readonly<{
   list: ConnectionList
   summary: ConnectionsSummary | null
   apps: UseQueryResult<GitHubAppList>
@@ -241,7 +275,10 @@ function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd 
   actions: RowActions
   onNotice: (text: string) => void
   onAdd: (host: ConnectionHost) => void
+  /** Open the token dialog (7.60.00). */
+  onToken: () => void
 }>) {
+  const search = useRef<HTMLInputElement>(null)
   const appList = apps.data
   const appsFull = appList === undefined || appList.apps.length >= appList.limit
   const empty = summary?.empty === true
@@ -251,8 +288,12 @@ function PageBody({ list, summary, apps, view, checks, actions, onNotice, onAdd 
       {empty
         ? <ConnectGitHubHero full={appsFull} />
         : <ConnectedBody list={list} apps={apps} view={view} checks={checks} actions={actions} onNotice={onNotice} />}
+      {!empty && (
+        <AddRepositoryChooser apps={appList?.apps ?? []} appsFull={appsFull} connectionsFull={connectionsFull}
+          onToken={onToken} onFork={() => { toSearch(search) }} />
+      )}
       {/* (7.57.00: any public repository, read with the deployment's App, so once there is one) */}
-      {(appList?.apps.length ?? 0) > 0 && <PublicRepositoryPicker full={connectionsFull} onNotice={onNotice} />}
+      {(appList?.apps.length ?? 0) > 0 && <PublicRepositoryPicker full={connectionsFull} onNotice={onNotice} searchRef={search} />}
       <MoreWaysToConnect anotherApp={!empty} appsFull={appsFull} appLimit={appList?.limit ?? null}
         connectionsFull={connectionsFull} connectionLimit={list.limit} onAdd={onAdd} />
     </>
@@ -278,7 +319,8 @@ export function EngineeringConnections() {
       <ListState read={reads.connections} configured={reads.configured} />
       {list !== undefined && (
         <PageBody list={list} summary={summary} apps={reads.apps} view={reads.issues} checks={checks}
-          actions={rowActions(checks, show)} onNotice={setNotice} onAdd={(host) => { show({ kind: 'add', host }) }} />
+          actions={rowActions(checks, show)} onNotice={setNotice} onAdd={(host) => { show({ kind: 'add', host }) }}
+          onToken={() => { show({ kind: 'token' }) }} />
       )}
       {open !== null && <OpenDialog open={open} onClose={() => setOpen(null)} onNotice={setNotice} />}
     </div>

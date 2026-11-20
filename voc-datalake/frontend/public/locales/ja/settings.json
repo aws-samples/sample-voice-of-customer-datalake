@@ -1036,9 +1036,12 @@
     "waysUnset_other": "AI との働き方が未設定のユーザー {{count, number}} 人",
     "modelsBlocked_one": "このアカウントで呼び出せない AI モデル {{count, number}} 件",
     "modelsBlocked_other": "このアカウントで呼び出せない AI モデル {{count, number}} 件",
+    "tokensToReplace_one": "まもなく期限切れ、または置き換えが必要な Fine-grained トークン {{count, number}} 件",
+    "tokensToReplace_other": "まもなく期限切れ、または置き換えが必要な Fine-grained トークン {{count, number}} 件",
     "reviewSources": "ソースを確認",
     "openUsers": "ユーザーを開く",
     "openModels": "AIモデルを開く",
+    "openConnections": "GitHub接続を開く",
     "badge_one": "{{count, number}}件の確認が必要",
     "badge_other": "{{count, number}}件の確認が必要",
     "option": "{{tab}}（{{count, number}}）"
@@ -1056,9 +1059,12 @@
     "modelsDescription": "このデプロイで各ロールが実行されるハーネスと使用するモデル。変更はロールのレジストリカードで行い、次の実行から適用されます。",
     "modelsUnread": "ロールのモデルを読み込めませんでした。",
     "connectionsDescription": "エンジニアリングエージェントがリポジトリを得る場所、その費用、最初の実行までの手順。",
+    "tokensTitle": "置き換えが必要な Fine-grained トークン",
+    "tokensHint": "エージェントオーケストレーション › 接続 でそれぞれ置き換えてください。期限切れのトークンでの実行は開始時に拒否されます。",
+    "tokenUnusable": "未設定、または有効期限が不明",
     "links": {
       "connections": "エージェントオーケストレーション › 接続",
-      "connectionsHint": "GitHubを接続し、エージェントが作業するリポジトリを選ぶ",
+      "connectionsHint": "GitHubを接続し、エージェントが作業するリポジトリを選ぶ（App、Fine-grained トークン、またはフォーク経由）",
       "spend": "エージェントオーケストレーション › 費用",
       "spendHint": "各ワークフローの月間予算と実行の費用",
       "setup": "セットアップガイド",
@@ -1107,7 +1113,7 @@
       "participants": "参加者, 送信者名, 1 日の上限, 外部の人, メール送信",
       "hardCap": "厳密な上限, 予算, コスト上限, 実行を止める, 支出の上限",
       "models": "モデル, Kiro, ネイティブハーネス, Opus, Sonnet, Haiku, ロール, レジストリ",
-      "connections": "GitHub, GitHub App, リポジトリ, 接続, インストール, Issue",
+      "connections": "GitHub, GitHub App, リポジトリ, 接続, インストール, Issue, Fine-grained トークン, 個人用アクセストークン, フォーク",
       "spend": "コスト, 費用, 予算, 上限, 請求",
       "preferences": "言語, テーマ, 自分の設定, ダークモード"
     }

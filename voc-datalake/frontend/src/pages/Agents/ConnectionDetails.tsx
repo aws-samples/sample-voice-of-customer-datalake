@@ -24,6 +24,8 @@ import { useCloseOnPressOutside } from '../../hooks/useCloseOnPressOutside'
 import { placeFixedMenu } from '../../utils/fixedMenu'
 import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
 import { useAttestationText } from './connectionText'
+import { isTokenConnection } from '../../api/engineeringConnectionsApi'
+import type { TFunction } from 'i18next'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 import type { ConnectionIssues } from '../../api/issuesSourceApi'
 
@@ -79,6 +81,12 @@ function Ids({ connection, copiedKey, onCopy }: Readonly<{
   )
 }
 
+/** The credential's kind in words: a GitLab token, a fine-grained token (7.60.00), or a GitHub App. */
+function credentialName(connection: EngineeringConnection, t: TFunction<'agents'>): string {
+  if (connection.host === 'gitlab') return t('connections.kindToken')
+  return isTokenConnection(connection) ? t('connections.token.kind') : t('connections.kind')
+}
+
 function Facts({ connection, issues, labelName }: Readonly<{
   connection: EngineeringConnection; issues: ConnectionIssues | undefined; labelName: string
 }>) {
@@ -86,16 +94,18 @@ function Facts({ connection, issues, labelName }: Readonly<{
   const attestation = useAttestationText()
   const { credential } = connection
   const gitlab = connection.host === 'gitlab'
+  // (7.60.00: a fine-grained token's expiry is said as a GitLab token's)
+  const token = gitlab || isTokenConnection(connection)
   const when = formatDateTime(connection.updated_at, i18n.language, '')
   const key = credential.set ? t('connections.details.keyStored') : t('connections.details.keyMissing')
   return (
     <>
       <Fact label={t('connections.details.branch')}>{connection.default_branch}</Fact>
       <Fact label={t('connections.details.host')}>
-        {[t(`connections.hosts.${connection.host}`), gitlab ? t('connections.kindToken') : t('connections.kind')].join(' · ')}
+        {[t(`connections.hosts.${connection.host}`), credentialName(connection, t)].join(' · ')}
       </Fact>
       <Fact label={t('connections.details.key')}>{key}</Fact>
-      {gitlab && credential.expires_at !== null && (
+      {token && credential.expires_at !== null && (
         <Fact label={t('connections.details.tokenExpiry')}>{formatCalendarDay(credential.expires_at, i18n.language)}</Fact>
       )}
       <Fact label={t('connections.details.ci')}>{attestation(connection.ci_attestation)}</Fact>
