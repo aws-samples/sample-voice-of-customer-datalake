@@ -51,6 +51,7 @@ from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.category_gate import scope_for_event
 from shared.delete_audit import actor_from_event, record_delete_first, record_delete_once
 from shared.dynamo_paging import iter_query
+from shared.dynamo_values import is_whole
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -1197,10 +1198,6 @@ def _require_update_fields(body: Mapping[str, Any]) -> None:
             raise ValidationError(f'{name} must be a whole number')
 
 
-def _is_whole(value: object) -> TypeGuard[int]:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
                  answered: Callable[[], bool] = lambda: False) -> _Update:
     """The write of a PUT on ``stored``: the definition validated when the PUT changes it (a new revision when it
@@ -1217,7 +1214,7 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     _require_update_fields(body)
     expected, revision = body.get('expected_revision'), fv2.revision_of(stored)
     expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
-    if (_is_whole(expected) and expected != revision) or (_is_whole(expected_writes) and expected_writes != writes):
+    if (is_whole(expected) and expected != revision) or (is_whole(expected_writes) and expected_writes != writes):
         raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(stored))
     current = _definition(stored)
     proposed = _definition_update(stored, current, body)

@@ -50,7 +50,7 @@ function usePickNote(pick: ModelPick, harness: Props['harness']): string | null 
 
 /** A native role's other model: one of the Bedrock models this deployment enables beyond the named three (a choice
  * saved earlier that is none of them is shown, said not to be enabled). */
-function EnabledModel({ draft, onChange, enabled, disabled }: Readonly<Omit<Props, 'label' | 'defaultLabel' | 'harness'>>) {
+function EnabledModel({ draft, onChange, enabled, disabled }: Readonly<Omit<Props, 'label' | 'defaultLabel' | 'harness' | 'creditPrice'>>) {
   const { t } = useTranslation('agents')
   const id = useId()
   const models = otherModelsOn(enabled ?? [], draft.other)
@@ -74,7 +74,7 @@ function EnabledModel({ draft, onChange, enabled, disabled }: Readonly<Omit<Prop
   )
 }
 
-function OtherModel({ draft, onChange, harness, enabled, disabled }: Readonly<Omit<Props, 'label' | 'defaultLabel'>>) {
+function OtherModel({ draft, onChange, harness, enabled, disabled }: Readonly<Omit<Props, 'label' | 'defaultLabel' | 'creditPrice'>>) {
   const { t } = useTranslation('agents')
   const id = useId()
   if (harness === 'native') return <EnabledModel draft={draft} onChange={onChange} enabled={enabled} disabled={disabled} />

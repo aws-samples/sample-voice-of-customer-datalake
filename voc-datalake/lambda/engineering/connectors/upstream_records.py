@@ -13,14 +13,13 @@ carries a short one), and why there is none. An opened record is never replaced 
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Callable
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.connectors.hosts import UPSTREAM_OPENED, Unavailable, UpstreamRecord
 from engineering.connectors.identity import WORKSPACE
+from engineering.connectors.records import WritesPartition
 from engineering.rows import string_attr
 from engineering.run_links import UPSTREAM_OP, UPSTREAM_SK, upstream_view, writes_pk
 from shared.aws import is_conditional_check_failure
@@ -28,13 +27,8 @@ from shared.aws import is_conditional_check_failure
 _UNREADABLE: Final = 'The upstream pull requests\' records could not be read; retry.'
 
 
-class UpstreamRecords:
+class UpstreamRecords(WritesPartition):
     """The ``UpstreamLedger`` over voc-engineering (a low-level DynamoDB client) and ``clock``."""
-
-    def __init__(self, client: Any, table: str, clock: Callable[[], float] = time.time) -> None:
-        self._client = client
-        self._table = table
-        self._clock = clock
 
     def _run_key(self, run_id: str) -> dict[str, Any]:
         return {'pk': {'S': writes_pk(WORKSPACE, run_id)}, 'sk': {'S': UPSTREAM_SK}}

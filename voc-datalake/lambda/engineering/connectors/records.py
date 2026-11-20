@@ -156,18 +156,24 @@ class RunRecords:
 WRITE_PREFIX: Final = 'WRITE#'
 
 
-class WriteClaims:
+class WritesPartition:
+    """A store of rows in the runs' writes' partitions (``run_links.writes_pk``) of voc-engineering: a low-level DynamoDB
+    client, the table and ``clock`` (the write claims here, the upstream pull requests' records in
+    ``upstream_records.py``)."""
+
+    def __init__(self, client: Any, table: str, clock: Callable[[], float] = time.time) -> None:
+        self._client = client
+        self._table = table
+        self._clock = clock
+
+
+class WriteClaims(WritesPartition):
     """The broker's ``WriteLedger``: one create-only claim row per write key in the run's writes' partition, the
     broker's only write, taken before the host call and closed with its outcome. A row's attributes are ``pk``,
     ``sk``, ``state``, ``op``, ``at``, ``result`` and ``closed_at``, and the broker's IAM grant allows those alone
     (engineering-broker.ts ``BROKER_CLAIM_ATTRIBUTES``). A claim is taken again only after a refusal (nothing
     was written); a done write's row keeps its answer (a number, a URL, a branch and tree: never a body), so a repeat
     is answered with it. The run's pull request row (``record_pull_request``) has the same attributes."""
-
-    def __init__(self, client: Any, table: str, clock: Callable[[], float] = time.time) -> None:
-        self._client = client
-        self._table = table
-        self._clock = clock
 
     def _key(self, run_id: str, key: str) -> dict[str, Any]:
         return {'pk': {'S': writes_pk(WORKSPACE, run_id)}, 'sk': {'S': f'{WRITE_PREFIX}{key}'}}

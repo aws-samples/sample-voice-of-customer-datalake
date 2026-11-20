@@ -19,8 +19,9 @@ the run view shows all of it except ``by_sub``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Final, TypeGuard
+from typing import Any, Final
 
+from shared.dynamo_values import is_whole
 from shared.exceptions import ValidationError
 
 DECISION_ACCEPT: Final = 'accept'
@@ -60,7 +61,7 @@ def max_calls_per_run(agent: Mapping[str, Any]) -> int:
     """The agent's model-call budget per run (``budget.max_model_calls_per_run``, else the default)."""
     budget = agent.get('budget')
     value = budget.get('max_model_calls_per_run') if isinstance(budget, Mapping) else None
-    if not _is_whole(value) or not 0 < value <= MAX_MODEL_CALLS_CEILING:
+    if not is_whole(value) or not 0 < value <= MAX_MODEL_CALLS_CEILING:
         return DEFAULT_MAX_MODEL_CALLS_PER_RUN
     return value
 
@@ -70,10 +71,6 @@ def _objections(raw: object) -> list[str]:
         return []
     return [text.strip()[:MAX_OBJECTION_CHARS] for text in raw if isinstance(text, str) and text.strip()][
         :MAX_OBJECTIONS]
-
-
-def _is_whole(value: object) -> TypeGuard[int]:
-    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _verdict(raw: object) -> dict[str, Any] | None:
@@ -138,7 +135,7 @@ def allowed_actions(run: Mapping[str, Any]) -> list[str]:
     payload = run.get('needs_human')
     if not isinstance(payload, Mapping) or payload.get('reason') not in GATE_REASONS:
         return [DECISION_STOP]
-    if _is_whole(payload.get('loop_index')):
+    if is_whole(payload.get('loop_index')):
         return [DECISION_ACCEPT, DECISION_ANOTHER_ROUND, DECISION_STOP]
     return [DECISION_ACCEPT, DECISION_STOP]
 

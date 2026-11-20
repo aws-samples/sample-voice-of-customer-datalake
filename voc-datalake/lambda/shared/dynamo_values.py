@@ -12,7 +12,7 @@ text, a trimmed text, a non-empty text, a mapping, a list of strings, a pattern'
 import re
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeGuard
 
 
 def _sorted_members(members: list[Any]) -> list[Any]:
@@ -26,6 +26,11 @@ def _sorted_members(members: list[Any]) -> list[Any]:
 def item_key(item: Mapping[str, Any]) -> dict[str, str]:
     """The ``{pk, sk}`` key of a stored item (as strings)."""
     return {'pk': str(item['pk']), 'sk': str(item['sk'])}
+
+
+def is_whole(value: object) -> TypeGuard[int]:
+    """Whether ``value`` is a whole number as a JSON body or ``plain`` gives it: an int, never a bool."""
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def as_count(value: object) -> int:

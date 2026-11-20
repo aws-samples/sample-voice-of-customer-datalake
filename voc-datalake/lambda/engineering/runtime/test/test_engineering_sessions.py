@@ -194,21 +194,31 @@ def test_a_models_tokens_past_the_sessions_cap_cost_their_own_price_on_the_share
     assert (row['tokens_in'], row['usd']) == (1_000_000, Decimal('4'))
 
 
+def capped_budgets(aws: Any, max_cost_usd: float, pricing: SessionPricing,
+                   *reports: dict[str, dict[str, int]]) -> list[Any]:
+    """A run capped at ``max_cost_usd`` whose session reports each of ``reports`` in turn (its counts per model), its
+    rows priced with ``pricing``: the run's budget (``TableRunControl.budget``) after each."""
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10, max_cost_usd=max_cost_usd), now=0, flow='wf_hunt')
+    store = SessionStore(aws[1], runs, pricing, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    control, session = TableRunControl(runs), store.create(SESSION)
+    budgets: list[Any] = []
+    for tokens in reports:
+        session = store.save(replace(session, tokens=tokens))
+        budgets.append(control.budget(RUN))
+    return budgets
+
+
 def test_a_runs_cost_cap_is_spent_by_model_tokens_alone(aws):
     """The supervisor's budget path (``TableRunControl.budget``): a run whose sessions cost nothing but tokens passes
     its ``max_cost_usd`` once their price does, and its agents are held for a person."""
-    runs = RunStore(aws[1])
-    runs.start(RUN, caps=RunCaps(max_tasks=10, max_cost_usd=0.05), now=0, flow='wf_hunt')
-    store = SessionStore(aws[1], runs, SessionPricing(rates=UNPRICED), clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
-    control = TableRunControl(runs)
-    created = store.create(SESSION)
-    moved = store.save(replace(created, tokens={SONNET: {'in': 10_000, 'out': 1_000}}))   # $0.03
-    assert not control.budget(RUN).exceeded
-    store.save(replace(moved, tokens={SONNET: {'in': 20_000, 'out': 2_000}}))   # $0.06 in all
-    budget = control.budget(RUN)
-    assert (budget.exceeded, round(budget.cost_usd, 6)) == (True, 0.06)
+    before, after = capped_budgets(aws, 0.05, SessionPricing(rates=UNPRICED),
+                                   {SONNET: {'in': 10_000, 'out': 1_000}},    # $0.03
+                                   {SONNET: {'in': 20_000, 'out': 2_000}})    # $0.06 in all
+    assert not before.exceeded
+    assert (after.exceeded, round(after.cost_usd, 6)) == (True, 0.06)
     # Unpriced (the store's default), the same tokens never reach the cap: what 7.49 did.
-    assert SessionStore(aws[1], runs).pricing.tokens == NO_TOKEN_PRICES
+    assert SessionStore(aws[1], RunStore(aws[1])).pricing.tokens == NO_TOKEN_PRICES
 
 
 def test_unpriced_microvm_time_is_still_ledgered_with_no_dollars(aws):

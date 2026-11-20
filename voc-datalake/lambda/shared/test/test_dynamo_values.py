@@ -18,6 +18,7 @@ from agents import store as runtime_store
 from shared import agents_store, briefing_store, memory_store, prototype_pins
 from shared.dynamo_values import (
     as_text,
+    is_whole,
     json_count,
     mapping_or_empty,
     matches_text,
@@ -55,6 +56,14 @@ class TestTheSharedRule:
         value = {'n': [Decimal('1')]}
         plain(value)
         assert value == {'n': [Decimal('1')]}
+
+    @pytest.mark.parametrize(('value', 'expected'), [
+        (0, True), (7, True), (-3, True), (True, False), (False, False), (1.0, False), (Decimal('2'), False),
+        ('2', False), (None, False),
+    ])
+    def test_a_whole_number_is_an_int_never_a_bool(self, value, expected):
+        # (one rule for a body's or a plain value's whole numbers: the forms' save preconditions, the run decisions)
+        assert is_whole(value) is expected
 
 
 class TestAgentsRuntimeStore:

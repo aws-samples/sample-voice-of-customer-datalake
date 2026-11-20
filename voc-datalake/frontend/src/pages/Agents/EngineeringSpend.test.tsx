@@ -23,7 +23,8 @@ const { EngineeringSpend } = await import('./EngineeringSpend')
 /** A ledger total: dollars, then input and output tokens and MicroVM seconds. */
 const usage = (usd: number, [tokensIn, tokensOut, seconds] = [0, 0, 0]) =>
   ({ usd, tokens_in: tokensIn, tokens_out: tokensOut, microvm_seconds: seconds })
-const answer = (by: string, groups: { key: string }[], extra: Record<string, unknown> = {}) => ({
+/** A spend read's answer: its groups, each a key and its totals (and since 7.58.00 a Kiro session's `credits`). */
+const answer = (by: string, groups: ({ key: string } & Record<string, unknown>)[], extra: Record<string, unknown> = {}) => ({
   month: '2026-11', by, total: usage(3.5, [300_000, 40_000, 7_200]), truncated: false, groups, ...extra,
 })
 const spendPath = (query: string) => `GET /agents/engineering/spend?${query}`

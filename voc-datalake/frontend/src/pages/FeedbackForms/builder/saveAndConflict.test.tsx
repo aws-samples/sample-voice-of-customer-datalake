@@ -153,6 +153,14 @@ describe('a stale save (409, D7)', () => {
     return { user, harness, banner }
   }
 
+  /** Save mine, once the latest revision is `latest` (what the form reads again), saved as revision 6. */
+  async function saveMineOver(latest: LoadedForm) {
+    api.getForm.mockResolvedValue(latest)
+    api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form, 6)))
+    const { user, banner } = await saveIntoConflict()
+    await user.click(within(banner).getByRole('button', { name: 'Save mine' }))
+  }
+
   it('says someone else saved first (the server names them by sub, never a name), with Compare, Reload theirs and Save mine', async () => {
     useAuthStore.setState({ user: { username: 'bo', email: 'bo@example.com', groups: ['users'], sub: 'bo' } })
     const { banner } = await saveIntoConflict()
@@ -168,10 +176,7 @@ describe('a stale save (409, D7)', () => {
   })
 
   it('Save mine saves this draft over the latest revision', async () => {
-    api.getForm.mockResolvedValue({ ...stored(sampleForm({ name: 'Theirs' }), 5), meta: { ...STORED_META, revision: 5, write_count: 9 } })
-    api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form, 6)))
-    const { user, banner } = await saveIntoConflict()
-    await user.click(within(banner).getByRole('button', { name: 'Save mine' }))
+    await saveMineOver({ ...stored(sampleForm({ name: 'Theirs' }), 5), meta: { ...STORED_META, revision: 5, write_count: 9 } })
     // Over theirs: its revision and its save count, read again.
     await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, null, 9) })
     await waitFor(() => { expect(screen.queryByRole('alert')).not.toBeInTheDocument() })
@@ -179,10 +184,7 @@ describe('a stale save (409, D7)', () => {
 
   it('Save mine names what it removes from theirs once theirs is answered', async () => {
     const theirs = sampleForm({ name: 'Theirs', questions: [...sampleForm().questions, { id: 'q_more', type: 'open_text', headline: { en: 'More?' }, required: false, long: false, input_type: 'text' }] })
-    api.getForm.mockResolvedValue({ form: theirs, meta: { ...STORED_META, revision: 5, has_responses: true, can_delete_test_responses: false } })
-    api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form, 6)))
-    const { user, banner } = await saveIntoConflict()
-    await user.click(within(banner).getByRole('button', { name: 'Save mine' }))
+    await saveMineOver({ form: theirs, meta: { ...STORED_META, revision: 5, has_responses: true, can_delete_test_responses: false } })
     await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, { questions: ['q_more'] }, 5) })
   })
 

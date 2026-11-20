@@ -113,6 +113,12 @@ administrator's, behind Cognito.
   and the runtime reads the row through one table helper (`engineering/settings.py`, `runtime/handler.py`), so the
   raw-access counts stay as they were; the Registry's Save model row is a `StickyActionBar`; and the cost rollup's
   test reads its concurrently started batches in any order (it depended on thread timing, before 7.58.00 too).
+- The merged batch's validate findings: one whole-number check (`shared/dynamo_values.py` `is_whole`) for the forms'
+  save preconditions and the run decisions; one `model` check for Run now and Restart
+  (`agents_engineering_run_routes.requested_model`); one base for the stores of the runs' writes' partitions
+  (`connectors/records.py` `WritesPartition`); `effort.claude_effort` sends no level Claude does not take; and three
+  supervisor tests wait for a crashed agent's harness to end before the tick that continues it (on a loaded machine
+  the tick came first and started no continuation; the race predates 7.58.00).
 - The coverage floor: 7.57.00's public-repository and fork code is tested to it (the token function's public
   actions, a fork's upstream reads and readiness's fork ports: 97 %, 100 % and 86 %), and three SPA files are
   back over 80 % and out of the baseline (the forms' stats schema, the step palette, the scraper editor's parts).

@@ -58,6 +58,16 @@ def _until(world: World, now: int, done: Callable[[AgentSession], bool], agent_i
     raise AssertionError(f'the session never got there: {world.session(agent_id)}')
 
 
+def _ended(world: World, session: AgentSession) -> None:
+    """Wait for the session's harness to end, its result there for the supervisor's next poll: the one tick a test
+    makes next sees the crash however slowly a loaded machine runs the process (it is not seen while it runs)."""
+    for _ in range(1500):
+        if world.runtime.poll_exec(session.vm, str(session.exec_id)) is not None:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f'the harness never ended: {session}')
+
+
 def _assert_terminated(world: World, session: AgentSession) -> None:
     assert world.runtime.state_of(session.vm) == 'terminated'
 
@@ -243,7 +253,7 @@ def test_a_continuation_the_service_has_no_room_for_is_held_and_continued_once_t
 def test_a_continuation_that_never_finds_room_goes_to_a_person_after_a_bounded_number_of_ticks(
         world: World, monkeypatch: pytest.MonkeyPatch):
     world.launch(code='import sys; sys.exit(1)')
-    _until(world, 1000, lambda s: s.status == 'working')
+    _ended(world, _until(world, 1000, lambda s: s.status == 'working'))   # (each tick below counts one: none is lost)
 
     def never(_spec: AgentSpec) -> RuntimeSession:
         raise SessionsFull('AgentCore has no room for a new session now')
@@ -368,9 +378,10 @@ def test_a_session_whose_stop_fails_is_stopped_again_every_tick_and_its_time_cou
 
 
 def _crashing_with_its_starts_recorded(world: World, monkeypatch: pytest.MonkeyPatch) -> list[RuntimeSession]:
-    """A working agent about to crash, and every session the runtime starts from now on (its continuation's)."""
+    """A working agent that has crashed (its harness ended: the next tick continues it), and every session the runtime
+    starts from now on (its continuation's)."""
     world.launch(code='import sys; sys.exit(1)')
-    _until(world, 1000, lambda s: s.status == 'working')
+    _ended(world, _until(world, 1000, lambda s: s.status == 'working'))
     started: list[RuntimeSession] = []
     real_run = world.runtime.run
 

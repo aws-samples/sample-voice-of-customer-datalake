@@ -47,7 +47,7 @@ route here, the restart included, refuses it.
   afresh, on the ``same`` commit or the repository's ``head``. 409 while the run is live (restart an agent there with
   the ``restart`` signal); ``confirm: true`` is required. The child runs on the parent's models (its start's
   ``model_choice`` and the roles' own), unless ``model`` (7.58.00) names one for every role of the child: Run now's
-  field and checks (``agents_handler._run_model``; null or absent keeps the parent's), so a step Kiro stopped for its
+  field and checks (``requested_model``; null or absent keeps the parent's), so a step Kiro stopped for its
   model goes on with another. The child's id is minted here: an answer that could not be read is a 503 naming it, so
   the person opens it rather than restarting twice.
 
@@ -482,9 +482,11 @@ class Restart:
     model: str = ''
 
 
-def _restart_model(body: Mapping[str, Any]) -> str:
-    """A restart's optional ``model``, as Run now's (``model_choices.check``: its shape, and a Bedrock model this
-    deployment grants and prices while a role runs on the native harness); 400 otherwise."""
+def requested_model(body: Mapping[str, Any]) -> str:
+    """A request's optional ``model`` (7.58.00): one model for every role of the run, Run now's and a restart's
+    (``agents_handler``'s start routes and ``parse_restart``; ``model_choices.check``: ``auto``, ``opus``, ``sonnet``,
+    ``haiku`` or another model id, and a Bedrock model this deployment grants and prices while a role runs on the
+    native harness), '' for each role's own; 400 otherwise. The run's start checks it again."""
     from engineering.model_choices import check
     from engineering.runtime.harness.model_choice import ModelChoiceError
     from engineering.runtime.harness_switch import KIRO_ROLES
@@ -512,7 +514,7 @@ def parse_restart(body: Mapping[str, Any]) -> Restart:
                               'unfinished task)')
     if body.get('confirm') is not True:
         raise ValidationError('a restart starts a new run of this one: send confirm: true')
-    return Restart(str(mode), tuple(dict.fromkeys(agents or ())), str(base), _restart_model(body))
+    return Restart(str(mode), tuple(dict.fromkeys(agents or ())), str(base), requested_model(body))
 
 
 @app.post('/agents/engineering/<run_id>/restart')

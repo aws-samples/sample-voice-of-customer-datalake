@@ -84,6 +84,19 @@ def _resumed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
     handler.start_handler(dict(RESUME), None)
 
+
+def _seeded_from(monkeypatch: pytest.MonkeyPatch, fix: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """The fixer's seed in the child, once the parent's last checkpoint is ``checkpoint`` and the parent resumed."""
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{checkpoint_prefix(PARENT, "fixer-2", COMMIT, 1)}000003-cd.json',
+                  Body=json.dumps({'plan': [], **checkpoint}))
+    _resumed(monkeypatch)
+    _recording(monkeypatch)
+    handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
+    record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
+    assert record is not None
+    return record
+
 def test_a_resume_starts_a_child_with_its_parent_its_inherited_steps_and_its_runs_list_row(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
@@ -155,15 +168,9 @@ def test_a_parents_saved_kiro_session_is_copied_beside_its_seed_for_the_childs_s
     s3 = boto3.client('s3', region_name='us-east-1')
     state = f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 1, "kiro")}000003-cd.tgz'
     s3.put_object(Bucket=WORKSPACE_BUCKET, Key=state, Body=b'packed kiro session')
-    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{checkpoint_prefix(PARENT, "fixer-2", COMMIT, 1)}000003-cd.json',
-                  Body=json.dumps({'position': {'turn': 5, 'task_id': fix, 'kiro': {'session_id': 'sess_parent',
-                                                                                    'state': state}},
-                                   'plan': [], 'notes': 'on kiro', 'patch': None}))
-    _resumed(monkeypatch)
-    _recording(monkeypatch)
-    handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
-    record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
-    assert record is not None
+    record = _seeded_from(monkeypatch, fix, {
+        'position': {'turn': 5, 'task_id': fix, 'kiro': {'session_id': 'sess_parent', 'state': state}},
+        'notes': 'on kiro', 'patch': None})
     assert record['kiro'] == {'session_id': 'sess_parent', 'state': seed.kiro_key(CHILD, fix)}
     assert s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.kiro_key(CHILD, fix))['Body'].read() == b'packed kiro session'
 
@@ -183,14 +190,8 @@ def test_a_parent_checkpoints_tree_outside_its_attempts_own_patches_is_no_tree(
     _store, _hunt, fix = _parent(monkeypatch)
     s3 = boto3.client('s3', region_name='us-east-1')
     s3.put_object(Bucket=WORKSPACE_BUCKET, Key=tree, Body=b'diff --git a/secret b/secret\n')
-    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{checkpoint_prefix(PARENT, "fixer-2", COMMIT, 1)}000003-cd.json',
-                  Body=json.dumps({'position': {'turn': 5, 'task_id': fix}, 'plan': [], 'notes': 'elsewhere',
-                                   'patch': tree}))
-    _resumed(monkeypatch)
-    _recording(monkeypatch)
-    handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
-    record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
-    assert record is not None
+    record = _seeded_from(monkeypatch, fix, {'position': {'turn': 5, 'task_id': fix}, 'notes': 'elsewhere',
+                                             'patch': tree})
     assert (record['checkpoint']['notes'], record.get('patch_key') or '') == ('elsewhere', '')
 
 

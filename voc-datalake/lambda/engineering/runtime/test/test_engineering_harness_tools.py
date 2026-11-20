@@ -321,6 +321,12 @@ class TestClaudeThinkingIsShown:
         assert 'output_config' not in older
         assert older['thinking'] == {'type': 'adaptive', 'display': 'summarized'}
 
+    def test_a_level_claude_does_not_take_is_never_sent(self, monkeypatch):
+        from engineering.runtime.harness import effort
+        monkeypatch.setitem(effort.CLAUDE_EFFORT, 'global.anthropic.claude-opus-5-5', 'extreme')
+        assert effort.claude_effort('global.anthropic.claude-opus-5-5') is None
+        assert effort.claude_effort('global.anthropic.claude-sonnet-5-5') == 'high'
+
     def test_a_model_that_does_not_think_adaptively_is_asked_for_neither(self):
         # (Q17: an older Claude refuses adaptive thinking; the launch runs none on this harness, and none is asked)
         from engineering.runtime.harness.converse_loop import model_request_fields

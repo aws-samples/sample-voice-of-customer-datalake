@@ -23,5 +23,7 @@ CLAUDE_EFFORT: Final = {
 
 
 def claude_effort(model_id: str) -> str | None:
-    """The effort ``model_id`` runs at, None for a model this table does not name."""
-    return CLAUDE_EFFORT.get(model_id)
+    """The effort ``model_id`` runs at, None for a model this table does not name (or names at a level Claude does not
+    take, which no request carries)."""
+    level = CLAUDE_EFFORT.get(model_id)
+    return level if level in EFFORT_LEVELS else None

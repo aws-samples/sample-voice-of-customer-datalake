@@ -27,11 +27,11 @@ from engineering.runtime.caps import (
 )
 from engineering.runtime.harness.kiro import METADATA_METHOD, TurnCredits, session_credits, turn_credits
 from engineering.runtime.interface import MICRO_CREDITS, RuntimeRefused
-from engineering.runtime.runs import RunCaps, RunStore, TableRunControl
+from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import SessionStore
 from engineering.runtime.test.harness_fakes import World, world
 from engineering.runtime.test.test_engineering_kiro_harness import _adapter, _events, _fake, _finish, _transcribed
-from engineering.runtime.test.test_engineering_sessions import KEY, SESSION, _ledger
+from engineering.runtime.test.test_engineering_sessions import KEY, SESSION, _ledger, capped_budgets
 from engineering.spend import Usage, month_spend, token_deltas
 
 #: kiro-cli's own numbers, as the probes saw them (v2's on Haiku 5.5 at its default model, v3's on Haiku 5.5).
@@ -189,19 +189,13 @@ def test_a_kiro_sessions_credits_are_ledgered_at_the_price_per_credit_on_its_row
 def test_a_runs_cost_cap_is_spent_by_a_kiro_sessions_credits(aws):
     """The supervisor's budget path (``TableRunControl.budget``, as for tokens: its agents are then held for a person):
     a Kiro run passes its ``max_cost_usd`` once its credits' price does."""
-    runs = RunStore(aws[1])
-    runs.start(SESSION.run_id, caps=RunCaps(max_tasks=10, max_cost_usd=0.1), now=0, flow='wf_hunt')
-    store = SessionStore(aws[1], runs, SessionPricing(rates=UNPRICED),   # (the default price per credit: $0.04)
-                         clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
-    control = TableRunControl(runs)
-    created = store.create(SESSION)
-    moved = store.save(replace(created, tokens={'kiro:auto': {'in': 0, 'out': 0, MICRO_CREDITS: 2_000_000}}))   # $0.08
-    assert not control.budget(SESSION.run_id).exceeded
-    store.save(replace(moved, tokens={'kiro:auto': {'in': 0, 'out': 0, MICRO_CREDITS: 3_000_000}}))   # $0.12 in all
-    budget = control.budget(SESSION.run_id)
-    assert (budget.exceeded, round(budget.cost_usd, 6)) == (True, 0.12)
+    before, after = capped_budgets(aws, 0.1, SessionPricing(rates=UNPRICED),   # (the default price per credit: $0.04)
+                                   {'kiro:auto': {'in': 0, 'out': 0, MICRO_CREDITS: 2_000_000}},    # $0.08
+                                   {'kiro:auto': {'in': 0, 'out': 0, MICRO_CREDITS: 3_000_000}})    # $0.12 in all
+    assert not before.exceeded
+    assert (after.exceeded, round(after.cost_usd, 6)) == (True, 0.12)
     # Unpriced (the store's default), the same credits never reach the cap.
-    assert SessionStore(aws[1], runs).pricing.credit_price == 0
+    assert SessionStore(aws[1], RunStore(aws[1])).pricing.credit_price == 0
 
 
 # -- the price per credit --------------------------------------------------------------------------------------------
