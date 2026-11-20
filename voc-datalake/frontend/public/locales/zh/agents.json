@@ -926,6 +926,7 @@
     "tokensIn": "输入令牌",
     "tokensOut": "输出令牌",
     "microvm": "MicroVM 时间",
+    "credits": "Kiro 积分",
     "budget": "月度预算",
     "budgetHint": "每个工作流当前的月度预算，以及本月已花费的比例（会话时间和模型令牌）。",
     "budgetShare": "{{percent}}%",
@@ -1051,13 +1052,7 @@
       },
       "approval": "安装需要所有者批准。批准后，请打开 智能体编排 → 连接，并在 App 上使用“添加仓库”来保存其仓库。",
       "noState": "GitHub 返回时没有带上本部署的链接，因此未保存任何内容。请打开 智能体编排 → 连接，并在 App 上使用“检查安装”或“添加仓库”。",
-      "authorizedTitle": "GitHub 授权",
-      "authorizing": "正在保存你的授权…",
-      "authorizedBody": "已授权为 @{{login}}。",
-      "authorizedUse": "平台只将其用于一件事：在我们的关卡通过后，你的 fork 连接上的运行在上游创建的 pull request。",
-      "authorizeDeclined": "授权在 GitHub 上被拒绝：未保存任何内容。",
-      "forkConnected": "已连接 fork：{{repository}}，{{upstream}} 的 fork。",
-      "noAuthorizeCode": "此页面需要你授权 App 后 GitHub 返回的链接。请从 智能体编排 → 连接 重新开始。"
+      "forkConnected": "已连接 fork：{{repository}}，{{upstream}} 的 fork。"
     },
     "title": "代码仓库连接",
     "intro": "工程智能体在哪里工作：每个仓库、它们如何访问它，以及是否允许推送。",
@@ -1288,9 +1283,15 @@
       "badge": "{{upstream}} 的 fork",
       "owner": "所有者：{{owner}}",
       "licence": "已确认的许可证：{{licence}}",
-      "outcome": "运行以 {{upstream}} 上一键可开的拉取请求结束：{{owner}} 在 GitHub 上点击 Create，或授权后由应用代其打开。只有上游的维护者会合并它。",
-      "assisted": "为 AI 辅助的运行也创建上游 pull request",
-      "ownerOnly": "只有连接的所有者 {{owner}} 可以更改此项。"
+      "outcome": "运行以 {{upstream}} 上一键可开的拉取请求结束：{{owner}} 在 GitHub 上点击 Create。只有上游的维护者会合并它。",
+      "ownerOnly": "只有连接的所有者 {{owner}} 可以重新确认上游的许可证。",
+      "acknowledge": "确认当前许可证…",
+      "licenceReading": "正在 GitHub 上读取上游的许可证…",
+      "licenceUnread": "无法在 GitHub 上读取上游的许可证：请重试。",
+      "licenceNone": "{{upstream}} 现在没有 GitHub 能识别的许可证：不接受来自这里的贡献。",
+      "licenceNow": "{{upstream}} 当前的许可证：{{licence}}。",
+      "licenceUnchanged": "与你确认的相同。",
+      "licenceConfirm": "确认 {{licence}}"
     },
     "public": {
       "title": "添加公开仓库",
@@ -1336,45 +1337,15 @@
       "step2": "让智能体推送到你的分叉",
       "step2Hint": "在你的分叉上安装应用，只选择该仓库。你返回时应用会检测到分叉。",
       "installOnFork": "在你的分叉上安装应用",
-      "step3": "可选：代你打开拉取请求",
-      "step3Hint": "通过“以我的身份授权”，应用会代你在 {{upstream}} 上打开每个拉取请求。不授权时，每次运行的拉取请求也只需一键：你在 GitHub 上点击 Create。",
       "stepTitle": "{{number}}. {{title}}",
       "statusDone": "已完成",
       "statusTodo": "待完成",
-      "statusOptional": "可选",
       "cardTitle": "为 {{upstream}} 做贡献",
       "cardIntro": "上游仓库属于 {{owner}}；分叉及其拉取请求属于你。",
       "summaryReads": "读取：{{upstream}}（公开，只读）。",
       "summaryPushes": "智能体推送到：{{fork}}（你的分叉）。",
       "summaryPushesPending": "智能体推送到：你的分叉（连接后）。",
-      "summaryPullRequests": "发往 {{upstream}} 的拉取请求来自：{{account}}（由你点击 Create，或授权后由应用代你打开）。",
-      "summaryPullRequestsPending": "发往 {{upstream}} 的拉取请求来自你的分叉（由你点击 Create，或授权后由应用代你打开）。",
-      "step3NoClient": "请先设置应用的 OAuth 客户端：{{slug}} 卡片上的“设置 App 的 OAuth 客户端…”。"
-    },
-    "authorization": {
-      "noClient": "要代你向上游打开拉取请求，应用需要它的 OAuth 客户端，但这里未存储。没有它，每个拉取请求也只需一键。",
-      "setClient": "设置 App 的 OAuth 客户端…",
-      "reading": "正在读取你的授权…",
-      "unreadable": "无法读取你的 GitHub 授权。",
-      "needed": "可选：以你的身份授权应用，它会代你打开你的分叉向上游的拉取请求。不授权时，每个拉取请求也只需一键。",
-      "authorize": "以我的身份授权",
-      "as": "已授权为 @{{login}}",
-      "remove": "移除我的授权",
-      "removeTitle": "要移除你对 {{slug}} 的授权吗？",
-      "removeMessage": "平台会忘记你的授权：应用不再代你打开你的分叉向上游的拉取请求，每次运行的拉取请求在 GitHub 上一键即可创建。若要在 GitHub 上也撤销：Settings → Applications → Authorized GitHub Apps。",
-      "removeConfirm": "移除",
-      "removed": "你对 {{slug}} 的授权已移除。",
-      "clientTitle": "{{slug}} 的 OAuth 客户端",
-      "clientDescription": "加密保存在服务器上，不会再次显示。",
-      "clientHint": "在 GitHub 上：Settings → Developer settings → GitHub Apps → 该 App → Generate a new client secret。客户端 ID 在同一页面。",
-      "callbackHint": "在同一页面添加此 Callback URL：",
-      "clientId": "客户端 ID",
-      "clientIdInvalid": "GitHub 显示的客户端 ID（字母、数字和点）。",
-      "clientSecret": "客户端密钥",
-      "clientSecretHint": "只粘贴一次；不会再次显示。",
-      "clientSecretInvalid": "请粘贴 GitHub 生成的客户端密钥。",
-      "clientSave": "保存客户端",
-      "clientSaved": "{{slug}} 的 OAuth 客户端已保存。"
+      "summaryPullRequests": "发往 {{upstream}} 的拉取请求来自你：运行以一个一键链接结束，由你在 GitHub 上点击 Create。"
     }
   },
   "skills": {
@@ -1796,29 +1767,6 @@
     "answer": "你的消息",
     "bytes": "{{used, number}} / {{max, number}} 字节",
     "send": "发送",
-    "board": {
-      "post": "发布任务",
-      "role": "角色",
-      "title": "标题",
-      "instructions": "要做什么",
-      "postSubmit": "发布",
-      "posted": "已发布。",
-      "controls": "任务 {{task}}",
-      "take": "接手",
-      "takeOver": "接管",
-      "moveTo": "移至{{state}}",
-      "block": "阻止",
-      "priority": "优先级",
-      "setPriority": "设置优先级",
-      "reason": "原因",
-      "blockSubmit": "阻止该任务",
-      "takeOverTitle": "接管此任务?",
-      "takeOverMessage": "另一人正在处理 ({{holder}}):接管后归您,对方的操作会被拒绝。",
-      "duplicate": "看板上已有相同的任务:没有发布新任务。",
-      "blockOverTitle": "阻止此任务?",
-      "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。",
-      "release": "交还给代理"
-    },
     "reports": {
       "title": "报告：{{subject}}",
       "version": "版本",
@@ -1841,6 +1789,7 @@
     "notFound": "找不到工程运行",
     "notFoundHint": "请检查运行 ID。只有在开启了工程智能体的部署中，且只对能看到所有类别的人，才会显示工程运行。",
     "modelTokens": "{{model}}：输入 {{input, number}}，输出 {{output, number}}",
+    "modelCredits": "{{model}}：{{credits, number}} 个 Kiro 积分（{{cost}}）",
     "agentStatus": "{{agent}}：{{status}}",
     "agentNotApplied": "{{agent}}：{{status}}（未应用）",
     "status": {
@@ -1958,7 +1907,6 @@
       "sandbox": "会话沙箱",
       "kiro": "Kiro 运行环境",
       "fork": "Fork",
-      "user_authorization": "所有者的 GitHub 授权",
       "upstream_pr": "上游 pull request"
     },
     "required": "运行所需"
@@ -2234,7 +2182,9 @@
         "head": "仓库当前的最新状态（变基；冲突交给智能体处理）"
       },
       "agents": "智能体",
-      "agentsHint": "未勾选任何项：所有未完成的任务。"
+      "agentsHint": "未勾选任何项：所有未完成的任务。",
+      "model": "新运行的模型",
+      "modelDefault": "与本次运行相同的模型"
     },
     "header": {
       "cost": "目前费用：{{cost}}",
@@ -2878,7 +2828,6 @@
       "runsNative": "此部署在原生 Harness（Amazon Bedrock）上运行该角色：运行在 {{model}}（{{id}}）上。",
       "nextRun": "运行开始时会记录模型，因此更改从下一次运行起生效；以自己的模型启动的运行，所有角色都在该模型上运行。",
       "changed": "由 {{who}} 于 {{at}} 更改。",
-      "template": "其模板指定 {{model}}。",
       "save": "保存模型",
       "saved": "已保存。",
       "failed": "无法保存模型。请重试。",
@@ -3052,6 +3001,7 @@
   },
   "modelChoice": {
     "auto": "Auto",
+    "kiroCredits": "按每个 Kiro 积分 {{price}} 计费，计入成本上限。",
     "onHarness": "{{model}} · {{harness}}",
     "harness": {
       "native": "原生",
@@ -3067,13 +3017,17 @@
     "notes": {
       "auto": "Kiro 按任务选择模型。仅 Kiro：在原生 Harness 上运行该角色的默认模型。",
       "named": "两种 Harness 上均为 {{model}}：Kiro 上为 {{kiro}}，原生 Harness（Amazon Bedrock）上为 {{bedrock}}。",
-      "other": "你输入的模型 ID，在该角色运行的 Harness 上按原样使用。"
+      "other": "你输入的模型 ID，在该角色运行的 Harness 上按原样使用。",
+      "otherNative": "此部署启用并定价的其他 Bedrock 模型，从列表中选择。"
     },
     "other": {
       "label": "模型 ID",
+      "enabledLabel": "已启用的模型",
+      "choose": "选择模型…",
+      "noneEnabled": "此部署未启用其他模型。管理员可通过 -c engineeringModelPrices 添加（docs/deployment.md）。",
       "hint": {
         "kiro": "Kiro 模型 ID，即 `kiro-cli chat --list-models` 列出的 ID（例如 claude-sonnet-5.5）。",
-        "native": "此部署启用的 Bedrock 模型或推理配置文件 ID（例如 global.anthropic.claude-sonnet-5-5）。",
+        "native": "除上面三个之外，此部署启用并定价的 Bedrock 模型。管理员可通过 -c engineeringModelPrices 添加（docs/deployment.md）。",
         "any": "Kiro 上的角色填 Kiro 模型 ID，即 `kiro-cli chat --list-models` 列出的 ID（例如 claude-sonnet-5.5）；原生 Harness 上的角色填此部署启用的 Bedrock 模型 ID（例如 global.anthropic.claude-sonnet-5-5）。"
       }
     },

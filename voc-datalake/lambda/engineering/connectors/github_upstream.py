@@ -5,22 +5,16 @@ Reads, with the fork's own installation token for ``metadata: read`` (the upstre
 reader reads them: ``GitHubHost.public_get``): the upstream's facts (archived, licence, topics), its opt-out labels,
 its CONTRIBUTING file and pull request template (``upstream.CONTRIBUTING_PATHS``, ``upstream.TEMPLATE_PATHS``, each at
 most ``upstream.MAX_FILE_BYTES``), an open upstream pull request from the fork's branch, and the run's pull request on
-the fork. At most ``1 + 2 + 3 + 6`` requests for the facts.
-
-The one write is the upstream pull request (``open``): ``POST /repos/<upstream>/pulls`` with ``head`` the fork's
-``<owner>:<branch>``, ``base`` the upstream's default branch, ready for review (``draft: false``) and
-``maintainer_can_modify: true``, sent once with the connection owner's user token in its ``Authorization`` header and
-nowhere else: no other request ever carries that token. A refusal GitHub answers (403, 404, 422) wrote nothing and is
-``UpstreamHostRefused``, naming the status, never GitHub's text.
+the fork. At most ``1 + 2 + 3 + 6`` requests for the facts. No write: the person opens the upstream pull request on
+GitHub from its one-click link (7.58.00; ``upstream_pr.py``).
 """
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Final
 from urllib.parse import quote
 
 from engineering.connectors.credentials import Credential, GitHubAppCredential
-from engineering.connectors.github import RAW_ACCEPT, GitHubHost, first_pull_request, open_from, pull_request_ref
+from engineering.connectors.github import RAW_ACCEPT, GitHubHost, first_pull_request, open_from
 from engineering.connectors.hosts import (
     FORK,
     REPOSITORY_KIND,
@@ -28,7 +22,6 @@ from engineering.connectors.hosts import (
     ForkPullRequest,
     HostError,
     NotFound,
-    OwnerToken,
     PullRequestRef,
     UpstreamFacts,
 )
@@ -43,20 +36,6 @@ from engineering.connectors.upstream import (
     facts_of,
     opt_out,
 )
-from engineering.connectors.write_policy import WriteRefused
-
-#: What GitHub's refusal of the app's upstream pull request says, by status (nothing was written; the run keeps the
-#: one-click link, upstream_pr.py).
-REFUSALS: Final = {
-    403: ('GitHub answered 403 for {upstream}: the App is not installed there, so its user authorization does not '
-          'reach it'),
-    404: 'GitHub answered 404 for {upstream}: the repository or the fork\'s branch is not there',
-    422: 'GitHub answered 422 for {upstream}: one may already be open from this branch, or it has no change',
-}
-
-
-class UpstreamHostRefused(WriteRefused):
-    """GitHub refused the upstream pull request (403, 404, 422): nothing was written."""
 
 
 class GitHubUpstream:
@@ -123,15 +102,3 @@ class GitHubUpstream:
         data = json_of(response)
         return ForkPullRequest(title=text_or_empty(data, 'title'), body=text_or_empty(data, 'body'),
                                open=dig(data, 'state') == 'open' and dig(data, 'merged') is not True)
-
-    def open(self, connection_id: str, owner: OwnerToken, branch: str, title: str, body: str) -> PullRequestRef:
-        credential, fork = self._fork(connection_id)
-        try:
-            created = self._github.open_upstream_pull_request(owner.token, fork.upstream, f'{credential.owner}:{branch}',
-                                                              fork.upstream_default_branch, title, body)
-        except HostError as error:
-            status = getattr(error, 'status', None)
-            if status in REFUSALS:
-                raise UpstreamHostRefused(REFUSALS[status].format(upstream=fork.upstream)) from None
-            raise
-        return pull_request_ref(json_of(created))

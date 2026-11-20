@@ -11,16 +11,15 @@ import pytest
 
 from engineering.connectors.credentials import CredentialUnusable, parse_credential
 from engineering.connectors.github import GitHubHost
-from engineering.connectors.github_upstream import GitHubUpstream, UpstreamHostRefused
-from engineering.connectors.hosts import FORK, PUBLIC_READ, ForkFacts, InvalidTarget, OwnerToken
+from engineering.connectors.github_upstream import GitHubUpstream
+from engineering.connectors.hosts import FORK, PUBLIC_READ, ForkFacts, InvalidTarget
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
-from engineering.connectors.test.test_github import TOKENS, Clock, FakeGitHub, answer
+from engineering.connectors.test.test_github import Clock, FakeGitHub, answer
 
 UPSTREAM = 'upstream-org/refund-service'
 FORK_REPO = '/repos/example-org/refund-service'
 OWNER_HASH = 'b' * 64
-OWNER_GHU = 'ghu_ownersTokenForTests00000000001'
-FACTS = ForkFacts(upstream=UPSTREAM, upstream_default_branch='main', owner=OWNER_HASH, licence='MIT', app_id=APP_ID,
+FACTS = ForkFacts(upstream=UPSTREAM, upstream_default_branch='main', owner=OWNER_HASH, licence='MIT',
                   repository='example-org/refund-service')
 
 
@@ -70,8 +69,6 @@ def test_a_public_read_is_of_a_repository_alone() -> None:
     host = GitHubHost(lambda _: fork_credential(), FakeGitHub(), clock=Clock())
     with pytest.raises(InvalidTarget):
         host.public_get('conn-1', '/user', 'a read')
-    with pytest.raises(InvalidTarget):
-        host.open_upstream_pull_request(OWNER_GHU, 'not a repository', 'o:b', 'main', 't', 'b')
 
 
 def upstream_api() -> FakeGitHub:
@@ -86,10 +83,7 @@ def upstream_api() -> FakeGitHub:
                 lambda _: replace(answer(200), body=contributing))
             .on('GET', f'/repos/{UPSTREAM}/contents/.github/pull_request_template.md', answer(404, {}))
             .on('GET', f'/repos/{UPSTREAM}/contents/.github/PULL_REQUEST_TEMPLATE.md',
-                lambda _: replace(answer(200), body=b'## Description\n'))
-            .on('POST', f'/repos/{UPSTREAM}/pulls', answer(201, {
-                'number': 314, 'html_url': f'https://github.com/{UPSTREAM}/pull/314',
-                'head': {'ref': 'voc-agent/x'}, 'base': {'ref': 'main'}})))
+                lambda _: replace(answer(200), body=b'## Description\n')))
 
 
 def test_the_upstreams_facts_template_and_contributing_are_read_with_the_forks_token() -> None:
@@ -98,39 +92,12 @@ def test_the_upstreams_facts_template_and_contributing_are_read_with_the_forks_t
     found = GitHubUpstream(lambda _: fork_credential(), github).facts('conn-1')
     assert (found.opt_out, found.template, found.contributing.path) == ('no-ai-prs', '## Description\n',
                                                                        'CONTRIBUTING.md')
-    assert all(not sent.headers['Authorization'].endswith(OWNER_GHU) for sent in api.sent)
-
-
-def test_the_owners_token_is_sent_in_the_upstream_pull_request_alone() -> None:
-    api = upstream_api()
-    github = GitHubHost(lambda _: fork_credential(), api, clock=Clock())
-    upstream = GitHubUpstream(lambda _: fork_credential(), github)
-    upstream.facts('conn-1')
-    ref = upstream.open('conn-1', OwnerToken(token=OWNER_GHU, login='casey-dev'), 'voc-agent/x', 'Fix', 'Body')
-    assert ref.number == 314
-    carrying = [(sent.method, sent.path) for sent in api.sent if sent.headers['Authorization'] == f'Bearer {OWNER_GHU}']
-    assert carrying == [('POST', f'/repos/{UPSTREAM}/pulls')]
-    [sent] = [sent for sent in api.sent if sent.method == 'POST' and sent.path.endswith('/pulls')]
-    assert sent.body == {'title': 'Fix', 'body': 'Body', 'head': 'example-org:voc-agent/x', 'base': 'main',
-                         'draft': False, 'maintainer_can_modify': True}
-    assert TOKENS not in [path for _, path in carrying]
-
-
-@pytest.mark.parametrize('status', [403, 404, 422])
-def test_a_refusal_github_answers_wrote_nothing_and_says_so(status: int) -> None:
-    api = FakeGitHub().on('POST', f'/repos/{UPSTREAM}/pulls', answer(status, {'message': 'Resource not accessible'}))
-    upstream = GitHubUpstream(lambda _: fork_credential(), GitHubHost(lambda _: fork_credential(), api, clock=Clock()))
-    with pytest.raises(UpstreamHostRefused) as refused:
-        upstream.open('conn-1', OwnerToken(token=OWNER_GHU, login='c'), 'voc-agent/x', 'Fix', 'Body')
-    assert str(status) in refused.value.reason
-    assert 'Resource not accessible' not in refused.value.reason
 
 
 def _value(**change: object) -> str:
     value: dict[str, object] = {'kind': FORK, 'app_id': APP_ID, 'installation_id': INSTALLATION_ID,
                                 'repository': 'example-org/refund-service', 'key': 'app', 'upstream': UPSTREAM,
-                                'upstream_default_branch': 'main', 'owner': OWNER_HASH, 'licence': 'MIT',
-                                'upstream_pr_assisted': False, **change}
+                                'upstream_default_branch': 'main', 'owner': OWNER_HASH, 'licence': 'MIT', **change}
     return json.dumps({name: item for name, item in value.items() if item is not None})
 
 
@@ -142,13 +109,13 @@ def test_a_fork_and_a_public_credential_are_read_with_their_kind() -> None:
     fork = parse_credential(_value(), keys)
     assert (fork.kind, fork.fork) == (FORK, FACTS)
     public = parse_credential(_value(kind=PUBLIC_READ, upstream=None, upstream_default_branch=None, owner=None,
-                                     licence=None, upstream_pr_assisted=None), keys)
+                                     licence=None), keys)
     assert (public.kind, public.fork) == (PUBLIC_READ, None)
 
 
 @pytest.mark.parametrize('change', [
     {'kind': 'admin'}, {'key': None, 'private_key': 'x'}, {'owner': 'person-sub-1'}, {'upstream': '../x'},
-    {'licence': ''}, {'upstream_pr_assisted': 'yes'}, {'upstream_default_branch': ''},
+    {'licence': ''}, {'upstream_default_branch': ''},
 ])
 def test_a_fork_credential_off_its_shape_is_unusable_failing_closed(change: dict[str, object]) -> None:
     with pytest.raises(CredentialUnusable):

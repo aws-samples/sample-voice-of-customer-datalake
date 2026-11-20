@@ -14,7 +14,6 @@ import { createEngineeringAppTokens } from './engineering-app-tokens';
 import { createEngineeringIssuesConfig, issuesConfigDeployed } from './engineering-issues-config';
 import { EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { EngineeringBus } from './engineering-bus';
-import { createEngineeringUserAuth } from './engineering-user-auth';
 import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
 
 export interface ProcessingEngineeringProps {
@@ -37,9 +36,8 @@ export interface ProcessingEngineeringProps {
 }
 
 /**
- * The broker, the GitHub Apps' token function (7.45.00, engineering-app-tokens.ts: it shares the broker's signing layer),
- * the user authorizations' code exchange (7.57.00, engineering-user-auth.ts) and the bus (with the flag only), then the
- * runtime, which the peers wire to them.
+ * The broker, the GitHub Apps' token function (7.45.00, engineering-app-tokens.ts: it shares the broker's signing layer)
+ * and the bus (with the flag only), then the runtime, which the peers wire to them.
  */
 export function addProcessingEngineering(scope: Construct, props: ProcessingEngineeringProps): void {
   const { uniqueName, layer, kmsKey, roleNamePattern } = props;
@@ -57,9 +55,6 @@ export function addProcessingEngineering(scope: Construct, props: ProcessingEngi
     createEngineeringAppTokens(scope, {
       uniqueName, layer, signingLayer: broker.signingLayer, kmsKey, deploymentPrefix: props.deploymentPrefix,
     });
-    // The GitHub App user authorizations' code exchange (7.57.00, engineering-user-auth.ts): the upstream pull request's
-    // person, whose token only the broker reads.
-    createEngineeringUserAuth(scope, { uniqueName, layer, kmsKey, deploymentPrefix: props.deploymentPrefix });
     // The GitHub Issues source's settings for the connections (7.50.02, engineering-issues-config.ts), with that plugin.
     if (issuesConfigDeployed(scope, props.enabledSources)) {
       if (!props.apiSecretsArn) throw new Error('the GitHub Issues settings function needs VocIngestionStack\'s secretsArn');

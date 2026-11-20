@@ -441,127 +441,13 @@ describe('the run\'s Stop (7.50.03)', () => {
   })
 })
 
-describe('an admin acts on the board', () => {
-  type Task = ReturnType<typeof engineeringBoard>['tasks'][number]
-  const boardWith = (change: (tasks: Task[]) => Task[]) => () => ({ tasks: change(engineeringBoard().tasks) })
-  const held = (by: string, state = 'claimed') => boardWith((tasks) => tasks.map((task) => (task.task_id === 'task-2'
-    ? { ...task, state, lease: { agent: by, epoch: 0, expires: 253402300799 } } : task)))
-  const openBoard = async (extra: Record<string, Handler> = {}) => {
-    routes(extra)
+describe('the board', () => {
+  it('is read only, for an admin on a live run too (7.58.00: a person\'s board actions never reached a run)', async () => {
+    routes()
     renderRun()
-    await userEvent.click(await screen.findByRole('tab', { name: /Board/ }))
-    return screen.findByRole('group', { name: 'Task Sorting ignores the time zone' })
-  }
-
-  it('posts a task for a role, with what to do', async () => {
-    const posted = vi.fn((_body: unknown) => ({ task: {} }))
-    await openBoard({ [`POST ${BASE}/board/tasks`]: posted })
-    await userEvent.click(screen.getByText('Post a task'))
-    await userEvent.selectOptions(screen.getByLabelText('Role'), 'hunter')
-    await userEvent.type(screen.getByLabelText('Title'), ' Look at the export ')
-    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
-    await userEvent.type(screen.getByLabelText('What to do'), 'Check the CSV export')
-    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
-    await waitFor(() => expect(posted).toHaveBeenCalledWith(
-      { role: 'hunter', title: 'Look at the export', spec: { instructions: 'Check the CSV export' } }))
-    expect(await screen.findByText('Posted.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Title')).toHaveValue('')
-  })
-
-  it('takes an open task, blocks it with a reason and sets its priority', async () => {
-    const calls = { take: vi.fn((_b: unknown) => ({})), block: vi.fn((_b: unknown) => ({})), priority: vi.fn((_b: unknown) => ({})) }
-    const group = await openBoard({
-      [`POST ${BASE}/board/tasks/task-2/take`]: calls.take,
-      [`POST ${BASE}/board/tasks/task-2/block`]: calls.block,
-      [`POST ${BASE}/board/tasks/task-2/priority`]: calls.priority,
-    })
-    await userEvent.click(within(group).getByRole('button', { name: 'Take' }))
-    await waitFor(() => expect(calls.take).toHaveBeenCalledWith({}))
-    await userEvent.click(within(group).getByRole('button', { name: 'Block' }))
-    await userEvent.type(screen.getByLabelText('Why'), 'Wrong repository')
-    await userEvent.click(screen.getByRole('button', { name: 'Block the task' }))
-    await waitFor(() => expect(calls.block).toHaveBeenCalledWith({ reason: 'Wrong repository' }))
-    const priority = within(group).getByLabelText('Priority')
-    expect(within(group).getByRole('button', { name: 'Set priority' })).toBeDisabled()
-    await userEvent.clear(priority)
-    await userEvent.type(priority, '5')
-    await userEvent.click(within(group).getByRole('button', { name: 'Set priority' }))
-    await waitFor(() => expect(calls.priority).toHaveBeenCalledWith({ priority: 5 }))
-  })
-
-  it('moves a task the admin holds, and offers no Take on it', async () => {
-    const move = vi.fn((_b: unknown) => ({}))
-    const group = await openBoard({ [`GET ${BASE}/board`]: held('human:admin-sub'), [`POST ${BASE}/board/tasks/task-2/move`]: move })
-    expect(within(group).queryByRole('button', { name: /^Take/ })).toBeNull()
-    expect(within(group).getAllByRole('button', { name: /^Move to/ }).map((button) => button.textContent))
-      .toStrictEqual(['Move to In progress', 'Move to Failed'])   // (to "needs a person" only by Block, with a reason)
-    await userEvent.click(within(group).getByRole('button', { name: 'Move to In progress' }))
-    await waitFor(() => expect(move).toHaveBeenCalledWith({ to: 'in_progress' }))
-  })
-
-  it('gives a task the admin holds back to the agents', async () => {
-    const release = vi.fn((_b: unknown) => ({}))
-    const group = await openBoard({ [`GET ${BASE}/board`]: held('human:admin-sub'), [`POST ${BASE}/board/tasks/task-2/release`]: release })
-    await userEvent.click(within(group).getByRole('button', { name: 'Give back to the agents' }))
-    await waitFor(() => expect(release).toHaveBeenCalledWith({}))
-  })
-
-  it('asks before taking over another person\'s task, and sends it as a take over', async () => {
-    const take = vi.fn((_b: unknown) => ({}))
-    const group = await openBoard({ [`GET ${BASE}/board`]: held('human:other-sub'), [`POST ${BASE}/board/tasks/task-2/take`]: take })
-    expect(within(group).queryByRole('button', { name: /^Move to/ })).toBeNull()
-    await userEvent.click(within(group).getByRole('button', { name: 'Take over' }))
-    const dialog = await screen.findByRole('dialog')
-    expect([within(dialog).getByText(/other-sub/), take.mock.calls]).toStrictEqual([expect.anything(), []])
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Take over' }))
-    await waitFor(() => expect(take).toHaveBeenCalledWith({ over: true }))
-  })
-
-  it('asks before blocking another person\'s task, and sends the block with over', async () => {
-    const block = vi.fn((_b: unknown) => ({}))
-    const group = await openBoard({ [`GET ${BASE}/board`]: held('human:other-sub'), [`POST ${BASE}/board/tasks/task-2/block`]: block })
-    await userEvent.click(within(group).getByRole('button', { name: 'Block' }))
-    await userEvent.type(screen.getByLabelText('Why'), 'Wrong repository')
-    await userEvent.click(screen.getByRole('button', { name: 'Block the task' }))
-    const dialog = await screen.findByRole('dialog')
-    expect([within(dialog).getByText(/blocking it ends their hold/), block.mock.calls]).toStrictEqual([expect.anything(), []])
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Block the task' }))
-    await waitFor(() => expect(block).toHaveBeenCalledWith({ reason: 'Wrong repository', over: true }))
-  })
-
-  it('says a post that found an equal task posted nothing, and keeps what was typed', async () => {
-    await openBoard({ [`POST ${BASE}/board/tasks`]: () => ({ task: {}, duplicate: true }) })
-    await userEvent.click(screen.getByText('Post a task'))
-    await userEvent.type(screen.getByLabelText('Title'), 'Look at the export')
-    await userEvent.type(screen.getByLabelText('What to do'), 'Check the CSV export')
-    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
-    expect(await screen.findByText('An equal task is already on the board: nothing new was posted.')).toBeInTheDocument()
-    expect([screen.queryByText('Posted.'), screen.getByLabelText('Title')]).toStrictEqual([null, expect.anything()])
-    expect(screen.getByLabelText('Title')).toHaveValue('Look at the export')
-  })
-
-  it('sets no priority from an empty field', async () => {
-    const group = await openBoard()
-    await userEvent.clear(within(group).getByLabelText('Priority'))
-    expect(within(group).getByRole('button', { name: 'Set priority' })).toBeDisabled()
-  })
-
-  it('shows why an action was refused', async () => {
-    const group = await openBoard({
-      [`POST ${BASE}/board/tasks/task-2/take`]: () => { throw new ApiError(409, 'the task has moved on: reload the board') },
-    })
-    await userEvent.click(within(group).getByRole('button', { name: 'Take' }))
-    expect(await within(group.parentElement ?? document.body).findByRole('alert'))
-      .toHaveTextContent('the task has moved on: reload the board')
-  })
-
-  it('offers no controls on a task that has ended or on the coordinator\'s task', async () => {
-    await openBoard({ [`GET ${BASE}/board`]: boardWith((tasks) => [
-      ...tasks, ...tasks.filter((task) => task.task_id === 'task-2').map((task) => ({ ...task, task_id: 'coordinate', title: 'Coordinate' })),
-    ]) })
-    expect(screen.queryByRole('group', { name: 'Task The gate record for the page fix' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Task Coordinate' })).toBeNull()
-    expect(screen.getByRole('group', { name: 'Task The last page shows one item too many' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Fix the paging bugs' })
+    await expectNoBoardControls()
+    expect(screen.queryByRole('group', { name: 'Task Sorting ignores the time zone' })).toBeNull()
   })
 })
 
@@ -586,7 +472,7 @@ describe('who may act', () => {
   const question = { ref: 'c1', at: '2026-11-12T08:40:00Z', kind: 'message', from: { kind: 'agent', id: 'fixer-1' }, text: 'Message 1', cut: false, update: '' }
 
   it('an admin, where neither the signals nor the bus reach the run, still has Stop, and is told why the rest is off', async () => {
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, signals: false, board: false }),
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, signals: false }),
       [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
     renderRun('RUN1', 'fixer-1')
     await screen.findByRole('button', { name: 'Stop' })
@@ -602,7 +488,7 @@ describe('who may act', () => {
   })
 
   it('shows each control by its own flag (7.51.02): the signals without the bus, steering and Reply without the signals', async () => {
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false, board: false }),
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { steer: false }),
       [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
     const signalled = renderRun('RUN1', 'fixer-1')
     // The signals reach the run (the start function): Pause, Save and the agent's own controls; the composer is off.
@@ -612,7 +498,7 @@ describe('who may act', () => {
       screen.getByRole('textbox', { name: 'Steer the orchestrator' }).hasAttribute('disabled'),
       screen.queryByRole('button', { name: 'Reply to fixer-1' })]).toStrictEqual([true, null, true, null])
     signalled.unmount()
-    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { signals: false, board: false }),
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, { signals: false }),
       [`GET ${BASE}/agents/fixer-1/thread?limit=200`]: () => ({ items: [question], next: null, done: false }) })
     renderRun('RUN1', 'fixer-1')
     // Steering reaches it (the bus): the composer and Reply are on; Pause, Save and the agent's controls are not.
@@ -626,8 +512,8 @@ describe('who may act', () => {
 
   it('reads an overview that does not say what reaches the run as reaching none of it', () => {
     const unsaid = parseOverview({ ...engineeringOverview(), steer_available: undefined, signals_available: undefined,
-      board_available: undefined })
-    expect([unsaid.steer_available, unsaid.signals_available, unsaid.board_available]).toStrictEqual([false, false, false])
+      stop_available: undefined })
+    expect([unsaid.steer_available, unsaid.signals_available, unsaid.stop_available]).toStrictEqual([false, false, false])
     const said = parseOverview(engineeringOverview())
     expect([said.steer_available, said.signals_available, said.stop_available]).toStrictEqual([true, true, true])
   })

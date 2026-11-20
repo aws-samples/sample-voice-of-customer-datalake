@@ -79,8 +79,6 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/runs/<run_id>/decision',
         # An engineering run's signals and a person's answers in it: the same, an admin acting for themselves.
         'POST /agents/engineering/<run_id>/signals', 'POST /agents/engineering/<run_id>/messages',
-        # A person's board actions on an engineering run: the same gate (engineering/board/api.py PersonBoard).
-        'POST /agents/engineering/<run_id>/board/tasks', 'POST /agents/engineering/<run_id>/board/tasks/<task_id>/<action>',
         # A person's go on an engineering run (what an AI-assisted run's push waits for): the same gate.
         'POST /agents/engineering/<run_id>/go',
         # An administrator's hand trigger of an ended run's reactions read (7.10.00): the same gate.
@@ -107,14 +105,11 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/github-apps/manifest', 'POST /agents/engineering/github-apps/conversions',
         'POST /agents/engineering/github-apps/installations', 'POST /agents/engineering/github-apps/<app_id>/install',
         'POST /agents/engineering/github-apps/<app_id>/check', 'DELETE /agents/engineering/github-apps/<app_id>',
-        # Any public repository (7.57.00): a read-only connection (public_repos.py), the fork workflow and its owner's
-        # settings (forks.py), and a person's GitHub user authorization (user_authorizations.py): the same gate.
+        # Any public repository (7.57.00): a read-only connection (public_repos.py), the fork workflow and (7.58.00) its
+        # owner's acknowledgement of a changed licence (forks.py): the same gate.
         'POST /agents/engineering/public-connections',
         'POST /agents/engineering/connections/<connection_id>/fork',
         'PUT /agents/engineering/connections/<connection_id>/upstream',
-        'PUT /agents/engineering/github-apps/<app_id>/oauth', 'POST /agents/engineering/github-apps/<app_id>/authorize',
-        'POST /agents/engineering/github-apps/authorizations',
-        'DELETE /agents/engineering/github-apps/<app_id>/authorization',
         # A run's start from a saved engineering flow (the start function): an admin acting for themselves.
         'POST /agents/engineering/runs',
         # A skill version's acceptance, rejection, rollback and benchmark (engineering/skills/actions.py): the same gate.

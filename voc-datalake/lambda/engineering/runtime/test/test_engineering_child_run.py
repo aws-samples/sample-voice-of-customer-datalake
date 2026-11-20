@@ -168,6 +168,32 @@ def test_a_parents_saved_kiro_session_is_copied_beside_its_seed_for_the_childs_s
     assert s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.kiro_key(CHILD, fix))['Body'].read() == b'packed kiro session'
 
 
+@pytest.mark.parametrize('tree', [
+    f'{artifact_prefix(PARENT, "hunter-2", COMMIT, 1, "patches")}checkpoint-000002-ab.diff',   # (another agent's)
+    f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 2, "patches")}checkpoint-000002-ab.diff',   # (another attempt's)
+    f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 1, "patches")}nested/checkpoint.diff',      # (below its own)
+    f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 1, "patches")}',                            # (the prefix itself)
+    f'{artifact_prefix(PARENT, "fixer-2", COMMIT, 1, "checkpoints")}000002-ab.json',           # (not a patch)
+    'ws/default/other/patch.diff'])
+def test_a_parent_checkpoints_tree_outside_its_attempts_own_patches_is_no_tree(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, tree: str):
+    """(S4) The seeder reads with the runtime's role: a checkpoint's ``patch`` naming any key but its own attempt's
+    ``_patches/<name>`` is never copied into the child's seed."""
+    assert wired is not None
+    _store, _hunt, fix = _parent(monkeypatch)
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=tree, Body=b'diff --git a/secret b/secret\n')
+    s3.put_object(Bucket=WORKSPACE_BUCKET, Key=f'{checkpoint_prefix(PARENT, "fixer-2", COMMIT, 1)}000003-cd.json',
+                  Body=json.dumps({'position': {'turn': 5, 'task_id': fix}, 'plan': [], 'notes': 'elsewhere',
+                                   'patch': tree}))
+    _resumed(monkeypatch)
+    _recording(monkeypatch)
+    handler.lambda_handler({'action': 'seed_restart', 'run_id': CHILD, 'actor': 'admin-2'}, None)
+    record = seed.parse(s3.get_object(Bucket=WORKSPACE_BUCKET, Key=seed.seed_key(CHILD, fix))['Body'].read(), CHILD)
+    assert record is not None
+    assert (record['checkpoint']['notes'], record.get('patch_key') or '') == ('elsewhere', '')
+
+
 def test_a_live_run_is_restarted_through_its_signals_never_as_a_child(wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     monkeypatch.setattr(handler, '_hand_on_launch', lambda *_: None)

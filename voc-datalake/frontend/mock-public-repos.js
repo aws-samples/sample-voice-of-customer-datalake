@@ -8,8 +8,9 @@
 //   POST /agents/engineering/connections/<id>/fork    {account, org?, licence, app_id?, workspace?}: GitHub's fork page
 //                                                     and the App's install link (a fork state, mock-github-apps.js);
 //                                                     409 archived, no licence, another licence than the upstream's
-//   PUT  /agents/engineering/connections/<id>/upstream  {assisted, licence?, reason?}: a fork connection's owner's
-//                                                     upstream pull request settings; 409 for anyone but its owner
+//   PUT  /agents/engineering/connections/<id>/upstream  {licence, reason?} (7.58.00): a fork connection's owner
+//                                                     acknowledges the upstream's current licence again; 409 for
+//                                                     anyone but its owner or another licence than the upstream's
 // No real GitHub is reached and no token exists here.
 
 import { mintForkState } from './mock-github-apps.js';
@@ -95,10 +96,11 @@ function fork(connection, body) {
 }
 
 function upstream(connection, body) {
-  if (connection.kind !== 'fork' || connection.fork === null) return [409, { message: 'only a fork connection has upstream pull request settings' }];
-  if (!connection.fork.owned_by_me) return [409, { message: `only ${connection.fork.owner}, the connection's owner, changes its upstream pull requests` }];
-  if (typeof body?.assisted !== 'boolean') return [400, { message: 'the body is {assisted: true or false, licence?, reason?}' }];
-  connection.fork = { ...connection.fork, upstream_pr_assisted: body.assisted };
+  if (connection.kind !== 'fork' || connection.fork === null) return [409, { message: 'this connection is not a fork' }];
+  if (!connection.fork.owned_by_me) return [409, { message: `only ${connection.fork.owner}, the connection's owner, changes this` }];
+  if (typeof body?.licence !== 'string' || body.licence === '') return [400, { message: 'the body is {licence, reason?}: the upstream\'s current licence' }];
+  if (body.licence !== 'MIT') return [409, { message: `${connection.fork.upstream}'s licence is MIT, not the ${body.licence} acknowledged for this connection: acknowledge it again on the connection` }];
+  connection.fork = { ...connection.fork, licence: body.licence };
   connection.version += 1;
   connection.updated_at = new Date().toISOString();
   return [200, { connection }];
@@ -145,7 +147,7 @@ export function sampleContributions() {
     credential: { kind: 'app_reference', set: true, app_id: '271828', installation_id: '27182818', expires_at: null },
     public: null,
     fork: { upstream: 'open-tools/lint-kit', upstream_connection: 'lint-kit', upstream_default_branch: 'main',
-      owner: 'admin-demo', owned_by_me: true, licence: 'MIT', upstream_pr_assisted: false, account: 'admin-demo',
+      owner: 'admin-demo', owned_by_me: true, licence: 'MIT', account: 'admin-demo',
       account_type: 'User' },
     created_at: now, created_by: 'admin-demo', updated_at: now, updated_by: 'admin-demo', version: 1, ci_attestation: null,
   };

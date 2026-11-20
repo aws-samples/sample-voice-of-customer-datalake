@@ -96,4 +96,11 @@ describe('the readiness checks\' grants on the agents API', { timeout: SYNTH_TIM
     // (pricing a model grants nothing: the role's statements are the same with or without the price)
     expect(statements(priced)).toStrictEqual(statements(on()));
   });
+
+  it('name a Kiro credit\'s price, which the run page and the model picker show Kiro\'s credits at (7.58.00)', () => {
+    expect(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_KIRO_CREDIT_PRICE).toBe('0.04');
+    const priced = TemplateOf.fromStack(buildApiStack({ engineeringAgents: true, engineeringKiroCreditPrice: '0.05' }));
+    expect(serviceEnvironment(priced, 'voc-agents-api').ENGINEERING_KIRO_CREDIT_PRICE).toBe('0.05');
+    expect(statements(priced)).toStrictEqual(statements(on()));
+  });
 });

@@ -35,9 +35,9 @@ from datetime import UTC, datetime
 from typing import Any, Final, Literal
 
 from engineering.connectors.identity import OPEN_OR_UPDATE_DRAFT_PR
-from engineering.connectors.user_auth_paths import GITHUB_LOGIN
 from engineering.rows import amount_attr
 from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
+from shared.github_rest import GITHUB_LOGIN
 from shared.logging import logger
 
 #: Each host kind's own web domain (``connectors/gitlab_api.py`` ``GITLAB_HOST`` for GitLab, held to it by a test).

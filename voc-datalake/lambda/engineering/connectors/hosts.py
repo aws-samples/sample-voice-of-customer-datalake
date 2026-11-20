@@ -8,8 +8,8 @@ their place, so every permitted operation answers ``NoConnection``. Since 7.52.0
 (``records.ApprovedDocsRecords``: the knowledge docs and the tenets as an administrator approved them) and their writes'
 claims (``records.DocsClaims``), for voc-engineering-start's ``push_approved_docs`` and the agents' ``tenets`` read.
 Since 7.57.00 a connection is of a kind (a repository of one's own, ``REPOSITORY_KIND``; a public repository read
-only, ``PUBLIC_READ``; or a fork whose upstream gets the run's pull request, ``FORK``), and the broker opens that upstream pull request through
-three more collaborators (``UpstreamHost``, ``OwnerTokens``, ``UpstreamLedger``: ``upstream_pr.py``).
+only, ``PUBLIC_READ``; or a fork whose upstream gets the run's pull request, ``FORK``), and the broker offers that upstream
+pull request, one click away, through two more collaborators (``UpstreamHost``, ``UpstreamLedger``: ``upstream_pr.py``).
 """
 from __future__ import annotations
 
@@ -234,18 +234,14 @@ FORK: Final = 'fork'
 @dataclass(frozen=True)
 class ForkFacts:
     """A fork connection's upstream, as its credential names it (written by the Agents API: ``connections.py``): the
-    upstream ``owner/name`` and its default branch, the connection owner (``owner``: the sha256 of their subject, whose
-    GitHub user authorization opens the upstream pull request), the licence they acknowledged (its SPDX id), and their
-    setting for AI-assisted runs (``assisted``: an AI-assisted run's upstream pull request opens only with it)."""
+    upstream ``owner/name`` and its default branch (as stored when it was connected), the connection's owner (``owner``:
+    the sha256 of their subject) and the licence they acknowledged (its SPDX id)."""
 
     upstream: str
     upstream_default_branch: str
     owner: str
     licence: str
-    assisted: bool = False
-    #: The deployment's GitHub App the fork's installation is of: the owner's user token is that App's.
-    app_id: str = ''
-    #: The fork itself (``owner/name``): the head of the upstream pull request and of its compare link.
+    #: The fork itself (``owner/name``): the head of the upstream pull request's compare link.
     repository: str = ''
 
 
@@ -270,21 +266,11 @@ class ForkPullRequest:
     open: bool
 
 
-@dataclass(frozen=True)
-class OwnerToken:
-    """The connection owner's GitHub user token (``repr`` leaves it out) and their login: for the upstream pull request
-    alone."""
-
-    token: str = field(repr=False)
-    login: str = ''
-
-
-#: The run's upstream pull request's states on its record: opened by the app; offered as a one-click link the person
-#: opens on GitHub (``link``: the app did not open it, which is no error); refused by a safety check (no link); unknown.
+#: The run's upstream pull request's states on its record: found open from the run's branch (the person opened it);
+#: offered as a one-click link the person opens on GitHub (``link``); refused by a safety check (no link).
 UPSTREAM_OPENED: Final = 'opened'
 UPSTREAM_LINK: Final = 'link'
 UPSTREAM_REFUSED: Final = 'refused'
-UPSTREAM_UNKNOWN: Final = 'unknown'
 
 
 @dataclass(frozen=True)
@@ -664,9 +650,8 @@ class DocsReader(Protocol):
 
 
 class UpstreamHost(Protocol):
-    """A connection's kind and, for a fork, its upstream (7.57.00, ``github_upstream.py``): reads with the fork's
-    installation token (the upstream is public), and the one write, the upstream pull request, with the connection
-    owner's user token alone."""
+    """A connection's kind and, for a fork, its upstream (7.57.00, ``github_upstream.py``): reads only, with the fork's
+    installation token (the upstream is public)."""
 
     def kind(self, connection_id: str) -> str:
         """The connection's kind (``REPOSITORY_KIND``, ``PUBLIC_READ`` or ``FORK``), from its credential."""
@@ -688,23 +673,9 @@ class UpstreamHost(Protocol):
         """The fork's pull request ``number`` (the run's): its title, body and whether it is open."""
         ...
 
-    def open(self, connection_id: str, owner: OwnerToken, branch: str, title: str, body: str) -> PullRequestRef:
-        """Open the upstream pull request ``fork:branch`` → the upstream's default branch, ready for review, as
-        ``owner`` (their user token, sent in this one request's ``Authorization`` header alone)."""
-        ...
-
-
-class OwnerTokens(Protocol):
-    """The connection owners' GitHub user tokens (7.57.00, ``user_auth.OwnerTokens``): the broker's alone."""
-
-    def token(self, app_id: str, owner: str) -> OwnerToken:
-        """``owner``'s (a subject's sha256) user token of App ``app_id``, refreshed when due; ``OwnerUnauthorized``
-        when there is none, or it can no longer be refreshed."""
-        ...
-
 
 class UpstreamLedger(Protocol):
-    """The upstream pull requests' records (7.57.00, ``records.UpstreamRecords``): the run's, and the day's caps."""
+    """The run's upstream pull request's record (7.57.00, ``upstream_records.UpstreamRecords``)."""
 
     def recorded(self, run_id: str) -> UpstreamRecord | None:
         """The run's upstream pull request record, None for none."""
@@ -713,19 +684,6 @@ class UpstreamLedger(Protocol):
     def record(self, run_id: str, record: UpstreamRecord) -> None:
         """Keep ``record`` as the run's (an opened one is never replaced by a later refusal)."""
         ...
-
-    def take_slot(self, day: str, upstream: str, run_id: str, connection_id: str) -> str | None:
-        """Count the run's upstream pull request against ``day``'s caps (the deployment's and ``upstream``'s): None
-        once counted (or already counted for the run), else why not (a cap reached)."""
-        ...
-
-    def close_slot(self, day: str, upstream: str, run_id: str, outcome: dict[str, object]) -> None:
-        """Record ``outcome`` on the run's slots of ``day`` (their audit: who, when, which upstream, what)."""
-        ...
-
-
-class OwnerUnauthorized(Conflict):
-    """The connection owner's GitHub user authorization is missing, expired or refused (the message says what to do)."""
 
 
 class Unconnected:
@@ -785,9 +743,8 @@ class Connector:
     #: docs write and the tenets read are refused, ``NoConnection``).
     docs: DocsReader | None = None
     docs_writes: WriteLedger | None = None
-    #: A connection's kind and a fork's upstream, the owners' user tokens and the upstream pull requests' records
-    #: (7.57.00; None where the deployment names none: every connection is a ``repository``, and a fork's upstream pull
-    #: request is refused, ``NoConnection``).
+    #: A connection's kind and a fork's upstream, and the upstream pull requests' records (7.57.00; None where the
+    #: deployment names none: every connection is a ``repository``, and a fork's upstream pull request is refused,
+    #: ``NoConnection``).
     upstream: UpstreamHost | None = None
-    owner_tokens: OwnerTokens | None = None
     upstream_ledger: UpstreamLedger | None = None

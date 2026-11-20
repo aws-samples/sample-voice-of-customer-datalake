@@ -6,7 +6,8 @@
 import { describe, it, expect } from 'vitest'
 import { modelShortName } from '../../components/WorkflowEditor/nodes/nodeText'
 import {
-  BEDROCK_MODELS, KIRO_MODELS, NAMED_MODEL_CHOICES, draftOf, isModelId, kiroName, modelChoiceOf, modelIssue, modelOn,
+  BEDROCK_MODELS, KIRO_MODELS, NAMED_MODEL_CHOICES, choicesOn, draftOf, isModelId, kiroName, modelChoiceOf, modelIssue, modelOn,
+  otherModelsOn,
 } from './modelChoice'
 import type { ModelDraft } from './modelChoice'
 
@@ -27,6 +28,21 @@ describe('modelChoice', () => {
     ['', 'native', DEFAULT], ['global.anthropic.claude-opus-5', 'kiro', 'claude-opus-5'], ['my-model', 'kiro', 'my-model'],
   ] as const)('runs %s on the %s harness as %s', (choice, harness, model) => {
     expect(modelOn(choice, harness, DEFAULT)).toBe(model)
+  })
+
+  it('offers Auto on Kiro and for a run (its roles on either harness), never on the native harness unless saved so', () => {
+    const all = ['', 'auto', 'opus', 'sonnet', 'haiku', 'other']
+    expect([choicesOn('kiro'), choicesOn('any'), choicesOn('native'), choicesOn('native', 'auto')]).toStrictEqual([
+      all, all, ['', 'opus', 'sonnet', 'haiku', 'other'], all])
+  })
+
+  it('lists a native role\'s other models: the enabled ones beyond the named three, sorted, a saved one first', () => {
+    const enabled = [...Object.values(BEDROCK_MODELS), 'global.anthropic.claude-opus-5', 'global.anthropic.claude-opus-4-8']
+    expect(otherModelsOn(enabled, '')).toStrictEqual(['global.anthropic.claude-opus-4-8', 'global.anthropic.claude-opus-5'])
+    expect(otherModelsOn(enabled, ' global.anthropic.claude-opus-5 ')).toStrictEqual(['global.anthropic.claude-opus-4-8',
+      'global.anthropic.claude-opus-5'])
+    expect(otherModelsOn(Object.values(BEDROCK_MODELS), 'gone-model')).toStrictEqual(['gone-model'])
+    expect(otherModelsOn([], '')).toStrictEqual([])
   })
 
   it('names a Claude Bedrock id by Kiro\'s name, as the backend does, and any other id as it is', () => {

@@ -294,11 +294,12 @@ def test_a_usage_starts_at_zero_in_every_figure() -> None:
     assert Usage() == Usage(usd=Decimal(0), tokens_in=0, tokens_out=0, microvm_seconds=0)
 
 
-@pytest.mark.parametrize('field', ['usd', 'tokens_in', 'tokens_out', 'microvm_seconds'])
+@pytest.mark.parametrize('field', ['usd', 'tokens_in', 'tokens_out', 'microvm_seconds', 'micro_credits'])
 def test_a_row_missing_a_figure_reads_it_as_zero(field: str) -> None:
-    row = {'usd': Decimal('1.5'), 'tokens_in': 10, 'tokens_out': 3, 'microvm_seconds': 60}
+    row = {'usd': Decimal('1.5'), 'tokens_in': 10, 'tokens_out': 3, 'microvm_seconds': 60, 'micro_credits': 7}
     del row[field]
-    expected = {'usd': Decimal('1.5'), 'tokens_in': 10, 'tokens_out': 3, 'microvm_seconds': 60, field: 0}
+    expected = {'usd': Decimal('1.5'), 'tokens_in': 10, 'tokens_out': 3, 'microvm_seconds': 60, 'micro_credits': 7,
+                field: 0}
     assert Usage.of_row(row) == Usage(**expected)
 
 
@@ -327,7 +328,9 @@ def test_a_usages_tokens_are_in_and_out_together() -> None:
 
 def test_a_usage_is_shown_with_dollars_as_a_number() -> None:
     assert Usage(Decimal('1.25'), 1, 2, 3).view() == {'usd': 1.25, 'tokens_in': 1, 'tokens_out': 2,
-                                                       'microvm_seconds': 3}
+                                                       'microvm_seconds': 3, 'credits': 0.0}
+    # (7.58.00) A Kiro session's credits, kept in millionths, are shown in credits.
+    assert Usage(micro_credits=208_012).view()['credits'] == 0.208012
 
 
 # --- the model-row cap -----------------------------------------------------------------------------------------
@@ -397,7 +400,7 @@ def test_a_reported_model_named_like_the_session_row_is_ledgered_apart_and_summe
 def test_an_empty_month_shows_nothing_spent() -> None:
     assert MonthSpend('2026-11', 'day').view() == {
         'month': '2026-11', 'by': 'day', 'truncated': False, 'groups': [],
-        'total': {'usd': 0.0, 'tokens_in': 0, 'tokens_out': 0, 'microvm_seconds': 0}}
+        'total': {'usd': 0.0, 'tokens_in': 0, 'tokens_out': 0, 'microvm_seconds': 0, 'credits': 0.0}}
 
 
 def test_a_months_read_says_which_month_and_grouping_it_is() -> None:
@@ -414,7 +417,7 @@ def test_groups_are_biggest_first_by_dollars_then_tokens_then_time_then_key() ->
     assert [group['key'] for group in view['groups']] == [
         'more-dollars', 'dollars', 'tokens', 'fewer-tokens', 'more-time', 'a-time', 'b-time']
     assert view['groups'][0] == {'key': 'more-dollars', 'usd': 1.0, 'tokens_in': 0, 'tokens_out': 0,
-                                 'microvm_seconds': 0}
+                                 'microvm_seconds': 0, 'credits': 0.0}
     assert view['truncated'] is True
 
 

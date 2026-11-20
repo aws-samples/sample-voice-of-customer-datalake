@@ -3,8 +3,10 @@
  * (`POST …/restart`, D51-3: reopening it would break its record, its 30-day limit and its budget). The admin
  * chooses how (resume: each agent from its newest checkpoint; restart: their tasks afresh), which agents (none
  * ticked: every unfinished task's), and on which commit (the run's own, or the repository's head now, rebased by the
- * harness, a conflict reaching the agent as data). The child opens once it is started; an answer that could not be
- * read names the child to open, never to start twice.
+ * harness, a conflict reaching the agent as data), and (7.58.00) optionally one model for every role of the new run
+ * (ModelChoiceField.tsx, as Run now's; none: the run's own models), so a step Kiro stopped for its model goes on with
+ * another. The child opens once it is started; an answer that could not be read names the child to open, never to
+ * start twice.
  *
  * @module pages/Agents/RunWorkspace/RestartRunDialog
  */
@@ -16,6 +18,8 @@ import RadioChoices from '../../../components/RadioChoices/RadioChoices'
 import { ApiError } from '../../../lib/errors'
 import { RESTART_BASES, RESTART_MODES } from '../../../api/engineeringRunWorkspaceApi'
 import { useActionError } from '../engineeringRunText'
+import { ModelChoiceField } from '../ModelChoiceField'
+import { draftOf, modelChoiceOf, modelIssue } from '../modelChoice'
 import { useRestartRun } from './useRunWorkspace'
 import { runWorkspacePath } from './runWorkspacePaths'
 import type { RestartBase, RestartMode } from '../../../api/engineeringRunWorkspaceApi'
@@ -37,12 +41,15 @@ export function RestartRunDialog({ runId, agents, onClose }: Readonly<Props>) {
   const [mode, setMode] = useState<RestartMode>('resume')
   const [base, setBase] = useState<RestartBase>('same')
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set())
+  const [model, setModel] = useState(draftOf(null))
   const toggle = (agent: string) => {
     setChosen((before) => new Set(before.has(agent) ? [...before].filter((id) => id !== agent) : [...before, agent]))
   }
   const confirm = () => {
+    if (modelIssue(model) !== null) return   // (the model field says what is wrong with it)
     const named = agents.map((agent) => agent.agent).filter((agent) => chosen.has(agent))
-    restart.mutate({ mode, base, ...(named.length === 0 ? {} : { agents: named }) }, {
+    const picked = modelChoiceOf(model)
+    restart.mutate({ mode, base, ...(named.length === 0 ? {} : { agents: named }), ...(picked === null ? {} : { model: picked }) }, {
       onSuccess: (child) => {
         onClose()
         void navigate(runWorkspacePath(child))
@@ -72,6 +79,8 @@ export function RestartRunDialog({ runId, agents, onClose }: Readonly<Props>) {
             ))}
           </fieldset>
         )}
+        <ModelChoiceField label={t('runWorkspace.restartRun.model')} defaultLabel={t('runWorkspace.restartRun.modelDefault')}
+          draft={model} onChange={setModel} harness="any" disabled={restart.isPending} />
         {restart.isError && (
           <p role="alert" className="text-[12px] text-danger">
             {errorText(restart.error)}

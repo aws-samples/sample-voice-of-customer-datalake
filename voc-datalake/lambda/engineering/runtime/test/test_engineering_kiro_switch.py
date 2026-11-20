@@ -17,7 +17,7 @@ from engineering.runtime import egress, harness_switch, sandbox, unit_runner
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness import seed
 from engineering.runtime.harness.kiro import KiroAcp
-from engineering.runtime.harness.kiro_pin import KIRO_CLI_VERSION
+from engineering.runtime.harness.kiro_pin import KEY_PARAMETER_RE, KIRO_CLI_VERSION
 from engineering.runtime.harness.skills import SKILLS, harness_argv
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.restart import _kiro_state
@@ -31,7 +31,7 @@ FIXER = SKILLS['fixer']
 #: voc-datalake/; the images are its templates/orchestration/images (7.56.00).
 DATALAKE = Path(__file__).resolve().parents[4]
 IMAGES = DATALAKE / 'templates' / 'orchestration' / 'images'
-PARAMETER = '/voc/engineering/_kiro/api-key'
+PARAMETER = '/voc/engineering-kiro/api-key'
 KIRO_ENV = {harness_switch.HARNESS_ENV: 'kiro', harness_switch.KEY_PARAMETER_ENV: PARAMETER}
 
 
@@ -69,6 +69,17 @@ def test_a_role_on_kiro_without_a_key_parameter_is_refused_at_its_launch():
     with pytest.raises(RuntimeRefused, match='names no Kiro key parameter'):
         harness_switch.harness_for(harness_argv(FIXER), 'fixer', {**KIRO_ENV,
                                                                     harness_switch.KEY_PARAMETER_ENV: '/voc/other'})
+
+
+@pytest.mark.parametrize('parameter', ['/voc/engineering/_kiro/api-key', '/b-voc/engineering/_kiro/api-key',
+                                       '/voc/engineering/conn-1', '/voc/engineering/engineering-kiro/api-key'])
+def test_the_key_is_never_one_under_the_connections_path(parameter: str):
+    # (S3, 7.58.00) Under /voc/engineering/ the broker, the cache writer and the Agents API's grants on every
+    # connection's parameter reached it: its own path beside it, /[<prefix>-]voc/engineering-kiro/api-key, only.
+    assert KEY_PARAMETER_RE.fullmatch(parameter) is None
+    with pytest.raises(RuntimeRefused, match='names no Kiro key parameter'):
+        harness_switch.harness_for(harness_argv(FIXER), 'fixer', {**KIRO_ENV, harness_switch.KEY_PARAMETER_ENV: parameter})
+    assert KEY_PARAMETER_RE.fullmatch('/b-voc/engineering-kiro/api-key') is not None
 
 
 # -- the egress -------------------------------------------------------------------------------------------------
@@ -222,7 +233,7 @@ def test_the_kiro_check_passes_only_with_the_key_stored_and_the_pinned_cli_seen(
 
 
 @pytest.mark.parametrize(('ports', 'status', 'said'), [
-    (_Ports(kind=None, seen=SEEN), 'fail', 'no Kiro API key is stored at /voc/engineering/_kiro/api-key'),
+    (_Ports(kind=None, seen=SEEN), 'fail', 'no Kiro API key is stored at /voc/engineering-kiro/api-key'),
     (_Ports(kind='String', seen=SEEN), 'fail', 'is a String, not a SecureString'),
     (_Ports(kind=ReadFailed('the Kiro API key: AccessDenied'), seen=SEEN), 'unknown', 'AccessDenied'),
     (_Ports(seen=None), 'unknown', 'unknown until its first session (it must be 3.4.0)'),
@@ -234,7 +245,7 @@ def test_the_kiro_check_says_what_is_missing(ports, status, said):
     assert check.status == status, check
     assert said in check.detail, check
     if status == 'fail' and 'key' in said:
-        assert 'aws ssm put-parameter --name /voc/engineering/_kiro/api-key --type SecureString' in check.fix
+        assert 'aws ssm put-parameter --name /voc/engineering-kiro/api-key --type SecureString' in check.fix
 
 
 def test_the_readiness_port_reads_the_keys_metadata_never_its_value():

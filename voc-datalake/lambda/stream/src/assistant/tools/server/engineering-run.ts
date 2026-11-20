@@ -4,7 +4,7 @@
  * and its `/board`), whose server-side gate (`require_admin_caller`) admits only a non-delegated administrator, on
  * every call: an MCP token or an agent's credential is refused (403), whatever this tool says. A plan reads it only
  * in a think step whose approver the conductor re-checks as an administrator before the step (`admin_read_packs`),
- * as with the other admin-only reads. Read only: the run's signals, answers and board actions stay on its page.
+ * as with the other admin-only reads. Read only: the run's signals and answers stay on its page.
  *
  * The agents' own words (their step, why they look stuck, their tool calls, task titles) reach the model inside the
  * JSON result, as data: the description says so, beside the system prompt's rule for every tool result. Live agents

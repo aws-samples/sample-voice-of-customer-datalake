@@ -212,6 +212,27 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       .toThrow(/engineeringModelPrices/);
   });
 
+  it('prices a Kiro credit at $0.04 unless -c engineeringKiroCreditPrice names its own (7.58.00)', () => {
+    // runtime/caps.py DEFAULT_KIRO_CREDIT_PRICE; the delivery prices a continuation's writes the same way.
+    expect(supervisorEnv(on.template).ENGINEERING_KIRO_CREDIT_PRICE).toBe('0.04');
+    expect(functionEnv(on.template, 'voc-engineering-delivery').ENGINEERING_KIRO_CREDIT_PRICE).toBe('0.04');
+    const priced = runtimeStack({ engineeringAgents: 'true', engineeringKiroCreditPrice: ' 0.05 ' }).template;
+    expect(supervisorEnv(priced).ENGINEERING_KIRO_CREDIT_PRICE).toBe('0.05');
+    expect(supervisorEnv(runtimeStack({ engineeringAgents: 'true', engineeringKiroCreditPrice: '0' }).template)
+      .ENGINEERING_KIRO_CREDIT_PRICE).toBe('0');
+  }, SYNTH_TIMEOUT_MS);
+
+  it.each([
+    ['not a number', 'cheap'],
+    ['a negative price', '-0.04'],
+    ['a price a few orders of magnitude off', '40'],
+    ['an exponent', '4e-2'],
+    ['more than 12 digits after the point', '0.0000000000001'],
+  ])('refuses -c engineeringKiroCreditPrice with %s at synth', (_case, value) => {
+    expect(() => runtimeStack({ engineeringAgents: 'true', engineeringKiroCreditPrice: value }))
+      .toThrow(/engineeringKiroCreditPrice is a price in USD per Kiro credit, 0 to 10/);
+  });
+
   it('adds no alarm unless asked (an alarm is a fixed cost)', () => {
     expect(count(on.template, 'AWS::CloudWatch::Alarm')).toBe(0);
     const withAlarm = runtimeStack({ engineeringAgents: 'true', engineeringSupervisorAlarm: 'true' }).template;
@@ -604,7 +625,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
     const env = Object.keys(EnvSchema.parse(fn?.Properties?.Environment).Variables);
     expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_BOARD_URL',
       'ENGINEERING_BUS_NAME',
-      'ENGINEERING_AGENT_RUNTIMES',
+      'ENGINEERING_AGENT_RUNTIMES', 'ENGINEERING_KIRO_CREDIT_PRICE',
       'ENGINEERING_MODEL_PRICES', 'ENGINEERING_SESSION_RATES', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS',
       'ENGINEERING_WORKSPACE_BUCKET',
       'RAW_DATA_BUCKET']));
@@ -727,7 +748,8 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       expect(everyStatement().find((found) => found.Sid === 'TenetsDrafts')).toMatchObject({
         Effect: 'Allow', Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
         Condition: {
-          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] },
+          // (7.58.00: the workspace's own; never the agent memory's WS#<ws>#AMEM#REPO#…, core-buckets.test.ts)
+          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#REPO#*'] },
           'ForAllValues:StringEquals': { 'dynamodb:Attributes': TENETS_DRAFT_ATTRIBUTES },
         },
       });
@@ -743,7 +765,7 @@ describe('with -c engineeringAgents=true', { timeout: SYNTH_TIMEOUT_MS }, () => 
       // (the counter: the triage's hard lock and the draft's number)
       expect(everyStatement().find((found) => found.Sid === 'TenetsReads')).toMatchObject({
         Effect: 'Allow', Action: 'dynamodb:GetItem',
-        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] } },
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#REPO#*'] } },
       });
       const records = everyStatement().find((found) => found.Sid === 'TenetsRecords');
       expect(records).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });

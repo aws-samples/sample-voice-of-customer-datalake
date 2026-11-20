@@ -1,14 +1,14 @@
 """Any public repository, the Agents API's side (7.57.00): the picker and the read-only connection (public_repos.py),
-the fork workflow and its owner's settings (forks.py), a person's GitHub user authorization (user_authorizations.py),
-and the App's OAuth client kept at its creation (github_apps.py). Under moto: no secret is ever answered, a read-only
-connection takes no attestation and no label, and a kind never changes."""
+the fork workflow and (7.58.00) its owner's acknowledgement of a changed licence (forks.py), and the App's OAuth client
+never kept (github_apps.py: the user authorization that kept it is gone). Under moto: no secret is ever answered, a
+read-only connection takes no attestation and no label, and a kind never changes."""
 from __future__ import annotations
 
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 import pytest
 from moto import mock_aws
@@ -31,15 +31,15 @@ from engineering.connectors.test.test_github_apps import (
     Env,
     answer,
     conversion,
-    created,
     listed,
     state_of,
 )
-from engineering.connectors.user_auth_paths import client_parameter, subject_hash, user_parameter
-from engineering.connectors.user_authorizations import UserAuthorizations
+from shared.digests import sha256_hex as subject_hash
 
-USER_PREFIX = '/voc/engineering-user-auth/'
 UPSTREAM = 'upstream-org/lint-kit'
+#: A GitHub App's OAuth client as its conversion answers one (fixtures: no real client has them).
+CLIENT_ID = 'Iv23liExample0Client1'
+CLIENT_SECRET = '0123456789abcdef0123456789abcdef01234567'
 CLIENT_ID = 'Iv23liExample0Client1'
 CLIENT_SECRET = '0123456789abcdef0123456789abcdef01234567'
 
@@ -86,8 +86,7 @@ class PublicTokens:
 
 def wired(env: Env, tokens: PublicTokens) -> tuple[GitHubApps, PublicRepositories, Forks]:
     apps = GitHubApps(env.table, lambda: env.ssm, PREFIX, env.key_id, env.connections(), tokens,
-                      frontend_url=FRONTEND, webhook_url=HOOK, clock=env.clock, transport=env.github,
-                      user_prefix=USER_PREFIX)
+                      frontend_url=FRONTEND, webhook_url=HOOK, clock=env.clock, transport=env.github)
     apps.forks = Forks(env.connections(), apps, tokens)
     return apps, PublicRepositories(env.connections(), tokens), apps.forks
 
@@ -215,7 +214,7 @@ def test_the_installs_return_saves_the_forks_one_connection_owned_by_who_started
     assert (fork['kind'], fork['repository'], fork['credential']['kind']) == (KIND_FORK, 'casey-dev/lint-kit',
                                                                              'app_reference')
     assert fork['fork']['owned_by_me'] is True
-    assert fork['fork']['upstream_pr_assisted'] is False
+    assert 'upstream_pr_assisted' not in fork['fork']
     value = json.loads(env.parameter(fork['connection_id'])['Value'])
     assert (value['kind'], value['upstream'], value['owner'], value['licence']) == (
         'fork', UPSTREAM, subject_hash(ADMIN.subject), 'MIT')
@@ -240,84 +239,58 @@ def test_an_install_that_covers_no_fork_in_the_chosen_account_keeps_its_state(en
     assert done['fork']['repository'] == 'acme-tools/lint-kit'
 
 
-def test_only_the_owner_changes_the_forks_upstream_settings(env: Env) -> None:
-    tokens = PublicTokens()
+def _fork(env: Env, tokens: PublicTokens) -> tuple[Forks, dict[str, Any]]:
+    """A fork connection made by ADMIN through the install's return."""
     apps, forks, connection = _public(env, tokens)
     started = forks.start(connection['connection_id'], {'account': 'user', 'licence': 'MIT'}, ADMIN)
     fork = apps.installed({'installation_id': 888, 'setup_action': 'install',
                            'state': state_of(started['install_url'])}, ADMIN)['connections'][0]['connection']
+    return forks, fork
+
+
+def test_only_the_owner_acknowledges_the_upstreams_current_licence_again(env: Env) -> None:
+    # (Q22, 7.58.00) {licence, reason?}: the upstream read again, its current licence alone taken.
+    tokens = PublicTokens()
+    forks, fork = _fork(env, tokens)
     with pytest.raises(ConnectionRefused, match='only the connection'):
-        forks.set_upstream(fork['connection_id'], {'assisted': True}, OTHER_ADMIN)
-    changed = forks.set_upstream(fork['connection_id'], {'assisted': True, 'reason': 'trusted repo'}, ADMIN)
-    assert changed['fork']['upstream_pr_assisted'] is True
-    assert json.loads(env.parameter(fork['connection_id'])['Value'])['upstream_pr_assisted'] is True
+        forks.set_upstream(fork['connection_id'], {'licence': 'MIT'}, OTHER_ADMIN)
+    for body in ({}, {'assisted': True}, {'licence': 'MIT', 'assisted': False}):
+        with pytest.raises(ConnectionRefused, match=r'the body is \{licence, reason\?\}'):
+            forks.set_upstream(fork['connection_id'], body, ADMIN)
+    tokens.facts = public_facts(licence_spdx='Apache-2.0')
+    with pytest.raises(ConnectionRefused, match=r"licence is Apache-2\.0, not the MIT acknowledged"):
+        forks.set_upstream(fork['connection_id'], {'licence': 'MIT'}, ADMIN)
+    changed = forks.set_upstream(fork['connection_id'], {'licence': 'Apache-2.0', 'reason': 'licence changed'}, ADMIN)
+    assert changed['fork']['licence'] == 'Apache-2.0'
+    value = json.loads(env.parameter(fork['connection_id'])['Value'])
+    assert (value['licence'], 'upstream_pr_assisted' in value) == ('Apache-2.0', False)
     audits = [row for row in env.rows() if row.get('connection_id') == fork['connection_id']
               and str(row['sk']).startswith('LOG#') and row.get('action') == 'updated']
-    assert audits
-    assert audits[-1]['changes']['upstream_pr_assisted'] == {'from': False, 'to': True}
+    assert audits[-1]['changes']['licence'] == {'from': 'MIT', 'to': 'Apache-2.0'}
 
 
-# --- the user authorization ---------------------------------------------------------------------------------------
+def test_acknowledging_the_licence_again_refreshes_the_upstreams_default_branch(env: Env) -> None:
+    # (Q20, 7.58.00) The stored default branch was frozen at connect time: the acknowledgement reads the upstream and
+    # stores the one GitHub answers now.
+    tokens = PublicTokens()
+    forks, fork = _fork(env, tokens)
+    tokens.facts = public_facts(default_branch='trunk')
+    changed = forks.set_upstream(fork['connection_id'], {'licence': 'MIT'}, ADMIN)
+    assert changed['fork']['upstream_default_branch'] == 'trunk'
+    assert json.loads(env.parameter(fork['connection_id'])['Value'])['upstream_default_branch'] == 'trunk'
 
 
-def authorizations(env: Env, apps: GitHubApps, exchange: Any) -> UserAuthorizations:
-    return UserAuthorizations(env.table, lambda: env.ssm, USER_PREFIX, env.key_id, apps, exchange,
-                              frontend_url=FRONTEND, clock=env.clock)
-
-
-def test_a_new_apps_oauth_client_goes_to_the_user_auth_path_never_answered(env: Env) -> None:
+def test_an_apps_oauth_client_is_never_kept_and_its_manifest_names_no_callback(env: Env) -> None:
+    # (7.58.00) The user authorization that kept it is gone: GitHub's answer's client id and secret are read into nothing.
     env.github.answers = [answer(201, conversion(client_id=CLIENT_ID, client_secret=CLIENT_SECRET))]
     apps, _, _ = wired(env, PublicTokens())
     made = apps.manifest({'account': 'user'}, ADMIN)
-    assert made['manifest']['callback_urls'] == [f'{FRONTEND}/agents/connections/github/authorized']
+    assert 'callback_urls' not in made['manifest']
     converted = apps.convert({'code': CODE, 'state': state_of(made['action_url'])}, ADMIN)
-    assert (converted['app']['oauth'], converted['app']['client_id']) == (True, CLIENT_ID)
-    stored = env.ssm.get_parameter(Name=client_parameter(USER_PREFIX, '4242'), WithDecryption=True)
-    assert json.loads(stored['Parameter']['Value'])['client_secret'] == CLIENT_SECRET
-    assert CLIENT_SECRET not in json.dumps(converted, default=str)
-    assert CLIENT_SECRET not in json.dumps(env.rows(), default=str)
-
-
-def test_authorize_then_the_return_records_the_login_and_never_a_token(env: Env) -> None:
-    apps, _, _ = wired(env, PublicTokens())
-    made = created(env)
-    asked: list[dict[str, Any]] = []
-
-    def exchange(request: dict[str, Any]) -> dict[str, Any]:
-        asked.append(request)
-        return {'login': 'casey-dev', 'user_id': 99, 'expires_at': None,
-                'refresh_token_expires_at': '2027-05-01T00:00:00+00:00'}
-
-    users = authorizations(env, apps, exchange)
-    with pytest.raises(ConnectionRefused, match='OAuth client is not stored'):
-        users.authorize(made['app']['app_id'], {}, ADMIN)
-    with pytest.raises(ConnectionRefused):
-        users.set_client(made['app']['app_id'], {'client_id': CLIENT_ID, 'client_secret': 'too-short'}, ADMIN)
-    app = users.set_client(made['app']['app_id'], {'client_id': CLIENT_ID, 'client_secret': CLIENT_SECRET}, ADMIN)
-    assert app['oauth'] is True
-    link = users.authorize(app['app_id'], {}, ADMIN)['authorize_url']
-    query = parse_qs(urlsplit(link).query)
-    assert (urlsplit(link).netloc, query['client_id'], query['redirect_uri']) == (
-        'github.com', [CLIENT_ID], [f'{FRONTEND}/agents/connections/github/authorized'])
-    done = users.complete({'code': 'code123', 'state': query['state'][0]}, ADMIN)
-    assert done == {'authorization': {'app_id': app['app_id'], 'login': 'casey-dev',
-                                      'authorized_at': env.clock().isoformat(),
-                                      'refresh_expires_at': '2027-05-01T00:00:00+00:00'}}
-    assert asked == [{'action': 'exchange', 'app_id': app['app_id'], 'subject_hash': subject_hash(ADMIN.subject),
-                      'code': 'code123', 'redirect_uri': f'{FRONTEND}/agents/connections/github/authorized'}]
-    assert users.complete({'code': 'code123', 'state': query['state'][0]}, ADMIN) == done   # (a replay)
-    assert users.mine(ADMIN) == [done['authorization']]
-    assert users.mine(OTHER_ADMIN) == []
-    with pytest.raises(ConnectionRefused):
-        users.complete({'code': 'code123', 'state': query['state'][0]}, OTHER_ADMIN)   # (not their state)
-    env.ssm.put_parameter(Name=user_parameter(USER_PREFIX, app['app_id'], subject_hash(ADMIN.subject)),
-                          Type='SecureString', Value='{}')   # (as voc-engineering-user-auth would have stored it)
-    users.remove(app['app_id'], ADMIN)
-    assert users.mine(ADMIN) == []
-    with pytest.raises(env.ssm.exceptions.ParameterNotFound):
-        env.ssm.get_parameter(Name=user_parameter(USER_PREFIX, app['app_id'], subject_hash(ADMIN.subject)))
-    assert sorted(row['action'] for row in env.rows() if row.get('action', '').startswith('github_user')) == [
-        'github_user_authorization_removed', 'github_user_authorized']
+    assert not {'oauth', 'client_id'} & set(converted['app'])
+    kept = json.dumps([converted, env.rows()], default=str)
+    assert (CLIENT_SECRET in kept, CLIENT_ID in kept) == (False, False)
+    assert [name for name in env.parameter_names() if 'engineering-user-auth' in name] == []
 
 
 def test_a_public_connection_gets_no_label(env: Env) -> None:

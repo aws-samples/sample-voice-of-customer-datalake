@@ -1,24 +1,26 @@
 /**
  * @fileoverview A fork connection's lines under its repository (7.57.00): which upstream it is a fork of, who owns the
- * connection (the person whose GitHub authorization opens the upstream pull request), the licence they acknowledged,
- * what a run's outcome is (a pull request on the upstream, opened as them once our gate passes, ready for review and
- * merged only by the upstream's maintainers), and the owner's switch "Open upstream pull requests for AI-assisted runs"
- * (`PUT /agents/engineering/connections/<id>/upstream`; an AI-driven run opens one anyway, a Human-driven one never).
- * Only the owner may turn the switch: anyone else sees it as it stands, disabled, and why.
+ * connection, the licence they acknowledged, and what a run's outcome is (a pull request on the upstream, one click away
+ * once our gate passes: the person creates it on GitHub, and only the upstream's maintainers merge it).
+ *
+ * (7.58.00) **Acknowledge the current licence…**, the owner's alone: an upstream that changed its licence takes no
+ * contribution acknowledged for the old one (the broker refuses the run's link, saying so). The upstream's licence is
+ * read live (`GET /agents/engineering/public-repositories?q=<owner/name>`, GitHub's answer now; the stored facts are
+ * the connect time's), then the owner ticks "I have read the ‹licence› licence and contribute under it" and
+ * acknowledges it (`PUT /agents/engineering/connections/<id>/upstream` `{licence}`; the server reads the upstream again,
+ * refuses a licence that is not its current one, and refreshes its default branch). Anyone else sees why they cannot.
  *
  * @module pages/Agents/ForkLines
  */
-import { useId } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useId, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitFork } from 'lucide-react'
-import clsx from 'clsx'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
+import { publicRepositoriesApi, publicRepositoriesKeys } from '../../api/publicRepositoriesApi'
 import { ConnectionChangeError } from './ConnectionChangeError'
 import type { ConnectionList, EngineeringConnection, ForkFacts } from '../../api/engineeringConnectionsApi'
-
-const TRACK = 'switch peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50'
 
 /** "Fork of owner/name", beside the repository's name. */
 export function ForkBadge({ fork }: Readonly<{ fork: ForkFacts }>) {
@@ -26,42 +28,61 @@ export function ForkBadge({ fork }: Readonly<{ fork: ForkFacts }>) {
   return <IconBadge toneClass="badge-muted" icon={GitFork}>{t('connections.fork.badge', { upstream: fork.upstream })}</IconBadge>
 }
 
-/** The owner's switch: AI-assisted runs open the upstream pull request too. */
-function AssistedSwitch({ connection, fork }: Readonly<{ connection: EngineeringConnection; fork: ForkFacts }>) {
+/** The upstream's licence as GitHub answers it now (its SPDX id; null for none), undefined while it is read. */
+function useCurrentLicence(upstream: string): { licence: string | null | undefined; failed: boolean } {
+  const found = useQuery({
+    queryKey: publicRepositoriesKeys.search(upstream), queryFn: () => publicRepositoriesApi.search(upstream), retry: false,
+  })
+  if (found.isError) return { licence: undefined, failed: true }
+  if (found.data === undefined) return { licence: undefined, failed: false }
+  const match = found.data.repositories.find((repository) => repository.repository.toLowerCase() === upstream.toLowerCase())
+  return { licence: match?.licence?.spdx ?? null, failed: false }
+}
+
+/** The owner's acknowledgement of the upstream's licence as it is now, once they asked for it. */
+function AcknowledgeLicence({ connection, fork, onDone }: Readonly<{
+  connection: EngineeringConnection; fork: ForkFacts; onDone: () => void
+}>) {
   const { t } = useTranslation('agents')
   const queryClient = useQueryClient()
-  const hintId = useId()
-  const change = useMutation({
-    mutationFn: (assisted: boolean) => engineeringConnectionsApi.setUpstream(connection.connection_id, { assisted }),
+  const tickId = useId()
+  const [ticked, setTicked] = useState(false)
+  const { licence, failed } = useCurrentLicence(fork.upstream)
+  const acknowledge = useMutation({
+    mutationFn: (current: string) => engineeringConnectionsApi.acknowledgeLicence(connection.connection_id, { licence: current }),
     onSuccess: (saved) => {
       queryClient.setQueryData<ConnectionList>(engineeringConnectionsKeys.list(), (list) => (list === undefined ? list : {
         ...list, connections: list.connections.map((c) => (c.connection_id === saved.connection_id ? saved : c)),
       }))
+      onDone()
     },
   })
-  const disabled = !fork.owned_by_me || change.isPending
+  if (failed) return <p role="alert" className="text-[12px] text-danger">{t('connections.fork.licenceUnread')}</p>
+  if (licence === undefined) return <p className="text-[12px] text-muted">{t('connections.fork.licenceReading')}</p>
+  if (licence === null) return <p className="text-[12px] text-warn">{t('connections.fork.licenceNone', { upstream: fork.upstream })}</p>
   return (
-    <div className="space-y-1">
-      <label className="inline-flex items-center gap-2 text-[12px] text-text">
-        <span className="relative inline-flex flex-shrink-0 items-center">
-          <input type="checkbox" role="switch" className="peer sr-only" checked={fork.upstream_pr_assisted} disabled={disabled}
-            aria-describedby={fork.owned_by_me ? undefined : hintId}
-            onChange={(event) => { change.mutate(event.target.checked) }} />
-          <span aria-hidden="true" className={clsx(TRACK, fork.upstream_pr_assisted && 'switch-on')}><span className="switch-knob" /></span>
-        </span>
-        <span>{t('connections.fork.assisted')}</span>
+    <div className="space-y-1 text-[12px]" data-testid={`fork-licence-${connection.connection_id}`}>
+      <p className="text-text">
+        {t('connections.fork.licenceNow', { upstream: fork.upstream, licence })}
+        {licence === fork.licence && <> {t('connections.fork.licenceUnchanged')}</>}
+      </p>
+      <label htmlFor={tickId} className="flex items-start gap-2 text-text">
+        <input id={tickId} type="checkbox" className="mt-0.5" checked={ticked} onChange={(event) => { setTicked(event.target.checked) }} />
+        {t('connections.contribute.licence', { licence })}
       </label>
-      {!fork.owned_by_me && (
-        <p id={hintId} className="text-[12px] text-muted">{t('connections.fork.ownerOnly', { owner: fork.owner })}</p>
-      )}
-      <ConnectionChangeError change={change} />
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!ticked || acknowledge.isPending}
+        onClick={() => { acknowledge.mutate(licence) }}>
+        {t('connections.fork.licenceConfirm', { licence })}
+      </button>
+      <ConnectionChangeError change={acknowledge} />
     </div>
   )
 }
 
-/** The fork's upstream, owner, licence, its runs' outcome and the owner's switch. */
+/** The fork's upstream, owner, licence and its runs' outcome; the owner's acknowledgement of a changed licence. */
 export function ForkLines({ connection, fork }: Readonly<{ connection: EngineeringConnection; fork: ForkFacts }>) {
   const { t } = useTranslation('agents')
+  const [asked, setAsked] = useState(false)
   const owner = fork.owner === '' ? t('connections.ci.unknownPerson') : fork.owner
   return (
     <div className="space-y-1 pt-1" data-testid={`fork-lines-${connection.connection_id}`}>
@@ -70,7 +91,13 @@ export function ForkLines({ connection, fork }: Readonly<{ connection: Engineeri
         {fork.licence !== null && <> · {t('connections.fork.licence', { licence: fork.licence })}</>}
       </p>
       <p className="text-[12px] text-text">{t('connections.fork.outcome', { upstream: fork.upstream, owner })}</p>
-      <AssistedSwitch connection={connection} fork={fork} />
+      {!fork.owned_by_me && <p className="text-[12px] text-muted">{t('connections.fork.ownerOnly', { owner })}</p>}
+      {fork.owned_by_me && !asked && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAsked(true) }}>
+          {t('connections.fork.acknowledge')}
+        </button>
+      )}
+      {fork.owned_by_me && asked && <AcknowledgeLicence connection={connection} fork={fork} onDone={() => { setAsked(false) }} />}
     </div>
   )
 }

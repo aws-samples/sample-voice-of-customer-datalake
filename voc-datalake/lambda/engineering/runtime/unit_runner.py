@@ -206,6 +206,11 @@ MAX_STATUS_BYTES: Final = 64 * 1024
 MAX_STEP_CHARACTERS: Final = 200
 MAX_RECENT_TOOLS: Final = 10
 MAX_MODELS: Final = 20
+#: (7.58.00) A Kiro session's credits on its model's counts, in millionths (``interface.MICRO_CREDITS``: this file
+#: ships alone, so it names it itself; a test keeps the two equal).
+MICRO_CREDITS: Final = 'micro_credits'
+#: The most millionths of a credit one session reports (a billion credits): past it, a count is off its shape.
+MAX_MICRO_CREDITS: Final = 10**15
 
 
 def scrub_text(text: str) -> str:
@@ -358,7 +363,8 @@ def sandboxed_argv(argv: list[str], *, repository_code: bool, network: bool,
 
 
 def bounded_status(raw: object) -> dict[str, Any]:
-    """The harness's report, cut to what the run monitor shows: a step, ten tool names, token counts."""
+    """The harness's report, cut to what the run monitor shows: a step, ten tool names, token counts (and a Kiro
+    session's millionths of a credit, 7.58.00: a whole number from 0 to ``MAX_MICRO_CREDITS``, else none)."""
     report: dict[str, Any] = raw if isinstance(raw, dict) else {}
     listed, counted = report.get('recent_tools'), report.get('tokens')
     tools: list[Any] = listed if isinstance(listed, list) else []
@@ -366,7 +372,11 @@ def bounded_status(raw: object) -> dict[str, Any]:
     tokens: dict[str, dict[str, int]] = {}
     for model, counts in list(raw_tokens.items())[:MAX_MODELS]:
         if isinstance(counts, dict):
-            tokens[str(model)[:100]] = {kind: int(counts.get(kind, 0) or 0) for kind in ('in', 'out')}
+            kept = {kind: int(counts.get(kind, 0) or 0) for kind in ('in', 'out')}
+            micro = counts.get(MICRO_CREDITS)
+            if isinstance(micro, int) and not isinstance(micro, bool) and 0 <= micro <= MAX_MICRO_CREDITS:
+                kept[MICRO_CREDITS] = micro
+            tokens[str(model)[:100]] = kept
     return {'step': scrub_text(str(report.get('step', '')))[:MAX_STEP_CHARACTERS],
             'recent_tools': [str(tool)[:64] for tool in tools[-MAX_RECENT_TOOLS:]],
             'tokens': tokens}

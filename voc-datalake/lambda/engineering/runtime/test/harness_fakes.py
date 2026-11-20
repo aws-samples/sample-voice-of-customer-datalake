@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from engineering.board.store import MAX_LINE, BoardError
 from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.ports import Direction, InboxMessage, SkillAnswer, TaskBrief
@@ -71,6 +72,9 @@ class FakeBoard:
         self.heartbeats.append((run_id, task_id, agent_id))
 
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        # The board's own bound (board/store.py ``progress``): a step is a line of 1 to MAX_LINE characters.
+        if not step.strip() or len(step.strip()) > MAX_LINE:
+            raise BoardError('invalid', f'"step" is a line of 1 to {MAX_LINE} characters')
         self.progress_seen.append((run_id, task_id, agent_id, step))
         self.waiting_seen.append(waiting)
 

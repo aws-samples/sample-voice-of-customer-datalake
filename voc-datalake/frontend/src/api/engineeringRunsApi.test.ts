@@ -34,11 +34,12 @@ describe('parseOverview', () => {
       ['coordinator-0', 'waiting', null, 1], ['fixer-1', 'working', 'task-1', 1], ['final-go-1', 'working', 'task-3', 0],
     ])
     expect(overview.totals).toStrictEqual({
-      messages: 3, microvm_seconds: 900, by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],
+      messages: 3, microvm_seconds: 900,
+      by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400, credits: null, credits_usd: null }],
     })
     expect(Object.keys(overview)).toStrictEqual(
-      ['run', 'agents', 'steer_available', 'signals_available', 'stop_available', 'board_available', 'totals', 'reactions',
-        'lanes', 'gates', 'children'])
+      ['run', 'agents', 'steer_available', 'signals_available', 'stop_available', 'totals', 'reactions', 'lanes', 'gates',
+        'children'])
   })
 
   it('reads a Stop under way and the decision point a run waits at; an unsaid Stop is unavailable', () => {
@@ -88,7 +89,8 @@ describe('parseOverview', () => {
     expect(overview.agents).toStrictEqual([{
       agent: 'fixer-1', role: '', task_id: null, status: '', continuation: 0, started_at: null, step: null,
       microvm_state: null, microvm_age: null, heartbeat_age: null, last_progress_at: null, stuck_why: null,
-      recent_tools: [], microvm_seconds: 0, tokens: [{ model: 'm', input_tokens: 0, output_tokens: 0 }],
+      recent_tools: [], microvm_seconds: 0,
+      tokens: [{ model: 'm', input_tokens: 0, output_tokens: 0, credits: null, credits_usd: null }],
       cost_usd: null, attempt: 0, commit: null, skill_label: null, model: null, last_exit: null, last_failure: null,
       card: null, card_version: null, harness: 'native', model_choice: null,
     }])

@@ -95,8 +95,8 @@ def test_the_overview_offers_the_stop_and_the_signals_through_the_start_function
         lambda_context: Any, run: tuple[Any, Any]) -> None:
     assert run is not None
     status, view = _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')
-    flags = [view[flag] for flag in ('steer_available', 'signals_available', 'stop_available', 'board_available')]
-    assert (status, flags, view['run']['waiting_at']) == (200, [False, True, True, False], '')
+    flags = [view[flag] for flag in ('steer_available', 'signals_available', 'stop_available')]
+    assert (status, flags, view['run']['waiting_at']) == (200, [False, True, True], '')
 
 
 def test_a_whole_run_shut_down_signal_is_the_stop_and_ends_the_agents_run_too(

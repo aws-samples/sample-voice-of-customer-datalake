@@ -13,7 +13,7 @@ from engineering.runtime.harness import waiting
 from engineering.runtime.harness.board_client import BoardRefused
 from engineering.runtime.harness.converse_loop import COORDINATOR_NUDGE, NUDGE, ConverseAdapter, nudge
 from engineering.runtime.harness.ports import InboxMessage, TaskSummary
-from engineering.runtime.harness.tool_server import SessionFiles
+from engineering.runtime.harness.tool_server import SessionFiles, answer
 from engineering.runtime.harness.tool_server import waiter as files_waiter
 from engineering.runtime.harness.tools import PROGRESS_MAX
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, World, opened, use, world
@@ -299,6 +299,42 @@ def test_the_tool_servers_wait_takes_its_harnesss_batches_and_a_kiro_wake(tmp_pa
     assert _wait(w).text == "the wait ended: a person's steering came, and it is in your conversation: act on it."
     assert (files.woken(), lease.log[-1]) == (False, ('progress', "done waiting: a person's steering came", False))
     assert not [name for name in os.listdir(files.directory) if name.startswith('wake-')]
+
+
+def _served_wait(w: World, files: SessionFiles) -> str:
+    """``wait_for_agents`` as the tool server answers kiro-cli's call (its start: the call's)."""
+    answered = answer(w.session.tools, files, {'jsonrpc': '2.0', 'id': 7, 'method': 'tools/call',
+                                               'params': {'name': 'wait_for_agents', 'arguments': {}}})
+    assert answered is not None
+    return answered['result']['content'][0]['text']
+
+
+def test_a_wake_left_before_the_wait_began_never_ends_it(tmp_path):
+    # (Q19) The Kiro adapter leaves a wake with every steering prompt, waiting or not: one left between waits (its
+    # steering already in the conversation) made the next wait_for_agents return at once, "a person's steering came".
+    files = SessionFiles(str(tmp_path / 'session'))
+    w, _, lease, clock = _coordinator(tmp_path)
+    w.session.context.waiter = files_waiter(files)
+    files.wake()
+    clock.hook = lambda now: files.post([{'kind': 'task.done', 'summary': DONE.summary, 'sender': 'board'}]) \
+        if now >= 3 * waiting.POLL_SECONDS else None
+    assert _served_wait(w, files).startswith('news while you waited (1 message)')
+    assert clock.sleeps[:3] == [waiting.POLL_SECONDS] * 3   # (it waited: the stale wake ended nothing)
+    assert not [name for name in os.listdir(files.directory) if name.startswith('wake-')]   # (taken unread)
+    assert lease.log[-1] == ('progress', 'done waiting: 1 message(s) (task.done)', False)
+    # One left while the served wait is under way still ends it.
+    clock.hook = lambda _now: files.wake()
+    assert _served_wait(w, files) == "the wait ended: a person's steering came, and it is in your conversation: act on it."
+
+
+def test_a_wake_markers_time_is_its_names_and_a_name_off_its_shape_is_never_newer_than_a_wait(tmp_path):
+    files = SessionFiles(str(tmp_path / 'session'))
+    files.write('wake-not-a-time', {})
+    assert files.woken(since=1) is False
+    files.write(f'wake-{10:020d}-abcd1234', {})
+    assert (files.woken(since=11), files.woken()) == (False, False)
+    files.write(f'wake-{10:020d}-abcd1234', {})
+    assert files.woken(since=10) is True
 
 
 # -- the finish rule -----------------------------------------------------------------------------------------------

@@ -89,7 +89,6 @@ const EXEMPT: Readonly<Record<string, string>> = {
   KnowledgeReview: 'Approve a knowledge pack version is the one action of its review card in the setup guide, nothing typed left unsaved',
   RegistryPage: 'Create from a skill heads the Registry\'s list (it opens the Create card sheet)',
   SteerComposer: 'Send is the run workspace thread\'s composer, under the session pane it steers (a message to the orchestrator, not a form\'s save row)',
-  EngineeringBoardControls: 'Post is a small fold-out form\'s at the top of the board it adds a task to (an action, not a page\'s save row)',
   RunDecisionForm: 'Make the decision sits in the decision card at the top of the selected run, above the graph, left-aligned',
   AddPasskeyButton: 'a one-action card button (the passkey offer above the page, Account → Passkey), no form to save',
   EndpointCard: 'Download skill is a card action at the top of Connect',

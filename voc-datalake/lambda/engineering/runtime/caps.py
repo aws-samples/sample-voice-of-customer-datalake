@@ -19,7 +19,8 @@ An agent runs as long as its task needs and it makes progress. These are the onl
 Model tokens and cost stay hard caps set by a person, per run; they are read from the run, never here. What a
 session costs is counted here (``SessionPricing``): each session's vCPU and memory at the deployment's AgentCore
 rates, and (7.50.00) its model tokens at the deployment's price per model (``TokenPrices``, ``token_usd``), so the
-run's cost cap and its flow's budget bound model spend, not session time alone.
+run's cost cap and its flow's budget bound model spend, not session time alone; and (7.58.00) a Kiro session's credits
+at the deployment's price per credit (``kiro_credit_price``, ``credit_usd``), so they bound a Kiro session's too.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from typing import Any, Final
 
-from engineering.runtime.interface import SESSION_LIFE_SECONDS, RuntimeRefused
+from engineering.runtime.interface import MICRO_PER_CREDIT, SESSION_LIFE_SECONDS, RuntimeRefused
 
 MINUTE: Final = 60
 #: The idle timeout of every agent runtime (``idleRuntimeSessionTimeout``, lib/stacks/engineering-agentcore.ts): a
@@ -255,16 +256,55 @@ def model_prices(raw: str | None) -> TokenPrices:
     return TokenPrices(prices)
 
 
+#: (7.58.00) What one Kiro credit costs by default, in USD: Kiro's price for a credit past a plan's own (its add-on
+#: credits; kiro.dev/pricing, read 2026-11-20). A plan's included credits are not modelled: the cap counts every credit
+#: at this price, an upper bound. The default of ``-c engineeringKiroCreditPrice``.
+DEFAULT_KIRO_CREDIT_PRICE: Final = Decimal('0.04')
+#: The highest price per credit a deployment may set, in USD (a typo of a few orders of magnitude fails).
+MAX_USD_PER_CREDIT: Final = Decimal('10')
+KIRO_CREDIT_PRICE_ENV: Final = 'ENGINEERING_KIRO_CREDIT_PRICE'
+
+
+def kiro_credit_price(raw: str | None) -> Decimal:
+    """``ENGINEERING_KIRO_CREDIT_PRICE``: USD per Kiro credit, 0 to ``MAX_USD_PER_CREDIT`` with at most
+    ``PRICE_DIGITS`` digits after the point (0: credits counted, never priced); unset: ``DEFAULT_KIRO_CREDIT_PRICE``.
+    Anything else is refused."""
+    if raw is None or raw.strip() == '':
+        return DEFAULT_KIRO_CREDIT_PRICE
+    shape = (f'{KIRO_CREDIT_PRICE_ENV} is 0-{MAX_USD_PER_CREDIT} USD per credit, at most {PRICE_DIGITS} digits after '
+             'the point')
+    try:
+        price = Decimal(raw.strip())
+    except InvalidOperation as error:
+        raise RuntimeRefused(shape) from error
+    exponent = price.as_tuple().exponent
+    if (not price.is_finite() or not isinstance(exponent, int) or exponent < -PRICE_DIGITS
+            or not Decimal(0) <= price <= MAX_USD_PER_CREDIT):
+        raise RuntimeRefused(shape)
+    return price
+
+
+def credit_usd(price: Decimal, micro_credits: int) -> Decimal:
+    """What ``micro_credits`` millionths of a Kiro credit cost at ``price`` USD per credit, rounded up to the 12th
+    digit (a plain 0, never 0E-12), as ``token_usd``."""
+    if micro_credits < 0:
+        raise ValueError('a credit count is never below zero')
+    usd = Decimal(micro_credits) * price / MICRO_PER_CREDIT
+    return usd.quantize(USD_STEP, rounding=ROUND_CEILING) or Decimal(0)
+
+
 @dataclass(frozen=True)
 class SessionPricing:
     """Each session's vCPU and memory at the deployment's rates: the size of its role (``build_roles`` get the
-    ``build_size`` when the deployment gives them one, every other role ``STANDARD_SIZE``); and its model tokens at
-    the deployment's price per model (``tokens``, 7.50.00)."""
+    ``build_size`` when the deployment gives them one, every other role ``STANDARD_SIZE``); its model tokens at the
+    deployment's price per model (``tokens``, 7.50.00); and a Kiro session's credits at its price per credit
+    (``credit_price``, 7.58.00)."""
 
     rates: SessionRates = field(default_factory=SessionRates)
     build_roles: frozenset[str] = frozenset()
     build_size: SessionSize | None = None
     tokens: TokenPrices = field(default_factory=TokenPrices)
+    credit_price: Decimal = DEFAULT_KIRO_CREDIT_PRICE
 
     def size(self, role: str) -> SessionSize:
         return self.build_size if self.build_size is not None and role in self.build_roles else STANDARD_SIZE

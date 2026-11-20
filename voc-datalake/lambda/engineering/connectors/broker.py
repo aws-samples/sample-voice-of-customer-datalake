@@ -428,11 +428,10 @@ class Broker:
         return self._upstream_after(caller, branch, done) if fork else done
 
     def _upstream_after(self, caller: Caller, branch: str, ref: PullRequestRef) -> PullRequestRef:
-        """The fork's pull request ``ref`` with the run's upstream pull request's outcome (7.57.00): opened, its
-        one-click link (``link``, the run's record keeping it), refused with its reason and no link (the run ends with
-        the fork's pull request), or unknown (the record keeping the link). Never raises: the fork's
-        pull request was made, and is the answer whatever becomes of the upstream one. ``ref`` as it is on any other
-        connection."""
+        """The fork's pull request ``ref`` with the run's upstream pull request's outcome (7.57.00): its one-click link
+        (``link``, the run's record keeping it), one already open from the branch (``opened``), or refused with its
+        reason and no link (the run ends with the fork's pull request). Never raises: the fork's pull request was made,
+        and is the answer whatever becomes of the upstream one. ``ref`` as it is on any other connection."""
         connector = self._connector
         if connector is None or connector.upstream is None:
             return ref
@@ -444,21 +443,20 @@ class Broker:
             outcome = self._upstream_step(connector).open(caller.run_id, run, branch)
         except (WriteRefused, HostError, NoConnection) as failed:
             reason = failed.reason if isinstance(failed, (WriteRefused, HostError)) else NO_CONNECTION
-            logger.info('broker upstream pull request not opened', extra={'run_id': caller.run_id,
-                                                                          'kind': type(failed).__name__})
-            outcome = {'state': 'unknown' if isinstance(failed, OutcomeUnknown) else 'refused', 'reason': reason}
+            logger.info('broker upstream pull request not offered', extra={'run_id': caller.run_id,
+                                                                           'kind': type(failed).__name__})
+            outcome = {'state': 'refused', 'reason': reason}
         return replace(ref, upstream=outcome)
 
     @staticmethod
     def _upstream_step(connector: Connector) -> UpstreamPullRequests:
-        return UpstreamPullRequests(connector, _claimed)
+        return UpstreamPullRequests(connector)
 
     def open_upstream_pr(self, caller: Caller, branch: str) -> dict[str, object]:
         """The run's upstream pull request (7.57.00, the PR author's alone): what ``upstream_pr.py`` checks, then its
-        one-click link, and the pull request ``<fork owner>:<branch>`` → the upstream's default branch, ready for
-        review, opened as the fork connection's owner where they authorized it and GitHub lets it (else ``link``);
-        once per run (an opened one is answered as it stands). A safety check's refusal is ``NotNow`` (409), no link,
-        and is kept on the run's record."""
+        one-click link to GitHub's compare page, ``<fork owner>:<branch>`` → the upstream's default branch, which the
+        person opens (the app never opens it itself, 7.58.00); one already open from the branch is answered as it
+        stands. A safety check's refusal is ``NotNow`` (409), no link, and is kept on the run's record."""
         connector, run = self._open(caller, OPEN_UPSTREAM_PR)
         _require_branch(branch, run, caller.run_id)
         return self._upstream_step(connector).open(caller.run_id, run, branch)

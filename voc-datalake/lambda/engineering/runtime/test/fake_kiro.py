@@ -15,7 +15,9 @@ request the client never offered), ``hold`` (until a cancel or the next prompt: 
 reason, ``end_turn`` by default), ``exit`` (ends the process mid-turn); ``refuse_mode`` (answers another agent);
 ``load_session`` (false: no ``loadSession`` capability); 7.58.00: ``model`` (the session's model at the start),
 ``models`` (the ones the account offers), ``model_groups`` (listed in a group), ``model_refuse`` (an error for a model
-set) and ``model_answer`` (another model said to be current). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
+set) and ``model_answer`` (another model said to be current); and a turn's ``info`` (a v3 ``session_info_update`` with
+those ``_meta.kiro`` fields: ``turn_completion``'s credits, ``session_usage``'s total) or ``metadata`` (a v2
+``_kiro.dev/metadata`` with those params). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
 """
 from __future__ import annotations
 
@@ -189,8 +191,8 @@ class Fake:
                 self.ask(action)
             elif 'fs' in action:
                 self.request('fs/read_text_file', {'sessionId': self.session_id, 'path': action['fs']})
-            elif 'plan' in action:
-                self.update({'sessionUpdate': 'plan', 'entries': action['plan']})
+            elif {'plan', 'info', 'metadata'} & set(action):
+                self.notify(action)
             elif action.get('exit'):
                 return 'exit'
             elif action.get('hold'):
@@ -199,6 +201,18 @@ class Fake:
                 stop = action['stop']
         self.answer(ident, {'stopReason': stop})
         return stop
+
+    def notify(self, action: dict[str, Any]) -> None:
+        """A turn's notification with no answer: its ``plan``; (7.58.00) a v3 ``session_info_update`` with ``info``'s
+        ``_meta.kiro`` fields (a turn's credits among them), or the v2 engine's ``_kiro.dev/metadata`` with
+        ``metadata``'s params."""
+        if 'plan' in action:
+            self.update({'sessionUpdate': 'plan', 'entries': action['plan']})
+        elif 'info' in action:
+            self.update({'sessionUpdate': 'session_info_update', '_meta': {'kiro': action['info']}})
+        else:
+            self.send({'jsonrpc': '2.0', 'method': '_kiro.dev/metadata',
+                       'params': {'sessionId': self.session_id, **action['metadata']}})
 
     def hold(self, ident: Any, pending: list[dict[str, Any]]) -> str:
         """Until a cancel (this turn answers cancelled) or a new prompt (this one cancelled, then that one runs)."""

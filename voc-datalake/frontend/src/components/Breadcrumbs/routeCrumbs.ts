@@ -79,14 +79,13 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'setup': { labelKey: 'common:breadcrumbs.setupGuide' },
   // `/agents/engineering/:runId[/a/<agent>]` — a run's workspace: the crumb is the list of runs (Agents → Runs).
   'engineering': { labelKey: 'common:breadcrumbs.runs', path: '/agents/runs' },
-  // `/agents/connections/github/created`, `…/installed` and (7.57.00) `…/authorized`, where GitHub sends an
+  // `/agents/connections/github/created` and `…/installed`, where GitHub sends an
   // administrator back from the deployment's GitHub App: both crumbs above the page go to the Connections tab, where
   // the App is managed.
   'connections': { labelKey: 'common:breadcrumbs.connections' },
   'github': { labelKey: 'common:breadcrumbs.github', path: '/agents/connections' },
   'created': { labelKey: 'common:breadcrumbs.githubAppCreated' },
   'installed': { labelKey: 'common:breadcrumbs.githubAppInstalled' },
-  'authorized': { labelKey: 'common:breadcrumbs.githubAppAuthorized' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
   // `/oauth/authorize`, the MCP sign-in consent: its parent is Connect, where the sign-in is managed.
   'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },

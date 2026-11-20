@@ -926,6 +926,7 @@
     "tokensIn": "입력 토큰",
     "tokensOut": "출력 토큰",
     "microvm": "MicroVM 시간",
+    "credits": "Kiro 크레딧",
     "budget": "월 예산",
     "budgetHint": "각 워크플로의 현재 월 예산과 이번 달에 쓴 비율(세션 시간과 모델 토큰).",
     "budgetShare": "{{percent}}%",
@@ -1051,13 +1052,7 @@
       },
       "approval": "소유자가 설치를 승인해야 합니다. 승인되면 에이전트 오케스트레이션 → 연결을 열고 App의 저장소 추가로 저장소를 저장하세요.",
       "noState": "GitHub가 이 배포의 링크 없이 돌려보내서 아무것도 저장하지 않았습니다. 에이전트 오케스트레이션 → 연결을 열고 App의 설치 확인 또는 저장소 추가를 사용하세요.",
-      "authorizedTitle": "GitHub 승인",
-      "authorizing": "승인을 저장하는 중…",
-      "authorizedBody": "@{{login}}(으)로 승인했습니다.",
-      "authorizedUse": "플랫폼은 이것을 한 가지에만 사용합니다. 게이트를 통과하면 내 포크 연결의 실행이 업스트림에 여는 풀 리퀘스트입니다.",
-      "authorizeDeclined": "GitHub에서 승인이 거부되었습니다. 아무것도 저장하지 않았습니다.",
-      "forkConnected": "포크 연결됨: {{upstream}}의 포크인 {{repository}}.",
-      "noAuthorizeCode": "이 페이지에는 App을 승인한 뒤 GitHub가 돌려주는 링크가 필요합니다. 에이전트 오케스트레이션 → 연결에서 다시 시작하세요."
+      "forkConnected": "포크 연결됨: {{upstream}}의 포크인 {{repository}}."
     },
     "title": "저장소 연결",
     "intro": "엔지니어링 에이전트가 작업하는 곳: 각 저장소, 접근 방법, 푸시 허용 여부.",
@@ -1288,9 +1283,15 @@
       "badge": "{{upstream}}의 포크",
       "owner": "소유자: {{owner}}",
       "licence": "확인한 라이선스: {{licence}}",
-      "outcome": "실행은 클릭 한 번이면 되는 {{upstream}}의 풀 리퀘스트로 끝납니다. {{owner}} 님이 GitHub에서 Create를 클릭하거나, 승인 후에는 앱이 대신 엽니다. 병합은 업스트림 메인테이너만 합니다.",
-      "assisted": "AI 지원 실행에서도 업스트림 풀 리퀘스트 열기",
-      "ownerOnly": "연결 소유자인 {{owner}}만 변경할 수 있습니다."
+      "outcome": "실행은 클릭 한 번이면 되는 {{upstream}}의 풀 리퀘스트로 끝납니다. {{owner}} 님이 GitHub에서 Create를 클릭합니다. 병합은 업스트림 메인테이너만 합니다.",
+      "ownerOnly": "연결 소유자인 {{owner}}만 업스트림의 라이선스를 다시 확인할 수 있습니다.",
+      "acknowledge": "현재 라이선스 확인…",
+      "licenceReading": "GitHub에서 업스트림의 라이선스를 읽는 중…",
+      "licenceUnread": "GitHub에서 업스트림의 라이선스를 읽지 못했습니다. 다시 시도하세요.",
+      "licenceNone": "{{upstream}}에는 이제 GitHub가 인식하는 라이선스가 없습니다. 여기에서는 기여를 받지 않습니다.",
+      "licenceNow": "{{upstream}}의 현재 라이선스: {{licence}}.",
+      "licenceUnchanged": "확인한 라이선스와 같습니다.",
+      "licenceConfirm": "{{licence}} 확인"
     },
     "public": {
       "title": "공개 리포지토리 추가",
@@ -1336,45 +1337,15 @@
       "step2": "에이전트가 내 포크에 푸시하도록 허용",
       "step2Hint": "포크에 앱을 설치하고 그 저장소만 선택하세요. 돌아오면 앱이 포크를 감지합니다.",
       "installOnFork": "내 포크에 앱 설치",
-      "step3": "선택 사항: 대신 풀 리퀘스트 열기",
-      "step3Hint": "내 계정으로 승인하면 앱이 {{upstream}}에 풀 리퀘스트를 대신 엽니다. 승인하지 않아도 각 실행의 풀 리퀘스트는 클릭 한 번이면 됩니다. GitHub에서 Create를 클릭하세요.",
       "stepTitle": "{{number}}. {{title}}",
       "statusDone": "완료",
       "statusTodo": "할 일",
-      "statusOptional": "선택 사항",
       "cardTitle": "{{upstream}}에 기여하기",
       "cardIntro": "업스트림은 {{owner}}의 것이고, 포크와 그 풀 리퀘스트는 내 것입니다.",
       "summaryReads": "읽기: {{upstream}}(공개, 읽기 전용).",
       "summaryPushes": "에이전트 푸시 대상: {{fork}}(내 포크).",
       "summaryPushesPending": "에이전트 푸시 대상: 연결된 후의 내 포크.",
-      "summaryPullRequests": "{{upstream}}으로의 풀 리퀘스트 출처: {{account}}(내가 Create를 클릭하거나, 승인 후에는 앱이 대신 엽니다).",
-      "summaryPullRequestsPending": "{{upstream}}으로의 풀 리퀘스트는 내 포크에서 옵니다(내가 Create를 클릭하거나, 승인 후에는 앱이 대신 엽니다).",
-      "step3NoClient": "먼저 앱의 OAuth 클라이언트를 설정하세요: {{slug}} 카드의 App의 OAuth 클라이언트 설정…."
-    },
-    "authorization": {
-      "noClient": "업스트림 풀 리퀘스트를 대신 열려면 앱에 OAuth 클라이언트가 필요하지만 여기에 저장되어 있지 않습니다. 없어도 각 풀 리퀘스트는 클릭 한 번이면 됩니다.",
-      "setClient": "App의 OAuth 클라이언트 설정…",
-      "reading": "승인을 읽는 중…",
-      "unreadable": "GitHub 승인을 읽을 수 없습니다.",
-      "needed": "선택 사항: 내 계정으로 앱을 승인하면 앱이 내 포크의 업스트림 풀 리퀘스트를 대신 엽니다. 승인하지 않아도 각 풀 리퀘스트는 클릭 한 번이면 됩니다.",
-      "authorize": "내 계정으로 승인",
-      "as": "@{{login}}(으)로 승인됨",
-      "remove": "내 승인 삭제",
-      "removeTitle": "{{slug}}에 대한 승인을 삭제할까요?",
-      "removeMessage": "플랫폼이 내 승인을 잊습니다. 앱은 더 이상 내 포크의 업스트림 풀 리퀘스트를 대신 열지 않으며, 각 실행의 풀 리퀘스트는 GitHub에서 클릭 한 번이면 됩니다. GitHub에서도 취소하려면: Settings → Applications → Authorized GitHub Apps.",
-      "removeConfirm": "삭제",
-      "removed": "{{slug}}에 대한 승인을 삭제했습니다.",
-      "clientTitle": "{{slug}}의 OAuth 클라이언트",
-      "clientDescription": "서버에 암호화되어 저장되며 다시 표시되지 않습니다.",
-      "clientHint": "GitHub에서: Settings → Developer settings → GitHub Apps → 해당 App → Generate a new client secret. 클라이언트 ID도 같은 페이지에 있습니다.",
-      "callbackHint": "같은 페이지에 이 Callback URL을 추가하세요:",
-      "clientId": "클라이언트 ID",
-      "clientIdInvalid": "GitHub에 표시된 그대로의 클라이언트 ID(문자, 숫자, 점).",
-      "clientSecret": "클라이언트 시크릿",
-      "clientSecretHint": "한 번만 붙여 넣으며 다시 표시되지 않습니다.",
-      "clientSecretInvalid": "GitHub가 생성한 클라이언트 시크릿을 붙여 넣으세요.",
-      "clientSave": "클라이언트 저장",
-      "clientSaved": "{{slug}}의 OAuth 클라이언트를 저장했습니다."
+      "summaryPullRequests": "{{upstream}}으로의 풀 리퀘스트는 내가 보냅니다. 실행은 원클릭 링크로 끝나고, 내가 GitHub에서 Create를 클릭합니다."
     }
   },
   "skills": {
@@ -1796,29 +1767,6 @@
     "answer": "메시지",
     "bytes": "{{used, number}} / {{max, number}}바이트",
     "send": "보내기",
-    "board": {
-      "post": "작업 게시",
-      "role": "역할",
-      "title": "제목",
-      "instructions": "할 일",
-      "postSubmit": "게시",
-      "posted": "게시했습니다.",
-      "controls": "작업 {{task}}",
-      "take": "맡기",
-      "takeOver": "인계받기",
-      "moveTo": "{{state}}(으)로 이동",
-      "block": "차단",
-      "priority": "우선순위",
-      "setPriority": "우선순위 설정",
-      "reason": "이유",
-      "blockSubmit": "작업 차단",
-      "takeOverTitle": "이 작업을 인계받을까요?",
-      "takeOverMessage": "다른 사람이 맡고 있습니다 ({{holder}}). 내 작업이 되고 그 사람의 이동은 거부됩니다.",
-      "duplicate": "같은 작업이 이미 보드에 있습니다. 새로 게시된 것은 없습니다.",
-      "blockOverTitle": "이 작업을 차단할까요?",
-      "blockOverMessage": "다른 사람이 맡고 있습니다 ({{holder}}). 차단하면 그 사람의 담당이 끝납니다.",
-      "release": "에이전트에게 돌려주기"
-    },
     "reports": {
       "title": "보고서: {{subject}}",
       "version": "버전",
@@ -1841,6 +1789,7 @@
     "notFound": "엔지니어링 실행을 찾을 수 없습니다",
     "notFoundHint": "실행 ID를 확인하세요. 엔지니어링 실행은 엔지니어링 에이전트가 켜진 곳에서, 모든 카테고리를 볼 수 있는 사람에게만 표시됩니다.",
     "modelTokens": "{{model}}: 입력 {{input, number}}, 출력 {{output, number}}",
+    "modelCredits": "{{model}}: Kiro 크레딧 {{credits, number}}({{cost}})",
     "agentStatus": "{{agent}}: {{status}}",
     "agentNotApplied": "{{agent}}: {{status}} (적용 안 됨)",
     "status": {
@@ -1958,7 +1907,6 @@
       "sandbox": "세션 샌드박스",
       "kiro": "Kiro 하네스",
       "fork": "포크",
-      "user_authorization": "소유자의 GitHub 승인",
       "upstream_pr": "업스트림 풀 리퀘스트"
     },
     "required": "실행에 필요"
@@ -2234,7 +2182,9 @@
         "head": "지금 저장소의 최신 상태(리베이스, 충돌은 에이전트가 처리)"
       },
       "agents": "에이전트",
-      "agentsHint": "아무것도 선택하지 않으면: 완료되지 않은 모든 작업"
+      "agentsHint": "아무것도 선택하지 않으면: 완료되지 않은 모든 작업",
+      "model": "새 실행의 모델",
+      "modelDefault": "이 실행과 같은 모델"
     },
     "header": {
       "cost": "지금까지의 비용: {{cost}}",
@@ -2878,7 +2828,6 @@
       "runsNative": "이 배포는 이 역할을 네이티브 하네스(Amazon Bedrock)에서 실행합니다: {{model}}({{id}})에서 실행됩니다.",
       "nextRun": "실행이 시작될 때 모델이 기록되므로 변경 사항은 다음 실행부터 적용됩니다. 자체 모델로 시작한 실행은 모든 역할을 그 모델로 실행합니다.",
       "changed": "{{who}}님이 {{at}}에 변경함.",
-      "template": "템플릿은 {{model}}을(를) 지정합니다.",
       "save": "모델 저장",
       "saved": "저장했습니다.",
       "failed": "모델을 저장하지 못했습니다. 다시 시도하세요.",
@@ -3052,6 +3001,7 @@
   },
   "modelChoice": {
     "auto": "Auto",
+    "kiroCredits": "크레딧당 {{price}}의 Kiro 크레딧으로 청구되며, 비용 한도에 포함됩니다.",
     "onHarness": "{{model}} · {{harness}}",
     "harness": {
       "native": "네이티브",
@@ -3067,13 +3017,17 @@
     "notes": {
       "auto": "Kiro가 작업마다 모델을 고릅니다. Kiro 전용: 네이티브 하네스에서는 역할의 기본 모델이 실행됩니다.",
       "named": "두 하네스 모두에서 {{model}}: Kiro에서는 {{kiro}}, 네이티브 하네스(Amazon Bedrock)에서는 {{bedrock}}.",
-      "other": "입력한 모델 ID를 역할이 실행되는 하네스에서 그대로 사용합니다."
+      "other": "입력한 모델 ID를 역할이 실행되는 하네스에서 그대로 사용합니다.",
+      "otherNative": "이 배포가 사용하도록 설정하고 가격을 정한 다른 Bedrock 모델(목록에서 선택)."
     },
     "other": {
       "label": "모델 ID",
+      "enabledLabel": "사용 가능한 모델",
+      "choose": "모델 선택…",
+      "noneEnabled": "이 배포에서 사용 가능한 다른 모델이 없습니다. 관리자가 -c engineeringModelPrices로 추가합니다(docs/deployment.md).",
       "hint": {
         "kiro": "`kiro-cli chat --list-models`가 나열하는 Kiro 모델 ID(예: claude-sonnet-5.5).",
-        "native": "이 배포가 사용하도록 설정한 Bedrock 모델 또는 추론 프로필 ID(예: global.anthropic.claude-sonnet-5-5).",
+        "native": "위의 세 모델 외에 이 배포가 사용하도록 설정하고 가격을 정한 Bedrock 모델입니다. 관리자가 -c engineeringModelPrices로 추가합니다(docs/deployment.md).",
         "any": "Kiro의 역할에는 `kiro-cli chat --list-models`가 나열하는 Kiro 모델 ID(예: claude-sonnet-5.5), 네이티브 하네스의 역할에는 이 배포가 사용하도록 설정한 Bedrock 모델 ID(예: global.anthropic.claude-sonnet-5-5)."
       }
     },

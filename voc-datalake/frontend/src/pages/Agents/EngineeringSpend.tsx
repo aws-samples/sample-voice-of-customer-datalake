@@ -10,7 +10,7 @@
 import { useId } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign, Timer, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign, Coins, Timer, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import MetricCard from '../../components/MetricCard/MetricCard'
@@ -73,8 +73,11 @@ function useFormats() {
   const hours = new Intl.NumberFormat(i18n.language, { style: 'unit', unit: 'hour', unitDisplay: 'short', maximumFractionDigits: 1 })
   const minutes = new Intl.NumberFormat(i18n.language, { style: 'unit', unit: 'minute', unitDisplay: 'short', maximumFractionDigits: 0 })
   const seconds = new Intl.NumberFormat(i18n.language, { style: 'unit', unit: 'second', unitDisplay: 'short', maximumFractionDigits: 0 })
+  const credits = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 2 })
   return {
     usd: (value: number) => usd.format(value),
+    /** (7.58.00) Kiro credits, to two decimals. */
+    credits: (value: number) => credits.format(value),
     count: (value: number) => formatCount(value, i18n.language),
     /** MicroVM time in its largest sensible unit. */
     time: (value: number) => {
@@ -97,6 +100,10 @@ function Totals({ total, approximate }: Readonly<{ total: SpendUsage; approximat
       <MetricCard title={t('spend.tokensIn')} value={total.tokens_in} icon={icon(ArrowDownToLine)} approximate={approximate} />
       <MetricCard title={t('spend.tokensOut')} value={total.tokens_out} icon={icon(ArrowUpFromLine)} approximate={approximate} />
       <MetricCard title={t('spend.microvm')} value={format.time(total.microvm_seconds)} icon={icon(Timer)} approximate={approximate} />
+      {/* (7.58.00: a Kiro session's credits, priced into the cost; shown once there are some) */}
+      {total.credits > 0 && (
+        <MetricCard title={t('spend.credits')} value={format.credits(total.credits)} icon={icon(Coins)} approximate={approximate} />
+      )}
     </div>
   )
 }
@@ -216,6 +223,8 @@ function GroupTable({ spend, library, onWorkflow }: Readonly<{
   // (by workflow, this month only: each one's spend against its budget as it is now; a past month ran under the
   // budgets its runs kept, which the alerts measured, not today's)
   const withBudget = spend.by === 'workflow' && spend.month === currentMonth() && budgets.size > 0
+  // (7.58.00: Kiro's credits, a column only once a group used some)
+  const credited = spend.groups.some((group) => group.credits > 0)
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-[36rem]">
@@ -227,6 +236,7 @@ function GroupTable({ spend, library, onWorkflow }: Readonly<{
             <th scope="col" className={TH_NUM}>{t('spend.tokensIn')}</th>
             <th scope="col" className={TH_NUM}>{t('spend.tokensOut')}</th>
             <th scope="col" className={TH_NUM}>{t('spend.microvm')}</th>
+            {credited && <th scope="col" className={TH_NUM}>{t('spend.credits')}</th>}
             {withBudget && <th scope="col" className={TH_NUM}>{t('spend.budget')}</th>}
           </tr>
         </thead>
@@ -240,6 +250,7 @@ function GroupTable({ spend, library, onWorkflow }: Readonly<{
               <td className={TD_NUM}>{format.count(group.tokens_in)}</td>
               <td className={TD_NUM}>{format.count(group.tokens_out)}</td>
               <td className={TD_NUM}>{format.time(group.microvm_seconds)}</td>
+              {credited && <td className={TD_NUM}>{format.credits(group.credits)}</td>}
               {withBudget && <td className={TD_NUM}><BudgetCell usd={group.usd} budget={budgets.get(group.key)} /></td>}
             </tr>
           ))}

@@ -154,6 +154,18 @@ def test_an_ended_run_restarts_as_a_child_through_the_start_function(lambda_cont
                                  'mode': 'restart', 'base': 'head', 'actor': 'admin-sub'}]
 
 
+def test_a_restart_may_name_one_model_for_every_role_of_its_child(lambda_context: Any,
+                                                                  api: tuple[Any, Bus, Lambdas]) -> None:
+    # (Q18) Kiro's refusal asks for another model: the Restart takes it, as Run now does; null keeps the parent's.
+    _, _, lambdas = api
+    body = {'mode': 'resume', 'base': 'same', 'model': 'haiku', 'confirm': True}
+    assert _call(lambda_context, 'POST', f'/agents/engineering/{world.ENDED_RUN}/restart', body=body)[0] == 202
+    assert lambdas.requests[-1]['model_choice'] == 'haiku'
+    kept = {**body, 'model': None}
+    assert _call(lambda_context, 'POST', f'/agents/engineering/{world.ENDED_RUN}/restart', body=kept)[0] == 202
+    assert 'model_choice' not in lambdas.requests[-1]
+
+
 @pytest.mark.usefixtures('api')
 @pytest.mark.parametrize(('run', 'body', 'status'), [
     (world.RUN, {'mode': 'resume', 'base': 'same', 'confirm': True}, 409),   # (live: the signals restart its agents)
@@ -162,6 +174,8 @@ def test_an_ended_run_restarts_as_a_child_through_the_start_function(lambda_cont
     (world.ENDED_RUN, {'mode': 'resume', 'base': 'tip', 'confirm': True}, 400),
     (world.ENDED_RUN, {'mode': 'resume', 'agents': ['fixer-9'], 'confirm': True}, 400),   # (not its agent)
     (world.ENDED_RUN, {'mode': 'resume', 'agents': [], 'confirm': True}, 400),
+    (world.ENDED_RUN, {'mode': 'resume', 'model': 'not a model', 'confirm': True}, 400),
+    (world.ENDED_RUN, {'mode': 'resume', 'model': 'global.anthropic.claude-opus-5', 'confirm': True}, 400),   # (unpriced)
     ('01JD0000000000000000000009', {'mode': 'resume', 'confirm': True}, 404),
 ])
 def test_a_restart_off_its_rule_or_of_a_live_run_is_refused(lambda_context: Any, api: tuple[Any, Bus, Lambdas],

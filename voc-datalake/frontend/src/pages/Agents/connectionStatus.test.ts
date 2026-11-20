@@ -25,7 +25,7 @@ function connection(fields: Record<string, unknown> = {}, credential: Record<str
 
 const app = (fields: Partial<GitHubApp> = {}): GitHubApp => ({
   app_id: '271828', slug: 'voc-agents-ac7a4f', owner: 'example-org', owner_type: 'Organization', html_url: '',
-  webhook: true, connections: ['web'], created_at: null, created_by: null, version: 1, oauth: false, client_id: null, ...fields,
+  webhook: true, connections: ['web'], created_at: null, created_by: null, version: 1, ...fields,
 })
 
 const issues = (fields: Partial<ConnectionIssues> = {}): ConnectionIssues => ({

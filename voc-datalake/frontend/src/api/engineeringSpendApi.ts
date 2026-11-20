@@ -23,7 +23,8 @@ export const SPEND_NONE = '-'
 export const SPEND_MICROVM = 'microvm'
 
 const amount = z.number().nonnegative().catch(0)
-const UsageSchema = z.object({ usd: amount, tokens_in: amount, tokens_out: amount, microvm_seconds: amount })
+/** (7.58.00: `credits`, a Kiro session's credits, priced into `usd` at the deployment's price per credit) */
+const UsageSchema = z.object({ usd: amount, tokens_in: amount, tokens_out: amount, microvm_seconds: amount, credits: amount })
 const GroupSchema = UsageSchema.extend({ key: z.string() })
 
 export type SpendUsage = z.output<typeof UsageSchema>

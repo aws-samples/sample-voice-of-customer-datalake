@@ -42,7 +42,6 @@ NEVER: tuple[tuple[str, str, Any], ...] = (
     ('POST', f'{BASE}/messages', {'to': 'conductor', 'text': 'x'}),
     ('POST', f'{BASE}/restart', {'mode': 'resume', 'base': 'same', 'confirm': True}),
     ('POST', f'{BASE}/reactions', {}),
-    ('POST', f'{BASE}/board/tasks', {'role': 'fixer', 'title': 't', 'spec': {}}),
     ('GET', f'{BASE}/board', None),
     ('GET', f'{BASE}/conversation', None),
     ('GET', f'{BASE}/reports', None),

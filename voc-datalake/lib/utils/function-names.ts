@@ -41,8 +41,8 @@ export const RADAR_SCAN_FUNCTION_BASE_NAME = 'voc-radar-scan';
 export const DESIGN_CAPTURE_FUNCTION_BASE_NAME = 'voc-design-capture';
 /**
  * The engineering board's function (VocProcessingStack, lib/stacks/engineering-bus.ts; with
- * `-c engineeringAgents=true`). The Agents API in VocApiStack invokes it directly for a person's board actions
- * (ENGINEERING_BOARD_FUNCTION): the board's own role writes the change, the API's role writes no board row.
+ * `-c engineeringAgents=true`). The Agents API in VocApiStack invokes it directly for a person's go on a run
+ * (ENGINEERING_BOARD_FUNCTION): the board's own role writes it, the API's role writes no board row.
  */
 export const ENGINEERING_BOARD_FUNCTION_BASE_NAME = 'voc-engineering-board';
 /**
@@ -67,13 +67,6 @@ export const ENGINEERING_APP_TOKENS_FUNCTION_BASE_NAME = 'voc-engineering-app-to
  * for the connections' follow (ENGINEERING_ISSUES_CONFIG_FUNCTION).
  */
 export const ENGINEERING_ISSUES_CONFIG_FUNCTION_BASE_NAME = 'voc-engineering-issues-config';
-/**
- * The GitHub App user authorizations' code exchange (VocProcessingStack, lib/stacks/engineering-user-auth.ts; with
- * `-c engineeringAgents=true`; 7.57.00): its own role reads the Apps' OAuth clients and writes the people's
- * user-to-server tokens (never reads one), entered where it takes `exchange` alone. The Agents API in VocApiStack
- * invokes it when a person's GitHub sign-in comes back (ENGINEERING_USER_AUTH_FUNCTION).
- */
-export const ENGINEERING_USER_AUTH_FUNCTION_BASE_NAME = 'voc-engineering-user-auth';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

@@ -65,7 +65,7 @@ def not_enabled(model: str) -> str:
             '(docs/deployment.md).')
 
 
-def chosen(run_choice: str, role_choice: str, template_choice: str) -> str:
-    """The choice a launch applies: the run's (one model for every role), else the role's (the Registry's), else its
-    template card's; '' for none."""
-    return run_choice or role_choice or template_choice
+def chosen(run_choice: str, role_choice: str) -> str:
+    """The choice a launch applies: the run's (one model for every role), else the role's (the Registry's); '' for
+    none (the role's default, its card's ``model.id``: a card names no choice)."""
+    return run_choice or role_choice

@@ -360,7 +360,6 @@
    "steer_available": true,
    "signals_available": true,
    "stop_available": true,
-   "board_available": false,
    "totals": {
     "messages": 8,
     "microvm_seconds": 2150,
@@ -445,7 +444,6 @@
    "steer_available": true,
    "signals_available": true,
    "stop_available": true,
-   "board_available": false,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,
@@ -506,7 +504,6 @@
    "steer_available": true,
    "signals_available": true,
    "stop_available": true,
-   "board_available": false,
    "totals": {
     "messages": 0,
     "microvm_seconds": 0,
@@ -684,7 +681,6 @@
    "steer_available": true,
    "signals_available": true,
    "stop_available": true,
-   "board_available": false,
    "totals": {
     "messages": 9,
     "microvm_seconds": 40,

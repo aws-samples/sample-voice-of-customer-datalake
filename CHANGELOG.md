@@ -19,10 +19,12 @@ the platform package version.
 
 ## [7.58.00] - 2026-11-20
 
-**Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (Auto,
-Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for a whole run from Run now or a flow's Start a run
-([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)). Only with
-`-c engineeringAgents=true`; every change is an administrator's, behind Cognito.
+**Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (on Kiro
+Auto, Opus 5.5, Sonnet 5.5, Haiku 5.5 or another Kiro model id typed; on the native harness the three named models or
+another model the deployment enables, from a list), and one for a whole run from Run now, a flow's Start a run or a
+Restart ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)); **a Kiro session's
+credits now count toward the cost caps**, priced per credit. Only with `-c engineeringAgents=true`; every change is an
+administrator's, behind Cognito.
 
 ### Added
 
@@ -30,25 +32,47 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   native harness the role's default), `opus`, `sonnet`, `haiku` (`claude-<name>-5.5` on Kiro,
   `global.anthropic.claude-<name>-5-5` on Bedrock), or another model id (letters, digits and `._:/-`, at most 128
   characters, no space, no URL), checked in the card's schema, the API and the app.
-- **On a role's card**: `agents/<role>/agent.yaml` `model.choice` (one of the four, the schema's enum) or `model.other`
-  (an id), never both; a card with neither runs as before. The bundle carries it as the agent's `model_choice`. No
-  shipped card names one.
 - **In the Registry**: a role's card has a **Model** select (each option says where it works, Auto "Kiro only";
   "Other model…" shows its id field, with a Kiro or a Bedrock hint by the role's harness) and says what the role runs
   on here; `PUT /agents/engineering/registry/<role>/model` saves it (`{model}`, null for the default) in one
   `SETTINGS#engineering` / `ROLE_MODELS` row of `voc-agents`, with a create-only history row per change. Every card
-  answers `model_choice`, `template_model_choice`, who changed it and when, and `runs_on` (`native` or `kiro`); the
-  listing answers `bedrock_enabled`.
+  answers `model_choice`, who changed it and when, and `runs_on` (`native` or `kiro`); the listing answers
+  `bedrock_enabled` and (F4) `kiro_credit_price_usd`.
 - **Model for this run** in Run now (`POST /agents/<id>/run` `{model}`) and in a flow's **Start a run**
   (`POST /agents/engineering/runs` `{model}`, the same field and checks): one model for every role. A run's start
-  records it and the roles' own choices on its `META` (`model_choice`, `role_models`), a Resume or a Restart keeps them,
-  each launch applies them (the run's, else the role's, else its card's), and the session row says the model asked for
-  and the choice applied; the run page shows the run's model and each step's model with its harness.
+  records it and the roles' own choices on its `META` (`model_choice`, `role_models`), a Resume or a Restart keeps them
+  unless the Restart names another (below), each launch applies them (the run's, else the role's, else its card's
+  `model.id`), and the session row says the model asked for and the choice applied; the run page shows the run's model
+  and each step's model with its harness.
+- **A Restart may name the new run's model** (Q18): **Restart run → Model for the new run** (`POST
+  …/<run>/restart` `{model}`, Run now's field and checks; null or absent keeps the run's models): one model for every
+  role of the child run, so a step Kiro stopped for its model goes on with another. A model off its shape, or one the
+  deployment cannot run natively, is refused before the child is written.
 - **Kiro sets its model and checks it**: after the mode, `session/set_config_option {configId: model}` with the
   launch's model (`--kiro-model`), else Kiro's name for the skill's, which the session's agent config and the compiled
   `kiro-agents/*.json` (`model`) pin too. Unless Kiro answers that it is the session's model (`auto`: any), the step
-  ends for a person: "Kiro could not use ‹wanted› for the ‹role› (it answered ‹current or none›). Choose another model
-  in the role's setup or for this run." Never another model: nobody pays for a model they did not pick.
+  ends for a person: "Kiro could not use ‹wanted› for the ‹role› (it answered ‹current or none›). Restart the run with
+  another model (Restart run, Model), or start a new run with one." (Q18: a Resume or a Restart keeps the run's models,
+  so the old "choose another model in the role's setup" could not reach the run.) Never another model: nobody pays for a
+  model they did not pick.
+- **Kiro credits are metered** (F4, the owner's decision; `harness/kiro.py` `turn_credits`, `runtime/caps.py`
+  `kiro_credit_price`, `credit_usd`): each Kiro turn's credits, as kiro-cli reports them (on the harness's v3 engine a
+  `session_info_update` `turn_completion`; on v2 the `_kiro.dev/metadata` notification whose `meteringUsage` comes with
+  `turnDurationMs` at a turn's end), are summed per turn (entries in `credit` only; another unit is recorded, never
+  counted), counted once per turn, recorded in the transcript (`kiro_credits`: credits, the turn's milliseconds, the
+  model) and reported on the session's status as the model `kiro:<model>`'s credits, which the runtime ledgers at
+  **`-c engineeringKiroCreditPrice`** (USD a credit, default 0.04, Kiro's add-on credit price; 0 to 10, at most 12
+  digits after the point, checked at synth and by the runtime) as the session's model spend: so a run's cost cap, its
+  flow's budget alerts and the hard cap count them, as they count Bedrock tokens. A plan's included credits are not
+  modelled (an upper bound). The run page shows each Kiro model's credits and their cost, Agents → Spend a **Kiro
+  credits** column (and total) once some were used, and the Registry's **Model** of a Kiro role "Billed in Kiro credits
+  at ‹price› a credit, which the cost cap counts". The runtime, the start function and the Agents API get
+  `ENGINEERING_KIRO_CREDIT_PRICE`.
+- **Acknowledge the current licence…** on a fork connection (Q22), its owner's alone: the upstream's licence read live
+  (`GET …/public-repositories?q=<owner/name>`), the owner ticks "I have read the ‹licence› licence and contribute
+  under it", and `PUT …/connections/<id>/upstream` `{licence, reason?}` stores it (the upstream read again: 409 for a
+  licence that is not its current one, saying which it is), refreshing the stored upstream default branch with it. An
+  upstream that changed its licence refused every run's link until then, with nothing to acknowledge it with.
 - **Readiness**: `bedrock_models` checks the native roles' chosen models, and fails on one the deployment does not
   grant and price; `kiro` names each Kiro role's model and says Kiro checks it when the step's session starts.
 
@@ -59,10 +83,29 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   when it is saved, at the run's start and at the launch: "‹id› isn't enabled in this deployment. An admin adds it
   with -c engineeringModelPrices (docs/deployment.md)." No grant is widened. The Agents API's environment gains
   `ENGINEERING_MODEL_PRICES`.
+- **Only a model that thinks adaptively runs on the native harness** (Q17): the Converse loop asks every session's
+  model for adaptive, summarized thinking, which an older Claude refuses, so `harness_switch.native_models` keeps only
+  the allowlist's `adaptive_thinking` models (Claude Sonnet 4.6 and Haiku 4.5 are not enabled even when priced) and a
+  choice of one is refused saying why: "‹id› can't run on the native harness: it doesn't think adaptively, which the
+  harness asks of every model. Choose another model."
+- **A role's card names no model choice** (F2): `agents/<role>/agent.yaml` `model` is `{id}` only, the role's default on
+  both harnesses (Kiro's name for it on Kiro). The card's schema refuses `model.choice` and `model.other`, and the
+  bundle carries no `model_choice`. A launch takes the run's choice, else the role's (the Registry's), else the card's
+  `model.id` (`model_choice.chosen` has two tiers). The Registry's cards no longer answer `template_model_choice`. No
+  shipped card named one.
+- **The Registry's Model on a role the native harness runs** (F2): no Auto (Kiro's alone, and the role's default
+  there; an Auto saved while the role ran on Kiro is shown as it is). Its **Other model…** is a list of the other
+  Bedrock models this deployment grants and prices (the listing's `bedrock_enabled`, beyond Opus, Sonnet and Haiku 5.5),
+  never an id typed; with none it says how an admin adds one (`-c engineeringModelPrices`). Kiro roles, Run now, Start a
+  run and Restart keep Auto, the three named models and a typed id.
 - A Kiro session with no choice runs Kiro's name for its skill's model, not the account's default; one whose model
   Kiro has no name for stops before kiro-cli starts ("‹id› has no Kiro name; choose a Kiro model for this role.").
-- Spend is unchanged: Kiro sessions bill Kiro credits (their rate differs per model, `kiro-cli chat --list-models`
-  `rate_multiplier`), so the ledger counts their session time only.
+- Spend counts a Kiro session's credits (F4, Added above; their rate differs per model, `kiro-cli chat --list-models`
+  `rate_multiplier`), beside its session time: a Kiro role's model choice is a spend choice the caps bound.
+- The review gate's records (round 1): the owner's approval of jscpd's three `vi.mock` ignore patterns (2026-11-17, the
+  7.51–7.54 batch) is recorded in docs/code-audit.md, checked to match only spec files' mock blocks and the one
+  spec-only Prioritization fixture; `.gitleaks.toml`'s fixture allowlists name their quotes (`['"]`, not any character)
+  and say what they are in one line; CHANGELOG 7.55.00 names one ceiling (below).
 - The root README explains Autonomous engineering and the agent orchestration templates and links their docs; the
   monitor's overview test names 7.57.00's `upstream_pull_request`.
 - The role's model route is classified (deployment-wide, an administrator's: the cross-workspace tables, the admin
@@ -83,6 +126,21 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
 
 ### Fixed
 
+- **A Kiro model refusal reaches a person** (Q6, `harness/main.py` `_finished`): Kiro's answer can make the reason
+  longer than the board's 200-character step, which the board refused: the session crashed, and its continuation was
+  refused again, never reaching `needs_human`. The task's progress step, and the coordinator's crash reason, are now the
+  reason as one line of at most 180 characters (`tools.progress_line`); the session's status and its transcript
+  (`model_refused`, the run's thread) keep it whole.
+- **A coordinator on Kiro waits** (Q19, `tool_server.py`): the Kiro adapter leaves a wake with every steering prompt,
+  waiting or not, and one left between waits ended the next `wait_for_agents` at once ("a person's steering came", its
+  steering already in the conversation). A wake counts only when left since the tool call began; an older one is taken
+  unread.
+- **A fork's upstream pull request link is based on the upstream's default branch now** (Q20): GitHub's answer at the
+  link's checks, not the branch stored when the fork was connected; acknowledging the licence again refreshes the
+  stored one.
+- **Readiness on a public repository read only** (Q23): `app_installation` answers "Not needed: a public repository
+  connected read only is read with this deployment's GitHub App, which needs no installation on it." (it judged the
+  App's installation of the repository, which no read-only connection has).
 - No hidden field is `__proto__`, `constructor` or `prototype` (the names the widget never fills): the API's form
   validation (`shared/forms_v2.py`) refuses them with a 400, "‹id› is a reserved name; choose another", the
   builder's id check says the same, and an AI draft renames one (`constructor_field`). A form saved earlier with
@@ -131,25 +189,80 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
 - **An open text's `equals` rule folds case on both sides alike** (`str.lower` as the widget's `toLowerCase`; `ß` is
   not `ss`), so the server checks the path the widget took.
 
+### Security
+
+- **The repositories' partitions grant no agent memory** (S1, `core-buckets.ts`): `ENGINEERING_REPO_PARTITIONS` was
+  `WS#*#REPO#*`, which also matched the agent memory's `WS#<ws>#AMEM#REPO#<connection>`, so the Agents API's
+  `KnowledgeDecisions` and the runtime's `TenetsDrafts` could write repository memory. It is
+  `WS#${ENGINEERING_WORKSPACE}#REPO#*` (`WS#default#REPO#*`), with a negative pin that it matches no `AMEM#` key.
+- **The Kiro API key has a path of its own** (S3, `engineering-kiro.ts`, `harness/kiro_pin.py`):
+  `/[<prefix>-]voc/engineering-kiro/api-key`, beside the connections' `/voc/engineering/` and outside every grant on it
+  (under it, at `…/engineering/_kiro/api-key`, the broker and the checkout cache's writer could read it and the Agents
+  API could put or delete it). The roles on Kiro read only the new path, the harness refuses any other (its
+  `KEY_PARAMETER_RE`), and a negative pin shows no reader or writer of the connections reaches it. Move the key: upgrade
+  notes.
+- **A child run copies only its parent's own working tree** (S4, `runtime/restart.py`): a parent checkpoint's `patch`
+  is taken only under the attempt's own `artifact_prefix(…, 'patches')` with no further `/`; any other key, which the
+  seeder would have read with the runtime's role, is no tree.
+
 ### Removed
 
+- **The app's own open of a fork's upstream pull request** (F1, the owner's decision): a live test showed GitHub refuses
+  it (a GitHub App user token answered 403 "Resource not accessible by integration" on `POST /repos/<repo>/pulls` for a
+  repository the App is not installed on, even the person's own), so 7.57.00's automatic open goes with its GitHub user
+  authorization (the function `voc-engineering-user-auth`, its stack files, IAM and pins, its SSM path
+  `/[<prefix>-]voc/engineering-user-auth/`, the routes `PUT …/github-apps/<id>/oauth`, `POST …/github-apps/<id>/authorize`,
+  `POST`/`GET …/github-apps/authorizations` and `DELETE …/github-apps/<id>/authorization`, the SPA's Authorize as me, its
+  OAuth client form and its `/agents/connections/github/authorized` page, the manifest's `callback_urls` and the App's
+  kept OAuth client), its daily caps, the owner's setting for AI-assisted runs (`upstream_pr_assisted`) and readiness's
+  `user_authorization`. The one-click compare link, its safety checks and Copy the description stay: every fork run ends
+  with its upstream pull request one click away, which the person creates on GitHub.
+- **The run workspace's board actions** (F5): `POST /agents/engineering/<run_id>/board/tasks` and `…/board/tasks/<task_id>/<action>`
+  (a post, a take, a block, a priority, a move, a release) answered 503 on every deployment since 7.51.02 (the monitor's
+  `board_available` was always false: the bus takes only a person's steering and answers from the Agents API); they
+  are no route now (404), with the monitor's `board_bus` and `board_available`, the overview's `board_available` flag,
+  the run workspace's Board actor controls, their mock routes and route inventories. A person's go on the run (`POST
+  …/go`) and the read-only Board stay.
 - The root `templates/` folder: its one file pointed to `voc-datalake/templates/orchestration/README.md`, which the
   root README now links.
 
 ### Upgrade notes
 
-- Nothing to do: a role with no choice runs its card's model, on Kiro by Kiro's name for it. On a Kiro account that
-  does not offer that model, its steps now stop for a person, saying so: choose a model it offers for the role (Agents
-  → Registry) or for the run.
+- A role with no choice runs its card's model, on Kiro by Kiro's name for it. On a Kiro account that does not offer
+  that model, its steps now stop for a person, saying so: choose a model it offers for the role (Agents → Registry), or
+  restart the run with one (Restart run, Model).
+- **Runs on Kiro now count toward the caps** (F4): a Kiro session's credits are priced at `-c engineeringKiroCreditPrice`
+  (0.04 USD a credit by default, every credit at that price: a plan's included credits are not modelled) into the run's
+  cost cap, its flow's budget alerts and the hard cap. A long Kiro run that ran within its cap before may reach it now;
+  set the price your Kiro plan charges, or raise the run cap (`-c engineeringRunCapUsd`).
+- **Move the Kiro API key** (S3), on a deployment with a role on Kiro, before deploying this release (its roles read
+  only the new path). Nothing below prints the key: it goes from SSM to a file only you can read, then back to SSM.
+  On a prefixed deployment, put `/<prefix>-voc/` for `/voc/` in each path.
+
+  ```bash
+  umask 077
+  aws ssm get-parameter --region <region> --name /voc/engineering/_kiro/api-key --with-decryption \
+    --query Parameter.Value --output text > kiro-key.txt
+  aws ssm put-parameter --region <region> --name /voc/engineering-kiro/api-key --type SecureString \
+    --key-id alias/<the deployment's voc-datalake-key alias> --value file://kiro-key.txt
+  rm -P kiro-key.txt   # (Linux: shred -u kiro-key.txt)
+  ```
+
+  Then deploy, and once a Kiro session has read the new path, delete the old parameter:
+  `aws ssm delete-parameter --region <region> --name /voc/engineering/_kiro/api-key`.
+- **On a deployment that ran 7.57.00** (a test one: 7.57.00 was never released), the GitHub user authorizations'
+  parameters stay in SSM after the function's removal; nothing reads them. List their names with `aws ssm
+  get-parameters-by-path --region <region> --path /<prefix>-voc/engineering-user-auth/ --recursive --query
+  'Parameters[].Name'` and delete them (`aws ssm delete-parameters --names …`); revoking an authorization on GitHub is
+  each person's (Settings → Applications → Authorized GitHub Apps).
 
 ## [7.57.00] - 2026-11-19
 
 The engineering agents work on **any public GitHub repository**, not only the deployment's own: read only, or, to
-contribute, on a fork whose run ends with a **pull request on the upstream**, always one click away once our gate and
-final go passed and every safeguard held: the run's **Open the pull request on ‹upstream›** link to GitHub's compare
-page, title and body prefilled, which the person creates on GitHub; with their GitHub user authorization the broker
-opens it for them, as the optional extra. The upstream is the organization's; the fork and the pull requests are the
-person's. Merging it stays the upstream maintainers'
+contribute, on a fork whose run ends with a **pull request on the upstream**, one click away once our gate and final
+go passed and every safeguard held: the run's **Open the pull request on ‹upstream›** link to GitHub's compare page,
+title and body prefilled, which the person creates on GitHub. The upstream is the organization's; the fork and the pull
+requests are the person's. Merging it stays the upstream maintainers'
 ([autonomous-engineering.md](docs/autonomous-engineering.md#any-public-repository-75700)). Only with
 `-c engineeringAgents=true`; every route is an administrator's acting for themselves, behind Cognito.
 
@@ -172,15 +285,13 @@ person's. Merging it stays the upstream maintainers'
   upstream (archived, opted out, no licence, a licence other than the one acknowledged: 409) and answers GitHub's fork
   page and the App's install link with a state of its own; the person forks into their account or an organization they
   administer, installs the App on the fork, and the return saves a `fork` connection (the App's reference on the fork,
-  the fork's `owner/name`, the upstream, the owner, the licence acknowledged); `PUT …/connections/<id>/upstream` is the
-  owner's setting for AI-assisted runs. The agents push only to `voc-agent/**` on the fork and open its pull request
-  there; the fork's CI is attested as any connection's.
-- **A guided setup card** on the public connection, **Contribute to ‹upstream›**, three steps each with its status:
-  **Fork it on GitHub**, **Let the agents push to your fork** (the App on the fork alone), **Optional: open pull requests
-  for you** (Authorize as me); under them, in the real names, "Reads: ‹upstream› (public, read-only)", "Agents push to:
-  ‹account›/‹name› (your fork)" and "Pull requests to ‹upstream› come from: ‹account› (you click Create, or the app opens
-  it for you once authorized)".
-- **The upstream pull request, always one click away** (`connectors/upstream_pr.py`, the broker's `open_upstream_pr`,
+  the fork's `owner/name`, the upstream, the owner, the licence acknowledged). The agents push only to `voc-agent/**`
+  on the fork and open its pull request there; the fork's CI is attested as any connection's.
+- **A guided setup card** on the public connection, **Contribute to ‹upstream›**, two steps each with its status:
+  **Fork it on GitHub**, **Let the agents push to your fork** (the App on the fork alone); under them, in the real
+  names, "Reads: ‹upstream› (public, read-only)", "Agents push to: ‹account›/‹name› (your fork)" and "Pull requests to
+  ‹upstream› come from you: the run ends with a one-click link, and you click Create on GitHub".
+- **The upstream pull request, one click away** (`connectors/upstream_pr.py`, the broker's `open_upstream_pr`,
   the PR author's alone, and the step its fork pull request goes on to): `<fork>:voc-agent/… → <upstream>:<default>`.
   - **The one-click link** (`upstream.compare_link`): `https://github.com/<upstream>/compare/<default>...<fork
     owner>:<fork name>:<branch>?expand=1&title=…&body=…`, every part percent-encoded, title and body prefilled; at most
@@ -192,30 +303,16 @@ person's. Merging it stays the upstream maintainers'
     acknowledged one, no DCO sign-off asked, an issue when it asks for one first; the template filled, the issue linked,
     CONTRIBUTING named and an AI-assistance disclosure naming the fork's account. A refusal offers no link, its reason
     on the run, and the run ends with the fork's pull request.
-  - **Opened for you, the optional extra**: with the owner's authorization the broker opens it as them, ready for
-    review, when the starter's way of working allows it (AI-driven, or AI-assisted with a person's go and the owner's
-    explicit setting) and within a daily cap of 10 a deployment and 2 per upstream (UTC; only automatic opens count, an
-    attempt whatever GitHub answers). Otherwise, or when GitHub refuses the app (403: "GitHub didn't let the app open it
-    for you: open it with one click"), the run keeps the link with a plain note, never an error. Every automatic open is
-    an audit row (the day's slots: who, when, which run and upstream, the outcome).
-- **GitHub App user authorization** (`connectors/user_authorizations.py`, `connectors/user_auth.py`): **Authorize as
-  me** on an App (`POST …/github-apps/<id>/authorize`), the SPA's `/agents/connections/github/authorized` page posting
-  the code once (`POST …/github-apps/authorizations`), `GET …/github-apps/authorizations` and `DELETE
-  …/github-apps/<id>/authorization`; the new function **voc-engineering-user-auth** exchanges the code and keeps the
-  token per person in SSM (`/[<prefix>-]voc/engineering-user-auth/user/…`, the stack's key), outside the connections'
-  path; only the broker reads it, refreshes it and sends it, in one request alone. New Apps keep their OAuth client and
-  name the callback URL; an older App's client is set with `PUT …/github-apps/<id>/oauth`.
-- Readiness: `fork`, `user_authorization` (advice: without it a run ends with the one-click link) and `upstream_pr`
-  for a fork connection (none required).
+  - An upstream pull request already open from the branch (the person's click) is recorded as the run's. The app never
+    opens one itself: nothing is written to the upstream.
+- Readiness: `fork` and `upstream_pr` for a fork connection (neither required).
 - Frontend: the public repository picker, the read-only and fork rows, the Contribute dialog and the setup card, the
-  authorization line and OAuth client form on each App, the authorized callback page, the upstream pull request on the
-  run (its link, Copy the description, the note); 9 locales; mocks.
+  upstream pull request on the run (its link, Copy the description); 9 locales; mocks.
 
 ### Changed
 
 - A fork run's issue is its upstream's (META's `issue_repo`; the start's `head` reads its state there); the agents
   comment on and label nothing on it, and the fork's pull request names no issue.
-- The App manifest gains `callback_urls`; an App row and view gain `oauth` and `client_id` (not a secret).
 - The Issues source's `issues_token` reads an uncovered public repository through the App (before, it was skipped).
 - **The signing layer goes only to the functions that sign** (`SIGNING_LAYER_FUNCTION_IDS`,
   `lib/utils/dependency-layers.ts`): the projects API and its assist worker (and the MCP endpoint, which verifies). The
@@ -229,11 +326,8 @@ person's. Merging it stays the upstream maintainers'
 
 ### Security
 
-- IAM, pinned in CDK tests: voc-engineering-user-auth holds the client read and the people's tokens' put alone; the
-  broker adds reads of both and a put of the people's tokens; the Agents API adds an invoke and the clients' put and
-  delete, still no `ssm:GetParameter`; negative pins: no agent role, the cache writer, the token function, the
-  ingestor, voc-engineering-start, voc-engineering-issues-config or the runtime names `engineering-user-auth`, and the
-  connections' grant does not match it. In Python: the owner's token is sent only in `POST /repos/<upstream>/pulls`.
+- No new grant for the upstream pull request: the broker reads the upstream with the fork's own token, and the run's
+  upstream record is a write claim's row, under the claims' grant.
 - **A form's test responses follow the caller's category and source access** (`feedback_form_handler.py`
   `_view_rows`, `_admits_test_rows`): Results, Responses and their CSV scoped the real responses by the caller's
   category access and source access, but added the test responses (`include_test=true` or `only`) to every caller, so
@@ -244,15 +338,9 @@ person's. Merging it stays the upstream maintainers'
 
 ### Upgrade notes
 
-- **An App made before 7.57.00** needs, only for the app to open fork connections' upstream pull requests itself (the
-  one-click link needs nothing): its callback URL (`https://<domain>/agents/connections/github/authorized`) added on
-  GitHub, a new client secret, and **Set the App's OAuth client** under Agents → Connections
-  ([deployment.md](docs/deployment.md#the-github-user-authorizations-return-75700)).
 - **Test responses and access (Security above):** from 7.55.00, when form test mode came in, a form's Results,
   Responses and CSV showed its test responses, testers' contact answers included, to a caller denied the
   `feedback_form` source or limited to other categories; upgrading closes it. Nothing to migrate.
-- **Needs a live check:** whether GitHub accepts the automatic open with a user token of an App that is installed on
-  the fork but not on the upstream (its documentation suggests not); a 403 keeps the one-click link, saying so.
 
 ## [7.56.00] - 2026-11-19
 
@@ -711,8 +799,9 @@ without a rating shows its Question.
   WAF scope as the widget's reads, so a beacon never spends the submit route's limit, which stays for real responses.
   It writes counters only: never an answer, a hidden value, an address or a user agent. The AI draft's two routes ride
   the settings API's existing `/settings/{proxy+}` (Cognito-authorized). The public config read never writes; the test
-  token rides the existing submit. The stack's resource ceiling goes from 415 to 425 (`api-engagement-budget.test.ts`:
-  the performance-tier synth is at the 425 gate, which is unchanged).
+  token rides the existing submit. VocApiStack's largest shape (the performance-tier synth, every plugin) goes from 415
+  to 425 resources, which is the stack's gate, 425, unchanged (`api-engagement-budget.test.ts`
+  `ENGAGEMENT_RELEASE_CEILING`, checked 2026-11-20).
 - `voc-retention` gains `DeleteItem` on voc-aggregates, key-scoped to the test responses' own partitions
   (`FEEDBACK_FORM_TEST` and one workspace id's `WS#{ws}#FEEDBACK_FORM_TEST`, for an erasure or a retention period); it
   cannot delete a form, a revision, a funnel counter or any other row there (pinned in

@@ -5,11 +5,14 @@
  * - `-c engineeringHarness`: `native` (the default: every agent on its skill's own adapter, the Bedrock Converse
  *   loop), `kiro` (every launchable role), or `kiro:<role>,<role>` (only those). The runtime gets it as
  *   ENGINEERING_HARNESS (lambda/engineering/runtime/harness_switch.py reads the same three shapes) and readiness too.
- * - The key: ONE SecureString an operator stores, `/[<prefix>-]voc/engineering/_kiro/api-key` (under the connections'
- *   path, as the GitHub Apps' keys are), never written by any stack or function. Only the agent roles that run on Kiro
- *   may read it: `ssm:GetParameter` on exactly that parameter, and `kms:Decrypt` of the stack's key only through SSM
- *   and only for that parameter (SSM puts the parameter's ARN in the encryption context). The harness reads it with
- *   the agent's own role session and hands it to kiro-cli's environment only (lambda/engineering/runtime/harness/kiro.py).
+ * - The key: ONE SecureString an operator stores, `/[<prefix>-]voc/engineering-kiro/api-key`, never written by any
+ *   stack or function. Since 7.58.00 on a path of its own, beside the connections' and outside them: under
+ *   `/[<prefix>-]voc/engineering/` (7.53.00 to 7.57.00) the broker and the checkout
+ *   cache's writer could read it and the Agents API could put or delete it, through their grants on every connection's
+ *   parameter. Only the agent roles that run on Kiro may read it: `ssm:GetParameter` on exactly that parameter, and
+ *   `kms:Decrypt` of the stack's key only through SSM and only for that parameter (SSM puts the parameter's ARN in the
+ *   encryption context). The harness reads it with the agent's own role session and hands it to kiro-cli's environment
+ *   only (lambda/engineering/runtime/harness/kiro.py).
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -20,8 +23,9 @@ import type { Construct } from 'constructs';
 const HARNESS_CONTEXT = 'engineeringHarness';
 const NATIVE = 'native';
 const KIRO = 'kiro';
-/** The key's parameter under the connections' path (`engineeringParameterPrefix`). */
-const KIRO_KEY_PARAMETER = '_kiro/api-key';
+/** The connections' path's last segment, and the key's, beside it (`/[<prefix>-]voc/engineering-kiro/api-key`). */
+const CONNECTIONS_SEGMENT = '/engineering/';
+const KIRO_KEY_PARAMETER = '/engineering-kiro/api-key';
 /** The roles a deployment may run on Kiro: every launchable one (the coach is Learn's, never launched). */
 function kiroLaunchable(roles: readonly string[]): string[] {
   return roles.filter((role) => role !== 'coach');
@@ -50,9 +54,15 @@ export function engineeringHarness(scope: Construct, roles: readonly string[]): 
   return { value: `${KIRO}:${sorted.join(',')}`, kiroRoles: sorted };
 }
 
-/** The key's parameter name (`parameterPrefix` is `/[<prefix>-]voc/engineering/`). */
+/**
+ * The key's parameter name beside the connections' path (`parameterPrefix` is `/[<prefix>-]voc/engineering/`):
+ * `/[<prefix>-]voc/engineering-kiro/api-key`, which no grant on `/[<prefix>-]voc/engineering/*` reaches.
+ */
 export function kiroKeyParameterName(parameterPrefix: string): string {
-  return `${parameterPrefix}${KIRO_KEY_PARAMETER}`;
+  if (!parameterPrefix.endsWith(CONNECTIONS_SEGMENT)) {
+    throw new Error(`the connections' path ends in ${CONNECTIONS_SEGMENT}: ${parameterPrefix}`);
+  }
+  return `${parameterPrefix.slice(0, -CONNECTIONS_SEGMENT.length)}${KIRO_KEY_PARAMETER}`;
 }
 
 /** The key's parameter ARN in `stack`'s account and region. */

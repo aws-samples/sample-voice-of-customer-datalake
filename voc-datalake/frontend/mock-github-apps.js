@@ -14,16 +14,7 @@
 //   POST   …/github-apps/<app_id>/check      {}: the repositories its installation covers, and its connections it no
 //                                        longer covers (none here)
 //   DELETE …/github-apps/<app_id>        {reason?}: {removed: true}; 409 while connections use it; 404
-// 7.57.00, a person's GitHub App user authorization (the broker opens a fork connection's upstream pull request with it):
-//   POST   …/github-apps/<app_id>/authorize    {workspace?}: GitHub's authorization page with a single-use state; 409
-//                                        while the App's OAuth client is not stored here
-//   POST   …/github-apps/authorizations       {code, state}: {authorization: {app_id, login, authorized_at,
-//                                        refresh_expires_at}}; the uniform 400 for the state
-//   GET    …/github-apps/authorizations       {authorizations}: the caller's own
-//   DELETE …/github-apps/<app_id>/authorization  {removed: true}; 404 for none
-//   PUT    …/github-apps/<app_id>/oauth       {client_id, client_secret}: {app} with `oauth: true`
-//   and an installation whose state a fork started (mock-public-repos.js) saves the fork alone (`fork` in the answer).
-// To see the authorization's return page by hand: `/agents/connections/github/authorized?code=demo-code&state=demo-authorize-state`.
+// 7.57.00: an installation whose state a fork started (mock-public-repos.js) saves the fork alone (`fork` in the answer).
 // The installation's and the check's answers carry `issues` (7.50.02): what followed for the deployment's GitHub Issues
 // source (mock-issues-source.js).
 // No real GitHub is reached: to see the return pages by hand, open
@@ -33,8 +24,7 @@
 
 import { issuesFollow } from './mock-issues-source.js';
 
-const APPS_PATH = /^\/agents\/engineering\/github-apps(?:\/([^/]+))?(?:\/(install|check|authorize|authorization|oauth))?$/;
-const CLIENT_ID = /^[A-Za-z0-9.]{8,64}$/;
+const APPS_PATH = /^\/agents\/engineering\/github-apps(?:\/([^/]+))?(?:\/(install|check))?$/;
 const APP_LIMIT = 5;
 const ORG_LOGIN = /^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$/;
 /** A workspace's slug (lambda/shared/platform_workspaces.py `_SLUG`): where the creation's return comes back to. */
@@ -56,15 +46,12 @@ const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
 const apps = new Map([['271828', {
   app_id: '271828', slug: 'voc-agents-3f9a2c', owner: 'example-org', owner_type: 'Organization',
   html_url: 'https://github.com/apps/voc-agents-3f9a2c', webhook: true, created_at: minutesAgo(60 * 24 * 5),
-  created_by: 'admin-demo', version: 1, oauth: true, client_id: 'Iv23liDemoClient01',
+  created_by: 'admin-demo', version: 1,
 }]]);
-/** The caller's own authorizations, by App (7.57.00): the login GitHub answered, never a token. */
-const authorizations = new Map();
 /** state -> {purpose: 'create' | 'install', app_id?, used} */
 const states = new Map([
   ['demo-create-state', { purpose: 'create', used: false }],
   ['demo-install-state', { purpose: 'install', app_id: '271828', used: false }],
-  ['demo-authorize-state', { purpose: 'authorize', app_id: '271828', used: false }],
 ]);
 let nextApp = 314159;
 let nextState = 1;
@@ -116,7 +103,6 @@ function manifest(body) {
       name: `VoC Autonomous Agent ${hex}`, url: 'http://localhost:3000', public: false, request_oauth_on_install: false,
       setup_on_update: true, redirect_url: `${returnBase}/agents/connections/github/created`,
       setup_url: 'http://localhost:3000/agents/connections/github/installed',
-      callback_urls: ['http://localhost:3000/agents/connections/github/authorized'],
       hook_attributes: { url: 'http://localhost:3001/webhooks/github_issues', active: true },
       default_permissions: { contents: 'write', pull_requests: 'write', issues: 'write', metadata: 'read' },
       default_events: ['issues', 'issue_comment'],
@@ -131,7 +117,7 @@ function conversion(body, connections) {
   const app = {
     app_id: appId, slug: `voc-agents-${appId}`, owner: 'admin-demo', owner_type: 'User',
     html_url: `https://github.com/apps/voc-agents-${appId}`, webhook: true, created_at: new Date().toISOString(),
-    created_by: 'admin-demo', version: 1, oauth: true, client_id: `Iv23liDemo${appId}`,
+    created_by: 'admin-demo', version: 1,
   };
   apps.set(appId, app);
   return [201, { app: appView(app, connections), install_url: installUrl(app), expires_at: thirtyMinutes() }];
@@ -157,7 +143,7 @@ function forkInstallation(state, app, id, connections) {
     credential: { kind: 'app_reference', set: true, app_id: app.app_id, installation_id: String(id), expires_at: null },
     public: null,
     fork: { upstream: state.upstream, upstream_connection: state.upstream_connection, upstream_default_branch: 'main',
-      owner: 'admin-demo', owned_by_me: true, licence: 'MIT', upstream_pr_assisted: false, account: 'admin-demo',
+      owner: 'admin-demo', owned_by_me: true, licence: 'MIT', account: 'admin-demo',
       account_type: 'User' },
     created_at: now, created_by: 'admin-demo', updated_at: now, updated_by: 'admin-demo', version: 1, ci_attestation: null,
   };
@@ -196,51 +182,9 @@ function installation(body, connections, limit) {
     issues: issuesFollow(connections, app.app_id) }];
 }
 
-/** The caller's authorization from GitHub's return (7.57.00): the state claimed once, the login GitHub answered. */
-function authorized(body) {
-  const state = claim(body?.state, 'authorize');
-  if (state === null || typeof body?.code !== 'string' || body.code === '') return [400, { message: STATE_REFUSED }];
-  const authorization = { app_id: state.app_id, login: 'admin-demo', authorized_at: new Date().toISOString(),
-    refresh_expires_at: new Date(Date.now() + 180 * 86_400_000).toISOString() };
-  authorizations.set(state.app_id, authorization);
-  return [200, { authorization }];
-}
-
-/** A person's authorization of `app` and its OAuth client (7.57.00); false for another method. */
-function authorizationRoute(req, res, send, shared, app, action, connections) {
-  if (action === 'authorize' && req.method === 'POST') {
-    if (!app.oauth) send(409, { message: 'the App\'s OAuth client is not stored here: set it first' });
-    else {
-      const state = mintState('authorize', app.app_id);
-      send(200, { authorize_url: `https://github.com/login/oauth/authorize?client_id=${app.client_id}&state=${state}`,
-        expires_at: thirtyMinutes() });
-    }
-    return true;
-  }
-  if (action === 'authorization' && req.method === 'DELETE') {
-    if (authorizations.delete(app.app_id)) send(200, { removed: true });
-    else send(404, { message: 'no authorization of this App is stored for you' });
-    return true;
-  }
-  if (action !== 'oauth' || req.method !== 'PUT') return false;
-  shared.collectJson(req, res, (body) => {
-    if (!CLIENT_ID.test(String(body?.client_id ?? '')) || typeof body?.client_secret !== 'string' || body.client_secret.trim() === '') {
-      send(400, { message: 'the body is {client_id, client_secret}: the App\'s OAuth client, as its settings page shows it' });
-      return;
-    }
-    Object.assign(app, { oauth: true, client_id: body.client_id, version: app.version + 1 });
-    send(200, { app: appView(app, connections) });
-  });
-  return true;
-}
-
 function appRoute(req, send, shared, res, appId, action, connections) {
   const app = apps.get(appId);
   if (app === undefined) return send(404, { message: 'GitHub App not found' });
-  if (['authorize', 'authorization', 'oauth'].includes(action)) {
-    if (!authorizationRoute(req, res, send, shared, app, action, connections)) send(405, { message: 'Method not allowed' });
-    return undefined;
-  }
   if (action === 'install' && req.method === 'POST') return send(200, { install_url: installUrl(app), expires_at: thirtyMinutes() });
   if (action === 'check' && req.method === 'POST') {
     const using = [...connections.values()].filter((c) => c.credential.app_id === appId && c.credential.kind === 'app_reference');
@@ -273,12 +217,8 @@ export function handleGitHubAppRoutes(req, res, url, send, shared, { connections
     else send(405, { message: 'Method not allowed' });
     return true;
   }
-  if (first === 'authorizations' && action === undefined && req.method === 'GET') {
-    send(200, { authorizations: [...authorizations.values()] });
-    return true;
-  }
   const steps = { manifest: (body) => manifest(body), conversions: (body) => conversion(body, connections),
-    installations: (body) => installation(body, connections, connectionLimit), authorizations: (body) => authorized(body) };
+    installations: (body) => installation(body, connections, connectionLimit) };
   if (action === undefined && Object.hasOwn(steps, first)) {
     if (req.method !== 'POST') send(405, { message: 'Method not allowed' });
     else shared.collectJson(req, res, (body) => send(...steps[first](body)));

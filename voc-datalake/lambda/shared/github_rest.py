@@ -18,6 +18,9 @@ GITHUB_API_VERSION: Final = '2022-11-28'
 #: A GitHub App's id or an installation's: digits, no leading zero (the engineering connections' ``APP_NUMBER`` and the
 #: github_issues source's ``github_app_id``).
 GITHUB_NUMBER: Final = re.compile(r'[1-9][0-9]{0,19}')
+#: A GitHub login, a user's or an organization's: letters, digits and single hyphens, at most 39 (the engineering
+#: GitHub App form's target organization, a pull request's ``as``).
+GITHUB_LOGIN: Final = re.compile(r'[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}')
 #: A repository as ``owner/name`` (GitHub's limits: a 39-character owner, a 100-character name).
 GITHUB_REPOSITORY: Final = re.compile(r'^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}\Z')
 #: ``https://github.com/…``, ``github.com/…`` or ``www.github.com/…``, query and fragment cut. Any other host falls

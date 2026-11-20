@@ -2,13 +2,11 @@
  * @fileoverview Any public GitHub repository on Agents → Connections (7.57.00): Add a public repository searches GitHub
  * on the server and shows each result's stars, licence, Archived badge and last push, with Connect read-only (the POST
  * with the repository; one already connected says so); a public repository read only is a row of its own card (its
- * badge, the "stays in VoC" note, no CI to attest) with the guided Contribute to ‹upstream›: three steps whose statuses
- * follow the connections and the person's authorizations (fork it on GitHub's own fork page, in a new tab; let the
- * agents push to the fork, whose dialog needs the licence ticked before it asks the server and then goes to the App's
- * install page; optionally Authorize as me), and a summary with the real names; an archived repository or one with no
- * licence holds step 2; a fork's row says its upstream, its owner and its runs' one-click outcome, and only the owner
- * turns its upstream pull request switch; the person's authorization of an App, and an older App's OAuth client form
- * (the secret sent, never shown back).
+ * badge, the "stays in VoC" note, no CI to attest) with the guided Contribute to ‹upstream›: two steps whose statuses
+ * follow the connections (fork it on GitHub's own fork page, in a new tab; let the agents push to the fork, whose dialog
+ * needs the licence ticked before it asks the server and then goes to the App's install page), and a summary with the
+ * real names; an archived repository or one with no licence holds step 2; a fork's row says its upstream, its owner and
+ * its runs' one-click outcome, and (7.58.00) only the owner acknowledges a changed upstream licence, read live.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -30,7 +28,6 @@ const APPS = 'GET /agents/engineering/github-apps'
 const SEARCH = 'GET /agents/engineering/public-repositories?q=lint'
 const CONNECT = 'POST /agents/engineering/public-connections'
 const FORK = 'POST /agents/engineering/connections/lint-kit/fork'
-const AUTHORIZATIONS = 'GET /agents/engineering/github-apps/authorizations'
 
 const result = (repository: string, fields: Record<string, unknown> = {}) => ({
   repository, description: 'A small, fast linter.', stars: 1240, licence: { spdx: 'MIT', name: 'MIT License' },
@@ -47,25 +44,12 @@ const publicRead = (fields: Record<string, unknown> = {}) => ({
 const forkOf = (fork: Record<string, unknown> = {}) => ({
   ...appConnection('lint-kit-fork', 'alice/lint-kit'), repository_private: false, kind: 'fork',
   fork: { upstream: 'open-tools/lint-kit', upstream_connection: 'lint-kit', upstream_default_branch: 'main', owner: 'alice',
-    owned_by_me: true, licence: 'MIT', upstream_pr_assisted: false, account: 'alice', account_type: 'User', ...fork },
+    owned_by_me: true, licence: 'MIT', account: 'alice', account_type: 'User', ...fork },
 })
 
 function renderConnections(routes: Record<string, RouteHandler> = {}, connections: unknown[] = [], apps: unknown[] = [githubApp()]) {
   routeFetchApi({ [LIST]: () => ({ connections, limit: 20 }), [APPS]: () => ({ apps, limit: 5 }), ...routes }, { missStatus: 500 })
   renderWithQueryClient(<TestRouter><EngineeringConnections /></TestRouter>, createTestQueryClient())
-}
-
-/** GitHub's authorization page for App 271828, as the server answers it. */
-const AUTHORIZE_PAGE = 'https://github.com/login/oauth/authorize?client_id=Iv23li&state=a1'
-
-/** The connections page before the person authorized App 271828 (Authorize as me answers GitHub's page): where the tab goes. */
-function renderUnauthorized(connections: unknown[], apps: unknown[]) {
-  const assign = stubLocationAssign('/agents/connections')
-  renderConnections({
-    [AUTHORIZATIONS]: () => ({ authorizations: [] }),
-    'POST /agents/engineering/github-apps/271828/authorize': () => ({ authorize_url: AUTHORIZE_PAGE, expires_at: 'later' }),
-  }, connections, apps)
-  return assign
 }
 
 async function search(text = 'lint') {
@@ -157,8 +141,6 @@ describe('a public repository read only', () => {
 describe('Contribute to ‹upstream›, the guided setup', () => {
   const links = { fork_url: 'https://github.com/open-tools/lint-kit/fork',
     install_url: 'https://github.com/apps/voc-agents-3f9a2c/installations/new?state=f1', expires_at: 'later', app_id: '271828' }
-  const OAUTH_APP = githubApp({ oauth: true, client_id: 'Iv23li', connections: ['lint-kit-fork'] })
-
   const CARD = { name: 'Contribute to open-tools/lint-kit' }
 
   async function cardOf() {
@@ -168,9 +150,10 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
   /** The card's steps' titles and statuses, in order. */
   function statuses() {
     const card = within(screen.getByRole('region', CARD))
-    return [1, 2, 3].map((n) => {
+    expect(card.queryByTestId('contribute-step-3')).toBeNull()   // (7.58.00: the app never opens it itself)
+    return [1, 2].map((n) => {
       const step = within(card.getByTestId(`contribute-step-${n}`))
-      return [step.getByText(/^\d\. /).textContent, step.getByText(/^(Done|To do|Optional)$/).textContent]
+      return [step.getByText(/^\d\. /).textContent, step.getByText(/^(Done|To do)$/).textContent]
     })
   }
 
@@ -183,62 +166,34 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
     renderConnections({}, [publicRead()])
     const card = await cardOf()
     expect(card.getByText('The upstream is open-tools\'s; the fork and its pull requests are yours.')).toBeInTheDocument()
-    expect(statuses()).toStrictEqual([['1. Fork it on GitHub', 'To do'], ['2. Let the agents push to your fork', 'To do'],
-      ['3. Optional: open pull requests for you', 'Optional']])
+    expect(statuses()).toStrictEqual([['1. Fork it on GitHub', 'To do'], ['2. Let the agents push to your fork', 'To do']])
     const forkLink = card.getByRole('link', { name: 'Fork on GitHub (opens in a new tab)' })
     expect([forkLink.getAttribute('href'), forkLink.getAttribute('target'), forkLink.getAttribute('rel')])
       .toStrictEqual(['https://github.com/open-tools/lint-kit/fork', '_blank', 'noopener noreferrer'])
     expect([...card.getByTestId('contribute-summary').querySelectorAll('li')].map((line) => line.textContent)).toStrictEqual([
       'Reads: open-tools/lint-kit (public, read-only).',
       'Agents push to: your fork, once it is connected.',
-      'Pull requests to open-tools/lint-kit come from your fork (you click Create, or the app opens it for you once authorized).',
+      'Pull requests to open-tools/lint-kit come from you: the run ends with a one-click link, and you click Create on GitHub.',
     ])
   })
 
   it('marks steps 1 and 2 done once the fork is connected, and names the fork and its account', async () => {
     renderConnections({}, [publicRead(), forkOf({ account: 'my-org', account_type: 'Organization' })])
     const card = await cardOf()
-    expect(statuses().map(([, status]) => status)).toStrictEqual(['Done', 'Done', 'Optional'])
+    expect(statuses().map(([, status]) => status)).toStrictEqual(['Done', 'Done'])
     expect([card.queryByRole('link', { name: /Fork on GitHub/ }), card.queryByRole('button', { name: 'Install the App on your fork' })])
       .toStrictEqual([null, null])
     expect([...card.getByTestId('contribute-summary').querySelectorAll('li')].map((line) => line.textContent)).toStrictEqual([
       'Reads: open-tools/lint-kit (public, read-only).',
       'Agents push to: alice/lint-kit (your fork).',
-      'Pull requests to open-tools/lint-kit come from: my-org (you click Create, or the app opens it for you once authorized).',
+      'Pull requests to open-tools/lint-kit come from you: the run ends with a one-click link, and you click Create on GitHub.',
     ])
   })
 
   it('finds the fork by its upstream\'s name too (its public connection made again)', async () => {
     renderConnections({}, [publicRead(), forkOf({ upstream: 'Open-Tools/Lint-Kit', upstream_connection: 'an-older-one' })])
     await cardOf()
-    expect(statuses().map(([, status]) => status)).toStrictEqual(['Done', 'Done', 'Optional'])
-  })
-
-  it('offers Authorize as me for the fork\'s App at step 3, optional until the person authorized it', async () => {
-    const assign = renderUnauthorized([publicRead(), forkOf()], [OAUTH_APP])
-    const card = await cardOf()
-    const step3 = within(card.getByTestId('contribute-step-3'))
-    await userEvent.click(await step3.findByRole('button', { name: 'Authorize as me voc-agents-3f9a2c' }))
-    await waitFor(() => { expect(assign).toHaveBeenCalledWith(AUTHORIZE_PAGE) })
-    expect(statuses()[2]).toStrictEqual(['3. Optional: open pull requests for you', 'Optional'])
-  })
-
-  it('marks step 3 done, as whom, once the person\'s authorizations list the fork\'s App', async () => {
-    renderConnections({
-      [AUTHORIZATIONS]: () => ({ authorizations: [{ app_id: '271828', login: 'alice', authorized_at: null, refresh_expires_at: null }] }),
-    }, [publicRead(), forkOf()], [OAUTH_APP])
-    const step3 = within((await cardOf()).getByTestId('contribute-step-3'))
-    expect(await step3.findByText('Done')).toBeInTheDocument()
-    expect([step3.getByText('Authorized as @alice'), step3.queryByRole('button')]).toStrictEqual([step3.getByText('Authorized as @alice'), null])
-  })
-
-  it('points to the App\'s OAuth client at step 3 for an App made before 7.57.00', async () => {
-    renderConnections({}, [publicRead()], [githubApp()])
-    const step3 = within((await cardOf()).getByTestId('contribute-step-3'))
-    expect(step3.getByText('First set the App\'s OAuth client: Set the App\'s OAuth client… on the voc-agents-3f9a2c card.'))
-      .toBeInTheDocument()
-    expect(step3.queryByRole('button')).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Set the App\'s OAuth client…' })).toHaveLength(1)
+    expect(statuses().map(([, status]) => status)).toStrictEqual(['Done', 'Done'])
   })
 
   it('asks nothing of the server until the licence is acknowledged', async () => {
@@ -279,61 +234,63 @@ describe('a fork connection', () => {
     renderConnections({}, [forkOf()])
     const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
     expect([row.getByText('Fork of open-tools/lint-kit'), row.getByText(/Owner: alice/), row.getByText(/Licence acknowledged: MIT/),
-      row.getByText(/one click away: alice clicks Create on GitHub, or the app opens it for them once authorized\. Only the upstream's maintainers merge it\./)])
+      row.getByText(/one click away: alice clicks Create on GitHub\. Only the upstream's maintainers merge it\./)])
       .toHaveLength(4)
     await userEvent.click(row.getByRole('button', { name: 'Actions for alice/lint-kit' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).not.toContain('Change default branch…')
   })
 
-  it('lets its owner open upstream pull requests for AI-assisted runs', async () => {
-    renderConnections({ [UPSTREAM]: () => ({ connection: forkOf({ upstream_pr_assisted: true }) }) }, [forkOf()])
-    const toggle = await screen.findByRole('switch', { name: 'Open upstream pull requests for AI-assisted runs' })
-    await userEvent.click(toggle)
-    await waitFor(() => { expect(sentFetchApiBody('/agents/engineering/connections/lint-kit-fork/upstream', 'PUT')).toStrictEqual({ assisted: true }) })
-    await waitFor(() => { expect(screen.getByRole('switch', { name: 'Open upstream pull requests for AI-assisted runs' })).toBeChecked() })
-  })
+  /** The live licence read (GitHub's answer for the upstream's name), its licence `spdx`. */
+  const live = (spdx: string | null) => () => ({ repositories: [result('open-tools/lint-kit', {
+    licence: spdx === null ? null : { spdx, name: spdx } })] })
+  const LIVE = 'GET /agents/engineering/public-repositories?q=open-tools%2Flint-kit'
 
-  it('shows anyone but its owner the switch as it stands, disabled, and why', async () => {
-    renderConnections({}, [forkOf({ owned_by_me: false })])
-    const toggle = await screen.findByRole('switch', { name: 'Open upstream pull requests for AI-assisted runs' })
-    expect(toggle).toBeDisabled()
-    expect(toggle).toHaveAccessibleDescription('Only alice, the connection\'s owner, can change this.')
-  })
-})
-
-describe('the person\'s authorization of an App', () => {
-  it('offers Authorize as me, which opens GitHub\'s authorization page in this tab', async () => {
-    const assign = renderUnauthorized([forkOf()], [githubApp({ oauth: true, client_id: 'Iv23li', connections: ['lint-kit-fork'] })])
-    await userEvent.click(await screen.findByRole('button', { name: 'Authorize as me voc-agents-3f9a2c' }))
-    await waitFor(() => { expect(assign).toHaveBeenCalledWith(AUTHORIZE_PAGE) })
-  })
-
-  it('says who it is authorized as, and removes it after a confirmation', async () => {
-    renderConnections({
-      [AUTHORIZATIONS]: () => ({ authorizations: [{ app_id: '271828', login: 'alice', authorized_at: null, refresh_expires_at: null }] }),
-      'DELETE /agents/engineering/github-apps/271828/authorization': () => ({ removed: true }),
-    }, [forkOf()], [githubApp({ oauth: true, client_id: 'Iv23li', connections: ['lint-kit-fork'] })])
-    expect(await screen.findByText('Authorized as @alice')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Remove my authorization' }))
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }))
-    expect(await screen.findByText('Your authorization of voc-agents-3f9a2c is removed.')).toBeInTheDocument()
-  })
-
-  it('stores an older App\'s OAuth client, the secret sent and never shown back', async () => {
-    renderConnections({ 'PUT /agents/engineering/github-apps/271828/oauth': () => ({ app: githubApp({ oauth: true, client_id: 'Iv1.abc12345' }) }) },
-      [publicRead()], [githubApp({ connections: [] })])
-    await userEvent.click(await screen.findByRole('button', { name: 'Set the App\'s OAuth client…' }))
-    const dialog = within(screen.getByRole('dialog', { name: 'The OAuth client of voc-agents-3f9a2c' }))
-    expect(dialog.getByText(/\/agents\/connections\/github\/authorized$/)).toBeInTheDocument()
-    await userEvent.click(dialog.getByRole('button', { name: 'Save the client' }))
-    expect(dialog.getByText('The client id as GitHub shows it (letters, digits and dots).')).toBeInTheDocument()
-    await userEvent.type(dialog.getByLabelText('Client id'), 'Iv1.abc12345')
-    await userEvent.type(dialog.getByLabelText('Client secret'), 'a-client-secret-for-tests')
-    await userEvent.click(dialog.getByRole('button', { name: 'Save the client' }))
+  it('lets its owner acknowledge the upstream\'s licence as it is now, read live, once ticked (7.58.00)', async () => {
+    renderConnections({ [LIVE]: live('Apache-2.0'), [UPSTREAM]: () => ({ connection: forkOf({ licence: 'Apache-2.0' }) }) },
+      [forkOf()])
+    const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
+    await userEvent.click(row.getByRole('button', { name: 'Acknowledge the current licence…' }))
+    expect(await row.findByText('open-tools/lint-kit\'s licence now: Apache-2.0.')).toBeInTheDocument()
+    const confirm = row.getByRole('button', { name: 'Acknowledge Apache-2.0' })
+    expect(confirm).toBeDisabled()
+    await userEvent.click(row.getByLabelText('I have read the Apache-2.0 licence and contribute under it'))
+    await userEvent.click(confirm)
     await waitFor(() => {
-      expect(sentFetchApiBody('/agents/engineering/github-apps/271828/oauth', 'PUT'))
-        .toStrictEqual({ client_id: 'Iv1.abc12345', client_secret: 'a-client-secret-for-tests' })
+      expect(sentFetchApiBody('/agents/engineering/connections/lint-kit-fork/upstream', 'PUT')).toStrictEqual({ licence: 'Apache-2.0' })
     })
-    expect(await screen.findByText('The OAuth client of voc-agents-3f9a2c is stored.')).toBeInTheDocument()
+    expect(await row.findByText(/Licence acknowledged: Apache-2\.0/)).toBeInTheDocument()
+  })
+
+  it('says the licence is unchanged, none, or unreadable, and the server\'s refusal in its words', async () => {
+    renderConnections({ [LIVE]: live('MIT'), [UPSTREAM]: () => { throw new ApiError(409, 'open-tools/lint-kit\'s licence is GPL-3.0, not the MIT acknowledged') } },
+      [forkOf()])
+    const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
+    await userEvent.click(row.getByRole('button', { name: 'Acknowledge the current licence…' }))
+    expect(await row.findByText(/It is the one you acknowledged\./)).toBeInTheDocument()
+    await userEvent.click(row.getByLabelText('I have read the MIT licence and contribute under it'))
+    await userEvent.click(row.getByRole('button', { name: 'Acknowledge MIT' }))
+    expect(await row.findByRole('alert')).toHaveTextContent('licence is GPL-3.0, not the MIT acknowledged')
+  })
+
+  it('says an upstream with no licence takes no contribution, and offers nothing to tick', async () => {
+    renderConnections({ [LIVE]: live(null) }, [forkOf()])
+    const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
+    await userEvent.click(row.getByRole('button', { name: 'Acknowledge the current licence…' }))
+    expect(await row.findByText(/has no licence GitHub recognises now/)).toBeInTheDocument()
+    expect(row.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('says a licence that cannot be read on GitHub to try again', async () => {
+    renderConnections({ [LIVE]: () => { throw new ApiError(503, 'GitHub is busy') } }, [forkOf()])
+    const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
+    await userEvent.click(row.getByRole('button', { name: 'Acknowledge the current licence…' }))
+    expect(await row.findByRole('alert')).toHaveTextContent('could not be read on GitHub')
+  })
+
+  it('shows anyone but its owner why they cannot acknowledge it, and no control', async () => {
+    renderConnections({}, [forkOf({ owned_by_me: false })])
+    const row = within(await screen.findByTestId('connection-row-lint-kit-fork'))
+    expect(row.getByText('Only alice, the connection\'s owner, can acknowledge the upstream\'s licence again.')).toBeInTheDocument()
+    expect(row.queryByRole('button', { name: 'Acknowledge the current licence…' })).toBeNull()
   })
 })

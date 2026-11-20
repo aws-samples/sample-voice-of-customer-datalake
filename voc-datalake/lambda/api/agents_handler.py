@@ -28,9 +28,8 @@ Permissions:
   ``…/messages``, like a decision) and a person's Stop of it
   (``POST …/stop``, 7.50.03: the start function's ``stop_run``, below, which ends it whatever its agents are doing;
   then its engineering agent's run is ended here too, its lock released) and a
-  person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
-  engineering/board/api.py PersonBoard) and a person's go on a run (``POST …/go``, what an AI-assisted run's push
-  waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
+  person's go on a run (``POST …/go``, what an AI-assisted run's push waits for: engineering/board/api.py
+  person_request), and the runs' spend by month (``GET /agents/engineering/spend``,
   engineering/spend.py), and the hard cap's setting, read and written (``GET``/``PUT
   /agents/engineering/settings``, engineering/settings.py: one row in the agents table, written with
   its history row; the runtime reads it at a budgeted run's first start), and the repository connections
@@ -59,11 +58,8 @@ Permissions:
   …/registry/cards``, ``…/gates``, ``…/assertions``: shared/agents_engineering_registry_routes.py), and, since
   7.57.00, any public repository (``GET /agents/engineering/public-repositories``, ``POST …/public-connections``,
   engineering/connectors/public_repos.py; the fork workflow, ``POST …/connections/<id>/fork``, ``PUT
-  …/connections/<id>/upstream``, engineering/connectors/forks.py; a person's GitHub user authorization, ``PUT
-  …/github-apps/<app_id>/oauth``, ``POST …/github-apps/<app_id>/authorize``, ``POST``/``GET
-  …/github-apps/authorizations``, ``DELETE …/github-apps/<app_id>/authorization``,
-  engineering/connectors/user_authorizations.py, the code exchanged by voc-engineering-user-auth); while the
-  engineering agents are off every caller gets 404;
+  …/connections/<id>/upstream``, engineering/connectors/forks.py); while the engineering agents are off every caller
+  gets 404;
 - a flow's expansion (``GET /workflows/<id>/expanded``) and an automation's pause and resume (``POST
   /agents/<id>/pause``, ``…/resume``) are administrators' too (7.52.00, the same router); a workflow's ``used_by``
   (the automations that run it, read as the agents are, and the flows that call it) is answered with it, and the
@@ -84,8 +80,8 @@ Own role (20 KB policy limit): the agents table (read/write), the aggregates tab
 their table and workspace bucket (GetItem and Query), the skills' and, since 7.52.00, the Registry cards' writes
 (PutItem, UpdateItem and ConditionCheckItem on the ``WS#*#SKILL#*`` and ``WS#*#AGENTCARD#*`` partitions only, what
 the stores' transactions use; no delete) and ``lambda:InvokeFunction`` on the board's
-function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
-events back for this role to publish as the person (engineering/board/api.py person_request), and
+function (``ENGINEERING_BOARD_FUNCTION``), which writes a person's go on a run with its own role
+(engineering/board/api.py person_request), and
 ``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
 code and role, which runs ``start_run``, since 7.10.00 ``ask_reactions``, since 7.50.03 ``stop_run`` and since
 7.51.02 ``signal_run`` (the monitor's signals: checked, recorded and handed on to the runtime by that function), and
@@ -95,11 +91,7 @@ voc-engineering-app-tokens: the broker's code under its own role, which reads an
 neither of which answers a token), and, since 7.50.02, on the GitHub Issues settings function
 (``ENGINEERING_ISSUES_CONFIG_FUNCTION``, voc-engineering-issues-config: its own role reads and writes the source's
 settings and turns its schedule on; this role holds no grant on the secret or the rule), where that plugin is deployed
-(lib/stacks/api-engineering-issues-sync.ts), and, since 7.57.00, on the user authorizations' function
-(``ENGINEERING_USER_AUTH_FUNCTION``, voc-engineering-user-auth: it reads an App's OAuth client and writes a person's
-token; this API asks it only ``exchange``, which answers no token), with ``ssm:PutParameter`` and
-``ssm:DeleteParameter`` on the user-auth path's App clients and ``ssm:DeleteParameter`` on its people's tokens
-(``/[<prefix>-]voc/engineering-user-auth/``, still no ``ssm:GetParameter``), and
+(lib/stacks/api-engineering-issues-sync.ts), and
 ``dynamodb:PutItem`` and ``UpdateItem`` on the run requests' partitions only (``WS#*#RUNREQ#*``, 7.53.00), and
 ``ssm:PutParameter`` and ``ssm:DeleteParameter`` on the connections' parameters only, with ``kms:Encrypt`` and
 ``kms:GenerateDataKey`` on the stack's key through SSM for them (no ``ssm:GetParameter``), and, since 7.51.02,
@@ -1751,7 +1743,7 @@ def _readiness_ssm_client() -> Any:
 
 def _readiness_settings() -> Any:
     """The deployment's settings the checks read: its environment, each role's card model (the templates), and since
-    7.58.00 each role's model choice (the Registry's over its card's; one the row cannot say is left out, logged)."""
+    7.58.00 each role's model choice (the Registry's; one the row cannot say is left out, logged)."""
     from engineering.model_choices import deployment_choices
     from engineering.readiness_aws import settings_from_environment
     from engineering.settings import read_role_models
@@ -1764,7 +1756,7 @@ def _readiness_settings() -> Any:
         logger.exception('engineering readiness: the roles\' model choices could not be read')
         stored = {}
     return settings_from_environment(templates.card_models(), os.environ.get('AWS_REGION', ''),
-                                     deployment_choices(stored, templates.choices))
+                                     deployment_choices(stored))
 
 
 def _readiness(subject: Any, *, required_only: bool = False, ports: Any = None) -> Any:
@@ -2211,11 +2203,6 @@ def withdraw_engineering_connection_ci(connection_id: str):
 #: on, a plain "try again" for the rest.
 _APP_TOKENS_REFUSALS: Final[Mapping[str, Kind]] = {'InstallationRefused': 'conflict', 'AppKeyUnavailable': 'conflict',
                                                    'HostBusy': 'unavailable', 'HostError': 'unavailable'}
-#: The user authorizations' function's errors (7.57.00, engineering/connectors/user_auth.py): a code GitHub refused or
-#: an App with no OAuth client here are 409 in its words, GitHub or SSM failing "try again".
-_USER_AUTH_REFUSALS: Final[Mapping[str, Kind]] = {'AuthorizationRefused': 'conflict', 'ClientUnavailable': 'conflict',
-                                                  'UserAuthRefused': 'invalid', 'HostBusy': 'unavailable',
-                                                  'HostError': 'unavailable'}
 
 
 #: The GitHub Issues settings function's errors (7.50.02, engineering/connectors/issues_config.py): a request off its
@@ -2241,19 +2228,17 @@ def _github_apps() -> tuple[Any, Caller]:
 
 
 def _engineering_github() -> tuple[Any, Any, Caller]:
-    """The Apps' store, the connections' and the caller (``_connection_store``'s gate); since 7.57.00 the Apps keep
-    their OAuth client under the user-auth path, and a fork's install goes to the fork workflow (forks.py)."""
+    """The Apps' store, the connections' and the caller (``_connection_store``'s gate); since 7.57.00 a fork's install
+    goes to the fork workflow (forks.py)."""
     connections, caller = _connection_store()
     from engineering.connectors.connections import PARAMETER_KEY_ENV, PARAMETER_PREFIX_ENV
     from engineering.connectors.forks import Forks
     from engineering.connectors.github_apps import FRONTEND_URL_ENV, WEBHOOK_URL_ENV, GitHubApps
-    from engineering.connectors.user_auth_paths import USER_AUTH_PREFIX_ENV
 
     apps = GitHubApps(_agents_table(), _ssm_client, os.environ.get(PARAMETER_PREFIX_ENV, ''),
                       os.environ.get(PARAMETER_KEY_ENV, ''), connections, _invoke_app_tokens,
                       frontend_url=os.environ.get(FRONTEND_URL_ENV, ''),
-                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow(),
-                      user_prefix=os.environ.get(USER_AUTH_PREFIX_ENV, ''))
+                      webhook_url=os.environ.get(WEBHOOK_URL_ENV, ''), issues=_issues_follow())
     apps.forks = Forks(connections, apps, _invoke_app_tokens)
     return apps, connections, caller
 
@@ -2406,30 +2391,8 @@ def delete_engineering_github_app(app_id: str):
 # Any public GitHub repository (7.57.00; docs/autonomous-engineering.md, "Any public repository"): the connections' gate
 # (404 while the module is off, then administrators acting for themselves), behind Cognito (/agents/{proxy+}): no new
 # unauthenticated endpoint. A public repository is read with a read-only token of the deployment's App, minted by the
-# token function and never answered here; a fork's upstream pull request is the person's one click (the run's link),
-# or the broker's, as the connection's owner, through their optional GitHub user authorization, whose code this API
-# hands to voc-engineering-user-auth and never sees again.
-def _invoke_user_auth(request: dict[str, Any]) -> dict[str, Any]:
-    """voc-engineering-user-auth's answer to ``exchange`` (``{login, user_id, expires_at, refresh_token_expires_at}``,
-    never a token): a code GitHub refused or an App without its OAuth client here are 409, anything else 503."""
-    from shared.engineering_agents import USER_AUTH_FUNCTION_ENV
-
-    return _invoke_peer(USER_AUTH_FUNCTION_ENV, _USER_AUTH_REFUSALS, request, what='user auth',
-                        unnamed='GitHub user authorizations cannot be made here: the deployment names no function',
-                        unreadable='GitHub could not be asked for the authorization: authorize again',
-                        refused='GitHub refused the authorization: authorize again')
-
-
-def _user_authorizations() -> tuple[Any, Caller]:
-    apps, _, caller = _engineering_github()
-    from engineering.connectors.connections import PARAMETER_KEY_ENV
-    from engineering.connectors.github_apps import FRONTEND_URL_ENV
-    from engineering.connectors.user_auth_paths import USER_AUTH_PREFIX_ENV
-    from engineering.connectors.user_authorizations import UserAuthorizations
-
-    return UserAuthorizations(_agents_table(), _ssm_client, os.environ.get(USER_AUTH_PREFIX_ENV, ''),
-                              os.environ.get(PARAMETER_KEY_ENV, ''), apps, _invoke_user_auth,
-                              frontend_url=os.environ.get(FRONTEND_URL_ENV, '')), caller
+# token function and never answered here; a fork's upstream pull request is the person's one click (the run's link:
+# 7.58.00, the app never opens it itself).
 
 
 @app.get('/agents/engineering/public-repositories')
@@ -2482,8 +2445,9 @@ def start_engineering_fork(connection_id: str):
 @app.put('/agents/engineering/connections/<connection_id>/upstream')
 @tracer.capture_method(capture_response=False)
 def put_engineering_fork_upstream(connection_id: str):
-    """``{assisted, licence?, reason?}`` → ``{connection}``: a fork connection's owner's settings for its upstream pull
-    requests (whether an AI-assisted run's opens; the licence acknowledged again). 409 for anyone but its owner."""
+    """``{licence, reason?}`` → ``{connection}``: a fork connection's owner acknowledges the upstream's current licence
+    again (7.58.00; the upstream read again, its default branch refreshed). 409 for anyone but its owner, or for a
+    licence that is not the upstream's now."""
     apps, _, caller = _engineering_github()
     from engineering.connectors.connections import check_connection_id
 
@@ -2492,59 +2456,6 @@ def put_engineering_fork_upstream(connection_id: str):
         return apps.forks.set_upstream(connection_id, json_object_body(app), _connection_actor(caller))
 
     return {'connection': _connection_call(settings)}
-
-
-@app.put('/agents/engineering/github-apps/<app_id>/oauth')
-@tracer.capture_method(capture_response=False)
-def put_engineering_github_app_oauth(app_id: str):
-    """``{client_id, client_secret}`` → ``{app}``: the App's OAuth client stored for the user authorization (an App
-    made before 7.57.00, whose client the manifest flow discarded). Never answered or logged."""
-    authorizations, caller = _user_authorizations()
-    return {'app': _connection_call(lambda: authorizations.set_client(app_id, json_object_body(app),
-                                                                       _connection_actor(caller)))}
-
-
-@app.post('/agents/engineering/github-apps/<app_id>/authorize')
-@tracer.capture_method(capture_response=False)
-def authorize_engineering_github_app(app_id: str):
-    """``{workspace?}`` → ``{authorize_url, expires_at}``: GitHub's authorize link for the caller's own user
-    authorization of the App (a single-use state, 30 minutes). 409 while its OAuth client is not stored here."""
-    authorizations, caller = _user_authorizations()
-    return _connection_call(lambda: authorizations.authorize(app_id, json_object_body(app), _connection_actor(caller)))
-
-
-@app.post('/agents/engineering/github-apps/authorizations')
-@tracer.capture_method(capture_response=False)
-def complete_engineering_github_authorization():
-    """``{code, state}`` (as GitHub handed them back) → ``{authorization: {app_id, login, authorized_at,
-    refresh_expires_at}}``: the code exchanged by voc-engineering-user-auth, which keeps the token; never a token
-    here. 400 for a state not this step's; 409 when GitHub refused the code."""
-    authorizations, caller = _user_authorizations()
-    return _connection_call(lambda: authorizations.complete(json_object_body(app), _connection_actor(caller)))
-
-
-@app.get('/agents/engineering/github-apps/authorizations')
-@tracer.capture_method(capture_response=False)
-def list_engineering_github_authorizations():
-    """``{authorizations: [...]}``: the caller's own GitHub user authorizations (never another person's, never a
-    token)."""
-    authorizations, caller = _user_authorizations()
-    return {'authorizations': _connection_call(lambda: authorizations.mine(_connection_actor(caller)))}
-
-
-@app.delete('/agents/engineering/github-apps/<app_id>/authorization')
-@tracer.capture_method(capture_response=False)
-def delete_engineering_github_authorization(app_id: str):
-    """``{}`` → ``{removed: true}``: the caller's own authorization of the App removed (its token deleted first). 404
-    when there is none. Revoking it on GitHub stays the person's."""
-    authorizations, caller = _user_authorizations()
-
-    def remove() -> None:
-        _empty_body()
-        authorizations.remove(app_id, _connection_actor(caller))
-
-    _connection_call(remove)
-    return {'removed': True}
 
 
 # A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering
@@ -2773,79 +2684,44 @@ def message_engineering_run(run_id: str):
     return {'message': sent}
 
 
-# A person's board actions (engineering/board/api.py PersonBoard, plan v3 4.3): the same gate as the monitor's
-# actions (admins acting for themselves; 404 while the module is off or for an unknown run), the bus needed for their
-# events (503 without it; since 7.51.02 for every action that publishes, the API's source saying only steering and
-# answers: RunMonitor.board_available), each change written by the board store with the person as its actor.
+# A person's go on the run (engineering/board/api.py person_request ``go``): the same gate as the monitor's actions
+# (admins acting for themselves; 404 while the module is off or for an unknown run), written by the board function's
+# own role with the person as its actor. (7.58.00) A person's other board actions are gone from here: their task.*
+# events would go out from the API's source, which the bus takes only steering and answers from (7.51.02), so their
+# two routes answered 503 on every deployment.
 _BOARD_ERRORS = {**_MONITOR_ERRORS, 'forbidden': AuthorizationError, 'cap': TooManyRequestsError}
 
 
-def _person_board_action(run_id: str, request: dict[str, str], *, publishes: bool = True) -> dict:
-    """A person's board action (``request``: ``{op: post}``, ``{op: act, task_id, action}`` or ``{op: go}``) through
-    the board function, whose own role writes the change (this role writes no board row: engineering/board/api.py
-    person_request); the events it hands back are published here, from the API's source, as the person. An action
-    that ``publishes`` nothing (a go: its row is the record) needs no bus; one that does is refused before the board
-    is asked while the bus takes no ``task.*`` from the API (``RunMonitor.board_bus``, 7.51.02)."""
+def _person_go(run_id: str) -> dict:
+    """A person's go on the run through the board function, whose own role writes it (this role writes no board row:
+    engineering/board/api.py person_request). A go publishes nothing (its row is the record), so it needs no bus; an
+    event the board hands back for it is the board's fault: 503, nothing sent."""
     monitor, caller = _acting_monitor(run_id)
-    from engineering.bus.publish import PublishError
-    from engineering.bus.schema import parse
     from engineering.rows import Refused
 
     board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
     try:
         monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
-        # (no change its event could not be sent for: since 7.51.02 the bus takes no task.* from the API's source,
-        # monitor.board_available, so every board action that publishes is refused here, before the board writes)
-        publisher = monitor.board_bus() if publishes else None
         if not board:
             raise ServiceUnavailableError('the board cannot be reached from here: the deployment names no board function')
-        person = {**request, 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}
+        person = {'op': 'go', 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}
         answer = _invoke_board(board, {'person': person})
         if answer.get('status') != 'ok':
             kind = str(answer.get('kind'))
             raise _BOARD_ERRORS.get(kind, ServiceUnavailableError)(str(answer.get('message') or 'the board refused it'))
         result = answer.get('answer')
-        if not isinstance(result, dict):   # (the board's fault, as an event that is not the person's: nothing sent)
+        if not isinstance(result, dict):
             logger.error('engineering: the board answered ok with no answer')
             raise ServiceUnavailableError('the board could not be reached: retry')
-        messages = _persons_events(answer.get('events'), parse, run_id, caller.subject, request)
-        if messages:
-            if publisher is None:   # (an action that publishes nothing handed an event back: the board's fault)
-                logger.error('engineering: the board handed back an event for an action that has none')
-                raise ServiceUnavailableError('the board could not be reached: retry')
-            for message in messages:
-                publisher.publish(message)
+        if answer.get('events'):
+            logger.error('engineering: the board handed back an event for a go, which has none')
+            raise ServiceUnavailableError('the board could not be reached: retry')
     except Refused as refused:   # (the monitor's refusals: the same kinds)
         raise _BOARD_ERRORS[refused.kind](str(refused)) from refused
     except (ClientError, BotoCoreError) as exc:
         logger.exception('engineering: the board could not be reached')
         raise ServiceUnavailableError('the board could not be reached: retry') from exc
-    except PublishError as exc:
-        raise ServiceUnavailableError('the board changed but its event was not published: retry') from exc
     return result
-
-
-def _persons_events(raw: Any, parse: Any, run_id: str, subject: str, request: dict[str, str]) -> list[Any]:
-    """The events the board handed back, each checked to be this person's board action before it goes out under the
-    API's source (which the bus lets send more than ``task.*``): at most one, a ``task.*`` of this run (and of this
-    task, for an action on one) from ``human:<subject>``. Anything else, an event that is not voc-msg/1 too, is the
-    board's fault (docs/autonomous-agents.md): 503, nothing sent."""
-    from engineering.bus.schema import MessageError, Party
-
-    events = raw if isinstance(raw, list) else []
-    expected = Party('human', subject)
-    try:
-        messages = [parse(event) for event in events]
-        persons = len(messages) <= 1 and all(
-            message.type.startswith('task.') and message.sender == expected and message.run_id == run_id
-            and ('task_id' not in request or message.task_id == request['task_id']) for message in messages)
-    except MessageError:
-        messages, persons = [], False
-    if not persons:
-        logger.error('engineering: the board handed back an event that is not the person\'s action',
-                     extra={'events': len(events), 'types': [message.type for message in messages]})
-        raise ServiceUnavailableError('the board could not be reached: retry')
-    return messages
 
 
 def _invoke_board(function: str, payload: dict) -> dict:
@@ -2867,22 +2743,6 @@ def _invoke_board(function: str, payload: dict) -> dict:
     return answer
 
 
-@app.post('/agents/engineering/<run_id>/board/tasks')
-@tracer.capture_method
-def post_engineering_task(run_id: str):
-    """``{role, title, spec, priority?, parent_task?, flow_step?, shard?}`` → ``{task, duplicate}``: a person posts a
-    task (admin); in a run that follows its flow, for a live step it names or as their own task with none."""
-    return _person_board_action(run_id, {'op': 'post'})
-
-
-@app.post('/agents/engineering/<run_id>/board/tasks/<task_id>/<action>')
-@tracer.capture_method
-def act_on_engineering_task(run_id: str, task_id: str, action: str):
-    """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` | ``release {}`` →
-    ``{task}`` (admin)."""
-    return _person_board_action(run_id, {'op': 'act', 'task_id': task_id, 'action': action})
-
-
 @app.post('/agents/engineering/<run_id>/go')
 @tracer.capture_method
 def give_engineering_go(run_id: str):
@@ -2890,7 +2750,7 @@ def give_engineering_go(run_id: str):
     AI-assisted run's push and pull request wait for (TENETS.md tenet 3; engineering/connectors/broker.py). Written
     once, create-only, by the board function (``GO#person``, board/store.py person_go); a go already given is
     answered as it is. No bus needed: the row is the record (who and when, D4)."""
-    answer = _person_board_action(run_id, {'op': 'go'}, publishes=False)
+    answer = _person_go(run_id)
     logger.info('Engineering run given a go', extra={'run_id': run_id, 'go_written': answer.get('go', {}).get('created')})
     return answer
 

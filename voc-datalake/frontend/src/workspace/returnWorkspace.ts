@@ -1,8 +1,7 @@
 /**
  * @fileoverview The workspace an external return goes back to (7.49.00): GitHub sends an administrator back from the
  * deployment's GitHub App to `/agents/connections/github/created` (the manifest's `redirect_url`) or `…/installed`
- * (its `setup_url`, fixed when the App is made, while an install can start in any workspace), and since 7.57.00 from a
- * person's authorization of the App to `…/authorized` (its `callback_urls`, fixed the same way). Opened outside a
+ * (its `setup_url`, fixed when the App is made, while an install can start in any workspace). Opened outside a
  * workspace, either page goes straight into the workspace the flow started in, its query carried through, and never
  * shows the workspace picker.
  *
@@ -20,11 +19,7 @@ import { isWorkspaceSlug } from './workspacePath'
 import type { CurrentWorkspace } from './currentWorkspace'
 
 /** The app paths an external service returns to (routes.tsx; lambda/engineering/connectors/github_apps.py). */
-export const EXTERNAL_RETURN_PATHS: readonly string[] = [
-  '/agents/connections/github/created', '/agents/connections/github/installed',
-  // (7.57.00: a person's authorization of the App, the manifest's `callback_urls`: fixed with the App, top-level too)
-  '/agents/connections/github/authorized',
-]
+export const EXTERNAL_RETURN_PATHS: readonly string[] = ['/agents/connections/github/created', '/agents/connections/github/installed']
 
 const FLOW_KEY = 'voc-github-app-flow'
 /** How long a remembered flow counts: a state lives 30 minutes, the code an hour. */

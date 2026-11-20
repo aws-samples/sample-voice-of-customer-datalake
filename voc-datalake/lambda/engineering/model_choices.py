@@ -1,9 +1,8 @@
 """The roles' and the runs' model choices as the Agents API shows, checks and saves them (7.58.00).
 
 A choice is ``runtime/harness/model_choice.py``'s (``auto``, ``opus``, ``sonnet``, ``haiku`` or another model id). Each
-role has at most one in this deployment (the Registry's, ``settings.py`` ``ROLE_MODELS_KEY``), over its template card's
-(``model.choice`` / ``model.other``, the bundle's ``model_choice``); a run may name one for every role (Run now's
-``model``). Which harness a role runs on is the deployment's switch (``-c engineeringHarness``,
+role has at most one in this deployment (the Registry's, ``settings.py`` ``ROLE_MODELS_KEY``), over its card's
+``model.id`` (the default: a card names no choice); a run may name one for every role (Run now's ``model``). Which harness a role runs on is the deployment's switch (``-c engineeringHarness``,
 ``runtime/harness_switch.py``), so a choice is checked for it:
 
 - the shape, always (``ModelChoiceError``, 400);
@@ -17,8 +16,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
-from engineering.runtime.harness.model_choice import ModelChoiceError, bedrock_model, checked, not_enabled
-from engineering.runtime.harness_switch import HARNESS_ENV, kiro_roles, native_models
+from engineering.runtime.harness.model_choice import ModelChoiceError, bedrock_model, checked
+from engineering.runtime.harness_switch import HARNESS_ENV, kiro_roles, native_models, not_native
 from engineering.runtime.interface import RuntimeRefused
 from engineering.settings import RoleModel
 
@@ -53,21 +52,19 @@ def check(value: object, roles: Iterable[str], env: Mapping[str, str]) -> str:
         return choice
     model = bedrock_model(choice, '')
     if model and model not in enabled_models(env):
-        raise ModelChoiceError(not_enabled(model))
+        raise ModelChoiceError(not_native(model))
     return choice
 
 
-def deployment_choices(stored: Mapping[str, RoleModel], templates: Mapping[str, str]) -> dict[str, str]:
-    """Each role's choice here: the Registry's, else its template card's; only the roles that have one."""
-    return {**dict(templates), **{role: model.choice for role, model in stored.items() if model.choice}}
+def deployment_choices(stored: Mapping[str, RoleModel]) -> dict[str, str]:
+    """Each role's choice here (the Registry's); only the roles that have one."""
+    return {role: model.choice for role, model in stored.items() if model.choice}
 
 
-def card_fields(role: str, stored: Mapping[str, RoleModel], template_choice: str,
-                env: Mapping[str, str]) -> dict[str, Any]:
+def card_fields(role: str, stored: Mapping[str, RoleModel], env: Mapping[str, str]) -> dict[str, Any]:
     """What a Registry card says of its role's model choice (a made card: its base role's)."""
     found = stored.get(role)
     return {'model_choice': found.choice if found is not None and found.choice else None,
-            'template_model_choice': template_choice or None,
             'model_choice_updated_at': found.updated_at if found is not None else None,
             'model_choice_updated_by': found.updated_by if found is not None else None,
             'runs_on': runs_on(role, env)}

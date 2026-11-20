@@ -22,15 +22,15 @@ import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 // (7.50.00: and the readiness checks' settings, api-engineering-readiness.ts)
 // (7.51.02: and the engineering bus, for a person's steering and answers: api-engineering-voice.ts)
-// (7.58.00: and the models' prices, which a role's or a run's model choice is checked against: api-engineering-readiness.ts)
+// (7.58.00: and the models' prices, which a role's or a run's model choice is checked against, and a Kiro credit's, which
+// Kiro's credits are shown at: api-engineering-readiness.ts)
 const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_AGENT_NETWORK', 'ENGINEERING_APP_TOKENS_FUNCTION',
   'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_BUILD_MEMORY_MIB', 'ENGINEERING_BUS_NAME', 'ENGINEERING_HARNESS',
-  'ENGINEERING_IMAGE_LANGUAGES',
+  'ENGINEERING_IMAGE_LANGUAGES', 'ENGINEERING_KIRO_CREDIT_PRICE',
   'ENGINEERING_MAX_SESSIONS', 'ENGINEERING_MODEL_PRICES',
   'ENGINEERING_PARAMETER_KEY', 'ENGINEERING_PARAMETER_PREFIX', 'ENGINEERING_RUN_CAP_USD', 'ENGINEERING_RUN_TOKEN_CAP',
-  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_USER_AUTH_FUNCTION', 'ENGINEERING_USER_AUTH_PREFIX',
+  'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE',
   'ENGINEERING_WATERMARKS_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
-// (7.57.00: and the GitHub App user authorizations, api-engineering-user-auth.ts; pinned in engineering-user-auth.test.ts)
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -140,7 +140,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(policyStatementsOf(on(), 'AgentsLambdaRole'))).not.toMatch(/agent-registry|bedrock-agentcore:.*Registry/);
   });
 
-  it('write the repositories\' partitions (WS#*#REPO#*) with Put and Update only: approvals and tenets (7.52.00)', () => {
+  it('write the repositories\' partitions (WS#default#REPO#*) with Put and Update only: approvals and tenets (7.52.00)', () => {
     // (an administrator's approval of a knowledge pack version with its docs' rendering, and an acceptance or rejection
     // of a tenets version: the stores' transactions; no delete, no ConditionCheckItem)
     const writes = policyStatementsOf(on(), 'AgentsLambdaRole').filter((statement) => /Engineering/.test(statement.resource)
@@ -148,7 +148,8 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(writes.map((statement) => [...statement.actions].sort(byCodeUnit))).toStrictEqual(
       [['dynamodb:PutItem', 'dynamodb:UpdateItem']]);
     expect(writes[0]?.condition).toStrictEqual({
-      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] },
+      // (7.58.00: the workspace's own, never the agent memory's WS#<ws>#AMEM#REPO#…: core-buckets.test.ts)
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#REPO#*'] },
       Null: { 'dynamodb:LeadingKeys': 'false' },
     });
     // Never the docs' claims (the broker's) nor the start's push: this role reaches the broker only through the start.
@@ -171,7 +172,7 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     expect(JSON.stringify(statements)).not.toMatch(/SKILL|AGENTCARD|RUNREQ|ConditionCheckItem/);
   });
 
-  it('send a person\'s board actions to the board\'s function, by its name, which its own role writes', () => {
+  it('send a person\'s go on a run to the board\'s function, by its name, which its own role writes', () => {
     const invokes = policyStatementsOf(on(), 'AgentsLambdaRole')
       .filter((statement) => statement.actions.includes('lambda:InvokeFunction') && /voc-engineering-board/.test(statement.resource));
     expect(invokes.map((statement) => statement.actions)).toStrictEqual([['lambda:InvokeFunction']]);
@@ -187,16 +188,16 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
       .filter((statement) => statement.actions.includes('lambda:InvokeFunction'));
     const engineering = invokes.filter((statement) => /voc-engineering-/.test(statement.resource));
     expect(engineering.map((statement) => statement.actions)).toStrictEqual([['lambda:InvokeFunction'],
-      ['lambda:InvokeFunction'], ['lambda:InvokeFunction'], ['lambda:InvokeFunction']]);
+      ['lambda:InvokeFunction'], ['lambda:InvokeFunction']]);
     // (7.45.00: and the GitHub Apps' token function, for an installation's read: engineering-app-tokens.test.ts)
-    // (7.57.00: and the user authorizations' code exchange: engineering-user-auth.test.ts)
+    // (7.57.00's user authorizations' code exchange is gone with the app's own upstream pull request: 7.58.00)
     expect(engineering.map((statement) => statement.resource)).toStrictEqual([
       expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-board-",/),
       expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-start-",/),
-      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-app-tokens-",/),
-      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-user-auth-",/)]);
-    // The runtime itself (tick, launch, signal, end_run) is not this role's to invoke, in any form.
-    expect(JSON.stringify(invokes)).not.toMatch(/voc-engineering-(runtime|delivery)/);
+      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-app-tokens-",/)]);
+    // The runtime itself (tick, launch, signal, end_run) is not this role's to invoke, in any form; nor (7.58.00) the
+    // removed user authorizations' function.
+    expect(JSON.stringify(invokes)).not.toMatch(/voc-engineering-(runtime|delivery|user-auth)/);
     expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_START_FUNCTION))
       .toMatch(/^"?\S*voc-engineering-start-/);
   });
@@ -255,12 +256,9 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
     const statements = policyStatementsOf(on(), 'AgentsLambdaRole');
     const parameters = '{"Fn::Join":["",["arn:",{"Ref":"AWS::Partition"},":ssm:us-east-1:111111111111:parameter/voc/engineering/*"]]}';
     const ssm = statements.filter((statement) => statement.actions.some((action) => action.startsWith('ssm:')));
-    // (7.57.00: and the user authorizations' own path, never read either: engineering-user-auth.test.ts)
     expect(ssm.map((statement) => [[...statement.actions].sort(byCodeUnit), statement.resource]))
-      .toStrictEqual([[['ssm:DeleteParameter', 'ssm:PutParameter'], parameters],
-        [['ssm:DeleteParameter', 'ssm:PutParameter'], expect.stringContaining('parameter/voc/engineering-user-auth/app/*')],
-        [['ssm:DeleteParameter'], expect.stringContaining('parameter/voc/engineering-user-auth/user/*')]]);
-    expect(ssm.map((statement) => statement.condition)).toStrictEqual([undefined, undefined, undefined]);
+      .toStrictEqual([[['ssm:DeleteParameter', 'ssm:PutParameter'], parameters]]);
+    expect(ssm.map((statement) => statement.condition)).toStrictEqual([undefined]);
     // No read of a parameter in any form, so the Agents API never holds a stored credential in clear.
     expect(JSON.stringify(statements)).not.toMatch(/ssm:Get|ssm:\*|ssm:Describe/);
   });
@@ -274,9 +272,8 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('encrypt a credential with the stack\'s key only through SSM and only for the connections\' parameters', () => {
     const statements = policyStatementsOf(on(), 'AgentsLambdaRole')
       .filter((statement) => statement.actions.includes('kms:Encrypt') && /ssm\./.test(JSON.stringify(statement.condition)));
-    // (7.57.00: the second, the Apps' OAuth clients alone: engineering-user-auth.test.ts)
     expect(statements.map((statement) => [...statement.actions].sort(byCodeUnit)))
-      .toStrictEqual([['kms:Encrypt', 'kms:GenerateDataKey'], ['kms:Encrypt', 'kms:GenerateDataKey']]);
+      .toStrictEqual([['kms:Encrypt', 'kms:GenerateDataKey']]);
     expect(statements[0]?.condition).toStrictEqual({
       StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' },
       StringLike: {
@@ -300,8 +297,6 @@ describe('the engineering run reads', { timeout: SYNTH_TIMEOUT_MS }, () => {
       [expect.objectContaining({ StringEquals: via('ssm') }), ['kms:Encrypt', 'kms:GenerateDataKey']],
       // (7.50.00: the readiness probe's create-only put, through S3)
       [{ StringEquals: via('s3') }, ['kms:GenerateDataKey']],
-      // (7.57.00: the Apps' OAuth clients, through SSM)
-      [expect.objectContaining({ StringEquals: via('ssm') }), ['kms:Encrypt', 'kms:GenerateDataKey']],
     ]);
     expect(new Set(keys.map((statement) => statement.resource)).size).toBe(1);
   });

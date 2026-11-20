@@ -10,7 +10,8 @@
  * full width (`min-h-9`). Keyboard order: the issues switch, the action, ⓘ, ⋯. The action names its repository to a
  * screen reader ("Attest CI example-org/web"). No id is content: the connection id, the App's and the installation's
  * live in the details. A fork connection (7.57.00) says which upstream it is a fork of, its owner, the licence they
- * acknowledged and its upstream pull request switch (ForkLines.tsx), and has no edit in its menu.
+ * acknowledged and (7.58.00) its owner's acknowledgement of a changed licence (ForkLines.tsx), and has no edit in its
+ * menu.
  *
  * @module pages/Agents/ConnectionRow
  */

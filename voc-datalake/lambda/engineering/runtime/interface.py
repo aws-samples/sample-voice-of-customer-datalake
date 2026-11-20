@@ -143,13 +143,20 @@ class CacheMount:
         return f'engineering/cache/{check_id("connection", self.connection)}/'
 
 
+#: (7.58.00) A Kiro session's credits ride on its tokens per model as a third count, in millionths of a credit (whole
+#: numbers, as the token counts: summed, ledgered and compared exactly), under the model ``kiro:<Kiro model>``:
+#: ``{'kiro:claude-sonnet-5.5': {'in': 0, 'out': 0, 'micro_credits': 208012}}`` (``harness/kiro.py``).
+MICRO_CREDITS: Final = 'micro_credits'
+MICRO_PER_CREDIT: Final = 1_000_000
+
+
 @dataclass(frozen=True)
 class AgentStatus:
     """What the harness says it is doing, for the run monitor (scrubbed and bounded by the runner)."""
 
     step: str = ''
     recent_tools: tuple[str, ...] = ()
-    #: Tokens per model: ``{model_id: {'in': n, 'out': n}}``.
+    #: Tokens per model: ``{model_id: {'in': n, 'out': n}}``, and a Kiro session's ``micro_credits`` (7.58.00).
     tokens: dict[str, dict[str, int]] = field(default_factory=dict)
 
 

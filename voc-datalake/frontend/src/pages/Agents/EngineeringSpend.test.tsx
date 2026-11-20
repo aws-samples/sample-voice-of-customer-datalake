@@ -65,6 +65,22 @@ describe('Agents → Spend: the month', () => {
     expect(screen.getByText('2 hr')).toBeInTheDocument()
   })
 
+  it('shows a Kiro session\'s credits, priced into the cost, only once there are some (7.58.00)', async () => {
+    route({ [BY_WORKFLOW]: () => answer('workflow', [{ key: 'wf_fix', ...usage(0.2), credits: 5 }],
+      { total: { ...usage(3.5, [300_000, 40_000, 7_200]), credits: 5 } }) })
+    renderSpend()
+    expect(await screen.findByRole('columnheader', { name: 'Kiro credits' })).toBeInTheDocument()
+    expect(screen.getAllByText('Kiro credits')).toHaveLength(2)   // (the month's card and the table's column)
+    expect(screen.getAllByText('5')).toHaveLength(2)   // (the month's total and the workflow's row)
+  })
+
+  it('shows no credits column when nothing ran on Kiro', async () => {
+    route({ [BY_WORKFLOW]: () => answer('workflow', [{ key: 'wf_fix', ...usage(3.38) }]) })
+    renderSpend()
+    expect(await screen.findByText('$3.50')).toBeInTheDocument()
+    expect(screen.queryByText('Kiro credits')).toBeNull()
+  })
+
   it('names each workflow by its library name, an unknown one by its id', async () => {
     route({ [BY_WORKFLOW]: () => answer('workflow', [{ key: 'wf_fix', ...usage(3.38) }, { key: 'wf_gone', ...usage(0.12) }]) })
     renderSpend()

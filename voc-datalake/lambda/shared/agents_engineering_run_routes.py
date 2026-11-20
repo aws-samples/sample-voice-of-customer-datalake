@@ -16,7 +16,8 @@
                                                                               failures, scorecards, coached, learned,
                                                                               cross_run}
     POST /agents/engineering/<run>/steer {text, about?, thread_id?}       -> 202 {message: {event_id, thread_id, at}}
-    POST /agents/engineering/<run>/restart {mode, agents?, base, confirm} -> 202 {run: {run_id, parent_run_id, status}}
+    POST /agents/engineering/<run>/restart {mode, agents?, base, model?, confirm}
+                                                                          -> 202 {run: {run_id, parent_run_id, status}}
 
 What each reads: engineering/views.py (the runs list, the assertions), views_thread.py (the thread), views_inspector.py
 (the inspector's tabs); the run monitor (engineering/monitor.py) for the steering. The run overview, the signals (a
@@ -44,8 +45,11 @@ route here, the restart included, refuses it.
   child with its parent and the parent's ``CHILD#`` row, copies its caps, connection and flow, and seeds the agents
   named (every unfinished task's when none is) from their checkpoints and patches: ``resume`` with them, ``restart``
   afresh, on the ``same`` commit or the repository's ``head``. 409 while the run is live (restart an agent there with
-  the ``restart`` signal); ``confirm: true`` is required. The child's id is minted here: an answer that could not be
-  read is a 503 naming it, so the person opens it rather than restarting twice.
+  the ``restart`` signal); ``confirm: true`` is required. The child runs on the parent's models (its start's
+  ``model_choice`` and the roles' own), unless ``model`` (7.58.00) names one for every role of the child: Run now's
+  field and checks (``agents_handler._run_model``; null or absent keeps the parent's), so a step Kiro stopped for its
+  model goes on with another. The child's id is minted here: an answer that could not be read is a 503 naming it, so
+  the person opens it rather than restarting twice.
 
 Kept in ``shared/`` because an API bundle ships ``api/<handler>.py`` and ``shared/`` only
 (api/test/test_api_bundle_imports.py); the engineering package ships beside it only with the module on, so it is
@@ -89,7 +93,7 @@ UNREADABLE: Final = 'the run could not be read: retry'
 _MONTH: Final = re.compile(r'20[0-9]{2}-(?:0[1-9]|1[0-2])\Z')
 RESTART_MODES: Final = ('resume', 'restart')
 RESTART_BASES: Final = ('same', 'head')
-RESTART_FIELDS: Final = frozenset({'mode', 'agents', 'base', 'confirm'})
+RESTART_FIELDS: Final = frozenset({'mode', 'agents', 'base', 'model', 'confirm'})
 MAX_RESTART_AGENTS: Final = 50
 MAX_QUERY_TEXT: Final = 1_000
 #: What the conversation records before steering a local assistant sent over MCP (7.53.00): it is the minter's, and
@@ -474,14 +478,29 @@ class Restart:
     mode: str
     agents: tuple[str, ...]
     base: str
+    #: (7.58.00) One model for every role of the child ('' keeps the parent's).
+    model: str = ''
+
+
+def _restart_model(body: Mapping[str, Any]) -> str:
+    """A restart's optional ``model``, as Run now's (``model_choices.check``: its shape, and a Bedrock model this
+    deployment grants and prices while a role runs on the native harness); 400 otherwise."""
+    from engineering.model_choices import check
+    from engineering.runtime.harness.model_choice import ModelChoiceError
+    from engineering.runtime.harness_switch import KIRO_ROLES
+
+    try:
+        return check(body.get('model'), KIRO_ROLES, os.environ)
+    except ModelChoiceError as refused:
+        raise ValidationError(str(refused)) from None
 
 
 def parse_restart(body: Mapping[str, Any]) -> Restart:
-    """``{mode: resume | restart, agents?: [agent ids], base: same | head, confirm: true}``."""
+    """``{mode: resume | restart, agents?: [agent ids], base: same | head, model?, confirm: true}``."""
     from engineering.workspace.layout import ID
 
     if not set(body) <= RESTART_FIELDS:
-        raise ValidationError('the body is {mode, agents?, base, confirm}')
+        raise ValidationError('the body is {mode, agents?, base, model?, confirm}')
     mode, base, agents = body.get('mode'), body.get('base', 'same'), body.get('agents')
     if mode not in RESTART_MODES:
         raise ValidationError('mode is resume (from the agents\' checkpoints) or restart (their tasks afresh)')
@@ -493,14 +512,15 @@ def parse_restart(body: Mapping[str, Any]) -> Restart:
                               'unfinished task)')
     if body.get('confirm') is not True:
         raise ValidationError('a restart starts a new run of this one: send confirm: true')
-    return Restart(str(mode), tuple(dict.fromkeys(agents or ())), str(base))
+    return Restart(str(mode), tuple(dict.fromkeys(agents or ())), str(base), _restart_model(body))
 
 
 @app.post('/agents/engineering/<run_id>/restart')
 @tracer.capture_method
 def restart_engineering_run(run_id: str):
-    """``{mode, agents?, base, confirm: true}`` → 202 ``{run: {run_id, parent_run_id, status}}``: an ended run resumed
-    or restarted as a child run, through the start function's ``restart_run``; 409 while the run is live."""
+    """``{mode, agents?, base, model?, confirm: true}`` → 202 ``{run: {run_id, parent_run_id, status}}``: an ended run
+    resumed or restarted as a child run, through the start function's ``restart_run`` (``model``: one for every role of
+    the child, else the parent's); 409 while the run is live."""
     monitor, caller = _acting_monitor(run_id)
     restart = parse_restart(json_object_body(app))
     if not _refused(lambda: monitor.ended(run_id)):
@@ -518,6 +538,8 @@ def restart_engineering_run(run_id: str):
                                'base': restart.base, 'actor': caller.subject}
     if restart.agents:
         request['agents'] = list(restart.agents)
+    if restart.model:
+        request['model_choice'] = restart.model
     answer = eng_runs.invoke_start(_start_client(), function, request, run_id=child)
     if answer.outcome == 'uncertain':
         return _json(503, {'error': f'run {child} may have been started: open it before you restart this run again',

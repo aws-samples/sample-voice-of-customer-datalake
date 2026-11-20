@@ -9,12 +9,12 @@ import pytest
 
 from engineering.connectors.credentials import Credential
 from engineering.connectors.github import GitHubHost, open_from
-from engineering.connectors.github_upstream import GitHubUpstream, UpstreamHostRefused
-from engineering.connectors.hosts import FORK, PUBLIC_READ, REPOSITORY_KIND, HostError, NotFound, OwnerToken
+from engineering.connectors.github_upstream import GitHubUpstream
+from engineering.connectors.hosts import FORK, PUBLIC_READ, REPOSITORY_KIND, HostError, NotFound
 from engineering.connectors.test.app_keys import credential
 from engineering.connectors.test.gitlab_fakes import credential as gitlab_credential
 from engineering.connectors.test.test_github import Clock, FakeGitHub, answer
-from engineering.connectors.test.test_github_upstream import FACTS, OWNER_GHU, UPSTREAM, fork_credential
+from engineering.connectors.test.test_github_upstream import FACTS, UPSTREAM, fork_credential
 
 FORK_PULLS = '/repos/example-org/refund-service/pulls'
 
@@ -83,10 +83,3 @@ def test_an_upstream_read_off_its_shape_is_a_host_error() -> None:
     api = FakeGitHub().on('GET', f'/repos/{UPSTREAM}', answer(200, {'full_name': 'not a repository'}))
     with pytest.raises(HostError, match='off its shape'):
         _upstream(api).facts('conn-1')
-
-
-def test_a_failure_that_is_not_githubs_refusal_is_raised_as_it_is() -> None:
-    api = FakeGitHub().on('POST', f'/repos/{UPSTREAM}/pulls', answer(500, {'message': 'boom'}))
-    with pytest.raises(HostError) as raised:
-        _upstream(api).open('conn-1', OwnerToken(token=OWNER_GHU, login='c'), 'voc-agent/x', 'Fix', 'Body')
-    assert not isinstance(raised.value, UpstreamHostRefused)

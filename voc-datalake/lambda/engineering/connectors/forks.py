@@ -15,13 +15,12 @@ side: nothing here imports ``cryptography`` or reads a credential.
    covers, in the account chosen, becomes one ``fork`` connection (``connections.ForkReference``): the App's reference
    on the fork's installation (so the broker pushes to the fork and opens its pull request exactly as on one's own
    repository, its CI attested as any connection's), with the upstream, its default branch, the owner (whoever
-   started the workflow: their subject's sha256 names their GitHub user authorization, with which the app opens the
-   upstream pull request for them), the licence they acknowledged and their setting for AI-assisted runs (off). No fork
-   there: 409, the state
-   kept, so the same install link works once the fork exists.
-3. **The owner's settings** (``set_upstream``, ``PUT …/connections/<id>/upstream``): ``{assisted, licence?, reason?}``,
-   the owner's alone: whether the app opens an AI-assisted run's upstream pull request, and the licence acknowledged again
-   after the upstream changed it (read again; it must be the current one).
+   started the workflow; the credential names them by their subject's sha256) and the licence they acknowledged. No
+   fork there: 409, the state kept, so the same install link works once the fork exists.
+3. **The licence acknowledged again** (``set_upstream``, ``PUT …/connections/<id>/upstream``, 7.58.00:
+   ``{licence, reason?}``), the owner's alone, after the upstream changed it: the upstream is read again, the licence
+   must be its current one (else 409, saying which it is), and the upstream's default branch is refreshed with it.
+   7.57.00's setting for AI-assisted runs went with the app's own open of the upstream pull request.
 """
 from __future__ import annotations
 
@@ -51,7 +50,7 @@ from engineering.connectors.github_apps import (
 )
 from engineering.connectors.transport import dig
 from engineering.connectors.upstream import contribution_refusal, facts_from_answer, licence_refusal
-from engineering.connectors.user_auth_paths import subject_hash
+from shared.digests import sha256_hex as subject_hash
 from shared.logging import logger
 
 NOT_PUBLIC_READ: Final = ('contributing starts from a public repository connected read only: this connection is '
@@ -63,7 +62,7 @@ NO_FORK: Final = ('the installation covers no fork of {upstream} in {account}: f
 WRONG_ACCOUNT: Final = 'the App was installed on {login}, not on the account chosen for the fork ({wanted})'
 UPSTREAM_GONE: Final = 'GitHub has no public repository {upstream} any more'
 _START_FIELDS: Final = frozenset({'account', 'org', 'licence', 'app_id', 'workspace'})
-_SETTINGS_FIELDS: Final = frozenset({'assisted', 'licence', 'reason'})
+_SETTINGS_FIELDS: Final = frozenset({'licence', 'reason'})
 
 
 def fork_page(upstream: str) -> str:
@@ -166,44 +165,43 @@ class Forks:
         request = ConnectionRequest(
             host='github', repository=repository, default_branch=branch, repository_private=dig(fork, 'private') is True,
             credential=ForkReference(app_id, installation_id, upstream, str(state.get('upstream_default_branch', '')),
-                                     subject_hash(actor.subject), licence, assisted=False),
+                                     subject_hash(actor.subject), licence),
             kind=KIND_FORK, facts={
                 'upstream': upstream, 'upstream_connection': str(state.get('upstream_connection') or ''),
                 'upstream_default_branch': str(state.get('upstream_default_branch', '')),
                 'owner_subject': actor.subject, 'owner_name': display_name(actor.name), 'licence': licence,
-                'upstream_pr_assisted': False, 'fork_account': login, 'fork_account_type': kind})
+                'fork_account': login, 'fork_account_type': kind})
         connection, created = self._connections.save(connection_id, request, actor)
         logger.info('engineering fork connected', extra={'connection_id': connection_id, 'app_id': app_id})
         return {'account': {'login': login, 'type': kind}, 'connections': [{'connection': connection, 'created': created}],
                 'skipped': [], 'fork': {'upstream': upstream, 'repository': repository}}
 
-    # --- 3. the owner's settings ----------------------------------------------------------------------------------
+    # --- 3. the licence acknowledged again ---------------------------------------------------------------------
 
     def set_upstream(self, connection_id: str, body: Mapping[str, object], actor: Actor) -> dict[str, Any]:
-        if not set(body) <= _SETTINGS_FIELDS or not isinstance(body.get('assisted'), bool):
-            raise ConnectionRefused('invalid', 'the body is {assisted: true or false, licence?, reason?}')
+        if not set(body) <= _SETTINGS_FIELDS or body.get('licence') is None:
+            raise ConnectionRefused('invalid', 'the body is {licence, reason?}: the upstream\'s current licence')
         row = self._connections.stored_row(connection_id)
         if kind_of(row) != KIND_FORK:
             raise ConnectionRefused('conflict', NOT_A_FORK)
         if row.get('owner_subject') != actor.subject:
             raise ConnectionRefused('conflict', NOT_OWNER)
-        upstream, licence = str(row.get('upstream', '')), str(row.get('licence', ''))
-        if body.get('licence') is not None:
-            licence = _licence(body['licence'])
-            answer = self._upstream(str(row.get('app_id', '')), int(str(row.get('installation_id', '0'))), upstream)
-            facts = facts_from_answer(answer.get('repository'))
-            refusal = None if facts is None else licence_refusal(facts, licence)
-            if facts is None or refusal is not None:
-                raise ConnectionRefused('conflict', refusal or UPSTREAM_GONE.format(upstream=upstream))
-        assisted = bool(body['assisted'])
+        upstream, licence = str(row.get('upstream', '')), _licence(body['licence'])
+        answer = self._upstream(str(row.get('app_id', '')), int(str(row.get('installation_id', '0'))), upstream)
+        facts = facts_from_answer(answer.get('repository'))
+        refusal = None if facts is None else licence_refusal(facts, licence)
+        if facts is None or refusal is not None:
+            raise ConnectionRefused('conflict', refusal or UPSTREAM_GONE.format(upstream=upstream))
+        # (7.58.00: the upstream's default branch as GitHub answers it now, refreshed; the link takes it live anyway,
+        # upstream_pr.py)
+        default_branch = facts.default_branch or str(row.get('upstream_default_branch', ''))
         request = ConnectionRequest(
             host='github', repository=str(row.get('repository', '')), default_branch=str(row.get('default_branch', '')),
             reason=parse_reason(body.get('reason')), repository_private=row.get('repository_private') is True,
             credential=ForkReference(str(row.get('app_id', '')), int(str(row.get('installation_id', '0'))), upstream,
-                                     str(row.get('upstream_default_branch', '')), subject_hash(actor.subject),
-                                     licence, assisted=assisted),
+                                     default_branch, subject_hash(actor.subject), licence),
             kind=KIND_FORK, facts={**{name: row.get(name) for name in (
-                'upstream', 'upstream_connection', 'upstream_default_branch', 'owner_subject', 'owner_name',
-                'fork_account', 'fork_account_type')}, 'licence': licence, 'upstream_pr_assisted': assisted})
+                'upstream', 'upstream_connection', 'owner_subject', 'owner_name', 'fork_account',
+                'fork_account_type')}, 'upstream_default_branch': default_branch, 'licence': licence})
         connection, _ = self._connections.save(connection_id, request, actor)
         return connection

@@ -77,9 +77,8 @@ class Ports:
     walls: Any = field(default_factory=lambda: NAMESPACES_SEEN)
     #: The Kiro key parameter's type (7.53.00; None: not stored).
     kiro: Any = 'SecureString'
-    #: A fork's parent on GitHub (7.57.00; '' no fork, None no repository) and whether its owner authorized the App.
+    #: A fork's parent on GitHub (7.57.00; '' no fork, None no repository).
     parent: Any = 'upstream-org/shop'
-    authorized: Any = True
     asked: list[str] = field(default_factory=list)
 
     @staticmethod
@@ -160,9 +159,6 @@ class Ports:
         self.asked.append(f'parent {connection.get("repository")}')
         return self._answer(self.parent)
 
-    def user_authorized(self, app_id: str, subject: str) -> bool:
-        self.asked.append(f'authorized {app_id} {subject}')
-        return self._answer(self.authorized)
 
 
 SETTINGS =Settings(image_languages=frozenset({'python', 'node'}), network=True, build_memory_mib=0,

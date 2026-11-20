@@ -122,7 +122,6 @@ describe('trailSegments: a page\'s places are paths, and the trail ends at the p
     ['/agents/workflows', ['agents']],
     ['/agents/workflows/wf_1', ['agents', 'workflows', 'wf_1']],
     ['/agents/connections/github/created', ['agents', 'connections', 'github', 'created']],
-    ['/agents/connections/github/authorized', ['agents', 'connections', 'github', 'authorized']],
     ['/agents/ag_1/runs', ['agents', 'ag_1']],
     ['/agents/engineering/r1', ['agents', 'engineering', 'r1']],
     // (the setup guide's steps are its own places: the trail ends at the guide)

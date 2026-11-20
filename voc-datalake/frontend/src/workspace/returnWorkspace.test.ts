@@ -23,7 +23,7 @@ afterEach(() => {
 describe('returnWorkspace', () => {
   it('is the workspace the flow started in, for an hour', () => {
     rememberReturnWorkspace('aws', NOW)
-    expect(EXTERNAL_RETURN_PATHS.map((path) => returnWorkspace(path, MINE, NOW + 1000))).toStrictEqual(['aws', 'aws', 'aws'])
+    expect(EXTERNAL_RETURN_PATHS.map((path) => returnWorkspace(path, MINE, NOW + 1000))).toStrictEqual(['aws', 'aws'])
     expect(returnWorkspace(INSTALLED, MINE, NOW + 61 * 60 * 1000)).toBe('acme')
   })
 

@@ -24,12 +24,10 @@ installations (``kind: public_read``: the repository is not in that installation
     {"kind": "public_read", "app_id": "123456", "installation_id": 7890123, "repository": "owner/name", "key": "app"}
 
 or a fork of a public repository, the App installed on the fork, with the upstream its runs' pull request goes to
-(``kind: fork``: the connection owner's subject's sha256, whose GitHub user authorization opens it, the licence they
-acknowledged and their setting for AI-assisted runs)::
+(``kind: fork``: the connection owner's subject's sha256 and the licence they acknowledged)::
 
     {"kind": "fork", "app_id": "123456", "installation_id": 7890123, "repository": "me/name", "key": "app",
-     "upstream": "owner/name", "upstream_default_branch": "main", "owner": "<64 hex>", "licence": "MIT",
-     "upstream_pr_assisted": false}
+     "upstream": "owner/name", "upstream_default_branch": "main", "owner": "<64 hex>", "licence": "MIT"}
 
 or, since 7.06.00, a GitLab project's (its id and path as GitLab answered the save's check, the token's expiry)::
 
@@ -59,9 +57,9 @@ from engineering.connectors.connections import APP_NUMBER, APP_REFERENCE, REPOSI
 from engineering.connectors.gitlab_api import TOKEN, is_project_path
 from engineering.connectors.hosts import FORK, NO_CONNECTION, PUBLIC_READ, REPOSITORY_KIND, ForkFacts, NoConnection
 from engineering.connectors.upstream import SPDX
-from engineering.connectors.user_auth_paths import SUBJECT_HASH
 from shared.logging import logger
 from shared.model_fallback import error_code
+from shared.plan_canonical import FINGERPRINT_RE as SUBJECT_HASH
 
 #: How long a read credential is kept: a replaced key reaches a warm container within this.
 CACHE_SECONDS: Final = 300
@@ -166,7 +164,7 @@ def parse_credential(text: str, app_keys: AppKeyReader | None = None) -> GitHubA
     kind = value.get('kind', REPOSITORY_KIND)
     if kind not in (REPOSITORY_KIND, PUBLIC_READ, FORK) or (kind != REPOSITORY_KIND and value.get('key') != APP_REFERENCE):
         raise CredentialUnusable(NO_CONNECTION)   # (a public read and a fork are always one of the deployment's Apps)
-    fork = _fork_facts(value, app_id) if kind == FORK else None
+    fork = _fork_facts(value) if kind == FORK else None
     if value.get('key') == APP_REFERENCE:
         if app_keys is None or 'private_key' in value:
             raise CredentialUnusable(NO_CONNECTION)
@@ -177,15 +175,15 @@ def parse_credential(text: str, app_keys: AppKeyReader | None = None) -> GitHubA
                                repository=repository.group('name'), private_key=key, kind=str(kind), fork=fork)
 
 
-def _fork_facts(value: dict[str, Any], app_id: str) -> ForkFacts:
+def _fork_facts(value: dict[str, Any]) -> ForkFacts:
     """A fork credential's upstream (``CredentialUnusable`` off its shape: every field is needed, failing closed)."""
     upstream, branch = REPOSITORY.fullmatch(_field(value, 'upstream')), _field(value, 'upstream_default_branch')
-    owner, licence, assisted = _field(value, 'owner'), _field(value, 'licence'), value.get('upstream_pr_assisted')
+    owner, licence = _field(value, 'owner'), _field(value, 'licence')
     if (upstream is None or upstream.group('name') in {'.', '..'} or not branch or len(branch) > 255
-            or not SUBJECT_HASH.fullmatch(owner) or not SPDX.fullmatch(licence) or not isinstance(assisted, bool)):
+            or not SUBJECT_HASH.fullmatch(owner) or not SPDX.fullmatch(licence)):
         raise CredentialUnusable(NO_CONNECTION)
     return ForkFacts(upstream=upstream.group(0), upstream_default_branch=branch, owner=owner, licence=licence,
-                     assisted=assisted, app_id=app_id, repository=_field(value, 'repository'))
+                     repository=_field(value, 'repository'))
 
 
 @lru_cache(maxsize=1)

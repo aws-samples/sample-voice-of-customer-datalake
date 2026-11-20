@@ -10,7 +10,8 @@ conditional on the row's ``seq``, so overlapping ticks never write over each oth
 
 A row holds ids, times, the session's id and its runtime's ARN (``vm_id``, ``endpoint``), the run monitor's inspection
 data and the live cost counters (the session's seconds running and held, its vCPU- and GB-seconds, tokens per model and
-their totals), never a token, a credential or a command's output.
+their totals, and since 7.58.00 a Kiro session's credits on its ``kiro:<model>``'s counts, ``interface.MICRO_CREDITS``),
+never a token, a credential or a command's output.
 """
 from __future__ import annotations
 
@@ -26,8 +27,8 @@ from typing import Any, Final, Literal
 from botocore.exceptions import ClientError
 
 from engineering.rows import LAUNCH_HOLD
-from engineering.runtime.caps import NO_TOKEN_PRICES, UNPRICED, SessionPricing, token_usd
-from engineering.runtime.interface import AgentSpec, RuntimeSession
+from engineering.runtime.caps import NO_TOKEN_PRICES, UNPRICED, SessionPricing, credit_usd, token_usd
+from engineering.runtime.interface import MICRO_CREDITS, AgentSpec, RuntimeSession
 from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk, transaction_conflict
 from engineering.spend import (
     MAX_SESSION_MODELS,
@@ -173,16 +174,17 @@ class AgentSession:
         """The session's tokens, given what the current session's harness reported.
 
         The report comes from inside the session, so it can only add: a negative count is none, and no total ever
-        drops below what was saved (the run's token cap must not be talked down).
+        drops below what was saved (the run's token cap must not be talked down; nor, 7.58.00, its cost cap by a Kiro
+        session's credits, ``MICRO_CREDITS``, a count only the models that report one have).
         """
         totals = {model: dict(counts) for model, counts in self.tokens_before.items()}
         for model, counts in current.items():
             total = totals.setdefault(model, {'in': 0, 'out': 0})
-            for kind in ('in', 'out'):
+            for kind in _kinds(counts):
                 total[kind] = total.get(kind, 0) + max(int(counts.get(kind, 0)), 0)
         for model, counts in self.tokens.items():
             total = totals.setdefault(model, {'in': 0, 'out': 0})
-            for kind in ('in', 'out'):
+            for kind in _kinds(counts):
                 total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
         return totals
 
@@ -204,6 +206,11 @@ class AgentSession:
                        pause_requested_at=None, after_pause='continue', suspended=False,
                        failures=0, no_room=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None, harness_at=None,
                        session_expires_at=None, last_tick_at=now)
+
+
+def _kinds(counts: dict[str, int]) -> tuple[str, ...]:
+    """A model's counts: its tokens in and out, and its credits when it reports any (a Kiro session's)."""
+    return ('in', 'out', MICRO_CREDITS) if MICRO_CREDITS in counts else ('in', 'out')
 
 
 _OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at', 'last_tick_at',
@@ -273,14 +280,16 @@ class SessionStore:
     held) to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so neither writes over the other), with the
     vCPU- and GB-seconds they count as, in the same conditional write, so a move counted once is priced once; and the
     model tokens it has not ledgered yet at their price per model (``SessionPricing.tokens``, 7.50.00; the default
-    prices none). Pricing goes forward only: time or tokens used while unpriced are never priced later."""
+    prices none), and (7.58.00) a Kiro session's credits not ledgered yet at the price per credit
+    (``SessionPricing.credit_price``; the default prices none). Pricing goes forward only: time, tokens or credits
+    used while unpriced are never priced later."""
 
     def __init__(self, table: Any, runs: RunStore, pricing: SessionPricing | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._table = table
         self._pause: Callable[[float], None] = time.sleep   # (a test sets its own)
         self._runs = runs
-        self.pricing = pricing or SessionPricing(rates=UNPRICED, tokens=NO_TOKEN_PRICES)
+        self.pricing = pricing or SessionPricing(rates=UNPRICED, tokens=NO_TOKEN_PRICES, credit_price=Decimal(0))
         self._clock = clock
         self._runs_seen: dict[str, tuple[str, str]] = {}
 
@@ -366,7 +375,8 @@ class SessionStore:
     def _metered(self, session: AgentSession) -> tuple[AgentSession, Decimal | None, dict[str, Usage]]:
         """``_priced``, and what the write adds to the spend ledger: the session seconds not counted before (with
         their price, if any) and, per model, the tokens not ledgered before, each model's at its price
-        (``caps.token_usd``: a model with no price of its own at the dearest listed, an upper bound). The session then
+        (``caps.token_usd``: a model with no price of its own at the dearest listed, an upper bound), and a Kiro
+        session's credits not ledgered before at the price per credit (``caps.credit_usd``, 7.58.00). The session then
         records both as counted, in the same write, and the row's ``cost_usd`` gets the tokens' dollars too (the
         returned cost), so the run's cost cap and its flow's budget bound model spend. Past the session's first
         ``MAX_SESSION_MODELS`` models by name, its others' tokens are ledgered under ``-`` (each priced as its own
@@ -381,7 +391,8 @@ class SessionStore:
         tokens_usd = Decimal(0)
         for model, used in token_deltas(priced.tokens, priced.ledgered_tokens).items():
             name = model if model in own else OTHER_MODELS
-            usd = token_usd(self.pricing.tokens, model, used.tokens_in, used.tokens_out)
+            usd = (token_usd(self.pricing.tokens, model, used.tokens_in, used.tokens_out)
+                   + credit_usd(self.pricing.credit_price, used.micro_credits))
             tokens_usd += usd
             usage[name] = usage.get(name, Usage()) + replace(used, usd=usd)
         if unpriced > 0 or held > 0:

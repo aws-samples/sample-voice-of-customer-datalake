@@ -149,7 +149,6 @@ function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly
   // (while the Apps are read, nothing is grouped: a connection made through one would show among the others)
   if (apps.isPending) return <div className="skeleton h-16" />
   const groups = groupConnections(list.connections, apps.data?.apps ?? [])
-  const contributing = list.connections.some((connection) => connection.kind !== 'repository')
   return (
     <>
       {apps.data === undefined && (
@@ -160,7 +159,7 @@ function ConnectedBody({ list, apps, view, checks, actions, onNotice }: Readonly
           {groups.apps.map((group) => (
             <li key={group.app.app_id}>
               <AppGroup group={group} view={view} record={checks.records.get(group.app.app_id)}
-                checking={checks.running.has(group.app.app_id)} actions={actions} onNotice={onNotice} contributing={contributing}
+                checking={checks.running.has(group.app.app_id)} actions={actions} onNotice={onNotice}
                 onCheck={() => { void checks.check(group.app.app_id) }} />
             </li>
           ))}

@@ -36,32 +36,16 @@ const count = z.number().catch(0)
 
 /** The board states in which a task is over: its agent is no longer signalled through it. */
 export const FINAL_TASK_STATES: readonly string[] = ['done', 'failed', 'needs_human']
-/** The moves a task's holder may make, from a state to the next (`engineering/board/model.py` MOVES). */
-export const TASK_MOVES: Readonly<Record<string, readonly string[]>> = {
-  claimed: ['in_progress', 'failed', 'needs_human'],
-  in_progress: ['in_review', 'done', 'failed', 'needs_human'],
-  in_review: ['in_progress', 'done', 'failed', 'needs_human'],
-}
-/** The run coordinator's own task, which no person acts on (`engineering/board/store.py` COORDINATE_TASK). */
+/** The run coordinator's own task (`engineering/board/store.py` COORDINATE_TASK). */
 export const COORDINATE_TASK = 'coordinate'
-/** A person's id on the board: a task they hold has lease agent `human:<their subject>`. */
-export const PERSON_PREFIX = 'human:'
-/** A person's actions on one task (`…/board/tasks/<task_id>/<action>`). */
-export type BoardAction =
-  | { action: 'take'; over?: boolean }
-  | { action: 'block'; reason: string; over?: boolean }
-  | { action: 'priority'; priority: number }
-  | { action: 'move'; to: string }
-  | { action: 'release' }
-/** A person's new task: `spec` says what to do (`{instructions}`). */
-export interface NewTask {
-  role: string
-  title: string
-  spec: Record<string, unknown>
-}
 
 const maybeCount = z.number().nullable().catch(null)
-const TokensSchema = z.object({ model: text, input_tokens: count, output_tokens: count })
+/** A model's use; (7.58.00) a Kiro session's model (`kiro:<model>`) its credits too, and their cost at the
+ *  deployment's price per credit (null for a model that reports none). */
+const TokensSchema = z.object({
+  model: text, input_tokens: count, output_tokens: count,
+  credits: z.number().nonnegative().nullable().catch(null), credits_usd: z.number().nonnegative().nullable().catch(null),
+})
 /** (7.51.04) An agent's last failed command as the supervisor kept it: its stderr's tail redacted by the server. */
 const LastExitSchema = z.object({
   exit_code: maybeCount, timed_out: z.boolean().catch(false), duration_seconds: maybeCount, stderr_tail: text,
@@ -209,13 +193,11 @@ const OverviewSchema = z.object({
   }),
   agents: eachOf(AgentSchema),
   /** (7.51.02) What reaches the run from here, each false when unsaid: steering and answers (the stack names the
-   *  engineering bus to the Agents API), Pause, Resume, Save and an agent's signals (it names the start function), a
-   *  person's Stop (the start function, 7.50.03), and a person's board actions (never yet: the bus takes only steering
-   *  and answers from the Agents API). */
+   *  engineering bus to the Agents API), Pause, Resume, Save and an agent's signals (it names the start function), and
+   *  a person's Stop (the start function, 7.50.03). */
   steer_available: z.boolean().catch(false),
   signals_available: z.boolean().catch(false),
   stop_available: z.boolean().catch(false),
-  board_available: z.boolean().catch(false),
   totals: z.object({ messages: count, microvm_seconds: count, by_model: eachOf(TokensSchema) })
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
   /** The latest read of people's reactions to the run's pull request (7.10.00); null for none. */
@@ -393,15 +375,6 @@ export const engineeringRunsApi = {
     if (!parsed.success || parsed.data.stop.status === '') throw new Error('The stop answer was unreadable')
     return parsed.data.stop
   },
-  /** A person posts a task (admin); the board answers it, which the page reads again. */
-  postTask: async (runId: string, task: NewTask): Promise<{ duplicate: boolean }> => {
-    const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/board/tasks'), post(task))
-    // `duplicate`: an equal task still under way is answered, and nothing new is posted.
-    return { duplicate: isRecord(raw) && raw.duplicate === true }
-  },
-  /** A person's action on one task (admin). */
-  actOnTask: async (runId: string, taskId: string, { action, ...body }: BoardAction): Promise<unknown> =>
-    fetchApi<unknown>(engineeringRunPath(runId, `/board/tasks/${encodeURIComponent(taskId)}/${action}`), post(body)),
   /** The run's reports, each with its latest version (a bad entry costs itself). */
   reports: async (runId: string): Promise<EngineeringReportEntry[]> => {
     const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/reports'))

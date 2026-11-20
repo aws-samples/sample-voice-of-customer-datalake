@@ -563,6 +563,22 @@ describe('Restart run on an ended run', () => {
         .toStrictEqual({ mode: 'restart', base: 'head', agents: ['fixer-1'], confirm: true }))
     })
 
+    it('runs the new run on another model for every role when one is chosen, and holds an other id off its shape', async () => {
+      endedRoutes()
+      renderWorkspace(ENDED)
+      const dialog = await openDialog()
+      const model = dialog.getByRole('combobox', { name: 'Model for the new run' })
+      expect(model).toHaveDisplayValue('The same models as this run')
+      await userEvent.selectOptions(model, 'other')
+      await userEvent.type(dialog.getByRole('textbox', { name: 'Model ID' }), 'not a model')
+      await userEvent.click(dialog.getByRole('button', { name: 'Start the new run' }))
+      expect(calledEndpoints('POST')).not.toContain(fixture.restart.path)
+      await userEvent.selectOptions(model, 'sonnet')
+      await userEvent.click(dialog.getByRole('button', { name: 'Start the new run' }))
+      await waitFor(() => expect(sentFetchApiBody(fixture.restart.path, 'POST'))
+        .toStrictEqual({ mode: 'resume', base: 'same', model: 'sonnet', confirm: true }))
+    })
+
     it('names the child to open when the answer could not be read, and starts no other', async () => {
       endedRoutes(() => { throw new ApiError(503, 'run C1 may have been started: open it before you restart this run again', undefined, 'C1') })
       renderWorkspace(ENDED)

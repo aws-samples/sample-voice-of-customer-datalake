@@ -11,7 +11,7 @@ vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiC
 const { currentMonth, engineeringSpendApi, parseMonthSpend } = await import('./engineeringSpendApi')
 
 const QUERY = { month: '2026-11', by: 'run', workflow: '' } as const
-const ZERO = { usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 }
+const ZERO = { usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0, credits: 0 }
 const EMPTY = { month: '2026-11', total: ZERO, groups: [] }
 
 beforeEach(() => { resetFetchApi() })
@@ -40,10 +40,10 @@ describe('parseMonthSpend', () => {
     }, QUERY)
     expect(spend).toStrictEqual({
       month: '2026-11', by: 'run', truncated: true,
-      total: { usd: 1.5, tokens_in: 10, tokens_out: 2, microvm_seconds: 60 },
+      total: { usd: 1.5, tokens_in: 10, tokens_out: 2, microvm_seconds: 60, credits: 0 },
       groups: [
-        { key: 'RUN1', usd: 1.5, tokens_in: 10, tokens_out: 0, microvm_seconds: 0 },
-        { key: 'RUN2', usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 },
+        { key: 'RUN1', usd: 1.5, tokens_in: 10, tokens_out: 0, microvm_seconds: 0, credits: 0 },
+        { key: 'RUN2', usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0, credits: 0 },
       ],
     })
   })

@@ -13,17 +13,14 @@
  * installation against the App's connections (`POST …/<app_id>/check`) and the App's removal (`DELETE …/<app_id>`,
  * refused while connections use it). Since 7.50.02 the installation's and the check's answers say what followed for the
  * deployment's GitHub Issues source (`issues`: api/issuesSourceApi.ts): their repositories read automatically, each
- * one's `voc-agent` label. Since 7.57.00 a person authorizes an App as themselves (`POST …/<app_id>/authorize`, GitHub's
- * return posted to `POST …/github-apps/authorizations`; `GET` lists the caller's own, `DELETE …/<app_id>/authorization`
- * forgets one), the broker's way to open a fork connection's upstream pull request as its owner; an App made before
- * then gets its OAuth client stored with `PUT …/<app_id>/oauth`. No answer carries a key, a secret or a token. The addresses the page sends the
+ * one's `voc-agent` label. No answer carries a key, a secret or a token. The addresses the page sends the
  * browser to are taken only on github.com: an answer naming another host is unreadable, never followed.
  *
  * @module api/githubAppsApi
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
-import { del, post, put } from './requestKit'
+import { del, post } from './requestKit'
 import { parseEach } from './lenientFields'
 import { optionalServerText, parseConnection, parseLimitedList } from './engineeringConnectionsApi'
 import { parseIssuesFollow } from './issuesSourceApi'
@@ -54,10 +51,6 @@ const AppSchema = z.object({
   created_at: optionalServerText(),
   created_by: optionalServerText(),
   version: z.number().int().catch(0),
-  /** (7.57.00) Whether the App's OAuth client is stored here: what a person's authorization needs. */
-  oauth: z.boolean().catch(false),
-  /** The App's OAuth client id (not a secret); null when not stored. */
-  client_id: optionalServerText(),
 })
 
 export type GitHubApp = z.output<typeof AppSchema>
@@ -111,26 +104,6 @@ export interface Installation {
   /** (7.57.00) An installation on a fork, started from "Contribute to ‹upstream›" (step 2): the upstream and the fork. */
   fork: { upstream: string; repository: string } | null
 }
-
-/** A person's GitHub App user authorization (7.57.00): the login it acts as, never its token. */
-const AuthorizationSchema = z.object({
-  app_id: z.string().regex(/^[1-9]\d{0,19}$/),
-  login: z.string().min(1),
-  authorized_at: optionalServerText(),
-  /** When its refresh token lapses (GitHub's six months); null when not said. */
-  refresh_expires_at: optionalServerText(),
-})
-
-export type GitHubAuthorization = z.output<typeof AuthorizationSchema>
-
-/** The App's OAuth client, for an App made before 7.57.00 (whose secret its creation discarded): written, never read back. */
-export interface OAuthClientInput {
-  client_id: string
-  client_secret: string
-}
-
-/** An OAuth client id as GitHub shows one (`Iv1.…`, `Iv23…`): letters, digits and dots. */
-export const CLIENT_ID = /^[A-Za-z0-9.]{8,64}$/
 
 export interface InstallationReturn {
   installationId: number
@@ -216,22 +189,6 @@ function parseInstallation(raw: unknown): Installation {
   }
 }
 
-function parseAuthorization(raw: unknown): GitHubAuthorization {
-  const authorization = AuthorizationSchema.safeParse(isRecord(raw) ? raw.authorization : undefined)
-  if (!authorization.success) throw unreadable('authorization')
-  return authorization.data
-}
-
-function parseAuthorizations(raw: unknown): GitHubAuthorization[] {
-  if (!isRecord(raw) || !Array.isArray(raw.authorizations)) throw unreadable('authorizations')
-  return parseEach(AuthorizationSchema, raw.authorizations)
-}
-
-function parseAuthorizeLink(raw: unknown): { authorizeUrl: string } {
-  if (!isRecord(raw)) throw unreadable('authorization link')
-  return { authorizeUrl: githubUrl(raw, 'authorize_url', 'authorization link') }
-}
-
 const strings = (value: unknown): string[] => (Array.isArray(value)
   ? value.filter((entry): entry is string => typeof entry === 'string')
   : [])
@@ -244,11 +201,7 @@ function parseCheck(raw: unknown): InstallationCheck {
 const APPS_PATH = '/agents/engineering/github-apps'
 const appPath = (appId: string) => `/agents/engineering/github-apps/${encodeURIComponent(appId)}`
 
-export const githubAppsKeys = {
-  list: () => ['engineering-github-apps'] as const,
-  /** The caller's own GitHub App user authorizations (7.57.00). */
-  authorizations: () => ['engineering-github-authorizations'] as const,
-}
+export const githubAppsKeys = { list: () => ['engineering-github-apps'] as const }
 
 /** The deployment's Apps; `scope` 'deployment' sends no `X-Workspace-Id` (the deployment's Data sources). */
 async function listApps(scope: RequestScope): Promise<GitHubAppList> {
@@ -279,27 +232,5 @@ export const githubAppsApi = {
   /** Remove the App's stored key and its row (refused, 409, while connections use it). */
   remove: async (appId: string, reason = ''): Promise<void> => {
     await fetchApi<unknown>(appPath(appId), del(reason.trim() === '' ? {} : { reason: reason.trim() }))
-  },
-  /**
-   * (7.57.00) GitHub's authorization page for the caller and the App (a single-use state), which the page navigates
-   * to: the broker opens a fork connection's upstream pull request as its owner with it. 409 while the App's OAuth
-   * client is not stored here.
-   */
-  authorize: async (appId: string, workspace?: string): Promise<{ authorizeUrl: string }> =>
-    parseAuthorizeLink(await fetchApi<unknown>(`${appPath(appId)}/authorize`, post(workspace === undefined ? {} : { workspace }))),
-  /** Hand the code GitHub sent the person back with to the server, which exchanges it (the token never reaches the page). */
-  authorized: async (code: string, state: string): Promise<GitHubAuthorization> =>
-    parseAuthorization(await fetchApi<unknown>(`${APPS_PATH}/authorizations`, post({ code, state }))),
-  /** The caller's own authorizations, one per App at most. */
-  authorizations: async (): Promise<GitHubAuthorization[]> =>
-    parseAuthorizations(await fetchApi<unknown>(`${APPS_PATH}/authorizations`)),
-  /** Forget the caller's authorization of the App here (revoking it on GitHub stays theirs: Settings → Applications). */
-  removeAuthorization: async (appId: string): Promise<void> => {
-    await fetchApi<unknown>(`${appPath(appId)}/authorization`, del())
-  },
-  /** Store the App's OAuth client (an App made before 7.57.00): the secret goes to the server's store, never back. */
-  setOAuthClient: async (appId: string, client: OAuthClientInput): Promise<GitHubApp> => {
-    const raw = await fetchApi<unknown>(`${appPath(appId)}/oauth`, put(client))
-    return parseApp(isRecord(raw) ? raw.app : undefined, 'GitHub App')
   },
 }

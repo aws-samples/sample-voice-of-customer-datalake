@@ -174,21 +174,21 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     assert view['totals'] == {'messages': 12, 'microvm_seconds': 300, 'by_model': [
         {'model': 'model-a', 'input_tokens': 1050, 'output_tokens': 205},
         {'model': 'model-b', 'input_tokens': 7, 'output_tokens': 1}]}
-    # (this monitor reaches the start function's signals and the bus; it names no Stop; no board action reaches a run)
-    assert [view[flag] for flag in FLAGS] == [True, True, False, False]
+    # (this monitor reaches the start function's signals and the bus; it names no Stop)
+    assert [view[flag] for flag in FLAGS] == [True, True, False]
     assert 'actions_available' not in view
 
 
 #: What of a run can be reached from here (7.51.02), each by its own flag.
-FLAGS = ('steer_available', 'signals_available', 'stop_available', 'board_available')
+FLAGS = ('steer_available', 'signals_available', 'stop_available')
 
 
 @pytest.mark.parametrize(('signals', 'bus', 'stop', 'flags'), [
-    (True, False, False, [False, True, False, False]),
-    (False, True, False, [True, False, False, False]),
-    (False, False, True, [False, False, True, False]),
-    (True, True, True, [True, True, True, False]),
-    (False, False, False, [False, False, False, False]),
+    (True, False, False, [False, True, False]),
+    (False, True, False, [True, False, False]),
+    (False, False, True, [False, False, True]),
+    (True, True, True, [True, True, True]),
+    (False, False, False, [False, False, False]),
 ])
 def test_the_overview_says_what_reaches_the_run_each_by_its_own_flag(run, signals: bool, bus: bool, stop: bool,
                                                                       flags: list[bool]) -> None:
@@ -200,13 +200,14 @@ def test_the_overview_says_what_reaches_the_run_each_by_its_own_flag(run, signal
     assert [view[flag] for flag in FLAGS] == flags
 
 
-def test_a_persons_board_actions_reach_no_run_since_the_api_says_only_steering_and_answers(run) -> None:
-    """Their task.* events would go out from the API's source, which the bus does not take from it (7.51.02)."""
-    _, monitor, _, publisher, _ = run
-    assert monitor.board_available is False
-    with pytest.raises(MonitorError, match='board actions cannot reach the run') as refused:
-        monitor.board_bus()
-    assert (refused.value.kind, publisher.sent) == ('unavailable', [])
+def test_the_overview_says_no_board_action_since_none_can_reach_a_run(run) -> None:
+    """(7.58.00) A person's board actions would publish task.* from the API's source, which the bus does not take from
+    it (7.51.02): their routes and their flag are gone."""
+    _, monitor, _, _, _ = run
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert ('board_available' in view, hasattr(monitor, 'board_bus'), hasattr(monitor, 'board_available')) == (
+        False, False, False)
 
 
 def test_an_unknown_run_has_no_overview() -> None:
@@ -522,7 +523,7 @@ def test_a_stop_reaches_the_run_through_the_start_function_without_the_runtime_o
     view = monitor.overview(RUN)
     assert view is not None
     # (neither the signals nor the bus reach this run, its Stop does: the run monitor offers Stop alone)
-    assert [view[flag] for flag in FLAGS] == [False, False, True, False]
+    assert [view[flag] for flag in FLAGS] == [False, False, True]
     stopped = monitor.stop(RUN, parse_stop({}), ADMIN)
     assert stopper.calls == [(RUN, 'stop', 'admin-sub')]
     assert (stopped['status'], stopped['tasks_closed'], 'recorded' in stopped) == ('stopped', ['task-1'], False)

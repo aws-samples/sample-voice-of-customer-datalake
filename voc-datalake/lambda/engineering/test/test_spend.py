@@ -68,7 +68,8 @@ def test_a_month_reads_one_partition_grouped_by_what_is_asked(table: Any):
     _add(table, fix, {MICROVM: Usage(usd=Decimal('3'), microvm_seconds=300)})
     _add(table, fix, {MICROVM: Usage(usd=Decimal('9'))}, datetime(2026, 12, 1, tzinfo=UTC))   # (next month: not read)
     by_workflow = month_spend(table, '2026-11', 'workflow').view()
-    assert by_workflow['total'] == {'usd': 5.0, 'tokens_in': 10, 'tokens_out': 2, 'microvm_seconds': 450}
+    assert by_workflow['total'] == {'usd': 5.0, 'tokens_in': 10, 'tokens_out': 2, 'microvm_seconds': 450,
+                                    'credits': 0.0}
     assert [(group['key'], group['usd']) for group in by_workflow['groups']] == [('wf_fix', 3.0), ('wf_hunt', 2.0)]
     by_model = month_spend(table, '2026-11', 'model', flow='wf_hunt').view()
     assert [(group['key'], group['tokens_in']) for group in by_model['groups']] == [('microvm', 0), ('model-a', 10)]
@@ -98,7 +99,7 @@ def test_model_names_that_clean_to_one_key_are_one_entry_never_two_operations_on
     assert entry['Update']['ExpressionAttributeValues'][':in'] == 12
     _add(table, Where('RUN1', 'fixer-2', 'wf'), usage)
     assert month_spend(table, '2026-11', 'model').view()['groups'] == [
-        {'key': '-', 'usd': 0.0, 'tokens_in': 12, 'tokens_out': 1, 'microvm_seconds': 0}]
+        {'key': '-', 'usd': 0.0, 'tokens_in': 12, 'tokens_out': 1, 'microvm_seconds': 0, 'credits': 0.0}]
 
 
 def test_a_month_groups_by_run_by_day_and_by_each_runs_own_agent(table: Any):

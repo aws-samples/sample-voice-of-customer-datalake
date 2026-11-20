@@ -264,6 +264,17 @@ and `/__mock/*` controls are never judged. Key `mock-server.js::GET /path`, `moc
 
 ## Similar code
 
+### jscpd's `vi.mock` ignore patterns (an owner-approved gate exception)
+
+The last three `ignorePattern` entries of `.jscpd.json` take a spec's `vi.mock(...)` calls out of jscpd's token
+comparison: one on a line of its own, one whose arrow factory ends on the next line, and one whose factory is a block
+up to its closing `})`. Every spec mocks the same modules the same way, and jscpd counted those blocks as clones a
+spec cannot share (Vitest hoists `vi.mock` per file). **The owner approved them on 2026-11-17, in the 7.51–7.54 batch.**
+They match only a line that starts with `vi.mock(` at its first column: checked on 2026-11-20, every such line is in a
+spec (`*.test.ts[x]`) or in the one spec-only fixture module the Prioritization specs import first
+(`frontend/src/pages/Prioritization/prioritization-mock-fixtures.ts`), never in code that ships. A pattern that
+reaches anything else needs the owner's approval again.
+
 ### `clones_struct.py` (Python) and `clones_struct.mjs` (TypeScript / JavaScript)
 
 **Finds** the same statements and expressions in the same order with other names and literals: the renamed

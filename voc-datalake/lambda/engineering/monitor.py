@@ -13,8 +13,7 @@ host to that pull request (``engineering/learning/reactions.py``; None for none)
 run control
 (``engineering.runtime.ports.RunControl.budget``) once it is wired. And (7.51.02) what of it can be reached from here,
 each by its own flag: ``steer_available`` (the bus is named: steering and answers), ``signals_available`` and
-``stop_available`` (the start function is: the signals and the Stop), ``board_available`` (a person's board actions:
-never yet, below).
+``stop_available`` (the start function is: the signals and the Stop).
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
 
@@ -41,26 +40,28 @@ The actions (the route lets only an admin acting for themselves take them, like 
 
 A run that has ended (``META.ended_at``) takes none of them. Without the start function the signals and the Stop are
 ``unavailable``; without the bus, steering and answers; so is a failed call (the caller retries: the supervisor's
-signal and the Stop are idempotent). A person's board actions (``board/api.py`` PersonBoard) publish the board's
-``task.*`` events as the person from the API's source, which the bus does not take from it (7.51.02): they are
-unavailable (``board_available`` false) and refused before the board changes anything.
+signal and the Stop are idempotent). A person acts on no task of the board from here (7.58.00): their actions would
+publish the board's ``task.*`` events as the person from the API's source, which the bus does not take from it
+(7.51.02), so the routes that always refused them, and their ``board_available`` flag, are gone; a person's go on the
+run (``POST …/go``) stays, its row the record.
 """
 from __future__ import annotations
 
 import json
+import os
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering import run_overview
-from engineering.board.model import EVENT_OF, FINAL, OPEN, PERSON_PREFIX, Task
+from engineering.board.model import FINAL, OPEN, PERSON_PREFIX, Task
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, summary_text
-from engineering.bus.senders import API_TYPES
 from engineering.connectors.identity import WORKSPACE
 from engineering.flow.record import run_flow
 from engineering.learning.reactions import ReactionsStore
@@ -68,6 +69,8 @@ from engineering.learning.reactions import view as reactions_view
 from engineering.rows import Refused, amount_attr, budget_view, run_pk, run_rows, string_attr
 from engineering.run_links import run_links
 from engineering.run_objects import RunObjects
+from engineering.runtime.caps import DEFAULT_KIRO_CREDIT_PRICE, KIRO_CREDIT_PRICE_ENV, credit_usd, kiro_credit_price
+from engineering.runtime.interface import MICRO_CREDITS, MICRO_PER_CREDIT, RuntimeRefused
 from engineering.runtime.runs import ENDED
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
@@ -86,9 +89,6 @@ WHOLE_RUN_STOPS = {'shutdown': STOP, 'stop_now': STOP_NOW}
 STOP_STATUSES = frozenset({'stopped', 'stopping', 'done', 'failed'})
 #: What it answers a signal it recorded and handed on with (runtime/run_signals.py).
 SENT = 'sent'
-#: The board's events a person's board action publishes as the person (board/api.py PersonBoard: a post, a release
-#: and each state's change), which the bus does not take from the API's source (``API_TYPES``, 7.51.02).
-PERSON_BOARD_TYPES = frozenset({'task.posted', 'task.progress', *EVENT_OF.values()})
 #: The longest text the overview passes on from a row the runtime wrote (a step, a reason, a tool call).
 MAX_LINE = 280
 MAX_NOTE_BYTES = 500
@@ -129,19 +129,41 @@ def _agent_view(session: AgentSession) -> dict[str, Any]:
         'last_progress_at': _whole(inspect.get('last_progress_at')), 'stuck_why': _line(inspect.get('stuck_why')),
         'recent_tools': [str(tool)[:MAX_LINE] for tool in tools] if isinstance(tools, list) else [],
         'microvm_seconds': session.microvm_seconds,
-        'tokens': [{'model': model, 'input_tokens': int(counts.get('in', 0)), 'output_tokens': int(counts.get('out', 0))}
+        'tokens': [_token_row(model, int(counts.get('in', 0)), int(counts.get('out', 0)), counts.get(MICRO_CREDITS))
                    for model, counts in sorted(session.tokens.items())],
     }
 
 
+def _token_row(model: str, tokens_in: int, tokens_out: int, micro_credits: object) -> dict[str, Any]:
+    """A model's use: its tokens; (7.58.00) a Kiro session's model (``kiro:<model>``) its credits too, and what they
+    cost at the deployment's price per credit now (``credits_usd``; the ledger priced each at the price of its day)."""
+    row: dict[str, Any] = {'model': model, 'input_tokens': tokens_in, 'output_tokens': tokens_out}
+    if isinstance(micro_credits, int | float) and not isinstance(micro_credits, bool):
+        micro = max(int(micro_credits), 0)
+        row.update(credits=micro / MICRO_PER_CREDIT, credits_usd=float(credit_usd(_credit_price(), micro)))
+    return row
+
+
+def _credit_price() -> Decimal:
+    """The deployment's price per Kiro credit (``ENGINEERING_KIRO_CREDIT_PRICE``; off its shape: the default, which
+    the stack refuses at synth anyway)."""
+    try:
+        return kiro_credit_price(os.environ.get(KIRO_CREDIT_PRICE_ENV))
+    except RuntimeRefused:
+        return DEFAULT_KIRO_CREDIT_PRICE
+
+
 def _by_model(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     totals: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    credited: dict[str, int] = {}
     for agent in agents:
         for used in agent['tokens']:
             sums = totals[used['model']]
             sums[0] += used['input_tokens']
             sums[1] += used['output_tokens']
-    return [{'model': model, 'input_tokens': sums[0], 'output_tokens': sums[1]} for model, sums in sorted(totals.items())]
+            if 'credits' in used:
+                credited[used['model']] = credited.get(used['model'], 0) + round(used['credits'] * MICRO_PER_CREDIT)
+    return [_token_row(model, sums[0], sums[1], credited.get(model)) for model, sums in sorted(totals.items())]
 
 
 @dataclass(frozen=True)
@@ -449,12 +471,10 @@ class RunMonitor:
             'lanes': run_overview.lanes(tasks, agents), 'gates': gates,
             'children': run_overview.children(run_rows(self.client, self.table, WORKSPACE, run_id, 'CHILD#')),
             # What of it can be reached from here (7.51.02), each by its own flag: steering and answers (the bus
-            # named), the signals and the Stop (the start function named: 7.50.03 for the Stop), a person's board
-            # actions (never yet: board_available).
+            # named), the signals and the Stop (the start function named: 7.50.03 for the Stop).
             'steer_available': self.publisher is not None,
             'signals_available': self.signaller is not None,
             'stop_available': self.stopper is not None,
-            'board_available': self.board_available,
             # The messages numbered so far (META's counter: a redelivery or a failed write uses a number too).
             'totals': {'messages': int(amount_attr(meta, 'msg_seq')),
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
@@ -489,20 +509,6 @@ class RunMonitor:
                 'flow_outcome': {'outcome': plan.outcome, 'at': plan.at or None, 'reason': _line(plan.reason)},
                 # (7.52.00) The calls it expanded, as the copy records them: [{step, flow, revision, inputs?}].
                 'expansion': recorded_expansion(found.definition)}, dict(plan.verdicts)
-
-    @property
-    def board_available(self) -> bool:
-        """A person's board actions can reach the run: their ``task.*`` events would go out from the API's source, which
-        the bus takes only steering and answers from (``API_TYPES``, 7.51.02: the router, and the API role's grant on
-        the bus), so they cannot, and the board routes refuse them before the board changes anything."""
-        return self.publisher is not None and PERSON_BOARD_TYPES <= API_TYPES
-
-    def board_bus(self) -> Publisher:
-        """The bus for a person's board actions' events (``board_available``), else unavailable."""
-        if not self.board_available:
-            raise MonitorError('unavailable', "a person's board actions cannot reach the run from here: the Agents API "
-                                              'says only steering and answers on the engineering bus')
-        return self.bus()
 
     def run_exists(self, run_id: str) -> bool:
         return self._get(run_id, 'META') is not None

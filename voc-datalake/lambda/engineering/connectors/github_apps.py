@@ -27,14 +27,11 @@ or reads a credential back.
    Issues source follows: every connection of the App whose switch is on is read by it, and each repository gets the
    ``voc-agent`` label (the answer's ``issues`` block; **Check installation** does the same).
 
-Since 7.57.00 (any public repository): the manifest names the App's callback URL
-(``<frontend>/agents/connections/github/authorized``, its user authorization's return: ``user_authorizations.py``), and
-the conversion keeps the App's OAuth client (its client id and secret, which GitHub answers with the key) for that
-authorization, in the user-auth parameters' path, ``…/engineering-user-auth/app/<id>/client`` (``user_auth.py``),
-SecureString, never overwritten, never read here; the row says the client is stored (``oauth``) and its id (not a
-secret). An App made before 7.57.00 had its client discarded: ``set_client`` stores the client id and a new client
-secret an administrator generates on GitHub. An install state may also be a fork's (``FORK_INSTALL``, minted by
-``forks.py``): its return saves the fork's one connection (``Forks.installed``) instead of every repository.
+Since 7.57.00 (any public repository) an install state may also be a fork's (``FORK_INSTALL``, minted by
+``forks.py``): its return saves the fork's one connection (``Forks.installed``) instead of every repository. The App's
+OAuth client (its client id and secret, which GitHub answers with the key) is never read into anything, as before
+7.57.00: 7.57.00's user authorization, which kept it, is gone (7.58.00: a GitHub App's user token cannot open a pull
+request on a repository the App is not installed on).
 
 State: each step's state is ``secrets.token_urlsafe(32)``, handed to the browser and never stored; its row,
 ``CONNECTIONS#default#SETUP`` / ``STATE#<sha256 of it>``, names its purpose (``create`` or ``install``), the
@@ -98,20 +95,9 @@ from engineering.connectors.connections import utc_iso as _iso
 from engineering.connectors.hosts import HostBusy, HostError
 from engineering.connectors.issues_sync import follow_stored
 from engineering.connectors.transport import DEFAULT_RETRY_SECONDS, HttpsTransport, Transport, asked_wait, dig, json_of
-from engineering.connectors.user_auth_paths import (
-    AUTHORIZED_PATH as USER_AUTHORIZED_PATH,
-)
-from engineering.connectors.user_auth_paths import (
-    CLIENT_ID,
-    CLIENT_SECRET,
-    GITHUB_LOGIN,
-    OAUTH_CODE,
-    client_parameter,
-    client_value,
-)
 from shared.digests import sha256_hex
 from shared.dynamo_values import plain, text_or_none
-from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
+from shared.github_rest import GITHUB_API, GITHUB_API_VERSION, GITHUB_LOGIN
 from shared.logging import logger
 from shared.model_fallback import error_code
 from shared.workspace_ids import is_workspace_slug
@@ -127,15 +113,13 @@ SETUP_PARTITION: Final = f'{PARTITION}#SETUP'
 STATE_PREFIX: Final = 'STATE#'
 CREATE: Final = 'create'
 INSTALL: Final = 'install'
-#: A fork's install (7.57.00, forks.py) and a person's user authorization (user_authorizations.py).
+#: A fork's install (7.57.00, forks.py).
 FORK_INSTALL: Final = 'fork_install'
-AUTHORIZE: Final = 'authorize'
 STATE_SECONDS: Final = 30 * 60
 STATE_TTL_SECONDS: Final = 24 * 60 * 60
-#: Where GitHub sends the browser back (the SPA's pages; the third, 7.57.00, the user authorization's).
+#: Where GitHub sends the browser back (the SPA's two pages).
 CREATED_PATH: Final = '/agents/connections/github/created'
 INSTALLED_PATH: Final = '/agents/connections/github/installed'
-AUTHORIZED_PATH: Final = USER_AUTHORIZED_PATH
 #: What the App may do: the broker's operations (contents, pull requests and issues, read and write) and metadata.
 PERMISSIONS: Final = {'contents': 'write', 'pull_requests': 'write', 'issues': 'write', 'metadata': 'read'}
 EVENTS: Final = ('issues', 'issue_comment')
@@ -148,8 +132,8 @@ MAX_NAME_CHARS: Final = 34
 ORGANIZATION: Final = GITHUB_LOGIN
 #: ``secrets.token_urlsafe(32)``.
 STATE: Final = re.compile(r'[A-Za-z0-9_-]{43}')
-#: GitHub's manifest code, as a path segment (the OAuth code's rule too).
-CODE: Final = OAUTH_CODE
+#: GitHub's manifest code, as a path segment.
+CODE: Final = re.compile(r'[A-Za-z0-9_-]{1,200}')
 _SLUG: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,99}')
 _OWNER_TYPES: Final = frozenset({'User', 'Organization'})
 _SETUP_ACTIONS: Final = frozenset({'install', 'update'})
@@ -166,9 +150,8 @@ UNDER_WAY: Final = 'this step is already under way: open Agents → Connections 
 
 @dataclass(frozen=True)
 class ConvertedApp:
-    """What GitHub's conversion answers that is kept: the App's facts, its private key and webhook secret, and since
-    7.57.00 its OAuth client (its id, not a secret, and its secret: '' when GitHub answered none off its shape),
-    ``repr`` leaving the secrets out."""
+    """What GitHub's conversion answers that is kept: the App's facts, its private key and webhook secret (``repr``
+    leaves both out). Its client id and secret are never read into it."""
 
     app_id: str
     slug: str
@@ -177,8 +160,6 @@ class ConvertedApp:
     html_url: str
     private_key: str
     webhook_secret: str
-    client_id: str = ''
-    client_secret: str = ''
 
     def __repr__(self) -> str:
         return f'ConvertedApp(app_id={self.app_id!r}, slug={self.slug!r}, owner={self.owner!r})'
@@ -206,9 +187,6 @@ def manifest_for(name: str, frontend_url: str, webhook_url: str, workspace: str 
     manifest: dict[str, Any] = {
         'name': name, 'url': frontend_url, 'description': 'The VoC data lake\'s engineering agents (this deployment).',
         'redirect_url': f'{base}{CREATED_PATH}', 'setup_url': f'{frontend_url}{INSTALLED_PATH}',
-        # (7.57.00: the user authorization's return, top-level like the setup page; no OAuth on install, the
-        # authorization is a person's own step, user_authorizations.py)
-        'callback_urls': [f'{frontend_url}{AUTHORIZED_PATH}'],
         'public': False, 'request_oauth_on_install': False, 'setup_on_update': True,
         'default_permissions': dict(PERMISSIONS),
     }
@@ -386,9 +364,7 @@ def app_view(item: Mapping[str, Any], connections: Sequence[str]) -> dict[str, A
             'owner_type': str(item.get('owner_type', '')), 'html_url': str(item.get('html_url', '')),
             'webhook': item.get('webhook') is True, 'connections': sorted(connections),
             'version': int(item.get('version', 0)),
-            'created_at': text_or_none(item.get('created_at')), 'created_by': text_or_none(item.get('created_by')),
-            # (7.57.00: whether its OAuth client is stored, for the user authorization, and its id: not a secret)
-            'oauth': item.get('oauth') is True, 'client_id': text_or_none(item.get('client_id'))}
+            'created_at': text_or_none(item.get('created_at')), 'created_by': text_or_none(item.get('created_by'))}
 
 
 def connection_id_for(repository: str, taken: set[str]) -> str:
@@ -412,7 +388,7 @@ class GitHubApps:
     def __init__(self, table: Any, ssm: Callable[[], Any], prefix: str, key_id: str, connections: ConnectionStore,
                  tokens: Callable[[dict[str, Any]], dict[str, Any]], *, frontend_url: str, webhook_url: str = '',
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC), transport: Transport | None = None,
-                 issues: Any = None, user_prefix: str = '') -> None:
+                 issues: Any = None) -> None:
         self._table = table
         self._ssm = ssm
         self._prefix = prefix
@@ -424,8 +400,6 @@ class GitHubApps:
         self._clock = clock
         self._transport = transport or HttpsTransport(host=API_HOST)
         self._issues = issues
-        #: The user-auth parameters' prefix (7.57.00; '' where the deployment names none: no OAuth client is kept).
-        self._user_prefix = user_prefix
         #: A fork's install (7.57.00, ``forks.Forks``; None: a fork's state is refused as any other step's).
         self.forks: Any = None
         self.states = SetupStates(table, clock)
@@ -474,18 +448,8 @@ class GitHubApps:
         return app_view(item, [str(c['connection_id']) for c in users])
 
     def stored(self, app_id: str) -> dict[str, Any]:
-        """A stored App's row (404 for none or a removed one): the fork workflow's and the user authorization's read
-        of its slug and OAuth client id (7.57.00)."""
+        """A stored App's row (404 for none or a removed one): the fork workflow's read of its slug (7.57.00)."""
         return self._app(app_id)
-
-    def view_of(self, item: Mapping[str, Any]) -> dict[str, Any]:
-        """``item`` (an App's row) as the API answers it, with the connections that use it."""
-        return self._view(item)
-
-    def write(self, item: Mapping[str, Any], before: Mapping[str, Any], audit: Mapping[str, Any]) -> None:
-        """An App's row changed (conditioned on the version ``before`` read) with its audit row (7.57.00: its OAuth
-        client set, ``user_authorizations.py``)."""
-        self._write(item, before, audit)
 
     # --- 1. create -------------------------------------------------------------------------------------------
 
@@ -567,11 +531,6 @@ class GitHubApps:
         if hooked:
             names.append(app_webhook_parameter(self._prefix, app.app_id))
             values.append(json.dumps({'webhook_secret': app.webhook_secret}))
-        # (7.57.00: its OAuth client, for the user authorization, outside the connections' path)
-        oauth = bool(self._user_prefix and app.client_id and app.client_secret)
-        if oauth:
-            names.append(client_parameter(self._user_prefix, app.app_id))
-            values.append(client_value(app.app_id, app.client_id, app.client_secret))
         if any(len(value.encode()) > MAX_PARAMETER_BYTES for value in values):
             raise ConnectionRefused('unavailable', f'GitHub\'s key for the App is larger than a parameter holds: {LOST}')
         put: list[str] = []
@@ -588,16 +547,15 @@ class GitHubApps:
         at, who = _iso(self._clock()), display_name(actor.name)
         item = {**self._app_key(app.app_id), 'app_id': app.app_id, 'slug': app.slug, 'owner': app.owner,
                 'owner_type': app.owner_type, 'html_url': app.html_url, 'webhook': hooked,
-                'created_at': at, 'created_by': who, 'updated_at': at, 'updated_by': who, 'version': 1,
-                **({'oauth': True, 'client_id': app.client_id} if oauth else {})}
+                'created_at': at, 'created_by': who, 'updated_at': at, 'updated_by': who, 'version': 1}
         changes = {'slug': app.slug, 'owner': app.owner, 'owner_type': app.owner_type, 'webhook': hooked,
-                   'key': 'stored', **({'client_secret': 'stored'} if oauth else {})}
+                   'key': 'stored'}
         try:
             self._write(item, None, audit_row({'app_id': app.app_id}, 'github_app_created', changes, actor, at, 1))
         except ConnectionRefused:
             self._delete(put, app.app_id)
             raise ConnectionRefused('unavailable', f'the App could not be recorded: {LOST}') from None
-        logger.info('engineering GitHub App created', extra={'app_id': app.app_id, 'webhook': hooked, 'oauth': oauth})
+        logger.info('engineering GitHub App created', extra={'app_id': app.app_id, 'webhook': hooked})
         return item
 
     def _delete(self, names: Sequence[str], app_id: str) -> None:
@@ -771,8 +729,7 @@ class GitHubApps:
         users = self._users().get(app_id, [])
         if users:
             raise ConnectionRefused('conflict', f'{len(users)} connection(s) use this GitHub App: remove them first')
-        self._delete([app_key_parameter(self._prefix, app_id), app_webhook_parameter(self._prefix, app_id),
-                      *([client_parameter(self._user_prefix, app_id)] if self._user_prefix else [])], app_id)
+        self._delete([app_key_parameter(self._prefix, app_id), app_webhook_parameter(self._prefix, app_id)], app_id)
         at = _iso(self._clock())
         version = int(before.get('version', 0)) + 1
         item = {**before, 'removed': True, 'removed_at': at, 'removed_by': display_name(actor.name), 'version': version}
@@ -791,11 +748,5 @@ def _converted(data: object) -> ConvertedApp:
             and isinstance(owner, str) and owner_type in _OWNER_TYPES and isinstance(html_url, str)
             and html_url.startswith('https://github.com/') and (secret is None or isinstance(secret, str))):
         raise HostError('GitHub answered the App\'s code off its shape.')
-    # (7.57.00: its OAuth client, for the user authorization; one off its shape is not kept, and an administrator
-    # sets it later: set_client)
-    client_id, client_secret = dig(data, 'client_id'), dig(data, 'client_secret')
-    client = (isinstance(client_id, str) and CLIENT_ID.fullmatch(client_id) is not None
-              and isinstance(client_secret, str) and CLIENT_SECRET.fullmatch(client_secret) is not None)
     return ConvertedApp(app_id=app_id, slug=slug, owner=owner, owner_type=str(owner_type), html_url=html_url,
-                        private_key=checked_private_key(dig(data, 'pem')), webhook_secret=secret or '',
-                        client_id=str(client_id) if client else '', client_secret=str(client_secret) if client else '')
+                        private_key=checked_private_key(dig(data, 'pem')), webhook_secret=secret or '')

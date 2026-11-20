@@ -49,8 +49,8 @@ const SEEDED_NAMES: Readonly<Record<AutomationStep, string>> = {
  * the deployment's GitHub App, its CI attestation and branch protection, and the GitHub Issues source with its label.
  */
 const PREREQUISITE_CHECKS: ReadonlySet<string> = new Set([
-  'connection', 'app_installation', 'fork', 'user_authorization', 'upstream_pr', 'ci_attestation', 'ci_protection',
-  'issues_source', 'issue_label',
+  'connection', 'app_installation', 'fork', 'upstream_pr', 'ci_attestation', 'ci_protection', 'issues_source',
+  'issue_label',
 ])
 
 export type Automations = Readonly<Record<AutomationStep, Agent | null>>

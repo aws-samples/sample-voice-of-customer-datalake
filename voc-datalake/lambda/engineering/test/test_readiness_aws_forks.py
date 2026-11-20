@@ -1,15 +1,13 @@
 """The readiness ports a fork connection's checks read (7.57.00, engineering/readiness_aws.py): the fork's parent on
-GitHub through the token function's ``public_repository``, the owner's user authorization row, and the connection's
-row and the CI protection (which the broker reads, never this role); every failed read is ``ReadFailed``."""
+GitHub through the token function's ``public_repository``, and the connection's row and the CI protection (which the
+broker reads, never this role); every failed read is ``ReadFailed``."""
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
 
-from engineering.connectors.connections import PARTITION, ConnectionRefused
-from engineering.connectors.user_auth_paths import subject_hash
-from engineering.connectors.user_authorizations import ROW_PREFIX
+from engineering.connectors.connections import ConnectionRefused
 from engineering.readiness import ReadFailed
 from engineering.test.test_readiness_aws import Table, ports, refused
 
@@ -50,19 +48,6 @@ def test_a_refused_fork_read_is_read_failed() -> None:
 
     with pytest.raises(ReadFailed):
         ports(inspect=busy).fork_parent(FORK)
-
-
-def test_the_owners_user_authorization_is_its_row_unless_removed() -> None:
-    key = f'{PARTITION}#{ROW_PREFIX}123#{subject_hash("owner-sub")}'
-    agents = Table(items={key: {'app_id': '123'}})
-    assert ports(agents=agents).user_authorized('123', 'owner-sub') is True
-    assert ports(agents=agents).user_authorized('123', 'someone-else') is False
-    assert ports(agents=Table(items={key: {'removed': True}})).user_authorized('123', 'owner-sub') is False
-    # (an App id off its shape, or nobody, reads nothing)
-    assert (ports(agents=agents).user_authorized('app', 'owner-sub'), ports(agents=agents).user_authorized('123', '')) \
-        == (False, False)
-    with pytest.raises(ReadFailed):
-        ports(agents=Table(error=refused('ProvisionedThroughputExceededException'))).user_authorized('123', 'owner-sub')
 
 
 def test_the_connections_row_is_read_and_the_ci_protection_is_left_to_the_broker() -> None:

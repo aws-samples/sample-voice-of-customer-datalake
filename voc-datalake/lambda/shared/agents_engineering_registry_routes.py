@@ -1,8 +1,10 @@
 """The Registry, the quality gates, the assertions, a flow's expansion and an automation's pause (7.52.00; included by
 ``api/agents_handler.py``).
 
-    GET  /agents/engineering/registry?connection=&month=        -> {month, connection, cards: [...], bedrock_enabled}
-    GET  /agents/engineering/registry/<card>?connection=&month= -> {card, versions, events, bedrock_enabled}
+    GET  /agents/engineering/registry?connection=&month=        -> {month, connection, cards: [...], bedrock_enabled,
+                                                                    kiro_credit_price_usd}
+    GET  /agents/engineering/registry/<card>?connection=&month= -> {card, versions, events, bedrock_enabled,
+                                                                    kiro_credit_price_usd}
     POST /agents/engineering/registry/cards                      -> 201 {card}
     PUT  /agents/engineering/registry/<role>/model               -> {role, model_choice, updated_at, updated_by}
     GET  /agents/engineering/gates?connection=                   -> {packs, aliases, own_gate, briefs, runners, ...}
@@ -26,9 +28,11 @@
   model, tools the role may have), its caps at most the template's; written with its log row in one transaction.
   Its ``node`` is the agent step the Flows palette drops: ``{role, skill_version, model, card}``.
 - **A role's model** (7.58.00, engineering/model_choices.py): every card says its role's model choice in this
-  deployment (``model_choice``, the Registry's; ``template_model_choice``, its template card's; who changed it and
-  when) and the harness the role runs on (``runs_on``: ``native`` or ``kiro``), and the listing the Bedrock models the
-  native harness may run here (``bedrock_enabled``: granted and priced). ``PUT …/registry/<role>/model`` sets it
+  deployment (``model_choice``, the Registry's, null for its card's ``model.id``; who changed it and when) and the
+  harness the role runs on (``runs_on``: ``native`` or ``kiro``), and the listing the Bedrock models the
+  native harness may run here (``bedrock_enabled``: granted and priced) and what a Kiro credit costs here
+  (``kiro_credit_price_usd``, ``-c engineeringKiroCreditPrice``, which a Kiro role's spend is counted at in the cost
+  caps). ``PUT …/registry/<role>/model`` sets it
   (``{model}``: ``auto``, ``opus``, ``sonnet``, ``haiku``, another model id, or null for the role's default), with its
   history row (engineering/settings.py ``ROLE_MODELS_KEY``).
 - **The quality gates**: the gate packs' steps (each with its messages and its vacuous-pass rule in words), the
@@ -183,25 +187,31 @@ def _role_models() -> Mapping[str, Any]:
     return read_role_models(_agents_table())
 
 
-def _template_choices() -> dict[str, str]:
-    """Each role's template card's model choice (the bundle's ``model_choice``), only the cards that name one."""
-    return {str(template['id']): str(template['model_choice']) for template in engineering_templates.bundle()['agents']
-            if isinstance(template.get('model_choice'), str) and template['model_choice']}
-
-
 def _with_model(card: dict[str, Any], stored: Mapping[str, Any]) -> dict[str, Any]:
     """A card with its role's model choice (7.58.00, engineering/model_choices.py ``card_fields``: a made card shows its
     base role's)."""
     from engineering.model_choices import card_fields
 
     role = str(card.get('base_role') or card.get('id', ''))
-    return {**card, **card_fields(role, stored, _template_choices().get(role, ''), os.environ)}
+    return {**card, **card_fields(role, stored, os.environ)}
 
 
 def _enabled_models() -> list[str]:
     from engineering.model_choices import enabled_models
 
     return enabled_models(os.environ)
+
+
+def _credit_price() -> float:
+    """(7.58.00) What a Kiro credit costs here, in USD (``ENGINEERING_KIRO_CREDIT_PRICE``; off its shape, which the stack
+    refuses at synth: Kiro's add-on price, as the runtime would refuse to price)."""
+    from engineering.runtime.caps import DEFAULT_KIRO_CREDIT_PRICE, KIRO_CREDIT_PRICE_ENV, kiro_credit_price
+    from engineering.runtime.interface import RuntimeRefused
+
+    try:
+        return float(kiro_credit_price(os.environ.get(KIRO_CREDIT_PRICE_ENV)))
+    except RuntimeRefused:
+        return float(DEFAULT_KIRO_CREDIT_PRICE)
 
 
 @app.get('/agents/engineering/registry')
@@ -221,7 +231,7 @@ def get_engineering_registry():
         stored = _role_models()
         made = [_with_model(with_skills(card, bundle), stored) for card in RegistryViews(*_engineering_client()).cards()]
         return {'month': month, 'connection': connection, 'cards': _role_cards(connection, month, stored=stored) + made,
-                'bedrock_enabled': _enabled_models()}
+                'bedrock_enabled': _enabled_models(), 'kiro_credit_price_usd': _credit_price()}
     return _answered(read, 'the Registry could not be read: retry')
 
 
@@ -240,7 +250,7 @@ def get_engineering_registry_card(card: str):
     if card in roles:
         connection, month = _connection(), _month()
         return _answered(lambda: {'card': _role_cards(connection, month, {card})[0], 'versions': [], 'events': [],
-                                  'bedrock_enabled': _enabled_models()},
+                                  'bedrock_enabled': _enabled_models(), 'kiro_credit_price_usd': _credit_price()},
                          'the Registry could not be read: retry')
     if not CARD_ID.fullmatch(card):
         raise NotFoundError(f'the Registry has no card {card[:64]}')
@@ -249,7 +259,7 @@ def get_engineering_registry_card(card: str):
         found, bundle = RegistryViews(*_engineering_client()).card(card), engineering_templates.bundle()
         return {**found, 'card': _with_model(with_skills(found['card'], bundle), _role_models()),
                 'versions': [with_skills(version, bundle) for version in found['versions']],
-                'bedrock_enabled': _enabled_models()}
+                'bedrock_enabled': _enabled_models(), 'kiro_credit_price_usd': _credit_price()}
     return _answered(read, 'the Registry could not be read: retry')
 
 

@@ -71,7 +71,7 @@ export function AgentCardDetail({ cardId, connection, search, onCreate }: Readon
       {read.data !== undefined && (
         <>
           <CardFacts card={read.data.card} />
-          <RoleModelSetting card={read.data.card} enabled={read.data.bedrockEnabled} />
+          <RoleModelSetting card={read.data.card} enabled={read.data.bedrockEnabled} creditPrice={read.data.kiroCreditPrice} />
           <CardVersions detail={read.data} />
           <CardSource role={read.data.card.base_role} skill={read.data.card.launchable} />
         </>

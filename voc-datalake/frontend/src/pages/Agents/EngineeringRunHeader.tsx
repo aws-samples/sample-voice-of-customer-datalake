@@ -11,21 +11,21 @@
 import { useTranslation } from 'react-i18next'
 import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
 import { EngineeringRunLinks, UpstreamEndNotice } from './EngineeringRunLinks'
+import { useModelUseText } from './modelUseText'
 import { shareTone } from './spendView'
 import type { ReactNode } from 'react'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
 
 function Totals({ totals }: Readonly<{ totals: EngineeringOverview['totals'] }>) {
   const { t } = useTranslation('agents')
+  const use = useModelUseText()
   return (
     <div className="space-y-1 text-[13px] text-muted">
       <p>{t('engineeringRun.totals', { seconds: totals.microvm_seconds, messages: totals.messages })}</p>
       {totals.by_model.length > 0 && (
         <ul className="flex flex-wrap gap-x-4 gap-y-1" aria-label={t('engineeringRun.byModel')}>
           {totals.by_model.map((row) => (
-            <li key={row.model} className="min-w-0 break-words">
-              {t('engineeringRun.modelTokens', { model: row.model || '—', input: row.input_tokens, output: row.output_tokens })}
-            </li>
+            <li key={row.model} className="min-w-0 break-words">{use(row)}</li>
           ))}
         </ul>
       )}

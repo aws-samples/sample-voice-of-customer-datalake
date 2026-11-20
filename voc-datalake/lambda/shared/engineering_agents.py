@@ -19,9 +19,6 @@ APP_TOKENS_FUNCTION_ENV: Final = 'ENGINEERING_APP_TOKENS_FUNCTION'
 #: The GitHub Issues settings function's name (7.50.02, voc-engineering-issues-config): the Agents API's, for the
 #: connections' follow of the deployment's GitHub Issues source (set only where that plugin is deployed).
 ISSUES_CONFIG_FUNCTION_ENV: Final = 'ENGINEERING_ISSUES_CONFIG_FUNCTION'
-#: The user authorizations' function's name (7.57.00, voc-engineering-user-auth): the Agents API's alone, for the code
-#: exchange of a person's GitHub user authorization (engineering/connectors/user_auth.py).
-USER_AUTH_FUNCTION_ENV: Final = 'ENGINEERING_USER_AUTH_FUNCTION'
 #: voc-engineering's name, where the module is on (the Agents API, the broker, the agents' heartbeat: 7.47.00).
 ENGINEERING_TABLE_ENV: Final = 'ENGINEERING_TABLE'
 #: An engineering run's statuses (engineering/runtime/runs.py: its two live ones and the three it ends in), as the

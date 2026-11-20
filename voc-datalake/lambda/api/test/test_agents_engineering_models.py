@@ -44,10 +44,11 @@ def test_every_card_says_its_roles_model_choice_and_harness(lambda_context: Any)
     assert {OPUS, SONNET, HAIKU} <= set(body['bedrock_enabled'])
     assert UNPRICED not in body['bedrock_enabled']
     fixer = next(card for card in body['cards'] if card['id'] == 'fixer')
-    assert {name: fixer[name] for name in ('model_choice', 'template_model_choice', 'model_choice_updated_at',
-                                           'model_choice_updated_by', 'runs_on')} == {
-        'model_choice': None, 'template_model_choice': None, 'model_choice_updated_at': None,
-        'model_choice_updated_by': None, 'runs_on': 'native'}
+    assert {name: fixer[name] for name in ('model_choice', 'model_choice_updated_at', 'model_choice_updated_by',
+                                           'runs_on')} == {
+        'model_choice': None, 'model_choice_updated_at': None, 'model_choice_updated_by': None, 'runs_on': 'native'}
+    # (a card names no model choice: its model.id is its default, so no card answers a template's choice)
+    assert not [card['id'] for card in body['cards'] if 'template_model_choice' in card]
 
 
 def test_an_administrator_sets_a_roles_model_and_clears_it_with_its_history(lambda_context: Any) -> None:

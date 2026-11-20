@@ -1,5 +1,5 @@
 """A scripted host for the connectors' HTTPS clients (``transport.Transport``): its JSON answers, given in turn, and
-every request it was sent. Shared by the App tokens', the GitHub Apps' and the user authorizations' suites."""
+every request it was sent. Shared by the App tokens' and the GitHub Apps' suites."""
 from __future__ import annotations
 
 import json

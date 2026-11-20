@@ -77,7 +77,7 @@ from engineering.runtime.harness.seed import parse as parse_seed
 from engineering.runtime.harness.skills import Skill
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tool_server import SessionFiles, serve, waiter
-from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox
+from engineering.runtime.harness.tools import MAX_CHECKS, MAX_PATCH_BYTES, AgentContext, Runs, ToolBox, progress_line
 from engineering.runtime.harness.transcript import FLUSH_SECONDS, Transcript
 from engineering.runtime.harness.workspace import Workspace
 from engineering.runtime.interface import check_id
@@ -101,8 +101,6 @@ STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person d
 COORDINATOR_STOPPED: Final = 'Stopped without finishing the run: continued as a crash.'
 #: A coordinator continuation's first progress report, which closes a wait its last session left open (7.54.00).
 CONTINUING: Final = 'continuing from the checkpoint'
-#: The most of an adapter's reason for ending a session before its model ran that the task's progress says (7.58.00).
-MAX_STOPPED: Final = 500
 
 
 class S3Store:
@@ -586,10 +584,14 @@ def _finished(session: AgentSession) -> None:
     context = session.context
     if session.stopped_for:
         # (7.58.00) The adapter ended it before its model ran (Kiro did not take the model the launch chose): the
-        # task goes to a person in its words; the coordinator's is a crash, as below, saying why.
-        context.board.progress(context.run_id, context.task_id, context.agent_id, session.stopped_for[:MAX_STOPPED])
+        # task goes to a person in its words; the coordinator's is a crash, as below, saying why. The progress step
+        # is one board line (``progress_line``: the board refuses one over ``MAX_LINE``, and a refusal here would be
+        # a crash, continued, refused again); the adapter's full reason stays on the session's status and in its
+        # transcript (``model_refused``), which the run's thread shows.
+        line = progress_line(session.stopped_for)
+        context.board.progress(context.run_id, context.task_id, context.agent_id, line)
         if context.role == COORDINATOR_ROLE:
-            raise CoordinatorStopped(session.stopped_for[:MAX_STOPPED])
+            raise CoordinatorStopped(line)
         context.board.move(context.run_id, context.task_id, to_state='needs_human')
         return
     if context.finished or session.finished_elsewhere:

@@ -759,14 +759,14 @@ class PersonBoard:
     """A person's board actions (plan v3 4.3): post, re-prioritise, block or take a task, and move a task they took or
     give it back (release).
 
-    The Agents API's routes (``/agents/engineering/<run_id>/board/tasks…``) call it for an administrator acting for
-    themselves, never a delegated credential, like the run monitor's signals. Each change is the board store's own
-    conditional write, with a history row naming ``human:<subject>`` (D1, D4), then the board's ``task.*`` event,
-    to be published from the API's own source (``voc.engineering/api``) with ``from.kind`` human. Since 7.51.02 the
-    bus takes only a person's steering and answers from that source (bus/senders.py ``API_TYPES``, and the API role's
-    grant), so the Agents API refuses these actions before it asks the board (engineering/monitor.py
-    ``board_available``); this stays the board's side of them. A failed publish raises after the row is written; a
-    retry is the same change, so the same event (a redelivery). Never the coordinate task (signal the run instead)."""
+    The board's side of them, for a direct invoke of an administrator acting for themselves (``person_request``).
+    Each change is the board store's own conditional write, with a history row naming ``human:<subject>`` (D1, D4),
+    then the board's ``task.*`` event, to be published from the API's own source (``voc.engineering/api``) with
+    ``from.kind`` human. Since 7.51.02 the bus takes only a person's steering and answers from that source
+    (bus/senders.py ``API_TYPES``, and the API role's grant), so the Agents API never asks for them: its two routes,
+    which answered 503 on every deployment, are gone (7.58.00), and only its ``go`` reaches the board. A failed publish
+    raises after the row is written; a retry is the same change, so the same event (a redelivery). Never the
+    coordinate task (signal the run instead)."""
 
     store: BoardStore
     publisher: Publisher
@@ -881,8 +881,8 @@ class _Kept:
 
 
 def person_request(store: BoardStore, request: Mapping[str, Any], flows: FlowGuard | None = None) -> dict[str, Any]:
-    """A person's board action, as the Agents API asks it (``{op: post|act|go, run_id, subject, body, task_id?,
-    action?}``; ``go`` is a person's go on the run, ``BoardStore.person_go``)
+    """A person's board action (``{op: post|act|go, run_id, subject, body, task_id?, action?}``; ``go`` is a person's
+    go on the run, ``BoardStore.person_go``, the one the Agents API asks since 7.58.00: ``PersonBoard``)
     through a direct invoke of this function, never its URL: the agent roles may invoke it only through the URL, so a
     direct invoke is the API's role, which has checked the person is an administrator acting for themselves and the
     run is open. The board's own role writes the change (the API's role writes no board row), and the events it

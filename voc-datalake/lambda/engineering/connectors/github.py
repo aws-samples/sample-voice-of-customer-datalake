@@ -39,8 +39,8 @@ files' names.
 Since 7.57.00 (any public repository): a public repository read only (``PUBLIC_READ``) gets a token of
 ``metadata: read`` alone that names no repository, whatever its operation asks (it is in no installation; GitHub serves
 a public repository to any reader); a fork's issue reads go to its upstream (``issues_repository``); a public read of a
-whole ``/repos/`` path (``public_get``, the upstream's facts) uses the connection's ``metadata: read`` token; and
-``open_upstream_pull_request`` is the one request a connection owner's user token is ever sent in.
+whole ``/repos/`` path (``public_get``, the upstream's facts) uses the connection's ``metadata: read`` token. (7.58.00)
+No request opens a pull request on the upstream: the run ends with a link a person clicks.
 
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets.
@@ -267,8 +267,6 @@ def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
     return _check_names(names)
 
 
-#: ``owner/name`` as a path (the upstream pull request's repository).
-REPOSITORY_PATH: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}')
 
 
 def issues_repository(credential: GitHubAppCredential) -> str:
@@ -369,19 +367,6 @@ class GitHubHost:
             raise InvalidTarget('A public read is of a repository.')
         _, token = self._token(connection_id, METADATA_READ)
         return self._send('GET', path, f'Bearer {token}', what, accept=accept, ok=ok)
-
-    def open_upstream_pull_request(self, user_token: str, upstream: str, head: str, base: str, title: str,
-                                   body: str) -> Response:
-        """The one request a connection owner's user token is ever sent in (7.57.00, ``github_upstream.py``): ``POST
-        /repos/<upstream>/pulls``, ``head`` the fork's ``<owner>:<branch>``, ready for review (``draft: false``), the
-        maintainers allowed to edit it. A rate limit is ``HostBusy``, another status than 201 a ``HostError`` (its
-        ``status`` set); the token is never logged or put in an error."""
-        if not REPOSITORY_PATH.fullmatch(upstream):
-            raise InvalidTarget('The upstream is owner/name.')
-        return self._send('POST', f'/repos/{upstream}/pulls', f'Bearer {user_token}', 'the upstream pull request',
-                          body={'title': title, 'body': body, 'head': head, 'base': base, 'draft': False,
-                                'maintainer_can_modify': True}, ok=(201,))
-
 
     # --- reads ------------------------------------------------------------------------------------------------
 

@@ -80,14 +80,13 @@ describe('the engineering broker', () => {
     // PutObject or other write anywhere on its role.
     // (7.10.00: one more Query, of the runs' writes' partitions, for the reactions read: RunPullRequestReads)
     // (7.52.00: one more GetItem and GetObject, the approved docs' rows and the knowledge packs' objects, read only)
-    // (7.57.00: the GitHub App user authorizations, for open_upstream_pr: a read of the OAuth clients and the people's
-    // tokens, a put of the tokens alone, each through SSM; engineering-user-auth.test.ts pins them)
+    // (7.57.00's GitHub App user authorizations, a read and a put of the people's tokens, are gone with the app's own
+    // open of the upstream pull request: 7.58.00)
     expect(actions).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
       'dynamodb:Query', 'dynamodb:Query', 'dynamodb:Query', 'dynamodb:UpdateItem',
-      'kms:Decrypt', 'kms:Decrypt', 'kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey', 'kms:GenerateDataKey',
-      'logs:CreateLogStream', 'logs:PutLogEvents',
-      's3:GetObject', 's3:GetObject', 'ssm:GetParameter', 'ssm:GetParameter', 'ssm:PutParameter',
+      'kms:Decrypt', 'kms:Decrypt', 'kms:GenerateDataKey', 'logs:CreateLogStream', 'logs:PutLogEvents',
+      's3:GetObject', 's3:GetObject', 'ssm:GetParameter',
     ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
@@ -105,6 +104,10 @@ describe('the engineering broker', () => {
     });
     // The stack's one customer-managed key (an import from the test's dependency stack), never "*".
     expect(JSON.stringify(decrypt?.Resource)).toContain('Fn::ImportValue');
+  });
+
+  it('holds no grant of 7.57.00\'s user authorizations, gone with the app\'s own upstream pull request (7.58.00)', () => {
+    expect(JSON.stringify(brokerStatements(template('on')))).not.toMatch(/engineering-user-auth|cognito-idp:/);
   });
 
   it('reads the run\'s recorded pull request by one Query of the runs\' writes\' partitions alone (7.10.00)', () => {
@@ -207,7 +210,7 @@ describe('the engineering broker', () => {
     const rows = statements.find((statement) => statement.Sid === 'ApprovedDocsRecords');
     expect(rows).toMatchObject({
       Effect: 'Allow', Action: 'dynamodb:GetItem',
-      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#REPO#*'] } },
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#REPO#*'] } },
     });
     expect(JSON.stringify(rows?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
     const objects = statements.find((statement) => statement.Sid === 'ApprovedDocsObjects');

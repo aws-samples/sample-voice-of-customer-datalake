@@ -3,16 +3,16 @@
  *
  * - An agent's facts: its session as the supervisor keeps it: its step, its MicroVM's state and age, its heartbeat's
  *   age and its last progress, its start, its MicroVM time and tokens per model (the inspector's Cost tab).
- * - Board: the tasks grouped by state, each with its lease holder and attempt, and its history in a disclosure; for an
- *   admin on a run under way, the board controls (EngineeringBoardControls.tsx).
+ * - Board: the tasks grouped by state, each with its lease holder and attempt, and its history in a disclosure; read
+ *   only (7.58.00: a person's board actions never reached a run since 7.51.02, and their controls are gone).
  *
  * @module pages/Agents/EngineeringRunPanels
  */
 import { useTranslation } from 'react-i18next'
 import { formatDateTime, formatRelativeDate } from '../../utils/dateUtils'
 import { TASK_STATES } from '../../api/engineeringRunsApi'
-import { PostTaskForm, TaskControls } from './EngineeringBoardControls'
 import { groupsInOrder, useAge } from './engineeringRunText'
+import { useModelUseText } from './modelUseText'
 import type { EngineeringAgent, EngineeringTask } from '../../api/engineeringRunsApi'
 
 /** An epoch-seconds time as an age from `now` (ms), in the reader's words. */
@@ -23,6 +23,7 @@ const sinceEpoch = (seconds: number | null, language: string, now: number) =>
 export function AgentFacts({ agent, now }: Readonly<{ agent: EngineeringAgent; now: number }>) {
   const { t, i18n } = useTranslation('agents')
   const age = useAge()
+  const use = useModelUseText()
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[12px]">
       <dt className="text-muted">{t('engineeringRun.agent.step')}</dt><dd className="break-words">{agent.step ?? '—'}</dd>
@@ -36,22 +37,14 @@ export function AgentFacts({ agent, now }: Readonly<{ agent: EngineeringAgent; n
       <dd>
         {t('engineeringRun.agent.microvmTime', { seconds: agent.microvm_seconds })}
         {agent.tokens.map((row) => (
-          <span key={row.model} className="block break-words">
-            {t('engineeringRun.modelTokens', { model: row.model || '—', input: row.input_tokens, output: row.output_tokens })}
-          </span>
+          <span key={row.model} className="block break-words">{use(row)}</span>
         ))}
       </dd>
     </dl>
   )
 }
 
-/** Who may act on the board from here: the run, and the signed-in admin's `sub` (absent: no controls). */
-interface BoardActor {
-  runId: string
-  me: string
-}
-
-function TaskItem({ task, actor }: Readonly<{ task: EngineeringTask; actor?: BoardActor }>) {
+function TaskItem({ task }: Readonly<{ task: EngineeringTask }>) {
   const { t, i18n } = useTranslation('agents')
   return (
     <li className="rounded-md border border-border px-3 py-2 space-y-1 min-w-0">
@@ -75,17 +68,15 @@ function TaskItem({ task, actor }: Readonly<{ task: EngineeringTask; actor?: Boa
           </ol>
         </details>
       )}
-      {actor !== undefined && <TaskControls runId={actor.runId} task={task} me={actor.me} />}
     </li>
   )
 }
 
-/** The board by state; with `actor` (an admin, the run under way) its controls: post a task, act on each one. */
-export function BoardPanel({ tasks, actor }: Readonly<{ tasks: readonly EngineeringTask[]; actor?: BoardActor }>) {
+/** The board by state. */
+export function BoardPanel({ tasks }: Readonly<{ tasks: readonly EngineeringTask[] }>) {
   const { t } = useTranslation('agents')
   return (
     <div className="space-y-4">
-      {actor !== undefined && <PostTaskForm runId={actor.runId} />}
       {tasks.length === 0 && <p className="text-sm text-muted">{t('engineeringRun.noTasks')}</p>}
       {groupsInOrder(TASK_STATES, tasks.map((task) => task.state)).map((state) => {
         const group = tasks.filter((task) => task.state === state)
@@ -93,7 +84,7 @@ export function BoardPanel({ tasks, actor }: Readonly<{ tasks: readonly Engineer
         return (
           <section key={state} aria-label={name} className="space-y-2">
             <h3 className="text-[12px] font-medium uppercase tracking-wide text-muted">{name} ({group.length})</h3>
-            <ul className="space-y-2">{group.map((task) => <TaskItem key={task.task_id} task={task} actor={actor} />)}</ul>
+            <ul className="space-y-2">{group.map((task) => <TaskItem key={task.task_id} task={task} />)}</ul>
           </section>
         )
       })}

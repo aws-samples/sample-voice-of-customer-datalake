@@ -16,9 +16,6 @@
 //                     save first (`stop` on the run, "Stopping…") and the run ends a few seconds later; now: true
 //                     needs confirm: true and ends it at once; 409 once the run has ended
 //   POST …/reactions  {}: admin; an ended run's reactions read asked for (202); 409 while it runs, 429 within the hour
-//   POST …/board/tasks {role, title, spec, priority?}: admin; a person posts a task (403 for the coordinator's role)
-//   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} | release (the
-//                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
 //   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal, issue?, model?}: admin; a run's start, answered
@@ -245,12 +242,10 @@ function overview() {
     agents: workspace.agents,
     lanes: workspace.lanes, gates: workspace.gates, children: workspace.children,
     // The dev mock plays a stack that names the bus to the Agents API (steering and answers) and the start function
-    // (the signals since 7.51.02, the Stop since 7.50.03); a person's board actions reach no run (7.51.02: the bus
-    // takes only steering and answers from the Agents API), as the server says.
+    // (the signals since 7.51.02, the Stop since 7.50.03), as the server says.
     steer_available: true,
     signals_available: true,
     stop_available: true,
-    board_available: false,
     totals: {
       messages: run.messages.length, microvm_seconds: run.agents.reduce((sum, a) => sum + a.microvm_seconds, 0),
       by_model: [...byModel.values()].sort((a, b) => a.model.localeCompare(b.model)),
@@ -409,110 +404,6 @@ function routeGet(sub, rest, url) {
   return [404, { message: 'Engineering run not found' }];
 }
 
-/** The dev mock's signed-in admin, as a person on the board (the mock's admin user's sub). */
-const PERSON = 'human:sub-admin-demo';
-const CLAIMERS = ['builder', 'commit-reviewer', 'committer', 'final-go', 'fixer', 'hunter', 'mapper', 'pr-author',
-  'pr-reviewer', 'understander'];
-const MOVES = {
-  claimed: ['in_progress', 'failed', 'needs_human'],
-  in_progress: ['in_review', 'done', 'failed', 'needs_human'],
-  in_review: ['in_progress', 'done', 'failed', 'needs_human'],
-};
-
-function changed(task, state, op, reason) {
-  const at = new Date().toISOString();
-  Object.assign(task, { state, updated_by: PERSON, updated_at: at });
-  task.history.push({ state, at, by: PERSON, op, attempt: task.attempt, result_keys: 0, ...(reason ? { reason } : {}) });
-  say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'run', id: SAMPLE_RUN_ID }, `task.${state === 'open' ? 'progress' : state}`,
-    `${task.title} (${state}): ${op} by a person`, { threadId: task.task_id, taskId: task.task_id, at });
-  return [200, { task }];
-}
-
-/** A person posts a task (`POST …/board/tasks`), as the board does. */
-function postTask(body) {
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  if (!CLAIMERS.includes(body.role)) return [body.role === 'coordinator' ? 403 : 400, { message: 'unknown role' }];
-  if (!title || typeof body.spec !== 'object' || body.spec === null) return [400, { message: '"title" and "spec" are required' }];
-  // As the board (spec_hash: role, parent task, spec): an equal task still under way is answered, nothing posted.
-  const equal = run.tasks.find((t) => t.role === body.role && !FINAL.has(t.state)
-    && (t.parent_task || '') === (body.parent_task || '')
-    && JSON.stringify(t.spec) === JSON.stringify(body.spec));
-  if (equal) return [200, { task: equal, duplicate: true }];
-  const at = new Date().toISOString();
-  const task = {
-    task_id: `task-person-${run.tasks.length + 1}`, role: body.role, state: 'open', title, spec: body.spec, depth: 0,
-    priority: Number.isInteger(body.priority) ? body.priority : 0, attempt: 1, parent_task: null, lease: null,
-    result_keys: [], posted_by: PERSON, updated_by: PERSON, updated_at: at, spec_hash: `p${run.tasks.length + 1}`,
-    history: [{ state: 'open', at, by: PERSON, op: 'post', attempt: 1, result_keys: 0 }],
-  };
-  run.tasks.push(task);
-  say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'role', id: task.role }, 'task.posted', title, { threadId: task.task_id, taskId: task.task_id, at });
-  return [200, { task, duplicate: false }];
-}
-
-/** Another person's hold is ended (taken or blocked) only when `over` asks for it. */
-function heldByAnother(task, body) {
-  if (body.over !== undefined && typeof body.over !== 'boolean') return [400, { message: '"over" is true or false' }];
-  if (task.lease?.agent?.startsWith('human:') && task.lease.agent !== PERSON && body.over !== true) {
-    return [409, { message: 'another person holds the task: take it over only if you mean to' }];
-  }
-  return null;
-}
-
-const ACTIONS = {
-  take(task, body) {
-    const refused = heldByAnother(task, body);
-    if (refused) return refused;
-    task.lease = { agent: PERSON, epoch: task.attempt, expires: 253402300799 };
-    return changed(task, task.state === 'open' ? 'claimed' : task.state, 'take');
-  },
-  block(task, body) {
-    if (typeof body.reason !== 'string' || !body.reason.trim()) return [400, { message: 'a block says why (a line)' }];
-    const refused = heldByAnother(task, body);
-    if (refused) return refused;
-    task.lease = null;
-    return changed(task, 'needs_human', 'block', body.reason.trim());
-  },
-  priority(task, body) {
-    if (!Number.isInteger(body.priority)) return [400, { message: '"priority" is a whole number' }];
-    task.priority = body.priority;
-    return changed(task, task.state, 'priority', `priority ${body.priority}`);
-  },
-  release(task) {
-    // As the store: their own release again is answered as it is; only the holder gives a task back.
-    const last = task.history.at(-1);
-    if (task.state === 'open' && last?.op === 'release' && last.by === PERSON) return [200, { task }];
-    if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you hold is given back by you: read the board again' }];
-    const at = new Date().toISOString();
-    Object.assign(task, { state: 'open', attempt: task.attempt + 1, lease: null, updated_by: PERSON, updated_at: at });
-    task.history.push({ state: 'open', at, by: PERSON, op: 'release', attempt: task.attempt, result_keys: 0, reason: 'released by a person' });
-    // Open for its role again, as a re-post: the role is told (task.posted), as the person.
-    say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'role', id: task.role }, 'task.posted',
-      `${task.title} (open, by ${PERSON})`, { threadId: task.task_id, taskId: task.task_id, at });
-    return [200, { task }];
-  },
-  move(task, body) {
-    if (body.to === 'needs_human') return [400, { message: 'a task needs a person by block, with a reason: not by a move' }];
-    if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you took is moved by you: take it first' }];
-    // As the store: a state no move reaches is a bad request; one that is not a move from this state, a conflict.
-    if (!Object.values(MOVES).some((targets) => targets.includes(body.to))) {
-      return [400, { message: `a task cannot be moved to ${String(body.to)}` }];
-    }
-    if (!(MOVES[task.state] ?? []).includes(body.to)) return [409, { message: 'the task cannot move from its state' }];
-    return changed(task, body.to, 'move');
-  },
-};
-
-/** A person's action on one task (`POST …/board/tasks/<task_id>/<action>`), as the board does. */
-function actOnTask(taskId, action, body) {
-  const task = run.tasks.find((t) => t.task_id === taskId);
-  if (!task) return [404, { message: 'no such task' }];
-  if (taskId === 'coordinate') return [403, { message: "the coordinate task is the run coordinator's" }];
-  if (FINAL.has(task.state)) return [409, { message: 'the task has ended' }];
-  if (!Object.hasOwn(ACTIONS, action)) return [400, { message: 'the action is one of block, move, priority, release, take' }];
-  return ACTIONS[action](task, body);
-}
-
 /** The run's own actions (`POST …/<run>/<action>`), each on its body. */
 const RUN_POSTS = {
   signals: (body) => signal(body),
@@ -527,9 +418,6 @@ const RUN_POSTS = {
 
 function routePost(sub, rest, body) {
   if (!isAdmin()) return [403, { message: 'Admin access required' }];
-  if (run.meta.ended_at !== null && sub === 'board') return [409, { message: 'This run has ended' }];
-  if (sub === 'board' && rest[0] === 'tasks' && rest.length === 1) return postTask(body ?? {});
-  if (sub === 'board' && rest[0] === 'tasks' && rest.length === 3) return actOnTask(rest[1], rest[2], body ?? {});
   if (rest.length > 0 || !Object.hasOwn(RUN_POSTS, sub)) return [404, { message: 'Engineering run not found' }];
   return RUN_POSTS[sub](body ?? {});
 }
@@ -958,7 +846,7 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
     return true;
   }
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
-  const nested = (req.method === 'GET' && ['reports', 'agents'].includes(sub)) || (req.method === 'POST' && sub === 'board');
+  const nested = req.method === 'GET' && ['reports', 'agents'].includes(sub);
   if ([ENDED_RUN_ID, CHILD_RUN_ID].includes(runId) && rest.length === 0) {
     otherRunRoute(req, res, send, shared, runId, sub);
     return true;

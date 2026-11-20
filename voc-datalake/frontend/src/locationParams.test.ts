@@ -74,7 +74,7 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   // External callbacks.
   'api/oauthRedirect.ts': { kind: 'callback', keys: ['redirect_uri'], reason: 'the MCP OAuth authorize request the consent page approves' },
   'pages/OAuthConsent/OAuthConsent.tsx': { kind: 'callback', keys: [], reason: 'the OAuth authorize request, passed whole to the API (docs/mcp.md)' },
-  'pages/Agents/githubCallback.ts': { kind: 'callback', keys: ['code', 'state'], via: ['name', 'skipOn'], reason: 'takes GitHub\'s return query once and removes it from the address (the names its pages pass): `?code=&state=` of the manifest return (`redirect_url`) and of the user authorization\'s (7.57.00), and the declined answer the authorization page names (`skipOn`, `error`)' },
+  'pages/Agents/githubCallback.ts': { kind: 'callback', keys: ['code', 'state'], via: ['name'], reason: 'takes GitHub\'s return query once and removes it from the address (the names its pages pass): `?code=&state=` of the manifest return (`redirect_url`)' },
   'pages/Agents/GitHubAppInstalled.tsx': { kind: 'callback', keys: ['installation_id', 'setup_action', 'state'], reason: 'GitHub\'s installation return (`setup_url`)' },
   'pages/Board/BoardLogin.tsx': { kind: 'callback', keys: ['email', 'code'], reason: 'the emailed board sign-in link, read once and removed' },
   'pages/Board/signInLink.ts': { kind: 'callback', keys: [], reason: 'strips the emailed sign-in link\'s `email` and `code`' },

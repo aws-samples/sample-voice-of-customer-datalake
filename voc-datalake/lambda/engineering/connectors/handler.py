@@ -29,12 +29,10 @@ agent's ``read`` of kind ``tenets`` (7.52.00, ``{"kind": "tenets", "target": "ac
 connection's accepted tenets from the store; the approved docs' reader and their claims are wired with the engineering
 table and the workspace bucket (``records.ApprovedDocsRecords``, ``records.DocsClaims``).
 
-Since 7.57.00 ``open_upstream_pr`` (``{branch}``, the PR author's alone) opens a fork's run's upstream pull request, and
-``open_or_update_draft_pr``'s answer carries its outcome on a fork (``upstream``); the connection's kind and a fork's
-upstream are read from its credential (``github_upstream.GitHubUpstream``), the owner's user token from the user-auth
-parameters (``user_auth.OwnerTokens``, with ``ENGINEERING_USER_AUTH_PREFIX`` and ``ENGINEERING_PARAMETER_KEY``
-named), and the upstream pull requests' records and caps written with the claims' attributes
-(``upstream_records.UpstreamRecords``).
+Since 7.57.00 ``open_upstream_pr`` (``{branch}``, the PR author's alone) offers a fork's run's upstream pull request,
+one click away, and ``open_or_update_draft_pr``'s answer carries its outcome on a fork (``upstream``); the connection's
+kind and a fork's upstream are read from its credential (``github_upstream.GitHubUpstream``), and the upstream pull
+requests' records written with the claims' attributes (``upstream_records.UpstreamRecords``).
 """
 from __future__ import annotations
 
@@ -49,7 +47,7 @@ from functools import lru_cache
 from typing import Any, Final
 
 from engineering.connectors.broker import Broker, DocsRequest, NotNow, NotPermitted
-from engineering.connectors.connections import CONNECTION_ID, PARAMETER_KEY_ENV, PARAMETER_PREFIX_ENV
+from engineering.connectors.connections import CONNECTION_ID, PARAMETER_PREFIX_ENV
 from engineering.connectors.credentials import ParameterStoreCredentials
 from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
@@ -94,7 +92,6 @@ from engineering.connectors.patches import WorkspacePatches
 from engineering.connectors.records import ApprovedDocsRecords, DocsClaims, RunRecords, WriteClaims
 from engineering.connectors.router import HostRouter
 from engineering.connectors.upstream_records import UpstreamRecords
-from engineering.connectors.user_auth import USER_AUTH_PREFIX_ENV, OwnerTokens
 from engineering.connectors.write_policy import WriteRefused
 from engineering.runtime.interface import MAX_ATTEMPT
 from engineering.workspace.store import WorkspaceStore
@@ -413,14 +410,12 @@ def host_router(parameter_prefix: str) -> HostRouter:
 
 @lru_cache(maxsize=1)
 def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '',
-               agents: str = '', user_auth: str = '', key_id: str = '') -> Broker:
+               agents: str = '') -> Broker:
     """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
     connections under ``parameter_prefix``, and the run's records, the patches and the dial in ``table``, ``bucket``
     and ``aggregates`` (``UNCONNECTED`` while any is unnamed), the CI attestations in ``agents`` (none attested while
     it is unnamed); no connector without a prefix. Since 7.57.00 every connection's kind and a fork's upstream (the
-    credentials), and, with the user-auth parameters' prefix (``user_auth``) and the key a refreshed token is put
-    under (``key_id``) named, the connection owners' user tokens and the upstream pull requests' records: without them
-    a fork's upstream pull request is refused (503)."""
+    credentials), and the upstream pull requests' records."""
     if not parameter_prefix:
         return Broker(None)
     host = host_router(parameter_prefix)
@@ -433,13 +428,12 @@ def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggrega
     # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
     workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
     records = RunRecords(get_dynamodb_client(), table, workspace, agents)
-    owners = OwnerTokens(user_auth, key_id) if user_auth and key_id else None
     return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
                             ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates)),
                             writes=WriteClaims(get_dynamodb_client(), table),
                             docs=ApprovedDocsRecords(approved_docs(get_dynamodb_client(), table, workspace)),
                             docs_writes=DocsClaims(get_dynamodb_client(), table), upstream=upstream,
-                            owner_tokens=owners, upstream_ledger=UpstreamRecords(get_dynamodb_client(), table)))
+                            upstream_ledger=UpstreamRecords(get_dynamodb_client(), table)))
 
 
 def approved_docs(client: Any, table: str, workspace: WorkspaceStore) -> Any:
@@ -461,8 +455,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
                       broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
                                  environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, ''),
-                                 environ.get(CONNECTIONS_TABLE_ENV, ''), environ.get(USER_AUTH_PREFIX_ENV, ''),
-                                 environ.get(PARAMETER_KEY_ENV, '')),
+                                 environ.get(CONNECTIONS_TABLE_ENV, '')),
                       (environ.get(RUNTIME_ROLE_NAME_ENV, ''), environ.get(RUNTIME_FUNCTION_ENV, '')),
                       (environ.get(START_ROLE_NAME_ENV, ''), environ.get(START_FUNCTION_ENV, '')))
     finally:

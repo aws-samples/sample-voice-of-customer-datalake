@@ -414,10 +414,12 @@ class _Ssm:
 
 def test_the_key_is_read_decrypted_from_exactly_the_deployments_parameter():
     ssm = _Ssm()
-    assert ssm_key('/b-voc/engineering/_kiro/api-key', 'us-west-2', ssm)() == KEY
-    assert ssm.asked == [{'Name': '/b-voc/engineering/_kiro/api-key', 'WithDecryption': True}]
-    with pytest.raises(KiroNotOffered):
-        ssm_key('/voc/engineering/conn-1', 'us-west-2', ssm)
+    assert ssm_key('/b-voc/engineering-kiro/api-key', 'us-west-2', ssm)() == KEY
+    assert ssm.asked == [{'Name': '/b-voc/engineering-kiro/api-key', 'WithDecryption': True}]
+    # Never a connection's parameter, nor (7.58.00) the key's old place under the connections' path.
+    for elsewhere in ('/voc/engineering/conn-1', '/voc/engineering/_kiro/api-key', '/b-voc/engineering/_kiro/api-key'):
+        with pytest.raises(KiroNotOffered):
+            ssm_key(elsewhere, 'us-west-2', ssm)
 
 
 def test_a_key_that_cannot_be_read_says_why_never_what_it_held():
@@ -425,11 +427,11 @@ def test_a_key_that_cannot_be_read_says_why_never_what_it_held():
         response: ClassVar[dict[str, Any]] = {'Error': {'Code': 'ParameterNotFound', 'Message': f'not {KEY}'}}
 
     with pytest.raises(KiroNotOffered) as raised:
-        ssm_key('/voc/engineering/_kiro/api-key', 'us-east-1', _Ssm(error=Refused()))()
+        ssm_key('/voc/engineering-kiro/api-key', 'us-east-1', _Ssm(error=Refused()))()
     assert 'ParameterNotFound' in str(raised.value)
     assert KEY not in str(raised.value)
     with pytest.raises(KiroNotOffered, match='holds no key'):
-        ssm_key('/voc/engineering/_kiro/api-key', 'us-east-1', _Ssm(value=' '))()
+        ssm_key('/voc/engineering-kiro/api-key', 'us-east-1', _Ssm(value=' '))()
 
 
 # -- the saved state ------------------------------------------------------------------------------------------------

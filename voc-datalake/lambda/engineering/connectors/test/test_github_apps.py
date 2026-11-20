@@ -230,8 +230,7 @@ def test_the_code_is_exchanged_once_and_the_key_and_webhook_secret_go_to_ssm_bef
     assert {(p['KeyId'], p['Tier']) for p in described.values()} == {(env.key_id, 'Standard')}
     assert made['app'] == {'app_id': APP_ID, 'slug': SLUG, 'owner': 'example-org', 'owner_type': 'Organization',
                            'html_url': f'https://github.com/apps/{SLUG}', 'webhook': True, 'connections': [],
-                           'created_at': WHEN.isoformat(), 'created_by': 'alice', 'version': 1,
-                           'oauth': False, 'client_id': None}   # (7.57.00: no OAuth client kept without its path)
+                           'created_at': WHEN.isoformat(), 'created_by': 'alice', 'version': 1}
     assert made['install_url'].startswith(f'https://github.com/apps/{SLUG}/installations/new?state=')
 
 

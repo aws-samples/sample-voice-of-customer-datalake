@@ -67,6 +67,10 @@ const MODEL_PRICES_CONTEXT = 'engineeringModelPrices';
 const MAX_USD_PER_MILLION_TOKENS = 1000;
 const PRICE_PARTS = ['input', 'output', 'cacheRead', 'cacheWrite'];
 const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+/** `-c engineeringKiroCreditPrice`: USD per Kiro credit (kiroCreditPrice; runtime/caps.py MAX_USD_PER_CREDIT). */
+const KIRO_CREDIT_PRICE_CONTEXT = 'engineeringKiroCreditPrice';
+const DEFAULT_KIRO_CREDIT_PRICE = '0.04';
+const MAX_USD_PER_CREDIT = 10;
 
 /** AgentCore Runtime V2's rates, checked 2026-11-13 (runtime/caps.py DEFAULT_RATES: a test keeps them equal). */
 export const DEFAULT_RATES: Readonly<Record<string, string>> = {
@@ -206,14 +210,33 @@ export function modelPrices(scope: Construct): Record<string, Record<string, str
 }
 
 /**
+ * `-c engineeringKiroCreditPrice=<USD>` (7.58.00): what one Kiro credit costs, `0.04` (Kiro's add-on credit price,
+ * runtime/caps.py DEFAULT_KIRO_CREDIT_PRICE: a test keeps them equal) by default; 0 to 10, at most 12 digits after the
+ * point, 0 leaving the credits counted and unpriced. A Kiro session's credits are priced at it, so a run's cost cap, its
+ * flow's budget and the hard cap count them (a plan's included credits are not modelled: an upper bound).
+ */
+export function kiroCreditPrice(scope: Construct): string {
+  const raw: unknown = scope.node.tryGetContext(KIRO_CREDIT_PRICE_CONTEXT);
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_KIRO_CREDIT_PRICE;
+  const text = String(raw).trim();
+  if (typeof raw === 'boolean' || !RATE_RE.test(text) || Number(text) > MAX_USD_PER_CREDIT) {
+    throw new Error(`${KIRO_CREDIT_PRICE_CONTEXT} is a price in USD per Kiro credit, 0 to ${MAX_USD_PER_CREDIT}, at most `
+      + `12 digits after the point: -c ${KIRO_CREDIT_PRICE_CONTEXT}=${DEFAULT_KIRO_CREDIT_PRICE}`);
+  }
+  return text;
+}
+
+/**
  * The runtime's pricing settings, as its environment names them: AgentCore's rates for each session's CPU and memory
- * (`-c engineeringSessionRates`) and each model's token price over the runtime's defaults (`-c engineeringModelPrices`,
- * 7.50.00; `{}` keeps them), so a run's cost cap and its flow's budget bound both.
+ * (`-c engineeringSessionRates`), each model's token price over the runtime's defaults (`-c engineeringModelPrices`,
+ * 7.50.00; `{}` keeps them) and a Kiro credit's (`-c engineeringKiroCreditPrice`, 7.58.00), so a run's cost cap and
+ * its flow's budget bound all three.
  */
 export function pricingEnvironment(scope: Construct): Record<string, string> {
   return {
     ENGINEERING_SESSION_RATES: JSON.stringify(sessionRates(scope)),
     ENGINEERING_MODEL_PRICES: JSON.stringify(modelPrices(scope)),
+    ENGINEERING_KIRO_CREDIT_PRICE: kiroCreditPrice(scope),
   };
 }
 

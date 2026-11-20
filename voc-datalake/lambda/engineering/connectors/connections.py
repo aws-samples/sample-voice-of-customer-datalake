@@ -27,8 +27,8 @@ A connection is a row in voc-agents and, while it holds a credential, one SSM Pa
 Since 7.57.00 a connection is of a kind (the row's ``connection_kind``; none: ``repository``, as before): a public
 repository read only (``public_read``: ``public_repos.py``; its parameter names the deployment's App installation whose
 read-only token reads it, ``PublicRead``), or a fork of one, its App installed on the fork, with the upstream its runs'
-pull request goes to (``fork``: ``forks.py``; ``ForkReference``, the owner's subject's sha256, their acknowledged
-licence and their setting for AI-assisted runs). A kind never changes: the generic save refuses a connection of another
+pull request goes to (``fork``: ``forks.py``; ``ForkReference``, the owner's subject's sha256 and their acknowledged
+licence). A kind never changes: the generic save refuses a connection of another
 kind (409), and a read-only connection takes no CI attestation (nothing is pushed to it).
 
 A connection's CI attestation (7.04.00, ``attestations.py``): an administrator confirms the setup guide's points for
@@ -113,7 +113,7 @@ _CREDENTIAL_FIELDS: Final = frozenset({'app_id', 'installation_id', 'private_key
 #: The row's fields an audit row records the change of (never the private key or the token).
 _AUDITED: Final = ('host', 'repository', 'default_branch', 'app_id', 'installation_id', 'token_expires_at',
                    'credential_kind', 'repository_private', 'connection_kind', 'upstream', 'licence',
-                   'upstream_pr_assisted')
+                   'upstream_default_branch')
 #: A connection's kinds (7.57.00; hosts.py REPOSITORY_KIND, PUBLIC_READ, FORK): the row's ``connection_kind``, none for ``repository``.
 KIND_REPOSITORY: Final = 'repository'
 KIND_PUBLIC_READ: Final = 'public_read'
@@ -198,9 +198,8 @@ class PublicRead:
 @dataclass(frozen=True)
 class ForkReference:
     """A fork of a public repository (7.57.00, ``forks.py``), its App installed on the fork: the App and that
-    installation, the upstream and its default branch, the connection owner (``owner``: their subject's sha256, whose
-    user authorization lets the app open the upstream pull request), the licence they acknowledged, and whether the app
-    opens an AI-assisted run's upstream pull request (``assisted``, their explicit setting)."""
+    installation, the upstream and its default branch, the connection owner (``owner``: their subject's sha256) and the
+    licence they acknowledged."""
 
     app_id: str
     installation_id: int
@@ -208,7 +207,6 @@ class ForkReference:
     upstream_default_branch: str
     owner: str
     licence: str
-    assisted: bool = False
 
 
 @dataclass(frozen=True)
@@ -429,7 +427,7 @@ def fork_value(repository: str, reference: ForkReference) -> str:
     return json.dumps({'kind': KIND_FORK, 'app_id': reference.app_id, 'installation_id': reference.installation_id,
                        'repository': repository, 'key': APP_REFERENCE, 'upstream': reference.upstream,
                        'upstream_default_branch': reference.upstream_default_branch, 'owner': reference.owner,
-                       'licence': reference.licence, 'upstream_pr_assisted': reference.assisted})
+                       'licence': reference.licence})
 
 
 def _value(repository: str, credential: AppCredential | AppReference | PublicRead | ForkReference) -> str:
@@ -481,7 +479,7 @@ def _fork_view(item: Mapping[str, Any], viewer: str) -> dict[str, Any] | None:
     return {'upstream': str(item.get('upstream') or ''), 'upstream_connection': item.get('upstream_connection') or None,
             'upstream_default_branch': str(item.get('upstream_default_branch') or ''),
             'owner': str(item.get('owner_name') or UNNAMED), 'owned_by_me': bool(viewer) and owner == viewer,
-            'licence': item.get('licence') or None, 'upstream_pr_assisted': item.get('upstream_pr_assisted') is True,
+            'licence': item.get('licence') or None,
             'account': str(item.get('fork_account') or ''), 'account_type': str(item.get('fork_account_type') or '')}
 
 

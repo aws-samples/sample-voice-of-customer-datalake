@@ -195,8 +195,10 @@ export const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}
 /**
  * The repositories' partitions in voc-engineering (`WS#<ws>#REPO#<connection>`, 7.52.00 knowledge/store.py, tenets.py,
  * docs.py): the knowledge packs' versions and their rendering, the tenets' versions, as a `dynamodb:LeadingKeys` pattern.
+ * Pinned to the engineering workspace (7.58.00): `WS#*#REPO#*` also matched the agent memory's repository partitions
+ * (`WS#<ws>#AMEM#REPO#<connection>`, agent_memory/model.py), so a writer of the packs could write repository memory.
  */
-export const ENGINEERING_REPO_PARTITIONS = 'WS#*#REPO#*';
+export const ENGINEERING_REPO_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#REPO#*`;
 /**
  * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
  * pattern: the metering writers ADD to them in the same transaction as each priced session write.

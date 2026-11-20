@@ -308,12 +308,9 @@ describe('cdk-nag acknowledgements', () => {
       // (`…/_kiro/*`), which a child run's seed copies: one more finding of the patches' and sessions' acknowledgement.
       // 138 -> 139 (7.54.00): the board's read of the reviewers' verdicts (`…/_review/*`) for review.no_blocking: one
       // more finding of its recorded outputs' acknowledgement (engineering-bus.ts).
-      // 139 -> 145 (7.57.00): the GitHub App user authorizations' path (`…/engineering-user-auth/`), two findings on each
-      // of its three roles: the code exchange's read of the Apps' OAuth clients and put of the people's tokens
-      // (engineering-user-auth.ts), the broker's read of both and refresh of the tokens
-      // (engineering-user-auth-parameters.ts), and the Agents API's put and delete of the clients and delete of the
-      // tokens (api-engineering-user-auth.ts).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 145, used: 145 });
+      // (7.57.00's GitHub App user authorizations' path, six findings, is gone with the app's own open of the upstream
+      // pull request: 7.58.00, back to 139.)
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 139, used: 139 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

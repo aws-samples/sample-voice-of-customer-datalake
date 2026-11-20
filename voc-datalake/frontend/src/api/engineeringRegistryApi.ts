@@ -7,9 +7,10 @@
  *   from a skill (`kind: 'card'`, its base role's library skills);
  * - `GET …/registry/<card>?connection=` → `{card, versions, events}`, read as its card and versions (a role's card has
  *   neither);
- * - 7.58.00: each card's model choice (its role's, deployment-wide: `model_choice`, who set it and when; the template's
- *   own, `template_model_choice`) and the harness its role runs on here (`runs_on`), and beside the cards the Bedrock
- *   models the deployment grants and prices (`bedrock_enabled`); `PUT …/registry/<role>/model` `{model}` sets a role's
+ * - 7.58.00: each card's model choice (its role's, deployment-wide: `model_choice`, who set it and when; null for its
+ *   card's model, a card naming no choice) and the harness its role runs on here (`runs_on`), and beside the cards the Bedrock
+ *   models the deployment grants and prices (`bedrock_enabled`) and what a Kiro credit costs here
+ *   (`kiro_credit_price_usd`, the cost caps' price for a Kiro role's credits); `PUT …/registry/<role>/model` `{model}` sets a role's
  *   choice (null: back to its default), 400 in the server's words for an id off its shape or one not enabled;
  * - `POST …/registry/cards` `{from_skill: {role, connection?, version}, slug, purpose, title?, model?, caps?,
  *   expected_version?}` → 201 `{card}`; 400 a bad body, 404 no such skill version, 409 a proposal, a bad model or tool,
@@ -37,6 +38,8 @@ const maybeText = z.string().nullable().catch(null)
 const count = z.number().int().nonnegative().catch(0)
 const rate = z.number().min(0).max(1).nullable().catch(null)
 const names = z.array(z.string()).catch([])
+/** (7.58.00) USD per Kiro credit: 0 to 10, as the stack takes it (`-c engineeringKiroCreditPrice`). */
+const creditPrice = z.number().min(0).max(10).nullable().catch(null)
 
 /** The skill a card runs: the store's version the scope resolves to, or the role's bundled template. */
 const SkillSchema = z.object({
@@ -99,8 +102,6 @@ const CardSchema = z.object({
   model_choice: maybeText,
   model_choice_updated_at: maybeText,
   model_choice_updated_by: maybeText,
-  /** (7.58.00) The template card's own choice (null for every shipped card). */
-  template_model_choice: maybeText,
   /** (7.58.00) The harness this deployment runs its role on (`-c engineeringHarness`). */
   runs_on: z.enum(['native', 'kiro']).catch('native'),
 })
@@ -112,6 +113,9 @@ export interface RegistryCardDetail {
   versions: RegistryCard[]
   /** (7.58.00) The Bedrock models this deployment grants and prices: what a native role may run on. */
   bedrockEnabled: string[]
+  /** (7.58.00) What a Kiro credit costs here, in USD (`kiro_credit_price_usd`, `-c engineeringKiroCreditPrice`): a
+   *  Kiro role's credits are counted at it in the cost caps; null when the answer names none. */
+  kiroCreditPrice: number | null
 }
 
 /** (7.58.00) A role's model choice as saved. */
@@ -211,7 +215,10 @@ export function parseCardDetail(raw: unknown): RegistryCardDetail {
   const card = CardSchema.safeParse(isRecord(raw) ? raw.card : undefined)
   if (!card.success) throw new Error('The Registry card answer was unreadable')
   const record = isRecord(raw) ? raw : {}
-  return { card: card.data, versions: parseEach(CardSchema, record.versions), bedrockEnabled: names.parse(record.bedrock_enabled) }
+  return {
+    card: card.data, versions: parseEach(CardSchema, record.versions), bedrockEnabled: names.parse(record.bedrock_enabled),
+    kiroCreditPrice: creditPrice.parse(record.kiro_credit_price_usd),
+  }
 }
 
 export function parseSavedModel(raw: unknown): SavedModelChoice {

@@ -5,8 +5,8 @@
  * records or withdraws an administrator's attestation that the repository's CI meets the setup guide (the broker
  * refuses every push and pull request on a connection while none holds; a repository change or a removal voids it).
  * Since 7.57.00 a connection has a kind (a public repository read only, or a person's fork of one): `POST
- * …/connections/<id>/fork` starts a fork of a public one, `PUT …/connections/<id>/upstream` sets a fork's upstream
- * pull request settings (api/publicRepositoriesApi.ts finds and connects public repositories).
+ * …/connections/<id>/fork` starts a fork of a public one, `PUT …/connections/<id>/upstream` acknowledges the upstream's
+ * current licence again (7.58.00; api/publicRepositoriesApi.ts finds and connects public repositories).
  *
  * The credential is write-only: a GitHub App's (its ids and its private key) or a GitLab project access token. The
  * server stores it in SSM and no answer ever carries it back; a connection says only whether one is set, and the
@@ -101,18 +101,16 @@ const PublicFactsSchema = z.object({
   pushed_at: optionalServerText(),
 }).nullable().catch(null)
 
-/** A fork connection's upstream and its owner (whose GitHub authorization opens the upstream pull request). */
+/** A fork connection's upstream and its owner (whose fork and pull requests these are). */
 const ForkFactsSchema = z.object({
   upstream: z.string().min(1),
   upstream_connection: optionalServerText(),
   upstream_default_branch: z.string().catch('main'),
-  /** The person who made the fork connection (their name): the upstream pull request is opened as them. */
+  /** The person who made the fork connection (their name). */
   owner: z.string().catch(''),
   owned_by_me: z.boolean().catch(false),
   /** The upstream's licence (SPDX) its owner acknowledged; null for none. */
   licence: optionalServerText(),
-  /** The owner's explicit setting: an AI-assisted run opens the upstream pull request too. */
-  upstream_pr_assisted: z.boolean().catch(false),
   /** The fork's account on GitHub (a person's login or an organization's), and its kind. */
   account: z.string().catch(''),
   account_type: z.string().catch(''),
@@ -248,10 +246,9 @@ export interface ForkLinks {
   installUrl: string
 }
 
-/** The owner's upstream pull request settings of a fork connection. */
-export interface UpstreamSettings {
-  assisted: boolean
-  licence?: string
+/** (7.58.00) The upstream's current licence acknowledged again by the fork connection's owner (its SPDX id). */
+export interface UpstreamLicence {
+  licence: string
   reason?: string
 }
 
@@ -303,7 +300,11 @@ export const engineeringConnectionsApi = {
    */
   fork: async (connectionId: string, request: ForkRequest): Promise<ForkLinks> =>
     parseForkLinks(await fetchApi<unknown>(`${connectionPath(connectionId)}/fork`, post(request))),
-  /** A fork connection's upstream pull request settings, its owner's alone (409 for anyone else). */
-  setUpstream: async (connectionId: string, settings: UpstreamSettings): Promise<EngineeringConnection> =>
-    parseUpstreamSaved(await fetchApi<unknown>(`${connectionPath(connectionId)}/upstream`, put(settings))),
+  /**
+   * (7.58.00) Acknowledge the upstream's current licence again, the fork connection's owner's alone (409 for anyone
+   * else, or for a licence that is not the upstream's now, saying which it is); the upstream's default branch is
+   * refreshed with it.
+   */
+  acknowledgeLicence: async (connectionId: string, request: UpstreamLicence): Promise<EngineeringConnection> =>
+    parseUpstreamSaved(await fetchApi<unknown>(`${connectionPath(connectionId)}/upstream`, put(request))),
 }

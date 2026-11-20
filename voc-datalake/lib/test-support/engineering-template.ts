@@ -33,11 +33,6 @@ export function processingSynths<K extends string>(contexts: Readonly<Record<K, 
     .map(([key, context]) => [key, () => synthProcessingTemplate({ context })]));
 }
 
-/** Each template synthesized once, from its factory, in the suite's beforeAll; returns the getter. */
-export function templatesOnce<K extends string>(factories: Readonly<Record<K, () => Template>>): (key: K) => Template {
-  return synthesizedOnce(Object.entries<() => Template>(factories));
-}
-
 /** The templates of `factories` synthesized in the suite's beforeAll, and the getter of one by its key. */
 function synthesizedOnce<K extends string>(factories: ReadonlyArray<readonly [string, () => Template]>): (key: K) => Template {
   const synthesized = new Map<string, Template>();

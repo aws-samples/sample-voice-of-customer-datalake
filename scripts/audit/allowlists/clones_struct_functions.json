@@ -67,7 +67,7 @@
         "voc-datalake/lambda/engineering/runtime/ports.py"
       ],
       "name": "head_commit",
-      "reason": "typing.Protocol method stubs of two text arguments: the broker's host, GO-ledger, write-claim, run-record, docs, upstream and owner-token ports, readiness's attestation and user-authorization ports and the runtime's lease port declare different operations that only share the empty shape"
+      "reason": "typing.Protocol method stubs of two text arguments: the broker's host, GO-ledger, write-claim, run-record, docs and upstream ports, readiness's attestation port and the runtime's lease port declare different operations that only share the empty shape"
     },
     {
       "files": [

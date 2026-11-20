@@ -1,6 +1,6 @@
 /**
  * @fileoverview The frame the pages GitHub sends a person back to share (GitHubAppCreated.tsx, GitHubAppInstalled.tsx;
- * 7.45.00; GitHubAppAuthorized.tsx, 7.57.00): their title, what they say, and the way back to Agents → Connections;
+ * 7.45.00): their title, what they say, and the way back to Agents → Connections;
  * and what each says before its request's answer (`ReturnProgress`).
  *
  * @module pages/Agents/GitHubReturnFrame

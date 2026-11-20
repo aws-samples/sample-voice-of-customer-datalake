@@ -1,6 +1,6 @@
 /**
  * @fileoverview The guided setup of contributing to a public repository, on its read-only connection (7.57.00). The
- * upstream is its owner's (an organization's, say); the fork and the pull requests are the person's. Three steps, each
+ * upstream is its owner's (an organization's, say); the fork and the pull requests are the person's. Two steps, each
  * with its status, then a plain summary with the connections' real names:
  *
  * 1. **Fork it on GitHub**: GitHub's own fork page, in a new tab, where the person picks their account or an
@@ -8,28 +8,22 @@
  * 2. **Let the agents push to your fork**: where the fork goes and the licence acknowledged (ContributeDialog.tsx),
  *    then the App's install page, choosing only the fork; the app detects the fork when GitHub sends them back. Done
  *    once the fork connection exists.
- * 3. **Optional: open pull requests for you**: Authorize as me for the fork's App (AppAuthorization.tsx), done once
- *    the person's authorizations list it; for an App made before 7.57.00 the step points to Set the App's OAuth client…
- *    on the App's card first. Without it each run ends with its pull request one click away on GitHub (the person
- *    clicks Create); with it the app opens it for them.
+ *
+ * Each run then ends with its pull request on the upstream one click away on GitHub: the person clicks Create (7.58.00:
+ * the app never opens it itself; a GitHub App's user token cannot open one on a repository the App is not installed on).
  *
  * An archived repository and one with no licence are not offered (said, and step 2 held).
  *
  * @module pages/Agents/ContributeCard
  */
 import { useId } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { CircleCheck, Circle, ExternalLink, GitFork, UserCheck } from 'lucide-react'
-import { IconBadge } from '../../components/IconBadge/IconBadge'
-import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
-import { AuthorizeButton } from './AppAuthorization'
+import { CircleCheck, Circle, ExternalLink, GitFork } from 'lucide-react'
 import { useContributionHeld } from './connectionText'
 import type { ReactNode } from 'react'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
-import type { GitHubApp } from '../../api/githubAppsApi'
 
-type StepStatus = 'done' | 'todo' | 'optional'
+type StepStatus = 'done' | 'todo'
 
 /** GitHub's own page that forks `upstream` (the person chooses the account or organization there). */
 function forkPageUrl(upstream: string): string {
@@ -50,7 +44,6 @@ function Step({ number, title, status, children }: Readonly<{
   const Icon = status === 'done' ? CircleCheck : Circle
   const said: Readonly<Record<StepStatus, string>> = {
     done: t('connections.contribute.statusDone'), todo: t('connections.contribute.statusTodo'),
-    optional: t('connections.contribute.statusOptional'),
   }
   return (
     <li className="flex gap-3" data-testid={`contribute-step-${number}`}>
@@ -66,50 +59,23 @@ function Step({ number, title, status, children }: Readonly<{
   )
 }
 
-/**
- * The person's authorization of the App: the login it is authorized as, null for none, undefined while it is read (or
- * cannot be, or the App has no OAuth client to authorize with).
- */
-function useAuthorizedAs(app: GitHubApp | null): string | null | undefined {
-  const authorizations = useQuery({
-    queryKey: githubAppsKeys.authorizations(), queryFn: githubAppsApi.authorizations, retry: false,
-    enabled: app?.oauth === true,
-  })
-  if (app === null || authorizations.data === undefined) return undefined
-  return authorizations.data.find((entry) => entry.app_id === app.app_id)?.login ?? null
-}
-
-/** Step 3's move: authorized as whom, Authorize as me, or the App's OAuth client to set first (on its card). */
-function AuthorizeStep({ app, login }: Readonly<{ app: GitHubApp | null; login: string | null | undefined }>) {
-  const { t } = useTranslation('agents')
-  if (app === null) return null
-  if (!app.oauth) return <p className="text-[12px] text-muted">{t('connections.contribute.step3NoClient', { slug: app.slug })}</p>
-  if (login === undefined) return null
-  if (login === null) return <div className="text-[12px]"><AuthorizeButton app={app} /></div>
-  return <IconBadge toneClass="badge-ok" icon={UserCheck}>{t('connections.authorization.as', { login })}</IconBadge>
-}
-
 /** The plain summary under the steps: where the agents read, where they push, whose the pull requests are. */
 function Summary({ upstream, fork }: Readonly<{ upstream: string; fork: EngineeringConnection | null }>) {
   const { t } = useTranslation('agents')
-  const account = fork?.fork?.account === undefined || fork.fork.account === ''
-    ? (fork?.repository.split('/')[0] ?? '') : fork.fork.account
   return (
     <ul className="space-y-0.5 border-t border-border pt-2 text-[12px] text-text" data-testid="contribute-summary">
       <li>{t('connections.contribute.summaryReads', { upstream })}</li>
       <li>{fork === null ? t('connections.contribute.summaryPushesPending')
         : t('connections.contribute.summaryPushes', { fork: fork.repository })}</li>
-      <li>{fork === null || account === '' ? t('connections.contribute.summaryPullRequestsPending', { upstream })
-        : t('connections.contribute.summaryPullRequests', { upstream, account })}</li>
+      <li>{t('connections.contribute.summaryPullRequests', { upstream })}</li>
     </ul>
   )
 }
 
-export function ContributeCard({ connection, connections, apps, onInstall }: Readonly<{
+export function ContributeCard({ connection, connections, onInstall }: Readonly<{
   connection: EngineeringConnection
   /** Every stored connection: the fork of this upstream among them. */
   connections: readonly EngineeringConnection[]
-  apps: readonly GitHubApp[]
   /** Step 2: where the fork goes and the licence, then the App's install page (ContributeDialog.tsx). */
   onInstall: () => void
 }>) {
@@ -119,9 +85,6 @@ export function ContributeCard({ connection, connections, apps, onInstall }: Rea
   const upstream = connection.repository
   const fork = forkOf(connection, connections)
   const held = useContributionHeld(connection)
-  const appId = fork?.credential.app_id ?? connection.credential.app_id
-  const app = apps.find((entry) => entry.app_id === appId) ?? apps[0] ?? null
-  const login = useAuthorizedAs(app)
   const forked: StepStatus = fork === null ? 'todo' : 'done'
   return (
     <section className="space-y-3 rounded-md border border-border p-3" aria-labelledby={titleId}
@@ -151,10 +114,6 @@ export function ContributeCard({ connection, connections, apps, onInstall }: Rea
               {t('connections.contribute.installOnFork')}
             </button>
           )}
-        </Step>
-        <Step number={3} title={t('connections.contribute.step3')} status={typeof login === 'string' ? 'done' : 'optional'}>
-          <p className="text-[12px] text-muted">{t('connections.contribute.step3Hint', { upstream })}</p>
-          <AuthorizeStep app={app} login={login} />
         </Step>
       </ol>
       <Summary upstream={upstream} fork={fork} />

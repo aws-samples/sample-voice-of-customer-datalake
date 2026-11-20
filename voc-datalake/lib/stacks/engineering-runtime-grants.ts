@@ -248,7 +248,8 @@ export const TENETS_DRAFT_ATTRIBUTES = ['pk', 'sk', 'versions', 'version', 'stat
 /**
  * A Tenets run's end and a triage run's hard lock (7.52.00), on the runtime's role: the understander's recorded tenets
  * read (`GetObject` on the runs' `_tenets/` objects only, no listing); the repositories' rows read (`GetItem` on
- * `WS#*#REPO#*`: the tenets' counter, its accepted ids, for the triage's lock and the draft's number); and the draft
+ * `WS#default#REPO#*`, never the agent memory's `…#AMEM#REPO#…`: the tenets' counter, its accepted ids, for the
+ * triage's lock and the draft's number); and the draft
  * written (`PutItem` and `UpdateItem` on those partitions, of the draft's attributes alone: `dynamodb:Attributes`), so the
  * runtime drafts and never accepts, rejects or approves anything.
  */

@@ -872,6 +872,7 @@
     "tokensIn": "Input tokens",
     "tokensOut": "Output tokens",
     "microvm": "MicroVM time",
+    "credits": "Kiro credits",
     "budget": "Monthly budget",
     "budgetHint": "Each workflow’s monthly budget as it is now, and the share of it spent this month (session time and model tokens).",
     "budgetShare": "{{percent}}%",
@@ -997,13 +998,7 @@
       },
       "approval": "An owner must approve the installation. Once they have, open Agent orchestration → Connections and use Add repositories on the App to save its repositories.",
       "noState": "GitHub sent you back without this deployment's link, so nothing was saved. Open Agent orchestration → Connections and use Check installation or Add repositories on the App.",
-      "authorizedTitle": "GitHub authorization",
-      "authorizing": "Storing your authorization…",
-      "authorizedBody": "Authorized as @{{login}}.",
-      "authorizedUse": "The platform uses it for one thing: the pull request a run on your fork connections opens on the upstream, once our gate passes.",
-      "authorizeDeclined": "The authorization was declined on GitHub: nothing is stored.",
-      "forkConnected": "Fork connected: {{repository}}, a fork of {{upstream}}.",
-      "noAuthorizeCode": "This page needs the link GitHub sends back once you authorized the App. Start again from Agent orchestration → Connections."
+      "forkConnected": "Fork connected: {{repository}}, a fork of {{upstream}}."
     },
     "title": "Repository connections",
     "intro": "Where the engineering agents work: each repository, how they reach it, and whether they may push.",
@@ -1234,9 +1229,15 @@
       "badge": "Fork of {{upstream}}",
       "owner": "Owner: {{owner}}",
       "licence": "Licence acknowledged: {{licence}}",
-      "outcome": "A run ends with a pull request on {{upstream}} one click away: {{owner}} clicks Create on GitHub, or the app opens it for them once authorized. Only the upstream's maintainers merge it.",
-      "assisted": "Open upstream pull requests for AI-assisted runs",
-      "ownerOnly": "Only {{owner}}, the connection's owner, can change this."
+      "outcome": "A run ends with a pull request on {{upstream}} one click away: {{owner}} clicks Create on GitHub. Only the upstream's maintainers merge it.",
+      "ownerOnly": "Only {{owner}}, the connection's owner, can acknowledge the upstream's licence again.",
+      "acknowledge": "Acknowledge the current licence…",
+      "licenceReading": "Reading the upstream's licence on GitHub…",
+      "licenceUnread": "The upstream's licence could not be read on GitHub: try again.",
+      "licenceNone": "{{upstream}} has no licence GitHub recognises now: it takes no contribution from here.",
+      "licenceNow": "{{upstream}}'s licence now: {{licence}}.",
+      "licenceUnchanged": "It is the one you acknowledged.",
+      "licenceConfirm": "Acknowledge {{licence}}"
     },
     "public": {
       "title": "Add a public repository",
@@ -1282,45 +1283,15 @@
       "step2": "Let the agents push to your fork",
       "step2Hint": "Install the App on your fork, choosing only that repository. The app detects the fork when you come back.",
       "installOnFork": "Install the App on your fork",
-      "step3": "Optional: open pull requests for you",
-      "step3Hint": "Authorize as me, and the app opens each pull request on {{upstream}} for you. Without it, each run's pull request is one click away: you click Create on GitHub.",
       "stepTitle": "{{number}}. {{title}}",
       "statusDone": "Done",
       "statusTodo": "To do",
-      "statusOptional": "Optional",
       "cardTitle": "Contribute to {{upstream}}",
       "cardIntro": "The upstream is {{owner}}'s; the fork and its pull requests are yours.",
       "summaryReads": "Reads: {{upstream}} (public, read-only).",
       "summaryPushes": "Agents push to: {{fork}} (your fork).",
       "summaryPushesPending": "Agents push to: your fork, once it is connected.",
-      "summaryPullRequests": "Pull requests to {{upstream}} come from: {{account}} (you click Create, or the app opens it for you once authorized).",
-      "summaryPullRequestsPending": "Pull requests to {{upstream}} come from your fork (you click Create, or the app opens it for you once authorized).",
-      "step3NoClient": "First set the App's OAuth client: Set the App's OAuth client… on the {{slug}} card."
-    },
-    "authorization": {
-      "noClient": "To open upstream pull requests for you, the app needs its OAuth client, which is not stored here. Without it, each is one click away.",
-      "setClient": "Set the App's OAuth client…",
-      "reading": "Reading your authorization…",
-      "unreadable": "Your GitHub authorization could not be read.",
-      "needed": "Optional: authorize the App as you, and it opens your forks' upstream pull requests for you. Without it, each is one click away.",
-      "authorize": "Authorize as me",
-      "as": "Authorized as @{{login}}",
-      "remove": "Remove my authorization",
-      "removeTitle": "Remove your authorization of {{slug}}?",
-      "removeMessage": "The platform forgets your authorization: the app no longer opens your forks' upstream pull requests for you, and each run's is one click away on GitHub. To revoke it on GitHub too: Settings → Applications → Authorized GitHub Apps.",
-      "removeConfirm": "Remove",
-      "removed": "Your authorization of {{slug}} is removed.",
-      "clientTitle": "The OAuth client of {{slug}}",
-      "clientDescription": "Stored encrypted on the server and never shown back.",
-      "clientHint": "On GitHub: Settings → Developer settings → GitHub Apps → the App → Generate a new client secret. The client id is on the same page.",
-      "callbackHint": "Add this Callback URL on the same page:",
-      "clientId": "Client id",
-      "clientIdInvalid": "The client id as GitHub shows it (letters, digits and dots).",
-      "clientSecret": "Client secret",
-      "clientSecretHint": "Pasted once; never shown back.",
-      "clientSecretInvalid": "Paste the client secret GitHub generated.",
-      "clientSave": "Save the client",
-      "clientSaved": "The OAuth client of {{slug}} is stored."
+      "summaryPullRequests": "Pull requests to {{upstream}} come from you: the run ends with a one-click link, and you click Create on GitHub."
     }
   },
   "skills": {
@@ -1742,29 +1713,6 @@
     "answer": "Your message",
     "bytes": "{{used, number}} / {{max, number}} bytes",
     "send": "Send",
-    "board": {
-      "post": "Post a task",
-      "role": "Role",
-      "title": "Title",
-      "instructions": "What to do",
-      "postSubmit": "Post",
-      "posted": "Posted.",
-      "controls": "Task {{task}}",
-      "take": "Take",
-      "takeOver": "Take over",
-      "moveTo": "Move to {{state}}",
-      "block": "Block",
-      "priority": "Priority",
-      "setPriority": "Set priority",
-      "reason": "Why",
-      "blockSubmit": "Block the task",
-      "takeOverTitle": "Take over this task?",
-      "takeOverMessage": "Another person holds it ({{holder}}): it becomes yours, and their moves are refused.",
-      "duplicate": "An equal task is already on the board: nothing new was posted.",
-      "blockOverTitle": "Block this task?",
-      "blockOverMessage": "Another person holds it ({{holder}}): blocking it ends their hold.",
-      "release": "Give back to the agents"
-    },
     "reports": {
       "title": "Report: {{subject}}",
       "version": "Version",
@@ -1787,6 +1735,7 @@
     "notFound": "Engineering run not found",
     "notFoundHint": "Check the run id. Engineering runs are shown only where the engineering agents are turned on, to people who can see every category.",
     "modelTokens": "{{model}}: {{input, number}} in, {{output, number}} out",
+    "modelCredits": "{{model}}: {{credits, number}} Kiro credits ({{cost}})",
     "agentStatus": "{{agent}}: {{status}}",
     "agentNotApplied": "{{agent}}: {{status}} (not applied)",
     "status": {
@@ -1904,7 +1853,6 @@
       "sandbox": "Session sandbox",
       "kiro": "Kiro harness",
       "fork": "Fork",
-      "user_authorization": "Owner's GitHub authorization",
       "upstream_pr": "Upstream pull request"
     },
     "required": "Needed to run"
@@ -2180,7 +2128,9 @@
         "head": "The repository's head now (rebased; a conflict goes to the agent)"
       },
       "agents": "Agents",
-      "agentsHint": "None ticked: every task not finished."
+      "agentsHint": "None ticked: every task not finished.",
+      "model": "Model for the new run",
+      "modelDefault": "The same models as this run"
     },
     "header": {
       "cost": "Cost so far: {{cost}}",
@@ -2824,7 +2774,6 @@
       "runsNative": "This deployment runs the role on the native harness (Amazon Bedrock): it runs on {{model}} ({{id}}).",
       "nextRun": "A run's start records the models, so a change applies from the next run; a run started with a model of its own runs every role on it.",
       "changed": "Changed by {{who}}, {{at}}.",
-      "template": "Its template names {{model}}.",
       "save": "Save model",
       "saved": "Saved.",
       "failed": "The model could not be saved. Try again.",
@@ -2998,6 +2947,7 @@
   },
   "modelChoice": {
     "auto": "Auto",
+    "kiroCredits": "Billed in Kiro credits at {{price}} a credit, which the cost cap counts.",
     "onHarness": "{{model}} · {{harness}}",
     "harness": {
       "native": "native",
@@ -3013,13 +2963,17 @@
     "notes": {
       "auto": "Kiro chooses the model per task. Kiro only: on the native harness the role's default model runs.",
       "named": "{{model}} on both harnesses: {{kiro}} on Kiro, {{bedrock}} on the native harness (Amazon Bedrock).",
-      "other": "A model ID you type, used as it is on the harness the role runs on."
+      "other": "A model ID you type, used as it is on the harness the role runs on.",
+      "otherNative": "Another Bedrock model this deployment grants and prices, from its list."
     },
     "other": {
       "label": "Model ID",
+      "enabledLabel": "Enabled model",
+      "choose": "Choose a model…",
+      "noneEnabled": "No other model is enabled in this deployment. An admin adds one with -c engineeringModelPrices (docs/deployment.md).",
       "hint": {
         "kiro": "A Kiro model ID, as `kiro-cli chat --list-models` lists them (e.g. claude-sonnet-5.5).",
-        "native": "A Bedrock model or inference profile ID this deployment enables (e.g. global.anthropic.claude-sonnet-5-5).",
+        "native": "The Bedrock models this deployment grants and prices besides the three above. An admin adds one with -c engineeringModelPrices (docs/deployment.md).",
         "any": "For roles on Kiro, a Kiro model ID as `kiro-cli chat --list-models` lists them (e.g. claude-sonnet-5.5); for roles on the native harness, a Bedrock model ID this deployment enables (e.g. global.anthropic.claude-sonnet-5-5)."
       }
     },

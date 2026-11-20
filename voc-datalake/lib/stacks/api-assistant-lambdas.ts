@@ -32,7 +32,6 @@ import { engineeringAgentsEnabled, engineeringParameterArns, engineeringParamete
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
-import { grantUserAuthorizationWrites } from './api-engineering-user-auth';
 import { grantEngineeringRunReads } from './api-engineering-run-reads';
 import { agentsApiRole, grantEngineeringVoice } from './api-engineering-voice';
 import { engineeringRunCaps } from './engineering-start';
@@ -106,7 +105,7 @@ export interface AssistantLambdas {
  * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
  * partitions for `GET /agents/engineering/spend`), and its one write, the skills' partitions (`SkillDecisions`: an
  * administrator's actions on a skill version); `lambda:InvokeFunction` on the board's function
- * for a person's board actions (its own role writes them), on the start function for a run's start (never the
+ * for a person's go on a run (its own role writes it), on the start function for a run's start (never the
  * runtime's own function) and, since 7.45.00, on the GitHub Apps' token function for an installation's read
  * (engineering-app-tokens.ts: it reads an App's key with its own role; this one never does), and GetObject on the workspace
  * bucket's reports only, with `kms:Decrypt` on the stack's key through S3 alone (the table's key comes with the role's
@@ -118,9 +117,7 @@ export interface AssistantLambdas {
  * source and a person's steering and answer (api-engineering-voice.ts); a person's signals go through the start
  * function's `signal_run`, on the invoke below. Since 7.53.00 the run requests' writes (`RunRequests`: PutItem and
  * UpdateItem on `WS#*#RUNREQ#*` alone, a local assistant's request for a Run now over MCP and an administrator's
- * decision on it). Since 7.57.00 the GitHub App user authorizations: the code exchange's function by name, the Apps'
- * OAuth clients put and deleted, a person's token deleted, never read (api-engineering-user-auth.ts). Returns the env
- * that turns the routes on (shared/engineering_agents.py), or undefined: off, the
+ * decision on it). Returns the env that turns the routes on (shared/engineering_agents.py), or undefined: off, the
  * role gets nothing and the routes answer 404.
  */
 function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
@@ -148,9 +145,9 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     },
   }));
   grantKnowledgeDecisions(ctx, role);
-  // A person's board actions go through the board's function (engineering/board/api.py person_request), invoked
-  // directly: its own role writes the change, and hands the events back for this role to publish as the person. This
-  // role writes no row of the table. The agent roles may invoke the board only through its function URL
+  // A person's go on a run goes through the board's function (engineering/board/api.py person_request), invoked
+  // directly: its own role writes it (7.58.00: the one board action a person takes; it publishes nothing). This role
+  // writes no row of the table. The agent roles may invoke the board only through its function URL
   // (`lambda:InvokedViaFunctionUrl`), so a direct invoke is this role's (VocProcessingStack deploys the function first;
   // reached by its deterministic name, as the plan-step runner reaches this stack's functions).
   // The run requests (7.53.00, lambda/engineering/run_requests.py): a local assistant's request for a Run now over MCP
@@ -198,14 +195,10 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   const issues = grantIssuesSourceFollow(ctx, role);
   // A person's steering and answers on the engineering bus, and nothing else there (7.51.02, api-engineering-voice.ts).
   const voice = grantEngineeringVoice(ctx, role);
-  // The GitHub App user authorizations (7.57.00, api-engineering-user-auth.ts): the code exchange's function by name,
-  // the Apps' OAuth clients written and removed, a person's token removed; never a read.
-  const userAuth = grantUserAuthorizationWrites(ctx, role);
   return {
     ...readiness,
     ...issues,
     ...voice,
-    ...userAuth,
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
     ENGINEERING_PARAMETER_KEY: ctx.props.kmsKey.keyArn,
@@ -226,7 +219,8 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
  * lambda/engineering/knowledge/): an administrator's approval of a knowledge pack version, with the docs it renders
  * recorded (its `KDOCS` row and `KDOCSLOG#` row), and an acceptance or rejection of a tenets version: exactly what the
  * stores' transactions use (PutItem of a create-only log row or the rendering's row held to the number read, UpdateItem
- * of a version's status and its counter), on the repositories' partitions only (`WS#*#REPO#*`, by
+ * of a version's status and its counter), on the repositories' partitions only (`WS#default#REPO#*`, never the agent
+ * memory's `WS#default#AMEM#REPO#*`, by
  * `dynamodb:LeadingKeys`, as the skills' decisions are). No delete, no ConditionCheckItem (none is used). And GetObject on
  * the knowledge packs' objects (`ws/default/knowledge/*`), read for an approval's rendering and a preview, decrypted
  * through S3 by the reports' key statement. The key through DynamoDB is AgentsTablesKey's.

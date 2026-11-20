@@ -40,7 +40,7 @@ import {
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentsAutomations, AgentsRuns, AgentsSpend, AgentsFlows, AgentsConnections,
   AgentDetail, SetupGuide,
-  WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, GitHubAppAuthorized, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
+  WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
@@ -204,8 +204,6 @@ export const routes: RouteObject[] = [
       // query is GitHub's (an external callback): each page takes it once and removes it from the address.
       { path: 'agents/connections/github/created', ...page(<GitHubAppCreated />) },
       { path: 'agents/connections/github/installed', ...page(<GitHubAppInstalled />) },
-      // (7.57.00) A person's authorization of the App (its callback URL, also fixed with the App): the code and state.
-      { path: 'agents/connections/github/authorized', ...page(<GitHubAppAuthorized />) },
       { path: 'connect', ...page(<Connect />) },
       { path: 'oauth/authorize', ...page(<OAuthConsent />) },
       // Its tabs: /account/profile|preferences|briefing|objectives|access (Account/accountSections.ts).

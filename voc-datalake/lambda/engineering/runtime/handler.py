@@ -259,12 +259,14 @@ def _record_walls(spec: AgentSpec, vm: RuntimeSession, walls: Walls) -> None:
 
 def _pricing() -> caps.SessionPricing:
     """Each session's vCPU and memory at the deployment's AgentCore rates (``ENGINEERING_SESSION_RATES``), at its
-    role's size (``ENGINEERING_BUILD_ROLES``, ``ENGINEERING_BUILD_MEMORY_MIB``), and its model tokens at the
-    deployment's price per model (``ENGINEERING_MODEL_PRICES`` over ``caps.DEFAULT_TOKEN_PRICES``, 7.50.00)."""
+    role's size (``ENGINEERING_BUILD_ROLES``, ``ENGINEERING_BUILD_MEMORY_MIB``), its model tokens at the
+    deployment's price per model (``ENGINEERING_MODEL_PRICES`` over ``caps.DEFAULT_TOKEN_PRICES``, 7.50.00), and a Kiro
+    session's credits at its price per credit (``ENGINEERING_KIRO_CREDIT_PRICE``, 7.58.00)."""
     return caps.SessionPricing(rates=caps.session_rates(os.environ.get('ENGINEERING_SESSION_RATES')),
                                build_roles=_build_roles(),
                                build_size=caps.build_size(os.environ.get('ENGINEERING_BUILD_MEMORY_MIB')),
-                               tokens=caps.model_prices(os.environ.get('ENGINEERING_MODEL_PRICES')))
+                               tokens=caps.model_prices(os.environ.get('ENGINEERING_MODEL_PRICES')),
+                               credit_price=caps.kiro_credit_price(os.environ.get(caps.KIRO_CREDIT_PRICE_ENV)))
 
 
 def _supervisor() -> Supervisor:
@@ -705,10 +707,10 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
 def _launch_model(argv: tuple[str, ...], labels: dict[str, str], role: str,
                   run: Run) -> tuple[tuple[str, ...], dict[str, str]]:
     """The launch's argv on its harness and model (7.58.00, ``harness_switch.with_model``): the run's choice for every
-    role, else the role's as the run's start recorded it, else its template card's; none, as before. Its labels say the
+    role, else the role's as the run's start recorded it; none, as before (the skill's model). Its labels say the
     model it asks for (on Kiro without a choice, Kiro's name for its skill's model; its Bedrock id when Kiro has none,
     and that session stops) and the choice applied (``model_choice``, none without one)."""
-    choice = model_choice.chosen(run.model_choice, run.role_models.get(role, ''), bundled().choice(role))
+    choice = model_choice.chosen(run.model_choice, run.role_models.get(role, ''))
     argv, model = harness_switch.with_model(argv, role, os.environ, choice)
     if choice:
         return argv, {**labels, 'model': model, 'model_choice': choice}
@@ -922,11 +924,24 @@ def _start_models(event: Mapping[str, Any], definition: str) -> tuple[str, dict[
     role, checked), and the roles' own choices (``_role_model_choices``); refused before anything is written when a
     role of the flow would run on the native harness on a model this deployment does not grant and price
     (``harness_switch.native_models``): never a launch that cannot run, never a wider grant."""
+    choice = _checked_choice(event)
+    roles = _role_model_choices()
+    _refuse_native(choice, roles, definition)
+    return choice, roles
+
+
+def _checked_choice(event: Mapping[str, Any]) -> str:
+    """A start's or a restart's ``model_choice`` (one model for every role), checked: '' for none."""
     try:
-        choice = model_choice.checked(event.get('model_choice'))
+        return model_choice.checked(event.get('model_choice'))
     except model_choice.ModelChoiceError as error:
         raise RuntimeRefused(str(error)) from error
-    roles = _role_model_choices()
+
+
+def _refuse_native(choice: str, roles: Mapping[str, str], definition: str) -> None:
+    """Refused (``RuntimeRefused``) when a role of the flow ``definition`` (every role without one it can read) would
+    run on the native harness on a model this deployment does not grant and price, with ``choice`` for every role over
+    ``roles``' own."""
     try:
         parsed = json.loads(definition) if definition else None
     except ValueError:
@@ -934,14 +949,12 @@ def _start_models(event: Mapping[str, Any], definition: str) -> tuple[str, dict[
     launched = readiness.flow_roles(parsed) if isinstance(parsed, Mapping) else AGENT_ROLES
     native = (launched & harness_switch.KIRO_ROLES) - harness_switch.kiro_roles(
         os.environ.get(harness_switch.HARNESS_ENV))
-    templates = bundled()
     enabled = harness_switch.native_models(os.environ)
     for role in sorted(native):
-        chosen = model_choice.chosen(choice, roles.get(role, ''), templates.choice(role))
+        chosen = model_choice.chosen(choice, roles.get(role, ''))
         model = model_choice.bedrock_model(chosen, '')
         if model and model not in enabled:
-            raise RuntimeRefused(f'the {role} runs on the native harness: {model_choice.not_enabled(model)}')
-    return choice, roles
+            raise RuntimeRefused(f'the {role} runs on the native harness: {harness_switch.not_native(model)}')
 
 
 def _goal(event: Mapping[str, Any]) -> str:
@@ -1765,11 +1778,12 @@ def _head_commit(connection: str, repository: str, branch: str) -> str:
 
 def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
     """voc-engineering-start's ``restart_run`` (7.51.00, ``{"run_id": <parent>, "child_run_id"?, "mode": resume |
-    restart, "base": same | head, "agents"?: [<agent>], "actor"}``): the child run written (``restart.py`` 1), its
-    rule switched on and ``seed_restart`` handed on to voc-engineering-runtime. A retry with the same child id answers
-    the child already there. Refused, before anything is written, for a parent that is live (its signals resume and
-    restart its agents), unknown, or one this deployment cannot launch a coordinator for. Answers ``{run_id: <child>,
-    parent_run_id, status}``."""
+    restart, "base": same | head, "agents"?: [<agent>], "model_choice"?, "actor"}``): the child run written
+    (``restart.py`` 1), its rule switched on and ``seed_restart`` handed on to voc-engineering-runtime. A retry with
+    the same child id answers the child already there. The child runs on the parent's models, or (7.58.00)
+    ``model_choice`` for every role, checked as a start's (``_refuse_native``). Refused, before anything is written,
+    for a parent that is live (its signals resume and restart its agents), unknown, one this deployment cannot launch a
+    coordinator for, or a model it cannot run. Answers ``{run_id: <child>, parent_run_id, status}``."""
     from engineering.bus.publish import new_event_id
     from engineering.runtime import restart
     parent_id, actor = check_run_id(str(event.get('run_id', ''))), str(event.get('actor') or '')[:200]
@@ -1794,6 +1808,9 @@ def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
         _coordinator_launchable(parent.language)
     meta = runs.table.get_item(Key=meta_key(parent_id), ConsistentRead=True).get('Item') or {}
     copy = runs.table.get_item(Key={'pk': run_pk(parent_id), 'sk': 'FLOW'}, ConsistentRead=True).get('Item') or {}
+    model = _checked_choice(event)
+    if model:
+        _refuse_native(model, parent.role_models, str(copy.get('definition', '')))
     commit = parent.commit
     if base == 'head' and parent.connection:
         commit = _head_commit(parent.connection, parent.repo, str(meta.get('default_branch', '')))
@@ -1815,8 +1832,8 @@ def restart_run(event: Mapping[str, Any]) -> dict[str, Any]:
                extra=restart.child_rows(parent_id, child_id, mode=mode, actor=actor, at=at, inherited=inherited,
                                         fanned=fanned),
                coordinator_seed=seed_key_of(child_id),
-               # (7.58.00: the parent's models, as its start chose them: a Resume or Restart runs on them)
-               model_choice=parent.model_choice, role_models=parent.role_models)
+               # (7.58.00: the parent's models, as its start chose them, unless the restart names one for every role)
+               model_choice=model or parent.model_choice, role_models=parent.role_models)
     try:
         _switch(True)
         from shared.aws import invoke_lambda_async

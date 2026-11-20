@@ -42,7 +42,6 @@ export const RunWorkspace = lazy(() => import('./pages/Agents/RunWorkspace/RunWo
 // Where GitHub sends an administrator back from creating and from installing the deployment's GitHub App (7.45.00).
 export const GitHubAppCreated = lazy(() => import('./pages/Agents/GitHubAppCreated'))
 export const GitHubAppInstalled = lazy(() => import('./pages/Agents/GitHubAppInstalled'))
-export const GitHubAppAuthorized = lazy(() => import('./pages/Agents/GitHubAppAuthorized'))
 export const Account = lazy(() => import('./pages/Account/Account'))
 // The current workspace's members (docs/multi-workspace.md): a page only inside a workspace.
 export const Members = lazy(() => import('./pages/Members/Members'))

@@ -91,6 +91,19 @@ def _kiro_state(raw: object, where: Attempt) -> dict[str, str] | None:
     return None
 
 
+def _own_tree(raw: object, where: Attempt) -> str:
+    """A parent checkpoint's working tree (its ``patch``): the key, only under the attempt's own ``_patches/`` with no
+    further ``/`` (the harness writes it there, ``main.py``); '' for none, or for any other key (never copied: a
+    checkpoint is the agent's own writing, and the seeder reads with the runtime's role)."""
+    try:
+        own = artifact_prefix(where.run_id, where.agent_id, where.commit, where.attempt, 'patches')
+    except RuntimeRefused:
+        return ''
+    if isinstance(raw, str) and raw.startswith(own) and raw != own and '/' not in raw.removeprefix(own):
+        return raw
+    return ''
+
+
 def may_restart(status: str, waiting_at: str, started_at: int, now: int) -> None:
     """Refuse a parent that is live and may still be resumed or signalled (``409`` at the API): only an ended run, one
     waiting at its spent budget or past its 30 days, starts a child."""
@@ -231,7 +244,7 @@ class Seeder:
         if body is None or not is_valid(body):
             return None, '', None
         state = json.loads(body)
-        tree = state.get('patch') if isinstance(state.get('patch'), str) else ''
+        tree = _own_tree(state.get('patch'), where)
         position = state.get('position') if isinstance(state.get('position'), dict) else {}
         return ({'position': {name: value for name, value in position.items() if name in ('task_id', 'turn', 'step')},
                  'plan': state.get('plan') or [], 'notes': str(state.get('notes') or '')}, tree,

@@ -4,7 +4,9 @@ One partition per workspace and month, ``WS#<ws>#SPEND#<yyyy-mm>``; one row per 
 ``DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>``, whose numbers only grow by ADD: ``usd`` (what was
 priced: the session's seconds under the model ``microvm``, and since 7.50.00 each model's tokens at its price,
 runtime/caps.py ``token_usd``), ``tokens_in``/``tokens_out`` per model and
-``microvm_seconds``. Its ``repo`` names the run's repository, for grouping by it.
+``microvm_seconds``; since 7.58.00 a Kiro session's credits too, under the model ``kiro:<Kiro model>``: ``micro_credits``
+(millionths of a credit, whole numbers) and their dollars in ``usd`` at the deployment's price per credit
+(``caps.credit_usd``, ``-c engineeringKiroCreditPrice``). Its ``repo`` names the run's repository, for grouping by it.
 
 Every row is written in the SAME transaction as the metering it mirrors (``ledger_updates``: the session store's priced
 writes add their rows to the session's own conditional write), so the ledger and the sessions never drift: a write the
@@ -41,6 +43,7 @@ from typing import Any, Final, Literal
 from botocore.exceptions import ClientError
 
 from engineering.connectors.identity import WORKSPACE
+from engineering.runtime.interface import MICRO_CREDITS, MICRO_PER_CREDIT
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 
@@ -85,19 +88,22 @@ def _part(value: str) -> str:
 
 @dataclass(frozen=True)
 class Usage:
-    """What one write adds for one model: dollars priced, tokens in and out, session seconds."""
+    """What one write adds for one model: dollars priced, tokens in and out, session seconds, and (7.58.00) a Kiro
+    session's credits in millionths."""
     usd: Decimal = Decimal(0)
     tokens_in: int = 0
     tokens_out: int = 0
     microvm_seconds: int = 0
+    micro_credits: int = 0
 
     def __bool__(self) -> bool:
-        return bool(self.usd or self.tokens_in or self.tokens_out or self.microvm_seconds)
+        return bool(self.usd or self.tokens_in or self.tokens_out or self.microvm_seconds or self.micro_credits)
 
     def __add__(self, other: Usage) -> Usage:
         return Usage(usd=self.usd + other.usd, tokens_in=self.tokens_in + other.tokens_in,
                      tokens_out=self.tokens_out + other.tokens_out,
-                     microvm_seconds=self.microvm_seconds + other.microvm_seconds)
+                     microvm_seconds=self.microvm_seconds + other.microvm_seconds,
+                     micro_credits=self.micro_credits + other.micro_credits)
 
     @property
     def tokens(self) -> int:
@@ -107,11 +113,13 @@ class Usage:
     def of_row(cls, item: Mapping[str, Any]) -> Usage:
         """A ledger row's numbers."""
         return cls(usd=Decimal(str(item.get('usd', 0))), tokens_in=int(item.get('tokens_in', 0)),
-                   tokens_out=int(item.get('tokens_out', 0)), microvm_seconds=int(item.get('microvm_seconds', 0)))
+                   tokens_out=int(item.get('tokens_out', 0)), microvm_seconds=int(item.get('microvm_seconds', 0)),
+                   micro_credits=int(item.get(MICRO_CREDITS, 0)))
 
     def view(self) -> dict[str, Any]:
+        """Its numbers as the spend views read them: a Kiro session's credits in credits (``credits``, 0 for none)."""
         return {'usd': float(self.usd), 'tokens_in': self.tokens_in, 'tokens_out': self.tokens_out,
-                'microvm_seconds': self.microvm_seconds}
+                'microvm_seconds': self.microvm_seconds, 'credits': self.micro_credits / MICRO_PER_CREDIT}
 
 
 @dataclass(frozen=True)
@@ -137,7 +145,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
     day = at.astimezone(UTC).strftime('%d')
     by_model: dict[str, Usage] = {}
     for model, used in usage.items():
-        if min(used.usd, used.tokens_in, used.tokens_out, used.microvm_seconds) < 0:
+        if min(used.usd, used.tokens_in, used.tokens_out, used.microvm_seconds, used.micro_credits) < 0:
             raise ValueError('a ledger write only adds: nothing in it is below zero')
         part = _part(model)
         by_model[part] = by_model.get(part, Usage()) + used
@@ -156,14 +164,17 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
               f'#MODEL#{model}')
         updates.append({'Update': {
             'TableName': table, 'Key': {'pk': ledger_pk(month_of(at)), 'sk': sk},
-            'UpdateExpression': ('ADD usd :usd, tokens_in :in, tokens_out :out, microvm_seconds :secs '
+            'UpdateExpression': ('ADD usd :usd, tokens_in :in, tokens_out :out, microvm_seconds :secs'
+                                 + (', micro_credits :credits' if used.micro_credits else '') + ' '
                                  'SET #day = :day, flow = :flow, repo = :repo, run_id = :run, agent_id = :agent, '
                                  'model = :model, updated_at = :at, updated_by = :by, session_seq = :seq'),
             'ExpressionAttributeNames': {'#day': 'day'},
             'ExpressionAttributeValues': {
                 ':usd': used.usd, ':in': used.tokens_in, ':out': used.tokens_out, ':secs': used.microvm_seconds,
                 ':day': day, ':flow': where.flow, ':repo': where.repo, ':run': where.run_id, ':agent': where.agent_id,
-                ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq},
+                ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq,
+                # (7.58.00: a Kiro session's credits, only on the rows that have some: the others' writes stay as they were)
+                **({':credits': used.micro_credits} if used.micro_credits else {})},
         }})
     dollars = sum(by_model.values(), Usage()).usd
     # (only a write that adds dollars: unpriced tokens or session time leave the hot item alone)
@@ -283,12 +294,14 @@ def alert_sent(table: Any, month: str, flow: str, level: int, *, run_id: str, bu
 
 
 def token_deltas(now: Mapping[str, Mapping[str, int]], ledgered: Mapping[str, Mapping[str, int]]) -> dict[str, Usage]:
-    """Per model, the tokens in ``now`` not yet in the ledger (``ledgered``): never negative (a total never drops)."""
+    """Per model, the tokens (and a Kiro session's credits) in ``now`` not yet in the ledger (``ledgered``): never
+    negative (a total never drops)."""
     deltas: dict[str, Usage] = {}
     for model, counts in now.items():
         before = ledgered.get(model, {})
         delta = Usage(tokens_in=max(int(counts.get('in', 0)) - int(before.get('in', 0)), 0),
-                      tokens_out=max(int(counts.get('out', 0)) - int(before.get('out', 0)), 0))
+                      tokens_out=max(int(counts.get('out', 0)) - int(before.get('out', 0)), 0),
+                      micro_credits=max(int(counts.get(MICRO_CREDITS, 0)) - int(before.get(MICRO_CREDITS, 0)), 0))
         if delta:
             name = REPORTED_MICROVM if model == MICROVM else model   # (the session row is the runtime's own)
             deltas[name] = deltas.get(name, Usage()) + delta

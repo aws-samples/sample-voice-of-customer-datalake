@@ -47,7 +47,9 @@ def nudge(role: str) -> str:
 
 #: Claude on Bedrock thinks adaptively by default but sends its thinking with an empty text (``display: omitted``):
 #: ``summarized`` makes the run's thread show what the agent thought (the transcript keeps it; checked live on
-#: global.anthropic.claude-sonnet-5-5, 2026-11-18: the same reasoning block, now with its summary's text).
+#: global.anthropic.claude-sonnet-5-5, 2026-11-18: the same reasoning block, now with its summary's text). Only a
+#: model that thinks adaptively takes it: the launch runs no other one here (``harness_switch.native_models``, the
+#: allowlist's ``adaptive_thinking``; this image has no ``shared/`` to read the flag from).
 CLAUDE_THINKING: Final = {'thinking': {'type': 'adaptive', 'display': 'summarized'}}
 
 

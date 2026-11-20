@@ -944,6 +944,7 @@
     "tokensIn": "Jetons en entrée",
     "tokensOut": "Jetons en sortie",
     "microvm": "Temps MicroVM",
+    "credits": "Crédits Kiro",
     "budget": "Budget mensuel",
     "budgetHint": "Le budget mensuel actuel de chaque workflow, et la part dépensée ce mois-ci (temps de session et jetons du modèle).",
     "budgetShare": "{{percent}} %",
@@ -1069,13 +1070,7 @@
       },
       "approval": "Un propriétaire doit approuver l’installation. Ensuite, ouvrez Orchestration d'agents → Connexions et utilisez Ajouter des dépôts sur l’App pour enregistrer ses dépôts.",
       "noState": "GitHub vous a renvoyé sans le lien de ce déploiement : rien n’a été enregistré. Ouvrez Orchestration d'agents → Connexions et utilisez Vérifier l’installation ou Ajouter des dépôts sur l’App.",
-      "authorizedTitle": "Autorisation GitHub",
-      "authorizing": "Enregistrement de votre autorisation…",
-      "authorizedBody": "Autorisé en tant que @{{login}}.",
-      "authorizedUse": "La plateforme ne s’en sert que pour une chose : la pull request qu’une exécution de vos connexions de fork ouvre sur le dépôt d’origine, une fois notre contrôle passé.",
-      "authorizeDeclined": "L’autorisation a été refusée sur GitHub : rien n’est enregistré.",
-      "forkConnected": "Fork connecté : {{repository}}, un fork de {{upstream}}.",
-      "noAuthorizeCode": "Cette page a besoin du lien que GitHub renvoie une fois l’App autorisée. Recommencez depuis Orchestration d'agents → Connexions."
+      "forkConnected": "Fork connecté : {{repository}}, un fork de {{upstream}}."
     },
     "title": "Connexions aux dépôts",
     "intro": "Où travaillent les agents d’ingénierie : chaque dépôt, comment ils y accèdent et s’ils peuvent y pousser.",
@@ -1306,9 +1301,15 @@
       "badge": "Fork de {{upstream}}",
       "owner": "Propriétaire : {{owner}}",
       "licence": "Licence acceptée : {{licence}}",
-      "outcome": "Une exécution se termine par une pull request sur {{upstream}} à un clic : {{owner}} clique sur Create sur GitHub, ou l’app l’ouvre pour cette personne une fois autorisée. Seuls les mainteneurs du dépôt d’origine la fusionnent.",
-      "assisted": "Ouvrir des pull requests sur le dépôt d’origine pour les exécutions assistées par l’IA",
-      "ownerOnly": "Seul {{owner}}, propriétaire de la connexion, peut le modifier."
+      "outcome": "Une exécution se termine par une pull request sur {{upstream}} à un clic : {{owner}} clique sur Create sur GitHub. Seuls les mainteneurs du dépôt d’origine la fusionnent.",
+      "ownerOnly": "Seul {{owner}}, propriétaire de la connexion, peut accepter à nouveau la licence du dépôt d’origine.",
+      "acknowledge": "Accepter la licence actuelle…",
+      "licenceReading": "Lecture de la licence du dépôt d’origine sur GitHub…",
+      "licenceUnread": "La licence du dépôt d’origine n’a pas pu être lue sur GitHub : réessayez.",
+      "licenceNone": "{{upstream}} n’a plus de licence que GitHub reconnaît : il ne prend aucune contribution d’ici.",
+      "licenceNow": "Licence de {{upstream}} désormais : {{licence}}.",
+      "licenceUnchanged": "C’est celle que vous avez acceptée.",
+      "licenceConfirm": "Accepter {{licence}}"
     },
     "public": {
       "title": "Ajouter un dépôt public",
@@ -1354,45 +1355,15 @@
       "step2": "Laissez les agents pousser vers votre fork",
       "step2Hint": "Installez l’app sur votre fork en ne choisissant que ce dépôt. L’app détecte le fork à votre retour.",
       "installOnFork": "Installer l’app sur votre fork",
-      "step3": "Facultatif : ouvrir les pull requests pour vous",
-      "step3Hint": "Avec Autoriser en mon nom, l’app ouvre chaque pull request sur {{upstream}} pour vous. Sans cela, la pull request de chaque exécution est à un clic : vous cliquez sur Create sur GitHub.",
       "stepTitle": "{{number}}. {{title}}",
       "statusDone": "Fait",
       "statusTodo": "À faire",
-      "statusOptional": "Facultatif",
       "cardTitle": "Contribuer à {{upstream}}",
       "cardIntro": "Le dépôt d’origine appartient à {{owner}} ; le fork et ses pull requests sont à vous.",
       "summaryReads": "Lit : {{upstream}} (public, en lecture seule).",
       "summaryPushes": "Les agents poussent vers : {{fork}} (votre fork).",
       "summaryPushesPending": "Les agents poussent vers : votre fork, une fois connecté.",
-      "summaryPullRequests": "Les pull requests vers {{upstream}} viennent de : {{account}} (vous cliquez sur Create, ou l’app l’ouvre pour vous une fois autorisée).",
-      "summaryPullRequestsPending": "Les pull requests vers {{upstream}} viennent de votre fork (vous cliquez sur Create, ou l’app l’ouvre pour vous une fois autorisée).",
-      "step3NoClient": "Définissez d’abord le client OAuth de l’app : Définir le client OAuth de l’App… sur la carte de {{slug}}."
-    },
-    "authorization": {
-      "noClient": "Pour ouvrir les pull requests vers le dépôt d’origine pour vous, l’app a besoin de son client OAuth, qui n’est pas stocké ici. Sans lui, chacune est à un clic.",
-      "setClient": "Définir le client OAuth de l’App…",
-      "reading": "Lecture de votre autorisation…",
-      "unreadable": "Votre autorisation GitHub n’a pas pu être lue.",
-      "needed": "Facultatif : autorisez l’app en votre nom, et elle ouvre pour vous les pull requests de vos forks vers le dépôt d’origine. Sans cela, chacune est à un clic.",
-      "authorize": "Autoriser en mon nom",
-      "as": "Autorisé en tant que @{{login}}",
-      "remove": "Retirer mon autorisation",
-      "removeTitle": "Retirer votre autorisation de {{slug}} ?",
-      "removeMessage": "La plateforme oublie votre autorisation : l’app n’ouvre plus pour vous les pull requests de vos forks vers le dépôt d’origine, et celle de chaque exécution est à un clic sur GitHub. Pour la révoquer aussi sur GitHub : Settings → Applications → Authorized GitHub Apps.",
-      "removeConfirm": "Retirer",
-      "removed": "Votre autorisation de {{slug}} est retirée.",
-      "clientTitle": "Le client OAuth de {{slug}}",
-      "clientDescription": "Enregistré chiffré sur le serveur et jamais réaffiché.",
-      "clientHint": "Sur GitHub : Settings → Developer settings → GitHub Apps → l’App → Generate a new client secret. Le client id est sur la même page.",
-      "callbackHint": "Ajoutez cette Callback URL sur la même page :",
-      "clientId": "Client id",
-      "clientIdInvalid": "Le client id tel que GitHub l’affiche (lettres, chiffres et points).",
-      "clientSecret": "Client secret",
-      "clientSecretHint": "Collé une fois ; jamais réaffiché.",
-      "clientSecretInvalid": "Collez le client secret que GitHub a généré.",
-      "clientSave": "Enregistrer le client",
-      "clientSaved": "Le client OAuth de {{slug}} est enregistré."
+      "summaryPullRequests": "Les pull requests vers {{upstream}} viennent de vous : l’exécution se termine par un lien à un clic, et vous cliquez sur Create sur GitHub."
     }
   },
   "skills": {
@@ -1815,29 +1786,6 @@
     "answer": "Votre message",
     "bytes": "{{used, number}} / {{max, number}} octets",
     "send": "Envoyer",
-    "board": {
-      "post": "Publier une tâche",
-      "role": "Rôle",
-      "title": "Titre",
-      "instructions": "Que faire",
-      "postSubmit": "Publier",
-      "posted": "Publiée.",
-      "controls": "Tâche {{task}}",
-      "take": "Prendre",
-      "takeOver": "Reprendre",
-      "moveTo": "Déplacer vers {{state}}",
-      "block": "Bloquer",
-      "priority": "Priorité",
-      "setPriority": "Définir la priorité",
-      "reason": "Pourquoi",
-      "blockSubmit": "Bloquer la tâche",
-      "takeOverTitle": "Reprendre cette tâche ?",
-      "takeOverMessage": "Une autre personne la détient ({{holder}}) : elle devient la vôtre et ses actions sont refusées.",
-      "duplicate": "Une tâche identique est déjà sur le tableau : rien de nouveau n’a été publié.",
-      "blockOverTitle": "Bloquer cette tâche ?",
-      "blockOverMessage": "Une autre personne la détient ({{holder}}) : la bloquer met fin à sa prise en charge.",
-      "release": "Rendre aux agents"
-    },
     "reports": {
       "title": "Rapport : {{subject}}",
       "version": "Version",
@@ -1860,6 +1808,7 @@
     "notFound": "Exécution d’ingénierie introuvable",
     "notFoundHint": "Vérifiez l’identifiant de l’exécution. Les exécutions d’ingénierie ne s’affichent que là où les agents d’ingénierie sont activés, pour les personnes qui voient toutes les catégories.",
     "modelTokens": "{{model}} : {{input, number}} en entrée, {{output, number}} en sortie",
+    "modelCredits": "{{model}} : {{credits, number}} crédits Kiro ({{cost}})",
     "agentStatus": "{{agent}} : {{status}}",
     "agentNotApplied": "{{agent}} : {{status}} (non appliqué)",
     "status": {
@@ -1977,7 +1926,6 @@
       "sandbox": "Bac à sable de la session",
       "kiro": "Harnais Kiro",
       "fork": "Fork",
-      "user_authorization": "Autorisation GitHub du propriétaire",
       "upstream_pr": "Pull request sur le dépôt d’origine"
     },
     "required": "Nécessaire à l'exécution"
@@ -2253,7 +2201,9 @@
         "head": "L’état actuel du dépôt (rebasé ; un conflit revient à l’agent)"
       },
       "agents": "Agents",
-      "agentsHint": "Aucun coché : chaque tâche non terminée."
+      "agentsHint": "Aucun coché : chaque tâche non terminée.",
+      "model": "Modèle de la nouvelle exécution",
+      "modelDefault": "Les mêmes modèles que cette exécution"
     },
     "header": {
       "cost": "Coût jusqu’ici : {{cost}}",
@@ -2897,7 +2847,6 @@
       "runsNative": "Ce déploiement exécute le rôle sur le harness natif (Amazon Bedrock) : il s’exécute sur {{model}} ({{id}}).",
       "nextRun": "Le démarrage d’une exécution enregistre les modèles : un changement s’applique donc à partir de l’exécution suivante ; une exécution démarrée avec son propre modèle exécute chaque rôle sur celui-ci.",
       "changed": "Modifié par {{who}}, {{at}}.",
-      "template": "Son gabarit indique {{model}}.",
       "save": "Enregistrer le modèle",
       "saved": "Enregistré.",
       "failed": "Le modèle n’a pas pu être enregistré. Réessayez.",
@@ -3071,6 +3020,7 @@
   },
   "modelChoice": {
     "auto": "Auto",
+    "kiroCredits": "Facturé en crédits Kiro à {{price}} le crédit, que le plafond de coût compte.",
     "onHarness": "{{model}} · {{harness}}",
     "harness": {
       "native": "natif",
@@ -3086,13 +3036,17 @@
     "notes": {
       "auto": "Kiro choisit le modèle à chaque tâche. Kiro seulement : sur le harness natif, c’est le modèle par défaut du rôle qui s’exécute.",
       "named": "{{model}} sur les deux harness : {{kiro}} sur Kiro, {{bedrock}} sur le harness natif (Amazon Bedrock).",
-      "other": "Un identifiant de modèle que vous saisissez, utilisé tel quel sur le harness où le rôle s’exécute."
+      "other": "Un identifiant de modèle que vous saisissez, utilisé tel quel sur le harness où le rôle s’exécute.",
+      "otherNative": "Un autre modèle Bedrock que ce déploiement active et tarifie, choisi dans sa liste."
     },
     "other": {
       "label": "Identifiant du modèle",
+      "enabledLabel": "Modèle activé",
+      "choose": "Choisissez un modèle…",
+      "noneEnabled": "Ce déploiement n’active aucun autre modèle. Un administrateur en ajoute un avec -c engineeringModelPrices (docs/deployment.md).",
       "hint": {
         "kiro": "Un identifiant de modèle Kiro, tel que `kiro-cli chat --list-models` les liste (p. ex. claude-sonnet-5.5).",
-        "native": "Un identifiant de modèle ou de profil d’inférence Bedrock que ce déploiement active (p. ex. global.anthropic.claude-sonnet-5-5).",
+        "native": "Les modèles Bedrock que ce déploiement active et tarifie en plus des trois ci-dessus. Un administrateur en ajoute un avec -c engineeringModelPrices (docs/deployment.md).",
         "any": "Pour les rôles sur Kiro, un identifiant de modèle Kiro tel que `kiro-cli chat --list-models` les liste (p. ex. claude-sonnet-5.5) ; pour les rôles sur le harness natif, un identifiant de modèle Bedrock que ce déploiement active (p. ex. global.anthropic.claude-sonnet-5-5)."
       }
     },

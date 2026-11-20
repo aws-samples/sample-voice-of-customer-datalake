@@ -9,8 +9,7 @@
  * repositories** (a new install link, opened in this tab). Its "⋯": Open <slug> on GitHub ↗ · Check installation
  * (installed only) · Remove App… (its key and webhook secret deleted here, refused while connections use it; the App
  * stays on GitHub). A check says what it found and what followed for the GitHub Issues source (ConnectionIssues.tsx
- * `IssuesFollowLines`). Since 7.57.00, under the header, the person's own GitHub authorization of the App
- * (AppAuthorization.tsx: what opens a fork connection's upstream pull request as its owner), where it matters.
+ * `IssuesFollowLines`).
  *
  * @module pages/Agents/AppGroup
  */
@@ -23,7 +22,6 @@ import Notice from '../../components/Notice/Notice'
 import { RowActionsMenu } from '../../components/RowActionsMenu/RowActionsMenu'
 import { githubAppsApi, githubAppsKeys } from '../../api/githubAppsApi'
 import { formatRelativeDate } from '../../utils/dateUtils'
-import { AppAuthorization } from './AppAuthorization'
 import { ConnectionChangeConfirm } from './ConnectionModals'
 import { IssuesFollowLines } from './ConnectionIssues'
 import { RepositoryList } from './ConnectionRow'
@@ -91,7 +89,7 @@ function appMenu(app: GitHubApp, labels: Readonly<{ open: string; check: string;
   return entries
 }
 
-export function AppGroup({ group, view, record, checking, actions, onCheck, onNotice, contributing = false }: Readonly<{
+export function AppGroup({ group, view, record, checking, actions, onCheck, onNotice }: Readonly<{
   group: AppGroupOf
   /** The deployment's GitHub Issues source's view, once read. */
   view: IssuesSourceView | undefined
@@ -102,8 +100,6 @@ export function AppGroup({ group, view, record, checking, actions, onCheck, onNo
   actions: RowActions
   onCheck: () => void
   onNotice: (text: string) => void
-  /** (7.57.00) The deployment reads a public repository or contributes to one: the person's authorization line shows. */
-  contributing?: boolean
 }>) {
   const { t } = useTranslation('agents')
   const titleId = useId()
@@ -125,7 +121,6 @@ export function AppGroup({ group, view, record, checking, actions, onCheck, onNo
         installing={install.isPending} onInstall={startInstall} menu={menu} />
       <AppCheckLines app={app} result={result} checking={checking} installing={install.isPending} onInstall={startInstall}
         failed={install.isError ? install.error : record?.error ?? null} />
-      <AppAuthorizationWhere app={app} contributing={contributing} onNotice={onNotice} />
       {connections.length > 0 && (
         <RepositoryList label={t('connections.githubApp.repositoriesLabel', { slug: app.slug })} connections={connections}
           view={view} actions={actions} labelBusy={() => checking} />
@@ -133,13 +128,6 @@ export function AppGroup({ group, view, record, checking, actions, onCheck, onNo
       {removing && <RemoveApp app={app} onClose={() => { setRemoving(false) }} onNotice={onNotice} />}
     </section>
   )
-}
-
-/** The person's authorization of the App (7.57.00), where it matters: its OAuth client stored, or public repositories used. */
-function AppAuthorizationWhere({ app, contributing, onNotice }: Readonly<{
-  app: GitHubApp; contributing: boolean; onNotice: (text: string) => void
-}>) {
-  return app.oauth || contributing ? <AppAuthorization app={app} onNotice={onNotice} /> : null
 }
 
 /** The App's header row: its tile, slug, account and state, its one button and its "⋯". */

@@ -21,7 +21,7 @@ edit here. Kiro's own tools are never offered:
   (which the tool server enforces again), ``reject_once`` for everything else, never an ``allow_always``; a request it
   cannot read is answered ``cancelled``. Each decision is in the transcript (``permission``).
 - **The key.** ``KIRO_API_KEY`` is read just in time from SSM (``ssm_key``: the deployment's
-  ``/[<prefix>-]voc/engineering/_kiro/api-key``, which only the roles that run on Kiro may read), with the agent's own
+  ``/[<prefix>-]voc/engineering-kiro/api-key``, which only the roles that run on Kiro may read), with the agent's own
   role session, and handed to kiro-cli's environment only: never an argument, a file, a log line, the transcript, the
   status or the tool server (whose config blanks it). Nothing here keeps it after the child started.
 
@@ -42,6 +42,15 @@ The ACP mapping (docs/autonomous-engineering.md, "The Kiro harness (7.53.00)"):
 - progress = ``session/update``: ``agent_message_chunk`` and ``agent_thought_chunk`` (coalesced), Kiro's own tool calls
   and refused ones as ``tool_call``/``tool_result`` with the ACP ``call_id``, ``tool_kind`` and ``status`` (the
   platform's tools are recorded by the tool server, as for the CLI), ``plan`` and ``usage_update``;
+- spend (7.58.00) = each turn's credits as kiro-cli reports them (``turn_credits``): on the v3 engine (the harness's,
+  ``KIRO_ARGV``) a ``session_info_update`` of kind ``turn_completion`` (``promptTurnSummaries``, ``elapsedTime``,
+  ``turnId``), on the v2 engine the ``_kiro.dev/metadata`` that carries ``meteringUsage`` and ``turnDurationMs``; the
+  entries in ``credit`` are summed, counted once per turn (a v3 turn by its id), recorded (``kiro_credits``: the
+  credits, the turn's milliseconds, the model) and reported on the session's status as the model ``kiro:<model>``'s
+  ``micro_credits``, which the runtime ledgers at the deployment's price per credit
+  (``-c engineeringKiroCreditPrice``), so the run's cost cap, its flow's budget and the hard cap count them; another
+  unit is recorded, never counted, and v3's running total (``session_usage``) is recorded beside them
+  (``kiro_session_credits``), never counted;
 - resume = ``session/load {sessionId}`` in the new process, from the Kiro session's state saved with each checkpoint
   (``$HOME/.kiro/sessions``, packed under the agent's own ``_kiro/attempt-<n>/`` keys) or with a child run's seed;
   without one, or when the load is refused, the 7.51 path: a fresh session opened with the checkpoint's notes, or the
@@ -63,6 +72,7 @@ import tarfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from decimal import ROUND_CEILING, Decimal
 from typing import Any, Final
 
 from engineering.runtime.checkpoints import artifact_prefix
@@ -76,6 +86,7 @@ from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 from engineering.runtime.harness.tools import DIRECTION, MAX_RUN_SECONDS, STEER
 from engineering.runtime.harness.transcript import tool_kind
 from engineering.runtime.harness.waiting import TOOL
+from engineering.runtime.interface import MICRO_PER_CREDIT
 
 KIRO_BINARY: Final = '/usr/local/bin/kiro-cli'
 #: How it is started: ACP on stdio, the v3 engine (whose agents are chosen per session, ``session/set_config_option``).
@@ -454,6 +465,11 @@ class _KiroRun:
         self.from_seed = False
         #: The model this session runs on Kiro (7.58.00, ``wanted_model``): '' for a session given none.
         self.wanted = ''
+        #: (7.58.00) The model its credits are ledgered under (``kiro:<model>``, Kiro's answer once the session opened),
+        #: the v3 turns already counted (by ``turnId``) and the millionths of a credit counted in this session.
+        self.metered_model = ''
+        self.metered_turns: set[str] = set()
+        self.counted_micro = 0
 
     # -- the process ----------------------------------------------------------------------------------------------
 
@@ -569,6 +585,11 @@ class _KiroRun:
         return decision.answer
 
     def on_notification(self, notification: Notification) -> None:
+        if notification.method == METADATA_METHOD:
+            # (the v2 engine's own notification: a turn's credits, 7.58.00; never a loaded session's history)
+            if notification.params.get('sessionId', self.session_id) == self.session_id and not self.replaying:
+                self.metered(notification.method, notification.params)
+            return
         if notification.method != 'session/update':
             return
         update = notification.params.get('update')
@@ -585,6 +606,11 @@ class _KiroRun:
                 self.hold(kind, text)
             return
         self.flush_chunks()
+        self.other_update(kind, update, notification)
+
+    def other_update(self, kind: str, update: Mapping[str, Any], notification: Notification) -> None:
+        """A ``session/update`` other than a chunk: Kiro's own tool calls, its plan, its usage, and (7.58.00) its
+        ``session_info_update`` (a v3 turn's credits, or the session's total, among Kiro's other news)."""
         if kind == 'tool_call':
             self.tool_call(update)
         elif kind == 'tool_call_update':
@@ -593,6 +619,31 @@ class _KiroRun:
             self.record('plan', entries=update.get('entries', []))
         elif kind == 'usage_update':
             self.record('usage', **{str(name): value for name, value in update.items() if name != 'sessionUpdate'})
+        elif kind == 'session_info_update':
+            self.metered(notification.method, notification.params)
+
+    def metered(self, method: str, params: Mapping[str, Any]) -> None:
+        """(7.58.00) A turn's credits, as kiro-cli reported them (``turn_credits``): recorded (``kiro_credits``) and,
+        once per turn (a v3 turn by its id: a second report of it is recorded, never counted), reported on the status
+        as ``kiro:<model>``'s millionths of a credit, which the runtime ledgers at the deployment's price. v3's running
+        total is recorded beside them, with what this session counted (``kiro_session_credits``), never counted."""
+        found = turn_credits(method, params)
+        if found is None:
+            total = session_credits(params)
+            if total is not None:
+                self.record('kiro_session_credits', credits=float(total), counted_credits=self.counted_micro / MICRO_PER_CREDIT)
+            return
+        repeated = bool(found.turn_id) and found.turn_id in self.metered_turns
+        if found.turn_id:
+            self.metered_turns.add(found.turn_id)
+        model = f'kiro:{self.metered_model or "unknown"}'
+        counted = not repeated and found.micro_credits > 0
+        self.record('kiro_credits', credits=found.micro_credits / MICRO_PER_CREDIT, micro_credits=found.micro_credits,
+                    turn_ms=found.turn_ms, model=model, engine=found.engine, turn_id=found.turn_id or None,
+                    counted=counted, **({'ignored': list(found.ignored)} if found.ignored else {}))
+        if counted:
+            self.counted_micro += found.micro_credits
+            self.context.status.add_credits(model, found.micro_credits)
 
     def hold(self, kind: str, text: str) -> None:
         """One chunk of the agent's answer or thinking, coalesced with the ones before it of the same kind."""
@@ -672,6 +723,8 @@ class _KiroRun:
         if _current(mode, 'mode') != self.context.role:
             raise AcpError(f'kiro-cli did not select the {self.context.role} agent')
         model = self.choose_model(self.wanted) if self.wanted else _current(mode, 'model')
+        # (its credits' ledger model: what Kiro answered, else what was asked; plain characters, as a ledger key takes)
+        self.metered_model = _LEDGER_MODEL.sub('-', model or self.wanted)[:80]
         self.context.status.at(f'kiro session {"loaded" if loaded else "started"}' + (f' on {model}' if model else ''))
         self.session.checkpoint_extra = self.save_state
         return loaded
@@ -707,8 +760,10 @@ class _KiroRun:
         self.record('kiro_model', wanted=wanted, current=current or 'none')
         why = (f'it answered {current or "none"}' + (f': {words}' if words else '')
                + (f'; Kiro does not offer {wanted} on this account' if offered and wanted not in offered else ''))
-        raise ModelRefused(f'Kiro could not use {wanted} for the {self.context.role} ({why}). Choose another model in '
-                           "the role's setup or for this run.")
+        # (A Resume or a Restart keeps the run's models, the roles' own as its start read them: only the Restart's
+        # Model, or a new run, changes them.)
+        raise ModelRefused(f'Kiro could not use {wanted} for the {self.context.role} ({why}). Restart the run with '
+                           'another model (Restart run, Model), or start a new run with one.')
 
     def load(self, session_id: str) -> tuple[bool, str]:
         """``session/load`` of the restored session (its history replayed, counted, not recorded again): whether it
@@ -918,6 +973,105 @@ def _offered(answer: Mapping[str, Any], option: str) -> list[str]:
             if isinstance(value, str) and value and value[:128] not in values:
                 values.append(value[:128])
     return values[:MAX_OFFERED]
+
+
+# -- Kiro's credits (7.58.00) ---------------------------------------------------------------------------------------
+
+#: The v2 engine's own notification: several per turn, the one at a turn's end with ``meteringUsage`` (each entry
+#: ``{value, unit, unitPlural}``) and ``turnDurationMs`` (checked live on kiro-cli 3.4.0 and 3.5.0, 2026-11-20).
+METADATA_METHOD: Final = '_kiro.dev/metadata'
+#: The v3 engine's (the harness's, ``KIRO_ARGV``): a ``session_info_update`` whose ``_meta.kiro.kind`` is
+#: ``turn_completion`` carries the turn's ``promptTurnSummaries`` (each ``{usage, unit, unitPlural}``), ``elapsedTime``
+#: (ms) and ``turnId``; one of kind ``session_usage`` the session's running total (``credits``), never counted (its
+#: turns are). Checked live on kiro-cli 3.5.0, 2026-11-20: the v3 engine sends no ``_kiro.dev/metadata``.
+TURN_COMPLETION: Final = 'turn_completion'
+SESSION_USAGE: Final = 'session_usage'
+CREDIT_UNIT: Final = 'credit'
+#: The most credits one turn's entry is taken to say: past it, it is off its shape (recorded, never counted).
+MAX_TURN_CREDITS: Final = Decimal(100_000)
+#: The most entries not counted a turn's record keeps.
+MAX_IGNORED: Final = 5
+#: A ledger model's characters (``spend.py`` key parts): anything else in Kiro's model id becomes ``-``.
+_LEDGER_MODEL: Final = re.compile(r'[^A-Za-z0-9._:/-]')
+
+
+@dataclass(frozen=True)
+class TurnCredits:
+    """One turn's credits as kiro-cli reported them: in millionths of a credit (rounded up, never below what it said),
+    the turn's milliseconds (None when it said none), its id (v3's; '' on v2), the engine's shape it came in, and the
+    entries not counted (another unit, or an amount off its shape), as they came."""
+
+    micro_credits: int
+    turn_ms: int | None
+    turn_id: str
+    engine: str
+    ignored: tuple[dict[str, Any], ...] = ()
+
+
+def _kiro_meta(params: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """A ``session/update``'s ``update._meta.kiro`` (v3's own fields), None for one without it."""
+    found: object = params
+    for key in ('update', '_meta', 'kiro'):
+        found = found.get(key) if isinstance(found, Mapping) else None
+    return found if isinstance(found, Mapping) else None
+
+
+def _credits(entry: object, amount: str) -> Decimal | None:
+    """An entry's credits (its ``amount`` field: v2's ``value``, v3's ``usage``), None unless its unit is ``credit`` and
+    its amount a number from 0 to ``MAX_TURN_CREDITS``."""
+    if not isinstance(entry, Mapping) or entry.get('unit') != CREDIT_UNIT:
+        return None
+    raw = entry.get(amount)
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    value = Decimal(str(raw))
+    return value if value.is_finite() and Decimal(0) <= value <= MAX_TURN_CREDITS else None
+
+
+def _shown(entry: object) -> dict[str, Any]:
+    """An entry not counted, as the turn's record keeps it: a few of its fields, plain and short."""
+    if not isinstance(entry, Mapping):
+        return {'entry': str(entry)[:100]}
+    return {str(name)[:40]: value if isinstance(value, int | float) and not isinstance(value, bool) else str(value)[:100]
+            for name, value in list(entry.items())[:6]}
+
+
+def turn_credits(method: str, params: Mapping[str, Any]) -> TurnCredits | None:
+    """The credits a notification says one turn used, in either engine's shape (``METADATA_METHOD``'s
+    ``meteringUsage``, v3's ``turn_completion``): the entries in ``credit`` summed; None for a notification that reports
+    no turn's (most of them, v3's running total among them)."""
+    if method == METADATA_METHOD:
+        entries, elapsed, turn, engine, amount = (params.get('meteringUsage'), params.get('turnDurationMs'), '', 'v2',
+                                                  'value')
+    else:
+        kiro = _kiro_meta(params)
+        if kiro is None or kiro.get('kind') != TURN_COMPLETION:
+            return None
+        entries, elapsed, engine, amount = kiro.get('promptTurnSummaries'), kiro.get('elapsedTime'), 'v3', 'usage'
+        turn = _LEDGER_MODEL.sub('-', str(kiro.get('turnId') or ''))[:128]
+    if entries is None:
+        return None
+    total, ignored = Decimal(0), []
+    for entry in entries if isinstance(entries, list) else [entries]:
+        value = _credits(entry, amount)
+        if value is None:
+            ignored.append(_shown(entry))
+        else:
+            total += value
+    micro = int((total * MICRO_PER_CREDIT).to_integral_value(rounding=ROUND_CEILING))
+    turn_ms = elapsed if isinstance(elapsed, int) and not isinstance(elapsed, bool) and elapsed >= 0 else None
+    return TurnCredits(micro, turn_ms, turn, engine, tuple(ignored[:MAX_IGNORED]))
+
+
+def session_credits(params: Mapping[str, Any]) -> Decimal | None:
+    """v3's ``session_usage``: the Kiro session's running total of credits (recorded beside its turns', never counted:
+    a loaded session's total holds the turns its earlier harness sessions counted already); None for any other."""
+    kiro = _kiro_meta(params)
+    if kiro is None or kiro.get('kind') != SESSION_USAGE:
+        return None
+    entries = kiro.get('credits')
+    values = [_credits(entry, 'usage') for entry in entries] if isinstance(entries, list) else []
+    return sum((value for value in values if value is not None), Decimal(0))
 
 
 def _tool_text(update: Mapping[str, Any]) -> str:

@@ -1,4 +1,5 @@
-"""The harness's own report for the run monitor: its step, its recent tool calls, its tokens per model.
+"""The harness's own report for the run monitor: its step, its recent tool calls, its tokens per model (and, 7.58.00,
+a Kiro session's credits: ``add_credits``).
 
 Written to ``~/.voc/status.json`` in the agent's home (the runner reads it without following links,
 bounded and scrubbed: ``unit_runner.Runner.status``), atomically, after every model call and tool call.
@@ -10,6 +11,8 @@ import os
 import tempfile
 from collections import deque
 from typing import Final
+
+from engineering.runtime.interface import MICRO_CREDITS
 
 MAX_RECENT: Final = 10
 
@@ -26,6 +29,12 @@ class StatusReport:
         counts = self.tokens.setdefault(model_id, {'in': 0, 'out': 0})
         counts['in'] += tokens_in
         counts['out'] += tokens_out
+        self.write()
+
+    def add_credits(self, model_id: str, micro_credits: int) -> None:
+        """(7.58.00) A Kiro turn's credits, in millionths (``interface.MICRO_CREDITS``), on the model's counts."""
+        counts = self.tokens.setdefault(model_id, {'in': 0, 'out': 0})
+        counts[MICRO_CREDITS] = counts.get(MICRO_CREDITS, 0) + micro_credits
         self.write()
 
     def tool(self, name: str) -> None:

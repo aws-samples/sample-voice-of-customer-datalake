@@ -11,7 +11,8 @@
 //   GET  …/<run>/agents/<agent>/{files,gate,memory}      the fixer's files and memory, the gate runner's gate
 //   GET  …/<run>/assertions                              the gate step's assertions
 //   POST …/<run>/steer {text, about?, thread_id?}        202; recorded as msg.steer to the conductor
-//   POST …/<run>/restart {mode, agents?, base, confirm}  409 for the live sample run; 202 a child for the ended run
+//   POST …/<run>/restart {mode, agents?, base, model?, confirm}  409 for the live sample run; 202 a child for the
+//                                                       ended run (7.58.00: model, one for every role, taken as given)
 //   GET  /agents/engineering/<ended run> and <child run>  their overviews (a parent and its child)
 //   GET  /agents/engineering/<failed run>[/agents/coordinator-1/thread]  (7.51.04) a run at a person whose
 //                                                       orchestrator failed at its checkout (exit 128, the

@@ -32,11 +32,24 @@ _INVALID: Final = -32602
 _INTERNAL: Final = -32603
 
 
+#: A wake marker's name: ``wake-<time_ns, 20 digits>-<8 hex>.json``.
+WAKE: Final = 'wake-'
+
+
+def _left_at(name: str) -> int:
+    """When a wake marker was left (its name's ``time_ns``); 0 for a name off its shape, never newer than a wait."""
+    stamp = name[len(WAKE):len(WAKE) + 20]
+    return int(stamp) if stamp.isdigit() else 0
+
+
 class SessionFiles:
     """What the tool server tells the harness: the agent's last checkpoint notes, and its finish."""
 
     def __init__(self, directory: str) -> None:
         self.directory = directory
+        #: When the tool call being answered began (``time.time_ns``; 0 before any): a ``wait_for_agents``'s start,
+        #: before which a wake ends nothing (``woken``).
+        self.call_started = 0
 
     def _path(self, name: str) -> str:
         return os.path.join(self.directory, f'{name}.json')
@@ -69,18 +82,20 @@ class SessionFiles:
 
     def wake(self) -> None:
         """End a ``wait_for_agents`` under way (7.54.00: the Kiro adapter, which sends steering as a prompt, never as a
-        batch): one marker file, never rewritten."""
-        self.write(f'wake-{time.time_ns():020d}-{secrets.token_hex(4)}', {})
+        batch): one marker file, never rewritten, named with when it was left."""
+        self.write(f'{WAKE}{time.time_ns():020d}-{secrets.token_hex(4)}', {})
 
-    def woken(self) -> bool:
-        """Whether a wake was left; each marker is taken once."""
+    def woken(self, since: int = 0) -> bool:
+        """Whether a wake was left at ``since`` (``time.time_ns``: the wait's start) or later; each marker is taken
+        once, and an older one is taken unread. The adapter leaves one with every steering prompt, waiting or not: one
+        left outside a wait (its steering already in the conversation) never ends the next wait at once (7.58.00)."""
         found = False
         with contextlib.suppress(FileNotFoundError):
             for name in os.listdir(self.directory):
-                if name.startswith('wake-') and name.endswith('.json'):
+                if name.startswith(WAKE) and name.endswith('.json'):
                     with contextlib.suppress(FileNotFoundError):
                         os.remove(os.path.join(self.directory, name))
-                        found = True
+                        found = found or _left_at(name) >= since
         return found
 
     def take_messages(self) -> list[dict[str, Any]]:
@@ -119,8 +134,9 @@ def _taken(files: SessionFiles) -> tuple[InboxMessage, ...]:
 
 def waiter(files: SessionFiles) -> Waiter:
     """How ``wait_for_agents`` looks at the inbox in this server (7.54.00): the batches its harness left, and the
-    Kiro adapter's wake; never a pause (the harness acts on one itself, ending this server)."""
-    return lambda: News(messages=_taken(files), interrupted=files.woken())
+    Kiro adapter's wake left since the call began (7.58.00); never a pause (the harness acts on one itself, ending this
+    server)."""
+    return lambda: News(messages=_taken(files), interrupted=files.woken(files.call_started))
 
 
 def _messages(files: SessionFiles, context: AgentContext) -> str:
@@ -149,6 +165,7 @@ def answer(toolbox: ToolBox, files: SessionFiles, request: Mapping[str, Any]) ->
         arguments = params.get('arguments')
         if not isinstance(params.get('name'), str) or not isinstance(arguments, dict | None):
             return {'jsonrpc': '2.0', 'id': ident, 'error': {'code': _INVALID, 'message': 'name and arguments'}}
+        files.call_started = time.time_ns()
         try:
             outcome = toolbox.call(params['name'], arguments or {})
         except Exception as error:  # noqa: BLE001 - said to the harness, which crashes the session from it

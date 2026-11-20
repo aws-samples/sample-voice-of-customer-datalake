@@ -148,6 +148,8 @@ export interface RestartRequest {
   mode: RestartMode
   base: RestartBase
   agents?: string[]
+  /** (7.58.00) One model for every role of the new run (Run now's choice); absent: the run's own models. */
+  model?: string
 }
 
 const SteeredSchema = z.object({ message: z.object({ event_id: z.string().min(1), at: text }) })

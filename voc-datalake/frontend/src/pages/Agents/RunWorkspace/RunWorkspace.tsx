@@ -64,9 +64,6 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
 }>) {
   const isAdmin = useIsAdmin()
   const controlsId = useId()
-  // A person's board actions by their own flag (7.51.02: none reaches a run yet, the bus taking only steering and
-  // answers from the Agents API).
-  const canAct = isAdmin && overview.board_available
   const orchestrator = orchestratorOf(overview.agents)?.agent ?? null
   const current = agentInPath ?? orchestrator
   const agentIds = useMemo(() => new Set(overview.agents.map((agent) => agent.agent)), [overview.agents])
@@ -94,7 +91,7 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
             actions={sessionActions(isAdmin, live, overview)} sessions={sessions} />
         </div>
         <div className="order-3 min-w-0 lg:col-span-2 2xl:col-span-1">
-          <Inspector runId={runId} overview={overview} agent={shown} live={live} canAct={canAct} readAt={readAt} onOpen={openSession}
+          <Inspector runId={runId} overview={overview} agent={shown} live={live} readAt={readAt} onOpen={openSession}
             step={step} onCloseStep={() => setStep(null)} />
         </div>
       </div>

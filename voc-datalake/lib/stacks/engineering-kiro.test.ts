@@ -9,11 +9,13 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApiStack, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
 import { functionEnv, policyText, runtimeStack, supervisorEnv } from '../test-support/engineering-runtime-fixture';
+import { processingSynths } from '../test-support/engineering-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { engineeringHarness } from './engineering-kiro';
+import { engineeringParameterPrefix } from './engineering-broker';
+import { engineeringHarness, kiroKeyParameterName } from './engineering-kiro';
 import { AGENT_ROLES } from './engineering-runtime';
 
-const KEY = '/voc/engineering/_kiro/api-key';
+const KEY = '/voc/engineering-kiro/api-key';
 const scope = (value: unknown): cdk.App => new cdk.App({ context: value === undefined ? {} : { engineeringHarness: value } });
 
 describe('-c engineeringHarness', () => {
@@ -43,7 +45,7 @@ describe('the runtime on Kiro', { timeout: SYNTH_TIMEOUT_MS }, () => {
     const { template } = runtimeStack({ engineeringAgents: 'true' });
     const env = supervisorEnv(template);
     expect([env.ENGINEERING_HARNESS, 'ENGINEERING_KIRO_KEY_PARAMETER' in env]).toStrictEqual(['native', false]);
-    expect(JSON.stringify(template.toJSON())).not.toMatch(/KiroApiKey|_kiro\/api-key/);
+    expect(JSON.stringify(template.toJSON())).not.toMatch(/KiroApiKey|engineering-kiro\/api-key/);
   });
 
   it('names the switch and the key parameter to the runtime, never to the delivery', () => {
@@ -57,14 +59,14 @@ describe('the runtime on Kiro', { timeout: SYNTH_TIMEOUT_MS }, () => {
   it('grants exactly the roles on Kiro the key, its one parameter, decrypted through SSM for it alone', () => {
     const { template } = runtimeStack({ engineeringAgents: 'true', engineeringHarness: 'kiro:fixer' });
     const fixer = policyText(template, 'EngineeringAgentFixerRole');
-    expect([/"Action":"ssm:GetParameter".*?parameter\/voc\/engineering\/_kiro\/api-key"/.test(fixer),
+    expect([/"Action":"ssm:GetParameter".*?parameter\/voc\/engineering-kiro\/api-key"/.test(fixer),
       fixer.includes('"Sid":"KiroApiKeyDecrypt"'), fixer.includes('"kms:ViaService":"ssm.us-east-1.amazonaws.com"'),
-      /"kms:EncryptionContext:PARAMETER_ARN":\{?.*?parameter\/voc\/engineering\/_kiro\/api-key/.test(fixer)])
+      /"kms:EncryptionContext:PARAMETER_ARN":\{?.*?parameter\/voc\/engineering-kiro\/api-key/.test(fixer)])
       .toStrictEqual([true, true, true, true]);
     // No wildcard on the key, no other parameter, no put.
-    expect(fixer).not.toMatch(/_kiro\/\*|ssm:PutParameter|ssm:GetParameters"/);
+    expect(fixer).not.toMatch(/engineering-kiro\/\*|ssm:PutParameter|ssm:GetParameters"/);
     const others = ['EngineeringAgentHunterRole', 'EngineeringAgentCoordinatorRole', 'EngineeringSupervisorRole',
-      'EngineeringDeliveryRole'].filter((role) => /KiroApiKey|_kiro\/api-key/.test(policyText(template, role)));
+      'EngineeringDeliveryRole'].filter((role) => /KiroApiKey|engineering-kiro\/api-key/.test(policyText(template, role)));
     expect(others).toStrictEqual([]);
   });
 });
@@ -83,8 +85,60 @@ describe('readiness on Kiro', { timeout: SYNTH_TIMEOUT_MS }, () => {
     const kiro = statements(template).filter((statement) => statement.actions.some((action) => action.startsWith('ssm:Describe')));
     expect(kiro.map((statement) => [statement.actions, statement.resource])).toStrictEqual(
       [[['ssm:DescribeParameters'], '"*"']]);
-    expect(JSON.stringify(statements(template))).not.toMatch(/_kiro\/api-key/);
+    expect(JSON.stringify(statements(template))).not.toMatch(/engineering-kiro\/api-key/);
     const env = serviceEnvironment(template, 'voc-agents-api');
     expect([env.ENGINEERING_HARNESS, env.ENGINEERING_KIRO_KEY_PARAMETER]).toStrictEqual(['kiro', KEY]);
+  });
+});
+
+/** IAM's glob (an ARN's or a StringLike's): `*` any run of characters, `?` one. */
+function globMatches(pattern: string, value: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.');
+  return new RegExp(`^${escaped}$`).test(value);
+}
+
+/** A synthesized ARN with its `Fn::Join` flattened and the partition named (`{Ref: AWS::Partition}` as `aws`). */
+function flatArn(resource: unknown): string {
+  const text = JSON.stringify(resource);
+  const joined = /^\{"Fn::Join":\["",(\[.*\])\]\}$/.exec(text)?.[1];
+  if (joined === undefined) return typeof resource === 'string' ? resource : text;
+  const parts: unknown = JSON.parse(joined);
+  return (Array.isArray(parts) ? parts : []).map((part: unknown) => (typeof part === 'string' ? part : 'aws')).join('');
+}
+
+describe('the key\'s own path (7.58.00)', { timeout: SYNTH_TIMEOUT_MS }, () => {
+  const processing = processingSynths({ kiro: { engineeringAgents: true, engineeringHarness: 'kiro' } });
+
+  it('is beside the connections\' path, never under it, unprefixed and prefixed', () => {
+    expect([kiroKeyParameterName('/voc/engineering/'), kiroKeyParameterName('/b-voc/engineering/')])
+      .toStrictEqual(['/voc/engineering-kiro/api-key', '/b-voc/engineering-kiro/api-key']);
+    expect(() => kiroKeyParameterName('/voc/other/')).toThrow(/the connections' path ends in \/engineering\//);
+    for (const prefix of [undefined, 'b']) {
+      const connections = `${engineeringParameterPrefix(prefix)}*`;   // (every grant on a connection's parameter)
+      expect([globMatches(connections, kiroKeyParameterName(engineeringParameterPrefix(prefix))),
+        globMatches(connections, `${engineeringParameterPrefix(prefix)}conn-1`)]).toStrictEqual([false, true]);
+    }
+  });
+
+  it('is reached by none of the connections\' readers or writers: the broker, the cache writer, the Agents API', () => {
+    const ssm = (statement: { Action?: unknown; Resource?: unknown }) => [statement.Action].flat()
+      .some((action) => String(action).startsWith('ssm:'));
+    const reaching = (parameter: string) => Object.entries(processing('kiro').findResources('AWS::IAM::Policy'))
+      .filter(([, policy]) => !/EngineeringAgent[A-Za-z]+Role/.test(JSON.stringify(policy.Properties?.Roles)))
+      .flatMap(([id, policy]) => (policy.Properties?.PolicyDocument?.Statement ?? [])
+        .filter(ssm).filter((statement: { Resource?: unknown }) => [statement.Resource].flat()
+          .some((resource) => /:parameter\//.test(flatArn(resource))
+            && globMatches(flatArn(resource).replace(/^arn:aws:ssm:[^:]*:[^:]*:/, ''), `parameter${parameter}`)))
+        .map(() => id));
+    // (the control: the broker's and the cache writer's reads of every connection's parameter reach the old place)
+    expect([reaching('/voc/engineering/conn-1').length >= 2, reaching('/voc/engineering/_kiro/api-key').length >= 2])
+      .toStrictEqual([true, true]);
+    expect(reaching(KEY)).toStrictEqual([]);
+    const api = TemplateOf.fromStack(buildApiStack({ engineeringAgents: true, engineeringHarness: 'kiro' }));
+    const writes = policyStatementsOf(api, 'AgentsLambdaRole').filter((statement) => statement.actions
+      .some((action) => /^ssm:(Put|Delete|Get)Parameter/.test(action)));
+    expect(writes.length).toBeGreaterThan(0);   // (its connections' puts and deletes: under /voc/engineering/* only)
+    expect(writes.filter((statement) => /engineering-kiro|parameter\/voc\/\*|parameter\/\*/.test(statement.resource)))
+      .toStrictEqual([]);
   });
 });

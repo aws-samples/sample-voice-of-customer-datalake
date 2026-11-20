@@ -159,6 +159,10 @@
     {
       "key": "FEEDBACK_FORM_SOURCE|FORM_DELETE_KIND::lambda/api/feedback_form_handler.py,lambda/shared/feedback_form_raw.py",
       "reason": "the same word in two vocabularies: the source id every form response is filed under (feedback_form_raw.py, stored on every item) and the kind of a deployment form's AUDIT#delete row (shared/delete_audit.py kinds: persona, document, feedback_form...); one may change without the other"
+    },
+    {
+      "key": "MICRO_CREDITS::lambda/engineering/runtime/interface.py,lambda/engineering/runtime/unit_runner.py",
+      "reason": "a Kiro session's credits count on its tokens per model (7.58.00): the runtime's rule (engineering/runtime/interface.py) and the unit runner's, which ships alone in the agent image and imports nothing of the repository; held equal by engineering/runtime/test/test_engineering_kiro_credits.py"
     }
   ]
 }

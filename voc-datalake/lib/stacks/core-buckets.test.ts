@@ -12,6 +12,7 @@ import {
   RAW_BUCKET_WORKSPACE_PREFIXES,
   APPEND_ONLY_PREFIXES,
   ENGINEERING_CACHE_EXPIRATION_DAYS,
+  ENGINEERING_REPO_PARTITIONS,
   ENGINEERING_WORKSPACE,
   RAW_LAYER_PREFIX,
   SILVER_HISTORY_PREFIX,
@@ -326,6 +327,20 @@ describe('VocCoreStack engineering workspace bucket', () => {
       Condition: { Null: { 's3:if-none-match': 'true' }, Bool: { 's3:ObjectCreationOperation': 'true' } },
     }]);
     expect(JSON.stringify(denies[0]?.['Resource'])).toContain('"/*"');
+  });
+
+  it('pins the repositories\' partitions to the workspace, never the agent memory\'s repository partitions (7.58.00)', () => {
+    // IAM's StringLike: `*` any run of characters, `?` one. 'WS#*#REPO#*' matched 'WS#default#AMEM#REPO#<connection>'
+    // too, so the Agents API's KnowledgeDecisions and the runtime's TenetsDrafts could write repository memory.
+    const like = new RegExp(`^${ENGINEERING_REPO_PARTITIONS.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replaceAll('*', '.*').replaceAll('?', '.')}$`);
+    expect(ENGINEERING_REPO_PARTITIONS).toBe('WS#default#REPO#*');
+    expect(like.test('WS#default#REPO#conn-1')).toBe(true);
+    for (const memory of ['WS#default#AMEM#REPO#conn-1', 'WS#default#AMEM#ROLE#conn-1#fixer', 'WS#other#REPO#conn-1']) {
+      expect(like.test(memory)).toBe(false);
+    }
+    const model = readFileSync(join(__dirname, '../../lambda/engineering/agent_memory/model.py'), 'utf8');
+    expect(model).toContain("return f'WS#{ws}#AMEM#REPO#{self.connection}'");   // (the key the pattern must miss)
   });
 
   it('keeps the workspace key layout of lambda/engineering/workspace/layout.py and the one workspace of identity.py', () => {

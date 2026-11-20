@@ -3,9 +3,7 @@
  * code and state) and GitHubAppInstalled.tsx (the installation's id, its setup action and the state). Each takes its
  * query, removes it from the address at once with a replace (the code is a bearer credential for an hour), and sends
  * its one request exactly once, StrictMode's double effects included; without what it needs, or when GitHub says an
- * owner must approve the installation, it sends nothing. A refusal is said in the server's words. Since 7.57.00 the
- * same holds for GitHubAppAuthorized.tsx (a person's authorization of the App: its code and state), which sends nothing
- * when GitHub says the person declined.
+ * owner must approve the installation, it sends nothing. A refusal is said in the server's words.
  */
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -22,12 +20,9 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 
 const { default: GitHubAppCreated } = await import('./GitHubAppCreated')
 const { default: GitHubAppInstalled } = await import('./GitHubAppInstalled')
-const { default: GitHubAppAuthorized } = await import('./GitHubAppAuthorized')
 
 const CREATED = '/agents/connections/github/created'
 const INSTALLED = '/agents/connections/github/installed'
-const AUTHORIZED = '/agents/connections/github/authorized'
-const AUTHORIZATIONS = 'POST /agents/engineering/github-apps/authorizations'
 const CONVERSIONS = 'POST /agents/engineering/github-apps/conversions'
 const INSTALLATIONS = 'POST /agents/engineering/github-apps/installations'
 const APP = {
@@ -57,7 +52,6 @@ function renderAt(entry: string, routes: Record<string, RouteHandler>) {
           <Routes>
             <Route path={CREATED} element={<><GitHubAppCreated /><Where /></>} />
             <Route path={INSTALLED} element={<><GitHubAppInstalled /><Where /></>} />
-            <Route path={AUTHORIZED} element={<><GitHubAppAuthorized /><Where /></>} />
           </Routes>
         </TestRouter>
       </QueryClientProvider>
@@ -159,29 +153,5 @@ describe('the installation\'s return', () => {
     renderAt(`${INSTALLED}?installation_id=31415926&setup_action=update`, {})
     expect(await screen.findByText(/use Check installation or Add repositories/)).toBeInTheDocument()
     expect(fetchApi).not.toHaveBeenCalled()
-  })
-})
-
-describe('the authorization\'s return (7.57.00)', () => {
-  const authorization = { authorization: { app_id: '271828', login: 'alice', authorized_at: '2026-11-19T10:00:00Z', refresh_expires_at: null } }
-
-  it('removes the code and the state with a replace, sends them once and says who it is authorized as', async () => {
-    renderAt(`${AUTHORIZED}?code=the-code&state=the-state`, { [AUTHORIZATIONS]: () => authorization })
-    expect([await screen.findByText('Authorized as @alice.'), screen.getByText(/uses it for one thing/)]).toHaveLength(2)
-    expect(screen.getByTestId('where')).toHaveTextContent(/^REPLACE$/)
-    expect(posts('/agents/engineering/github-apps/authorizations')).toHaveLength(1)
-    expect(sentFetchApiBody('/agents/engineering/github-apps/authorizations', 'POST')).toStrictEqual({ code: 'the-code', state: 'the-state' })
-  })
-
-  it('sends nothing without a code, or when the person declined on GitHub', async () => {
-    renderAt(`${AUTHORIZED}?error=access_denied&state=s`, {})
-    expect(await screen.findByText(/declined on GitHub: nothing is stored/)).toBeInTheDocument()
-    expect(screen.getByTestId('where')).toHaveTextContent(/^REPLACE$/)
-    expect(fetchApi).not.toHaveBeenCalled()
-  })
-
-  it('says the server\'s refusal of a used state in its words', async () => {
-    renderAt(`${AUTHORIZED}?code=c&state=s`, { [AUTHORIZATIONS]: () => { throw new ApiError(400, 'this link is no longer valid: start again from Agents → Connections') } })
-    expect(await screen.findByRole('alert')).toHaveTextContent('this link is no longer valid')
   })
 })

@@ -37,17 +37,13 @@
  *   `state`, `repository` and `version` (a projection: a `dynamodb:Attributes` condition);
  * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only;
  * - since 7.52.00, for voc-engineering-start's `push_approved_docs` and the agents' read of the accepted tenets:
- *   `dynamodb:GetItem` on voc-engineering, only in the repositories' partitions (`WS#*#REPO#*`: the knowledge packs'
+ *   `dynamodb:GetItem` on voc-engineering, only in the repositories' partitions (`WS#default#REPO#*`: the knowledge packs'
  *   versions and their rendering, the tenets' versions), read only; `s3:GetObject` on the knowledge packs' objects
  *   (`ws/default/knowledge/*`); and the docs writes' claims in the connections' docs partitions (`WS#*#DOCS#*`, records.py
  *   DocsClaims) with the claims' own grant and attributes.
- * - since 7.57.00, for its `open_upstream_pr` (a fork connection's pull request to the upstream, opened as the
- *   connection's owner through the GitHub App's user authorization): `ssm:GetParameter` on the Apps' OAuth clients and
- *   the people's tokens (`/[<prefix>-]voc/engineering-user-auth/app/*\/client`, `…/user/*`: a path of their own, outside
- *   the connections', so no other reader of the connections reaches them), `ssm:PutParameter` on the people's tokens
- *   alone (a refresh rotates them), `kms:Decrypt` through SSM for those two and `kms:Encrypt` and `kms:GenerateDataKey`
- *   through SSM for the tokens alone (engineering-user-auth-parameters.ts); the upstream pull request's records and its
- *   daily caps' slots are claim rows in the runs' writes' partitions, under the claims' grant above.
+ * - since 7.57.00, for its `open_upstream_pr` (a fork connection's pull request to the upstream, one click away: the
+ *   app never opens it itself, 7.58.00), no grant of its own: the upstream is read with the fork's own token, and the
+ *   run's upstream pull request's record is a claim row in the runs' writes' partitions, under the claims' grant above.
  * No other write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
  * on it can call it: the agent roles (engineering-runtime.ts) and, since 7.10.00, voc-engineering-runtime's role for the
@@ -67,7 +63,6 @@ import { ENGINEERING_CI_LAYER_DIR, SIGNING_LAYER_DIR, dependencyLayer } from '..
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import { ENGINEERING_REPO_PARTITIONS, ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS } from './core-buckets';
-import { engineeringUserAuthPrefix, grantBrokerUserAuthorizations } from './engineering-user-auth-parameters';
 
 /** The CDK context key that deploys the engineering agents (default off). */
 const ENGINEERING_AGENTS_CONTEXT_KEY = 'engineeringAgents';
@@ -205,10 +200,6 @@ export class EngineeringBroker extends Construct {
         ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
         AGGREGATES_TABLE: props.aggregatesTable.tableName,
         ENGINEERING_CONNECTIONS_TABLE: props.agentsTable.tableName,
-        // (7.57.00: the fork connections' upstream pull request, opened as their owner: the user authorizations' path,
-        // and the stack's key a refreshed token is put under; engineering-user-auth-parameters.ts)
-        ENGINEERING_USER_AUTH_PREFIX: engineeringUserAuthPrefix(props.deploymentPrefix),
-        ENGINEERING_PARAMETER_KEY: props.kmsKey.keyArn,
       },
       serviceName: 'voc-engineering-broker',
     });
@@ -222,8 +213,6 @@ export class EngineeringBroker extends Construct {
       'YAML reader for the engineering broker (GitLab CI files; ARM64/Graviton)'));
     this.connectionParameters = { prefix: parameterPrefix, arns: engineeringParameterArns(stack, props.deploymentPrefix) };
     grantConnectionCredentials(role, props.kmsKey, this.connectionParameters.arns);
-    // (7.57.00: the GitHub App user authorizations, for open_upstream_pr alone: the people's tokens' one reader)
-    grantBrokerUserAuthorizations(role, props.kmsKey, props.deploymentPrefix);
     grantRunRecordReads(role, props);
     this.url = broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     this.function = broker;

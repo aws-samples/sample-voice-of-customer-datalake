@@ -1,7 +1,7 @@
 /**
  * @fileoverview The workspace's inspector (7.51.00): for the agent whose session is open, Changes, Files, Gate, Cost
- * (with its session as the supervisor keeps it) and Memory/Learn; and the run's own Assertions, Board (with a
- * person's actions on its tasks) and Reports, which were the run monitor's panels. Each tab reads when it is shown
+ * (with its session as the supervisor keeps it) and Memory/Learn; and the run's own Assertions, Board (read only) and
+ * Reports, which were the run monitor's panels. Each tab reads when it is shown
  * (and the Changes tab reads a file's part of the patch only when it is opened). (7.52.00 C2) A step selected on the
  * canvas opens its Step view instead (RunStepView.tsx: Agents, Setup, Checks); closing it comes back here.
  *
@@ -11,7 +11,6 @@ import { useState } from 'react'
 import { CircleDollarSign, FileDiff, FileText, FolderTree, GraduationCap, KanbanSquare, ListChecks, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../../components/IconTabs/IconTabs'
-import { useMySub } from '../../../store/authStore'
 import { BoardPanel } from '../EngineeringRunPanels'
 import { ReportsPanel } from '../EngineeringReports'
 import { useEngineeringBoard } from '../useEngineeringRun'
@@ -38,8 +37,6 @@ interface Props {
   overview: EngineeringOverview
   agent: EngineeringAgent | undefined
   live: boolean
-  /** An admin may act on the run (the board's actions). */
-  canAct: boolean
   /** When the overview was read (the agent's ages are as of then). */
   readAt: number
   onOpen: (agent: string) => void
@@ -55,20 +52,19 @@ function gateAgentsOf(overview: EngineeringOverview): string[] {
   return [...new Set(lanes.flatMap((lane) => (lane.agent === null ? [] : [lane.agent])))]
 }
 
-function BoardTab({ runId, live, canAct }: Readonly<{ runId: string; live: boolean; canAct: boolean }>) {
-  const me = useMySub()
+function BoardTab({ runId, live }: Readonly<{ runId: string; live: boolean }>) {
   const board = useEngineeringBoard(runId, live)
-  return <BoardPanel tasks={board.data ?? []} actor={canAct && live && me !== '' ? { runId, me } : undefined} />
+  return <BoardPanel tasks={board.data ?? []} />
 }
 
-function RunTab({ tab, runId, overview, live, canAct }: Readonly<Omit<Props, 'agent' | 'readAt' | 'onOpen'> & { tab: Tab }>) {
-  if (tab === 'board') return <BoardTab runId={runId} live={live} canAct={canAct} />
+function RunTab({ tab, runId, overview, live }: Readonly<Omit<Props, 'agent' | 'readAt' | 'onOpen'> & { tab: Tab }>) {
+  if (tab === 'board') return <BoardTab runId={runId} live={live} />
   if (tab === 'reports') return <ReportsPanel runId={runId} live={live} />
   const titles = new Map(overview.run.flow_definition?.nodes.map((node) => [node.id, node.data.title]) ?? [])
   return <AssertionsTab runId={runId} live={live} titles={titles} />
 }
 
-function AgentTab({ tab, runId, overview, agent, live, readAt, onOpen }: Readonly<Omit<Props, 'agent' | 'canAct'> & { tab: Tab; agent: EngineeringAgent }>) {
+function AgentTab({ tab, runId, overview, agent, live, readAt, onOpen }: Readonly<Omit<Props, 'agent'> & { tab: Tab; agent: EngineeringAgent }>) {
   const name = agent.agent
   switch (tab) {
     case 'files': return <FilesTab runId={runId} agent={name} live={live} />

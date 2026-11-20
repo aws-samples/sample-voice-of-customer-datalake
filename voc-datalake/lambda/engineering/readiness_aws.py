@@ -57,7 +57,7 @@ def _failed(what: str, error: Exception) -> ReadFailed:
 def settings_from_environment(card_models: Mapping[str, str], region: str,
                               model_choices: Mapping[str, str] | None = None) -> Settings:
     """The deployment's settings the checks read, from the Agents API's environment; ``model_choices`` (7.58.00): each
-    role's model choice, the Registry's over its card's."""
+    role's model choice, the Registry's (a card names none: its model is the default)."""
     raw_mib = os.environ.get(BUILD_MEMORY_ENV, '0').strip() or '0'
     raw_sessions = os.environ.get(MAX_SESSIONS_ENV, '').strip()
     return Settings(
@@ -169,20 +169,6 @@ class AwsReadinessPorts:
             raise ReadFailed(str(refused)) from refused
         facts = facts_from_answer(answer.get('repository'))
         return None if facts is None else facts.parent if facts.fork else ''
-
-    def user_authorized(self, app_id: str, subject: str) -> bool:
-        """Whether ``subject`` holds a user authorization of App ``app_id`` (its row in voc-agents, 7.57.00)."""
-        from engineering.connectors.connections import PARTITION
-        from engineering.connectors.user_auth_paths import subject_hash
-        from engineering.connectors.user_authorizations import ROW_PREFIX
-        if not (app_id.isdigit() and subject):
-            return False
-        try:
-            row = self.agents.get_item(Key={'pk': PARTITION, 'sk': f'{ROW_PREFIX}{app_id}#{subject_hash(subject)}'},
-                                       ConsistentRead=True).get('Item')
-        except _AWS_ERRORS as error:
-            raise _failed('the owner\'s authorization', error) from error
-        return isinstance(row, dict) and row.get('removed') is not True
 
     def knowledge_approved(self, connection_id: str) -> int:
         from engineering.knowledge.workspaces import ROOT

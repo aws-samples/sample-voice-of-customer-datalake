@@ -761,8 +761,11 @@ The engineering agents work on any public GitHub repository, not only the deploy
 contribute, on a fork whose run ends with a pull request on the upstream. **The model, plainly: the upstream is the
 organization's (for example `aws-samples/X`); the fork and the pull requests are the person's (`<their account>/X`).**
 The agents read the upstream, push only to the person's fork, and the pull request to the upstream comes from that fork:
-the person clicks Create on GitHub (always possible, for anyone: no token, no App on the upstream), or the app opens it
-for them once they authorized it. Only with `-c engineeringAgents=true` (404
+the person clicks Create on GitHub (always possible, for anyone: no token, no App on the upstream). The app never opens
+it itself (7.58.00): in a live test, a GitHub App's user token read a repository the App is not installed on, but `POST
+/repos/<that repository>/pulls` answered 403 "Resource not accessible by integration", even on the person's own
+repository, so 7.57.00's automatic open, its user authorization and its daily caps are gone. Only with
+`-c engineeringAgents=true` (404
 otherwise); every route is an administrator's acting for themselves (a delegated MCP credential gets 403), served
 through `/agents/{proxy+}` with Cognito: no new unauthenticated endpoint. A connection now has a kind (its row's
 `connection_kind`; none is `repository`, as before): `public_read` or `fork`. A kind never changes (the generic save
@@ -804,12 +807,11 @@ answers 409 for a connection of another kind: remove it and connect again).
   required check: Enable is refused, with the connection's **Contribute** card as the fix) and passes one that reads.
 
 **The fork workflow (`fork`, `connectors/forks.py`).** On the public connection, a guided card, **Contribute to
-‹upstream›**, walks it in three steps, each with its status: **1. Fork it on GitHub** (GitHub's fork page: the person's
+‹upstream›**, walks it in two steps, each with its status: **1. Fork it on GitHub** (GitHub's fork page: the person's
 account or an organization they administer); **2. Let the agents push to your fork** (the App's install link, choosing
-only the fork; the app detects the fork on the way back); **3. Optional: open pull requests for you** (Authorize as me,
-below). Under the steps, in the connection's own names: "Reads: ‹upstream› (public, read-only)", "Agents push to: ‹your
-account›/‹name› (your fork)", "Pull requests to ‹upstream› come from: ‹your account› (you click Create, or the app opens it
-for you once authorized)". Behind the steps:
+only the fork; the app detects the fork on the way back). Under the steps, in the connection's own names: "Reads:
+‹upstream› (public, read-only)", "Agents push to: ‹your account›/‹name› (your fork)", "Pull requests to ‹upstream› come
+from you: the run ends with a one-click link, and you click Create on GitHub". Behind the steps:
 
 1. **Step 2's dialog** (the account and the licence) on a `public_read` connection: `POST /agents/engineering/connections/<id>/fork`
    `{account: "user" | "organization", org?, licence, app_id?, workspace?}` → `{fork_url, install_url, expires_at,
@@ -827,49 +829,46 @@ for you once authorized)". Behind the steps:
    refused) and the forks of the upstream it covers in the account chosen (each fork's `parent` read), and saves the
    fork's one connection: an App reference on the fork's installation (so the broker pushes to the fork and opens its
    pull request exactly as on one's own repository) with the upstream, its default branch, its owner (who started the
-   workflow), the licence acknowledged and the owner's setting for AI-assisted runs (off). Its parameter: `{"kind":
-   "fork", "app_id", "installation_id", "repository", "key": "app", "upstream", "upstream_default_branch", "owner": <the
-   sha256 of the owner's subject>, "licence", "upstream_pr_assisted"}`. An install that covers no fork there is 409
-   with the state kept, so the same link works once the fork exists.
+   workflow) and the licence acknowledged. Its parameter: `{"kind": "fork", "app_id", "installation_id", "repository",
+   "key": "app", "upstream", "upstream_default_branch", "owner": <the sha256 of the owner's subject>, "licence"}`. An
+   install that covers no fork there is 409 with the state kept, so the same link works once the fork exists.
 4. **Its CI.** As any connection's: the CI attestation is the fork's, and the broker's branch-rules check reads the
    fork's (its default branch protected with a required check, `voc-agent/*` unprotected). A fork has Actions off by
    default: turn them on, and protect its default branch.
-5. **The owner's settings.** `PUT /agents/engineering/connections/<id>/upstream` `{assisted, licence?, reason?}` →
-   `{connection}`, the owner's alone (409 for anyone else): whether the app opens an AI-assisted run's upstream pull
-   request itself (otherwise its run ends with the one-click link), and the licence acknowledged again after the upstream changed it (read again; it must be the current one). The
-   connection view answers `fork: {upstream, upstream_connection, upstream_default_branch, owner, owned_by_me,
-   licence, upstream_pr_assisted, account, account_type}`, never the owner's subject.
+5. **The licence acknowledged again** (7.58.00). An upstream that changes its licence takes no contribution
+   acknowledged for the old one: the broker refuses the run's link, saying which licence it has now. On the fork's row
+   the owner clicks **Acknowledge the current licence…**: the page reads the upstream's licence live (`GET
+   …/public-repositories?q=<owner/name>`, GitHub's answer now; the public connection's stored facts are its connect
+   time's), the owner ticks "I have read the ‹licence› licence and contribute under it", and `PUT
+   /agents/engineering/connections/<id>/upstream` `{licence, reason?}` → `{connection}` stores it, the owner's alone (409
+   for anyone else, and for a licence that is not the upstream's now: the upstream is read again). The same save refreshes
+   the stored `upstream_default_branch` with the one GitHub answers. The connection view answers `fork: {upstream,
+   upstream_connection, upstream_default_branch, owner, owned_by_me, licence, account, account_type}`, never the owner's
+   subject. 7.57.00's setting for AI-assisted runs (`assisted`, `upstream_pr_assisted`) is gone with the automatic open.
 
 On a fork, the run's issue is the upstream's (a start names it as the upstream's, META's `issue_repo`; the start's
 `head` reads its state there): the agents comment on and label nothing there (`FORK_ISSUE`), the fork's pull request
 names no issue, and the upstream pull request fixes it.
 
-**The run's outcome: the upstream pull request, always one click away (`connectors/upstream_pr.py`, the broker's
+**The run's outcome: the upstream pull request, one click away (`connectors/upstream_pr.py`, the broker's
 `open_upstream_pr`).** On a fork connection the PR author's `open_or_update_draft_pr` opens (or updates) the fork's
 pull request, `voc-agent/<run>/…` → the fork's default branch, exactly as before, and then goes on to the upstream pull
-request: `<fork owner>:voc-agent/…` → `<upstream>:<its default branch>`. `open_upstream_pr` `{branch}` is the same step on
-its own, the PR author's alone (any other role, the runtime and the start: 403). Its answer, and the PR operation's
-`upstream`, are the run's record (`run.upstream_pull_request`): `{state: opened | link | refused | unknown, upstream,
-number, url, as, reason, at, compare_url, title, description}`. Merging it stays the upstream maintainers'.
+request: `<fork owner>:voc-agent/…` → `<upstream>:<its default branch>`, as GitHub answers the default branch now
+(7.58.00; the step's facts, not the one stored when the fork was connected). `open_upstream_pr` `{branch}` is the same
+step on its own, the PR author's alone (any other role, the runtime and the start: 403). Its answer, and the PR
+operation's `upstream`, are the run's record (`run.upstream_pull_request`): `{state: link | opened | refused, upstream,
+number, url, reason, at, compare_url, title, description}` (`opened`: one already open from the branch, which the person
+created). Merging it stays the upstream maintainers'.
 
-- **The one-click link, for everyone.** Once the safety checks pass, the run always gets **"Open the pull request on
+- **The one-click link.** Once the safety checks pass, the run gets **"Open the pull request on
   ‹upstream›"**: GitHub's compare page, `https://github.com/<upstream>/compare/<default>...<fork owner>:<fork
   name>:<branch>?expand=1&title=…&body=…` (`upstream.compare_link`, every part percent-encoded), its title and body
   prefilled. The person clicks Create on GitHub, so the pull request is theirs; it needs no token, no App on the upstream
   and no permission beyond their own. The link is at most 7,000 characters: past it, its body is a short one (`Fixes #N`,
   a pointer to the full text and the disclosure) and the full text is kept on the run (`description`, the run page's
   **Copy the description**). It is shown on the run page and in the run's end notice.
-- **Opened for you, the optional extra.** With the owner's GitHub user authorization (**Authorize as me**, below) the
-  broker opens it as them, **ready for review**, `maintainer_can_modify: true` (`state: opened`). When it does not, the
-  run keeps the link (`state: link`, a plain note, never an error): no authorization ("the app opens it for you once you
-  authorize it"); the starter's way of working (AI-driven, or AI-assisted with a person's go on the run AND the owner's
-  explicit setting `upstream_pr_assisted`; anything else, failing closed as the dial does); the day's cap; or GitHub
-  refusing the app (403, 404, 422: "GitHub didn't let the app open it for you: open it with one click", with the status,
-  never GitHub's text). GitHub's documentation says a user access token reaches only accounts where the App is installed,
-  so a 403 is the expected answer on an upstream without the App: the link is the design, the automatic open a
-  convenience where GitHub allows it (needs a live check).
 
-**The safety checks**, before any link and any token, in this order; a refusal (409, `state: refused`) offers **no link**,
+**The safety checks**, before any link, in this order; a refusal (409, `state: refused`) offers **no link**,
 its reason on the run, and the run ends with the fork's pull request:
 
 1. the connection is a fork; an upstream pull request already opened for the run is answered as it stands;
@@ -881,8 +880,7 @@ its reason on the run, and the run ends with the fork's pull request:
    the owner acknowledged; a CONTRIBUTING file that asks for a DCO sign-off (`Signed-off-by`, "Developer Certificate of
    Origin") is refused (the agents' commits cannot sign off for a person), and one that asks for an issue first needs
    the run's issue (both a best-effort reading);
-5. an open upstream pull request from the branch (opened meanwhile by the person's click, or by an attempt whose answer
-   was lost) is recorded as the run's, with no new write and no cap used;
+5. an open upstream pull request from the branch (opened meanwhile by the person's click) is recorded as the run's;
 6. **the body**: the upstream's pull request template (`.github/pull_request_template.md` and GitHub's other places)
    with its comments taken out, the fork pull request's description under its description section (else after its
    first heading), `Fixes #<issue>` under its issue section (else at the end), "Prepared following this repository's
@@ -891,70 +889,9 @@ its reason on the run, and the run ends with the fork's pull request:
    maintainers decide whether to merge it"); the fork's own closing line (`MERGE_IS_HUMAN`) stays on the fork. The
    agents' words (the title, the description) pass the write rules again; checkboxes stay unticked.
 
-Then, for the automatic open only: the starter's way of working, the owner's authorization (`OwnerUnauthorized` when none,
-or it can no longer be refreshed), **the daily caps** (UTC days: 10 a deployment and 2 per upstream repository; they count
-automatic opens alone, an attempt counting whatever GitHub answers; a click on the link counts nothing), and the write,
-once per run and branch (a claim in the run's writes): a refusal GitHub answers wrote nothing and keeps the link; a lost
-answer is an unknown outcome (the link kept), never made again, which step 5 settles on the next attempt. **Every
-automatic open is audited**: each day's cap slot row (`WS#default#WRITES#_upstream#<day>` and `…#<day>#<owner/name>`,
-`CAP#<n>`) keeps the run, the connection, the upstream and, once closed, the outcome, the number and the login it was
-opened as; the run's row (`WS#default#WRITES#<run>` / `UPSTREAM_PULL_REQUEST`) keeps the outcome and the link; both with a
-write claim's attributes alone, so the broker's DynamoDB grant is unchanged; and an operational log line (`broker wrote`,
-never a body or a token).
-
-**The user authorization (`connectors/user_authorizations.py`, `connectors/user_auth.py`), optional.** The owner's
-GitHub user access token of the same App (its OAuth user-to-server token), kept per person, encrypted in SSM under the
-stack's key, refreshed, and used for this one action alone, the automatic open, by the broker alone; never by an agent.
-Without it every run still ends with the one-click link.
-
-- **The App's OAuth client.** An App made from 7.57.00 keeps its client id and secret from the manifest's conversion,
-  and its manifest names the callback, `<the deployment>/agents/connections/github/authorized`. One made before had them
-  discarded: `PUT /agents/engineering/github-apps/<app_id>/oauth` `{client_id, client_secret}` → `{app}` stores a new
-  secret an administrator generates on GitHub (the App's settings → **Generate a new client secret**), after adding the
-  callback URL there. The App view answers `oauth` and `client_id` (not a secret).
-- **Authorize.** `POST …/github-apps/<app_id>/authorize` `{workspace?}` → `{authorize_url, expires_at}`: GitHub's
-  authorize link with a single-use state (`authorize`, 30 minutes; 409 while the App's client is not stored). GitHub
-  sends the browser to the SPA's `/agents/connections/github/authorized` page (top-level like the install's return,
-  taken back into the workspace the flow started in), which takes `code` and `state` out of its address at once (a
-  replace) and posts them once: `POST …/github-apps/authorizations` `{code, state}` → `{authorization: {app_id, login,
-  authorized_at, refresh_expires_at}}`. The code goes to **voc-engineering-user-auth** (`exchange`), the one function
-  that reads the App's client secret: it exchanges the code at `https://github.com/login/oauth/access_token`, reads who
-  the token is (`GET /user`), writes the person's parameter and answers no token. The row (`CONNECTIONS#default` /
-  `USER_AUTH#<app>#<sha256 of the subject>`) keeps the login, when and the refresh token's expiry, with an audit row
-  (`github_user_authorized`). A code GitHub refuses is 409; a replay of the same state answers the same.
-- **Read and remove.** `GET …/github-apps/authorizations` → the caller's own; `DELETE …/github-apps/<app_id>/authorization`
-  → `{removed: true}`: the person's token deleted first, then the row marked removed (`github_user_authorization_removed`).
-  Revoking it on GitHub (Settings → Applications → Authorized GitHub Apps) stays the person's.
-- **The broker's use** (`OwnerTokens`): it reads the owner's parameter at each upstream pull request (never cached, so a
-  removal holds at once), refreshes it when it expires within five minutes (GitHub's user tokens live eight hours, their
-  refresh tokens six months; the rotated pair written back; a refresh another container made first is read again), and
-  sends it in exactly one request: `POST /repos/<upstream>/pulls` (`github.py` `open_upstream_pull_request`, pinned by
-  `connectors/test/test_github_upstream.py`: no other request carries it).
-
-**Parameters.** Under their own path, outside the connections', so the broker's and the checkout cache writer's read
-of `/[<prefix>-]voc/engineering/*` never reaches them: `/[<prefix>-]voc/engineering-user-auth/app/<app_id>/client`
-(`{app_id, client_id, client_secret}`) and `…/engineering-user-auth/user/<app_id>/<sha256 of the subject>` (`{app_id,
-user_id, login, access_token, expires_at, refresh_token, refresh_token_expires_at}`), SecureString, standard tier, the
-stack's key.
-
-**IAM (pinned by `lib/stacks/engineering-user-auth.test.ts`, `engineering-broker.test.ts`, `api-engineering-reads.test.ts`).**
-
-- voc-engineering-user-auth (VocProcessingStack, `lib/stacks/engineering-user-auth.ts`, only with the module):
-  `ssm:GetParameter` on `…/engineering-user-auth/app/*/client`, `ssm:PutParameter` on `…/engineering-user-auth/user/*`,
-  `kms:Decrypt` through SSM for the clients and `kms:Encrypt` / `kms:GenerateDataKey` through SSM for the people's
-  tokens (`PARAMETER_ARN`); no table, no bucket, no function URL, no resource policy; the Agents API invokes it by name.
-- The broker adds `ssm:GetParameter` on the clients and the people's tokens, `ssm:PutParameter` on the people's tokens
-  only (a refresh), and the same KMS conditions; nothing on DynamoDB (the records above use its claims' grant).
-- The Agents API adds `lambda:InvokeFunction` on voc-engineering-user-auth, `ssm:PutParameter` and
-  `ssm:DeleteParameter` on `…/engineering-user-auth/app/*` and `ssm:DeleteParameter` on `…/user/*`, with `kms:Encrypt`
-  and `kms:GenerateDataKey` through SSM for the clients; still no `ssm:GetParameter` anywhere.
-- **Negative pins**: no agent role, not the checkout cache's writer, the token function, the github_issues ingestor,
-  voc-engineering-start, voc-engineering-issues-config or the runtime holds any statement naming
-  `engineering-user-auth`; and the connections' grant's pattern does not match a user-auth parameter.
-
-**Egress.** The broker reaches `github.com` too, for a refresh alone (`/login/oauth/access_token`, its own bound
-transport), and voc-engineering-user-auth `github.com` for the exchange and `api.github.com` for the user read; the
-agents' sessions reach no new host.
+The run's row (`WS#default#WRITES#<run>` / `UPSTREAM_PULL_REQUEST`) keeps the outcome and the link, with a write
+claim's attributes alone, so the broker's DynamoDB grant is unchanged; the broker holds no grant of its own for any of
+it (the upstream is read with the fork's own token).
 
 ## The knowledge pack
 
@@ -1548,28 +1485,21 @@ another agent, which resumes it from its checkpoint. An agent suspended on an op
 `review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
 the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
-A person can post, re-prioritise, block or take a task, from the run monitor's Board tab or through the API (an
-administrator acting for themselves: `/agents/engineering/<run_id>/board/tasks…`,
-[docs/autonomous-agents.md](autonomous-agents.md)). Each is the board
-store's own conditional write, with a history row naming `human:<subject>`, published as the board's `task.*` event
-from the API's own source with `from.kind` human (the only `task.*` the bus takes from the API). Taking a task makes
-the person its holder with no expiry (`lease_agent` `human:<subject>`, the lease's epoch its attempt): its agent can
-move it no more, and the supervisor, which judges agents' sessions, leaves it alone; the person moves it on like any
-holder, or releases it: open again at its next attempt, as a re-post, until the run coordinator launches an agent of its role
-for it (from the task's spec: a new attempt starts with no checkpoint). A task another person holds is taken or blocked from them only when asked (`over`: the monitor asks first;
-the write holds the holder it read), and an
-agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
-with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
-A person re-prioritises a task another person holds without `over`: a priority ends no hold, so nothing is taken
-from them. Never the coordinate task. The Agents API makes none of these writes itself: after its own checks (an
-administrator acting for themselves, an open run, the bus named) it invokes the board's function directly
-(`voc-datalake/lambda/engineering/board/api.py` `person_request`, `{person: {op, run_id, subject, body, task_id?,
-action?}}`), whose role already writes the board's rows; the board writes the change and hands back the events it
-made, which the API publishes from its own source as the person (the bus takes a person's `task.*` only from there).
-The API's role reads the table (GetItem, Query) and writes none of it, closing the gap where IAM, bounded only by the
-run's partition, let it write any item of a run. The agent roles may invoke the board only through its function URL
-(`lambda:InvokedViaFunctionUrl`), so a direct invoke, the only way into the person path, is the API's; a function
-URL's event is always an agent's, whatever its body says.
+A person acts on no task of the board (7.58.00): the run workspace's Board tab is read only. Their board actions (post,
+re-prioritise, block, take, move or release a task) would publish the board's `task.*` from the API's own source as
+the person, which the bus takes only steering and answers from since 7.51.02, so their two routes
+(`/agents/engineering/<run_id>/board/tasks…`) answered 503 on every deployment; they are gone, and so is the
+overview's `board_available`. The board's function keeps its side of them (`voc-datalake/lambda/engineering/board/api.py`
+`PersonBoard`, the `post` and `act` ops of `person_request`), which nothing asks for now, and the store and the
+supervisor still read a task a person held as before (its holder `human:<subject>` with no expiry, left alone by the
+supervisor). The one person request the Agents API makes is a person's go on the run (`POST …/go`,
+[docs/autonomous-agents.md](autonomous-agents.md)): after its own checks (an administrator acting for themselves, an
+open run) it invokes the board's function directly (`person_request`, `{person: {op: go, run_id, subject, body}}`),
+whose role writes the board's rows; a go publishes nothing (its row is the record). The API's role reads the table
+(GetItem, Query) and writes none of it, closing the gap where IAM, bounded only by the run's partition, let it write
+any item of a run. The agent roles may invoke the board only through its function URL (`lambda:InvokedViaFunctionUrl`),
+so a direct invoke, the only way into the person path, is the API's; a function URL's event is always an agent's,
+whatever its body says.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers
@@ -3045,7 +2975,8 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
   its session ended as re-posted). Refused for a stopped run, past 30 days, with its budget spent, without an agent, for
   a fresh restart of the coordinator, and while a person's Stop of the run is under way.
 - **Resume or Restart an ended run as a child run** (D51-3: never reopened). voc-engineering-start's `restart_run`
-  (`runtime/restart.py`, `POST …/restart {mode, agents?, base, confirm}`, 409 while the run is live) writes the child in
+  (`runtime/restart.py`, `POST …/restart {mode, agents?, base, model?, confirm}`, 409 while the run is live; `model`,
+  7.58.00: one for every role of the child, else the parent's models) writes the child in
   its start transaction: META `parent {run_id, mode, by, at, base}`, the parent's create-only `CHILD#<child>`, the
   parent's caps, connection, language, goal, issue (no new claim) and flow copy at the same revision, and for a Resume
   `STEP#<step>#inherited` rows the conductor treats as done (never a quality gate or a fixer's or builder's step). Then
@@ -3154,11 +3085,12 @@ voc-engineering-start). Now each reaches its run by its own path:
 - **Nothing else is said on the bus from the API.** A signal's and a Stop's conversation records (`signal.*`) are gone:
   the `RUNLOG#` rows are their record. A person's board actions publish the board's `task.*` from the API's source,
   which the bus no longer takes, so the overview says `board_available: false` and the board routes answer 503 before
-  the board is asked (their go, which publishes nothing, still works).
+  the board is asked (their go, which publishes nothing, still works). (7.58.00: those routes, the flag and the Board
+  tab's controls are gone; the go stays.)
 - **The overview's flags.** `actions_available` is replaced by what is actually reachable: `steer_available` (the bus
-  is named), `signals_available` and `stop_available` (the start function is), `board_available` (false). The
-  workspace shows each control from its own flag: the composer and Reply, Pause, Resume and Save, an agent's Stop and
-  ⋯, the Board tab's controls; a control that is off keeps its line saying why.
+  is named), `signals_available` and `stop_available` (the start function is), `board_available` (false; gone in
+  7.58.00). The workspace shows each control from its own flag: the composer and Reply, Pause, Resume and Save, an
+  agent's Stop and ⋯; a control that is off keeps its line saying why.
 
 ### MCP for runs (7.53.00)
 
@@ -3298,14 +3230,18 @@ state beside the seed (`_seed/<task>/kiro.tgz`, `voc-resume-seed/1`'s `kiro` ent
 else takes the 7.51 seed's history.
 
 **The key.** `KIRO_API_KEY` lives in one SSM SecureString under the deployment's path,
-`/[<prefix>-]voc/engineering/_kiro/api-key`, which an operator stores ([deployment.md](deployment.md),
+`/[<prefix>-]voc/engineering-kiro/api-key` (since 7.58.00; before, `/[<prefix>-]voc/engineering/_kiro/api-key`), which an operator stores ([deployment.md](deployment.md),
 `engineeringHarness`: `aws ssm put-parameter --type SecureString …`); no stack and no function writes it. Only the
 agent roles that run on Kiro may read it (`KiroApiKey`: `ssm:GetParameter` on exactly that parameter;
 `KiroApiKeyDecrypt`: `kms:Decrypt` of the stack's key only through SSM and only for that parameter,
 `kms:EncryptionContext:PARAMETER_ARN`). The harness reads it just in time with the agent's own role session and
 hands it to kiro-cli's environment only: never an argument, a file, a log line, the transcript, the status or the tool
-server. (As the connections' credentials and the GitHub Apps' keys under the same path, the broker's role, which reads
-`/[<prefix>-]voc/engineering/*`, could read it too; it never does.) Readiness reads its type, never its value.
+server. Its path is its own, beside the connections' and outside them: under
+`/[<prefix>-]voc/engineering/` (7.53.00 to 7.57.00) the broker and the checkout cache's writer, which read every
+connection's parameter, could read it, and the Agents API, which puts and deletes them, could overwrite or delete it;
+no grant on `/[<prefix>-]voc/engineering/*` reaches `…/engineering-kiro/api-key` (pinned by
+`lib/stacks/engineering-kiro.test.ts`), and the harness refuses any other parameter (`kiro_pin.KEY_PARAMETER_RE`).
+Readiness reads its type, never its value.
 
 **Egress.** An agent on Kiro reaches, on its own proxy only (`egress.kiro_hosts`; an extra host of that shape is
 refused, so the dependency step never gets them): `runtime.us-east-1.kiro.dev` (the model runtime),
@@ -3335,9 +3271,10 @@ the key is not stored as a SecureString, and while the language's last session h
 is unknown until a session of the image has started (Enable is not refused: a first session is what records the image).
 Since 7.58.00 it names each Kiro role's model and says Kiro checks it when the step's session starts.
 
-**What it does not do yet, and what it costs.** A session's tokens are not counted (Kiro bills its own credits, at a
-rate that differs per model: [Choosing the model](#choosing-the-model-75800); a `usage_update`, when Kiro sends one,
-is recorded). The code and issue text an agent reads go to the Kiro service.
+**What it does not do yet, and what it costs.** Since 7.58.00 a session's Kiro credits are counted: each turn's, as
+kiro-cli reports them, priced at `-c engineeringKiroCreditPrice` (0.04 USD a credit by default) into the run's cost
+cap, its flow's budget and the hard cap ([What a Kiro credit counts as](#cost); its tokens are not reported, and a
+`usage_update`, when Kiro sends one, is recorded). The code and issue text an agent reads go to the Kiro service.
 kiro-cli runs as the agent user, so it could read what the harness can (as the CLI adapter's `claude`): it is offered
 no tool that reads, at a pinned and checked version. **Still needs a live run**: a session on AgentCore Runtime
 starting kiro-cli behind the namespaces, its proxy and the NAT; the key read through SSM with the agent's session;
@@ -3355,7 +3292,7 @@ They are in Kiro's v3 universal format (one engine reads `tools` and `allowedToo
 each file has both).
 
 - **What a config holds.** `name` is the role and `description` its card's purpose. Since 7.58.00 `model` is the
-  Kiro model of its card's (its model choice's, else Kiro's name for its `model.id`: `kiro_pin.kiro_model`), so the
+  Kiro model of its card's (Kiro's name for its `model.id`: `kiro_pin.kiro_model`), so the
   agent pins it before the session sets it; a session's copy names the session's own. `prompt` is the platform rules
   and then the role's skill, as the harness builds its system prompt, without the session's fence line (a nonce each
   session draws).
@@ -4071,8 +4008,7 @@ what its roles do: a flow with a committer or a PR author a pushing way of worki
 | `connection` | yes | the agent's stored connection (7.57.00: a public repository read only fails a flow that pushes, and passes one that reads) | Agents → Connections, then the agent's Set up; for a read-only one, its Contribute card |
 | `app_installation` | | the GitHub App installation, through `voc-engineering-app-tokens`' `inspect_installation`, for a connection made through one of the deployment's Apps (`unknown` for a connection with its own App key, which only the broker reads; GitLab: not needed) | add the repository to the installation on GitHub |
 | `fork` (7.57.00) | | a fork connection's repository is still a fork of its upstream (its `parent`, through the token function's `public_repository`); not needed off a fork | fork the upstream again, install the App on it, the Contribute card |
-| `user_authorization` (7.57.00) | | the fork connection's owner holds a user authorization of the fork's App (its row): `warn` without it (optional: a run then ends with the one-click link, and the person creates the upstream pull request on GitHub) | the owner: Agents → Connections → GitHub Apps → Authorize as me |
-| `upstream_pr` (7.57.00) | | the way of working the runs follow against the rule for the app opening the upstream pull request (AI-driven, or AI-assisted with the owner's setting): `warn` otherwise, a run then ending with the one-click link; the upstream's own state is the broker's to read at each one | AI-driven, or the owner's "Open upstream pull requests for AI-assisted runs" |
+| `upstream_pr` (7.57.00) | | a fork whose flow pushes: its run ends with the upstream pull request one click away once the gate passes (the licence acknowledged); the person creates it on GitHub (7.58.00: the app never opens it itself); the upstream's own state is the broker's to read at each one | none (a changed licence: the fork's **Acknowledge the current licence…**) |
 | `ci_attestation` | yes, where the flow pushes | the connection's CI attestation | the CI attestation under Agents → Connections |
 | `ci_protection` | | `unknown`: the broker reads the host's branch rules with the connection's own token at each push; this API holds no host token | protect the default branch with its required checks, and leave `voc-agent/*` unprotected |
 | `image` | yes | the languages with an agent runtime (`-c engineeringImages` with a network) | build and push the image, deploy with its digest ([deployment](deployment.md)) |
@@ -4121,28 +4057,27 @@ ARN, in the change that first uses it.
 
 | Choice | On Kiro | On the native harness (Bedrock) |
 |---|---|---|
-| Auto | `auto`: Kiro chooses per task | the role's default (its card's `model.id`) |
+| Auto | `auto`: Kiro chooses per task | not offered for a role on it (Kiro's alone); for a run, or one saved while the role ran on Kiro, the role's default (its card's `model.id`) |
 | Opus 5.5 | `claude-opus-5.5` | `global.anthropic.claude-opus-5-5` |
 | Sonnet 5.5 | `claude-sonnet-5.5` | `global.anthropic.claude-sonnet-5-5` |
 | Haiku 5.5 | `claude-haiku-5.5` | `global.anthropic.claude-haiku-5-5` |
-| Other model… | the id as typed (a Claude Bedrock id becomes Kiro's name for it) | the id as typed, only if this deployment grants and prices it |
+| Other model… | the id as typed (a Claude Bedrock id becomes Kiro's name for it) | in the Registry, one of the other models this deployment grants and prices, picked from a list (the listing's `bedrock_enabled`); for a run, the id as typed, only if this deployment grants and prices it |
 
 An "Other" id is letters, digits and `._:/-`, at most 128 characters, with no space and no `//` (never a URL), checked
-in the card's schema, the API and the app. A Kiro id is any id Kiro's model service takes, as `kiro-cli chat
---list-models` lists them; which ones an account offers depends on the account, and Kiro says so only to a session.
+in the API and the app. A Kiro id is any id Kiro's model service takes, as `kiro-cli chat --list-models` lists them;
+which ones an account offers depends on the account, and Kiro says so only to a session. A role's card names no
+choice: its `model.id` is the role's default (the card's schema refuses `model.choice` and `model.other`).
 
 **Where a choice lives, and which one a launch takes.** In this order, the first that names one:
 
 1. the run's (**Model for this run** in Run now and in a flow's **Start a run**, `POST /agents/engineering/runs`
    `model`: one model for every role; recorded on the run's `META` as `model_choice`, and kept by a Resume or a
-   Restart, which is a child run);
+   Restart, which is a child run, unless the Restart names another: **Restart run → Model for the new run**,
+   `POST …/restart` `model`, the same field and checks, so a step Kiro stopped for its model goes on with another);
 2. the role's in this deployment (Agents → Registry → the role's card → **Model**, an administrator's,
    `PUT /agents/engineering/registry/<role>/model`; one `SETTINGS#engineering` / `ROLE_MODELS` row in `voc-agents`
    with a create-only history row per change, read at each run's first start and recorded on its `META` as
-   `role_models`, so a run keeps the models it started with);
-3. the role's card in the templates (`agents/<role>/agent.yaml` `model.choice`, one of the four named choices, or
-   `model.other`, another id; never both; the bundle carries it as the agent's `model_choice`). No shipped card names
-   one.
+   `role_models`, so a run keeps the models it started with).
 
 With none, a native session runs its skill's model (`model.id`, as before), and a Kiro session runs Kiro's name for it
 (`global.anthropic.claude-sonnet-5-5` is `claude-sonnet-5.5`). The launch puts the model on its argv (`--model` on
@@ -4155,13 +4090,21 @@ prices (`caps.DEFAULT_TOKEN_PRICES` and `-c engineeringModelPrices`), so the cos
 widened for it. A choice outside that set is refused when it is saved (the Agents API reads the same price setting,
 `ENGINEERING_MODEL_PRICES`), at the run's start (before anything is written) and at each launch, saying "‹id› isn't
 enabled in this deployment. An admin adds it with -c engineeringModelPrices (docs/deployment.md)." Adding a price
-for a model the allowlist does not hold does not grant it: that is a release's change.
+for a model the allowlist does not hold does not grant it: that is a release's change. Nor does a price enable a
+granted model that does not think adaptively (the allowlist's `adaptive_thinking` false: Claude Sonnet 4.6 and Haiku
+4.5): the harness asks every session's model for adaptive, summarized thinking, which they refuse, so the native
+harness never runs them ("‹id› can't run on the native harness: it doesn't think adaptively, which the harness asks
+of every model. Choose another model.", `harness_switch.not_native`).
 
 **On Kiro, never another model.** A Kiro session always asks for its model: it is in the session's agent config and
 the compiled ones (`model`), and after the mode the harness sets it (`session/set_config_option {configId: model}`)
 and checks Kiro's answer. If Kiro refuses it, does not offer it on the account or answers another model, the step
 ends for a person (its task to `needs_human`, the run coordinator's as a crash) with "Kiro could not use ‹wanted›
-for the ‹role› (it answered ‹current or none›). Choose another model in the role's setup or for this run.", and a
+for the ‹role› (it answered ‹current or none›). Restart the run with another model (Restart run, Model), or start a
+new run with one." (a Resume or a Restart keeps the run's models, the roles' own as its start read them, so a Registry
+change alone would not reach it). The task's progress step is that reason as one board line (at most 180
+characters, `tools.progress_line`; the board refuses a step over its 200); the session's status and its transcript
+(`model_refused`, the run's thread) keep it whole. And a
 model Kiro has no name for stops the step before kiro-cli starts ("‹id› has no Kiro name; choose a Kiro model for
 this role."); `auto` takes whichever model Kiro picks. The owner's rule: nobody pays for a model they did not pick.
 
@@ -4169,10 +4112,12 @@ this role."); `auto` takes whichever model Kiro picks. The owner's rule: nobody 
 on one the deployment does not grant and price); `kiro` names each Kiro role's model and says Kiro checks it when
 the step's session starts (readiness reads no Kiro session, so it cannot see what the account offers).
 
-**Spend.** Unchanged: a native session's tokens are priced per model; a Kiro session's tokens are not counted (Kiro
-bills its own credits, and each model's credit rate differs: `kiro-cli chat --list-models` shows its
-`rate_multiplier`, on kiro-cli 3.4.0 for instance 0.06 for `claude-haiku-5.5`, 1.3 for `claude-sonnet-5.5` and 2.0
-for `claude-opus-5.5`; an account's may differ), so the spend ledger shows its session time only.
+**Spend.** A native session's tokens are priced per model, as before; a Kiro session's credits (Kiro bills credits,
+and each model's credit rate differs: `kiro-cli chat --list-models` shows its `rate_multiplier`, on kiro-cli 3.4.0 for
+instance 0.06 for `claude-haiku-5.5`, 1.3 for `claude-sonnet-5.5` and 2.0 for `claude-opus-5.5`; an account's may
+differ) are counted since 7.58.00 at the deployment's price per credit, so a Kiro role's model choice is a spend choice
+the cost cap bounds: the Registry's **Model** of a Kiro role says "Billed in Kiro credits at ‹price› a credit, which the
+cost cap counts" ([What a Kiro credit counts as](#cost)).
 
 ## Trust and safety
 
@@ -4328,6 +4273,22 @@ $0.20 / $5.00. A deployment in another region or tier sets its own per model wit
 12 digits after the point; checked at synth and again by the runtime), each replacing that model's default. A model
 with no price (a new id, or a harness's model under another name) is priced at the dearest price listed, part by part:
 an upper bound, so the caps still hold. Tokens used before 7.50.00 stay unpriced (pricing goes forward only).
+
+**What a Kiro credit counts as** (7.58.00, `caps.py` `kiro_credit_price` and `credit_usd`, `harness/kiro.py`
+`turn_credits`, built). A Kiro session's turns report the credits Kiro bills for them: on the harness's v3 engine
+(`kiro-cli acp --agent-engine=v3`) a `session_info_update` of kind `turn_completion` (its `promptTurnSummaries`, the
+turn's id and elapsed time), on the v2 engine the JSON-RPC notification `_kiro.dev/metadata` whose `meteringUsage`
+(`[{value, unit: "credit"}]`) comes with `turnDurationMs` at a turn's end (the earlier ones carry only
+`contextUsagePercentage`). The harness sums each turn's entries in `credit`, counts a turn once (a v3 turn by its id),
+records it in the transcript (`kiro_credits`: the credits, the turn's milliseconds, the model; another unit is recorded
+and never counted, as is v3's running total for the session) and reports the session's millionths of a credit on its
+status under the model `kiro:<Kiro model>`. The runtime prices them at `-c engineeringKiroCreditPrice` (USD a credit,
+0.04 by default: Kiro's price for a credit past a plan's own, kiro.dev/pricing, read 2026-11-20; 0 to 10, at most 12
+digits after the point, checked at synth and by the runtime; 0 counts and prices none), ADDed to the session's
+`cost_usd`, the model's ledger row (`micro_credits` beside its dollars) and the flow's month total, as tokens are: so a
+run's cost cap, its flow's budget alerts and the hard cap count them. A plan's included credits are not modelled: the
+cap counts every credit at this price, a conservative upper bound. The run page shows each Kiro model's credits and
+their cost, and Agents → Spend a **Kiro credits** column once a group used some.
 
 **The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
 model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per

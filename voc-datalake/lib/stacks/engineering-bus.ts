@@ -22,9 +22,9 @@
  *   agent reads its notices through the board API's `inbox` op.
  * - The board API (`engineering/board/api.py`) behind a function URL with IAM authentication and no resource-based
  *   policy, like the broker: for an agent it takes the caller from its assumed-role identity and publishes each change
- *   as the board. The Agents API (VocApiStack) also invokes it directly, by name, for a person's board actions
- *   (`person_request`): the board writes them with its own role and hands the events back for the API to publish as
- *   the person. The agent roles may invoke it only through the URL, so a direct invoke is the API's.
+ *   as the board. The Agents API (VocApiStack) also invokes it directly, by name, for a person's go on a run
+ *   (`person_request`, 7.58.00: the one board action a person takes): the board writes it with its own role. The
+ *   agent roles may invoke it only through the URL, so a direct invoke is the API's.
  * - One dead-letter queue, voc-engineering-dlq: the events the rule could not hand the router, the router's and the
  *   delivery function's invocations that failed every retry, the report builder's failed builds, and the runtime's
  *   supervisor ticks EventBridge could not deliver (engineering-runtime.ts). Alerting watches it like the platform's other

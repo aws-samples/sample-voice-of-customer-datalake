@@ -926,6 +926,7 @@
     "tokensIn": "入力トークン",
     "tokensOut": "出力トークン",
     "microvm": "MicroVM 時間",
+    "credits": "Kiro クレジット",
     "budget": "月間予算",
     "budgetHint": "各ワークフローの現在の月間予算と、今月使った割合（セッション時間とモデルのトークン）。",
     "budgetShare": "{{percent}}%",
@@ -1051,13 +1052,7 @@
       },
       "approval": "インストールにはオーナーの承認が必要です。承認されたら、エージェントオーケストレーション → 接続 を開き、App の「リポジトリを追加」でリポジトリを保存してください。",
       "noState": "GitHub からこのデプロイのリンクなしで戻ったため、何も保存されていません。エージェントオーケストレーション → 接続 を開き、App の「インストールを確認」または「リポジトリを追加」を使ってください。",
-      "authorizedTitle": "GitHub の承認",
-      "authorizing": "承認を保存しています…",
-      "authorizedBody": "@{{login}} として承認しました。",
-      "authorizedUse": "プラットフォームはこれを 1 つの用途にだけ使います。こちらのゲートを通過したとき、あなたのフォーク接続の実行が上流に作成するプルリクエストです。",
-      "authorizeDeclined": "GitHub で承認が拒否されました。何も保存されていません。",
-      "forkConnected": "フォークを接続しました: {{repository}} ({{upstream}} のフォーク)。",
-      "noAuthorizeCode": "このページには、App を承認した後に GitHub が返すリンクが必要です。エージェントオーケストレーション → 接続 からやり直してください。"
+      "forkConnected": "フォークを接続しました: {{repository}} ({{upstream}} のフォーク)。"
     },
     "title": "リポジトリ接続",
     "intro": "エンジニアリングエージェントの作業先: 各リポジトリ、そこへのアクセス方法、プッシュしてよいかどうか。",
@@ -1288,9 +1283,15 @@
       "badge": "{{upstream}} のフォーク",
       "owner": "所有者: {{owner}}",
       "licence": "確認済みのライセンス: {{licence}}",
-      "outcome": "実行は {{upstream}} へのワンクリックのプルリクエストで終わります。{{owner}} が GitHub で Create をクリックするか、承認後はアプリが代わりに開きます。マージするのはアップストリームのメンテナーだけです。",
-      "assisted": "AI 支援の実行でも上流へのプルリクエストを作成する",
-      "ownerOnly": "変更できるのは接続の所有者 {{owner}} だけです。"
+      "outcome": "実行は {{upstream}} へのワンクリックのプルリクエストで終わります。{{owner}} が GitHub で Create をクリックします。マージするのはアップストリームのメンテナーだけです。",
+      "ownerOnly": "アップストリームのライセンスを確認し直せるのは、接続の所有者 {{owner}} だけです。",
+      "acknowledge": "現在のライセンスを確認…",
+      "licenceReading": "GitHub でアップストリームのライセンスを読み取っています…",
+      "licenceUnread": "GitHub でアップストリームのライセンスを読み取れませんでした。もう一度お試しください。",
+      "licenceNone": "{{upstream}} には現在 GitHub が認識するライセンスがありません。ここからの貢献は受け付けられません。",
+      "licenceNow": "{{upstream}} の現在のライセンス: {{licence}}。",
+      "licenceUnchanged": "確認済みのライセンスと同じです。",
+      "licenceConfirm": "{{licence}} を確認"
     },
     "public": {
       "title": "公開リポジトリを追加",
@@ -1336,45 +1337,15 @@
       "step2": "エージェントがフォークにプッシュできるようにする",
       "step2Hint": "フォークにアプリをインストールし、そのリポジトリだけを選びます。戻ってくるとアプリがフォークを検出します。",
       "installOnFork": "フォークにアプリをインストール",
-      "step3": "任意: プルリクエストを代わりに開く",
-      "step3Hint": "「自分として承認」すると、アプリが {{upstream}} へのプルリクエストを代わりに開きます。承認しない場合も、各実行のプルリクエストはワンクリックです。GitHub で Create をクリックします。",
       "stepTitle": "{{number}}. {{title}}",
       "statusDone": "完了",
       "statusTodo": "未完了",
-      "statusOptional": "任意",
       "cardTitle": "{{upstream}} に貢献する",
       "cardIntro": "アップストリームは {{owner}} のものです。フォークとそのプルリクエストはあなたのものです。",
       "summaryReads": "読み取り: {{upstream}} (公開、読み取り専用)。",
       "summaryPushes": "エージェントのプッシュ先: {{fork}} (あなたのフォーク)。",
       "summaryPushesPending": "エージェントのプッシュ先: 接続後のあなたのフォーク。",
-      "summaryPullRequests": "{{upstream}} へのプルリクエストの作成元: {{account}} (あなたが Create をクリックするか、承認後はアプリが代わりに開きます)。",
-      "summaryPullRequestsPending": "{{upstream}} へのプルリクエストはあなたのフォークから作成されます (あなたが Create をクリックするか、承認後はアプリが代わりに開きます)。",
-      "step3NoClient": "先にアプリの OAuth クライアントを設定してください: {{slug}} のカードの「App の OAuth クライアントを設定…」。"
-    },
-    "authorization": {
-      "noClient": "アップストリームへのプルリクエストを代わりに開くには、アプリの OAuth クライアントが必要ですが、ここには保存されていません。なくても、各プルリクエストはワンクリックで開けます。",
-      "setClient": "App の OAuth クライアントを設定…",
-      "reading": "承認を読み取っています…",
-      "unreadable": "GitHub の承認を読み取れませんでした。",
-      "needed": "任意: アプリを自分として承認すると、フォークからアップストリームへのプルリクエストをアプリが代わりに開きます。承認しなくても、各プルリクエストはワンクリックで開けます。",
-      "authorize": "自分として承認",
-      "as": "@{{login}} として承認済み",
-      "remove": "自分の承認を削除",
-      "removeTitle": "{{slug}} の承認を削除しますか?",
-      "removeMessage": "プラットフォームはあなたの承認を破棄します。アプリはフォークからアップストリームへのプルリクエストを代わりに開かなくなり、各実行のプルリクエストは GitHub でワンクリックで開けます。GitHub でも取り消すには: Settings → Applications → Authorized GitHub Apps。",
-      "removeConfirm": "削除",
-      "removed": "{{slug}} の承認を削除しました。",
-      "clientTitle": "{{slug}} の OAuth クライアント",
-      "clientDescription": "サーバーに暗号化して保存され、再表示されることはありません。",
-      "clientHint": "GitHub で: Settings → Developer settings → GitHub Apps → 該当の App → Generate a new client secret。クライアント ID も同じページにあります。",
-      "callbackHint": "同じページにこの Callback URL を追加してください:",
-      "clientId": "クライアント ID",
-      "clientIdInvalid": "GitHub に表示されるとおりのクライアント ID (英字、数字、ドット)。",
-      "clientSecret": "クライアントシークレット",
-      "clientSecretHint": "一度だけ貼り付けます。再表示はされません。",
-      "clientSecretInvalid": "GitHub が生成したクライアントシークレットを貼り付けてください。",
-      "clientSave": "クライアントを保存",
-      "clientSaved": "{{slug}} の OAuth クライアントを保存しました。"
+      "summaryPullRequests": "{{upstream}} へのプルリクエストはあなたから送られます。実行はワンクリックのリンクで終わり、あなたが GitHub で Create をクリックします。"
     }
   },
   "skills": {
@@ -1796,29 +1767,6 @@
     "answer": "メッセージ",
     "bytes": "{{used, number}} / {{max, number}} バイト",
     "send": "送信",
-    "board": {
-      "post": "タスクを投稿",
-      "role": "ロール",
-      "title": "タイトル",
-      "instructions": "やること",
-      "postSubmit": "投稿",
-      "posted": "投稿しました。",
-      "controls": "タスク {{task}}",
-      "take": "引き受ける",
-      "takeOver": "引き継ぐ",
-      "moveTo": "{{state}} へ移動",
-      "block": "ブロック",
-      "priority": "優先度",
-      "setPriority": "優先度を設定",
-      "reason": "理由",
-      "blockSubmit": "タスクをブロック",
-      "takeOverTitle": "このタスクを引き継ぎますか?",
-      "takeOverMessage": "別の人が担当しています ({{holder}})。あなたの担当になり、その人の操作は拒否されます。",
-      "duplicate": "同じタスクがすでにボードにあります。新しいものは投稿されていません。",
-      "blockOverTitle": "このタスクをブロックしますか?",
-      "blockOverMessage": "別の人が担当しています ({{holder}})。ブロックするとその人の担当は終わります。",
-      "release": "エージェントに戻す"
-    },
     "reports": {
       "title": "レポート: {{subject}}",
       "version": "バージョン",
@@ -1841,6 +1789,7 @@
     "notFound": "エンジニアリング実行が見つかりません",
     "notFoundHint": "実行 ID を確認してください。エンジニアリング実行は、エンジニアリングエージェントが有効な環境でのみ、すべてのカテゴリを閲覧できる人に表示されます。",
     "modelTokens": "{{model}}: 入力 {{input, number}}、出力 {{output, number}}",
+    "modelCredits": "{{model}}: Kiro クレジット {{credits, number}} ({{cost}})",
     "agentStatus": "{{agent}}: {{status}}",
     "agentNotApplied": "{{agent}}: {{status}}（未適用）",
     "status": {
@@ -1958,7 +1907,6 @@
       "sandbox": "セッションのサンドボックス",
       "kiro": "Kiro ハーネス",
       "fork": "フォーク",
-      "user_authorization": "所有者の GitHub 承認",
       "upstream_pr": "上流へのプルリクエスト"
     },
     "required": "実行に必要"
@@ -2234,7 +2182,9 @@
         "head": "リポジトリの現在の最新状態（リベースあり。競合はエージェントに渡されます）"
       },
       "agents": "エージェント",
-      "agentsHint": "何も選ばない場合: 未完了のすべてのタスク"
+      "agentsHint": "何も選ばない場合: 未完了のすべてのタスク",
+      "model": "新しい実行のモデル",
+      "modelDefault": "この実行と同じモデル"
     },
     "header": {
       "cost": "これまでの費用: {{cost}}",
@@ -2878,7 +2828,6 @@
       "runsNative": "このデプロイはこのロールをネイティブハーネス（Amazon Bedrock）で動かします: {{model}}（{{id}}）で動きます。",
       "nextRun": "実行の開始時にモデルが記録されるため、変更は次の実行から適用されます。独自のモデルで開始した実行では、すべてのロールがそのモデルで動きます。",
       "changed": "{{who}} が {{at}} に変更しました。",
-      "template": "テンプレートは {{model}} を指定しています。",
       "save": "モデルを保存",
       "saved": "保存しました。",
       "failed": "モデルを保存できませんでした。もう一度お試しください。",
@@ -3052,6 +3001,7 @@
   },
   "modelChoice": {
     "auto": "Auto",
+    "kiroCredits": "Kiro クレジットで 1 クレジットあたり {{price}} で課金され、コスト上限に含まれます。",
     "onHarness": "{{model}} · {{harness}}",
     "harness": {
       "native": "ネイティブ",
@@ -3067,13 +3017,17 @@
     "notes": {
       "auto": "Kiro がタスクごとにモデルを選びます。Kiro のみ: ネイティブハーネスではロールの既定のモデルが動きます。",
       "named": "両方のハーネスで {{model}}: Kiro では {{kiro}}、ネイティブハーネス（Amazon Bedrock）では {{bedrock}}。",
-      "other": "入力したモデル ID を、ロールが動くハーネスでそのまま使います。"
+      "other": "入力したモデル ID を、ロールが動くハーネスでそのまま使います。",
+      "otherNative": "このデプロイが有効にし料金を設定している、ほかの Bedrock モデル（一覧から選択）。"
     },
     "other": {
       "label": "モデル ID",
+      "enabledLabel": "有効なモデル",
+      "choose": "モデルを選択…",
+      "noneEnabled": "このデプロイで有効なほかのモデルはありません。管理者が -c engineeringModelPrices で追加します（docs/deployment.md）。",
       "hint": {
         "kiro": "Kiro のモデル ID（`kiro-cli chat --list-models` が一覧表示するもの。例: claude-sonnet-5.5）。",
-        "native": "このデプロイが有効にしている Bedrock のモデル ID または推論プロファイル ID（例: global.anthropic.claude-sonnet-5-5）。",
+        "native": "上の 3 つ以外に、このデプロイが有効にし料金を設定している Bedrock モデル。管理者が -c engineeringModelPrices で追加します（docs/deployment.md）。",
         "any": "Kiro 上のロールには Kiro のモデル ID（`kiro-cli chat --list-models` が一覧表示するもの。例: claude-sonnet-5.5）、ネイティブハーネス上のロールにはこのデプロイが有効にしている Bedrock のモデル ID（例: global.anthropic.claude-sonnet-5-5）。"
       }
     },

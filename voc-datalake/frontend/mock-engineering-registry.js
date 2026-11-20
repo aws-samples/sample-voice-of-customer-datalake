@@ -8,9 +8,10 @@
 //   PUT  /agents/engineering/registry/<role>/model         7.58.00: {model} (null: the role's default) → {role, model_choice,
 //                                                          updated_at, updated_by}; 400 for an id off its shape, or (a
 //                                                          role on the native harness) one this deployment does not enable
-// 7.58.00: each card says the model chosen for its role (`model_choice`, who and when), its template's own and the harness
-// its role runs on here (`runs_on`: the builder on Kiro, the others native), and both reads name the Bedrock models the
-// deployment grants and prices (`bedrock_enabled`).
+// 7.58.00: each card says the model chosen for its role (`model_choice`, who and when; a card names none of its own) and
+// the harness its role runs on here (`runs_on`: the builder on Kiro, the others native), and both reads name the Bedrock
+// models the deployment grants and prices (`bedrock_enabled`: here one beyond the three named, for a native role's
+// "Other model…" list).
 //   GET  /agents/engineering/gates?connection=             the packs (steps with their messages and vacuous-pass rule),
 //                                                          the briefs WITHOUT their text (gap N), the stops, the defaults
 //   GET  /agents/engineering/gates/briefs/<id>             one brief with its text; 404 for none
@@ -34,15 +35,17 @@ const CARD_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const GATE_ROLES = new Set(['gate-runner', 'final-go']);
 const month = () => new Date().toISOString().slice(0, 7);
 /** 7.58.00: the Bedrock models the deployment grants and prices, the roles it runs on Kiro, and each role's choice. */
-const BEDROCK_ENABLED = ['global.anthropic.claude-haiku-5-5', 'global.anthropic.claude-opus-5-5', 'global.anthropic.claude-sonnet-5-5'];
+const BEDROCK_ENABLED = ['global.anthropic.claude-haiku-5-5', 'global.anthropic.claude-opus-5', 'global.anthropic.claude-opus-5-5',
+  'global.anthropic.claude-sonnet-5-5'];
+/** (7.58.00) USD per Kiro credit here (`-c engineeringKiroCreditPrice`, its default): a Kiro role's billing note. */
+const KIRO_CREDIT_PRICE = 0.04;
 const KIRO_ROLES = new Set(['builder']);
 const NAMED_MODELS = new Set(['auto', 'opus', 'sonnet', 'haiku']);
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const CHOICES = { fixer: { model_choice: 'opus', updated_at: new Date(Date.now() - 2 * 86_400_000).toISOString(), updated_by: 'admin-demo' } };
-const roleModelFields = (role, template) => ({
+const roleModelFields = (role) => ({
   model_choice: CHOICES[role]?.model_choice ?? null, model_choice_updated_at: CHOICES[role]?.updated_at ?? null,
-  model_choice_updated_by: CHOICES[role]?.updated_by ?? null, template_model_choice: template?.model_choice ?? null,
-  runs_on: KIRO_ROLES.has(role) ? 'kiro' : 'native',
+  model_choice_updated_by: CHOICES[role]?.updated_by ?? null, runs_on: KIRO_ROLES.has(role) ? 'kiro' : 'native',
 });
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
 
@@ -81,7 +84,7 @@ function roleCard(template, connection) {
       cost_usd: 2.46, since: daysAgo(14), until: daysAgo(0) },
     spend: { month: month(), usd: template.id === 'fixer' ? 3.2 : 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 },
     node: launchable ? { type: 'agent', data: { title: template.id, params: { role: template.id, skill_version: 'latest' } } } : null,
-    ...roleModelFields(template.id, template),
+    ...roleModelFields(template.id),
   };
 }
 
@@ -106,20 +109,20 @@ function madeRecord({ id, version, role, title, purpose, skillVersion, connectio
 
 const cardView = (record) => ({ kind: 'card', ...record, node: { type: 'agent', data: { title: record.title, params: {
   role: record.base_role, skill_version: `v${record.skill.version}`, model: record.model, card: `${record.id}@v${record.version}` } } },
-  ...roleModelFields(record.base_role, BUNDLE.agents.find((agent) => agent.id === record.base_role)) });
+  ...roleModelFields(record.base_role) });
 
 function registry(connection) {
   const cards = BUNDLE.agents.map((template) => roleCard(template, connection));
-  return [200, { month: month(), connection, bedrock_enabled: BEDROCK_ENABLED,
+  return [200, { month: month(), connection, bedrock_enabled: BEDROCK_ENABLED, kiro_credit_price_usd: KIRO_CREDIT_PRICE,
     cards: [...cards, ...Object.values(MADE).map((versions) => cardView(versions.at(-1)))] }];
 }
 
 function card(id, connection) {
   const template = BUNDLE.agents.find((agent) => agent.id === id);
-  if (template) return [200, { card: roleCard(template, connection), versions: [], events: [], bedrock_enabled: BEDROCK_ENABLED }];
+  if (template) return [200, { card: roleCard(template, connection), versions: [], events: [], bedrock_enabled: BEDROCK_ENABLED, kiro_credit_price_usd: KIRO_CREDIT_PRICE }];
   const versions = MADE[id];
   if (!versions) return [404, { error: `the Registry has no card ${id.slice(0, 64)}` }];
-  return [200, { card: cardView(versions.at(-1)), versions: [...versions].reverse().map(cardView), bedrock_enabled: BEDROCK_ENABLED,
+  return [200, { card: cardView(versions.at(-1)), versions: [...versions].reverse().map(cardView), bedrock_enabled: BEDROCK_ENABLED, kiro_credit_price_usd: KIRO_CREDIT_PRICE,
     events: [...versions].reverse().map((record) => ({ version: record.version, event: 'created', by: record.created_by, at: record.created_at })) }];
 }
 

@@ -11,7 +11,7 @@
  * - **Public repositories (read-only)** ({@link PublicConnections}): one row each, its kind badge, its facts, its issues
  *   switch (the deployment's GitHub Issues source reads it as for any connection), the "stays in VoC" note, its "⋯"
  *   (Remove connection…) and the guided setup of contributing to it (ContributeCard.tsx: fork it, let the agents push to
- *   the fork, optionally let the app open the pull requests). No CI to attest: the agents push nothing to it.
+ *   the fork; each run's upstream pull request is one click away). No CI to attest: the agents push nothing to it.
  *
  * @module pages/Agents/PublicRepositories
  */
@@ -224,7 +224,7 @@ export function PublicConnections({ connections, all, apps, view, onRemove }: Re
         {connections.map((connection) => (
           <PublicConnectionRow key={connection.connection_id} connection={connection} view={view}
             onRemove={() => { onRemove(connection) }}>
-            <ContributeCard connection={connection} connections={all} apps={apps}
+            <ContributeCard connection={connection} connections={all}
               onInstall={() => { setContributing(connection) }} />
           </PublicConnectionRow>
         ))}

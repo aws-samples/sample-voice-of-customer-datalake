@@ -23,14 +23,21 @@ describe('the Registry\'s answers', () => {
 
   it('read a card\'s model choice, its harness and the enabled models (7.58.00), each missing one as none', () => {
     const role = { kind: 'role', id: 'builder', skill: {}, model_choice: 'claude-opus-5.5', runs_on: 'kiro',
-      model_choice_updated_by: 'admin', model_choice_updated_at: '2026-11-19T09:00:00Z' }
+      model_choice_updated_by: 'admin', model_choice_updated_at: '2026-11-19T09:00:00Z', template_model_choice: 'opus' }
     const detail = parseCardDetail({ card: role, versions: [], bedrock_enabled: ['global.anthropic.claude-opus-5-5', 7] })
-    expect([detail.card.model_choice, detail.card.runs_on, detail.card.model_choice_updated_by, detail.card.template_model_choice,
-      detail.bedrockEnabled]).toStrictEqual(['claude-opus-5.5', 'kiro', 'admin', null, []])
+    // (a card names no choice of its own: an older server's template_model_choice is dropped)
+    expect([detail.card.model_choice, detail.card.runs_on, detail.card.model_choice_updated_by, detail.bedrockEnabled,
+      'template_model_choice' in detail.card]).toStrictEqual(['claude-opus-5.5', 'kiro', 'admin', [], false])
     const [sparse] = parseRegistry({ cards: [{ kind: 'role', id: 'fixer', skill: {}, runs_on: 'elsewhere' }] })
     expect([sparse?.model_choice, sparse?.runs_on, parseCardDetail({ card: role }).bedrockEnabled]).toStrictEqual([null, 'native', []])
     expect(parseSavedModel({ role: 'builder', model_choice: null, updated_at: 't', updated_by: 'a' }).model_choice).toBeNull()
     expect(() => parseSavedModel({ model_choice: 'opus' })).toThrow('The answer to saving the model was unreadable')
+  })
+
+  it('read what a Kiro credit costs here (7.58.00), none for a missing or impossible price', () => {
+    const role = { kind: 'role', id: 'builder', skill: {} }
+    expect([0.04, 0, undefined, -1, 11, '0.04'].map((price) => parseCardDetail({ card: role, kiro_credit_price_usd: price })
+      .kiroCreditPrice)).toStrictEqual([0.04, 0, null, null, null, null])
   })
 
   it('read the quality gates with their packs, and a template\'s source only with its text', () => {

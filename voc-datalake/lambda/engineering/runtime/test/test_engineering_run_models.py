@@ -22,7 +22,7 @@ LAUNCH = {'action': 'launch', 'run_id': RUN_ID, 'agent_id': 'fixer-1', 'role': '
           'language': 'python', 'connection': 'conn-1', 'commit': COMMIT, 'paths': ['src']}
 OPUS = 'global.anthropic.claude-opus-5-5'
 UNPRICED = 'global.anthropic.claude-opus-5'   # (one of the agents' Claude models, not in DEFAULT_TOKEN_PRICES)
-KIRO = {'ENGINEERING_HARNESS': 'kiro', 'ENGINEERING_KIRO_KEY_PARAMETER': '/voc/engineering/_kiro/api-key'}
+KIRO = {'ENGINEERING_HARNESS': 'kiro', 'ENGINEERING_KIRO_KEY_PARAMETER': '/voc/engineering-kiro/api-key'}
 
 
 def _table() -> Any:
@@ -132,6 +132,34 @@ def test_a_child_run_keeps_its_parents_models(monkeypatch):
     child = RunStore(_table()).get(CHILD)
     assert child is not None
     assert (child.model_choice, dict(child.role_models)) == ('haiku', {'fixer': 'opus'})
+
+
+@pytest.mark.usefixtures('wired')
+def test_a_restart_that_names_a_model_runs_its_child_on_it_for_every_role(monkeypatch):
+    # (Q18) A step Kiro stopped for its model goes on with another: the Restart's model, over the parent's.
+    from engineering.runtime.test.test_engineering_child_run import CHILD, PARENT, RESUME, _parent
+    from shared import aws as shared_aws
+    _parent(monkeypatch)
+    _table().update_item(Key={'pk': run_pk(PARENT), 'sk': 'META'},
+                         UpdateExpression='SET model_choice = :m, role_models = :r',
+                         ExpressionAttributeValues={':m': 'opus', ':r': {'fixer': 'opus'}})
+    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda *_: None)
+    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    handler.start_handler({**RESUME, 'model_choice': 'sonnet'}, None)
+    child = RunStore(_table()).get(CHILD)
+    assert child is not None
+    assert (child.model_choice, dict(child.role_models)) == ('sonnet', {'fixer': 'opus'})
+
+
+@pytest.mark.usefixtures('wired')
+@pytest.mark.parametrize(('model', 'said'), [('not a model', 'a model is auto'),
+                                             (UNPRICED, r"runs on the native harness: global\.anthropic\.claude-opus-5 isn't")])
+def test_a_restarts_model_off_its_shape_or_not_enabled_writes_no_child(monkeypatch, model: str, said: str):
+    from engineering.runtime.test.test_engineering_child_run import CHILD, RESUME, _parent
+    _parent(monkeypatch)
+    with pytest.raises(RuntimeRefused, match=said):
+        handler.start_handler({**RESUME, 'model_choice': model}, None)
+    assert RunStore(_table()).get(CHILD) is None
 
 
 # -- the launch --------------------------------------------------------------------------------------------------

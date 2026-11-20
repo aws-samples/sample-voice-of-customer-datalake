@@ -34,7 +34,8 @@ from decimal import Decimal
 from typing import Any, Final, Literal, Protocol
 
 from engineering.runtime.harness.kiro_pin import kiro_model
-from engineering.runtime.harness.model_choice import bedrock_model, not_enabled
+from engineering.runtime.harness.model_choice import bedrock_model
+from engineering.runtime.harness_switch import not_native
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
 from shared.dynamo_values import string_list as _texts
 from shared.workflow_engineering import PUSHING_ROLES
@@ -42,10 +43,9 @@ from shared.workflow_engineering import PUSHING_ROLES
 Status = Literal['pass', 'fail', 'warn', 'unknown']
 DOCS: Final = 'docs/autonomous-engineering.md'
 READINESS_DOCS: Final = f'{DOCS}#readiness-75000'
-#: The checks, in the order they are answered (7.57.00: a fork connection's ``fork``, ``user_authorization`` and
-#: ``upstream_pr``, none of them required: a run whose upstream pull request the app does not open ends with its
-#: one-click link).
-CHECK_IDS: Final = ('connection', 'app_installation', 'fork', 'user_authorization', 'upstream_pr', 'ci_attestation',
+#: The checks, in the order they are answered (7.57.00: a fork connection's ``fork`` and ``upstream_pr``, neither of
+#: them required).
+CHECK_IDS: Final = ('connection', 'app_installation', 'fork', 'upstream_pr', 'ci_attestation',
                     'ci_protection', 'image', 'pack', 'tenets', 'issues_source', 'issue_label', 'dial', 'budget',
                     'hard_cap', 'bedrock_models', 'agentcore_quota', 'memory_setting', 'network', 'sandbox', 'kiro',
                     'session_storage')
@@ -157,7 +157,7 @@ class Settings:
     kiro_roles: frozenset[str] = frozenset()
     kiro_key_parameter: str = ''
     kiro_version: str = ''
-    #: (7.58.00) Each role's model choice (the Registry's, else its card's: runtime/harness/model_choice.py), only the
+    #: (7.58.00) Each role's model choice (the Registry's: runtime/harness/model_choice.py), only the
     #: roles that have one, and the Bedrock models the native harness may run here (granted and priced:
     #: runtime/harness_switch.py ``native_models``; empty when not known).
     model_choices: Mapping[str, str] = field(default_factory=dict)
@@ -256,10 +256,6 @@ class ReadinessPorts(Protocol):
     def fork_parent(self, connection: Mapping[str, Any]) -> str | None:
         """What a fork connection's repository is a fork of on GitHub now (7.57.00: its ``parent``, read through the
         token function with a read-only token), '' when it is no fork, None when GitHub has no such repository."""
-        ...
-
-    def user_authorized(self, app_id: str, subject: str) -> bool:
-        """Whether ``subject`` holds a GitHub user authorization of App ``app_id`` (7.57.00: its row; never a token)."""
         ...
 
 
@@ -454,6 +450,11 @@ def _app_installation(ctx: _Context) -> Check:
                      ADD_CONNECTION, APP_DOCS)
     if str(ctx.row.get('host') or 'github') != 'github':
         return _not_needed('app_installation', 'a GitLab connection signs in with its project access token', APP_DOCS)
+    if ctx.row.get('connection_kind') == 'public_read':
+        # (7.58.00) Read with an installation token of the deployment's App that holds metadata: read alone and names no
+        # repository (github.py ``_token``): no installation on the public repository is needed, nor asked for.
+        return _not_needed('app_installation', 'a public repository connected read only is read with this '
+                           "deployment's GitHub App, which needs no installation on it", PUBLIC_DOCS)
     try:
         covered = ctx.ports.installation_repositories(ctx.row)
     except ReadFailed as error:
@@ -497,52 +498,18 @@ def _fork(ctx: _Context) -> Check:
     return Check('fork', 'pass', f'{_repository(ctx)} is a fork of {upstream}.', '', PUBLIC_DOCS)
 
 
-def _user_authorization(ctx: _Context) -> Check:
-    """The fork connection's owner's GitHub user authorization (7.57.00): what lets the app open the upstream pull
-    request for them (optional: without it each run ends with the one-click link)."""
-    if not _is_fork(ctx) or ctx.row is None:
-        return _not_needed('user_authorization', 'the connection is not a fork', PUBLIC_DOCS)
-    owner = str(ctx.row.get('owner_name') or 'the connection\'s owner')
-    fix = (f'{owner} authorizes the App under Agents → Connections → GitHub Apps → Authorize as me (its OAuth client '
-           'set first, for an App made before 7.57.00).')
-    try:
-        held = ctx.ports.user_authorized(str(ctx.row.get('app_id') or ''), str(ctx.row.get('owner_subject') or ''))
-    except ReadFailed as error:
-        return _unknown('user_authorization', 'The owner\'s authorization', error, fix, PUBLIC_DOCS)
-    if held:
-        return Check('user_authorization', 'pass', f'{owner} authorized the App: the app opens the upstream pull '
-                     'request as them where GitHub lets it, else the run ends with the one-click link.', '', PUBLIC_DOCS)
-    return Check('user_authorization', 'warn', f'{owner} has not authorized the App (optional): a run ends with the '
-                 'one-click link, and they create the upstream pull request on GitHub.', fix, PUBLIC_DOCS)
-
-
 def _upstream_pr(ctx: _Context) -> Check:
-    """Whether the app opens the runs' upstream pull request under the way of working they follow (7.57.00):
-    AI-driven, or AI-assisted with the owner's explicit setting; the licence acknowledged (otherwise a run ends with the
-    one-click link). GitHub's own state (archived, opted out, a changed licence) is read by the broker at each upstream
-    pull request."""
+    """The runs' upstream pull request on a fork (7.57.00): one click away once the gate passes, the person creating it
+    on GitHub (the app never opens it itself, 7.58.00), with the licence acknowledged. GitHub's own state (archived,
+    opted out, a changed licence) is read by the broker at each upstream pull request."""
     if not _is_fork(ctx) or ctx.row is None:
         return _not_needed('upstream_pr', 'the connection is not a fork', PUBLIC_DOCS)
     if not requires(ctx.subject, 'ci_attestation'):
         return _not_needed('upstream_pr', 'the flow pushes nothing, so it opens no pull request', PUBLIC_DOCS)
-    assisted = ctx.row.get('upstream_pr_assisted') is True
-    try:
-        mode = ctx.ports.mode(ctx.subject.person) if ctx.subject.person else ''
-    except ReadFailed as error:
-        return _unknown('upstream_pr', 'The way of working', error, docs=PUBLIC_DOCS)
     licence = str(ctx.row.get('licence') or '')
-    if mode == MODE_AI_DRIVEN or (mode == MODE_AI_ASSISTED and assisted):
-        return Check('upstream_pr', 'pass', f'The runs open their pull request on {ctx.row.get("upstream", "")} after '
-                     f'the gate passes (licence {licence} acknowledged), within the daily caps.', '',
-                     PUBLIC_DOCS)
-    if mode == MODE_AI_ASSISTED:
-        return Check('upstream_pr', 'warn', 'The runs work AI-assisted, and the owner has not allowed the app to open '
-                     'upstream pull requests for AI-assisted runs: a run ends with the one-click link.',
-                     'The owner turns on "Open upstream pull requests for AI-assisted runs" on the fork connection.',
-                     PUBLIC_DOCS)
-    return Check('upstream_pr', 'warn', 'The runs\' way of working lets the app open no upstream pull request: a run '
-                 'ends with the one-click link.', 'Set AI-driven (or AI-assisted, with the owner\'s setting) for the person the '
-                 'runs follow.', PUBLIC_DOCS)
+    return Check('upstream_pr', 'pass', f'A run ends with its pull request on {ctx.row.get("upstream", "")} one click '
+                 f'away once the gate passes (licence {licence} acknowledged): you create it on GitHub.', '',
+                 PUBLIC_DOCS)
 
 
 def _ci_attestation(ctx: _Context) -> Check:
@@ -773,7 +740,7 @@ def _bedrock_models(ctx: _Context) -> Check:
         return Check('bedrock_models', 'fail', 'The flow names no role with a model.', 'Add the flow\'s steps.',
                      MODELS_DOCS)
     chosen = _chosen_native(ctx)
-    refused = [f'The {role}: {not_enabled(model)}' for role, model, ok in chosen if not ok]
+    refused = [f'The {role}: {not_native(model)}' for role, model, ok in chosen if not ok]
     if refused:
         return Check('bedrock_models', 'fail', ' '.join(refused),
                      'Choose another model for the role (Agents → Registry), or have an admin price it.', MODELS_DOCS)
@@ -957,7 +924,7 @@ def _session_storage(ctx: _Context) -> Check:
 
 _CHECKS: Final[Mapping[str, Callable[[_Context], Check]]] = {
     'connection': _connection, 'app_installation': _app_installation, 'fork': _fork,
-    'user_authorization': _user_authorization, 'upstream_pr': _upstream_pr, 'ci_attestation': _ci_attestation,
+    'upstream_pr': _upstream_pr, 'ci_attestation': _ci_attestation,
     'ci_protection': _ci_protection, 'image': _image, 'pack': _pack, 'tenets': _tenets,
     'issues_source': _issues_source, 'issue_label': _issue_label, 'dial': _dial, 'budget': _budget,
     'hard_cap': _hard_cap, 'bedrock_models': _bedrock_models, 'agentcore_quota': _agentcore_quota,

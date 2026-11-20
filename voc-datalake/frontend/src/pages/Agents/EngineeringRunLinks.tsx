@@ -6,12 +6,12 @@
  * Since 7.57.00 a run on a fork connection also shows its pull request on the upstream (the upstream is its owner's; the
  * fork and the pull request are the person's):
  *
- * - **opened** by the app as the connection's owner (they authorized it): a link only to
- *   `https://github.com/<upstream>/pull/<n>`, as whom;
+ * - **opened** (found open from the run's branch: the person created it): a link only to
+ *   `https://github.com/<upstream>/pull/<n>`;
  * - **one click away** (`link`): **Open the pull request on ‹upstream›**, GitHub's compare page with the title and body
- *   prefilled, where the person clicks Create (so it is theirs; no token, no App on the upstream). A link only to
- *   `https://github.com/<upstream>/compare/…`. When the link's body had to be shortened, **Copy the description**
- *   copies the full one. Why the app did not open it is a plain note, not an error;
+ *   prefilled, where the person clicks Create (so it is theirs; no token, no App on the upstream; 7.58.00: the app never
+ *   opens it itself). A link only to `https://github.com/<upstream>/compare/…`. When the link's body had to be
+ *   shortened, **Copy the description** copies the full one;
  * - **refused** by a safety check (no link: the reason);
  * - **unknown** outcome (the compare link kept, when there is one).
  *

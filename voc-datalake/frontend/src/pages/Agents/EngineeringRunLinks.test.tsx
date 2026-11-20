@@ -99,7 +99,7 @@ describe('the upstream pull request of a run on a fork connection (7.57.00)', ()
   const COMPARE = 'https://github.com/open-tools/lint-kit/compare/main...alice:lint-kit:voc-agent/RUN1/fix?expand=1&title=Fix'
   const oneClick = (fields: Record<string, unknown> = {}) => upstream({
     state: 'link', number: null, url: null, as: null, compare_url: COMPARE, title: 'Fix', description: null,
-    reason: 'The app opens it for you once you authorize it (Authorize as me).', ...fields,
+    reason: null, ...fields,
   })
   const OPEN_COMPARE = 'Open the pull request on open-tools/lint-kit (opens in a new tab)'
 
@@ -155,13 +155,13 @@ describe('the upstream pull request of a run on a fork connection (7.57.00)', ()
     ]).toStrictEqual(Array.from({ length: 10 }, () => null))
   })
 
-  it('puts the pull request one click away on GitHub\'s compare page, why the app did not open it a plain note', () => {
+  it('puts the pull request one click away on GitHub\'s compare page, the person\'s to create, no error', () => {
     render(<EngineeringRunLinks run={runWith({ upstream_pull_request: oneClick() })} />)
     const link = screen.getByRole('link', { name: OPEN_COMPARE })
     expect([link.getAttribute('href'), link.getAttribute('target'), link.getAttribute('rel')])
       .toStrictEqual([COMPARE, '_blank', 'noopener noreferrer'])
     const compare = screen.getByTestId('upstream-compare')
-    expect(compare).toHaveTextContent('The app opens it for you once you authorize it (Authorize as me).')
+    expect(compare).toHaveTextContent('You click Create on GitHub: the pull request is yours.')
     expect([within(compare).queryByRole('button'), screen.queryByTestId('upstream-refused'), compare.querySelector('.text-warn')])
       .toStrictEqual([null, null, null])
   })

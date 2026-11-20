@@ -9,14 +9,16 @@ from typing import Any
 
 import pytest
 
+from engineering.board.store import MAX_LINE, BoardError
 from engineering.runtime import harness_switch
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness import model_choice
 from engineering.runtime.harness.kiro import _offered
 from engineering.runtime.harness.kiro_pin import kiro_model
 from engineering.runtime.harness.skills import HARNESS_ENTRY
+from engineering.runtime.harness.tools import PROGRESS_MAX
 from engineering.runtime.interface import RuntimeRefused
-from engineering.runtime.test.harness_fakes import World, world
+from engineering.runtime.test.harness_fakes import FakeBoard, World, world
 from engineering.runtime.test.test_engineering_kiro_harness import (
     _adapter,
     _events,
@@ -26,7 +28,7 @@ from engineering.runtime.test.test_engineering_kiro_harness import (
     _transcribed,
 )
 
-PARAMETER = '/voc/engineering/_kiro/api-key'
+PARAMETER = '/voc/engineering-kiro/api-key'
 SONNET = 'global.anthropic.claude-sonnet-5-5'
 ARGV = (*HARNESS_ENTRY, '--adapter', 'converse', '--model', SONNET)
 
@@ -36,7 +38,7 @@ def _model_sets(log: Path) -> list[str]:
             if frame['params']['configId'] == 'model']
 
 
-TAIL = " Choose another model in the role's setup or for this run."
+TAIL = ' Restart the run with another model (Restart run, Model), or start a new run with one.'
 
 
 def _run(tmp_path: Path, scenario: dict[str, Any], model: str, *, skill_model: str = '') -> tuple[World, Path, str]:
@@ -174,6 +176,33 @@ def test_a_coordinator_stopped_for_its_model_is_a_crash_saying_why(tmp_path):
     assert (w.board.moves, w.board.progress_seen[-1][3]) == ([], w.session.stopped_for)
 
 
+def test_a_long_refusal_reaches_a_person_as_one_board_line_and_stays_whole_on_the_session(tmp_path):
+    # (Q25) Kiro's answer can make the reason longer than the board's MAX_LINE (200): sent whole, the board refused
+    # the progress step, the session crashed and was continued into the same refusal, never reaching a person.
+    w = world(tmp_path)
+    w.session.stopped_for = 'Kiro could not use claude-opus-5.5 for the fixer (it answered ' + 'x' * 250 + ').'
+    w.session.context.status.at(w.session.stopped_for)
+    harness_main._finished(w.session)
+    step = w.board.progress_seen[-1][3]
+    assert (len(step) <= PROGRESS_MAX < MAX_LINE, step.endswith('…'), w.board.moves[-1][2]) == (True, True, 'needs_human')
+    assert w.session.context.status.step == w.session.stopped_for
+
+
+def test_a_long_coordinator_refusal_is_a_crash_whose_reason_is_one_line(tmp_path):
+    w = world(tmp_path, role='coordinator')
+    w.session.stopped_for = 'Kiro could not use claude-opus-5.5 for the coordinator\n(it answered ' + 'y' * 250 + ').'
+    with pytest.raises(harness_main.CoordinatorStopped) as stopped:
+        harness_main._finished(w.session)
+    assert (str(stopped.value), w.board.moves) == (w.board.progress_seen[-1][3], [])
+    assert len(str(stopped.value)) <= PROGRESS_MAX
+    assert '\n' not in str(stopped.value)
+
+
+def test_the_board_fake_refuses_a_step_over_the_boards_line():
+    with pytest.raises(BoardError, match='a line of 1 to 200'):
+        FakeBoard().progress('r', 't', 'a', 'z' * (MAX_LINE + 1))
+
+
 def test_the_harness_takes_the_kiro_model_from_its_argv_and_names_it_as_the_sessions():
     args = harness_main._parser().parse_args(['run', '--adapter', 'kiro', '--model', SONNET, '--kiro-model',
                                               'claude-haiku-5.5'])
@@ -212,6 +241,17 @@ def test_another_bedrock_id_runs_only_where_the_deployment_grants_and_prices_it(
     assert 'vendor.model-x' not in harness_switch.native_models(ungranted)
 
 
+@pytest.mark.parametrize('model', ['global.anthropic.claude-sonnet-4-6', 'global.anthropic.claude-haiku-4-5-20251001-v1:0'])
+def test_a_granted_claude_that_does_not_think_adaptively_never_runs_natively_even_priced(model):
+    # (Q17) The Converse loop asks every model for adaptive, summarized thinking, which these refuse: the launch runs
+    # only the allowlist's adaptive_thinking models, and says why, not "price it".
+    priced = _env(ENGINEERING_MODEL_PRICES=json.dumps({model: {'input': '3', 'output': '15'}}))
+    assert model not in harness_switch.native_models(priced)
+    with pytest.raises(RuntimeRefused, match=r"can't run on the native harness: it doesn't think adaptively"):
+        harness_switch.with_model(ARGV, 'fixer', priced, model)
+    assert harness_switch.not_native('vendor.model-x') == model_choice.not_enabled('vendor.model-x')
+
+
 @pytest.mark.parametrize(('choice', 'kiro'), [('opus', 'claude-opus-5.5'), ('auto', 'auto'),
                                               ('claude-sonnet-4.5', 'claude-sonnet-4.5')])
 def test_a_role_on_kiro_gets_the_choices_kiro_model(choice, kiro):
@@ -247,8 +287,8 @@ def test_a_choice_off_its_shape_is_refused(value):
         model_choice.checked(value)
 
 
-def test_the_launch_applies_the_runs_choice_then_the_roles_then_its_cards():
-    assert model_choice.chosen('haiku', 'opus', 'sonnet') == 'haiku'
-    assert model_choice.chosen('', 'opus', 'sonnet') == 'opus'
-    assert model_choice.chosen('', '', 'sonnet') == 'sonnet'
-    assert model_choice.chosen('', '', '') == ''
+def test_the_launch_applies_the_runs_choice_then_the_roles_and_else_none():
+    # (a card names no choice: none is its model.id, the skill's --model)
+    assert model_choice.chosen('haiku', 'opus') == 'haiku'
+    assert model_choice.chosen('', 'opus') == 'opus'
+    assert model_choice.chosen('', '') == ''

@@ -58,23 +58,22 @@ export function useSingleRequest<T>(request: (() => Promise<T>) | null): Request
 
 /**
  * The one exchange of the `code` and `state` GitHub sent back: `names` taken out of the address (`useTakenQuery`), the
- * two sent once at the first mount (`send`), then `stale`'s queries read again. `declined`: GitHub sent `skipOn` back
- * instead (a person declined), and nothing is sent; `idle` too when the code or the state is missing.
+ * two sent once at the first mount (`send`), then `stale`'s queries read again; `idle` when the code or the state is
+ * missing.
  */
 export function useCodeExchange<T>(names: readonly string[], send: (code: string, state: string) => Promise<T>,
-  stale: readonly QueryKey[], skipOn = ''): { outcome: RequestOutcome<T>; declined: boolean } {
+  stale: readonly QueryKey[]): { outcome: RequestOutcome<T> } {
   const queryClient = useQueryClient()
   const taken = useTakenQuery(names)
-  const [declined] = useState(() => skipOn !== '' && taken.has(skipOn))
   const [request] = useState(() => {
     const code = taken.get('code') ?? ''
     const state = taken.get('state') ?? ''
-    if (declined || code === '' || state === '') return null
+    if (code === '' || state === '') return null
     return async () => {
       const answer = await send(code, state)
       for (const queryKey of stale) void queryClient.invalidateQueries({ queryKey })
       return answer
     }
   })
-  return { outcome: useSingleRequest(request), declined }
+  return { outcome: useSingleRequest(request) }
 }

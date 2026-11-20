@@ -8,6 +8,10 @@
  * - any other model id ("Other model…"): typed by a person, used as it is on the harness the role runs on (a Kiro model
  *   id, or a Bedrock model or inference profile id this deployment enables); on Kiro a Claude Bedrock id by Kiro's name.
  *
+ * On a role the native harness runs, a select offers no Auto (Kiro's alone: the role's default there) and its "Other
+ * model…" is one of the Bedrock models this deployment enables (the Registry's `bedrock_enabled`: granted and priced)
+ * beyond the three named, never an id typed (`choicesOn`, `otherModelsOn`). A card names no choice of its own.
+ *
  * No choice (null or '') is the role's default: its card's model, on Kiro by Kiro's name for it
  * (`global.anthropic.claude-sonnet-5-5` → `claude-sonnet-5.5`, the backend's `kiro_pin.py` `kiro_model`; a model Kiro
  * has no name for is asked as it is, and the step stops for a person). Pure: the forms (ModelChoiceField.tsx), the
@@ -62,6 +66,23 @@ export function draftOf(choice: string | null): ModelDraft {
 export function modelChoiceOf(draft: ModelDraft): string | null {
   if (draft.pick === '') return null
   return draft.pick === 'other' ? draft.other.trim() : draft.pick
+}
+
+/** The picks a select offers on a harness (`any`: the run's roles may be on either): the default, the named choices and
+ * "Other model…"; on the native harness no Auto, unless it is the pick already (saved while the role ran on Kiro: shown
+ * as it is). */
+export function choicesOn(harness: ModelHarness | 'any', current: ModelPick = ''): readonly ModelPick[] {
+  const named = harness === 'native' && current !== 'auto' ? NAMED_MODEL_CHOICES.filter((name) => name !== 'auto') : NAMED_MODEL_CHOICES
+  return ['', ...named, 'other']
+}
+
+/** What a native role's "Other model…" offers: the models this deployment enables beyond the three named ones, sorted;
+ * with `current` first when it is none of them (a choice saved earlier, which `modelIssue` says is not enabled). */
+export function otherModelsOn(enabled: readonly string[], current: string): string[] {
+  const named = new Set<string>(Object.values(BEDROCK_MODELS))
+  const others = [...new Set(enabled)].filter((id) => !named.has(id)).sort((a, b) => a.localeCompare(b))
+  const id = current.trim()
+  return id === '' || others.includes(id) ? others : [id, ...others]
 }
 
 /** Why a form's other id cannot be saved: none typed, off its shape, or (native) a model this deployment does not

@@ -10,8 +10,10 @@ from typing import Final
 #: The one kiro-cli the images install (templates/orchestration/images/common/install-kiro.sh, at its published
 #: sha256), and the version the harness accepts (``kiro.check``; the launch's argv names it: runtime/harness_switch.py).
 KIRO_CLI_VERSION: Final = '3.4.0'
-#: The deployment's key parameter: ``/voc/engineering/_kiro/api-key``, or ``/<prefix>-voc/…`` on a prefixed one.
-KEY_PARAMETER_RE: Final = re.compile(r'/(?:[a-z0-9][a-z0-9-]{0,40}-)?voc/engineering/_kiro/api-key\Z')
+#: The deployment's key parameter: ``/voc/engineering-kiro/api-key``, or ``/<prefix>-voc/…`` on a prefixed one (7.58.00:
+#: beside the connections' ``/voc/engineering/``, outside every grant on it; lib/stacks/engineering-kiro.ts). The old
+#: ``/voc/engineering/_kiro/api-key`` is refused: the launch says no key parameter is named.
+KEY_PARAMETER_RE: Final = re.compile(r'/(?:[a-z0-9][a-z0-9-]{0,40}-)?voc/engineering-kiro/api-key\Z')
 #: A Claude model's Bedrock id (``global.anthropic.claude-sonnet-5-5``, ``…claude-haiku-4-5-20251001-v1:0``): its family,
 #: its major and its minor version.
 CLAUDE_MODEL_RE: Final = re.compile(
