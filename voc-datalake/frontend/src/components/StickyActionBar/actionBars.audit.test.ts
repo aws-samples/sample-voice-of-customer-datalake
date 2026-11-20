@@ -50,6 +50,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   BrandEditorCard: 'Administration → Brand & appearance → Brand → Save; Workspace settings → Brand → Save; Administration → Platform → Deployment brand → Save',
   SaveBar: 'the document surface\'s own save row (components/Document/surface): Discard and Save',
   TenetsReview: 'Agent orchestration → Setup guide → Tenets: a version\'s reason, then Reject or Accept',
+  RoleModelSetting: 'Agents → Registry → a role\'s card → Model → Save model (7.58.00)',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */

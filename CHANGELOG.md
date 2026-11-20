@@ -65,6 +65,11 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   `rate_multiplier`), so the ledger counts their session time only.
 - The root README explains Autonomous engineering and the agent orchestration templates and links their docs; the
   monitor's overview test names 7.57.00's `upstream_pull_request`.
+- The role's model route is classified (deployment-wide, an administrator's: the cross-workspace tables, the admin
+  gates and the delegated-credential refusals); the two `SETTINGS#engineering` saves share one transaction helper
+  and the runtime reads the row through one table helper (`engineering/settings.py`, `runtime/handler.py`), so the
+  raw-access counts stay as they were; the Registry's Save model row is a `StickyActionBar`; and the cost rollup's
+  test reads its concurrently started batches in any order (it depended on thread timing, before 7.58.00 too).
 
 ### Removed
 

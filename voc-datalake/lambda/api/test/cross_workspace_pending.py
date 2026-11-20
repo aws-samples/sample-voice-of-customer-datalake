@@ -275,6 +275,9 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/pause',
         'POST /agents/<agent_id>/resume',
         'POST /agents/engineering/registry/cards',
+        # (7.58.00) A role's model in this deployment: one SETTINGS#engineering ROLE_MODELS row beside the hard cap's,
+        # an administrator's, deployment-wide like the agents it sets.
+        'PUT /agents/engineering/registry/<role>/model',
     }),
     # The scheduled cross-run Learn pass's weekly record (7.53.00, included by agents_handler.py): the deployment's
     # flows' records (ws/default/learn/), so it moves with the engineering agents in 3g3.

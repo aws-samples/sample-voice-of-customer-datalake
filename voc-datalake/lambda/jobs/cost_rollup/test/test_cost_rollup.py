@@ -146,7 +146,8 @@ def test_fifty_groups_a_query_and_the_batches_rows_are_summed(world):
     logs = Logs(names, lambda _query: ('Complete', [usage(ACME, calls=2, input_tokens=10)]))
     handle_event({'days': [YESTERDAY]}, world.rollup(logs))
 
-    assert [len(q['logGroupNames']) for q in logs.started] == [50, 50, 50, 50, 50, 10]
+    # (the queries start concurrently, shared/system_logs.py start_queries: their batches' sizes, in any order)
+    assert sorted((len(q['logGroupNames']) for q in logs.started), reverse=True) == [50, 50, 50, 50, 50, 10]
     assert sorted(name for q in logs.started for name in q['logGroupNames']) == sorted(names)
     [row] = world.rows(f'WS#{ACME}#COST')
     assert (row['totals']['calls'], row['totals']['input_tokens']) == (12, 60)

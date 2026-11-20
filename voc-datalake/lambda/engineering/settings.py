@@ -47,18 +47,29 @@ def read_hard_cap(table: Any) -> HardCap:
 
 def save_hard_cap(table: Any, *, on: bool, by: str, at: datetime) -> HardCap:
     """Save the hard cap's state, with its history row, in one transaction; the hard cap as saved."""
-    when = at.astimezone(UTC).isoformat()
-    name = ''.join(char for char in by if char.isprintable())[:_MAX_NAME] or UNNAMED
+    when, name = _when_and_who(at, by)
+    _save_with_history(table, SETTINGS_KEY, {
+        'UpdateExpression': 'SET hard_cap = :on, updated_at = :at, updated_by = :by',
+        'ExpressionAttributeValues': {':on': on, ':at': when, ':by': name}}, {'hard_cap': on}, when, name)
+    return HardCap(on=on, updated_at=when, updated_by=name)
+
+
+def _when_and_who(at: datetime, by: str) -> tuple[str, str]:
+    """A change's time (UTC, ISO 8601) and who made it, as recorded: printable, at most ``_MAX_NAME``, never blank."""
+    return at.astimezone(UTC).isoformat(), ''.join(char for char in by if char.isprintable())[:_MAX_NAME] or UNNAMED
+
+
+def _save_with_history(table: Any, key: dict[str, str], update: dict[str, Any], change: dict[str, Any], when: str,
+                       name: str) -> None:
+    """One settings row's update and its create-only history row (``LOG#<at>#<n>`` in the same partition: ``change``,
+    who and when; D1, D4) in one transaction, so the setting and its history never drift."""
     table.meta.client.transact_write_items(TransactItems=[
-        {'Update': {'TableName': table.name, 'Key': SETTINGS_KEY,
-                    'UpdateExpression': 'SET hard_cap = :on, updated_at = :at, updated_by = :by',
-                    'ExpressionAttributeValues': {':on': on, ':at': when, ':by': name}}},
+        {'Update': {'TableName': table.name, 'Key': key, **update}},
         {'Put': {'TableName': table.name,
-                 'Item': {'pk': SETTINGS_KEY['pk'], 'sk': f'LOG#{when}#{secrets.token_hex(4)}',
-                          'hard_cap': on, 'by': name, 'at': when},
+                 'Item': {'pk': key['pk'], 'sk': f'LOG#{when}#{secrets.token_hex(4)}', **change, 'by': name,
+                          'at': when},
                  'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
     ])
-    return HardCap(on=on, updated_at=when, updated_by=name)
 
 
 # -- the roles' models (7.58.00) ------------------------------------------------------------------------------------
@@ -96,18 +107,12 @@ def read_role_models(table: Any) -> dict[str, RoleModel]:
 def save_role_model(table: Any, *, role: str, choice: str, by: str, at: datetime) -> RoleModel:
     """Save ``role``'s model choice ('' clears it: the role's default again), checked by the caller, with its history
     row, in one transaction; the choice as saved."""
-    when = at.astimezone(UTC).isoformat()
-    name = ''.join(char for char in by if char.isprintable())[:_MAX_NAME] or UNNAMED
+    when, name = _when_and_who(at, by)
     names = {'#m': f'{_MODEL}{role}', '#a': f'at:{role}', '#b': f'by:{role}'}
     update = ({'UpdateExpression': 'SET #m = :m, #a = :at, #b = :by',
                'ExpressionAttributeValues': {':m': choice, ':at': when, ':by': name}} if choice else
               {'UpdateExpression': 'SET #a = :at, #b = :by REMOVE #m',
                'ExpressionAttributeValues': {':at': when, ':by': name}})
-    table.meta.client.transact_write_items(TransactItems=[
-        {'Update': {'TableName': table.name, 'Key': ROLE_MODELS_KEY, 'ExpressionAttributeNames': names, **update}},
-        {'Put': {'TableName': table.name,
-                 'Item': {'pk': ROLE_MODELS_KEY['pk'], 'sk': f'LOG#{when}#{secrets.token_hex(4)}',
-                          'role_model': {'role': role, 'model': choice}, 'by': name, 'at': when},
-                 'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
-    ])
+    _save_with_history(table, ROLE_MODELS_KEY, {'ExpressionAttributeNames': names, **update},
+                       {'role_model': {'role': role, 'model': choice}}, when, name)
     return RoleModel(choice, when, name)

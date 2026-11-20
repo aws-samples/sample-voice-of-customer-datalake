@@ -53,6 +53,8 @@ NEVER: tuple[tuple[str, str, Any], ...] = (
     ('GET', '/agents/engineering/settings', None),
     ('PUT', '/agents/engineering/settings', {'hard_cap': False}),
     ('GET', '/agents/engineering/spend', None),
+    # (7.58.00: a role's model in this deployment, an administrator's acting for themselves)
+    ('PUT', '/agents/engineering/registry/fixer/model', {'model': 'opus'}),
 )
 
 

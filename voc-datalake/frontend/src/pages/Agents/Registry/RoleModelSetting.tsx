@@ -14,6 +14,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { engineeringRegistryApi, engineeringRegistryKeys } from '../../../api/engineeringRegistryApi'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { modelShortName } from '../../../components/WorkflowEditor/nodes/nodeText'
 import { serverReason } from '../../../lib/errors'
 import { ModelChoiceField } from '../ModelChoiceField'
@@ -69,12 +70,12 @@ function RoleModelForm({ card, enabled }: Readonly<{ card: RegistryCard; enabled
       {card.runs_on === 'kiro' && <p className="text-[12px] text-muted">{t('registry.model.kiroStops')}</p>}
       <p className="text-[12px] text-muted">{t('registry.model.nextRun')}</p>
       <Changed card={card} />
-      <div className="flex flex-wrap items-center gap-2">
+      <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-2 py-2">
         <button type="button" className="btn btn-primary btn-sm" aria-disabled={blocked} disabled={blocked} onClick={() => save.mutate()}>
           {save.isPending && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}{t('registry.model.save')}
         </button>
         {save.isSuccess && <span role="status" className="text-[12px] text-ok">{t('registry.model.saved')}</span>}
-      </div>
+      </StickyActionBar>
       {save.isError && (
         <p role="alert" className="text-sm text-danger">
           {reason === null ? t('registry.model.failed') : t('registry.model.refused', { message: reason })}

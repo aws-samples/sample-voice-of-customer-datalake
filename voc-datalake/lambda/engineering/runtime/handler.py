@@ -312,12 +312,18 @@ def _hard_cap_on() -> bool:
     first start. A read that fails refuses the start, saying so (nothing is written yet: retry), rather than start
     a run the cap may have refused."""
 
-    from shared.aws import get_dynamodb_resource
     try:
-        return read_hard_cap(get_dynamodb_resource().Table(os.environ['ENGINEERING_SETTINGS_TABLE'])).on
+        return read_hard_cap(_settings_table(os.environ['ENGINEERING_SETTINGS_TABLE'])).on
     except (ClientError, BotoCoreError, KeyError) as error:
         logger.exception('engineering runtime: the hard cap\'s setting could not be read')
         raise StartReadFailed('the hard cap\'s setting could not be read: start the run again') from error
+
+
+def _settings_table(name: str) -> Any:
+    """voc-agents (``ENGINEERING_SETTINGS_TABLE``), for its ``SETTINGS#engineering`` rows only: the hard cap's and,
+    since 7.58.00, the roles' models (engineering/settings.py; the runtime's role may GetItem that partition alone)."""
+    from shared.aws import get_dynamodb_resource
+    return get_dynamodb_resource().Table(name)
 
 
 def _gate_record(key: str) -> GateRecord | None:
@@ -903,9 +909,8 @@ def _role_model_choices() -> dict[str, str]:
     if not table:
         return {}
     from engineering.settings import read_role_models
-    from shared.aws import get_dynamodb_resource
     try:
-        found = read_role_models(get_dynamodb_resource().Table(table))
+        found = read_role_models(_settings_table(table))
     except (ClientError, BotoCoreError) as error:
         logger.exception('engineering runtime: the roles\' model choices could not be read')
         raise StartReadFailed('the roles\' models could not be read: start the run again') from error
